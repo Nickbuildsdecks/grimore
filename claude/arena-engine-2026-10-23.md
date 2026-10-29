@@ -5812,6 +5812,40 @@ from a graveyard, and nothing in this pool destroys a land. The same keyword on 
 watching for deaths, is **offered 137 times, taken 130, declined 7, for 390 cards milled**. Before
 asking what a keyword is worth, ask how often the card gets to use it.
 
+### Buyback, the cost that changes where the card goes rather than what it does (D211)
+
+The pool has had an optional additional cost since the kicker, and every one since has been a
+variation on *what the spell does*: kicker changes the effect, replicate multiplies it, the five
+alternative costs replace the price. Buyback changes neither. The spell is the same spell, the
+targets are the same targets — and the card goes back to its owner's **hand** instead of their
+graveyard (CR 702.26a). It is the only cost here whose purchase is the card itself.
+
+Which made it cheap to build, because both joints already existed. The second row at the printed
+cost plus the buyback is the kicker's arrangement, so the table needed nothing new — a player sees
+`Cast Capsize` and `Cast Capsize with buyback {3}` and the row's own words say what the three mana
+buys. And "somewhere other than the graveyard as it leaves the stack" is the branch flashback and
+the adventure already share in `spellLeavesStack`, which takes a `resolved` flag precisely because
+*some* of those dispositions depend on the spell having finished and some do not.
+
+Buyback depends on it, and a test proved the dependency rather than assuming it: **a countered
+bought-back Capsize goes to the graveyard**, because the promise is about resolving. The first
+version of that test failed for a different reason and was the more useful failure — it targeted the
+spell with `{ kind: 'spell' }`, the engine's counterspells target a spell on the stack as a
+`{ kind: 'card' }`, and the Cancel resolved without countering anything. A test that had been
+written to pass would have hidden it.
+
+Two refusals keep the keyword honest. The row is offered only on an **instant or a sorcery**,
+because a permanent spell resolving becomes a permanent and never leaves the stack for a graveyard
+at all, so the extra mana would buy nothing — `legalActions` does not draw it and `auto:cast`
+refuses it, which is the same two-sided rule every cost flag here keeps. And buyback is not paid
+beside an alternative cost, for the plain reason that an alternative cost replaces the printed one
+it is added to.
+
+**The bot pays it**, which is the check D207 made permanent: 25 of 54 Capsize casts and 5 of 44
+Whispers of the Muse casts over 96 games apiece, counted off `action.buyback` rather than inferred.
+A cost flag dropped between the chosen play and the action sent is silently the other play, and the
+replicate bug is what that looks like when nobody counts.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

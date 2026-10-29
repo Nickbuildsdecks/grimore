@@ -652,6 +652,20 @@ export function spellLeavesStack(
     const exiled = relocate(state, inst, 'exile', inst.owner, 'bottom');
     return withInstance(exiled, inst.id, { onAdventure: true });
   }
+  /*
+    And a spell whose **buyback** was paid goes back to its owner's hand (CR 702.26a).
+
+    The same `resolved` test and for the same reason as the adventure above it: the promise is
+    about the spell finishing, so a countered buyback spell goes to the graveyard like any other
+    countered spell, and the only thing that knows which happened is the caller.
+
+    Below the adventure branch rather than above it because no card has both and the adventure's is
+    the narrower claim; above the flashback line because a flashback casting replaces the printed
+    cost that buyback is paid on top of, so no casting is ever both.
+  */
+  if (object.boughtBack === true && resolved) {
+    return relocate(state, inst, 'hand', inst.owner, 'bottom');
+  }
   return relocate(state, inst, object.flashback === true ? 'exile' : 'graveyard', inst.owner, 'bottom');
 }
 

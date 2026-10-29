@@ -11772,3 +11772,65 @@ One thing it did not fall for, because the extort run already had. The prompt's 
 both button labels ("… instead of drawing? Mill 3 Draw instead"), so a check matching the text would
 pass on a run that declined every time. The check is anchored on the **driver's** report of which
 button it pressed.
+
+## D211 — Buyback, and what is left when a cost buys neither a better spell nor a cheaper one
+
+**The keyword.** "You may pay an additional cost as you cast this spell. If you do, put this card
+into its owner's hand instead of into your graveyard as it resolves" (CR 702.26a). Every optional
+cost in this pool before it changed *what the spell does* — kicker branches the effect, replicate
+multiplies it, and the five alternative costs replace the price and sometimes the result. Buyback
+changes none of that. The spell is the same spell with the same targets; what the extra mana buys
+is **the card**.
+
+### Why it was two days' design and twenty minutes' code
+
+Both joints already existed, and finding that out was the whole of the design.
+
+The **second row** is the kicker's arrangement. `legalActions` already offers one card twice at two
+prices — that is how a kicker, a morph, a split card and five alternative costs all reach the table
+— so a player sees `Cast Capsize` and `Cast Capsize with buyback {3}` and the row's own words say
+what the three mana is for. Nothing in the client changed.
+
+The **destination** is flashback's. `spellLeavesStack` already decided where a spell's card goes as
+it leaves the stack, already knew about two dispositions that are not the graveyard, and already
+took a `resolved` flag — because the adventure's exile depends on the spell having finished and
+flashback's does not. Buyback is a third disposition on that same switch, and it is on the
+`resolved` side.
+
+So the effect never reads the keyword. There is a `ctx.kicked` because a kicked spell is a
+different spell; there is no `ctx.boughtBack`, because a bought-back spell is the same spell you
+happen to keep.
+
+### The test that was useful because it failed for the wrong reason
+
+"A countered buyback spell goes to the graveyard" is the claim the `resolved` flag exists for, and
+the first version of that test failed — but not over buyback. It aimed the counterspell with
+`{ kind: 'spell', id }`, which reads correctly and is not how this engine targets a spell on the
+stack: the convention everywhere else is `{ kind: 'card', id }`, the Cancel resolved countering
+nothing, and the Capsize resolved afterwards and went home. The assertion that caught it was about
+the card's zone, so the failure looked exactly like the bug it was written to prevent.
+
+Worth keeping as a general note: **a test that fails for the wrong reason is cheaper than one
+written to pass.** Had the target been right first time, the test would have been green either way
+and the `resolved` flag untested.
+
+### Two refusals, both two-sided
+
+The row is offered only on an **instant or a sorcery**. A permanent spell that resolves becomes a
+permanent and never leaves the stack for a graveyard at all, so "instead of into your graveyard" has
+nothing to replace and the extra mana would buy nothing. `legalActions` does not draw the row and
+`auto:cast` refuses the flag — the same two-sided discipline every cost flag here keeps, because a
+table offering a play the engine then refuses is the one bug that file exists to prevent. And
+buyback is not paid beside an alternative cost, which replaces the printed cost it is added to.
+
+### The bot pays it, and this time that was checked rather than assumed
+
+**25 of 54 Capsize casts and 5 of 44 Whispers of the Muse casts**, over 96 games each, counted off
+`action.buyback` on the action the bot actually sent. That check is D207's lesson made routine: the
+replicate count was dropped between the chosen play and the action for a whole piece, with no
+refusal and no failing test, because a cast missing a cost flag is quietly the cheaper play. Every
+new flag gets the twenty-line script now.
+
+The split between the two cards is the cards rather than the bot. Capsize's buyback is {3} on a
+three-mana spell, so six lands pays both halves and a control deck has six lands; Whispers' is {5}
+on a one-mana spell, which is a mana sink by design and only reached in the long games.

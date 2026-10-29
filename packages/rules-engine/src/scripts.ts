@@ -2565,6 +2565,52 @@ const ESSENCE_SCATTER: CardScript = {
 };
 
 /** Unsummon: not removal, time — the creature comes back, and so does the mana it cost. */
+/**
+ * Capsize: the pool's first **buyback** card, and the plainest statement of the keyword.
+ *
+ * Three mana returns a permanent to its owner's hand, which is a fair instant. Three more returns
+ * the *card* to yours (CR 702.26a) — and that is the whole mechanic: the extra mana does not make
+ * the spell better, it makes the spell permanent. A deck that reaches six mana holding this has an
+ * answer it cannot run out of, which is why the card is famous and why it is priced where it is.
+ *
+ * Any permanent rather than any creature, which is the other half of what the slot costs Tidal Mind
+ * — the Unsummon it replaces could only bounce a creature.
+ */
+const CAPSIZE: CardScript = {
+  name: 'Capsize',
+  buyback: { cost: '{3}', description: 'Buyback {3}' },
+  targets: [{
+    kind: 'permanent',
+    description: 'target permanent',
+    filter: (state, candidate) => {
+      if (candidate.kind !== 'card') return false;
+      return state.instances[candidate.id]?.zone === 'battlefield';
+    },
+  }],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : bounceToHand(c.state, id);
+  },
+};
+
+/**
+ * Whispers of the Muse: the other thing buyback is for, which is somewhere to put the eighth land.
+ *
+ * One mana to draw a card is filler; six to draw a card **every turn** is a mana sink, and a deck
+ * that wins slowly wants one more than it wants a two-for-one. Where Capsize asks whether an answer
+ * is worth keeping, this asks what a long game is spent on.
+ *
+ * Its draw is `drawLater`, like every terminal draw in the pool, so a Hollow Tide holding a dredge
+ * card would be asked about it on the bought-back cantrip as well as in the draw step. Nothing in
+ * this deck has dredge today; the line is there because the rule at `drawLater` is about the shape
+ * of the card and not about the pool.
+ */
+const WHISPERS_OF_THE_MUSE: CardScript = {
+  name: 'Whispers of the Muse',
+  buyback: { cost: '{5}', description: 'Buyback {5}' },
+  onResolve: (c) => drawLater(c.state, c.controller, 1),
+};
+
 const UNSUMMON: CardScript = {
   name: 'Unsummon',
   targets: [TARGET_CREATURE],
@@ -7370,7 +7416,7 @@ const ALL: readonly CardScript[] = [
   SACRED_CAT, ANGEL_OF_SANCTIONS, ADORNED_POUNCER, SUNSCOURGE_CHAMPION,
   THUNDEROUS_WRATH, TERMINUS, STAGGERSHOCK, DISTORTION_STRIKE, PYROMATICS, TRAIN_OF_THOUGHT,
   BASILICA_SCREECHER, BASILICA_GUARDS, RIFT_BOLT, SEARCH_FOR_TOMORROW,
-  SHAMBLING_SHELL, DARKBLAST,
+  SHAMBLING_SHELL, DARKBLAST, CAPSIZE, WHISPERS_OF_THE_MUSE,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

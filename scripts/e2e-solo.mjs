@@ -41,7 +41,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * pay one cost several times over (`REPLICATE_LIST`), `LIST=extort` one that is asked for mana
  * every time it casts a spell (`EXTORT_LIST`), `LIST=suspend` one that spends its first turn on a
  * card it will cast two turns later (`SUSPEND_LIST`), `LIST=dredge` one that keeps buying the same
- * spell back out of its graveyard (`DREDGE_LIST`), and `LIST=earned` one
+ * spell back out of its graveyard (`DREDGE_LIST`), `LIST=buyback` one that pays to keep the spell
+ * it just cast (`BUYBACK_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -330,6 +331,25 @@ const SUSPEND_LIST = [
  * itself — two buttons about a draw, with the price in cards — and the **card coming back**, which
  * is the half that makes dredge a keyword rather than a drawback.
  */
+/**
+ * A deck with nothing to spend its mana on but the same spell, over and over (CR 702.26a).
+ *
+ * Buyback is a price list rather than an effect: the card is the same either way, and what the
+ * extra mana buys is the card itself, back in your hand. So the scenario needs two things a normal
+ * deck will not reliably give it — **enough lands to pay both halves** (six for a Capsize with its
+ * buyback) and a board worth pointing at, which the computer's own creatures supply.
+ *
+ * What the run proves is the pair the engine's tests cannot reach through a table: the **second
+ * row** on a card already in hand, priced at the printed cost plus the buyback, and the card
+ * arriving back in the hand it was cast from rather than in the graveyard.
+ */
+const BUYBACK_LIST = [
+  '26 Island',
+  '8 Capsize',
+  '4 Whispers of the Muse', '4 Preordain', '4 Thieving Magpie', '4 Wind Drake',
+  '4 Air Elemental', '2 Mulldrifter', '4 Omenspeaker',
+].join('\n');
+
 const DREDGE_LIST = [
   '24 Swamp',
   '8 Darkblast',
@@ -399,6 +419,8 @@ const DREDGE_LIST = [
         ? SUSPEND_LIST
         : LIST === 'dredge'
         ? DREDGE_LIST
+        : LIST === 'buyback'
+        ? BUYBACK_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -529,6 +551,17 @@ const DREDGE_LIST = [
      */
     const dredgesTaken = new Set();
     let castsAfterADredge = 0;
+    /**
+     * The buyback rows pressed, and the casts that happened *after* one, under `LIST=buyback`.
+     *
+     * The second half is the keyword: a row that charges three more mana and then puts the card in
+     * the graveyard anyway is a worse card, so what the run has to see is the same card cast again.
+     * Counted by name rather than by instance because the table does not say which Capsize is
+     * which — eight of them are in the deck — so the claim is the weaker and honest one: a buyback
+     * row was pressed, and a Capsize was cast again afterwards.
+     */
+    const buybackRows = new Set();
+    let castsAfterABuyback = 0;
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -584,6 +617,12 @@ const DREDGE_LIST = [
         if (typeof did === 'string' && /Suspend .*time counter/i.test(did)) suspendRows.add(did);
         if (typeof did === 'string' && /last time counter is gone/i.test(did)) suspendCasts.add(did);
         if (typeof did === 'string' && /^took a dredge: /.test(did)) dredgesTaken.add(did);
+        if (typeof did === 'string' && /chose a play: Cast .* with buyback/i.test(did)) {
+          buybackRows.add(did);
+        } else if (buybackRows.size > 0 && typeof did === 'string'
+          && /chose a play: Cast Capsize/.test(did)) {
+          castsAfterABuyback += 1;
+        }
         if (dredgesTaken.size > 0 && typeof did === 'string'
           && /chose a play: Cast Darkblast/.test(did)) castsAfterADredge += 1;
         if (typeof did === 'string') {
@@ -657,7 +696,7 @@ const DREDGE_LIST = [
     */
     const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
-      || LIST === 'dredge'
+      || LIST === 'dredge' || LIST === 'buyback'
       ? 5 : 3;
     /*
       What "not yet" means for this list.
@@ -678,10 +717,12 @@ const DREDGE_LIST = [
       ? suspendRows.size === 0 || suspendCasts.size === 0
       : LIST === 'dredge'
       ? dredgesTaken.size === 0 || castsAfterADredge === 0
+      : LIST === 'buyback'
+      ? buybackRows.size === 0 || castsAfterABuyback === 0
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
-      || LIST === 'dredge')
+      || LIST === 'dredge' || LIST === 'buyback')
       && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
@@ -690,6 +731,7 @@ const DREDGE_LIST = [
         : LIST === 'extort' ? `${extortPaid.size} extort payments`
         : LIST === 'suspend' ? `${suspendRows.size} suspends, ${suspendCasts.size} casts`
         : LIST === 'dredge' ? `${dredgesTaken.size} dredges, ${castsAfterADredge} casts after one`
+        : LIST === 'buyback' ? `${buybackRows.size} buyback rows, ${castsAfterABuyback} casts after one`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -836,6 +878,20 @@ const DREDGE_LIST = [
       check('and the card it bought back is cast again', castsAfterADredge > 0,
         `casts after a dredge: ${castsAfterADredge}`);
       for (const did of [...dredgesTaken].slice(0, 2)) console.log(`      ${did}`);
+    } else if (LIST === 'buyback') {
+      /*
+        A price list where both rows are the same spell (CR 702.26a).
+
+        The kicker's shape at a different price, and the only one in the pool where what the extra
+        mana buys is **the card**. So the two checks are the row and the consequence: a Cast row at
+        the printed cost plus the buyback was pressed, and the same card was cast again afterwards —
+        which it could only be if it came back to the hand instead of the graveyard.
+      */
+      check('a buyback row is offered on a card in hand, at the dearer price',
+        buybackRows.size > 0, `rows: ${buybackRows.size}`);
+      check('and the card it kept is cast again', castsAfterABuyback > 0,
+        `casts after a buyback: ${castsAfterABuyback}`);
+      for (const did of [...buybackRows].slice(0, 2)) console.log(`      ${did}`);
     } else if (LIST === 'graveyard') {
       /*
         The two rows pressed on a card in the graveyard, and the face of what arrived.

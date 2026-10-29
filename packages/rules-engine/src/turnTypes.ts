@@ -206,6 +206,17 @@ export interface StackObject {
    */
   readonly kicked?: boolean;
   /**
+   * Whether this spell's buyback was paid (CR 702.26a).
+   *
+   * The flashback flag's opposite number and on the object for exactly the same reason: where the
+   * card goes as it leaves the stack depends on how it was cast, and by then nothing else
+   * remembers. Flashback sends it to exile whatever happened; this sends it to its owner's **hand**
+   * — but only if the spell **resolved**, which is the half that cannot be read here. A countered
+   * buyback spell goes to the graveyard like any other, so `spellLeavesStack` is told whether it
+   * resolved by the caller, the same way the adventure branch is.
+   */
+  readonly boughtBack?: true;
+  /**
    * Whether this spell was cast with flashback (CR 702.33a).
    *
    * On the stack object because the card's destination depends on it and the card does not: a
@@ -1025,6 +1036,12 @@ export interface AutoCastAction {
   readonly division?: readonly number[];
   /** Pay the kicker (CR 702.32a). Refused on a spell that has none. */
   readonly kicked?: boolean;
+  /**
+   * Pay the buyback cost (CR 702.26a). Refused on a spell that has none, on a **permanent** spell —
+   * which never leaves the stack for a graveyard, so the cost would buy nothing — and beside an
+   * alternative cost, which replaces the printed cost that buyback adds to.
+   */
+  readonly buyback?: boolean;
   /**
    * Pay the replicate cost this many times (CR 702.56). Refused on a spell that has none, on a
    * count below one, and beside an alternative cost — a spell is cast for one cost, and replicate

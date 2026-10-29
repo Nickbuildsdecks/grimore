@@ -1166,6 +1166,31 @@ export interface CardScript {
     readonly description: string;
   };
   /**
+   * Buyback: an optional additional cost that changes where the card **goes** (CR 702.26).
+   *
+   * The kicker's twin and its opposite in the one way that matters. Both are extra mana announced
+   * as the spell is cast, both are a second row on the same card at a higher price, and both are
+   * read off the stack object so an opponent can see what they are answering. The difference is
+   * what they buy: a kicker changes what the spell *does*, and this changes where the card ends up
+   * when it is finished — its owner's hand instead of their graveyard.
+   *
+   * So the effect never reads it. `ctx.kicked` exists because a kicked spell is a different spell;
+   * there is no `ctx.boughtBack`, because a bought-back spell is the same spell you get to keep.
+   *
+   * Two things it is not. It is not a cost that can be paid on a **permanent** spell — a creature
+   * that resolves becomes a permanent and never leaves the stack for a graveyard at all, so the
+   * cost would buy nothing; `legalActions` offers the row only on an instant or a sorcery and the
+   * cast refuses it otherwise. And it does nothing for a spell that is **countered**: the card goes
+   * to the graveyard like any other, because the promise is about resolving. See
+   * `StackObject.boughtBack`, which is where both of those are enforced.
+   */
+  readonly buyback?: {
+    /** The extra mana, in the printed `{3}` form, on top of the card's own cost. */
+    readonly cost: string;
+    /** As printed: "Buyback {3}". */
+    readonly description: string;
+  };
+  /**
    * Flashback: a second casting, out of the graveyard, for a different cost (CR 702.33).
    *
    * The second zone a spell is ever cast *from* in this engine — the command zone was the first,

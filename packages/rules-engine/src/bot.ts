@@ -1263,6 +1263,10 @@ function candidateActions(
             // version as a separate one — so it has to be said, or the engine casts the cheap
             // half of a card the table offered as the expensive one.
             ...(play.kicked === true ? { kicked: true } : {}),
+            // And buyback, the same flag for the same reason at a different price: the row the
+            // search chose is the one that gets the card back, and a cast sent without this is
+            // quietly the printed one.
+            ...(play.buyback === true ? { buyback: true } : {}),
             /*
               And replicate's **count**, which is the same mistake as the kicker's with a number in
               it — and the one that proves the comment above is not theoretical. Before this line
@@ -2897,6 +2901,7 @@ function castsARitual(state: GameState, action: Action): boolean {
 /** One play, identified well enough to tell "this is new" from "this was already on offer". */
 const playKey = (play: LegalPlay): string =>
   `${play.kind}|${play.card}|${play.abilityIndex ?? ''}|${play.kicked === true ? 'k' : ''}`
+  + `${play.buyback === true ? 'y' : ''}`
   // And evoke, for the same reason as the kicker: the two castings of a Mulldrifter are two
   // plays, and a key that could not tell them apart would read the expensive one as still on
   // offer after the cheap one had been cast.

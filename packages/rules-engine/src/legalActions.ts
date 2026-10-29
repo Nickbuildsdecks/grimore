@@ -12,7 +12,7 @@
  */
 import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
-import { characteristicsOf } from './characteristics.js';
+import { characteristicsOf, hasType } from './characteristics.js';
 import {
   atSorcerySpeed, bottomOwed, modeCombinations, modeTargetSpecs, modesOf, pendingDeclaration,
   sacrificeOptions, stackTop,
@@ -91,6 +91,13 @@ export interface LegalPlay {
   readonly fromGraveyard?: boolean;
   /** Set on the second of the two plays a kicker offers: this one pays it (CR 702.32a). */
   readonly kicked?: boolean;
+  /**
+   * Set on the second of the two plays a buyback offers: this one pays it (CR 702.26a).
+   *
+   * The kicker's arrangement again, and the table needs no new way to draw it — it is a second row
+   * on the same card at a higher price, and the row's own words say what the price buys.
+   */
+  readonly buyback?: boolean;
   /**
    * How many times this play pays the card's replicate cost, and so how many copies it makes.
    *
@@ -1368,6 +1375,36 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           description: `Cast ${ch.name} with ${kicker.description.toLowerCase()}`,
           manaCost: `${def?.manaCost ?? ''}${kicker.cost}`, ...taxOn,
           ...(kickedCost.x ? { xMax: maxAffordableX(poolOf(state, seat), kickedCost, sources) } : {}),
+          targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims,
+        });
+      }
+    }
+
+    /*
+      And buyback, which is the kicker's shape at a different price for a different thing.
+
+      Only on an **instant or a sorcery**: a permanent spell resolving becomes a permanent and never
+      leaves the stack for a graveyard at all, so the extra mana would buy nothing — and a row that
+      charges for nothing is worse than no row. The cast refuses it on the same grounds, because a
+      table and an engine disagreeing about a play is the one bug this file exists to prevent.
+    */
+    const buyback = flashback || escape || foretold ? undefined : script?.buyback;
+    const leavesForAGraveyard = hasType(ch.typeLine, 'instant') || hasType(ch.typeLine, 'sorcery');
+    if (buyback !== undefined && leavesForAGraveyard) {
+      const withBuyback = parseManaCost(`${def?.manaCost ?? ''}${buyback.cost}`);
+      const boughtCost: ManaCost = withCostChange(
+        fromCommand && tax > 0
+          ? { ...withBuyback, generic: withBuyback.generic + tax }
+          : withBuyback,
+        change.generic,
+      );
+      if (withBuyback.unsupported === undefined
+        && canAfford(poolOf(state, seat), boughtCost, sources)) {
+        out.push({
+          kind: 'cast', card: id, name: ch.name, buyback: true,
+          description: `Cast ${ch.name} with ${buyback.description.toLowerCase()}`,
+          manaCost: `${def?.manaCost ?? ''}${buyback.cost}`, ...taxOn,
+          ...(boughtCost.x ? { xMax: maxAffordableX(poolOf(state, seat), boughtCost, sources) } : {}),
           targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims,
         });
       }

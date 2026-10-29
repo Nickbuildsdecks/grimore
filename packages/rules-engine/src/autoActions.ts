@@ -290,6 +290,30 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   }
 
   /*
+    And buyback, the kicker's twin: announced with the spell, refused on a card without one.
+
+    With one refusal of its own. A **permanent** spell never leaves the stack for a graveyard — it
+    becomes a permanent — so "instead of into your graveyard" has nothing to replace and the extra
+    mana would buy nothing at all. `legalActions` never offers the row on one; this is the half that
+    makes a hand-built action agree with the table.
+  */
+  const boughtBack = action.buyback === true;
+  if (boughtBack) {
+    if (script?.buyback === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no buyback`);
+    }
+    if (!hasType(characteristics.typeLine, 'instant')
+      && !hasType(characteristics.typeLine, 'sorcery')) {
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        'buyback returns the card as it resolves, which a permanent spell never does');
+    }
+    if (kicked) {
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        'the kicker and buyback are both paid on top of the printed cost, and no card in this pool has both');
+    }
+  }
+
+  /*
     And replicate, announced the same way and for the same reason — with one difference: it is a
     **count** rather than a yes (CR 702.56).
 
@@ -377,7 +401,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       not that one — and a card that has dash and not evoke would otherwise be refused for the
       keyword it does not have rather than for the two it was sent.
     */
-    if (flashback || escape || foretold || offered || kicked
+    if (flashback || escape || foretold || offered || kicked || boughtBack
       || [evoked, dashed, bestowed, spectacled, overloaded].filter(Boolean).length > 1) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${word} is an alternative cost: it is paid instead of another, not beside one`);
     }
@@ -485,6 +509,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
                 // from the kicker on the line below.
                 : overloaded ? script?.overload?.cost
                   : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}`
+                  // And buyback, which adds on top exactly as the kicker does — what differs
+                  // between them is what the mana buys, not how it is paid.
+                  : boughtBack ? `${def?.manaCost ?? ''}${script?.buyback?.cost ?? ''}`
                     /*
                       And replicate, the other cost that *adds* — and the only one that adds the
                       same symbols several times over. Written out as a repeated string rather than
@@ -674,6 +701,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // And the kicker, for the same reason again: whether it was paid changes what the spell does,
   // and the player deciding whether to respond reads the stack to find out.
   const kickedText = kicked ? ' (kicked)' : '';
+  // And buyback's, which the player deciding whether to answer it needs most of all: countering a
+  // bought-back spell is the only way to stop it coming back, and the window is now.
+  const boughtBackText = boughtBack ? ' (buyback)' : '';
   /*
     And replicate's, which the player answering it needs as much as any of them — and needs *early*,
     because the window closes: the copies are separate objects put on the stack by the card's own
@@ -736,6 +766,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     ...(action.division === undefined ? {} : { division: [...action.division] }),
     ...(modes === undefined ? {} : { modes: [...modes] }),
     ...(kicked ? { kicked: true } : {}),
+    // The other flag the card's destination depends on, and flashback's opposite number: this one
+    // sends the card to its owner's hand as it leaves the stack, but only if it got that far.
+    ...(boughtBack ? { boughtBack: true as const } : {}),
     // The flag the card's destination depends on: a spell cast from the graveyard is exiled as it
     // leaves the stack, and by then nothing else remembers where it came from.
     ...(flashback ? { flashback: true as const } : {}),
@@ -765,7 +798,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       creature spell and goes to the battlefield like one.
     */
     ...(faces?.kind === 'adventure' && faceKey !== undefined ? { adventure: true as const } : {}),
-    description: `${characteristics.name}${xText}${kickedText}${replicatedText}${flashbackText}${escapedText}`
+    description: `${characteristics.name}${xText}${kickedText}${boughtBackText}${replicatedText}${flashbackText}${escapedText}`
       + `${delveText}${foretoldText}${evokedText}${dashedText}${bestowedText}${spectacledText}`
       + `${overloadedText}${offeredText}${modeText}`,
   };
@@ -802,11 +835,12 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // The lands tapped for it are named, because they turn sideways on screen and a player who
     // did not tap them should be able to see why.
     message: paid.tapped.length === 0
-      ? `${seatName(state, action.by)} casts ${characteristics.name}${kickedText}${replicatedText}${tax > 0 ? ` (+{${tax}} tax)` : ''}`
-      : `${seatName(state, action.by)} taps ${paid.tapped.length} for ${characteristics.name}${kickedText} and casts it`,
+      ? `${seatName(state, action.by)} casts ${characteristics.name}${kickedText}${boughtBackText}${replicatedText}${tax > 0 ? ` (+{${tax}} tax)` : ''}`
+      : `${seatName(state, action.by)} taps ${paid.tapped.length} for ${characteristics.name}${kickedText}${boughtBackText} and casts it`,
     data: {
       card: inst.id, name: characteristics.name, tapped: [...paid.tapped],
       ...(kicked ? { kicked: true } : {}),
+      ...(boughtBack ? { buyback: true } : {}),
       ...(sacrificed === null ? {} : { sacrificed, sacrificedName }),
     },
   };

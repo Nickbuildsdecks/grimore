@@ -3422,6 +3422,39 @@ const DISTORTION_STRIKE: CardDef = {
   colors: ['U'],
 };
 
+/**
+ * The buyback card: bounce anything, and keep the card if you can pay for it.
+ *
+ * Capsize is the keyword's clearest statement — {1}{U}{U} for a bounce is a fair rate and
+ * {3} more to **keep the spell** is the whole mechanic, because what the extra mana buys is not a
+ * better effect but the same effect again next turn, and the turn after that. A deck that reaches
+ * six mana with this in hand has an answer it never runs out of.
+ */
+const CAPSIZE: CardDef = {
+  name: 'Capsize',
+  typeLine: 'Instant',
+  manaCost: '{1}{U}{U}',
+  cmc: 3,
+  oracleText: "Buyback {3} (You may pay an additional {3} as you cast this spell. If you do, put this card into your hand as it resolves.)\nReturn target permanent to its owner's hand.",
+  colors: ['U'],
+};
+
+/**
+ * Buyback's other half of the bargain: a cheap cantrip whose buyback costs more than the card.
+ *
+ * One mana to draw a card is a filler spell; six mana to draw a card and keep the spell is a
+ * **mana sink**, which is the other thing the keyword was printed to do. Where Capsize asks
+ * whether an answer is worth keeping, this asks what a deck does with its eighth land.
+ */
+const WHISPERS_OF_THE_MUSE: CardDef = {
+  name: 'Whispers of the Muse',
+  typeLine: 'Instant',
+  manaCost: '{U}',
+  cmc: 1,
+  oracleText: 'Buyback {5} (You may pay an additional {5} as you cast this spell. If you do, put this card into your hand as it resolves.)\nDraw a card.',
+  colors: ['U'],
+};
+
 export const TIDAL_MIND: DeckSpec = {
   id: 'tidal-mind',
   name: 'Tidal Mind',
@@ -3674,7 +3707,16 @@ export const TIDAL_MIND: DeckSpec = {
       because deathtouch, flying and lifelink is the one creature in these colours that both holds
       the ground against anything and wins the game on its own if the game goes long.
     */
-    { card: MAN_O_WAR, count: 2 },
+    { card: MAN_O_WAR, count: 1 },
+    /*
+      Capsize for the second Man-o'-War: a bounce for a bounce, which is what makes the number
+      readable.
+
+      Both return something to a hand and both cost three; the Man-o'-War leaves a 2/2 behind, and
+      this one leaves *itself* behind for three more mana. So what the probe is asked is whether a
+      body is worth more than a spell you keep — which is the keyword's own question. See D211.
+    */
+    { card: CAPSIZE, count: 1 },
     /*
       Chalice of the Void, for the third Man-o'-War.
 
@@ -4955,7 +4997,16 @@ export const HOLLOW_TIDE: DeckSpec = {
     */
     { card: DIABOLIC_TUTOR, count: 1 },
     { card: MIND_SCULPT, count: 3 },
-    { card: THOUGHT_SCOUR, count: 2 },
+    { card: THOUGHT_SCOUR, count: 1 },
+    /*
+      Whispers of the Muse for the second Thought Scour: a one-mana cantrip for a one-mana cantrip.
+
+      The Thought Scour mills two and replaces itself, which in this deck is a small piece of the
+      plan. This replaces itself too, and then costs six to do it again every turn afterwards — so
+      the slot asks what a mill deck's long game is worth, which is the half of buyback that is not
+      about answers. See D211.
+    */
+    { card: WHISPERS_OF_THE_MUSE, count: 1 },
     /*
       One Compelling Argument rather than two, for the Chasm Skulker at the bottom of this list.
 

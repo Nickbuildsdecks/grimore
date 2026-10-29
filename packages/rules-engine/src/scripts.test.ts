@@ -13529,14 +13529,25 @@ describe('extort: an optional cost paid while the trigger resolves', () => {
   it('pays once per spell, so two spells are two lives', () => {
     let s = board(['Island', 'Island', 'Swamp', 'Swamp']);
     const theirs = life(s, 1);
-    // A second spell in hand, walked in so the turn can cast both.
-    const scour = find(s, 0, 'library', 'Thought Scour');
-    s = apply(s, { type: 'card:move', by: 0, card: scour, toZone: 'hand' });
-    for (const card of [find(s, 0, 'hand', 'Thought Scour'), scour]) {
-      s = apply(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'player', seat: 1 }] });
+    /*
+      A second spell in hand, walked in so the turn can cast both — and a **different** spell,
+      which is the stronger form of the claim: extort fires on each spell you cast rather than on
+      each copy of one card.
+    */
+    const preordain = find(s, 0, 'library', 'Preordain');
+    s = apply(s, { type: 'card:move', by: 0, card: preordain, toZone: 'hand' });
+    for (const card of [find(s, 0, 'hand', 'Thought Scour'), preordain]) {
+      const targets = nameOf(s, card) === 'Thought Scour'
+        ? [{ kind: 'player' as const, seat: 1 as SeatIndex }]
+        : [];
+      s = apply(s, { type: 'auto:cast', by: 0, card, targets });
       s = passBoth(s);
-      if (s.pendingDecision !== null) {
-        s = apply(s, { type: 'auto:decide', by: 0, option: 'Pay {W/B}' });
+      // Preordain's own scry comes first on the way through, and is answered by leaving the cards
+      // where they are: this test is about the extort beneath it.
+      while (s.pendingDecision !== null) {
+        s = s.pendingDecision.options?.includes('Pay {W/B}') === true
+          ? apply(s, { type: 'auto:decide', by: 0, option: 'Pay {W/B}' })
+          : apply(s, { type: 'auto:decide', by: 0, cards: [] });
       }
       s = drain(s, 40);
     }
@@ -16244,5 +16255,128 @@ describe('dredge: the draw replaced by a mill, and the card that comes back', ()
       s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'exile' });
     }
     expect(botAction(s, 0)).toEqual({ type: 'auto:dredge', by: 0, dredge: false });
+  });
+});
+
+describe('buyback: the cost that changes where the card goes', () => {
+  /*
+    The kicker's twin and its opposite in the one way that matters. Both are extra mana announced as
+    the spell is cast and both are a second row on the same card; a kicker changes what the spell
+    *does*, and this changes where the card ends up (CR 702.26a).
+
+    So the tests are the three places that distinction lives: the row and its price, the card coming
+    back when the spell resolves, and the two cases where it does not — a spell that was countered,
+    and a cost nobody may pay on a permanent spell.
+  */
+  const table = (lands: readonly string[], theirs: readonly string[] = ['Grizzly Bears']): GameState =>
+    tapAllLands(advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      hands: { 0: ['Capsize'] },
+      battlefield: { 0: [...lands], 1: [...theirs] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+
+  const SIX = ['Island', 'Island', 'Island', 'Island', 'Island', 'Island'];
+
+  it('offers a second row at the printed cost plus the buyback', () => {
+    const s = table(SIX);
+    const rows = legalActions(s, 0).plays.filter((play) => play.name === 'Capsize');
+    expect(rows.map((play) => play.manaCost)).toEqual(['{1}{U}{U}', '{1}{U}{U}{3}']);
+    expect(rows.find((play) => play.buyback === true)?.description).toContain('buyback {3}');
+    // And not the dearer row with only the printed cost up: a row nobody can pay for is not a row.
+    const poor = table(['Island', 'Island', 'Island']);
+    expect(legalActions(poor, 0).plays.filter((play) => play.name === 'Capsize'))
+      .toHaveLength(1);
+  });
+
+  it('puts the card back in hand as it resolves, and bounces the permanent either way', () => {
+    let s = table(SIX);
+    const capsize = find(s, 0, 'hand', 'Capsize');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: capsize, buyback: true,
+      targets: [{ kind: 'card', id: bears }],
+    }), 40);
+    expect(s.instances[bears]!.zone).toBe('hand');
+    // The whole of the keyword: the card is in the hand it was cast from, not in the graveyard.
+    expect(s.instances[capsize]!.zone).toBe('hand');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Capsize');
+  });
+
+  it('goes to the graveyard without it, which is the same spell for less mana', () => {
+    let s = table(['Island', 'Island', 'Island']);
+    const capsize = find(s, 0, 'hand', 'Capsize');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: capsize, targets: [{ kind: 'card', id: bears }],
+    }), 40);
+    expect(s.instances[bears]!.zone).toBe('hand');
+    expect(s.instances[capsize]!.zone).toBe('graveyard');
+  });
+
+  it('a countered buyback spell goes to the graveyard, because the promise is about resolving', () => {
+    /*
+      The half that cannot be read off the stack object, and the reason `spellLeavesStack` is told
+      whether the spell resolved rather than working it out: a bought-back spell that never resolved
+      did not come back, and a card that returned anyway would make the cost free.
+    */
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'tidal-mind' },
+      hands: { 0: ['Capsize'], 1: ['Cancel'] },
+      battlefield: { 0: [...SIX], 1: ['Island', 'Island', 'Island'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    // Seat 1's lands are left standing: the engine taps for the Cancel as it is cast, and tapping
+    // them by hand would need a priority this seat does not hold.
+    const capsize = find(s, 0, 'hand', 'Capsize');
+    const land = find(s, 1, 'battlefield', 'Island');
+
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: capsize, buyback: true,
+      targets: [{ kind: 'card', id: land }],
+    });
+    // The caster keeps priority after a cast, so the answer waits for them to let it go.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Cancel'),
+      targets: [{ kind: 'card', id: capsize }],
+    });
+    s = drain(passBoth(s), 40);
+    expect(s.instances[capsize]!.zone).toBe('graveyard');
+    expect(s.instances[land]!.zone).toBe('battlefield');
+  });
+
+  it('refuses the cost on a spell that has none, and on a permanent spell', () => {
+    const s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      hands: { 0: ['Capsize', "Man-o'-War"] },
+      battlefield: { 0: [...SIX] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', "Man-o'-War"), buyback: true,
+    })).toContain('has no buyback');
+
+    // And the rule that keeps the keyword honest: a permanent spell never leaves the stack for a
+    // graveyard, so there is nothing for the cost to replace. No card in the pool is written that
+    // way; the refusal is what stops one being written by accident.
+    const whispers = scriptFor('Whispers of the Muse');
+    expect(whispers?.buyback?.cost).toBe('{5}');
+    expect([...CARD_SCRIPTS.values()]
+      .filter((script) => script.buyback !== undefined).map((s2) => s2.name).sort())
+      .toEqual(['Capsize', 'Whispers of the Muse']);
+  });
+
+  it('is read on the stack, so an opponent can see what they are answering', () => {
+    let s = table(SIX);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Capsize'), buyback: true,
+      targets: [{ kind: 'card', id: bears }],
+    });
+    expect(s.stackObjects[s.stackOrder[0]!]!.boughtBack).toBe(true);
+    expect(s.stackObjects[s.stackOrder[0]!]!.description).toContain('(buyback)');
   });
 });

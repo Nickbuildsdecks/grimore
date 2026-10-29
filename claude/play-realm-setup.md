@@ -940,6 +940,7 @@ LIST=replicate node scripts/e2e-solo.mjs # a deck with the mana to pay one cost 
 LIST=extort node scripts/e2e-solo.mjs  # a deck asked for mana every time it casts a spell — 25 checks
 LIST=suspend node scripts/e2e-solo.mjs # a deck that pays for a spell a turn before it casts it — 26 checks
 LIST=dredge node scripts/e2e-solo.mjs  # a deck that buys the same spell back every draw step — 26 checks
+LIST=buyback node scripts/e2e-solo.mjs # a deck that pays to keep the spell it just cast — 26 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -1012,6 +1013,7 @@ LIST=replicate node scripts/e2e-solo.mjs         # one card offered at three pri
 LIST=extort node scripts/e2e-solo.mjs            # an optional cost paid in the middle of a resolution
 LIST=suspend node scripts/e2e-solo.mjs           # a card exiled with time counters, and the free cast two turns later
 LIST=dredge node scripts/e2e-solo.mjs            # a draw replaced by a mill, and the card it hands back
+LIST=buyback node scripts/e2e-solo.mjs           # the dearer of two rows on one card, and the card coming home
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
@@ -1026,7 +1028,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1070 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1076 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1168,6 +1170,13 @@ card nobody then plays has proved the question rather than the keyword. The deck
 and twenty bodies behind twenty-four Swamps, because the spell needs a creature to point at on its
 way to the graveyard. Three runs, 26 of 26 checks each.
 
+`LIST=buyback` is the eleventh, and the only one where both rows are the **same spell**. A Capsize
+is cast for {1}{U}{U}{3} rather than {1}{U}{U}, and what the extra three mana buys is the card
+itself: it goes back to the hand it was cast from instead of to the graveyard. Both halves are
+required — the dearer row pressed, and a Capsize cast again afterwards, which it could only be if
+it came home. The deck is eight Capsizes and twenty-six Islands, because paying both halves takes
+six lands. Three runs, 26 of 26 checks each.
+
 Worth saying what this scenario could not have proved by accident. The prompt's own sentence carries
 both button labels — "Mill 3 Draw instead" — which is exactly the trap the extort check fell into,
 so the check is anchored on the **driver's** report of which button it pressed rather than on the
@@ -1180,7 +1189,7 @@ pointer handler sets, so nothing that does not move a real pointer can see them.
 hovers a card and reads the variables back, which is the only honest way to check a thing whose
 whole existence is in the browser.
 
-The layers under them have their own suites: `packages/rules-engine` (1070 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1076 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (216 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
