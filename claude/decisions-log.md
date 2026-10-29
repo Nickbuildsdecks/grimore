@@ -13348,15 +13348,16 @@ The instrument, same 48 games, same seeds:
 Four bad blinks to none, and the useful ones nearly doubled — the bot now reaches for the arrival
 trigger instead of the biggest creature.
 
-`bot-duel` three ways, and all three say the same thing — nothing:
+`bot-duel` four ways, and all four say the same thing — nothing:
 
 | | |
 | --- | --- |
 | `SUBJECT=skyward-writ`, seeds 3300, 288 games | 146-142 (+4) |
 | `SUBJECT=skyward-writ`, seeds 5100, 288 games | 145-143 (+2) |
 | the whole field, seeds 3300, 624 games | 311-313 (−2) |
+| the whole field, seeds 5100, 624 games | 312-310 (+2) |
 
-Level, level and level: every reading is well inside the ±20 floor and they do not even agree on the
+Level four times over: every reading is well inside the ±20 floor and they do not even agree on the
 sign. That is the expected shape rather than a disappointment — a rule that changes four choices in
 forty-eight games cannot move a win rate, which is the same arithmetic D223's +1 and +3 ran into. The
 duel's job here was to **rule out harm**, and it does: the bot is not worse for knowing what a blink
@@ -13378,3 +13379,18 @@ is what gets read. So narrowing buys **time**, not signal: the same number, six 
 It also costs something that is easy to miss, and the rule being measured is the example.
 `blinksWell` fires off Soulherder in Skyward Writ *and* Cloudshift in Verdant Guard, so
 `SUBJECT=skyward-writ` prices three quarters of it. The whole-field run is what prices all of it.
+
+### And the browser, where the prompt lives
+
+`LIST=blink` is the eighteenth scenario in `e2e-solo.mjs` and the first whose question is about the
+player's **own** board. The two required checks are the ones no engine test can make: the question
+asked in the ability's own words, and the counter its answer pays for arriving on the **card face**.
+The decline — "Choose nothing" being the right answer because the only other creature is a token — is
+reported when the shuffle produces it rather than required, the way the damage-assignment order is:
+a board whose only other creature is a token is a fact about the shuffle and not something a deck
+list can arrange. 26 of 26, with the prompt answered in the second game of three.
+
+It also made the driver say what it answered. A choose-prompt came back as `aimed a trigger`, which
+is true of every trigger in the pool and useless to a scenario checking that a *particular* one
+reached the table — the same mistake the feed prompt's words were added to fix (D222). It now carries
+the ability's own description.

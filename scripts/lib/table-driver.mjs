@@ -485,15 +485,25 @@ export async function makeMove(
   // A triggered ability waiting to be aimed blocks everything, so it is answered first. The board
   // lights its legal targets the same way a spell's does.
   if (await has(page, 'choose-prompt')) {
+    /*
+      The prompt's own words, carried back with the answer, for the reason the feed prompt's are:
+      "aimed a trigger" is true of every trigger in the pool, and a scenario checking that a
+      *particular* one was answered through the table can do nothing with it. The words are the
+      ability's own description, which is the thing a player reads.
+    */
+    const words = await textOf(
+      page.locator('[data-testid="choose-prompt"] > span').first(),
+    ).then((s) => s.replace(/\s+/g, ' ').trim())
+      .catch(() => '');
     const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
     if ((await lit.count()) > 0) {
       await tap(lit.first());
-      return 'aimed a trigger';
+      return `aimed a trigger: ${words}`;
     }
     const seatButtons = page.locator('[data-testid^="target-seat-"]');
     if ((await seatButtons.count()) > 0) {
       await tap(seatButtons.first());
-      return 'aimed a trigger at a player';
+      return `aimed a trigger at a player: ${words}`;
     }
     /*
       Declining, for a trigger whose targets are optional — "up to one target artifact creature"
@@ -505,7 +515,7 @@ export async function makeMove(
     */
     if (await has(page, 'confirm-choice')) {
       await press(page, 'confirm-choice');
-      return 'declined an optional trigger';
+      return `declined an optional trigger: ${words}`;
     }
     // Nothing lit anywhere and nothing to decline: the table is asking for a target it is not
     // showing, which is a defect in the table rather than something to wait out.

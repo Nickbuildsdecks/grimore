@@ -161,7 +161,7 @@ not here: it would be a second list of two hundred and eighteen names to keep in
 first, to save a sign flip. See D138.
 
 `blink-use` is also the instrument that set a bot rule on its own, which is worth noting because the
-duel could not have: `blinksWell` reads +4, +2 and −2 across three arms — inside the floor every
+duel could not have: `blinksWell` reads +4, +2, −2 and +2 across four arms — inside the floor every
 time and not even agreeing on the sign — while the instrument reads 4 bad blinks going to 0 and the
 useful ones nearly doubling.
 A rule that changes four choices in forty-eight games is a rule only a count of *what it chose* can

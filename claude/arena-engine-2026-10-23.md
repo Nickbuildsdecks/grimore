@@ -6465,9 +6465,9 @@ the best candidate, and a board whose only other creature is a token leaves the 
 best one. Afterwards: 31 blinks, **no** tokens destroyed, **no** counters stripped, and the arrival
 triggers blinked nearly twice as often.
 
-`bot-duel` reads +4 and +2 of 288 on Skyward Writ's pairings and −2 of 624 across the whole field —
-three readings that do not agree on the sign and are all inside the floor, which is what a rule that
-changes four choices in forty-eight games looks like. Not the argument, then: the instrument is, the
+`bot-duel` reads +4 and +2 of 288 on Skyward Writ's pairings and −2 and +2 of 624 across the whole
+field — four readings that do not agree on the sign and are all inside the floor, which is what a
+rule that changes four choices in forty-eight games looks like. Not the argument, then: the instrument is, the
 same way it was for D220's ninja and D223's artifact. Two measurement notes came out of it. `SUBJECT` is new on that harness and buys **time rather than signal**: an untouched
 pairing is the same game twice and contributes nothing to the difference either way, so the field
 was never diluted. And it drops the decks it does not name, which matters here because this rule

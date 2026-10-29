@@ -962,6 +962,7 @@ LIST=upkeep node scripts/e2e-solo.mjs  # a deck whose upkeep question gets deare
 LIST=level node scripts/e2e-solo.mjs   # a deck with a creature that grows by being paid for — 26 checks
 LIST=vanish node scripts/e2e-solo.mjs  # a deck whose best creatures come with a countdown on them — 26 checks
 LIST=artifact node scripts/e2e-solo.mjs # a deck that pays its costs with spare artifacts — 25 checks
+LIST=blink node scripts/e2e-solo.mjs   # a deck whose end step asks which of your own creatures to blink — 26 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -1041,6 +1042,7 @@ LIST=upkeep node scripts/e2e-solo.mjs            # the same question at two diff
 LIST=level node scripts/e2e-solo.mjs             # a row pressed on the battlefield, and the body the card face then shows
 LIST=vanish node scripts/e2e-solo.mjs            # a counter on the card face, read at more than one number
 LIST=artifact node scripts/e2e-solo.mjs          # the bar asking for an artifact rather than a creature
+LIST=blink node scripts/e2e-solo.mjs             # a question about your own board, and the counter its answer pays for
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
@@ -1278,6 +1280,22 @@ modular trigger asks for "up to one target artifact creature", and the choosing 
 on it at all — written when every trigger in the pool had a target it *had* to take. A board with
 eight Arcbound creatures is the first one to reach it. The prompt now draws **Choose nothing**, and
 the sentence under it reads "choose a target, or none" when the trigger says you may.
+
+`LIST=blink` is the eighteenth, and the first whose question is about **your own board**. Every other
+prompt in this suite points at the opponent — a removal trigger, a counterspell, a burn spell — so
+the worst a wrong answer has ever done is waste a card. Soulherder's end step asks which of *your*
+creatures to exile and bring back, and a wrong answer there costs a creature: a token blinked never
+returns (CR 111.7) and counters, Auras and damage do not travel with what does (CR 400.7). So the
+run checks the two halves an engine test cannot reach — that the question was asked in the ability's
+own words, and that the counter its answer pays for arrived **on the card face** — and reports the
+third when the shuffle produces it, which is the "Choose nothing" button being the right answer
+because the only other creature was a token. Eight Soulherders, four Talrands for the tokens and
+Man-o'-Wars and Omenspeakers for the arrivals worth re-running; 26 of 26, with the prompt answered in
+the second game of three.
+
+It also made the driver say what it answered. A choose-prompt used to come back as "aimed a trigger",
+which is true of every trigger in the pool and useless to a scenario checking that a particular one
+reached the table; it now carries the ability's own description, which is what the player reads.
 
 Two of the checks are about how the table **looks** rather than what it does, which is new and
 worth saying why. A card at this table leans towards the cursor with a foil sheen that follows it,

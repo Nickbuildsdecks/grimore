@@ -515,6 +515,31 @@ const VANISH_LIST = [
  * Mono-white plus colourless, for the lesson `LIST=costs` paid for twice: a scenario needing two
  * colours fails on its mana base rather than on the thing it is testing.
  */
+/**
+ * A deck whose end step asks a question about **your own** board, for the prompt only a blink
+ * raises.
+ *
+ * Soulherder's trigger is the first in the pool that stops the table to ask which of *your*
+ * creatures to point at, and the first whose answer can be "none" for a reason other than an empty
+ * board — a token blinked does not come back (CR 111.7), so declining is sometimes the play. Both
+ * halves live entirely in the table: the engine's own tests build the answer by hand, so a prompt
+ * that never appeared, or one with no way to decline, would pass all of them.
+ *
+ * Eight Soulherders rather than the one Skyward Writ runs, because the scenario needs one on the
+ * board early enough for the end steps to add up; four Talrands for the tokens, which is where the
+ * decline comes from; and Man-o'-Wars and Omenspeakers so the blink has arrivals worth re-running
+ * and the run says so in the log.
+ *
+ * Mono-blue, for the lesson `LIST=costs` paid for twice: a scenario that needs two colours fails on
+ * its mana base rather than on the thing being tested.
+ */
+const BLINK_LIST = [
+  '24 Island',
+  '8 Soulherder', '4 Talrand, Sky Summoner',
+  '4 Man-o\'-War', '4 Omenspeaker',
+  '4 Counterspell', '4 Essence Scatter', '4 Unsummon', '4 Tome Scour',
+].join('\n');
+
 const ARTIFACT_LIST = [
   '24 Plains',
   '4 Arcbound Ravager', '4 Arcbound Worker',
@@ -598,6 +623,8 @@ const ARTIFACT_LIST = [
         ? VANISH_LIST
         : LIST === 'artifact'
         ? ARTIFACT_LIST
+        : LIST === 'blink'
+        ? BLINK_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -792,6 +819,19 @@ const ARTIFACT_LIST = [
      * table *said* about it.
      */
     const feedWords = new Set();
+    /*
+      The blink prompt, in three parts, because three different things can go wrong with it.
+
+      `blinkPrompts` is the question being asked at all — the words the bar printed, so a run cannot
+      pass on some other trigger's prompt. `blinkDeclines` is the "Choose nothing" button being
+      pressed, which is the half the engine's tests cannot reach. And `herderBodies` is the counter
+      arriving on the card face, which is the only check here that reads the *board* rather than the
+      bar: a Soulherder showing 2/2 is the trigger having resolved and the layer system having put
+      the counter through to the screen.
+    */
+    const blinkPrompts = new Set();
+    const blinkDeclines = new Set();
+    const herderBodies = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -854,6 +894,24 @@ const ARTIFACT_LIST = [
         if (typeof did === 'string'
           && /^(fed a sacrifice outlet|backed out of a sacrifice): /.test(did)) {
           feedWords.add(did.replace(/^[^:]+: /, ''));
+        }
+        if (typeof did === 'string' && /^aimed a trigger: .*blink/i.test(did)) {
+          blinkPrompts.add(did.replace(/^aimed a trigger: /, ''));
+        }
+        if (typeof did === 'string' && /^declined an optional trigger: .*blink/i.test(did)) {
+          blinkDeclines.add(did.replace(/^declined an optional trigger: /, ''));
+        }
+        if (LIST === 'blink' && typeof did === 'string' && /blink/i.test(did)) {
+          /*
+            Read straight after the answer rather than at the end of the game, for the reason the
+            levelled bodies are: a grown Soulherder is a 2/2 until somebody kills it, and by the
+            last turn it usually has been.
+          */
+          const board = await page.locator('[data-testid="zone-battlefield-0"]').innerText()
+            .catch(() => '');
+          for (const body of ['2/2', '3/3', '4/4']) {
+            if (/Soulherder/.test(board) && board.includes(body)) herderBodies.add(body);
+          }
         }
         if (LIST === 'level' && typeof did === 'string' && /chose a play: Level up/.test(did)) {
           levelPlays.add(did);
@@ -964,6 +1022,7 @@ const ARTIFACT_LIST = [
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
       || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish' || LIST === 'artifact'
+      || LIST === 'blink'
       ? 5 : 3;
     /*
       What "not yet" means for this list.
@@ -1012,11 +1071,21 @@ const ARTIFACT_LIST = [
       */
       : LIST === 'artifact'
       ? ![...feedWords].some((w) => /tap an artifact to sacrifice/i.test(w))
+      /*
+        The prompt and the counter, which are two different claims: a run that answered the question
+        has proved the bar, and a run whose Soulherder grew has proved the answer reached the board.
+        The **decline** is not on this list on purpose — it needs a board whose only other creature
+        is a token, which is a fact about the shuffle rather than something the scenario can arrange,
+        so it is reported when it happens the way the damage-assignment order is.
+      */
+      : LIST === 'blink'
+      ? blinkPrompts.size === 0 || herderBodies.size === 0
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
-      || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish' || LIST === 'artifact')
+      || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish' || LIST === 'artifact'
+      || LIST === 'blink')
       && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
@@ -1032,6 +1101,7 @@ const ARTIFACT_LIST = [
         : LIST === 'level' ? `${levelPlays.size} level-ups, ${levelledBodies.size} levelled bodies`
         : LIST === 'vanish' ? `clocks seen: ${[...clockFaces].join(', ') || 'none'}`
         : LIST === 'artifact' ? `feeding sentences: ${[...feedWords].join(' | ') || 'none'}`
+        : LIST === 'blink' ? `${blinkPrompts.size} blink prompts, bodies: ${[...herderBodies].join(', ') || 'none'}`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -1285,6 +1355,35 @@ const ARTIFACT_LIST = [
         [...feedWords].some((w) => /tap an artifact to sacrifice/i.test(w)),
         `sentences seen: ${[...feedWords].join(' | ') || 'none'}`);
       for (const w of [...feedWords].slice(0, 3)) console.log(`      ${w}`);
+    } else if (LIST === 'blink') {
+      /*
+        The first prompt in this suite that asks about **your own** board, and the first whose right
+        answer is sometimes nothing.
+
+        `scripts.test.ts` builds the answer by hand — it knows which creature the trigger should
+        take and asserts the counter arrives. What it cannot see is the question: the whole prompt
+        had no control on it until D225, so a Soulherder alone on the battlefield left the ability on
+        the stack with nothing on screen able to answer it, and the table stopped for good. That bug
+        shipped in a release and was found by a different card's scenario.
+
+        Two required checks and one reported. The **question** has to be asked in this run's own
+        words, so a pass cannot come from some other trigger's prompt. The **counter** has to reach
+        the card face, which is the answer having resolved and the layer system having drawn it. The
+        **decline** needs a board whose only other creature is a token, which is a fact about the
+        shuffle rather than something a deck list can arrange, so it is reported when it happens the
+        way the damage-assignment order is.
+      */
+      check('the table asks which of your own creatures to blink, in the ability’s own words',
+        blinkPrompts.size > 0, `prompts: ${[...blinkPrompts].join(' | ') || 'none'}`);
+      check('and the counter the blink pays for reaches the card face',
+        herderBodies.size > 0, `bodies seen: ${[...herderBodies].join(', ') || 'none'}`);
+      if (blinkDeclines.size > 0) {
+        check('and "Choose nothing" answers it when the only other creature is a token', true,
+          [...blinkDeclines][0]);
+      } else {
+        console.log('      no decline this run: every end step had something worth blinking');
+      }
+      for (const w of [...blinkPrompts].slice(0, 2)) console.log(`      ${w}`);
     } else if (LIST === 'vanish') {
       /*
         A clock the player can read, and a clock that is actually running.
