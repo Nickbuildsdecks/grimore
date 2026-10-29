@@ -905,11 +905,11 @@ Four browser suites, one per way of playing. All need the stack running and Play
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 73 checks
 node scripts/e2e-arena.mjs      # two browsers, rules engine           — 52-58 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks
-node scripts/e2e-solo.mjs       # one browser, against the computer    — 22-23 checks
-SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 24 checks
-LIST=cascade node scripts/e2e-solo.mjs # a deck built to cascade, in a browser — 23-24 checks
-LIST=costs   node scripts/e2e-solo.mjs # a deck built to pay evoke, dash and bestow — 25-26 checks
-LIST=earned  node scripts/e2e-solo.mjs # a deck built for spectacle and overload — 24-25 checks
+node scripts/e2e-solo.mjs       # one browser, against the computer    — 24-26 checks
+SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 26 checks
+LIST=cascade node scripts/e2e-solo.mjs # a deck built to cascade, in a browser — 25-26 checks
+LIST=costs   node scripts/e2e-solo.mjs # a deck built to pay evoke, dash and bestow — 27-28 checks
+LIST=earned  node scripts/e2e-solo.mjs # a deck built for spectacle and overload — 26-27 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -1039,6 +1039,13 @@ about the harness:
 The deals are budgeted at **five games** rather than the three `LIST=costs` uses, for the reason the
 runs showed: whichever row a shuffle happens to offer, the other is usually a deal away, and a game
 under this list is short enough that a re-deal costs almost nothing.
+
+Two of those checks are about how the table **looks** rather than what it does, which is new and
+worth saying why. A card at this table leans towards the cursor with a foil sheen that follows it,
+and the board has its own mana embers drifting behind it — and both are written as CSS variables a
+pointer handler sets, so nothing that does not move a real pointer can see them. The browser suite
+hovers a card and reads the variables back, which is the only honest way to check a thing whose
+whole existence is in the browser.
 
 The layers under them have their own suites: `packages/rules-engine` (1012 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander

@@ -10780,3 +10780,68 @@ taking the bot's first turn and the view the test reads straight after `auto:kee
 The general lesson is the one the game-over block had already half-learned. A rule that clears
 outstanding questions has to enumerate them, and a derived question is the one that escapes the
 list — because nothing in it looks like a field to set to null.
+
+## D201 — The table's own atmosphere, and the test that had to be a browser
+
+The engine had got a long way ahead of the table. Thirteen decks, two hundred scripted cards, five
+alternative costs — played on a board that looked like a well-organised form. Two of the pieces
+CLAUDE.md specifies for the Play Realm were simply not built, and they are the two that make a board
+feel like a game: the mana embers behind it, and cards that move under the cursor.
+
+### A second canvas, because it belongs to the game rather than the app
+
+`AmbientCanvas` already exists and is the wrong thing to reuse. It is the *app's* backdrop — violet
+runes and sigil rings, `position: fixed`, the same on the deck builder and the login page. What a
+table wants is the opposite of shared: WUBRG embers at the board's own layer, moving with it, and
+reacting to the cursor the way the spec asks (a 160px aura, embers pulled towards the pointer).
+
+So `ArenaEmbers` is its own component, and four rules keep it from costing anything:
+
+- **Reduced motion allocates nothing**, returning before the first array is built.
+- **A hidden tab stops it.** `visibilitychange` cancels the loop; a table left open in a background
+  tab should not be drawing.
+- **The count is capped by width**, because a four-seat pod on a phone is the smallest screen with
+  the most on it.
+- **Two arcs per ember, not `shadowBlur`.** A core inside a dim halo is what makes an ember read as
+  glowing rather than as a speck of dust, and the obvious way to get the same look is the one canvas
+  property that reliably costs a frame on a phone. The first version drew one dot per ember and
+  looked like dust in the screenshot, which is how this was found.
+
+`isolate` on the table root is the line that makes `-z-10` safe. Without a stacking context there, a
+negative index puts the canvas behind the page's own background and nothing is visible at all.
+
+### One transform, three jobs
+
+A card at this table is already carrying two transforms: it is centred on a slot that is bigger than
+it, and it turns a quarter when tapped. The tilt is a third, and Tailwind's utilities cannot be
+ordered against each other — so the three are written as one arbitrary transform in the order that
+reads correctly (centre, turn, lean), with the tapped rotation travelling as `--card-rot` so the
+tilt never has to know whether the card is tapped.
+
+The pointer handler writes custom properties **straight onto the node**, not through React state.
+Forty cards times a pointermove each is the one place in this app where a re-render per frame would
+be felt, and none of what changes is state any component reads: it is four numbers that only CSS
+looks at. The same argument `CombatArrows` makes for drawing itself.
+
+Mouse only. A touch "hover" is a tap in progress, and tilting the card somebody is pressing is the
+opposite of helpful.
+
+### Reduced motion needed its own rule
+
+`index.css` already kills every transition under `prefers-reduced-motion`, and that is not enough
+here: a tilt with no transition is not an absent tilt, it is an **instant** one, and a board of
+cards snapping between angles under the cursor is worse for somebody who asked for less movement
+than a smooth lean. So the tilt variables are pinned flat, and the handler's work lands on nothing.
+
+### The test had to be a browser, and that is the general lesson
+
+Neither of these can be seen by any test that does not move a real pointer. The web package's tests
+are reducer tests that never touch the DOM; a component test for the card would be asserting that a
+handler it called by hand did what it says it does. Playwright's `hover` dispatches a genuine
+`pointermove`, so the solo suite hovers a card — off centre, because both tilt variables are zero at
+the middle — and reads the variables back off the element.
+
+An effect that lives entirely in the browser is one only a browser can be asked about. That is the
+same argument `LIST=cascade`, `LIST=costs` and `LIST=earned` each made about a *row* the engine
+offers, arriving from the other direction: there the engine knew the answer and the table was
+untested, here nothing but the table knows anything at all.

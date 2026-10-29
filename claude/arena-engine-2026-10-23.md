@@ -5496,6 +5496,38 @@ that is also demanding attackers, and no way out. It now returns null on a finis
 A rule that clears outstanding questions has to enumerate them, and the derived one is the one that
 escapes the list.
 
+### The table's own atmosphere (D201)
+
+The engine had got a long way ahead of the table it is played on. Two of the pieces CLAUDE.md
+specifies for the Play Realm were missing, and they are the two that make a board read as a game
+rather than as a form.
+
+**`ArenaEmbers`** is a second canvas, and the difference from the app's `AmbientCanvas` is the
+point: that one is the backdrop every page shares, violet runes fixed to the viewport. This one
+belongs to the game — WUBRG embers at the table's own layer, so they move with the board, leaning
+towards the cursor inside the spec's 160px aura with friction applied every frame so a long hover
+bends the field instead of collapsing it. It allocates nothing under `prefers-reduced-motion`, stops
+its loop on `visibilitychange` rather than animating a table nobody is looking at, and caps its
+count by screen width, because a four-seat pod on a phone is the smallest screen with the most to
+draw. Each ember is a bright core inside a dim halo — two cheap arcs rather than `shadowBlur`, which
+is the one canvas property that reliably costs a frame on a phone.
+
+**The cards lean towards the cursor.** Three transforms have to compose on one element — the
+centring on its slot, the quarter turn when it is tapped, and the tilt — so they are written as one
+arbitrary transform in the order that reads correctly, with the tapped rotation travelling as a
+variable so the tilt never has to know about it. The pointer handler writes custom properties
+straight onto the node instead of going through React state: forty cards times a pointermove each is
+the one place in this app where a re-render per frame would be felt. Mouse only, because a touch
+hover is a tap in progress.
+
+Reduced motion needed a rule of its own rather than the blanket transition-killer already in
+`index.css`: zeroing a duration only makes a tilt *instant*, which for somebody who asked for less
+movement is worse than a smooth one.
+
+And both are checked in a browser, because neither can be seen any other way: the solo suite hovers
+a card and reads the tilt variables back off it. That is the general shape of this kind of work —
+an effect that lives entirely in the browser is one only a browser can be asked about.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
