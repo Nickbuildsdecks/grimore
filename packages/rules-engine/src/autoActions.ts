@@ -15,7 +15,7 @@ import { characteristicsOf, hasType } from './characteristics.js';
 import {
   advanceStep, aliveSeats, applyStatics, atSorcerySpeed, attackAimIssue, autoPassFor, bottomOwed,
   canAttack, canBlock, checkTargets, damageOrdersOwed, endTurnCleanup, forcedAttackers, legalAttackers,
-  legalBlockers, menaceSatisfied, payFrom, pendingDeclaration, raiseUnblockedAttacks,
+  legalBlockers, legalDefenders, menaceSatisfied, payFrom, pendingDeclaration, raiseUnblockedAttacks,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
   raiseWard, resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop,
   stateBasedActions, unblockedAttackersOf,
@@ -1666,9 +1666,43 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
   */
   const broken = pactsBrokenBy(state, action.by, attacks.map((a) => a.defender));
 
+  /*
+    And who this declaration **left alone**, which is the other half of a pod's politics
+    (see `Seat.spared`).
+
+    Read from `state` rather than from `next`, and that is not a style choice: `tapAttackers` below
+    taps every attacker, and a tapped creature has no legal defenders at all — so computed a few
+    lines later this is empty every time. The question is whose board could have come at a seat at
+    the moment the attack was declared.
+
+    Power rather than a count, so it reads against `damageFrom` in the same unit, and keyed by the
+    **declaring** seat the way that field is keyed by the dealing one. A seat that was not a legal
+    defender for a creature is not spared by it: that is the whole distinction the field exists for.
+  */
+  const sparedBy: Record<string, number> = {};
+  for (const attack of attacks) {
+    const power = characteristicsOf(state, state.instances[attack.attacker]!).power;
+    if (power <= 0) continue;
+    for (const defender of legalDefenders(state, attack.attacker, action.by)) {
+      if (defender === attack.defender) continue;
+      sparedBy[String(defender)] = (sparedBy[String(defender)] ?? 0) + power;
+    }
+  }
+
   let next: GameState = {
     ...state,
     pacts: markPactsBroken(state.pacts, broken),
+    seats: state.seats.map((seat) => {
+      const spared = sparedBy[String(seat.index)];
+      if (spared === undefined) return seat;
+      return {
+        ...seat,
+        spared: {
+          ...seat.spared,
+          [String(action.by)]: (seat.spared[String(action.by)] ?? 0) + spared,
+        },
+      };
+    }),
     combat: {
       attacks, firstStrikeDealt: false, attackersDeclared: true, blockersDeclaredBy: [],
       damageOrdered: false,

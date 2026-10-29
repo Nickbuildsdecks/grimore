@@ -80,6 +80,7 @@ function makeSeat(index: number, playerId: string, name: string, life: number): 
     poison: 0,
     commanderDamage: {},
     damageFrom: {},
+    spared: {},
     counters: {},
     eliminated: false,
     eliminatedReason: null,

@@ -80,6 +80,30 @@ export interface Seat {
    * Empty on a tabletop, where damage is recorded by hand through `life:adjust` rather than dealt.
    */
   readonly damageFrom: Readonly<Record<string, number>>;
+  /**
+   * The attacking **power that could have been aimed at this seat and went somewhere else**, by the
+   * seat that declared it, over the whole game.
+   *
+   * `damageFrom`'s mirror, and the other half of the political question D189 left open: that field
+   * answers *who has been coming at me*, and nothing answered *who has been leaving me alone*. The
+   * reason it needed its own field rather than being read off the board is in the question's own
+   * wording — a player who attacked somebody else instead of you looks exactly like a player who
+   * could not attack you at all, and the difference between those two is the whole of pod politics.
+   *
+   * **Legality is what tells them apart.** An attack counts here only if this seat was a legal
+   * defender for that creature at the moment it was declared (`legalDefenders`), so a creature that
+   * was goaded away from you, held off by a "can't attack you", or aimed at a planeswalker rather
+   * than a player leaves nothing behind. A seat with a board full of creatures that *could* have
+   * come at you and did not is making a choice, and this is the record of it.
+   *
+   * **Power rather than a count of attacks**, so it reads against `damageFrom` in the same unit: a
+   * 5/5 sent elsewhere was five damage you did not take, and "spared you 5" beside "hit you 12" is
+   * two numbers a player can weigh against each other. Power as it was at the declaration, which is
+   * what the pump spell cast afterwards does not change.
+   *
+   * Empty on a tabletop, where attacks are not declared through the engine.
+   */
+  readonly spared: Readonly<Record<string, number>>;
   /** Arbitrary named counters (energy, experience, rad, tickets, ...). */
   readonly counters: Readonly<Record<string, number>>;
   readonly eliminated: boolean;

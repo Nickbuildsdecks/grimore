@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest"
 import type { GameView, LegalPlay, Target, VisibleCard } from "@grimore/rules-engine"
 import {
   IDLE, arenaReducer, attackRead, attackSummary, blockersOf, boardRead, brokeADeal, candidatesAt,
-  cardBadges, damageTakenFrom, decisionLabel, pactAsked, pactBadge, pactOffers,
+  cardBadges, damageTakenFrom, decisionLabel, pactAsked, pactBadge, pactOffers, sparedYouBy,
   manaPips, playsForCard, primaryMove, reasonCannotPlay, specAt, splitBattlefield, targetKey,
   targetsRequired,
   targetsWanted,
@@ -1794,6 +1794,33 @@ describe("deals between players", () => {
     expect(damageTakenFrom(v, 0)).toBe(0)
     // And a watcher, who has no seat, is owed no political read at all.
     expect(damageTakenFrom(view({ seats: hit, seat: null }), 1)).toBe(0)
+  })
+
+  it("and how much each of them could have aimed at you and did not", () => {
+    /*
+      The mirror, and the half a player cannot work out by watching: a seat that attacked somebody
+      else looks exactly like a seat that could not attack you at all, and only the engine knows
+      which — it is the thing that checked the legality when the attack was declared. See
+      `Seat.spared`.
+
+      Read in the same unit as the damage beside it on purpose: "hit you 7, spared you 9" is a seat
+      coming at you and holding something back, and "hit you 0, spared you 20" is a seat that has
+      left you alone all game while it could have done otherwise.
+    */
+    const board = [
+      { index: 0, name: "Nick", damageFrom: { "1": 7 }, spared: { "1": 9, "2": 20 } },
+      { index: 1, name: "Friend", damageFrom: { "0": 3 }, spared: {} },
+      { index: 2, name: "Third", damageFrom: {}, spared: {} },
+    ] as unknown as GameView["seats"]
+    const v = view({ seats: board, seat: 0 })
+    expect(sparedYouBy(v, 1)).toBe(9)
+    expect(sparedYouBy(v, 2)).toBe(20)
+    // Your own row is not a read about somebody else, and a watcher is owed no political read —
+    // the same two answers `damageTakenFrom` gives, for the same two reasons.
+    expect(sparedYouBy(v, 0)).toBe(0)
+    expect(sparedYouBy(view({ seats: board, seat: null }), 1)).toBe(0)
+    // Nought where nothing was spared, because the caller draws nothing at nought.
+    expect(sparedYouBy(view({ seats: board, seat: 1 }), 0)).toBe(0)
   })
 
   it("remembers who went back on one, for the rest of the game", () => {

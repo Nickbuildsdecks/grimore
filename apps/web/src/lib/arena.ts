@@ -1249,6 +1249,25 @@ export function damageTakenFrom(view: GameView, other: SeatIndex): number {
   return me?.damageFrom[String(other)] ?? 0
 }
 
+/**
+ * How much attacking power another seat **could** have aimed at you and sent elsewhere, this game.
+ *
+ * `damageTakenFrom`'s mirror, and the half of a pod's politics that had no answer anywhere: a
+ * player who attacked somebody else instead of you looks exactly like a player who could not
+ * attack you at all, and only the engine knows which it was — it is the one that checked the
+ * legality when the attack was declared. See `Seat.spared`.
+ *
+ * In the same unit as the damage beside it, which is what makes the pair readable: "hit you 12,
+ * spared you 5" is a seat that has been coming at you and holding something back, and "hit you 0,
+ * spared you 20" is a seat that has left you alone all game while it could have done otherwise.
+ */
+export function sparedYouBy(view: GameView, other: SeatIndex): number {
+  const mine = view.seat
+  if (mine === null || mine === other) return 0
+  const me = view.seats.find((s) => s.index === mine)
+  return me?.spared[String(other)] ?? 0
+}
+
 /** Whether this seat has gone back on a deal in this game. The table remembers; that is the point. */
 export function brokeADeal(view: GameView, seat: SeatIndex): boolean {
   return view.pacts.some((p) => p.broken === true && p.from === seat)

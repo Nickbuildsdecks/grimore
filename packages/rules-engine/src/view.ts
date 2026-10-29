@@ -204,6 +204,15 @@ export interface SeatView {
   readonly commanderDamage: Readonly<Record<string, number>>;
   /** All damage this seat has taken from each other seat. See `Seat.damageFrom`. */
   readonly damageFrom: Readonly<Record<string, number>>;
+  /**
+   * The attacking power each other seat could have aimed at this one and sent elsewhere.
+   * See `Seat.spared`.
+   *
+   * Public, like `damageFrom` and for the same reason: an attack declaration is public, and so is
+   * every board it could have been aimed at. Nothing here is hidden information — it is a tally of
+   * things every player at the table watched happen.
+   */
+  readonly spared: Readonly<Record<string, number>>;
   readonly counters: Readonly<Record<string, number>>;
   readonly eliminated: boolean;
   readonly eliminatedReason: EliminatedReason | null;
@@ -626,6 +635,7 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     poison: seat.poison,
     commanderDamage: seat.commanderDamage,
     damageFrom: seat.damageFrom,
+    spared: seat.spared,
     counters: seat.counters,
     eliminated: seat.eliminated,
     eliminatedReason: seat.eliminatedReason,

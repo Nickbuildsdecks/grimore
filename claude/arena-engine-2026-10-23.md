@@ -6473,6 +6473,25 @@ pairing is the same game twice and contributes nothing to the difference either 
 was never diluted. And it drops the decks it does not name, which matters here because this rule
 fires off Cloudshift in Verdant Guard as well as Soulherder in Skyward Writ.
 
+### The pod's other half: who has been leaving you alone (D227)
+
+D189 answered *who has been coming at me* and left the mirror open, with the reason written beside
+it: a player who attacked somebody else instead of you looks identical to a player who could not
+attack you at all. The difference is a legality check, and the engine is the only thing at the table
+that ran one — so `Seat.spared` records, per declaring seat, the attacking **power that could
+legally have come at you and went elsewhere**.
+
+Goad, a "can't attack you", a tapped or summoning-sick creature: none of them leaves anything
+behind, which is exactly the distinction. Read from the state *before* `tapAttackers` runs, because
+a tapped attacker has no legal defenders and the tally computed afterwards is empty every time. And
+in power rather than attacks, so the pair reads in one unit: "hit you 12, spared you 5" against
+"hit you 0, spared you 20".
+
+Twelve bot pods: 12 of 12 ended with a tally, biggest single number 174, and the per-seat totals
+land in the same tens as the damage ones — which is what makes the two badges weighable against each
+other. Information and never enforcement, like the deals: no rule reads it and the bot does not
+either.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -6561,6 +6580,8 @@ fires off Cloudshift in Verdant Guard as well as Soulherder in Skyward Writ.
    chat panel and those three sentences, and nothing that records who was politically on whose side
    over a game. **Half of that is now built**: every opponent's strip reads `hit you N`, all the
    damage that player has dealt you this game, so the table remembers what people did as well as
-   what they promised (D189). What is still missing is the other direction — nothing records who was
-   *helping* whom, because helping is not a thing the engine sees: a player who attacked somebody
-   else instead of you looks identical to a player who could not attack you at all.
+   what they promised (D189). **And the other direction is now recorded too** (D227): every strip also reads
+   `spared you N`, the attacking power that seat could legally have aimed at you and sent somewhere
+   else, which is the one reading that tells a player who chose to leave you alone from a player
+   who was never able to attack you. What is still missing is the *conversation* — there is no table
+   talk beyond the chat panel and the three preset deals.

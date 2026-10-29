@@ -18187,3 +18187,112 @@ describe('what a blink costs, which the bot had no way to know', () => {
     expect(blinks(s, { blinksWell: false })).toBe('Grizzly Bears');
   });
 });
+
+describe('who has been leaving you alone, which only legality can tell from who could not', () => {
+  /*
+    The other half of D189, and the half that needed the engine rather than the table.
+
+    "Hit you 12" is a sum of things that happened; this is a sum of things that **did not**, and the
+    whole difficulty is that the two readings of "did not" look identical from the outside. A player
+    whose board could have come at you and went at somebody else is making a choice and inviting
+    one back. A player whose creatures were goaded away from you, or held off by a "can't attack
+    you", did nothing of the kind — and the only thing at the table that knows which is the engine,
+    because it is the thing that checked the legality when the attack was declared.
+
+    Power rather than a count of attacks, so it reads against the damage tally in the same unit, and
+    read at the **declaration**: see `Seat.spared`.
+  */
+  const pod = (): GameState => arena({
+    format: 'pod',
+    seats: 3,
+    decks: { 0: 'ember-rush', 1: 'tidal-mind', 2: 'verdant-guard' },
+    battlefield: { 0: ['Mountain', 'Hill Giant'], 1: ['Island'], 2: ['Forest'] },
+    turn: 4,
+    firstSeat: 0,
+  });
+
+  it('credits the seat an attack could have come at and did not', () => {
+    let s = advanceTo(pod(), 'declare-attackers');
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: giant, defender: 1 }] });
+    // Three power that seat 2 was a legal defender for, aimed somewhere else.
+    expect(s.seats[2]!.spared['0']).toBe(3);
+    // And nothing on the seat it was aimed at: being attacked is not being spared.
+    expect(s.seats[1]!.spared).toEqual({});
+    // Nor on the attacker's own, which would be a seat sparing itself.
+    expect(s.seats[0]!.spared).toEqual({});
+  });
+
+  it('and credits nothing when the creature could not have attacked you anyway', () => {
+    /*
+      Goad's second half is the clearest case in the pool (CR 701.38a): a creature goaded by seat 2
+      may not be aimed at seat 2 while there is anybody else to attack, so seat 1 is the only legal
+      defender and seat 2 is not being spared — it is being obeyed.
+
+      Built with the engine's own continuous effect rather than with Disrupt Decorum, because what
+      is being tested is the legality check and not the card: `mustAttackAnotherPlayer` is what goad
+      leaves behind, whoever put it there.
+    */
+    let s = pod();
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = staticEffect(s, giant, 2, { kind: 'cards', ids: [giant] }, {
+      mustAttack: true, mustAttackAnotherPlayer: true,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: giant, defender: 1 }] });
+    expect(s.seats[2]!.spared['0'] ?? 0).toBe(0);
+  });
+
+  it('and nothing at all in a duel, where the only legal defender is the one attacked', () => {
+    // Which is why the badge is a pod badge: with two seats there is no choice to record, and a
+    // tally that counted every attack as "sparing" nobody would be a column of zeroes.
+    let s = arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      battlefield: { 0: ['Mountain', 'Hill Giant'], 1: ['Island'] },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: giant, defender: 1 }] });
+    expect(s.seats[1]!.spared).toEqual({});
+  });
+
+  it('reads the power the attack was declared with, not the one a pump gives it after', () => {
+    /*
+      The tally is a fact about a declaration, and a Giant Growth cast afterwards is a fact about
+      the combat that followed it. Three rather than six is also the honest number for what seat 2
+      was spared: the pump was cast because the attack went where it went.
+    */
+    let s = arena({
+      format: 'pod',
+      seats: 3,
+      decks: { 0: 'verdant-guard', 1: 'tidal-mind', 2: 'ember-rush' },
+      hands: { 0: ['Giant Growth'] },
+      battlefield: { 0: ['Forest', 'Forest', 'Centaur Courser'], 1: ['Island'], 2: ['Mountain'] },
+      turn: 4,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const giant = find(s, 0, 'battlefield', 'Centaur Courser');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: giant, defender: 1 }] });
+    s = tapAllLands(s, 0);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: giant }],
+    }), 40);
+    expect(power(s, giant)).toBe(6);
+    expect(s.seats[2]!.spared['0']).toBe(3);
+  });
+
+  it('and the view carries it, because every player watched it happen', () => {
+    let s = advanceTo(pod(), 'declare-attackers');
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: giant, defender: 1 }] });
+    // From seat 2's own view, which is where the badge reads it.
+    const seen = viewFor(s, 2).seats.find((seat) => seat.index === 2);
+    expect(seen?.spared['0']).toBe(3);
+    // And from a watcher's, which is the same number: an attack declaration is public, and so is
+    // every board it could have been aimed at.
+    expect(viewFor(s, null).seats.find((seat) => seat.index === 2)?.spared['0']).toBe(3);
+  });
+});

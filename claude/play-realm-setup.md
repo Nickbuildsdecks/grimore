@@ -112,6 +112,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Play two lands in one turn | **Explore** in Delta Bloom ({G}, sorcery) says "you may play an additional land this turn", and the table simply offers the land again: a land in hand that said **you have already played a land this turn** goes back to saying **playable**. The order does not matter — cast it before or after the turn's land and you still get two — and the permission ends with the turn, so an Explore cast with no land in hand is just a card. With Tatyova out each of those lands is also a card and a life, which is what the deck is for. Nothing else in the pool gives one, and the engine counts them per turn: a third land is refused with **you have already played 2 lands this turn**. |
 | Block | **Declare blockers**, tap your creature, then tap the attacker it blocks. Only attackers it may legally block light up. |
 | See who is attacking whom | Lines on the board: gold from each attacker to the player it is aimed at, dashed from each blocker to what it blocked. In a pod that is how you know an attack is yours to answer. |
+| Work out who has been leaving you alone | In a pod, each opponent's strip also reads **spared you N**: the attacking power that player could legally have aimed at you this game and sent somewhere else. It is the half of the question a player cannot work out by watching — a seat that attacked somebody else looks exactly like a seat that could not attack you, and the engine is the only thing at the table that checked. A creature goaded away from you, held off by a "can't attack you", tapped or summoning-sick leaves nothing here, because none of them could have come at you. Read it beside the badge above: "hit you 12, spared you 5" is somebody coming at you and holding something back; "hit you 0, spared you 20" is somebody who has left you alone all game while they could have done otherwise. |
 | Work out who has been hitting you | In a pod, each opponent's strip reads **hit you N** — all the damage that player has dealt you this game, combat and spells alike, from the first turn on. It is the question a four-player table asks every turn and nothing on the screen could answer: life totals are everybody's work added up, and the log tells you one event at a time. Damage that was *prevented* reads as nothing, because it never happened, and a swing your blockers ate reads as nothing either — what you see is what landed on you. A strip with no badge is the other half of the read: that is the player who has left you alone. Nothing here is enforced and nothing is judged; the table just remembers, which is the same line the deals draw. |
 | Work out who the threat is | Every seat strip says `board N` — the total power of that seat's creatures — and `· M up` for how much of that power is untapped. The first number is what can kill you eventually; the second is what can kill you on their *next* turn, and what can stop you on yours. A **lethal** badge on an opponent's strip means their untapped power alone is at least your life and you have nothing untapped to block with. |
 | Choose who to attack | The attack prompt lists every player and planeswalker you may send an attack at, and each player's button says their life, their untapped power, and how many of your creatures are already pointed at them — plus **lethal** when that swing would finish them with nothing able to block. Tap a player, then tap the creatures that go at them; tap a different player and the next creatures go there instead. |
@@ -1057,7 +1058,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1161 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1166 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1304,9 +1305,9 @@ pointer handler sets, so nothing that does not move a real pointer can see them.
 hovers a card and reads the variables back, which is the only honest way to check a thing whose
 whole existence is in the browser.
 
-The layers under them have their own suites: `packages/rules-engine` (1161 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1166 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
-pods as well as duels), `apps/web` (223 tests, the interaction reducer behind every prompt and the deck panel) and
+pods as well as duels), `apps/web` (224 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
 (43 tests against live Redis, including two socket clients playing to a finish, one person
 playing the server, a deal struck with the server's own seat, and two players rematching on
@@ -1374,10 +1375,13 @@ decks they pasted in).
 - **Pod politics is half the pod's own business.** The table says what going at each player is
   walking into, sends the whole swing at one of them in a press, records a deal — three preset
   things you can say to another player, their answer, and a badge on whoever went back on one — and
-  now **remembers what everybody has actually done to you**: each opponent's strip reads `hit you N`
-  for the damage that player has dealt you over the whole game, combat and spells alike, and a strip
-  with no badge at all is the player who has left you alone. That pair is the whole political read:
-  what somebody promised, and what they did. What the table does not do is enforce any of it,
+  now **remembers what everybody has actually done to you, and what they have not**: each
+  opponent's strip reads `hit you N` for the damage that player has dealt you over the whole game,
+  combat and spells alike, and `spared you N` for the attacking power they could legally have aimed
+  at you and sent somewhere else. The second needed the engine rather than the screen — a player who
+  attacked somebody else looks exactly like a player who could not attack you, and the legality
+  check that tells them apart happens when the attack is declared. So the political read is three
+  things now: what somebody promised, what they did, and what they chose not to do. What the table does not do is enforce any of it,
   deliberately — a table where the software stops you breaking your word is a table where your word
   costs nothing. Anything said beyond those three sentences is still between the people at the
   table, in the chat panel or out loud.

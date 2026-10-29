@@ -13394,3 +13394,53 @@ It also made the driver say what it answered. A choose-prompt came back as `aime
 is true of every trigger in the pool and useless to a scenario checking that a *particular* one
 reached the table — the same mistake the feed prompt's words were added to fix (D222). It now carries
 the ability's own description.
+
+## D227 — Who has been leaving you alone, which only the engine can tell from who could not
+
+D189 gave every opponent's strip `hit you N` — all the damage that seat has dealt you this game —
+and closed half a question. The other half has been in the "Next" list ever since, with the reason
+it was hard written down beside it: *a player who attacked somebody else instead of you looks
+identical to a player who could not attack you at all*. Both show up as no damage and no badge.
+
+### Legality is the whole of it
+
+The difference between those two players is a legality check, and the only thing at the table that
+ran one is the engine: `legalDefenders` is asked at every declaration, and it already knows whether
+a creature *could* have been aimed at a given seat. So `Seat.spared` records, per declaring seat,
+the attacking **power that could legally have come at you and went somewhere else**.
+
+A creature goaded away from you (CR 701.38a), one held off by a "can't attack you", one that is
+tapped or summoning-sick — none of them leaves anything behind, because none of them could have
+attacked you. A board full of creatures that could have and did not is a choice, and this is the
+record of the choice.
+
+Two details that are load-bearing rather than incidental:
+
+- **Read from the pre-declaration state.** `tapAttackers` runs a few lines later and a tapped
+  creature has no legal defenders at all, so computed after it the tally is empty every single
+  time. The question is about the moment the attack was declared.
+- **Power, not a count of attacks**, so it reads against `damageFrom` in the same unit. "Hit you
+  12, spared you 5" is a seat coming at you and holding something back; "hit you 0, spared you 20"
+  is a seat that has left you alone all game while it could have done otherwise. And power *as
+  declared*, which the pump cast afterwards does not change — that pump is a fact about the combat
+  that followed, not about the choice of where to send it.
+
+### It fires, which is a thing to check rather than assume
+
+Twelve four-seat bot pods: **12 of 12** ended with a sparing tally, the biggest single number 174,
+and the per-seat totals land in the same tens as the damage ones — `38/0/65/30 spared` beside
+`33/40/36/9 hit` in the first game. That matters for the badge rather than for the engine: two
+numbers a player is meant to weigh against each other have to be in the same range, and a column
+that read 0 or 400 would be noise either way.
+
+### Information and never enforcement
+
+The same line the deals draw and `damageFrom` draws: no rule reads this field, no state-based action
+consults it, and the bot does not either. The pod already has a rule about ganging up on whoever is
+ahead (D137's `chaseTheCrown`), and "attack whoever has spared you least" would be a different piece
+of work with its own measurement — the badge is a thing for the *people* at the table, which is what
+a pod's politics is made of.
+
+The badge draws nothing at nought, like its sibling: on turn one everybody has spared everybody and
+a row saying so on every strip is noise. It is drawn in the green the table uses for what is going
+your way, beside the red of what is not.

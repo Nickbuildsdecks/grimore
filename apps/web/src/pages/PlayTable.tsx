@@ -22,7 +22,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
-  ArrowDownToLine, ArrowUpToLine, Dices, Hand, Layers, Link2, LogOut, MessageSquare, Minus, Plus,
+  ArrowDownToLine, ArrowUpToLine, Dices, Hand, Handshake, Layers, Link2, LogOut, MessageSquare,
+  Minus, Plus,
   HelpCircle, RotateCcw, Search, Shuffle, Skull, Sparkles, SquareStack, Swords, Undo2,
   Volume2, VolumeX,
 } from "lucide-react"
@@ -47,7 +48,7 @@ import { cn } from "@/lib/utils"
 import {
   IDLE, arenaReducer, boardRead, brokeADeal, candidatesAt, cardBadges, choiceCandidatesAt,
   damageTakenFrom, dividedAmount,
-  eliminatedLabel, pactBadge, playsForCard, reasonCannotPlay, splitBattlefield,
+  eliminatedLabel, pactBadge, playsForCard, reasonCannotPlay, sparedYouBy, splitBattlefield,
   type ArenaEvent, type ArenaMode, type BoardRead,
 } from "@/lib/arena"
 import {
@@ -929,6 +930,7 @@ function SeatStrip({
   pact,
   brokeDeal,
   hitMe,
+  sparedMe,
 }: {
   seat: SeatView
   isMe: boolean
@@ -976,6 +978,14 @@ function SeatStrip({
    * Passed only for somebody else's strip, and only when the engine is counting.
    */
   hitMe?: number
+  /**
+   * How much attacking power this seat could have aimed at *you* and sent elsewhere, all game.
+   *
+   * The other half of the same question, and the half that needed the engine: a seat that attacked
+   * somebody else looks identical to a seat that could not attack you, and the legality check that
+   * tells them apart happens when the attack is declared. See `Seat.spared`.
+   */
+  sparedMe?: number
 }) {
   const life = (delta: number) => onAct({ type: "life:adjust", seat: seat.index, delta })
   /**
@@ -1148,6 +1158,26 @@ function SeatStrip({
           className="flex items-center gap-1 text-[10px] text-[var(--g-mana-r)]"
         >
           <Swords className="size-3" /> hit you {hitMe}
+        </span>
+      ) : null}
+      {/*
+        And what this player has **not** done to you, which is the other half of the read.
+
+        A seat with no "hit you" badge is either a friend or a player with no board, and a pod
+        spends half its conversation on which. This is the number that tells them apart: attacking
+        power that was legally able to come at you and went somewhere else. Shown in the green the
+        table uses for what is going your way, beside the red of what is not.
+
+        Zero is drawn as nothing, like the badge above — on turn one everybody has spared everybody
+        and the row would say so on every strip.
+      */}
+      {typeof sparedMe === "number" && sparedMe > 0 ? (
+        <span
+          data-testid={`spared-me-${seat.index}`}
+          title="Attacking power this player could have aimed at you this game and sent elsewhere."
+          className="flex items-center gap-1 text-[10px] text-[var(--g-mana-g)]"
+        >
+          <Handshake className="size-3" /> spared you {sparedMe}
         </span>
       ) : null}
       {seat.poison > 0 ? <span className="text-[var(--g-mana-g)]">poison {seat.poison}</span> : null}
@@ -1881,6 +1911,7 @@ function Board({ table }: { table: UseTable }) {
             pact={pactBadge(view, o.index)}
             brokeDeal={brokeADeal(view, o.index)}
             hitMe={automated ? damageTakenFrom(view, o.index) : undefined}
+            sparedMe={automated ? sparedYouBy(view, o.index) : undefined}
           />
           <div className="flex gap-1.5">
             <ZoneRow
