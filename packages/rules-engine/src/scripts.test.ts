@@ -26,6 +26,7 @@ import {
   advanceTo, apply, arena, choices, countOf, damageOn, decide, drain, find, ids, life, nameOf,
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
+import { CARD_SCRIPTS } from './scripts.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
 
@@ -13316,6 +13317,265 @@ describe('miracle: the cast offered the moment you draw it', () => {
     expect(legalActions(s, 0).plays.map((play) => play.manaCost)).toEqual(['{W}']);
     // A **sorcery**, offered in the draw step: the keyword says when, not the card's type line.
     expect(s.step).toBe('draw');
+  });
+});
+
+describe('rebound: the spell that casts itself again next turn', () => {
+  /*
+    The fourth card in the engine that is cast twice, and the first that pays for the second casting
+    with **time**. Flashback charges a second price, escape charges mana and a graveyard, madness
+    and miracle charge less than the printed cost once — rebound charges nothing at all, and the
+    price is that your opponent gets a whole turn in between.
+
+    So the tests are about the three things that are new: where the card goes as it resolves (exile,
+    not a graveyard), when the offer arrives (its controller's next upkeep, from a delayed trigger),
+    and the two halves of the rule that stop it being infinite — the second casting comes from exile
+    and so does not rebound, and a spell that never resolved never rebounds either.
+  */
+  const holding = (card: string, deck: string, lands: readonly string[]): GameState => advanceTo(
+    arena({
+      decks: { 0: deck, 1: 'rot-harvest' },
+      hands: { 0: [card] },
+      battlefield: { 0: [...lands] },
+      turn: 5, firstSeat: 0,
+    }),
+    'precombat-main',
+  );
+  /** Plays on until an offer is standing, which is the only way to reach the rebound cast. */
+  const untilOffered = (start: GameState): GameState => {
+    let s = start;
+    for (let i = 0; i < 200; i += 1) {
+      if (s.pendingOfferedCast !== null) return s;
+      const owed = pendingDeclaration(s);
+      if (owed !== null) {
+        for (const seat of owed.seats) {
+          s = owed.kind === 'attackers'
+            ? apply(s, { type: 'auto:attack', by: seat, attackers: [] })
+            : apply(s, { type: 'auto:block', by: seat, blocks: [] });
+        }
+        continue;
+      }
+      const discard = s.pendingDiscard;
+      if (discard !== null) {
+        s = apply(s, {
+          type: 'auto:discard', by: discard.seat, card: ids(s, discard.seat, 'hand')[0]!,
+        });
+        continue;
+      }
+      if (s.priority === null) throw new Error(`nobody holds priority at ${s.step}`);
+      s = apply(s, { type: 'auto:pass', by: s.priority });
+    }
+    throw new Error('no offer was ever made');
+  };
+
+  it('exiles itself as it resolves, and schedules the free cast for your next upkeep', () => {
+    let s = holding('Staggershock', 'arc-tempest', ['Mountain', 'Mountain']);
+    const shock = find(s, 0, 'hand', 'Staggershock');
+    const before = life(s, 1);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: shock, targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+
+    expect(life(s, 1)).toBe(before - 2);
+    // Exile rather than the graveyard, which is the half of the keyword the card's text spends
+    // most of its words on.
+    expect(s.instances[shock]!.zone).toBe('exile');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Staggershock');
+    // And the promise, as a delayed trigger rather than as a flag on the card (CR 603.7).
+    expect(s.delayed.map((entry) => [entry.step, entry.of, entry.subject]))
+      .toEqual([['upkeep', 'you', shock]]);
+  });
+
+  it('offers it for nothing in the upkeep, and the second casting does not rebound again', () => {
+    let s = holding('Staggershock', 'arc-tempest', ['Mountain', 'Mountain']);
+    const shock = find(s, 0, 'hand', 'Staggershock');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: shock, targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    const after = life(s, 1);
+
+    s = untilOffered(s);
+    expect(s.step).toBe('upkeep');
+    expect(s.activeSeat).toBe(0);
+    const offer = s.pendingOfferedCast;
+    expect(offer?.seat).toBe(0);
+    expect(offer?.card).toBe(shock);
+    // Free, and the card is where the resolution left it.
+    expect(offer?.cost).toBeUndefined();
+    expect(offer?.stays).toBe(true);
+    expect(s.instances[shock]!.zone).toBe('exile');
+    expect(legalActions(s, 0).mustCastOffered?.cost).toBe('');
+    expect(legalActions(s, 0).passLabel).toBe('Decline');
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: shock, offered: true, targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    // Two more damage, and no mana paid for it: the lands are still untapped in the upkeep.
+    expect(life(s, 1)).toBe(after - 2);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped)).toEqual([]);
+    /*
+      And the loop-breaker: this casting came out of **exile**, so nothing flagged it, so the card
+      goes to the graveyard like any other spell and nothing is scheduled. A rebound that remembered
+      nothing about where it was cast from would be two damage every upkeep for the rest of the game.
+    */
+    expect(namesIn(s, 0, 'graveyard')).toContain('Staggershock');
+    expect(s.delayed).toEqual([]);
+  });
+
+  it('declining leaves it in exile for good, and it is not offered twice', () => {
+    let s = holding('Staggershock', 'arc-tempest', ['Mountain', 'Mountain']);
+    const shock = find(s, 0, 'hand', 'Staggershock');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: shock, targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    s = untilOffered(s);
+    const after = life(s, 1);
+
+    s = drain(apply(s, { type: 'auto:pass', by: 0 }), 40);
+    expect(s.pendingOfferedCast).toBeNull();
+    // `stays` doing its second job: a declined rebound is not moved, so it stays in exile.
+    expect(s.instances[shock]!.zone).toBe('exile');
+    expect(s.delayed).toEqual([]);
+
+    // On round to the next upkeep, and nothing is offered: the trigger was consumed by resolving.
+    let turns = 0;
+    for (let i = 0; i < 400 && turns < 2; i += 1) {
+      if (s.pendingOfferedCast !== null) throw new Error('it was offered a second time');
+      const owed = pendingDeclaration(s);
+      if (owed !== null) {
+        for (const seat of owed.seats) {
+          s = owed.kind === 'attackers'
+            ? apply(s, { type: 'auto:attack', by: seat, attackers: [] })
+            : apply(s, { type: 'auto:block', by: seat, blocks: [] });
+        }
+        continue;
+      }
+      const discard = s.pendingDiscard;
+      if (discard !== null) {
+        s = apply(s, {
+          type: 'auto:discard', by: discard.seat, card: ids(s, discard.seat, 'hand')[0]!,
+        });
+        continue;
+      }
+      if (s.priority === null) break;
+      const was = s.turn;
+      s = apply(s, { type: 'auto:pass', by: s.priority });
+      if (s.turn !== was) turns += 1;
+    }
+    expect(life(s, 1)).toBe(after);
+    expect(s.instances[shock]!.zone).toBe('exile');
+  });
+
+  it('a countered rebound spell goes to the graveyard and promises nothing', () => {
+    let s = arena({
+      decks: { 0: 'arc-tempest', 1: 'hollow-tide' },
+      hands: { 0: ['Staggershock'], 1: ['Counterspell'] },
+      battlefield: { 0: ['Mountain', 'Mountain'], 1: ['Island', 'Island'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const shock = find(s, 0, 'hand', 'Staggershock');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: shock, targets: [{ kind: 'player', seat: 1 }],
+    });
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Counterspell'),
+      targets: [{ kind: 'card', id: shock }],
+    });
+    s = drain(passBoth(s), 40);
+    /*
+      "If you cast this spell from your hand, exile it **as it resolves**" — a spell that never
+      resolved never got there. The same reasoning the adventure branch in `spellLeavesStack` is
+      written around, and the reason `resolved` is a parameter of that function at all.
+    */
+    expect(namesIn(s, 0, 'graveyard')).toContain('Staggershock');
+    expect(s.instances[shock]!.zone).toBe('graveyard');
+    expect(s.delayed).toEqual([]);
+  });
+
+  it('and the sorcery is cast in an upkeep, which is the keyword permitting it', () => {
+    let s = holding('Distortion Strike', 'tidal-mind', ['Island', 'Island']);
+    const strike = find(s, 0, 'hand', 'Distortion Strike');
+    // A creature of its own to make unblockable, placed by hand so it is not summoning-sick.
+    const magpie = find(s, 0, 'library', 'Thieving Magpie');
+    s = apply(s, { type: 'card:move', by: 0, card: magpie, toZone: 'battlefield' });
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: strike, targets: [{ kind: 'card', id: magpie }],
+    }), 40);
+    expect(s.instances[strike]!.zone).toBe('exile');
+    // A Thieving Magpie is a 1/3, so +1/+0 makes it a 2/3 — the number that matters is the
+    // `cantBeBlocked` beside it, which is what makes those two power connect.
+    const pumped = characteristicsOf(s, s.instances[magpie]!);
+    expect(pumped.power).toBe(2);
+    expect(pumped.cantBeBlocked).toBe(true);
+
+    s = untilOffered(s);
+    // A **sorcery**, on the stack in an upkeep: the ability that offers the cast is what permits
+    // the timing (CR 702.88a), which is the same path cascade has used since D168.
+    expect(s.step).toBe('upkeep');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: strike, offered: true,
+      targets: [{ kind: 'card', id: magpie }],
+    }), 40);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Distortion Strike');
+    expect(characteristicsOf(s, s.instances[magpie]!).cantBeBlocked).toBe(true);
+  });
+
+  it('the bot takes the upkeep offer it would decline from hand', () => {
+    /*
+      The rule this keyword nearly died of. `expiringPumpCanMatter` drops a pump cast outside a
+      combat, on the argument that a better moment is coming — right about a card in hand, and
+      false about an offer, which is the only moment there is. A Distortion Strike offered in an
+      upkeep would have been declined every time, and declining strands the card in exile.
+
+      Both halves here: the bot takes the offered cast, and the original rule is untouched for the
+      same card in the same step when it is in hand with its own mana up.
+    */
+    let s = holding('Distortion Strike', 'tidal-mind', ['Island', 'Island']);
+    const strike = find(s, 0, 'hand', 'Distortion Strike');
+    const magpie = find(s, 0, 'library', 'Thieving Magpie');
+    s = apply(s, { type: 'card:move', by: 0, card: magpie, toZone: 'battlefield' });
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: strike, targets: [{ kind: 'card', id: magpie }],
+    }), 40);
+    s = untilOffered(s);
+    expect(s.step).toBe('upkeep');
+    const taken = botAction(s, 0);
+    expect(taken?.type).toBe('auto:cast');
+    expect(taken?.type === 'auto:cast' ? taken.card : null).toBe(strike);
+
+    /*
+      And the other half, which has to be asked in a main phase rather than in the same upkeep: a
+      sorcery is not a legal play in an upkeep at all, so the bot declining one there would prove
+      nothing about the rule. The board here is a creature that **cannot attack** — walked on with
+      `card:move`, so it is summoning-sick — which is exactly the case the rule is for: the pump is
+      legal, it does something, and there is no combat it can matter in.
+    */
+    let inHand = holding('Distortion Strike', 'tidal-mind', ['Island', 'Island']);
+    const sick = find(inHand, 0, 'library', 'Thieving Magpie');
+    inHand = apply(inHand, { type: 'card:move', by: 0, card: sick, toZone: 'battlefield' });
+    const strikeInHand = find(inHand, 0, 'hand', 'Distortion Strike');
+    expect(legalActions(inHand, 0).plays.some((play) => play.card === strikeInHand)).toBe(true);
+    const held = botAction(inHand, 0);
+    expect(held?.type === 'auto:cast' && held.card === strikeInHand).toBe(false);
+  });
+
+  it('every card with rebound carries exactly one delayed upkeep trigger', () => {
+    /*
+      The invariant the engine depends on: `completeResolution` finds the ability by searching the
+      card's triggers for a delayed upkeep one, so a card with the keyword and no such trigger
+      would be exiled with nothing to bring it back — strictly worse than not having the keyword.
+      The same test dash has, one step of the turn earlier.
+    */
+    const rebounders = [...CARD_SCRIPTS.values()].filter((script) => script.rebound === true);
+    expect(rebounders.map((script) => script.name).sort())
+      .toEqual(['Distortion Strike', 'Staggershock']);
+    for (const script of rebounders) {
+      const delayed = (script.triggers ?? []).filter((trigger) => trigger.delayed === true
+        && trigger.on.kind === 'step' && trigger.on.step === 'upkeep');
+      expect(delayed.length).toBe(1);
+    }
   });
 });
 

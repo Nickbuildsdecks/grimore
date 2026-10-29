@@ -31,7 +31,7 @@ import {
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
   becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, EVOKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
-  addEnergy, energyOf, spendEnergy, bottomPile,
+  addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
@@ -6166,6 +6166,83 @@ const TERMINUS: CardScript = {
   })),
 };
 
+/**
+ * The delayed trigger every rebound card carries (CR 702.88a).
+ *
+ * `dashReturn()` one step of the turn earlier, and for the same reason: the ability is a delayed
+ * trigger, so it wants a place on the stack, a description and a resolution path — and a card's
+ * `triggers` list is where this engine keeps those. The engine schedules it as the spell resolves
+ * (see `completeResolution`) and finds it by index; a card declaring `rebound` carries exactly one,
+ * which a test holds.
+ *
+ * The zone check is not a formality. A rebound card can be gone by the time its upkeep arrives —
+ * a Tormod's Crypt, a Rest in Peace, another card exiling the exile — and a delayed trigger fires
+ * from wherever its source has got to (CR 603.7d). If the card is not in exile any more there is
+ * nothing to offer, and the trigger resolving into nothing is the right answer rather than a bug.
+ */
+const reboundCast = (): TriggerDef => ({
+  on: { kind: 'step', step: 'upkeep', of: 'you' },
+  delayed: true,
+  description: 'cast it from exile without paying its mana cost',
+  effect: (c) => {
+    const id = c.subject;
+    if (id === undefined || c.state.instances[id]?.zone !== 'exile') return c.state;
+    return reboundOffer(c.state, id);
+  },
+});
+
+/**
+ * Staggershock: two damage now and two more next turn, for two mana.
+ *
+ * The pool's first **rebound** card, and the one the keyword reads best on. Two damage for {1}{R}
+ * is a fair card; four damage over two turns for {1}{R} is a much better one, and the price is
+ * exactly the thing a burn deck is short of — patience. The second half cannot be countered by
+ * answering the first, cannot be stopped by killing anything, and cannot be hurried.
+ *
+ * In Arc Tempest it is also two *spells*, which is the half the deck is built to notice: a
+ * Guttersnipe, a Thermo-Alchemist and three Monastery Swiftspears all read "whenever you cast", and
+ * a card that casts itself twice triggers them on two different turns. That is the reason it goes
+ * here rather than in Ember Rush, where it would be four damage and nothing else.
+ */
+const STAGGERSHOCK: CardScript = {
+  name: 'Staggershock',
+  rebound: true,
+  targets: [ANY_TARGET],
+  triggers: [reboundCast()],
+  onResolve: (c) => damageFirstTarget(c, 2),
+};
+
+/**
+ * Distortion Strike: one damage more, unblockable, twice.
+ *
+ * Rebound's other half, on the keyword's quieter card. +1/+0 and "can't be blocked this turn" is
+ * barely a card on its own; the same spell on two consecutive turns, for one mana, is a way to make
+ * a creature that is *about* connecting connect twice — which in Tidal Mind means a **Thieving
+ * Magpie** drawing two cards it would not have drawn, and a **Bloodthirsty Aerialist** growing
+ * twice. The deck's problem has always been closing, and this is a closer that costs one mana and
+ * stays cast.
+ *
+ * It is also the first sorcery in the pool that gets cast in an **upkeep**, which is worth saying
+ * out loud: rebound's offer ignores the timing restriction on the card, because the ability that
+ * makes the offer is what permits the cast (CR 702.88a). The engine gets this right for free —
+ * every offered cast goes through the same path, and cascade has been casting sorceries on other
+ * players' turns since D168.
+ */
+const DISTORTION_STRIKE: CardScript = {
+  name: 'Distortion Strike',
+  rebound: true,
+  // Wears off at end of turn, so the bot holds it for a combat. See `expiresAtEndOfTurn`.
+  expiresAtEndOfTurn: true,
+  targets: [TARGET_CREATURE],
+  triggers: [reboundCast()],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null
+      ? c.state
+      : pump(c.state, [id], c.source, c.controller, { power: 1, cantBeBlocked: true });
+  },
+};
+
 const THICKET_BASILISK: CardScript = {
   name: 'Thicket Basilisk',
   triggers: [
@@ -7045,7 +7122,7 @@ const ALL: readonly CardScript[] = [
   tapLand('Hagra Broodpit', 'B'), tapLand('Vastwood Thicket', 'G'),
   SQUID, CHASM_SKULKER, FATE_UNRAVELER,
   SACRED_CAT, ANGEL_OF_SANCTIONS, ADORNED_POUNCER, SUNSCOURGE_CHAMPION,
-  THUNDEROUS_WRATH, TERMINUS,
+  THUNDEROUS_WRATH, TERMINUS, STAGGERSHOCK, DISTORTION_STRIKE,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

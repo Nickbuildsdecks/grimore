@@ -11309,3 +11309,91 @@ the control it was measured against.
 So the bot's share of D204's −32 is about a third of it, and the rest is a symmetric sweeper in a
 deck of small creatures. The slot is kept, with the deck at 45% rather than the 50% it had before
 miracle, and that is the first place to look if Skyward Writ needs those games back.
+
+## D206 — Rebound, and the drop-this-option rule that would have declined it every time
+
+**The keyword.** Rebound is the fourth way a card in this engine gets cast twice, and the first
+that pays for the second casting with **time**: cast it from your hand and it goes to exile as it
+resolves, and at the beginning of your next upkeep you may cast it from there for nothing
+(CR 702.88). Flashback charges a second price, escape charges mana and a graveyard, madness and
+miracle charge less than the printed cost once. Rebound charges nothing at all, and what makes it
+fair is that the opponent gets a whole turn in between.
+
+Almost all of it is machinery that already existed. The promise is a **delayed trigger** (CR 603.7),
+the same arrangement dash's return and unearth's exile use — `reboundCast()` builds it, the card
+carries it, and `completeResolution` schedules it as the spell leaves the stack. The offer is
+`pendingOfferedCast` for the fourth time, and declining reuses miracle's `stays`: "do not move the
+card" is the same disposition whether the card is sitting in a hand or in an exile.
+
+Two halves of the rule are load-bearing, and both are about the *second* casting:
+
+- It only rebounds if it was cast **from a hand**, which is `StackObject.rebounding`, read as the
+  spell is announced because by then nothing else knows where the card came from. The rebound cast
+  comes out of exile, so it is not flagged, so it does not rebound again — a card that remembered
+  nothing would be two damage every upkeep for the rest of the game.
+- A spell that never **resolved** never got there. A countered Staggershock goes to the graveyard
+  like any other countered spell, which is why `spellLeavesStack` takes `resolved` as a parameter
+  and why the branch is at the one call site that knows.
+
+Two cards, both cheap, both in decks that read "whenever you cast" or "whenever this deals damage",
+so the second casting is a second *trigger* on a different turn: **Staggershock** ({1}{R}, 2 damage,
+in Arc Tempest for a Monastery Swiftspear) and **Distortion Strike** ({U}, +1/+0 and unblockable, in
+Tidal Mind for a Doom Blade — a closer in the deck that has never been short of answers).
+
+### The rule that would have killed the keyword, found by reading rather than by measuring
+
+`expiringPumpCanMatter` drops a pump cast outside a combat, and its comment says exactly why: "an
+upkeep, a draw step, a main phase with an instant in hand — a card spent two steps before the
+question it answers", with 59 of 95 measured casts in an upkeep or a draw step. That argument is
+right about a card in hand and **false about an offered cast**: the offer is the only moment there
+is, and declining it strands the card in exile for good. Distortion Strike's rebound cast would have
+been declined every single time, in the one step the keyword happens in.
+
+The fix is `offerCannotWait`, and the thing worth keeping about it is that the distinction is a fact
+on the board rather than a new flag: a declined offer leaves the card where it is, so the card's
+**zone** says what declining costs. A miracle card sits in the hand it was drawn into and can be
+cast later for its printed cost; a cascade hit, a madness card and a rebound card sit in exile,
+where declining is final. So the "a better moment is coming" drop stands for everything in a hand
+and steps aside for an offer the player cannot come back to.
+
+The other members of the family were checked and deliberately left alone. A Fog with nothing
+attacking, a protection trick with nothing threatened and a ritual that buys nothing do nothing
+*now* whether or not they are offered — those are facts about the board, not claims about timing,
+and they are right under every disposition.
+
+### What the slots are worth, which is "nothing much", said properly
+
+Paired probes, each swapping the one card for the card it replaced, 288 games per arm, two seed
+sets:
+
+| card | seed set 3300 | seed set 4400 |
+| --- | --- | --- |
+| Staggershock | gains 3 | gains 1 |
+| Distortion Strike | gains 4 | costs 14 |
+
+Every one of those is inside the instrument's own ±20-game floor, and the Distortion Strike pair
+disagrees in sign — which is the D204 lesson again rather than a finding about the card. Worth
+putting beside it: **Tidal Mind's own record for the unchanged list reads 123-165 on one seed set
+and 94-191 on the other**, a 29-game spread with nothing changed at all, so the deck's noise is
+larger than either reading. The slots are kept because they cost nothing measurable, the keyword is
+exercised, and the Doom Blade the Strike replaced was the deck's eighth answer in a deck that has
+never been short of them.
+
+**And the keyword does happen.** `offers.mjs` over 192 games: **39** Staggershock rebound offers in
+Arc Tempest's field and **24** Distortion Strike offers in Tidal Mind's, one copy each — so a single
+rebound card is cast and resolved in about a fifth of the games it is in, and every one of those is
+a second spell a turn later. The same runs recorded the instrument's **first declined offer ever**,
+one in each: the bot now has two reasons to pass on a free cast (D205's sweep, and a pump with
+nothing to pump) where before it had none.
+
+### The browser
+
+`LIST=rebound` is the first browser scenario whose claim spans **two turns**: the spell resolves, the
+card goes somewhere no other spell goes, the opponent takes a whole turn, and the bar comes back in
+the player's own upkeep offering a free cast of a card they no longer have. Three runs, 26 to 27
+checks each, all passing, and the sentence they collect is the whole claim:
+
+```
+took a free cast: Staggershock rebounds: you may cast it from exile without paying its mana cost
+```
+

@@ -271,6 +271,15 @@ export interface StackObject {
    */
   readonly overloaded?: true;
   /**
+   * Whether this spell was cast **from its controller's hand** with rebound (CR 702.88a).
+   *
+   * Set as the spell is announced, because by the time it has resolved the card is on the stack and
+   * nothing remembers which zone it came from — and the zone is the whole of the condition: the
+   * rebound cast itself happens from exile, so a spell that remembered nothing would exile itself
+   * again every upkeep for the rest of the game. See `CardScript.rebound`.
+   */
+  readonly rebounding?: true;
+  /**
    * The modes chosen for a modal spell, as indices into its script's `modal.modes`, in printed
    * order. Chosen as the spell was cast (CR 601.2b) and public from that moment, which is why it
    * lives on the stack object rather than anywhere private.

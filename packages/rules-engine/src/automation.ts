@@ -32,8 +32,8 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  DASHED, EVOKED, REGENERATION, addCounters, counterSpell, destroy, draw, loseLife, madnessOffer,
-  miracleOffer,
+  DASHED, EVOKED, REGENERATION, addCounters, counterSpell, destroy, draw, exileCard, loseLife,
+  madnessOffer, miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
   type EffectContext, type EffectFn, type PumpOptions,
@@ -258,6 +258,11 @@ export const stackTop = (state: GameState): StackObject | undefined => {
 const dashReturnIndex = (script: CardScript | undefined): number =>
   (script?.triggers ?? []).findIndex((trigger) => trigger.delayed === true
     && trigger.on.kind === 'step' && trigger.on.step === 'end');
+
+/** Rebound's own delayed trigger, the same arrangement one step of the turn earlier. */
+const reboundCastIndex = (script: CardScript | undefined): number =>
+  (script?.triggers ?? []).findIndex((trigger) => trigger.delayed === true
+    && trigger.on.kind === 'step' && trigger.on.step === 'upkeep');
 
 const scriptOf = (state: GameState, instanceId: string): CardScript | undefined => {
   const inst = state.instances[instanceId];
@@ -2538,10 +2543,41 @@ function completeResolution(
       // here as well was the bug: a permanent that arrived any *other* way got none.
 
     } else if (inst !== undefined) {
-      // Graveyard, or exile when it was cast with flashback, or exile on an adventure. The last of
-      // the three is the only one that depends on the spell having *resolved*, which is what this
-      // call site knows and the other two do not. See `spellLeavesStack`.
-      next = spellLeavesStack(next, object, requireInstance(next, inst.id), true);
+      /*
+        Rebound, which is a third destination and a promise (CR 702.88a): the card goes to exile
+        rather than to a graveyard, and a delayed trigger for its controller's **next upkeep**
+        offers the free cast.
+
+        Here rather than inside `spellLeavesStack` for the reason the adventure branch there gives
+        from the other side: this is the only call site that knows the spell resolved, and a
+        countered rebound spell goes to the graveyard like any other. And the scheduling has to
+        happen where the card's script is in hand anyway — the ability lives on the card, the way
+        dash's return and unearth's exile do.
+
+        The index check is the belt: a card with `rebound` and no delayed upkeep trigger would
+        otherwise be exiled with nothing to bring it back, which is strictly worse than the card
+        not having the keyword. A test holds the pairing; this keeps a mistake in it cheap.
+      */
+      const reboundAt = object.rebounding === true ? reboundCastIndex(script) : -1;
+      if (reboundAt >= 0) {
+        next = exileCard(next, inst.id);
+        next = scheduleDelayed(next, {
+          source: inst.id,
+          controller: object.controller,
+          abilityIndex: reboundAt,
+          step: 'upkeep',
+          // `you` rather than `any`: the printed card says *your* next upkeep, so a spell cast on
+          // somebody else's turn waits for the caster's own.
+          of: 'you',
+          subject: inst.id,
+          description: `cast ${def?.name ?? 'it'} from exile without paying its mana cost`,
+        });
+      } else {
+        // Graveyard, or exile when it was cast with flashback, or exile on an adventure. The last
+        // of the three is the only one that depends on the spell having *resolved*, which is what
+        // this call site knows and the other two do not. See `spellLeavesStack`.
+        next = spellLeavesStack(next, object, requireInstance(next, inst.id), true);
+      }
     }
     const name = def?.name ?? 'a spell';
     return { state: next, message: script ? `${name} resolves` : `${name} resolves (not automated — resolve it by hand)` };

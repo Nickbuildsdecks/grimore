@@ -5658,6 +5658,34 @@ deck whose first draw is often the card it is built around, and asserts on the s
 showed rather than on anything left behind — because by the next move there is nothing to look at.
 Three runs, 26 of 26 checks each.
 
+### Rebound, and the rule that would have declined it every time (D206)
+
+The fourth way a card gets cast twice here, and the first that pays with **time**: cast it from
+hand, it exiles itself as it resolves, and at the beginning of your next upkeep you may cast it from
+exile for nothing. Almost all of it is machinery that existed — a delayed trigger for the promise
+(the arrangement dash and unearth use), `pendingOfferedCast` for the offer, and miracle's `stays`
+for declining, because "do not move the card" is the same disposition in an exile as in a hand. What
+is new is two small facts that keep it from being infinite: the spell has to have been cast **from a
+hand** (`StackObject.rebounding`, read as it is announced), and it has to have **resolved** — a
+countered Staggershock goes to the graveyard like anything else.
+
+**The interesting part is a bot rule, found by reading.** `expiringPumpCanMatter` drops a pump cast
+outside a combat because "a better moment is coming", which is right about a card in hand and false
+about an offer: the offer is the only moment there is. Distortion Strike's rebound cast, which
+happens in an upkeep, would have been declined every single time. `offerCannotWait` fixes it off a
+fact rather than a flag — a declined offer leaves the card where it is, so the card's **zone** says
+what declining costs: a miracle card is in a hand and can be cast later, while a cascade hit, a
+madness card and a rebound card are in exile, where declining is final. The rest of the family (a
+Fog with nothing attacking, a ritual that buys nothing) is about the board rather than the clock and
+was left alone.
+
+Both slots measure inside the instrument's floor — Staggershock +3 and +1, Distortion Strike +4 and
+−14 on two seed sets, against a Tidal Mind whose unchanged list swings 29 games between those same
+seed sets. The keyword does fire: 39 rebound offers in 192 games of Arc Tempest and 24 in Tidal
+Mind's, one copy each. And `LIST=rebound` is the first browser scenario whose claim spans two turns:
+three runs, 26 to 27 checks, the bar offering a free cast in the upkeep of a card the player no
+longer has.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

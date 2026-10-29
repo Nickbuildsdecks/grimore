@@ -35,6 +35,7 @@ it.
 | --- | --- | --- |
 | `deck-table.mjs` | how does every deck do against every other? | `SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs` |
 | `deck-probe.mjs` | what would this slot change be worth? | `SUBJECT=tidal-mind CHANGE='Fog Bank:+1,Cancel:-1' SEEDS=17 node scripts/measure/deck-probe.mjs` |
+| `deck-probe.mjs` | is this slot bad, or badly played? | `BOT='{"sparesItsOwnBoard":false}' SUBJECT=skyward-writ CHANGE='Terminus:-1,Leonin Skyhunter:+1' SEEDS=12 node scripts/measure/deck-probe.mjs` |
 | `deck-probe.mjs` | what is the **commander** worth? | `SUBJECT=dawn-tithe COMMANDER='Balan, Wandering Knight' SEEDS=15 node scripts/measure/deck-probe.mjs` |
 | `cast-counts.mjs` | which of a deck's sixty cards does the bot actually use? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/cast-counts.mjs` |
 | `cast-counts.mjs` | …and **which cost** did it pay — the printed one, or the evoke, dash, bestow, spectacle, overload, flashback or foretell? | `SUBJECT=tidal-mind SEEDS=12 node scripts/measure/cast-counts.mjs` (the block under the table) |
@@ -414,3 +415,20 @@ out by hand, and the first `deck-table` run after the twelfth deck was added mea
 eleven-deck field as the day before with no warning at all. They all read
 `Object.keys(STARTER_DECKS)` now; keep it that way, because a measurement that silently answers last
 week's question is worse than one that fails.
+
+**A keyword's name is the last word of the sentence, and the last word is what a harness matches
+on.** `offers.mjs` asked the *script* whether a card has cascade, by looking for a trigger that
+fires on its controller casting it — which is the shape cascade, storm, replicate and conspire all
+share, so every Grapeshot in Arc Tempest counted as a cascade and the line "60 of 62 found nothing
+at all" was printed about a deck holding no cascade card. The browser driver made the mirror-image
+mistake on the other side of the same keyword family: it cut the offer's prompt at eighty
+characters for the log, and the prompt is 88 — so `LIST=miracle` matched none of its own offers,
+because `(miracle)` had been thrown away. **Both were found by a number that was obviously wrong
+rather than by a failing check.** Where a keyword can only be told from its siblings by the card's
+own text, read the card's own text, and never truncate the string a scenario asserts on.
+
+**Ask whether a slot is a bad card or a badly played one, because the answer is sometimes both.**
+`deck-probe` takes `BOT` now for exactly this: Terminus cost Skyward Writ 32 and 29 games of 288
+with the bot casting every one it was offered, and 24 and 12 with `sparesItsOwnBoard` on (D205). A
+third of that slot was the bot. The probe's *other* arm is the check that the rule is as narrow as
+it claims — the list with the sweeper cut comes back byte-identical with the rule on and off.

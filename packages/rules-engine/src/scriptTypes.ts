@@ -1559,6 +1559,34 @@ export interface CardScript {
    * punished an opponent for the reveal would need the reveal to be real.
    */
   readonly miracle?: { readonly cost: string };
+  /**
+   * Rebound: cast it from your hand and it comes back next turn, for nothing (CR 702.88).
+   *
+   * The fourth card in the engine that is cast twice and the first that pays for the second casting
+   * with **time** rather than with a cost. Flashback charges a second price; escape charges mana and
+   * a graveyard; madness and miracle charge less than the printed cost once. Rebound charges
+   * nothing at all — and the reason it is fair is that you have to still be alive next turn, and
+   * your opponent gets a whole turn in between to make the second copy matter less.
+   *
+   * `true` rather than a cost, because there is no cost: everything about the keyword is the
+   * engine's. As the spell resolves it goes to **exile** instead of to the graveyard, and the card
+   * schedules a delayed trigger for its controller's next upkeep (CR 603.7) whose resolution offers
+   * the free cast — so a card declaring `rebound` must carry exactly one `delayed` upkeep trigger,
+   * which `reboundCast()` is for and which a test holds. The same arrangement dash and unearth use:
+   * the ability lives on the card, so it gets a description, a place on the stack and a resolution
+   * path without a second mechanism.
+   *
+   * Two halves of the rule are load-bearing and both are about the *second* casting. It only
+   * happens if the spell was cast **from a hand** — see `StackObject.rebounding` — so the rebound
+   * cast, which comes from exile, does not rebound again. And declining leaves the card in exile
+   * for good: `pendingOfferedCast.stays` is miracle's flag doing a second job, because "do not move
+   * it" is the same disposition whether the card is sitting in a hand or in an exile.
+   *
+   * What it deliberately does not model is the one-shot nature of the *offer* beyond the exile: a
+   * card still in exile when its upkeep comes round again is not offered twice, because the delayed
+   * trigger is consumed when it resolves and nothing schedules another.
+   */
+  readonly rebound?: true;
   readonly replaces?: readonly {
     /**
      * Which zone change this replaces. The three are the same move seen at three widths, and a

@@ -333,6 +333,16 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     `completeResolution` reads it.
   */
   const overloaded = action.overloaded === true;
+  /*
+    And rebound, which is not an alternative cost at all and so is not validated with the five
+    above: nothing is announced, nothing is chosen, and the player is not asked. It is a fact about
+    **where this spell was cast from** (CR 702.88a), read here because here is the last moment
+    anybody knows — the card is on the stack from the next line on.
+
+    Which is also the whole of the loop-breaker: the rebound casting comes out of exile, so it is
+    not flagged, so it does not rebound again. See `StackObject.rebounding`.
+  */
+  const rebounding = script?.rebound === true && inst.zone === 'hand' && inst.zoneSeat === action.by;
   if (evoked || dashed || bestowed || spectacled || overloaded) {
     const word = evoked ? 'evoke' : dashed ? 'dash' : bestowed ? 'bestow'
       : spectacled ? 'spectacle' : 'overload';
@@ -701,6 +711,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     ...(spectacled ? { spectacled: true as const } : {}),
     // And overload's, which the resolution reads to run the card's other effect.
     ...(overloaded ? { overloaded: true as const } : {}),
+    // And rebound's, which the resolution reads to exile the card instead of putting it in a
+    // graveyard, and to schedule the free cast for its controller's next upkeep.
+    ...(rebounding ? { rebounding: true as const } : {}),
     /*
       And the other flag the destination depends on, for the same reason: an adventure that
       resolves is exiled "on an adventure" rather than put into a graveyard, and once it has left

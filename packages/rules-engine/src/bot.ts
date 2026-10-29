@@ -2623,6 +2623,30 @@ function destroysOneOfItsOwn(state: GameState, seat: SeatIndex, action: Action):
 }
 
 /**
+ * Whether this option is an **offered cast the player cannot come back to**.
+ *
+ * Three of the drop-this-option rules are about a card being spent at the wrong *moment* rather
+ * than on nothing — the expiring pump most explicitly, whose whole argument is "there is a better
+ * moment coming". For a card in hand that argument is right. For an offered cast it can be false in
+ * the strongest way: the offer is the only moment there is, and declining throws the card away.
+ *
+ * Which of the two it is, is readable off the board rather than out of a new flag. A declined offer
+ * leaves the card where it is, so the card's **zone** is the whole question: a miracle card sits in
+ * the hand it was drawn into and can be cast later for its printed cost, while a cascade hit, a
+ * madness card and a **rebound** card sit in exile, where declining strands them for good.
+ *
+ * Found by reading rather than by measuring, and it would have cost the keyword everything: a
+ * rebound card's free cast is offered in an upkeep, `expiringPumpCanMatter` returns false in every
+ * upkeep, and Distortion Strike's second casting would have been declined every single time.
+ */
+function offerCannotWait(state: GameState, seat: SeatIndex, action: Action): boolean {
+  const offer = state.pendingOfferedCast;
+  if (offer === null || offer.seat !== seat) return false;
+  if (action.type !== 'auto:cast' || action.card !== offer.card) return false;
+  return state.instances[offer.card]?.zone !== 'hand';
+}
+
+/**
  * Whether this cast is a sweep that hits every creature on the table rather than a chosen one.
  *
  * **A text match rather than a flag**, for the reason `destroysOneOfItsOwn` gives: the card's own
@@ -3137,7 +3161,8 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       coming, which is a fact.
     */
     if (castsAnExpiringPump(state, option.action)
-      && !expiringPumpCanMatter(state, seat, option.action)) {
+      && !expiringPumpCanMatter(state, seat, option.action)
+      && !offerCannotWait(state, seat, option.action)) {
       dropped += 1;
       continue;
     }

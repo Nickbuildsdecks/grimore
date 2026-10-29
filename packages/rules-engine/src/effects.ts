@@ -1003,6 +1003,35 @@ export const drawnThisTurn = (state: GameState, seat: SeatIndex): number =>
  * is given priority, which is what "when you draw it" means and why a sorcery with miracle can be
  * cast on somebody else's turn.
  */
+/**
+ * Rebound (CR 702.88a): the card is in exile, and this is its one free casting.
+ *
+ * The shortest of the four offers, because everything that makes the other three interesting has
+ * already happened: there is no pile to put back, no cost to price, and no zone change to finish.
+ * The card is sitting in exile where the resolution put it, and all this does is stop the table and
+ * say it may be cast for nothing.
+ *
+ * `stays` is miracle's flag doing a second job. Declining a rebound leaves the card in exile for
+ * the rest of the game — which is "do not move it", the same disposition as a miracle card left in
+ * the hand it was drawn into, and a fourth flag for the same behaviour would be a fourth thing to
+ * keep in step.
+ */
+export function reboundOffer(state: GameState, card: string): GameState {
+  const inst = state.instances[card];
+  if (inst === undefined || inst.zone !== 'exile') return state;
+  const name = state.cardDefs[inst.defKey]?.name ?? 'it';
+  return {
+    ...state,
+    pendingOfferedCast: {
+      seat: inst.owner,
+      card,
+      prompt: `${name} rebounds: you may cast it from exile without paying its mana cost`,
+      stays: true,
+      source: card,
+    },
+  };
+}
+
 export function miracleOffer(state: GameState, card: string, cost: string): GameState {
   const inst = state.instances[card];
   if (inst === undefined) return state;

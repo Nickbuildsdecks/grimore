@@ -3392,6 +3392,36 @@ const DISALLOW: CardDef = {
   colors: ['U'],
 };
 
+/*
+  The two rebound cards, and why they go where they go.
+
+  Rebound's price is a turn, so the keyword is worth most to a deck that was going to still be
+  there next turn and worth least to one racing. Both of these are cheap spells in decks that
+  already read "whenever you cast" or "whenever this deals damage" — so the second casting is not
+  only a second spell, it is a second trigger on a different turn.
+*/
+const STAGGERSHOCK: CardDef = {
+  name: 'Staggershock',
+  typeLine: 'Instant',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  oracleText: 'Staggershock deals 2 damage to any target.\nRebound (If you cast this spell from '
+    + 'your hand, exile it as it resolves. At the beginning of your next upkeep, you may cast this '
+    + 'card from exile without paying its mana cost.)',
+  colors: ['R'],
+};
+
+const DISTORTION_STRIKE: CardDef = {
+  name: 'Distortion Strike',
+  typeLine: 'Sorcery',
+  manaCost: '{U}',
+  cmc: 1,
+  oracleText: 'Target creature gets +1/+0 and can\u2019t be blocked this turn.\nRebound (If you cast '
+    + 'this spell from your hand, exile it as it resolves. At the beginning of your next upkeep, '
+    + 'you may cast this card from exile without paying its mana cost.)',
+  colors: ['U'],
+};
+
 export const TIDAL_MIND: DeckSpec = {
   id: 'tidal-mind',
   name: 'Tidal Mind',
@@ -3488,8 +3518,18 @@ export const TIDAL_MIND: DeckSpec = {
       rules argument rather than on a number, and the number is written down as unknown.
     */
     { card: DISALLOW, count: 1 },
-    { card: DOOM_BLADE, count: 2 },
-    // Removal that does not care what colour it is, which the Doom Blades do.
+    { card: DOOM_BLADE, count: 1 },
+    /*
+      The second Doom Blade's slot, spent on a **closer** rather than on another answer.
+
+      This deck has never been short of removal — a Murder, an Agonizing Demise, two Man-o'-Wars,
+      an Unsummon, a Turn to Frog and a Maze of Ith beside the Blade — and it has always been short
+      of a way to finish. A Distortion Strike makes a Thieving Magpie connect, which draws a card,
+      and rebound makes it connect again next turn for nothing: one mana, two unblockable attacks,
+      on the two creatures in the deck that are *paid* for connecting.
+    */
+    { card: DISTORTION_STRIKE, count: 1 },
+    // Removal that does not care what colour it is, which the Doom Blade does.
     { card: MURDER, count: 1 },
     { card: SAW_IT_COMING, count: 1 },
     // Not removal but time — and the only card here that answers something already resolved
@@ -5119,7 +5159,18 @@ export const ARC_TEMPEST: DeckSpec = {
       play and twelve burn spells in the library, or with a Swiftspear and two cantrips, and it can
       win with neither — twelve of the spells point at a face.
     */
-    { card: MONASTERY_SWIFTSPEAR, count: 3 },
+    { card: MONASTERY_SWIFTSPEAR, count: 2 },
+    /*
+      And the third Swiftspear's slot, which went to the pool's first **rebound** card.
+
+      A Staggershock is two spells for one card on two consecutive turns, and this is the deck where
+      that is worth more than a 1/2 with prowess: a Guttersnipe, a Thermo-Alchemist and two
+      Swiftspears all read "whenever you cast", so the second casting arrives on a turn when the
+      board is already set up to notice it. The Swiftspear is the right card to pay for it — three
+      copies of a one-drop in a deck whose curve starts at one and whose other eight copies live in
+      Ember Rush and Forge Alliance.
+    */
+    { card: STAGGERSHOCK, count: 1 },
     { card: STORMCHASER_MAGE, count: 1 },
     /*
       Goblin Electromancer, for the second Stormchaser Mage.

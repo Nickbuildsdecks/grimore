@@ -36,7 +36,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * `LIST=cascade` pastes a deck built to cascade instead of Ember Rush's own sixty,
  * `LIST=costs` one built to pay an alternative cost — see `COSTS_LIST` — `LIST=graveyard` one built
  * to press an ability on a card in the graveyard (`GRAVEYARD_LIST`), `LIST=miracle` one whose
- * first draw is often the card it is built around (`MIRACLE_LIST`), and `LIST=earned` one
+ * first draw is often the card it is built around (`MIRACLE_LIST`), `LIST=rebound` one built to
+ * cast the same spell twice a turn apart (`REBOUND_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -236,6 +237,22 @@ const MIRACLE_LIST = [
   '4 Lightning Bolt', '4 Shock', '4 Monastery Swiftspear', '4 Goblin Arsonist',
   '4 Borderland Marauder', '4 Firebrand Archer', '4 Raging Goblin',
 ].join('\n');
+
+/**
+ * Sixty cards whose first draw is beside the point: eight **Staggershocks**, cast for the keyword
+ * that fires a turn later.
+ *
+ * `LIST=miracle` is built around a card being drawn; this one is built around a card being *cast*,
+ * which is a much easier thing to arrange — so the eight copies are here for the same reason the
+ * Wraths are, to make the window frequent rather than to make the deck good. Mono-red again, and
+ * the same shell, so the only difference between the two runs is the keyword under test.
+ */
+const REBOUND_LIST = [
+  '24 Mountain',
+  '8 Staggershock',
+  '4 Lightning Bolt', '4 Shock', '4 Monastery Swiftspear', '4 Goblin Arsonist',
+  '4 Borderland Marauder', '4 Firebrand Archer', '4 Raging Goblin',
+].join('\n');
   const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
   watchForReactWarnings(page, '', reactWarnings);
@@ -289,6 +306,8 @@ const MIRACLE_LIST = [
         ? GRAVEYARD_LIST
         : LIST === 'miracle'
         ? MIRACLE_LIST
+        : LIST === 'rebound'
+        ? REBOUND_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -394,6 +413,14 @@ const MIRACLE_LIST = [
      * A `Set`, so eight copies of the same card do not read as eight different findings.
      */
     const miracleOffers = new Set();
+    /**
+     * And the rebound offers, by the same sentence and for the same reason, under `LIST=rebound`.
+     *
+     * Separate from the miracle set because the two prompts say different things and each list
+     * requires its own: one is "the first card you drew this turn", the other is "cast it from
+     * exile", and a run that collected either would pass the wrong check.
+     */
+    const reboundOffers = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -433,6 +460,7 @@ const MIRACLE_LIST = [
         if (did === 'assigned combat damage') ordered = true;
         if (typeof did === 'string' && /a free cast/.test(did)) freeCasts += 1;
         if (typeof did === 'string' && /miracle/i.test(did)) miracleOffers.add(did);
+        if (typeof did === 'string' && /rebounds/i.test(did)) reboundOffers.add(did);
         if (typeof did === 'string') {
           for (const word of Object.keys(altCasts)) {
             /*
@@ -502,7 +530,8 @@ const MIRACLE_LIST = [
       times and overload none; three runs after the Sol Rings went in pressed overload three times
       in one run and spectacle none. Both rows exist on every table; one shuffle does not see both.
     */
-    const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle' ? 5 : 3;
+    const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
+      || LIST === 'rebound' ? 5 : 3;
     /*
       What "not yet" means for this list.
 
@@ -512,11 +541,14 @@ const MIRACLE_LIST = [
     */
     const wantsAnotherGame = () => (LIST === 'miracle'
       ? miracleOffers.size === 0
+      : LIST === 'rebound'
+      ? reboundOffers.size === 0
       : !Object.values(altCasts).every((n) => n > 0));
-    while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle')
-      && games < dealBudget && wantsAnotherGame()) {
+    while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
+      || LIST === 'rebound') && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
+        : LIST === 'rebound' ? `${reboundOffers.size} rebound offers`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -589,6 +621,22 @@ const MIRACLE_LIST = [
         sentences.length > 0, `offers seen: ${sentences.length}`);
       check('the offer says it was the first card drawn, and names the miracle cost',
         sentences.some((did) => /first card you drew this turn/.test(did) && /\{R\}/.test(did)),
+        sentences[0] ?? 'nothing was offered');
+      for (const did of sentences.slice(0, 3)) console.log(`      ${did}`);
+    } else if (LIST === 'rebound') {
+      /*
+        The offer that arrives a **turn** after the card was cast, on a card in exile.
+
+        What this proves that the engine's own tests cannot: the table kept the promise across a
+        turn boundary — the spell resolved, the card went somewhere no other spell goes, the
+        opponent took a whole turn, and the bar came back in the player's own upkeep with a free
+        cast of a card they no longer had. Nothing else in the suite spans two turns like that.
+      */
+      const sentences = [...reboundOffers];
+      check('a spell cast last turn is offered again in the upkeep, from exile',
+        sentences.length > 0, `offers seen: ${sentences.length}`);
+      check('the offer says where the card is and that the cast is free',
+        sentences.some((did) => /from exile/.test(did) && /without paying its mana cost/.test(did)),
         sentences[0] ?? 'nothing was offered');
       for (const did of sentences.slice(0, 3)) console.log(`      ${did}`);
     } else if (LIST === 'graveyard') {
