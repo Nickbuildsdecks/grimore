@@ -33,8 +33,10 @@ const OPPONENT_DECK = process.env.OPPONENT_DECK ?? 'tidal-mind';
  */
 const SOLO_POD = process.env.SOLO_POD === '1';
 /**
- * `LIST=cascade` pastes a deck built to cascade instead of Ember Rush's own sixty, and
- * `LIST=costs` one built to pay an alternative cost — see `COSTS_LIST`.
+ * `LIST=cascade` pastes a deck built to cascade instead of Ember Rush's own sixty,
+ * `LIST=costs` one built to pay an alternative cost — see `COSTS_LIST` — and `LIST=earned` one
+ * built for the two alternative costs whose **rows** behave unlike any other row, see
+ * `EARNED_LIST`.
  *
  * Cascade is the one mechanic in the pool a browser suite cannot reach by playing a real game: the
  * keyword fires about once every seven games with one copy in a sixty-card deck, and what it finds
@@ -104,6 +106,38 @@ const COSTS_LIST = [
   '4 Birds of Paradise', '4 Llanowar Elves', '4 Grizzly Bears',
 ].join('\n');
 
+/**
+ * Sixty cards built for the two cheap rows that behave unlike every other cheap row.
+ *
+ * `LIST=costs` above asks whether a second row on a card in hand can be pressed at all. These two
+ * ask something the other three cannot:
+ *
+ * - **Spectacle** ({R} instead of {2}{R} on Skewer the Critics) is the only row in the game that
+ *   *appears mid-turn*. It is absent until an opponent has lost life this turn and gone again when
+ *   the turn ends, so pressing it is a claim about a table that redraws its own sheet while the
+ *   player is looking at it.
+ *
+ *   Two ways to earn it are in the list on purpose, because the first one alone was not enough.
+ *   Eight Monastery Swiftspears earn it the way a player would — by attacking — but an attack lands
+ *   in combat, so the row only exists in the *postcombat* main phase of that turn, and a run that
+ *   dealt three games reached it in none of them. Eight Lightning Bolts earn it in the **precombat**
+ *   main phase instead, where the driver does most of its casting, and a Skewer in the same hand
+ *   then shows both of its rows at once. (A Skewer aimed at the other player earns it for the next
+ *   Skewer, too.)
+ * - **Overload** ({3}{R}{R}{R} on Mizzium Mortars) is the only row with **no targets at all**. The
+ *   table has to send it the moment it is chosen rather than walking the player through a pick, and
+ *   a table that asked would hang on a question the engine refuses. It is also dearer than printed,
+ *   so twenty-four lands is not greed — six of them have to be out at once.
+ *
+ * Mono-red on purpose: `LIST=costs` needed three colours and failed its first run on the mana base
+ * rather than on a keyword, and the fix was twelve guildgates. This list has nothing to fix.
+ */
+const EARNED_LIST = [
+  '24 Mountain',
+  '10 Skewer the Critics', '10 Mizzium Mortars',
+  '8 Lightning Bolt', '8 Monastery Swiftspear',
+].join('\n');
+
 const myMove = (page) => isMyMove(page);
 /**
  * Aggression 1: a solo game has nobody to hold mana up against, so it always develops.
@@ -170,6 +204,8 @@ async function main() {
         ? CASCADE_LIST
         : LIST === 'costs'
         ? COSTS_LIST
+        : LIST === 'earned'
+        ? EARNED_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -219,7 +255,9 @@ async function main() {
      * checks is that the table offered the cheap cast, said what it costs, and sent the flag with
      * it. `LIST=costs` turns all three into requirements.
      */
-    const altCasts = { evoke: 0, dash: 0, bestow: 0 };
+    const altCasts = LIST === 'earned'
+      ? { spectacle: 0, overload: 0 }
+      : { evoke: 0, dash: 0, bestow: 0 };
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -259,7 +297,7 @@ async function main() {
         if (did === 'assigned combat damage') ordered = true;
         if (typeof did === 'string' && /a free cast/.test(did)) freeCasts += 1;
         if (typeof did === 'string') {
-          for (const word of ['evoke', 'dash', 'bestow']) {
+          for (const word of Object.keys(altCasts)) {
             if (did.includes(`its ${word} cost`)) altCasts[word] += 1;
           }
         }
@@ -289,7 +327,8 @@ async function main() {
 
     await playOutGame();
     let games = 1;
-    while (LIST === 'costs' && games < 3 && !Object.values(altCasts).every((n) => n > 0)) {
+    while ((LIST === 'costs' || LIST === 'earned') && games < 3
+      && !Object.values(altCasts).every((n) => n > 0)) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
@@ -335,7 +374,20 @@ async function main() {
       check('a Mardu Scout is cast for its dash cost through the table', altCasts.dash > 0, where);
       check('a Boon Satyr is cast as an Aura for its bestow cost, enchanting a creature it chose',
         altCasts.bestow > 0, where);
-    } else if (altCasts.evoke + altCasts.dash + altCasts.bestow > 0) {
+    } else if (LIST === 'earned') {
+      /*
+        And the two rows that are not simply cheaper.
+
+        What each proves is about the *table* rather than the engine: that a row which was not there
+        a moment ago was offered, said why it was on offer, and sent its flag — and that a row with
+        no targets was sent on one tap instead of waiting for a pick nobody can make.
+      */
+      const where = JSON.stringify(altCasts);
+      check('a Skewer the Critics is cast for the spectacle cost a turn of combat earned',
+        altCasts.spectacle > 0, where);
+      check('a Mizzium Mortars is overloaded, on a row that asks for no targets at all',
+        altCasts.overload > 0, where);
+    } else if (Object.values(altCasts).some((n) => n > 0)) {
       console.log(`      (alternative costs paid: ${JSON.stringify(altCasts)})`);
     }
     check('the opponent plays its own turns without being asked to', turnsSeen >= 4, `turns ${turnsSeen}`);
