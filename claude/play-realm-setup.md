@@ -939,7 +939,7 @@ LIST=rebound node scripts/e2e-solo.mjs # a deck built to cast the same spell twi
 LIST=replicate node scripts/e2e-solo.mjs # a deck with the mana to pay one cost several times — 25 checks
 LIST=extort node scripts/e2e-solo.mjs  # a deck asked for mana every time it casts a spell — 25 checks
 LIST=suspend node scripts/e2e-solo.mjs # a deck that pays for a spell a turn before it casts it — 26 checks
-LIST=dredge node scripts/e2e-solo.mjs  # a deck that buys the same spell back every draw step — 26 checks
+LIST=dredge node scripts/e2e-solo.mjs  # a deck that buys the same spell back every draw step — 27 checks
 LIST=buyback node scripts/e2e-solo.mjs # a deck that pays to keep the spell it just cast — 26 checks
 ```
 
@@ -1028,7 +1028,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1076 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1079 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1168,7 +1168,9 @@ whether to mill three and take it back instead of drawing. Both halves are requi
 pressed, and a Darkblast cast *after* one was taken — because a prompt that appears and hands back a
 card nobody then plays has proved the question rather than the keyword. The deck is eight Darkblasts
 and twenty bodies behind twenty-four Swamps, because the spell needs a creature to point at on its
-way to the graveyard. Three runs, 26 of 26 checks each.
+way to the graveyard. A third check reads the **standing answer** back off the bar beside the
+question — the setting that stops a dredge card asking in every draw step for the rest of the game.
+Three runs, 27 of 27 checks each.
 
 `LIST=buyback` is the eleventh, and the only one where both rows are the **same spell**. A Capsize
 is cast for {1}{U}{U}{3} rather than {1}{U}{U}, and what the extra three mana buys is the card
@@ -1189,7 +1191,7 @@ pointer handler sets, so nothing that does not move a real pointer can see them.
 hovers a card and reads the variables back, which is the only honest way to check a thing whose
 whole existence is in the browser.
 
-The layers under them have their own suites: `packages/rules-engine` (1076 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1079 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (216 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`

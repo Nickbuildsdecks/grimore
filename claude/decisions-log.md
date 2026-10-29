@@ -11773,6 +11773,36 @@ both button labels ("… instead of drawing? Mill 3 Draw instead"), so a check m
 pass on a run that declined every time. The check is anchored on the **driver's** report of which
 button it pressed.
 
+### The question it asks every turn, and the answer you can give once
+
+A dredge card sits in a graveyard for the rest of the game, so the table stops in **every** draw
+step for as long as it is there. That is correct Magic and it is also twenty taps a game for an
+answer most players give the same way every time — which is the shape `autoPassOff` already had an
+answer for (#79): being asked is a *preference*, not a rule, and two people at one table can
+reasonably want different ones.
+
+So `GameState.dredgeStops` holds a standing answer per seat, set by `auto:dredgeStops` with `ask`,
+`always` or `never`. `drainOwedDraws` reads it before raising the question: `never` takes the draw,
+`always` takes the dredge, and absent asks. Three things about the shape are deliberate.
+
+**Absent is "ask", and that is the default.** A mechanic that answers itself without being told to
+is the bug the whole offer family exists to avoid, and the bot numbers in the table above are
+numbers about a bot that is asked — a default of `always` would have quietly changed what they mean.
+
+**It is said out loud.** This is the one path in the engine where cards move — three off a library,
+one out of a graveyard — with nobody pressing anything, so both branches write a line through the
+replacement channel. A player who set `always` four turns ago should still be able to read what it
+did.
+
+**And the control does not disappear.** It is drawn beside the question, which is where a player
+is when they get tired of it — but also whenever a standing answer is set, because a seat that
+chose `always` is never asked again and a control that only appeared with the prompt would be a
+one-way door. The engine's half of that is `AutomationView.dredgeStanding`, which travels so the
+table can show the setting back.
+
+The move itself is `takeDredge`, shared by the button and the standing answer, because "what a
+dredge does" should not be written twice.
+
 ## D211 — Buyback, and what is left when a cost buys neither a better spell nor a cheaper one
 
 **The keyword.** "You may pay an additional cost as you cast this spell. If you do, put this card

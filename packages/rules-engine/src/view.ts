@@ -183,6 +183,14 @@ export interface AutomationView {
      */
     readonly prompt?: string;
   } | null;
+  /**
+   * This seat's standing answer to the dredge question, or `ask` (CR 702.52a).
+   *
+   * Travels so the table can show the setting back — and so a player who set `always` four turns
+   * ago, and has therefore not been asked since, still has somewhere to change their mind. A
+   * control that only appears while the question is up would be a one-way door.
+   */
+  readonly dredgeStanding: 'ask' | 'always' | 'never';
   /** This seat's own legal moves, or null for a spectator. */
   readonly you: LegalActions | null;
 }
@@ -562,6 +570,7 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
     pools: state.pools,
     combat: state.combat,
     awaiting,
+    dredgeStanding: viewer === null ? 'ask' : (state.dredgeStops[String(viewer)] ?? 'ask'),
     you: viewer === null ? null : legalActions(state, viewer),
   };
 }

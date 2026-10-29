@@ -328,8 +328,19 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     // Shot before pressing, because the question is the picture: the card named, the price in
     // cards, and the two answers.
     await shot(page, 'a-dredge-offered');
+    /*
+      Whether the bar is also offering a **standing** answer, reported rather than pressed.
+
+      The setting is the thing that stops this question being asked twenty times in a game, and the
+      place it has to be reachable from is here — beside the question it is about. Reported so a run
+      can require it without the driver changing a preference mid-game, which would make every
+      later move a different test.
+    */
+    const standing = (await has(page, 'dredge-standing'))
+      ? ` [standing: ${(await text(page, 'dredge-standing')).trim()}]`
+      : '';
     await press(page, 'dredge-take');
-    return `took a dredge: ${prompt}`;
+    return `took a dredge: ${prompt}${standing}`;
   }
 
   // A card that stopped mid-resolution to ask this player something blocks everything, including

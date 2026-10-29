@@ -33,7 +33,7 @@ import {
 } from './combat.js';
 import {
   DASHED, EVOKED, REGENERATION, TIME, addCounters, counterSpell, destroy, draw, drawLater,
-  exileCard, loseLife, suspendedCast,
+  exileCard, loseLife, mill, suspendedCast,
   madnessOffer, miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
@@ -1499,6 +1499,26 @@ function dredgeFor(
 }
 
 /**
+ * Mills for a dredge and puts the card back in its owner's hand (CR 702.52a).
+ *
+ * Shared by the two ways the answer can arrive: a player pressing the button, and a standing
+ * answer the engine gives for them. The **mill happens first**, which is the order the rules put
+ * them in and is not cosmetic — a dredge whose own mill turns up a second dredge card puts it in
+ * the graveyard where the next draw can use it, and a graveyard read first would miss it.
+ */
+export function takeDredge(
+  state: GameState, seat: SeatIndex, card: string, amount: number,
+): GameState {
+  const next = mill(state, seat, amount);
+  const inst = next.instances[card];
+  // Only still there to take back if its own mill did not move it, which it cannot — a card in a
+  // graveyard is not on top of a library — but a state that moved underneath the answer is left
+  // alone rather than forced.
+  if (inst === undefined || inst.zone !== 'graveyard') return next;
+  return relocate(next, inst, 'hand', inst.owner, 'bottom');
+}
+
+/**
  * Takes the draws the engine owes, asking about a dredge where there is one (CR 702.52a).
  *
  * The first thing `settle` does, before the lists of deaths and arrivals are drained, so a draw
@@ -1527,6 +1547,31 @@ function drainOwedDraws(state: GameState): GameState {
       continue;
     }
     const name = next.cardDefs[next.instances[dredge.card]?.defKey ?? '']?.name ?? 'a card';
+    /*
+      A standing answer, given once instead of every turn (see `GameState.dredgeStops`).
+
+      Said out loud through the replacement channel either way, because this is the one path where
+      cards move — three off a library, one out of a graveyard — with nobody pressing anything. A
+      player who set "always" four turns ago should still be able to read what it did.
+    */
+    const standing = next.dredgeStops[String(seat)];
+    if (standing === 'never') {
+      next = draw({
+        ...next,
+        drawsOwed: next.drawsOwed.slice(1),
+        replacements: [...next.replacements, `${name} was not dredged: you draw instead`],
+      }, seat, 1);
+      continue;
+    }
+    if (standing === 'always') {
+      next = takeDredge({
+        ...next,
+        drawsOwed: next.drawsOwed.slice(1),
+        replacements: [...next.replacements,
+          `${name}: ${dredge.mill} milled and the card returned, instead of a draw`],
+      }, seat, dredge.card, dredge.mill);
+      continue;
+    }
     next = {
       ...next,
       pendingDredge: {

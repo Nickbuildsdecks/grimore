@@ -144,6 +144,7 @@ export function createGame(options: CreateGameOptions): GameState {
     // Automation, empty until a table is switched into automated mode.
     automated: false,
     autoPassOff: [],
+    dredgeStops: {},
     kept: [],
     openingHands: false,
     pendingChoice: null,
@@ -694,6 +695,7 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         // run twice, so nobody could restart it.
         automated: false,
         autoPassOff: [],
+        dredgeStops: {},
         kept: [],
         openingHands: false,
         pendingChoice: null,

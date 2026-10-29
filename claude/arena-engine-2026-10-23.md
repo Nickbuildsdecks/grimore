@@ -5804,6 +5804,16 @@ a further 3 to 6 games, four times out of four**. The default stays on — a bot
 every turn and never taking it looks broken — but "always yes" is now a measured wrong answer with a
 baseline to beat rather than a guess.
 
+**And the question it asks every turn now has an answer you can give once.** A dredge card stays in
+the graveyard, so the table stops in every draw step for the rest of the game — correct, and twenty
+taps for an answer most players repeat. `GameState.dredgeStops` holds a standing `always` or
+`never` per seat, the same shape `autoPassOff` uses and for the same reason: being asked is a
+preference, not a rule. Absent is "ask" and that is the default, because a mechanic that answers
+itself unasked is the bug the offer family exists to avoid; both standing branches say what they did
+through the replacement channel, since this is the one path where cards move with nobody pressing
+anything; and the control is drawn whenever a standing answer is set as well as when the question is
+up, so choosing `always` — after which you are never asked again — is not a one-way door.
+
 **And the first card chosen for it was wrong in a way only an instrument could say.** Dredge went on
 a dredge *land* first — a Swamp that enters tapped and buys itself back — which is minimal and
 readable and, `dredge.mjs` reported, **offered three times in 96 games**: a dredge card works only

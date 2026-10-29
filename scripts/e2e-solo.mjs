@@ -877,6 +877,15 @@ const DREDGE_LIST = [
         dredgesTaken.size > 0, `dredges: ${dredgesTaken.size}`);
       check('and the card it bought back is cast again', castsAfterADredge > 0,
         `casts after a dredge: ${castsAfterADredge}`);
+      /*
+        And the way out of being asked every turn, which is the other half of a keyword that fires
+        in every draw step. The control lives beside the question so it is reachable at the moment
+        a player is tired of it; what it does when pressed is three engine tests, because a run that
+        changed a preference mid-game would make every later move a different test.
+      */
+      check('a standing answer is offered beside the question',
+        [...dredgesTaken].some((did) => /\[standing: /.test(did)),
+        `${[...dredgesTaken].filter((did) => /\[standing: /.test(did)).length} offered it`);
       for (const did of [...dredgesTaken].slice(0, 2)) console.log(`      ${did}`);
     } else if (LIST === 'buyback') {
       /*

@@ -19,7 +19,7 @@ import {
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
   raiseWard, resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop,
   stateBasedActions,
-  stillDeciding, tapAttackers,
+  stillDeciding, takeDredge, tapAttackers,
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
   type AutoOrderAction,
 } from './automation.js';
@@ -2049,9 +2049,8 @@ function payWard(state: GameState, action: { by: SeatIndex; pay: boolean }): Out
  * way: the owed draw comes off the front of the queue, and `settle` carries on with whatever is
  * behind it.
  *
- * The mill comes **before** the card comes back, which is the order the rules put them in and is
- * not cosmetic: a dredge whose own mill hits a second dredge card puts that one in the graveyard
- * where the next draw can use it, and a graveyard that was read first would miss it.
+ * The move itself is `takeDredge`, shared with the standing answer a seat can set instead of being
+ * asked every turn — because "what a dredge does" should not be written twice.
  */
 function dredgeDraw(state: GameState, action: { by: SeatIndex; dredge: boolean }): Outcome {
   requireAutomated(state);
@@ -2080,14 +2079,7 @@ function dredgeDraw(state: GameState, action: { by: SeatIndex; dredge: boolean }
       data: { dredged: false, card: pending.card },
     };
   }
-  let next: GameState = mill(rest, action.by, pending.mill);
-  const inst = next.instances[pending.card];
-  // The card is only still there to take back if its own mill did not move it, which it cannot —
-  // a card in a graveyard is not on top of a library — but a state that moved underneath the
-  // question is answered by taking the draw rather than by throwing.
-  if (inst !== undefined && inst.zone === 'graveyard') {
-    next = relocate(next, inst, 'hand', inst.owner, 'bottom');
-  }
+  let next: GameState = takeDredge(rest, action.by, pending.card, pending.mill);
   next = resetPriority(settle(next, state));
   return {
     state: next,
@@ -2243,6 +2235,39 @@ function setStops(state: GameState, action: { by: SeatIndex; autoPass: boolean }
   };
 }
 
+/**
+ * Sets this seat's standing answer to the dredge question, or clears it (CR 702.52a).
+ *
+ * The same shape as `setStops` and the same kind of setting: it is about how you want to be asked,
+ * not about the game, so it is per seat and it changes nothing anybody else sees. It does not
+ * answer a question that is **already** standing — the two buttons are still there for that — which
+ * keeps the action from reaching into a decision the table is mid-way through.
+ */
+function setDredgeStops(
+  state: GameState, action: { by: SeatIndex; standing: 'ask' | 'always' | 'never' },
+): Outcome {
+  requireAutomated(state);
+  assertSeatIndex(state, action.by, 'by');
+  if (action.standing !== 'ask' && action.standing !== 'always' && action.standing !== 'never') {
+    throw new EngineError('INVALID_ACTION', 'a standing dredge answer is ask, always or never');
+  }
+  const rest = { ...state.dredgeStops };
+  delete rest[String(action.by)];
+  const dredgeStops = action.standing === 'ask'
+    ? rest
+    : { ...rest, [String(action.by)]: action.standing };
+  const said = action.standing === 'ask'
+    ? 'asks to be offered every dredge'
+    : action.standing === 'always'
+      ? 'will dredge whenever it is offered, without being asked'
+      : 'will draw rather than dredge, without being asked';
+  return {
+    state: { ...state, dredgeStops },
+    message: `${seatName(state, action.by)} ${said}`,
+    data: { standing: action.standing, seat: action.by },
+  };
+}
+
 function startAutomation(
   state: GameState, action: { by: SeatIndex; firstSeat?: SeatIndex; autoPass?: boolean },
 ): Outcome {
@@ -2391,6 +2416,7 @@ function dispatch(state: GameState, action: AutoAction): Outcome {
     case 'auto:foretell': return foretell(state, action);
     case 'auto:suspend': return suspend(state, action);
     case 'auto:dredge': return dredgeDraw(state, action);
+    case 'auto:dredgeStops': return setDredgeStops(state, action);
     default: {
       const exhaustive: never = action;
       throw new EngineError('INVALID_ACTION', `unknown action: ${String((exhaustive as { type?: string }).type)}`);

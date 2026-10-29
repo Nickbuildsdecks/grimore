@@ -16244,6 +16244,60 @@ describe('dredge: the draw replaced by a mill, and the card that comes back', ()
     expect(theirs.you?.mustDredge).toBeNull();
   });
 
+  it('a standing "always" answers it without stopping the table, and says so', () => {
+    /*
+      The preference, not the rule. A dredge card in a graveyard stops the table every draw step for
+      as long as it is there — correct, and twenty taps a game for an answer most players give the
+      same way every time. So a seat can answer once.
+    */
+    let s = shellInTheYard();
+    s = apply(s, { type: 'auto:dredgeStops', by: 0, standing: 'always' });
+    expect(s.dredgeStops['0']).toBe('always');
+
+    const library = ids(s, 0, 'library').length;
+    const shell = find(s, 0, 'graveyard', 'Shambling Shell');
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+
+    // Taken, with nothing shown and nothing pressed.
+    expect(s.pendingDredge).toBeNull();
+    expect(s.instances[shell]!.zone).toBe('hand');
+    expect(s.cardsDrawnThisTurn['0'] ?? 0).toBe(0);
+    expect(ids(s, 0, 'library').length).toBe(library - 3);
+    // And said out loud, because this is the one path where cards move with nobody pressing
+    // anything.
+    expect(s.replacements.join(' ') + s.log.map((e) => e.message).join(' '))
+      .toContain('Shambling Shell');
+  });
+
+  it('a standing "never" takes the draw, and "ask" puts the question back', () => {
+    let s = shellInTheYard();
+    s = apply(s, { type: 'auto:dredgeStops', by: 0, standing: 'never' });
+    const shell = find(s, 0, 'graveyard', 'Shambling Shell');
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(s.pendingDredge).toBeNull();
+    expect(s.instances[shell]!.zone).toBe('graveyard');
+    expect(s.cardsDrawnThisTurn['0']).toBe(1);
+
+    // Back to being asked, which is what keeps the setting from being a one-way door.
+    s = apply(s, { type: 'auto:dredgeStops', by: 0, standing: 'ask' });
+    expect(s.dredgeStops['0']).toBeUndefined();
+    s = untilAsked(s);
+    expect(s.pendingDredge?.card).toBe(shell);
+  });
+
+  it('is one seat\u2019s preference and not the table\u2019s, and travels to that seat only', () => {
+    let s = shellInTheYard();
+    s = apply(s, { type: 'auto:dredgeStops', by: 1, standing: 'always' });
+    // Seat 1 said it; seat 0 is still asked.
+    s = untilAsked(s);
+    expect(s.pendingDredge?.seat).toBe(0);
+
+    expect(unpackView(packView(viewFor(s, 0))).automation!.dredgeStanding).toBe('ask');
+    expect(unpackView(packView(viewFor(s, 1))).automation!.dredgeStanding).toBe('always');
+    expect(refusal(s, { type: 'auto:dredgeStops', by: 0, standing: 'sometimes' as 'ask' }))
+      .toContain('ask, always or never');
+  });
+
   it('the bot declines when the library cannot stand the mill four times over', () => {
     let s = untilAsked(shellInTheYard());
     expect(botAction(s, 0)).toEqual({ type: 'auto:dredge', by: 0, dredge: true });

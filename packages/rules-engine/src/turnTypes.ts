@@ -450,6 +450,24 @@ export interface AutomationState {
    * this list existed comes back with everybody auto-passing, which is what it had.
    */
   readonly autoPassOff: readonly SeatIndex[];
+  /**
+   * Seats that have given a **standing answer** to the dredge question (CR 702.52a), by seat index.
+   *
+   * The second preference on this state and the same kind of thing as `autoPassOff`: it is about
+   * how you want to be *asked*, not about the game. A dredge card in a graveyard stops the table
+   * every single draw step for as long as it is there, which is correct and is also twenty taps a
+   * game for an answer most players give the same way every time.
+   *
+   * So a seat may say `always` or `never` and the engine answers for them, saying so through the
+   * replacement channel so the cards do not move silently. **Absent is "ask", and that is the
+   * default on purpose**: a mechanic that answers itself without being told to is the bug the whole
+   * offer family exists to avoid, and the measured bot numbers in D210 are numbers about a bot that
+   * is asked.
+   *
+   * Keyed by `String(seat)` rather than a list because there are three answers and a list can only
+   * carry two. See `auto:dredgeStops`.
+   */
+  readonly dredgeStops: Readonly<Record<string, 'always' | 'never'>>;
   readonly step: Step;
   /** Seat holding priority, or null in a step where nobody gets it. */
   readonly priority: SeatIndex | null;
@@ -1007,6 +1025,16 @@ export interface AutoOrderAction {
 
 /** One seat's own stops setting. `by` is whose preference it is, and nobody else's changes. */
 export interface AutoStopsAction { readonly type: 'auto:stops'; readonly by: SeatIndex; readonly autoPass: boolean }
+/**
+ * Sets this seat's standing answer to the dredge question, or clears it (CR 702.52a).
+ *
+ * `'ask'` removes the entry, which is the default and the state a table starts in. The other two
+ * are the two buttons, given once instead of every turn. See `GameState.dredgeStops`.
+ */
+export interface AutoDredgeStopsAction {
+  readonly type: 'auto:dredgeStops'; readonly by: SeatIndex;
+  readonly standing: 'ask' | 'always' | 'never';
+}
 export interface AutoPlayLandAction {
   readonly type: 'auto:playLand'; readonly by: SeatIndex; readonly card: string;
   /**
@@ -1256,13 +1284,14 @@ export type AutoAction =
   | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
   | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoOrderAction | AutoDiscardAction
   | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction | AutoPayAction
-  | AutoTurnUpAction | AutoForetellAction | AutoSuspendAction | AutoDredgeAction;
+  | AutoTurnUpAction | AutoForetellAction | AutoSuspendAction | AutoDredgeAction
+  | AutoDredgeStopsAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
   'auto:block', 'auto:order', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
   'auto:decide', 'auto:pay', 'auto:turnUp', 'auto:foretell', 'auto:suspend',
-  'auto:dredge',
+  'auto:dredge', 'auto:dredgeStops',
 ]);
 
 export const isAutoAction = (action: { type: string }): action is AutoAction =>

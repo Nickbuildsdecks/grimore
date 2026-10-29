@@ -1218,6 +1218,7 @@ const automation = (over: Record<string, unknown> = {}): GameView["automation"] 
       damageOrdered: false,
     },
     awaiting: null,
+    dredgeStanding: "ask" as const,
     you: {
       seat: 0, step: "precombat-main", hasPriority: true, isActivePlayer: true, canPass: true,
       passLabel: "Pass", plays: [], attackers: [], mustAttack: [], attackAims: [], blockers: [],

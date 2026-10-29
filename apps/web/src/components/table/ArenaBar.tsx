@@ -634,6 +634,45 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
         </div>
       ) : null}
 
+      {/*
+        A standing answer, for the question a dredge card asks every single draw step.
+
+        The same kind of control as the stops toggle beside it and for the same reason: being asked
+        is a preference, not a rule. It cycles rather than offering three buttons, because the
+        setting is a drawer-level thing that happens to live on the bar, and a row of three would
+        weigh as much as the question it is about.
+
+        Shown while the question is up **or** while a standing answer is set — the second half is
+        what keeps it from being a one-way door, since a player who chose "always" is never asked
+        again and would otherwise have nowhere to change their mind.
+      */}
+      {you.mustDredge !== null || auto.dredgeStanding !== "ask" ? (
+        <div className="flex items-center gap-2 text-[10px] text-[var(--g-text-low)]">
+          <span>Dredge</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="dredge-standing"
+            className="h-6 px-2 text-[10px]"
+            title={auto.dredgeStanding === "ask"
+              ? "Asked every time a dredge is offered. Tap to always dredge."
+              : auto.dredgeStanding === "always"
+                ? "Dredging whenever it is offered. Tap to never dredge."
+                : "Drawing rather than dredging. Tap to be asked each time."}
+            onClick={() => onAct({
+              type: "auto:dredgeStops",
+              standing: auto.dredgeStanding === "ask"
+                ? "always"
+                : auto.dredgeStanding === "always" ? "never" : "ask",
+            })}
+          >
+            {auto.dredgeStanding === "ask"
+              ? "asking each time"
+              : auto.dredgeStanding === "always" ? "always" : "never"}
+          </Button>
+        </div>
+      ) : null}
+
       {you.mustPay !== null ? (
         <div data-testid="ward-prompt" className="flex flex-wrap items-center gap-2 text-xs">
           <Shield className="size-3.5 text-[var(--g-gold-400)]" />
