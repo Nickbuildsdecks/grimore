@@ -350,7 +350,18 @@ async function main() {
 
     await playOutGame();
     let games = 1;
-    while ((LIST === 'costs' || LIST === 'earned') && games < 3
+    /*
+      Deal again until both rows have been pressed, or the budget is out.
+
+      `LIST=earned` gets **five** games where `LIST=costs` gets three, and the reason is in the
+      numbers rather than in the keywords: a game under this list is about ten moves long — three
+      of them fit in twenty-seven — so a re-deal costs almost nothing, and which of the two rows a
+      game offers is a fact about the shuffle. Three runs of three games pressed spectacle five
+      times and overload none; three runs after the Sol Rings went in pressed overload three times
+      in one run and spectacle none. Both rows exist on every table; one shuffle does not see both.
+    */
+    const dealBudget = LIST === 'earned' ? 5 : 3;
+    while ((LIST === 'costs' || LIST === 'earned') && games < dealBudget
       && !Object.values(altCasts).every((n) => n > 0)) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${JSON.stringify(altCasts)} after ${games} game(s)`);

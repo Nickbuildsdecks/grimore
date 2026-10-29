@@ -909,6 +909,7 @@ node scripts/e2e-solo.mjs       # one browser, against the computer    — 22-23
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 24 checks
 LIST=cascade node scripts/e2e-solo.mjs # a deck built to cascade, in a browser — 23-24 checks
 LIST=costs   node scripts/e2e-solo.mjs # a deck built to pay evoke, dash and bestow — 25-26 checks
+LIST=earned  node scripts/e2e-solo.mjs # a deck built for spectacle and overload — 24-25 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -973,6 +974,7 @@ OPPONENT_DECK=rot-harvest node scripts/e2e-solo.mjs                # which deck 
 SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the computer's
 LIST=cascade node scripts/e2e-solo.mjs           # eight Bloodbraid Elves, pasted in as text
 LIST=costs   node scripts/e2e-solo.mjs           # evoke, dash and bestow, all three pressed
+LIST=earned  node scripts/e2e-solo.mjs           # spectacle and overload, the two odd rows
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
@@ -1001,6 +1003,34 @@ to **prefer** the row that pays an alternative cost turned the run into a loop, 
 Mardu Scout is back in your hand at the end of the turn. One run paid the dash cost twenty-one
 times across three games and never cast the Mulldrifter at all. Random picking plus dealing again
 reached all three in every run.
+
+`LIST=earned` is the third, and it is about the two rows that behave unlike the other three.
+**Spectacle's row appears mid-turn** — it is not on the card until an opponent has lost life this
+turn, and it is gone again when the turn ends — so pressing it is a claim about a table that redraws
+its own sheet while you are looking at it. **Overload's row has no targets at all**, so the table has
+to send it the moment you choose it; a table that walked you through picking a creature would hang on
+a question the engine refuses. The deck is mono-red: eight Skewer the Critics, eight Mizzium Mortars,
+six Lightning Bolts, twelve Monastery Swiftspears, eight Sol Rings and eighteen Mountains, and the
+run requires both rows.
+
+Getting that deck right took four tries, and every one of them is a fact about the game rather than
+about the harness:
+
+- **Twelve Swiftspears and nothing else to earn it.** An attack lands in *combat*, so the spectacle
+  row only exists in that turn's postcombat main phase — which is not where most casting happens. A
+  run dealt three games and reached the row in none of them. Six Lightning Bolts earn it in the
+  precombat main phase instead, and a Skewer in the same hand then shows both of its rows at once.
+- **Twenty-four burn spells and no bodies.** Against Tidal Mind's Wall of Frost that is two decks
+  that cannot close: one run passed **450 times without reaching a winner**. So the list got a clock
+  (prowess creatures, which grow with every spell in it) and the scenario's computer opponent became
+  **Ember Rush** rather than Tidal Mind — the two fastest decks in the pool reach a result in twenty
+  turns instead of a hundred.
+- **Then the clock overshot.** Three games in twenty-nine moves never saw a sixth land, so the
+  overload row was never on the sheet: five spectacle presses across three runs and no overloads.
+  One row wants a turn of combat behind it and the other wants six mana, and a game short enough for
+  the first is too short for the second. **Eight Sol Rings** are what a player would add to a deck
+  that means to overload on time — three Mountains and two rocks is {3}{R}{R}{R} on turn four — and
+  an artifact spell is a noncreature spell, so each rock is a prowess trigger too.
 
 The layers under them have their own suites: `packages/rules-engine` (1011 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
