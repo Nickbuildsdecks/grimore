@@ -32,13 +32,14 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  DASHED, EVOKED, REGENERATION, addCounters, counterSpell, destroy, draw, exileCard, loseLife,
+  DASHED, EVOKED, REGENERATION, TIME, addCounters, counterSpell, destroy, draw, exileCard,
+  loseLife, suspendedCast,
   madnessOffer, miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
   type EffectContext, type EffectFn, type PumpOptions,
 } from './effects.js';
-import { manaSources } from './legalActions.js';
+import { legalActions, manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
 import {
   EMPTY_POOL, addMana, canAfford, canPay, parseManaCost, payCost, solveTap,
@@ -425,6 +426,33 @@ function advanceSagas(state: GameState, seat: SeatIndex): GameState {
 }
 
 /** What happens as a step begins, before anyone gets priority. */
+/**
+ * A time counter off each of this seat's suspended cards, and the cast the last one raises
+ * (CR 702.62b, CR 702.62c).
+ *
+ * Two things worth saying about the shape. The **counter going to nothing is what "suspended" stops
+ * meaning**: `addCounters` deletes a counter that reaches zero, so a card whose cast is declined or
+ * impossible is left in exile with no time counters and is never offered again — which is the rule
+ * ("it remains exiled") and costs no extra state to say.
+ *
+ * And **one card at a time**: an offer stops the table, so a seat with two cards finishing together
+ * is asked about the first and the second keeps its zero until the next pass through here, which is
+ * the next upkeep. Rare enough that the simple version is the right one, and the alternative — a
+ * queue of pending casts — is a second mechanism for a case this pool cannot build.
+ */
+function tickSuspended(state: GameState, seat: SeatIndex): GameState {
+  let next = state;
+  let finished: string | undefined;
+  for (const id of [...listAt(next, zoneKey(seat, 'exile'))]) {
+    const inst = next.instances[id];
+    if (inst === undefined || (inst.counters[TIME] ?? 0) <= 0) continue;
+    next = addCounters(next, id, TIME, -1);
+    if ((next.instances[id]?.counters[TIME] ?? 0) === 0 && finished === undefined) finished = id;
+  }
+  if (finished === undefined || next.pendingOfferedCast !== null) return next;
+  return suspendedCast(next, finished);
+}
+
 function onEnterStep(state: GameState, step: Step): GameState {
   let next = state;
   switch (step) {
@@ -446,6 +474,17 @@ function onEnterStep(state: GameState, step: Step): GameState {
       return next;
 
     case 'upkeep':
+      /*
+        A time counter off each of the active player's suspended cards (CR 702.62b), before the
+        upkeep's own triggers go on the stack.
+
+        A **turn-based action** like the Saga's lore counter below, and for the same reason: it
+        happens as the step begins, nobody has priority, and nothing can be done about the counter
+        itself. What *can* be answered is the cast the last counter off raises — which is why the
+        tick and the cast are two different things, and why the cast goes through the offer family
+        rather than happening here.
+      */
+      next = tickSuspended(next, next.activeSeat);
       return raise(next, { kind: 'step', step: 'upkeep' }, next.activeSeat);
 
     /*
@@ -1688,7 +1727,28 @@ function settle(state: GameState, before: GameState): GameState {
  */
 function settleOffer(state: GameState): GameState {
   const offer = state.pendingOfferedCast;
-  if (offer === null || offer.cost === undefined || offer.cost === '') return state;
+  if (offer === null) return state;
+  /*
+    And a **mandatory** offer with no legal way to take it, which is the one case where "there is
+    nothing to decide" is not about mana (CR 702.62c).
+
+    Suspend's cast cannot be declined, so an offer the seat cannot act on would be a table that has
+    stopped for good: `legalActions` gives that seat the casts and no pass, and if there are no
+    casts there is no move at all. Which is also exactly the rule — a suspended Rift Bolt with
+    nothing to point at "remains exiled" — so the engine answers the question itself and says so.
+    The card keeps the empty exile it is already in, because its time counters are gone and nothing
+    offers it again.
+  */
+  if (offer.mandatory === true) {
+    if (legalActions(state, offer.seat).plays.some((play) => play.offered === true)) return state;
+    const name = state.cardDefs[state.instances[offer.card]?.defKey ?? '']?.name ?? 'a card';
+    return {
+      ...state,
+      pendingOfferedCast: null,
+      replacements: [...state.replacements, `${name} cannot be cast, so it remains exiled`],
+    };
+  }
+  if (offer.cost === undefined || offer.cost === '') return state;
   const cost = parseManaCost(offer.cost);
   if (cost.unsupported === undefined
     && canAfford(poolOf(state, offer.seat), cost, manaSources(state, offer.seat))) return state;

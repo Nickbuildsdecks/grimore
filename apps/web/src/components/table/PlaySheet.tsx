@@ -90,8 +90,11 @@ export function PlaySheet({ card, plays, mustDiscard, reason, onPlay, onDiscard,
               // down" — which are the two most different things you can do with the card.
               // And a foretell, which is a third thing to do with one card in hand: cast it, cast
               // it face down, or hide it in exile. Three rows that would otherwise share one id.
+              // And suspend, which is a fourth thing to do with one card in hand.
               const slug = play.kind === 'foretell'
                 ? 'foretell'
+                : play.kind === 'suspend'
+                ? 'suspend'
                 : play.faceDown === true
                 ? 'facedown'
                 : play.modes === undefined

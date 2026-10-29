@@ -606,6 +606,15 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     const played = (await tryToPlayFromZone(page, `zone-exile-${seat}`))
       ?? (await tryToPlayFromZone(page, `zone-hand-${seat}`));
     if (played !== null) return `took a free cast: ${said}`;
+    /*
+      And declining, which is the fallback — when there is one to press.
+
+      A **suspended** card's cast cannot be declined (CR 702.62c), so the bar draws no Decline for
+      it and this branch would be looking for a button that is deliberately not there. Reported
+      rather than pressed blindly, because a run that reaches here on a mandatory offer has found
+      something real: a cast the table cannot make and cannot refuse.
+    */
+    if (!(await has(page, 'offered-cast-decline'))) return `could not answer an offer: ${said}`;
     await press(page, 'offered-cast-decline');
     return `declined a free cast: ${said}`;
   }

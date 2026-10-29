@@ -13320,6 +13320,138 @@ describe('miracle: the cast offered the moment you draw it', () => {
   });
 });
 
+describe('suspend: a card cast on turn two for turn five', () => {
+  /*
+    The only mechanic here that spends **turns** as a resource, and the fourth use of the offer
+    family — with the one thing the family had never needed: a cast that cannot be declined.
+
+    So the tests are the three joints. The special action (pay the card's own cost, exile it with
+    time counters), the upkeep tick (one counter a turn, and the last one raises the cast), and the
+    mandatory half: no pass while the offer stands, and the engine answering for itself when the
+    cast cannot be made at all.
+  */
+  const holding = (card: string, lands: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'kindle-grove', 1: 'rot-harvest' },
+    hands: { 0: [card] },
+    battlefield: { 0: [...lands] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+  /** Plays on until an offer is standing, which is how the suspended cast arrives. */
+  const untilOffered = (start: GameState): GameState => {
+    let s = start;
+    for (let i = 0; i < 300; i += 1) {
+      if (s.pendingOfferedCast !== null) return s;
+      const owed = pendingDeclaration(s);
+      if (owed !== null) {
+        for (const seat of owed.seats) {
+          s = owed.kind === 'attackers'
+            ? apply(s, { type: 'auto:attack', by: seat, attackers: [] })
+            : apply(s, { type: 'auto:block', by: seat, blocks: [] });
+        }
+        continue;
+      }
+      const discard = s.pendingDiscard;
+      if (discard !== null) {
+        s = apply(s, {
+          type: 'auto:discard', by: discard.seat, card: ids(s, discard.seat, 'hand')[0]!,
+        });
+        continue;
+      }
+      if (s.priority === null) throw new Error(`nobody holds priority at ${s.step}`);
+      s = apply(s, { type: 'auto:pass', by: s.priority });
+    }
+    throw new Error('no offer was ever made');
+  };
+
+  it('exiles the card with time counters for its own cost, not the printed one', () => {
+    let s = holding('Rift Bolt', ['Mountain', 'Mountain', 'Mountain']);
+    const bolt = find(s, 0, 'hand', 'Rift Bolt');
+    // Offered as a row of its own, beside the printed cast, and priced at the suspend cost.
+    const row = legalActions(s, 0).plays.find((play) => play.kind === 'suspend');
+    expect(row?.card).toBe(bolt);
+    expect(row?.manaCost).toBe('{R}');
+    expect(row?.description).toContain('1 time counter');
+
+    s = apply(s, { type: 'auto:suspend', by: 0, card: bolt });
+    expect(s.instances[bolt]!.zone).toBe('exile');
+    expect(s.instances[bolt]!.counters['time']).toBe(1);
+    // One Mountain for {R}, not three for the printed {2}{R}.
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(1);
+  });
+
+  it('removes a counter each upkeep, and the last one casts it for nothing', () => {
+    let s = holding('Rift Bolt', ['Mountain']);
+    const bolt = find(s, 0, 'hand', 'Rift Bolt');
+    const theirs = life(s, 1);
+    s = apply(s, { type: 'auto:suspend', by: 0, card: bolt });
+
+    s = untilOffered(s);
+    expect(s.step).toBe('upkeep');
+    expect(s.activeSeat).toBe(0);
+    const offer = s.pendingOfferedCast;
+    expect(offer?.card).toBe(bolt);
+    expect(offer?.mandatory).toBe(true);
+    // The counter is gone, which is what stops it being suspended any more.
+    expect(s.instances[bolt]!.counters['time']).toBeUndefined();
+    // And there is no pass: the cast is not a request (CR 702.62c).
+    const you = legalActions(s, 0);
+    expect(you.canPass).toBe(false);
+    expect(you.plays.map((play) => play.offered)).toEqual([true]);
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: bolt, offered: true, targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    expect(life(s, 1)).toBe(theirs - 3);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Rift Bolt');
+    // The Mountain it was suspended with is untapped again by now: nothing was paid for the cast.
+    expect(s.pendingOfferedCast).toBeNull();
+  });
+
+  it('two counters means two upkeeps, which is what the second card costs', () => {
+    let s = holding('Search for Tomorrow', ['Forest']);
+    const search = find(s, 0, 'hand', 'Search for Tomorrow');
+    s = apply(s, { type: 'auto:suspend', by: 0, card: search });
+    expect(s.instances[search]!.counters['time']).toBe(2);
+
+    // The first upkeep takes one off and offers nothing.
+    s = nextTurn(nextTurn(s));
+    expect(s.instances[search]!.counters['time']).toBe(1);
+    expect(s.pendingOfferedCast).toBeNull();
+
+    // The second takes the last one and casts it: a basic land, untapped, from the library.
+    const lands = ids(s, 0, 'battlefield').length;
+    s = untilOffered(s);
+    s = apply(s, { type: 'auto:cast', by: 0, card: search, offered: true });
+    // The spell is on the stack now — a suspended cast is an ordinary cast, which is the point of
+    // routing it through the offer family — so it resolves when the table passes.
+    s = passBoth(s);
+    // And then the card's own question, which is the half that makes this a search rather than a
+    // ramp spell: the engine stops mid-resolution and the player names the land.
+    s = drain(decide(s, ['Forest']), 60);
+    expect(ids(s, 0, 'battlefield').length).toBe(lands + 1);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Forest');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Search for Tomorrow');
+  });
+
+  it('and the other player can see it coming, which is half of what it costs', () => {
+    /*
+      Suspend is **public**, and that is not a detail: a foretold card is a secret and a suspended
+      one is a threat with a date on it. So the claim is about the opponent's own view — the card
+      by name, in exile, with the number of turns left on it — because a mechanic whose whole risk
+      is that the other player gets to prepare has to be visible to them.
+    */
+    let s = holding('Search for Tomorrow', ['Forest']);
+    const search = find(s, 0, 'hand', 'Search for Tomorrow');
+    s = apply(s, { type: 'auto:suspend', by: 0, card: search });
+
+    const theirs = unpackView(packView(viewFor(s, 1)));
+    const seen = theirs.cards[search];
+    expect(seen?.card?.name).toBe('Search for Tomorrow');
+    expect(seen?.zone).toBe('exile');
+    expect(seen?.counters?.['time']).toBe(2);
+  });
+});
+
 describe('extort: an optional cost paid while the trigger resolves', () => {
   /*
     The first optional **mana** cost in this engine that is paid during a resolution. A kicker and a

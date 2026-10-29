@@ -1623,6 +1623,28 @@ export interface CardScript {
    * player's favour.
    */
   readonly replicate?: { readonly cost: string };
+  /**
+   * Suspend: pay a cost now to exile the card with time counters, and cast it for nothing when the
+   * last counter comes off (CR 702.62).
+   *
+   * The only mechanic in this engine that spends **turns** as a resource. Rebound buys a second
+   * casting with a turn of waiting; suspend buys a *first* casting cheaply with several — a {R}
+   * sorcery on turn one that deals three damage on turn two, out of mana nobody had.
+   *
+   * Three pieces, each of which already existed on its own. The special action is foretell's: a
+   * play from hand that is not a cast, pays a cost of its own and puts the card in exile (see
+   * `auto:suspend`). The counters are ordinary counters on a card that happens not to be on the
+   * battlefield. And the free cast is the offer family for the fourth time — with the one thing it
+   * needed: the cast is **mandatory** when it can be made (CR 702.62c), so the offer carries
+   * `mandatory` and the table offers no pass while it stands. A suspended card that *cannot* be
+   * cast — no legal target — stays in exile, which is the rule and also what falls out of an offer
+   * nobody can take.
+   *
+   * A creature cast this way gains **haste** until end of turn (CR 702.62e); nothing in this pool
+   * suspends a creature yet, and the engine grants it where the cast resolves rather than making
+   * each card say so.
+   */
+  readonly suspend?: { readonly cost: string; readonly counters: number };
   readonly replaces?: readonly {
     /**
      * Which zone change this replaces. The three are the same move seen at three widths, and a

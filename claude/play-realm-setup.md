@@ -938,6 +938,7 @@ LIST=miracle node scripts/e2e-solo.mjs # a deck whose first draw is often the ca
 LIST=rebound node scripts/e2e-solo.mjs # a deck built to cast the same spell twice, a turn apart — 26-27 checks
 LIST=replicate node scripts/e2e-solo.mjs # a deck with the mana to pay one cost several times — 25 checks
 LIST=extort node scripts/e2e-solo.mjs  # a deck asked for mana every time it casts a spell — 25 checks
+LIST=suspend node scripts/e2e-solo.mjs # a deck that pays for a spell a turn before it casts it — 26 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -1008,6 +1009,7 @@ LIST=miracle node scripts/e2e-solo.mjs           # a miracle offered in the draw
 LIST=rebound node scripts/e2e-solo.mjs           # a rebound offered a turn later, on a card in exile
 LIST=replicate node scripts/e2e-solo.mjs         # one card offered at three prices, and the one tapped charged
 LIST=extort node scripts/e2e-solo.mjs            # an optional cost paid in the middle of a resolution
+LIST=suspend node scripts/e2e-solo.mjs           # a card exiled with time counters, and the free cast two turns later
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
@@ -1022,7 +1024,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1059 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1063 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1147,6 +1149,15 @@ the first word every time, which for this question is "Decline", so it picks at 
 first version of the check passed on a run that declined every time, because the prompt's own text
 contains both button labels. Three runs, 25 of 25 checks each.
 
+`LIST=suspend` is the ninth, and the only one whose two required checks are **two turns apart**. A
+Rift Bolt is suspended from the hand for {R} with two time counters on it; a counter comes off at
+each of the caster's upkeeps; and when the last one goes the table offers the cast for free. The run
+requires both ends — the suspend row pressed, and the cast arriving later — so a mechanic that
+exiled the card and then forgot about it would fail rather than pass quietly. The deck is eight Rift
+Bolts behind twenty-four Mountains. Three runs, 26 of 26 checks each. It also found the table
+offering a **Decline** on an offer the rules do not let you decline, which is now omitted, and the
+driver reports a missing Decline instead of pressing it.
+
 Two of those checks are about how the table **looks** rather than what it does, which is new and
 worth saying why. A card at this table leans towards the cursor with a foil sheen that follows it,
 and the board has its own mana embers drifting behind it — and both are written as CSS variables a
@@ -1154,7 +1165,7 @@ pointer handler sets, so nothing that does not move a real pointer can see them.
 hovers a card and reads the variables back, which is the only honest way to check a thing whose
 whole existence is in the browser.
 
-The layers under them have their own suites: `packages/rules-engine` (1059 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1063 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (216 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`

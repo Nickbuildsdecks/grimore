@@ -11543,3 +11543,76 @@ Two things the browser forced, and the second is the better lesson:
   exactly this reason, and the check anchors on it. A check that cannot tell the two answers apart
   is not a check, and it passed before it was right.
 
+## D209 — Suspend, the only mechanic here that spends turns, and the offer that cannot be declined
+
+**The keyword.** Suspend is a special action from the hand: pay the card's own suspend cost, exile
+it with time counters, and remove one at the beginning of each of your upkeeps. When the last comes
+off, you cast it without paying its mana cost (CR 702.62). It is the only thing in this engine that
+spends **turns** as a resource — a {R} sorcery on turn one that deals three damage on turn two.
+
+Three joints, and two of them already existed:
+
+- **The special action is foretell's.** A play from hand that is not a cast, pays a cost of its own
+  and ends with the card in exile — a row in the play sheet, an action, a path through the client.
+  Two differences: the cost is the card's rather than a fixed {2}, and the card is **public**, which
+  is half of what the mechanic costs you. Everyone can see it coming and count the turns.
+- **The counters are ordinary counters.** They work on a card in exile because counters have always
+  been a field on the *instance* rather than a thing about the battlefield, so the whole of
+  "suspended" is `TIME` counters and the upkeep taking one off. The counter reaching nothing is also
+  what stops the card being suspended: `addCounters` deletes a counter that hits zero, so a card
+  whose cast is impossible is left in exile with no counters and is never offered again — which is
+  the rule ("it remains exiled") for free.
+- **The cast is the offer family for the fourth time**, with the one thing it had never needed.
+
+### The offer that is not a question
+
+Cascade, madness and miracle all say "you may", and declining each of them is a real answer. Suspend
+does not: the rules say you cast it. So `pendingOfferedCast` carries `mandatory`, and three things
+follow from it.
+
+`legalActions` gives that seat the casts and **no pass** — which is the whole of the rule enforced in
+one line. `settleOffer` answers the question itself when there is no legal cast at all, because an
+offer with no pass and no play would be a table stopped for good; the card stays exiled and the
+engine says so through the replacement channel. And the bar draws no **Decline**.
+
+That last one is a browser finding rather than a design decision. The first run of `LIST=suspend`
+passed its checks and printed this:
+
+```
+took a free cast: Rift Bolt's last time counter is gone: cast it without paying its mana cost Cast it Decline
+```
+
+The engine was right and the table was wrong: a Decline button whose only outcome is a refused
+action. `mustCastOffered.mandatory` carries the fact to the client now, the bar omits the button, and
+the browser driver reports rather than presses when the button it expects is missing — because a run
+that reaches that branch on a mandatory offer has found a real problem.
+
+### Two cards chosen so the measurement is about the keyword
+
+Both are a card Kindle Grove already plays with suspend bolted on, which is the point: **Rift Bolt**
+for the Lightning Strike (three damage for {1}{R} now against three for {R} and a wait) and **Search
+for Tomorrow** for the second Rampant Growth (a basic land tapped for {1}{G} on turn two against one
+untapped for {G} on turn three). So what the probe reads is a turn of waiting against two mana,
+twice over.
+
+| | seed set 3300 | seed set 4400 |
+| --- | --- | --- |
+| both suspend cards against the two they replaced | gains 2 | costs 6 |
+
+Level, twice, inside the floor — which for this comparison is the interesting answer rather than a
+dull one: **a turn is worth about the two mana it saves** in this pool, and the keyword is a fair
+trade rather than a bargain or a trap.
+
+And it is used. Over 96 games of Kindle Grove against the field: **21 Search for Tomorrow and 6 Rift
+Bolt suspended, 24 of those 27 cast off their last counter**, and two still waiting in exile when the
+game ended. The bot suspends under the same rule it foretells under — spend it when the mana had no
+better home — because `simulate` sees a card leave the hand and nothing happen, which is foretell's
+problem with a longer wait. `foretellIsSpareMana` is `specialIsSpareMana` now and answers for both.
+
+### The browser
+
+`LIST=suspend` plays eight Rift Bolts behind twenty-four Mountains. Three runs, 26 of 26 checks each,
+both halves required: the suspend row pressed on a card in hand, and the cast arriving in a later
+upkeep off the last counter. It is the first scenario here whose two required checks are *two turns
+apart* in the same game.
+

@@ -24,7 +24,8 @@ import {
   type AutoOrderAction,
 } from './automation.js';
 import {
-  addCounters, addToPool, bottomPile, counterSpell, energyOf, loseLife, poolOf, spendEnergy,
+  TIME, addCounters, addToPool, bottomPile, counterSpell, energyOf, loseLife, poolOf,
+  spendEnergy,
 } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
@@ -38,7 +39,7 @@ import {
 } from './legalActions.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, targetKey, type CombatAttack, type StackObject, type Target,
-  type AutoTurnUpAction, type AutoForetellAction,
+  type AutoTurnUpAction, type AutoForetellAction, type AutoSuspendAction,
 } from './turnTypes.js';
 import { EngineError, type ActionContext, type GameState, type Outcome, type SeatIndex } from './types.js';
 
@@ -931,6 +932,48 @@ function foretell(state: GameState, action: AutoForetellAction): Outcome {
     // opponent can count it in exile without knowing what it is.
     message: `${seatName(state, action.by)} foretells a card`,
     data: { card: inst.id, tapped: [...paid.tapped], foretold: true },
+  };
+}
+
+/**
+ * Suspending a card from your hand (CR 702.62a).
+ *
+ * Foretell's shape with two differences, and both are the mechanic. The card is exiled **face up**
+ * with time counters on it, so the table can see what is coming and count the turns to it — a
+ * suspended Rift Bolt is information both players play around, where a foretold card is a secret.
+ * And what casts it later is the **engine**: the upkeep removes a counter, and the last one off
+ * raises the cast. See `CardScript.suspend` and `tickSuspended`.
+ *
+ * A special action like the other two: no stack, no window, nobody to respond. The cost is the
+ * card's own rather than a fixed {2}, because suspend's cost is printed per card and is the whole
+ * of why the mechanic is a bargain — three damage for {R} and two turns.
+ */
+function suspend(state: GameState, action: AutoSuspendAction): Outcome {
+  requireAutomated(state);
+  requirePriority(state, action.by);
+  const inst = requireInstance(state, action.card);
+  if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
+  }
+  const def = state.cardDefs[inst.defKey];
+  const script = scriptFor(def?.name);
+  if (script?.suspend === undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no suspend`);
+  }
+  // "Any time you could cast a sorcery" (CR 702.62a), which is this engine's own main-phase window.
+  if (!atSorcerySpeed(state, action.by)) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'suspend is taken during your own main phase, with nothing on the stack');
+  }
+
+  const paid = payFrom(state, action.by, script.suspend.cost, 0, 0);
+  let next = relocate(paid.state, requireInstance(paid.state, inst.id), 'exile', action.by, 'bottom');
+  next = addCounters(next, inst.id, TIME, Math.max(1, script.suspend.counters));
+  next = resetPriority(settle(next, state), action.by);
+  return {
+    state: next,
+    message: `${seatName(state, action.by)} suspends ${def?.name ?? 'a card'}`
+      + ` with ${Math.max(1, script.suspend.counters)} time counters`,
+    data: { card: inst.id, tapped: [...paid.tapped] },
   };
 }
 
@@ -2252,6 +2295,7 @@ function dispatch(state: GameState, action: AutoAction): Outcome {
     case 'auto:pay': return payWard(state, action);
     case 'auto:turnUp': return turnUp(state, action);
     case 'auto:foretell': return foretell(state, action);
+    case 'auto:suspend': return suspend(state, action);
     default: {
       const exhaustive: never = action;
       throw new EngineError('INVALID_ACTION', `unknown action: ${String((exhaustive as { type?: string }).type)}`);

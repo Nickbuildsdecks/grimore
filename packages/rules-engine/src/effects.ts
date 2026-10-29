@@ -543,6 +543,17 @@ export const EVOKED = 'evoked';
 export const DASHED = 'dashed';
 
 /**
+ * The counters a **suspended** card waits on, in exile (CR 702.62b).
+ *
+ * The one counter in this engine that is not on a permanent, and the reason that works at all is
+ * that counters have always been a field on the *instance* rather than a thing about the
+ * battlefield. So a card in exile can carry three of these, the upkeep can take one off, and the
+ * table can draw the number — which is the whole of what the mechanic needs to be legible: a
+ * suspended card is public information and counting the turns to it is both players' business.
+ */
+export const TIME = 'time';
+
+/**
  * The marker a **renowned** creature carries (CR 702.112a).
  *
  * "If it isn't renowned" is an intervening-if about a state the creature holds, and the engine's
@@ -1016,6 +1027,37 @@ export const drawnThisTurn = (state: GameState, seat: SeatIndex): number =>
  * the hand it was drawn into, and a fourth flag for the same behaviour would be a fourth thing to
  * keep in step.
  */
+/**
+ * Suspend's last time counter has come off: the card is cast, and it is not a request
+ * (CR 702.62c).
+ *
+ * The fourth offer and the only **mandatory** one. Three of them are permissions — cascade,
+ * madness and miracle all say "you may" — and the player who declines has made a real choice.
+ * Suspend does not: the rules say you cast it. So the offer carries `mandatory`, `legalActions`
+ * offers no pass while it stands, and the only way past the question is the cast.
+ *
+ * What happens when the cast **cannot** be made is the rule rather than an edge case: a Rift Bolt
+ * with nothing to point at stays in exile. That falls out of the machinery — `settleOffer` takes
+ * back an offer nobody can take, and the card's time counters are already gone, so nothing offers
+ * it again.
+ */
+export function suspendedCast(state: GameState, card: string): GameState {
+  const inst = state.instances[card];
+  if (inst === undefined || inst.zone !== 'exile') return state;
+  const name = state.cardDefs[inst.defKey]?.name ?? 'it';
+  return {
+    ...state,
+    pendingOfferedCast: {
+      seat: inst.owner,
+      card,
+      prompt: `${name}'s last time counter is gone: cast it without paying its mana cost`,
+      stays: true,
+      mandatory: true,
+      source: card,
+    },
+  };
+}
+
 export function reboundOffer(state: GameState, card: string): GameState {
   const inst = state.instances[card];
   if (inst === undefined || inst.zone !== 'exile') return state;

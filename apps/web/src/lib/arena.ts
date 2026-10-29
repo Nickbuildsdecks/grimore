@@ -377,6 +377,14 @@ function playAction(
   if (play.kind === "foretell") {
     return { type: "auto:foretell", card: play.card }
   }
+  /*
+    And suspending, the third special action and foretell's opposite in one respect: everybody can
+    see the card and count the turns to it. Nothing to choose here either — one tap, the card's own
+    cost, and the counters start coming off next upkeep.
+  */
+  if (play.kind === "suspend") {
+    return { type: "auto:suspend", card: play.card }
+  }
   if (play.kind === "cast") {
     // A cast can have a cost of its own to pay now: "sacrifice a creature" is an additional cost,
     // not something the spell asks for on resolution, so it travels with the cast.

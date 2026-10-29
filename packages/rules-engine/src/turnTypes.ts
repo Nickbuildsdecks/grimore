@@ -815,6 +815,16 @@ export interface AutomationState {
      * printed one.
      */
     readonly stays?: true;
+    /**
+     * Whether the cast **must** be taken if it can be (CR 702.62c): suspend's, and nothing else's.
+     *
+     * Three of the four offers are permissions — "you may cast this" — and declining is a real
+     * answer. A suspended card whose last time counter has come off is not a permission: the rules
+     * say you cast it. So `legalActions` offers no pass while this stands, and the only way past
+     * the question is the cast itself — or an engine that takes the offer back because the cast
+     * cannot be made at all, which is the same `settleOffer` path an unpayable madness cost uses.
+     */
+    readonly mandatory?: true;
     /** The spell or permanent whose keyword did this, for the table to point at. */
     readonly source: string;
   } | null;
@@ -1083,6 +1093,19 @@ export interface AutoCastAction {
  * the engine's only special actions and they are opposites — one hides a card and the other
  * reveals one.
  */
+/**
+ * Exile a card from your hand with time counters on it, to be cast for nothing later
+ * (CR 702.62a).
+ *
+ * The third special action, and foretell's near-twin: a play from your hand that is not a cast,
+ * pays a cost of its own, and ends with the card in exile. The differences are that the card is
+ * **public** — everyone can see what is coming and count the turns — and that what casts it later
+ * is the engine rather than the player. See `CardScript.suspend`.
+ */
+export interface AutoSuspendAction {
+  readonly type: 'auto:suspend'; readonly by: SeatIndex; readonly card: string;
+}
+
 export interface AutoForetellAction {
   readonly type: 'auto:foretell'; readonly by: SeatIndex; readonly card: string;
 }
@@ -1162,12 +1185,12 @@ export type AutoAction =
   | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
   | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoOrderAction | AutoDiscardAction
   | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction | AutoPayAction
-  | AutoTurnUpAction | AutoForetellAction;
+  | AutoTurnUpAction | AutoForetellAction | AutoSuspendAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
   'auto:block', 'auto:order', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
-  'auto:decide', 'auto:pay', 'auto:turnUp', 'auto:foretell',
+  'auto:decide', 'auto:pay', 'auto:turnUp', 'auto:foretell', 'auto:suspend',
 ]);
 
 export const isAutoAction = (action: { type: string }): action is AutoAction =>

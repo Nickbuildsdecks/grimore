@@ -42,7 +42,7 @@ export interface LegalPlay {
    * is exactly why it is its own kind — it uses no stack, so a table that drew it as an ability
    * would be promising a window to respond that does not exist.
    */
-  readonly kind: 'land' | 'cast' | 'activate' | 'turnUp' | 'foretell';
+  readonly kind: 'land' | 'cast' | 'activate' | 'turnUp' | 'foretell' | 'suspend';
   readonly card: string;
   readonly name: string;
   readonly description: string;
@@ -357,6 +357,15 @@ export interface LegalActions {
     readonly cost: string;
     /** How many other cards were exiled with it, bound for the bottom of the library. */
     readonly bottom: number;
+    /**
+     * Whether the cast **must** be taken, which is suspend's and nothing else's (CR 702.62c).
+     *
+     * The table needs it as much as the engine does: three of the four offers draw a Decline beside
+     * the cast and this one must not, because pressing it would be a move the engine refuses. A
+     * button that cannot be pressed is worse than no button — which is what the first run of
+     * `LIST=suspend` showed, with "Cast it Decline" on a question that has one answer.
+     */
+    readonly mandatory?: boolean;
   } | null;
   /**
    * A declaration this seat owes before play continues. Separate from `hasPriority` because
@@ -962,6 +971,30 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           // Named for its own player, who is the only one who will ever see which card it was.
           description: `Foretell ${ch.name} (${FORETELL_COST}, face down in exile)`,
           manaCost: FORETELL_COST, targetSpecs: [], candidates: [],
+          isManaAbility: false, sacrificeOptions: [],
+        });
+      }
+    }
+
+    /*
+      And suspend, foretell's near-twin and the other play on a card in hand that is not a cast
+      (CR 702.62a).
+
+      The same window — your own main phase, nothing on the stack — and the same shape of row, with
+      two differences the description carries: the cost is the **card's own** rather than a fixed
+      {2}, and what it buys is public. "Three time counters" is the whole of what the other player
+      needs to plan around, so the row says it.
+    */
+    if (script?.suspend !== undefined && !flashback && !escape && !fromCommand && !foretold
+      && !fromAdventure && sorcerySpeed) {
+      const cost = parseManaCost(script.suspend.cost);
+      if (cost.unsupported === undefined && canAfford(poolOf(state, seat), cost, sources)) {
+        const counters = Math.max(1, script.suspend.counters);
+        out.push({
+          kind: 'suspend', card: id, name: ch.name,
+          description: `Suspend ${ch.name} (${script.suspend.cost}, ${counters} time counter`
+            + `${counters === 1 ? '' : 's'} in exile)`,
+          manaCost: script.suspend.cost, targetSpecs: [], candidates: [],
           isManaAbility: false, sacrificeOptions: [],
         });
       }
@@ -1660,6 +1693,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
         source: offer.source,
         cost: offer.cost ?? '',
         bottom: (offer.bottom ?? []).length,
+        ...(offer.mandatory === true ? { mandatory: true } : {}),
       }
     : null;
 
@@ -1707,6 +1741,16 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   if (offer !== null) {
     if (offer.seat !== seat) return empty;
     const offered = castablePlays(state, seat, sources).plays.filter((play) => play.offered === true);
+    /*
+      Unless the cast is **mandatory**, which is suspend's and nothing else's (CR 702.62c).
+
+      Three of the four offers are permissions and declining is a real answer. A suspended card
+      whose last time counter has come off is not a permission — the rules say you cast it — so
+      there is no pass to offer, and the only move at this table is the cast. A suspended card that
+      genuinely cannot be cast never gets here: `settleOffer` takes the offer back before anybody is
+      asked, the same way it does for a madness cost nobody can pay.
+    */
+    if (offer.mandatory === true) return { ...empty, plays: offered };
     return { ...empty, canPass: true, passLabel: 'Decline', plays: offered };
   }
   if (mustDiscard > 0) return { ...empty, passLabel: `Discard ${mustDiscard}` };

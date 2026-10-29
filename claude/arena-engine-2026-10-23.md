@@ -5730,6 +5730,38 @@ now, the same argument the play-row picker already made. And the first version o
 a run that declined every time, because the prompt's text carries both button labels — the check
 anchors on the chosen word now, and it passed before it was right.
 
+### Suspend, the mechanic that spends turns, and the offer with no Decline (D209)
+
+The first thing in this engine that spends **turns** as a resource: pay a cheaper cost, exile the
+card with time counters, lose one at each of your upkeeps, and cast it free when the last comes off.
+Two of its three joints were already built. The special action is foretell's — a play from hand that
+is not a cast, pays its own cost and ends in exile — with the cost read off the card and the card
+left **public**, which is half of what the mechanic costs you. And "suspended" is nothing but
+counters: they live on the instance rather than on the battlefield, so a card in exile can carry them,
+and `addCounters` deleting a counter that reaches zero is why a card whose cast is impossible is left
+exiled and never offered again. That is the rule, for free.
+
+The third joint is the offer family's fourth use and the one thing it had never needed. Cascade,
+madness and miracle all say "you may"; suspend says you cast it. So `pendingOfferedCast` carries
+`mandatory`, `legalActions` hands that seat the casts and **no pass** — the whole rule in one line —
+and `settleOffer` answers the question itself when there is no legal cast, because an offer with
+neither a pass nor a play is a table stopped for good.
+
+The bar's missing **Decline** is a browser finding rather than a design decision. The first
+`LIST=suspend` run passed every check and printed `cast it without paying its mana cost Cast it
+Decline`: the engine right, the table offering a button whose only outcome is a refused action. The
+flag travels to the client now, the bar omits it, and the driver *reports* a missing Decline instead
+of pressing one, because a run that reaches that branch has found something real.
+
+Both cards are a card Kindle Grove already plays with suspend bolted on, so the probe reads the
+keyword rather than the card: **Rift Bolt** for the Lightning Strike and **Search for Tomorrow** for
+the second Rampant Growth. It gains 2 of 288 on one seed set and costs 6 on the other — level twice,
+and for once the dull answer is the interesting one: **a turn is worth about the two mana it saves**
+in this pool. It is used, too: 21 Search for Tomorrow and 6 Rift Bolt suspended over 96 games, 24 of
+those 27 cast off the last counter, two still waiting when the game ended. `foretellIsSpareMana` is
+`specialIsSpareMana` now and answers for both. Three browser runs, 26 of 26 checks, and the first
+scenario here whose two required checks are two turns apart in the same game.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -6332,6 +6332,35 @@ export const BLIGHT_VECTOR: DeckSpec = {
  * than it plays a deck of answers, so expect this one to read higher on the table than it would in
  * a person's hands. The opposite of Tidal Mind's problem, and the same cause.
  */
+/*
+  The two suspend cards, and both are deliberately a card the deck already plays with the keyword
+  bolted on — three damage, and a basic land. What the measurement reads is then the *keyword*
+  rather than the card: a turn of waiting against two mana, twice over.
+*/
+const RIFT_BOLT: CardDef = {
+  name: 'Rift Bolt',
+  typeLine: 'Sorcery',
+  manaCost: '{2}{R}',
+  cmc: 3,
+  oracleText: 'Rift Bolt deals 3 damage to any target.\nSuspend 1—{R} (Rather than cast this card '
+    + 'from your hand, you may pay {R} and exile it with a time counter on it. At the beginning of '
+    + 'your upkeep, remove a time counter. When the last is removed, cast it without paying its '
+    + 'mana cost.)',
+  colors: ['R'],
+};
+
+const SEARCH_FOR_TOMORROW: CardDef = {
+  name: 'Search for Tomorrow',
+  typeLine: 'Sorcery',
+  manaCost: '{2}{G}',
+  cmc: 3,
+  oracleText: 'Search your library for a basic land card, put it onto the battlefield, then shuffle.'
+    + '\nSuspend 2—{G} (Rather than cast this card from your hand, you may pay {G} and exile it with '
+    + 'two time counters on it. At the beginning of your upkeep, remove a time counter. When the '
+    + 'last is removed, cast it without paying its mana cost.)',
+  colors: ['G'],
+};
+
 export const KINDLE_GROVE: DeckSpec = {
   id: 'kindle-grove',
   name: 'Kindle Grove',
@@ -6360,7 +6389,16 @@ export const KINDLE_GROVE: DeckSpec = {
 
     // ── Four that get to five mana a turn early ──
     { card: LLANOWAR_ELVES, count: 2 },
-    { card: RAMPANT_GROWTH, count: 2 },
+    { card: RAMPANT_GROWTH, count: 1 },
+    /*
+      The second Rampant Growth's slot, spent on the same card with **suspend** on it.
+
+      A Search for Tomorrow is a Rampant Growth that costs {G} on turn one instead of {1}{G} on
+      turn two, puts the land in untapped rather than tapped, and arrives on turn three. Which is
+      the fair comparison the slot is for: the two cards do nearly the same thing at nearly the same
+      price, so what the probe reads is the keyword rather than the card.
+    */
+    { card: SEARCH_FOR_TOMORROW, count: 1 },
 
     // ── Nineteen creatures, in the order the curve wants them ──
     /*
@@ -6450,7 +6488,14 @@ export const KINDLE_GROVE: DeckSpec = {
       asks — and more than three when this deck has been saving, which is what makes it the right
       removal spell for a list that now has two other cards putting energy in the pool.
     */
-    { card: LIGHTNING_STRIKE, count: 1 },
+    /*
+      And the Lightning Strike's slot, for suspend's other card and the other half of the bargain.
+
+      Three damage for {1}{R} now, against three damage for {R} and a turn of waiting — and a turn
+      in which the other player can see it coming. The deck keeps two Lightning Bolts for the damage
+      it needs immediately; this slot is the one that buys a turn of mana back.
+    */
+    { card: RIFT_BOLT, count: 1 },
     { card: HARNESSED_LIGHTNING, count: 1 },
     { card: FLAME_SLASH, count: 1 },
     // Removal that costs a creature rather than a card, which is the red-green trade and the

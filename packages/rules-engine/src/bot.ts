@@ -1212,10 +1212,23 @@ function candidateActions(
       spell that is. `simulate` scores the board after the foretell, so what it sees is two mana
       gone and a card out of hand, which is a cost with no visible gain — and that is exactly the
       case `castsARitual` and its family exist for. So it is dropped unless the mana was going
-      spare; see `foretellIsSpareMana`.
+      spare; see `specialIsSpareMana`.
     */
     if (play.kind === 'foretell') {
       out.push({ action: { type: 'auto:foretell', by: seat, card: play.card } });
+      continue;
+    }
+    /*
+      Suspending, offered on exactly the same terms and dropped by the same rule.
+
+      It is foretell's problem in a stronger form: `simulate` sees a card leave the hand, some mana
+      spent and **nothing at all** happen, because the payoff is two or three turns away rather
+      than one. So the same fact decides it — was the mana going to be spent anyway — and the same
+      function answers it, because "anything else worth doing with this mana" is the same question
+      whichever special action is asking. See `specialIsSpareMana`.
+    */
+    if (play.kind === 'suspend') {
+      out.push({ action: { type: 'auto:suspend', by: seat, card: play.card } });
       continue;
     }
     for (const aim of aimings(state, seat, play)) {
@@ -2335,8 +2348,8 @@ const foretells = (state: GameState, action: Action): boolean =>
  * other half of why a person does it. That is information warfare and this bot has no model of what
  * an opponent knows.
  */
-function foretellIsSpareMana(state: GameState, seat: SeatIndex, action: Action): boolean {
-  if (action.type !== 'auto:foretell') return false;
+function specialIsSpareMana(state: GameState, seat: SeatIndex, action: Action): boolean {
+  if (action.type !== 'auto:foretell' && action.type !== 'auto:suspend') return false;
   const plays = legalActions(state, seat).plays;
   /*
     Anything else worth doing with the mana, where "else" means **another card**.
@@ -3252,7 +3265,17 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       would foretell on turn two instead of playing a creature. What the board can say is whether
       the mana was going to be spent anyway.
     */
-    if (foretells(state, option.action) && !foretellIsSpareMana(state, seat, option.action)) {
+    if (foretells(state, option.action) && !specialIsSpareMana(state, seat, option.action)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And suspending, which is the same bargain over a longer wait: a Rift Bolt suspended on turn
+      one is three damage on turn two, and the search sees a card gone and a mana spent for nothing.
+      Same fact, same function — spend it when the mana had no better home.
+    */
+    if (option.action.type === 'auto:suspend'
+      && !specialIsSpareMana(state, seat, option.action)) {
       dropped += 1;
       continue;
     }

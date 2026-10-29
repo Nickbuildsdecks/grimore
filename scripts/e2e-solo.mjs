@@ -39,7 +39,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * first draw is often the card it is built around (`MIRACLE_LIST`), `LIST=rebound` one built to
  * cast the same spell twice a turn apart (`REBOUND_LIST`), `LIST=replicate` one with the mana to
  * pay one cost several times over (`REPLICATE_LIST`), `LIST=extort` one that is asked for mana
- * every time it casts a spell (`EXTORT_LIST`), and `LIST=earned` one
+ * every time it casts a spell (`EXTORT_LIST`), `LIST=suspend` one that spends its first turn on a
+ * card it will cast two turns later (`SUSPEND_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -294,6 +295,26 @@ const EXTORT_LIST = [
   '4 Doom Blade', '4 Ravenous Rats', '4 Vampire Nighthawk', '4 Mind Rot',
   '4 Agonizing Demise', '4 Tormod\'s Crypt', '4 Mind Stone',
 ].join('\n');
+
+/**
+ * Sixty cards built to spend turn one on turn two: eight **Rift Bolts** and nothing to hold them up.
+ *
+ * Suspend is the only mechanic here whose payoff is in a *later turn*, so the scenario needs two
+ * things a normal deck will not give it: a reason to suspend (a hand full of cards that are better
+ * suspended than cast) and games long enough for the counters to come off. Eight copies of a
+ * three-mana sorcery that costs {R} suspended is both.
+ *
+ * What the run proves is the pair of joints the engine's own tests cannot reach through a table: the
+ * suspend **row** on a card in hand — a fourth thing to do with one card, beside casting it — and
+ * the cast that arrives in a later upkeep with **no Decline button**, because that cast is not a
+ * request (CR 702.62c).
+ */
+const SUSPEND_LIST = [
+  '24 Mountain',
+  '8 Rift Bolt',
+  '4 Lightning Bolt', '4 Shock', '4 Monastery Swiftspear', '4 Goblin Arsonist',
+  '4 Firebrand Archer', '4 Raging Goblin', '4 Borderland Marauder',
+].join('\n');
   const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
   watchForReactWarnings(page, '', reactWarnings);
@@ -353,6 +374,8 @@ const EXTORT_LIST = [
         ? REPLICATE_LIST
         : LIST === 'extort'
         ? EXTORT_LIST
+        : LIST === 'suspend'
+        ? SUSPEND_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -470,6 +493,9 @@ const EXTORT_LIST = [
     const replicateRows = new Set();
     /** The extort questions this run answered by **paying**, under `LIST=extort`. */
     const extortPaid = new Set();
+    /** The suspend rows pressed and the casts they bought back, under `LIST=suspend`. */
+    const suspendRows = new Set();
+    const suspendCasts = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -522,6 +548,8 @@ const EXTORT_LIST = [
         if (typeof did === 'string' && /^chose a word: Pay \{W\/B\}/.test(did)) {
           extortPaid.add(did);
         }
+        if (typeof did === 'string' && /Suspend .*time counter/i.test(did)) suspendRows.add(did);
+        if (typeof did === 'string' && /last time counter is gone/i.test(did)) suspendCasts.add(did);
         if (typeof did === 'string') {
           for (const word of Object.keys(altCasts)) {
             /*
@@ -592,7 +620,8 @@ const EXTORT_LIST = [
       in one run and spectacle none. Both rows exist on every table; one shuffle does not see both.
     */
     const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
-      || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' ? 5 : 3;
+      || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
+      ? 5 : 3;
     /*
       What "not yet" means for this list.
 
@@ -608,15 +637,18 @@ const EXTORT_LIST = [
       ? replicateRows.size === 0
       : LIST === 'extort'
       ? extortPaid.size === 0
+      : LIST === 'suspend'
+      ? suspendRows.size === 0 || suspendCasts.size === 0
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
-      || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort')
+      || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend')
       && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
         : LIST === 'rebound' ? `${reboundOffers.size} rebound offers`
         : LIST === 'replicate' ? `${replicateRows.size} replicate rows`
         : LIST === 'extort' ? `${extortPaid.size} extort payments`
+        : LIST === 'suspend' ? `${suspendRows.size} suspends, ${suspendCasts.size} casts`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -733,6 +765,21 @@ const EXTORT_LIST = [
       check('an extort question is asked mid-resolution, and paying it is one tap',
         answers.length > 0, `payments: ${answers.length}`);
       for (const did of answers.slice(0, 3)) console.log(`      ${did}`);
+    } else if (LIST === 'suspend') {
+      /*
+        A card put away on one turn and cast on another, through the table.
+
+        Two halves, and the second is the one that needed something new in the engine: the row on a
+        card in hand that is neither a cast nor a morph nor a foretell, and the cast that turns up in
+        a later upkeep with **no Decline** — a suspended card's last counter is not a permission
+        (CR 702.62c), so the bar offers the cast and nothing else.
+      */
+      check('a card is suspended from hand, for its own cost', suspendRows.size > 0,
+        `suspends: ${suspendRows.size}`);
+      check('and cast in a later upkeep, off the last time counter', suspendCasts.size > 0,
+        `casts: ${suspendCasts.size}`);
+      for (const did of [...suspendRows].slice(0, 2)) console.log(`      ${did}`);
+      for (const did of [...suspendCasts].slice(0, 2)) console.log(`      ${did}`);
     } else if (LIST === 'graveyard') {
       /*
         The two rows pressed on a card in the graveyard, and the face of what arrived.

@@ -6389,6 +6389,48 @@ const BASILICA_GUARDS: CardScript = {
   triggers: [extort()],
 };
 
+/**
+ * Rift Bolt: three damage for one mana, a turn late.
+ *
+ * The pool's first **suspend** card, and the cleanest possible demonstration of what the keyword
+ * sells: {2}{R} for three damage is a fair card, and {R} on turn one for three damage on turn two
+ * is the same card bought with a turn instead of two mana. Which is also the whole risk — the
+ * opponent gets a turn knowing it is coming, and in a pod they get three.
+ *
+ * It replaces Kindle Grove's Lightning Strike, which is the fair comparison: three damage for
+ * {1}{R} now against three damage for {R} and a wait.
+ */
+const RIFT_BOLT: CardScript = {
+  name: 'Rift Bolt',
+  suspend: { cost: '{R}', counters: 1 },
+  targets: [ANY_TARGET],
+  onResolve: (c) => damageFirstTarget(c, 3),
+};
+
+/**
+ * Search for Tomorrow: a land on turn three, for one mana on turn one.
+ *
+ * Suspend's other card and the other half of the bargain: two time counters rather than one, and
+ * what it buys is not damage but **a turn of mana**. A Rampant Growth for {1}{G} puts a land in
+ * tapped; this one, suspended for {G} on turn one, puts one in **untapped** on turn three — so a
+ * deck that spends its first turn on it is a deck with four mana on turn three.
+ *
+ * In Kindle Grove for the second Rampant Growth, which is the same comparison Rift Bolt makes: the
+ * card it replaces does nearly the same thing at nearly the same price, so what the measurement is
+ * reading is the keyword rather than the card.
+ */
+const SEARCH_FOR_TOMORROW: CardScript = {
+  name: 'Search for Tomorrow',
+  suspend: { cost: '{G}', counters: 2 },
+  decisions: [searchYourLibrary('Search your library for a basic land card', isBasicLand)],
+  onResolve: (c) => {
+    const found = chosenCard(c);
+    // Untapped, which is the difference from the Rampant Growth it replaces and half of why the
+    // card is worth the wait.
+    return found === null ? c.state : putOntoBattlefield(c.state, found, c.controller);
+  },
+};
+
 const THICKET_BASILISK: CardScript = {
   name: 'Thicket Basilisk',
   triggers: [
@@ -7269,7 +7311,7 @@ const ALL: readonly CardScript[] = [
   SQUID, CHASM_SKULKER, FATE_UNRAVELER,
   SACRED_CAT, ANGEL_OF_SANCTIONS, ADORNED_POUNCER, SUNSCOURGE_CHAMPION,
   THUNDEROUS_WRATH, TERMINUS, STAGGERSHOCK, DISTORTION_STRIKE, PYROMATICS, TRAIN_OF_THOUGHT,
-  BASILICA_SCREECHER, BASILICA_GUARDS,
+  BASILICA_SCREECHER, BASILICA_GUARDS, RIFT_BOLT, SEARCH_FOR_TOMORROW,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

@@ -656,14 +656,23 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
                 <Check className="size-3.5" /> Cast it
               </Button>
             ) : null}
-            <Button
-              size="sm"
-              variant="ghost"
-              data-testid="offered-cast-decline"
-              onClick={() => onAct({ type: "auto:pass" })}
-            >
-              <X className="size-3.5" /> Decline
-            </Button>
+            {/*
+              And the answer that is not a cast — unless there isn't one.
+
+              A suspended card's last time counter is not a permission (CR 702.62c): the engine
+              offers that seat the cast and no pass, so a Decline here would be a button whose only
+              outcome is a refusal. The first browser run of `LIST=suspend` drew exactly that.
+            */}
+            {you.mustCastOffered?.mandatory === true ? null : (
+              <Button
+                size="sm"
+                variant="ghost"
+                data-testid="offered-cast-decline"
+                onClick={() => onAct({ type: "auto:pass" })}
+              >
+                <X className="size-3.5" /> Decline
+              </Button>
+            )}
           </span>
         </div>
       ) : null}
