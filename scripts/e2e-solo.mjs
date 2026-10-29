@@ -263,6 +263,36 @@ async function main() {
     check('the computer has already settled its hand', /you/i.test(waiting), waiting);
     await shot(page, 'opening-hand');
 
+    /*
+      The card leans towards the cursor, checked where it actually happens.
+
+      The tilt is four CSS variables written onto the card by a pointer handler, which means it is
+      invisible to every test that does not move a real pointer: `apps/web`'s reducer tests never
+      touch the DOM, and a card's own component test would be asserting that a handler it called by
+      hand did what it says. Playwright's `hover` dispatches a genuine pointermove at the element's
+      centre, so what this reads is the browser's own answer.
+
+      The centre is deliberate: `--tilt-x` and `--tilt-y` are both zero there, so the check is that
+      the variables **exist** rather than that they have a particular value — a card nobody has
+      pointed at has never had them set at all.
+    */
+    const anyCard = cardsIn(page, 'zone-hand-0').first();
+    let tilt = { x: '', y: '', sheen: '' };
+    if (await anyCard.count() > 0) {
+      await anyCard.hover({ position: { x: 20, y: 8 } });
+      await page.waitForTimeout(80);
+      tilt = await anyCard.evaluate((el) => ({
+        x: el.style.getPropertyValue('--tilt-x'),
+        y: el.style.getPropertyValue('--tilt-y'),
+        sheen: el.style.getPropertyValue('--sheen-a'),
+      }));
+    }
+    check('a card leans towards the cursor, and lights up where it is pointed at',
+      tilt.x !== '' && tilt.y !== '' && tilt.sheen === '1', JSON.stringify(tilt));
+    // And the board has its own atmosphere behind it, which the app shell's backdrop is not.
+    check('the board has mana embers behind it', await has(page, 'arena-embers'));
+
+
     // ── Play it out ─────────────────────────────────────────────────────────────────────────────
     let moves = 0;
     /** Whether this game ever asked for a damage assignment order. Sampled, not required. */

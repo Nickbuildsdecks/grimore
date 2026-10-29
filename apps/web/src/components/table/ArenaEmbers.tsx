@@ -85,7 +85,7 @@ export function ArenaEmbers({ className }: { className?: string }) {
       vy: -(Math.random() * 0.22 + 0.06),
       size: Math.random() * 1.6 + 0.9,
       hue: MANA_HUES[Math.floor(Math.random() * MANA_HUES.length)] ?? 278,
-      alpha: Math.random() * 0.16 + 0.07,
+      alpha: Math.random() * 0.2 + 0.1,
       pulse: Math.random() * Math.PI * 2,
       pulseSpd: Math.random() * 0.02 + 0.006,
     })
@@ -141,10 +141,20 @@ export function ArenaEmbers({ className }: { className?: string }) {
 
         if (eb.y < -12 || eb.x < -20 || eb.x > w + 20) Object.assign(eb, newEmber(true))
 
+        /*
+          A core and a halo rather than one dot, which is what makes an ember read as glowing
+          rather than as a speck of dust. Two arcs is still cheap — forty-six embers is ninety-two
+          paths a frame — where `shadowBlur`, the obvious way to get the same look, is the one
+          canvas property that reliably costs a frame on a phone.
+        */
         const glow = eb.alpha * (0.65 + Math.sin(eb.pulse) * 0.35)
         ctx.beginPath()
+        ctx.arc(eb.x, eb.y, eb.size * 3, 0, Math.PI * 2)
+        ctx.fillStyle = `hsla(${eb.hue}, 85%, 68%, ${glow * 0.22})`
+        ctx.fill()
+        ctx.beginPath()
         ctx.arc(eb.x, eb.y, eb.size, 0, Math.PI * 2)
-        ctx.fillStyle = `hsla(${eb.hue}, 85%, 70%, ${glow})`
+        ctx.fillStyle = `hsla(${eb.hue}, 90%, 76%, ${glow})`
         ctx.fill()
       }
       raf = requestAnimationFrame(draw)
