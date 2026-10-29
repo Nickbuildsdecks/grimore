@@ -92,6 +92,14 @@ export interface LegalPlay {
   /** Set on the second of the two plays a kicker offers: this one pays it (CR 702.32a). */
   readonly kicked?: boolean;
   /**
+   * How many times this play pays the card's replicate cost, and so how many copies it makes.
+   *
+   * One play per count, which is the kicker's arrangement rather than {X}'s picker: the ceiling is
+   * the mana available and in this pool that is a short list. Absent on the printed cast, which is
+   * the same play with no copies. See `CardScript.replicate`.
+   */
+  readonly replicate?: number;
+  /**
    * Set on a play that casts the card out of its owner's graveyard for its flashback cost
    * (CR 702.33).
    *
@@ -1313,6 +1321,38 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           description: `Cast ${ch.name} with ${kicker.description.toLowerCase()}`,
           manaCost: `${def?.manaCost ?? ''}${kicker.cost}`, ...taxOn,
           ...(kickedCost.x ? { xMax: maxAffordableX(poolOf(state, seat), kickedCost, sources) } : {}),
+          targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims,
+        });
+      }
+    }
+
+    /*
+      And replicate, one play per count the mana will cover (CR 702.56).
+
+      Capped at four rather than left to the pool, and the cap is about the *list* rather than about
+      the rules: a Pyromatics with eleven Mountains up would otherwise put eleven near-identical
+      rows in front of the player, and the eleventh is not a play anybody is choosing between. Four
+      is past the top of what either card in this pool is cast for.
+
+      Each count is priced from scratch rather than by adding to the last, because a cost is parsed
+      as a whole: `{1}{R}{1}{R}` is two generic and two red, and a loop that added numbers would get
+      the coloured half wrong.
+    */
+    const replicate = flashback || escape || foretold ? undefined : script?.replicate;
+    if (replicate !== undefined) {
+      for (let times = 1; times <= 4; times += 1) {
+        const text = `${def?.manaCost ?? ''}${replicate.cost.repeat(times)}`;
+        const parsed = parseManaCost(text);
+        if (parsed.unsupported !== undefined) break;
+        const cost = withCostChange(
+          fromCommand && tax > 0 ? { ...parsed, generic: parsed.generic + tax } : parsed,
+          change.generic,
+        );
+        if (!canAfford(poolOf(state, seat), cost, sources)) break;
+        out.push({
+          kind: 'cast', card: id, name: ch.name, replicate: times,
+          description: `Cast ${ch.name} with replicate x${times}`,
+          manaCost: text, ...taxOn,
           targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims,
         });
       }

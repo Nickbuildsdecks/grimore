@@ -37,7 +37,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * `LIST=costs` one built to pay an alternative cost — see `COSTS_LIST` — `LIST=graveyard` one built
  * to press an ability on a card in the graveyard (`GRAVEYARD_LIST`), `LIST=miracle` one whose
  * first draw is often the card it is built around (`MIRACLE_LIST`), `LIST=rebound` one built to
- * cast the same spell twice a turn apart (`REBOUND_LIST`), and `LIST=earned` one
+ * cast the same spell twice a turn apart (`REBOUND_LIST`), `LIST=replicate` one with the mana to
+ * pay one cost several times over (`REPLICATE_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -253,6 +254,26 @@ const REBOUND_LIST = [
   '4 Lightning Bolt', '4 Shock', '4 Monastery Swiftspear', '4 Goblin Arsonist',
   '4 Borderland Marauder', '4 Firebrand Archer', '4 Raging Goblin',
 ].join('\n');
+
+/**
+ * Sixty cards built to have mana left over: eight **Pyromatics** and twenty-eight Mountains.
+ *
+ * Replicate is a cost paid as many times as you can afford it, so the scenario is not about drawing
+ * the card — it is about *having the mana when you cast it*. A normal red deck spends its mana on
+ * its curve; this one deliberately does not have a curve, so by turn five there is enough spare to
+ * pay the cost twice and the table has three rows to offer on one card.
+ *
+ * Which is the claim: `legalActions` offers one play per affordable count (CR 702.56), the table
+ * draws them as separate rows with their own prices, and the engine accepts the count the player
+ * tapped rather than the printed cast. That last part is not hypothetical — the bot sent the
+ * printed cast for 49 castings before the count was carried through (D207).
+ */
+const REPLICATE_LIST = [
+  '28 Mountain',
+  '8 Pyromatics',
+  '4 Lightning Bolt', '4 Shock', '4 Monastery Swiftspear', '4 Goblin Arsonist',
+  '4 Firebrand Archer', '4 Raging Goblin',
+].join('\n');
   const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
   watchForReactWarnings(page, '', reactWarnings);
@@ -308,6 +329,8 @@ const REBOUND_LIST = [
         ? MIRACLE_LIST
         : LIST === 'rebound'
         ? REBOUND_LIST
+        : LIST === 'replicate'
+        ? REPLICATE_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -421,6 +444,8 @@ const REBOUND_LIST = [
      * exile", and a run that collected either would pass the wrong check.
      */
     const reboundOffers = new Set();
+    /** The replicate rows this run pressed, by the row's own words, under `LIST=replicate`. */
+    const replicateRows = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -461,6 +486,7 @@ const REBOUND_LIST = [
         if (typeof did === 'string' && /a free cast/.test(did)) freeCasts += 1;
         if (typeof did === 'string' && /miracle/i.test(did)) miracleOffers.add(did);
         if (typeof did === 'string' && /rebounds/i.test(did)) reboundOffers.add(did);
+        if (typeof did === 'string' && /replicate x[1-9]/i.test(did)) replicateRows.add(did);
         if (typeof did === 'string') {
           for (const word of Object.keys(altCasts)) {
             /*
@@ -531,7 +557,7 @@ const REBOUND_LIST = [
       in one run and spectacle none. Both rows exist on every table; one shuffle does not see both.
     */
     const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
-      || LIST === 'rebound' ? 5 : 3;
+      || LIST === 'rebound' || LIST === 'replicate' ? 5 : 3;
     /*
       What "not yet" means for this list.
 
@@ -543,12 +569,16 @@ const REBOUND_LIST = [
       ? miracleOffers.size === 0
       : LIST === 'rebound'
       ? reboundOffers.size === 0
+      : LIST === 'replicate'
+      ? replicateRows.size === 0
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
-      || LIST === 'rebound') && games < dealBudget && wantsAnotherGame()) {
+      || LIST === 'rebound' || LIST === 'replicate')
+      && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
         : LIST === 'rebound' ? `${reboundOffers.size} rebound offers`
+        : LIST === 'replicate' ? `${replicateRows.size} replicate rows`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -639,6 +669,19 @@ const REBOUND_LIST = [
         sentences.some((did) => /from exile/.test(did) && /without paying its mana cost/.test(did)),
         sentences[0] ?? 'nothing was offered');
       for (const did of sentences.slice(0, 3)) console.log(`      ${did}`);
+    } else if (LIST === 'replicate') {
+      /*
+        One card, three rows, and the engine charging for the one that was tapped.
+
+        What this proves that the engine's own tests cannot: the table *drew* the counts as separate
+        plays with their own prices, and the cast it sent carried the count. The second half is the
+        one that was broken in the bot and would have been broken here too — a count dropped on the
+        way out looks exactly like a cheap cast that worked.
+      */
+      const rows = [...replicateRows];
+      check('a replicate row is offered on one card at several prices, and pressed',
+        rows.length > 0, `rows pressed: ${rows.length}`);
+      for (const did of rows.slice(0, 3)) console.log(`      ${did}`);
     } else if (LIST === 'graveyard') {
       /*
         The two rows pressed on a card in the graveyard, and the face of what arrived.

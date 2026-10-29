@@ -289,6 +289,28 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   }
 
   /*
+    And replicate, announced the same way and for the same reason — with one difference: it is a
+    **count** rather than a yes (CR 702.56).
+
+    Refused rather than clamped when it is out of range, which is this file's rule for every
+    announced number: a client that sent a count it cannot pay for is a client asking for a spell
+    that does not exist, and the engine is the authority on what a casting cost. The payment below
+    is where "cannot pay for" gets decided, because that is where the whole cost is assembled.
+  */
+  const replicated = action.replicate ?? 0;
+  if (replicated !== 0) {
+    if (script?.replicate === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no replicate`);
+    }
+    if (!Number.isInteger(replicated) || replicated < 1) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'replicate is paid a whole number of times');
+    }
+    if (kicked) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'replicate and the kicker are both paid on top of the printed cost, and no card in this pool has both');
+    }
+  }
+
+  /*
     Evoke, announced with the spell for the same reason the kicker is (CR 702.74a).
 
     Both players read the stack to decide whether to answer a spell, and whether this one was
@@ -461,7 +483,17 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
                 // alternative cost, so it replaces rather than adds, which is the whole difference
                 // from the kicker on the line below.
                 : overloaded ? script?.overload?.cost
-                  : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
+                  : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}`
+                    /*
+                      And replicate, the other cost that *adds* — and the only one that adds the
+                      same symbols several times over. Written out as a repeated string rather than
+                      as arithmetic on a parsed cost for the reason `legalActions` does the same:
+                      `{1}{R}{1}{R}` is two generic and two red, and adding numbers would lose the
+                      coloured half.
+                    */
+                    : replicated > 0
+                      ? `${def?.manaCost ?? ''}${(script?.replicate?.cost ?? '').repeat(replicated)}`
+                      : def?.manaCost;
   /*
     And what the permanents on the table have done to the cost: a Goblin Electromancer, a Thalia.
 
@@ -641,6 +673,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // And the kicker, for the same reason again: whether it was paid changes what the spell does,
   // and the player deciding whether to respond reads the stack to find out.
   const kickedText = kicked ? ' (kicked)' : '';
+  /*
+    And replicate's, which the player answering it needs as much as any of them — and needs *early*,
+    because the window closes: the copies are separate objects put on the stack by the card's own
+    trigger (CR 707.10), so countering the original does not touch them. A player who wants to
+    answer a replicated spell has to answer the trigger, or the copies, or nothing.
+  */
+  const replicatedText = replicated > 0 ? ` (replicate x${replicated})` : '';
   // And flashback, for the third time for the same reason: a player deciding whether to counter a
   // spell cast out of a graveyard should be able to see that it is never coming back.
   const flashbackText = flashback ? ' (flashback)' : '';
@@ -714,6 +753,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // And rebound's, which the resolution reads to exile the card instead of putting it in a
     // graveyard, and to schedule the free cast for its controller's next upkeep.
     ...(rebounding ? { rebounding: true as const } : {}),
+    // And replicate's count, which the card's own trigger reads to know how many copies to make.
+    ...(replicated > 0 ? { replicated } : {}),
     /*
       And the other flag the destination depends on, for the same reason: an adventure that
       resolves is exiled "on an adventure" rather than put into a graveyard, and once it has left
@@ -723,7 +764,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       creature spell and goes to the battlefield like one.
     */
     ...(faces?.kind === 'adventure' && faceKey !== undefined ? { adventure: true as const } : {}),
-    description: `${characteristics.name}${xText}${kickedText}${flashbackText}${escapedText}`
+    description: `${characteristics.name}${xText}${kickedText}${replicatedText}${flashbackText}${escapedText}`
       + `${delveText}${foretoldText}${evokedText}${dashedText}${bestowedText}${spectacledText}`
       + `${overloadedText}${offeredText}${modeText}`,
   };
@@ -760,7 +801,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // The lands tapped for it are named, because they turn sideways on screen and a player who
     // did not tap them should be able to see why.
     message: paid.tapped.length === 0
-      ? `${seatName(state, action.by)} casts ${characteristics.name}${kickedText}${tax > 0 ? ` (+{${tax}} tax)` : ''}`
+      ? `${seatName(state, action.by)} casts ${characteristics.name}${kickedText}${replicatedText}${tax > 0 ? ` (+{${tax}} tax)` : ''}`
       : `${seatName(state, action.by)} taps ${paid.tapped.length} for ${characteristics.name}${kickedText} and casts it`,
     data: {
       card: inst.id, name: characteristics.name, tapped: [...paid.tapped],
@@ -795,10 +836,11 @@ function castFaceDown(
     throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
   }
   if (action.flashback === true || action.escape === true || action.kicked === true || action.x !== undefined
+    || action.replicate !== undefined
     || (action.modes !== undefined && action.modes.length > 0) || action.sacrifice !== undefined
     || (action.targets !== undefined && action.targets.length > 0)) {
     throw new EngineError('RULE_NOT_APPLICABLE',
-      'a face-down spell has no text: no modes, no X, no kicker and nothing to target');
+      'a face-down spell has no text: no modes, no X, no kicker, no replicate and nothing to target');
   }
   if (!atSorcerySpeed(state, action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE',

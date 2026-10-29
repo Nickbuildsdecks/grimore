@@ -432,3 +432,18 @@ own text, read the card's own text, and never truncate the string a scenario ass
 with the bot casting every one it was offered, and 24 and 12 with `sparesItsOwnBoard` on (D205). A
 third of that slot was the bot. The probe's *other* arm is the check that the rule is as narrow as
 it claims — the list with the sweeper cut comes back byte-identical with the rule on and off.
+
+**What a slot is worth is a fact about the card that pays for it, not about the card.** Pyromatics
+in Arc Tempest measured **−10 and −19** of 288 in the Firebolt's slot and **+1 and +1** in the second
+Think Twice's — same card, same deck, same two seed sets (D207). Both readings are right, and a
+probe run once against one filler would have concluded something about the keyword that was wrong
+either way round. When a slot comes back negative, re-run it against a *different* card of the
+deck's before concluding anything about the card that went in.
+
+**Count what the bot actually paid, not only what it cast.** The replicate count was dropped on the
+way from the chosen play to the action sent, so the bot cast Pyromatics 49 times in 96 games and paid
+the replicate cost **zero** times — with no refusal, no failing test and no stuck game, because a
+cast with the count missing is a legal cheap cast. A twenty-line script that counted `action.replicate`
+by value found it in one run. Every announced number and every cost flag is worth that script the
+first time a card uses it; `scripts/measure/offers.mjs` is the permanent version of the same idea for
+the offer family.

@@ -11397,3 +11397,78 @@ checks each, all passing, and the sentence they collect is the whole claim:
 took a free cast: Staggershock rebounds: you may cast it from exile without paying its mana cost
 ```
 
+## D207 — Replicate, the cost paid several times over, and the slot that was worth −19 or +1
+
+**The keyword.** Replicate is the engine's first cost that can be paid **more than once on one
+casting**, and the first announced number that is not {X}: "pay this cost as many times as you like,
+and copy the spell for each" (CR 702.56). Everything else in the cost family is a yes or a no — a
+kicker is paid or not, an alternative cost replaces the printed one or does not.
+
+Two pieces already existed and this is the first card to put them together. The copies are a **self
+spell-cast trigger**, which is storm's shape with the count read from the casting rather than from
+the turn, and `copySpellOnStack` already carried the original's targets *and* its division (D131) —
+so a replicated Pyromatics divided one damage each between two creatures really is two damage each.
+
+The count is offered as **one play per affordable number**, which is the kicker's arrangement rather
+than {X}'s picker, and that was a deliberate choice about the client: the table already draws a
+second play on the same card at a different price, so a count whose ceiling is the mana available is
+exactly that list and needs nothing new. {X} has a picker because X ranges to twenty; replicate in
+this pool ranges to four, and four is the cap for the same reason — an eleventh near-identical row
+is not a play anybody is choosing between.
+
+### The bot cast it 49 times and paid the cost not once
+
+`legalActions` offered the rows, the search chose between them, and **the action the bot sent
+dropped the count**: `candidateActions` builds a cast from the play and carries eleven cost flags,
+and a twelfth that is a number was not one of them. So a chosen "replicate x2" became the printed
+cast, the engine charged {1}{R}, resolved it, and nothing anywhere looked wrong — no refusal, no
+failing test, no stuck game. 49 Pyromatics casts in 96 games, zero replicate payments.
+
+It was found by **counting what the bot paid**, which is a five-minute script rather than a test, and
+the same comment block in `candidateActions` had already said why that bug keeps happening: "a cast
+sent without the flag is quietly the *other* play". It is the twelfth time; the web client needed
+the same line, and a reducer test now holds it.
+
+With the count carried through, the bot uses the keyword like a player would:
+
+| | casts | x1 | x2 |
+| --- | --- | --- | --- |
+| Pyromatics, Arc Tempest's field, 96 games | 49 | 9 | 1 |
+| Train of Thought, Hollow Tide's field, 96 games | 33 | 16 | 1 |
+
+Half of every Train of Thought is cast for two cards or more, which is the keyword doing exactly
+what it is printed for: a bad card early, a refill late.
+
+### The same card in the same deck, worth −19 and +1
+
+Pyromatics first went into Arc Tempest in the **Firebolt's** slot. Paired probes, 288 games per arm:
+
+| what Pyromatics replaced | seed set 3300 | seed set 4400 |
+| --- | --- | --- |
+| a Firebolt (2 damage for {R}, and again from the graveyard for {4}{R}) | **costs 10** | **costs 19** |
+| the second Think Twice (a cantrip the deck has six other ways to do) | gains 1 | gains 1 |
+
+**That is the finding, and it is not about replicate.** What a slot is worth is a fact about the card
+that *pays* for it: the same card, in the same deck, measured on the same two seed sets, is a
+ten-to-nineteen-game loss against a Firebolt and dead level against a redundant cantrip. Both
+readings are right. A probe that had only been run once would have concluded something about the
+keyword, and it would have been wrong either way round.
+
+Train of Thought, in Hollow Tide for the third Fog Bank, reads **costs 7 and costs 2** — inside the
+floor on both seed sets, which for a card that is a bad draw-one most of the time and a four-card
+refill occasionally is the answer the keyword deserves.
+
+**One thing left open, and it is the bot's rather than the card's.** With eight mana up, a single
+Pyromatics offers *five* plays, and `candidateActions` keeps the eight most expensive plays before
+the search sees them — so one card with replicate can take five of those eight slots away from the
+rest of the hand. It has not been measured and the cheap slot's +1 suggests it costs little, but a
+hand of five spells and a Pyromatics is a position where the search may be looking at one card.
+
+### The browser
+
+`LIST=replicate` plays twenty-eight Mountains and eight Pyromatics — a deck with no curve, so there
+is spare mana by turn five and the table has three rows to offer on one card. Three runs, 25 of 25
+checks each, with `x1` and `x3` rows pressed across them. What it proves is the half that was broken
+in the bot and would have been broken the same way here: the row's own price was charged, rather than
+the printed cost on a card the table had drawn an expensive row for.
+

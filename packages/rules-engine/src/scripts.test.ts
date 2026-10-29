@@ -13320,6 +13320,113 @@ describe('miracle: the cast offered the moment you draw it', () => {
   });
 });
 
+describe('replicate: a cost paid several times over', () => {
+  /*
+    The engine's first cost that can be paid **more than once on one casting**, and the first number
+    announced with a spell that is not {X}. Everything else in the cost family is a yes or a no.
+
+    So the tests are about the three things that are new: the list of plays (one per count the mana
+    will cover, which is the kicker's arrangement rather than {X}'s picker), the copies the count
+    buys, and the refusals for a count that is not a count.
+  */
+  const casting = (card: string, deck: string, lands: readonly string[]): GameState => advanceTo(
+    arena({
+      decks: { 0: deck, 1: 'rot-harvest' },
+      hands: { 0: [card] },
+      battlefield: { 0: [...lands] },
+      turn: 6, firstSeat: 0,
+    }),
+    'precombat-main',
+  );
+  const MOUNTAIN = 'Mountain';
+
+  it('offers one cast per count the mana will cover, and no more', () => {
+    const two = casting('Pyromatics', 'arc-tempest', [MOUNTAIN, MOUNTAIN]);
+    const pyro = (s: GameState): string => find(s, 0, 'hand', 'Pyromatics');
+    expect(legalActions(two, 0).plays.filter((p) => p.card === pyro(two))
+      .map((p) => [p.manaCost, p.replicate]))
+      .toEqual([['{1}{R}', undefined]]);
+
+    const six = casting('Pyromatics', 'arc-tempest', Array.from({ length: 6 }, () => MOUNTAIN));
+    expect(legalActions(six, 0).plays.filter((p) => p.card === pyro(six))
+      .map((p) => p.replicate))
+      .toEqual([undefined, 1, 2]);
+
+    /*
+      And the cap, which is about the list rather than about the rules: with ten lands up the player
+      could pay four times over and the cost of a fifth is the only thing stopping a fifth row.
+      Arc Tempest's own mana base is what is available — seven Mountains and three Izzet Guildgates,
+      which is every red source the deck has.
+    */
+    const ten = casting('Pyromatics', 'arc-tempest', [
+      ...Array.from({ length: 7 }, () => MOUNTAIN),
+      'Izzet Guildgate', 'Izzet Guildgate', 'Izzet Guildgate',
+    ]);
+    expect(legalActions(ten, 0).plays.filter((p) => p.card === pyro(ten))
+      .map((p) => p.replicate))
+      .toEqual([undefined, 1, 2, 3, 4]);
+  });
+
+  it('copies the spell for each payment, keeping the original\'s target', () => {
+    let s = casting('Pyromatics', 'arc-tempest', Array.from({ length: 6 }, () => MOUNTAIN));
+    const pyro = find(s, 0, 'hand', 'Pyromatics');
+    const before = life(s, 1);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: pyro, replicate: 2,
+      targets: [{ kind: 'player', seat: 1 }], division: [1],
+    }), 60);
+    // One damage three times rather than three damage once: three separate dealings, which is what
+    // protection and prevention each have to be asked about separately.
+    expect(life(s, 1)).toBe(before - 3);
+    // Six mana for it, which is the whole of what the keyword charges.
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(6);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Pyromatics');
+  });
+
+  it('and the cheap casting is still there, for one mana at a time', () => {
+    let s = casting('Pyromatics', 'arc-tempest', [MOUNTAIN, MOUNTAIN]);
+    const before = life(s, 1);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Pyromatics'),
+      targets: [{ kind: 'player', seat: 1 }], division: [1],
+    }), 60);
+    expect(life(s, 1)).toBe(before - 1);
+  });
+
+  it('draws a card for each payment, on the keyword\'s other card', () => {
+    let s = casting('Train of Thought', 'hollow-tide',
+      ['Island', 'Island', 'Island', 'Island', 'Island', 'Island']);
+    const held = ids(s, 0, 'hand').length;
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Train of Thought'), replicate: 1,
+    }), 60);
+    // Two cards for six mana: the Train itself and one copy. The card it was cast with is gone, so
+    // the hand is one up on where it started rather than two.
+    expect(ids(s, 0, 'hand').length).toBe(held - 1 + 2);
+  });
+
+  it('refuses a count that is not a count, and one on a card with no replicate', () => {
+    const s = casting('Pyromatics', 'arc-tempest', Array.from({ length: 6 }, () => MOUNTAIN));
+    const pyro = find(s, 0, 'hand', 'Pyromatics');
+    const aim = { targets: [{ kind: 'player' as const, seat: 1 as SeatIndex }], division: [1] };
+    // Zero is "no replicate at all" rather than a count of none, and is simply the printed cast.
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: pyro, replicate: 0, ...aim })).toBeNull();
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: pyro, replicate: -1, ...aim }))
+      .toContain('whole number');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: pyro, replicate: 1.5, ...aim }))
+      .toContain('whole number');
+    // And a count it cannot pay for, refused by the payment rather than by a range check.
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: pyro, replicate: 4, ...aim }))
+      .not.toBeNull();
+
+    const bolt = casting('Lightning Bolt', 'arc-tempest', [MOUNTAIN, MOUNTAIN]);
+    expect(refusal(bolt, {
+      type: 'auto:cast', by: 0, card: find(bolt, 0, 'hand', 'Lightning Bolt'), replicate: 1,
+      targets: [{ kind: 'player', seat: 1 }],
+    })).toContain('no replicate');
+  });
+});
+
 describe('rebound: the spell that casts itself again next turn', () => {
   /*
     The fourth card in the engine that is cast twice, and the first that pays for the second casting

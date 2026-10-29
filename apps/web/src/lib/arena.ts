@@ -315,6 +315,14 @@ function playAction(
   // missing x on a cost with one would silently cast it for nothing.
   const withX = play.xMax === undefined ? {} : { x: Math.max(0, Math.min(x ?? 0, play.xMax)) }
   /*
+    And replicate's **count**, which is the twelfth cost flag and the only one that is a number.
+
+    It cannot go in the loop below for that reason, and it does not need the X treatment either: the
+    count is not picked by the player, it *is* the row they tapped. The engine offers one play per
+    affordable number (CR 702.56), so sending the play's own count back is the whole of it.
+  */
+  const withReplicate = play.replicate === undefined ? {} : { replicate: play.replicate }
+  /*
     Every flag that says **which cost this cast is paying**, carried across as one object.
 
     There are eleven of them and they are one idea: the engine offers a card in hand or in a
@@ -374,7 +382,7 @@ function playAction(
     // not something the spell asks for on resolution, so it travels with the cast.
     return {
       type: "auto:cast", card: play.card,
-      ...withModes, ...withX, ...withCostFlags,
+      ...withModes, ...withX, ...withReplicate, ...withCostFlags,
       ...withHalf, ...withDivision,
       ...withSacrifice, ...withTargets,
     }

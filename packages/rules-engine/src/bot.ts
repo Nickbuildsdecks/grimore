@@ -1250,6 +1250,15 @@ function candidateActions(
             // version as a separate one — so it has to be said, or the engine casts the cheap
             // half of a card the table offered as the expensive one.
             ...(play.kicked === true ? { kicked: true } : {}),
+            /*
+              And replicate's **count**, which is the same mistake as the kicker's with a number in
+              it — and the one that proves the comment above is not theoretical. Before this line
+              the bot cast Pyromatics 49 times in 96 games and paid the replicate cost **not once**:
+              the search was choosing the x2 row and the action it sent was the printed cast, which
+              the engine then charged {1}{R} for and resolved, so nothing anywhere looked wrong.
+              Found by counting what the bot paid rather than by a failing test.
+            */
+            ...(play.replicate === undefined ? {} : { replicate: play.replicate }),
             // And the same for flashback, which is a different *zone* as well as a different
             // cost: without this the engine would be told to cast a card that is in a graveyard
             // as though it were in hand, and would refuse its own offer.
@@ -2826,6 +2835,10 @@ const playKey = (play: LegalPlay): string =>
   + `${play.evoked === true ? 'e' : ''}${play.dashed === true ? 'd' : ''}`
   + `${play.bestowed === true ? 'b' : ''}${play.spectacled === true ? 's' : ''}`
   + `${play.overloaded === true ? 'o' : ''}`
+  // And replicate's count, for the same reason one step further: the three castings of a Pyromatics
+  // are three plays, and a key that could not tell them apart would read "x2 is still on offer"
+  // after the printed one had been cast.
+  + `${play.replicate === undefined ? '' : `r${play.replicate}`}`
   // The half, because two halves of one card are two different plays: without it the "did casting
   // that buy me anything" checks would read Ice as still on offer after Fire had been cast.
   + `|${play.half ?? ''}|${(play.modes ?? []).join(',')}`;

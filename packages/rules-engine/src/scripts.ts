@@ -6243,6 +6243,78 @@ const DISTORTION_STRIKE: CardScript = {
   },
 };
 
+/**
+ * The self spell-cast trigger every replicate card carries (CR 702.56).
+ *
+ * `storm()` with the count read from a different place: storm asks the turn how many spells came
+ * before this one, replicate asks the *casting* how many times its cost was paid. Both make their
+ * copies with `copySpellOnStack`, and both keep the original's targets — the printed card offers
+ * new targets for the copies and this engine does not, which is the narrower reading and the one
+ * that cannot be wrong in the player's favour (CR 707.10).
+ */
+function replicate(): TriggerDef {
+  return {
+    on: { kind: 'spell-cast', self: true },
+    description: 'Replicate — copy this spell for each time its replicate cost was paid',
+    effect: (c) => {
+      const id = c.answering;
+      if (id === undefined) return c.state;
+      const copies = c.state.stackObjects[id]?.replicated ?? 0;
+      let next = c.state;
+      for (let i = 0; i < copies; i += 1) next = copySpellOnStack(next, id, c.controller);
+      return next;
+    },
+  };
+}
+
+/**
+ * Pyromatics: one damage, divided, for as many mana as you have.
+ *
+ * The pool's first **replicate** card, and the keyword's best argument: {1}{R} for one damage is
+ * the worst burn spell ever printed, and {1}{R} plus two more copies is three damage spread
+ * wherever you like for six mana at instant speed. What the keyword really sells is *lateness* — a
+ * card that is unplayable on turn two and a sweeper for small creatures on turn eight, out of one
+ * slot in the deck.
+ *
+ * In Arc Tempest for the reason Grapeshot is: that deck casts cheap spells and counts them, so a
+ * replicated Pyromatics is three cast triggers for its Guttersnipes and Thermo-Alchemists as well
+ * as three damage. The two cards are the same shape from opposite ends — storm pays for copies with
+ * the turn's history, replicate pays for them with mana.
+ *
+ * The division is the half worth noticing in this engine: each copy keeps the original's
+ * **division** as well as its targets, which `copySpellOnStack` already carried for Twincast
+ * (D131). So a Pyromatics aimed one damage each at two creatures, replicated twice, is two damage
+ * each — and a player who wanted three on one thing had to say so when they cast it.
+ */
+const PYROMATICS: CardScript = {
+  name: 'Pyromatics',
+  replicate: { cost: '{1}{R}' },
+  targets: [{ kind: 'any', description: 'any target', count: 2, optional: true, divided: 1 }],
+  triggers: [replicate()],
+  onResolve: (c) => dividedAmong(c).reduce(
+    (state, { target, amount }) => dealDamage(state, target, amount, {
+      controller: c.controller, source: c.source,
+    }),
+    c.state,
+  ),
+};
+
+/**
+ * Train of Thought: a card, or as many cards as the turn can pay for.
+ *
+ * Replicate's other half, on the keyword's quieter card and in the deck that needs the quiet half.
+ * {2}{U} to draw one card is a bad rate; {2}{U} four times over to draw four is the same rate and a
+ * **refill**, which is the thing a control deck runs out of. Hollow Tide holds the pool's only
+ * Treasure Cruise and its Gurmag Angler, so it is already the deck whose late turns have mana and
+ * nothing to spend it on.
+ */
+const TRAIN_OF_THOUGHT: CardScript = {
+  name: 'Train of Thought',
+  replicate: { cost: '{2}{U}' },
+  triggers: [replicate()],
+  onResolve: (c) => draw(c.state, c.controller, 1),
+};
+
 const THICKET_BASILISK: CardScript = {
   name: 'Thicket Basilisk',
   triggers: [
@@ -7122,7 +7194,7 @@ const ALL: readonly CardScript[] = [
   tapLand('Hagra Broodpit', 'B'), tapLand('Vastwood Thicket', 'G'),
   SQUID, CHASM_SKULKER, FATE_UNRAVELER,
   SACRED_CAT, ANGEL_OF_SANCTIONS, ADORNED_POUNCER, SUNSCOURGE_CHAMPION,
-  THUNDEROUS_WRATH, TERMINUS, STAGGERSHOCK, DISTORTION_STRIKE,
+  THUNDEROUS_WRATH, TERMINUS, STAGGERSHOCK, DISTORTION_STRIKE, PYROMATICS, TRAIN_OF_THOUGHT,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

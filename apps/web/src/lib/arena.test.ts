@@ -328,6 +328,29 @@ describe("costs that are choices", () => {
     })
   })
 
+  it("sends replicate's count, which is the one cost flag that is a number", () => {
+    /*
+      The same shape as the kicker above with one difference that matters: the count is not a flag
+      the loop can carry, so it needed a line of its own — and the engine's own bot proved why
+      before this test existed. With the count dropped, a cast of the x2 row was quietly the
+      printed cast: the engine charged {1}{R}, resolved it, and nothing anywhere looked wrong.
+    */
+    const twice = play({
+      name: "Pyromatics", description: "Cast Pyromatics with replicate x2", replicate: 2,
+      manaCost: "{1}{R}{1}{R}{1}{R}",
+    })
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: twice }).mode
+    expect(arenaReducer(mode, { kind: "pickTarget", target: player(1) }).action).toEqual({
+      type: "auto:cast", card: "c1", replicate: 2, targets: [player(1)],
+    })
+    // And the printed cast carries no count at all, rather than a zero the engine would refuse.
+    const once = play({ name: "Pyromatics", manaCost: "{1}{R}" })
+    const plain = arenaReducer(IDLE, { kind: "choosePlay", play: once }).mode
+    expect(arenaReducer(plain, { kind: "pickTarget", target: player(1) }).action).toEqual({
+      type: "auto:cast", card: "c1", targets: [player(1)],
+    })
+  })
+
   it("sends the flashback flag when the play came out of the graveyard", () => {
     /*
       The flag the client forgot, and the reason this test exists rather than a comment.

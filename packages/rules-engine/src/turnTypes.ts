@@ -280,6 +280,14 @@ export interface StackObject {
    */
   readonly rebounding?: true;
   /**
+   * How many times this spell's replicate cost was paid, and so how many copies it makes.
+   *
+   * A number rather than a flag, which is what makes it different from every other keyword on this
+   * object: the count is part of what was paid, and the trigger that makes the copies reads it from
+   * here the way storm's reads `castNumber`. See `CardScript.replicate`.
+   */
+  readonly replicated?: number;
+  /**
    * The modes chosen for a modal spell, as indices into its script's `modal.modes`, in printed
    * order. Chosen as the spell was cast (CR 601.2b) and public from that moment, which is why it
    * lives on the stack object rather than anywhere private.
@@ -963,6 +971,15 @@ export interface AutoCastAction {
   readonly division?: readonly number[];
   /** Pay the kicker (CR 702.32a). Refused on a spell that has none. */
   readonly kicked?: boolean;
+  /**
+   * Pay the replicate cost this many times (CR 702.56). Refused on a spell that has none, on a
+   * count below one, and beside an alternative cost — a spell is cast for one cost, and replicate
+   * adds to the printed one rather than replacing it.
+   *
+   * A number rather than a flag because the whole keyword is the count: it is the first cost in
+   * this engine that can be paid more than once on a single casting.
+   */
+  readonly replicate?: number;
   /**
    * Cast it from your graveyard for its flashback cost (CR 702.33). Refused on a card with no
    * flashback, and on one that is not in your graveyard.

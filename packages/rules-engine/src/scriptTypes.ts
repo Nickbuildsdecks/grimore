@@ -1587,6 +1587,27 @@ export interface CardScript {
    * trigger is consumed when it resolves and nothing schedules another.
    */
   readonly rebound?: true;
+  /**
+   * Replicate: pay this cost as many times as you like, and copy the spell for each (CR 702.56).
+   *
+   * The engine's first cost that can be paid **more than once on one casting**, and the first
+   * number announced as a spell is cast that is not {X}. Everything else in the cost family is a
+   * yes or a no: a kicker is paid or not, an alternative cost replaces the printed one or does not.
+   * This is a count, and what it buys is copies rather than a bigger effect.
+   *
+   * Offered as **one play per count** rather than as a number picker, which is the kicker's
+   * arrangement rather than {X}'s and is deliberate. The table already draws a second play on the
+   * same card with a different cost; a count whose ceiling is the mana available is exactly that
+   * list, one entry per affordable number, and it needs nothing new in the client. {X}'s picker
+   * exists because X ranges to twenty; replicate in this pool ranges to three.
+   *
+   * The copies are the card's own **self spell-cast trigger**, the shape storm uses
+   * (`replicate()`), reading the count off `StackObject.replicated`. Each copy keeps the original's
+   * targets and its division, like storm's: the printed card offers new targets for the copies and
+   * the engine does not, which is the narrower reading and the one that cannot be wrong in the
+   * player's favour.
+   */
+  readonly replicate?: { readonly cost: string };
   readonly replaces?: readonly {
     /**
      * Which zone change this replaces. The three are the same move seen at three widths, and a

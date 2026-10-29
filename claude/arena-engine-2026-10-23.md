@@ -5686,6 +5686,27 @@ Mind's, one copy each. And `LIST=rebound` is the first browser scenario whose cl
 three runs, 26 to 27 checks, the bar offering a free cast in the upkeep of a card the player no
 longer has.
 
+### Replicate, and the slot that was worth −19 or +1 depending on what paid for it (D207)
+
+The first cost in this engine that can be paid **more than once on one casting**, and the first
+announced number that is not {X}. The copies are storm's trigger with the count read from the
+casting instead of the turn, and `copySpellOnStack` already carried targets and division — so the
+engine work was the cost: a count on the cast action, one offered play per affordable number (the
+kicker's arrangement rather than {X}'s picker), and a cap of four because the fifth row is not a
+play anybody chooses between.
+
+**The bot cast Pyromatics 49 times in 96 games and paid the replicate cost not once.** The rows were
+offered and the search chose between them; the action it sent dropped the count, so a chosen "x2"
+was quietly the printed cast — charged {1}{R}, resolved, no refusal and no failing test. Twelve cost
+flags travel on a cast now and the twelfth is a number. Found by counting what the bot paid, which
+is a five-minute script, and the comment block that block already carried had predicted it.
+
+**And then the slot measurement said something general.** Pyromatics in the Firebolt's slot costs Arc
+Tempest 10 and 19 games of 288 on two seed sets; the same card in the same deck in the second Think
+Twice's slot gains 1 and 1. What a slot is worth is a fact about the card that *pays* for it, and a
+probe run once would have drawn a conclusion about the keyword that was wrong either way round.
+Train of Thought, in Hollow Tide for a Fog Bank, reads −7 and −2 — inside the floor both times.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

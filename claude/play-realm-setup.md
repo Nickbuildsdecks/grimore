@@ -936,6 +936,7 @@ LIST=earned  node scripts/e2e-solo.mjs # a deck built for spectacle and overload
 LIST=graveyard node scripts/e2e-solo.mjs # a deck built to press a button in the graveyard — 27-29 checks
 LIST=miracle node scripts/e2e-solo.mjs # a deck whose first draw is often the card it is built around — 26 checks
 LIST=rebound node scripts/e2e-solo.mjs # a deck built to cast the same spell twice, a turn apart — 26-27 checks
+LIST=replicate node scripts/e2e-solo.mjs # a deck with the mana to pay one cost several times — 25 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -1004,6 +1005,7 @@ LIST=earned  node scripts/e2e-solo.mjs           # spectacle and overload, the t
 LIST=graveyard node scripts/e2e-solo.mjs         # embalm and eternalize, pressed in the graveyard
 LIST=miracle node scripts/e2e-solo.mjs           # a miracle offered in the draw step, on a card in hand
 LIST=rebound node scripts/e2e-solo.mjs           # a rebound offered a turn later, on a card in exile
+LIST=replicate node scripts/e2e-solo.mjs         # one card offered at three prices, and the one tapped charged
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
@@ -1018,7 +1020,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1049 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1054 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1126,6 +1128,15 @@ else in this suite asks the table to keep a promise across a turn boundary. The 
 mono-red shell `LIST=miracle` uses with eight Staggershocks in place of the Wraths, so the only
 difference between the two runs is the keyword. Three runs, 26 to 27 checks each.
 
+`LIST=replicate` is the seventh, and the only one whose subject is the **price list**. A card with
+replicate is offered once per count the mana will cover, so one Pyromatics with eight mana up is
+three or four rows at three or four prices — and what the run proves is that the row tapped is the
+row charged. That is not a hypothetical: the bot sent the printed cast for forty-nine castings
+before the count was carried through (D207), and nothing about it looked wrong. The deck is
+twenty-eight Mountains and eight Pyromatics, with no curve on purpose so there is spare mana by turn
+five. Three runs, 25 of 25 checks each; the driver picks a random row, so it took four games in two
+of the three runs to press one.
+
 Two of those checks are about how the table **looks** rather than what it does, which is new and
 worth saying why. A card at this table leans towards the cursor with a foil sheen that follows it,
 and the board has its own mana embers drifting behind it — and both are written as CSS variables a
@@ -1133,9 +1144,9 @@ pointer handler sets, so nothing that does not move a real pointer can see them.
 hovers a card and reads the variables back, which is the only honest way to check a thing whose
 whole existence is in the browser.
 
-The layers under them have their own suites: `packages/rules-engine` (1049 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1054 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
-pods as well as duels), `apps/web` (215 tests, the interaction reducer behind every prompt and the deck panel) and
+pods as well as duels), `apps/web` (216 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
 (43 tests against live Redis, including two socket clients playing to a finish, one person
 playing the server, a deal struck with the server's own seat, and two players rematching on

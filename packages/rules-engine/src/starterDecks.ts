@@ -4816,6 +4816,31 @@ export const SKYWARD_WRIT: DeckSpec = {
  * every connection and comes back from the command zone when it dies is the half the spells cannot
  * do.
  */
+/*
+  The two replicate cards. Both are mana sinks rather than spells, which is what the keyword is:
+  a bad card early and a card that scales with the turn you cast it in.
+*/
+const PYROMATICS: CardDef = {
+  name: 'Pyromatics',
+  typeLine: 'Instant',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  oracleText: 'Pyromatics deals 1 damage divided as you choose among one or two targets.\n'
+    + 'Replicate {1}{R} (When you cast this spell, copy it for each time you paid its replicate '
+    + 'cost. You may choose new targets for the copies.)',
+  colors: ['R'],
+};
+
+const TRAIN_OF_THOUGHT: CardDef = {
+  name: 'Train of Thought',
+  typeLine: 'Sorcery',
+  manaCost: '{2}{U}',
+  cmc: 3,
+  oracleText: 'Draw a card.\nReplicate {2}{U} (When you cast this spell, copy it for each time '
+    + 'you paid its replicate cost.)',
+  colors: ['U'],
+};
+
 export const HOLLOW_TIDE: DeckSpec = {
   id: 'hollow-tide',
   name: 'Hollow Tide',
@@ -4883,7 +4908,16 @@ export const HOLLOW_TIDE: DeckSpec = {
       about measuring the cut as well as the card, landing on the deck that asked the question.
     */
     // attack and all of them are happy to block for ever.
-    { card: FOG_BANK, count: 3 },
+    { card: FOG_BANK, count: 2 },
+    /*
+      The third Fog Bank's slot, spent on a **mana sink** instead of a third blocker.
+
+      This deck's late turns have always had mana and nothing to spend it on — a Treasure Cruise
+      for {U} and a Gurmag Angler for {B} both get *cheaper* as the graveyard fills, which is the
+      opposite of a sink. A Train of Thought is a bad card for three mana and a refill for nine, so
+      it is the card this list was short of rather than another card it already has three of.
+    */
+    { card: TRAIN_OF_THOUGHT, count: 1 },
     /*
       Evolve, and the second Psychic Strike it replaced.
 
@@ -5284,7 +5318,23 @@ export const ARC_TEMPEST: DeckSpec = {
     { card: PREORDAIN, count: 2 },
     // Think Twice, for the same reason as Firebolt: one card, two casts, and the second one comes
     // on a turn the hand is empty.
-    { card: THINK_TWICE, count: 2 },
+    { card: THINK_TWICE, count: 1 },
+    /*
+      The second Think Twice's slot, which went to the pool's first **replicate** card.
+
+      Pyromatics is a *bad card* at its printed rate and that is the point of the slot: one damage
+      for two mana is unplayable, and the same card on turn eight is three damage divided wherever
+      it is needed at instant speed. What it replaces is the deck's second copy of a cantrip it
+      already has six other ways to do — two Preordains, a Behold the Multiverse, a Faithless
+      Looting and the first Think Twice — so what the deck gives up is redundancy and what it buys
+      is a mana sink, which it had none of.
+
+      It was first tried in the **Firebolt's** slot and measured at ten and nineteen games of 288
+      across two seed sets (D207). A Firebolt is two damage for {R} and two more from the graveyard;
+      losing that for a one-damage spell is a real cost, and the number said so twice. This is the
+      cheaper slot, measured the same way.
+    */
+    { card: PYROMATICS, count: 1 },
     // Behold the Multiverse, which is the deck's two-mana play on a turn it has nothing else to do
     // and its four-mana draw-two on a turn it does.
     // One Behold rather than two, and the pool's last copy: Tidal Mind's went in its rebuild, so
