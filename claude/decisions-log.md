@@ -10845,3 +10845,94 @@ An effect that lives entirely in the browser is one only a browser can be asked 
 same argument `LIST=cascade`, `LIST=costs` and `LIST=earned` each made about a *row* the engine
 offers, arriving from the other direction: there the engine knew the answer and the table was
 untested, here nothing but the table knows anything at all.
+
+## D202 — Energy: a resource that is saved, and an instrument that found a bug by its absence
+
+Every cost this engine could pay came out of one of five pots: mana, life, tapping something, cards
+in a graveyard, or counters on a permanent. Energy (CR 122) is none of them. It is a counter on the
+**player**, it is never emptied, and it is the first resource here that a deck *saves up* over
+several turns and spends at once.
+
+### It needed no new state, which is the part worth noticing
+
+`Seat.counters` has read "arbitrary named counters (energy, experience, rad, tickets, ...)" since
+the first week and nothing had ever used it. So the work is not in the state at all — it is in the
+cost (`AbilityCost.energy`), in the offer (`legalActions` skips an ability whose energy the seat
+does not have, the same CR 118.4 rule life and `removeCounter` already follow), in the payment and
+its refusal (`autoActions`), and in one place for the arithmetic: `addEnergy` / `spendEnergy` /
+`energyOf` in `effects.ts`, which is `recordLifeLost`'s discipline for the same reason — a resource
+whose arithmetic is written out at each call site is one that eventually goes negative somewhere.
+
+Nothing in `endTurnCleanup` touches it. That absence is the whole character of the resource, so it
+is said out loud there and has a test of its own: a Longtusk Cub that connects on turn five has its
+counters on turn six, which is the only reason a three-energy card is ever castable.
+
+### Four cards, which are the whole mechanic
+
+**Aether Hub** ties energy to mana: a land that arrives with one and spends it for a colour.
+**Longtusk Cub** makes it — two every time it connects, and two of them for a +1/+1 counter.
+**Bristling Hydra** is the payoff: three on arrival, three to grow *and* gain hexproof until end of
+turn, which is the one answer in that deck to a removal spell already on the stack. And **Harnessed
+Lightning** is the first spell here whose effect asks **how much of a resource to spend** — D130's
+number-decision shape, built for Toxic Deluge's life, pointed at a different pot. Its `best` is the
+cheapest kill rather than the whole pool, because energy kept is a Hydra protected later.
+
+All four into Kindle Grove, which can cast them and already wants creatures to connect: a Mountain
+becomes the Hub, and one each of Borderland Marauder, Ambush Viper and Lightning Strike makes room.
+
+### The instrument, and the bug it found by looking for an absence
+
+No existing harness could see this mechanic. `cast-counts.mjs` counts **casts** and three of the
+four cards spend through an *activated ability*; `deck-probe.mjs` answers whether the deck won more;
+`wasted-plays.mjs` never flags spending energy because spending it always moves something. So
+`scripts/measure/energy.mjs` watches the pot itself: in, out, the high-water mark, and what was left
+unspent when the game ended.
+
+Its first full run reported that the Aether Hub had given out thirty-six energy and **none of it was
+ever spent** — and that absence was a real bug, one zone away from the cards. `manaSources`, the
+list the engine auto-taps from, read the mana, the tap, the sacrifice and the life on an ability and
+nothing else. A Hub's coloured rows cost `{T}` and one energy, so the auto-tapper saw five free rows
+and would tap the Hub for any colour with no energy at all. A land that quietly makes any colour for
+nothing is not the card.
+
+Two halves to the fix, and the second is a judgement rather than a rule. A row whose energy the seat
+does not have is not a source. And where a permanent offers both a free tap and a paid one — the Hub
+is the pool's first card actually shaped that way — the auto-tapper takes the free one, the same
+conservative rule that stops it charging life for a tap that did not need it. Spending a saved
+resource to fix a colour is a judgement about the next three turns, and a solver that knows about
+one cost is not in a position to make it; the player still sees all six rows.
+
+### Measured: level, and a bot that does not hoard
+
+Two seed sets of 288 paired duels, probing the revert of all four cards at once:
+
+```
+3300   with the energy four 157-131   without 164-122   -7
+5100   with the energy four 165-123   without 168-119   -3
+```
+
+Level and faintly negative — both arms the same way for the second time in the session, from a
+**four-card** swap rather than a one-card slot, and still inside the ±20 floor.
+
+And the question this piece was written around, which was whether the bot would simply sit on the
+counters:
+
+```
+energy in: 401        out: 326        81% of it spent
+  225  Bristling Hydra            222  Hydra — grow and gain hexproof
+  113  (a chain not attributed)   104  Longtusk Cub — a +1/+1 counter
+   36  Aether Hub
+   18  Harnessed Lightning
+    9  Longtusk Cub
+111 seat-games of 576 had any; mean peak 2.6, most ever 6; 0.6 unspent at the end
+28 of those 111 spent none of it
+```
+
+**It spends it**, which is the opposite of the worry. Four fifths of everything handed out, with
+little more than half a counter left over at the end of an average game.
+
+The honest surprise is elsewhere in that table. **Longtusk Cub gave nine energy in 288 games** — the
+card whose job is to *make* the resource makes almost none of it, because a 2/2 that has to connect
+rarely connects in a format full of blockers. The mechanic in this deck runs on the payoff card's
+own arrival trigger: the Hydra is its own enabler. That is worth knowing before anybody designs a
+second energy deck around a creature that has to get through.

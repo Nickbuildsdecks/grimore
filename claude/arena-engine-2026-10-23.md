@@ -5528,6 +5528,35 @@ And both are checked in a browser, because neither can be seen any other way: th
 a card and reads the tilt variables back off it. That is the general shape of this kind of work —
 an effect that lives entirely in the browser is one only a browser can be asked about.
 
+### Energy, and the bug an instrument found by its absence (D202)
+
+Energy (CR 122) is the first resource in this engine that is none of mana, life, tapping, graveyard
+cards or counters on a permanent: it is a counter on the **player**, never emptied, saved across
+turns. It needed no new state — `Seat.counters` was always meant for it and nothing had used it — so
+the work is in the cost (`AbilityCost.energy`), the offer, the payment, and one place for the
+arithmetic (`addEnergy`/`spendEnergy`/`energyOf`). Nothing in `endTurnCleanup` touches it, and that
+absence has a test.
+
+Four cards are the whole mechanic: **Aether Hub** (a land that arrives with one and spends it for a
+colour), **Longtusk Cub** (two when it connects, two for a counter), **Bristling Hydra** (three on
+arrival, three to grow and gain hexproof — an answer to removal already on the stack) and
+**Harnessed Lightning**, the first spell here whose effect asks *how much of a resource to spend*.
+They go into Kindle Grove, and the slot measures level and faintly negative (−7 and −3 on two seed
+sets of 288) from a four-card swap.
+
+`scripts/measure/energy.mjs` exists because nothing else could see the mechanic: `cast-counts` counts
+casts and three of the four spend through an activated ability. Its first run found a real bug **by
+an absence** — the Hub gave out thirty-six energy and none was ever spent, because `manaSources` read
+mana, tap, sacrifice and life on an ability and never energy, so the auto-tapper would tap a Hub for
+any colour with none at all. Fixed twice over: an unpayable row is not a source, and a permanent with
+both a free tap and a paid one gives the auto-tapper the free one, because spending a saved resource
+to fix a colour is a judgement about the next three turns.
+
+Measured over 288 games the bot **spends** it — 401 given, 326 spent, 81% — which is the opposite of
+the worry the task was written around. The surprise is elsewhere: **Longtusk Cub gave nine energy in
+288 games**, because a 2/2 that must connect rarely does. The mechanic runs on the payoff card's own
+arrival trigger rather than on its enabler.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
