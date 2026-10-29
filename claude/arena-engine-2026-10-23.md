@@ -5795,14 +5795,18 @@ rather than handing the owed draw back to the drain, which would offer the same 
 forever. That was a real bug for one run of the tests: the first version sliced the queue and
 declining ate the draw.
 
-**What it measures is two losses of different sizes, and only the control told them apart.** Both
-cards cost their decks — Rot Harvest wins 8 and 14 more games of 288 without the Shambling Shell,
-Blight Vector 6 and 13 more without the Darkblast, four readings on the same side of the ±20 floor.
-Run again with the bot never dredging, the same slots read 5, 10, 3 and 7. So the cards are simply
-worse than the Endless One and the Doom Blade they replaced, and **the bot taking every dredge costs
-a further 3 to 6 games, four times out of four**. The default stays on — a bot offered a mechanic
-every turn and never taking it looks broken — but "always yes" is now a measured wrong answer with a
-baseline to beat rather than a guess.
+**Both cards cost their decks.** Rot Harvest wins 8 and 14 more games of 288 without the Shambling
+Shell, Blight Vector 6 and 13 more without the Darkblast — four readings on the same side of the ±20
+floor, so the cards are simply worse than the Endless One and the Doom Blade they replaced.
+
+**And the thing that was read off those numbers about the *bot* was wrong.** Running the same probes
+with the rule off gave 5, 10, 3 and 7, and the difference was published as "taking every dredge
+costs a further 3 to 6 games". It does not. Measured head to head with `bot-duel`, which varies the
+rule and cancels the deck, the matchup and the seat, always-dredging, never-dredging and a tighter
+rule are **level within two games of 624** — on a harness whose negative control is *exactly*
+312-312. The 3-to-6 was the difference of two noisy numbers, each a probe with a ±20 floor. D212 has
+the four runs and the lesson: **a bot rule is measured with the bot instrument**, and no amount of
+running a slot probe twice turns it into an answer about the opponent.
 
 **And the question it asks every turn now has an answer you can give once.** A dredge card stays in
 the graveyard, so the table stops in every draw step for the rest of the game — correct, and twenty

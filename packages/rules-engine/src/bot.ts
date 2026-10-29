@@ -18,8 +18,8 @@ import { crewPlan, legalActions, manaSources, type LegalActions, type LegalPlay 
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
-  bottomOwed, modesOf, pendingDeclaration, pendingRetarget, preferredAmount, preferredOption,
-  stillDeciding,
+  bottomOwed, hasAnyLegalTargets, modesOf, pendingDeclaration, pendingRetarget, preferredAmount,
+  preferredOption, stillDeciding,
 } from './automation.js';
 import { characteristicsOf, hasType, parseTypeLine, type Keyword } from './characteristics.js';
 import {
@@ -1445,6 +1445,17 @@ export interface BotOptions {
    * also the control the rule was measured against. See `dredgeIsWorthIt` and D210.
    */
   readonly dredgesForValue?: boolean;
+  /**
+   * Whether the dredge rule is the **tight** one. Default **on**; off is the first rule, kept as a
+   * control.
+   *
+   * The loose rule — "the library can afford it and the card's mana value is no more than the lands
+   * standing" — is true of nearly everything by turn four, so what it encoded was *always*, and
+   * always measured as a loss of 3 to 6 games of 288 four times out of four (D210). This flag is
+   * what lets the two be played against each other head to head rather than inferred from two slot
+   * probes. See `dredgeIsWorthIt`.
+   */
+  readonly dredgesTightly?: boolean;
 }
 
 /**
@@ -1499,20 +1510,72 @@ function aimPending(
  * D164 went looking for. So the comparison is never "is this better than the card I would draw" —
  * it cannot be.
  */
+/**
+ * How many cards a library must still hold before this bot will dredge (CR 702.52a).
+ *
+ * A flat number rather than a multiple of the dredge cost, because what it is protecting against
+ * is flat: drawing from an empty library loses the game whatever the card cost to get back. Twenty
+ * is about a third of a starting deck and roughly the point past which the remaining draws are the
+ * game.
+ */
+const DREDGE_LIBRARY_FLOOR = 20;
+
 function dredgeIsWorthIt(
   state: GameState, seat: SeatIndex, ask: { readonly card: string; readonly mill: number },
+  opts: BotOptions = {},
 ): boolean {
   const library = listAt(state, zoneKey(seat, 'library')).length;
   if (library < ask.mill * 4) return false;
   const def = state.cardDefs[state.instances[ask.card]?.defKey ?? ''];
   if (def === undefined) return false;
-  const lands = listAt(state, zoneKey(seat, 'battlefield'))
-    .filter((id) => {
-      const inst = state.instances[id];
-      return inst !== undefined
-        && hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine ?? ''), 'land');
-    }).length;
-  return (def.cmc ?? 0) <= lands;
+  if ((opts.dredgesTightly ?? true) !== true) {
+    // The first rule, kept as the control the tight one is measured against: mana value no more
+    // than the lands standing, which by turn four is true of nearly everything.
+    const lands = listAt(state, zoneKey(seat, 'battlefield'))
+      .filter((id) => {
+        const inst = state.instances[id];
+        return inst !== undefined
+          && hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine ?? ''), 'land');
+      }).length;
+    return (def.cmc ?? 0) <= lands;
+  }
+  /*
+    Three facts, and each one is a reason this particular card is worth three off the library.
+
+    **Not one you already hold.** A dredge brings back a card you have *seen*; a draw brings back an
+    unknown. The one case where the known card is certainly worth less than the unknown is when you
+    are already holding a copy of it, and a second Darkblast in a hand that has one does nothing a
+    first does not.
+
+    **Castable now.** The question is asked in the draw step, which is after the untap — so the
+    lands are standing and "can I pay for this" reads as "can I use this *this turn*". The loose
+    rule asked whether the mana value was no more than the land count, which ignores colours and is
+    satisfied by almost everything.
+
+    **With something to point at.** A Darkblast returned to a hand with no creature on the board is
+    a dead card bought for three live ones, which is the same thing the bot already refuses to do
+    when it declines to cast removal into an empty board.
+  */
+  /*
+    And a floor on the library that is a **number of cards left** rather than a multiple of the
+    price.
+
+    `mill * 4` is twelve cards for a dredge 3, and a seat whose library is down to twelve has
+    already milled most of its deck away — the rule was measuring the wrong end. Over 96 games of
+    each dredge deck the instrument counted three in which somebody drew from an empty library,
+    which is about the size of the loss the slot probes found, so the first thing to try is simply
+    not racing your own library.
+  */
+  if (library < DREDGE_LIBRARY_FLOOR) return false;
+  const name = def.name;
+  const alreadyHeld = listAt(state, zoneKey(seat, 'hand'))
+    .some((id) => state.cardDefs[state.instances[id]?.defKey ?? '']?.name === name);
+  if (alreadyHeld) return false;
+  const cost = parseManaCost(def.manaCost ?? '');
+  if (cost.unsupported !== undefined) return false;
+  if (!canAfford(poolOf(state, seat), cost, manaSources(state, seat))) return false;
+  const specs = scriptFor(name)?.targets ?? [];
+  return specs.length === 0 || hasAnyLegalTargets(state, specs, seat);
 }
 
 function answerPending(state: GameState): Action | null {
@@ -3065,7 +3128,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     return {
       type: 'auto:dredge',
       by: seat,
-      dredge: (opts.dredgesForValue ?? true) && dredgeIsWorthIt(state, seat, dredge),
+      dredge: (opts.dredgesForValue ?? true) && dredgeIsWorthIt(state, seat, dredge, opts),
     };
   }
 

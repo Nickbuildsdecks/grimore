@@ -35,6 +35,16 @@ const FIELD = ALL.filter((id) => id !== SUBJECT);
 const SEEDS = Number(process.env.SEEDS ?? 4);
 const SEED0 = Number(process.env.SEED0 ?? 3300);
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
+/*
+  `BotOptions` as JSON, so the same counts can be read with the dredge rule on, off or changed.
+
+  The question this instrument is for — how often is it offered, how often taken, and does the deck
+  run itself out of cards — is a question about a *rule*, and a count taken under one configuration
+  only says what that configuration does. `deck-probe` takes the same env for the same reason.
+
+    BOT='{"dredgesForValue":false}' SUBJECT=rot-harvest node scripts/measure/dredge.mjs
+*/
+const BOT = JSON.parse(process.env.BOT ?? '{}');
 
 let games = 0;
 /** Offers made, by the card that made them. */
@@ -47,7 +57,13 @@ const declined = new Map();
 let milled = 0;
 /** The shortest library the subject seat ever stood on, per game. */
 const lows = [];
-/** Games that ended with somebody having drawn from an empty library. */
+/**
+ * Games the **subject** ended having drawn from an empty library.
+ *
+ * The subject's own and not "somebody's", which the first version counted and which answers a
+ * different question: against Hollow Tide the opponent decks you on purpose, so a count that
+ * includes every seat reads a mill deck's win as a dredge deck's mistake.
+ */
 let decked = 0;
 
 const bump = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
@@ -69,7 +85,7 @@ function duel(seed, decks) {
   for (let move = 0; move < 4000 && !s.finished; move++) {
     const seat = seatsToAct(s)[0];
     if (seat === undefined) break;
-    const action = botAction(s, seat);
+    const action = botAction(s, seat, BOT);
     if (action === null) break;
     /*
       The question, read off the state before the answer is applied.
@@ -93,7 +109,7 @@ function duel(seed, decks) {
     low = Math.min(low, librarySize(s, subjectSeat));
   }
   lows.push(low);
-  if (s.drewFromEmpty.length > 0) decked += 1;
+  if (s.drewFromEmpty.includes(subjectSeat)) decked += 1;
   games += 1;
 }
 
@@ -116,4 +132,4 @@ for (const [name, n] of sorted(offered)) {
 lows.sort((a, b) => a - b);
 const median = lows[Math.floor(lows.length / 2)] ?? 0;
 console.log(`  ${SUBJECT}'s library at its shortest: median ${median}, worst ${lows[0] ?? 0}`);
-console.log(`  games where somebody drew from an empty library: ${decked}`);
+console.log(`  games ${SUBJECT} drew from an empty library: ${decked}`);

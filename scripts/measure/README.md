@@ -428,6 +428,15 @@ because `(miracle)` had been thrown away. **Both were found by a number that was
 rather than by a failing check.** Where a keyword can only be told from its siblings by the card's
 own text, read the card's own text, and never truncate the string a scenario asserts on.
 
+**Measure a bot rule with `bot-duel`, never by differencing two slot probes.** A probe prices a
+*slot* — the deck with a card against the deck without it — and running it twice, once per bot
+setting, does not turn it into an answer about the bot: each probe carries a ±20 floor, and the
+difference of two of them carries both. D210 did exactly that and published "taking every dredge
+costs 3 to 6 games of 288, four times out of four"; `bot-duel` then found every dredge configuration
+**level within two games of 624**, and D212 withdrew the claim. The giveaway was available
+beforehand: this harness's negative control is not approximately level, it is *exactly* 312-312, and
+that is the property that makes two games readable and three-of-288 arguable.
+
 **Ask whether a slot is a bad card or a badly played one, because the answer is sometimes both.**
 `deck-probe` takes `BOT` now for exactly this: Terminus cost Skyward Writ 32 and 29 games of 288
 with the bot casting every one it was offered, and 24 and 12 with `sparesItsOwnBoard` on (D205). A

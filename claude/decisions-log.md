@@ -11730,15 +11730,14 @@ cards still cost 5, 10, 3 and 7 — they are simply worse than the Endless One a
 replaced, which is a fact about two cards and not about dredge. The rest, **3, 4, 3 and 6 games of
 288, four times out of four**, is the bot taking every dredge it is offered.
 
-That is not "the keyword is bad"; it is "always yes is the wrong answer to this question", and the
-difference matters because the right rule is a third thing neither probe measured. `dredgeIsWorthIt`
-as written is far too loose — "mana value no more than the lands standing" is true of nearly
-everything by turn four — so what it really encodes is *always*. The default stays **on** regardless,
-for the reason the Dark Ritual rule stayed: a bot that is offered a mechanic every turn and never
-takes it looks broken to the person sitting opposite, and three games of 288 is a worse thing to buy
-that with than it sounds. The honest next step is a better rule rather than no rule, and these eight
-numbers are its baseline, and the open task that carries them names the facts a better rule could
-read without touching a hidden zone.
+That reading looked solid — four pairs of numbers, all the same sign — and **it was wrong**. See
+D212: measured head to head with `bot-duel`, which varies the rule and holds everything else, the
+same two configurations are level to within two games of 624. The 3-to-6 was the difference of two
+*noisy* numbers, each of them a slot probe with a ±20 floor, and differencing two of those is a
+noisier thing than either. The instrument was the mistake, not the arithmetic.
+
+The default stays **on** regardless, for the reason the Dark Ritual rule stayed: a bot that is
+offered a mechanic every turn and never takes it looks broken to the person sitting opposite.
 
 One other thing the runs printed and it is worth not hiding: one arm of one probe reported **1
 unfinished game of 288** — a game that ran out of move budget. It was in the *rule-off* arm, where
@@ -11901,3 +11900,63 @@ the bot pays it 25 times in 96 games, and a card that is famous for a reason the
 reach is worth more to a person sitting at the table than four games of 288. What this is not is a
 claim that buyback is bad: the keyword is one card's price list, and the one card that priced badly
 here is slow for reasons that have nothing to do with keeping it.
+
+## D212 — The dredge rule, measured on the right instrument, and a claim withdrawn
+
+**D210 published a number that does not survive the instrument built for the question.** It said
+taking every dredge costs the deck 3 to 6 games of 288, four times out of four. It does not.
+
+### What the two instruments actually compare
+
+`deck-probe` prices a **slot**: the deck with a card against the deck without it, both bots the same.
+To ask what a *rule* costs, D210 ran that probe twice — once with the rule on and once with it off —
+and subtracted. Each probe is a number with a ±20 floor on it. The difference of two such numbers is
+noisier than either, and four same-sign readings of a small difference is exactly what noise looks
+like when you go looking for a sign.
+
+`bot-duel` prices a **rule**: both bots play every deck pairing in both seats on identical seeds, so
+the deck, the matchup and the seat all cancel and what is left is the setting. It is the instrument
+this project already wrote down as the right shape for a change to the opponent, and its negative
+control is not approximately level — two identical bots score **exactly 312-312 of 624**.
+
+### The four runs
+
+| | of 624 |
+| --- | --- |
+| control: identical bots | 312-312 |
+| the tighter rule against the first one | 313-311 |
+| the tighter rule against **never dredging** | 312-312 |
+| the first rule against never dredging | 311-313 |
+
+Every configuration is level within two games. Always-dredging, never-dredging and the tighter rule
+are the same bot as far as 624 games can tell. **The 3-to-6 is withdrawn.**
+
+### The rule that was built to beat it, and why it is kept anyway
+
+The tighter rule reads four facts instead of two, each one a reason *this* card is worth three off
+the library: a copy is not already in hand, the cost is payable now (the question is asked in the
+draw step, after the untap, so "payable" reads as "usable this turn"), the card has something legal
+to point at, and the library still holds **twenty cards** — a flat floor rather than a multiple of
+the dredge cost, because a seat down to twelve cards has already milled its deck away.
+
+Two of those four barely fire in this pool. A copy in hand is impossible when each deck runs one of
+the card, and "payable now" is true of a {B} instant from turn one. What does fire is the floor
+(11 and 5 declines per 96 games) and the empty board (a Darkblast with no creature to shrink).
+Measured: nothing.
+
+Kept anyway, and the reason is the one `ritualBoughtSomething` was kept for. A bot that dredges
+itself down to twelve cards, or buys back a removal spell with nothing to remove, looks broken to
+the person sitting opposite — and that is worth more here than a win rate that cannot tell the
+difference. The flags stay so the next person can re-ask: `dredgesForValue` turns it off entirely,
+`dredgesTightly: false` is the first rule, kept as the control this one was measured against.
+
+### The lesson, which is the part worth keeping
+
+**Measure a bot rule with the bot instrument.** A slot probe answers "is this card worth its place",
+and no amount of running it twice turns it into an answer about the opponent. The giveaway was
+available before the run: `bot-duel`'s own header says so, and its control scores *exactly* level,
+which is the property that makes two games readable and 3-of-288 arguable.
+
+And the smaller one: **a difference of two noisy measurements needs its own error bar.** Four
+readings agreeing in sign is not four readings of the same thing — it is two subtractions, each
+carrying both probes' noise.

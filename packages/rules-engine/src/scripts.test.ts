@@ -16298,17 +16298,52 @@ describe('dredge: the draw replaced by a mill, and the card that comes back', ()
       .toContain('ask, always or never');
   });
 
-  it('the bot declines when the library cannot stand the mill four times over', () => {
+  it('the bot declines once the library is short, whichever rule it is on', () => {
     let s = untilAsked(shellInTheYard());
     expect(botAction(s, 0)).toEqual({ type: 'auto:dredge', by: 0, dredge: true });
 
-    // Eleven cards is under four times the Shell's dredge 3. The rule reads the library's *size*
-    // and nothing about its contents, which is what keeps it off a hidden zone — see
-    // `dredgeIsWorthIt`.
-    for (const id of ids(s, 0, 'library').slice(11)) {
-      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'exile' });
-    }
-    expect(botAction(s, 0)).toEqual({ type: 'auto:dredge', by: 0, dredge: false });
+    /*
+      Nineteen cards is under the flat floor the rule keeps, and eleven is under the old rule's
+      multiple of the dredge cost — so both configurations decline a short library and the flat one
+      declines sooner. Both read the library's *size* and nothing about its contents, which is what
+      keeps the rule off a hidden zone (D164). See `dredgeIsWorthIt`.
+    */
+    const trimmed = (to: number): GameState => {
+      let next = s;
+      for (const id of ids(next, 0, 'library').slice(to)) {
+        next = apply(next, { type: 'card:move', by: 0, card: id, toZone: 'exile' });
+      }
+      return next;
+    };
+    const nineteen = trimmed(19);
+    expect(botAction(nineteen, 0)).toEqual({ type: 'auto:dredge', by: 0, dredge: false });
+    // The rule it replaced would still have taken it there, which is the difference the two flags
+    // exist to measure.
+    expect(botAction(nineteen, 0, { dredgesTightly: false }))
+      .toEqual({ type: 'auto:dredge', by: 0, dredge: true });
+    expect(botAction(trimmed(11), 0, { dredgesTightly: false }))
+      .toEqual({ type: 'auto:dredge', by: 0, dredge: false });
+  });
+
+  it('the bot does not dredge back a card with nothing to point at', () => {
+    /*
+      The same discipline the bot keeps about casting removal into an empty board (#89), applied one
+      step earlier: a Darkblast returned to a hand with no creature on the table is a dead card
+      bought for three live ones.
+    */
+    const table = (theirs: readonly string[]): GameState => {
+      const start = advanceTo(arena({
+        decks: { 0: 'blight-vector', 1: 'ember-rush' },
+        battlefield: { 0: ['Swamp', 'Swamp', 'Forest'], 1: [...theirs] },
+        turn: 5, firstSeat: 0,
+      }), 'precombat-main');
+      return untilAsked(apply(start, {
+        type: 'card:move', by: 0, card: find(start, 0, 'library', 'Darkblast'), toZone: 'graveyard',
+      }));
+    };
+    expect(botAction(table([]), 0)).toEqual({ type: 'auto:dredge', by: 0, dredge: false });
+    expect(botAction(table(['Raging Goblin']), 0))
+      .toEqual({ type: 'auto:dredge', by: 0, dredge: true });
   });
 });
 
