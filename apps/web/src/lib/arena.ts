@@ -314,66 +314,45 @@ function playAction(
   // cost has an {X} in it, including zero — the engine refuses an x on a cost without one, and a
   // missing x on a cost with one would silently cast it for nothing.
   const withX = play.xMax === undefined ? {} : { x: Math.max(0, Math.min(x ?? 0, play.xMax)) }
-  // The kicker is part of the cost, and the player paid it by choosing this play rather than the
-  // one beside it — the same gesture that chooses a mode.
-  const withKicker = play.kicked === true ? { kicked: true } : {}
   /*
-    Flashback, for the same reason as the kicker and one more: it is a different *zone* as well as a
-    different cost, so without it the engine is told to cast a card in the graveyard as though it
-    were in hand — and refuses the play the table had just offered.
+    Every flag that says **which cost this cast is paying**, carried across as one object.
 
-    Found by the pod browser suite rather than by reasoning: "the engine never refused anything a
-    table offered" failed with "that card is not in your hand" the first time a bot's flashback play
-    reached this function. The engine's own tests all passed, because they build the action by hand.
+    There are eleven of them and they are one idea: the engine offers a card in hand or in a
+    graveyard as two or three separate plays, one per price, and the flag is what tells it which
+    row the player tapped. A cast sent without the flag is not a validation error — it is quietly
+    the *other* play, and the engine then refuses it for want of mana or because the card is in the
+    wrong zone, about a card the table had just drawn a Cast row for.
+
+    Each was found the same way and most of them in a browser suite rather than by reasoning,
+    because the engine's own tests build the action by hand:
+
+    - `kicked` — the kicker is part of the cost, paid by choosing this row (CR 702.32).
+    - `flashback`, `escape` — a different **zone** as well as a different cost: without the flag
+      the engine is told to cast a card in the graveyard as though it were in hand. `escape` sends
+      nothing about the payment: `exiles` says what it costs and the engine spends it.
+    - `faceDown` — morph's 2/2 for {3}, which is refused for want of mana on exactly the turn the
+      player reached for it (CR 702.37a).
+    - `foretold` — the card is in **exile**, so the same shape of bug a fourth time.
+    - `offered` — not a cheaper cost but a **claim on an offer** the engine is holding the table
+      open for: cascade and madness (CR 702.85a, CR 702.35a).
+    - `evoked`, `dashed` — the kicker's shape with the trade reversed: cheaper, out of hand.
+    - `bestowed` — the one that also points at something, so the flag travels with the targets the
+      table collected; without it the engine is handed a creature spell with a target it cannot
+      have.
+    - `spectacled` — the one that comes and goes, offered only while an opponent has lost life
+      this turn.
+    - `overloaded` — the one that is dearer, and the one that changes what the spell does.
+
+    One loop rather than eleven conditional spreads, and not only for the length: eleven spreads of
+    `{} | { flag: true }` is a union of two thousand object types, which TypeScript refuses to
+    represent at all ("union type that is too complex") — overload was the one that tipped it over.
   */
-  const withFlashback = play.flashback === true ? { flashback: true } : {}
-  /*
-    And escape, which is the graveyard again with a cost that is partly cards — the same shape of
-    bug flashback taught, and the same one line to prevent it. How many cards it costs is on the
-    play as `exiles` and *which* ones is the engine's to choose, so nothing about the payment is
-    sent: the table says what it will cost and the engine spends it.
-  */
-  const withEscape = play.escape === true ? { escape: true } : {}
-  /*
-    And morph, for the same reason a third time: the face-down cast is a separate play on the same
-    card, so a cast sent without the flag is the printed one — which the engine refuses for want of
-    mana on exactly the turn the player reached for the 2/2.
-  */
-  const withFaceDown = play.faceDown === true ? { faceDown: true } : {}
-  /*
-    And foretell, which is a different *zone* as well as a different cost — the same shape of bug
-    flashback taught in a browser suite: without the flag the engine is told to cast a card in exile
-    as though it were in hand, and refuses the play the table had just offered.
-  */
-  const withForetold = play.foretold === true ? { foretold: true } : {}
-  /*
-    And an offered cast, which is the same shape of bug a fifth time with a sharper edge: the flag is
-    not a cheaper cost but a **claim on an offer** the engine is holding the table open for, so a
-    cast sent without it is refused outright — "that card is not in your hand", about a card the
-    table had just drawn a Cast row for. Cascade is the one that offers it (CR 702.85a).
-  */
-  const withFree = play.offered === true ? { offered: true } : {}
-  /*
-    And evoke, which is the kicker's shape with the trade the other way round: the cheap casting is
-    its own play on a card in hand, so a cast sent without the flag is the printed five-mana one
-    and is refused for want of mana on exactly the turn the player reached for the cheap half.
-  */
-  const withEvoked = play.evoked === true ? { evoked: true } : {}
-  // And dash, evoke's mirror and the same one line: the cheap cast is its own play, and a cast
-  // sent without the flag is the printed one at the printed price.
-  const withDashed = play.dashed === true ? { dashed: true } : {}
-  /*
-    And bestow, which is the one of the three that also points at something: the play carries a
-    creature to enchant, so the table walks the player through choosing one and the flag travels
-    with the targets. Without it the engine is handed a creature spell with a target it cannot
-    have.
-  */
-  const withBestowed = play.bestowed === true ? { bestowed: true } : {}
-  /*
-    And spectacle, the fourth and the only one that comes and goes: the row is on the sheet only
-    while an opponent has lost life this turn, and the flag is what claims that price.
-  */
-  const withSpectacled = play.spectacled === true ? { spectacled: true } : {}
+  const COST_FLAGS = [
+    "kicked", "flashback", "escape", "faceDown", "foretold", "offered",
+    "evoked", "dashed", "bestowed", "spectacled", "overloaded",
+  ] as const
+  const withCostFlags: { [K in (typeof COST_FLAGS)[number]]?: true } = {}
+  for (const flag of COST_FLAGS) if (play[flag] === true) withCostFlags[flag] = true
   /*
     Turning a morph face up is a special action, not a cast and not an ability (CR 702.37b), so it
     is its own action with nothing to choose: no targets, no cost to pick, no window for anybody to
@@ -395,9 +374,7 @@ function playAction(
     // not something the spell asks for on resolution, so it travels with the cast.
     return {
       type: "auto:cast", card: play.card,
-      ...withModes, ...withX, ...withKicker, ...withFlashback, ...withEscape, ...withFaceDown,
-      ...withForetold, ...withFree, ...withEvoked, ...withDashed, ...withBestowed,
-      ...withSpectacled,
+      ...withModes, ...withX, ...withCostFlags,
       ...withHalf, ...withDivision,
       ...withSacrifice, ...withTargets,
     }

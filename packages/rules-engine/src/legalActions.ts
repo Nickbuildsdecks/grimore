@@ -184,6 +184,14 @@ export interface LegalPlay {
    */
   readonly spectacled?: boolean;
   /**
+   * Set on the play that casts the card for its overload cost (CR 702.96).
+   *
+   * The fifth of the family and the only one that is *dearer* than the printed cast, so it is the
+   * one row here that can be absent for the ordinary reason — the mana is not there. It carries no
+   * candidates, because an overloaded spell targets nothing.
+   */
+  readonly overloaded?: boolean;
+  /**
    * Which face of a two-faced card this play casts, as an index into `CardDef.faces.cards`
    * (CR 708).
    *
@@ -1005,6 +1013,25 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
               note: `spectacle cost (${script.spectacle.cost}, because an opponent has lost life this turn)`,
               specs: specsFor(script),
             }]),
+        /*
+          And overload, the one of the five that is **dearer** than the printed cast.
+
+          It is in this list rather than beside the kicker it resembles on price because it is an
+          alternative cost: it replaces the printed one, where a kicker is paid on top. Being dearer
+          costs nothing here — the loop below asks `canAfford` per alternative, so the row is simply
+          absent on a turn the overload cost is out of reach, which is the same answer the printed
+          cast gets.
+
+          `specs: []` is the point of the keyword: "change each instance of 'target' to 'each'"
+          (CR 702.96a) leaves a spell that points at nothing, so this play asks the player no
+          questions and gives a ward, a redirection or a protection trick nothing to answer.
+        */
+        ...(script?.overload === undefined ? [] : [{
+          flag: 'overloaded' as const,
+          cost: script.overload.cost,
+          note: `overload cost (${script.overload.cost}, each instead of one)`,
+          specs: [] as readonly TargetSpec[],
+        }]),
       ];
     for (const alternative of alternatives) {
       const altChange = costChangeFor(state, seat, def);

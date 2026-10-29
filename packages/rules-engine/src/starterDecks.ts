@@ -1766,6 +1766,17 @@ const THALIA_GUARDIAN_OF_THRABEN: CardDef = {
   colors: ['W'],
 };
 
+const MIZZIUM_MORTARS: CardDef = {
+  name: 'Mizzium Mortars',
+  typeLine: 'Sorcery',
+  manaCost: '{1}{R}',
+  cmc: 2,
+  oracleText: "Mizzium Mortars deals 4 damage to target creature you don't control.\n"
+    + 'Overload {3}{R}{R}{R} (You may cast this spell for its overload cost. If you do, change each '
+    + 'instance of "target" to "each.")',
+  colors: ['R'],
+};
+
 const SKEWER_THE_CRITICS: CardDef = {
   name: 'Skewer the Critics',
   typeLine: 'Sorcery',
@@ -2998,7 +3009,23 @@ export const EMBER_RUSH: DeckSpec = {
     */
     { card: MUTAVAULT, count: 1 },
     { card: MONASTERY_SWIFTSPEAR, count: 4 },
-    { card: RAGING_GOBLIN, count: 2 },
+    /*
+      One Raging Goblin rather than two, and a Mizzium Mortars for the other.
+
+      **Overload** (D198) is the fifth alternative cost and the first that changes what the spell
+      does: {1}{R} for four damage to one of their creatures, or {3}{R}{R}{R} for four damage to
+      *every* creature they have. This is the deck that can pay either — eighteen Mountains and a
+      Mutavault, so six lands is six red — and the deck that most wants both halves: the cheap one
+      is the removal a burn deck never had for a 4/4 blocker, and the dear one is the card that
+      wins the game this deck has otherwise already lost, where it is on three lands' worth of
+      spells against a board it cannot attack into.
+
+      The cut is the second copy of the weakest card in the list, which is this list's own rule: a
+      1/1 with haste is three damage over three turns if nothing ever blocks it. One stays, so the
+      script and the tests that use it by name are untouched.
+    */
+    { card: RAGING_GOBLIN, count: 1 },
+    { card: MIZZIUM_MORTARS, count: 1 },
     { card: GOBLIN_ARSONIST, count: 2 },
     // One Archer rather than two: the slot went to Crimson Wisps, which is a card the Archer would
     // have pinged for anyway and which gives the Dragon, the Kavu or a Hill Giant haste.

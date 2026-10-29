@@ -2390,8 +2390,21 @@ function completeResolution(
     const def = next.cardDefs[object.cardKey];
     const isPermanent = inst !== undefined && isPermanentCard(def);
     const modes = modesOf(script, object.modes);
+    /*
+      Which effect this spell has is a question for the first time here, and the answer is on the
+      stack object.
+
+      An overloaded spell runs the card's *other* effect (CR 702.96a): "each instance of target"
+      became "each", which is a different sentence rather than a bigger number, so the card writes
+      it out as its own function and this picks between them. Checked before the modes because a
+      card cannot be both — nothing printed has overload and modes, and if one did, the overload
+      text would be what replaced the modal text.
+    */
+    if (object.overloaded === true && script?.overload !== undefined) {
+      next = script.overload.onResolve({ ...ctx, state: next });
+    }
     // A modal spell's effect is its chosen modes, in printed order; everything else has one.
-    if (modes.length > 0) next = runModes(next, modes, { ...ctx, state: next });
+    else if (modes.length > 0) next = runModes(next, modes, { ...ctx, state: next });
     else if (script?.onResolve) next = script.onResolve({ ...ctx, state: next });
     if (isPermanent && inst !== undefined) {
       next = relocate(next, requireInstance(next, inst.id), 'battlefield', object.controller, 'bottom');

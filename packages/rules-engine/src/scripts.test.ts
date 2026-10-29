@@ -14654,3 +14654,149 @@ describe('spectacle: the cheap cost the board has to earn', () => {
     expect(bolted.lifeLostThisTurn['1']).toBe(3);
   });
 });
+
+describe('overload: the cost that stops the spell pointing at one thing', () => {
+  /*
+    The fifth alternative cost and the first that changes what the spell **does** (CR 702.96a).
+    Evoke and dash change what becomes of the permanent, bestow changes what kind of object the
+    spell is, spectacle changes only the price — and this one rewrites the text: "change each
+    instance of 'target' to 'each'". So there are two things to check that the other four never
+    needed: that the overloaded cast runs the card's other effect, and that it **targets nothing**,
+    which is what makes it an answer to a board a removal spell cannot beat.
+  */
+  const mountains = (n: number): string[] => Array.from({ length: n }, () => 'Mountain');
+
+  const table = (
+    lands: number,
+    theirs: readonly string[] = ['Sedgemoor Witch'],
+    // A Raging Goblin rather than the deck's Monastery Swiftspear on purpose: prowess would put a
+    // trigger on the stack above the spell every time this file casts one, and these tests are
+    // about what the spell says.
+    mine: readonly string[] = ['Raging Goblin'],
+  ): GameState => advanceTo(arena({
+    decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+    hands: { 0: ['Mizzium Mortars'] },
+    battlefield: { 0: [...mountains(lands), ...mine], 1: ['Island', ...theirs] },
+    turn: 7, firstSeat: 0,
+  }), 'precombat-main');
+
+  const mortars = (s: GameState): string => find(s, 0, 'hand', 'Mizzium Mortars');
+
+  it('offers the sweep as a second row, but only once the six mana is there', () => {
+    // Two lands: the printed cast and nothing else, because the dear row is the one row of the
+    // five that can be missing for the ordinary reason.
+    expect(legalActions(table(2), 0).plays
+      .filter((p) => p.name === 'Mizzium Mortars').map((p) => p.description))
+      .toEqual(['Cast Mizzium Mortars']);
+
+    // Six, and both rows are there — the overload one first, like every other alternative cost,
+    // because the cheap-cast rule that put them above the affordability check puts this one there
+    // too.
+    expect(legalActions(table(6), 0).plays
+      .filter((p) => p.name === 'Mizzium Mortars').map((p) => p.description))
+      .toEqual([
+        'Cast Mizzium Mortars for its overload cost ({3}{R}{R}{R}, each instead of one)',
+        'Cast Mizzium Mortars',
+      ]);
+  });
+
+  it('asks for a creature on the printed row and for nothing at all on the overloaded one', () => {
+    const plays = legalActions(table(6), 0).plays.filter((p) => p.name === 'Mizzium Mortars');
+    const [sweep, printed] = plays;
+    expect(sweep?.overloaded).toBe(true);
+    expect(sweep?.targetSpecs).toEqual([]);
+    expect(sweep?.candidates).toEqual([]);
+    // And the printed row points at one of theirs, as the card says — not at the Swiftspear.
+    expect(printed?.targetSpecs.map((spec) => spec.description))
+      .toEqual(["target creature you don't control"]);
+    expect(printed?.candidates[0]?.map((t) => nameOf(table(6), t.kind === 'card' ? t.id : '')))
+      .toEqual(['Sedgemoor Witch']);
+  });
+
+  it('deals its four damage to every creature they control and none of yours', () => {
+    /*
+      Three creatures of theirs, chosen to say three different things: the Witch dies, the
+      Omenspeaker dies, and the Wall of Frost does **not** — a 0/7 takes four damage and stands,
+      which is the difference between this card and a Day of Judgment and is the whole reason it is
+      four rather than "destroy".
+    */
+    let s = table(6, ['Sedgemoor Witch', 'Omenspeaker', 'Wall of Frost']);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: mortars(s), overloaded: true }), 40);
+
+    expect(namesIn(s, 1, 'graveyard')).toContain('Sedgemoor Witch');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Omenspeaker');
+    expect(namesIn(s, 1, 'battlefield')).toContain('Wall of Frost');
+    expect(damageOn(s, find(s, 1, 'battlefield', 'Wall of Frost'))).toBe(4);
+    // And the caster's own creature is untouched: "you don't control" is read on both halves.
+    expect(namesIn(s, 0, 'battlefield')).toContain('Raging Goblin');
+  });
+
+  it('says on the stack that it was overloaded, and costs six lands rather than two', () => {
+    let s = table(6);
+    s = apply(s, { type: 'auto:cast', by: 0, card: mortars(s), overloaded: true });
+    expect(stackNames(s)).toEqual(['Mizzium Mortars (overloaded)']);
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(6);
+  });
+
+  it('gives ward nothing to ask for, because it targets nothing', () => {
+    /*
+      The rule this keyword is played for. Ward (CR 702.21) triggers on *becoming the target of* a
+      spell an opponent controls, so the printed Mortars at a Sedgemoor Witch has to pay {3} on top
+      of its {1}{R} or be countered — and the overloaded one walks straight through, because there
+      is no target for the trigger to watch for.
+    */
+    let printedCast = table(6);
+    const witch = find(printedCast, 1, 'battlefield', 'Sedgemoor Witch');
+    printedCast = drain(passBoth(apply(printedCast, {
+      type: 'auto:cast', by: 0, card: mortars(printedCast), targets: [{ kind: 'card', id: witch }],
+    })));
+    expect(printedCast.pendingPayment?.cost).toBe('{3}');
+
+    let swept = table(6);
+    swept = drain(apply(swept, {
+      type: 'auto:cast', by: 0, card: mortars(swept), overloaded: true,
+    }), 40);
+    expect(swept.pendingPayment).toBeNull();
+    expect(namesIn(swept, 1, 'graveyard')).toContain('Sedgemoor Witch');
+  });
+
+  it('refuses a target sent with an overloaded cast', () => {
+    const s = table(6);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: mortars(s), overloaded: true,
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Sedgemoor Witch') }],
+    })).toBeTruthy();
+  });
+
+  it('refuses the flag on a card without the keyword, and beside another alternative cost', () => {
+    const s = table(6);
+    const bolt = find(s, 0, 'library', 'Lightning Bolt');
+    const moved = apply(s, { type: 'card:move', by: 0, card: bolt, toZone: 'hand' });
+    expect(refusal(moved, {
+      type: 'auto:cast', by: 0, card: find(moved, 0, 'hand', 'Lightning Bolt'),
+      overloaded: true, targets: [{ kind: 'player', seat: 1 }],
+    })).toMatch(/has no overload/);
+
+    /*
+      And beside another alternative cost, which is one cast paying two prices (CR 601.2f). Sent
+      with evoke rather than with the kicker it resembles on price: the kicker is validated further
+      up this function, and "Mizzium Mortars has no kicker" would be a true sentence about the
+      wrong rule.
+    */
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: mortars(s), overloaded: true, evoked: true,
+    })).toMatch(/paid instead of another/);
+  });
+
+  it('is the printed spell again on the printed row, pointing at one creature', () => {
+    let s = table(2, ['Omenspeaker']);
+    const speaker = find(s, 1, 'battlefield', 'Omenspeaker');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: mortars(s), targets: [{ kind: 'card', id: speaker }],
+    }), 40);
+    expect(stackNames(s)).toEqual([]);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Omenspeaker');
+    // Two lands, not six: the printed row is still a two-mana removal spell.
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(2);
+  });
+});

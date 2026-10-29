@@ -1306,6 +1306,44 @@ export interface CardScript {
     readonly cost: string;
   };
   /**
+   * Overload: pay more and the spell stops pointing at one thing and happens to everything
+   * (CR 702.96).
+   *
+   * The fifth alternative cost here and the first that changes **what the spell does**. Evoke and
+   * dash change what happens to the permanent afterwards; bestow changes what kind of object the
+   * spell is; spectacle changes only the price. This one rewrites the text: "change each instance
+   * of 'target' to 'each'", so a Mizzium Mortars for {1}{R} kills one creature and the same card
+   * for {3}{R}{R}{R} kills all of theirs.
+   *
+   * Two consequences, and they are the reason the field holds an effect rather than a number.
+   *
+   * The spell **targets nothing** when it is overloaded, which is not a detail: it cannot be
+   * Willbendered, a ward does not see it, "sacrifice this creature when it becomes the target of a
+   * spell" never fires, and it does not fizzle when the one creature worth killing is saved. So the
+   * alternative carries `specs: []` the way bestow carries its own, and the overloaded play asks
+   * the player nothing.
+   *
+   * And the effect is a different effect, so the card writes it out. The printed `onResolve` reads
+   * `cardTargets`, which is empty on an overloaded cast, so a shared effect that tried to serve
+   * both halves would have to branch on a flag inside every such card — and a card whose two halves
+   * are two functions is the honest shape, because the two halves are two different spells with one
+   * name. `completeResolution` picks between them on the stack object's `overloaded`.
+   *
+   * It is dearer than printed, like the kicker, and replaces the printed cost, unlike the kicker.
+   */
+  readonly overload?: {
+    /** The whole cost of an overloaded casting, in the printed `{3}{R}{R}{R}` form. */
+    readonly cost: string;
+    /**
+     * What the spell does when it was overloaded, instead of its printed `onResolve`.
+     *
+     * Runs with no targets, because an overloaded spell has none, and with the same context
+     * everything else gets — so it reads the board through `battlefield` and `c.controller` the way
+     * a sweeper does.
+     */
+    readonly onResolve: EffectFn;
+  };
+  /**
    * Morph: cast this face down as a 2/2 for {3}, and turn it up later for this cost (CR 702.37).
    *
    * Only the *turn-up* cost lives here. The face-down casting costs {3} for every card that has

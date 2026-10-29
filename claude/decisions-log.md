@@ -10581,3 +10581,123 @@ what it is (somebody at a manual table correcting a number, not an event in a ga
 does not turn a spectacle cost on. The test that needed an opponent to have lost life had to make
 them lose it for real, with a Lightning Bolt pointed at them. That is the right shape: the fact is
 recorded by the rules, and a test that could fake it would not be testing the rules.
+
+## D198 — Overload: the first alternative cost that changes what the spell does
+
+Four alternative costs in, the family had a shape: evoke and dash change what becomes of the
+permanent (D194, D195), bestow changes what kind of object the spell is (D196), spectacle changes
+only the price (D197). Overload (CR 702.96) breaks it in the one direction left — it rewrites the
+**text**: "change each instance of 'target' to 'each'".
+
+A Mizzium Mortars for {1}{R} deals four damage to one creature you don't control. The same card for
+{3}{R}{R}{R} deals four damage to **every** creature you don't control, and points at nothing while
+it does it.
+
+### Two effects on one card, rather than one effect with a flag in it
+
+`CardScript.overload` holds a cost **and an `onResolve` of its own**, and `completeResolution` picks
+between the two on the stack object's `overloaded`. That was a choice, and the alternative — one
+effect branching on `c.overloaded` — is worse for a reason worth writing down: the printed half
+reads `cardTargets`, which is empty on an overloaded cast, so every line of it would have to guard
+against a target it will never have, and the sweep would have to ignore a target it was never
+given. The two halves are two different spells with one name, and two functions is what that is.
+
+It is also the only one of the five where the *resolution* reads the flag at all. The other four
+are spent by the time the spell resolves: evoke's sacrifice is a card trigger, dash's return is
+scheduled as the permanent arrives, bestow's difference is on the card itself, and spectacle's is
+over once the mana is paid. This one has to be asked at the moment the effect runs.
+
+### Targeting nothing is the point, not a detail
+
+The overloaded entry in `legalActions` carries `specs: []`, and `castSpell` sets `specs` to the
+empty list when the flag is set — which refuses a target sent with it through the same
+`checkTargets` every other cast goes through. That empty list is most of what the keyword is worth
+at a table:
+
+- a ward (CR 702.21) never triggers, because nothing becomes the target of anything — the printed
+  Mortars at a Sedgemoor Witch has to pay {3} on top of its {1}{R} or be countered, and the
+  overloaded one walks through;
+- a Willbender has nothing to redirect and a Swerve nothing to point elsewhere;
+- protection, hexproof and a Dive Down save nothing;
+- and the spell cannot fizzle, so answering the one creature worth killing no longer answers the
+  card.
+
+The only answer left is a counterspell, which is why the stack says `(overloaded)`: the player
+holding a Counterspell is deciding about a sweeper rather than a removal spell, and both players can
+read which it is.
+
+It is also four damage rather than "destroy", which a test says out loud with a Wall of Frost: a 0/7
+takes the four and stands. That is the difference between this card and the Day of Judgment in the
+same pool, and the reason it is not simply better.
+
+### Dearer, and still an alternative cost
+
+Overload is the first of the five that costs *more* than printed, which makes it the kicker's
+neighbour on price and its opposite in mechanics: a kicker is paid **on top of** the printed cost,
+an overload cost **replaces** it. So it goes in the alternatives list with the other four rather
+than beside the kicker, and being dearer costs nothing there — the loop asks `canAfford` per
+alternative, so the row is simply absent on a turn six mana is out of reach. That is the same answer
+the printed cast gets when it cannot be paid, rather than a greyed-out row.
+
+### One loop instead of eleven spreads, because TypeScript said so
+
+`apps/web`'s `playAction` had grown one `const withX = play.flag === true ? { flag: true } : {}` per
+alternative cost, each spread into the action it builds. The eleventh — this one — made the web
+typecheck fail with **TS2590, "expression produces a union type that is too complex to represent"**:
+eleven spreads of `{} | { flag: true }` is a union of 2,048 object types, and TypeScript stops
+before it gets there.
+
+So the eleven are now one `COST_FLAGS` list and one loop into a single object, and the eleven
+comments are one comment that says what the family is: the engine offers a card as two or three
+separate plays, one per price, and the flag is what tells it which row the player tapped. A cast
+sent without the flag is not a validation error — it is quietly the *other* play, refused for want
+of mana or for being in the wrong zone, about a card the table had just offered. Most of the eleven
+were found that way in a browser suite rather than by reasoning, because the engine's own tests
+build the action by hand.
+
+A type error is not usually a design note, but this one is: it was counting the shape the code had
+drifted into.
+
+### Mizzium Mortars, and the slot it takes
+
+**Mizzium Mortars into Ember Rush**, for the second Raging Goblin. Ember Rush is the deck that can
+pay either half — eighteen Mountains and a Mutavault, so six lands is six red — and the one that
+wants both: the cheap half is the answer a burn deck never had for a 4/4 blocker, and the dear half
+wins the game this deck has otherwise already lost, the one where it is out of cards against a board
+it cannot attack into. The cut is the second copy of the weakest card in the list, which is this
+list's own rule; one Raging Goblin stays, so the three test files that use it by name are untouched.
+
+### Measured: level again, and the first alternative cost the bot pays without being told to
+
+Two seed sets of 288 paired duels, probing the revert:
+
+```
+3300   with Mizzium Mortars 210-78   with a 2nd Raging Goblin 208-80   +2
+5100   with Mizzium Mortars 208-79   with a 2nd Raging Goblin 203-85   +5
+```
+
+Level — the fifth slot in a row inside the ±20 floor. Worth one honest note: this is the first of
+the five where both arms lean the *same* way, and the lean is positive. Two and five are still
+noise, so the entry is "level" and not "worth four games"; a card that is actually worth something
+to this instrument looks like D139's clock, not like this.
+
+`cast-counts.mjs` over the same 288 games:
+
+```
+ 63%  cast   62 + used    0 / in hand   98 games  x1  Mizzium Mortars
+    11  Mizzium Mortars (overloaded)
+```
+
+**Eleven of sixty-two castings were the sweep** — 18%, against spectacle's 27%, dash's 23%, evoke's
+one in thirty-three and bestow's nought in sixty-three. And this one is the interesting number of
+the five, because it is the first that is a *judgement* rather than an arithmetic consequence.
+Spectacle and dash are cheaper and give up nothing the bot values, so taking them is not a decision;
+bestow and evoke cost a body, so a greedy evaluation never takes them. Overload costs **four more
+mana** and the bot still pays it almost one time in five — which it can only be doing because the
+one-ply search can see the board it clears.
+
+And `wasted-plays.mjs` says it is not paying it into nothing: over 72 games and 576 plays, the
+suspects are a Goblin Arsonist (1 of 27) and a Flame Slash (1 of 22), and **Mizzium Mortars is not
+in the list at all**. The sixteenth member of the "spent on nothing" family did not need writing,
+because the search already prices a sweeper against an empty board correctly. That is the first time
+one of these keywords has needed no bot work for a reason better than "it never presses it".

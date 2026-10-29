@@ -5420,6 +5420,55 @@ than of how often this deck has already drawn blood by the time it wants three m
 a quarter of the time. No bot rule again, for the fourth time, and for the cleanest reason yet:
 there is nothing to decide.
 
+### Overload, the cost that rewrites the spell (D198)
+
+Overload (CR 702.96) is the fifth alternative cost and the first that changes what the spell
+**does**: "change each instance of 'target' to 'each'". A Mizzium Mortars for {1}{R} deals four
+damage to one creature you don't control; for {3}{R}{R}{R} it deals four to every creature you don't
+control and points at nothing while it does it.
+
+So `CardScript.overload` holds a cost **and an `onResolve` of its own**, and `completeResolution`
+picks between the card's two effects on the stack object's `overloaded` — the only one of the five
+flags the resolution reads at all, since the other four are spent by the time the spell resolves.
+Two functions rather than one that branches: the printed half reads `cardTargets`, which is empty on
+an overloaded cast, so a shared effect would have to guard every line against a target it will never
+have.
+
+The empty target list is most of what the keyword is worth. A ward never triggers (the printed
+Mortars at a Sedgemoor Witch pays {3} or is countered; the sweep walks through), a Willbender has
+nothing to redirect, protection and a Dive Down save nothing, and the spell cannot fizzle — the only
+answer left is a counterspell, which is why the stack says `(overloaded)`. And it is four damage
+rather than "destroy", which a Wall of Frost demonstrates by standing up to it.
+
+It is the first of the five that is **dearer** than printed, which makes it the kicker's neighbour on
+price and its opposite in mechanics: a kicker is paid on top, an overload cost replaces. Being dearer
+costs nothing in the alternatives list, because that loop asks `canAfford` per entry — so the row is
+simply absent on a turn six mana is out of reach.
+
+**Mizzium Mortars into Ember Rush**, for the second Raging Goblin: the deck that can pay either half
+(eighteen Mountains and a Mutavault) and wants both — the removal a burn deck never had for a 4/4
+blocker, and the card that wins the game it has otherwise already lost. The slot measures level (+2
+and +5 on two seed sets of 288), the fifth in a row inside the floor, and the first where both arms
+lean the same way.
+
+The usage is the most interesting of the five. Over 288 games the Mortars is cast **62 times in the
+98 games it reached hand**, and **11 of those 62 were the sweep** — 18%, against spectacle's 27%,
+dash's 23%, evoke's one in thirty-three and bestow's nought in sixty-three. It is also the only one
+of the five that is a *judgement*: the cheap ones are cheaper and give up nothing, the body ones cost
+a creature a greedy evaluation will not give up, and this one costs **four more mana** and the bot
+still pays it one time in five, which it can only do because the one-ply search sees the board it
+clears. `wasted-plays.mjs` confirms the other half of that: over 576 plays the suspects are a Goblin
+Arsonist and a Flame Slash, and the Mortars is **not in the list** — it is not being overloaded into
+an empty board, so no bot rule was needed for a better reason than "it never presses it".
+
+One more thing came out of it, in `apps/web`. `playAction` had grown one
+`const withX = play.flag === true ? { flag: true } : {}` per alternative cost, spread into the action
+it builds, and the eleventh made the web typecheck fail outright: **TS2590, "union type that is too
+complex to represent"** — eleven spreads of `{} | { flag: true }` is a union of 2,048 object types.
+They are now one `COST_FLAGS` list and one loop, with one comment that says what the family is
+instead of eleven that each say it once. A type error is not usually a design note; this one was
+counting the shape the code had drifted into.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

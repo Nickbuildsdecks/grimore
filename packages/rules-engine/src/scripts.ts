@@ -2000,6 +2000,43 @@ const SKEWER_THE_CRITICS: CardScript = {
   onResolve: (c) => damageFirstTarget(c, 3),
 };
 
+/**
+ * Mizzium Mortars: four damage to one of theirs, or to all of them.
+ *
+ * The pool's first overload card, and the shape of the keyword in one script: two `onResolve`
+ * functions on one name. The printed one reads `c.targets`; the overload one reads the board and
+ * never looks at a target, because an overloaded spell has none (CR 702.96a).
+ *
+ * Writing it as two functions rather than one that branches on a flag is the honest shape — the
+ * two halves are two different spells — and it is also the only shape that works: the printed half
+ * would have to guard every line against an empty target list, and the overloaded half would have
+ * to ignore a target it was never given.
+ *
+ * "You don't control" rather than "an opponent controls", as printed. The two are the same thing in
+ * a duel and not in a pod, where the difference is somebody else's token: `zoneSeat !== controller`
+ * is what both halves ask, so the one-target cast and the sweep agree about whose creatures they
+ * are allowed to hit.
+ */
+const MIZZIUM_MORTARS: CardScript = {
+  name: 'Mizzium Mortars',
+  targets: [{ ...TARGET_CREATURE, description: "target creature you don't control", filter: creatureYouDontControl }],
+  onResolve: (c) => damageFirstTarget(c, 4),
+  overload: {
+    cost: '{3}{R}{R}{R}',
+    onResolve: (c) => {
+      let state = c.state;
+      for (const id of battlefield(state, (cardId) => {
+        const inst = state.instances[cardId];
+        if (inst === undefined || inst.zoneSeat === c.controller) return false;
+        return characteristicsOf(state, inst).isCreature;
+      })) {
+        state = dealDamage(state, { kind: 'card', id }, 4, { controller: c.controller, source: c.source });
+      }
+      return state;
+    },
+  },
+};
+
 const PLANAR_VOID: CardScript = {
   name: 'Planar Void',
   triggers: [
@@ -6633,7 +6670,7 @@ const ALL: readonly CardScript[] = [
   PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE, WOE_STRIDER,
   REST_IN_PEACE, FIREMANE_AVENGER, SUNHOME_STALWART, TOPAN_FREEBLADE, GOBLIN_WARDRIVER,
   BLOODBRAID_ELF, GRAPESHOT, FIERY_TEMPER, MULLDRIFTER, MARDU_SCOUT, BOON_SATYR,
-  SKEWER_THE_CRITICS,
+  SKEWER_THE_CRITICS, MIZZIUM_MORTARS,
   KITCHEN_FINKS,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,

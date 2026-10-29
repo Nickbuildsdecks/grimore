@@ -1286,6 +1286,9 @@ function candidateActions(
             // and a cast sent without the flag is the printed cost on a card the bot had priced
             // at one mana.
             ...(play.spectacled === true ? { spectacled: true } : {}),
+            // And overload, the fifth: a cast sent without the flag is the printed spell, which
+            // targets one thing — and the bot had just decided it wanted all of them.
+            ...(play.overloaded === true ? { overloaded: true } : {}),
             // And which half of a two-faced card, for the fifth time and the same reason: the two
             // halves are separate plays on one card, and a cast sent without this is either the
             // wrong spell or — on a split card, which has no printed face of its own — refused.
@@ -2722,6 +2725,7 @@ const playKey = (play: LegalPlay): string =>
   // offer after the cheap one had been cast.
   + `${play.evoked === true ? 'e' : ''}${play.dashed === true ? 'd' : ''}`
   + `${play.bestowed === true ? 'b' : ''}${play.spectacled === true ? 's' : ''}`
+  + `${play.overloaded === true ? 'o' : ''}`
   // The half, because two halves of one card are two different plays: without it the "did casting
   // that buy me anything" checks would read Ice as still on offer after Fire had been cast.
   + `|${play.half ?? ''}|${(play.modes ?? []).join(',')}`;

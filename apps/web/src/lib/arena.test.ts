@@ -415,6 +415,37 @@ describe("costs that are choices", () => {
       })
   })
 
+  it("sends the spectacle flag with its target, and the overload flag with none", () => {
+    /*
+      The fourth and fifth of the family, and the pair that says the family is not one shape. A
+      spectacle cast is the printed spell at a lower price, so it still asks the player what to
+      point it at; an overloaded one is the same card with "target" rewritten to "each", so it asks
+      nothing and has to be sent the moment it is chosen. A table that walked the player through
+      picking a creature for the sweep would hang on a question the engine will refuse.
+    */
+    const spectacled = play({
+      name: "Skewer the Critics",
+      description:
+        "Cast Skewer the Critics for its spectacle cost ({R}, because an opponent has lost life this turn)",
+      spectacled: true, manaCost: "{R}",
+      targetSpecs: [{ kind: "any", description: "any target" }],
+      candidates: [[player(1)]],
+    })
+    const asking = arenaReducer(IDLE, { kind: "choosePlay", play: spectacled }).mode
+    expect(arenaReducer(asking, { kind: "pickTarget", target: player(1) }).action).toEqual({
+      type: "auto:cast", card: "c1", spectacled: true, targets: [player(1)],
+    })
+
+    const overloaded = play({
+      name: "Mizzium Mortars",
+      description: "Cast Mizzium Mortars for its overload cost ({3}{R}{R}{R}, each instead of one)",
+      overloaded: true, manaCost: "{3}{R}{R}{R}", targetSpecs: [], candidates: [],
+    })
+    expect(arenaReducer(IDLE, { kind: "choosePlay", play: overloaded }).action).toEqual({
+      type: "auto:cast", card: "c1", overloaded: true,
+    })
+  })
+
   it("and never sends one on the play beside it", () => {
     const mode = arenaReducer(IDLE, { kind: "choosePlay", play: play({ name: "Burst Lightning" }) }).mode
     expect(arenaReducer(mode, { kind: "pickTarget", target: player(1) }).action).toEqual({

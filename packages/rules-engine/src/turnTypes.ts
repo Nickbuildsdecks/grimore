@@ -260,6 +260,17 @@ export interface StackObject {
    */
   readonly spectacled?: true;
   /**
+   * Whether this spell was cast for its overload cost (CR 702.96).
+   *
+   * The one flag of the five that changes what the resolution *does* rather than what it cost, so
+   * `completeResolution` reads it to choose between the card's two effects. On the stack object
+   * because it is public from the moment the spell is announced and because both players need it:
+   * an overloaded spell has no targets, so there is nothing to protect and nothing to redirect, and
+   * a player deciding whether to counter it is deciding about a sweeper rather than a removal
+   * spell.
+   */
+  readonly overloaded?: true;
+  /**
    * The modes chosen for a modal spell, as indices into its script's `modal.modes`, in printed
    * order. Chosen as the spell was cast (CR 601.2b) and public from that moment, which is why it
    * lives on the stack object rather than anywhere private.
@@ -971,6 +982,13 @@ export interface AutoCastAction {
    * may announce (CR 601.2b).
    */
   readonly spectacled?: boolean;
+  /**
+   * Cast it for its overload cost, which makes it affect everything and target nothing
+   * (CR 702.96). Refused on a card with no overload, and refused beside another alternative cost.
+   * Targets sent with it are refused the way any other unwanted target is: an overloaded spell
+   * does not point at anything.
+   */
+  readonly overloaded?: boolean;
   /**
    * Cast it face down as a 2/2 creature for {3} (CR 702.37a). Refused on a card with no morph.
    *
