@@ -530,15 +530,25 @@ never fires" is not a diagnosis; it is the question. Count how often the play wa
 deciding whether the bot or the card is at fault.
 
 
-**Count the candidates, not only the windows.** The lesson above got the Ravager half right. Its row
-was offered 434 times and the bot took it 0 times, which said *judgement* rather than *zone* — and
-the fix moved it to 4. Four, of 434. Tallying the candidates themselves, bucketed by the reason the
-new rule declined each one, said why in one run: in all **434** of those windows the only artifact on
-offer was **the Ravager itself**, and the Equipment that did appear was already **attached** 89 times
-and unattached once. So the bot was not mostly refusing good food; there mostly was none, because
-every non-creature artifact in that deck is Equipment or a Vehicle and both stay in use. "Offered"
-counts the question. What answers it is the list of things that could have paid, named and counted
-one by one — which also turned a bot question into a *deck* question, and those have different fixes.
+**Count the candidates, not only the windows — and count them on the arm where the rule is off.**
+The lesson above got the Ravager half right: its row was offered 437 times and taken 0, which said
+*judgement* rather than *zone*, and the rule moved it to 4. Asking why, the candidates were tallied
+one by one — on the arm with the rule **on**, where the bot had already eaten the idle artifacts
+before the tally saw them. It reported one idle Equipment in the whole run and the conclusion "there
+is nothing to eat", which was the instrument reading its own effect:
+
+| across 48 games | rule on | rule off |
+| --- | --- | --- |
+| windows the row was offered in | 434 | 437 |
+| of those, nothing but the source itself on offer | 383 | **220** |
+| other candidates, already attached | 89 | **191** |
+| other candidates, idle | 1 | **104** |
+
+**A filter changes the board it is measured on.** Any tally of what a rule *could* have chosen has to
+be read with the rule off, or it describes the aftermath instead of the choice. The corrected reading
+still turns a bot question into a deck question — all 104 of those idle candidates are unattached
+Equipment and uncrewed Vehicles, which is to say things to use rather than things to spend — but it
+gets there by auditing the pool (below) rather than by a number that was measuring itself.
 
 **The browser suite is where a wording claim lives, and it finds more than wording.** `LIST=artifact`
 exists for one sentence: the feeding bar now carries three different costs through one mode, and the
@@ -549,3 +559,30 @@ prompt the table had **no button on at all**. Every trigger in the pool before m
 it was obliged to take, so nothing had ever needed one. A scenario built to read one string found an
 unanswerable prompt in the same run; that is the argument for building the deck rather than trusting
 the claim.
+
+**A rule that fires rarely still has to be priced, because rare and harmless are different things.**
+The artifact-feeding rule fired four times in 48 games, which looked too thin to matter — and
+`bot-duel` across 936 games agreed, flat three times. The slot probe did not: run with `BOT=` so the
+same slot is priced by both players on the same seeds, the deck was 7 games of 288 worse with the rule
+on at one seed set and 6 at the other. Four plays, both readings the same sign, and the reason was one
+tally away — four of the four had a creature standing by that could have carried the Equipment, and
+two were the deck's best card. **`bot-duel` prices a rule across the field and drowns a rule that
+touches one deck; the slot probe with `BOT=` prices it where it acts.** Reach for the second when the
+rule is about one card. Four plays were enough to send a default back, which is the other half of
+this: a rule can be too rare for a win rate to see and still be wrong every time it fires, and the
+count of *what it chose* says so when the count of *how often* cannot.
+
+**Two probe arms on the same seeds carry their own control, so look for it before running one.** The
+`BOT=` arrangement runs stock and variant for each bot, and when the change removes the card the flag
+is about, the *variant* column must come out identical in both arms — 151-137 and 151-137, then
+181-107 and 181-107. That is not a coincidence to note, it is the pairing being proved: with no
+Ravager on the board the flag cannot change anything, and any difference there would mean the two arms
+were not playing the same games. A control you get for free beats one you have to schedule.
+
+**Audit the pool before writing a rule about a card type.** "Feed it a spent artifact" assumed spent
+artifacts exist. Printing every non-creature artifact in the pool with its abilities, statics and
+triggers took one script and showed there are none: all of them are Equipment, Vehicles, mana sources,
+standing answers or an anthem. It also killed the fix that looked obvious — a syntactic "no ability,
+no static" test passes an Obelisk of Urd, whose +2/+2 lives in an enters-the-battlefield choice, so the
+bot would have eaten a lord. The audit was twenty lines and it answered a question two probes and a
+duel could only hint at.

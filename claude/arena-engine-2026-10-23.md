@@ -6286,21 +6286,37 @@ idle is not), not attached (an equipped Darksteel Plate is why its holder is ali
 source (unexercised by this pool and in anyway, with a deck the test builds for itself). Cheapest by
 mana value among the rest, which is the weak part and is said so.
 
-**0 → 4 activations** across the same 48 games. Four, of 434 windows — and tallying the *candidates*
-rather than the windows says why, which is the correction to the lesson written one piece earlier:
+**0 → 4 activations** across the same 48 games, and then the default went back off, because the four
+were the wrong four. Of them, **four of four** were eaten with a creature standing by that could have
+carried them and **two were Loxodon Warhammers**, the deck's best card; paired on the same seeds with
+the flag the only difference, the deck was **7 games of 288 worse** with feeding on at one seed set
+and 6 at the other. That is the weakness the rule's own docblock had already named — an unattached
+Warhammer with a carrier is live — found by the instrument rather than hoped away.
 
-| at every window the row was offered, across 48 games | |
-| --- | --- |
-| the only artifact on offer was **the Ravager itself** | **434** of 434 |
-| an Equipment on offer and already **attached** | 89 |
-| an Equipment on offer and **idle** | 1 |
+It is a default rather than a patch because there is no clause to add. "Unattached and nothing could
+carry it" collapses to never (the Ravager is itself a creature that can hold Equipment), and a
+syntactic test for inert — no activated ability, no static — passes an Obelisk of Urd, whose anthem
+lives in an enters-the-battlefield choice. Audited card by card, **every** non-creature artifact in
+this pool is Equipment, a Vehicle, a mana source, a standing answer or an anthem. There is nothing
+spent here to find, which makes it a deck question; the rule stays written and switched on by its own
+flag, waiting on an Ichor Wellspring shape (#206).
 
-So the rule's most frequent job is refusing to let the Ravager **eat itself** — which the engine
-offers, correctly, because the card says "an artifact" and not "another" — and the reason it fires
-only four times is a fact about the *deck*: every non-creature artifact in Forge Alliance is Equipment
-or a Vehicle, and both stay in use. It also kills the obvious refinement before it was written:
-"unattached **and** nothing could carry it" collapses to never, because the Ravager is itself a
-creature that can hold Equipment.
+Four, of 434 windows — and the first explanation of *why* was wrong, which is the more useful half.
+The candidate tally that produced it was read off the arm with feeding **on**, where the bot had
+already eaten the idle artifacts before anything counted them. Read on the shipping bot:
+
+| across 48 games | feeding on | feeding off |
+| --- | --- | --- |
+| windows the row was offered in | 434 | **437** |
+| of those, nothing but the Ravager on offer | 383 | **220** |
+| other artifacts on offer, already **attached** | 89 | **191** |
+| other artifacts on offer, **idle** | 1 | **104** |
+
+"There was nothing to eat" was the instrument reading its own effect. Idle Equipment is on offer in
+about half those windows; the four eats are the *search* rarely preferring the activation. What stands
+is narrower: in **220 of 437** windows the only artifact on offer is the Ravager itself, which the
+engine offers because the card says "an artifact" and not "another", so the self-refusal is still the
+single commonest thing the rule does.
 
 **And the browser row found a stall it was not built for.** `LIST=artifact` exists for one sentence
 (the bar now carries three costs through one mode, and the words are all that distinguish them). Its

@@ -1620,18 +1620,34 @@ export interface BotOptions {
    */
   readonly holdsNinjas?: boolean;
   /**
-   * Whether to pay an **artifact** cost with an artifact that is doing nothing. Default **on**.
+   * Whether to pay an **artifact** cost with an artifact that is doing nothing. Default **off**,
+   * and the default was flipped by the measurement rather than chosen.
    *
-   * On is the only reason the pool's one artifact cost is ever paid. D221 measured the Arcbound
-   * Ravager's outlet offered 437 times across 48 games and activated **zero** times, and the
-   * diagnosis was the opposite of ninjutsu's: not a zone problem where the play never came up, but
-   * a judgement problem where it came up constantly and the bot declined every time — because the
-   * creature path it was being asked through refuses fodder with text of its own, and every artifact
-   * in Forge Alliance has text.
+   * It shipped on. D221 had measured the Arcbound Ravager's outlet offered 437 times across 48
+   * games and activated **zero** times, for the opposite reason to ninjutsu's — not a zone problem
+   * where the play never came up but a judgement problem where it came up constantly and the bot
+   * declined, because the creature path refuses fodder with text of its own and every artifact in
+   * Forge Alliance has text. `spentArtifact` is the judgement that replaces that, and it is right
+   * as far as it goes.
    *
-   * Off is the bot as it was, kept as the control, and it is a refusal rather than a different
-   * choice: with the flag off the activation is dropped and the Ravager stays a 1/1. See
-   * `spentArtifact` for the rule and D222 for what it is worth.
+   * What it fed it on was wrong, and the instrument said so in one run. Of the four artifacts it
+   * ate across those 48 games, **four of four** were eaten on a board where this seat controlled a
+   * creature that could have carried them — and **two of the four were Loxodon Warhammers**, the
+   * deck's best card and the one D221 had already singled out for doing two things at once. One
+   * +1/+1 counter on a 1/1 is not worth a Warhammer, and the slot probe agreed: paired on the same
+   * seeds with the flag the only difference, the deck was 7 games of 288 worse with it on at one
+   * seed set and 6 at the other.
+   *
+   * The reason is not a missing clause, which is why this is a default and not a patch. There is no
+   * spent artifact in this pool to find: audited card by card, every non-creature artifact here is
+   * Equipment, a Vehicle, a mana source, a standing answer or an anthem, and all five are things
+   * you would rather keep. A syntactic test for "inert" does not exist either — the obvious one
+   * (no activated ability, no static) passes an Obelisk of Urd, whose +2/+2 lives in an
+   * enters-the-battlefield choice rather than in `statics`.
+   *
+   * So the rule stays written, tested and switched off, the way `dredgesTightly`'s loose variant is
+   * kept: it is the half that is already done, waiting on a card worth eating. See D222 for the
+   * numbers and the task that adds one.
    */
   readonly feedsArtifacts?: boolean;
 }
@@ -3554,14 +3570,15 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       continue;
     }
     /*
-      And the control for the artifact cost, which is the family read backwards.
+      And the artifact cost, which is the only member of this family that is **off** by default.
 
-      Every other filter here is a rule the bot gains: the default drops the play and `false` is the
-      bot as it was. This one is a rule the bot gained in `candidateActions`, so the default keeps
-      the play and `false` is the bot as it was. Hence the explicit `=== false` — an `?? true` here
-      would read as though not feeding were the rule. See `BotOptions.feedsArtifacts`.
+      The others each drop a play that bought nothing, so their default drops and `false` restores
+      the bot as it was. This one drops a play that bought something and cost more: feeding was
+      measured at 7 games of 288 against the deck at one seed set and 6 at the other, with every one
+      of the four artifacts it ate having a creature standing by that could have carried it. So the
+      default is the refusal, and `true` is the opt-in. See `BotOptions.feedsArtifacts` and D222.
     */
-    if (opts.feedsArtifacts === false && feedsAnArtifact(state, option.action)) {
+    if (opts.feedsArtifacts !== true && feedsAnArtifact(state, option.action)) {
       dropped += 1;
       continue;
     }

@@ -17672,6 +17672,13 @@ describe('the bot feeds a spent artifact to an artifact cost', () => {
     The replacement asks whether the artifact is *doing anything*, and the tests below are its three
     clauses plus the ordering. The first of them is the one that matters most often, and it is not
     the one the task was about.
+
+    **It is `feedsArtifacts: true` throughout, because the measurement turned the default off.** Of
+    the four artifacts the rule ate across those 48 games, four of four had a creature standing by
+    that could have carried them and two were Loxodon Warhammers — and paired on the same seeds, the
+    deck was 7 games of 288 worse with feeding on at one seed set and 6 at the other. The rule is
+    right about what "spent" means and there is nothing spent in this pool to find, so it is kept
+    written and switched off. These tests pin the judgement; the two below pin the default.
   */
   const ravagerBoard = (alongside: readonly string[]): GameState => {
     let s = arena({
@@ -17702,12 +17709,24 @@ describe('the bot feeds a spent artifact to an artifact cost', () => {
     return null;
   };
 
+  it('is off by default, because feeding measured worse than not feeding', () => {
+    /*
+      The default, which is the whole of D222's second half. Every other filter in that family is a
+      rule the bot gains; this is the one whose measurement sent it back. With it off the Ravager
+      stays a 1/1, which is what D221 complained about — and 6 to 7 games of 288 says that is the
+      better of the two, because what it was eating was the deck's own Equipment.
+    */
+    const s = ravagerBoard(['Bonesplitter']);
+    expect(fed(s, {})).toBeNull();
+    expect(fed(s, { feedsArtifacts: true })).toBe('Bonesplitter');
+  });
+
   it('never eats itself, which is the clause that fires in every window there is', () => {
     /*
       The Ravager is an artifact, so the engine offers it as a candidate for its own cost — and
       correctly, because that is what the card says. The instrument counting the pool says this is
-      not an edge case but *the* case: across 434 windows in 48 games the Ravager was the only
-      candidate on offer in all 434 of them.
+      the commonest single case: across 437 windows in 48 games of the shipping bot, 220 had nothing
+      on offer but the Ravager itself.
 
       So a naive "eat the cheapest artifact" would have the bot sacrifice the Ravager to put a
       counter on the Ravager, which is a card thrown in the bin for nothing. Reading `isCreature`
@@ -17717,16 +17736,12 @@ describe('the bot feeds a spent artifact to an artifact cost', () => {
     const s = ravagerBoard([]);
     const play = legalActions(s, 0).plays.find((p) => p.sacrificeKind === 'artifact');
     expect(play?.sacrificeOptions).toContain(find(s, 0, 'battlefield', 'Arcbound Ravager'));
-    expect(fed(s, {})).toBeNull();
+    expect(fed(s, { feedsArtifacts: true })).toBeNull();
   });
 
   it('eats an Equipment that is lying there unattached', () => {
     const s = ravagerBoard(['Bonesplitter']);
-    expect(fed(s, {})).toBe('Bonesplitter');
-    // And with the rule off — the bot as it was, which is the control the rule is measured
-    // against. Note the sense: here `false` is the old behaviour rather than the new one, because
-    // this flag adds a play instead of dropping one.
-    expect(fed(s, { feedsArtifacts: false })).toBeNull();
+    expect(fed(s, { feedsArtifacts: true })).toBe('Bonesplitter');
   });
 
   it('and leaves an Equipment that is on a creature alone', () => {
@@ -17751,7 +17766,7 @@ describe('the bot feeds a spent artifact to an artifact cost', () => {
       targets: [{ kind: 'card', id: vanguard }],
     }), 40);
     expect(s.instances[axe]!.attachedTo).toBe(vanguard);
-    expect(fed(s, {})).toBeNull();
+    expect(fed(s, { feedsArtifacts: true })).toBeNull();
   });
 
   it('reads "is it a creature" off the board, so an uncrewed Vehicle is fodder and a crewed one is not', () => {
@@ -17762,7 +17777,7 @@ describe('the bot feeds a spent artifact to an artifact cost', () => {
       this branch exists to stay out of.
     */
     const idle = ravagerBoard(['Sky Skiff']);
-    expect(fed(idle, {})).toBe('Sky Skiff');
+    expect(fed(idle, { feedsArtifacts: true })).toBe('Sky Skiff');
 
     let s = ravagerBoard(['Sky Skiff', 'Elite Vanguard']);
     const skiff = find(s, 0, 'battlefield', 'Sky Skiff');
@@ -17772,7 +17787,7 @@ describe('the bot feeds a spent artifact to an artifact cost', () => {
       type: 'auto:activate', by: 0, card: skiff, abilityIndex: crew!.abilityIndex ?? 0,
     }), 40);
     expect(characteristicsOf(s, s.instances[skiff]!).isCreature).toBe(true);
-    expect(fed(s, {})).toBeNull();
+    expect(fed(s, { feedsArtifacts: true })).toBeNull();
   });
 
   it('takes the cheapest of them, by mana value', () => {
@@ -17780,7 +17795,7 @@ describe('the bot feeds a spent artifact to an artifact cost', () => {
     // for what an artifact cost to get and a poor one for what it is worth now, which the rule says
     // out loud rather than pretending otherwise.
     const s = ravagerBoard(['Bonesplitter', 'Loxodon Warhammer']);
-    expect(fed(s, {})).toBe('Bonesplitter');
+    expect(fed(s, { feedsArtifacts: true })).toBe('Bonesplitter');
   });
 
   it('and will not eat a mana source, which no deck in this pool can make it do', () => {
@@ -17814,6 +17829,6 @@ describe('the bot feeds a spent artifact to an artifact cost', () => {
     // Offered by the engine, because the card says "an artifact" and a Mind Stone is one.
     const play = legalActions(s, 0).plays.find((p) => p.sacrificeKind === 'artifact');
     expect(play?.sacrificeOptions).toContain(stone);
-    expect(fed(s, {})).toBeNull();
+    expect(fed(s, { feedsArtifacts: true })).toBeNull();
   });
 });

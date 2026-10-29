@@ -12854,28 +12854,36 @@ this one adds a play the default makes. Hence an explicit `=== false` at the gat
 
 Activations across the same 48 games, same seeds, the flag the only difference: **0 → 4**.
 
-Four, of 434 windows. The honest follow-up was to ask why, and the first instrument could not say —
-counting windows told ninjutsu's zone problem from this judgement problem, but "the bot declined"
-turned out to be wrong about *most* of those 434. So the candidates themselves were tallied, bucketed
-by the clause that refused each one:
+Four, of 434 windows. The honest follow-up was to ask why — and the first answer to that was wrong,
+which is worth more to this file than the rule is.
 
-| across 48 games, at every window the row was offered | |
-| --- | --- |
-| the only artifact on offer was **the Ravager itself** | **434** of 434 |
-| an Equipment on offer and **already attached** | 89 |
-| an Equipment on offer and **idle** | 1 |
+The candidate tally that produced it was read off the arm **with feeding on**, where the bot had
+already eaten the idle artifacts before anything counted them; it reported one idle Equipment in the
+whole run, and the conclusion drawn from that was "there is nothing here to eat". Run on the bot as
+it actually ships, the same instrument says something else:
 
-So the rule's most frequent job is not feeding the Ravager at all — it is **refusing to let the
-Ravager eat itself**, which the engine offers because the card says "an artifact" and not "another".
-A naive "eat the cheapest artifact" would bin the card for a counter on nothing, in every one of
-those 434 windows. And the reason the rule only fires four times is a fact about the *deck* rather
-than the bot: every non-creature artifact in Forge Alliance is Equipment or a Vehicle, and both stay
-in use. There mostly is no spent artifact to spend.
+| across 48 games | feeding **on** | feeding **off** |
+| --- | --- | --- |
+| windows the row was offered in | 434 | **437** |
+| of those, nothing but the Ravager itself on offer | 383 | **220** |
+| other artifacts on offer, already **attached** | 89 | **191** |
+| other artifacts on offer, **idle** | 1 | **104** |
+| artifacts eaten | 4 | 0 |
 
-That also kills the obvious refinement before it was written. "Unattached **and** nothing could carry
-it" sounds stricter and better; it collapses to *never*, because the Ravager is itself a creature
-that can hold Equipment, so while it lives there is always somewhere for the Equipment to go. "Not
-attached" is the strongest usable reading of "spent" in this pool.
+So that was the instrument reading its own effect. **A filter changes the board it is measured on**,
+and any tally of what a rule *could* have picked has to be read with the rule off or it describes the
+aftermath rather than the choice. Idle Equipment is on offer in a good half of those windows; the
+four eats are the search rarely preferring the activation, not a shortage of candidates.
+
+What survives is narrower than first claimed and still worth having: in **220 of 437** windows the
+only artifact on offer is the Ravager itself, which the engine offers because the card says "an
+artifact" and not "another". A naive "eat the cheapest artifact" would bin the card for a counter on
+nothing in every one of those, so refusing to let it eat itself is the commonest single thing the
+rule does.
+
+And the refinement that looks obvious is still dead, for the reason it always was. "Unattached **and**
+nothing could carry it" collapses to *never*, because the Ravager is itself a creature that can carry
+Equipment, so while it lives there is always somewhere for the Equipment to go.
 
 ### The stall the scenario found, which was not what it was built for
 
@@ -12925,3 +12933,64 @@ games of one deck in a field of thirteen has nothing for it to see. That is the 
 README lesson draws — a negative control proves the harness is fair, a positive control proves it is
 connected — and this is the second rule in a row where only the second control made the flat reading
 mean anything.
+
+### What the slot says, and the default the measurement sent back
+
+`deck-probe` with `BOT=` — the same slot, same direction, same seeds, priced by two players, which is
+what that argument exists for and is not two probes differenced (D212):
+
+| seeds | feeding | deck with the Ravager | deck without it | taking it out is worth |
+| --- | --- | --- | --- | --- |
+| 3300 | on | 135-153 | 151-137 | +16 |
+| 3300 | **off** | **142**-146 | 151-137 | +9 |
+| 5100 | on | 168-120 | 181-107 | +13 |
+| 5100 | **off** | **174**-114 | 181-107 | +7 |
+
+The "without it" column is identical inside each seed set, which is the control built into the
+arrangement rather than one that had to be run: with no Ravager on the board the flag cannot change a
+thing, and it did not. So the two readings that matter are paired on the same shuffles with the flag
+the only difference, and **feeding cost the deck 7 games of 288 at one seed set and 6 at the other**.
+Inside the ±20 floor, so not a result by this project's standard — but the same sign twice, and the
+sign is the wrong way round for a rule that was meant to help.
+
+The counting instrument says why in one line. Of the four artifacts the rule ate across those 48
+games, **four of four** were eaten on a board where the seat controlled a creature that could have
+carried them, and **two of the four were Loxodon Warhammers** — the deck's best card, and the one
+D221 had already singled out for doing two things at once (cast 24 times and equipped 57 in 41
+games). The other two were a Bonesplitter and an uncrewed Sky Skiff. Equips were 112 with the rule on
+against 110 with it off, so it is not displacing the equip in the count; it is eating the card before
+the equip happens. One +1/+1 counter on a 1/1 is not worth any of those four.
+
+And that is exactly the weakness the rule's own docblock named when it shipped: *"an unattached
+Warhammer with a creature to carry it is live, and the same card on an empty board is not."* The
+measurement found the clause that had already been flagged as weak, which is the argument for writing
+the weakness down rather than hoping.
+
+### Why this is a default and not a patch
+
+The obvious next clause is "unattached **and** nothing could carry it". It collapses to never, because
+the Ravager is itself a creature that can hold Equipment, so while it lives there is always somewhere
+for the Equipment to go. The next idea — a syntactic test for an inert artifact, "no activated ability
+and no static" — was audited against every artifact in the pool and **fails**: it passes an Obelisk of
+Urd, whose +2/+2 anthem lives in an enters-the-battlefield choice rather than in `statics`, so the bot
+would eat a lord. The audit is the real answer and it is a fact about the pool rather than the code:
+
+| every non-creature artifact in the pool is | and so |
+| --- | --- |
+| Equipment (Bonesplitter, Basilisk Collar, Darksteel Plate, Loxodon Warhammer) | you would rather equip it |
+| a Vehicle (Sky Skiff, Renegade Freighter, Consulate Dreadnought) | you would rather crew it |
+| a mana source (Sol Ring, Mind Stone) | you would rather tap it |
+| a standing answer (Chalice of the Void, Tormod's Crypt, Icy Manipulator, Contagion Clasp, Strionic Resonator) | you would rather keep it |
+| an anthem (Obelisk of Urd) | you would *certainly* rather keep it |
+
+**There is no spent artifact in this pool.** A bot rule cannot conjure one, which makes this a deck
+question and not a judgement question — and the only honest reading of "the keyword never fires" here
+is that the pool has nothing worth feeding it.
+
+So `feedsArtifacts` defaults to **off** and stays written, tested and switched on by its own flag, the
+way `dredgesTightly`'s loose variant is kept as a control. What it is waiting for is a card that wants
+to go: an Ichor Wellspring or Chromatic Star shape, cheap, with a trigger that fires when it *leaves*
+rather than text it uses while it stays. That is #206, and it now has a specification instead of a
+hunch. What the piece delivers unconditionally is the rest: `sacrificeKind`, the bar asking for an
+artifact in the right words, the self-eating refusal, the browser row, and the unanswerable prompt it
+found on the way.
