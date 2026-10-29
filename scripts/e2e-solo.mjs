@@ -23,7 +23,6 @@ import {
 const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
 const SHOT_DIR = process.env.SHOT_DIR ?? path.join('e2e-shots', 'solo');
 const HEADED = process.env.HEADED === '1';
-const OPPONENT_DECK = process.env.OPPONENT_DECK ?? 'tidal-mind';
 /**
  * `SOLO_POD=1` plays the four-seat Commander table instead of the duel.
  *
@@ -48,6 +47,17 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * it: the deck is text a player could type, and every card in it is one of the pool's.
  */
 const LIST = process.env.LIST ?? '';
+/**
+ * Which deck the computer plays, and why `LIST=earned` does not take the default.
+ *
+ * Tidal Mind is the default because it is the deck that asks the table the most questions. It is
+ * the wrong opponent for `LIST=earned`, and that cost a run to find out: a mono-red list of burn
+ * and sweepers against a control deck holding a Wall of Frost and a Dirgur Nemesis is two decks
+ * that cannot close, and the game ran past **450 moves of nothing but Pass** without reaching a
+ * winner. Ember Rush ends games — its own and this one's — so the scenario puts the two fastest
+ * decks in the pool at the same table and gets a result in twenty turns instead of a hundred.
+ */
+const OPPONENT_DECK = process.env.OPPONENT_DECK ?? (LIST === 'earned' ? 'ember-rush' : 'tidal-mind');
 const MAX_MOVES = Number.parseInt(process.env.MAX_MOVES ?? '2000', 10);
 
 /**
@@ -127,15 +137,21 @@ const COSTS_LIST = [
  * - **Overload** ({3}{R}{R}{R} on Mizzium Mortars) is the only row with **no targets at all**. The
  *   table has to send it the moment it is chosen rather than walking the player through a pick, and
  *   a table that asked would hang on a question the engine refuses. It is also dearer than printed,
- *   so twenty-four lands is not greed — six of them have to be out at once.
+ *   so twenty lands is not greed — six of them have to be out at once.
+ *
+ * Sixteen Monastery Swiftspears are the **clock**, and they are here because the version without
+ * one did not finish. Twenty-four burn spells and no bodies against a control deck is a game
+ * neither side can close: one run passed four hundred and fifty times without reaching a winner.
+ * A prowess creature that grows with every spell in this list is what turns it back into a game,
+ * and `OPPONENT_DECK` above is the other half of that fix.
  *
  * Mono-red on purpose: `LIST=costs` needed three colours and failed its first run on the mana base
  * rather than on a keyword, and the fix was twelve guildgates. This list has nothing to fix.
  */
 const EARNED_LIST = [
-  '24 Mountain',
-  '10 Skewer the Critics', '10 Mizzium Mortars',
-  '8 Lightning Bolt', '8 Monastery Swiftspear',
+  '20 Mountain',
+  '8 Skewer the Critics', '8 Mizzium Mortars',
+  '8 Lightning Bolt', '16 Monastery Swiftspear',
 ].join('\n');
 
 const myMove = (page) => isMyMove(page);
