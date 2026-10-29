@@ -1522,6 +1522,24 @@ const ARCBOUND_RAVAGER: CardDef = {
   colors: [],
 };
 
+/*
+  The card D222 asked for by name: an artifact that **pays you for leaving**.
+
+  Every other non-creature artifact in this pool is Equipment, a Vehicle, a mana source, a standing
+  answer or an anthem — five kinds of thing you would rather keep, which is why the Arcbound Ravager's
+  "Sacrifice an artifact" had nothing to eat that was not a downgrade. This is the sixth kind, and the
+  only one whose text is entirely about going: it draws on the way in and again on the way out, so
+  sacrificing it costs a permanent that was doing nothing and pays a card for the privilege.
+*/
+const ICHOR_WELLSPRING: CardDef = {
+  name: 'Ichor Wellspring',
+  typeLine: 'Artifact',
+  manaCost: '{2}',
+  cmc: 2,
+  oracleText: 'When Ichor Wellspring enters the battlefield or is put into a graveyard from the battlefield, draw a card.',
+  colors: [],
+};
+
 const ELITE_VANGUARD: CardDef = {
   name: 'Elite Vanguard',
   typeLine: 'Creature — Human Soldier',
@@ -4413,7 +4431,26 @@ export const FORGE_ALLIANCE: DeckSpec = {
     // Both copies: a vehicles test crews a Sky Skiff with two of them, and `playout.test.ts`
     // watches one die for its Spirit.
     { card: DOOMED_TRAVELER, count: 2 },
-    { card: LEONIN_SKYHUNTER, count: 2 },
+    { card: LEONIN_SKYHUNTER, count: 1 },
+    /*
+      The second Skyhunter's slot, spent on the card the Ravager had nothing to eat without.
+
+      Paid from a two-of on purpose, and the reason is a lesson this project has already paid for
+      twice: `arena()` places a card by finding it in that seat's **library**, so a test naming a
+      card in this deck breaks the moment the deck stops carrying it. Every one-of that the usage
+      instrument offered is named by a test somewhere — the Angelic Gift and Firemane Avenger
+      included — and cutting a copy of a two-of leaves the card in the library and every test
+      standing.
+
+      It is also a **hard** payer rather than a convenient one, which is the discipline D211 asks
+      for: same mana value as the Wellspring, and the bot casts a Skyhunter in 96% of the games it
+      holds one. The dead slot the instrument actually pointed at is Disrupt Decorum — 0 casts in
+      144 games — and it stays, because it is the pool's only goad card and goad is a mechanic only
+      a pod can use. A duel measurement is not a reason to delete the pod's card.
+
+      What the Wellspring buys that a 2/2 flier does not is a cost this deck could not pay. See D223.
+    */
+    { card: ICHOR_WELLSPRING, count: 1 },
     // A two-drop that wins the fight it is in rather than trading, which is what a board of small
     // creatures is short of — and the first first-striker in the pool.
     { card: YOUTHFUL_KNIGHT, count: 1 },

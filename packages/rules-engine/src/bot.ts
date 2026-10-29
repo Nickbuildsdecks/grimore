@@ -388,16 +388,26 @@ function cheapestCreature(state: GameState, ids: readonly string[]): string | nu
  * the rule is about the board state rather than the card — the same Warhammer is fodder on one turn
  * and untouchable on the next.
  *
- * *Not a mana source.* Nothing in this pool exercises it: the only artifact cost here is the
- * Ravager's and Forge Alliance has no rocks. It is in anyway, because a bot that eats its own Sol
- * Ring to grow a 1/1 is a bug waiting for the next deck to arrive, and the check is one question
- * about the card rather than a guess about the board.
+ * *And it pays you for going* — a trigger of its own on reaching a graveyard. This clause replaced
+ * two others, and it is the whole of what D222 cost to learn. The first version asked only "is it
+ * doing anything right now", which is true of an unattached Bonesplitter and an uncrewed Sky Skiff,
+ * and the instrument said what that was worth: of four artifacts eaten across 48 games, **four of
+ * four** had a creature standing by that could have carried them, and two were **Loxodon
+ * Warhammers**. One +1/+1 counter on a 1/1 is not worth the deck's best card, and the slot probe
+ * agreed at 6 to 7 games of 288 against.
  *
- * Cheapest by mana value among what is left — and that is the weak part of this, said out loud.
- * Mana value is a fair proxy for what an artifact cost to get and a poor one for what it is worth
- * now, and the judgement it misses is a real one: an unattached Warhammer with a creature to carry
- * it is live, and the same card on an empty board is not. That distinction is a question about next
- * turn, which is a different piece of work from this one.
+ * "Doing nothing *now*" was the wrong question, because an Equipment doing nothing now is a card you
+ * equip next turn. The right one is **"is sacrificing this a loss at all"**, and the only artifact
+ * that honestly answers no is one whose text is about **leaving**: an Ichor Wellspring draws on the
+ * way out, so the cost is a permanent that was idle and the payment is a card.
+ *
+ * It subsumes the mana-source clause it replaced — a Sol Ring has nothing to say about graveyards —
+ * and it is safe where a syntactic test for "inert" is not. "No activated ability and no static"
+ * sounds equivalent and passes an Obelisk of Urd, whose +2/+2 lives in an enters-the-battlefield
+ * choice rather than in `statics`: that version eats a lord.
+ *
+ * Cheapest by mana value among what is left, which is now a tie-break between cards that all pay you
+ * for going rather than a judgement about what is worth losing — the part it was never good at.
  */
 function spentArtifact(state: GameState, ids: readonly string[]): string | null {
   let best: { id: string; cmc: number } | null = null;
@@ -406,12 +416,24 @@ function spentArtifact(state: GameState, ids: readonly string[]): string | null 
     if (inst === undefined) continue;
     if (characteristicsOf(state, inst).isCreature) continue;
     if (inst.attachedTo !== null) continue;
-    const def = state.cardDefs[inst.defKey];
-    if ((scriptFor(def?.name)?.abilities ?? []).some((a) => a.produces !== undefined)) continue;
-    const cmc = def?.cmc ?? 0;
+    if (!paysForLeaving(state.cardDefs[inst.defKey]?.name)) continue;
+    const cmc = state.cardDefs[inst.defKey]?.cmc ?? 0;
     if (best === null || cmc < best.cmc) best = { id, cmc };
   }
   return best?.id ?? null;
+}
+
+/**
+ * Whether this card's own text fires when it reaches a graveyard — "is sacrificing it a payment".
+ *
+ * Both `self` and `any` are named, because `who` defaults to **`another`** on this one event and to
+ * `self` on the five board events. A Planar Void watching everybody else's cards reach a graveyard
+ * is not a reason to sacrifice a Planar Void, and leaving the default implicit would have said it
+ * was.
+ */
+function paysForLeaving(name: string | undefined): boolean {
+  return (scriptFor(name)?.triggers ?? []).some((t) =>
+    t.on.kind === 'to-graveyard' && (t.on.who === 'self' || t.on.who === 'any'));
 }
 
 /**

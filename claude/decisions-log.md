@@ -13070,3 +13070,79 @@ tests: the sweep with the blinding on, and the named position with it off, asser
 change its mind. If the second ever goes green, the first has stopped checking anything. The flag is
 a measurement control and nothing else — `false` is the bot reading the shuffle, and it must never
 reach a real table.
+
+## D223 — The card the pool was missing, and the question "is it idle" replaced with "is it a loss"
+
+D222 ended with an artifact cost the deck could not pay well and a bot rule switched off because what
+it fed the cost was wrong. This is the card that fixes the first and the narrowing that fixes the
+second. It needed D224 shipped first: the deck change turns the hidden-information audit red, because
+adding one card to Forge Alliance was what surfaced the shuffle leak.
+
+### The rule: not "is it idle" but "is sacrificing it a loss"
+
+D222's rule asked whether an artifact was **doing anything right now**, and the instrument said what
+that was worth: four artifacts eaten across 48 games, four of four with a creature standing by that
+could have carried them, two of them **Loxodon Warhammers**. Paired on the same seeds it cost 6 to 7
+games of 288.
+
+The question was wrong, not the implementation. An Equipment doing nothing this instant is a card you
+equip next turn — "idle" and "spent" are different words. The right question is whether sacrificing it
+is a **loss at all**, and the only artifact that honestly answers no is one whose own text fires when
+it reaches a graveyard. `paysForLeaving` is that clause, and it replaced two others:
+
+- the mana-source clause is **subsumed** — a Sol Ring has nothing to say about graveyards — so it was
+  deleted rather than kept as a second way of saying the same thing;
+- and the "no activated ability, no static" test that looked equivalent was **audited against the
+  pool and rejected**: it passes an Obelisk of Urd, whose +2/+2 lives in an enters-the-battlefield
+  choice rather than in `statics`, so that version eats a lord. The audit is one command
+  (`AUDIT=1 node scripts/measure/artifact-cost.mjs`) and it is the reason this clause reads the way
+  it does rather than the way it first looked like it should.
+
+`isCreature` and `attachedTo` stay with no card behind either of them, which is the opposite of this
+engine's usual rule about options nothing fires. The distinction: those are **refusals**, not offers.
+A refusal that never fires costs nothing and stops the bot eating a body for a counter the day a card
+exists with a `to-graveyard` trigger on a creature.
+
+### The card, which is the sixth kind of artifact in the pool
+
+Ichor Wellspring, {2}: "enters the battlefield **or** is put into a graveyard from the battlefield —
+draw a card." Every other non-creature artifact here is Equipment, a Vehicle, a mana source, a
+standing answer or an anthem. This is the only one whose whole text is about **going**.
+
+Two triggers rather than one, because the engine has no "or" for two different events and does not
+need one: that templating *means* two triggers, and the rules read them separately too (CR 603.2
+raises each on its own). In printed order, so a log reads the way the card does. `who: 'self'` named
+on both, which is load-bearing on the graveyard event — `who` defaults to **`another`** there and to
+`self` on the five board events, so the default would have made this a card that draws whenever
+anybody else's card is binned. `drawLater` for both, so a dredge can replace either.
+
+### The slot, and the lesson that picked the payer
+
+`cast-counts` named the deck's dead slot without ambiguity: **Disrupt Decorum, 0 casts in 144 games**,
+in hand 45 of them. It is not the payer. Goad is a mechanic only a pod can use, and that card is the
+pool's only one — a duel measurement is not a reason to delete the pod's card.
+
+So the payer is the **second Leonin Skyhunter**, and paying from a two-of is the point rather than a
+convenience. `arena()` places a card by finding it in that seat's library, so a test naming a card in
+this deck breaks the moment the deck stops carrying it — and every one-of the usage instrument
+offered is named by a test somewhere, the Angelic Gift and Firemane Avenger included. That cost one
+wasted swap before the grep: the README lesson from D201 says to check the payer *and* the deck
+before the probe runs, and it says nothing about checking a one-of against the whole suite. Cutting
+one copy of a two-of leaves the card in the library and every test standing. It is also a hard payer
+by this project's standard: same mana value, and the bot casts a Skyhunter in 96% of the games it
+holds one.
+
+### What it is worth
+
+The rule now eats the Wellspring and nothing else. Across the same 48 games it ate **one** artifact,
+and it was the right one — against D222's four, of which four were mistakes:
+
+| across 48 games, feeding on | D222's rule | this one |
+| --- | --- | --- |
+| artifacts eaten | 4 | **1** |
+| eaten with a carrier standing by | 4 | 1 |
+| Loxodon Warhammers eaten | 2 | **0** |
+
+One in 48 is not a per-game number, and the reason is arithmetic rather than judgement: one copy of a
+two-mana artifact rarely shares a board with the Ravager. The eligibility is right and the frequency
+is a fact about a 60-card deck with one of them in it.

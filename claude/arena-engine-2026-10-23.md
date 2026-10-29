@@ -6332,6 +6332,35 @@ nothing** — sends at the fewest. Second defect running that a browser row foun
 had passed, and the same shape both times: a claim about what the *player* can see, which no layer
 below the browser can make.
 
+### The card the pool was missing, and "is it idle" replaced with "is it a loss" (D223)
+
+D222's rule asked whether an artifact was **doing anything right now**, and ate two Loxodon
+Warhammers in 48 games for it. The question was wrong, not the implementation: an Equipment doing
+nothing this instant is a card you equip next turn. The right question is whether sacrificing it is a
+**loss at all**, and `paysForLeaving` is that clause — a trigger of its own on reaching a graveyard.
+It subsumes the mana-source clause it replaced (a Sol Ring has nothing to say about graveyards), and
+the "no activated ability, no static" test that looked equivalent was audited against the pool and
+**rejected**: it passes an Obelisk of Urd, whose +2/+2 lives in an enters-the-battlefield choice.
+
+Which took a card, because the pool had none. **Ichor Wellspring**, {2}, "enters the battlefield or is
+put into a graveyard from the battlefield — draw a card": the sixth kind of artifact here, after
+Equipment, Vehicles, mana sources, standing answers and anthems, and the only one whose whole text is
+about **going**. Two triggers rather than one, because that templating *means* two and the rules read
+them separately (CR 603.2); `who: 'self'` named on both, load-bearing on the graveyard event where the
+default is `another`.
+
+| across 48 games, feeding on | D222's rule | this one |
+| --- | --- | --- |
+| artifacts eaten | 4 | **1** |
+| eaten with a carrier standing by | 4 | 1 |
+| Loxodon Warhammers eaten | 2 | **0** |
+
+The slot is the **second Leonin Skyhunter**, and paying from a two-of is the point: `arena()` places a
+card by finding it in that seat's library, so cutting a one-of breaks every test naming it — which
+cost one wasted swap before the grep. `cast-counts` named the deck's actually-dead slot (Disrupt
+Decorum, 0 casts in 144 games) and it **stays**, because goad is a mechanic only a pod can use and a
+duel measurement is not a reason to delete the pod's card.
+
 ### The bot was reading its own shuffle (D224)
 
 A fairness bug, found by accident. The search plays a candidate out with `applyAction` on the **real

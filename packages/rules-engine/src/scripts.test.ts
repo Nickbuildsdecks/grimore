@@ -17660,29 +17660,46 @@ describe('modular: counters that move from a dying creature to a living one', ()
   });
 });
 
-describe('the bot feeds a spent artifact to an artifact cost', () => {
+describe('the artifact cost, and what the bot is willing to pay it with', () => {
   /*
-    The rule D221 asked for (D222), and the reason it exists is a number: the Arcbound Ravager's
-    "Sacrifice an artifact" row was offered **437 times across 48 bot games and taken 0**, because
-    the branch answering it was the creature branch, whose first rule is "never feed anything with
-    text of its own". Over an artifact cost that rule is not merely unhelpful, it is backwards —
-    nearly every artifact is only text — so it refused the whole pool and the Ravager sat there as
-    a 1/1 for the length of every game it was drawn in.
+    Two pieces of measurement in one describe, because the second corrected the first and keeping
+    them apart would leave a reader believing the wrong one.
 
-    The replacement asks whether the artifact is *doing anything*, and the tests below are its three
-    clauses plus the ordering. The first of them is the one that matters most often, and it is not
-    the one the task was about.
+    D221 measured the Arcbound Ravager's "Sacrifice an artifact" row offered 437 times across 48 bot
+    games and taken 0: the branch answering it was the creature branch, whose first rule is "never
+    feed anything with text of its own", and over an artifact cost that is backwards — nearly every
+    artifact is only text. D222 replaced it with "is this artifact doing anything right now", which
+    ate four artifacts in 48 games: four of four on a board with a creature standing by that could
+    have carried them, and two of them **Loxodon Warhammers**, the deck's best card. Paired on the
+    same seeds, that cost the deck 7 games of 288 at one seed set and 6 at the other.
 
-    **It is `feedsArtifacts: true` throughout, because the measurement turned the default off.** Of
-    the four artifacts the rule ate across those 48 games, four of four had a creature standing by
-    that could have carried them and two were Loxodon Warhammers — and paired on the same seeds, the
-    deck was 7 games of 288 worse with feeding on at one seed set and 6 at the other. The rule is
-    right about what "spent" means and there is nothing spent in this pool to find, so it is kept
-    written and switched off. These tests pin the judgement; the two below pin the default.
+    D223 is the narrowing. "Doing nothing *now*" was the wrong question, because an Equipment doing
+    nothing now is a card you equip next turn. The question is whether sacrificing it is a loss at
+    all, and the only artifact that answers no is one whose own text fires when it reaches a
+    graveyard — which took a new card, because the pool had none.
+
+    The deck these tests use is their own, for a reason worth stating: Ichor Wellspring is scripted
+    and in no starter deck, because putting it in Forge Alliance turns the hidden-information audit
+    in `playout.test.ts` red. That is a pre-existing leak it happens to surface (the bot reads its
+    own library when it simulates a Mirko Vosk mill), and the card waits on that being fixed rather
+    than shipping a red audit. `deckSpecs` is how a test says what it needs.
   */
-  const ravagerBoard = (alongside: readonly string[]): GameState => {
+  const affinity = customDeck({
+    id: 'ravager-and-food',
+    name: 'Ravager and food',
+    entries: [
+      { name: 'Arcbound Ravager', count: 4 }, { name: 'Ichor Wellspring', count: 4 },
+      { name: 'Bonesplitter', count: 4 }, { name: 'Sky Skiff', count: 4 },
+      { name: 'Mind Stone', count: 4 }, { name: 'Elite Vanguard', count: 4 },
+      { name: 'Plains', count: 36 },
+    ],
+  }).deck;
+
+  /** The Ravager **cast** (a 0/0 placed never ran `entersWith`), with `alongside` on the board. */
+  const board = (alongside: readonly string[]): GameState => {
     let s = arena({
-      decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+      decks: { 0: 'ravager-and-food', 1: 'tidal-mind' },
+      deckSpecs: { 'ravager-and-food': affinity },
       hands: { 0: ['Arcbound Ravager'] },
       battlefield: { 0: ['Plains', 'Plains', 'Plains', 'Plains', ...alongside], 1: ['Island'] },
       turn: 5, firstSeat: 0,
@@ -17709,126 +17726,130 @@ describe('the bot feeds a spent artifact to an artifact cost', () => {
     return null;
   };
 
-  it('is off by default, because feeding measured worse than not feeding', () => {
-    /*
-      The default, which is the whole of D222's second half. Every other filter in that family is a
-      rule the bot gains; this is the one whose measurement sent it back. With it off the Ravager
-      stays a 1/1, which is what D221 complained about — and 6 to 7 games of 288 says that is the
-      better of the two, because what it was eating was the deck's own Equipment.
-    */
-    const s = ravagerBoard(['Bonesplitter']);
-    expect(fed(s, {})).toBeNull();
-    expect(fed(s, { feedsArtifacts: true })).toBe('Bonesplitter');
+  const ON = { feedsArtifacts: true } as const;
+
+  it('eats the Wellspring, which replaces itself on the way out', () => {
+    expect(fed(board(['Ichor Wellspring']), ON)).toBe('Ichor Wellspring');
   });
 
-  it('never eats itself, which is the clause that fires in every window there is', () => {
+  it('and leaves an idle Bonesplitter alone, which is the whole of D223', () => {
     /*
-      The Ravager is an artifact, so the engine offers it as a candidate for its own cost — and
-      correctly, because that is what the card says. The instrument counting the pool says this is
-      the commonest single case: across 437 windows in 48 games of the shipping bot, 220 had nothing
-      on offer but the Ravager itself.
-
-      So a naive "eat the cheapest artifact" would have the bot sacrifice the Ravager to put a
-      counter on the Ravager, which is a card thrown in the bin for nothing. Reading `isCreature`
-      off its characteristics is what refuses it, and the refusal is the whole ability going
-      unused — which is right, because with nothing but itself there is nothing to pay with.
+      The test that would have passed before the narrowing and is the point of it. An unattached
+      Bonesplitter is doing nothing this instant and is a card you equip next turn; the old rule ate
+      it, and over 48 games ate two Loxodon Warhammers the same way.
     */
-    const s = ravagerBoard([]);
+    expect(fed(board(['Bonesplitter']), ON)).toBeNull();
+  });
+
+  it('nor an uncrewed Vehicle, for the same reason', () => {
+    // A Sky Skiff doing nothing is a 2/3 flier the moment anybody taps a creature for it. "Idle"
+    // and "spent" are different words and the first rule confused them.
+    expect(fed(board(['Sky Skiff']), ON)).toBeNull();
+  });
+
+  it('nor a mana source', () => {
+    // Converting two mana a turn into one point of power, permanently, is the clearest version of
+    // the mistake. This one the first rule did refuse, for a clause D223 could then delete: a Mind
+    // Stone has nothing to say about graveyards, so the narrowed rule covers it with no special case.
+    expect(fed(board(['Mind Stone']), ON)).toBeNull();
+  });
+
+  it('prefers the one that pays over the one that is merely idle', () => {
+    // Both on the board, and the Bonesplitter is the **cheaper** by mana value — which is exactly
+    // the trap the old ordering fell into. Eligibility comes first, so the tie-break never sees it.
+    expect(fed(board(['Bonesplitter', 'Ichor Wellspring']), ON)).toBe('Ichor Wellspring');
+  });
+
+  it('never eats itself, which the engine offers because the card says "an artifact"', () => {
+    /*
+      The Ravager is an artifact, so it is a legal candidate for its own cost — correctly, because
+      the card says "an artifact" and not "another". Sacrificing it to put a counter on it is a card
+      in the bin for nothing, and on the shipping bot this is the commonest shape there is: of 437
+      windows the row was offered in across 48 games, 220 had nothing else on offer at all.
+
+      Two clauses refuse it now rather than one, which is worth knowing: it is a creature, and its
+      own trigger is `dies` rather than `to-graveyard`. The `isCreature` clause is kept for the card
+      that has the second without the first — a refusal with no card behind it costs nothing and
+      prevents the bot eating a body for a counter.
+    */
+    const s = board([]);
     const play = legalActions(s, 0).plays.find((p) => p.sacrificeKind === 'artifact');
     expect(play?.sacrificeOptions).toContain(find(s, 0, 'battlefield', 'Arcbound Ravager'));
-    expect(fed(s, { feedsArtifacts: true })).toBeNull();
+    expect(fed(s, ON)).toBeNull();
   });
 
-  it('eats an Equipment that is lying there unattached', () => {
-    const s = ravagerBoard(['Bonesplitter']);
-    expect(fed(s, { feedsArtifacts: true })).toBe('Bonesplitter');
-  });
-
-  it('and leaves an Equipment that is on a creature alone', () => {
+  it('is off by default, because feeding has never earned one', () => {
     /*
-      An equipped Bonesplitter is +2/+0 on an attacker; the same card in the second column is a
-      card. `attachedTo` is the one fact that tells those apart, which is why the rule is about the
-      board rather than about the card — the same Bonesplitter is fodder on one turn and
-      untouchable on the next.
-
-      This is the clause that decides what the rule is *worth*: the pool instrument found the
-      Ravager's Equipment attached 89 times across 48 games and unattached once, because the bot
-      equips the moment it can. See D222 — the rule is right and the deck gives it almost nothing
-      to do.
+      The default the measurement set twice. D222 shipped it on and the slot probe sent it back at 6
+      to 7 games of 288 against; D223 removed the harm by construction, and with the narrowed rule
+      the bot ate **one** artifact in 48 games — the right one. Safe is not proven, so it stays
+      opt-in, and what it waits on is a deck with something to eat (#206).
     */
-    let s = ravagerBoard(['Bonesplitter', 'Elite Vanguard']);
-    const axe = find(s, 0, 'battlefield', 'Bonesplitter');
-    const vanguard = find(s, 0, 'battlefield', 'Elite Vanguard');
-    const equip = legalActions(s, 0).plays.find((p) => p.card === axe && p.kind === 'activate');
-    expect(equip).toBeDefined();
-    s = drain(apply(s, {
-      type: 'auto:activate', by: 0, card: axe, abilityIndex: equip!.abilityIndex ?? 0,
-      targets: [{ kind: 'card', id: vanguard }],
-    }), 40);
-    expect(s.instances[axe]!.attachedTo).toBe(vanguard);
-    expect(fed(s, { feedsArtifacts: true })).toBeNull();
+    expect(fed(board(['Ichor Wellspring']), {})).toBeNull();
   });
+});
 
-  it('reads "is it a creature" off the board, so an uncrewed Vehicle is fodder and a crewed one is not', () => {
-    /*
-      A Vehicle is where the printed type line and the board disagree, which is exactly why the
-      clause reads characteristics instead. Uncrewed, a Sky Skiff is an artifact doing nothing.
-      Crewed, it is a 2/3 flier — and eating a body for a +1/+1 counter is the creature arithmetic
-      this branch exists to stay out of.
-    */
-    const idle = ravagerBoard(['Sky Skiff']);
-    expect(fed(idle, { feedsArtifacts: true })).toBe('Sky Skiff');
+describe('Ichor Wellspring, the artifact that pays you for leaving', () => {
+  /*
+    The card D223 needed and the pool did not have. Audited card by card, every non-creature
+    artifact here was Equipment, a Vehicle, a mana source, a standing answer or an anthem — five
+    kinds of thing you would rather keep — so an artifact cost had nothing to eat that was not a
+    downgrade. This is the sixth kind, and its whole text is about going.
+  */
+  const solo = customDeck({
+    id: 'wellsprings',
+    name: 'Wellsprings',
+    entries: [{ name: 'Ichor Wellspring', count: 4 }, { name: 'Plains', count: 56 }],
+  }).deck;
 
-    let s = ravagerBoard(['Sky Skiff', 'Elite Vanguard']);
-    const skiff = find(s, 0, 'battlefield', 'Sky Skiff');
-    const crew = legalActions(s, 0).plays.find((p) => p.card === skiff && p.kind === 'activate');
-    expect(crew).toBeDefined();
-    s = drain(apply(s, {
-      type: 'auto:activate', by: 0, card: skiff, abilityIndex: crew!.abilityIndex ?? 0,
-    }), 40);
-    expect(characteristicsOf(s, s.instances[skiff]!).isCreature).toBe(true);
-    expect(fed(s, { feedsArtifacts: true })).toBeNull();
-  });
-
-  it('takes the cheapest of them, by mana value', () => {
-    // A Bonesplitter at {1} and a Loxodon Warhammer at {3}, both idle. Mana value is a fair proxy
-    // for what an artifact cost to get and a poor one for what it is worth now, which the rule says
-    // out loud rather than pretending otherwise.
-    const s = ravagerBoard(['Bonesplitter', 'Loxodon Warhammer']);
-    expect(fed(s, { feedsArtifacts: true })).toBe('Bonesplitter');
-  });
-
-  it('and will not eat a mana source, which no deck in this pool can make it do', () => {
-    /*
-      The clause that guards the next deck rather than this one. The only artifact cost in the pool
-      is the Ravager's and Forge Alliance has no rocks, so nothing here exercises it — which is why
-      the test says what it needs with a deck of its own rather than hunting for one that happens
-      to have both cards. A bot that ate its own Mind Stone to grow a 1/1 would be converting two
-      mana a turn into one point of power, permanently.
-    */
-    const affinity = customDeck({
-      id: 'ravager-and-rocks',
-      name: 'Ravager and rocks',
-      entries: [
-        { name: 'Arcbound Ravager', count: 4 }, { name: 'Mind Stone', count: 4 },
-        { name: 'Plains', count: 52 },
-      ],
-    }).deck;
-    let s = arena({
-      decks: { 0: 'ravager-and-rocks', 1: 'tidal-mind' },
-      deckSpecs: { 'ravager-and-rocks': affinity },
-      hands: { 0: ['Arcbound Ravager'] },
-      battlefield: { 0: ['Plains', 'Plains', 'Mind Stone'], 1: ['Island'] },
+  const wellspring = (): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'wellsprings', 1: 'tidal-mind' },
+      deckSpecs: { wellsprings: solo },
+      hands: { 0: ['Ichor Wellspring'] },
+      battlefield: { 0: ['Plains', 'Plains', 'Plains'], 1: ['Island'] },
       turn: 5, firstSeat: 0,
-    });
-    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  it('draws a card as it arrives', () => {
+    let s = wellspring();
+    const before = ids(s, 0, 'hand').length;
     s = drain(apply(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Arcbound Ravager'),
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ichor Wellspring'),
     }), 40);
-    const stone = find(s, 0, 'battlefield', 'Mind Stone');
-    // Offered by the engine, because the card says "an artifact" and a Mind Stone is one.
-    const play = legalActions(s, 0).plays.find((p) => p.sacrificeKind === 'artifact');
-    expect(play?.sacrificeOptions).toContain(stone);
-    expect(fed(s, { feedsArtifacts: true })).toBeNull();
+    expect(namesIn(s, 0, 'battlefield')).toContain('Ichor Wellspring');
+    // One card out of the hand to cast it, one back from the trigger: level, and a permanent up.
+    expect(ids(s, 0, 'hand').length).toBe(before);
+  });
+
+  it('and draws another when it reaches a graveyard', () => {
+    let s = wellspring();
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ichor Wellspring'),
+    }), 40);
+    const well = find(s, 0, 'battlefield', 'Ichor Wellspring');
+    const before = ids(s, 0, 'hand').length;
+    s = drain(destroy(s, well), 40);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Ichor Wellspring');
+    expect(ids(s, 0, 'hand').length).toBe(before + 1);
+  });
+
+  it('is two triggers rather than one, because the engine has no "or" and does not need one', () => {
+    /*
+      The printed card is one sentence — "enters the battlefield **or** is put into a graveyard from
+      the battlefield" — and two triggers is what that templating means. The rules read them
+      separately too (CR 603.2 raises each event on its own), so the engine gets the card right by
+      not having the feature. In printed order, so a log reads the way the card does.
+    */
+    const script = scriptFor('Ichor Wellspring');
+    expect(script?.triggers?.map((t) => t.on.kind)).toEqual(['etb', 'to-graveyard']);
+    /*
+      And `who: 'self'` named on both, which is load-bearing on the graveyard event: `who` defaults
+      to **`another`** there and to `self` on the five board events. Left implicit, this would be a
+      card that draws whenever anybody else's card is binned.
+    */
+    expect(script?.triggers?.every((t) => t.on.who === 'self')).toBe(true);
   });
 });

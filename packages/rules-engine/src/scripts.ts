@@ -6655,6 +6655,52 @@ const ARCBOUND_WORKER: CardScript = {
  * does not stay dead: eat two Bonesplitters, attack as a 3/3, and when it finally dies the three
  * counters land on an Etched Champion that nothing in the pool can target.
  */
+/**
+ * Ichor Wellspring: the pool's first artifact whose whole text is about **leaving**.
+ *
+ * D222 is the reason it exists. The Ravager's artifact cost had nothing in the pool worth paying it
+ * with — audited card by card, every non-creature artifact here is Equipment, a Vehicle, a mana
+ * source, a standing answer or an anthem — so a bot taught to feed the cost ate two Loxodon
+ * Warhammers and measured 6 to 7 games of 288 against its own deck. The missing card was not a
+ * better rule; it was a card that wants to go.
+ *
+ * Two triggers, one sentence, and the printed card really is one sentence: "enters **or** is put into
+ * a graveyard from the battlefield". The engine has no "or" for two different events, and does not
+ * need one — two triggers with the same body is what that templating means, and reading them as two
+ * is how the rules read them too (CR 603.2 raises each separately). They are deliberately in printed
+ * order, so a log reads the way the card does.
+ *
+ * `drawLater` rather than `draw` for both, because the draw is the last thing the card does and that
+ * is the rule `drawLater`'s own docblock lays down — which also means a **dredge** can replace
+ * either of them. Not the first artifact that can be dredged off, since a Mind Stone sacrificed for
+ * its card already could, but the first whose draw happens without anybody choosing to: the
+ * Wellspring's two are events rather than activations, so a Rot Harvest player gets the offer for
+ * free twice.
+ */
+const ICHOR_WELLSPRING: CardScript = {
+  name: 'Ichor Wellspring',
+  triggers: [
+    {
+      on: { kind: 'etb', who: 'self' },
+      description: 'draw a card',
+      effect: (c) => drawLater(c.state, c.controller, 1),
+    },
+    {
+      on: { kind: 'to-graveyard', who: 'self' },
+      description: 'draw a card',
+      /*
+        Guarded on the card actually being in a graveyard, the way Rancor's is. `to-graveyard` is
+        raised for the move, and a card that was moved on again before this resolved — exiled from
+        the graveyard by a Planar Void, say — is no longer the object the trigger was about. Rancor
+        checks for the same reason and the comment there is the longer version.
+      */
+      effect: (c) => (c.state.instances[c.source]?.zone === 'graveyard'
+        ? drawLater(c.state, c.controller, 1)
+        : c.state),
+    },
+  ],
+};
+
 const ARCBOUND_RAVAGER: CardScript = {
   name: 'Arcbound Ravager',
   modular: { count: 1 },
@@ -7971,7 +8017,7 @@ const ALL: readonly CardScript[] = [
   CALCIDERM, BLASTODERM,
   SUDDEN_SHOCK, KROSAN_GRIP,
   NINJA_OF_THE_DEEP_HOURS,
-  ARCBOUND_WORKER, ARCBOUND_RAVAGER,
+  ARCBOUND_WORKER, ARCBOUND_RAVAGER, ICHOR_WELLSPRING,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(
