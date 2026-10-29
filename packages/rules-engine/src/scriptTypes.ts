@@ -834,6 +834,28 @@ export interface AbilityCost {
    */
   readonly exileSelf?: boolean;
   /**
+   * "Return an unblocked attacker you control to hand:" — ninjutsu's cost (CR 702.49a).
+   *
+   * The first cost in this engine paid with a permanent that is **not** destroyed: a sacrifice
+   * puts a creature in a graveyard and this puts one back in a hand, which is a very different
+   * trade — the creature that got through is the one you keep, and the card you were holding is
+   * the one that replaces it mid-combat.
+   *
+   * It also makes the ability the first one in this pool activated **from the hand without
+   * spending the card**: cycling and madness discard it, embalm exiles it from the graveyard, and
+   * the ninja is simply put onto the battlefield instead. So the zone this ability is used from is
+   * the hand, and the card is still there when the effect runs.
+   *
+   * Which attacker goes back is a choice, so it travels on the action as `returned` and the
+   * candidates travel on the play as `returnOptions`, exactly as a sacrifice cost's do. The engine
+   * recomputes and re-checks the list rather than trusting it, for the same reason.
+   *
+   * The timing is a fact about the cost rather than about the ability: an unblocked attacker only
+   * exists once blockers have been declared, so an ability with this cost is offered in the
+   * declare-blockers step after the defending player has finished declaring and not before.
+   */
+  readonly returnsUnblockedAttacker?: true;
+  /**
    * "Crew N" — tap any number of untapped creatures you control with total power N or greater
    * (CR 702.122a).
    *
@@ -1312,6 +1334,17 @@ export interface CardScript {
    * Read by `legalActions`, which is the one place that decides what a seat may do. A card declares
    * it and nothing else needs to know.
    */
+  /**
+   * Ninjutsu: swap an unblocked attacker for this card, mid-combat (CR 702.49).
+   *
+   * Read nowhere but the card that declares it, like `echo` and `splitSecond`: the ability in
+   * `abilities` carries the behaviour, with `AbilityCost.returnsUnblockedAttacker` as its cost. It
+   * is here so the pool can be audited for the keyword.
+   */
+  readonly ninjutsu?: {
+    /** The mana half of the cost, in the printed `{1}{U}` form. */
+    readonly cost: string;
+  };
   readonly splitSecond?: true;
   /**
    * Vanishing N: this permanent arrives with N time counters and spends one each of your upkeeps,

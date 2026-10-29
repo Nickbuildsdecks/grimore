@@ -156,6 +156,22 @@ export interface StackObject {
    */
   readonly answering?: string;
   /**
+   * The attack a ninjutsu ability's source is about to **join**, captured when the cost was paid
+   * (CR 702.49a).
+   *
+   * It travels on the object for the same reason `attacked` and `answering` do: the attacker that
+   * was returned to hand is out of combat by the time this ability resolves, so the defender it was
+   * aimed at no longer exists anywhere in the board. Without this the ninja would arrive attacking
+   * nobody, or — worse — attacking whoever happened to still be in `combat.attacks`.
+   *
+   * Named for what it carries rather than for the keyword, because any effect that puts a permanent
+   * onto the battlefield already attacking wants exactly this and nothing else.
+   */
+  readonly enteringAttack?: {
+    readonly defender: SeatIndex;
+    readonly planeswalker?: string;
+  };
+  /**
    * Which **object** each card target was when it was chosen, by instance id (CR 400.7).
    *
    * A separate map rather than a field on `Target` so that nothing downstream — the wire, the
@@ -1225,6 +1241,14 @@ export interface AutoActivateAction {
   readonly abilityIndex: number; readonly targets?: readonly Target[];
   /** The creature sacrificed to pay for it, when the ability's cost asks for one. */
   readonly sacrifice?: string;
+  /**
+   * The unblocked attacker **returned to hand** to pay for it — ninjutsu's cost (CR 702.49a).
+   *
+   * A second field rather than a second meaning for `sacrifice`, because the two costs do opposite
+   * things to the permanent they take: one puts a creature in a graveyard and the other puts one
+   * back in a hand. A single field would make every reader of this action guess which.
+   */
+  readonly returned?: string;
 }
 export interface AutoPassAction { readonly type: 'auto:pass'; readonly by: SeatIndex }
 export interface AutoAttackAction {

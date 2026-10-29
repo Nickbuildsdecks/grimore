@@ -1801,3 +1801,51 @@ describe("deals between players", () => {
     expect(pactOffers(view({ seats }))).toEqual([])
   })
 })
+
+describe("paying for an ability by returning an unblocked attacker", () => {
+  /*
+    Ninjutsu's cost, which is the sacrifice flow with the opposite consequence: the creature goes
+    back to its owner's **hand**, so the mode has to say which cost it is or the bar tells the
+    player they are about to lose a creature they are in fact keeping.
+  */
+  const ninja = (over: Partial<LegalPlay> = {}) => play({
+    kind: "activate", abilityIndex: 0, name: "Ninja of the Deep Hours",
+    description: "Ninjutsu {1}{U} (return an unblocked attacker you control to hand)",
+    manaCost: "{1}{U}", targetSpecs: [], candidates: [], sacrificeOptions: [],
+    returnOptions: ["hawk"],
+    ...over,
+  })
+
+  it("asks which attacker to return before anything else, because a cost is paid on activation", () => {
+    const result = arenaReducer(IDLE, { kind: "choosePlay", play: ninja() })
+    expect(result.action).toBeNull()
+    expect(result.mode.kind).toBe("feeding")
+    // And it says *which* cost, which is what the bar's wording reads.
+    expect(result.mode.kind === "feeding" ? result.mode.cost : null).toBe("returned")
+  })
+
+  it("sends the activation with the attacker in its own field, not as a sacrifice", () => {
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: ninja() }).mode
+    const result = arenaReducer(mode, { kind: "feed", card: "hawk" })
+    expect(result.action).toEqual({
+      type: "auto:activate", card: "c1", abilityIndex: 0, returned: "hawk",
+    })
+  })
+
+  it("ignores a permanent the engine did not offer", () => {
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: ninja() }).mode
+    const result = arenaReducer(mode, { kind: "feed", card: "an-island" })
+    expect(result.action).toBeNull()
+    expect(result.mode.kind).toBe("feeding")
+  })
+
+  it("and a sacrifice cost still says sacrifice, with the same mode", () => {
+    // The regression this shares a mode with: one flow, two costs, and no chance of the wrong field.
+    const outlet = ninja({ sacrificeOptions: ["fodder"], returnOptions: undefined })
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: outlet }).mode
+    expect(mode.kind === "feeding" ? mode.cost : null).toBe("sacrifice")
+    expect(arenaReducer(mode, { kind: "feed", card: "fodder" }).action).toEqual({
+      type: "auto:activate", card: "c1", abilityIndex: 0, sacrifice: "fodder",
+    })
+  })
+})

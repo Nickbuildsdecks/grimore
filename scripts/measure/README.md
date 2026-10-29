@@ -501,3 +501,13 @@ seat's library. So a card can be safe to reduce from two to one and still unsafe
 list — Lava Spike is escape fodder named by deck in several arc-tempest tests, and looked like the
 ideal payer right up to the point the suite went red. Checking costs one grep; not checking costs a
 probe run and a rewrite.
+
+**When a keyword never fires, count the *windows* rather than the activations.** Ninjutsu measured
+**zero** activations in 48 bot games, and the first instinct — "the bot will not take the play" — was
+wrong: asked directly on a board with a ninja in hand and an attacker through, it returns the
+activation with the right creature named. What the zero was about took three counters at one
+declare-blockers step, over 95 of them: an unblocked attacker 19 times, a ninja in hand **2** times,
+and the two together **0**. The bot casts the card as a two-drop the moment it can, so it is never
+there when the swap exists. One instrument, one run, and the difference between "the bot judges this
+badly" and "the card is in the wrong zone" — which are different pieces of work with different fixes.
+

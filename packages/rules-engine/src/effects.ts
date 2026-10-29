@@ -81,6 +81,11 @@ export interface EffectContext {
    */
   readonly subject?: string;
   /**
+   * The attack this ability's source is about to join, for an effect that puts a permanent onto the
+   * battlefield already attacking. See `StackObject.enteringAttack` and `enterAttacking`.
+   */
+  readonly enteringAttack?: { readonly defender: SeatIndex; readonly planeswalker?: string };
+  /**
    * The counters the permanent this trigger is about had before the event, by counter name.
    *
    * Undefined for everything that is not a death trigger, and for a permanent that had none. It
@@ -629,6 +634,41 @@ export function removeFromCombat(state: GameState, id: string): GameState {
   const same = attacks.length === state.combat.attacks.length
     && attacks.every((attack, i) => attack === state.combat.attacks[i]);
   return same ? state : { ...state, combat: { ...state.combat, attacks } };
+}
+
+/**
+ * Puts a card onto the battlefield **tapped and attacking** (CR 702.49a, CR 506.3c).
+ *
+ * The first thing in this engine that adds an attacker to a combat already in progress, and the
+ * rules are emphatic about what that is *not*: the creature was never declared as an attacker, so
+ * nothing that triggers on attacking triggers, and no attack cost is paid. The engine gets that for
+ * free — `attacks` is appended to directly rather than going through the declaration path, and the
+ * declaration path is where `raise('attacks')` lives.
+ *
+ * Tapped, because the card says so and because an untapped creature that had not attacked would be
+ * able to block on the way back round. `attackerSeq` is recorded like any declared attacker's, so
+ * the damage step can tell this object from a later one with the same id.
+ */
+export function enterAttacking(
+  state: GameState, id: string, seat: SeatIndex,
+  attack: { readonly defender: SeatIndex; readonly planeswalker?: string },
+): GameState {
+  const placed = putOntoBattlefield(state, id, seat, { tapped: true });
+  const inst = placed.instances[id];
+  if (inst === undefined || inst.zone !== 'battlefield') return placed;
+  return {
+    ...placed,
+    combat: {
+      ...placed.combat,
+      attacks: [...placed.combat.attacks, {
+        attacker: id,
+        defender: attack.defender,
+        ...(attack.planeswalker === undefined ? {} : { planeswalker: attack.planeswalker }),
+        blockers: [],
+        ...(inst.objectSeq === undefined ? {} : { attackerSeq: inst.objectSeq }),
+      }],
+    },
+  };
 }
 
 export function destroy(state: GameState, id: string): GameState {

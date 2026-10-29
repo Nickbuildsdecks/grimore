@@ -1089,6 +1089,28 @@ const PREORDAIN: CardDef = {
   colors: ['U'],
 };
 
+/**
+ * The pool's first **ninjutsu** card, and the only creature here that arrives mid-combat.
+ *
+ * A 2/2 for two that is never cast on turn two: it waits in hand until a creature gets through
+ * unblocked, then takes that creature's place on the attack, already tapped and already attacking,
+ * after the defending player has decided not to block. The creature it replaced goes back to its
+ * owner's hand, which is the half that makes the trade good rather than even — you keep both cards.
+ *
+ * In Skyward Writ, because ninjutsu needs an unblocked attacker and that deck's whole plan is
+ * fliers nobody can block. See `CardScript.ninjutsu`.
+ */
+const NINJA_OF_THE_DEEP_HOURS: CardDef = {
+  name: 'Ninja of the Deep Hours',
+  typeLine: 'Creature \u2014 Human Ninja',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Ninjutsu {1}{U} ({1}{U}, Return an unblocked attacker you control to hand: Put this card onto the battlefield from your hand tapped and attacking.)\nWhenever Ninja of the Deep Hours deals combat damage to a player, draw a card.',
+  colors: ['U'],
+};
+
 const OMENSPEAKER: CardDef = {
   name: 'Omenspeaker',
   typeLine: 'Creature — Human Wizard',
@@ -4916,7 +4938,16 @@ export const SKYWARD_WRIT: DeckSpec = {
       Knight is not lost: Forge Alliance still runs one.
     */
     { card: THALIA_GUARDIAN_OF_THRABEN, count: 1 },
-    { card: OMENSPEAKER, count: 2 },
+    { card: OMENSPEAKER, count: 1 },
+    /*
+      The second Omenspeaker's slot, spent on **ninjutsu**.
+
+      Same cost, same colour, same two-drop slot, and the trade is the whole keyword: a 1/3 that
+      scries two as it arrives against a 2/2 that is never cast at all — it waits in hand for a
+      flier to get through and takes its place on the attack, drawing a card when it connects. This
+      is the deck for it because this is the deck whose creatures get through. See D219.
+    */
+    { card: NINJA_OF_THE_DEEP_HOURS, count: 1 },
     /*
       The prevention pair, one copy each, and the two cards they cost.
 

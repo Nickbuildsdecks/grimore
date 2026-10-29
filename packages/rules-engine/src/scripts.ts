@@ -32,7 +32,7 @@ import {
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
   becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, EVOKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
-  addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer, FADE, TIME,
+  addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer, FADE, TIME, enterAttacking,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
@@ -6563,6 +6563,39 @@ function echoTrigger(cost: string): TriggerDef {
 }
 
 /**
+ * Ninja of the Deep Hours: a creature that arrives **already attacking** (CR 702.49).
+ *
+ * The pool's first **ninjutsu** card, and two things the engine had never done. A cost paid with a
+ * permanent that is **not** destroyed — the unblocked attacker goes back to its owner's hand, which
+ * is a very different trade from a sacrifice, because the creature that got through is the one you
+ * keep. And a creature put onto the battlefield in the middle of a combat, tapped and attacking the
+ * player the returned attacker was aimed at.
+ *
+ * What the ability buys in play is the swap: a 1/1 that got through becomes a 2/2 that draws a card,
+ * on the same attack, after the defender has already decided not to block. It is the only play in
+ * this pool that happens *after* blockers and still changes what damage lands.
+ *
+ * The effect reads `c.enteringAttack` rather than the combat, because the attacker whose place it is
+ * taking is in a hand by the time this resolves. See `StackObject.enteringAttack`.
+ */
+const NINJA_OF_THE_DEEP_HOURS: CardScript = {
+  name: 'Ninja of the Deep Hours',
+  ninjutsu: { cost: '{1}{U}' },
+  abilities: [{
+    cost: { mana: '{1}{U}', returnsUnblockedAttacker: true },
+    description: 'Ninjutsu {1}{U} (return an unblocked attacker you control to hand)',
+    effect: (c) => (c.enteringAttack === undefined
+      ? c.state
+      : enterAttacking(c.state, c.source, c.controller, c.enteringAttack)),
+  }],
+  triggers: [{
+    on: { kind: 'combat-damage' },
+    description: 'Whenever Ninja of the Deep Hours deals combat damage to a player, draw a card.',
+    effect: (c) => draw(c.state, c.controller, 1),
+  }],
+};
+
+/**
  * Sudden Shock: two damage nobody gets to answer (CR 702.19).
  *
  * The pool's first **split second** card, and a mana dearer than the Shock it sits beside for
@@ -7832,6 +7865,7 @@ const ALL: readonly CardScript[] = [
   STUDENT_OF_WARFARE, BEASTBREAKER_OF_BALA_GED,
   CALCIDERM, BLASTODERM,
   SUDDEN_SHOCK, KROSAN_GRIP,
+  NINJA_OF_THE_DEEP_HOURS,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

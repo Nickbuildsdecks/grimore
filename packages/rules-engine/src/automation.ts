@@ -123,6 +123,32 @@ export function sacrificeOptions(
   });
 }
 
+/**
+ * Attackers this seat controls that nothing is blocking — ninjutsu's candidates (CR 702.49a).
+ *
+ * Read off `combat.attacks` rather than off the battlefield, because "unblocked attacker" is a fact
+ * about the combat and not about the creature: a 2/2 sitting at home is not one, and a 2/2 that was
+ * blocked and whose blocker has since died **still is not one**, because the `blockers` list is
+ * what says an attack is blocked and nothing is removed from it (CR 509.1h).
+ *
+ * **And the defending seat has to have finished declaring**, which is an explicit check rather than
+ * a consequence: `blockers` starts empty on every attack, so an attacker is not "unblocked" the
+ * moment it is declared — it is unblocked once the player who could have blocked it has said they
+ * did not. Without that line a ninja could be swapped in during the declare-attackers step, before
+ * the defender had any say, which is the opposite of what the keyword is for.
+ *
+ * So this is the timing check as well as the candidate list, which is the shape every other cost
+ * here has: the one fact the cost needs is the one fact that says when it may be paid.
+ */
+export function unblockedAttackersOf(state: GameState, seat: SeatIndex): string[] {
+  return state.combat.attacks
+    .filter((attack) => attack.blockers.length === 0
+      && state.combat.blockersDeclaredBy.includes(attack.defender)
+      && state.instances[attack.attacker]?.zoneSeat === seat
+      && state.instances[attack.attacker]?.zone === 'battlefield')
+    .map((attack) => attack.attacker);
+}
+
 /** Seats that have not yet settled on an opening hand. */
 export function stillDeciding(state: GameState): SeatIndex[] {
   return state.seats.filter((s) => !s.eliminated && !state.kept.includes(s.index)).map((s) => s.index);
@@ -1165,6 +1191,8 @@ interface TriggerAbout {
   readonly answering?: string;
   readonly subject?: string;
   readonly actor?: SeatIndex;
+  /** The attack this ability's source is about to join. See `StackObject.enteringAttack`. */
+  readonly enteringAttack?: { readonly defender: SeatIndex; readonly planeswalker?: string };
   /** The counters the subject had before the event. See `StackObject.subjectCounters`. */
   readonly subjectCounters?: Readonly<Record<string, number>>;
 }
@@ -1190,6 +1218,7 @@ function pushAbility(
     ...(about.subject === undefined ? {} : { subject: about.subject }),
     ...(about.actor === undefined ? {} : { actor: about.actor }),
     ...(about.subjectCounters === undefined ? {} : { subjectCounters: about.subjectCounters }),
+    ...(about.enteringAttack === undefined ? {} : { enteringAttack: about.enteringAttack }),
     targetSeqs: targetSeqsFor(state, targets),
   };
   return {
@@ -2605,6 +2634,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     answering: object.answering,
     subject: object.subject,
     subjectCounters: object.subjectCounters,
+    enteringAttack: object.enteringAttack,
   })) {
     const next = popStack(state, object.id);
     const name = next.cardDefs[object.cardKey]?.name ?? 'it';
@@ -2670,6 +2700,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
       kicked: object.kicked === true, attacked: object.attacked, blocked: object.blocked,
       answering: object.answering,
       subject: object.subject, actor: object.actor, subjectCounters: object.subjectCounters,
+      enteringAttack: object.enteringAttack,
       ...(object.division === undefined ? {} : { division: object.division }),
     });
     return askOrFinish(ready, object, decisionPlan(ready, wanted, object), 0, []);
@@ -2748,6 +2779,8 @@ function completeResolution(
     // And what that permanent had on it before the event, for one that counts counters that are
     // gone by now. See `StackObject.subjectCounters`.
     subjectCounters: object.subjectCounters,
+    // And the attack it is about to join, for a ninja arriving mid-combat.
+    enteringAttack: object.enteringAttack,
     // And whose action it was, for one that has to say "that player".
     actor: object.actor,
     // And how a divided quantity was split, for the one card shape that announces numbers with

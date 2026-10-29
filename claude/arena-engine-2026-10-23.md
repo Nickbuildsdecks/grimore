@@ -6147,6 +6147,51 @@ worthless and the bot holding it has no idea, because its "keep mana up for an a
 board and its own hand. Nothing here tries to teach it, and nothing should until there is an
 instrument that would notice the difference.
 
+### Ninjutsu, a creature that arrives already attacking (D219)
+
+Every creature in this pool reaches the battlefield outside combat, or at least outside one that is
+half-resolved. Ninjutsu (CR 702.49) is the first that arrives **in the middle of one**: an unblocked
+attacker goes back to its owner's hand and the ninja takes its place, tapped and attacking the same
+player, after the defender has already decided not to block. It is the only play here that happens
+*after* blockers and still changes what damage lands.
+
+Two things the engine had never done. **A cost paid with a permanent that is not destroyed** — the
+creature goes to a *hand*, so you keep both cards, and a sacrifice cost's whole arithmetic does not
+apply. It is its own cost field, its own candidate list on the play and its own field on the action,
+because one field for both would make every reader guess which; the bot's branch is separate for the
+same reason, since the sacrifice branch declines plays whose fodder has text on it and would refuse a
+**free** swap. And **a creature put onto the battlefield already in combat** — `enterAttacking`
+appends to `combat.attacks` directly, which is the rule rather than a shortcut: the creature was never
+*declared* (CR 506.3c), so nothing that triggers on attacking triggers, and the engine gets that free
+because `raise('attacks')` lives in the declaration path this never goes through.
+
+The defender travels on the stack object, as `attacked` and `answering` do: by the time the ability
+resolves, the attacker whose place the ninja is taking is in a hand and its attack is gone from the
+board, so there is nothing left to read. And the timing is the candidate list rather than a step
+check — but that took a correction. The first filter was `blockers.length === 0` alone, which is true
+the instant an attacker is declared, so a ninja could have been swapped in before the defender had
+any say. "Unblocked" means the player who could have blocked it did not, so the filter also requires
+the defending seat to be in `blockersDeclaredBy`; the test that caught it is the one asserting the
+ability is *not* offered yet.
+
+**The UI needed one field and one sentence.** A cost paid by tapping your own permanent is the
+`feeding` mode, built for sacrifice outlets; ninjutsu reuses it with the mode now saying *which* cost
+it is, so the bar reads "tap an unblocked attacker to return to your hand" rather than "tap a creature
+to sacrifice" — which over this swap would tell the player they are losing the creature they are in
+fact getting back. One mode, two costs: D213's lesson in a third place.
+
+**The slot is level and the keyword does not happen in a bot game**, and the second half is the part
+worth reading. Ninja of the Deep Hours went into Skyward Writ for the second Omenspeaker at **+2 and
+−1 of 288** — the right home, because that deck's plan is fliers nobody blocks. But across 48 games
+there were **zero** ninjutsu activations. The bot is not refusing: asked directly on a board with a
+Ninja in hand and a Hawk through, it returns the activation with the right attacker named. Counting
+the windows says which part never happens — in 95 of its own declare-blockers steps it had an
+unblocked attacker 19 times and a Ninja in hand 2 times, and the two never coincided, because it
+casts the Ninja as a 2/2 the moment it can (13 casts in 48 games). So the keyword is implemented,
+tested and **unmeasured in bot play**, which is written down rather than papered over: the rule it
+needs is a holding rule, it belongs to the family of hand-taught facts D148 and D152 are about, and
+it is its own piece.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

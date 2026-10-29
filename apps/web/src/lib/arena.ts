@@ -36,7 +36,15 @@ export type ArenaMode =
    */
   | { kind: "deciding"; ask: Decision; chosen: string[] }
   /** Picking what to feed an ability whose cost is a sacrifice, before it is activated. */
-  | { kind: "feeding"; play: LegalPlay }
+  /*
+    A cost paid with a permanent, waiting for the player to pick which one.
+
+    `cost` says which field the answer fills, because the pool now has two of these and they are
+    opposites: a sacrifice puts a creature in a graveyard, and ninjutsu's return puts an unblocked
+    attacker back in its owner's hand. One mode rather than two, because the gesture is identical —
+    tap one of a lit set of your own permanents — and only the field and the wording differ.
+  */
+  | { kind: "feeding"; play: LegalPlay; cost: "sacrifice" | "returned" }
   /** A triggered ability of yours waiting to be aimed. Shaped like `targeting`, sent differently. */
   | { kind: "choosing"; specs: readonly LegalPlay["targetSpecs"][number][]; candidates: readonly (readonly Target[])[]; description: string; chosen: Target[] }
   /**
@@ -56,7 +64,8 @@ export type ArenaMode =
    * every other play, where there is nothing to divide.
    */
   | {
-      kind: "targeting"; play: LegalPlay; chosen: Target[]; sacrifice?: string; x?: number
+      kind: "targeting"; play: LegalPlay; chosen: Target[]; sacrifice?: string; returned?: string
+      x?: number
       shares?: number[]
     }
   /**
@@ -288,7 +297,7 @@ export function choiceCandidatesAt(
 /** The action a completed play turns into. */
 function playAction(
   play: LegalPlay, targets: readonly Target[], sacrifice?: string, x?: number,
-  division?: readonly number[],
+  division?: readonly number[], returned?: string,
 ): TableAction {
   const withTargets = targets.length > 0 ? { targets: [...targets] } : {}
   // The division, for a spell that has one. Sent only when the play's own spec asks for it, so a
@@ -297,6 +306,9 @@ function playAction(
     ? {}
     : { division: [...division] }
   const withSacrifice = sacrifice === undefined ? {} : { sacrifice }
+  // Ninjutsu's unblocked attacker, carried the same way and in its own field: a cost that gives the
+  // creature back is not a sacrifice, and one field for both would make the engine guess.
+  const withReturned = returned === undefined ? {} : { returned }
   /*
     And which half of a two-faced card, for the fifth time and the same reason: a split card and an
     adventurer are each offered as two plays on one card, and a cast with no half is either the
@@ -399,7 +411,7 @@ function playAction(
   }
   return {
     type: "auto:activate", card: play.card, abilityIndex: play.abilityIndex ?? 0,
-    ...withTargets, ...withSacrifice,
+    ...withTargets, ...withSacrifice, ...withReturned,
   }
 }
 
@@ -419,7 +431,14 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       // The cost comes first: a sacrifice is paid as the ability is activated, so it is chosen
       // before the targets rather than after. X is part of the cost in the same way, and the
       // rules put it before the targets too.
-      if (play.sacrificeOptions.length > 0) return { mode: { kind: "feeding", play }, action: null }
+      if (play.sacrificeOptions.length > 0) {
+        return { mode: { kind: "feeding", play, cost: "sacrifice" }, action: null }
+      }
+      // Ninjutsu's cost, asked the same way and for the same reason: it is paid as the ability is
+      // activated, so it comes before anything else the play wants.
+      if (play.returnOptions !== undefined && play.returnOptions.length > 0) {
+        return { mode: { kind: "feeding", play, cost: "returned" }, action: null }
+      }
       if (play.xMax !== undefined) {
         // Opening on the largest X is the choice a player makes nearly every time — a Fireball is
         // cast for everything available — and it is one tap from any smaller number.
@@ -437,12 +456,22 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
 
     case "feed": {
       if (mode.kind !== "feeding") return { mode, action: null }
-      if (!mode.play.sacrificeOptions.includes(event.card)) return { mode, action: null }
+      const allowed = mode.cost === "returned"
+        ? mode.play.returnOptions ?? []
+        : mode.play.sacrificeOptions
+      if (!allowed.includes(event.card)) return { mode, action: null }
       if (targetsWanted(mode.play) === 0) {
-        return { mode: IDLE, action: playAction(mode.play, [], event.card) }
+        return {
+          mode: IDLE,
+          action: mode.cost === "returned"
+            ? playAction(mode.play, [], undefined, undefined, undefined, event.card)
+            : playAction(mode.play, [], event.card),
+        }
       }
-      // Something to aim as well: keep the sacrifice and go on to the targets.
-      return { mode: { kind: "targeting", play: mode.play, chosen: [], sacrifice: event.card }, action: null }
+      // Something to aim as well: keep the cost and go on to the targets.
+      return mode.cost === "returned"
+        ? { mode: { kind: "targeting", play: mode.play, chosen: [], returned: event.card }, action: null }
+        : { mode: { kind: "targeting", play: mode.play, chosen: [], sacrifice: event.card }, action: null }
     }
 
     case "startChoosing":

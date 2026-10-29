@@ -15,7 +15,7 @@ import { listAt } from './cardActions.js';
 import { characteristicsOf, hasType } from './characteristics.js';
 import {
   atSorcerySpeed, bottomOwed, modeCombinations, modeTargetSpecs, modesOf, pendingDeclaration,
-  sacrificeOptions, stackTop,
+  sacrificeOptions, stackTop, unblockedAttackersOf,
 } from './automation.js';
 import {
   canBlock, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
@@ -234,6 +234,16 @@ export interface LegalPlay {
    * play rather than being asked for afterwards.
    */
   readonly sacrificeOptions: readonly string[];
+  /**
+   * Unblocked attackers that could be **returned to hand** to pay for this, when its cost asks for
+   * one — ninjutsu, and nothing else so far (CR 702.49a).
+   *
+   * Its own list rather than a widening of `sacrificeOptions`, because the two costs do opposite
+   * things to the permanent they take and a table that offered them under one name would be a
+   * table asking "which creature do you want to lose" about a creature the player is keeping.
+   * Absent for every other ability.
+   */
+  readonly returnOptions?: readonly string[];
 }
 
 export interface BlockOption {
@@ -1529,7 +1539,15 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
 
     for (let i = 0; i < abilities.length; i++) {
       const ability = abilities[i]!;
-      const wants = ability.cost.discardSelf === true
+      /*
+        Which zone this ability is used from, read off its cost.
+
+        Cycling discards the card, so it is used from the hand; unearth and embalm are paid out of
+        the graveyard; ninjutsu is used from the hand and **does not spend the card** — it puts it
+        onto the battlefield instead, which is the first ability here whose source survives its own
+        activation in the zone it was activated from.
+      */
+      const wants = ability.cost.discardSelf === true || ability.cost.returnsUnblockedAttacker === true
         ? 'hand'
         : ability.cost.fromGraveyard === true ? 'graveyard' : 'battlefield';
       if (wants !== zone) continue;
@@ -1579,6 +1597,19 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       // An ability whose cost is a sacrifice is not activatable with nothing to sacrifice.
       const victims = sacrificeOptions(state, seat, id, ability.cost);
       if (ability.cost.sacrifice !== undefined && victims.length === 0) continue;
+      /*
+        Ninjutsu, which is the same rule about a different list — and the list is the timing
+        (CR 702.49a).
+
+        An unblocked attacker exists only once the defending player has finished declaring blockers,
+        so `unblockedAttackersOf` is empty before that and the ability simply is not offered. No
+        separate step check: the one fact the cost needs is the one fact that says when it may be
+        paid, which is the shape every other cost here already has.
+      */
+      const ninjas = ability.cost.returnsUnblockedAttacker === true
+        ? unblockedAttackersOf(state, seat)
+        : [];
+      if (ability.cost.returnsUnblockedAttacker === true && ninjas.length === 0) continue;
 
       /*
         Crew, asked of the same planner that will pay it (CR 702.122a).
@@ -1609,6 +1640,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         ...(zone === 'graveyard' ? { fromGraveyard: true } : {}),
         targetSpecs: specs, candidates, isManaAbility: ability.produces !== undefined,
         sacrificeOptions: victims,
+        ...(ninjas.length === 0 ? {} : { returnOptions: ninjas }),
       });
     }
   }

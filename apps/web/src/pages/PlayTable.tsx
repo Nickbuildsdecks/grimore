@@ -1542,7 +1542,9 @@ function Board({ table }: { table: UseTable }) {
     ...nowChoosing.filter((t) => t.kind === "ability").map((t) => (t as { id: string }).id),
     // A creature that could be fed to an ability is lit the same way a target is: it is the next
     // thing to tap, and the player should not have to guess which of their creatures qualifies.
-    ...(arenaMode.kind === "feeding" ? arenaMode.play.sacrificeOptions : []),
+    ...(arenaMode.kind === "feeding"
+      ? arenaMode.cost === "returned" ? arenaMode.play.returnOptions ?? [] : arenaMode.play.sacrificeOptions
+      : []),
     // A card a mid-resolution question is offering is lit exactly like a target, wherever it is —
     // including a library, which is the one zone the table normally does not draw at all.
     ...(arenaMode.kind === "deciding" ? arenaMode.ask.candidates : []),
@@ -1619,7 +1621,10 @@ function Board({ table }: { table: UseTable }) {
 
     const mode = arenaRef.current
     if (mode.kind === "feeding") {
-      if (mode.play.sacrificeOptions.includes(card.id)) dispatchArena({ kind: "feed", card: card.id })
+      const allowed = mode.cost === "returned"
+        ? mode.play.returnOptions ?? []
+        : mode.play.sacrificeOptions
+      if (allowed.includes(card.id)) dispatchArena({ kind: "feed", card: card.id })
       return
     }
     if (mode.kind === "choosing") {

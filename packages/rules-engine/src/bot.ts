@@ -1404,6 +1404,35 @@ function candidateActions(
         card with text is not fed at all. The bot cannot tell when eating a Blood Artist to push
         lethal damage is right, and the measurement says the cost of guessing is enormous.
       */
+      /*
+        Ninjutsu, which needs a choice named or the engine refuses the play it just offered
+        (CR 702.49a).
+
+        The rule is "the smallest attacker that got through", and it is the right one for the only
+        reason that matters here: the creature goes back to the **hand**, so nothing is lost — the
+        only question is which body to swap out, and swapping out the smallest leaves the most
+        damage on the board. Nothing to weigh, which is why this is a sort and not a judgement.
+
+        Not folded into the sacrifice branch below, which declines plays on the arithmetic of losing
+        a creature: a cost that gives the card back has none of that arithmetic, and sharing the
+        branch would have the bot refusing a free swap because a Blood Artist has text on it.
+      */
+      if (play.returnOptions !== undefined && play.returnOptions.length > 0) {
+        const smallest = [...play.returnOptions].sort((a, b) => {
+          const left = state.instances[a];
+          const right = state.instances[b];
+          return (left === undefined ? 0 : characteristicsOf(state, left).power)
+            - (right === undefined ? 0 : characteristicsOf(state, right).power);
+        })[0]!;
+        out.push({
+          action: {
+            type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+            returned: smallest,
+            ...(targets.length > 0 ? { targets: [...targets] } : {}),
+          },
+        });
+        continue;
+      }
       if (play.sacrificeOptions.length > 0) {
         const fodder = cheapestCreature(state, play.sacrificeOptions);
         if (fodder === null) continue;

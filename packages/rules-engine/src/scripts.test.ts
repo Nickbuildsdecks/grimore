@@ -17275,3 +17275,152 @@ describe('split second: the spell nobody gets to answer', () => {
     expect(scriptFor('Krosan Grip')?.splitSecond).toBe(true);
   });
 });
+
+describe('ninjutsu: the creature that arrives already attacking', () => {
+  /*
+    Two things the engine had never done, both in one keyword (CR 702.49).
+
+    A cost paid with a permanent that is **not** destroyed: the unblocked attacker goes back to its
+    owner's hand, which is the opposite of a sacrifice in the way that matters — the creature that
+    got through is the one you keep.
+
+    And a creature put onto the battlefield **in the middle of a combat**, tapped and attacking the
+    player the returned attacker was aimed at. So the tests are the swap itself, the timing (there
+    is no unblocked attacker before blockers are declared, so there is no ability either), the
+    refusals, and the two things the keyword is not: it is not a declaration, so nothing that
+    watches attacking sees it, and the ninja is not castable off its ninjutsu cost.
+  */
+  const board = (): GameState => arena({
+    decks: { 0: 'skyward-writ', 1: 'tidal-mind' },
+    hands: { 0: ['Ninja of the Deep Hours'] },
+    battlefield: { 0: ['Island', 'Island', 'Healer\'s Hawk'], 1: ['Island'] },
+    turn: 5, firstSeat: 0,
+  });
+
+  /** Attacks with the Hawk, lets it through, and stops where ninjutsu may be used. */
+  const unblocked = (): GameState => {
+    let s = advanceTo(board(), 'declare-attackers');
+    const hawk = find(s, 0, 'battlefield', 'Healer\'s Hawk');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: hawk, defender: 1 }] });
+    // `advanceTo` declares for the defender on the way through, which is what "let it through"
+    // is: a seat with nothing able to block has no blocks to make.
+    return tapAllLands(advanceTo(s, 'declare-blockers'), 0);
+  };
+
+  const ninjutsuPlay = (s: GameState) => legalActions(s, 0).plays
+    .find((play) => play.description.startsWith('Ninjutsu'));
+
+  it('is not offered before blockers are declared, because there is no unblocked attacker yet', () => {
+    let s = advanceTo(board(), 'declare-attackers');
+    const hawk = find(s, 0, 'battlefield', 'Healer\'s Hawk');
+    s = tapAllLands(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: hawk, defender: 1 }],
+    }), 0);
+    /*
+      The timing lives in the candidate list rather than in a step check, which is the shape every
+      other cost here has. And it is an **explicit** condition rather than a consequence: every
+      attack starts with an empty `blockers` list, so "no blockers" alone would make an attacker
+      unblocked the instant it was declared. `unblockedAttackersOf` also requires the defending seat
+      to be in `blockersDeclaredBy` — unblocked means the player who could have blocked it did not.
+    */
+    expect(ninjutsuPlay(s)).toBeUndefined();
+  });
+
+  it('is offered once the attack is through, and swaps the Hawk for the Ninja', () => {
+    let s = unblocked();
+    const play = ninjutsuPlay(s);
+    expect(play).toBeDefined();
+    // The candidates travel with the play, as a sacrifice cost's do.
+    const hawk = find(s, 0, 'battlefield', 'Healer\'s Hawk');
+    expect(play?.returnOptions).toEqual([hawk]);
+
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'hand', 'Ninja of the Deep Hours'),
+      abilityIndex: 0, returned: hawk,
+    }), 40);
+
+    // The Hawk is back in hand rather than in a graveyard: this is not a sacrifice.
+    expect(namesIn(s, 0, 'hand')).toContain('Healer\'s Hawk');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Healer\'s Hawk');
+    // And the Ninja is on the battlefield, tapped, attacking the same player.
+    const ninja = find(s, 0, 'battlefield', 'Ninja of the Deep Hours');
+    expect(s.instances[ninja]!.tapped).toBe(true);
+    const attack = s.combat.attacks.find((a) => a.attacker === ninja);
+    expect(attack?.defender).toBe(1);
+    expect(attack?.blockers).toEqual([]);
+    // The Hawk's attack is gone, so the combat is one attacker — the new one.
+    expect(s.combat.attacks.length).toBe(1);
+  });
+
+  it('and the Ninja deals its own damage, drawing a card for it', () => {
+    let s = unblocked();
+    const hawk = find(s, 0, 'battlefield', 'Healer\'s Hawk');
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'hand', 'Ninja of the Deep Hours'),
+      abilityIndex: 0, returned: hawk,
+    }), 40);
+    const handBefore = ids(s, 0, 'hand').length;
+    const lifeBefore = life(s, 1);
+
+    s = drain(advanceTo(s, 'combat-damage'), 60);
+
+    /*
+      Two damage rather than the Hawk's one, and the Hawk's lifelink gain does not happen — the
+      creature that would have dealt the damage is in a hand. The swap is the whole play: it is the
+      only thing in this pool that changes what damage lands *after* blockers.
+    */
+    expect(life(s, 1)).toBe(lifeBefore - 2);
+    expect(ids(s, 0, 'hand').length).toBe(handBefore + 1);
+  });
+
+  it('refuses an attacker that is blocked, and one that is not attacking at all', () => {
+    let s = advanceTo(board(), 'declare-attackers');
+    const hawk = find(s, 0, 'battlefield', 'Healer\'s Hawk');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: hawk, defender: 1 }] });
+    // The Island is on the battlefield and is not an attacker, which is the refusal under test.
+    s = tapAllLands(advanceTo(s, 'declare-blockers'), 0);
+    const island = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Island')!;
+    const ninja = find(s, 0, 'hand', 'Ninja of the Deep Hours');
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: ninja, abilityIndex: 0, returned: island,
+    })).not.toBeNull();
+    // And with no choice named at all, which a client could get wrong in either direction.
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: ninja, abilityIndex: 0 })).not.toBeNull();
+  });
+
+  it('does not count as declaring an attacker, so nothing that watches attacking fires', () => {
+    /*
+      The rule people miss. The Ninja was never *declared* as an attacker (CR 506.3c), so an
+      attack trigger does not fire for it — in this engine for a structural reason rather than a
+      special case: `enterAttacking` appends to `combat.attacks` directly, and `raise('attacks')`
+      lives in the declaration path it never goes through.
+
+      Checked by the stack being empty after the swap resolves: the deck's own attack watchers had
+      nothing to say.
+    */
+    let s = unblocked();
+    const hawk = find(s, 0, 'battlefield', 'Healer\'s Hawk');
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'hand', 'Ninja of the Deep Hours'),
+      abilityIndex: 0, returned: hawk,
+    }), 40);
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('is still a creature you can simply cast, when you would rather have it early', () => {
+    // The ninjutsu cost is an extra row, not a replacement: a 2/2 for two is still a 2/2 for two.
+    let s = tapAllLands(advanceTo(board(), 'precombat-main'), 0);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ninja of the Deep Hours'),
+    }), 40);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Ninja of the Deep Hours');
+    // Cast normally it arrives untapped and out of combat, like any other creature.
+    const ninja = find(s, 0, 'battlefield', 'Ninja of the Deep Hours');
+    expect(s.instances[ninja]!.tapped).toBe(false);
+    expect(s.combat.attacks).toEqual([]);
+  });
+
+  it('declares the keyword on its script, so the pool can be audited for it', () => {
+    expect(scriptFor('Ninja of the Deep Hours')?.ninjutsu).toEqual({ cost: '{1}{U}' });
+  });
+});

@@ -12549,3 +12549,91 @@ Its "keep mana up for an answer" rule (D148, D149) reads the board and its own h
 "the spell about to be cast at me will not let me cast this". Nothing here tries to teach it, and
 nothing should until there is an instrument that would notice — the bot is not wrong to hold the mana,
 it is simply holding it for a spell that will not get its window.
+
+## D219 — Ninjutsu, a creature that arrives already attacking
+
+Every creature in this pool reaches the battlefield one of four ways: cast, reanimated, made as a
+token, or put there by an effect. All four happen outside combat, or at least outside a combat that
+is already half-resolved. Ninjutsu (CR 702.49) is the first that happens **in the middle of one**: an
+unblocked attacker goes back to its owner's hand and this card takes its place, tapped and attacking
+the same player, after the defender has already decided not to block.
+
+Two things the engine had never done, in one keyword.
+
+### A cost paid with a permanent that is not destroyed
+
+`AbilityCost.returnsUnblockedAttacker`, and it is a different thing from a sacrifice in the way that
+matters: the creature goes to a **hand**. You keep both cards. A sacrifice cost's whole arithmetic —
+is what I am feeding worth less than what I am getting — does not apply at all.
+
+So it is its own cost field, its own candidate list (`returnOptions` on the play), and its own field
+on the action (`returned`). One field for both would have made every reader guess which, and the two
+are opposites. The bot's branch is separate for the same reason: the sacrifice branch declines plays
+when the fodder has text on it, which would have it refusing a **free** swap because a Blood Artist
+is a card.
+
+And the timing is the candidate list rather than a step check, which is the shape every other cost
+here has: the one fact the cost needs is the one fact that says when it may be paid. But it took a
+correction — the first version filtered attacks on `blockers.length === 0` alone, which is true the
+instant an attacker is declared, so a ninja could have been swapped in during the declare-attackers
+step before the defender had any say. "Unblocked" means *the player who could have blocked it did
+not*, so the filter also requires the defending seat to be in `blockersDeclaredBy`. The test that
+caught it is the one asserting the ability is **not** offered yet.
+
+### A creature put onto the battlefield already in combat
+
+`enterAttacking`, which appends to `combat.attacks` directly. That is not a shortcut, it is the rule:
+the creature was never **declared** as an attacker (CR 506.3c), so nothing that triggers on attacking
+triggers — and the engine gets that for free, because `raise('attacks')` lives in the declaration
+path this never goes through. A test pins it by checking the stack is empty afterwards.
+
+The defender has to travel on the stack object. By the time the ability resolves, the attacker whose
+place the ninja is taking is in a hand and its attack is gone from the board, so there is nothing left
+to read — `StackObject.enteringAttack` carries it, for exactly the reason `attacked` and `answering`
+do. Named for what it holds rather than for the keyword, because any effect that puts a permanent onto
+the battlefield attacking wants that and nothing else.
+
+### The UI needed one field and one sentence, because the gesture was already there
+
+A cost paid by tapping one of your own permanents is the `feeding` mode, built for sacrifice outlets.
+Ninjutsu reuses it with one addition: the mode now says **which** cost it is, so the bar reads "tap an
+unblocked attacker to return to your hand" rather than "tap a creature to sacrifice" — which over a
+ninjutsu swap would tell the player they are about to lose the creature they are in fact getting back.
+
+One mode rather than two, because the gesture is identical and only the field and the wording differ.
+That is D213's lesson in a third place: a new kind of answer is cheaper as a new *value* in the
+machinery that already exists than as a new question.
+
+### The slot is level, and the keyword does not happen in a bot game
+
+Ninja of the Deep Hours went into Skyward Writ for the second Omenspeaker — same cost, same colour,
+same two-drop slot — at **+2 and −1 of 288**. Level, inside the floor, and the deck is the right home
+for the reason the keyword needs: Skyward Writ's whole plan is fliers nobody blocks.
+
+But the keyword itself **never fires**, and the number says so rather than hinting at it: across 48
+games, **zero** ninjutsu activations. The first instinct was that the bot would not take the play. It
+takes it: asked directly on a board with a Ninja in hand and a Hawk through, `botAction` returns the
+activation with the right attacker named. So the situation is what never happens, and counting the
+windows says precisely which part:
+
+| in 95 of its own declare-blockers steps, over 48 games | |
+| --- | --- |
+| an unblocked attacker it controls | 19 |
+| a Ninja of the Deep Hours in hand | 2 |
+| both at once (the window) | **0** |
+
+Not mana, and not judgement. **The bot casts the Ninja as a 2/2 the moment it can** — 13 casts in 48
+games — so it is never in hand when the swap exists. Which is the dredge-land lesson in a new shape:
+a card that only works from one zone is worth nothing until something keeps it there, and here the
+something is a bot rule rather than a sacrifice outlet.
+
+So ninjutsu is implemented, tested, and **unmeasured in bot play**, and that is written down rather
+than papered over with the slot's level reading. The rule it needs is a holding rule — "do not cast a
+card with ninjutsu while an attacker could get through" — which belongs to the family of hand-taught
+facts D148 and D152 are about and needs their treatment: a flag, a count of the windows before and
+after, and `bot-duel` to price the rule rather than the slot. That is its own piece.
+
+One more thing the window count says: even a perfect holding rule has thin ground to work with. Two
+of 95 steps had the card in hand at all, because it is a one-of in a sixty-card deck. The rule is
+worth building for the player's sake; expecting it to move a win rate would be the mistake D212 is
+about.

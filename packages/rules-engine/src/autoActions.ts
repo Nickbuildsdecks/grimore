@@ -18,14 +18,14 @@ import {
   legalBlockers, menaceSatisfied, payFrom, pendingDeclaration, raiseUnblockedAttacks,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
   raiseWard, resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop,
-  stateBasedActions,
+  stateBasedActions, unblockedAttackersOf,
   stillDeciding, takeDredge, tapAttackers,
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
   type AutoOrderAction,
 } from './automation.js';
 import {
   SEAT_CHOICE, TIME, addCounters, addToPool, bottomPile, counterSpell, draw, energyOf, loseLife,
-  mill,
+  mill, moveToHand, removeFromCombat,
   poolOf, spendEnergy,
 } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
@@ -1192,7 +1192,7 @@ function activate(
   state: GameState,
   action: {
     by: SeatIndex; card: string; abilityIndex: number;
-    targets?: readonly Target[]; sacrifice?: string;
+    targets?: readonly Target[]; sacrifice?: string; returned?: string;
   },
 ): Outcome {
   requireAutomated(state);
@@ -1208,7 +1208,11 @@ function activate(
     a script never has to: the alternative was a `fromHand` flag that could disagree with the cost
     beside it, and the same reasoning already decides sorcery speed for a loyalty ability.
   */
-  const fromHand = ability?.cost.discardSelf === true;
+  const fromHand = ability?.cost.discardSelf === true
+    // Ninjutsu is the second ability used from the hand, and the first that leaves the card there:
+    // the cost returns somebody else's permanent and the effect puts this card onto the
+    // battlefield. See `AbilityCost.returnsUnblockedAttacker`.
+    || ability?.cost.returnsUnblockedAttacker === true;
   const fromGraveyard = ability?.cost.fromGraveyard === true;
   const wantedZone = fromHand ? 'hand' : fromGraveyard ? 'graveyard' : 'battlefield';
   if (inst.zone !== wantedZone || inst.zoneSeat !== action.by) {
@@ -1305,6 +1309,7 @@ function activate(
   // exactly as it was rather than halfway through paying.
   let sacrificed: string | null = null;
   let sacrificedName = '';
+  let returnedName = '';
   if (ability.cost.sacrifice !== undefined) {
     const options = sacrificeOptions(state, action.by, inst.id, ability.cost);
     if (options.length === 0) {
@@ -1317,6 +1322,31 @@ function activate(
       throw new EngineError('RULE_NOT_APPLICABLE', 'that creature cannot be sacrificed for this');
     }
     sacrificed = action.sacrifice;
+  }
+
+  /*
+    Ninjutsu's cost, chosen and checked here for the same reason the sacrifice above is: a refusal
+    has to leave the board exactly as it was (CR 702.49a).
+
+    The candidate list is recomputed rather than trusted, which matters more here than for a
+    sacrifice — "unblocked" is a fact about the combat that a client could be a step behind on, and
+    a creature that has since been blocked must not be returnable.
+  */
+  let returned: string | null = null;
+  /** The attack the returned attacker was making, carried to the ability on the stack. */
+  let ninjutsuTarget: { defender: SeatIndex; planeswalker?: string } | null = null;
+  if (ability.cost.returnsUnblockedAttacker === true) {
+    const options = unblockedAttackersOf(state, action.by);
+    if (options.length === 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'you have no unblocked attacker to return');
+    }
+    if (action.returned === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'choose an unblocked attacker to return to your hand');
+    }
+    if (!options.includes(action.returned)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that creature is not an unblocked attacker you control');
+    }
+    returned = action.returned;
   }
 
   /*
@@ -1381,6 +1411,22 @@ function activate(
     next = relocate(next, victim, 'graveyard', victim.owner, 'bottom');
     sacrificedName = name;
   }
+  /*
+    Ninjutsu's cost, paid now: the attacker goes back to its owner's hand (CR 702.49a).
+
+    `removeFromCombat` as well as the move, and not because the move leaves it attacking — a
+    permanent that leaves the battlefield is out of combat by rule — but because the attack it was
+    making is the thing the effect below needs to read, and reading a stale entry is how a ninja
+    would end up attacking nobody. So the attack is captured first, then dropped.
+  */
+  if (returned !== null) {
+    returnedName = characteristicsOf(next, requireInstance(next, returned)).name;
+    const attack = next.combat.attacks.find((a) => a.attacker === returned);
+    ninjutsuTarget = attack === undefined
+      ? null
+      : { defender: attack.defender, ...(attack.planeswalker === undefined ? {} : { planeswalker: attack.planeswalker }) };
+    next = removeFromCombat(moveToHand(next, [returned]), returned);
+  }
   if (ability.cost.sacrificeSelf) next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');
   // Discarded as the cost is paid, so the card is in the graveyard while its own ability is still
   // on the stack (CR 702.29a) — which is why a cycling land can be cycled and then returned from
@@ -1406,14 +1452,18 @@ function activate(
     };
   }
 
-  next = pushAbility(next, inst.id, action.by, action.abilityIndex, chosen, 'activated', `${ch.name}: ${ability.description}`);
+  next = pushAbility(next, inst.id, action.by, action.abilityIndex, chosen, 'activated',
+    `${ch.name}: ${ability.description}`,
+    ninjutsuTarget === null ? {} : { enteringAttack: ninjutsuTarget });
   // Ward triggers off an ability as readily as off a spell (CR 702.21b) — an Icy Manipulator aimed
   // at a warded creature is exactly the case the keyword is printed for. See `raiseWard`.
   next = raiseWard(next, next.stackOrder[next.stackOrder.length - 1]!);
   next = resetPriority(settle(next, state), action.by);
   return {
     state: next,
-    message: sacrificed !== null
+    message: returned !== null
+      ? `${seatName(state, action.by)} returns ${returnedName} to hand and activates ${ch.name}`
+      : sacrificed !== null
       ? `${seatName(state, action.by)} sacrifices ${sacrificedName} and activates ${ch.name}`
       : crewed.length > 0
         // Said as a count, because the creatures turning sideways are the cost a player is paying
@@ -1423,6 +1473,7 @@ function activate(
     data: {
       card: inst.id, ability: action.abilityIndex,
       ...(sacrificed === null ? {} : { sacrificed }),
+      ...(returned === null ? {} : { returned }),
       ...(crewed.length === 0 ? {} : { crewed: [...crewed] }),
     },
   };

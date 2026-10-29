@@ -207,7 +207,16 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
       {mode.kind === "feeding" ? (
         <div data-testid="feed-prompt" className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-semibold text-[var(--g-text-high)]">{mode.play.description}</span>
-          <span className="text-[var(--g-text-muted)]">tap a creature to sacrifice</span>
+          {/*
+            The wording is the whole reason the mode says which cost it is: "tap a creature to
+            sacrifice" over a ninjutsu swap would tell the player they are about to lose the
+            creature they are in fact getting back.
+          */}
+          <span className="text-[var(--g-text-muted)]">
+            {mode.cost === "returned"
+              ? "tap an unblocked attacker to return to your hand"
+              : "tap a creature to sacrifice"}
+          </span>
           <Button size="sm" variant="ghost" className="ml-auto" data-testid="cancel-mode" onClick={() => dispatch({ kind: "cancel" })}>
             <X className="size-3.5" /> Cancel
           </Button>
