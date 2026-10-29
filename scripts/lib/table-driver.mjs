@@ -573,14 +573,28 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
       common case and the one a person would press. The exile row is the fallback and the only path
       for a hit with modes or halves, where the bar deliberately offers no menu of its own.
     */
+    /*
+      The whole sentence, near enough: the keyword that made the offer is the **last** word of it.
+
+      It used to be cut at eighty characters, which reads fine in a log and threw away the one word
+      a scenario matches on — "Thunderous Wrath is the first card you drew this turn: you may cast
+      it for {R} (miracle)" is 88 characters, so `LIST=miracle` counted none of its own offers.
+    */
+    const said = prompt.replace(/\s+/g, ' ').slice(0, 160);
     if (await has(page, 'offered-cast-take')) {
       await press(page, 'offered-cast-take');
-      return `took a free cast: ${prompt.replace(/\s+/g, ' ').slice(0, 80)}`;
+      return `took a free cast: ${said}`;
     }
-    const played = await tryToPlayFromZone(page, `zone-exile-${seat}`);
-    if (played !== null) return `took a free cast: ${prompt.replace(/\s+/g, ' ').slice(0, 80)}`;
+    /*
+      The card itself, for a hit with modes or halves that the bar will not choose between.
+      Exile first because that is where cascade and madness put it, then the hand, which is where
+      **miracle** leaves it: the offer is made on a card that was just drawn and never moved.
+    */
+    const played = (await tryToPlayFromZone(page, `zone-exile-${seat}`))
+      ?? (await tryToPlayFromZone(page, `zone-hand-${seat}`));
+    if (played !== null) return `took a free cast: ${said}`;
     await press(page, 'offered-cast-decline');
-    return `declined a free cast: ${prompt.replace(/\s+/g, ' ').slice(0, 80)}`;
+    return `declined a free cast: ${said}`;
   }
 
 

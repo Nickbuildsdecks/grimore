@@ -35,7 +35,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
 /**
  * `LIST=cascade` pastes a deck built to cascade instead of Ember Rush's own sixty,
  * `LIST=costs` one built to pay an alternative cost — see `COSTS_LIST` — `LIST=graveyard` one built
- * to press an ability on a card in the graveyard (`GRAVEYARD_LIST`), and `LIST=earned` one
+ * to press an ability on a card in the graveyard (`GRAVEYARD_LIST`), `LIST=miracle` one whose
+ * first draw is often the card it is built around (`MIRACLE_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -215,6 +216,26 @@ async function main() {
   const context = await browser.newContext({ viewport: { width: 1280, height: 950 } });
   const page = await context.newPage();
   const pageErrors = [];
+
+/**
+ * Sixty cards built so the turn's **first draw** is often a Thunderous Wrath.
+ *
+ * Miracle is the narrowest window in the pool: one card, one draw, and only the first of the turn.
+ * In its own deck it fires about once every six games (`offers.mjs`: 59 offers in 288 games off a
+ * single copy), which is not a scenario — so this list carries eight, where a first draw is a
+ * Wrath about one turn in eight and a game of fifteen turns offers one or two.
+ *
+ * Mono-red for the lesson `LIST=costs` paid for twice: a scenario that needs two colours fails on
+ * its mana base rather than on the thing being tested. Eight copies of a six-mana instant is not a
+ * deck anybody would build, and that is the point — every one of them cast is cast for {R} off the
+ * top, which is the only claim this list makes.
+ */
+const MIRACLE_LIST = [
+  '24 Mountain',
+  '8 Thunderous Wrath',
+  '4 Lightning Bolt', '4 Shock', '4 Monastery Swiftspear', '4 Goblin Arsonist',
+  '4 Borderland Marauder', '4 Firebrand Archer', '4 Raging Goblin',
+].join('\n');
   const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
   watchForReactWarnings(page, '', reactWarnings);
@@ -266,6 +287,8 @@ async function main() {
         ? EARNED_LIST
         : LIST === 'graveyard'
         ? GRAVEYARD_LIST
+        : LIST === 'miracle'
+        ? MIRACLE_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -362,6 +385,15 @@ async function main() {
       move and one token sits there for many of them.
     */
     const tokenFaces = new Set();
+    /**
+     * The miracle offers this run took, by the sentence the bar showed, under `LIST=miracle`.
+     *
+     * The prompt rather than a count, because the prompt is the claim: the engine writes "X is the
+     * first card you drew this turn: you may cast it for {R} (miracle)", and a run that collected
+     * that sentence off the bar has proved the window, the condition and the cost in one string.
+     * A `Set`, so eight copies of the same card do not read as eight different findings.
+     */
+    const miracleOffers = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -400,6 +432,7 @@ async function main() {
         */
         if (did === 'assigned combat damage') ordered = true;
         if (typeof did === 'string' && /a free cast/.test(did)) freeCasts += 1;
+        if (typeof did === 'string' && /miracle/i.test(did)) miracleOffers.add(did);
         if (typeof did === 'string') {
           for (const word of Object.keys(altCasts)) {
             /*
@@ -469,11 +502,22 @@ async function main() {
       times and overload none; three runs after the Sol Rings went in pressed overload three times
       in one run and spectacle none. Both rows exist on every table; one shuffle does not see both.
     */
-    const dealBudget = LIST === 'earned' || LIST === 'graveyard' ? 5 : 3;
-    while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard') && games < dealBudget
-      && !Object.values(altCasts).every((n) => n > 0)) {
+    const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle' ? 5 : 3;
+    /*
+      What "not yet" means for this list.
+
+      Every list but `miracle` is waiting for a set of rows to each have been pressed once; miracle
+      is waiting for a single sentence, because the keyword fires on the shuffle rather than on
+      anything the player can arrange. Same budget, different question.
+    */
+    const wantsAnotherGame = () => (LIST === 'miracle'
+      ? miracleOffers.size === 0
+      : !Object.values(altCasts).every((n) => n > 0));
+    while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle')
+      && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
-      console.log(`      dealing again: ${JSON.stringify(altCasts)} after ${games} game(s)`);
+      console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
+        : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
       moves = 0;
@@ -530,6 +574,23 @@ async function main() {
         altCasts.spectacle > 0, where);
       check('a Mizzium Mortars is overloaded, on a row that asks for no targets at all',
         altCasts.overload > 0, where);
+    } else if (LIST === 'miracle') {
+      /*
+        The one offer in the family that is made on a card in **hand**.
+
+        What this proves that the engine's own tests cannot: the table stopped in the *draw step*,
+        before anything else could happen on the turn, said which card it was and that it was the
+        first one drawn, named a cost that is not the card's own, and took a cast of a six-mana
+        instant for one red mana. Cascade and madness make their offer on a card in exile, and the
+        bar's sentence is the only place the difference is visible to a player.
+      */
+      const sentences = [...miracleOffers];
+      check('a miracle is offered on the turn\'s first draw, and the table takes it',
+        sentences.length > 0, `offers seen: ${sentences.length}`);
+      check('the offer says it was the first card drawn, and names the miracle cost',
+        sentences.some((did) => /first card you drew this turn/.test(did) && /\{R\}/.test(did)),
+        sentences[0] ?? 'nothing was offered');
+      for (const did of sentences.slice(0, 3)) console.log(`      ${did}`);
     } else if (LIST === 'graveyard') {
       /*
         The two rows pressed on a card in the graveyard, and the face of what arrived.
