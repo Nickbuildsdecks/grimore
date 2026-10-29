@@ -424,30 +424,38 @@ check now runs in the test suite, so a future version that peeks fails before it
 other, both seats, 288 games each (`SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs`):
 
 ```
- 75%  215-73   ember-rush
- 65%  187-101  verdant-guard
- 65%  187-101  dawn-tithe
- 56%  161-127  forge-alliance
- 55%  158-130  kindle-grove
- 49%  142-146  skyward-writ
- 46%  133-155  ashen-rite
- 45%  129-159  rot-harvest
- 44%  126-162  delta-bloom
- 42%  121-167  hollow-tide
- 39%  112-176  arc-tempest
- 34%  97-191   tidal-mind
- 34%  99-189   blight-vector
+ 76%  218-70   ember-rush
+ 69%  198-90   dawn-tithe
+ 61%  176-112  verdant-guard
+ 56%  162-126  kindle-grove
+ 53%  154-134  forge-alliance
+ 50%  144-144  skyward-writ
+ 45%  130-158  rot-harvest
+ 43%  124-164  ashen-rite
+ 42%  121-167  arc-tempest
+ 41%  119-169  hollow-tide
+ 41%  119-169  delta-bloom
+ 37%  107-181  tidal-mind
+ 34%  97-191   blight-vector
 ```
 
-**One deck is clearly ahead, two share second, and two are measurably short.** The spread is
-forty-one points. Ember Rush is alone at 75%, Verdant Guard and Dawn Tithe are level at 65%, nine
-decks sit between 39% and 56%, and the bottom is Tidal Mind and Blight Vector at 34% — five points
-below the deck above them. Earlier runs of this table read "the bottom is a cluster now" and "the
-spread is thirty-six points"; neither is true any more, and those sentences have been replaced
-rather than left standing — a published number that has been re-measured is worth more corrected
-than defended.
+**One deck is clearly ahead, one is clearly second, and one is measurably short.** The spread is
+forty-two points. Ember Rush is alone at 76% but no longer unchallenged — Dawn Tithe beats it 14-10
+head to head — ten decks sit between 37% and 61%, and the bottom is Blight Vector at 34%, three
+points below the deck above it.
 
-**The row that moved is the one with a new card in it, and the table can only see half of what the
+The row that moved is **Dawn Tithe, 65% to 69%**, which is the four embalm and eternalize cards and
+the six they cost (D203). Worth reading beside it: a paired probe of that same swap wanted to call
+it *forty-seven* games rather than eleven, on a deck whose own noise reads 55% and 62% for the same
+unchanged list on two seed sets. Verdant Guard dropped four points without changing a card at all.
+Read the order, not the numbers.
+
+Earlier runs of this table read "the bottom is a cluster now", "the spread is thirty-six points" and
+"Verdant Guard and Dawn Tithe are level at 65%"; none of those is true any more, and the sentences
+have been replaced rather than left standing — a published number that has been re-measured is worth
+more corrected than defended.
+
+**The run before this one also had one card in it, and the table could only see half of what the
 card's own probe saw.** Verdant Guard gained a **Kitchen Finks** in place of a Pacifism (D190), and
 its paired probe — the same list against itself, the card in and out, on two seed sets of 288 —
 priced that swap at between fifteen and thirty games. The table moved it twelve, from 175-113 to

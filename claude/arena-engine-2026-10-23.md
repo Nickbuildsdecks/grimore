@@ -5596,11 +5596,18 @@ from *hand* is the same card and the same action type.
 
 With that fixed: the bot takes **87% to 100%** of the chances it is offered (125 of 144 for the Cat,
 32 of 32 for the Angel), and all four cards are among the deck's most-used — Sacred Cat at 202% of
-the games it is drawn in. The slot itself is **not level**: probing the revert of all six cards gave
-+47 and +19 on two seed sets, against a deck whose own noise is wider than ±20 (the old list reads
-55% on one seed set and 62% on the other). Isolating Angel of Sanctions over Serra Angel gave +11,
-inside the floor, so the gain is spread rather than carried. That makes it a card-quality change
-wearing a keyword's name, and the trim is the deck's business rather than the keyword's.
+the games it is drawn in.
+
+**And the slot is worth four points, not the forty-seven the probe wanted.** Probing the revert gave
++47 on one seed set and +19 on another, against a deck whose own noise is wider than ±20 (the old
+list reads 55% and 62% on those two sets); isolating Angel of Sanctions over Serra Angel gave +11,
+inside the floor. The **field table**, on the seeds the published one already uses, says Dawn Tithe
+went 187-101 (65%, joint second) to **198-90 (69%, clear second)** — eleven games — with the pool's
+spread unchanged at 41-42 points and Verdant Guard four points down without changing a card. So the
+deck needs no trim: it has two losing matchups and its arrival in second narrows the gap at the top
+from twelve points to seven. The general lesson points the other way from D183, where the table found
+a change *larger* than the probes: a paired probe amplifies whatever its seeds gave it, the table
+lets the field move too, and where they disagree the table is the one to publish.
 
 ## Next
 

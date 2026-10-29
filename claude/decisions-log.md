@@ -11017,10 +11017,39 @@ one swap that looked like a clear upgrade on card quality alone, Angel of Sancti
 came back at **+11 of 287** — inside the floor and unresolvable — so the gain is spread across the
 six cards rather than carried by one of them.
 
-**That is a card-quality change wearing a keyword's name, and it is not level.** Dawn Tithe was third
-in the pool at 62% and these six cards put it near the top. The field table is the instrument for
-that question and it is running; whatever it says, the trim belongs to the deck rather than to the
-keyword.
+**And then the field table said the probe was reading far too much into it.** Run on the same seeds
+as the table already published (`SEEDS=12 SEED0=4400`), Dawn Tithe goes from **187-101 (65%, joint
+second)** to **198-90 (69%, clear second)** — eleven games and four points, against a probe that
+wanted to call it forty-seven. The pool's whole spread is unchanged: 41 points before, 42 now, with
+Ember Rush still alone at the top on 76% and Blight Vector still last on 34%. Verdant Guard dropped
+four points without changing a card, which is the field effect this table has shown five times now.
+
+So the slot is **+4 points on the instrument that answers this question**, and the deck does not need
+trimming: it has two losing matchups (Kindle Grove 10-14, Verdant Guard 11-13), nothing in the
+pool's bottom half that it beats worse than Ember Rush does, and its arrival in second place
+*narrows* the gap at the top from twelve points to seven.
+
+The lesson is the one the measurement README already warns about, pointing the other way this time.
+D183's planeswalker run found the **table** larger than the paired probes; here the probe was three
+to ten times the table. A paired probe swaps cards inside one deck and amplifies whatever the seeds
+gave it; the table re-measures the whole field and lets the field move too. Where the two disagree,
+believe the table — and never publish the probe alone.
+
+```
+ 76%  218-70   ember-rush        (was 75%, 215-73)
+ 69%  198-90   dawn-tithe        (was 65%, 187-101)   <- the six cards
+ 61%  176-112  verdant-guard     (was 65%, 187-101)
+ 56%  162-126  kindle-grove      (was 55%)
+ 53%  154-134  forge-alliance    (was 56%)
+ 50%  144-144  skyward-writ      (was 49%)
+ 45%  130-158  rot-harvest       (was 45%)
+ 43%  124-164  ashen-rite        (was 46%)
+ 42%  121-167  arc-tempest       (was 39%)
+ 41%  119-169  hollow-tide       (was 42%)
+ 41%  119-169  delta-bloom       (was 44%)
+ 37%  107-181  tidal-mind        (was 34%)
+ 34%  97-191   blight-vector     (was 34%)
+```
 
 ### And a correction worth more than the finding it replaced
 
@@ -11042,8 +11071,29 @@ Which also means every escape and delve number this harness has ever printed was
 reported **17 escaped Woe Striders** across 288 games; `cast-counts` reads **23 in 48**. So the whole
 block now counts actions, and the cards a cost spent are read as the cards that left the seat's
 graveyard for exile while the action was applied — which keeps the per-cast spread without the
-stack. The lesson is the general one: an instrument that watches a *place* sees what happens to be
-sitting there, and an instrument that watches an *action* sees the action. Prefer the action.
+stack. One more trap on the way: counting every cast of a watched card read **97 "escapes"** of a
+Phoenix of Ash in 144 games, of which 72 exiled nothing at all, because a Phoenix cast from *hand*
+is the same card and the same action type. Escape says so on the action; for delve the test is
+whether any card was actually exiled.
+
+The lesson is the general one: an instrument that watches a *place* sees what happens to be sitting
+there, and an instrument that watches an *action* sees the action. Prefer the action, and then check
+that the action paid the cost you are counting.
+
+**D171's three numbers, re-measured on its own seeds and 144 games each:**
+
+| | D171 said | it is |
+| --- | --- | --- |
+| Phoenix of Ash escapes (Arc Tempest) | 5 | **25**, every one of them 3 cards |
+| Gurmag Angler delved casts (Hollow Tide) | 11, 30 cards | **29**, 98 cards — one to six deep |
+| Treasure Cruise delved casts | 10, 48 cards | **51**, 204 cards — most of them four deep |
+| Woe Strider escapes (Ashen Rite) | not measured | **52**, and 11 of 144 games saw two |
+
+So escape is not rare, Arc Tempest's reservation rule was never suppressing it, and the "pool's
+first escape card lives in the deck least able to use it" line in D171 and in the arena-engine doc
+was an instrument artefact. The *shape* of the delve spread survives, because that was never about
+the count. (One deck note that changed underneath this: Treasure Cruise is in Hollow Tide now, not
+Tidal Mind, which runs neither delve card.)
 
 With that fixed the two harnesses agree to the game, and the real answer is the opposite of the
 first one. **The bot takes very nearly every chance it is given**, counted against the turns on
