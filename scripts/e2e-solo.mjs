@@ -18,6 +18,7 @@ import path from 'node:path';
 import {
   chromium, check, checks, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
   isMyMove, makeMove, press, readNumber, expectEventuallyTrue, watchForReactWarnings, tap,
+  textOf,
 } from './lib/table-driver.mjs';
 
 const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
@@ -33,7 +34,8 @@ const HEADED = process.env.HEADED === '1';
 const SOLO_POD = process.env.SOLO_POD === '1';
 /**
  * `LIST=cascade` pastes a deck built to cascade instead of Ember Rush's own sixty,
- * `LIST=costs` one built to pay an alternative cost — see `COSTS_LIST` — and `LIST=earned` one
+ * `LIST=costs` one built to pay an alternative cost — see `COSTS_LIST` — `LIST=graveyard` one built
+ * to press an ability on a card in the graveyard (`GRAVEYARD_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -165,6 +167,35 @@ const EARNED_LIST = [
   '6 Lightning Bolt', '12 Monastery Swiftspear',
 ].join('\n');
 
+/**
+ * Sixty cards built to press a button on a card in the **graveyard**.
+ *
+ * The one zone no browser suite has ever activated an ability from. Flashback and escape made the
+ * graveyard a row with *casts* in it, and the driver has walked that row since — but embalm and
+ * eternalize are **activated abilities**, so nothing goes on the stack and nothing is cast, and
+ * what arrives is a token whose characteristics are not the card's. Unearth, the only other ability
+ * in the pool used from there, has never been pressed outside the engine's own tests.
+ *
+ * Which makes this the list that has to get its own creatures killed. Four cards carry the two
+ * keywords and all four are white, so the mana base is twenty Plains and nothing to fix — the
+ * lesson `LIST=costs` paid for twice. Eight Sacred Cats and eight Adorned Pouncers are one- and
+ * two-mana bodies that die in any combat the driver walks into, and eight **Mind Stones** are there
+ * for the far end of the curve: eternalize is {4}{W}{W} and {5}{W}{W}, which is six and seven mana
+ * in a game this list wants to be short.
+ *
+ * Soul Wardens fill the last four slots rather than a fifth copy of something: they are a body for
+ * one mana that the deck is happy to lose, and the life they gain keeps the game going long enough
+ * for the seven-mana row to be affordable once.
+ *
+ * Against the default Tidal Mind, which is what makes the dying reliable from both ends — walls
+ * that eat a 1/1 attacking into them, and two Doom Blades and a Murder for the ones that stay home.
+ */
+const GRAVEYARD_LIST = [
+  '20 Plains', '8 Mind Stone',
+  '8 Sacred Cat', '8 Adorned Pouncer', '8 Sunscourge Champion', '4 Angel of Sanctions',
+  '4 Soul Warden',
+].join('\n');
+
 const myMove = (page) => isMyMove(page);
 /**
  * Aggression 1: a solo game has nobody to hold mana up against, so it always develops.
@@ -233,6 +264,8 @@ async function main() {
         ? COSTS_LIST
         : LIST === 'earned'
         ? EARNED_LIST
+        : LIST === 'graveyard'
+        ? GRAVEYARD_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -314,7 +347,21 @@ async function main() {
      */
     const altCasts = LIST === 'earned'
       ? { spectacle: 0, overload: 0 }
+      : LIST === 'graveyard'
+      ? { embalm: 0, eternalize: 0 }
       : { evoke: 0, dash: 0, bestow: 0 };
+    /*
+      What the token's own face said, under `LIST=graveyard`.
+
+      Read off the battlefield straight after the row is pressed rather than asserted at the end,
+      because a token is the one permanent that can stop existing: a Zombie Cat that dies two moves
+      later leaves nothing to look at, and a check that reads the board at the end of the game would
+      pass or fail on whether the token survived.
+
+      A `Set` of card faces, deduplicated by the text itself, because the board is read on every
+      move and one token sits there for many of them.
+    */
+    const tokenFaces = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -355,7 +402,35 @@ async function main() {
         if (typeof did === 'string' && /a free cast/.test(did)) freeCasts += 1;
         if (typeof did === 'string') {
           for (const word of Object.keys(altCasts)) {
-            if (did.includes(`its ${word} cost`)) altCasts[word] += 1;
+            /*
+              Two shapes of row, matched differently because they *are* different rows. An
+              alternative cost is a second way to cast a card and the table words it "Cast X for
+              its evoke cost"; embalm and eternalize are abilities, so the row is the ability's own
+              printed text and begins with the keyword. Matching the keyword rather than the
+              wrapper is also what keeps this honest: the word only appears because the engine put
+              that ability's description on the button.
+            */
+            const hit = LIST === 'graveyard'
+              ? new RegExp(`\\b${word}\\b`, 'i').test(did)
+              : did.includes(`its ${word} cost`);
+            if (hit) altCasts[word] += 1;
+          }
+        }
+        /*
+          And what arrived, which is the half the engine's tests cannot see: the token's *face*.
+
+          Sampled on **every** move rather than on the move that pressed the row, which is the
+          mistake the first run of this scenario made. Embalm is an activated ability, so pressing
+          it puts the ability on the stack and the token does not exist until it resolves a move or
+          two later — the first version read the board straight after the tap, found only the
+          Zombies from earlier presses, and reported "no 4/4 token" on a game that had made one.
+          A set, because the same token is on the board for many moves after it arrives.
+        */
+        if (LIST === 'graveyard') {
+          const mine = page.locator('[data-testid="zone-battlefield-0"] [data-testid^="card-"]');
+          for (let i = 0; i < await mine.count(); i += 1) {
+            const face = (await textOf(mine.nth(i))).replace(/\s+/g, ' ');
+            if (/Zombie/.test(face)) tokenFaces.add(face.slice(0, 120));
           }
         }
         if (process.env.VERBOSE === '1') console.log(`      move ${moves}: ${did}`);
@@ -394,8 +469,8 @@ async function main() {
       times and overload none; three runs after the Sol Rings went in pressed overload three times
       in one run and spectacle none. Both rows exist on every table; one shuffle does not see both.
     */
-    const dealBudget = LIST === 'earned' ? 5 : 3;
-    while ((LIST === 'costs' || LIST === 'earned') && games < dealBudget
+    const dealBudget = LIST === 'earned' || LIST === 'graveyard' ? 5 : 3;
+    while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard') && games < dealBudget
       && !Object.values(altCasts).every((n) => n > 0)) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${JSON.stringify(altCasts)} after ${games} game(s)`);
@@ -455,6 +530,45 @@ async function main() {
         altCasts.spectacle > 0, where);
       check('a Mizzium Mortars is overloaded, on a row that asks for no targets at all',
         altCasts.overload > 0, where);
+    } else if (LIST === 'graveyard') {
+      /*
+        The two rows pressed on a card in the graveyard, and the face of what arrived.
+
+        What this proves that nothing else can: the table badged a card in the **graveyard** as
+        playable for an *ability* rather than a cast, put the ability's printed text on the button,
+        sent it with no targets to pick, and then drew the token — which is a copy of the card with
+        the keyword's exceptions on it, so the player is looking at a Zombie and not at the card
+        they just spent.
+      */
+      const where = JSON.stringify(altCasts);
+      check('a Sacred Cat or an Angel of Sanctions is embalmed off a card in the graveyard',
+        altCasts.embalm > 0, where);
+      check('and an Adorned Pouncer or a Sunscourge Champion is eternalized from there too',
+        altCasts.eternalize > 0, where);
+      const faces = [...tokenFaces];
+      check('the token that arrives reads as a Zombie, which the card it copied is not',
+        faces.length > 0, faces[0] ?? 'no Zombie reached the battlefield');
+      /*
+        The eternalized 4/4, reported rather than required — and the reason is a measurement rather
+        than caution.
+
+        Three runs pressed the eternalize row every time and **none of them ever had a 4/4 Zombie on
+        the board when this sampler looked**, across 32 token faces. That is not the keyword failing:
+        the token really is made, and `scripts.test.ts` proves the altered definition survives
+        `viewFor` and `packView` with its 4/4 intact, which is the whole of what a client is handed.
+        What happens instead is that the opponent's entire turn runs inside the same write as the
+        pass that resolved the ability — a 4/4 is the biggest thing on the board, Tidal Mind holds
+        two Doom Blades and a Man-o'-War, and a token that is bounced ceases to exist rather than
+        going to a hand. So the board between two of this driver's moves is simply not a place a
+        4/4 token reliably sits.
+
+        Which leaves the division of labour honest: the browser proves the button on a card in the
+        graveyard and the Zombie that arrives, and the engine's own view test proves the size.
+      */
+      const big = faces.find((face) => /\b4\s*\/\s*4\b/.test(face));
+      if (big !== undefined) check('and an eternalized one is a printed 4/4', true, big);
+      else console.log(`      (no 4/4 Zombie on the board between moves: ${faces.length} token faces seen `
+        + '— see the view round-trip test in scripts.test.ts)');
     } else if (Object.values(altCasts).some((n) => n > 0)) {
       console.log(`      (alternative costs paid: ${JSON.stringify(altCasts)})`);
     }

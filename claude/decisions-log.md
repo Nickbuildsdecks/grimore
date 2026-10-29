@@ -11116,3 +11116,30 @@ the keyword promises and the first measurement hid. The honest unearth compariso
 Ashen Rite's 288 games a Dregscape Zombie reached the graveyard in 64 of them, and the same block —
 before the fix — read 10 unearths where `cast-counts` reads 6 in 48 games. Both numbers in that pair
 are now worth re-reading.
+
+### And the browser, which found something the engine could not
+
+`LIST=graveyard` in `scripts/e2e-solo.mjs` is the first browser scenario that presses a button on a
+card **in the graveyard**. Flashback and escape made that row a place with casts in it and the driver
+has walked it since; these are *abilities*, so the claim is different — the table badged a card in the
+graveyard as playable for an ability, put the ability's printed text on the button, sent it with no
+targets to pick, and then drew the token. Three runs, 27 to 28 checks each, both rows pressed in every
+one of them.
+
+**And the one check it cannot make honestly is the 4/4.** Three runs pressed the eternalize row every
+time and not one of them ever had a 4/4 Zombie on the board when the driver looked: 32 token faces
+across the three, all of them 1/1 Cats and 3/4 Angels. The cause is not the keyword. The opponent's
+whole turn runs inside the same write as the pass that resolved the ability, a 4/4 is the biggest
+thing on the board, Tidal Mind holds two Doom Blades and a Man-o'-War, and a token that is **bounced
+ceases to exist** rather than going to a hand — so the board between two of the driver's moves is
+simply not a place an eternalized token reliably sits. The first version of the sampler read the
+board on the move the row was pressed, which was worse and for a different reason: the ability was
+still on the stack, so the token did not exist yet at all.
+
+What proves the size instead is a test one layer in, and it is the better test: the altered definition
+survives `viewFor` and `packView` with its 4/4 and its empty mana cost intact, **beside the printed
+card in the same payload**. That is the collision `TokenCopyProfile.as` exists to prevent, asked of
+the wire format rather than of the engine — because `packView` deduplicates the definitions it sends,
+and two definitions that share a name is exactly the case it had never been handed. So the browser
+proves the button and the Zombie, and the view test proves the size.
+

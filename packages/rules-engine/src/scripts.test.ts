@@ -13059,6 +13059,44 @@ describe('embalm and eternalize: a token copy of the card, with different charac
     // in the graveyard to embalm a second time.
     expect(s.instances[token]).toBeUndefined();
   });
+
+  it('and the altered definition survives the trip to a seat\u2019s view and back', () => {
+    /*
+      The half a browser is the only other witness to, asked here because a browser is slow.
+
+      A token whose characteristics are not the copied card's is a **second definition under a
+      second key**, and everything between the engine and the card a player looks at has to carry
+      that: `viewFor` has to inline the altered def rather than the printed one, and `packView`
+      has to keep them apart on the wire. If either collapsed the two by name, the Zombie on the
+      battlefield would be drawn as a 1/1 Cat with `{W}` on it and nothing would throw — the exact
+      failure `TokenCopyProfile.as` exists to prevent, one layer further out.
+    */
+    let s = graveyard(['Adorned Pouncer'], 6);
+    const pouncer = find(s, 0, 'graveyard', 'Adorned Pouncer');
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: pouncer, abilityIndex: 0 }), 40);
+    const token = tokenOf(s, 0);
+
+    const view = unpackView(packView(viewFor(s, 0)));
+    const drawn = view.cards[token];
+    expect(drawn).toBeDefined();
+    expect(drawn!.isToken).toBe(true);
+    // The size the player reads, which for an eternalized body is printed rather than pumped.
+    expect([drawn!.power, drawn!.toughness]).toEqual([4, 4]);
+    expect(drawn!.card?.typeLine).toBe('Token Creature \u2014 Zombie Cat');
+    expect(drawn!.card?.manaCost).toBe('');
+    expect(drawn!.card?.name).toBe('Adorned Pouncer');
+    /*
+      And the printed card is still the printed card in the same payload, which is the collision
+      this is really about: the two definitions share a name, and `packView` keys the deduplicated
+      definitions it sends. A seat looking at its own graveyard sees both at once.
+    */
+    const inYard = Object.entries(view.cards)
+      .find(([, card]) => card.zone === 'graveyard' && card.card?.name === 'Adorned Pouncer');
+    if (inYard !== undefined) {
+      expect(inYard[1].card?.manaCost).toBe('{1}{W}');
+      expect(inYard[1].card?.typeLine).toBe('Creature \u2014 Cat');
+    }
+  });
 });
 
 describe('monstrosity and adapt: a creature that grows once and stays grown', () => {

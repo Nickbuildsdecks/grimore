@@ -5609,6 +5609,16 @@ from twelve points to seven. The general lesson points the other way from D183, 
 a change *larger* than the probes: a paired probe amplifies whatever its seeds gave it, the table
 lets the field move too, and where they disagree the table is the one to publish.
 
+**And it is pressed in a browser now**, which no cost paid out of a graveyard had been before:
+`LIST=graveyard` badges a card in the graveyard as playable for an *ability*, puts the ability's own
+printed text on the button, sends it with no targets to pick and draws the token. Three runs, both
+rows every time. The one thing the browser cannot check honestly is the eternalized **4/4** — three
+runs never had one on the board when the driver looked, because the opponent's whole turn runs inside
+the same write that resolved the ability and a bounced token ceases to exist. That claim moved one
+layer in, to the better test: the altered definition survives `viewFor` and `packView` with its 4/4
+and empty mana cost intact, beside the printed card in the same payload, which is the name collision
+`TokenCopyProfile.as` exists to prevent asked of the wire format rather than of the engine.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -920,6 +920,7 @@ SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 26
 LIST=cascade node scripts/e2e-solo.mjs # a deck built to cascade, in a browser — 25-26 checks
 LIST=costs   node scripts/e2e-solo.mjs # a deck built to pay evoke, dash and bestow — 27-28 checks
 LIST=earned  node scripts/e2e-solo.mjs # a deck built for spectacle and overload — 26-27 checks
+LIST=graveyard node scripts/e2e-solo.mjs # a deck built to press a button in the graveyard — 27-29 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -985,6 +986,7 @@ SOLO_POD=1 node scripts/e2e-solo.mjs             # four seats, three of them the
 LIST=cascade node scripts/e2e-solo.mjs           # eight Bloodbraid Elves, pasted in as text
 LIST=costs   node scripts/e2e-solo.mjs           # evoke, dash and bestow, all three pressed
 LIST=earned  node scripts/e2e-solo.mjs           # spectacle and overload, the two odd rows
+LIST=graveyard node scripts/e2e-solo.mjs         # embalm and eternalize, pressed in the graveyard
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
@@ -999,7 +1001,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1029 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1030 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1050,6 +1052,33 @@ The deals are budgeted at **five games** rather than the three `LIST=costs` uses
 runs showed: whichever row a shuffle happens to offer, the other is usually a deal away, and a game
 under this list is short enough that a re-deal costs almost nothing.
 
+`LIST=graveyard` is the fourth, and it is the first browser scenario that presses a button on a card
+**in the graveyard**. Flashback and escape made that row a place with *casts* in it, and the driver
+has walked it since — but embalm and eternalize are **activated abilities**, so nothing is cast,
+nothing goes on the stack to be countered, and what arrives is a **token whose characteristics are
+not the card's**. Unearth, the only other ability in the pool used from there, had never been pressed
+outside the engine's own tests. The deck is mono-white — twenty Plains, eight Mind Stones, eight
+Sacred Cats, eight Adorned Pouncers, eight Sunscourge Champions, four Angel of Sanctions and four
+Soul Wardens — and the run requires an embalm, an eternalize, and a Zombie on the board that the card
+it copied is not.
+
+Two things about it are worth saying rather than hiding:
+
+- **This list has to get its own creatures killed**, which is the opposite problem from every other
+  scenario here. One- and two-mana bodies die in any combat the driver walks into, and against the
+  default Tidal Mind they also die to two Doom Blades and a Murder — so the graveyard fills from both
+  ends. Games run long (173 to 264 moves across three runs) because a deck of lifelinkers against a
+  control deck is slow, and the Mind Stones are there so that eternalize's {4}{W}{W} and {5}{W}{W}
+  are affordable before the game ends.
+- **The eternalized 4/4 is reported, not required, and the reason is measured.** Three runs pressed
+  the eternalize row every time and none of them ever had a 4/4 Zombie on the board *when the driver
+  looked* — 32 token faces across the three, not one of them a 4/4. That is not the keyword failing.
+  The opponent's whole turn runs inside the same write as the pass that resolved the ability, a 4/4 is
+  the biggest thing on the board, and a token that is bounced ceases to exist rather than going to a
+  hand. What proves the size instead is an engine test: the altered definition survives `viewFor` and
+  `packView` with its 4/4 and its empty mana cost intact, beside the printed card in the same
+  payload. The browser proves the button and the Zombie; the view test proves the size.
+
 Two of those checks are about how the table **looks** rather than what it does, which is new and
 worth saying why. A card at this table leans towards the cursor with a foil sheen that follows it,
 and the board has its own mana embers drifting behind it — and both are written as CSS variables a
@@ -1057,7 +1086,7 @@ pointer handler sets, so nothing that does not move a real pointer can see them.
 hovers a card and reads the variables back, which is the only honest way to check a thing whose
 whole existence is in the browser.
 
-The layers under them have their own suites: `packages/rules-engine` (1029 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1030 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (215 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
