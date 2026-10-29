@@ -49,7 +49,7 @@ import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './inter
 import { scriptFor, soleTargetSpecOf } from './scripts.js';
 import type {
   AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, CountersDecisionSpec,
-  DecisionSpec, ModeDef, ReplacementEvent, TargetSpec, TriggerEvent,
+  DecisionSpec, DecisionSpecOf, ModeDef, ReplacementEvent, TargetSpec, TriggerEvent,
 } from './scriptTypes.js';
 import {
   isChoiceDecision, isCountersDecision, isNumberDecision, isTargetDecision, targetCount,
@@ -2082,12 +2082,28 @@ function runModes(
  * Separate from its targets in every respect: asked later, possibly of somebody else, possibly
  * about cards in a hidden zone, and never answerable by an opponent. See `DecisionSpec`.
  */
+/**
+ * The questions this stack object asks, with any a card computes resolved (CR 702.24b).
+ *
+ * The one funnel every reader of a card's questions goes through — the plan, the ask, the payment
+ * for a priced answer, and the fallback when that payment turns out to be impossible — which is why
+ * `DecisionSpecOf` could be widened to "a spec, or a function of the state and the source" without
+ * a single consumer downstream learning that a question can be computed. Cumulative upkeep is the
+ * card that needed it: its price is its cost for each age counter on it, so the words, the prompt
+ * and the cost are facts about this resolution rather than about the card.
+ *
+ * Resolved afresh on each call rather than once and remembered, because the alternative is a second
+ * place for the answer to live. The contract that makes that safe is on `DecisionSpecOf`: the
+ * function is pure and reads nothing that can change between the question and its answer.
+ */
 function decisionSpecsFor(state: GameState, object: StackObject): readonly DecisionSpec[] {
+  const asked = (specs: readonly DecisionSpecOf[]): readonly DecisionSpec[] =>
+    specs.map((spec) => (typeof spec === 'function' ? spec(state, object.source) : spec));
   const script = scriptOnStack(state, object);
-  if (object.kind !== 'spell') return abilityOrTrigger(script, object)?.decisions ?? [];
+  if (object.kind !== 'spell') return asked(abilityOrTrigger(script, object)?.decisions ?? []);
   const modes = modesOf(script, object.modes);
-  if (modes.length > 0) return modes.flatMap((mode) => [...(mode.decisions ?? [])]);
-  return script?.decisions ?? [];
+  if (modes.length > 0) return asked(modes.flatMap((mode) => [...(mode.decisions ?? [])]));
+  return asked(script?.decisions ?? []);
 }
 
 /** The half of a card that runs before its questions are asked. Spell-level only. */
@@ -2899,7 +2915,7 @@ interface Resolvable {
   readonly targets?: readonly TargetSpec[];
   /** Only a trigger has one. See `TriggerDef.condition`. */
   readonly condition?: ConditionFn;
-  readonly decisions?: readonly DecisionSpec[];
+  readonly decisions?: readonly DecisionSpecOf[];
   readonly beforeDecisions?: EffectFn;
   readonly effect?: EffectFn;
 }

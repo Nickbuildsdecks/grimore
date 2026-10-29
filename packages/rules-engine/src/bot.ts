@@ -2474,6 +2474,12 @@ function chosenNumberIsNothing(state: GameState, seat: SeatIndex, action: Action
   const script = name === undefined ? undefined : scriptFor(name);
   if (script?.decisions === undefined) return false;
   return script.decisions.some((spec) => {
+    /*
+      A question the card works out when it is asked is not this rule's business, and cannot be.
+      This runs *before* the cast, so there is no stack object and no source to compute it from —
+      and nothing with a computed question is a number question anyway (see `DecisionSpecOf`).
+    */
+    if (typeof spec === 'function') return false;
     if (!isNumberDecision(spec) || spec.who !== 'controller') return false;
     const best = spec.best?.(state, seat);
     // A card with no opinion is not this rule's business, and neither is one whose range has

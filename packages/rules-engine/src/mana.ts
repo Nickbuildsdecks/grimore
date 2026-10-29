@@ -82,6 +82,24 @@ export const FREE_COST: ManaCost = Object.freeze({ generic: 0, colors: EMPTY_POO
 const SYMBOL = /\{([^}]*)\}/g;
 
 /** Parses `{2}{R}{R}`. An unrecognised symbol is recorded rather than ignored. */
+/**
+ * A cost paid several times over, written as one cost (CR 702.24b).
+ *
+ * Cumulative upkeep asks for "its upkeep cost for each age counter on it", and a cost is a *string*
+ * here — so three lots of {1} is either `{3}` or `{1}{1}{1}`, and both parse to the same thing
+ * because `parseManaCost` sums generic symbols. The collapsed form is used where it exists, purely
+ * because `Pay {3}` is a button a player can read and `Pay {1}{1}{1}` is a puzzle.
+ *
+ * A coloured or hybrid cost is repeated rather than multiplied, which is what the rule means: two
+ * lots of {U} is {U}{U}, and there is no symbol for "two blue".
+ */
+export function timesCost(cost: string, times: number): string {
+  if (times <= 1) return cost;
+  const generic = /^\{(\d+)\}$/.exec(cost.trim());
+  if (generic !== null) return `{${Number.parseInt(generic[1] ?? '0', 10) * times}}`;
+  return cost.repeat(times);
+}
+
 export function parseManaCost(text: string | null | undefined): ManaCost {
   if (!text) return FREE_COST;
   let generic = 0;

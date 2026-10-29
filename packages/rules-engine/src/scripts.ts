@@ -39,6 +39,7 @@ import type {
   AbilityDef, CardScript, CardsDecisionSpec, CountersDecisionSpec, TargetDecisionSpec,
   TargetSpec, TriggerDef,
 } from './scriptTypes.js';
+import { timesCost } from './mana.js';
 import type { Color } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
 import { legalTargets, retarget } from './targeting.js';
@@ -6562,6 +6563,78 @@ function echoTrigger(cost: string): TriggerDef {
 }
 
 /**
+ * Cumulative upkeep: an age counter first, then its cost for each one (CR 702.24).
+ *
+ * Echo's shape with the one thing echo did not have: a **price that climbs**. The counter goes on as
+ * the ability resolves and the cost is read off the counters, so the first upkeep asks for one lot,
+ * the second for two, the third for three — and a card that is worth {1} a turn stops being worth it
+ * somewhere around the fourth.
+ *
+ * That is why `DecisionSpecOf` exists. The words on the buttons, the prompt and the price are all
+ * facts about *this* resolution rather than about the card, and a static spec cannot hold any of
+ * them — so the question is a function, resolved when it is asked. Two orderings make it correct:
+ * the counter is added in `beforeDecisions`, which runs before any question is planned, and the
+ * function reads the counters rather than remembering a number, so the three places the engine
+ * resolves it (planning, asking, paying) all agree.
+ *
+ * Unlike echo there is **no flag and no once**: cumulative upkeep is asked every upkeep for as long
+ * as the permanent is there, which is the whole of what the keyword is.
+ */
+function cumulativeUpkeepTrigger(cost: string): TriggerDef {
+  return {
+    on: { kind: 'step', step: 'upkeep' },
+    description: `Cumulative upkeep ${cost} — an age counter, then pay for each or sacrifice this`,
+    // The counter is part of the ability, not a turn-based action: it goes on as this resolves.
+    beforeDecisions: (c) => addCounters(c.state, c.source, 'age', 1),
+    decisions: [(state, source) => {
+      const age = Math.max(1, state.instances[source]?.counters['age'] ?? 1);
+      const price = timesCost(cost, age);
+      const pay = `Pay ${price}`;
+      return {
+        who: 'controller',
+        prompt: `Cumulative upkeep: pay ${price} for ${age} age counter${age === 1 ? '' : 's'}, or sacrifice this?`,
+        options: ['Sacrifice it', pay],
+        payIfChosen: { option: pay, cost: price },
+        best: () => pay,
+      };
+    }],
+    effect: (c) => (chosenOption(c)?.startsWith('Pay ') === true
+      ? c.state
+      : moveToGraveyard(c.state, [c.source])),
+  };
+}
+
+/**
+ * Mystic Remora: two cards every time they do anything, for as long as you keep paying.
+ *
+ * The pool's first **cumulative upkeep** card (CR 702.24), and the one that makes the climb a real
+ * decision rather than an accounting exercise: one mana for two cards is the best rate in the pool,
+ * two mana for two cards is still good, and by the fourth or fifth upkeep the Remora is asking for
+ * more than the deck can spare — so it is a card you play, milk and then let go.
+ *
+ * It only reads an **opponent's** noncreature spells, which is why it goes in a deck that is happy
+ * to sit behind counterspells: the turns it draws nothing are the turns nobody is doing anything.
+ */
+const MYSTIC_REMORA: CardScript = {
+  name: 'Mystic Remora',
+  cumulativeUpkeep: { cost: '{1}' },
+  triggers: [
+    cumulativeUpkeepTrigger('{1}'),
+    {
+      on: { kind: 'spell-cast', by: 'opponent', spell: 'noncreature' },
+      description: 'you may draw two cards',
+      decisions: [{
+        who: 'controller',
+        prompt: 'Mystic Remora: draw two cards?',
+        options: ['Decline', 'Draw two'],
+        best: () => 'Draw two',
+      }],
+      effect: (c) => (chosenOption(c) === 'Draw two' ? drawLater(c.state, c.controller, 2) : c.state),
+    },
+  ],
+};
+
+/**
  * Mogg War Marshal: two mana, two goblins, and a question next upkeep.
  *
  * The pool's first **echo** card (CR 702.29), and the one that shows why the keyword is a question
@@ -7578,7 +7651,7 @@ const ALL: readonly CardScript[] = [
   BASILICA_SCREECHER, BASILICA_GUARDS, RIFT_BOLT, SEARCH_FOR_TOMORROW,
   SHAMBLING_SHELL, DARKBLAST, CAPSIZE, WHISPERS_OF_THE_MUSE,
   CONTAGION_CLASP, STEADY_PROGRESS,
-  MOGG_WAR_MARSHAL, YAVIMAYA_GRANGER,
+  MOGG_WAR_MARSHAL, YAVIMAYA_GRANGER, MYSTIC_REMORA,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

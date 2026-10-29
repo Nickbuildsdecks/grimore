@@ -44,7 +44,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * spell back out of its graveyard (`DREDGE_LIST`), `LIST=buyback` one that pays to keep the spell
  * it just cast (`BUYBACK_LIST`), `LIST=proliferate` one that poisons the computer and then asks the
  * table to pick it out of a list of permanents (`PROLIFERATE_LIST`), `LIST=echo` one that is asked
- * for mana in its own upkeep (`ECHO_LIST`), and `LIST=earned` one
+ * for mana in its own upkeep (`ECHO_LIST`), `LIST=upkeep` one whose upkeep question gets **dearer**
+ * every turn (`UPKEEP_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -410,6 +411,26 @@ const ECHO_LIST = [
   '4 Monastery Swiftspear', '4 Goblin Arsonist', '4 Raging Goblin', '4 Borderland Marauder',
   '4 Lightning Bolt', '4 Shock', '4 Firebrand Archer',
 ].join('\n');
+
+/**
+ * A deck whose upkeep question costs one more every time it is asked (CR 702.24).
+ *
+ * The echo row proves a table can be asked something in its own upkeep. This one proves the thing
+ * only a *climbing* price can test: the words on the button change between one asking and the next,
+ * and a table that re-rendered the old question would offer `Pay {1}` for a cost of `{2}` — a
+ * payment the engine would then refuse, with the permanent going anyway and the player unable to
+ * see why.
+ *
+ * Eight Mystic Remoras and twenty-six Islands, because the claim needs **two different prices** in
+ * one run: the first upkeep asks {1}, the second {2}, and a deck with one copy that dies to the
+ * first refusal never gets there.
+ */
+const UPKEEP_LIST = [
+  '26 Island',
+  '8 Mystic Remora',
+  '4 Omenspeaker', '4 Man-o\'-War', '4 Wind Drake', '4 Preordain',
+  '4 Air Elemental', '4 Thieving Magpie', '2 Mulldrifter',
+].join('\n');
   const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
   watchForReactWarnings(page, '', reactWarnings);
@@ -479,6 +500,8 @@ const ECHO_LIST = [
         ? PROLIFERATE_LIST
         : LIST === 'echo'
         ? ECHO_LIST
+        : LIST === 'upkeep'
+        ? UPKEEP_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -638,6 +661,13 @@ const ECHO_LIST = [
      * permanent the player still wanted goes to the graveyard.
      */
     const echoAnswers = new Set();
+    /**
+     * The distinct **prices** a cumulative upkeep asked for, under `LIST=upkeep`.
+     *
+     * Prices rather than answers, because the price is the whole claim: two different ones in a run
+     * means the question was rebuilt as it climbed rather than re-rendered from the first asking.
+     */
+    const upkeepPrices = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -696,6 +726,10 @@ const ECHO_LIST = [
         if (typeof did === 'string' && /^chose a player: /.test(did)) playersChosen.add(did);
         if (typeof did === 'string' && /^chose a word: .*Echo \{1\}\{R\}/.test(did)) {
           echoAnswers.add(did.replace(/—.*$/, '').trim());
+        }
+        if (typeof did === 'string' && /Cumulative upkeep: pay /.test(did)) {
+          const price = /Cumulative upkeep: pay (\{[^ ]*?\}) for/.exec(did);
+          if (price !== null) upkeepPrices.add(price[1]);
         }
         if (typeof did === 'string' && /chose a play: Cast .* with buyback/i.test(did)) {
           buybackRows.add(did);
@@ -777,6 +811,7 @@ const ECHO_LIST = [
     const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
+      || LIST === 'upkeep'
       ? 5 : 3;
     /*
       What "not yet" means for this list.
@@ -808,10 +843,14 @@ const ECHO_LIST = [
       */
       : LIST === 'echo'
       ? echoAnswers.size < 2
+      // Two prices, because one price is a question and two prices are a climb.
+      : LIST === 'upkeep'
+      ? upkeepPrices.size < 2
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
-      || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo')
+      || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
+      || LIST === 'upkeep')
       && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
@@ -823,6 +862,7 @@ const ECHO_LIST = [
         : LIST === 'buyback' ? `${buybackRows.size} buyback rows, ${castsAfterABuyback} casts after one`
         : LIST === 'proliferate' ? `${playersChosen.size} answers with a player in them`
         : LIST === 'echo' ? `${echoAnswers.size} of the two echo answers`
+        : LIST === 'upkeep' ? `${upkeepPrices.size} distinct upkeep prices`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -1027,6 +1067,21 @@ const ECHO_LIST = [
       check('and both answers are reachable: paid, and refused',
         echoAnswers.size >= 2, [...echoAnswers].join(' / '));
       for (const did of [...echoAnswers].slice(0, 2)) console.log(`      ${did}`);
+    } else if (LIST === 'upkeep') {
+      /*
+        The one thing a climbing price can prove and a fixed one cannot.
+
+        The engine's tests pin the arithmetic — {1}, then {2}, then {3} — on a board built by hand.
+        What they cannot see is the **button**: the question is rebuilt on each asking, so a table
+        that re-rendered the first one would offer `Pay {1}` for a cost of `{2}`, the engine would
+        refuse the payment, and the permanent would go with the player unable to see why.
+
+        Two distinct prices in one run is that claim, and it is the whole check.
+      */
+      check('a cumulative upkeep is asked through the table', upkeepPrices.size > 0,
+        `prices: ${[...upkeepPrices].join(', ')}`);
+      check('and the price on the button climbs between askings',
+        upkeepPrices.size >= 2, [...upkeepPrices].join(', '));
     } else if (LIST === 'graveyard') {
       /*
         The two rows pressed on a card in the graveyard, and the face of what arrived.

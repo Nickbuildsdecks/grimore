@@ -1920,6 +1920,27 @@ const CHALICE_OF_THE_VOID: CardDef = {
   colors: [],
 };
 
+/**
+ * The pool's first **cumulative upkeep** card, and a rate that gets worse every turn.
+ *
+ * One mana for two cards is the best exchange in the pool; two mana for two cards is still good; by
+ * the fourth or fifth upkeep the Remora is asking for more than a control deck can spare while it
+ * is also holding up a counterspell. So it is a card you play early, milk, and then let go — which
+ * is the whole of what the keyword is for, and the reason it is worth a slot here rather than a
+ * vanilla draw spell.
+ *
+ * Only an **opponent's** noncreature spells, so the turns it draws nothing are the turns nobody is
+ * doing anything — which suits the deck that is happy to sit behind Counterspells.
+ */
+const MYSTIC_REMORA: CardDef = {
+  name: 'Mystic Remora',
+  typeLine: 'Enchantment',
+  manaCost: '{U}',
+  cmc: 1,
+  oracleText: 'Cumulative upkeep {1} (At the beginning of your upkeep, put an age counter on this permanent, then sacrifice it unless you pay its upkeep cost for each age counter on it.)\nWhenever an opponent casts a noncreature spell, you may draw two cards.',
+  colors: ['U'],
+};
+
 const TORMODS_CRYPT: CardDef = {
   name: "Tormod's Crypt",
   typeLine: 'Artifact',
@@ -3786,7 +3807,19 @@ export const TIDAL_MIND: DeckSpec = {
       because deathtouch, flying and lifelink is the one creature in these colours that both holds
       the ground against anything and wins the game on its own if the game goes long.
     */
-    { card: MAN_O_WAR, count: 2 },
+    { card: MAN_O_WAR, count: 1 },
+    /*
+      The second Man-o'-War's slot, spent on **cumulative upkeep** — and the payer is the honest
+      problem with this probe.
+
+      There is no card in this deck that does nearly what a Mystic Remora does at nearly its price,
+      so this slot cannot read the keyword the way the Rift Bolt and Search for Tomorrow slots do: a
+      {U} draw engine against a {2}{U} body-and-a-bounce is two different good cards rather than one
+      card twice. The direction is at least the honest one — the Remora has to beat a card this deck
+      is known to get a lot out of, which makes the reading conservative rather than flattering, and
+      D215 prices it against a second and much more marginal payer to bracket it.
+    */
+    { card: MYSTIC_REMORA, count: 1 },
     /*
       Chalice of the Void, for the third Man-o'-War.
 

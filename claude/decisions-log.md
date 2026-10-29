@@ -12144,3 +12144,79 @@ Every other prompt these runs press follows something the player did. This one a
 and the upkeep is where auto-pass lives — so a table that passed priority past its own question would
 lose the creature silently, and no engine test can see that, because no engine test passes priority
 the way a table does.
+
+## D215 — Cumulative upkeep, a price that climbs, and the question a card works out when it is asked
+
+Echo (D214) is a cost the game asks for, once. Cumulative upkeep (CR 702.24) is the same question
+every upkeep with one thing echo did not have: **the price goes up**. An age counter goes on as the
+ability resolves, and the cost is "its upkeep cost for each age counter on it" — so the first upkeep
+asks {1}, the second {2}, the third {3}, and a card worth a mana a turn stops being worth it
+somewhere around the fourth.
+
+### The shape, and the one that was rejected
+
+`ChoiceDecisionSpec.payIfChosen` is a static `{ option, cost }` pair, and here the cost, the words on
+the buttons and the prompt are **facts about this resolution** rather than about the card. Two shapes
+could carry that:
+
+1. **Widen `pendingPayment`** — the ward-only stopped-table state — into a general "a cost the game
+   demands", with the consequence named (counter that object, or sacrifice this permanent).
+2. **Let a card compute its question when it is asked**, the way `NumberDecisionSpec.range` already
+   computes its bounds.
+
+**The second, and the reason is that echo already exists.** Echo asks its question through the
+decision machinery; routing cumulative upkeep through `pendingPayment` would give the pool two
+mechanisms for one question shape — "pay or lose it" — with two reducer paths, two client modes, two
+bot branches and two places for the next keyword to be written wrongly. Widening the thing that was
+already nearly right is cheaper than building its twin.
+
+And it *was* nearly right. `DecisionSpecOf` is "a spec, or a function of the state and the source",
+and it is resolved in exactly one place: `decisionSpecsFor`, which every reader of a card's questions
+already went through — the plan, the asking, the payment for a priced answer, and the fallback when
+that payment turns out to be impossible. Four readers, one funnel, no consumer downstream learns that
+a question can be computed.
+
+Two orderings make it correct, and both are written on the type:
+
+- The age counter is added in **`beforeDecisions`**, which runs before any question is planned, so
+  the counter is on the card by the time the price is read.
+- The function must be **pure** and read nothing that can change between the question and its answer,
+  because the engine resolves it more than once and the three resolutions must agree.
+
+One place could not use it and says so: the bot's `chosenNumberIsNothing` rule reads a *spell's*
+decisions before the cast, where there is no stack object and so no source to compute from. It skips
+computed questions, which costs nothing — nothing with a computed question is a number question.
+
+### The measurement, and a card with no fair payer
+
+Mystic Remora ({U} enchantment, cumulative upkeep {1}, two cards whenever an opponent casts a
+noncreature spell) went into Tidal Mind. **There is no card in that deck that does nearly what it
+does at nearly its price**, so this slot cannot read the keyword the way the Rift Bolt and Search for
+Tomorrow slots did. What it can do is **bracket** it, which is D207's remedy applied up front rather
+than after a surprise:
+
+| payer | seeds 3300 | seeds 5100 |
+| --- | --- | --- |
+| the second Man-o'-War (a card this deck gets a lot out of) | −9 | −10 |
+| Tormod's Crypt (the most marginal card in the list) | +2 | −8 |
+
+Both pairs are inside the ±20 floor, so neither is a result. But the signs are informative: against a
+good card the Remora is **consistently a little worse**, and against a marginal one it is level. The
+honest summary is that this card is a wash in this deck, and the slot is justified by the pool
+needing a card behind the keyword rather than by a win-rate gain — the same "kept anyway, and here is
+why" D212 recorded for the dredge rule.
+
+**The alternative, with its numbers, rather than a silent preference**: the Crypt's slot is the
+better home by the readings above, and it is not taken only because the Crypt is the pool's single
+copy and two tests plus the script-coverage test need it to exist somewhere. Moving it to another
+deck to free that slot would mean an unmeasured change to a second deck, which is worth doing
+deliberately or not at all.
+
+### The browser row proves the one thing the engine tests cannot
+
+`LIST=upkeep` plays eight Remoras and requires **two different prices** to have been pressed. The
+engine's tests pin the arithmetic on a board built by hand; what they cannot see is the **button**.
+The question is rebuilt on each asking, so a table that re-rendered the first one would offer
+`Pay {1}` against a cost of `{2}`, the engine would refuse the payment, and the permanent would go
+with the player unable to see why. Two prices in one run is that claim, and nothing weaker is worth
+a row.

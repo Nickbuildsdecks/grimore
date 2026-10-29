@@ -692,6 +692,27 @@ export type DecisionSpec =
   | CardsDecisionSpec | ChoiceDecisionSpec | NumberDecisionSpec | TargetDecisionSpec
   | CountersDecisionSpec;
 
+/**
+ * A question, or a **card that works out its question when it is asked** (CR 702.24b).
+ *
+ * Four of the five shapes are facts about the card: the words of a modal choice, the zone a search
+ * reads, how many to sacrifice. Cumulative upkeep is not. Its price is "its upkeep cost for each age
+ * counter on it", and the counter goes on as the ability resolves — so the cost, the words on the
+ * buttons and the prompt are all facts about *this* resolution, and a static spec cannot hold any of
+ * them.
+ *
+ * `NumberDecisionSpec.range` had already met half of this problem and solved it the same way: a
+ * function, evaluated when the question is put. This widens that from one field to the whole spec,
+ * which is cheaper than it sounds — **every** reader of a card's questions goes through
+ * `decisionSpecsFor`, so the thunk is resolved in one place and nothing downstream knows it existed.
+ *
+ * The function must be **pure** and must read only things that cannot change between the question
+ * being asked and the answer being applied: the engine resolves it more than once (to plan the
+ * questions, to ask one, to pay for the answer) and the three must agree. An age counter put on by
+ * `beforeDecisions` is safe, because that runs before any of them.
+ */
+export type DecisionSpecOf = DecisionSpec | ((state: GameState, source: string) => DecisionSpec);
+
 /** Whether a question is the kind whose answer is a word. Narrows for TypeScript as well. */
 export const isChoiceDecision = (spec: DecisionSpec): spec is ChoiceDecisionSpec =>
   spec.options !== undefined;
@@ -747,7 +768,7 @@ export interface TriggerDef {
   readonly condition?: ConditionFn;
   readonly targets?: readonly TargetSpec[];
   /** Questions asked while it resolves. See `DecisionSpec`. */
-  readonly decisions?: readonly DecisionSpec[];
+  readonly decisions?: readonly DecisionSpecOf[];
   /** What it does before those questions are asked. See `CardScript.beforeDecisions`. */
   readonly beforeDecisions?: EffectFn;
   readonly effect: EffectFn;
@@ -887,7 +908,7 @@ export interface AbilityDef {
    */
   readonly produces?: readonly ManaType[];
   /** Questions asked while it resolves. See `DecisionSpec`. */
-  readonly decisions?: readonly DecisionSpec[];
+  readonly decisions?: readonly DecisionSpecOf[];
   /** What it does before those questions are asked. See `CardScript.beforeDecisions`. */
   readonly beforeDecisions?: EffectFn;
   readonly effect?: EffectFn;
@@ -969,7 +990,7 @@ export interface ModeDef {
   readonly description: string;
   readonly targets?: readonly TargetSpec[];
   /** Questions asked while this mode resolves. See `DecisionSpec`. */
-  readonly decisions?: readonly DecisionSpec[];
+  readonly decisions?: readonly DecisionSpecOf[];
   readonly effect: EffectFn;
   /**
    * See `CardScript.expiresAtEndOfTurn`. On the mode rather than the card, because a charm's other
@@ -1031,7 +1052,7 @@ export interface CardScript {
   /**
    * Questions asked while the spell resolves, answered before `onResolve` runs. See `DecisionSpec`.
    */
-  readonly decisions?: readonly DecisionSpec[];
+  readonly decisions?: readonly DecisionSpecOf[];
   /**
    * What the spell does *before* its questions are asked.
    *
@@ -1251,6 +1272,23 @@ export interface CardScript {
    */
   readonly echo?: {
     /** The echo cost, in the printed `{2}{G}` form. Usually the card's own mana cost. */
+    readonly cost: string;
+  };
+  /**
+   * Cumulative upkeep: an age counter each upkeep, then that cost **for each counter**
+   * (CR 702.24).
+   *
+   * Echo's shape with a price that climbs, and the reason `DecisionSpecOf` exists: the words, the
+   * prompt and the cost are facts about this resolution rather than about the card, so the question
+   * is computed when it is asked. Unlike echo there is no flag and no "once" — it is asked every
+   * upkeep for as long as the permanent is there, and the keyword *is* the climb.
+   *
+   * Read nowhere but the card that declares it, like `echo`: the trigger built by
+   * `cumulativeUpkeepTrigger` carries the behaviour. It is here so the pool can be audited for the
+   * keyword and so the table can say what a permanent owes.
+   */
+  readonly cumulativeUpkeep?: {
+    /** One lot of the upkeep cost, in the printed `{1}` form; the climb multiplies it. */
     readonly cost: string;
   };
   /**

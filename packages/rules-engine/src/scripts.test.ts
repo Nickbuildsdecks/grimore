@@ -20,7 +20,7 @@ import {
   packView, parseManaCost, pendingDeclaration, proliferate, proliferateCandidates, protectedFrom,
   pump, pumpAll, pumpTeam, scriptFor,
   scriptedCardNames,
-  staticEffect, unpackView, viewFor,
+  staticEffect, timesCost, unpackView, viewFor,
   type ContinuousEffect,
 } from './index.js';
 import {
@@ -16745,5 +16745,98 @@ describe('echo: the first cost the game asks for', () => {
     expect(namesIn(s, 0, 'graveyard')).toContain('Yavimaya Granger');
     // The land it fetched is still there, which is what makes paying a judgement rather than a must.
     expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Forest').length).toBe(4);
+  });
+});
+
+describe('cumulative upkeep: the price that climbs', () => {
+  /*
+    Echo's shape with the one thing echo did not have — a cost that is different every time it is
+    asked (CR 702.24b). The age counter goes on as the ability resolves and the price is read off the
+    counters, so the question is a fact about *this* resolution rather than about the card, which is
+    why `DecisionSpecOf` exists.
+
+    So the tests are the climb: one, then two, then three, and the permanent going when the climb
+    outruns what the seat can spare.
+  */
+  const cast = (lands: number, theirs: readonly string[] = []): GameState => {
+    let s = arena({
+      decks: { 0: 'tidal-mind', 1: 'ember-rush' },
+      hands: { 0: ['Mystic Remora'] },
+      battlefield: { 0: Array.from({ length: lands }, () => 'Island'), 1: [...theirs] },
+      turn: 5, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Island'), abilityIndex: 0 });
+    return drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Mystic Remora') }), 40);
+  };
+
+  /** Seat 0's next upkeep, with the trigger resolved far enough to be asking. */
+  const myNextUpkeep = (s: GameState): GameState => drain(nextTurn(nextTurn(s)), 40);
+
+  it('asks for one, then two, then three, and the counter is on the card', () => {
+    let s = cast(6);
+    const remora = find(s, 0, 'battlefield', 'Mystic Remora');
+
+    for (const expected of ['{1}', '{2}', '{3}']) {
+      s = myNextUpkeep(s);
+      const ask = s.pendingDecision;
+      expect(ask?.options).toEqual(['Sacrifice it', `Pay ${expected}`]);
+      expect(ask?.prompt).toContain(`pay ${expected}`);
+      s = drain(apply(s, { type: 'auto:decide', by: 0, option: `Pay ${expected}` }), 40);
+      expect(namesIn(s, 0, 'battlefield')).toContain('Mystic Remora');
+    }
+    // Three upkeeps, three age counters: the climb is on the card rather than in a counter somewhere.
+    expect(s.instances[remora]!.counters['age']).toBe(3);
+  });
+
+  it('goes when the climb outruns the lands, with no question asked', () => {
+    /*
+      Two Islands, one of them spent on the Remora itself. The first upkeep asks for {1} and is
+      payable; the second asks for {2}, which two Islands can still pay; the third asks for {3} and
+      cannot be — so the option with the price on it is not offered, the question has one answer, and
+      the engine takes it without stopping the table.
+    */
+    let s = cast(2);
+    s = drain(apply(myNextUpkeep(s), { type: 'auto:decide', by: 0, option: 'Pay {1}' }), 40);
+    s = drain(apply(myNextUpkeep(s), { type: 'auto:decide', by: 0, option: 'Pay {2}' }), 40);
+    s = myNextUpkeep(s);
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'graveyard')).toContain('Mystic Remora');
+  });
+
+  it('is asked every upkeep, unlike echo, which is asked once', () => {
+    // The second upkeep asks again, which is the difference between the two keywords.
+    let s = myNextUpkeep(cast(6));
+    expect(s.pendingDecision).not.toBeNull();
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Pay {1}' }), 40);
+    s = myNextUpkeep(s);
+    expect(s.pendingDecision?.options).toEqual(['Sacrifice it', 'Pay {2}']);
+  });
+
+  it('draws two off an opponent noncreature spell, which is what it is paying for', () => {
+    let s = cast(6, ['Mountain', 'Mountain']);
+    s = drain(apply(myNextUpkeep(s), { type: 'auto:decide', by: 0, option: 'Pay {1}' }), 40);
+    // Seat 1's turn, and a Shock from its hand: a noncreature spell, cast by an opponent.
+    s = nextTurn(s);
+    s = advanceTo(s, 'precombat-main');
+    const shock = find(s, 1, 'library', 'Shock');
+    s = apply(s, { type: 'card:move', by: 1, card: shock, toZone: 'hand' });
+    s = apply(s, { type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    const before = ids(s, 0, 'hand').length;
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 1, card: shock, targets: [{ kind: 'player', seat: 0 }],
+    }), 40);
+    // The Remora's own question, answered by its controller rather than by the caster.
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Draw two' }), 40);
+    expect(ids(s, 0, 'hand').length).toBe(before + 2);
+  });
+
+  it('a cost of one colour is repeated rather than multiplied', () => {
+    // {U} twice is {U}{U}, because there is no symbol for "two blue" — the collapsed form only
+    // exists for generic mana, and `timesCost` is where that distinction lives.
+    expect(timesCost('{1}', 3)).toBe('{3}');
+    expect(timesCost('{U}', 2)).toBe('{U}{U}');
+    expect(timesCost('{1}{B}', 2)).toBe('{1}{B}{1}{B}');
+    expect(timesCost('{2}', 1)).toBe('{2}');
   });
 });

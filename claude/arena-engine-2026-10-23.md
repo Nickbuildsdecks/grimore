@@ -5945,6 +5945,38 @@ The bot's rule is "pay", and it is **not priced head to head** — a card's `bes
 the options into that call would make every card-authored bot answer measurable at once; D214 leaves
 it as an open question rather than doing it badly here.
 
+### Cumulative upkeep, and the question a card works out when it is asked (D215)
+
+Echo is a cost the game asks for, once. Cumulative upkeep (CR 702.24) is the same question every
+upkeep with the one thing echo did not have: **the price climbs**. An age counter goes on as the
+ability resolves, the cost is that counter's worth for each one on the card, and a permanent worth a
+mana a turn stops being worth it somewhere around the fourth.
+
+`payIfChosen` is a static pair, and here the cost, the prompt and the words on the buttons are facts
+about *this* resolution. Two shapes could carry that: widen `pendingPayment` — the ward-only stopped
+table — into a general "a cost the game demands", or let a card **compute its question when it is
+asked**, the way `NumberDecisionSpec.range` already computes its bounds. The second, because echo
+already asks through the decision machinery and the first would have given the pool two mechanisms
+for one question shape, with two reducer paths and two places for the next keyword to go wrong.
+
+`DecisionSpecOf` is "a spec, or a function of the state and the source", resolved in exactly one
+place — `decisionSpecsFor`, which the plan, the asking, the payment and the impossible-payment
+fallback all already went through. Four readers, one funnel. Two orderings keep it honest and both
+are on the type: the counter is added in `beforeDecisions`, before any question is planned, and the
+function must be pure, because the engine resolves it more than once and the resolutions must agree.
+
+Mystic Remora went into Tidal Mind, and **there is no fair payer for it in that deck** — so the slot
+is bracketed rather than reported as one number: **−9/−10** of 288 against the second Man-o'-War (a
+card the deck gets a lot out of) and **+2/−8** against Tormod's Crypt (the most marginal card in the
+list). Both inside the ±20 floor, so neither is a result; the honest summary is that the card is a
+wash in this deck, and the slot is justified by the pool needing a card behind the keyword rather
+than by a win-rate gain.
+
+`LIST=upkeep` requires **two different prices** to have been pressed through a real browser, which is
+the one thing the engine tests cannot see: the question is rebuilt on each asking, so a table that
+re-rendered the first one would offer `Pay {1}` against a cost of `{2}`, the engine would refuse, and
+the permanent would go with the player unable to see why.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
