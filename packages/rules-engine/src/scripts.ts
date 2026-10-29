@@ -31,7 +31,7 @@ import {
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
   becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, EVOKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
-  addEnergy, energyOf, spendEnergy,
+  addEnergy, energyOf, spendEnergy, bottomPile,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
@@ -6107,6 +6107,65 @@ const SUNSCOURGE_CHAMPION: CardScript = {
   abilities: [eternalize('{5}{W}{W}', 'Token Creature \u2014 Zombie Human Cleric')],
 };
 
+/*
+  Miracle (CR 702.94), and the two cards that carry it.
+
+  The first cost in this engine conditioned on **when in the turn** a card arrived: "you may cast
+  this for its miracle cost when you draw it, if it's the first card you drew this turn". So it is
+  not an alternative cost on a card in your hand like evoke or spectacle, and not a cast out of
+  another zone like flashback — it is an **offer**, made by the engine at the moment of the draw,
+  with the card still in the hand it has just arrived in.
+
+  Which is why the field is a cost and nothing else: `settle` raises the offer as it drains the
+  draws (the only place the engine knows a card was *drawn* rather than put into a hand), the card
+  stays put if you decline, and the same `pendingOfferedCast` machinery cascade and madness already
+  use carries the question to the table. See `CardScript.miracle` and `GameState.drew`.
+
+  Both cards are deliberately spells whose printed cost the deck will almost never pay. That is
+  what the keyword is for: a Thunderous Wrath is six mana for five damage, which is a bad card, and
+  {R} for five damage, which is one of the best burn spells ever printed — and the only difference
+  is whether you drew it off the top this turn or had it in your opening hand.
+*/
+
+/**
+ * Thunderous Wrath: five damage for {R}, or six mana for five damage.
+ *
+ * The clearest statement of the keyword in print. In Arc Tempest, which is the deck whose plan is
+ * spells and whose curve stops at four — so the printed cost is a card it would never cast, and
+ * the miracle is a Lightning Bolt and two thirds.
+ */
+const THUNDEROUS_WRATH: CardScript = {
+  name: 'Thunderous Wrath',
+  miracle: { cost: '{R}' },
+  targets: [ANY_TARGET],
+  onResolve: (c) => damageFirstTarget(c, 5),
+};
+
+/**
+ * Terminus: every creature on the bottom of its owner's library, for {W}.
+ *
+ * The other half of what miracle is: a sweeper that answers a board no removal spell can, and the
+ * reason it is printed at five mana is that for {W} it would be unfair. It is also the cleanest
+ * sweeper this pool has — nothing dies, so nothing that watches a death sees anything, and nothing
+ * can be bought back out of a graveyard afterwards because the creatures are not in one.
+ *
+ * `bottomPile` is the whole effect and it already does the right thing: each card goes to the
+ * bottom of **its owner's** library, which is what the card says, and in a random order, which the
+ * card leaves unspecified. It is the same function cascade uses for its leftovers.
+ *
+ * Its own creatures too. Skyward Writ holds the ground with Walls and wins in the air, so a
+ * Terminus is a card it casts when it is losing on board rather than one it builds around — which
+ * is the decision the card is for.
+ */
+const TERMINUS: CardScript = {
+  name: 'Terminus',
+  miracle: { cost: '{W}' },
+  onResolve: (c) => bottomPile(c.state, battlefield(c.state, (id) => {
+    const inst = c.state.instances[id];
+    return inst !== undefined && characteristicsOf(c.state, inst).isCreature;
+  })),
+};
+
 const THICKET_BASILISK: CardScript = {
   name: 'Thicket Basilisk',
   triggers: [
@@ -6986,6 +7045,7 @@ const ALL: readonly CardScript[] = [
   tapLand('Hagra Broodpit', 'B'), tapLand('Vastwood Thicket', 'G'),
   SQUID, CHASM_SKULKER, FATE_UNRAVELER,
   SACRED_CAT, ANGEL_OF_SANCTIONS, ADORNED_POUNCER, SUNSCOURGE_CHAMPION,
+  THUNDEROUS_WRATH, TERMINUS,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

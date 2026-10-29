@@ -547,8 +547,21 @@ export interface AutomationState {
    *
    * It records only the cards that were really drawn. A seat drawing from an empty library draws
    * nothing and loses the game (CR 704.5b), and nothing should trigger off the card it did not get.
+   *
+   * **Each entry carries the card and its place in the seat's turn**, which it did not when it was
+   * only a seat index. Miracle is why (D204): "you may cast this for its miracle cost when you draw
+   * it, if it's the **first** card you drew this turn" (CR 702.94a) is a question about a particular
+   * card *and* about its position, and `nth` is the only honest way to say the second half — a count
+   * compared afterwards cannot tell the first card of a `draw(2)` from the second, because by then
+   * both have arrived. `nth` is one-based and counts that seat's own draws since the turn began,
+   * which is what `cardsDrawnThisTurn` is the running total of.
    */
-  readonly drew: readonly SeatIndex[];
+  readonly drew: readonly {
+    readonly seat: SeatIndex;
+    readonly card: string;
+    /** One-based: this card was the `nth` this seat drew this turn. */
+    readonly nth: number;
+  }[];
   /**
    * Cards that have arrived in somebody's graveyard and whose arrival nobody has announced yet.
    * Drained by `settle`.
@@ -724,6 +737,23 @@ export interface AutomationState {
    * somebody's end step was lost *this* turn.
    */
   readonly lifeLostThisTurn: Readonly<Record<string, number>>;
+  /**
+   * How many cards each seat has **drawn this turn**, keyed by seat index as a string.
+   *
+   * The third thing this engine remembers about a turn rather than about a permanent or a seat, and
+   * the third member of a family that keeps growing for the same reason: a keyword asked a question
+   * the board could not answer. Storm needed `spellsCastThisTurn`, spectacle needed
+   * `lifeLostThisTurn`, and miracle needs this one (CR 702.94a).
+   *
+   * Counted in `draw` and nowhere else, which is the discipline `drew` already follows: a card put
+   * into a hand by a Gravedigger or a Diabolic Tutor was not *drawn*, so it does not count here
+   * either, and a seat drawing from an empty library draws nothing and adds nothing.
+   *
+   * Reset in the cleanup step beside the other two. The number miracle cares about is the one
+   * **before** the card arrived, which is why each entry in `drew` carries its own `nth` rather
+   * than reading this field after the fact.
+   */
+  readonly cardsDrawnThisTurn: Readonly<Record<string, number>>;
   readonly pendingOfferedCast: {
     /** Who may cast it: the controller of the ability that offered it. */
     readonly seat: SeatIndex;
@@ -756,6 +786,18 @@ export interface AutomationState {
      * declining has to finish the move the replacement interrupted.
      */
     readonly toGraveyard?: true;
+    /**
+     * Declining leaves the card exactly where it is, which for miracle is the **hand**.
+     *
+     * The third disposition, and the one that is not a move at all. A cascade hit declined is
+     * already where it belongs and goes to the bottom with its pile; a madness card declined
+     * finishes the discard it interrupted. A miracle card declined is simply a card in your hand
+     * that you chose not to cast for {R} — you may still cast it later for its printed cost, which
+     * is the whole shape of the keyword (CR 702.94a). Without this the decline path would bottom
+     * the card, which is how the first version of it behaved and is a strictly worse card than the
+     * printed one.
+     */
+    readonly stays?: true;
     /** The spell or permanent whose keyword did this, for the table to point at. */
     readonly source: string;
   } | null;

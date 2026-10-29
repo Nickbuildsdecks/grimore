@@ -1,12 +1,14 @@
 /**
  * What does the engine offer you, and do you take it?
  *
- * Two keywords share one piece of machinery — `pendingOfferedCast`, the engine stopping the table
- * to say "you may cast this card" — and both of them turn on a distribution rather than on a rule.
+ * Three keywords share one piece of machinery — `pendingOfferedCast`, the engine stopping the table
+ * to say "you may cast this card" — and all three turn on a distribution rather than on a rule.
  * **Cascade** reads like a free spell and is not one: it is a free spell drawn off the top of a
  * sixty-card deck, and twenty-three of those cards are lands it walks straight past. **Madness** is
  * a cheap spell you only get if you were discarding it anyway, and only if the mana is up when the
- * discard happens. So this watches the offers themselves.
+ * discard happens. And **miracle** is the narrowest of the three: two cards in sixty, and only on
+ * the turn's *first* draw — so the number that matters is not how good the card is but how often
+ * the deck gets to look at it. So this watches the offers themselves.
  *
  * Three questions, in the order a player would ask them:
  *
@@ -108,6 +110,8 @@ let affordableChances = 0;
  * onto the message of the action that provoked it.
  */
 let unaffordable = 0;
+/** Turns in which a seat drew a first card: the only window a miracle can be offered in. */
+let firstDraws = 0;
 
 const bump = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
 const nameOf = (s, id) => s.cardDefs[s.instances[id]?.defKey ?? '']?.name ?? '?';
@@ -153,6 +157,18 @@ function duel(seed, decks) {
     for (const entry of s.log.slice(logged)) {
       if (/could not be paid/.test(entry.message ?? '')) unaffordable += 1;
     }
+    /*
+      First draws, which are miracle's denominator.
+
+      A seat's draw count going from nothing to something is the turn's first card, and that is the
+      only moment the keyword can fire — so "six offers" means nothing without "and four hundred
+      first draws". Read off `cardsDrawnThisTurn` rather than off `drew`, because `settle` drains
+      that list before anything outside the engine can see it.
+    */
+    for (const i of [0, 1]) {
+      if ((was.cardsDrawnThisTurn[String(i)] ?? 0) === 0
+        && (s.cardsDrawnThisTurn[String(i)] ?? 0) > 0) firstDraws += 1;
+    }
     for (const i of [0, 1]) {
       const held = new Set(s.zones[`${i}:hand`] ?? []);
       const gone = hands[i].filter((id) => !held.has(id) && id !== castId);
@@ -190,13 +206,20 @@ function duel(seed, decks) {
     if (now !== null && now.card !== offer?.card) {
       bump(byCascader, nameOf(s, now.source));
       bump(hits, nameOf(s, now.card));
-      depths.push(now.bottom.length + 1);
+      // `bottom` is cascade's pile and is absent for the other two keywords, which read as depth
+      // one: a madness or miracle offer digs through nothing at all.
+      depths.push((now.bottom ?? []).length + 1);
       offer = now;
     } else if (now === null && offer !== null) {
-      // The offer is gone, so it was answered: cast when the card left exile, declined when it
-      // went back into the library. The pile goes to the bottom either way.
+      /*
+        The offer is gone, so it was answered — and *where the card ended up* is how to tell which
+        way, which means the test is different for each keyword's disposition. A cascade hit goes
+        back to the library when declined; a miracle card **stays in the hand it was drawn into**,
+        so reading "not in the library" as "cast" would count every declined miracle as a cast.
+      */
       const where = s.instances[offer.card]?.zone;
-      if (where === 'library') declined += 1;
+      const kept = offer.stays === true ? where === 'hand' : where === 'library';
+      if (kept) declined += 1;
       else cast += 1;
       offer = null;
     }
@@ -230,6 +253,7 @@ console.log('');
 console.log(`${discards} cards were discarded: ${discardsOfMadness} of them had madness, and`
   + ` ${discardsWithMadnessInHand} were discarded out of a hand that was holding one`);
 console.log(`${unaffordable} offers were taken back because the cost could not be paid`);
+console.log(`${firstDraws} turns had a first card drawn in them, which is what miracle has to hit`);
 console.log(`of those missed chances, ${affordableChances} had the madness cost payable at the time`);
 console.log('');
 console.log('what was offered:');

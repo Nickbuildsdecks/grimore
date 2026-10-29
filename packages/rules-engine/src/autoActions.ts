@@ -1333,7 +1333,14 @@ function pass(state: GameState, action: { by: SeatIndex }): Outcome {
     }
     const name = state.cardDefs[state.instances[offer.card]?.defKey ?? '']?.name ?? 'it';
     let next: GameState = { ...state, pendingOfferedCast: null };
-    if (offer.toGraveyard === true) {
+    if (offer.stays === true) {
+      /*
+        Miracle: the card is in the hand it was just drawn into, and declining is not a move at all
+        — you may still cast it later for its printed cost (CR 702.94a). There is no pile either,
+        so there is nothing to do but clear the offer. See `pendingOfferedCast.stays`.
+      */
+      next = bottomPile(next, offer.bottom ?? []);
+    } else if (offer.toGraveyard === true) {
       const card = next.instances[offer.card];
       if (card !== undefined) next = relocate(next, card, 'graveyard', card.owner, 'bottom');
       next = bottomPile(next, offer.bottom ?? []);
@@ -1345,7 +1352,9 @@ function pass(state: GameState, action: { by: SeatIndex }): Outcome {
       message: `${seatName(state, action.by)} declines to cast ${name}`,
       data: {
         declined: offer.card,
-        ...(offer.toGraveyard === true
+        ...(offer.stays === true
+          ? { kept: true }
+          : offer.toGraveyard === true
           ? { toGraveyard: true }
           : { bottomed: (offer.bottom ?? []).length + 1 }),
       },

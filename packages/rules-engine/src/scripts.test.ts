@@ -13099,6 +13099,226 @@ describe('embalm and eternalize: a token copy of the card, with different charac
   });
 });
 
+describe('miracle: the cast offered the moment you draw it', () => {
+  /*
+    The first cost in this engine conditioned on **when in the turn** a card arrived.
+
+    Not an alternative cost on a card in hand like evoke, and not a cast out of another zone like
+    flashback: an **offer**, made by the engine as the card is drawn, with the card still in the
+    hand it has just arrived in. So the tests are about the three things that are new — the
+    condition ("the first card you drew this turn"), the window (the draw itself), and the one
+    disposition no other offer has: declining leaves the card where it is.
+
+    The draw is the real draw step rather than a card that draws, which took a false start to get
+    right: `arena` ends up in the active seat's **main phase**, so that turn's draw has already
+    happened and anything drawn after it is the turn's second card. Putting the card on top and
+    playing on to the next turn is the only way to be the first.
+  */
+  const onTop = (top: string, board: readonly string[], deck = 'arc-tempest'): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: deck, 1: 'rot-harvest' },
+      battlefield: { 0: [...board] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    // Where a Preordain would have put it.
+    return apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'library', top), toZone: 'library', position: 'top',
+    });
+  };
+  /**
+   * Plays on until an offer is standing, or until the game stops for something else.
+   *
+   * `nextTurn` cannot be used here: it passes priority until the turn counter moves, and an offer
+   * takes priority away from everybody — so it would throw "nobody holds priority" on the very
+   * state these tests are about.
+   */
+  const untilOffered = (start: GameState): GameState => {
+    let s = start;
+    for (let i = 0; i < 200; i += 1) {
+      if (s.pendingOfferedCast !== null) return s;
+      const owed = pendingDeclaration(s);
+      if (owed !== null) {
+        for (const seat of owed.seats) {
+          s = owed.kind === 'attackers'
+            ? apply(s, { type: 'auto:attack', by: seat, attackers: [] })
+            : apply(s, { type: 'auto:block', by: seat, blocks: [] });
+        }
+        continue;
+      }
+      const discard = s.pendingDiscard;
+      if (discard !== null) {
+        s = apply(s, { type: 'auto:discard', by: discard.seat, card: ids(s, discard.seat, 'hand')[0]! });
+        continue;
+      }
+      if (s.priority === null) throw new Error(`nobody holds priority at ${s.step}`);
+      s = apply(s, { type: 'auto:pass', by: s.priority });
+    }
+    throw new Error('no offer was ever made');
+  };
+  /** Plays on to seat 0's next draw step without stopping for an offer. */
+  const toMyNextDraw = (s: GameState): GameState => untilOffered(s);
+
+  const MOUNTAINS = ['Mountain', 'Mountain', 'Mountain'];
+
+  it('offers the card for its miracle cost as the first card drawn this turn', () => {
+    const s = toMyNextDraw(onTop('Thunderous Wrath', MOUNTAINS));
+    expect(s.step).toBe('draw');
+    expect(s.activeSeat).toBe(0);
+    expect(s.cardsDrawnThisTurn['0']).toBe(1);
+
+    const offer = s.pendingOfferedCast;
+    expect(offer?.seat).toBe(0);
+    expect(nameOf(s, offer?.card ?? '')).toBe('Thunderous Wrath');
+    expect(offer?.cost).toBe('{R}');
+    // The one disposition no other offer has: the card is in hand and declining will not move it.
+    expect(offer?.stays).toBe(true);
+    expect(s.instances[offer!.card]!.zone).toBe('hand');
+
+    // And the only play offered is the cheap one, at {R} rather than the printed {4}{R}{R}.
+    const you = legalActions(s, 0);
+    expect(you.passLabel).toBe('Decline');
+    expect(you.plays.map((play) => play.manaCost)).toEqual(['{R}']);
+    expect(you.plays[0]?.offered).toBe(true);
+    expect(you.mustCastOffered?.cost).toBe('{R}');
+  });
+
+  it('and five damage for one mana is what it buys', () => {
+    let s = toMyNextDraw(onTop('Thunderous Wrath', MOUNTAINS));
+    const wrath = s.pendingOfferedCast!.card;
+    const before = life(s, 1);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: wrath, offered: true, targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    expect(life(s, 1)).toBe(before - 5);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Thunderous Wrath');
+    // One Mountain tapped, not six: {R} was paid rather than the printed {4}{R}{R}.
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(1);
+  });
+
+  it('declining leaves it in hand, which is the whole shape of the keyword', () => {
+    /*
+      The disposition that is not a move. A cascade hit declined goes to the bottom with its pile
+      and a madness card declined finishes its discard; a miracle card declined is a card in your
+      hand you chose not to cast for {R}, and you may still cast it for {4}{R}{R} later. The first
+      version of the decline path bottomed it, which is a strictly worse card than the printed one.
+    */
+    let s = toMyNextDraw(onTop('Thunderous Wrath', MOUNTAINS));
+    const wrath = s.pendingOfferedCast!.card;
+    s = drain(apply(s, { type: 'auto:pass', by: 0 }), 40);
+    expect(s.pendingOfferedCast).toBeNull();
+    expect(s.instances[wrath]!.zone).toBe('hand');
+    // The card itself rather than the name: Arc Tempest runs two, and the other is still on top
+    // of a library it was never drawn from.
+    expect(ids(s, 0, 'hand')).toContain(wrath);
+  });
+
+  it('is not offered on the second card drawn in a turn (CR 702.94a)', () => {
+    /*
+      A Think Twice after the draw step: the Wrath is the turn's *second* card and the keyword says
+      nothing about it. Which is also the thing `nth` on the draw exists for — by the time the
+      second card has arrived, a count of the turn's draws cannot tell it from the first.
+    */
+    let s = onTop('Thunderous Wrath', [...MOUNTAINS, 'Island', 'Island']);
+    // A land above it, so the draw step finds the land and the Think Twice finds the Wrath.
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'library', 'Think Twice'), toZone: 'hand',
+    });
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'library', 'Mountain'),
+      toZone: 'library', position: 'top',
+    });
+    // No offer on the way to this seat's main phase, because the first card was the Mountain.
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(s.pendingOfferedCast).toBeNull();
+    expect(s.cardsDrawnThisTurn['0']).toBe(1);
+
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Think Twice') }), 40);
+    expect(s.cardsDrawnThisTurn['0']).toBe(2);
+    expect(s.pendingOfferedCast).toBeNull();
+    expect(namesIn(s, 0, 'hand')).toContain('Thunderous Wrath');
+  });
+
+  it('and not on a card put into your hand without drawing it', () => {
+    // The distinction `GameState.drew` exists for: a Gravedigger and a Man-o'-War put cards in a
+    // hand and nobody drew one, so the keyword never sees them.
+    let s = onTop('Thunderous Wrath', MOUNTAINS);
+    const wrath = find(s, 0, 'library', 'Thunderous Wrath');
+    s = drain(apply(s, { type: 'card:move', by: 0, card: wrath, toZone: 'hand' }), 40);
+    expect(s.pendingOfferedCast).toBeNull();
+  });
+
+  it('the turn\u2019s draw count resets, so the next turn has a first card again', () => {
+    let s = toMyNextDraw(onTop('Thunderous Wrath', MOUNTAINS));
+    expect(s.cardsDrawnThisTurn['0']).toBe(1);
+    s = drain(apply(s, { type: 'auto:pass', by: 0 }), 40);
+    // Over the turn boundary, which is where the cleanup step clears it beside the spell count
+    // and the turn's life loss.
+    s = nextTurn(s);
+    expect(s.cardsDrawnThisTurn['0'] ?? 0).toBe(0);
+  });
+
+  it('is taken back when the miracle cost cannot be paid, and the card stays in hand', () => {
+    /*
+      A question with one answer is not a question (CR 601.2h), and `settleOffer` answers it. Two
+      Islands cannot pay {R}, so the table is never stopped — and the card is simply a card in hand.
+    */
+    const s = advanceTo(nextTurn(nextTurn(onTop('Thunderous Wrath', ['Island', 'Island']))), 'precombat-main');
+    expect(s.pendingOfferedCast).toBeNull();
+    expect(namesIn(s, 0, 'hand')).toContain('Thunderous Wrath');
+    /*
+      And the table was never stopped: `nextTurn` walked straight through the draw step, which it
+      cannot do while an offer is standing. The note saying so travels on the action's own message
+      rather than in the state — `autoActions` drains `replacements` into the log at the end of
+      every automated action — so there is nothing here to read it from, which is why this test
+      asserts the behaviour instead of the sentence.
+    */
+    expect(legalActions(s, 0).hasPriority).toBe(true);
+  });
+
+  it('Terminus puts every creature on the bottom of its owner\u2019s library, and kills none of them', () => {
+    /*
+      The other card, and the cleanest sweeper in the pool: nothing dies, so nothing that watches a
+      death sees anything and nothing can be bought back out of a graveyard afterwards. Its own
+      creatures go too.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'rot-harvest' },
+      hands: { 0: ['Terminus'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains', 'Island', 'Island', 'Wall of Air'],
+        1: ['Gravedigger', 'Blood Artist'],
+      },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const wall = find(s, 0, 'battlefield', 'Wall of Air');
+    const theirs = find(s, 1, 'battlefield', 'Gravedigger');
+    const before = life(s, 0);
+
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Terminus') }), 40);
+    expect(s.instances[wall]!.zone).toBe('library');
+    expect(s.instances[theirs]!.zone).toBe('library');
+    // Each to its **own** owner's library, which is what the card says.
+    expect(s.instances[wall]!.zoneSeat).toBe(0);
+    expect(s.instances[theirs]!.zoneSeat).toBe(1);
+    // Nothing died, so the Blood Artist beside it drained nobody.
+    expect(namesIn(s, 1, 'graveyard')).not.toContain('Gravedigger');
+    expect(life(s, 0)).toBe(before);
+    // The lands stay: "all creatures" is all it says.
+    expect(namesIn(s, 0, 'battlefield')).toContain('Plains');
+  });
+
+  it('and is offered for {W} off the top, out of a deck that would rather not pay five', () => {
+    const s = toMyNextDraw(onTop('Terminus', ['Plains', 'Plains'], 'skyward-writ'));
+    const offer = s.pendingOfferedCast;
+    expect(nameOf(s, offer?.card ?? '')).toBe('Terminus');
+    expect(offer?.cost).toBe('{W}');
+    expect(legalActions(s, 0).plays.map((play) => play.manaCost)).toEqual(['{W}']);
+    // A **sorcery**, offered in the draw step: the keyword says when, not the card's type line.
+    expect(s.step).toBe('draw');
+  });
+});
+
 describe('monstrosity and adapt: a creature that grows once and stays grown', () => {
   /*
     Two keywords whose difference is one word of placement, and the tests are about that word.

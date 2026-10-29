@@ -961,16 +961,63 @@ export function draw(state: GameState, seat: SeatIndex, count: number): GameStat
     for why it is recorded here rather than worked out by comparing hands: every path that draws a
     card comes through this function — the draw step, the crown, and two dozen card effects — and
     no other path puts a card in a hand *by drawing it*.
+
+    Each entry carries the card and its place in the seat's turn, and the running total moves with
+    them. `before` is read once rather than per card so the ordinals are the seat's own draws since
+    the turn began — the first card of a `draw(2)` on an untouched turn is `nth: 1` and the second
+    is `nth: 2`, which is the distinction miracle is about.
   */
-  const drew = result.drawn > 0
-    ? [...result.state.drew, ...Array.from({ length: result.drawn }, () => seat)]
+  const key = String(seat);
+  const before = result.state.cardsDrawnThisTurn[key] ?? 0;
+  const drew = result.cards.length > 0
+    ? [...result.state.drew, ...result.cards.map((card, i) => ({ seat, card, nth: before + i + 1 }))]
     : result.state.drew;
+  const cardsDrawnThisTurn = result.cards.length > 0
+    ? { ...result.state.cardsDrawnThisTurn, [key]: before + result.cards.length }
+    : result.state.cardsDrawnThisTurn;
   // A player who could not draw has lost (CR 704.5b) — recorded here, acted on by state-based
   // actions, because losing is not Harmonize's business.
   if (result.drawn < count && !result.state.drewFromEmpty.includes(seat)) {
-    return { ...result.state, drew, drewFromEmpty: [...result.state.drewFromEmpty, seat] };
+    return {
+      ...result.state, drew, cardsDrawnThisTurn,
+      drewFromEmpty: [...result.state.drewFromEmpty, seat],
+    };
   }
-  return { ...result.state, drew };
+  return { ...result.state, drew, cardsDrawnThisTurn };
+}
+
+/** How many cards this seat has drawn since the turn began. See `GameState.cardsDrawnThisTurn`. */
+export const drawnThisTurn = (state: GameState, seat: SeatIndex): number =>
+  state.cardsDrawnThisTurn[String(seat)] ?? 0;
+
+/**
+ * Miracle (CR 702.94a): the card you just drew, offered for its miracle cost before anything else.
+ *
+ * `madnessOffer`'s sibling, and the differences are the two things that make the keyword what it
+ * is. The card is **not moved**: madness exiles the card it interrupted on its way to a graveyard,
+ * while a miracle card is revealed from the hand it has just arrived in and cast from there, so
+ * declining leaves it in hand to be cast later for its printed cost — which is `stays`.
+ *
+ * And the window is the draw itself. Nothing else in this engine offers a cast at a moment that is
+ * not a resolution: the offer is set while `settle` is draining the draws, before the drawing seat
+ * is given priority, which is what "when you draw it" means and why a sorcery with miracle can be
+ * cast on somebody else's turn.
+ */
+export function miracleOffer(state: GameState, card: string, cost: string): GameState {
+  const inst = state.instances[card];
+  if (inst === undefined) return state;
+  const name = state.cardDefs[inst.defKey]?.name ?? 'it';
+  return {
+    ...state,
+    pendingOfferedCast: {
+      seat: inst.owner,
+      card,
+      cost,
+      prompt: `${name} is the first card you drew this turn: you may cast it for ${cost} (miracle)`,
+      stays: true,
+      source: card,
+    },
+  };
 }
 
 export function tap(state: GameState, id: string, tapped = true): GameState {

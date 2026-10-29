@@ -4449,6 +4449,37 @@ export const ASHEN_RITE: DeckSpec = {
   ],
 };
 
+/*
+  The two miracle cards, and why each one is in the deck it is in.
+
+  Miracle is the only keyword in this pool whose two prices are a whole card apart. A Thunderous
+  Wrath for {4}{R}{R} is six mana for five damage, which no deck here would ever cast; for {R} it is
+  the best burn spell in the pool. A Terminus for {3}{W}{W} is a fair sweeper; for {W} it is not.
+  So both go into decks that would **not** play them at the printed cost — which is the honest test
+  of the keyword rather than of the cards, because every game they are cast in is a game the
+  keyword paid for.
+*/
+const THUNDEROUS_WRATH: CardDef = {
+  name: 'Thunderous Wrath',
+  typeLine: 'Instant',
+  manaCost: '{4}{R}{R}',
+  cmc: 6,
+  oracleText: 'Miracle {R} (You may cast this card for its miracle cost when you draw it if it\u2019s '
+    + 'the first card you drew this turn.)\nThunderous Wrath deals 5 damage to any target.',
+  colors: ['R'],
+};
+
+const TERMINUS: CardDef = {
+  name: 'Terminus',
+  typeLine: 'Sorcery',
+  manaCost: '{3}{W}{W}',
+  cmc: 5,
+  oracleText: 'Miracle {W} (You may cast this card for its miracle cost when you draw it if it\u2019s '
+    + 'the first card you drew this turn.)\nPut all creatures on the bottom of their owners\u2019 '
+    + 'libraries.',
+  colors: ['W'],
+};
+
 /**
  * The seventh deck, and the pairing the pool had never put together.
  *
@@ -4503,7 +4534,7 @@ export const SKYWARD_WRIT: DeckSpec = {
     { card: MASTER_OF_PEARLS, count: 1 },
     // A one-drop that blocks in the air and gains the life back, which is what the matchups this
     // deck loses actually ask for.
-    { card: HEALERS_HAWK, count: 2 },
+    { card: HEALERS_HAWK, count: 1 },
     /*
       Thalia, Guardian of Thraben, for the Youthful Knight.
 
@@ -4593,7 +4624,7 @@ export const SKYWARD_WRIT: DeckSpec = {
     */
     { card: AJANI_CALLER_OF_THE_PRIDE, count: 1 },
     // And the air, which it does intend to win.
-    { card: LEONIN_SKYHUNTER, count: 2 },
+    { card: LEONIN_SKYHUNTER, count: 1 },
     /*
       A Flickerwisp for the third Skyhunter, and the first card in the pool whose text happens
       **later**.
@@ -4705,6 +4736,23 @@ export const SKYWARD_WRIT: DeckSpec = {
       still run.
     */
     { card: KNIGHT_EXEMPLAR, count: 1 },
+    /*
+      Terminus, and the two fliers it cost.
+
+      The card for the board this deck cannot hold. Its plan is to stop the ground and win in the
+      air, and the matchup it loses is the one where the ground arrives faster than the Walls do —
+      so a sweeper that puts **every** creature on the bottom of its owner's library, for {W}, off
+      the top of the library, is the answer it has never had. Nothing dies, which matters against
+      the three decks whose cards come back out of a graveyard: there is no graveyard to come back
+      from.
+
+      Its own Walls go too, and that is the decision the card is for rather than a drawback to
+      apologise for. At {3}{W}{W} it is a fair five-mana sweeper this deck can also simply cast.
+
+      It cost the second Healer's Hawk and the second Leonin Skyhunter, which are the two least of
+      its fliers and both of which the pool keeps a copy of elsewhere.
+    */
+    { card: TERMINUS, count: 2 },
   ],
 };
 
@@ -5112,7 +5160,7 @@ export const ARC_TEMPEST: DeckSpec = {
       is what a split card is for.
     */
     { card: FIRE_ICE, count: 1 },
-    { card: LIGHTNING_STRIKE, count: 2 },
+    { card: LIGHTNING_STRIKE, count: 1 },
     /*
       Arc Lightning for the second Shock, and the one card here that kills two creatures.
 
@@ -5138,6 +5186,8 @@ export const ARC_TEMPEST: DeckSpec = {
     // Magma Jet over a third Lightning Strike: the scry is the half this deck is short of, since a
     // deck that needs its one Guttersnipe needs to find it.
     { card: MAGMA_JET, count: 1 },
+    { card: BURST_LIGHTNING, count: 1 },
+    { card: LAVA_SPIKE, count: 1 },
     /*
       **Grapeshot, for the second Magma Jet**: the pool's first storm card, in the only deck that
       casts three cheap spells in a turn as a matter of course.
@@ -5155,10 +5205,8 @@ export const ARC_TEMPEST: DeckSpec = {
       and Twincast stays in as the card that keeps that clause honest.
     */
     { card: GRAPESHOT, count: 1 },
-    { card: BURST_LIGHTNING, count: 1 },
     // Firebolt, which is two casts out of one card — the flashback is the second trigger for every
     // creature on the board, and the pool's only burn spell that is.
-    { card: FIREBOLT, count: 1 },
     /*
       Twincast was tried here, measured out, went to Tidal Mind, and has come back.
 
@@ -5178,7 +5226,6 @@ export const ARC_TEMPEST: DeckSpec = {
       free, inside the floor, and the deck keeps the pool's only copy of a card that copies a spell.
       The same card, the same deck, and the slot is the whole difference.
     */
-    { card: LAVA_SPIKE, count: 1 },
     // The X spell, which is what the deck's unspent mana is for on the turn the game ends.
     { card: FIREBALL, count: 1 },
 
@@ -5259,6 +5306,21 @@ export const ARC_TEMPEST: DeckSpec = {
       slot that bought the least.
     */
     { card: PHOENIX_OF_ASH, count: 1 },
+    /*
+      Thunderous Wrath, and the two burn spells it cost.
+
+      Five damage for {R} when it is the first card drawn this turn, and six mana for five damage
+      when it is not — which is a card this deck would never cast, and exactly the point. Its curve
+      stops at four and its plan is spells, so a six-mana burn spell is dead weight the moment it is
+      in an opening hand; off the top of the library it is better than anything else in the list.
+
+      It cost the Firebolt and the second Lightning Strike, which are two of the deck's eleven burn
+      spells and the two it misses least; both survive elsewhere in the pool. The two Preordains
+      stay, and they are the reason this is the right deck for the keyword rather than only a deck
+      that can cast it: a Preordain puts the Wrath on **top** of the library, and the next card you
+      draw is the first card you drew that turn.
+    */
+    { card: THUNDEROUS_WRATH, count: 2 },
   ],
 };
 

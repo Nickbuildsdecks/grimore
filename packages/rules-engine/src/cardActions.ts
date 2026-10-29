@@ -334,16 +334,27 @@ function defaultSeatFor(inst: CardInstance, toZone: ZoneId, by: SeatIndex): Seat
   return inst.owner;
 }
 
-export function drawFromLibrary(state: GameState, seat: SeatIndex, count: number): { state: GameState; drawn: number } {
+export function drawFromLibrary(
+  state: GameState, seat: SeatIndex, count: number,
+): { state: GameState; drawn: number; cards: readonly string[] } {
   let next = state;
-  let drawn = 0;
+  /*
+    Which cards, in the order they were drawn, and not only how many.
+
+    Miracle is why (D204): "you may cast this for its miracle cost when you draw it, **if it's the
+    first card you drew this turn**" is a question about a particular card and about its position in
+    the turn, and a count cannot answer either. `drawn` stays beside it because every other caller
+    only wants the number, and `cards.length` being the same thing is cheaper to read than to
+    explain at each call site.
+  */
+  const cards: string[] = [];
   for (let i = 0; i < count; i++) {
     const top = listAt(next, zoneKey(seat, 'library'))[0];
     if (top === undefined) break;
     next = relocate(next, requireInstance(next, top), 'hand', seat, 'bottom');
-    drawn++;
+    cards.push(top);
   }
-  return { state: next, drawn };
+  return { state: next, drawn: cards.length, cards };
 }
 
 // ---------------------------------------------------------------------------

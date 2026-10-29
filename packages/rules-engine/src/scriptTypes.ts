@@ -1537,6 +1537,28 @@ export interface CardScript {
    * replaced the discard.
    */
   readonly madness?: { readonly cost: string };
+  /**
+   * Miracle: if this is the **first card you drew this turn**, you may cast it for this cost as it
+   * is drawn (CR 702.94a).
+   *
+   * A field rather than a trigger the card writes itself, and the shape is madness's exactly: the
+   * **cost** has to be readable by everything that wants it, and the thing that offers the cast is
+   * the engine rather than the card. `settle` raises the offer as it drains the draws, which is the
+   * only moment the engine knows a card was *drawn* rather than put into a hand, and `settleOffer`
+   * asks whether the cost can be paid before stopping the table with a one-button question.
+   *
+   * It is the first cost in this engine conditioned on **when in the turn** a card arrived. The
+   * three things it needs are a draw that says which card it was, a count of the turn's draws, and
+   * an offer that leaves the card where it is when declined — `GameState.drew`'s `nth`,
+   * `GameState.cardsDrawnThisTurn` and `pendingOfferedCast.stays`.
+   *
+   * What it deliberately does not model is the **reveal**. The printed card is revealed from your
+   * hand as you draw it, whether or not you then cast it; here the offer is a question put to its
+   * own seat and the opponent learns the card only if it is cast. That is a hidden-information
+   * difference in the player's favour and it is small — but it is a difference, and a card that
+   * punished an opponent for the reveal would need the reveal to be real.
+   */
+  readonly miracle?: { readonly cost: string };
   readonly replaces?: readonly {
     /**
      * Which zone change this replaces. The three are the same move seen at three widths, and a

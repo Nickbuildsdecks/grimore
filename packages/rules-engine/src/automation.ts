@@ -33,6 +33,7 @@ import {
 } from './combat.js';
 import {
   DASHED, EVOKED, REGENERATION, addCounters, counterSpell, destroy, draw, loseLife, madnessOffer,
+  miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
   type EffectContext, type EffectFn, type PumpOptions,
@@ -563,6 +564,10 @@ export function endTurnCleanup(state: GameState): GameState {
     // And the turn's life loss, cleared here for the same reason: life lost in somebody's end step
     // was lost *this* turn, so a spectacle cost is payable until the turn is actually over.
     lifeLostThisTurn: {},
+    // And the turn's draws, the third of the three. A card drawn in somebody's end step was drawn
+    // this turn, so the next card drawn after the cleanup is the first of a new turn — which is
+    // what makes it a miracle.
+    cardsDrawnThisTurn: {},
   };
 }
 
@@ -1513,10 +1518,35 @@ function settle(state: GameState, before: GameState): GameState {
       draws first is also the order a player watched — the card was drawn, and then whatever the
       drawing killed or made happened afterwards.
 
-      One ability per card, which is what makes `drew` a list of seats rather than a count: three
+      One ability per card, which is what makes `drew` a list of entries rather than a count: three
       cards drawn is three triggers on the stack, each able to be answered on its own.
     */
-    for (const seat of drawn) next = raise(next, { kind: 'draws' }, seat);
+    for (const { seat } of drawn) next = raise(next, { kind: 'draws' }, seat);
+    /*
+      And miracle, which is not a trigger at all — it is an offer, on the card that was drawn.
+
+      Here because this is where the engine knows a card was *drawn* rather than put into a hand,
+      and after the draw triggers because that is the order on the stack a player would see: the
+      Chasm Skulker takes its counter, and then you are asked about the card. The condition is
+      read off the entry's own `nth` rather than off `cardsDrawnThisTurn`, which by now has counted
+      every card of a `draw(2)` and could not tell the first from the second.
+
+      Only the first card, only while it is still in the hand it arrived in, and only one at a time:
+      `pendingOfferedCast` holds one offer, so a turn that somehow drew two miracle cards first
+      offers the earlier one — which is the right one, and the later card is an ordinary card in
+      hand. Nothing in this pool can draw two first cards.
+    */
+    if (next.pendingOfferedCast === null) {
+      for (const { card, nth } of drawn) {
+        if (nth !== 1) continue;
+        const inst = next.instances[card];
+        if (inst === undefined || inst.zone !== 'hand') continue;
+        const cost = scriptFor(next.cardDefs[inst.defKey]?.name)?.miracle?.cost;
+        if (cost === undefined) continue;
+        next = miracleOffer(next, card, cost);
+        break;
+      }
+    }
     for (const id of dead) next = raise(next, { kind: 'dies' }, next.instances[id]?.zoneSeat, id);
     // Leaving comes after dying, so a card that does both raises the narrower event first and its
     // death trigger goes on the stack under the leave trigger — which is the order the rules put
@@ -1664,7 +1694,9 @@ function settleOffer(state: GameState): GameState {
   let next: GameState = {
     ...state, pendingOfferedCast: null, replacements: [...state.replacements, note],
   };
-  if (offer.toGraveyard === true) {
+  // And a miracle card nobody can pay for stays in the hand it was drawn into, which is the one
+  // disposition that is not a move. See `pendingOfferedCast.stays`.
+  if (offer.stays !== true && offer.toGraveyard === true) {
     const card = next.instances[offer.card];
     if (card !== undefined) next = relocate(next, card, 'graveyard', card.owner, 'bottom');
   }
