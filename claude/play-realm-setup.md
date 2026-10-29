@@ -1021,16 +1021,24 @@ about the harness:
   run dealt three games and reached the row in none of them. Six Lightning Bolts earn it in the
   precombat main phase instead, and a Skewer in the same hand then shows both of its rows at once.
 - **Twenty-four burn spells and no bodies.** Against Tidal Mind's Wall of Frost that is two decks
-  that cannot close: one run passed **450 times without reaching a winner**. So the list got a clock
-  (prowess creatures, which grow with every spell in it) and the scenario's computer opponent became
-  **Ember Rush** rather than Tidal Mind — the two fastest decks in the pool reach a result in twenty
-  turns instead of a hundred.
+  that cannot close: one run passed **450 times without reaching a winner**. The list needed a clock
+  — prowess creatures, which grow with every spell in it.
 - **Then the clock overshot.** Three games in twenty-nine moves never saw a sixth land, so the
   overload row was never on the sheet: five spectacle presses across three runs and no overloads.
   One row wants a turn of combat behind it and the other wants six mana, and a game short enough for
   the first is too short for the second. **Eight Sol Rings** are what a player would add to a deck
   that means to overload on time — three Mountains and two rocks is {3}{R}{R}{R} on turn four — and
   an artifact spell is a noncreature spell, so each rock is a prowess trigger too.
+- **And the opponent went back to Tidal Mind.** Changing it to Ember Rush was the first attempt at
+  the stall, and it worked by making games about **six moves long** — too short for a row that needs
+  a turn where damage has already landed, so one run of five games never pressed the spectacle row
+  at all. The stall was the missing clock rather than the matchup. With the clock and the rocks in,
+  Tidal Mind gives games of 36 to 59 moves that press both rows: **three runs out of three**, where
+  Ember Rush managed three out of four. A required check that fails one run in four is not a check.
+
+The deals are budgeted at **five games** rather than the three `LIST=costs` uses, for the reason the
+runs showed: whichever row a shuffle happens to offer, the other is usually a deal away, and a game
+under this list is short enough that a re-deal costs almost nothing.
 
 The layers under them have their own suites: `packages/rules-engine` (1011 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander

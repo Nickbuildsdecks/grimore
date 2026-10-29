@@ -48,16 +48,19 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  */
 const LIST = process.env.LIST ?? '';
 /**
- * Which deck the computer plays, and why `LIST=earned` does not take the default.
+ * Which deck the computer plays. Tidal Mind, because it is the deck that asks the table the most
+ * questions — and `LIST=earned` keeps it, which was not obvious and is worth the paragraph.
  *
- * Tidal Mind is the default because it is the deck that asks the table the most questions. It is
- * the wrong opponent for `LIST=earned`, and that cost a run to find out: a mono-red list of burn
- * and sweepers against a control deck holding a Wall of Frost and a Dirgur Nemesis is two decks
- * that cannot close, and the game ran past **450 moves of nothing but Pass** without reaching a
- * winner. Ember Rush ends games — its own and this one's — so the scenario puts the two fastest
- * decks in the pool at the same table and gets a result in twenty turns instead of a hundred.
+ * When that list had no clock, Tidal Mind looked like the problem: burn and sweepers against a
+ * Wall of Frost and a Dirgur Nemesis is two decks that cannot close, and one run went past **450
+ * moves of nothing but Pass** without reaching a winner. Switching the opponent to Ember Rush
+ * fixed that and broke the other end — games of about six moves, too short for a spectacle row
+ * that needs a turn where damage has already landed, and one run of five games pressed it not
+ * once. The stall was the missing clock rather than the matchup: with the Swiftspears and the Sol
+ * Rings in the list (see `EARNED_LIST`), Tidal Mind gives games of 36 to 59 moves that press both
+ * rows, three runs out of three, where Ember Rush managed three out of four.
  */
-const OPPONENT_DECK = process.env.OPPONENT_DECK ?? (LIST === 'earned' ? 'ember-rush' : 'tidal-mind');
+const OPPONENT_DECK = process.env.OPPONENT_DECK ?? 'tidal-mind';
 const MAX_MOVES = Number.parseInt(process.env.MAX_MOVES ?? '2000', 10);
 
 /**
@@ -150,7 +153,8 @@ const COSTS_LIST = [
  * wants six mana, and those pull in opposite directions. Mana rocks are what a player would add to
  * a deck that means to overload on time, so eight Sol Rings are what the list adds: three Mountains
  * and two Sol Rings is {3}{R}{R}{R} on turn four, and an artifact spell is a noncreature spell, so
- * each one is a prowess trigger as well. `OPPONENT_DECK` above is the other half of the clock.
+ * each one is a prowess trigger as well. `OPPONENT_DECK` above has the rest of that story,
+ * including the version of this fix that changed the opponent instead and why it was reverted.
  *
  * Mono-red on purpose: `LIST=costs` needed three colours and failed its first run on the mana base
  * rather than on a keyword, and the fix was twelve guildgates. This list has nothing to fix.
