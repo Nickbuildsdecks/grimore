@@ -14,6 +14,14 @@ pnpm --filter @grimore/rules-engine build
 Every one of them is deterministic: the same seeds play the same games, which is what makes two
 arms comparable at all. They take no database and no server — just the engine.
 
+**Count the action, not the stack.** A harness that walks `stackOrder` between actions sees only the
+objects somebody held priority over: with `autoPass: true` an object nobody wants to answer is put
+on the stack and resolved *inside the same `applyAction`*. `graveyard-costs.mjs` read the stack for
+its first three months and was wrong by about a factor of eight — 17 escaped Woe Striders across 288
+games where `cast-counts`, which counts the action, reads 23 in 48 (D203). If what you want to count
+is something a player *did*, count the action; the stack is only safe for things the engine puts
+there itself, such as a triggered ability.
+
 **How many seeds a question needs depends on whose question it is.** A deck's *record* against the
 field moves with every game, so twelve seeds of 288 duels is a usable number. A single *card's*
 usage does not: the subject deck is shuffled once per seed per seating, so `SEEDS=4` is eight
@@ -49,6 +57,7 @@ it.
 | `held-answers.mjs` | …and what did the reservation rule change? (it is on by default, so this is the control arm) | `BOT='{"reserveForAnswers":false}' SUBJECT=tidal-mind SEEDS=6 node scripts/measure/held-answers.mjs` |
 | `draw-triggers.mjs` | does "whenever you draw a card" fire in real games, and what does it add up to? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/draw-triggers.mjs` |
 | `graveyard-costs.mjs` | does the bot ever escape or delve, how many cards does it spend, and does the hate ever meet the cost? | `SUBJECT=arc-tempest SEEDS=6 node scripts/measure/graveyard-costs.mjs` |
+| `graveyard-costs.mjs` | …and the costs out of a graveyard that are **abilities** rather than casts: does it ever unearth, embalm or eternalize? | `SUBJECT=dawn-tithe SEEDS=12 node scripts/measure/graveyard-costs.mjs` (the last block) |
 | `infect-clock.mjs` | of the infect creatures it could attack with, how many does it send? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/infect-clock.mjs` |
 | `creature-fate.mjs` | what takes its creatures away, and how long do they live? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/creature-fate.mjs` |
 | `wasted-plays.mjs` | which of the bot's plays bought nothing at all? | `SEEDS=4 node scripts/measure/wasted-plays.mjs` |

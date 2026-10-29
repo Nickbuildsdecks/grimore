@@ -8150,6 +8150,14 @@ The delve spread is the mechanic doing what it says: the Angler is cast one to f
 which is a deck casting it the turn it becomes affordable rather than the turn the graveyard is
 deepest, and the Cruise goes six or seven deep because {7}{U} has further to come down.
 
+> **Corrected by D203.** Every count in this block is about one in eight of the truth, and the
+> paragraph above it has the reason backwards. Reading the **stack** between actions only sees the
+> objects somebody held priority over; with `autoPass: true` the rest are put on the stack and
+> resolved inside the same `applyAction`. `graveyard-costs.mjs` now counts the **action**, and the
+> escape count is not low at all — so "the pool's first escape card lives in the deck least able to
+> use it" was an artefact of the instrument, not a fact about Arc Tempest. The re-measured numbers
+> are in D203; the *shape* of the delve spread survives, because that was never about the count.
+
 ### What the three slots are worth
 
 Priced by probing the **revert**, so a negative revert means the new card earns its place. Two seed
@@ -10936,3 +10944,125 @@ card whose job is to *make* the resource makes almost none of it, because a 2/2 
 rarely connects in a format full of blockers. The mechanic in this deck runs on the payoff card's
 own arrival trigger: the Hydra is its own enabler. That is worth knowing before anybody designs a
 second energy deck around a creature that has to get through.
+
+## D203 — Embalm and eternalize: a copy with exceptions, and the cheap ability the bot never sees
+
+Embalm (CR 702.89) and eternalize (CR 702.100) are the fourth and fifth things this engine can pay
+for out of a graveyard, and the first two whose product is **not the card**. Flashback and escape
+cast it, delve feeds another spell with it, unearth puts the creature itself back for one turn.
+These exile the card for good and hand over a *token copy of it* — "except it's a white Zombie with
+no mana cost", or a black Zombie with base power and toughness 4/4.
+
+### The exception clause was the only thing missing
+
+`copyAsToken` already built a token from the copied card's own definition, which is what a copy is
+(CR 707.2). A copy with *different* characteristics needs a different definition — and `defKey` is a
+card's lowercased **name**, so an altered definition registered under its own name would have
+rewritten the printed card every other copy reads. The Sacred Cat still in the library would have
+become a Zombie with no mana cost too; or, because `createToken` keeps whatever is already
+registered, the alteration would have been silently dropped. Either way nothing would have thrown.
+
+So `TokenCopyProfile` is a short list of printed fields to replace, registered under the card's key
+plus a suffix (`sacred cat#embalmed`), with the token's `name` left alone. That last part is not
+cosmetic: `scriptFor` looks a script up by **name**, so leaving the name alone is exactly what gives
+the token the copied card's abilities — which is the whole reason these keywords are printed on
+cards with text rather than on bears. An Angel of Sanctions token exiles another permanent when it
+arrives and hands it back when the token dies, and a token built as a plain 3/4 flier would have
+been a strictly worse card with no error anywhere to find it. There is a test for that, and one for
+the printed card in the library being untouched.
+
+`oracleText` is deliberately left alone, embalm reminder text and all: the ability is gated on
+`fromGraveyard`, so a permanent on the battlefield is never offered it, and a token never reaches a
+graveyard to be offered it there. Printing the card's own text on the token is also what a player
+wants to read.
+
+### The cost is paid at activation, which is the half that is not bookkeeping
+
+`AbilityCost.exileSelf` is `discardSelf` one zone along, and it is a cost rather than an effect for
+one reason: embalm exiles the card **as the cost**. Done on resolution instead, the same Sacred Cat
+could be embalmed again while the first ability was still on the stack — two Cats for one card,
+which is the kind of bug that never gets reported as one because the deck just quietly plays better
+than it should. There is a test that activates it twice and reads the refusal.
+
+### Four cards into Dawn Tithe, and the Rest in Peace that could not come with them
+
+**Sacred Cat** ({W} 1/1 lifelink, *Embalm {W}*) is the keyword at its clearest: a one-drop that
+blocks, gains a life, dies, and is a one-drop again. **Adorned Pouncer** ({1}{W} 1/1 double strike,
+*Eternalize {4}{W}{W}*) is eternalize's size clause as the whole card — two damage becomes eight.
+**Sunscourge Champion** ({2}{W} 2/2, gain 2 life, *Eternalize {5}{W}{W}*) makes the keyword an
+*input* in the deck whose archetype is that gaining life is something other cards read. And **Angel
+of Sanctions** ({3}{W}{W} 3/4 flying, *Embalm {3}{W}{W}*) is the one that proves the token is a copy.
+
+Dawn Tithe rather than Skyward Writ, which was the first choice and the wrong one. Skyward Writ runs
+the pool's only **Rest in Peace**, and a symmetric graveyard hoser cannot sensibly share a sixty
+with four cards that need a graveyard. Moving the hoser was worse than moving the cards: it is the
+pool's only copy of itself, three tests build boards out of it, and the decks that have no graveyard
+of their own all have *death* triggers that a graveyard replacement would switch off as well. So the
+four went to the deck that wants them and the hoser stayed where it was.
+
+### Measured: the slot is not level, and the measurement needed fixing first
+
+Probing the revert of all six cards, two seed sets of 288 paired duels:
+
+```
+seeds 3300   with: 206-81    without: 159-129    +47
+seeds 4400   with: 198-90    without: 179-108    +19
+```
+
+Two answers 28 games apart, which is the first thing to say about them: the same *old* list measures
+55% on one seed set and 62% on the other, so this deck's own noise is wider than the ±20 the
+measurement README quotes. What both runs agree on is the sign and roughly the size — the new list
+is somewhere around seven to ten points up, against a recorded table standing of 62%. Isolating the
+one swap that looked like a clear upgrade on card quality alone, Angel of Sanctions over Serra Angel,
+came back at **+11 of 287** — inside the floor and unresolvable — so the gain is spread across the
+six cards rather than carried by one of them.
+
+**That is a card-quality change wearing a keyword's name, and it is not level.** Dawn Tithe was third
+in the pool at 62% and these six cards put it near the top. The field table is the instrument for
+that question and it is running; whatever it says, the trim belongs to the deck rather than to the
+keyword.
+
+### And a correction worth more than the finding it replaced
+
+The first version of this entry said the bot would not press the button: the new block in
+`graveyard-costs.mjs` reported a Sacred Cat embalmed **12 times** across 288 games against 144 turns
+on which the engine offered it, and the cause looked like `candidateActions` in `bot.ts`, which
+sorts the legal plays by mana cost and keeps the top eight — descending, so the cheapest plays are
+the first dropped. A tidy story about a one-mana ability never reaching the search.
+
+It was wrong, and `cast-counts.mjs` is what said so: the same games, the same seeds, **125 embalms**.
+At two seeds the two harnesses agree to the game (44 and 44), so the disagreement was never about
+the decks or the bot. It was about where the two instruments look. `cast-counts` counts the
+**action** a seat took; this block was reading the **stack** between actions — and with
+`autoPass: true` an object nobody wants to respond to is put on the stack and resolved *inside the
+same `applyAction`*, so a harness that looks between actions sees only the few that somebody held
+priority over. Roughly one in eight.
+
+Which also means every escape and delve number this harness has ever printed was that fraction. It
+reported **17 escaped Woe Striders** across 288 games; `cast-counts` reads **23 in 48**. So the whole
+block now counts actions, and the cards a cost spent are read as the cards that left the seat's
+graveyard for exile while the action was applied — which keeps the per-cast spread without the
+stack. The lesson is the general one: an instrument that watches a *place* sees what happens to be
+sitting there, and an instrument that watches an *action* sees the action. Prefer the action.
+
+With that fixed the two harnesses agree to the game, and the real answer is the opposite of the
+first one. **The bot takes very nearly every chance it is given**, counted against the turns on
+which the engine actually offered the ability:
+
+```
+125  Sacred Cat (embalm)           offered on 144 turns   87%
+ 80  Adorned Pouncer (eternalize)  offered on  89 turns   90%
+ 32  Angel of Sanctions (embalm)   offered on  32 turns  100%
+ 18  Sunscourge Champion           offered on  20 turns   90%
+```
+
+`cast-counts` says the same thing from the other end: all four are among the deck's most-used cards,
+each worth well over one use per game it is drawn — Sacred Cat at **202%** (192 casts and 125
+embalms across 157 games it was in hand), Adorned Pouncer 155%, Angel of Sanctions 110%, Sunscourge
+Champion 106%. A card used twice as often as it is drawn is a card that really is two cards.
+
+A card that is used twice as often as it is drawn is a card that really is two cards, which is what
+the keyword promises and the first measurement hid. The honest unearth comparison sits beside it: in
+Ashen Rite's 288 games a Dregscape Zombie reached the graveyard in 64 of them, and the same block —
+before the fix — read 10 unearths where `cast-counts` reads 6 in 48 games. Both numbers in that pair
+are now worth re-reading.

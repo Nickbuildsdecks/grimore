@@ -4486,17 +4486,16 @@ the deck already holds the ground with three Fog Banks), the **Treasure Cruise**
 a Preordain (75%, with four others in the pool).
 
 **And `graveyard-costs.mjs` says the bot pays these costs**, which no instrument here could have
-said before: it reads the stack, where the engine writes down "(escaped, 3 cards)" and "(delved 6)"
-because an opponent is entitled to read both halves of a cost before answering a spell. Over 144
-games each: 5 escapes in Arc Tempest, 11 delved Anglers in Hollow Tide (one to four cards deep),
-10 delved Cruises in Tidal Mind (six of them six or seven deep).
+said before. Its first version read the **stack**, where the engine writes down "(escaped, 3 cards)"
+and "(delved 6)", and over 144 games each it reported 5 escapes in Arc Tempest, 11 delved Anglers in
+Hollow Tide and 10 delved Cruises in Tidal Mind.
 
-The escape count is the honest surprise and it is not a bug: three things have to line up — the
-Phoenix has to die, the graveyard has to hold three other cards, and the bot needs four mana spare
-at *sorcery speed* — and Arc Tempest is one of the decks the reservation rule now keeps mana back
-in, so an escape that would spend a Counterspell's mana is dropped before the search sees it. The
-two features interact exactly as written, and the pool's first escape card happens to live in the
-deck least able to use it.
+**Those counts were about one in eight of the truth, and the paragraph that used to follow them drew
+exactly the wrong conclusion from the shortfall.** See D203: reading the stack between actions only
+sees the objects somebody held priority over, and with `autoPass: true` the rest are put on the
+stack and resolved inside the same `applyAction`. The harness counts the action now; the re-measured
+numbers are in D203, and the *shape* of the delve spread survives because that was never about the
+count.
 
 **Priced by probing the revert**, two seed sets of 288 duels each: the Phoenix is **+10 and +5** and
 the Angler **+17 and +2**, both positive on both sets. The Cruise is the one that lost its slot:
@@ -5556,6 +5555,52 @@ Measured over 288 games the bot **spends** it — 401 given, 326 spent, 81% — 
 the worry the task was written around. The surprise is elsewhere: **Longtusk Cub gave nine energy in
 288 games**, because a 2/2 that must connect rarely does. The mechanic runs on the payoff card's own
 arrival trigger rather than on its enabler.
+
+### Embalm and eternalize, and the instrument that was wrong by a factor of eight (D203)
+
+Embalm (CR 702.89) and eternalize (CR 702.100) are the fourth and fifth things payable out of a
+graveyard and the first two whose product is **not the card**: they exile it for good and hand over a
+token copy "except it's a white Zombie with no mana cost", or a black Zombie with base power and
+toughness 4/4.
+
+The exception clause was the only missing piece. `copyAsToken` already built a token from the copied
+card's own definition, which is what a copy is — but a copy with *different* characteristics needs a
+different definition, and `defKey` is a card's lowercased **name**, so an altered one registered
+under its own name would have rewritten the printed card every other copy reads. So
+`TokenCopyProfile` is a short list of printed fields to replace, registered under the card's key
+plus a suffix (`sacred cat#embalmed`), with the token's `name` left alone — which is what still
+gives it the copied card's abilities, because `scriptFor` looks a script up by name. That is the
+whole reason these keywords are printed on cards with text: an **Angel of Sanctions** token exiles
+another permanent when it arrives and hands it back when the token dies.
+
+`AbilityCost.exileSelf` is `discardSelf` one zone along and a **cost**, not an effect: embalm exiles
+the card as the cost, so the same Sacred Cat cannot be embalmed twice while the first ability is
+still on the stack.
+
+Four cards into Dawn Tithe — Sacred Cat, Adorned Pouncer, Sunscourge Champion, Angel of Sanctions —
+and not into Skyward Writ, which runs the pool's only Rest in Peace; a symmetric graveyard hoser and
+six cards that need a graveyard cannot share a sixty, and moving the hoser was worse than moving the
+cards.
+
+**The measurement is the part worth reading, and it had to be fixed before it could be read.** The
+new block in `graveyard-costs.mjs` first reported a Sacred Cat embalmed 12 times in 288 games;
+`cast-counts`, on the same seeds, read **125**. At two seeds the two agree to the game, so the
+disagreement was about where they look: `cast-counts` counts the **action**, and this block was
+reading the **stack between actions** — and with `autoPass: true` an object nobody wants to respond
+to is put on the stack and resolved *inside the same `applyAction`*. Roughly one in eight survives
+to be seen. Every escape and delve number this harness ever printed was that fraction, D171's
+included, and the "escape is rare" conclusion there was an artefact of the instrument. The block now
+counts actions, reads the cost as the cards that left the seat's graveyard for exile while the
+action was applied, and counts only the casts that actually spent it — because a Phoenix of Ash cast
+from *hand* is the same card and the same action type.
+
+With that fixed: the bot takes **87% to 100%** of the chances it is offered (125 of 144 for the Cat,
+32 of 32 for the Angel), and all four cards are among the deck's most-used — Sacred Cat at 202% of
+the games it is drawn in. The slot itself is **not level**: probing the revert of all six cards gave
++47 and +19 on two seed sets, against a deck whose own noise is wider than ±20 (the old list reads
+55% on one seed set and 62% on the other). Isolating Angel of Sanctions over Serra Angel gave +11,
+inside the floor, so the gain is spread rather than carried. That makes it a card-quality change
+wearing a keyword's name, and the trim is the deck's business rather than the keyword's.
 
 ## Next
 

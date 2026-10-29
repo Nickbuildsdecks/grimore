@@ -7,11 +7,10 @@
  * second copy, but the harness does not know that. And delve does not change what is cast at all:
  * a Gurmag Angler cast for {B} and one cast for {6}{B} are the same row.
  *
- * So this reads the **stack**, which is where the engine writes down how a spell was paid for. A
- * cast with escape carries "(escaped, 3 cards)" in its description and a delved one carries
- * "(delved 6)", because both halves of those costs are things the opponent is entitled to see
- * before deciding whether to answer the spell. Anything this prints, a player could have read off
- * the table.
+ * So this counts the **action** a player took and the cards that left their graveyard while it was
+ * applied: a cast of a watched card is one casting, and the cards of theirs that reached exile in
+ * the same step are what paid for it. It used to read the stack instead, which was wrong by a
+ * factor of about eight — see the note in `duel` below.
  *
  * Three questions, and the third is the one worth building for:
  *
@@ -33,7 +32,7 @@
  * commoner.
  */
 import {
-  applyAction, createGame, botAction, seatsToAct, scriptFor, STARTER_DECKS,
+  applyAction, createGame, botAction, legalActions, seatsToAct, scriptFor, STARTER_DECKS,
 } from '../../packages/rules-engine/dist/index.js';
 
 const SUBJECT = process.env.SUBJECT ?? 'arc-tempest';
@@ -87,9 +86,20 @@ for (const deck of Object.values(STARTER_DECKS)) {
     }
   }
 }
-/** Per watched card: abilities activated, and the games it reached the subject's graveyard in. */
+/*
+  Per watched card: abilities activated, the games it reached the subject's graveyard in, and the
+  turns on which the engine actually **offered** the ability.
+
+  The third number is the only honest denominator, and the reason is that the second one is not a
+  denominator at all. A card sitting in a graveyard is not a chance to use it: embalm is sorcery
+  speed, so a Sacred Cat that dies blocking on somebody else's turn offers nothing until the next
+  main phase, and only then if the mana is spare. Offers are counted per **turn** rather than per
+  priority pass, because one turn is one chance and a seat gets priority a dozen times in it.
+
+  Read the two together and the answer is clear: the bot takes nearly every chance it is given.
+*/
 const abilityRows = new Map();
-for (const name of ABILITIES.keys()) abilityRows.set(name, { used: 0, inYard: 0 });
+for (const name of ABILITIES.keys()) abilityRows.set(name, { used: 0, inYard: 0, offered: 0 });
 
 /*
   And the other side of the same dimension: the cards that *answer* a graveyard.
@@ -132,39 +142,19 @@ function duel(seed, decks, mine) {
   s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, ctx);
   s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, ctx);
 
-  /** Stack objects already counted, so a spell sitting on the stack is one casting. */
-  const counted = new Set();
   const perCard = new Map();
   /** Triggered abilities already counted, keyed by stack object. */
   const countedTriggers = new Set();
-  /** Activated abilities already counted, and which watched cards reached my graveyard. */
-  const countedAbilities = new Set();
+  /** Which watched cards reached my graveyard this game. */
   const reachedYard = new Set();
+  /** Turns on which a watched ability was offered, keyed `name:turn` so one turn is one chance. */
+  const offeredTurns = new Set();
   for (let move = 0; move < 4000 && !s.finished; move++) {
-    for (const id of s.stackOrder) {
-      const object = s.stackObjects[id];
-      if (object === undefined || object.kind !== 'spell' || object.controller !== mine) continue;
-      // Keyed by the object *and* its description, because an escaped Phoenix that dies and
-      // escapes again is the same card id with a new casting on it.
-      const key = `${id}:${object.description}`;
-      if (counted.has(key)) continue;
-      const name = s.cardDefs[object.cardKey]?.name;
-      if (!WATCHED.has(name)) continue;
-      const paid = /\((?:escaped, (\d+) cards|delved (\d+))\)/.exec(object.description ?? '');
-      if (paid === null) continue;
-      counted.add(key);
-      const spent = Number(paid[1] ?? paid[2]);
-      const r = row(name);
-      r.casts += 1;
-      r.cards += spent;
-      r.counts.set(spent, (r.counts.get(spent) ?? 0) + 1);
-      perCard.set(name, (perCard.get(name) ?? 0) + 1);
-    }
     /*
-      And the answers, counted the same way and for the same reason: a triggered ability on the
-      stack is one firing, and the stack is the one place a trigger is observable from outside the
-      engine. Both seats, not just the subject's — a Planar Void in the field is the half of this
-      measurement that says whether the hate ever meets the cost.
+      The answers, which are the one thing still read off the stack — and the one thing that can be.
+      A triggered ability is put on the stack by the engine rather than by an action, so there is no
+      action to count; both seats' are counted, because a Planar Void in the field is the half of
+      this measurement that says whether the hate ever meets the cost.
     */
     for (const id of s.stackOrder) {
       const object = s.stackObjects[id];
@@ -175,22 +165,9 @@ function duel(seed, decks, mine) {
       ANSWERS.set(name, ANSWERS.get(name) + 1);
     }
     /*
-      The abilities, read off the stack like the triggers above. Mine only: a Sacred Cat embalmed
-      by the opponent is their deck working, and the subject's own usage is the question.
-    */
-    for (const id of s.stackOrder) {
-      const object = s.stackObjects[id];
-      if (object?.kind !== 'activated' || object.controller !== mine) continue;
-      if (countedAbilities.has(id)) continue;
-      const name = s.cardDefs[object.cardKey]?.name;
-      if (!ABILITIES.has(name)) continue;
-      countedAbilities.add(id);
-      abilityRows.get(name).used += 1;
-    }
-    /*
       And whether the card was ever in my graveyard to be paid with at all, which is the
-      denominator. Counted once per game per card, from the zone rather than from an event: a card
-      that arrived and was embalmed on the same turn still spent a moment there.
+      denominator for an ability. Counted once per game per card, from the zone rather than from an
+      event: a card that arrived and was embalmed on the same turn still spent a moment there.
     */
     for (const inst of Object.values(s.instances)) {
       if (inst.zone !== 'graveyard' || inst.zoneSeat !== mine) continue;
@@ -199,14 +176,78 @@ function duel(seed, decks, mine) {
     }
     const seat = seatsToAct(s)[0];
     if (seat === undefined) break;
+    /*
+      The offers, read from the same list the bot chooses out of, so "declined" means declined.
+      Only when it is my priority, because `legalActions` for a seat that cannot act is empty.
+    */
+    if (seat === mine && ABILITIES.size > 0) {
+      for (const play of legalActions(s, mine).plays) {
+        if (play.kind !== 'activate') continue;
+        const inst = s.instances[play.card];
+        if (inst?.zone !== 'graveyard') continue;
+        const name = s.cardDefs[inst.defKey]?.name;
+        if (!ABILITIES.has(name)) continue;
+        const key = `${name}:${s.turn}`;
+        if (offeredTurns.has(key)) continue;
+        offeredTurns.add(key);
+        abilityRows.get(name).offered += 1;
+      }
+    }
     const action = botAction(s, seat);
     if (action === null) break;
+    /*
+      Everything a *player* did is counted off the **action**, not off the stack, and that is a
+      correction rather than a preference. The first version of this harness read the stack between
+      actions and reported seventeen escaped Woe Striders across 288 games; `cast-counts`, which
+      counts the action, reads twenty-three in 48. With `autoPass: true` an object that nobody wants
+      to respond to is put on the stack and resolved **inside the same `applyAction`**, so a harness
+      that looks between actions sees only the few that somebody held priority over. Roughly one in
+      eight. Every number this block has ever printed for escape and delve was that fraction.
+
+      A card leaving my graveyard for exile during the action is the cost being paid, which is how
+      the cards-per-cast spread survives the change: snapshot the graveyard before, count how many
+      of those cards are in exile after. (A graveyard hoser could in principle move one of them in
+      the same window; none in this pool moves a card that is *already* in a graveyard.)
+    */
+    const name = seat === mine ? nameOf(s, action.card) : undefined;
+    const watchedCast = action.type === 'auto:cast' && WATCHED.has(name) ? name : undefined;
+    const yardBefore = watchedCast === undefined ? null : Object.values(s.instances)
+      .filter((inst) => inst.zone === 'graveyard' && inst.zoneSeat === mine)
+      .map((inst) => inst.id);
+    if (action.type === 'auto:activate' && ABILITIES.has(name)) {
+      abilityRows.get(name).used += 1;
+    }
     const before = s.stateVersion;
     try { s = applyAction(s, action, ctx); } catch { break; }
     if (s.stateVersion === before) break;
+    if (watchedCast !== undefined) {
+      const spent = yardBefore
+        .filter((id) => id !== action.card && s.instances[id]?.zone === 'exile').length;
+      /*
+        Only the casts that actually spent the graveyard, which the first action-counting version
+        got wrong: a Phoenix of Ash cast from **hand** is the same card and the same action type,
+        and counting those read 97 “escapes” in 144 games of which 72 exiled nothing at all.
+        Escape says so on the action; delve does not, so for delve the test is whether any card was
+        exiled — a delve cast that chose to spend nothing is an ordinary cast of the card.
+      */
+      const paid = WATCHED.get(watchedCast) === 'escape' ? action.escape === true : spent > 0;
+      if (paid) {
+        const r = row(watchedCast);
+        r.casts += 1;
+        r.cards += spent;
+        r.counts.set(spent, (r.counts.get(spent) ?? 0) + 1);
+        perCard.set(watchedCast, (perCard.get(watchedCast) ?? 0) + 1);
+      }
+    }
   }
   if ([...perCard.values()].some((n) => n > 1)) twiceGames += 1;
   for (const name of reachedYard) abilityRows.get(name).inYard += 1;
+}
+
+/** A card's name, for an action that names one. */
+function nameOf(state, card) {
+  const inst = card === undefined ? undefined : state.instances[card];
+  return inst === undefined ? undefined : state.cardDefs[inst.defKey]?.name;
 }
 
 for (let i = 0; i < SEEDS; i++) {
@@ -241,7 +282,9 @@ if (ABILITIES.size > 0) {
   console.log('and the costs paid out of a graveyard that are abilities rather than casts:');
   for (const [name, keyword] of ABILITIES) {
     const r = abilityRows.get(name);
-    const where = MINE.has(name) ? `in ${r.inYard} games it reached the graveyard` : 'not in this deck';
+    const where = MINE.has(name)
+      ? `offered on ${r.offered} turns, across ${r.inYard} games it reached the graveyard`
+      : 'not in this deck';
     console.log(`${String(r.used).padStart(7)}  ${name} (${keyword}) \u2014 ${where}`);
   }
 }
