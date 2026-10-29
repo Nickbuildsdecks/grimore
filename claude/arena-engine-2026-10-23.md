@@ -6446,6 +6446,33 @@ destroyed, three creatures stripped of counters). The card works; the bot's *cho
 blink is the next piece, and it is a new kind of judgement problem, because this is the pool's first
 optional target where a bad answer destroys one of your own creatures rather than wasting a card.
 
+### What a blink costs (D226)
+
+The number D225 left on the table: of 34 blinks across 48 games the bot destroyed one of its own
+tokens and stripped three of its own creatures of counters. A blink is the pool's first target where
+a bad answer costs a creature rather than a card, because the permanent comes back as a *new object*
+— a token ceases to exist, and counters, Auras and damage do not travel (CR 111.7, CR 400.7).
+
+`TargetSpec.blinks` is the card declaring that, the way `friendly` declares which side to aim at,
+and `blinkLoss` is the four terms the instrument counted: the token, the counters (a +1/+1 is a loss
+and a −1/−1 is a creature healed), the Aura (whose it is decides the sign — your Pacifism on their
+creature is *freed* by the blink), and the Equipment that merely falls off. One function for both
+readings, with the sign flipped for an opponent's permanent, which is what makes Flickerwisp aim at
+their token and Soulherder refuse its own.
+
+The token needed a refusal rather than a weight, and the instrument proved it: a ranking only picks
+the best candidate, and a board whose only other creature is a token leaves the worst play as the
+best one. Afterwards: 31 blinks, **no** tokens destroyed, **no** counters stripped, and the arrival
+triggers blinked nearly twice as often.
+
+`bot-duel` reads +4 and +2 of 288 on Skyward Writ's pairings and −2 of 624 across the whole field —
+three readings that do not agree on the sign and are all inside the floor, which is what a rule that
+changes four choices in forty-eight games looks like. Not the argument, then: the instrument is, the
+same way it was for D220's ninja and D223's artifact. Two measurement notes came out of it. `SUBJECT` is new on that harness and buys **time rather than signal**: an untouched
+pairing is the same game twice and contributes nothing to the difference either way, so the field
+was never diluted. And it drops the decks it does not name, which matters here because this rule
+fires off Cloudshift in Verdant Guard as well as Soulherder in Skyward Writ.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

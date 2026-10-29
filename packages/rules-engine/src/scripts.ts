@@ -3512,6 +3512,9 @@ const SOULHERDER: CardScript = {
         // Soulherder that blinked an opponent's creature would be re-triggering their arrival and
         // growing nothing. See `TargetSpec.friendly`.
         friendly: true,
+        // And what the blink costs whatever it lands on, which `friendly` cannot say: a token of
+        // yours blinked is a creature destroyed. See `TargetSpec.blinks`.
+        blinks: true,
         filter: (state, candidate, controller, source) => candidate.kind === 'card'
           && candidate.id !== source && creatureYouControl(state, candidate, controller),
       }],
@@ -3537,6 +3540,9 @@ const CLOUDSHIFT: CardScript = {
   targets: [{
     kind: 'creature',
     description: 'target creature you control',
+    // Its own side only, so `friendly` would be redundant — but *which* of your creatures matters
+    // for the same reason it does on Soulherder: a token blinked does not come back.
+    blinks: true,
     filter: (state, candidate, controller) => creatureYouControl(state, candidate, controller),
   }],
   onResolve: (c) => {
@@ -7247,6 +7253,9 @@ const FLICKERWISP: CardScript = {
       targets: [{
         kind: 'permanent',
         description: 'another target permanent',
+        // And the hostile reading of a blink: what this exiles is usually an opponent's, where
+        // everything the permanent loses on the way out is a gain. See `TargetSpec.blinks`.
+        blinks: true,
         // "Another": its own arrival cannot be aimed at itself, which is printed on the card and
         // is also the difference between a blink and a sacrifice.
         filter: (_state, candidate, _controller, source) =>

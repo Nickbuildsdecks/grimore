@@ -75,6 +75,29 @@ export interface TargetSpec {
    */
   readonly friendly?: boolean;
   /**
+   * Advice to the bot: what this points at is **exiled and comes back as a new object**
+   * (CR 400.7) — a blink.
+   *
+   * The second hint of its kind and the first that cuts both ways, which is why it is not folded
+   * into `friendly`. A blink is not a help or a hit; it is a help *or* a hit depending on whose
+   * permanent it lands on, and the thing that decides is what the permanent loses by leaving. A
+   * token ceases to exist (CR 111.7), so blinking an opponent's is the best removal on the board
+   * and blinking your own destroys a creature for nothing. Counters, Auras and the damage marked on
+   * it all go the same way, and an Aura's owner decides the sign: your Pacifism on their creature is
+   * freed by the blink, their Pacifism on yours is shed by it.
+   *
+   * The bot could not possibly work any of that out from a spec it has not run — `chooseTargets`
+   * reads a candidate list and a `filter`, neither of which says "and then it comes back". Three
+   * cards carry it: Soulherder's end step, Cloudshift and Flickerwisp, which between them cover the
+   * friendly and the hostile reading.
+   *
+   * Not a restriction, like `friendly`: pointing a Soulherder at your own token is legal and stays
+   * legal, because a player may have a reason (a token about to be exiled by something worse, or a
+   * board where the Soulherder's counter is the last point of damage needed). It changes what the
+   * **bot** picks, and `BotOptions.blinksWell` is the flag that prices the change.
+   */
+  readonly blinks?: boolean;
+  /**
    * A quantity split among the targets of this spec, announced as the spell is cast (CR 601.2d):
    * "Arc Lightning deals 3 damage divided as you choose among one, two, or three targets."
    *

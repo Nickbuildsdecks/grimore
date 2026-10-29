@@ -15,13 +15,15 @@
  */
 import { pactProtects } from './pacts.js';
 import { crewPlan, legalActions, manaSources, type LegalActions, type LegalPlay } from './legalActions.js';
-import { zoneKey, type CardDef } from './cards.js';
+import { zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
   bottomOwed, hasAnyLegalTargets, modesOf, pendingDeclaration, pendingRetarget, preferredAmount,
   preferredOption, stillDeciding,
 } from './automation.js';
-import { characteristicsOf, hasType, parseTypeLine, type Keyword } from './characteristics.js';
+import {
+  characteristicsOf, hasSubtype, hasType, parseTypeLine, type Keyword,
+} from './characteristics.js';
 import {
   attackAimIssue, canAttack, canBlock, damageOrdersOwed, forcedAttackers, legalAttackers,
   legalDefenders,
@@ -294,7 +296,9 @@ const foesOf = (state: GameState, seat: SeatIndex): SeatIndex[] =>
  * merely wasteful but the whole cost of the card: a prevention shield aimed at an opponent prevents
  * the damage *you* were about to deal. Those are aimed the other way round — see `friendlyRank`.
  */
-function chooseTargets(state: GameState, seat: SeatIndex, play: LegalPlay): Target[] | null {
+function chooseTargets(
+  state: GameState, seat: SeatIndex, play: LegalPlay, opts: BotOptions = {},
+): Target[] | null {
   const chosen: Target[] = [];
   const used = new Set<string>();
   const foes = foesOf(state, seat);
@@ -308,11 +312,22 @@ function chooseTargets(state: GameState, seat: SeatIndex, play: LegalPlay): Targ
       const candidates = (play.candidates[i] ?? []).filter(
         (t) => !used.has(targetKey(t)),
       );
-      const score = spec.friendly === true
+      const base = spec.friendly === true
         ? (t: Target): number => friendlyRank(state, t, foes)
         : (t: Target): number => rank(state, t, foes);
+      // And what being blinked does to the thing pointed at, which no ordering of "whose is it"
+      // can see. See `TargetSpec.blinks` and `BotOptions.blinksWell`.
+      const blinks = spec.blinks === true && opts.blinksWell !== false;
+      const score = blinks
+        ? (t: Target): number => base(t) + blinkAdjust(state, t, foes)
+        : base;
       const bestFirst = [...candidates].sort((a, b) => score(b) - score(a));
-      const pick = bestFirst[0];
+      // And the one blink that is never a play, dropped rather than ranked last: see
+      // `blinkDestroysMine`. Only where declining is legal, which is what `optional` means.
+      const allowed = blinks && spec.optional === true
+        ? bestFirst.filter((candidate) => !blinkDestroysMine(state, candidate, foes))
+        : bestFirst;
+      const pick = allowed[0];
       if (pick === undefined) {
         if (spec.optional) break;
         return null;
@@ -455,6 +470,101 @@ function friendlyRank(state: GameState, target: Target, foes: readonly SeatIndex
   if (inst === undefined) return -100;
   if (foes.includes(inst.zoneSeat)) return -50;
   return 50 + creatureValue(state, target.id);
+}
+
+/**
+ * What a permanent's controller loses by having it blinked — exiled and returned as a new object.
+ *
+ * Positive is a loss to whoever controls it, which is what lets one function answer both halves of
+ * the question: `blinkAdjust` flips the sign for an opponent's permanent, because everything your
+ * own creature is sorry to lose, theirs is sorry to lose too.
+ *
+ * Four terms, and they are the four `blink-use.mjs` counted rather than four this file thought of:
+ *
+ *  - a **token** ceases to exist (CR 111.7). That is not a cost of the blink, it is the whole
+ *    permanent, so it dwarfs everything else — blinking your own is the worst play on the board and
+ *    blinking theirs is the best removal in the pool.
+ *  - **counters** do not come back (CR 400.7), and the sign depends on which kind: a +1/+1 counter
+ *    is a loss and a −1/−1 counter is a creature being healed. Every other counter here — loyalty
+ *    on a planeswalker Flickerwisp can aim at, a Saga's lore, a level — is value, so anything that
+ *    is not −1/−1 counts as a loss.
+ *  - an **Aura** attached to it dies, and *whose* Aura decides the sign: your Pacifism on their
+ *    creature is freed by the blink, their Pacifism on yours is shed by it. This is the play people
+ *    actually cast a Cloudshift for.
+ *  - an **Equipment** merely falls off, so it is a smaller loss: the card survives and can be
+ *    re-equipped for mana.
+ *
+ * What is deliberately **not** counted is the damage marked on it, which a blink clears. It is a
+ * real save, and it is worth nothing at the moment this engine's blinks are chosen: Soulherder's is
+ * an end-step trigger and damage wears off at cleanup anyway, and the one card that could use the
+ * save is an instant whose timing the bot does not pick. Untapping is in the same position and is
+ * the better candidate of the two if the probe comes back flat.
+ */
+function blinkLoss(state: GameState, inst: CardInstance): number {
+  if (inst.isToken) return 200;
+  let loss = 0;
+  for (const [kind, n] of Object.entries(inst.counters)) loss += (kind === '-1/-1' ? -10 : 10) * n;
+  for (const other of Object.values(state.instances)) {
+    if (other.attachedTo !== inst.id) continue;
+    const line = characteristicsOf(state, other).typeLine;
+    if (hasSubtype(line, 'Equipment')) loss += 10;
+    else loss += other.zoneSeat === inst.zoneSeat ? 25 : -25;
+  }
+  return loss;
+}
+
+/** Whether blinking this permanent runs an arrival trigger of its own again. */
+function arrivesAgain(state: GameState, inst: CardInstance): boolean {
+  return (scriptFor(state.cardDefs[inst.defKey]?.name)?.triggers ?? []).some(
+    (trigger) => trigger.on.kind === 'etb' && trigger.delayed !== true
+      && (trigger.on.who ?? 'self') !== 'another',
+  );
+}
+
+/**
+ * How much better or worse a target is *because* it will be blinked, added to the ordinary ranking.
+ *
+ * An adjustment rather than a ranking of its own, which is the difference between this hint and
+ * `friendly`. `friendly` says which side to aim at and replaces the ordering; a blink does not
+ * change the side — Soulherder's is its own board by filter, Flickerwisp's is usually the
+ * opponent's by judgement — it changes *which* permanent on that side is the right one. So the
+ * card's own ordering keeps the decision and this moves it.
+ *
+ * The sign is the whole rule: a blink costs its permanent's controller something, so the cost is
+ * subtracted for your own and added for theirs. And the one gain only your own side has is the
+ * arrival being run again, which is what a blink deck is for.
+ */
+function blinkAdjust(state: GameState, target: Target, foes: readonly SeatIndex[]): number {
+  if (target.kind !== 'card') return 0;
+  const inst = state.instances[target.id];
+  if (inst === undefined) return 0;
+  const loss = blinkLoss(state, inst);
+  if (foes.includes(inst.zoneSeat)) return loss;
+  return (arrivesAgain(state, inst) ? 25 : 0) - loss;
+}
+
+/**
+ * Whether blinking this would **destroy** one of my own permanents, which is never a play.
+ *
+ * A refusal rather than a weight, and the instrument is why: with the ranking alone the bot still
+ * blinked a token once in 48 games, because a ranking only decides which candidate is *best* and a
+ * board whose only other creature is a token leaves the worst play as the best one. A token exiled
+ * ceases to exist (CR 111.7), so there is nothing a blink can give back — it is a creature
+ * destroyed for one +1/+1 counter.
+ *
+ * Only for an **optional** spec, where declining is a legal answer. A mandatory blink with nothing
+ * but a token to point at has to point somewhere, and the rules rather than the bot decide that.
+ *
+ * Kept narrow on purpose: it refuses destruction, not a bad deal. A blink that drops two counters
+ * is a judgement and belongs in `blinkLoss` where a measurement can argue with it; a blink that
+ * removes a creature from the game has no other side.
+ */
+function blinkDestroysMine(
+  state: GameState, target: Target, foes: readonly SeatIndex[],
+): boolean {
+  if (target.kind !== 'card') return false;
+  const inst = state.instances[target.id];
+  return inst !== undefined && inst.isToken && !foes.includes(inst.zoneSeat);
 }
 
 /** Enemy players score highest, then enemy creatures by size, then anything else. */
@@ -1251,10 +1361,12 @@ interface Aiming {
  * that scores identically to an earlier one loses: the heuristic's pick stays the tie-break, and a
  * card that cannot tell its aims apart keeps the one the card's own `friendly` hint chose.
  */
-function aimings(state: GameState, seat: SeatIndex, play: LegalPlay): Aiming[] {
+function aimings(
+  state: GameState, seat: SeatIndex, play: LegalPlay, opts: BotOptions = {},
+): Aiming[] {
   const spec = play.targetSpecs[0];
   if (spec?.divided !== undefined) return dividedAimings(state, seat, play, spec.divided);
-  const first = chooseTargets(state, seat, play);
+  const first = chooseTargets(state, seat, play, opts);
   if (first === null) return [];
   if (first.length === 0) return [{ targets: [] }];
   const foes = foesOf(state, seat);
@@ -1383,7 +1495,7 @@ const PLAY_WIDTH = 8;
  * will be worth later — rather than about what a card does.
  */
 function candidateActions(
-  state: GameState, seat: SeatIndex, actions: LegalActions,
+  state: GameState, seat: SeatIndex, actions: LegalActions, opts: BotOptions = {},
 ): { action: Action }[] {
   const out: { action: Action }[] = [];
   const playable = actions.plays
@@ -1440,7 +1552,7 @@ function candidateActions(
       out.push({ action: { type: 'auto:suspend', by: seat, card: play.card } });
       continue;
     }
-    for (const aim of aimings(state, seat, play)) {
+    for (const aim of aimings(state, seat, play, opts)) {
       const targets = aim.targets;
       if (play.kind === 'cast') {
         /*
@@ -1767,6 +1879,26 @@ export interface BotOptions {
    * what the leak was and D224 for what it was worth.
    */
   readonly blindToShuffle?: boolean;
+  /**
+   * Whether the bot knows what a **blink** does to the permanent it is pointed at. Default **on**.
+   *
+   * The pool's first optional target where a bad answer is worse than a wasted card: everything
+   * else that asks the bot to choose aims at the enemy, so the floor has always been "nothing
+   * happens". Soulherder's end step aims at your own board, and `blink-use.mjs` read what that
+   * cost before this existed — of 34 blinks across 48 games, one destroyed a token outright
+   * (CR 111.7) and three stripped a creature of its +1/+1 counters (CR 400.7).
+   *
+   * `false` is the bot as it was: the ordinary ranking, which sorts your own creatures by power and
+   * so reaches for the biggest thing on the board whether or not it is carrying anything. That is
+   * the arm the probe is run against. See `blinkLoss` for the four terms and `TargetSpec.blinks`
+   * for what a card has to declare to get them.
+   *
+   * One honest limit, shared with `dredgesTightly`: inside a *simulated* line the stand-in that
+   * answers for every seat (`answerPending`) has no options to read, so the rule is always on
+   * there. The flag changes the decision the acting seat really makes, which is the one the
+   * instrument and the probe both read.
+   */
+  readonly blinksWell?: boolean;
 }
 
 /**
@@ -1778,15 +1910,30 @@ export interface BotOptions {
  */
 function aimPending(
   state: GameState, seat: SeatIndex, choice: NonNullable<LegalActions['mustChoose']>,
+  opts: BotOptions = {},
 ): Action {
   const foes = foesOf(state, seat);
   const chosen: Target[] = [];
   const used = new Set<string>();
   for (let i = 0; i < choice.specs.length; i++) {
-    const want = Math.max(1, choice.specs[i]!.count ?? 1);
+    const spec = choice.specs[i]!;
+    const want = Math.max(1, spec.count ?? 1);
+    /*
+      A blink's cost, on the one path a blink is actually chosen on: Soulherder's is a triggered
+      ability, so its target is picked here rather than in `chooseTargets`.
+
+      `friendly` is deliberately *not* read here and that is older than this change — a trigger's
+      candidate list is usually one side's by filter, so the enemy-first ordering has had nothing to
+      get wrong. A blink is the first case where which of *your own* creatures it is matters, which
+      is exactly what this adjustment says.
+    */
+    const blinks = spec.blinks === true && opts.blinksWell !== false;
+    const score = (t: Target): number =>
+      rank(state, t, foes) + (blinks ? blinkAdjust(state, t, foes) : 0);
     const ranked = [...(choice.candidates[i] ?? [])]
       .filter((t) => !used.has(targetKey(t)))
-      .sort((a, b) => rank(state, b, foes) - rank(state, a, foes));
+      .filter((t) => !(blinks && spec.optional === true && blinkDestroysMine(state, t, foes)))
+      .sort((a, b) => score(b) - score(a));
     for (const pick of ranked.slice(0, want)) {
       used.add(targetKey(pick));
       chosen.push(pick);
@@ -3461,7 +3608,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
 
   // A trigger waiting for its targets blocks everything else, so it is answered next.
   const choice = actions.mustChoose;
-  if (choice !== null) return aimPending(state, seat, choice);
+  if (choice !== null) return aimPending(state, seat, choice, opts);
 
   /*
     A ward, paid whenever it can be.
@@ -3615,7 +3762,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     };
   }
 
-  const options = candidateActions(state, seat, actions);
+  const options = candidateActions(state, seat, actions, opts);
   if (options.length === 0) return { type: 'auto:pass', by: seat };
   if (opts.lookahead === false) return options[0]!.action;
 

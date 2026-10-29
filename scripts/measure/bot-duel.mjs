@@ -12,6 +12,30 @@
  * movement in a real arm readable rather than arguable. See D116.
  *
  *   TESTED='{"lookahead":false}' SEEDS=3 node scripts/measure/bot-duel.mjs
+ *   SUBJECT=skyward-writ TESTED='{"blinksWell":false}' SEEDS=6 node scripts/measure/bot-duel.mjs
+ *
+ * `SUBJECT` narrows the field to the pairings **one deck** is in: that deck against each of the
+ * others, in both seats, with the bots swapped, so a seed set is 48 games rather than 312.
+ *
+ * **It buys time, not signal, and reaching for it to sharpen a reading is a mistake this file
+ * already warned about.** A pairing where the setting is inactive for both arms is the *same game
+ * twice* on the same seed — one win credited to each arm — so it adds exactly nothing to the
+ * difference and exactly nothing to its variance. The full field is not diluted; only the
+ * percentage is, and the difference is what is read. So `TESTED` against `CONTROL` comes out the
+ * same number either way, and the subject run simply gets there six times faster. Quote the
+ * difference rather than the ratio when you use it, because the denominator has changed.
+ *
+ * And the thing it really does cost: a rule that fires off cards in **more than one** deck loses
+ * the pairings of the decks it did not name. `blinksWell` is the example — Soulherder is in
+ * Skyward Writ and Cloudshift is in Verdant Guard, so `SUBJECT=skyward-writ` prices three quarters
+ * of the rule and a full run prices all of it. Run the subject first for the fast answer, then the
+ * field to be sure what was measured was the whole rule.
+ *
+ * The negative control costs nothing to reason about and is worth saying out loud: with `TESTED`
+ * and `CONTROL` identical the two arms are the *same game* played twice, so the score is exactly
+ * even by construction rather than approximately even by luck — 156-156 of 312 on the day `SUBJECT`
+ * was added. What that proves is this harness's symmetry, not that a setting is connected; for
+ * that, see D216 and run a rule known to matter (`lookahead: false`) through the same filter.
  */
 import {
   applyAction, createGame, botAction, seatsToAct, STARTER_DECKS,
@@ -26,6 +50,12 @@ import {
   silently answers last week's question is worse than one that fails.
 */
 const ALL = Object.keys(STARTER_DECKS);
+/** One deck's pairings only, for a rule that can only fire off a card in it. */
+const SUBJECT = process.env.SUBJECT ?? '';
+if (SUBJECT !== '' && !ALL.includes(SUBJECT)) {
+  console.error(`no such deck: ${SUBJECT}. One of: ${ALL.join(', ')}`);
+  process.exit(1);
+}
 const SEEDS = Number(process.env.SEEDS ?? 3);
 const SEED0 = Number(process.env.SEED0 ?? 3300);
 const TESTED = JSON.parse(process.env.TESTED ?? '{}');
@@ -58,6 +88,7 @@ for (let i = 0; i < SEEDS; i++) {
   for (let a = 0; a < ALL.length; a++) {
     for (let b = 0; b < ALL.length; b++) {
       if (a === b) continue;
+      if (SUBJECT !== '' && ALL[a] !== SUBJECT && ALL[b] !== SUBJECT) continue;
       // The same pairing twice with only the bots swapped, so the decks stay put: whatever the
       // matchup is worth, both arms get it exactly once.
       const first = duel(SEED0 + i, [ALL[a], ALL[b]], [TESTED, CONTROL]);
@@ -68,5 +99,6 @@ for (let i = 0; i < SEEDS; i++) {
   }
 }
 const games = won + lost + draw;
-console.log(`${JSON.stringify(TESTED)} vs ${JSON.stringify(CONTROL)}: ${won}-${lost}`
+console.log(`${SUBJECT === '' ? 'the whole field' : `${SUBJECT}'s pairings`}: `
+  + `${JSON.stringify(TESTED)} vs ${JSON.stringify(CONTROL)}: ${won}-${lost}`
   + `${draw ? ` (${draw} unfinished)` : ''} of ${games} [${Math.round((Date.now() - started) / 1000)}s]`);

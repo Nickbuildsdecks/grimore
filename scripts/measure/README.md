@@ -42,6 +42,7 @@ it.
 | `energy.mjs` | does the bot **spend** the energy it is given, or sit on it? | `SUBJECT=kindle-grove SEEDS=12 node scripts/measure/energy.mjs` |
 | `cast-counts.mjs` | …and how often does it press *this* button? | `SUBJECT=delta-bloom CHANGE="Kiora's Follower:+1,Rampant Growth:-1" SEEDS=6 node scripts/measure/cast-counts.mjs` |
 | `bot-duel.mjs` | what is this change to the *opponent* worth? | `TESTED='{"lookahead":false}' SEEDS=3 node scripts/measure/bot-duel.mjs` |
+| `bot-duel.mjs` | …the same question six times faster, for a rule only one deck can fire | `SUBJECT=skyward-writ TESTED='{"blinksWell":false}' SEEDS=6 node scripts/measure/bot-duel.mjs` |
 | `disagree.mjs` | does that change alter any decisions at all? | `TESTED='{"lookahead":false}' SEEDS=2 node scripts/measure/disagree.mjs` |
 | `step-drift.mjs` | how far does the table move on one action? | `SEEDS=2 node scripts/measure/step-drift.mjs` |
 | `morph-use.mjs` | which half of a morph does the bot take, and does it follow through? | `SEEDS=3 node scripts/measure/morph-use.mjs` |
@@ -159,7 +160,12 @@ A registry of every card in the pool would let step 2 read the other way round, 
 not here: it would be a second list of two hundred and eighteen names to keep in step with the
 first, to save a sign flip. See D138.
 
-`blink-use` asks the three questions a *friendly* optional target raises, which no instrument here
+`blink-use` is also the instrument that set a bot rule on its own, which is worth noting because the
+duel could not have: `blinksWell` reads +4, +2 and −2 across three arms — inside the floor every
+time and not even agreeing on the sign — while the instrument reads 4 bad blinks going to 0 and the
+useful ones nearly doubling.
+A rule that changes four choices in forty-eight games is a rule only a count of *what it chose* can
+price. It asks the three questions a *friendly* optional target raises, which no instrument here
 had asked before: is the trigger taken, what does it point at, and what did pointing there cost?
 Every other optional target in the pool aims at the enemy, where a bad answer wastes a card;
 Soulherder's end step aims at your own board, so a bad answer destroys one of your creatures — a
@@ -390,9 +396,16 @@ should be measured on those five, and the instinct is wrong: the harness plays e
 twice with only the bots swapped, so a pairing where the rule is inactive for *both* arms is the
 **same game twice** on the same seed — one win credited to each arm, zero variance added. That is
 why the negative control is exactly 468-468 rather than approximately. So leave the field alone: the
-difference between the arms already comes only from the games the rule changed. What narrowing the
-deck list *would* do is break the pairing, because the cancellation is what makes a matchup
-disappear.
+difference between the arms already comes only from the games the rule changed.
+
+**`SUBJECT` narrows it anyway, and the honest description of what that buys is *time*.** Dropping
+the pairings a rule cannot touch removes games that contributed exactly nothing to the difference
+and exactly nothing to its variance, so the number comes out the same and arrives six times sooner —
+which is worth having, and is not a sharper reading. Two things to keep straight when using it:
+quote the **difference** rather than the ratio, because the denominator moved; and remember it
+drops the pairings of every deck you did not name, so a rule whose cards live in two decks is only
+three-quarters priced by one subject. `blinksWell` was measured both ways for exactly that reason —
+Soulherder is in Skyward Writ and Cloudshift is in Verdant Guard.
 
 **`pod-duel`'s negative control is arithmetic and must not be read as a floor.** With both arms
 identical, all four rotations of a table are the same game, so the winning seat is credited to each

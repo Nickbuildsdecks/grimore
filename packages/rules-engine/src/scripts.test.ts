@@ -18046,3 +18046,144 @@ describe('Soulherder, and the move into exile nothing could read', () => {
     expect(countersOn(s, herder)).toBe(1);
   });
 });
+
+describe('what a blink costs, which the bot had no way to know', () => {
+  /*
+    The pool's first optional target where a bad answer is worse than a wasted card.
+
+    Everything else that asks the bot to choose aims at the enemy — removal, burn, a counters
+    trigger — so the floor on a bad choice has always been "nothing happens". Soulherder's end step
+    aims at your own board, and `blink-use.mjs` read what that cost before this existed: of 34 blinks
+    across 48 games, one destroyed a token outright (CR 111.7) and three stripped a creature of its
+    +1/+1 counters (CR 400.7).
+
+    Two mechanisms, and the split between them is the point. A **ranking** (`blinkLoss`) for the
+    deals, because which of two creatures to blink is a judgement a measurement can argue with. A
+    **refusal** (`blinkDestroysMine`) for the one case that has no other side, because a ranking
+    only picks the best candidate and a board whose only other creature is a token leaves the worst
+    play as the best one — which is exactly the blink the instrument caught.
+
+    Every case here reads `botAction`'s answer to the trigger's own prompt, which is where the
+    choice is really made: a trigger's targets go through `aimPending`, not `chooseTargets`.
+  */
+  const blinkTable = (
+    mine: readonly string[], opts: { tokens?: number; theirs?: readonly string[] } = {},
+  ): GameState => {
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+      battlefield: { 0: ['Soulherder', ...mine], 1: opts.theirs ?? [] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    /*
+      Tokens before the end step, which is not a detail: the trigger's targets are chosen as it
+      goes on the stack, so a token made *after* the step began is not a candidate and the table
+      never stops to ask. The first draft of these tests made them afterwards and read "no prompt"
+      as "declined".
+    */
+    if ((opts.tokens ?? 0) > 0) {
+      s = apply(s, {
+        type: 'token:create', by: 0, seat: 0, card: SOLDIER_TOKEN, count: opts.tokens!,
+      });
+    }
+    s = apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] });
+    return advanceTo(s, 'end');
+  };
+
+  /** What the bot points the end-step blink at, by name, or null if it declines. */
+  const blinks = (s: GameState, opts: Parameters<typeof botAction>[2]): string | null => {
+    expect(s.pendingChoice?.seat).toBe(0);
+    const action = botAction(s, 0, opts);
+    const picked = action?.type === 'auto:choose' ? action.targets?.[0] : undefined;
+    return picked === undefined || picked.kind !== 'card' ? null : nameOf(s, picked.id);
+  };
+
+  it('leaves your own token alone and blinks the real creature instead', () => {
+    expect(blinks(blinkTable(['Leonin Skyhunter'], { tokens: 1 }), {})).toBe('Leonin Skyhunter');
+  });
+
+  it('and declines altogether when the token is the only thing it could blink', () => {
+    /*
+      The refusal rather than the ranking, and the case the ranking alone could not fix: ranked
+      last is still ranked first when there is nothing else. "You may" is what makes declining a
+      legal answer, so this is the printed card's own out being used for the first time.
+    */
+    expect(blinks(blinkTable([], { tokens: 1 }), {})).toBeNull();
+  });
+
+  it('which is what `blinksWell: false` restores, so the rule has an arm to be priced against', () => {
+    expect(blinks(blinkTable([], { tokens: 1 }), { blinksWell: false })).toBe('Soldier');
+  });
+
+  it('prefers the creature whose arrival does something', () => {
+    // A Man-o'-War bounces something as it enters; a Serra Angel is four power and does nothing on
+    // arrival. The blink is worth a card on one of them and a +1/+1 counter on either.
+    const s = blinkTable(["Man-o'-War", 'Serra Angel']);
+    expect(blinks(s, {})).toBe("Man-o'-War");
+    // And without the hint it picks by **power**, which is how the instrument's twenty-two
+    // arrival-less blinks happened: the biggest creature is the one it reaches for.
+    expect(blinks(s, { blinksWell: false })).toBe('Serra Angel');
+  });
+
+  it('and the creature that is not carrying counters, which do not come back', () => {
+    let s = blinkTable(['Leonin Skyhunter', 'Paladin en-Vec'], {});
+    s = addCounters(s, find(s, 0, 'battlefield', 'Paladin en-Vec'), '+1/+1', 3);
+    expect(blinks(s, {})).toBe('Leonin Skyhunter');
+  });
+
+  it('and reads an Aura by whose it is, which is the play people cast a blink for', () => {
+    /*
+      A Pacifism an *opponent* put on your creature is shed by the blink, so that creature is the
+      best thing on the board to point at — the sign of the Aura term rather than its size. Nothing
+      about "an enchantment is attached" says which way round it is.
+    */
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'dawn-tithe' },
+      hands: { 1: ['Pacifism'] },
+      battlefield: {
+        0: ['Soulherder', 'Leonin Skyhunter', 'Serra Angel'],
+        1: ['Plains', 'Plains'],
+      },
+      turn: 5,
+      firstSeat: 1,
+    });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 1);
+    // Aimed at the Skyhunter rather than wherever the bot would put it, because what this test is
+    // about is the blink: the Angel is the bigger creature and the one the power ranking reaches
+    // for, so a Soulherder that frees the Skyhunter is reading the Aura rather than the board.
+    s = drain(apply(s, {
+      type: 'auto:cast',
+      by: 1,
+      card: find(s, 1, 'hand', 'Pacifism'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
+    }), 40);
+    expect(s.instances[find(s, 1, 'battlefield', 'Pacifism')]!.attachedTo)
+      .toBe(find(s, 0, 'battlefield', 'Leonin Skyhunter'));
+    s = advanceTo(nextTurn(s), 'declare-attackers');
+    s = advanceTo(apply(s, { type: 'auto:attack', by: 0, attackers: [] }), 'end');
+    expect(blinks(s, {})).toBe('Leonin Skyhunter');
+    expect(blinks(s, { blinksWell: false })).toBe('Serra Angel');
+  });
+
+  it('and the hostile reading: Flickerwisp aims at the token, which is removal', () => {
+    /*
+      The same fact with the sign flipped, which is why `blinks` is an adjustment rather than an
+      ordering of its own. A token exiled ceases to exist, so what makes it the worst thing to
+      point your own blink at makes it the best thing to point one of theirs at — and Flickerwisp's
+      target is "another target permanent", so the choice really is the bot's.
+    */
+    let s = arena({
+      decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+      hands: { 0: ['Flickerwisp'] },
+      battlefield: { 0: ['Plains', 'Plains', 'Plains', 'Plains'], 1: ['Grizzly Bears'] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = apply(s, { type: 'token:create', by: 0, seat: 1, card: SOLDIER_TOKEN, count: 1 });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Flickerwisp') }), 40);
+    expect(blinks(s, {})).toBe('Soldier');
+    // Without the hint it takes the biggest creature, which gets the whole permanent back.
+    expect(blinks(s, { blinksWell: false })).toBe('Grizzly Bears');
+  });
+});

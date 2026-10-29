@@ -13292,3 +13292,89 @@ bot has not had before: every other optional target in the pool points at the en
 a bad answer does is waste the card. This one points at your own board, so a bad answer destroys a
 creature. The shape of the fix is the one `TargetSpec.friendly` already has — a fact the card
 declares and the bot's ranker reads — and the number to beat is 4 in 34.
+
+## D226 — What a blink costs, and the first target the bot could harm by pointing at it
+
+D225 shipped Soulherder and read what the bot did with it: of 34 blinks across 48 games, **one
+destroyed a token outright** (CR 111.7) and **three stripped a creature of its +1/+1 counters**
+(CR 400.7). This is that number taken seriously.
+
+### Why it is a new kind of mistake
+
+Every optional target in this pool before now aims at the enemy. A Doom Blade pointed at the wrong
+creature, a shield on the wrong body, a modular counter given to the wrong artifact — the floor on
+all of them is "the card was wasted", which is why `chooseTargets` has been allowed to be as simple
+as "the enemy, biggest first" with one hint (`friendly`) for the handful of cards aimed the other
+way. A blink is the first target where a bad answer **costs you a creature**, because the permanent
+does not come back as itself: a token ceases to exist, and counters, Auras and marked damage are all
+gone from what returns.
+
+And the bot could not have worked that out. A target spec is a candidate list and a filter; nothing
+in it says "and then it comes back". So the card declares it, exactly as `friendly` is declared:
+`TargetSpec.blinks`, carried by Soulherder's end step, Cloudshift and Flickerwisp.
+
+### A ranking for the deals and a refusal for the destruction
+
+`blinkLoss` is what a permanent's controller loses, and `blinkAdjust` flips the sign for an
+opponent's — one function for both readings, which is the whole reason this is an *adjustment* to
+the ordinary ranking rather than a third ordering. Four terms, and they are the four the instrument
+counted rather than four this engine thought of: a token (the whole permanent), counters (a +1/+1 is
+a loss, a −1/−1 is a creature healed), an Aura (and *whose* it is decides the sign — your Pacifism
+on their creature is freed by the blink, theirs on yours is shed), and an Equipment (which merely
+falls off, so it is a smaller loss). Marked damage is deliberately left out, and so is untapping:
+both are real and neither is worth anything at the moment this engine's blinks are chosen, since
+Soulherder's is an end-step trigger. Untapping is the better of the two to add if a probe ever comes
+back asking for a term.
+
+The token needed a **refusal** rather than a weight, and the instrument is what proved it: with the
+ranking alone the bot still blinked a token once in 48 games, because a ranking only decides which
+candidate is best and a board whose only other creature is a token leaves the worst play as the best
+one. `blinkDestroysMine` drops it from the list, and only where declining is legal — a mandatory
+blink with nothing but a token to point at has to point somewhere, and that is the rules' answer
+rather than the bot's. It is kept narrow on purpose: it refuses destruction, not a bad deal.
+
+### What it is worth
+
+The instrument, same 48 games, same seeds:
+
+| | before | after |
+| --- | --- | --- |
+| blinks taken | 34 | 31 (one declined) |
+| a token destroyed | 1 | **0** |
+| counters stripped | 3 | **0** |
+| blinks with nothing to re-trigger | 22 | 15 |
+| Man-o'-Wars and Omenspeakers blinked | 6 | 11 |
+
+Four bad blinks to none, and the useful ones nearly doubled — the bot now reaches for the arrival
+trigger instead of the biggest creature.
+
+`bot-duel` three ways, and all three say the same thing — nothing:
+
+| | |
+| --- | --- |
+| `SUBJECT=skyward-writ`, seeds 3300, 288 games | 146-142 (+4) |
+| `SUBJECT=skyward-writ`, seeds 5100, 288 games | 145-143 (+2) |
+| the whole field, seeds 3300, 624 games | 311-313 (−2) |
+
+Level, level and level: every reading is well inside the ±20 floor and they do not even agree on the
+sign. That is the expected shape rather than a disappointment — a rule that changes four choices in
+forty-eight games cannot move a win rate, which is the same arithmetic D223's +1 and +3 ran into. The
+duel's job here was to **rule out harm**, and it does: the bot is not worse for knowing what a blink
+costs.
+
+The argument is the instrument's, and it is the same one D220 and D223 made. A bot that destroys its
+own token to put a +1/+1 counter on a 1/1 looks broken to the person sitting opposite, and this is a
+solo play realm before it is a benchmark.
+
+### A measurement lesson that cuts against the obvious one
+
+`SUBJECT` is new on `bot-duel`, and the first version of its docblock said it was there to stop a
+one-deck rule being "drowned six to one" in a 312-game field. **That was wrong, and this file had
+already said why**: a pairing where the setting is inactive for both arms is the same game twice on
+the same seed, so it credits one win to each arm and contributes nothing to the difference and
+nothing to its variance. The full field is not diluted — only the percentage is, and the difference
+is what gets read. So narrowing buys **time**, not signal: the same number, six times sooner.
+
+It also costs something that is easy to miss, and the rule being measured is the example.
+`blinksWell` fires off Soulherder in Skyward Writ *and* Cloudshift in Verdant Guard, so
+`SUBJECT=skyward-writ` prices three quarters of it. The whole-field run is what prices all of it.
