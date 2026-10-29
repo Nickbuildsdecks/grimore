@@ -138,6 +138,18 @@ export function pendingDeclaration(
   state: GameState,
 ): { readonly kind: 'attackers' | 'blockers' | 'order'; readonly seats: readonly SeatIndex[] } | null {
   if (!state.automated) return null;
+  /*
+    Nothing is outstanding on a finished game (CR 104.1), and this is the one outstanding thing the
+    game-over block in `engine.ts` cannot clear for itself.
+
+    Every other question the engine can be holding is a **field** — a decision, a choice, a ward
+    payment, an offered cast, a discard — and the block that ends the game sets each of them to
+    null. A combat declaration is not a field: it is derived here from the step and the combat
+    record, so a game that ended while somebody still owed attackers or blockers kept asking for
+    them forever. The table reads it as a game-over screen that is also demanding a declaration,
+    and `legalActions` offers nothing else while one is outstanding, so there is no way out of it.
+  */
+  if (state.finished) return null;
   if (state.step === 'declare-attackers' && !state.combat.attackersDeclared) {
     return { kind: 'attackers', seats: [state.activeSeat] };
   }

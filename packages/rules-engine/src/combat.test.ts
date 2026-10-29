@@ -56,6 +56,26 @@ describe('declaring attackers', () => {
     expect(refusal(s, { type: 'auto:pass', by: 0 })).toContain('must be declared');
   });
 
+  it('stops asking the moment the game is over (CR 104.1)', () => {
+    /*
+      The one outstanding question the game-over block in `engine.ts` cannot clear by setting a
+      field to null, because this one is not a field: it is derived from the step and the combat
+      record. So a game that ended while a declaration was owed went on asking for it, and the
+      table reads that as a game-over screen that is also demanding attackers — with nothing else
+      on offer, because `legalActions` holds priority back while a declaration stands.
+
+      Found by CI: `apps/realtime`'s whole-game test failed once with
+      `awaiting: { kind: 'attackers', seats: [1] }` where it expects null, on a commit that had
+      changed nothing but a browser script.
+    */
+    const owed = toAttackers(arena({ battlefield: { 0: ['Hill Giant'] }, turn: 2, firstSeat: 0 }));
+    expect(pendingDeclaration(owed)).toEqual({ kind: 'attackers', seats: [0] });
+
+    const over: GameState = { ...owed, finished: true, winnerSeat: 0 };
+    expect(pendingDeclaration(over)).toBeNull();
+    expect(legalActions(over, 0).mustDeclare).toBeNull();
+  });
+
   it('taps an attacking creature, but not one with vigilance (CR 508.1f)', () => {
     let s = toAttackers(arena({ battlefield: { 1: ['Centaur Courser', 'Serra Angel'] }, turn: 2, firstSeat: 1 }));
     const courser = find(s, 1, 'battlefield', 'Centaur Courser');

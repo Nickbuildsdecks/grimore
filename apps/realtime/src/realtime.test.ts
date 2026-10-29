@@ -739,9 +739,17 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       expect(view.automation!.awaiting).toEqual({ kind: 'mulligan', seats: [0] });
 
       view = await act({ type: 'auto:keep' });
-      // With both hands settled the game has begun, and the server has already taken any turn of
-      // its own that came first.
-      expect(view.automation!.awaiting).toBeNull();
+      /*
+        With both hands settled the game has begun, and the server has already taken any turn of
+        its own that came first.
+
+        Both of this test's `awaiting` assertions now say which one they are, because a failure of
+        either reads identically in CI — "expected { kind: 'attackers', seats: [ 1 ] } to be null"
+        — and the two mean opposite things: here it is the server not having finished the turn the
+        roll gave it, and at the end of the game it is a finished table still asking a question.
+        One occurrence of that message cost a session's worth of guessing which.
+      */
+      expect(view.automation!.awaiting, 'just after both opening hands were settled').toBeNull();
       expect(view.turn).toBeGreaterThanOrEqual(1);
 
       // Play it out by only ever doing what the table offers.
@@ -834,8 +842,10 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       expect(view.zones['1:library']).toBeUndefined();
       expect(view.zones['0:library']).toBeUndefined();
       // Whatever questions came up over the wire were answered over the wire, and none was left
-      // outstanding at the end — a game that ends mid-resolution has not ended.
-      expect(view.automation!.awaiting).toBeNull();
+      // outstanding at the end — a game that ends mid-resolution has not ended. A combat
+      // declaration is the one of those questions the engine derives rather than stores, which is
+      // how it used to survive the end of a game; see `pendingDeclaration`.
+      expect(view.automation!.awaiting, 'once the game had a winner').toBeNull();
       /*
         And the server's seat was never left with nothing to do.
 
