@@ -13071,6 +13071,28 @@ change its mind. If the second ever goes green, the first has stopped checking a
 a measurement control and nothing else — `false` is the bot reading the shuffle, and it must never
 reach a real table.
 
+### And what the cheat was worth: nothing
+
+`bot-duel` across every deck pairing, both seatings, three seed sets, the cheating bot against the
+fair one:
+
+| seed set | `blindToShuffle: false` vs the default |
+| --- | --- |
+| 3300 | 467-467 (2 unfinished) of 936 |
+| 8800 | 468-468 of 936 |
+| 5500 | 472-462 (2 unfinished) of 936 |
+
+Level, level, and +10 inside the ±20 floor. The positive control on this same build — `lookahead:
+false` — reads **91-220 of 312**, and reads the same 91-220 on the build *before* the blinding, which
+says something extra for free: the search lost no measurable strength by losing the shuffle.
+
+So the bot was reading its own library and **getting nothing for it**, which makes this the best
+shape a fairness fix can have — correctness with no price to argue about. It is worth saying that the
+flat reading here needs no apology under D216's rule, because the connectedness of the flag is not in
+question: `hidden-info` already showed it moving **9 decisions of 16,804**. A rule that changes nine
+decisions in seventeen thousand cannot move a win rate over 936 games, and the duel saying so is the
+two instruments agreeing rather than one of them being asleep.
+
 ## D223 — The card the pool was missing, and the question "is it idle" replaced with "is it a loss"
 
 D222 ended with an artifact cost the deck could not pay well and a bot rule switched off because what

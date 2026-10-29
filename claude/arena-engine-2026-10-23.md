@@ -6398,6 +6398,13 @@ the sweep with blinding on, and the named position with it off asserting the bot
 mind. A test that asserts "no difference" is worth exactly as much as the proof a difference was
 reachable.
 
+**And the cheat was worth nothing.** `bot-duel`, three seed sets, the cheating bot against the fair
+one: 467-467, 468-468 and 472-462 of 936, with the positive control (`lookahead: false`) at 91-220 of
+312 — the same 91-220 the build *before* the blinding gave, so the search lost no measurable strength
+by losing the shuffle. Correctness with no price to argue about, and the flat reading needs no
+apology: `hidden-info` already showed the flag moving 9 decisions of 16,804, and nine in seventeen
+thousand cannot move a win rate over 936 games.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
