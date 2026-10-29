@@ -957,6 +957,20 @@ export function eliminatedLabel(reason: string | null): string {
 export function cardBadges(view: GameView, card: VisibleCard): string[] {
   const out: string[] = []
   if (card.zone !== "battlefield") return out
+  /*
+    Something to do with this permanent right now, which the board never said.
+
+    Every other zone a play can come from badges it — hand, graveyard, exile, command — and the
+    battlefield did not, so a Contagion Clasp with four mana up, an Equipment that could move and a
+    Vehicle that could be crewed all looked exactly like a permanent sitting there doing nothing.
+    The plays were on the card's own sheet the whole time; what was missing was the thing that tells
+    a player to open it.
+
+    Mana abilities are left out on purpose. Every untapped land has one, so counting them would
+    badge half the board every turn and say nothing — and the engine taps lands for a cost by
+    itself, so a land's own `{T}: Add {G}` is not a play anybody needs pointing out.
+  */
+  if (playsForCard(view, card.id).some((play) => !play.isManaAbility)) out.push("playable")
   // An Aura is drawn on its controller's side, which is often not the side its host is on, so
   // without naming the host there is nothing on screen that says what a Pacifism is doing.
   if (card.attachedTo !== null) {

@@ -655,8 +655,42 @@ export interface StackObjectLike {
   readonly targets: readonly { readonly kind: string; readonly id?: string }[];
 }
 
+/**
+ * A question whose answer is a set of **permanents and players**: proliferate's (CR 701.27a).
+ *
+ * The fifth shape, and the first whose candidates are not all cards. Every other question here is
+ * about objects in a zone — a hand, a graveyard, the top of a library — and a *player* is not in a
+ * zone at all. Poison and energy counters live on a seat, so "choose any number of permanents
+ * and/or players with counters on them" could not be asked with the four shapes that existed; the
+ * nearest approximation, asking only about permanents, would have left the keyword unable to do the
+ * thing it is famous for.
+ *
+ * So the candidate list is mixed: an instance id is a permanent, and `seat:N` is the player at that
+ * seat. The engine computes it — **everything with at least one counter already on it**, which is
+ * the rule and is also what makes the question answerable without the chooser hunting the board.
+ *
+ * The scope is `permanents`, which is narrower than it reads and is the rule: a suspended card in
+ * exile carries time counters and is **not** a permanent, so it is not a legal choice. That is why
+ * proliferate does not accelerate a suspended spell in paper either.
+ */
+export interface CountersDecisionSpec {
+  readonly who: 'controller';
+  readonly prompt: string;
+  /** The discriminator. The shapes are told apart by which of these fields is present. */
+  readonly counters: true;
+  /** Both default to "any number", which is what the keyword says: 0 to everything. */
+  readonly min?: number;
+  readonly max?: number;
+  /** Never set on this shape. */
+  readonly from?: never;
+  readonly options?: never;
+  readonly range?: never;
+  readonly retargets?: never;
+}
+
 export type DecisionSpec =
-  | CardsDecisionSpec | ChoiceDecisionSpec | NumberDecisionSpec | TargetDecisionSpec;
+  | CardsDecisionSpec | ChoiceDecisionSpec | NumberDecisionSpec | TargetDecisionSpec
+  | CountersDecisionSpec;
 
 /** Whether a question is the kind whose answer is a word. Narrows for TypeScript as well. */
 export const isChoiceDecision = (spec: DecisionSpec): spec is ChoiceDecisionSpec =>
@@ -665,6 +699,10 @@ export const isChoiceDecision = (spec: DecisionSpec): spec is ChoiceDecisionSpec
 /** Whether a question is the kind whose answer is a number. */
 export const isNumberDecision = (spec: DecisionSpec): spec is NumberDecisionSpec =>
   spec.range !== undefined;
+
+/** Whether a question is proliferate's: a set of permanents and players carrying counters. */
+export const isCountersDecision = (spec: DecisionSpec): spec is CountersDecisionSpec =>
+  (spec as CountersDecisionSpec).counters === true;
 
 /** Whether a question is the kind whose answer is a target for something else on the stack. */
 export const isTargetDecision = (spec: DecisionSpec): spec is TargetDecisionSpec =>

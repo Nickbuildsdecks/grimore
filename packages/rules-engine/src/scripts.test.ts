@@ -17,7 +17,8 @@ import {
   hasType,
   legalActions,
   parseTypeLine,
-  packView, parseManaCost, pendingDeclaration, protectedFrom, pump, pumpAll, pumpTeam, scriptFor,
+  packView, parseManaCost, pendingDeclaration, proliferate, proliferateCandidates, protectedFrom,
+  pump, pumpAll, pumpTeam, scriptFor,
   scriptedCardNames,
   staticEffect, unpackView, viewFor,
   type ContinuousEffect,
@@ -16467,5 +16468,134 @@ describe('buyback: the cost that changes where the card goes', () => {
     });
     expect(s.stackObjects[s.stackOrder[0]!]!.boughtBack).toBe(true);
     expect(s.stackObjects[s.stackOrder[0]!]!.description).toContain('(buyback)');
+  });
+});
+
+describe('proliferate: the question whose answer can be a player', () => {
+  /*
+    The keyword action that touches everything this engine counts (CR 701.27a), and the first
+    question whose candidate list is not all cards: poison lives on a seat, so "permanents and/or
+    players" could not be asked with the four shapes that existed.
+
+    So the tests are the shape and the rule. The shape: a mixed candidate list, a seat answered by
+    `seat:N`, and "any number" meaning nought is a legal answer. The rule: one more of **each kind
+    already there**, nothing added where there is nothing, and a suspended card left alone because
+    it is not a permanent.
+  */
+  const table = (): GameState => tapAllLands(advanceTo(arena({
+    decks: { 0: 'blight-vector', 1: 'hollow-tide' },
+    hands: { 0: ['Contagion Clasp'] },
+    battlefield: { 0: ['Swamp', 'Swamp', 'Forest', 'Forest', 'Forest', 'Forest', 'Glistener Elf'], 1: ['Chasm Skulker'] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+
+  /**
+   * Casts the Clasp, aims its arrival trigger, then activates its proliferate.
+   *
+   * The `-1/-1` lives on the Clasp's **arrival trigger**, not on the spell, so the target is chosen
+   * after the artifact has resolved (`pendingChoice`) and a cast that carried one is refused. The
+   * last `drain` stops on the proliferate question, which is what each test then answers.
+   */
+  const clasped = (s0: GameState, target: string): GameState => {
+    let s = drain(apply(s0, {
+      type: 'auto:cast', by: 0, card: find(s0, 0, 'hand', 'Contagion Clasp'),
+    }), 40);
+    s = drain(apply(s, {
+      type: 'auto:choose', by: s.pendingChoice!.seat, targets: [{ kind: 'card', id: target }],
+    }), 40);
+    s = apply(s, {
+      type: 'auto:activate', by: 0,
+      card: find(s, 0, 'battlefield', 'Contagion Clasp'), abilityIndex: 0,
+    });
+    return drain(s, 40);
+  };
+
+  it('offers every permanent and player already carrying a counter, and nothing else', () => {
+    let s = table();
+    const elf = find(s, 0, 'battlefield', 'Glistener Elf');
+    const skulker = find(s, 1, 'battlefield', 'Chasm Skulker');
+    // A counter on each side, and a poisoned opponent.
+    s = addCounters(s, elf, '+1/+1', 2);
+    s = addCounters(s, skulker, '+1/+1', 1);
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, poison: 3 } : seat)) };
+
+    s = clasped(s, skulker);
+
+    const ask = s.pendingDecision;
+    expect(ask?.counters).toBe(true);
+    // The Elf, the Skulker (which the Clasp's arrival put a -1/-1 on) and seat 1's poison — and
+    // not a single land, because a permanent with no counters is not a legal choice.
+    expect([...(ask?.candidates ?? [])].sort()).toEqual([elf, skulker, 'seat:1'].sort());
+    // "Any number" is the keyword's own wording, so nought is an answer.
+    expect(ask?.min).toBe(0);
+    expect(ask?.max).toBe(3);
+  });
+
+  it('gives one more of each kind already there, to a permanent and to a player', () => {
+    let s = table();
+    const elf = find(s, 0, 'battlefield', 'Glistener Elf');
+    const skulker = find(s, 1, 'battlefield', 'Chasm Skulker');
+    s = addCounters(s, elf, '+1/+1', 2);
+    /*
+      A +1/+1 on the Skulker before the Clasp's -1/-1 arrives, so it survives to be proliferated —
+      a 0/1 that takes a -1/-1 is a -1/0 and dies before the ability is ever activated. It also
+      makes it the one permanent here carrying **two** kinds of counter, which is the half of
+      "one of each kind already there" that a single-counter permanent cannot show.
+    */
+    s = addCounters(s, skulker, '+1/+1', 1);
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, poison: 3 } : seat)) };
+
+    s = clasped(s, skulker);
+
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [elf, skulker, 'seat:1'] }), 40);
+    expect(s.instances[elf]!.counters['+1/+1']).toBe(3);
+    // The Skulker took a -1/-1 from the Clasp's arrival and another from the proliferate, and one
+    // more of the +1/+1 it already had: each kind that is there grows by one, not the biggest pile.
+    expect(s.instances[skulker]!.counters['-1/-1']).toBe(2);
+    expect(s.instances[skulker]!.counters['+1/+1']).toBe(2);
+    expect(s.seats[1]!.poison).toBe(4);
+    // And nothing was added where there was nothing: a land is still a land.
+    const land = find(s, 0, 'battlefield', 'Swamp');
+    expect(Object.keys(s.instances[land]!.counters)).toEqual([]);
+  });
+
+  it('leaves a suspended card alone, because a card in exile is not a permanent', () => {
+    /*
+      The thing people most often expect of this keyword and the one it does not do. Time counters
+      sit on a card in **exile**; proliferate chooses permanents and players (CR 701.27a), and the
+      answer paper gives is the answer here.
+    */
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'kindle-grove', 1: 'blight-vector' },
+      hands: { 0: ['Search for Tomorrow'] },
+      battlefield: { 0: ['Forest', 'Forest'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const search = find(s, 0, 'hand', 'Search for Tomorrow');
+    s = apply(s, { type: 'auto:suspend', by: 0, card: search });
+    expect(s.instances[search]!.counters['time']).toBe(2);
+    expect(proliferateCandidates(s)).not.toContain(search);
+
+    // And proliferating it by hand does nothing, which is the rule rather than a guard.
+    expect(proliferate(s, [search]).instances[search]!.counters['time']).toBe(2);
+  });
+
+  it('the bot takes the counters that help it and leaves the ones that do not', () => {
+    let s = table();
+    const elf = find(s, 0, 'battlefield', 'Glistener Elf');
+    const skulker = find(s, 1, 'battlefield', 'Chasm Skulker');
+    s = addCounters(s, elf, '+1/+1', 1);
+    s = addCounters(s, skulker, '+1/+1', 1);
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, poison: 2 } : seat)) };
+
+    s = clasped(s, elf);
+
+    const answer = botAction(s, 0);
+    const chosen = answer?.type === 'auto:decide' ? [...(answer.cards ?? [])] : [];
+    // The poisoned opponent, yes. Their growing Skulker, no. Its own Elf, no — the Clasp's own
+    // arrival put a -1/-1 on it, and one of each cancels.
+    expect(chosen).toContain('seat:1');
+    expect(chosen).not.toContain(skulker);
+    expect(chosen).not.toContain(elf);
   });
 });

@@ -1216,6 +1216,56 @@ export function freezeNextUntap(state: GameState, id: string): GameState {
   return withInstance(state, id, { frozen: true });
 }
 
+/**
+ * The prefix that makes a **player** answerable to a question whose other answers are cards.
+ *
+ * Proliferate's candidate list is mixed (CR 701.27a), and an answer travels down a socket as a list
+ * of strings — so a player has to be one of them. `seat:1` rather than a bare number because the
+ * list is checked against instance ids, and an answer that happened to collide with one would be
+ * exactly the bug that checking exists to prevent.
+ */
+export const SEAT_CHOICE = 'seat:';
+
+/**
+ * Proliferate: one more of **each kind of counter already there**, on each thing chosen
+ * (CR 701.27a).
+ *
+ * The keyword that touches everything this engine counts — +1/+1 and -1/-1, loyalty, poison,
+ * energy, lore on a Saga, charge on an artifact — and it adds nothing new to anything. A permanent
+ * with two kinds of counter on it gets one of each; a permanent with none is not a legal choice and
+ * never reaches here.
+ *
+ * Two things it deliberately does not do. It does not touch a **suspended card**: time counters sit
+ * on a card in exile, which is not a permanent, so proliferate cannot hurry a Rift Bolt along — the
+ * same answer paper gives and the thing people most often expect of this keyword. And poison is
+ * read off its own field rather than the counters record, because that is where a seat keeps it.
+ */
+export function proliferate(state: GameState, chosen: readonly string[]): GameState {
+  let next = state;
+  for (const id of chosen) {
+    if (id.startsWith(SEAT_CHOICE)) {
+      const seat = Number(id.slice(SEAT_CHOICE.length)) as SeatIndex;
+      const player = next.seats[seat];
+      if (player === undefined || player.eliminated) continue;
+      const counters: Record<string, number> = { ...player.counters };
+      for (const [key, value] of Object.entries(counters)) {
+        if (value > 0) counters[key] = clampValue(value + 1);
+      }
+      next = replaceSeat(next, seat, {
+        counters,
+        ...(player.poison > 0 ? { poison: clampValue(player.poison + 1) } : {}),
+      });
+      continue;
+    }
+    const inst = next.instances[id];
+    if (inst === undefined || inst.zone !== 'battlefield') continue;
+    for (const [key, value] of Object.entries(inst.counters)) {
+      if (value > 0) next = addCounters(next, id, key, 1);
+    }
+  }
+  return next;
+}
+
 export function addCounters(state: GameState, id: string, key: string, amount: number): GameState {
   const inst = state.instances[id];
   if (inst === undefined) return state;

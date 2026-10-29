@@ -5869,6 +5869,45 @@ committed slot is the Magpie's now. And what is left is not a wasted play — Ca
 in `wasted-plays.mjs` at all over 312 games — it is a slow one: six mana to bounce one permanent,
 buying a long game this pool rarely reaches.
 
+### Proliferate, and the first question whose answer can be a player (D213)
+
+Every question this table has ever asked is answered with **cards**: a sacrifice, a scry, a
+search, a discard, a damage order, a copy's new target. Proliferate chooses "any number of permanents
+and/or players with counters on them" (CR 701.27a), and poison lives on a *seat* — so this is the
+first answer with no card in it.
+
+It cost a prefix rather than a question type. `CountersDecisionSpec` is an ordinary decision with
+`counters: true`, which swaps the candidate list for `proliferateCandidates` — every battlefield
+permanent carrying a counter, plus `seat:N` for every player carrying one — in the **same**
+`candidates: string[]`. Two lists would have taught the reducer, the bot, the view and the driver
+that an answer has two kinds; one list left all of them alone, so `min`/`max` still count the answer
+and `auto:decide` still carries it. The client got half of it free: the lit-cards set reads
+`ask.candidates` wholesale, so the permanents lit themselves and only the seat strip was new. It
+borrows the targetable ring it already had, and its button says **Choose Nick** rather than *Target*
+Nick, because a proliferate does not target.
+
+The rule is one more of **each kind already there**, which is the keyword's whole subtlety: a
+permanent with a +1/+1 and a -1/-1 gets one of each, and a permanent with nothing is not a candidate
+at all. And the thing people expect of it that it does not do — **a suspended card is left alone**,
+because time counters sit on a card in exile and exile holds no permanents. That is a test rather
+than a comment.
+
+Contagion Clasp went into Blight Vector and Steady Progress into Hollow Tide, both **level** on two
+seed sets: −8/+4 and −11/+4 of 288, each pair disagreeing in sign and every reading inside the ±20
+floor. Expected for a two-mana artifact whose ability costs four, in a format these decks usually
+finish before turn eight.
+
+**And the browser row found two defects that had nothing to do with the keyword.** The board never
+said a permanent had something to do: hand, graveyard, exile and the command zone all badge a card
+`playable` and the battlefield did not, so an Equipment that could move, a Vehicle that could be
+crewed, a monstrosity and a regenerate were all invisible — the plays were on the card's own sheet
+the whole time and nothing told a player to open it. It badges them now, mana abilities excluded,
+because every untapped land has one and a badge on half the board says nothing. And no browser suite
+had ever **activated an ability of a permanent**, for exactly that reason. It can now, off by
+default: the first version turned it on everywhere and `LIST=cascade` stopped casting Bloodbraid
+Elves, because regenerating a River Boa costs {G} and a Forest spent on a shield nobody needed is a
+Forest the four-mana Elf wanted.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

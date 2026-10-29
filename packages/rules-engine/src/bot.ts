@@ -26,7 +26,7 @@ import {
   attackAimIssue, canAttack, canBlock, damageOrdersOwed, forcedAttackers, legalAttackers,
   legalDefenders,
 } from './combat.js';
-import { creaturesControlledBy, poolOf } from './effects.js';
+import { SEAT_CHOICE, creaturesControlledBy, poolOf } from './effects.js';
 import { applyAction } from './engine.js';
 import { canAfford, costValue, parseManaCost, type ManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
@@ -97,7 +97,53 @@ function decideAction(
       ...(picked === undefined ? {} : { target: picked }),
     };
   }
+  // And proliferate, which is the one question whose candidates are on both sides of the table:
+  // what to choose is a fact about *whose* counters they are. See `proliferateChoice`.
+  if (ask.counters === true) {
+    return { type: 'auto:decide', by: seat, cards: proliferateChoice(state, seat, ask.candidates) };
+  }
   return { type: 'auto:decide', by: seat, cards: decideCards(state, seat, ask) };
+}
+
+/**
+ * Which permanents and players to proliferate, which is a question about ownership (CR 701.27a).
+ *
+ * Every other decision here is "which of my cards"; this one offers the opponent's board too, and
+ * a bot that took the first few candidates would cheerfully grow an enemy Chasm Skulker. So it is
+ * four facts, each of them about who benefits:
+ *
+ *  - **My permanent with a +1/+1 or a loyalty counter**, unless it also carries a −1/−1 — one of
+ *    each cancels, and a permanent with both is not worth the choice.
+ *  - **Their permanent with a −1/−1 counter**, unless it also carries a +1/+1, for the same reason.
+ *  - **Their seat, when it has poison on it.** Poison is a clock to ten and the only counter in
+ *    this pool that wins a game on its own.
+ *  - **My own seat, only when it has no poison.** Proliferating yourself adds one of *each* kind
+ *    you carry, so a seat holding energy and poison would buy a point of energy with a point of
+ *    poison, which is the trade this rule exists to refuse.
+ *
+ * Lore counters are deliberately not chosen. Advancing a Saga is usually good and also ends it
+ * sooner, which is a judgement rather than a fact, and the pool has no card that makes the answer
+ * obvious.
+ */
+function proliferateChoice(
+  state: GameState, seat: SeatIndex, candidates: readonly string[],
+): string[] {
+  return candidates.filter((id) => {
+    if (id.startsWith(SEAT_CHOICE)) {
+      const other = Number(id.slice(SEAT_CHOICE.length)) as SeatIndex;
+      const player = state.seats[other];
+      if (player === undefined || player.eliminated) return false;
+      if (other !== seat) return player.poison > 0;
+      return player.poison === 0 && Object.values(player.counters).some((n) => n > 0);
+    }
+    const inst = state.instances[id];
+    if (inst === undefined) return false;
+    const plus = inst.counters['+1/+1'] ?? 0;
+    const minus = inst.counters['-1/-1'] ?? 0;
+    const mine = (plus > 0 || (inst.counters['loyalty'] ?? 0) > 0) && minus === 0;
+    if (inst.zoneSeat === seat) return mine;
+    return minus > 0 && plus === 0;
+  });
 }
 
 /**

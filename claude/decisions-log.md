@@ -11960,3 +11960,95 @@ which is the property that makes two games readable and 3-of-288 arguable.
 And the smaller one: **a difference of two noisy measurements needs its own error bar.** Four
 readings agreeing in sign is not four readings of the same thing — it is two subtractions, each
 carrying both probes' noise.
+
+## D213 — Proliferate, the first question whose answer can be a player
+
+Every question this table has ever asked is answered with **cards**. A sacrifice, a scry, a search, a
+discard, a damage order, a copy's new target: all of them are "tap the lit cards and confirm", and
+the whole chain — the engine's `candidates`, the client's lit ring, the driver's tap loop — is built
+on that. Proliferate chooses "any number of permanents and/or players with counters on them"
+(CR 701.27a), and poison lives on a **seat**. So this is the first answer in the game with no card in
+it.
+
+### The shape: one more decision flag, not a sixth question type
+
+`CountersDecisionSpec` is an ordinary `DecisionSpec` with `counters: true` on it, and that flag does
+two things and nothing else: `decisionCandidates` is replaced by `proliferateCandidates`, which
+returns battlefield permanents carrying a counter **plus** `seat:N` for every player carrying one;
+and the client reads the same flag to light a seat strip and to word the instruction as "tap the
+permanents and players".
+
+A `seat:` prefix inside the same `candidates: string[]` rather than a second list. Two lists would
+have meant every consumer of a decision — the reducer, the bot, the view, the driver — learning that
+a decision can have two kinds of answer, for one keyword. One list means the id namespace grows by a
+prefix and the machinery above it does not change at all: `min`/`max` still count the answer,
+`chosen` still holds it, and `auto:decide` still carries it.
+
+That bought something immediately: half of the client work was already done. The table's lit-cards
+set takes `ask.candidates` wholesale, so the permanents lit themselves; all that was left was the
+seat strip, which has no card to light and borrows the targetable ring it already had for spells.
+
+Two places had to learn the prefix, and both are about **naming**: the log line (`auto:decide` asked
+an instance for its name and threw `no card with id seat:1` — the one crash this piece produced), and
+the strip's own button, which now says **Choose Nick** rather than *Target* Nick, because a
+proliferate does not target (CR 701.27a) and a button that said so would be describing a different
+game.
+
+### The rule: one more of each kind already there
+
+`proliferate(state, chosen)` adds one of **every** counter kind already on a thing, which is the
+keyword's whole subtlety. A permanent with a +1/+1 and a -1/-1 on it gets one of each. A permanent
+with nothing gets nothing — and is not a candidate, so "nothing to proliferate" is not a refusal but
+an absence. Poison is read off the seat's own `poison` field rather than its counters record, because
+that is where this engine keeps it.
+
+And the thing people expect of it that it does not do: **a suspended card is not proliferated.** Time
+counters sit on a card in **exile**, and exile holds no permanents — so proliferate cannot hurry a
+Rift Bolt along. That is the answer paper gives, and it is a test rather than a comment: the
+suspended card is not in `proliferateCandidates`, and `proliferate` called on it by hand changes
+nothing.
+
+### Two cards, both measured level
+
+Contagion Clasp (`{2}` artifact; a `-1/-1` on arrival, then `{4}, {T}: Proliferate`) went into Blight
+Vector for the second Tainted Strike; Steady Progress (`{2}{U}` instant; proliferate, draw a card)
+into Hollow Tide for the third Mind Sculpt. Both priced on two seed sets of 288 paired games:
+
+| | seeds 3300 | seeds 5100 |
+| --- | --- | --- |
+| Contagion Clasp, in Blight Vector | −8 | +4 |
+| Steady Progress, in Hollow Tide | −11 | +4 |
+
+Both cards are level: each pair disagrees in **sign** and every reading is well inside the ±20 floor
+a 288-game paired probe has (D96, D211). That is the honest read and it is the expected one — a
+two-mana artifact whose ability costs four is a slow card in a format these decks usually finish
+before turn eight. Neither slot is moved, because nothing says to move it.
+
+### The browser row cost two things the table was missing
+
+`LIST=proliferate` plays a deck built for the question — sixteen infect creatures to put poison on
+the computer, eight Clasps to ask, four Sol Rings so the `{4}` is affordable before the game ends —
+and requires that a **player** was chosen by tapping their own strip. Getting there found two
+defects that had nothing to do with this keyword:
+
+**The board never said a permanent had something to do.** Hand, graveyard, exile and the command zone
+all badge a card `playable`; the battlefield did not. So an Equipment that could move, a Vehicle that
+could be crewed, a monstrosity, a regenerate and the Clasp's own ability were all invisible — the
+plays were on the card's sheet the whole time, and nothing told a player to open it. `cardBadges` now
+badges a permanent with any play that is **not a mana ability**; mana abilities are excluded because
+every untapped land has one, and a badge on half the board says nothing.
+
+**No browser suite had ever activated an ability of a permanent**, for exactly that reason: the
+driver only taps what carries the badge. It can now, and that is **off by default** — which is the
+part worth writing down. The first version turned it on for every caller and `LIST=cascade`
+immediately stopped casting Bloodbraid Elves: that deck runs three River Boas, regenerating one costs
+`{G}`, and a Forest spent on a shield nobody needed is a Forest the four-mana Elf wanted. Pressing an
+arbitrary activated ability is not "the simplest legal thing" — it is a scenario, so the scenario
+asks for it and the other fifteen runs keep playing the way they did.
+
+### The lesson
+
+**A new kind of answer is cheaper as a new kind of id than as a new kind of question.** The six
+stopped-table states each cost a reducer branch, a view field, a client mode and a driver branch.
+This one cost a prefix, because it kept the answer's *shape* — a list of ids with a count on it — and
+only widened what an id may name.

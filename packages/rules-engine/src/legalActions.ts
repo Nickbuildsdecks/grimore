@@ -320,6 +320,12 @@ export interface LegalActions {
      * an answer. See `TargetDecisionSpec`.
      */
     readonly targetChoices?: readonly Target[];
+    /**
+     * Proliferate's question, whose candidates mix permanents with `seat:N` players
+     * (CR 701.27a). The table lights each chosen player's own seat strip rather than trying to
+     * light a card that does not exist.
+     */
+    readonly counters?: true;
   } | null;
   /**
    * A ward this seat is being asked to pay (CR 702.21b), and what it loses by declining.
@@ -1733,6 +1739,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
         ...(decision.targetChoices === undefined
           ? {}
           : { targetChoices: [...decision.targetChoices] }),
+        ...(decision.counters === true ? { counters: true as const } : {}),
         candidates: decision.candidates, min: decision.min, max: decision.max,
       }
     : null;

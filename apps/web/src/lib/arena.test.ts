@@ -1564,6 +1564,30 @@ describe("cardBadges", () => {
     expect(cardBadges(v, permanent({ power: 5, toughness: 5 }))).toContain("5/5")
   })
 
+  it("says a permanent has something to do, and does not say it of a land", () => {
+    /*
+      Every other zone a play comes from badges it, and the battlefield did not — so an Equipment
+      that could move and a Contagion Clasp with four mana up looked like permanents doing nothing.
+
+      The second half is the reason it took this long: every untapped land has a mana ability, so a
+      badge that counted those would be on half the board every turn and would mean nothing.
+    */
+    const play = (over: Record<string, unknown>) => ({
+      kind: "activate", card: "p1", name: "Contagion Clasp", description: "{4}, {T}: Proliferate.",
+      manaCost: "{4}", abilityIndex: 0, targetSpecs: [], candidates: [], sacrificeOptions: [],
+      isManaAbility: false,
+      ...over,
+    })
+    const you = automation()!.you
+    const withAbility = view({ automation: automation({ you: { ...you, plays: [play({})] } }) })
+    expect(cardBadges(withAbility, permanent())).toContain("playable")
+
+    const onlyMana = view({ automation: automation({
+      you: { ...you, plays: [play({ name: "Forest", description: "{T}: Add {G}.", isManaAbility: true })] },
+    }) })
+    expect(cardBadges(onlyMana, permanent())).not.toContain("playable")
+  })
+
   it("names what a permanent is holding in exile", () => {
     // Killing a Journey to Nowhere is a decision about the creature it took, and the two cards are
     // on opposite sides of the board with nothing else connecting them.

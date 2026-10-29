@@ -941,6 +941,7 @@ LIST=extort node scripts/e2e-solo.mjs  # a deck asked for mana every time it cas
 LIST=suspend node scripts/e2e-solo.mjs # a deck that pays for a spell a turn before it casts it — 26 checks
 LIST=dredge node scripts/e2e-solo.mjs  # a deck that buys the same spell back every draw step — 27 checks
 LIST=buyback node scripts/e2e-solo.mjs # a deck that pays to keep the spell it just cast — 26 checks
+LIST=proliferate node scripts/e2e-solo.mjs # a deck that poisons the computer and then picks it out of a list — 25 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -1014,6 +1015,7 @@ LIST=extort node scripts/e2e-solo.mjs            # an optional cost paid in the 
 LIST=suspend node scripts/e2e-solo.mjs           # a card exiled with time counters, and the free cast two turns later
 LIST=dredge node scripts/e2e-solo.mjs            # a draw replaced by a mill, and the card it hands back
 LIST=buyback node scripts/e2e-solo.mjs           # the dearer of two rows on one card, and the card coming home
+LIST=proliferate node scripts/e2e-solo.mjs       # an answer with a player in it, tapped on the seat's own strip
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
@@ -1028,7 +1030,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1080 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1084 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1179,10 +1181,25 @@ required — the dearer row pressed, and a Capsize cast again afterwards, which 
 it came home. The deck is eight Capsizes and twenty-six Islands, because paying both halves takes
 six lands. Three runs, 26 of 26 checks each.
 
-Worth saying what this scenario could not have proved by accident. The prompt's own sentence carries
-both button labels — "Mill 3 Draw instead" — which is exactly the trap the extort check fell into,
-so the check is anchored on the **driver's** report of which button it pressed rather than on the
-text of the question. A run that declined every dredge records nothing.
+Worth saying what the dredge scenario could not have proved by accident. The prompt's own sentence
+carries both button labels — "Mill 3 Draw instead" — which is exactly the trap the extort check fell
+into, so the check is anchored on the **driver's** report of which button it pressed rather than on
+the text of the question. A run that declined every dredge records nothing.
+
+`LIST=proliferate` is the twelfth, and the only one whose required answer is **not a card**. The deck
+poisons the computer with sixteen infect creatures, asks the question with eight Contagion Clasps,
+and affords the `{4}` with four Sol Rings; the check is that a *player* was chosen, by pressing the
+button on their own seat strip — which says **Choose** rather than Target, because a proliferate does
+not target. Three runs, 25 of 25 checks each, the question reached on the first or second deal.
+
+It needed two things the table did not have, and neither was about this keyword. The battlefield
+never badged a permanent `playable`, although every other zone a play comes from does — so the
+Clasp's ability, an equip, a crew and a monstrosity were all invisible until somebody happened to tap
+the card. And the driver had never once activated an ability of a permanent, because it only taps
+what carries the badge. It can now, and **only when a scenario asks**: turned on for every run, it
+cost `LIST=cascade` its free cast, because regenerating a River Boa for {G} spends the Forest the
+four-mana Bloodbraid Elf wanted.
+
 
 Two of those checks are about how the table **looks** rather than what it does, which is new and
 worth saying why. A card at this table leans towards the cursor with a foil sheen that follows it,
@@ -1191,9 +1208,9 @@ pointer handler sets, so nothing that does not move a real pointer can see them.
 hovers a card and reads the variables back, which is the only honest way to check a thing whose
 whole existence is in the browser.
 
-The layers under them have their own suites: `packages/rules-engine` (1080 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1084 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
-pods as well as duels), `apps/web` (216 tests, the interaction reducer behind every prompt and the deck panel) and
+pods as well as duels), `apps/web` (217 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
 (43 tests against live Redis, including two socket clients playing to a finish, one person
 playing the server, a deal struck with the server's own seat, and two players rematching on

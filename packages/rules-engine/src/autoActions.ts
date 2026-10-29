@@ -24,7 +24,8 @@ import {
   type AutoOrderAction,
 } from './automation.js';
 import {
-  TIME, addCounters, addToPool, bottomPile, counterSpell, draw, energyOf, loseLife, mill,
+  SEAT_CHOICE, TIME, addCounters, addToPool, bottomPile, counterSpell, draw, energyOf, loseLife,
+  mill,
   poolOf, spendEnergy,
 } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
@@ -2196,7 +2197,13 @@ function decide(
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not one of the choices');
     }
   }
-  const names = chosen.map((id) => characteristicsOf(state, requireInstance(state, id)).name);
+  /*
+    What the log will say, and the one answer that is not a card: a proliferate may choose a
+    **player** (CR 701.27a), which arrives as `seat:N` and has no instance to look a name up on.
+  */
+  const names = chosen.map((id) => (id.startsWith(SEAT_CHOICE)
+    ? seatName(state, Number(id.slice(SEAT_CHOICE.length)) as SeatIndex)
+    : characteristicsOf(state, requireInstance(state, id)).name));
   const resumed = answerDecision(state, chosen);
   // Priority returns only once the resolution is actually over; a resolution that stopped to ask
   // somebody else something is still resolving, and nobody may act in the middle of it.

@@ -938,6 +938,17 @@ export interface AutomationState {
      * well. See `TargetDecisionSpec`.
      */
     readonly targetChoices?: readonly Target[];
+    /**
+     * Whether this is proliferate's question, whose candidates are **permanents and players**
+     * (CR 701.27a).
+     *
+     * A flag rather than something read off the list, because the list is sometimes all cards: on
+     * a board where nobody has poison or energy, proliferate's candidates are permanents only, and
+     * a reader that inferred the shape from a `seat:` id would see an ordinary card question and
+     * draw it as one. The table needs to know which it is to light the seat strips, and the bot
+     * needs to know to pick by whose counters they are.
+     */
+    readonly counters?: true;
     readonly resume: {
       /** Every question this resolution asks, in order: a spec index and who answers it. */
       readonly plan: readonly { readonly seat: SeatIndex; readonly specIndex: number }[];

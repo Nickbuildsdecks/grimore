@@ -310,9 +310,16 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             </span>
           ) : (
           <span className="text-[var(--g-text-muted)]">
-            {mode.ask.from === "library" ? "tap a card in your library below"
-              : mode.ask.from === "library-top" ? "tap the ones to put on the bottom"
-                : `tap a card in your ${mode.ask.from ?? "hand"}`}
+            {/*
+              Proliferate is the one question whose answers are on both sides of the table and
+              include the players, so the instruction says so rather than naming a zone it is not
+              about. The permanents light like any other candidate; a player's strip lights too.
+            */}
+            {mode.ask.counters === true
+              ? "tap the permanents and players to give another counter"
+              : mode.ask.from === "library" ? "tap a card in your library below"
+                : mode.ask.from === "library-top" ? "tap the ones to put on the bottom"
+                  : `tap a card in your ${mode.ask.from ?? "hand"}`}
           </span>
           )}
           <span className="ml-auto flex gap-1.5">

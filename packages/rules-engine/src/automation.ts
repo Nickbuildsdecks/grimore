@@ -32,8 +32,8 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  DASHED, EVOKED, REGENERATION, TIME, addCounters, counterSpell, destroy, draw, drawLater,
-  exileCard, loseLife, mill, suspendedCast,
+  DASHED, EVOKED, REGENERATION, SEAT_CHOICE, TIME, addCounters, counterSpell, destroy, draw,
+  drawLater, exileCard, loseLife, mill, suspendedCast,
   madnessOffer, miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
@@ -48,11 +48,11 @@ import {
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
 import { scriptFor, soleTargetSpecOf } from './scripts.js';
 import type {
-  AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, DecisionSpec, ModeDef,
-  ReplacementEvent, TargetSpec, TriggerEvent,
+  AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, CountersDecisionSpec,
+  DecisionSpec, ModeDef, ReplacementEvent, TargetSpec, TriggerEvent,
 } from './scriptTypes.js';
 import {
-  isChoiceDecision, isNumberDecision, isTargetDecision, targetCount,
+  isChoiceDecision, isCountersDecision, isNumberDecision, isTargetDecision, targetCount,
 } from './scriptTypes.js';
 import {
   checkTargets, hasAnyLegalTargets, legalTargets, liveTargets, stillHasLegalTarget, stillTheObject,
@@ -2125,6 +2125,30 @@ function turnOrder(state: GameState): SeatIndex[] {
   return start < 0 ? alive : [...alive.slice(start), ...alive.slice(0, start)];
 }
 
+/** Whether a seat is carrying any counter at all: poison, energy, anything a card put there. */
+const seatHasCounters = (state: GameState, seat: SeatIndex): boolean =>
+  (state.seats[seat]?.poison ?? 0) > 0
+  || Object.values(state.seats[seat]?.counters ?? {}).some((n) => n > 0);
+
+/**
+ * Everything proliferate may be pointed at: permanents and players already carrying a counter.
+ *
+ * "Already carrying" is the rule and it is also what keeps the question answerable — a list of
+ * every permanent on the table would make the player hunt for the three that matter.
+ *
+ * A **permanent**, which is narrower than "anything with counters on it": a suspended card in exile
+ * has time counters and is not a permanent, so proliferate cannot hurry it along. That is true in
+ * paper for the same reason and it is the one thing about this keyword people get wrong.
+ */
+export function proliferateCandidates(state: GameState): string[] {
+  const permanents = state.seats.flatMap((seat) => listAt(state, zoneKey(seat.index, 'battlefield')))
+    .filter((id) => Object.values(state.instances[id]?.counters ?? {}).some((n) => n > 0));
+  const players = state.seats
+    .filter((seat) => !seat.eliminated && seatHasCounters(state, seat.index))
+    .map((seat) => `${SEAT_CHOICE}${seat.index}`);
+  return [...permanents, ...players];
+}
+
 /** The cards in the chooser's own zone that a decision would accept. */
 export function decisionCandidates(
   state: GameState, spec: CardsDecisionSpec, chooser: SeatIndex,
@@ -2147,9 +2171,15 @@ export function decisionCandidates(
 }
 
 /** How many a decision asks for, clamped to what the chooser actually has. */
-function decisionBounds(spec: CardsDecisionSpec, available: number): { min: number; max: number } {
-  const max = Math.min(spec.max ?? 1, available);
-  return { min: Math.min(spec.min ?? 1, max), max };
+function decisionBounds(
+  spec: CardsDecisionSpec | CountersDecisionSpec, available: number,
+): { min: number; max: number } {
+  // "Any number" for proliferate, which is what the keyword says: nought to everything. The other
+  // shapes default to exactly one.
+  const wanted = isCountersDecision(spec) ? available : (spec.max ?? 1);
+  const floor = isCountersDecision(spec) ? 0 : (spec.min ?? 1);
+  const max = Math.min(spec.max ?? wanted, available);
+  return { min: Math.min(spec.min ?? floor, max), max };
 }
 
 /**
@@ -2317,7 +2347,16 @@ function askOrFinish(
       };
     }
     const taken = new Set(answers.filter((a) => a.seat === entry.seat).flatMap((a) => [...a.ids]));
-    const candidates = decisionCandidates(state, spec, entry.seat).filter((id) => !taken.has(id));
+    /*
+      Proliferate's candidates come from the board rather than from a zone, and include players.
+
+      The other four shapes all read a zone belonging to the chooser; this one reads **everything
+      with a counter on it**, on either side of the table, plus the seats. See
+      `proliferateCandidates` and `CountersDecisionSpec`.
+    */
+    const candidates = (isCountersDecision(spec)
+      ? proliferateCandidates(state)
+      : decisionCandidates(state, spec, entry.seat)).filter((id) => !taken.has(id));
     const { min, max } = decisionBounds(spec, candidates.length);
     if (max === 0 || (min === max && candidates.length === max)) {
       answers = [...answers, { seat: entry.seat, ids: max === 0 ? [] : candidates }];
@@ -2334,6 +2373,10 @@ function askOrFinish(
       pendingDecision: {
         seat: entry.seat, stackId: object.id, prompt: spec.prompt,
         candidates, min, max, from: spec.from,
+        // Which shape this is, said rather than inferred: proliferate's candidates are sometimes
+        // all cards (nobody has poison yet), and a reader guessing from the list would draw that
+        // board's question as an ordinary one. See `pendingDecision.counters`.
+        ...(isCountersDecision(spec) ? { counters: true as const } : {}),
         resume: { plan: [...plan], at: i, answers: [...answers] },
       },
     };

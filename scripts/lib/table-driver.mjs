@@ -264,8 +264,13 @@ export async function isMyMove(page) {
  * Returns a short description of what it did, which is what the caller logs. The policy is "do the
  * simplest legal thing": take the primary action, declare an empty attack unless something can
  * attack, block with nothing, and play a card from hand now and then so the game actually develops.
+ *
+ * `abilities` adds one thing to that policy — activating an ability of a permanent — and is off by
+ * default because an ability spends mana a spell wanted. See `tryToPlayFromHand`.
  */
-export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = false } = {}) {
+export async function makeMove(
+  page, seat, { aggression = 0.6, forceMulligan = false, abilities = false } = {},
+) {
   // Opening hands come before anything else, including priority.
   if (await has(page, 'bottom-prompt')) {
     // Tap cards in hand until as many are chosen as the prompt asks for, then keep.
@@ -401,6 +406,24 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
         return `pointed a copy: ${prompt}`;
       }
     }
+    /*
+      A **player** as part of the answer, which only proliferate asks for (CR 701.27a).
+
+      Every other question at this table is answered with cards, so a driver that only taps lit
+      cards would press Confirm on an empty answer and report it as answered — which is exactly
+      what it did: a poisoned opponent is the whole point of the keyword and the one candidate with
+      no card to light. Seat strips are pressed first, then the lit permanents below, so one answer
+      can hold both kinds.
+    */
+    let chosePlayer = false;
+    const seatPicks = page.locator('[data-testid^="target-seat-"]');
+    for (let i = 0, seatCount = await seatPicks.count(); i < seatCount; i++) {
+      await tap(seatPicks.nth(i));
+      chosePlayer = true;
+      // An exact count sends itself, and a seat can be the whole of it.
+      if (!(await has(page, 'decide-prompt'))) return `chose a player: ${prompt}`;
+    }
+    const answered = chosePlayer ? 'chose a player' : 'answered';
     // The candidates are lit wherever they are — hand, battlefield, graveyard, or the library,
     // which is the one zone the table draws only while a search is open.
     for (let pick = 0; pick < 4; pick++) {
@@ -408,15 +431,15 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
       if ((await lit.count()) === 0) break;
       await tap(lit.first());
       // An exact count sends itself; a range needs confirming, and "choose nothing" is an answer.
-      if (!(await has(page, 'decide-prompt'))) return `answered: ${prompt}`;
+      if (!(await has(page, 'decide-prompt'))) return `${answered}: ${prompt}`;
       if (await has(page, 'confirm-decision')) {
         await press(page, 'confirm-decision');
-        return `answered: ${prompt}`;
+        return `${answered}: ${prompt}`;
       }
     }
     if (await has(page, 'confirm-decision')) {
       await press(page, 'confirm-decision');
-      return `answered with nothing: ${prompt}`;
+      return chosePlayer ? `chose a player: ${prompt}` : `answered with nothing: ${prompt}`;
     }
     // Nothing lit and nothing to confirm: the table is asking a question it is not showing an
     // answer to, which stops the game — a defect to report rather than wait out.
@@ -673,7 +696,7 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
   const responding = /^Resolve/.test(label);
   const develop = /^Pass$/.test(label) && Math.random() < aggression;
   if (responding || develop) {
-    const played = await tryToPlayFromHand(page, seat);
+    const played = await tryToPlayFromHand(page, seat, abilities);
     if (played !== null) return played;
   }
   await press(page, 'primary-move');
@@ -843,7 +866,7 @@ export async function noteMove(seen, page, did) {
  * be cast. That is not a theoretical worry: it is why two full arena runs cast no modal spell at
  * all while three copies of a Charm sat in the deck.
  */
-export async function tryToPlayFromHand(page, seat) {
+export async function tryToPlayFromHand(page, seat, abilities = false) {
   /*
     The hand first, then the graveyard, which is the second zone a spell can be cast from.
 
@@ -860,7 +883,22 @@ export async function tryToPlayFromHand(page, seat) {
       that stopped at the graveyard left every card in the pool that is cast from exile
       unexercised in a browser.
     */
-    ?? (await tryToPlayFromZone(page, `zone-exile-${seat}`));
+    ?? (await tryToPlayFromZone(page, `zone-exile-${seat}`))
+    /*
+      And the battlefield, which is where every **activated ability** lives — only when the caller
+      asks for it.
+
+      This is the one zone no browser suite had ever played from: no run had pressed an equip, a
+      crew, a monstrosity, a regenerate or a Contagion Clasp's proliferate, because the board did
+      not badge a permanent as playable and this loop only taps what carries the badge.
+
+      Off by default, and the cascade scenario is why. The first version tried the board for every
+      caller and `LIST=cascade` immediately stopped casting Bloodbraid Elves: that deck has three
+      River Boas, a tap on one regenerates it for {G}, and a Forest spent on a shield nobody needed
+      is a Forest the four-mana Elf wanted. Pressing an arbitrary ability is not "the simplest legal
+      thing" — it is a *scenario*, so the scenario asks for it.
+    */
+    ?? (abilities ? await tryToPlayFromZone(page, `zone-battlefield-${seat}`) : null);
 }
 
 /** Taps the first card in one zone that says it is playable, and takes one of its plays. */

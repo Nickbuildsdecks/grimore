@@ -3455,6 +3455,39 @@ const WHISPERS_OF_THE_MUSE: CardDef = {
   colors: ['U'],
 };
 
+/**
+ * The repeatable proliferate, and the reason the keyword is an engine rather than a trick.
+ *
+ * Two mana for a -1/-1 counter is a fair answer to a one-toughness creature. Four more and a tap,
+ * every turn afterwards, grows every counter on the table that its controller wants grown — which
+ * in an infect deck is the poison it has already dealt, and in any deck is whatever it has been
+ * building.
+ */
+const CONTAGION_CLASP: CardDef = {
+  name: 'Contagion Clasp',
+  typeLine: 'Artifact',
+  manaCost: '{2}',
+  cmc: 2,
+  oracleText: 'When Contagion Clasp enters the battlefield, put a -1/-1 counter on target creature.\n{4}, {T}: Proliferate. (Choose any number of permanents and/or players with counters on them, then give each another counter of each kind already there.)',
+  colors: [],
+};
+
+/**
+ * Proliferate at instant speed, with a card attached.
+ *
+ * The other shape the keyword comes in: once, for three mana, at the moment it is worth most — the
+ * end of an opponent's turn, after the blocks are in and the counters are where they are going to
+ * be. It replaces itself, which is what stops it being a card you regret drawing on an empty board.
+ */
+const STEADY_PROGRESS: CardDef = {
+  name: 'Steady Progress',
+  typeLine: 'Instant',
+  manaCost: '{2}{U}',
+  cmc: 3,
+  oracleText: 'Proliferate, then draw a card. (Choose any number of permanents and/or players with counters on them, then give each another counter of each kind already there.)',
+  colors: ['U'],
+};
+
 export const TIDAL_MIND: DeckSpec = {
   id: 'tidal-mind',
   name: 'Tidal Mind',
@@ -5002,7 +5035,15 @@ export const HOLLOW_TIDE: DeckSpec = {
       a card it wants.
     */
     { card: DIABOLIC_TUTOR, count: 1 },
-    { card: MIND_SCULPT, count: 3 },
+    { card: MIND_SCULPT, count: 2 },
+    /*
+      Steady Progress for the third Mind Sculpt: one three-mana instant for one, both doing one
+      thing.
+
+      This deck has the two things proliferate wants and had no way to use them — a Chasm Skulker
+      that grows a counter every draw, and a Jace whose loyalty is the whole card. See D213.
+    */
+    { card: STEADY_PROGRESS, count: 1 },
     { card: THOUGHT_SCOUR, count: 1 },
     /*
       Whispers of the Muse for the second Thought Scour: a one-mana cantrip for a one-mana cantrip.
@@ -6331,7 +6372,16 @@ export const BLIGHT_VECTOR: DeckSpec = {
       — the line worth knowing — an opponent's own trampling 5/5 the turn before it kills you. It
       is also the only card here that can win a game the creatures have already lost.
     */
-    { card: TAINTED_STRIKE, count: 2 },
+    { card: TAINTED_STRIKE, count: 1 },
+    /*
+      Contagion Clasp for the second Tainted Strike, and the payer does one thing on purpose.
+
+      Both are cheap and both are about counters: the Strike turns one hit into poison, and the
+      Clasp answers a blocker and then grows every poison counter already dealt, every turn. The
+      payer is a spell rather than a body for the reason D211 wrote down — a creature that also does
+      the thing makes the number a fact about the creature. See D213.
+    */
+    { card: CONTAGION_CLASP, count: 1 },
     /*
       The equipment, and the single most poison the deck can put on anybody in one swing: +3/+0
       trample on a 1/1 with infect is four counters and no profitable block — and `cast-counts`

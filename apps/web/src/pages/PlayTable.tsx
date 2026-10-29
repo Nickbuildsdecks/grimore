@@ -920,6 +920,7 @@ function SeatStrip({
   onAct,
   targetable,
   onTarget,
+  targetVerb,
   manualLife,
   seats,
   board,
@@ -940,6 +941,13 @@ function SeatStrip({
   /** Lit as a legal target while a spell is being aimed. */
   targetable?: boolean
   onTarget?: () => void
+  /**
+   * What the tap means, when it is not aiming anything.
+   *
+   * A proliferate chooses players alongside permanents (CR 701.27a) rather than targeting them, so
+   * the button says "Choose" — "Target the computer" would be describing a different game.
+   */
+  targetVerb?: string
   /** The life buttons, which the engine's own life changes make unnecessary and misleading. */
   manualLife?: boolean
   /** Every seat, so commander damage can name who dealt it rather than printing a seat number. */
@@ -1003,7 +1011,7 @@ function SeatStrip({
           className="h-6 px-2 text-[10px]"
           onClick={onTarget}
         >
-          Target {isMe ? "yourself" : seat.name}
+          {targetVerb ?? "Target"} {isMe ? "yourself" : seat.name}
         </Button>
       ) : null}
       <span className="font-semibold text-[var(--g-text-high)]">
@@ -1542,7 +1550,30 @@ function Board({ table }: { table: UseTable }) {
     // the board: without the ring the player is being asked to tap cards that look untappable.
     ...(arenaMode.kind === "ordering" ? arenaMode.owed.flatMap((ask) => ask.blockers) : []),
   ])
+  /*
+    Proliferate's players, which are the only answers at this table that are not cards
+    (CR 701.27a).
+
+    The engine offers them as `seat:N` ids in the same candidate list as the permanents, so the
+    lit-cards machinery above already handles half the question. This is the other half: a seat
+    strip has no card to light, so it borrows the targetable ring and the tap means "toggle this
+    player in the answer" rather than "aim at this player".
+  */
+  const proliferating = arenaMode.kind === "deciding" && arenaMode.ask.counters === true
+  const seatChoice = (index: number): string => `seat:${index}`
+  const proliferatingSeats = new Set<number>(
+    proliferating
+      ? arenaMode.ask.candidates
+        .filter((id) => id.startsWith("seat:"))
+        .map((id) => Number(id.slice("seat:".length)))
+      : [],
+  )
+  const tapSeat = (index: number): void => {
+    if (proliferating) dispatchArena({ kind: "toggleDecision", card: seatChoice(index) })
+    else dispatchArena({ kind: "pickTarget", target: { kind: "player", seat: index } })
+  }
   const targetableSeats = new Set<number>([
+    ...proliferatingSeats,
     ...nowChoosing.filter((t) => t.kind === "player").map((t) => (t as { seat: number }).seat),
     /*
       And a player a dividing spell already points at (CR 601.2d).
@@ -1840,7 +1871,8 @@ function Board({ table }: { table: UseTable }) {
             myLife={automated ? view.seats.find((s) => s.index === seat)?.life : undefined}
             myBlockers={automated ? boardRead(view, seat).ready : undefined}
             targetable={targetableSeats.has(o.index)}
-            onTarget={() => dispatchArena({ kind: "pickTarget", target: { kind: "player", seat: o.index } })}
+            onTarget={() => tapSeat(o.index)}
+            targetVerb={proliferating ? "Choose" : undefined}
             pact={pactBadge(view, o.index)}
             brokeDeal={brokeADeal(view, o.index)}
             hitMe={automated ? damageTakenFrom(view, o.index) : undefined}
@@ -1912,7 +1944,8 @@ function Board({ table }: { table: UseTable }) {
           seats={view.seats}
           board={automated ? boardRead(view, seat) : undefined}
           targetable={targetableSeats.has(seat)}
-          onTarget={() => dispatchArena({ kind: "pickTarget", target: { kind: "player", seat } })}
+          onTarget={() => tapSeat(seat)}
+          targetVerb={proliferating ? "Choose" : undefined}
         />
       ) : null}
       <Battlefield

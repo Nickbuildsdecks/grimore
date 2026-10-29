@@ -42,7 +42,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * every time it casts a spell (`EXTORT_LIST`), `LIST=suspend` one that spends its first turn on a
  * card it will cast two turns later (`SUSPEND_LIST`), `LIST=dredge` one that keeps buying the same
  * spell back out of its graveyard (`DREDGE_LIST`), `LIST=buyback` one that pays to keep the spell
- * it just cast (`BUYBACK_LIST`), and `LIST=earned` one
+ * it just cast (`BUYBACK_LIST`), `LIST=proliferate` one that poisons the computer and then asks the
+ * table to pick it out of a list of permanents (`PROLIFERATE_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -214,7 +215,16 @@ const myMove = (page) => isMyMove(page);
  * three games and never once cast the Mulldrifter, because the Scout was always the cheapest thing
  * to do and always came back. Random picking plus dealing again reached all three in every run.
  */
-const takeTurn = (page) => makeMove(page, 0, { aggression: 1 });
+/*
+  `abilities` under `LIST=proliferate` only, because an ability spends mana a spell wanted.
+
+  The Clasp's proliferate is an activated ability on the battlefield, which is the one place the
+  driver does not look by default — see `tryToPlayFromHand`. Turning it on everywhere cost the
+  cascade scenario its free cast: its River Boas regenerate for {G}, and a Forest spent on a shield
+  is a Forest the Bloodbraid Elf needed.
+*/
+const takeTurn = (page) =>
+  makeMove(page, 0, { aggression: 1, abilities: LIST === 'proliferate' });
 
 async function main() {
   await setShotDir(SHOT_DIR);
@@ -319,19 +329,6 @@ const SUSPEND_LIST = [
 ].join('\n');
 
 /**
- * A deck that spends every draw step buying the same spell back (CR 702.52a).
- *
- * Dredge is the one keyword in the pool whose prompt is about a **draw** rather than about a card
- * somebody played, and it needs two things a normal deck does not reliably give it: a dredge card
- * that actually reaches the graveyard, and creatures on the table for it to point at on the way
- * there. Eight Darkblasts and twenty bodies is both — the spell is cast, it lands in the graveyard,
- * and from then on every draw step is a question.
- *
- * What the run proves is the pair of joints no engine test can reach through a table: the prompt
- * itself — two buttons about a draw, with the price in cards — and the **card coming back**, which
- * is the half that makes dredge a keyword rather than a drawback.
- */
-/**
  * A deck with nothing to spend its mana on but the same spell, over and over (CR 702.26a).
  *
  * Buyback is a price list rather than an effect: the card is the same either way, and what the
@@ -350,11 +347,49 @@ const BUYBACK_LIST = [
   '4 Air Elemental', '2 Mulldrifter', '4 Omenspeaker',
 ].join('\n');
 
+/**
+ * A deck that spends every draw step buying the same spell back (CR 702.52a).
+ *
+ * Dredge is the one keyword in the pool whose prompt is about a **draw** rather than about a card
+ * somebody played, and it needs two things a normal deck does not reliably give it: a dredge card
+ * that actually reaches the graveyard, and creatures on the table for it to point at on the way
+ * there. Eight Darkblasts and twenty bodies is both — the spell is cast, it lands in the graveyard,
+ * and from then on every draw step is a question.
+ *
+ * What the run proves is the pair of joints no engine test can reach through a table: the prompt
+ * itself — two buttons about a draw, with the price in cards — and the **card coming back**, which
+ * is the half that makes dredge a keyword rather than a drawback.
+ */
 const DREDGE_LIST = [
   '24 Swamp',
   '8 Darkblast',
   '4 Child of Night', '4 Vampire Nighthawk', '4 Ravenous Rats', '4 Drudge Skeletons',
   '4 Doom Blade', '4 Gravedigger', '4 Sign in Blood',
+].join('\n');
+
+/**
+ * A deck that poisons the computer and then asks the table to point at it (CR 701.27a).
+ *
+ * Proliferate is the only question at this table whose answer can be a **player**, and a player is
+ * only an answer while they have a counter on them — so the scenario has to arrange the one thing
+ * no other list needs: poison on the opposite side of the board. Sixteen infect creatures do that
+ * by attacking, eight Contagion Clasps ask the question, and the Fortifications and the Wolves
+ * keep permanents with counters on this side so the answer is a mixed one rather than a seat alone.
+ *
+ * The Sol Rings are the difference between a scenario that reaches the question and one that runs
+ * out of games waiting: the Clasp's proliferate costs {4} on top of the {2} that put it on the
+ * table, so without them the question is a turn-six question and four of the five deals ended
+ * before it was ever asked.
+ *
+ * What the run proves is the joint the engine's own tests cannot reach: a seat strip lit as part of
+ * an answer, with a button that says Choose rather than Target, and the counter landing on a player
+ * who was never pointed at by a spell.
+ */
+const PROLIFERATE_LIST = [
+  '24 Forest',
+  '8 Contagion Clasp',
+  '4 Glistener Elf', '4 Blight Mamba', '4 Cystbearer', '4 Ichorclaw Myr',
+  '4 Vastwood Fortification', '4 Young Wolf', '4 Sol Ring',
 ].join('\n');
   const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
@@ -421,6 +456,8 @@ const DREDGE_LIST = [
         ? DREDGE_LIST
         : LIST === 'buyback'
         ? BUYBACK_LIST
+        : LIST === 'proliferate'
+        ? PROLIFERATE_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -562,6 +599,16 @@ const DREDGE_LIST = [
      */
     const buybackRows = new Set();
     let castsAfterABuyback = 0;
+    /**
+     * The proliferate answers that included a **player**, under `LIST=proliferate`.
+     *
+     * One set rather than two, because the question and the answer cannot come apart here: the
+     * driver only reports this line when it has pressed a seat strip inside a decision, and a seat
+     * strip is only pressable when the engine listed that player as a candidate. So a run with one
+     * of these has seen the whole joint — the question asked with a player in it, and the player
+     * chosen by tapping their own strip on the board.
+     */
+    const playersChosen = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -617,6 +664,7 @@ const DREDGE_LIST = [
         if (typeof did === 'string' && /Suspend .*time counter/i.test(did)) suspendRows.add(did);
         if (typeof did === 'string' && /last time counter is gone/i.test(did)) suspendCasts.add(did);
         if (typeof did === 'string' && /^took a dredge: /.test(did)) dredgesTaken.add(did);
+        if (typeof did === 'string' && /^chose a player: /.test(did)) playersChosen.add(did);
         if (typeof did === 'string' && /chose a play: Cast .* with buyback/i.test(did)) {
           buybackRows.add(did);
         } else if (buybackRows.size > 0 && typeof did === 'string'
@@ -696,7 +744,7 @@ const DREDGE_LIST = [
     */
     const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
-      || LIST === 'dredge' || LIST === 'buyback'
+      || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate'
       ? 5 : 3;
     /*
       What "not yet" means for this list.
@@ -719,10 +767,12 @@ const DREDGE_LIST = [
       ? dredgesTaken.size === 0 || castsAfterADredge === 0
       : LIST === 'buyback'
       ? buybackRows.size === 0 || castsAfterABuyback === 0
+      : LIST === 'proliferate'
+      ? playersChosen.size === 0
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
-      || LIST === 'dredge' || LIST === 'buyback')
+      || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate')
       && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
@@ -732,6 +782,7 @@ const DREDGE_LIST = [
         : LIST === 'suspend' ? `${suspendRows.size} suspends, ${suspendCasts.size} casts`
         : LIST === 'dredge' ? `${dredgesTaken.size} dredges, ${castsAfterADredge} casts after one`
         : LIST === 'buyback' ? `${buybackRows.size} buyback rows, ${castsAfterABuyback} casts after one`
+        : LIST === 'proliferate' ? `${playersChosen.size} answers with a player in them`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -901,6 +952,23 @@ const DREDGE_LIST = [
       check('and the card it kept is cast again', castsAfterABuyback > 0,
         `casts after a buyback: ${castsAfterABuyback}`);
       for (const did of [...buybackRows].slice(0, 2)) console.log(`      ${did}`);
+    } else if (LIST === 'proliferate') {
+      /*
+        The one answer at this table that is not a card (CR 701.27a).
+
+        Everything else a player is ever asked to choose is a card somewhere — in hand, on the
+        battlefield, in a graveyard, in the library during a search — and the table answers all of
+        them the same way, by lighting cards. Proliferate breaks that: a poisoned player is a legal
+        choice with no card to light, so the seat strip has to become part of the answer, and the
+        only way to know it did is to press it and watch the counter land.
+
+        One check, not two. The question and the answer cannot be separated here — the driver
+        reports this line only when it pressed a seat strip inside a decision, and it can only do
+        that when the engine offered that player — so a second check would be the same claim twice.
+      */
+      check('a player is offered as part of an answer, and chosen by tapping their own strip',
+        playersChosen.size > 0, `answers with a player: ${playersChosen.size}`);
+      for (const did of [...playersChosen].slice(0, 2)) console.log(`      ${did}`);
     } else if (LIST === 'graveyard') {
       /*
         The two rows pressed on a card in the graveyard, and the face of what arrived.

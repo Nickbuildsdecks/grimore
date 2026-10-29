@@ -25,7 +25,7 @@ import {
   dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, firstCardTarget,
   firstPlayerTarget,
   chosenOption, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
-  allowExtraLand,
+  allowExtraLand, proliferate,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
@@ -36,7 +36,8 @@ import {
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
-  AbilityDef, CardScript, CardsDecisionSpec, TargetDecisionSpec, TargetSpec, TriggerDef,
+  AbilityDef, CardScript, CardsDecisionSpec, CountersDecisionSpec, TargetDecisionSpec,
+  TargetSpec, TriggerDef,
 } from './scriptTypes.js';
 import type { Color } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -6455,6 +6456,62 @@ const RIFT_BOLT: CardScript = {
 };
 
 /**
+ * Proliferate's question, which is the same two lines on every card that has the keyword.
+ *
+ * "Any number", so nought to everything — declining is a real answer and the commonest one early,
+ * when nothing on the table is carrying a counter yet. The candidate list is computed by the
+ * engine rather than filtered here, because what qualifies is a rule rather than a card's
+ * preference: everything already carrying a counter, on either side, plus the players.
+ */
+const PROLIFERATE: CountersDecisionSpec = {
+  who: 'controller',
+  counters: true,
+  prompt: 'Proliferate — choose any number of permanents and players with counters',
+};
+
+/**
+ * Contagion Clasp: the pool's first **proliferate** card, and the one that does it every turn.
+ *
+ * Two mana for a -1/-1 counter is a fair trade on its own; four mana and a tap to proliferate every
+ * turn afterwards is the engine. In Blight Vector that compounds two ways at once — the -1/-1 it
+ * puts on a blocker grows, and so does every poison counter the deck has already dealt.
+ *
+ * The artifact rather than the sorcery because what this piece is about is the *question*, and a
+ * repeatable question is asked twenty times in a game instead of once.
+ */
+const CONTAGION_CLASP: CardScript = {
+  name: 'Contagion Clasp',
+  triggers: [{
+    on: { kind: 'etb' },
+    description: 'Put a -1/-1 counter on target creature',
+    targets: [TARGET_CREATURE],
+    effect: (c) => {
+      const id = firstCardTarget(c);
+      return id === null ? c.state : addCounters(c.state, id, '-1/-1', 1);
+    },
+  }],
+  abilities: [{
+    cost: { mana: '{4}', tap: true },
+    description: '{4}, {T}: Proliferate.',
+    decisions: [PROLIFERATE],
+    effect: (c) => proliferate(c.state, chosenCards(c)),
+  }],
+};
+
+/**
+ * Steady Progress: proliferate at instant speed, and a card to go with it.
+ *
+ * The other half of what the keyword is for. The Clasp asks the question every turn and costs four
+ * mana a time; this asks it once for three and replaces itself, which is what a deck plays when it
+ * wants the counters to grow *now* — on an opponent's end step, after the blocks are in.
+ */
+const STEADY_PROGRESS: CardScript = {
+  name: 'Steady Progress',
+  decisions: [PROLIFERATE],
+  onResolve: (c) => drawLater(proliferate(c.state, chosenCards(c)), c.controller, 1),
+};
+
+/**
  * Dredge on a body you were going to spend anyway, in the deck that spends bodies.
  *
  * One of the pool's two **dredge** cards (CR 702.52a), and a creature rather than the land the slot
@@ -7417,6 +7474,7 @@ const ALL: readonly CardScript[] = [
   THUNDEROUS_WRATH, TERMINUS, STAGGERSHOCK, DISTORTION_STRIKE, PYROMATICS, TRAIN_OF_THOUGHT,
   BASILICA_SCREECHER, BASILICA_GUARDS, RIFT_BOLT, SEARCH_FOR_TOMORROW,
   SHAMBLING_SHELL, DARKBLAST, CAPSIZE, WHISPERS_OF_THE_MUSE,
+  CONTAGION_CLASP, STEADY_PROGRESS,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(
