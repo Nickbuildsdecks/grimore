@@ -34,6 +34,7 @@ import { customDeckIdFor, isCustomDeckId } from "@grimore/shared"
 import { deckSummary } from "@/lib/decks"
 import { CardFace, type CardHighlight } from "@/components/table/CardFace"
 import { ArenaBar } from "@/components/table/ArenaBar"
+import { ArenaEmbers } from "@/components/table/ArenaEmbers"
 import { CombatArrows } from "@/components/table/CombatArrows"
 import { TableFeed } from "@/components/table/TableFeed"
 import { PhaseBar } from "@/components/table/PhaseBar"
@@ -1657,7 +1658,19 @@ function Board({ table }: { table: UseTable }) {
     // `relative` so the combat overlay can be positioned against the whole board rather than
     // against the viewport: the board scrolls, and an arrow fixed to the viewport would slide off
     // the cards it is pointing at.
-    <div data-testid="table" className="relative flex min-h-dvh flex-col gap-1.5 px-2 pb-2 pt-2 sm:px-4">
+    <div
+      data-testid="table"
+      className="relative isolate flex min-h-dvh flex-col gap-1.5 px-2 pb-2 pt-2 sm:px-4"
+    >
+      {/*
+        The board's own atmosphere, behind everything.
+
+        `isolate` on the row above is what makes the `-z-10` on it safe: without a stacking context
+        here, a negative index would put the embers behind the page's own background and nothing
+        would be visible at all. With one, they sit under the table's content and over its
+        backdrop, which is exactly the one layer they want.
+      */}
+      <ArenaEmbers />
       {/*
         Who is attacking whom, drawn over the board. Only with the engine running: on a tabletop
         nothing knows what an attack is, and the players point at each other themselves.

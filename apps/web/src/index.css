@@ -983,6 +983,21 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+
+  /*
+    And the table's card tilt, which the rule above cannot reach.
+
+    Killing the transition only makes a tilt instant; it does not stop the card tipping, and a
+    board of cards snapping between angles under the cursor is worse for somebody who asked for
+    less movement than a smooth one. These are the variables `CardFace`'s pointer handler writes,
+    pinned flat so the handler's work lands on nothing. `ArenaEmbers` makes the same check in
+    JavaScript and never starts its loop at all.
+  */
+  [data-card-name] {
+    --tilt-x: 0deg !important;
+    --tilt-y: 0deg !important;
+    --sheen-a: 0 !important;
+  }
 }
 
 /* Tabletop life counter -------------------------------------------------- */

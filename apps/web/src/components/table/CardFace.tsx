@@ -11,8 +11,55 @@
  * permanent — and renders as a back. That is not a UI choice: the identity is genuinely absent from
  * the payload, so there is nothing to draw even if the component wanted to.
  */
+import type { PointerEvent as ReactPointerEvent } from "react"
+
 import { cn } from "@/lib/utils"
 import type { VisibleCard } from "@grimore/rules-engine"
+
+/**
+ * How far a card leans towards the cursor, in degrees at the very corner.
+ *
+ * Eight, which is enough to read as a physical card being tipped and not enough to make the text
+ * on it harder to read. The spec asks for `perspective(600px)`, which is the other half of how
+ * strong the effect looks: a shorter perspective exaggerates the same rotation.
+ */
+const TILT_MAX = 8
+
+/*
+  The tilt and the sheen, written straight onto the element's style rather than into React state.
+
+  Forty cards on a board times a pointermove event each is the one place in this app where a
+  re-render per frame would actually be felt, and none of what changes here is state the rest of
+  the component cares about: it is four numbers that only CSS reads. So the handler sets custom
+  properties on the node and React never hears about it, which is the same reason `CombatArrows`
+  draws itself rather than rendering a component per arrow.
+
+  Mouse only. A touch "hover" is a tap in progress, and tilting the card somebody is trying to
+  press is the opposite of helpful.
+*/
+function tiltTowardsCursor(event: ReactPointerEvent<HTMLButtonElement>): void {
+  if (event.pointerType !== "mouse") return
+  const el = event.currentTarget
+  const rect = el.getBoundingClientRect()
+  if (rect.width === 0 || rect.height === 0) return
+  const across = (event.clientX - rect.left) / rect.width
+  const down = (event.clientY - rect.top) / rect.height
+  // Away from the cursor on one axis and towards it on the other is what makes it read as a lean
+  // rather than a wobble: the near edge drops, the far edge rises.
+  el.style.setProperty("--tilt-y", `${(across - 0.5) * 2 * TILT_MAX}deg`)
+  el.style.setProperty("--tilt-x", `${(0.5 - down) * 2 * TILT_MAX}deg`)
+  el.style.setProperty("--sheen-x", `${across * 100}%`)
+  el.style.setProperty("--sheen-y", `${down * 100}%`)
+  el.style.setProperty("--sheen-a", "1")
+}
+
+/** Lets the card fall back flat. The transition on the element does the easing. */
+function releaseTilt(event: ReactPointerEvent<HTMLButtonElement>): void {
+  const el = event.currentTarget
+  el.style.setProperty("--tilt-y", "0deg")
+  el.style.setProperty("--tilt-x", "0deg")
+  el.style.setProperty("--sheen-a", "0")
+}
 
 const MANA_VAR: Record<string, string> = {
   W: "var(--g-mana-w)",
@@ -134,16 +181,27 @@ export function CardFace({ card, size = "board", onSelect, selected, highlight, 
       aria-label={label}
       title={hidden ? label : `${def.name} — ${def.typeLine}`}
       onClick={onSelect ? () => onSelect(card) : undefined}
+      onPointerMove={tiltTowardsCursor}
+      onPointerLeave={releaseTilt}
+      onPointerCancel={releaseTilt}
       disabled={!onSelect}
       className={cn(
-        "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2",
+        "absolute left-1/2 top-1/2",
+        /*
+          One arbitrary transform rather than Tailwind's utilities, because this card has three
+          transforms to compose and the utilities cannot be ordered against each other: the centring
+          on its slot, the quarter turn when it is tapped, and the lean towards the cursor. Written
+          out, the order is the one that reads correctly — centre, then turn, then tip — and the
+          tapped rotation travels as a variable so the tilt does not have to know about it.
+
+          The tilt variables default to zero, so a card nobody is pointing at is exactly the card
+          that was here before this: flat, centred, and rotated if it is tapped.
+        */
+        "[transform:translate(-50%,-50%)_rotate(var(--card-rot,0deg))_perspective(600px)_rotateX(var(--tilt-x,0deg))_rotateY(var(--tilt-y,0deg))]",
         "aspect-[2.5/3.5] rounded-[6px] border text-left transition-transform",
         "overflow-hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
         SIZES[size],
         onSelect && "cursor-pointer",
-        // Tapped cards lie on their side, as they do on a table. The wrapper above is already the
-        // landscape shape, so the rotation happens inside a slot that has room for it.
-        card.tapped && "rotate-90",
         selected
           ? "border-[var(--g-gold-400)] ring-2 ring-[var(--g-gold-400)]"
           : highlight
@@ -151,7 +209,12 @@ export function CardFace({ card, size = "board", onSelect, selected, highlight, 
             : "border-white/15",
         className,
       )}
-      style={{ background: hidden ? undefined : `linear-gradient(160deg, ${frameColor(def.colors)} 0%, rgba(8,8,12,0.92) 58%)` }}
+      style={{
+        background: hidden ? undefined : `linear-gradient(160deg, ${frameColor(def.colors)} 0%, rgba(8,8,12,0.92) 58%)`,
+        // Tapped cards lie on their side, as they do on a table. The wrapper above is already the
+        // landscape shape, so the rotation happens inside a slot that has room for it.
+        ...({ "--card-rot": card.tapped ? "90deg" : "0deg" } as Record<string, string>),
+      }}
     >
       {hidden ? (
         <span
@@ -265,6 +328,22 @@ export function CardFace({ card, size = "board", onSelect, selected, highlight, 
           ATT
         </span>
       ) : null}
+      {/*
+        The foil sheen: a soft highlight that follows the cursor across the card.
+
+        Last in the card so it lies over the art, the text and the badges, which is where a
+        reflection is — and `pointer-events-none` so it never swallows the press. Its opacity is a
+        variable the pointer handler sets, so it fades in with the tilt and out with it, and a card
+        nobody is pointing at paints one fully transparent layer.
+      */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-[var(--sheen-a,0)] transition-opacity duration-200"
+        style={{
+          background:
+            "radial-gradient(90px circle at var(--sheen-x,50%) var(--sheen-y,50%), rgba(255,255,255,0.30), rgba(255,255,255,0.06) 45%, transparent 70%)",
+        }}
+      />
       {badges !== undefined && badges.length > 0 ? (
         <span
           data-testid={`badges-${card.id}`}
