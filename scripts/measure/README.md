@@ -520,3 +520,12 @@ instrument is emphatically live and the rule really is level. The negative contr
 scoring exactly even) proves the harness is *fair*; a positive control proves it is *connected*, and
 they are different questions.
 
+
+**Two zeros, two diagnoses, one instrument.** Ninjutsu fired zero times and the Arcbound Ravager's
+sacrifice ability fired zero times, and the fixes are nothing alike. Counting the **windows** told
+them apart in one run each: ninjutsu had 19 unblocked attackers and 2 ninjas in hand and never both
+— the situation never arose, a **zone** problem. The Ravager's row was **offered 437 times** and taken
+**0** — the situation arose constantly and the bot declined, a **judgement** problem. "The keyword
+never fires" is not a diagnosis; it is the question. Count how often the play was *available* before
+deciding whether the bot or the card is at fault.
+

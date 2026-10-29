@@ -119,7 +119,20 @@ export function sacrificeOptions(
   return listAt(state, zoneKey(seat, 'battlefield')).filter((id) => {
     if (cost.sacrifice === 'another-creature' && id === source) return false;
     const inst = state.instances[id];
-    return inst !== undefined && characteristicsOf(state, inst).isCreature;
+    if (inst === undefined) return false;
+    const ch = characteristicsOf(state, inst);
+    /*
+      An artifact cost eats artifacts, and an artifact **creature** counts for both: a card that is
+      both is both (CR 205.2b). Read off `characteristicsOf` rather than the printed type line, so a
+      land animated into an artifact creature is eligible and a Mutavault is not.
+
+      Note what this *does* include: the source itself. An Arcbound Ravager is an artifact, and
+      sacrificing it to its own ability is a legal if pointless play — the printed card says
+      "sacrifice an artifact", not "another artifact", and refusing it here would be the engine
+      inventing a restriction. The bot will not do it, because feeding the thing you are growing is
+      never the cheapest creature it could feed.
+    */
+    return cost.sacrifice === 'artifact' ? hasType(ch.typeLine, 'artifact') : ch.isCreature;
   });
 }
 

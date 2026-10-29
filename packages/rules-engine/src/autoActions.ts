@@ -1313,13 +1313,22 @@ function activate(
   if (ability.cost.sacrifice !== undefined) {
     const options = sacrificeOptions(state, action.by, inst.id, ability.cost);
     if (options.length === 0) {
-      throw new EngineError('RULE_NOT_APPLICABLE', 'you have no creature to sacrifice for that');
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        ability.cost.sacrifice === 'artifact'
+          ? 'you have no artifact to sacrifice for that'
+          : 'you have no creature to sacrifice for that');
     }
     if (action.sacrifice === undefined) {
-      throw new EngineError('RULE_NOT_APPLICABLE', 'choose a creature to sacrifice');
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        ability.cost.sacrifice === 'artifact'
+          ? 'choose an artifact to sacrifice'
+          : 'choose a creature to sacrifice');
     }
     if (!options.includes(action.sacrifice)) {
-      throw new EngineError('RULE_NOT_APPLICABLE', 'that creature cannot be sacrificed for this');
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        ability.cost.sacrifice === 'artifact'
+          ? 'that artifact cannot be sacrificed for this'
+          : 'that creature cannot be sacrificed for this');
     }
     sacrificed = action.sacrifice;
   }

@@ -786,7 +786,16 @@ export interface AbilityCost {
    * creature in reply. Modelling it as a target would be close enough to look right and wrong
    * exactly where it matters.
    */
-  readonly sacrifice?: 'creature' | 'another-creature';
+  readonly sacrifice?: 'creature' | 'another-creature' | 'artifact';
+  /**
+   * `'artifact'` is the fourth member and the first that is not about creatures at all.
+   *
+   * Worth its own note because of what it eats in this pool: there are Equipment, mana rocks, a
+   * Chalice, a Bonesplitter and a Mind Stone, and until now no cost could spend any of them. An
+   * artifact **creature** satisfies it too, which is the rule rather than a convenience — a card
+   * that is both is both, and `characteristicsOf` is where that is decided rather than the printed
+   * type line.
+   */
   /**
    * "Pay 1 life:" — life as part of the cost rather than as something the ability does.
    *
@@ -1334,6 +1343,28 @@ export interface CardScript {
    * Read by `legalActions`, which is the one place that decides what a seat may do. A card declares
    * it and nothing else needs to know.
    */
+  /**
+   * Modular N: this enters with N +1/+1 counters, and when it dies you may move them to another
+   * artifact creature (CR 702.43).
+   *
+   * The first ability in this pool that **moves** counters off a dying permanent rather than
+   * reading them, which is what makes it interesting: a card leaving the battlefield loses its
+   * counters as it goes, so the number has to come from what was true when it died. That is exactly
+   * what `StackObject.subjectCounters` was built for, two keywords ago, for the other shape of the
+   * same problem — "for each +1/+1 counter on it" on a creature that is already in a graveyard.
+   *
+   * It also makes the pool's first printed **0/0**: a modular creature is alive only because of its
+   * own counters, which means a Turn to Frog on one kills it, and a −1/−1 counter from a Contagion
+   * Clasp cancels a +1/+1 and takes it with it.
+   *
+   * Read nowhere but the card that declares it, like `echo` and `ninjutsu`: `entersWith` puts the
+   * counters on and the trigger `modularTrigger` builds moves them. It is here so the pool can be
+   * audited for the keyword.
+   */
+  readonly modular?: {
+    /** Counters it enters with, and — barring anything else — the number that moves on. */
+    readonly count: number;
+  };
   /**
    * Ninjutsu: swap an unblocked attacker for this card, mid-combat (CR 702.49).
    *

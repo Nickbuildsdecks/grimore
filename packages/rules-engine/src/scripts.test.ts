@@ -13,6 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, botAction, canAttack, canBlock,
+  destroy,
   characteristicsOf, customDeck,
   hasType,
   legalActions,
@@ -17475,5 +17476,186 @@ describe('the bot holds a ninja instead of casting it as a two-drop', () => {
     */
     const s = withBoard([], ['Wall of Frost']);
     expect(castsTheNinja(s, {})).toBe(true);
+  });
+});
+
+describe('modular: counters that move from a dying creature to a living one', () => {
+  /*
+    Two things worth pinning (CR 702.43).
+
+    A printed **0/0** that is alive only because of its own counter — the pool's first, and not a
+    special case anywhere: `entersWith` puts a +1/+1 on it and the layer system does the rest, so
+    taking the counter away kills it.
+
+    And the first ability here that **moves** counters off a dying permanent. The number cannot be
+    read off the creature, because a card leaving the battlefield loses its counters on the way out
+    — so the trigger reads `subjectCounters`, which was built two keywords ago for the other shape
+    of the same problem.
+  */
+  /**
+   * The Ravager, **cast** with an artifact already out beside it.
+   *
+   * Cast rather than placed, and that is not a convenience: a 0/0 put straight onto the battlefield
+   * never *entered*, so `entersWith` never ran, and it is a 0/0 with no counters — which the state
+   * based actions correctly put in the graveyard at the next priority. The same lesson echo and
+   * vanishing both taught, sharpest here because the card cannot exist without its counter.
+   */
+  const castRavager = (alongside: readonly string[]): GameState => {
+    let s = arena({
+      decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+      hands: { 0: ['Arcbound Ravager'] },
+      battlefield: { 0: ['Plains', 'Plains', ...alongside], 1: ['Island'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    return drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Arcbound Ravager'),
+    }), 40);
+  };
+
+  /** Casts the Worker so it goes through the arrivals pass, which is what puts its counter on. */
+  const castWorker = (): GameState => {
+    let s = arena({
+      decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+      hands: { 0: ['Arcbound Worker'] },
+      battlefield: { 0: ['Plains', 'Etched Champion'], 1: ['Island'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    return drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Arcbound Worker'),
+    }), 40);
+  };
+
+  it('is a printed 0/0 that arrives as a 1/1, because of its own counter', () => {
+    const s = castWorker();
+    const worker = find(s, 0, 'battlefield', 'Arcbound Worker');
+    expect(s.instances[worker]!.counters['+1/+1']).toBe(1);
+    const ch = characteristicsOf(s, s.instances[worker]!);
+    expect(ch.power).toBe(1);
+    expect(ch.toughness).toBe(1);
+    // And the printed line really is 0/0, which is what makes the counter load-bearing.
+    expect(s.cardDefs[s.instances[worker]!.defKey]?.power).toBe('0');
+  });
+
+  it('moves its counters to another artifact creature when it dies', () => {
+    let s = castWorker();
+    const worker = find(s, 0, 'battlefield', 'Arcbound Worker');
+    const champion = find(s, 0, 'battlefield', 'Etched Champion');
+    s = drain(destroy(s, worker), 40);
+    // The trigger is targeted, so the answer comes through the choice machinery like any other.
+    if (s.pendingChoice !== null) {
+      s = drain(apply(s, {
+        type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: champion }],
+      }), 40);
+    }
+    expect(namesIn(s, 0, 'graveyard')).toContain('Arcbound Worker');
+    expect(s.instances[champion]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('moves what it actually had, not what the card says', () => {
+    /*
+      `modular: { count: 1 }` is the printed number and is deliberately not what moves. A Worker that
+      picked up a second counter passes two on — which is the whole reason the trigger reads the
+      board rather than the card, and the reason a Ravager that ate three artifacts is a real threat.
+    */
+    let s = castWorker();
+    const worker = find(s, 0, 'battlefield', 'Arcbound Worker');
+    const champion = find(s, 0, 'battlefield', 'Etched Champion');
+    s = addCounters(s, worker, '+1/+1', 2);
+    s = drain(destroy(s, worker), 40);
+    if (s.pendingChoice !== null) {
+      s = drain(apply(s, {
+        type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: champion }],
+      }), 40);
+    }
+    expect(s.instances[champion]!.counters['+1/+1']).toBe(3);
+  });
+
+  it('the Ravager eats an artifact to grow, which is the pool first cost that spends one', () => {
+    let s = castRavager(['Bonesplitter']);
+    const ravager = find(s, 0, 'battlefield', 'Arcbound Ravager');
+    const splitter = find(s, 0, 'battlefield', 'Bonesplitter');
+    const play = legalActions(s, 0).plays.find((p) => p.card === ravager && p.kind === 'activate');
+    expect(play).toBeDefined();
+    // The Equipment is a candidate; so is the Ravager itself, because the card says "an artifact".
+    expect(play?.sacrificeOptions).toContain(splitter);
+    expect(play?.sacrificeOptions).toContain(ravager);
+
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: ravager, abilityIndex: 0, sacrifice: splitter,
+    }), 40);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Bonesplitter');
+    expect(s.instances[ravager]!.counters['+1/+1']).toBe(2);
+  });
+
+  it('and refuses a creature that is not an artifact', () => {
+    const s = castRavager(['Elite Vanguard']);
+    const ravager = find(s, 0, 'battlefield', 'Arcbound Ravager');
+    const vanguard = find(s, 0, 'battlefield', 'Elite Vanguard');
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: ravager, abilityIndex: 0, sacrifice: vanguard,
+    })).not.toBeNull();
+  });
+
+  it('a -1/-1 counter cancels the +1/+1 and the 0/0 dies of it', () => {
+    /*
+      The interaction a printed 0/0 makes possible, and it needs no code: the two counters annihilate
+      (CR 704.5q), the creature is left a 0/0 on the battlefield, and the state-based actions put it
+      in the graveyard. A Contagion Clasp is lethal removal for this card.
+    */
+    let s = castWorker();
+    const worker = find(s, 0, 'battlefield', 'Arcbound Worker');
+    /*
+      The pass is the point of the test as much as the counter is. State-based actions run when a
+      player **would receive priority** (CR 704.3), so a counter put on by a bare effect call changes
+      the board and kills nothing until somebody acts — which is also why `drain` leaves it standing:
+      with an empty stack there is nothing for it to pass through.
+    */
+    s = apply(addCounters(s, worker, '-1/-1', 1), { type: 'auto:pass', by: 0 });
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Arcbound Worker');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Arcbound Worker');
+  });
+
+  it('and a 0/0 put onto the battlefield without entering dies at once, having no counter', () => {
+    /*
+      The tabletop's "Move by hand" can put any card on the battlefield, and a modular creature that
+      arrives that way never ran `entersWith` — so it is a literal 0/0 and the state-based actions
+      take it. Worth pinning rather than discovering: it is the same fact echo and vanishing each
+      found, and here it is the difference between a card and no card at all.
+
+      And it goes **without a question**: the modular trigger's intervening-if reads the counters it
+      had, which are none, so the table does not stop to ask who should receive nothing.
+    */
+    const s = apply(arena({
+      decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+      battlefield: { 0: ['Plains', 'Arcbound Worker'], 1: ['Island'] },
+      turn: 5, firstSeat: 0,
+    }), { type: 'auto:pass', by: 0 });
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Arcbound Worker');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Arcbound Worker');
+  });
+
+  it('is optional, because the card says "you may" and the target may be theirs', () => {
+    /*
+      The legal targets are *any* artifact creature, the opponent's included, which is what the card
+      says. Forced, a dying Worker whose only companion was an enemy Juggernaut would have to grow
+      it — so the spec is "up to one", and answering with none is a legal answer.
+    */
+    let s = castWorker();
+    const worker = find(s, 0, 'battlefield', 'Arcbound Worker');
+    const champion = find(s, 0, 'battlefield', 'Etched Champion');
+    s = drain(destroy(s, worker), 40);
+    if (s.pendingChoice !== null) {
+      s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [] }), 40);
+    }
+    expect(namesIn(s, 0, 'graveyard')).toContain('Arcbound Worker');
+    // Declined, so the Champion is untouched rather than grown.
+    expect(s.instances[champion]!.counters['+1/+1'] ?? 0).toBe(0);
+  });
+
+  it('both cards declare the keyword, so the pool can be audited for it', () => {
+    expect(scriptFor('Arcbound Worker')?.modular).toEqual({ count: 1 });
+    expect(scriptFor('Arcbound Ravager')?.modular).toEqual({ count: 1 });
   });
 });

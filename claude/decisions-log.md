@@ -12699,3 +12699,105 @@ was, kept as the control.
 Two of 95 declare-blockers steps had the card in hand at all, because it is a one-of in a sixty-card
 deck. The rule is worth having for the player's sake and for the keyword's; expecting it to move a
 win rate off that base would be D212's mistake, and the numbers above are reported so nobody tries.
+
+## D221 — Modular, the pool's first 0/0, and a zero that means the opposite of the last one
+
+Modular N (CR 702.43): the creature enters with N +1/+1 counters, and when it dies you may move its
+counters to another artifact creature. Two cards, Arcbound Worker and Arcbound Ravager, both into
+Forge Alliance, which is the deck where "another artifact creature" is a sentence with somewhere to
+point.
+
+### The first printed 0/0, which is the same fact as the keyword
+
+A modular creature is alive only because of its own counters. That makes the Worker the pool's first
+printed **0/0**, and it needed no special case: `entersWith` puts a +1/+1 on it as it arrives and the
+layer system does the rest. Three consequences, all tests rather than comments:
+
+- A **−1/−1 counter kills it**, because the two annihilate and a 0/0 is lethal to itself. A Contagion
+  Clasp is removal for this card.
+- A 0/0 **put onto the battlefield without entering** — the tabletop's "Move by hand", or a test
+  board built by hand — never ran `entersWith`, so it is a literal 0/0 and the state-based actions
+  take it immediately. The third keyword to find that fact, after echo and vanishing, and the
+  sharpest: here it is the difference between a card and no card at all.
+- And the state-based action that does it runs **when a player would receive priority** (CR 704.3),
+  which is why a test that adds the counter with a bare effect call and then drains sees nothing
+  happen: with an empty stack there is nothing to drain. The pass is part of the test.
+
+### The counters move, and the number comes from the past
+
+The first ability here that **moves** counters off a dying permanent rather than counting them. The
+number cannot be read off the creature — a card leaving the battlefield loses its counters on the way
+out, so by the time the trigger resolves it is in a graveyard with nothing on it. `subjectCounters`
+carries what it had, and that field was built two keywords ago for the other shape of the same
+problem. It needed nothing added.
+
+`modular: { count: 1 }` is the printed number and deliberately **not** what moves. What moves is what
+the creature actually had: a Worker that picked up a second counter passes two on, and a Ravager that
+ate three artifacts passes four. That is why the trigger reads the board rather than the card.
+
+Two details in the printed text that are easy to get wrong and are both tests:
+
+- **"You may"**, so the target spec is `optional: true` — up to one. Forced would be actively bad,
+  because the legal targets are *any* artifact creature including the opponent's: a dying Worker
+  whose only companion is an enemy Juggernaut would have to grow it.
+- And the trigger is **not asked at all** when there is nothing to move. The printed trigger fires
+  either way and then moves zero, but a table that stops to ask which creature should receive nothing
+  is asking a question whose every answer is identical — the same principle echo's unaffordable cost
+  gets. An intervening-if on the counters it had.
+
+### A cost that spends an artifact, which the pool has never had
+
+The Ravager's ability needed `AbilityCost.sacrifice` widened to `'artifact'` — the fourth member of
+that union and the first that is not about creatures. There are twenty-odd artifacts in this pool and
+until now nothing could pay with one. An artifact **creature** satisfies it too, which is the rule
+rather than a convenience, and it is read off `characteristicsOf` so an animated land counts and a
+Mutavault does not. The source itself is a legal answer, because the card says "an artifact" and not
+"another": refusing it here would be the engine inventing a restriction.
+
+### The slots: two payers, four readings, all the same sign
+
+| | seeds 3300 | seeds 5100 |
+| --- | --- | --- |
+| Arcbound Worker, for the 2nd Elite Vanguard | −1 | +3 |
+| Arcbound Ravager, for the 2nd Loxodon Warhammer | −7 | −13 |
+| Arcbound Ravager, for the 2nd Raise the Alarm | −9 | −7 |
+
+The Worker is level — signs disagree, both inside the floor, which is what a 1/1 for one swapped for
+a 2/1 for one ought to measure.
+
+The **Ravager is a downgrade**, and it took two payers to say so honestly. The Warhammer reading is
+the Capsize lesson again — that card is this deck's best and does two things at once (cast 24 times
+and equipped **57** in 41 games), so "a two-mana artifact for a three-mana one" was never the fair
+comparison. Re-priced against the second Raise the Alarm — two mana of board against two mana of
+board — it still costs **9 and 7**. Four readings, one sign, all inside the ±20 floor: not a result by
+this project's own standard, but the most a probe can say, and it says the card is worse than what it
+replaced.
+
+### And the reason is a zero that means the opposite of the last one
+
+The Ravager is cast in essentially every game it is drawn — 10 casts, and `cast-counts` says 24 of 24
+games holding it. It is not a stranded card. But its ability was **activated zero times**, and this is
+where the instrument earns its place:
+
+| across 48 games | |
+| --- | --- |
+| times the "Sacrifice an artifact" row was **offered** | **437** |
+| times the bot took it | **0** |
+
+Ninjutsu's zero was a **zone** problem: the situation never arose, 19 attackers and 2 ninjas and never
+both. This zero is a **judgement** problem: the situation arises constantly and the bot declines every
+time. Same instrument, opposite diagnosis, and the README lesson written one piece ago is exactly the
+thing that told them apart.
+
+The cause is identifiable and not mysterious: the bot's sacrifice branch refuses to feed anything with
+its own text, which exists because feeding a Blood Artist to a Vampire Aristocrat is a disaster —
+and every artifact in Forge Alliance has text on it. So a Bonesplitter that has done its job, a
+Vehicle nobody is crewing and a spent Mind Stone are all refused, and the Ravager stays a 1/1 for the
+whole game. A 1/1 for two that never grows is worse than two 1/1s for two, which is what the −9 and
+−7 are measuring.
+
+So modular is correct, tested and shipped; the Ravager's slot is honestly a loss while the bot will
+not feed it; and the rule it needs — for an **artifact** cost, prefer an artifact that is not a
+creature and is not currently attached — is its own piece, with its own before-and-after count and its
+own duel. The alternative was to quietly drop the Ravager and lose the only card in the pool that can
+pay an artifact cost, which would hide an engine gap behind a tidy number.

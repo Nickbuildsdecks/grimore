@@ -1481,6 +1481,47 @@ const BOROS_GUILDGATE: CardDef = {
   colors: [],
 };
 
+/**
+ * The pool's first printed **0/0**, and its first **modular** card (CR 702.43).
+ *
+ * Those two facts are one fact: a modular creature enters with its counters and is alive only
+ * because of them, so the printed 0/0 is not a typo on the card and not a special case in the
+ * engine — `entersWith` puts a +1/+1 on it and the layer system does the rest. Take the counter off
+ * and it dies, which is what makes a Contagion Clasp's −1/−1 lethal to it.
+ *
+ * What it buys for a mana is a body that never quite trades: block with it, let it die, and its
+ * counter lands on something bigger.
+ */
+const ARCBOUND_WORKER: CardDef = {
+  name: 'Arcbound Worker',
+  typeLine: 'Artifact Creature \u2014 Construct',
+  manaCost: '{1}',
+  cmc: 1,
+  power: '0',
+  toughness: '0',
+  oracleText: 'Modular 1 (This creature enters the battlefield with a +1/+1 counter on it. When it dies, you may put its +1/+1 counters on target artifact creature.)',
+  colors: [],
+};
+
+/**
+ * The sink the artifact deck has never had: an artifact that eats artifacts.
+ *
+ * Modular 1 on a two-mana 0/0, plus the pool's first cost that spends an **artifact** — after
+ * twenty-odd of them with nothing able to pay with one. Every Equipment that has done its job, every
+ * Vehicle nobody is crewing and every spent mana rock is now a +1/+1 counter, and when the Ravager
+ * finally dies those counters move on. See `AbilityCost.sacrifice`.
+ */
+const ARCBOUND_RAVAGER: CardDef = {
+  name: 'Arcbound Ravager',
+  typeLine: 'Artifact Creature \u2014 Beast',
+  manaCost: '{2}',
+  cmc: 2,
+  power: '0',
+  toughness: '0',
+  oracleText: 'Sacrifice an artifact: Put a +1/+1 counter on Arcbound Ravager.\nModular 1 (This creature enters the battlefield with a +1/+1 counter on it. When it dies, you may put its +1/+1 counters on target artifact creature.)',
+  colors: [],
+};
+
 const ELITE_VANGUARD: CardDef = {
   name: 'Elite Vanguard',
   typeLine: 'Creature — Human Soldier',
@@ -4359,7 +4400,15 @@ export const FORGE_ALLIANCE: DeckSpec = {
     { card: MOUNTAIN, count: 8 },
     { card: BOROS_GUILDGATE, count: 3 },
     { card: SECLUDED_STEPPE, count: 2 },
-    { card: ELITE_VANGUARD, count: 2 },
+    { card: ELITE_VANGUARD, count: 1 },
+    /*
+      The second Vanguard's slot, spent on **modular**.
+
+      Both are one-mana creatures and the trade is the keyword: a 2/1 that hits harder now against a
+      1/1 whose counter outlives it. In a deck with four other artifact creatures to catch it, the
+      Worker is the one that is never quite a clean trade for the opponent. See D221.
+    */
+    { card: ARCBOUND_WORKER, count: 1 },
     { card: MONASTERY_SWIFTSPEAR, count: 2 },
     // Both copies: a vehicles test crews a Sky Skiff with two of them, and `playout.test.ts`
     // watches one die for its Spirit.
@@ -4472,7 +4521,20 @@ export const FORGE_ALLIANCE: DeckSpec = {
     // And the Equipment that answers removal rather than adding power: whatever is holding the
     // swords stops dying to a Doom Blade or a Day of Judgment.
     { card: DARKSTEEL_PLATE, count: 1 },
-    { card: RAISE_THE_ALARM, count: 2 },
+    { card: RAISE_THE_ALARM, count: 1 },
+    /*
+      The second Alarm's slot, spent on the **sink** — and the payer was chosen the second time
+      round, after the first one said no.
+
+      The Ravager was measured against the second **Loxodon Warhammer** first, because an artifact
+      that eats artifacts and the best artifact in the deck are the same conversation. It came back
+      at 7 and 13 games of 288 against it, which is the Capsize lesson again: the Hammer is this
+      deck's best card and it does two things at once, so "a two-mana artifact for a three-mana one"
+      was never the fair comparison. A two-mana instant that makes two 1/1s is — both are two mana
+      of board, and the question is whether a growing body beats two small ones. Both readings are in
+      D221, because a slot's number is a fact about the payer.
+    */
+    { card: ARCBOUND_RAVAGER, count: 1 },
     { card: SECURE_THE_WASTES, count: 1 },
     { card: ANGELIC_GIFT, count: 1 },
     // One Charge rather than two, and the slot went to the Decorum. The pump rule (D86) measured

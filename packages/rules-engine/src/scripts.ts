@@ -6563,6 +6563,111 @@ function echoTrigger(cost: string): TriggerDef {
 }
 
 /**
+ * Modular N: the counters it entered with move on when it dies (CR 702.43b).
+ *
+ * The first ability here that **moves** counters off a dying permanent rather than counting them,
+ * and the number has to come from `c.subjectCounters` because a card leaving the battlefield loses
+ * its counters on the way out — by the time this resolves, the creature is in a graveyard with
+ * nothing on it. That field was built two keywords ago for the other shape of the same problem, and
+ * it needed nothing added for this one.
+ *
+ * `count` is the printed number and is **not** what moves. What moves is what the creature actually
+ * had: an Arcbound Worker that ate a +1/+1 from somewhere else passes two on, and one whose counter
+ * was cancelled by a −1/−1 passes nothing — which is why the trigger reads the board rather than
+ * the card.
+ *
+ * Targeted, as printed, so it is a real trigger that can fizzle: kill the only other artifact
+ * creature in response and the counters go nowhere. And "another" is the printed word, which the
+ * filter honours — a dying Ravager cannot give its counters back to itself.
+ */
+function modularTrigger(count: number): TriggerDef {
+  return {
+    on: { kind: 'dies', who: 'self' },
+    description: `Modular ${count} — move its +1/+1 counters to another artifact creature`,
+    /*
+      Not asked when there is nothing to move, which is a kindness rather than a rule: the printed
+      trigger fires either way and then moves zero counters, but a table that stops to ask which
+      creature should receive **nothing** is a table asking a question whose every answer is
+      identical. The same principle echo's unaffordable cost gets — a question with one outcome is
+      not a question — and the case is real: a modular creature that reached the battlefield without
+      entering has no counters at all and dies to the state-based actions immediately.
+    */
+    condition: (c) => (c.subjectCounters?.['+1/+1'] ?? 0) > 0,
+    targets: [{
+      kind: 'permanent',
+      description: 'another target artifact creature',
+      /*
+        "You **may** put its counters" — so up to one target, and the printed optionality matters
+        more here than it looks. The legal targets are *any* artifact creature, the opponent's
+        included, which is what the card says; forced, a dying Worker whose only companion is an
+        enemy Juggernaut would have to grow it. `optional: true` is the engine's "up to", and the
+        effect already does nothing with no target.
+      */
+      optional: true,
+      /*
+        And the bot is told this is a **help**, because its default is "the enemy and the enemy's
+        creatures" — sensible for the removal that is most of what targets anything, and exactly
+        backwards for counters it is giving away. See `TargetSpec.friendly`.
+      */
+      friendly: true,
+      filter: (state, candidate, _controller, source) => {
+        if (candidate.kind !== 'card' || candidate.id === source) return false;
+        const inst = state.instances[candidate.id];
+        if (inst === undefined || inst.zone !== 'battlefield') return false;
+        const ch = characteristicsOf(state, inst);
+        return ch.isCreature && hasType(ch.typeLine, 'artifact');
+      },
+    }],
+    effect: (c) => {
+      const moving = c.subjectCounters?.['+1/+1'] ?? 0;
+      const onto = firstCardTarget(c);
+      return onto === null || moving <= 0 ? c.state : addCounters(c.state, onto, '+1/+1', moving);
+    },
+  };
+}
+
+/**
+ * Arcbound Worker: a one-mana 0/0 that is alive only because of its own counter.
+ *
+ * The pool's first printed **0/0** and its first **modular** card, and the two facts are the same
+ * fact: without the counter it would die the moment it arrived. Which makes it the cheapest possible
+ * demonstration of the keyword — a 1/1 for one that hands its counter to something bigger when it
+ * goes, so trading it off is never quite a trade.
+ *
+ * In Forge Alliance, the artifact deck, where "another artifact creature" is a sentence with
+ * somewhere to point.
+ */
+const ARCBOUND_WORKER: CardScript = {
+  name: 'Arcbound Worker',
+  modular: { count: 1 },
+  entersWith: { counter: '+1/+1', amount: 1 },
+  triggers: [modularTrigger(1)],
+};
+
+/**
+ * Arcbound Ravager: the card the artifact deck has been missing an outlet for.
+ *
+ * Modular 1 on a two-mana 0/0, and an ability that eats **an artifact** to grow — the pool's first
+ * cost that spends an artifact, after twenty-odd of them with nothing able to pay with one. See
+ * `AbilityCost.sacrifice`.
+ *
+ * What it is in this deck is a mana sink that turns spent Equipment into power, and a threat that
+ * does not stay dead: eat two Bonesplitters, attack as a 3/3, and when it finally dies the three
+ * counters land on an Etched Champion that nothing in the pool can target.
+ */
+const ARCBOUND_RAVAGER: CardScript = {
+  name: 'Arcbound Ravager',
+  modular: { count: 1 },
+  entersWith: { counter: '+1/+1', amount: 1 },
+  abilities: [{
+    cost: { sacrifice: 'artifact' },
+    description: 'Sacrifice an artifact: Put a +1/+1 counter on Arcbound Ravager',
+    effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
+  }],
+  triggers: [modularTrigger(1)],
+};
+
+/**
  * Ninja of the Deep Hours: a creature that arrives **already attacking** (CR 702.49).
  *
  * The pool's first **ninjutsu** card, and two things the engine had never done. A cost paid with a
@@ -7866,6 +7971,7 @@ const ALL: readonly CardScript[] = [
   CALCIDERM, BLASTODERM,
   SUDDEN_SHOCK, KROSAN_GRIP,
   NINJA_OF_THE_DEEP_HOURS,
+  ARCBOUND_WORKER, ARCBOUND_RAVAGER,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

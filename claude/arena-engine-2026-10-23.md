@@ -6211,6 +6211,65 @@ is the play — which is `reserveForAnswers`'s summary word for word, and the re
 the same: a bot that holds a card with a keyword printed on it and never uses the keyword looks broken
 to the person opposite. See D220.
 
+### Modular, the pool's first 0/0, and a zero that means the opposite of the last one (D221)
+
+Modular N (CR 702.43): the creature enters with N +1/+1 counters, and when it dies you may move its
+counters to another artifact creature. Arcbound Worker and Arcbound Ravager, both into Forge
+Alliance, which is the deck where "another artifact creature" is a sentence with somewhere to point.
+
+**The first printed 0/0, which is the same fact as the keyword.** A modular creature is alive only
+because of its own counters, and that needed no special case: `entersWith` puts a +1/+1 on it and the
+layer system does the rest. Three consequences, all tests. A **−1/−1 counter kills it**, because the
+two annihilate and a 0/0 is lethal to itself — a Contagion Clasp is removal for this card. A 0/0 **put
+onto the battlefield without entering** never ran `entersWith`, so it is a literal 0/0 and the
+state-based actions take it at once: the third keyword to find that fact after echo and vanishing, and
+the sharpest, because here it is the difference between a card and no card. And that state-based
+action runs **when a player would receive priority** (CR 704.3), which is why a test that adds the
+counter with a bare effect call and then drains sees nothing happen — with an empty stack there is
+nothing to drain, so the pass is part of the test.
+
+**The counters move, and the number comes from the past.** This is the first ability here that moves
+counters off a dying permanent rather than counting them, and the number cannot be read off the
+creature: a card leaving the battlefield loses its counters on the way out. `subjectCounters` carries
+what it had, and that field was built two keywords ago for the other shape of the same problem — it
+needed nothing added. The printed `count` is deliberately not what moves: a Worker that picked up a
+second counter passes two on. Two printed details are easy to get wrong and are both tests — **"you
+may"**, so the spec is `optional: true`, which matters because the legal targets include the
+*opponent's* artifact creatures and a forced version would make a dying Worker grow an enemy
+Juggernaut; and the trigger is **not asked at all** with nothing to move, which is echo's principle
+(a question whose every answer is identical is not a question).
+
+**A cost that spends an artifact**, which the pool has never had: `AbilityCost.sacrifice` gained
+`'artifact'`, the fourth member of that union and the first not about creatures. Twenty-odd artifacts
+in this pool and until now nothing could pay with one.
+
+**The slots took two payers and gave four readings of one sign.** The Worker is level for the second
+Elite Vanguard (−1 and +3). The Ravager is a **downgrade**: −7 and −13 against the second Loxodon
+Warhammer, which is the Capsize lesson again (that card is the deck's best and does two things at
+once — cast 24 times and *equipped 57* in 41 games), and still **−9 and −7** re-priced against the
+second Raise the Alarm, two mana of board against two mana of board. Inside the ±20 floor every time,
+so not a result by this project's standard, but four same-sign readings is the most a probe can say.
+
+**And the reason is a zero that means the opposite of the last one.** The Ravager is cast in
+essentially every game it is drawn, so it is not a stranded card — but its ability was activated
+**zero** times, and the instrument says why:
+
+| across 48 games | |
+| --- | --- |
+| times the "Sacrifice an artifact" row was **offered** | **437** |
+| times the bot took it | **0** |
+
+Ninjutsu's zero was a **zone** problem: the situation never arose. This zero is a **judgement**
+problem: it arises constantly and the bot declines every time, because its sacrifice branch refuses
+to feed anything with its own text — a rule that exists so it will not eat a Blood Artist, and that
+refuses every artifact in Forge Alliance because they all have text. A spent Bonesplitter, an
+uncrewed Vehicle and a tapped Mind Stone are all declined, so the Ravager stays a 1/1 all game, and a
+1/1 for two that never grows is worse than two 1/1s for two. That is what the −9 and −7 measure. Same
+instrument as ninjutsu, opposite diagnosis, and the README lesson written one piece earlier is what
+told them apart. The rule it needs is its own piece (D221 says which rule); the alternative was to
+drop the Ravager quietly and lose the only card that can pay an artifact cost, hiding an engine gap
+behind a tidy number.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
