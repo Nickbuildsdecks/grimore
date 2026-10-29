@@ -6315,6 +6315,80 @@ const TRAIN_OF_THOUGHT: CardScript = {
   onResolve: (c) => draw(c.state, c.controller, 1),
 };
 
+/**
+ * Extort: pay {W/B} when you cast a spell, and everybody else loses a life (CR 702.100).
+ *
+ * The first **optional mana cost paid while an ability resolves** in this engine, which is what the
+ * keyword needed and what nothing else had. A kicker and a replicate cost are paid as a spell is
+ * cast; a ward is paid by an opponent to a question the engine raises. This is the card asking its
+ * own controller for mana in the middle of its own resolution, and the card cannot do it itself —
+ * paying means tapping lands, and the only thing that taps lands is the engine. So the question
+ * carries a price: see `ChoiceDecisionSpec.payIfChosen`.
+ *
+ * `Decline` is first in the list because the first option is what a bot falls back on and what the
+ * engine answers with when there is no real question to ask — and "do not spend mana" is the safe
+ * one of the two. The option with the price on it is only offered at all when the mana is up, so a
+ * player with three tapped lands is not asked a question they cannot answer.
+ *
+ * What `best` does **not** do is hold the mana back for a second spell. Extort fires after the
+ * first spell is already cast and paid for, so the mana it is spending is mana the turn did not
+ * use — and "keep one land untapped in case I draw something" is the two-step plan this bot has
+ * never been able to price (D108, D110). Pay, and the measurement says whether that is right.
+ */
+function extort(): TriggerDef {
+  return {
+    on: { kind: 'spell-cast', by: 'you' },
+    description: 'Extort — you may pay {W/B}: each opponent loses 1 life and you gain that much',
+    decisions: [{
+      who: 'controller',
+      prompt: 'Extort: pay {W/B} so each opponent loses 1 life and you gain that much?',
+      options: ['Decline', 'Pay {W/B}'],
+      payIfChosen: { option: 'Pay {W/B}', cost: '{W/B}' },
+      best: () => 'Pay {W/B}',
+    }],
+    effect: (c) => {
+      if (chosenOption(c) !== 'Pay {W/B}') return c.state;
+      const foes = opponentsOf(c.state, c.controller);
+      let next = c.state;
+      for (const foe of foes) next = loseLife(next, foe, 1);
+      // "You gain that much": one life per opponent who lost one, which is the difference between
+      // a duel and a pod and the reason this counts rather than adding one.
+      return foes.length === 0 ? next : gainLife(next, c.controller, foes.length);
+    },
+  };
+}
+
+/**
+ * Basilica Screecher: a 1/2 flier that charges a toll on every spell you cast.
+ *
+ * The pool's first extort card, and in Hollow Tide because that deck's problem has always been
+ * *closing*: it answers everything, mills and blocks, and then needs the game to end. Extort is a
+ * clock that costs no cards at all — one life a spell, for a mana it was not spending — and a
+ * control deck that casts two spells a turn for ten turns is twenty life.
+ *
+ * The body is almost incidental and that is the point of the slot: a 1/2 flier blocks the Healer's
+ * Hawks and Faerie Miscreants this pool is full of, and the card is bought for its text.
+ */
+const BASILICA_SCREECHER: CardScript = {
+  name: 'Basilica Screecher',
+  keywords: ['flying'],
+  triggers: [extort()],
+};
+
+/**
+ * Basilica Guards: a wall that drains, in the deck that was already trying to survive.
+ *
+ * Extort's other card, and the one that makes the keyword legible as a *defensive* clock: a 0/4 for
+ * two mana stops nearly every one- and two-drop in this pool dead, and every spell cast behind it
+ * is a life. Skyward Writ holds the Fog Banks, the Wall of Air and the Healers; what it has never
+ * had is a reason for the game going long to be *good* for it.
+ */
+const BASILICA_GUARDS: CardScript = {
+  name: 'Basilica Guards',
+  statics: [{ scope: 'self', effect: { cantAttack: true } }],
+  triggers: [extort()],
+};
+
 const THICKET_BASILISK: CardScript = {
   name: 'Thicket Basilisk',
   triggers: [
@@ -7195,6 +7269,7 @@ const ALL: readonly CardScript[] = [
   SQUID, CHASM_SKULKER, FATE_UNRAVELER,
   SACRED_CAT, ANGEL_OF_SANCTIONS, ADORNED_POUNCER, SUNSCOURGE_CHAMPION,
   THUNDEROUS_WRATH, TERMINUS, STAGGERSHOCK, DISTORTION_STRIKE, PYROMATICS, TRAIN_OF_THOUGHT,
+  BASILICA_SCREECHER, BASILICA_GUARDS,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

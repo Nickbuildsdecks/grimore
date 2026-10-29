@@ -4533,6 +4533,35 @@ const TERMINUS: CardDef = {
  * the Mind Stone are all worth drawing again, and she is the first commander in
  * the pool whose text is an activated ability pointing at a card in a graveyard.
  */
+/*
+  The two extort cards: a 1/2 flier and a 0/4 wall, both bought for their text rather than their
+  bodies. Extort is a clock that costs no cards — one life per spell for a mana the turn was not
+  spending — so it goes to the two decks whose problem is finishing games they are already winning.
+*/
+const BASILICA_SCREECHER: CardDef = {
+  name: 'Basilica Screecher',
+  typeLine: 'Creature — Bat Cleric',
+  manaCost: '{2}{B}',
+  cmc: 3,
+  power: '1',
+  toughness: '2',
+  oracleText: 'Flying\nExtort (Whenever you cast a spell, you may pay {W/B}. If you do, each '
+    + 'opponent loses 1 life and you gain that much life.)',
+  colors: ['B'],
+};
+
+const BASILICA_GUARDS: CardDef = {
+  name: 'Basilica Guards',
+  typeLine: 'Creature — Human Soldier',
+  manaCost: '{1}{W}',
+  cmc: 2,
+  power: '0',
+  toughness: '4',
+  oracleText: 'Defender\nExtort (Whenever you cast a spell, you may pay {W/B}. If you do, each '
+    + 'opponent loses 1 life and you gain that much life.)',
+  colors: ['W'],
+};
+
 export const SKYWARD_WRIT: DeckSpec = {
   id: 'skyward-writ',
   name: 'Skyward Writ',
@@ -4574,7 +4603,16 @@ export const SKYWARD_WRIT: DeckSpec = {
     { card: MASTER_OF_PEARLS, count: 1 },
     // A one-drop that blocks in the air and gains the life back, which is what the matchups this
     // deck loses actually ask for.
-    { card: HEALERS_HAWK, count: 2 },
+    { card: HEALERS_HAWK, count: 1 },
+    /*
+      The second Healer's Hawk's slot, spent on the pool's first **extort** card.
+
+      A 0/4 for two mana stops nearly every one- and two-drop in this pool dead, and every spell
+      cast behind it is a life off each opponent and a life back. Which is the thing this deck has
+      never had: a reason for the game going long to be *good* for it. It holds two Fog Banks, a
+      Wall of Air, a Samite Healer and a Holy Day, and all of them only buy time.
+    */
+    { card: BASILICA_GUARDS, count: 1 },
     /*
       Thalia, Guardian of Thraben, for the Youthful Knight.
 
@@ -4953,7 +4991,16 @@ export const HOLLOW_TIDE: DeckSpec = {
       discard, which are what a slow deck wants from its early turns.
     */
     { card: THE_ELDEST_REBORN, count: 1 },
-    { card: OMENSPEAKER, count: 2 },
+    { card: OMENSPEAKER, count: 1 },
+    /*
+      And the second Omenspeaker's slot, spent on extort's other card.
+
+      This deck answers everything and then needs the game to end. A 1/2 flier is almost
+      incidental; what the slot buys is one life a spell, for a mana a control deck is not
+      spending — and two spells a turn for ten turns is twenty life out of a card that was never
+      part of the board.
+    */
+    { card: BASILICA_SCREECHER, count: 1 },
     { card: THIEVING_MAGPIE, count: 1 },
     { card: VAMPIRE_NIGHTHAWK, count: 2 },
     // The answers. Three counters, four removal spells and two Man-o'-Wars, because the thing that

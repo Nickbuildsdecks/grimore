@@ -11472,3 +11472,74 @@ checks each, with `x1` and `x3` rows pressed across them. What it proves is the 
 in the bot and would have been broken the same way here: the row's own price was charged, rather than
 the printed cost on a card the table had drawn an expensive row for.
 
+## D208 — Extort, and the first optional mana cost paid in the middle of a resolution
+
+**The capability, which is the point of the piece.** This engine could already ask for mana in three
+places: as a spell is cast (a kicker, a replicate count, every alternative cost), as an ability is
+activated, and from an *opponent* answering a ward. What it could not do is let a card ask **its own
+controller** for mana while the card's ability is resolving — which is what extort is: "whenever you
+cast a spell, you may pay {W/B}; if you do, each opponent loses 1 life and you gain that much"
+(CR 702.100).
+
+The card cannot do it itself, and that is the whole design constraint: paying means **tapping
+lands**, and the only thing in this engine that taps lands is `payFrom`, which lives in the
+automation layer. A script cannot reach it (the import would be a cycle, and a card deciding which
+lands to tap would be a card doing the engine's job). So the price goes on the **answer**:
+`ChoiceDecisionSpec.payIfChosen` names an option and a cost, and the engine pays it between the
+question being answered and the effect being run.
+
+Two rules make it behave, and both are the discipline the rest of the engine already keeps:
+
+- **The priced option is not offered to a seat that cannot pay it.** Same rule `legalActions` keeps
+  about plays, and it gives the quiet case for free: filtering leaves one word, a question with one
+  answer is answered by the engine rather than drawn as a prompt with one button, and an extort
+  trigger with no mana up resolves without stopping the table at all.
+- **The payment happens before the effect**, so an effect reading `chosenOption` is reading an
+  answer that has already been paid for. It is also re-checked there rather than trusted: nothing
+  can spend the seat's mana between the two moments, but a client is free to send an `auto:decide`
+  naming a word that was never offered, and an unpaid extort that drained an opponent anyway would
+  be the engine lying about a cost.
+
+Nothing in the client needed changing. The question is the same word question Obelisk of Urd and
+Voice of All already ask, so the bar draws it, the socket carries it and the browser driver answers
+it — which is the argument for reusing the shape rather than adding a fourth pending state.
+
+**Two cards, both bought for their text.** Basilica Screecher (a 1/2 flier) in Hollow Tide and
+Basilica Guards (a 0/4 that cannot attack) in Skyward Writ — the two decks whose problem has always
+been finishing a game they are not losing. Extort is a clock that costs no cards at all.
+
+### What it is worth, and how often it even happens
+
+| | the extort creature reached the board | questions asked | paid | life drained |
+| --- | --- | --- | --- | --- |
+| Hollow Tide, 96 games | 40 | 101 | 101 | 101 |
+| Skyward Writ, 96 games | 30 | 121 | 121 | 120 |
+
+So about **four payments in a game the creature lands in**, and one life each in a duel. The bot pays
+every time, which is its whole policy and is deliberate: extort fires *after* the spell that
+triggered it has been paid for, so the mana it spends is mana the turn did not use, and "hold a land
+in case I draw something" is the two-step plan this bot has never been able to price (D108, D110).
+
+The slots, 288 games per arm on two seed sets: **Basilica Screecher costs 4 and 3**, **Basilica
+Guards gains 1 and 5**. All four inside the instrument's floor, which for a keyword that drains one
+life a spell is the honest answer rather than a disappointing one — one copy in sixty cards, landing
+in 40% of games, draining about one life a game. What the piece bought is the *capability*; the card
+is the smallest honest demonstration of it.
+
+### The browser, and a check that was wrong the first time
+
+`LIST=extort` plays eight Screechers behind twenty-four Swamps and cheap removal, so the question is
+asked often. Three runs, 25 of 25 checks each.
+
+Two things the browser forced, and the second is the better lesson:
+
+- **The driver always pressed the first word**, which for extort is `Decline` — so a scenario about
+  paying an optional cost could never once have paid one. It picks a random word now, which is the
+  same argument the play-row picker already made in its own comment: a driver that always takes
+  option one would look identical to a table that could not offer the others.
+- **The first version of the check passed on a run that declined every time.** It matched
+  `Pay {W/B}` anywhere in the line, and the prompt's own text carries *both* button labels — so the
+  paying word was in the string either way round. The driver reports the chosen word first for
+  exactly this reason, and the check anchors on it. A check that cannot tell the two answers apart
+  is not a check, and it passed before it was right.
+

@@ -5707,6 +5707,29 @@ Twice's slot gains 1 and 1. What a slot is worth is a fact about the card that *
 probe run once would have drawn a conclusion about the keyword that was wrong either way round.
 Train of Thought, in Hollow Tide for a Fog Bank, reads −7 and −2 — inside the floor both times.
 
+### Extort, and the first optional mana cost paid mid-resolution (D208)
+
+The engine could ask for mana as a spell was cast, as an ability was activated, and from an opponent
+answering a ward. What it could not do was let a card ask **its own controller** for mana while that
+card's ability was resolving — and the card cannot do it itself, because paying means tapping lands
+and the only thing that taps lands is the automation layer. So the price goes on the **answer**:
+`ChoiceDecisionSpec.payIfChosen` names an option and a cost, the engine pays it between the answer
+and the effect, and the option is not offered at all to a seat that cannot pay — which leaves one
+word, and a question with one answer is answered without a prompt.
+
+Nothing in the client changed: it is the same word question Obelisk of Urd already asks, so the bar
+draws it and the socket carries it. Basilica Screecher goes in Hollow Tide and Basilica Guards in
+Skyward Writ, the two decks whose problem is finishing games they are not losing. The numbers are
+small and honest: the creature lands in 40% of games, about four payments in those, one life each,
+and the slots read −4/−3 and +1/+5 of 288 — all inside the floor. What the piece bought is the
+capability.
+
+Two things the browser forced. The driver always pressed the **first** word, which for extort is
+`Decline`, so a scenario about paying an optional cost could never have paid one; it picks at random
+now, the same argument the play-row picker already made. And the first version of the check passed on
+a run that declined every time, because the prompt's text carries both button labels — the check
+anchors on the chosen word now, and it passed before it was right.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

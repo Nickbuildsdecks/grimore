@@ -533,6 +533,21 @@ export interface ChoiceDecisionSpec {
    * arbitrary.
    */
   readonly best?: (state: GameState, chooser: SeatIndex) => string | undefined;
+  /**
+   * A **mana cost the engine pays** when this word is the answer (CR 601.2h).
+   *
+   * The shape extort needed and the first optional cost in this engine that is paid *during* a
+   * resolution rather than as something is cast or activated. "You may pay {W/B}. If you do, each
+   * opponent loses 1 life" is one question with a price on one of its two answers, and the card
+   * cannot pay it itself: paying means tapping lands, which is the engine's job — see `payFrom`.
+   *
+   * Two rules make it behave. The option is **not offered** when the seat cannot pay for it, which
+   * is the same discipline `legalActions` keeps about every other play, and leaves a one-word
+   * question that the engine answers without a prompt. And the payment happens **before the
+   * effect**, so an effect that reads `chosenOption` is reading an answer that has already been
+   * paid for.
+   */
+  readonly payIfChosen?: { readonly option: string; readonly cost: string };
   /** Never set on this shape; the four are told apart by which of these is present. */
   readonly from?: never;
   readonly range?: never;

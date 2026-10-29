@@ -13320,6 +13320,111 @@ describe('miracle: the cast offered the moment you draw it', () => {
   });
 });
 
+describe('extort: an optional cost paid while the trigger resolves', () => {
+  /*
+    The first optional **mana** cost in this engine that is paid during a resolution. A kicker and a
+    replicate count are announced as a spell is cast; a ward is paid by an opponent to a question
+    the engine raises. Extort is the card asking its own controller for mana in the middle of its
+    own ability — and the card cannot pay it, because paying means tapping lands.
+
+    So the tests are about the price on the answer: that it is asked when it can be paid, that it is
+    *not* asked when it cannot, that paying taps a land and drains, and that declining does nothing.
+  */
+  const board = (lands: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'hollow-tide', 1: 'rot-harvest' },
+    hands: { 0: ['Thought Scour'] },
+    battlefield: { 0: ['Basilica Screecher', ...lands] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('asks for the mana as the trigger resolves, and drains when it is paid', () => {
+    // An Island for the Thought Scour and a Swamp for the extort: the {W/B} is paid with black.
+    let s = board(['Island', 'Swamp']);
+    const theirs = life(s, 1);
+    const mine = life(s, 0);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Thought Scour'),
+      targets: [{ kind: 'player', seat: 1 }],
+    });
+    // The spell is cast and its extort trigger is on top of it, waiting to be answered.
+    s = passBoth(s);
+    const ask = s.pendingDecision;
+    expect(ask?.seat).toBe(0);
+    expect(ask?.prompt).toContain('{W/B}');
+    expect(ask?.options).toEqual(['Decline', 'Pay {W/B}']);
+
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Pay {W/B}' }), 40);
+    expect(life(s, 1)).toBe(theirs - 1);
+    expect(life(s, 0)).toBe(mine + 1);
+    // One Swamp for the spell and one for the extort: the cost was really paid.
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(2);
+  });
+
+  it('and declining costs nothing at all', () => {
+    // An Island for the Thought Scour and a Swamp for the extort: the {W/B} is paid with black.
+    let s = board(['Island', 'Swamp']);
+    const theirs = life(s, 1);
+    const mine = life(s, 0);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Thought Scour'),
+      targets: [{ kind: 'player', seat: 1 }],
+    });
+    s = passBoth(s);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Decline' }), 40);
+    expect(life(s, 1)).toBe(theirs);
+    expect(life(s, 0)).toBe(mine);
+    // Only the spell's own Swamp.
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(1);
+  });
+
+  it('is not asked at all when the mana is not there', () => {
+    /*
+      One Swamp, spent on the spell itself. The option with the price on it is filtered out before
+      the question is asked, which leaves one word — and a question with one answer is one the
+      engine answers itself rather than a prompt with one button.
+    */
+    let s = board(['Island']);
+    const theirs = life(s, 1);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Thought Scour'),
+      targets: [{ kind: 'player', seat: 1 }],
+    });
+    s = drain(passBoth(s), 40);
+    expect(s.pendingDecision).toBeNull();
+    expect(life(s, 1)).toBe(theirs);
+  });
+
+  it('pays once per spell, so two spells are two lives', () => {
+    let s = board(['Island', 'Island', 'Swamp', 'Swamp']);
+    const theirs = life(s, 1);
+    // A second spell in hand, walked in so the turn can cast both.
+    const scour = find(s, 0, 'library', 'Thought Scour');
+    s = apply(s, { type: 'card:move', by: 0, card: scour, toZone: 'hand' });
+    for (const card of [find(s, 0, 'hand', 'Thought Scour'), scour]) {
+      s = apply(s, { type: 'auto:cast', by: 0, card, targets: [{ kind: 'player', seat: 1 }] });
+      s = passBoth(s);
+      if (s.pendingDecision !== null) {
+        s = apply(s, { type: 'auto:decide', by: 0, option: 'Pay {W/B}' });
+      }
+      s = drain(s, 40);
+    }
+    expect(life(s, 1)).toBe(theirs - 2);
+  });
+
+  it('and the bot pays it, which is the whole of its policy', () => {
+    let s = board(['Island', 'Swamp']);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Thought Scour'),
+      targets: [{ kind: 'player', seat: 1 }],
+    });
+    s = passBoth(s);
+    expect(s.pendingDecision?.options).toEqual(['Decline', 'Pay {W/B}']);
+    const answer = botAction(s, 0);
+    expect(answer?.type).toBe('auto:decide');
+    expect(answer?.type === 'auto:decide' ? answer.option : null).toBe('Pay {W/B}');
+  });
+});
+
 describe('replicate: a cost paid several times over', () => {
   /*
     The engine's first cost that can be paid **more than once on one casting**, and the first number

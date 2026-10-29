@@ -328,9 +328,22 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     */
     if (await has(page, 'decide-options')) {
       const words = page.locator('[data-testid^="decide-option-"]');
-      if ((await words.count()) > 0) {
-        await tap(words.first());
-        return `chose a word: ${prompt}`;
+      const count = await words.count();
+      if (count > 0) {
+        /*
+          Not always the first, for the same reason the play rows are not: a driver that always took
+          option one would only ever exercise option one, and would look identical to a table that
+          could not offer the others.
+
+          **Extort is what made this matter.** Its question is "Decline" or "Pay {W/B}", with
+          Decline first because that is what a bot falls back on — so a driver that always took the
+          first word could never once pay an optional cost through the table, which is the whole of
+          what that keyword does.
+        */
+        const pick = Math.floor(Math.random() * count);
+        const word = (await textOf(words.nth(pick))).replace(/\s+/g, ' ').trim();
+        await tap(words.nth(pick));
+        return `chose a word: ${word} — ${prompt.replace(/\s+/g, ' ').slice(0, 90)}`;
       }
     }
     /*

@@ -2003,7 +2003,22 @@ function askOrFinish(
       prompt with one button is noise. See `ChoiceDecisionSpec`.
     */
     if (isChoiceDecision(spec)) {
-      const options = spec.options;
+      /*
+        An option with a price on it is only offered to a seat that can pay it (CR 601.2h).
+
+        The same discipline `legalActions` keeps about plays, for the same reason: a table that
+        offered "Pay {W/B}" to a player with no untapped land would be offering an answer the
+        engine then has to take back. Filtering here rather than refusing later also gives the
+        empty case for free — one word left is a question the engine answers itself, so an extort
+        trigger with no mana up resolves without stopping the table at all.
+      */
+      const options = spec.payIfChosen === undefined
+        ? spec.options
+        : spec.options.filter((word) => word !== spec.payIfChosen?.option
+          || canAfford(
+            poolOf(state, entry.seat), parseManaCost(spec.payIfChosen.cost),
+            manaSources(state, entry.seat),
+          ));
       if (options.length < 2) {
         answers = [...answers, {
           seat: entry.seat, ids: [], ...(options[0] === undefined ? {} : { option: options[0] }),
@@ -2400,6 +2415,44 @@ function completeResolution(
 ): { state: GameState; message: string } {
   let next = popStack({ ...state, pendingDecision: null }, object.id);
   const script = scriptOnStack(next, object);
+
+  /*
+    An answer with a price on it, paid before the effect runs (CR 601.2h).
+
+    Extort is the card that needed this: "you may pay {W/B}" is a question whose *answer* costs
+    mana, and the card cannot pay it itself — paying means tapping lands, and the only thing that
+    taps lands is this file. So the engine pays here, between the question being answered and the
+    effect being run, and the effect reads an answer that has already been paid for.
+
+    The affordability check at ask time (see `askOrFinish`) is what makes this safe, and it is
+    re-asked here rather than trusted: nothing can spend this seat's mana between the two moments,
+    but a client is free to send an `auto:decide` naming a word that was never offered, and an
+    unpaid extort that drained an opponent anyway would be the engine lying about a cost.
+  */
+  const priced = decisionSpecsFor(next, object)
+    .flatMap((spec) => (isChoiceDecision(spec) && spec.payIfChosen !== undefined
+      ? [spec.payIfChosen]
+      : []));
+  let paidAnswers = answers;
+  for (const price of priced) {
+    const chosen = paidAnswers.findIndex((answer) => answer.option === price.option);
+    if (chosen < 0) continue;
+    const cost = parseManaCost(price.cost);
+    const seat = paidAnswers[chosen]!.seat;
+    if (cost.unsupported !== undefined
+      || !canAfford(poolOf(next, seat), cost, manaSources(next, seat))) {
+      // Not payable after all, so the answer was never available: it reads as the first option,
+      // which is the word the card puts first for exactly this reason.
+      const fallback = decisionSpecsFor(next, object)
+        .flatMap((spec) => (isChoiceDecision(spec) ? [spec.options[0]] : []))[0];
+      paidAnswers = paidAnswers.map((answer, i) => (i === chosen
+        ? { ...answer, ...(fallback === undefined ? {} : { option: fallback }) }
+        : answer));
+      continue;
+    }
+    next = payFrom(next, seat, cost, 0).state;
+  }
+  answers = paidAnswers;
 
   const ctx: EffectContext = {
     state: next,

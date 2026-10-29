@@ -38,7 +38,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * to press an ability on a card in the graveyard (`GRAVEYARD_LIST`), `LIST=miracle` one whose
  * first draw is often the card it is built around (`MIRACLE_LIST`), `LIST=rebound` one built to
  * cast the same spell twice a turn apart (`REBOUND_LIST`), `LIST=replicate` one with the mana to
- * pay one cost several times over (`REPLICATE_LIST`), and `LIST=earned` one
+ * pay one cost several times over (`REPLICATE_LIST`), `LIST=extort` one that is asked for mana
+ * every time it casts a spell (`EXTORT_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -274,6 +275,25 @@ const REPLICATE_LIST = [
   '4 Lightning Bolt', '4 Shock', '4 Monastery Swiftspear', '4 Goblin Arsonist',
   '4 Firebrand Archer', '4 Raging Goblin',
 ].join('\n');
+
+/**
+ * Sixty cards whose every spell is a toll: eight **Basilica Screechers** and nothing but black.
+ *
+ * Extort asks its question once per spell its controller casts, so the scenario is about casting
+ * *often* with a Screecher on the board — cheap removal, cheap bodies and Mind Stones, so the mana
+ * is there for the spell and for the {W/B} after it.
+ *
+ * It is the only list here whose subject is a **question**: the first optional mana cost in this
+ * engine that a player is asked for in the middle of a resolution (D208). What the run proves is
+ * that the table drew the two words, that pressing the paying one *spent mana*, and that the
+ * opponent's life went down for it.
+ */
+const EXTORT_LIST = [
+  '24 Swamp',
+  '8 Basilica Screecher',
+  '4 Doom Blade', '4 Ravenous Rats', '4 Vampire Nighthawk', '4 Mind Rot',
+  '4 Agonizing Demise', '4 Tormod\'s Crypt', '4 Mind Stone',
+].join('\n');
   const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
   watchForReactWarnings(page, '', reactWarnings);
@@ -331,6 +351,8 @@ const REPLICATE_LIST = [
         ? REBOUND_LIST
         : LIST === 'replicate'
         ? REPLICATE_LIST
+        : LIST === 'extort'
+        ? EXTORT_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -446,6 +468,8 @@ const REPLICATE_LIST = [
     const reboundOffers = new Set();
     /** The replicate rows this run pressed, by the row's own words, under `LIST=replicate`. */
     const replicateRows = new Set();
+    /** The extort questions this run answered by **paying**, under `LIST=extort`. */
+    const extortPaid = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -487,6 +511,17 @@ const REPLICATE_LIST = [
         if (typeof did === 'string' && /miracle/i.test(did)) miracleOffers.add(did);
         if (typeof did === 'string' && /rebounds/i.test(did)) reboundOffers.add(did);
         if (typeof did === 'string' && /replicate x[1-9]/i.test(did)) replicateRows.add(did);
+        /*
+          The **word that was chosen**, not the question that was asked.
+
+          The first version of this matched `Pay {W/B}` anywhere in the line and passed on a run
+          whose every answer was *Decline*: the prompt's own text carries both button labels, so the
+          paying word is in the string either way. The driver puts the chosen word first for exactly
+          this reason — a check that cannot tell the two answers apart is not a check.
+        */
+        if (typeof did === 'string' && /^chose a word: Pay \{W\/B\}/.test(did)) {
+          extortPaid.add(did);
+        }
         if (typeof did === 'string') {
           for (const word of Object.keys(altCasts)) {
             /*
@@ -557,7 +592,7 @@ const REPLICATE_LIST = [
       in one run and spectacle none. Both rows exist on every table; one shuffle does not see both.
     */
     const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
-      || LIST === 'rebound' || LIST === 'replicate' ? 5 : 3;
+      || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' ? 5 : 3;
     /*
       What "not yet" means for this list.
 
@@ -571,14 +606,17 @@ const REPLICATE_LIST = [
       ? reboundOffers.size === 0
       : LIST === 'replicate'
       ? replicateRows.size === 0
+      : LIST === 'extort'
+      ? extortPaid.size === 0
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
-      || LIST === 'rebound' || LIST === 'replicate')
+      || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort')
       && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
         : LIST === 'rebound' ? `${reboundOffers.size} rebound offers`
         : LIST === 'replicate' ? `${replicateRows.size} replicate rows`
+        : LIST === 'extort' ? `${extortPaid.size} extort payments`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -682,6 +720,19 @@ const REPLICATE_LIST = [
       check('a replicate row is offered on one card at several prices, and pressed',
         rows.length > 0, `rows pressed: ${rows.length}`);
       for (const did of rows.slice(0, 3)) console.log(`      ${did}`);
+    } else if (LIST === 'extort') {
+      /*
+        The first optional mana cost a *player* is asked for in the middle of a resolution.
+
+        What this proves that the engine's own tests cannot: the table drew the two words, the
+        paying one was pressed, and the engine charged for it — a question with a price on its
+        answer, asked while the ability was resolving and answered through the bar like any other
+        word question.
+      */
+      const answers = [...extortPaid];
+      check('an extort question is asked mid-resolution, and paying it is one tap',
+        answers.length > 0, `payments: ${answers.length}`);
+      for (const did of answers.slice(0, 3)) console.log(`      ${did}`);
     } else if (LIST === 'graveyard') {
       /*
         The two rows pressed on a card in the graveyard, and the face of what arrived.

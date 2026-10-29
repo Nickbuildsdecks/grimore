@@ -937,6 +937,7 @@ LIST=graveyard node scripts/e2e-solo.mjs # a deck built to press a button in the
 LIST=miracle node scripts/e2e-solo.mjs # a deck whose first draw is often the card it is built around — 26 checks
 LIST=rebound node scripts/e2e-solo.mjs # a deck built to cast the same spell twice, a turn apart — 26-27 checks
 LIST=replicate node scripts/e2e-solo.mjs # a deck with the mana to pay one cost several times — 25 checks
+LIST=extort node scripts/e2e-solo.mjs  # a deck asked for mana every time it casts a spell — 25 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -1006,6 +1007,7 @@ LIST=graveyard node scripts/e2e-solo.mjs         # embalm and eternalize, presse
 LIST=miracle node scripts/e2e-solo.mjs           # a miracle offered in the draw step, on a card in hand
 LIST=rebound node scripts/e2e-solo.mjs           # a rebound offered a turn later, on a card in exile
 LIST=replicate node scripts/e2e-solo.mjs         # one card offered at three prices, and the one tapped charged
+LIST=extort node scripts/e2e-solo.mjs            # an optional cost paid in the middle of a resolution
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
@@ -1020,7 +1022,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1054 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1059 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1137,6 +1139,14 @@ twenty-eight Mountains and eight Pyromatics, with no curve on purpose so there i
 five. Three runs, 25 of 25 checks each; the driver picks a random row, so it took four games in two
 of the three runs to press one.
 
+`LIST=extort` is the eighth, and the only one whose subject is a **question with a price on its
+answer**. An extort trigger asks its controller for {W/B} as it resolves, and the bar draws it as
+the same two-word question a Voice of All asks for a colour — so what the run proves is that
+pressing the paying word spent mana and took a life. Two things it forced: the driver used to press
+the first word every time, which for this question is "Decline", so it picks at random now; and the
+first version of the check passed on a run that declined every time, because the prompt's own text
+contains both button labels. Three runs, 25 of 25 checks each.
+
 Two of those checks are about how the table **looks** rather than what it does, which is new and
 worth saying why. A card at this table leans towards the cursor with a foil sheen that follows it,
 and the board has its own mana embers drifting behind it — and both are written as CSS variables a
@@ -1144,7 +1154,7 @@ pointer handler sets, so nothing that does not move a real pointer can see them.
 hovers a card and reads the variables back, which is the only honest way to check a thing whose
 whole existence is in the browser.
 
-The layers under them have their own suites: `packages/rules-engine` (1054 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1059 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
 pods as well as duels), `apps/web` (216 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
