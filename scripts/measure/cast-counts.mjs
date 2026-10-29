@@ -84,7 +84,7 @@ const used = new Map(); // name -> { cast, used, drawn }
   as well — the flags are read off the action rather than listed per card, so a keyword added
   later is counted here without this harness being told about it.
 */
-const ALT_FLAGS = ['evoked', 'dashed', 'kicked', 'flashback', 'escape', 'foretold', 'offered', 'faceDown'];
+const ALT_FLAGS = ['evoked', 'dashed', 'bestowed', 'spectacled', 'kicked', 'flashback', 'escape', 'foretold', 'offered', 'faceDown'];
 const alt = new Map(); // "name (flag)" -> count
 const bump = (name, key) => {
   const row = used.get(name) ?? { cast: 0, used: 0, drawn: 0 };

@@ -1282,6 +1282,10 @@ function candidateActions(
             // And bestow, the third of the family: without it the bot is told to cast a creature
             // spell that has a creature targeted, which is a cast the engine refuses.
             ...(play.bestowed === true ? { bestowed: true } : {}),
+            // And spectacle, the fourth: the row only exists on a turn an opponent has lost life,
+            // and a cast sent without the flag is the printed cost on a card the bot had priced
+            // at one mana.
+            ...(play.spectacled === true ? { spectacled: true } : {}),
             // And which half of a two-faced card, for the fifth time and the same reason: the two
             // halves are separate plays on one card, and a cast sent without this is either the
             // wrong spell or — on a split card, which has no printed face of its own — refused.
@@ -2717,7 +2721,7 @@ const playKey = (play: LegalPlay): string =>
   // plays, and a key that could not tell them apart would read the expensive one as still on
   // offer after the cheap one had been cast.
   + `${play.evoked === true ? 'e' : ''}${play.dashed === true ? 'd' : ''}`
-  + `${play.bestowed === true ? 'b' : ''}`
+  + `${play.bestowed === true ? 'b' : ''}${play.spectacled === true ? 's' : ''}`
   // The half, because two halves of one card are two different plays: without it the "did casting
   // that buy me anything" checks would read Ice as still on offer after Fire had been cast.
   + `|${play.half ?? ''}|${(play.modes ?? []).join(',')}`;

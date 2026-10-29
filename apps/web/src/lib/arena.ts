@@ -370,6 +370,11 @@ function playAction(
   */
   const withBestowed = play.bestowed === true ? { bestowed: true } : {}
   /*
+    And spectacle, the fourth and the only one that comes and goes: the row is on the sheet only
+    while an opponent has lost life this turn, and the flag is what claims that price.
+  */
+  const withSpectacled = play.spectacled === true ? { spectacled: true } : {}
+  /*
     Turning a morph face up is a special action, not a cast and not an ability (CR 702.37b), so it
     is its own action with nothing to choose: no targets, no cost to pick, no window for anybody to
     answer in. One tap, and the 2/2 is whatever it was all along.
@@ -392,6 +397,7 @@ function playAction(
       type: "auto:cast", card: play.card,
       ...withModes, ...withX, ...withKicker, ...withFlashback, ...withEscape, ...withFaceDown,
       ...withForetold, ...withFree, ...withEvoked, ...withDashed, ...withBestowed,
+      ...withSpectacled,
       ...withHalf, ...withDivision,
       ...withSacrifice, ...withTargets,
     }

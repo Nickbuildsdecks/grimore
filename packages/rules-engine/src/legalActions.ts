@@ -175,6 +175,15 @@ export interface LegalPlay {
    */
   readonly bestowed?: boolean;
   /**
+   * Set on the play that casts the card for its spectacle cost, which the board had to earn
+   * (CR 702.137a).
+   *
+   * The fourth of the family, and the first that is not always there: the row appears only once an
+   * opponent has lost life this turn, which is why its description says so — a cheap cast that
+   * comes and goes with the board needs to tell the player why it is on offer.
+   */
+  readonly spectacled?: boolean;
+  /**
    * Which face of a two-faced card this play casts, as an index into `CardDef.faces.cards`
    * (CR 708).
    *
@@ -977,6 +986,25 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           note: `bestow cost (${script.bestow.cost}, as an Aura)`,
           specs: [BESTOW_TARGET] as readonly TargetSpec[],
         }]),
+        /*
+          And spectacle, which is the first of the four that the board has to **earn**.
+
+          The entry is only built when an opponent has already lost life this turn (CR 702.137a), so
+          the row is simply absent on a turn nobody has been hit — which is how every other cost
+          this engine cannot pay is handled, and better than a greyed-out row nobody can read a
+          reason off. "An opponent" is every other seat that is still in the game: in a pod, a hit
+          on anybody but you pays for it.
+        */
+        ...(script?.spectacle === undefined
+          || !state.seats.some((other) => other.index !== seat && !other.eliminated
+            && (state.lifeLostThisTurn[String(other.index)] ?? 0) > 0)
+          ? []
+          : [{
+              flag: 'spectacled' as const,
+              cost: script.spectacle.cost,
+              note: `spectacle cost (${script.spectacle.cost}, because an opponent has lost life this turn)`,
+              specs: specsFor(script),
+            }]),
       ];
     for (const alternative of alternatives) {
       const altChange = costChangeFor(state, seat, def);

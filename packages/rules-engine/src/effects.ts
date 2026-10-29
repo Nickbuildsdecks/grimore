@@ -354,7 +354,12 @@ export function dealDamage(
     */
     next = infect
       ? replaceSeat(next, target.seat, { poison: clampValue(seat.poison + left), ...tally, ...dealt })
-      : replaceSeat(next, target.seat, { life: clampValue(seat.life - left), ...tally, ...dealt });
+      // And the turn's own record of it, which is what spectacle reads. Only on the life half:
+      // poison is not life lost (CR 120.3). See `recordLifeLost`.
+      : recordLifeLost(
+        replaceSeat(next, target.seat, { life: clampValue(seat.life - left), ...tally, ...dealt }),
+        target.seat, left,
+      );
   } else {
     const inst = next.instances[target.id];
     if (inst === undefined || inst.zone !== 'battlefield') return next;
@@ -416,7 +421,31 @@ export function loseLife(state: GameState, seat: SeatIndex, amount: number): Gam
   if (amount <= 0) return state;
   const s = state.seats[seat];
   if (s === undefined) return state;
-  return replaceSeat(state, seat, { life: clampValue(s.life - amount) });
+  return recordLifeLost(replaceSeat(state, seat, { life: clampValue(s.life - amount) }), seat, amount);
+}
+
+/**
+ * Remembers that a seat lost life **this turn** (CR 702.137a).
+ *
+ * One function called from the two places a seat's life goes down — this file's `dealDamage` to a
+ * player and `loseLife` above — for the reason `relocate` records every zone change in one place:
+ * a fact recorded at each call site is a fact some call site forgets. Spectacle is what reads it,
+ * and `endTurnCleanup` is what clears it.
+ *
+ * Damage that was replaced by poison does not come through here, which is the rule rather than an
+ * oversight: infect replaces what being dealt damage *does* to you, and what it does is not lose
+ * you life (CR 120.3). An infect deck's hits do not turn on a spectacle cost.
+ */
+export function recordLifeLost(state: GameState, seat: SeatIndex, amount: number): GameState {
+  if (amount <= 0) return state;
+  const key = String(seat);
+  return {
+    ...state,
+    lifeLostThisTurn: {
+      ...state.lifeLostThisTurn,
+      [key]: (state.lifeLostThisTurn[key] ?? 0) + amount,
+    },
+  };
 }
 
 // ── Moving cards ─────────────────────────────────────────────────────────────────────────────────

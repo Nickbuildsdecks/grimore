@@ -251,6 +251,15 @@ export interface StackObject {
    */
   readonly bestowed?: true;
   /**
+   * Whether this spell was cast for its spectacle cost (CR 702.137a).
+   *
+   * On the stack object with the other three for the same reason: both players can read what a
+   * spell cost before deciding whether to answer it, and a Skewer the Critics for {R} is a
+   * different card from one for {2}{R} — not in what it does, but in what the rest of the turn
+   * looked like.
+   */
+  readonly spectacled?: true;
+  /**
    * The modes chosen for a modal spell, as indices into its script's `modal.modes`, in printed
    * order. Chosen as the spell was cast (CR 601.2b) and public from that moment, which is why it
    * lives on the stack object rather than anywhere private.
@@ -684,6 +693,26 @@ export interface AutomationState {
    * `StackObject.castNumber`: this field is the running total and that one is the snapshot.
    */
   readonly spellsCastThisTurn: number;
+  /**
+   * How much life each seat has **lost this turn**, keyed by seat index as a string.
+   *
+   * The second thing this engine remembers about a turn rather than about a permanent or a seat,
+   * and it exists for spectacle: "you may cast this for its spectacle cost if an opponent lost life
+   * this turn" (CR 702.137a) cannot be answered from the board or from the life totals. A player on
+   * eighteen may have been on twenty a moment ago or for the last four turns, and a Seat's
+   * `damageFrom` tally is the whole game rather than this turn — and counts damage rather than
+   * life, which is not the same thing: an opponent who paid two life to a Mana Confluence has lost
+   * life and taken no damage.
+   *
+   * Recorded wherever a seat's life goes down, which is two places and only two — `dealDamage` to a
+   * player and `loseLife` — for the reason `relocate` records every zone change: one place per kind
+   * of move means no path can forget. Damage replaced by poison is **not** life lost, which is the
+   * rule (CR 120.3) and matters: an infect deck's hits do not turn on a spectacle cost.
+   *
+   * Reset in the cleanup step beside `spellsCastThisTurn`, and for the same reason: life lost in
+   * somebody's end step was lost *this* turn.
+   */
+  readonly lifeLostThisTurn: Readonly<Record<string, number>>;
   readonly pendingOfferedCast: {
     /** Who may cast it: the controller of the ability that offered it. */
     readonly seat: SeatIndex;
@@ -935,6 +964,13 @@ export interface AutoCastAction {
    * bestowed cast **must** have one, because an Aura spell with no target is not a legal cast.
    */
   readonly bestowed?: boolean;
+  /**
+   * Cast it for its spectacle cost, which is legal only if an opponent lost life this turn
+   * (CR 702.137a). Refused on a card with no spectacle, refused beside another alternative cost,
+   * and refused when nobody has lost any life — an alternative cost you may not pay is not one you
+   * may announce (CR 601.2b).
+   */
+  readonly spectacled?: boolean;
   /**
    * Cast it face down as a 2/2 creature for {3} (CR 702.37a). Refused on a card with no morph.
    *

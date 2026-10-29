@@ -14527,3 +14527,130 @@ describe('bestow: the creature you may cast as an Aura, and the Aura that stands
     })).toMatch(/alternative cost/);
   });
 });
+
+describe('spectacle: the cheap cost the board has to earn', () => {
+  /*
+    The fourth alternative cost and the first with a condition on the game's *history*: you may
+    cast this for its spectacle cost if an opponent lost life this turn (CR 702.137a). Nothing on
+    the board answers that question — a player on eighteen may have been on twenty a moment ago or
+    for four turns — so it needed `GameState.lifeLostThisTurn`, which these tests are as much about
+    as they are about the card.
+  */
+  const ashen = (lands: readonly string[], hand: readonly string[] = ['Skewer the Critics']): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'kindle-grove' },
+      hands: { 0: [...hand] },
+      battlefield: { 0: [...lands] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+
+  const mountains = (n: number): string[] => Array.from({ length: n }, () => 'Mountain');
+
+  it('is not offered on a turn nobody has been hit, and is the moment they have', () => {
+    let s = ashen(mountains(4), ['Skewer the Critics', 'Lightning Bolt']);
+    // Four mana and a quiet turn: the printed cost and nothing else.
+    expect(legalActions(s, 0).plays
+      .filter((p) => p.name === 'Skewer the Critics').map((p) => p.manaCost))
+      .toEqual(['{2}{R}']);
+
+    // A Bolt at the other seat is all it takes, and the row appears with its reason on it —
+    // beside the printed one, which the fourth land is there to keep payable.
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    expect(s.lifeLostThisTurn['1']).toBe(3);
+    expect(legalActions(s, 0).plays
+      .filter((p) => p.name === 'Skewer the Critics').map((p) => p.description))
+      .toEqual([
+        'Cast Skewer the Critics for its spectacle cost ({R}, because an opponent has lost life this turn)',
+        'Cast Skewer the Critics',
+      ]);
+  });
+
+  it('your own life does not pay for it', () => {
+    /*
+      "An opponent", which is the clause that makes the card the second half of an attack rather
+      than a one-mana Lava Spike. Ashen Rite is the deck that would otherwise cheat it: a Dark
+      Confidant, a Phyrexian Arena and a City of Brass all cost their own controller life every
+      turn, and three of those a game would make the cheap cost permanent.
+
+      Bolted at **yourself**, which is a legal target and the cheapest way to lose life through the
+      engine's own path rather than by moving a counter.
+    */
+    let s = ashen(mountains(4), ['Skewer the Critics', 'Lightning Bolt']);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 0 }],
+    }), 40);
+    expect(s.lifeLostThisTurn['0']).toBe(3);
+    expect(s.lifeLostThisTurn['1'] ?? 0).toBe(0);
+    expect(legalActions(s, 0).plays
+      .filter((p) => p.name === 'Skewer the Critics').map((p) => p.manaCost))
+      .toEqual(['{2}{R}']);
+  });
+
+  it('deals its three damage for one mana, and says so on the stack', () => {
+    let s = ashen(mountains(2), ['Skewer the Critics', 'Lightning Bolt']);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    expect(life(s, 1)).toBe(17);
+
+    const tappedBefore = ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length;
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Skewer the Critics'),
+      spectacled: true, targets: [{ kind: 'player', seat: 1 }],
+    });
+    expect(stackNames(s)).toEqual(['Skewer the Critics (spectacle)']);
+    s = drain(s, 40);
+    expect(life(s, 1)).toBe(14);
+    // One more land tapped, not three.
+    const tappedAfter = ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length;
+    expect(tappedAfter - tappedBefore).toBe(1);
+  });
+
+  it('refuses the cheap cost on a quiet turn, rather than charging it', () => {
+    const s = ashen(mountains(3));
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Skewer the Critics'),
+      spectacled: true, targets: [{ kind: 'player', seat: 1 }],
+    })).toMatch(/only payable if an opponent lost life/);
+  });
+
+  it('forgets at the end of the turn, which is what "this turn" means', () => {
+    let s = ashen(mountains(3), ['Skewer the Critics', 'Lightning Bolt']);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    expect(s.lifeLostThisTurn['1']).toBe(3);
+
+    s = nextTurn(s);
+    expect(s.lifeLostThisTurn['1'] ?? 0).toBe(0);
+    // And the row is gone with it, on a seat that is still three life down.
+    expect(life(s, 1)).toBe(17);
+    expect(legalActions(s, 0).plays
+      .filter((p) => p.name === 'Skewer the Critics').map((p) => p.manaCost))
+      .toEqual([]);
+  });
+
+  it('counts a life total moved by the engine and not one moved by hand', () => {
+    /*
+      The list is a record of life **lost**, which is narrower than "the number went down". A
+      tabletop adjustment is somebody correcting the board, not an event in the game — and a
+      paper-mode table has no rules running at all — so `life:adjust` records nothing, while the
+      engine's own damage path records every point.
+    */
+    const adjusted = apply(ashen(mountains(1)), { type: 'life:adjust', by: 0, seat: 1, delta: -3 });
+    expect(adjusted.lifeLostThisTurn['1'] ?? 0).toBe(0);
+
+    const board = ashen(mountains(1), ['Lightning Bolt']);
+    const bolted = drain(apply(board, {
+      type: 'auto:cast', by: 0, card: find(board, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    expect(bolted.lifeLostThisTurn['1']).toBe(3);
+  });
+});

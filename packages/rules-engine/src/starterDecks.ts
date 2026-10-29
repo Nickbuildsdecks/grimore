@@ -1766,6 +1766,15 @@ const THALIA_GUARDIAN_OF_THRABEN: CardDef = {
   colors: ['W'],
 };
 
+const SKEWER_THE_CRITICS: CardDef = {
+  name: 'Skewer the Critics',
+  typeLine: 'Sorcery',
+  manaCost: '{2}{R}',
+  cmc: 3,
+  oracleText: 'Spectacle {R}\nSkewer the Critics deals 3 damage to any target.',
+  colors: ['R'],
+};
+
 const FIERY_TEMPER: CardDef = {
   name: 'Fiery Temper',
   typeLine: 'Sorcery',
@@ -4189,7 +4198,23 @@ export const ASHEN_RITE: DeckSpec = {
       Unraveler are still five cards that drain on a death.
     */
     { card: FIERY_TEMPER, count: 1 },
-    { card: ZULAPORT_CUTTHROAT, count: 2 },
+    /*
+      Skewer the Critics for the second Zulaport Cutthroat: three damage for one mana, once the
+      board has earned it.
+
+      **Spectacle** (D197) is the fourth alternative cost and the first the board has to earn: for
+      {R} instead of {2}{R}, if an opponent lost life this turn. This is the deck that earns it
+      without trying — two Blood Artists, a Zulaport Cutthroat, a Fate Unraveler, an Impact Tremors
+      and five burn spells all take life off the other seat, so the condition is usually already
+      true by the time the card is in hand.
+
+      The slot is a **second copy of a card the deck already has four of in effect**: Blood Artist
+      and Zulaport Cutthroat are the same card at different rates, and this list runs four such
+      drains between them. One Cutthroat stays, so the script and the "your own side only" rule it
+      is the test case for are both still in the pool.
+    */
+    { card: SKEWER_THE_CRITICS, count: 1 },
+    { card: ZULAPORT_CUTTHROAT, count: 1 },
     { card: VAMPIRE_ARISTOCRAT, count: 2 },
     { card: BLOODTHRONE_VAMPIRE, count: 1 },
     /*

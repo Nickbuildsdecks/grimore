@@ -1976,6 +1976,30 @@ const BOON_SATYR: CardScript = {
   bestow: { cost: '{3}{G}{G}', effect: { power: 4, toughness: 2 } },
 };
 
+/**
+ * Skewer the Critics: three damage for three mana, or for one once somebody has been hit.
+ *
+ * The pool's first spectacle card, and the keyword's whole shape in one line: it is a Lightning
+ * Bolt on any turn the board has already done something, and a bad Lava Spike on a turn it has
+ * not. That makes it the first card here whose *price* depends on the turn's history rather than on
+ * the card, the zone or the board — see `GameState.lifeLostThisTurn`.
+ *
+ * It is in Ashen Rite because that deck earns the condition without trying. Two Blood Artists, a
+ * Zulaport Cutthroat, a Fate Unraveler and an Impact Tremors all take life off the other seat
+ * whenever anything happens, and five burn spells do it on purpose — so by the time three mana is
+ * available the one-mana price usually is too.
+ *
+ * Two declarative lines and nothing else: the spell does exactly what it does for either cost, and
+ * what the keyword changes is the price. That is the difference from evoke, dash and bestow, each
+ * of which had a consequence to build.
+ */
+const SKEWER_THE_CRITICS: CardScript = {
+  name: 'Skewer the Critics',
+  targets: [ANY_TARGET],
+  spectacle: { cost: '{R}' },
+  onResolve: (c) => damageFirstTarget(c, 3),
+};
+
 const PLANAR_VOID: CardScript = {
   name: 'Planar Void',
   triggers: [
@@ -6609,6 +6633,7 @@ const ALL: readonly CardScript[] = [
   PHOENIX_OF_ASH, GURMAG_ANGLER, TREASURE_CRUISE, PLANAR_VOID, SCAVENGING_OOZE, WOE_STRIDER,
   REST_IN_PEACE, FIREMANE_AVENGER, SUNHOME_STALWART, TOPAN_FREEBLADE, GOBLIN_WARDRIVER,
   BLOODBRAID_ELF, GRAPESHOT, FIERY_TEMPER, MULLDRIFTER, MARDU_SCOUT, BOON_SATYR,
+  SKEWER_THE_CRITICS,
   KITCHEN_FINKS,
   DRAGONSGUARD_ELITE, SEDGEMOOR_WITCH, PEST,
   SIEGE_WURM, CONCLAVE_TRIBUNAL,

@@ -548,6 +548,9 @@ export function endTurnCleanup(state: GameState): GameState {
   return {
     ...next, effects: expireEffects(next, 'end-of-turn'), pendingDiscard: null,
     spellsCastThisTurn: 0,
+    // And the turn's life loss, cleared here for the same reason: life lost in somebody's end step
+    // was lost *this* turn, so a spectacle cost is payable until the turn is actually over.
+    lifeLostThisTurn: {},
   };
 }
 

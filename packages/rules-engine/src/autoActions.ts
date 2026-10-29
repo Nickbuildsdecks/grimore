@@ -312,8 +312,18 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     `CardInstance.bestowed`.
   */
   const bestowed = action.bestowed === true;
-  if (evoked || dashed || bestowed) {
-    const word = evoked ? 'evoke' : dashed ? 'dash' : 'bestow';
+  /*
+    And spectacle, the one of the four with a condition on it (CR 702.137a).
+
+    The extra refusal is the condition itself: an alternative cost you may not pay is not one you
+    may announce (CR 601.2b), so a Skewer the Critics sent for {R} on a turn nobody has been hit is
+    refused rather than charged. `legalActions` never offers the row in that case, which makes this
+    the same belt-and-braces every other flag here has — the engine is the authority on what a
+    spell cost, not the client.
+  */
+  const spectacled = action.spectacled === true;
+  if (evoked || dashed || bestowed || spectacled) {
+    const word = evoked ? 'evoke' : dashed ? 'dash' : bestowed ? 'bestow' : 'spectacle';
     /*
       An alternative cost is paid *instead of* another (CR 601.2f), which includes the other one
       here: a card printed with both is cast for one of them.
@@ -323,11 +333,17 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
       keyword it does not have rather than for the two it was sent.
     */
     if (flashback || escape || foretold || offered || kicked
-      || [evoked, dashed, bestowed].filter(Boolean).length > 1) {
+      || [evoked, dashed, bestowed, spectacled].filter(Boolean).length > 1) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${word} is an alternative cost: it is paid instead of another, not beside one`);
     }
-    if ((evoked ? script?.evoke : dashed ? script?.dash : script?.bestow) === undefined) {
+    if ((evoked ? script?.evoke : dashed ? script?.dash
+      : bestowed ? script?.bestow : script?.spectacle) === undefined) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no ${word}`);
+    }
+    if (spectacled && !state.seats.some((other) => other.index !== action.by && !other.eliminated
+      && (state.lifeLostThisTurn[String(other.index)] ?? 0) > 0)) {
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        'the spectacle cost is only payable if an opponent lost life this turn');
     }
     if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
@@ -412,7 +428,10 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
             // And bestow, which replaces the cost the way the other two do — and is the only one
             // of the three where what you are paying for is a different kind of permanent.
             : bestowed ? script?.bestow?.cost
-              : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
+              // And spectacle, the fifth and last of the chain: cheaper again, and the only one
+              // whose availability is a fact about the turn rather than about the card.
+              : spectacled ? script?.spectacle?.cost
+                : kicked ? `${def?.manaCost ?? ''}${script?.kicker?.cost ?? ''}` : def?.manaCost;
   /*
     And what the permanents on the table have done to the cost: a Goblin Electromancer, a Thalia.
 
@@ -621,6 +640,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // And bestow, which is the one of the three the player answering it most needs: this is an Aura
   // spell, so a counterspell for creatures does not touch it and a board wipe will not either.
   const bestowedText = bestowed ? ' (bestowed)' : '';
+  // And spectacle, which tells the player answering it something about the turn as well as about
+  // the spell: three damage for one mana is a card they may not be able to race.
+  const spectacledText = spectacled ? ' (spectacle)' : '';
   /*
     And an offered cast, for the sixth time and the same reason: a player deciding whether to answer
     this should be able to read what it cost. "(free)" when nothing was paid and "(madness {R})"
@@ -652,6 +674,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // And bestow's, which the resolution reads to attach the permanent rather than simply putting
     // a creature onto the battlefield.
     ...(bestowed ? { bestowed: true as const } : {}),
+    ...(spectacled ? { spectacled: true as const } : {}),
     /*
       And the other flag the destination depends on, for the same reason: an adventure that
       resolves is exiled "on an adventure" rather than put into a graveyard, and once it has left
@@ -662,7 +685,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     */
     ...(faces?.kind === 'adventure' && faceKey !== undefined ? { adventure: true as const } : {}),
     description: `${characteristics.name}${xText}${kickedText}${flashbackText}${escapedText}`
-      + `${delveText}${foretoldText}${evokedText}${dashedText}${bestowedText}${offeredText}${modeText}`,
+      + `${delveText}${foretoldText}${evokedText}${dashedText}${bestowedText}${spectacledText}`
+      + `${offeredText}${modeText}`,
   };
   next = {
     ...next,

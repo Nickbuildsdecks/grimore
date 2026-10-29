@@ -5383,6 +5383,43 @@ button, until all three have been taken. Biasing the driver towards the cheap ro
 and was worse — a dashed Scout comes back to hand, so "always take the cheap row" is a loop that
 paid the dash cost twenty-one times and never cast the Mulldrifter.
 
+### Spectacle, the cheap cast the board has to earn (D197)
+
+Evoke, dash and bestow are always on offer. Spectacle (CR 702.137) is the first alternative cost
+here that is **earned**: the row appears on the card only once an opponent has lost life this turn,
+so it comes and goes mid-turn, and a Skewer the Critics is a Lightning Bolt after an attack and a
+bad Lava Spike before one.
+
+That needed a fact nothing in the engine held. Life totals do not say it — a player on eighteen may
+have been on twenty a moment ago or for four turns — and `Seat.damageFrom` is the whole game rather
+than this turn, and counts damage rather than life. So `GameState.lifeLostThisTurn`, the second
+thing this engine remembers about a *turn* after storm's spell count, written by one function
+(`recordLifeLost`) from the only two places a seat's life goes down — the player half of
+`dealDamage` and `loseLife` — and cleared in `endTurnCleanup` beside the spell count. Damage
+replaced by poison is **not** life lost (CR 120.3), so an infect deck's hits do not turn the cheap
+cast on; there is a test.
+
+`legalActions` builds this alternative **conditionally** — the first of the four that is not simply
+pushed — so on a turn nobody has been hit the row is absent rather than present and unpayable, and
+when it is there it says why: *"spectacle cost ({R}, because an opponent has lost life this turn)"*.
+"An opponent" is any other seat still in the game, so in a pod a hit on anybody but you pays for it.
+`castSpell` refuses a spectacle cast whose condition is false, the same belt-and-braces the other
+three flags have. There is nothing else to build: spectacle changes the price and nothing else,
+which is why the card is two declarative lines.
+
+**Skewer the Critics into Ashen Rite**, for the second Zulaport Cutthroat — the deck earns the
+condition without trying, with four drains and five burn spells. The slot measures level (−3 and −4
+on two seed sets of 288), the fourth in a row to do so.
+
+The usage is where this one parts from the other three. Over 288 games the Skewer is cast **102
+times in the 124 games it reached hand**, and **28 of those 102 paid the spectacle cost** — 27%,
+against dash's 23%, evoke's one in thirty-three and bestow's nought in sixty-three. The bot takes
+an alternative cost when the cost is simply smaller and nothing is given up, and spectacle gives up
+nothing at all: the spell is identical either way. So 28 is much less a reading of its judgement
+than of how often this deck has already drawn blood by the time it wants three mana of burn — about
+a quarter of the time. No bot rule again, for the fourth time, and for the cleanest reason yet:
+there is nothing to decide.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

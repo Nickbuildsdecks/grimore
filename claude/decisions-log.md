@@ -10468,3 +10468,116 @@ Mardu Scout is back in hand at the end of the turn, so the cheap row is always a
 cheapest. One run paid the dash cost **twenty-one times across three games and never cast the
 Mulldrifter once**. The driver's random pick is what gives the other two cards a turn, and it stays
 — the bias was reverted, and this paragraph is what is left of it.
+
+## D197 — Spectacle: the first cheap cast the board has to earn, and the engine's first fact about a turn's life loss
+
+Evoke, dash and bestow (D194–D196) are always on offer: the row is on the card from the moment the
+card is in hand, and the only question is whether you can pay. Spectacle (CR 702.137) is the first
+alternative cost in this engine that **has to be earned** — "you may cast this spell for its
+spectacle cost if an opponent lost life this turn" — so the row appears mid-turn, and on a turn
+nobody has been hit it is not there at all.
+
+A Skewer the Critics is a Lightning Bolt after an attack and a bad Lava Spike before one. The
+keyword is the second half of a turn rather than a card.
+
+### The fact a condition needs, and why nothing already held it
+
+The condition cannot be answered from anything this engine had. Not from the life totals: a player
+on eighteen may have been on twenty a moment ago or for the last four turns. Not from the board,
+which does not record what happened to produce it. And not from `Seat.damageFrom`, which is the
+whole game rather than this turn, and counts **damage** rather than life — an opponent who paid two
+life to a City of Brass has lost life and taken none.
+
+So `GameState.lifeLostThisTurn` — a map of seat index to life lost, and the second thing this engine
+remembers about a *turn* rather than about a permanent or a seat, after storm's `spellsCastThisTurn`
+(D192). Reset in `endTurnCleanup` beside it, and for the same reason: life lost in somebody's end
+step was lost *this* turn, so the cheap cast is payable until the turn is actually over.
+
+It is recorded by **one function called from two places**, `recordLifeLost` in `effects.ts`, reached
+from the player half of `dealDamage` and from `loseLife`. That is `relocate`'s discipline applied to
+a smaller fact: one place per kind of event means no path can forget, and a tally written at each
+call site is a tally some call site eventually misses. The two places are the two places a seat's
+life goes down, which was worth checking rather than assuming — every drain, every burn spell,
+every Dark Confidant trigger and every painland in the pool goes through one of them.
+
+**Damage replaced by poison is not life lost**, which is the rule (CR 120.3) and not an oversight:
+infect replaces what being dealt damage does to you, and what it does is not lose you life. Blight
+Vector's hits do not turn on a spectacle cost, and there is a test that says so.
+
+### A row that comes and goes, and the refusal under it
+
+`legalActions` builds the spectacle entry **conditionally** — the first of the four alternatives
+that is not simply pushed — and when the condition is false the row is absent rather than present
+and unpayable. That is how every other cost this engine cannot pay is handled, and it is better
+than a greyed-out row nobody can read a reason off. When it *is* there it says why:
+
+```
+Cast Skewer the Critics for its spectacle cost ({R}, because an opponent has lost life this turn)
+```
+
+"An opponent" is every other seat still in the game, so in a pod a hit on anybody but you pays for
+it, and your own life never does. `castSpell` refuses a spectacle cast whose condition is false with
+its own message, which is the same belt-and-braces the other three flags have: the engine is the
+authority on what a spell cost, not the client.
+
+There is no second consequence to build. Evoke had a sacrifice, dash a haste and a return, bestow a
+type change; spectacle changes the **price and nothing else**, which is why the card is two
+declarative lines and the work was all in the fact underneath it.
+
+### Skewer the Critics, and the slot it takes
+
+**Skewer the Critics into Ashen Rite**, for the second Zulaport Cutthroat. The deck earns the
+condition without trying: two Blood Artists, a Zulaport Cutthroat, a Fate Unraveler and an Impact
+Tremors take life off the other seat whenever anything happens, and five burn spells do it on
+purpose — so by the time three mana is available, one mana usually is enough. The cut is a second
+copy of a card the list effectively has four of (Blood Artist and Zulaport Cutthroat are the same
+card at different rates), and one Cutthroat stays, so the script and the "your own side only" rule
+it is the pool's test case for are both still there.
+
+### Measured: level again, and the first of the four the bot actually reaches for
+
+Two seed sets of 288 paired duels, probing the revert:
+
+```
+3300   with Skewer the Critics 147-140   with a 2nd Zulaport Cutthroat 150-137   -3
+5100   with Skewer the Critics 127-161   with a 2nd Zulaport Cutthroat 131-157   -4
+```
+
+Level — the fourth slot in a row to come out that way, and the same two numbers the Boon Satyr
+produced, which is coincidence rather than a signal: both are well inside this instrument's ±20
+floor. A one-card swap is below the resolution unless the card does something the deck could not do
+at all, and that result has now held for four keywords in four different decks.
+
+The **usage** is where this one parts from the other three. `cast-counts.mjs` over 288 games:
+
+```
+ 82%  cast  102 + used    0 / in hand  124 games  x1  Skewer the Critics
+    28  Skewer the Critics (spectacled)
+```
+
+**Twenty-eight of a hundred and two castings paid the spectacle cost** — 27%, against dash's 23%,
+evoke's one in thirty-three, and bestow's nought in sixty-three. So the answer to the question the
+card was added to ask is yes: the bot does have the condition when it wants to cast the card, and
+roughly one casting in four is the cheap one.
+
+And the reason is the reason bestow's answer was no, read from the other side. The bot is greedy
+about this turn (D108, D110, D119): it takes an alternative cost when the cost is simply smaller and
+nothing is given up. Dash is cheaper and costs a turn of board; spectacle is cheaper and costs
+*nothing at all* — the spell is identical either way — so there is nothing for the bot to weigh.
+Twenty-eight is therefore much less a measure of its judgement than of **how often Ashen Rite has
+already drawn blood by the time it wants to cast a three-mana burn spell**, which is a fact about
+the deck and a fair one: about a quarter of the time. Evoke and bestow ask the bot to give something
+up, and it almost never does.
+
+Which is also why no bot rule is written here, for the fourth time: there is nothing to decide. The
+greedy choice and the right choice are the same choice.
+
+### The test that could not use the debug action
+
+Writing the tests turned up one thing worth recording: `life:adjust` — the manual-table action that
+moves a life total, and the quickest way to set up a board in a test — **records nothing**. It
+writes the new total straight onto the seat without going through `loseLife`, which is right for
+what it is (somebody at a manual table correcting a number, not an event in a game) and means it
+does not turn a spectacle cost on. The test that needed an opponent to have lost life had to make
+them lose it for real, with a Lightning Bolt pointed at them. That is the right shape: the fact is
+recorded by the rules, and a test that could fake it would not be testing the rules.

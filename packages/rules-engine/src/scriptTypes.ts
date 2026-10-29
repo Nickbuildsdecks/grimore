@@ -1284,6 +1284,28 @@ export interface CardScript {
     readonly effect: PumpOptions;
   };
   /**
+   * Spectacle: a cheaper cost you may pay **only if an opponent lost life this turn**
+   * (CR 702.137).
+   *
+   * The fourth alternative cost in this engine and the first with a *condition on the game's
+   * history*. Evoke, dash and bestow are always on offer; this one has to be earned, and what earns
+   * it is not on the board — a player on eighteen may have been on twenty a moment ago or for four
+   * turns. So it needed the engine's second fact about a turn, after storm's spell count:
+   * `GameState.lifeLostThisTurn`.
+   *
+   * "An opponent", not "a player": your own life does not pay for it, which is the rule and also
+   * the whole shape of the card — a Skewer the Critics for {R} is the second half of an attack
+   * rather than a card you cast on turn one.
+   *
+   * There is no second effect to declare. The spell does exactly what it does for its printed
+   * cost; what the keyword changes is the price and the sentence on the row that says why it is
+   * being offered.
+   */
+  readonly spectacle?: {
+    /** The whole cost of a spectacle casting, in the printed `{R}` form. */
+    readonly cost: string;
+  };
+  /**
    * Morph: cast this face down as a 2/2 for {3}, and turn it up later for this cost (CR 702.37).
    *
    * Only the *turn-up* cost lives here. The face-down casting costs {3} for every card that has
