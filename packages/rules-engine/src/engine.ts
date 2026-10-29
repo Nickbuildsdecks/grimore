@@ -149,6 +149,8 @@ export function createGame(options: CreateGameOptions): GameState {
     pendingChoice: null,
     pendingPayment: null,
     pendingOfferedCast: null,
+    drawsOwed: [],
+    pendingDredge: null,
     spellsCastThisTurn: 0,
     lifeLostThisTurn: {},
     cardsDrawnThisTurn: {},
@@ -293,7 +295,8 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
    */
   const blockedByAQuestion = next.openingHands || next.pendingDecision !== null
     || next.pendingChoice !== null || next.pendingPayment !== null || next.pendingDiscard !== null
-    || next.pendingOfferedCast !== null || pendingDeclaration(next) !== null;
+    || next.pendingOfferedCast !== null || next.pendingDredge !== null
+    || pendingDeclaration(next) !== null;
   if (
     !next.finished && next.started && next.automated && next.priority === null
     && !blockedByAQuestion && !(NO_PRIORITY_STEPS as readonly string[]).includes(next.step)
@@ -327,6 +330,10 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
       // And so is a free cast on offer: the cards bound for the bottom of a library stay in exile,
       // which is where a finished game leaves everything else too.
       pendingOfferedCast: null,
+      // And a draw nobody is ever going to take, with the dredge that was waiting on it: a
+      // finished game owes no cards.
+      drawsOwed: [],
+      pendingDredge: null,
       pendingDiscard: null,
     };
   }
@@ -692,6 +699,8 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         pendingChoice: null,
         pendingPayment: null,
         pendingOfferedCast: null,
+        drawsOwed: [],
+        pendingDredge: null,
         spellsCastThisTurn: 0,
         lifeLostThisTurn: {},
         cardsDrawnThisTurn: {},

@@ -1432,6 +1432,15 @@ export interface BotOptions {
    * was measured against. See `sweepTakesMoreThanItGives` and D205.
    */
   readonly sparesItsOwnBoard?: boolean;
+  /**
+   * Whether to take a dredge when the library can afford it (CR 702.52a). Default **on**.
+   *
+   * The flag exists so the rule can be priced: a dredge is the only decision in this engine that
+   * trades a card the bot cannot see for one it can, so "always" and "never" are both defensible
+   * first guesses and only a probe can say which is closer. Off declines every dredge, which is
+   * also the control the rule was measured against. See `dredgeIsWorthIt` and D210.
+   */
+  readonly dredgesForValue?: boolean;
 }
 
 /**
@@ -1467,6 +1476,41 @@ function aimPending(
  * opponent model there is and the fair one: the other seat is assumed to answer as well as this
  * one would.
  */
+/**
+ * Whether to take a dredge: the one decision here that trades an unseen card for a seen one.
+ *
+ * Two facts. The first is the keyword's own price — **the library has to afford it four times
+ * over**, because the mill is cards this seat will never draw and a deck that dredges itself down
+ * to nothing has traded a game for a card. Four rather than one because the question is asked again
+ * every turn, and a library that can pay once can pay only once.
+ *
+ * The second is whether the card is one this deck can use: its **mana value is no more than the
+ * lands standing**, which is "a card I could pay for" rather than "a card I could pay for this
+ * instant with these colours". The looser form on purpose — a dredge taken in the draw step is for
+ * a turn that has not happened yet, and a rule that insisted on the colours would decline a
+ * three-drop all the way through the turns when filling a graveyard is what the deck is doing.
+ *
+ * Both read the library's **size** and never its contents, which is not a nicety: the bot may not
+ * see a hidden zone, and a dredge rule that looked at the top card would be the exact violation
+ * D164 went looking for. So the comparison is never "is this better than the card I would draw" —
+ * it cannot be.
+ */
+function dredgeIsWorthIt(
+  state: GameState, seat: SeatIndex, ask: { readonly card: string; readonly mill: number },
+): boolean {
+  const library = listAt(state, zoneKey(seat, 'library')).length;
+  if (library < ask.mill * 4) return false;
+  const def = state.cardDefs[state.instances[ask.card]?.defKey ?? ''];
+  if (def === undefined) return false;
+  const lands = listAt(state, zoneKey(seat, 'battlefield'))
+    .filter((id) => {
+      const inst = state.instances[id];
+      return inst !== undefined
+        && hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine ?? ''), 'land');
+    }).length;
+  return (def.cmc ?? 0) <= lands;
+}
+
 function answerPending(state: GameState): Action | null {
   if (state.pendingChoice !== null) {
     const seat = state.pendingChoice.seat;
@@ -1480,6 +1524,17 @@ function answerPending(state: GameState): Action | null {
   }
   if (state.pendingPayment !== null) {
     return { type: 'auto:pay', by: state.pendingPayment.seat, pay: true };
+  }
+  /*
+    A dredge inside a simulated line, answered by the same rule the real seat uses.
+
+    Unlike the ward above this one is not "always yes": a line that dredged away a library it was
+    about to draw from would look like a win to a search that cannot see the cards it burned. The
+    rule is cheap enough to run here, so the simulation and the seat answer alike.
+  */
+  if (state.pendingDredge !== null) {
+    const { seat, card, mill } = state.pendingDredge;
+    return { type: 'auto:dredge', by: seat, dredge: dredgeIsWorthIt(state, seat, { card, mill }) };
   }
   /*
     An offered cast inside a simulated line, taken whenever there is a legal way to take it.
@@ -2992,6 +3047,23 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
   const ward = actions.mustPay;
   if (ward !== null) return { type: 'auto:pay', by: seat, pay: true };
 
+  /*
+    And a dredge, which is the question this bot answers with a rule rather than with a search.
+
+    Searching it would mean simulating both branches, and one of the two branches is "lose two
+    cards off the top of a library the evaluation cannot read" — a line the search would score as
+    free. So it is a fact about the board instead, the same shape as every other drop rule here.
+    See `dredgeIsWorthIt`.
+  */
+  const dredge = actions.mustDredge;
+  if (dredge !== null) {
+    return {
+      type: 'auto:dredge',
+      by: seat,
+      dredge: (opts.dredgesForValue ?? true) && dredgeIsWorthIt(state, seat, dredge),
+    };
+  }
+
   if (actions.mustDiscard > 0) {
     /*
       A madness card first, because discarding it is how it gets cast (see `madnessToPitch`), and
@@ -3394,6 +3466,9 @@ export function seatsToAct(state: GameState): SeatIndex[] {
   if (state.pendingChoice !== null) return [state.pendingChoice.seat];
   // And a ward, which stops the table for the player who is not resolving anything.
   if (state.pendingPayment !== null) return [state.pendingPayment.seat];
+  // And a dredge, which stops it for a player who has not played anything at all: a draw is
+  // waiting on the answer.
+  if (state.pendingDredge !== null) return [state.pendingDredge.seat];
   // And an offered cast on offer, which stops it for the player who is: a cascade hit is answered
   // before anybody does anything else, by casting it or by declining.
   if (state.pendingOfferedCast !== null) return [state.pendingOfferedCast.seat];

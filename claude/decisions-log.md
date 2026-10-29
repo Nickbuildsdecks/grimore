@@ -11616,3 +11616,159 @@ both halves required: the suspend row pressed on a card in hand, and the cast ar
 upkeep off the last counter. It is the first scenario here whose two required checks are *two turns
 apart* in the same game.
 
+
+## D210 — Dredge, the replacement effect on a draw, and the rule that followed from deferring it
+
+**The keyword.** "If you would draw a card, you may instead mill N cards and return this card from
+your graveyard to your hand" (CR 702.52a). Every replacement effect in this engine before it was a
+**zone change** — dies, to-graveyard, leaves-battlefield — and those are easy here because the card
+is already moving: `relocate` records it, `settle` finds it in one of three lists, and whatever
+replaces it is handed the card. A draw is not a zone change the engine can catch after the fact. By
+the time the card has moved, the answer is moot.
+
+### Why the draw is deferred rather than paused
+
+Two walls, and they are both about where `draw` lives.
+
+It is in `effects.ts`, which sits **below** the layer that knows what a card's script is. Madness
+gets installed by `automation.ts` because that module can ask `scriptOf(next, id)?.madness`;
+`effects.ts` cannot, and a module cycle is the reason. So `draw` cannot look up a dredge card even
+if it wanted to.
+
+And a resolution cannot stop anywhere except a **decision spec** — a question the card declares,
+asked before its effect runs, answered into `ctx.decisions`. Dredge is not on the card that draws;
+it is on a card in a graveyard, and the engine does not know how many cards an effect will draw
+before running it.
+
+So the draw is **deferred**. `drawLater(state, seat, n)` adds n entries to `GameState.drawsOwed`,
+the surrounding effect finishes, and the first thing the next `settle` does is `drainOwedDraws`:
+take the head, and either raise `pendingDredge` or just draw it. A queue of one entry per card
+rather than a count per seat, because it has to survive a dredge taken in the middle of it — "each
+player draws" owes two draws to two seats, and a `draw 3` whose first card is dredged still owes
+two.
+
+Putting the drain at the **top** of `settle`, before the deaths and the draws are announced, is what
+makes the deferral invisible to everything else: a card deferred by `drawLater` reaches its `draws`
+trigger and its miracle offer in the same settle pass an immediate draw would have.
+
+### The rule the deferral imposes, written at the function
+
+**Only a draw that is the last thing a card does may be deferred.** Dark Confidant reads the hand to
+find what it drew and charges for its mana value; Faithless Looting draws two and then offers the
+hand to discard from. Both would see a hand without the cards if the draw were deferred past them,
+so both call `draw` and neither is ever offered a dredge. Nothing in the type system can tell those
+apart from a terminal draw, which is why the rule is documented at `drawLater` and the pool opts in
+one call site at a time: the eighteen places where `draw(c.state, c.controller, n)` *is* the whole
+effect, plus the draw step. All 1063 tests passed unchanged across that conversion, which is the
+claim about it being invisible, tested.
+
+The documented consequence: **a draw a card performs inside its own effect cannot be dredged.** That
+is a real gap in the rules, and the honest version of it is a sentence rather than a half-working
+mechanism — the same shape as `becomes-tapped` being the one trigger with no card behind it.
+
+### The sixth stopped table, and a decline with a job
+
+`pendingDredge` is the sixth thing that stops this table dead and the first about nothing on the
+stack: no spell, no target, nothing cast. Two buttons like a ward, because declining is the other
+half of a question rather than a gesture the table already has a meaning for.
+
+The decline has a job no other decline in this engine has: **it takes the draw.** The first version
+cleared `pendingDredge`, sliced the owed draw off the queue and drew nothing — because handing the
+draw back to the drain would offer the same dredge again, forever, with the card still sitting in the
+graveyard. One test caught it (`library - 1` read `library`). `auto:dredge` with `dredge: false`
+draws the card itself, which is also the only way "no" means the ordinary card off the top rather
+than no card at all.
+
+The library's length is the other half of the rule and it is not decoration: a dredge the library
+cannot pay for **is not offered**, so there is no unaffordable button and no way to deck yourself for
+free. A graveyard holding two dredge cards offers the cheaper one — the same "one at a time"
+concession `tickSuspended` makes, because the alternative is a third kind of prompt for a case this
+pool cannot build.
+
+### The bot reads the library's size and never its contents
+
+A dredge is the only decision here that trades a card the bot **cannot see** for one it can, which
+makes it the one place a confident rule could be badly wrong and still look fine: a line that
+dredged its library away wins the simulation it was scored in and loses the game. So it is a fact
+about the board rather than a search — `dredgeIsWorthIt` — and it is two facts.
+
+The library has to afford the mill **four times over**, because the question is asked again every
+turn and a library that can pay once can pay only once. And the card's **mana value has to be no
+more than the lands standing**: "a card I could pay for", not "a card I could pay for this instant
+with these colours". The looser form on purpose — a dredge taken in the draw step is for a turn that
+has not happened yet, and the tight form declined a three-drop all the way through the turns when
+filling a graveyard is the whole plan. Both read the library's *size* and never its contents, which
+is the D164 discipline: a rule that looked at the top card would be exactly the violation that audit
+went looking for.
+
+### What it measures, and the question that has to be asked first
+
+| of 288, the deck **without** the card | seed set 3300 | seed set 4400 |
+| --- | --- | --- |
+| Rot Harvest without Shambling Shell | 142 wins against 134 | 128 against 114 |
+| Blight Vector without Darkblast | 110 against 104 | 98 against 85 |
+
+Four readings, all the same sign: **both dredge cards cost their decks** — 8 and 14 games for the
+Shell, 6 and 13 for the Darkblast. Each is inside the ±20 floor on its own, and four readings landing
+on the same side of it is a different thing from one.
+
+Which raises the question D205 put into this project's method: is that a bad card or a badly played
+one? The bot takes a dredge whenever `dredgeIsWorthIt` says yes, and it says yes a great deal — 130
+of 137 offers. A dredge **skips a draw**: the card it hands back is one you have already seen, the
+card it skipped was new, and three more go into the graveyard unseen. A rule that always takes that
+trade is exactly the kind of rule a slot probe mistakes for a card. So the same four probes were run
+again with `BOT={"dredgesForValue":false}` — the bot never dredging — which is the control the flag
+exists for.
+
+| the same slot, with the bot **never** dredging | seed set 3300 | seed set 4400 |
+| --- | --- | --- |
+| Rot Harvest without Shambling Shell | 142 against 137 | 126 against 116 |
+| Blight Vector without Darkblast | 109 against 106 | 99 against 92 |
+
+**Both halves of the loss are real, and they are different sizes.** With the keyword switched off the
+cards still cost 5, 10, 3 and 7 — they are simply worse than the Endless One and the Doom Blade they
+replaced, which is a fact about two cards and not about dredge. The rest, **3, 4, 3 and 6 games of
+288, four times out of four**, is the bot taking every dredge it is offered.
+
+That is not "the keyword is bad"; it is "always yes is the wrong answer to this question", and the
+difference matters because the right rule is a third thing neither probe measured. `dredgeIsWorthIt`
+as written is far too loose — "mana value no more than the lands standing" is true of nearly
+everything by turn four — so what it really encodes is *always*. The default stays **on** regardless,
+for the reason the Dark Ritual rule stayed: a bot that is offered a mechanic every turn and never
+takes it looks broken to the person sitting opposite, and three games of 288 is a worse thing to buy
+that with than it sounds. The honest next step is a better rule rather than no rule, and these eight
+numbers are its baseline, and the open task that carries them names the facts a better rule could
+read without touching a hidden zone.
+
+One other thing the runs printed and it is worth not hiding: one arm of one probe reported **1
+unfinished game of 288** — a game that ran out of move budget. It was in the *rule-off* arm, where
+no dredge is ever taken, so it is not a dredge loop; the engine's own playout tests still play every
+deck pairing to a winner.
+
+### The card was wrong before the keyword was, and only an instrument could say so
+
+Dredge went on a dredge **land** first: a Swamp that enters tapped, taps for {B}, dredge 2 — minimal,
+readable, and the one card whose value is flat enough to make the keyword the only variable.
+`dredge.mjs` then reported it **offered three times in 96 games**. A dredge card does nothing except
+from a graveyard, and nothing in this pool destroys a land.
+
+The same keyword on **Shambling Shell** — {1}{B}{G} for a 2/2 that sacrifices itself to grow
+something — in Rot Harvest, which already runs two sacrifice outlets, a Blood Artist and a Zulaport
+Cutthroat: **137 offers, 130 taken, 7 declined, 390 cards milled** over the same 96 games, with the
+subject's library bottoming out at a median of 43. Darkblast, {B} for -1/-1 in Blight Vector, reads
+**63 offers, 62 taken, 1 declined, 186 milled**. Before asking what a keyword is worth, ask how often
+the card gets to use it — and the general form of that is now written up in
+`scripts/measure/README.md`.
+
+### The browser
+
+`LIST=dredge` plays eight Darkblasts and twenty bodies behind twenty-four Swamps: the spell is cast
+at a creature, lands in the graveyard, and from then on every draw step stops the table. Both halves
+required — the dredge pressed, and a Darkblast cast *after* one was taken, because a prompt that
+hands back a card nobody then plays has proved the question and not the keyword. Three runs, 26 of 26
+checks each.
+
+One thing it did not fall for, because the extort run already had. The prompt's own sentence carries
+both button labels ("… instead of drawing? Mill 3 Draw instead"), so a check matching the text would
+pass on a run that declined every time. The check is anchored on the **driver's** report of which
+button it pressed.

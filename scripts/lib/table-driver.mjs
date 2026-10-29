@@ -244,6 +244,8 @@ export async function isMyMove(page) {
   if (await has(page, 'order-prompt')) return true;
   if (await has(page, 'discard-prompt')) return true;
   if (await has(page, 'ward-prompt')) return true;
+  // And a dredge, which stops the table for a seat that is only owed a draw.
+  if (await has(page, 'dredge-prompt')) return true;
   /*
     A free cast on offer, which stops the table for the seat that may take it.
 
@@ -311,6 +313,23 @@ export async function makeMove(page, seat, { aggression = 0.6, forceMulligan = f
     await shot(page, 'a-ward-being-paid');
     await press(page, 'ward-pay');
     return `paid a ward: ${prompt}`;
+  }
+
+  /*
+    A dredge, which is the only question here about a card nobody played (CR 702.52a).
+
+    **Taken** rather than declined, for the reason the ward above is paid: a driver that always
+    declined would never once exercise the mill, and the mill is the half with the library in it.
+    Declining is the branch the engine's own tests cover, and it has one of its own there precisely
+    because it is the easier half to get wrong.
+  */
+  if (await has(page, 'dredge-prompt')) {
+    const prompt = await text(page, 'dredge-prompt');
+    // Shot before pressing, because the question is the picture: the card named, the price in
+    // cards, and the two answers.
+    await shot(page, 'a-dredge-offered');
+    await press(page, 'dredge-take');
+    return `took a dredge: ${prompt}`;
   }
 
   // A card that stopped mid-resolution to ask this player something blocks everything, including

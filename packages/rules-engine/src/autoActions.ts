@@ -24,8 +24,8 @@ import {
   type AutoOrderAction,
 } from './automation.js';
 import {
-  TIME, addCounters, addToPool, bottomPile, counterSpell, energyOf, loseLife, poolOf,
-  spendEnergy,
+  TIME, addCounters, addToPool, bottomPile, counterSpell, draw, energyOf, loseLife, mill,
+  poolOf, spendEnergy,
 } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
@@ -1406,6 +1406,9 @@ function pass(state: GameState, action: { by: SeatIndex }): Outcome {
   if (state.pendingPayment !== null) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${state.pendingPayment.prompt} must be answered first`);
   }
+  if (state.pendingDredge !== null) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${state.pendingDredge.prompt} must be answered first`);
+  }
   /*
     Declining an offered cast, which is the one thing a pass means that is not passing (CR 702.85a).
 
@@ -2002,6 +2005,63 @@ function payWard(state: GameState, action: { by: SeatIndex; pay: boolean }): Out
   };
 }
 
+/**
+ * Answers a dredge: mill for the card, or take the draw it would have replaced (CR 702.52a).
+ *
+ * The only action in this engine whose "no" is a **draw**. Everything else that can be declined
+ * leaves the table where it was — a ward unpaid counters a spell that was already on the stack, an
+ * offered cast declined leaves the card where the replacement put it — but a declined dredge has to
+ * finish the thing it interrupted, because the draw never happened. So both halves end the same
+ * way: the owed draw comes off the front of the queue, and `settle` carries on with whatever is
+ * behind it.
+ *
+ * The mill comes **before** the card comes back, which is the order the rules put them in and is
+ * not cosmetic: a dredge whose own mill hits a second dredge card puts that one in the graveyard
+ * where the next draw can use it, and a graveyard that was read first would miss it.
+ */
+function dredgeDraw(state: GameState, action: { by: SeatIndex; dredge: boolean }): Outcome {
+  requireAutomated(state);
+  const pending = state.pendingDredge;
+  if (pending === null) throw new EngineError('RULE_NOT_APPLICABLE', 'no draw is waiting to be dredged');
+  if (pending.seat !== action.by) throw new EngineError('FORBIDDEN', 'that draw is not yours');
+  if (typeof action.dredge !== 'boolean') {
+    throw new EngineError('INVALID_ACTION', 'say whether you are dredging');
+  }
+  const name = state.cardDefs[state.instances[pending.card]?.defKey ?? '']?.name ?? 'a card';
+  const rest = { ...state, pendingDredge: null, drawsOwed: state.drawsOwed.slice(1) };
+
+  if (!action.dredge) {
+    /*
+      The draw, taken here rather than left to the drain.
+
+      Declining is an answer about *this* draw, and the card is still in the graveyard — so handing
+      the owed draw back to `drainOwedDraws` would offer the same dredge again, forever. Taking it
+      here is also what makes "no" mean the ordinary card off the top rather than no card at all,
+      which is the one way this action differs from every other decline in the engine.
+    */
+    const next = resetPriority(settle(draw(rest, action.by, 1), state));
+    return {
+      state: next,
+      message: `${seatName(state, action.by)} does not dredge ${name} and draws instead`,
+      data: { dredged: false, card: pending.card },
+    };
+  }
+  let next: GameState = mill(rest, action.by, pending.mill);
+  const inst = next.instances[pending.card];
+  // The card is only still there to take back if its own mill did not move it, which it cannot —
+  // a card in a graveyard is not on top of a library — but a state that moved underneath the
+  // question is answered by taking the draw rather than by throwing.
+  if (inst !== undefined && inst.zone === 'graveyard') {
+    next = relocate(next, inst, 'hand', inst.owner, 'bottom');
+  }
+  next = resetPriority(settle(next, state));
+  return {
+    state: next,
+    message: `${seatName(state, action.by)} dredges ${name}: ${pending.mill} card${pending.mill === 1 ? '' : 's'} milled instead of a draw`,
+    data: { dredged: true, card: pending.card, mill: pending.mill },
+  };
+}
+
 // ── Answering a question a card asked while resolving ────────────────────────────────────────────
 
 /**
@@ -2296,6 +2356,7 @@ function dispatch(state: GameState, action: AutoAction): Outcome {
     case 'auto:turnUp': return turnUp(state, action);
     case 'auto:foretell': return foretell(state, action);
     case 'auto:suspend': return suspend(state, action);
+    case 'auto:dredge': return dredgeDraw(state, action);
     default: {
       const exhaustive: never = action;
       throw new EngineError('INVALID_ACTION', `unknown action: ${String((exhaustive as { type?: string }).type)}`);

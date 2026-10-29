@@ -65,6 +65,7 @@ it.
 | `hidden-info.mjs` | does the computer opponent read what it cannot see? | `SEEDS=2 node scripts/measure/hidden-info.mjs` |
 | `offers.mjs` | what does the engine offer you to cast — a cascade hit, a madness card, a **miracle** off the top — and is it taken? | `SUBJECT=arc-tempest SEEDS=12 node scripts/measure/offers.mjs` |
 | `storm.mjs` | how many spells does a turn actually hold, and what was the count on each storm spell? | `SUBJECT=arc-tempest SEEDS=4 node scripts/measure/storm.mjs` |
+| `dredge.mjs` | is a dredge ever offered, is it taken, and how short does the library get? | `SUBJECT=rot-harvest SEEDS=4 node scripts/measure/dredge.mjs` |
 
 `hidden-info` asks the fairness question, and it is the one no win rate answers: it puts the same
 position to the bot twice, the second time with **every card the acting seat cannot identify dealt
@@ -447,3 +448,12 @@ cast with the count missing is a legal cheap cast. A twenty-line script that cou
 by value found it in one run. Every announced number and every cost flag is worth that script the
 first time a card uses it; `scripts/measure/offers.mjs` is the permanent version of the same idea for
 the offer family.
+
+**A card that only works from one zone is worth nothing until something puts it there — and that is
+a question about the deck, not about the keyword.** Dredge's first card here was a dredge *land*, and
+`dredge.mjs` said it was offered **three times in 96 games**: a dredge card does nothing except from
+a graveyard, and nothing in this pool destroys a land. The same keyword on a 2/2 that sacrifices
+itself, in the deck with two sacrifice outlets in it, was offered **137 times**. Before measuring
+what a keyword is worth, measure how often the card gets to use it — a slot probe on the land would
+have read as nothing and the honest reading of that nothing is "this card never happened", which is
+not a fact about dredge.

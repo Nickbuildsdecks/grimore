@@ -965,6 +965,28 @@ export function discardAtRandom(state: GameState, seat: SeatIndex, count: number
   return next;
 }
 
+/**
+ * A draw this seat is owed but has not taken, which a dredge may replace (CR 702.52a).
+ *
+ * `draw` takes the card now; this one adds it to `GameState.drawsOwed` and lets `settle` take it,
+ * which is the only way a draw in this engine can be *replaced*. Nothing here knows what dredge is
+ * — the lookup needs a card's script and this module sits below that — so the deferral is blind and
+ * the layer above decides what to do with it.
+ *
+ * **Only for a draw that is the last thing the card does.** An effect that reads what it drew in
+ * the same breath — Dark Confidant charging you for the card's mana value, Faithless Looting
+ * offering the two cards it just drew to discard — must call `draw`, because by the time this one's
+ * card arrives the effect has finished. The compiler cannot tell the two apart, which is why the
+ * rule is written here and why the pool opts in one card at a time rather than all at once.
+ */
+export function drawLater(state: GameState, seat: SeatIndex, count: number): GameState {
+  if (count <= 0) return state;
+  return {
+    ...state,
+    drawsOwed: [...state.drawsOwed, ...Array.from({ length: Math.floor(count) }, () => seat)],
+  };
+}
+
 export function draw(state: GameState, seat: SeatIndex, count: number): GameState {
   const result = drawFromLibrary(state, seat, count);
   /*

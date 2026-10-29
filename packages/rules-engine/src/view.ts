@@ -171,7 +171,8 @@ export interface AutomationView {
   readonly combat: CombatState;
   /** Who the engine is waiting on, and for what. */
   readonly awaiting: {
-    readonly kind: 'attackers' | 'blockers' | 'order' | 'discard' | 'mulligan' | 'choose' | 'decide' | 'pay';
+    readonly kind: 'attackers' | 'blockers' | 'order' | 'discard' | 'mulligan' | 'choose'
+      | 'decide' | 'pay' | 'dredge';
     readonly seats: readonly SeatIndex[];
     /**
      * What is being asked, when it is a mid-resolution decision or a ward. Public on purpose: the
@@ -538,6 +539,11 @@ function automationFor(state: GameState, viewer: SeatIndex | null): AutomationVi
     : state.pendingChoice !== null ? { kind: 'choose', seats: [state.pendingChoice.seat] }
     : state.pendingPayment !== null
       ? { kind: 'pay', seats: [state.pendingPayment.seat], prompt: state.pendingPayment.prompt }
+    // A dredge, which is public for the same reason a ward is: the other player should see a table
+    // deciding rather than one that has silently stopped, and the card it is about is in a
+    // graveyard, which everybody can read anyway.
+    : state.pendingDredge !== null
+      ? { kind: 'dredge', seats: [state.pendingDredge.seat], prompt: state.pendingDredge.prompt }
     : pending !== null ? { kind: 'discard', seats: [pending.seat] }
     : owed !== null ? { kind: owed.kind, seats: owed.seats }
     : null;

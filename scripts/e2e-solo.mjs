@@ -40,7 +40,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * cast the same spell twice a turn apart (`REBOUND_LIST`), `LIST=replicate` one with the mana to
  * pay one cost several times over (`REPLICATE_LIST`), `LIST=extort` one that is asked for mana
  * every time it casts a spell (`EXTORT_LIST`), `LIST=suspend` one that spends its first turn on a
- * card it will cast two turns later (`SUSPEND_LIST`), and `LIST=earned` one
+ * card it will cast two turns later (`SUSPEND_LIST`), `LIST=dredge` one that keeps buying the same
+ * spell back out of its graveyard (`DREDGE_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -315,6 +316,26 @@ const SUSPEND_LIST = [
   '4 Lightning Bolt', '4 Shock', '4 Monastery Swiftspear', '4 Goblin Arsonist',
   '4 Firebrand Archer', '4 Raging Goblin', '4 Borderland Marauder',
 ].join('\n');
+
+/**
+ * A deck that spends every draw step buying the same spell back (CR 702.52a).
+ *
+ * Dredge is the one keyword in the pool whose prompt is about a **draw** rather than about a card
+ * somebody played, and it needs two things a normal deck does not reliably give it: a dredge card
+ * that actually reaches the graveyard, and creatures on the table for it to point at on the way
+ * there. Eight Darkblasts and twenty bodies is both — the spell is cast, it lands in the graveyard,
+ * and from then on every draw step is a question.
+ *
+ * What the run proves is the pair of joints no engine test can reach through a table: the prompt
+ * itself — two buttons about a draw, with the price in cards — and the **card coming back**, which
+ * is the half that makes dredge a keyword rather than a drawback.
+ */
+const DREDGE_LIST = [
+  '24 Swamp',
+  '8 Darkblast',
+  '4 Child of Night', '4 Vampire Nighthawk', '4 Ravenous Rats', '4 Drudge Skeletons',
+  '4 Doom Blade', '4 Gravedigger', '4 Sign in Blood',
+].join('\n');
   const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
   watchForReactWarnings(page, '', reactWarnings);
@@ -376,6 +397,8 @@ const SUSPEND_LIST = [
         ? EXTORT_LIST
         : LIST === 'suspend'
         ? SUSPEND_LIST
+        : LIST === 'dredge'
+        ? DREDGE_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -496,6 +519,16 @@ const SUSPEND_LIST = [
     /** The suspend rows pressed and the casts they bought back, under `LIST=suspend`. */
     const suspendRows = new Set();
     const suspendCasts = new Set();
+    /**
+     * The dredges taken, and the casts of a card that had been dredged back, under `LIST=dredge`.
+     *
+     * Two halves on purpose. The first is the prompt; the second is the point — a dredge that
+     * returns a card nobody then casts has proved the question and not the keyword. Counted only
+     * *after* a dredge has been taken, so the Darkblast cast that put the card in the graveyard in
+     * the first place is not mistaken for the one it bought back.
+     */
+    const dredgesTaken = new Set();
+    let castsAfterADredge = 0;
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -550,6 +583,9 @@ const SUSPEND_LIST = [
         }
         if (typeof did === 'string' && /Suspend .*time counter/i.test(did)) suspendRows.add(did);
         if (typeof did === 'string' && /last time counter is gone/i.test(did)) suspendCasts.add(did);
+        if (typeof did === 'string' && /^took a dredge: /.test(did)) dredgesTaken.add(did);
+        if (dredgesTaken.size > 0 && typeof did === 'string'
+          && /chose a play: Cast Darkblast/.test(did)) castsAfterADredge += 1;
         if (typeof did === 'string') {
           for (const word of Object.keys(altCasts)) {
             /*
@@ -621,6 +657,7 @@ const SUSPEND_LIST = [
     */
     const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
+      || LIST === 'dredge'
       ? 5 : 3;
     /*
       What "not yet" means for this list.
@@ -639,9 +676,12 @@ const SUSPEND_LIST = [
       ? extortPaid.size === 0
       : LIST === 'suspend'
       ? suspendRows.size === 0 || suspendCasts.size === 0
+      : LIST === 'dredge'
+      ? dredgesTaken.size === 0 || castsAfterADredge === 0
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
-      || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend')
+      || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
+      || LIST === 'dredge')
       && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
@@ -649,6 +689,7 @@ const SUSPEND_LIST = [
         : LIST === 'replicate' ? `${replicateRows.size} replicate rows`
         : LIST === 'extort' ? `${extortPaid.size} extort payments`
         : LIST === 'suspend' ? `${suspendRows.size} suspends, ${suspendCasts.size} casts`
+        : LIST === 'dredge' ? `${dredgesTaken.size} dredges, ${castsAfterADredge} casts after one`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -780,6 +821,21 @@ const SUSPEND_LIST = [
         `casts: ${suspendCasts.size}`);
       for (const did of [...suspendRows].slice(0, 2)) console.log(`      ${did}`);
       for (const did of [...suspendCasts].slice(0, 2)) console.log(`      ${did}`);
+    } else if (LIST === 'dredge') {
+      /*
+        The one prompt at this table that is about a **draw** (CR 702.52a).
+
+        Two halves again, and they are the question and the point. The question is the thing the
+        engine had to grow a sixth stopped-table state for — a draw deferred rather than taken, two
+        buttons, and a price in cards off your own library. The point is the card arriving back in
+        hand and being cast again, which is the only way a run can tell a working keyword from a
+        prompt that merely appears.
+      */
+      check('a dredge is offered in the draw step, and milling for it is one tap',
+        dredgesTaken.size > 0, `dredges: ${dredgesTaken.size}`);
+      check('and the card it bought back is cast again', castsAfterADredge > 0,
+        `casts after a dredge: ${castsAfterADredge}`);
+      for (const did of [...dredgesTaken].slice(0, 2)) console.log(`      ${did}`);
     } else if (LIST === 'graveyard') {
       /*
         The two rows pressed on a card in the graveyard, and the face of what arrived.

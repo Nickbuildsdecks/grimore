@@ -22,7 +22,8 @@ import { zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
   addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
-  dealDamage, destroy, discardAtRandom, draw, exileCard, firstCardTarget, firstPlayerTarget,
+  dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, firstCardTarget,
+  firstPlayerTarget,
   chosenOption, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
@@ -115,7 +116,7 @@ const cyclingLand = (name: string, type: 'W' | 'U' | 'B' | 'R' | 'G'): CardScrip
     {
       cost: { mana: '{2}', discardSelf: true },
       description: 'Cycling {2} ({2}, Discard this card: Draw a card.)',
-      effect: (c) => draw(c.state, c.controller, 1),
+      effect: (c) => drawLater(c.state, c.controller, 1),
     },
   ],
 });
@@ -429,7 +430,7 @@ const SWORDS_TO_PLOWSHARES: CardScript = {
 
 const HARMONIZE: CardScript = {
   name: 'Harmonize',
-  onResolve: (c) => draw(c.state, c.controller, 3),
+  onResolve: (c) => drawLater(c.state, c.controller, 3),
 };
 
 const OVERRUN: CardScript = {
@@ -487,7 +488,7 @@ const DOOM_BLADE: CardScript = {
 
 const DIVINATION: CardScript = {
   name: 'Divination',
-  onResolve: (c) => draw(c.state, c.controller, 2),
+  onResolve: (c) => drawLater(c.state, c.controller, 2),
 };
 
 const SIGN_IN_BLOOD: CardScript = {
@@ -504,7 +505,7 @@ const SIGN_IN_BLOOD: CardScript = {
 
 const MIND_SPRING: CardScript = {
   name: 'Mind Spring',
-  onResolve: (c) => draw(c.state, c.controller, c.x),
+  onResolve: (c) => drawLater(c.state, c.controller, c.x),
 };
 
 /**
@@ -533,7 +534,7 @@ const PREORDAIN: CardScript = {
   name: 'Preordain',
   // Scry *then* draw, which is the whole card: the draw sees the library the scry left behind.
   decisions: [scry(1)],
-  onResolve: (c) => draw(c.state, c.controller, 1),
+  onResolve: (c) => drawLater(c.state, c.controller, 1),
 };
 
 const OMENSPEAKER: CardScript = {
@@ -700,7 +701,7 @@ const JACE_BELEREN: CardScript = {
     {
       cost: { loyalty: -1 },
       description: '−1: You draw a card.',
-      effect: (c) => draw(c.state, c.controller, 1),
+      effect: (c) => drawLater(c.state, c.controller, 1),
     },
     {
       cost: { loyalty: -10 },
@@ -767,7 +768,7 @@ const ANGELIC_GIFT: CardScript = {
     {
       on: { kind: 'etb' },
       description: 'draw a card',
-      effect: (c) => draw(c.state, c.controller, 1),
+      effect: (c) => drawLater(c.state, c.controller, 1),
     },
   ],
 };
@@ -1497,7 +1498,7 @@ const CACKLING_COUNTERPART: CardScript = {
 const THINK_TWICE: CardScript = {
   name: 'Think Twice',
   flashback: { cost: '{2}{U}' },
-  onResolve: (c) => draw(c.state, c.controller, 1),
+  onResolve: (c) => drawLater(c.state, c.controller, 1),
 };
 
 const FIREBOLT: CardScript = {
@@ -2290,7 +2291,7 @@ const SCAVENGING_OOZE: CardScript = {
 const TREASURE_CRUISE: CardScript = {
   name: 'Treasure Cruise',
   delve: true,
-  onResolve: (c) => draw(c.state, c.controller, 3),
+  onResolve: (c) => drawLater(c.state, c.controller, 3),
 };
 
 // ── The library as the thing you attack ──────────────────────────────────────────────────────────
@@ -2356,7 +2357,7 @@ const THIEVING_MAGPIE: CardScript = {
     {
       on: { kind: 'combat-damage' },
       description: 'draw a card',
-      effect: (c) => draw(c.state, c.controller, 1),
+      effect: (c) => drawLater(c.state, c.controller, 1),
     },
   ],
 };
@@ -2397,7 +2398,7 @@ const COMPELLING_ARGUMENT: CardScript = {
   abilities: [{
     cost: { mana: '{U}', discardSelf: true },
     description: '{U}, Discard this card: Draw a card.',
-    effect: (c) => draw(c.state, c.controller, 1),
+    effect: (c) => drawLater(c.state, c.controller, 1),
   }],
 };
 
@@ -2478,7 +2479,7 @@ const JACE_MEMORY_ADEPT: CardScript = {
     {
       cost: { loyalty: 0 },
       description: '0: Draw a card.',
-      effect: (c) => draw(c.state, c.controller, 1),
+      effect: (c) => drawLater(c.state, c.controller, 1),
     },
   ],
 };
@@ -2641,7 +2642,7 @@ const ELVISH_VISIONARY: CardScript = {
   triggers: [{
     on: { kind: 'etb' },
     description: 'draw a card',
-    effect: (c) => draw(c.state, c.controller, 1),
+    effect: (c) => drawLater(c.state, c.controller, 1),
   }],
 };
 
@@ -2675,7 +2676,7 @@ const MIND_STONE: CardScript = {
     {
       cost: { mana: '{1}', tap: true, sacrificeSelf: true },
       description: '{1}, {T}, Sacrifice Mind Stone: Draw a card.',
-      effect: (c) => draw(c.state, c.controller, 1),
+      effect: (c) => drawLater(c.state, c.controller, 1),
     },
   ],
 };
@@ -3179,7 +3180,7 @@ const BEHOLD_THE_MULTIVERSE: CardScript = {
   foretell: { cost: '{1}{U}' },
   // Scry *then* draw, like Preordain: the draw sees the library the scry left behind.
   decisions: [scry(2)],
-  onResolve: (c) => draw(c.state, c.controller, 2),
+  onResolve: (c) => drawLater(c.state, c.controller, 2),
 };
 
 const SAW_IT_COMING: CardScript = {
@@ -3310,7 +3311,7 @@ const BONE_SPLINTERS: CardScript = {
 const VILLAGE_RITES: CardScript = {
   name: 'Village Rites',
   additionalCost: { sacrifice: 'creature' },
-  onResolve: (c) => draw(c.state, c.controller, 2),
+  onResolve: (c) => drawLater(c.state, c.controller, 2),
 };
 
 /**
@@ -5704,7 +5705,7 @@ const PELAKKA_WURM: CardScript = {
       // the way out, so the removal spell aimed at it was still a card for a card.
       on: { kind: 'dies' },
       description: 'draw a card',
-      effect: (c) => draw(c.state, c.controller, 1),
+      effect: (c) => drawLater(c.state, c.controller, 1),
     },
   ],
 };
@@ -6312,7 +6313,7 @@ const TRAIN_OF_THOUGHT: CardScript = {
   name: 'Train of Thought',
   replicate: { cost: '{2}{U}' },
   triggers: [replicate()],
-  onResolve: (c) => draw(c.state, c.controller, 1),
+  onResolve: (c) => drawLater(c.state, c.controller, 1),
 };
 
 /**
@@ -6405,6 +6406,63 @@ const RIFT_BOLT: CardScript = {
   suspend: { cost: '{R}', counters: 1 },
   targets: [ANY_TARGET],
   onResolve: (c) => damageFirstTarget(c, 3),
+};
+
+/**
+ * Dredge on a body you were going to spend anyway, in the deck that spends bodies.
+ *
+ * One of the pool's two **dredge** cards (CR 702.52a), and a creature rather than the land the slot
+ * was first written as — because a dredge card does nothing until it is in a graveyard, and the
+ * instrument found a dredge land offered three times in 96 games: nothing in this pool destroys a
+ * land. A 2/2 that sacrifices itself puts itself in the graveyard on the turn it is useful, which
+ * is the whole arrangement.
+ *
+ * In Rot Harvest, which already has a Blood Artist and a Zulaport Cutthroat watching for deaths, so
+ * the sacrifice is a play rather than a concession. After that every draw step offers it back for
+ * three cards off the top — in the one deck that wanted a full graveyard anyway.
+ */
+const SHAMBLING_SHELL: CardScript = {
+  name: 'Shambling Shell',
+  dredge: { mill: 3 },
+  abilities: [
+    {
+      cost: { sacrificeSelf: true },
+      description: 'Sacrifice Shambling Shell: Put a +1/+1 counter on target creature.',
+      targets: [TARGET_CREATURE],
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        return id === null ? c.state : addCounters(c.state, id, '+1/+1', 1);
+      },
+    },
+  ],
+};
+
+/**
+ * Darkblast: one mana for -1/-1, every turn, for as long as the library lasts.
+ *
+ * Dredge's other card and the other half of what the keyword does. The Shambling Shell asks what a
+ * body you were spending anyway is worth; this asks what **repetition** is worth, which is the
+ * thing dredge actually sells:
+ * -1/-1 for {B} is a card nobody plays, and -1/-1 for {B} once a turn forever is a card that beats
+ * a board of Glistener Elves on its own.
+ *
+ * In Blight Vector for the second Doom Blade, which is removal for removal — a one-shot kill
+ * anything against a recurring kill almost nothing. If the keyword is worth a slot at all it is
+ * worth it there, and if the probe says no then that is the number this pool has.
+ */
+const DARKBLAST: CardScript = {
+  name: 'Darkblast',
+  // Wears off at end of turn like any other pump, which for a shrink is what kills the creature
+  // before it can wear off. See `expiresAtEndOfTurn`.
+  expiresAtEndOfTurn: true,
+  dredge: { mill: 3 },
+  targets: [TARGET_CREATURE],
+  onResolve: (c) => {
+    const id = firstCardTarget(c);
+    return id === null
+      ? c.state
+      : pump(c.state, [id], c.source, c.controller, { power: -1, toughness: -1 });
+  },
 };
 
 /**
@@ -7312,6 +7370,7 @@ const ALL: readonly CardScript[] = [
   SACRED_CAT, ANGEL_OF_SANCTIONS, ADORNED_POUNCER, SUNSCOURGE_CHAMPION,
   THUNDEROUS_WRATH, TERMINUS, STAGGERSHOCK, DISTORTION_STRIKE, PYROMATICS, TRAIN_OF_THOUGHT,
   BASILICA_SCREECHER, BASILICA_GUARDS, RIFT_BOLT, SEARCH_FOR_TOMORROW,
+  SHAMBLING_SHELL, DARKBLAST,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

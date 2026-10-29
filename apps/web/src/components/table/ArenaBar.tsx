@@ -11,7 +11,9 @@
  * `legalActions.attackers`, and the mana comes from the pool the server sent.
  */
 import { useState } from "react"
-import { Check, FastForward, Hand, Handshake, Shield, Skull, Sparkles, Swords, Undo2, X } from "lucide-react"
+import {
+  Check, FastForward, Hand, Handshake, Layers, Shield, Skull, Sparkles, Swords, Undo2, X,
+} from "lucide-react"
 import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -603,6 +605,35 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
         the right one — and a single "Pay" button with no way past it would be a table that has
         stopped rather than a choice.
       */}
+      {/*
+        A dredge: the one prompt at this table that is about a draw rather than about a card
+        somebody played (CR 702.52a).
+
+        Two buttons like a ward, and for the same reason — declining is the other half of the
+        question rather than a gesture the table already has a meaning for. The sentence matters
+        more here than for most prompts: the card is in a graveyard, which is a pile nothing else in
+        the game asks you to look at, and the price is cards off your own library.
+      */}
+      {you.mustDredge !== null ? (
+        <div data-testid="dredge-prompt" className="flex flex-wrap items-center gap-2 text-xs">
+          <Layers className="size-3.5 text-[var(--g-gold-400)]" />
+          <span className="font-semibold text-[var(--g-text-high)]">{you.mustDredge.prompt}</span>
+          <span className="ml-auto flex gap-1.5">
+            <Button size="sm" data-testid="dredge-take" onClick={() => onAct({ type: "auto:dredge", dredge: true })}>
+              <Check className="size-3.5" /> Mill {you.mustDredge.mill}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="dredge-decline"
+              onClick={() => onAct({ type: "auto:dredge", dredge: false })}
+            >
+              <X className="size-3.5" /> Draw instead
+            </Button>
+          </span>
+        </div>
+      ) : null}
+
       {you.mustPay !== null ? (
         <div data-testid="ward-prompt" className="flex flex-wrap items-center gap-2 text-xs">
           <Shield className="size-3.5 text-[var(--g-gold-400)]" />

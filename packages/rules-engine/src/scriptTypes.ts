@@ -1645,6 +1645,26 @@ export interface CardScript {
    * each card say so.
    */
   readonly suspend?: { readonly cost: string; readonly counters: number };
+  /**
+   * Dredge: a draw you may replace by milling this many cards and taking this card back
+   * (CR 702.52a).
+   *
+   * The first replacement effect in this engine that applies to a **draw** rather than to a card
+   * that is moving, and the difference is the whole of why it needed new machinery. A replaced
+   * zone change can be asked about after the fact — the card has moved, `settle` finds it in the
+   * list and hands it to whatever replaces it. A replaced draw cannot: the question has to be
+   * answered before the card is taken, and by then it is in a hand and the answer is moot.
+   *
+   * So the draw is deferred rather than paused. See `drawLater` and `GameState.drawsOwed` — and the
+   * rule that follows from it: dredge is offered for a draw the *engine* performs (the draw step)
+   * and for a card whose draw is the last thing it does, because only a draw with nothing after it
+   * can be moved to the end of the action without changing what the card does.
+   *
+   * The cost is cards off your own library, which is the keyword's real price: a dredge with the
+   * library too short to pay is not offered at all (CR 702.52a), so it cannot be used to deck
+   * yourself and it stops working exactly when you most want it.
+   */
+  readonly dredge?: { readonly mill: number };
   readonly replaces?: readonly {
     /**
      * Which zone change this replaces. The three are the same move seen at three widths, and a

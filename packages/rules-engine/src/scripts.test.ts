@@ -16049,3 +16049,200 @@ describe('the auto-tapper and a land whose colour costs energy', () => {
     expect(rows.filter((p) => p.description.includes('Pay {E}'))).toHaveLength(5);
   });
 });
+
+describe('dredge: the draw replaced by a mill, and the card that comes back', () => {
+  /*
+    The first replacement effect in this engine that applies to a **draw** (CR 702.52a), and the
+    only question at this table that is about a card nobody cast. So the tests are the three things
+    that machinery had to get right: the draw is *not taken* while the question stands, either
+    answer finishes the draw the question interrupted, and the question is not asked at all when the
+    library cannot pay for it.
+
+    Every setup puts the dredge card in the graveyard **after** reaching a main phase rather than
+    through `arena`'s own `graveyard`, because a dredge card in a graveyard stops the next draw step
+    dead — which is the behaviour under test and would otherwise strand the setup itself.
+  */
+
+  /** Seat 0 on Rot Harvest in its main phase, with a Shambling Shell in the graveyard. */
+  const shellInTheYard = (): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'rot-harvest', 1: 'ember-rush' },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Forest'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    return apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'library', 'Shambling Shell'), toZone: 'graveyard',
+    });
+  };
+
+  /**
+   * Plays on until a dredge is standing, which is how the draw step's question arrives.
+   *
+   * `nextTurn` cannot be used: it passes priority until the turn counter moves, and the question
+   * takes priority away from everybody — so it would throw on the very state these tests are about.
+   */
+  const untilAsked = (start: GameState): GameState => {
+    let s = start;
+    for (let i = 0; i < 200; i += 1) {
+      if (s.pendingDredge !== null) return s;
+      const owed = pendingDeclaration(s);
+      if (owed !== null) {
+        for (const seat of owed.seats) {
+          s = owed.kind === 'attackers'
+            ? apply(s, { type: 'auto:attack', by: seat, attackers: [] })
+            : apply(s, { type: 'auto:block', by: seat, blocks: [] });
+        }
+        continue;
+      }
+      const discard = s.pendingDiscard;
+      if (discard !== null) {
+        s = apply(s, {
+          type: 'auto:discard', by: discard.seat, card: ids(s, discard.seat, 'hand')[0]!,
+        });
+        continue;
+      }
+      if (s.priority === null) throw new Error(`nobody holds priority at ${s.step}`);
+      s = apply(s, { type: 'auto:pass', by: s.priority });
+    }
+    throw new Error('no dredge was ever offered');
+  };
+
+  it('stops the draw step and asks, with the draw still owed', () => {
+    const s = untilAsked(shellInTheYard());
+    expect(s.step).toBe('draw');
+    expect(s.activeSeat).toBe(0);
+
+    const ask = s.pendingDredge;
+    expect(ask?.seat).toBe(0);
+    expect(nameOf(s, ask?.card ?? '')).toBe('Shambling Shell');
+    expect(ask?.mill).toBe(3);
+    // The card has **not** been drawn, which is the whole difference from every other replacement
+    // in this engine: those happen to a card that has already moved.
+    expect(s.drawsOwed).toEqual([0]);
+    expect(s.cardsDrawnThisTurn['0'] ?? 0).toBe(0);
+
+    // Two buttons and no priority: there is one move at this table and it is not a pass.
+    const you = legalActions(s, 0);
+    expect(you.hasPriority).toBe(false);
+    expect(you.canPass).toBe(false);
+    expect(you.mustDredge).toEqual({ prompt: ask!.prompt, card: ask!.card, mill: 3 });
+    expect(legalActions(s, 1).mustDredge).toBeNull();
+    expect(refusal(s, { type: 'auto:pass', by: 0 })).toContain('must be answered first');
+  });
+
+  it('mills for it and takes the card back, instead of drawing', () => {
+    let s = untilAsked(shellInTheYard());
+    const shell = s.pendingDredge!.card;
+    const hand = ids(s, 0, 'hand').length;
+    const library = ids(s, 0, 'library').length;
+
+    s = apply(s, { type: 'auto:dredge', by: 0, dredge: true });
+    expect(s.instances[shell]!.zone).toBe('hand');
+    // One card into the hand, three off the library, and not one of them was drawn.
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+    expect(ids(s, 0, 'library').length).toBe(library - 3);
+    expect(s.cardsDrawnThisTurn['0'] ?? 0).toBe(0);
+    expect(s.pendingDredge).toBeNull();
+    expect(s.drawsOwed).toEqual([]);
+    // And the table carries on: somebody holds priority again.
+    expect(s.priority).not.toBeNull();
+  });
+
+  it('declining takes the ordinary draw, and the card is offered again next turn', () => {
+    let s = untilAsked(shellInTheYard());
+    const shell = s.pendingDredge!.card;
+    const library = ids(s, 0, 'library').length;
+
+    s = apply(s, { type: 'auto:dredge', by: 0, dredge: false });
+    expect(s.instances[shell]!.zone).toBe('graveyard');
+    expect(ids(s, 0, 'library').length).toBe(library - 1);
+    expect(s.cardsDrawnThisTurn['0']).toBe(1);
+
+    // The card is still in the graveyard, so the next draw asks again: declining is an answer about
+    // one draw rather than about the keyword.
+    s = untilAsked(s);
+    expect(s.pendingDredge?.card).toBe(shell);
+    expect(s.activeSeat).toBe(0);
+  });
+
+  it('is not offered when the library is shorter than the mill (CR 702.52a)', () => {
+    let s = shellInTheYard();
+    // All but two cards out of the library, which is one short of the Shell's dredge 3.
+    for (const id of ids(s, 0, 'library').slice(2)) {
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'exile' });
+    }
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(s.pendingDredge).toBeNull();
+    // The draw happened instead, which is the point: a dredge nobody can pay for is not a dredge
+    // you may decline.
+    expect(s.cardsDrawnThisTurn['0']).toBe(1);
+  });
+
+  it('replaces one draw of a Divination and draws the other', () => {
+    /*
+      The interaction `drawsOwed` is a queue for. Divination defers both of its draws, the first is
+      replaced by the dredge, and the second is still owed — so it is drawn as itself, which is what
+      "dredge replaces *a* draw" means.
+    */
+    const dredger = customDeck({
+      id: 'dredge-test', name: 'Dredge Test',
+      entries: [
+        { name: 'Divination', count: 4 },
+        { name: 'Darkblast', count: 4 },
+        { name: 'Island', count: 26 },
+        { name: 'Swamp', count: 26 },
+      ],
+    }).deck;
+    let s = advanceTo(arena({
+      decks: { 0: 'dredge-test', 1: 'ember-rush' },
+      deckSpecs: { 'dredge-test': dredger },
+      hands: { 0: ['Divination'] },
+      battlefield: { 0: ['Island', 'Island', 'Island'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'library', 'Darkblast'), toZone: 'graveyard',
+    });
+    const blast = find(s, 0, 'graveyard', 'Darkblast');
+    const library = ids(s, 0, 'library').length;
+    // This turn's own draw step has already happened, so the count is read as a difference.
+    const drawn = s.cardsDrawnThisTurn['0'] ?? 0;
+
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Divination') }), 40);
+    expect(s.pendingDredge?.card).toBe(blast);
+    expect(s.drawsOwed).toEqual([0, 0]);
+
+    s = apply(s, { type: 'auto:dredge', by: 0, dredge: true });
+    // The Darkblast back, one card drawn, three milled: the second draw was taken as a draw.
+    expect(s.instances[blast]!.zone).toBe('hand');
+    expect(s.cardsDrawnThisTurn['0']).toBe(drawn + 1);
+    expect(ids(s, 0, 'library').length).toBe(library - 4);
+    expect(s.pendingDredge).toBeNull();
+    expect(s.drawsOwed).toEqual([]);
+  });
+
+  it('is a question the opponent can see standing, without seeing the library', () => {
+    const s = untilAsked(shellInTheYard());
+    const theirs = unpackView(packView(viewFor(s, 1))).automation!;
+    // A graveyard is public, so the opponent is told what the table is waiting for — and that it is
+    // waiting on somebody else. The prompt travels; the library it is about never does.
+    expect(theirs.awaiting?.kind).toBe('dredge');
+    expect(theirs.awaiting?.seats).toEqual([0]);
+    expect(theirs.awaiting?.prompt).toContain('Shambling Shell');
+    expect(theirs.priority).toBeNull();
+    expect(theirs.you?.mustDredge).toBeNull();
+  });
+
+  it('the bot declines when the library cannot stand the mill four times over', () => {
+    let s = untilAsked(shellInTheYard());
+    expect(botAction(s, 0)).toEqual({ type: 'auto:dredge', by: 0, dredge: true });
+
+    // Eleven cards is under four times the Shell's dredge 3. The rule reads the library's *size*
+    // and nothing about its contents, which is what keeps it off a hidden zone — see
+    // `dredgeIsWorthIt`.
+    for (const id of ids(s, 0, 'library').slice(11)) {
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'exile' });
+    }
+    expect(botAction(s, 0)).toEqual({ type: 'auto:dredge', by: 0, dredge: false });
+  });
+});

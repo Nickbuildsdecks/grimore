@@ -771,6 +771,50 @@ export interface AutomationState {
    * than reading this field after the fact.
    */
   readonly cardsDrawnThisTurn: Readonly<Record<string, number>>;
+  /**
+   * Draws the engine owes a seat and has not taken yet, one entry per card, oldest first.
+   *
+   * Dredge is why, and it is the only thing in this engine that replaces a **draw** rather than a
+   * zone change (CR 702.52a). Every other replacement happens to a card that is already moving, so
+   * `settle` can ask about it after the fact; a draw that may be replaced has to be asked about
+   * *before* the card is taken, and nothing in the effect vocabulary can stop the table to ask —
+   * `draw` lives below the layer that knows what a script is, and a resolution cannot be paused
+   * anywhere except a decision spec.
+   *
+   * So the draw is **deferred** instead. `drawLater` records it here, the surrounding effect
+   * finishes, and the first thing the next `settle` does is drain this list: each owed draw either
+   * raises `pendingDredge` or is simply taken. Which means a card may only defer a draw that is
+   * the *last* thing it does — a card that reads what it drew calls `draw` and is never offered a
+   * dredge. See `drawLater` for that rule written out.
+   *
+   * One entry per card rather than a count per seat, because the queue has to survive a dredge
+   * taken in the middle of it: "each player draws a card" owes two draws to two seats, and a
+   * `draw 3` whose first card is dredged still owes two.
+   */
+  readonly drawsOwed: readonly SeatIndex[];
+  /**
+   * A dredge on offer: an owed draw this seat may replace by milling instead (CR 702.52a).
+   *
+   * The sixth thing that stops the table dead, and the only one that is not about a card on the
+   * stack — there is nothing resolving, nothing targeted and nothing being cast. What is waiting is
+   * a draw, held in `drawsOwed`, and the answer decides whether it happens at all.
+   *
+   * `mill` is the dredge number, and the library must hold at least that many cards or the question
+   * is not asked (CR 702.52a) — which is also what keeps it from being a way to deck yourself for
+   * free. `card` is the one being offered: a graveyard with two dredge cards offers the cheaper of
+   * them, the same "one at a time" concession `tickSuspended` makes, because the alternative is a
+   * third kind of question for a case this pool cannot build.
+   */
+  readonly pendingDredge: {
+    /** Whose draw it is. */
+    readonly seat: SeatIndex;
+    /** The card in their graveyard that would come back. */
+    readonly card: string;
+    /** How many cards go from the top of their library to their graveyard instead. */
+    readonly mill: number;
+    /** Shown to the player deciding, in their own words. */
+    readonly prompt: string;
+  } | null;
   readonly pendingOfferedCast: {
     /** Who may cast it: the controller of the ability that offered it. */
     readonly seat: SeatIndex;
@@ -1174,6 +1218,16 @@ export interface AutoDecideAction {
 export interface AutoPayAction {
   readonly type: 'auto:pay'; readonly by: SeatIndex; readonly pay: boolean;
 }
+/**
+ * Answers a dredge (CR 702.52a): mill for it, or take the draw it would have replaced.
+ *
+ * `dredge: false` is a real answer rather than a refusal to answer, the same distinction
+ * `auto:pay` makes: declining takes the ordinary draw, and the dredge card stays in the graveyard
+ * for the next one.
+ */
+export interface AutoDredgeAction {
+  readonly type: 'auto:dredge'; readonly by: SeatIndex; readonly dredge: boolean;
+}
 /** Settles on an opening hand, putting back one card for each mulligan taken. */
 export interface AutoKeepAction {
   readonly type: 'auto:keep'; readonly by: SeatIndex;
@@ -1185,12 +1239,13 @@ export type AutoAction =
   | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
   | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoOrderAction | AutoDiscardAction
   | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction | AutoPayAction
-  | AutoTurnUpAction | AutoForetellAction | AutoSuspendAction;
+  | AutoTurnUpAction | AutoForetellAction | AutoSuspendAction | AutoDredgeAction;
 
 export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
   'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
   'auto:block', 'auto:order', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
   'auto:decide', 'auto:pay', 'auto:turnUp', 'auto:foretell', 'auto:suspend',
+  'auto:dredge',
 ]);
 
 export const isAutoAction = (action: { type: string }): action is AutoAction =>

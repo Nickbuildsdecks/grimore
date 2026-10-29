@@ -332,6 +332,20 @@ export interface LegalActions {
     readonly spell: string;
   } | null;
   /**
+   * A draw this seat may replace with a dredge (CR 702.52a), and what it would cost.
+   *
+   * The only question at this table that is about a card nobody has played: what is waiting is a
+   * draw, and the answer decides whether it happens. `mill` is the price in cards off the top of
+   * this seat's own library, and the library is known to be long enough — a dredge that cannot be
+   * paid for is not offered at all, so there is no unaffordable answer to draw a button for.
+   */
+  readonly mustDredge: {
+    readonly prompt: string;
+    /** The card in the graveyard that would come back. */
+    readonly card: string;
+    readonly mill: number;
+  } | null;
+  /**
    * A card this seat may cast without paying for it, and what put it there (CR 702.85a).
    *
    * The plays for it are in `plays` like any other cast — the table needs no second way to draw a
@@ -1632,6 +1646,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   const hasPriority = state.automated && state.priority === seat
     && !state.openingHands && state.pendingDecision === null && state.pendingChoice === null
     && state.pendingPayment === null && state.pendingOfferedCast === null
+    && state.pendingDredge === null
     && state.pendingDiscard === null && pendingDeclaration(state) === null;
   const potential = potentialMana(state, seat);
   // What could still be tapped, which is what decides affordability. `potential` above is the
@@ -1707,12 +1722,18 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
       }
     : null;
 
+  const dredge = state.pendingDredge;
+  const mustDredge: LegalActions['mustDredge'] = dredge !== null && dredge.seat === seat
+    ? { prompt: dredge.prompt, card: dredge.card, mill: dredge.mill }
+    : null;
+
   const empty: LegalActions = {
     seat, step: state.step, hasPriority, isActivePlayer: state.activeSeat === seat,
     canPass: false, passLabel: '', plays: [], attackers: [], mustAttack: [], attackAims: [],
     blockers: [], mustOrder: [],
     mustDiscard, mustDeclare, mustSettleHand, bottomOwed: bottomOwed(state, seat), mustChoose,
-    mustDecide, mustPay, mustCastOffered, blocked: [], pacts: pactOptions(state, seat),
+    mustDecide, mustPay, mustCastOffered, mustDredge, blocked: [],
+    pacts: pactOptions(state, seat),
     pool: poolOf(state, seat),
     potential,
   };
@@ -1727,6 +1748,17 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   // And so does a ward: the spell is on the stack, nobody holds priority, and the only move at the
   // table is the one answer this seat owes.
   if (payment !== null) return mustPay === null ? empty : { ...empty, passLabel: `Pay ${payment.cost}` };
+  /*
+    And so does a dredge, which is the one of these that stops the table over a card nobody cast.
+
+    There is nothing on the stack and nothing targeted — a *draw* is waiting, and until this is
+    answered it stays waiting. Two buttons rather than a pass, the same shape as a ward and for the
+    same reason: declining is not a gesture the table already has a meaning for, it is the other
+    half of the question, and `auto:dredge` carries which half was pressed.
+  */
+  if (dredge !== null) {
+    return mustDredge === null ? empty : { ...empty, passLabel: `Dredge ${dredge.mill}` };
+  }
   /*
     And so does an offered cast on offer, which is the one of these five that is answered with a *play*.
 

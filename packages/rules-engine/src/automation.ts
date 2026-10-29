@@ -32,8 +32,8 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  DASHED, EVOKED, REGENERATION, TIME, addCounters, counterSpell, destroy, draw, exileCard,
-  loseLife, suspendedCast,
+  DASHED, EVOKED, REGENERATION, TIME, addCounters, counterSpell, destroy, draw, drawLater,
+  exileCard, loseLife, suspendedCast,
   madnessOffer, miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
@@ -315,6 +315,7 @@ export function atSorcerySpeed(state: GameState, seat: SeatIndex): boolean {
 function resetPriority(state: GameState, to: SeatIndex = state.activeSeat): GameState {
   const blocked = state.openingHands || state.pendingDecision !== null || state.pendingChoice !== null
     || state.pendingPayment !== null || state.pendingOfferedCast !== null
+    || state.pendingDredge !== null
     || state.pendingDiscard !== null || pendingDeclaration(state) !== null;
   if (blocked) return { ...state, priority: null, passed: [] };
   return { ...state, priority: to, passed: [] };
@@ -501,7 +502,14 @@ function onEnterStep(state: GameState, step: Step): GameState {
     case 'draw':
       // The player who goes first skips their first draw (CR 103.8a).
       if (next.turn === 1) return next;
-      return draw(next, next.activeSeat, 1);
+      /*
+        Owed rather than taken, because this is the draw dredge is about (CR 702.52a).
+
+        `drawLater` defers it to the top of the `settle` that every caller of `advanceStep` runs
+        next, where it is either replaced by a dredge or simply drawn — see `drainOwedDraws`. The
+        step is a priority step, so the table stops here either way and nothing is skipped past.
+      */
+      return drawLater(next, next.activeSeat, 1);
 
     case 'declare-blockers': {
       // A defender with nothing that could legally block has no decision to make, so it is made
@@ -1464,8 +1472,76 @@ function replaceZoneChange(
   return { state: next, unreplaced: survived, replaced };
 }
 
+/**
+ * The dredge this seat could use for an owed draw, cheapest first (CR 702.52a).
+ *
+ * Two conditions and they are both the keyword's own. The card has to be **in the graveyard** —
+ * dredge is an ability that works from there and nowhere else — and the library has to hold at
+ * least `mill` cards, which is the half of the rule that keeps it from being a way to deck
+ * yourself: a dredge you cannot pay for is not a dredge you may decline, it is one that is not
+ * offered.
+ *
+ * The cheapest when there are several, which is the same "one at a time" concession
+ * `tickSuspended` makes. A question that offered a choice between three dredge cards and a draw
+ * would be a third kind of prompt, and the pool has no card that makes the choice interesting.
+ */
+function dredgeFor(
+  state: GameState, seat: SeatIndex,
+): { card: string; mill: number } | undefined {
+  const library = listAt(state, zoneKey(seat, 'library')).length;
+  let best: { card: string; mill: number } | undefined;
+  for (const id of listAt(state, zoneKey(seat, 'graveyard'))) {
+    const mill = scriptOf(state, id)?.dredge?.mill;
+    if (mill === undefined || mill > library) continue;
+    if (best === undefined || mill < best.mill) best = { card: id, mill };
+  }
+  return best;
+}
+
+/**
+ * Takes the draws the engine owes, asking about a dredge where there is one (CR 702.52a).
+ *
+ * The first thing `settle` does, before the lists of deaths and arrivals are drained, so a draw
+ * deferred by `drawLater` reaches its `draws` trigger and its miracle offer in the *same* settle
+ * pass an immediate draw would have — which is what makes the deferral invisible to everything
+ * except dredge.
+ *
+ * It stops at the first question. An offer and a dredge are two stopped tables and the engine
+ * holds one at a time, so a seat with a miracle on offer keeps its remaining owed draws until that
+ * is answered; the queue is state, so it survives the wait.
+ */
+function drainOwedDraws(state: GameState): GameState {
+  let next = state;
+  for (let guard = 0; guard < 64; guard++) {
+    if (next.pendingDredge !== null || next.pendingOfferedCast !== null) break;
+    const seat = next.drawsOwed[0];
+    if (seat === undefined) break;
+    // A seat that has left the game is owed nothing.
+    if (next.seats[seat]?.eliminated !== false) {
+      next = { ...next, drawsOwed: next.drawsOwed.slice(1) };
+      continue;
+    }
+    const dredge = dredgeFor(next, seat);
+    if (dredge === undefined) {
+      next = draw({ ...next, drawsOwed: next.drawsOwed.slice(1) }, seat, 1);
+      continue;
+    }
+    const name = next.cardDefs[next.instances[dredge.card]?.defKey ?? '']?.name ?? 'a card';
+    next = {
+      ...next,
+      pendingDredge: {
+        seat,
+        card: dredge.card,
+        mill: dredge.mill,
+        prompt: `Dredge ${name}: mill ${dredge.mill} and return it to your hand instead of drawing?`,
+      },
+    };
+  }
+  return next;
+}
+
 function settle(state: GameState, before: GameState): GameState {
-  let next = stateBasedActions(state);
+  let next = drainOwedDraws(stateBasedActions(state));
   // Deaths and arrivals, in a loop: a creature dying can trigger something that kills another or
   // makes a token, and every one of those has to reach its own trigger. `relocate` and
   // `createToken` record them wherever they happen — lethal damage, a destroy spell, a sacrifice,
@@ -1699,7 +1775,20 @@ function settle(state: GameState, before: GameState): GameState {
     game attached. An ability still resolving reads its source from the stack object, not from here.
   */
   if (Object.keys(next.vanished).length > 0) next = { ...next, vanished: {} };
-  return stateBasedActions(settleOffer(settlePayment(next)));
+  next = stateBasedActions(settleOffer(settlePayment(next)));
+  /*
+    And a dredge raised in this pass takes priority away, which `resetPriority` cannot do for it.
+
+    Every other question is set by an action that ends in `resetPriority(settle(...))`, so the
+    guard there is enough. A dredge is raised by the *draw step*, whose caller runs `advanceStep`
+    first — and `advanceStep` hands priority out on its way through, before this function has seen
+    the owed draw at all. So the invariant is restored here: nobody holds priority while the
+    question stands.
+  */
+  if (next.pendingDredge !== null && next.priority !== null) {
+    next = { ...next, priority: null, passed: [] };
+  }
+  return next;
 }
 
 /**

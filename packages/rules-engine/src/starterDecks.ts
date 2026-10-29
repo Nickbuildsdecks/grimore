@@ -3905,6 +3905,42 @@ const STRIONIC_RESONATOR: CardDef = {
   colors: [],
 };
 
+/**
+ * A body that feeds a sacrifice outlet and then comes back out of the graveyard to be fed again.
+ *
+ * A creature on purpose. The first card written for this slot was a dredge **land**, and the
+ * instrument said it was offered three times in 96 games: a dredge card only works from the
+ * graveyard, and nothing in this pool destroys a land. A creature in the sacrifice deck reaches a
+ * graveyard every game — by its own ability if nothing else obliges.
+ */
+const SHAMBLING_SHELL: CardDef = {
+  name: 'Shambling Shell',
+  typeLine: 'Creature — Plant Zombie',
+  manaCost: '{1}{B}{G}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: 'Sacrifice Shambling Shell: Put a +1/+1 counter on target creature.\nDredge 3 (If you would draw a card, you may mill three cards instead. If you do, return this card from your graveyard to your hand.)',
+  colors: ['B', 'G'],
+};
+
+/**
+ * One mana for -1/-1, and then one mana for -1/-1 again next turn, and the turn after.
+ *
+ * The removal spell dredge was printed for: it kills almost nothing on its own and never runs out,
+ * so a board of one-toughness creatures is answered by a single card and three draws. In this pool
+ * that is Glistener Elf, Blight Mamba, Llanowar Elves, Monastery Swiftspear and every token — which
+ * is why it goes in the deck that wants its own attackers to get through.
+ */
+const DARKBLAST: CardDef = {
+  name: 'Darkblast',
+  typeLine: 'Instant',
+  manaCost: '{B}',
+  cmc: 1,
+  oracleText: 'Target creature gets -1/-1 until end of turn.\nDredge 3 (If you would draw a card, you may mill three cards instead. If you do, return this card from your graveyard to your hand.)',
+  colors: ['B'],
+};
+
 export const ROT_HARVEST: DeckSpec = {
   id: 'rot-harvest',
   name: 'Rot Harvest',
@@ -3953,7 +3989,18 @@ export const ROT_HARVEST: DeckSpec = {
       D127 for the rule that says to ask this question separately.
     */
     { card: IMPERIOUS_PERFECT, count: 1 },
-    { card: ENDLESS_ONE, count: 2 },
+    { card: ENDLESS_ONE, count: 1 },
+    /*
+      Shambling Shell for the second Endless One: a creature for a creature, and the deck that can
+      actually use a dredge card.
+
+      Three mana for a 2/2 that sacrifices itself to grow something, in a list with a Blood Artist,
+      a Zulaport Cutthroat and two sacrifice outlets in it — so the body is spent on purpose and
+      lands in the graveyard, which is the only place a dredge card does anything. After that every
+      draw step offers it back for three cards off the top, in the deck that wanted a full graveyard
+      anyway. See D210.
+    */
+    { card: SHAMBLING_SHELL, count: 1 },
     { card: BLOOD_ARTIST, count: 1 },
     { card: ZULAPORT_CUTTHROAT, count: 1 },
     /*
@@ -6242,7 +6289,16 @@ export const BLIGHT_VECTOR: DeckSpec = {
     { card: LOXODON_WARHAMMER, count: 1 },
 
     // ── The eight that answer what gets in the way ──
-    { card: DOOM_BLADE, count: 2 },
+    { card: DOOM_BLADE, count: 1 },
+    /*
+      Darkblast for the second Doom Blade: removal for removal, and the honest comparison.
+
+      One kills anything once; the other kills a one-toughness creature every turn for the rest of
+      the game. This deck's problem is a blocker in front of a Glistener Elf, and most of the
+      blockers it meets are small — so the recurring half is the half it wants, and the probe is
+      asked whether that is true. See D210.
+    */
+    { card: DARKBLAST, count: 1 },
     { card: MURDER, count: 1 },
     // The charm's three modes are all live here: regenerate the team through a sweeper, kill a
     // Fog Bank, or shrink a blocker out of the way.

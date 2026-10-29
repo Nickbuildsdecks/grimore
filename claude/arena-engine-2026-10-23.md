@@ -5762,6 +5762,56 @@ those 27 cast off the last counter, two still waiting when the game ended. `fore
 `specialIsSpareMana` now and answers for both. Three browser runs, 26 of 26 checks, and the first
 scenario here whose two required checks are two turns apart in the same game.
 
+### Dredge, the first replacement effect on a draw, and the sixth stopped table (D210)
+
+Every replacement effect in this engine until now has been a **zone change**: a card is already
+moving, `settle` finds it in one of the three lists it keeps, and whatever replaces it gets handed
+the card. Dredge replaces the **draw** (CR 702.52a), and that is a different problem in two ways
+that only showed up once it was written. The question has to be answered *before* the card is taken,
+because afterwards it is in a hand and the answer is moot. And the only place that can ask is
+`draw` — which lives in `effects.ts`, below the layer that knows what a card's script is, and
+cannot stop a resolution because nothing can except a decision spec.
+
+So the draw is **deferred** rather than paused. `drawLater` adds it to `GameState.drawsOwed`, the
+card's effect finishes, and the first thing the next `settle` does is drain the queue: each owed
+draw either raises `pendingDredge` or is simply taken. The deferral is invisible to everything else
+because the drain happens *before* the lists of deaths and draws are announced — a card deferred by
+`drawLater` reaches its `draws` trigger and its miracle offer in the same settle pass an immediate
+draw would have.
+
+What the deferral costs is a rule a card has to respect: **only a draw that is the last thing the
+card does may be deferred.** Dark Confidant charges you for the card's mana value and Faithless
+Looting offers the two cards it just drew to discard; both call `draw` and get no dredge, because by
+the time a deferred card arrives their effect has finished. The compiler cannot tell those apart
+from a terminal draw, so the rule is written at `drawLater` and the pool opts in one call site at a
+time — the eighteen places where `draw(c.state, c.controller, n)` *is* the whole effect, plus the
+draw step, which is where dredge actually lives.
+
+The sixth thing that stops this table dead is also the first that is about nothing on the stack: no
+spell, no target, no cast. Two buttons like a ward, because declining is the other half of a
+question rather than a gesture the table already means something by — and the decline has a job no
+other decline here has: it takes the draw. `auto:dredge` with `dredge: false` draws the card itself
+rather than handing the owed draw back to the drain, which would offer the same dredge again
+forever. That was a real bug for one run of the tests: the first version sliced the queue and
+declining ate the draw.
+
+**What it measures is two losses of different sizes, and only the control told them apart.** Both
+cards cost their decks — Rot Harvest wins 8 and 14 more games of 288 without the Shambling Shell,
+Blight Vector 6 and 13 more without the Darkblast, four readings on the same side of the ±20 floor.
+Run again with the bot never dredging, the same slots read 5, 10, 3 and 7. So the cards are simply
+worse than the Endless One and the Doom Blade they replaced, and **the bot taking every dredge costs
+a further 3 to 6 games, four times out of four**. The default stays on — a bot offered a mechanic
+every turn and never taking it looks broken — but "always yes" is now a measured wrong answer with a
+baseline to beat rather than a guess.
+
+**And the first card chosen for it was wrong in a way only an instrument could say.** Dredge went on
+a dredge *land* first — a Swamp that enters tapped and buys itself back — which is minimal and
+readable and, `dredge.mjs` reported, **offered three times in 96 games**: a dredge card works only
+from a graveyard, and nothing in this pool destroys a land. The same keyword on Shambling Shell, a
+2/2 that sacrifices itself, in the deck that already has two sacrifice outlets and a Blood Artist
+watching for deaths, is **offered 137 times, taken 130, declined 7, for 390 cards milled**. Before
+asking what a keyword is worth, ask how often the card gets to use it.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
