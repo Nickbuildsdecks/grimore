@@ -3707,16 +3707,7 @@ export const TIDAL_MIND: DeckSpec = {
       because deathtouch, flying and lifelink is the one creature in these colours that both holds
       the ground against anything and wins the game on its own if the game goes long.
     */
-    { card: MAN_O_WAR, count: 1 },
-    /*
-      Capsize for the second Man-o'-War: a bounce for a bounce, which is what makes the number
-      readable.
-
-      Both return something to a hand and both cost three; the Man-o'-War leaves a 2/2 behind, and
-      this one leaves *itself* behind for three more mana. So what the probe is asked is whether a
-      body is worth more than a spell you keep — which is the keyword's own question. See D211.
-    */
-    { card: CAPSIZE, count: 1 },
+    { card: MAN_O_WAR, count: 2 },
     /*
       Chalice of the Void, for the third Man-o'-War.
 
@@ -3812,7 +3803,22 @@ export const TIDAL_MIND: DeckSpec = {
       could not simply be cut. The deck at the bottom of the table was the deck holding the pool's
       script coverage hostage.
     */
-    { card: THIEVING_MAGPIE, count: 2 },
+    { card: THIEVING_MAGPIE, count: 1 },
+    /*
+      Capsize for the second Thieving Magpie, and the slot was moved once after being measured.
+
+      It went in for the second **Man-o'-War** first, which reads like the fairer comparison — a
+      bounce for a bounce, both at three mana — and measured **+23 and +12 of 288 against the deck**
+      on two seed sets. Re-priced against the Magpie it reads **+12 and +4**: the same card, the
+      same deck, the same seeds, and half the loss. What the first arrangement was mostly measuring
+      was the 2/2 body that comes with a Man-o'-War's bounce, which is the rule D207 wrote down and
+      this is the second card to need it.
+
+      Still a loss and kept anyway, inside the floor on the arrangement that stands: six mana to
+      bounce one permanent is a slow play against an aggressive field, and what it buys — never
+      running out of the answer — is a long game this pool rarely reaches. See D211.
+    */
+    { card: CAPSIZE, count: 1 },
     { card: SEDGEMOOR_WITCH, count: 1 },
     { card: BLOODTHIRSTY_AERIALIST, count: 2 },
     { card: THORN_OF_THE_BLACK_ROSE, count: 1 },

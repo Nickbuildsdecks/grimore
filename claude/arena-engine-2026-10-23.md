@@ -5846,6 +5846,15 @@ Whispers of the Muse casts over 96 games apiece, counted off `action.buyback` ra
 A cost flag dropped between the chosen play and the action sent is silently the other play, and the
 replicate bug is what that looks like when nobody counts.
 
+**And the slot had to be moved after it was measured, which is the same lesson a second time.**
+Whispers of the Muse is level (+3 and −5 of 288). Capsize, in for the second Man-o'-War, costs Tidal
+Mind **23 and 12** — the first outside the ±20 floor. Re-priced against the second Thieving Magpie:
+**12 and 4**, same card, same deck, same seeds. Half of it was the payer, because a Man-o'-War
+bounces a creature *and leaves a 2/2 behind*, so "a bounce for a bounce" was never fair. The
+committed slot is the Magpie's now. And what is left is not a wasted play — Capsize does not appear
+in `wasted-plays.mjs` at all over 312 games — it is a slow one: six mana to bounce one permanent,
+buying a long game this pool rarely reaches.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

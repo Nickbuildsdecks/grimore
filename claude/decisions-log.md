@@ -11834,3 +11834,40 @@ new flag gets the twenty-line script now.
 The split between the two cards is the cards rather than the bot. Capsize's buyback is {3} on a
 three-mana spell, so six lands pays both halves and a control deck has six lands; Whispers' is {5}
 on a one-mana spell, which is a mana sink by design and only reached in the long games.
+
+### What it measures, and the slot that had to be moved after it was measured
+
+| of 288, the deck **without** the card | seed set 3300 | seed set 4400 |
+| --- | --- | --- |
+| Hollow Tide without Whispers of the Muse | 96 against 93 | 120 against 125 |
+| Tidal Mind without Capsize, paid for by a **Man-o'-War** | 125 against 102 | 99 against 87 |
+| Tidal Mind without Capsize, paid for by a **Thieving Magpie** | 114 against 102 | 91 against 87 |
+
+Whispers is level: +3 and −5, which is the honest answer for a one-mana cantrip whose buyback is
+reached in about one game in five.
+
+Capsize is not, and the two rows for it are the point. Against the second Man-o'-War it costs Tidal
+Mind **23 and 12 games of 288** — the first of those is outside the ±20 floor, which almost nothing
+in this pool is. Re-priced against the second Thieving Magpie, the same card in the same deck on the
+same seeds costs **12 and 4**. Half the loss was the *payer*: a Man-o'-War bounces a creature **and
+leaves a 2/2 behind**, so "a bounce for a bounce" was never the fair comparison it reads as.
+
+That is D207's rule applying for the second time — what a slot is worth is a fact about the card
+that pays for it — and it is written into this project's method precisely so a 23 does not get
+published as a fact about a keyword. **The committed slot was moved to the arrangement that
+measured better**, which is the Magpie's.
+
+### Why a famous card costs this deck games, and what it is not
+
+The first thing to rule out was the bot casting it into nothing, because a six-mana play that buys
+nothing is the failure mode `wasted-plays.mjs` exists for. **Capsize does not appear in that
+instrument's list at all** across 312 games — it is cast on real targets. So the loss is not a
+wasted play; it is a slow one. Six mana to bounce a single permanent is a tempo loss against an
+aggressive field, and what the extra three mana buys — never running out of the answer — is a long
+game this pool rarely reaches.
+
+Kept anyway, inside the floor on the arrangement that stands. The keyword works, the table draws it,
+the bot pays it 25 times in 96 games, and a card that is famous for a reason the simulation cannot
+reach is worth more to a person sitting at the table than four games of 288. What this is not is a
+claim that buyback is bad: the keyword is one card's price list, and the one card that priced badly
+here is slow for reasons that have nothing to do with keeping it.

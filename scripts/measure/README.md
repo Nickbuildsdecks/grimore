@@ -441,6 +441,13 @@ probe run once against one filler would have concluded something about the keywo
 either way round. When a slot comes back negative, re-run it against a *different* card of the
 deck's before concluding anything about the card that went in.
 
+**The second card to need that rule paid half its loss back.** Capsize in Tidal Mind measured **+23
+and +12 of 288 against the deck** in the second Man-o'-War's slot and **+12 and +4** in the second
+Thieving Magpie's (D211) — and the first of those is outside the floor, which is the reading that
+would have been published as a fact about buyback. A Man-o'-War bounces a creature *and leaves a 2/2
+behind*; "a bounce for a bounce" reads like the fair comparison and is not one. Prefer a payer that
+does **one** thing.
+
 **Count what the bot actually paid, not only what it cast.** The replicate count was dropped on the
 way from the chosen play to the action sent, so the bot cast Pyromatics 49 times in 96 games and paid
 the replicate cost **zero** times — with no refusal, no failing test and no stuck game, because a
