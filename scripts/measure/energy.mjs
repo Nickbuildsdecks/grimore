@@ -54,6 +54,22 @@ for (const name of new Set(Object.values(STARTER_DECKS).flatMap((d) => d.cards.m
   if (rows.length > 0) spenders.set(name, rows);
 }
 
+/*
+  Which cards can *give* energy, read off their printed text.
+
+  The first version of this attributed a gain to whatever card the action was about, and the output
+  said Doom Blade, Unsummon and Turn to Frog had given energy — which no card in this pool does. The
+  cause is auto-pass: one `applyAction` can resolve a whole chain, so the action being applied is
+  often not the thing that fired. Rather than guess, the harness now only credits a card that says
+  "you get {E}" on it, and buckets the rest honestly as a chain it could not attribute.
+*/
+const givers = new Set();
+for (const spec of Object.values(STARTER_DECKS)) {
+  for (const entry of spec.cards) {
+    if (/you get \{E\}/i.test(entry.card.oracleText ?? '')) givers.add(entry.card.name);
+  }
+}
+
 const gained = new Map(); // "card" -> total energy given
 const spent = new Map(); // "card — ability" -> total energy spent
 const bump = (map, key, n) => map.set(key, (map.get(key) ?? 0) + n);
@@ -128,9 +144,9 @@ function duel(seed, decks) {
     for (const seat of [0, 1]) {
       const delta = energyOfSeat(s, seat) - prior[seat];
       if (delta <= 0) continue;
-      const card = (action.card === undefined ? undefined : nameOf(s, action.card))
-        ?? resolving ?? '(something with no card behind it)';
-      bump(gained, card, delta);
+      const acting = action.card === undefined ? undefined : nameOf(s, action.card);
+      const credit = [acting, resolving].find((name) => name !== undefined && givers.has(name));
+      bump(gained, credit ?? '(a chain this harness could not attribute)', delta);
     }
   }
 
