@@ -1396,6 +1396,20 @@ export interface BotOptions {
    * as it was, kept as the control this was measured against.
    */
   readonly reserveForAnswers?: boolean;
+  /**
+   * Whether to decline a symmetric sweep that takes more off this seat's board than the opponents'.
+   *
+   * **On by default, and the measurement says level — which is not why it is on.** Bot against bot
+   * it is 470-464 of 936, and it changes 16 of 7192 casts (`disagree.mjs`), because the pool has
+   * two cards it can fire on: Verdant Guard's Day of Judgment and Skyward Writ's Terminus. Where it
+   * is worth something is to the deck holding one: Skyward Writ's own record moves **+8 and +17 of
+   * 288** on two seed sets, and the same probe's other arm — the list with Terminus cut — comes
+   * back byte-identical with the rule on and off, which is what a rule this narrow should look
+   * like. Kept because a bot that bottoms its own board in its own draw step looks broken to the
+   * person sitting opposite, the same reason `ritualBoughtSomething` is kept. Off is the control it
+   * was measured against. See `sweepTakesMoreThanItGives` and D205.
+   */
+  readonly sparesItsOwnBoard?: boolean;
 }
 
 /**
@@ -2608,6 +2622,68 @@ function destroysOneOfItsOwn(state: GameState, seat: SeatIndex, action: Action):
   });
 }
 
+/**
+ * Whether this cast is a sweep that hits every creature on the table rather than a chosen one.
+ *
+ * **A text match rather than a flag**, for the reason `destroysOneOfItsOwn` gives: the card's own
+ * words are what say whether it reads the whole table, and "all creatures" is the one phrase in the
+ * pool that cannot mean anything else. Day of Judgment destroys them, Terminus puts them on the
+ * bottom, and a card printed tomorrow that exiles them is covered without being enumerated here.
+ *
+ * Toxic Deluge is deliberately outside it: "each creature gets -X/-X" is a sweep whose size is a
+ * number its controller chooses while it resolves, so the board it clears is not knowable from the
+ * cast, and a rule that guessed would be guessing about the one card that can be aimed.
+ */
+function sweepsEveryCreature(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:cast') return false;
+  const def = state.cardDefs[state.instances[action.card]?.defKey ?? ''];
+  if (def === undefined) return false;
+  return /\b(?:destroy|exile|put)\s+all\s+creatures\b/i.test(def.oracleText ?? '');
+}
+
+/**
+ * Whether a sweep would cost this seat more than it costs everybody else: more bodies **and** more
+ * power.
+ *
+ * The sixteenth of the drop-this-option family, and the same shape as the rest of it: a fact about
+ * the board rather than a weight on the position. A sweep is the one card in the pool whose value
+ * is entirely about who is ahead when it resolves — the same Terminus that is a blowout against a
+ * developed board is a one-mana Armageddon for your own side if you are the one with creatures on
+ * the table.
+ *
+ * Both halves are required, which is what keeps it conservative. Losing a 1/1 to take a 5/5 is a
+ * fine trade and reads as "more bodies of mine"; losing a 5/5 to take two 1/1s reads as "more power
+ * of mine". Only when the sweep is worse for this seat on *both* counts is there no reading of the
+ * board on which casting it is right, and only then is the option dropped.
+ *
+ * Asked of the board before the cast, like every other rule in this family, and of every seat that
+ * is not this one — a sweep at a four-player table clears three boards, and a seat with two
+ * creatures facing six is not the seat that loses by it.
+ */
+function sweepTakesMoreThanItGives(state: GameState, seat: SeatIndex): boolean {
+  let mine = 0;
+  let minePower = 0;
+  let theirs = 0;
+  let theirPower = 0;
+  for (const other of state.seats) {
+    if (other.eliminated) continue;
+    for (const id of listAt(state, zoneKey(other.index, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst === undefined) continue;
+      const ch = characteristicsOf(state, inst);
+      if (!ch.isCreature) continue;
+      if (other.index === seat) {
+        mine += 1;
+        minePower += Math.max(0, ch.power);
+      } else {
+        theirs += 1;
+        theirPower += Math.max(0, ch.power);
+      }
+    }
+  }
+  return mine > theirs && minePower > theirPower;
+}
+
 /** Whether this action casts a spell whose whole effect is keeping one of your creatures alive. */
 function castsAProtection(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
@@ -3069,6 +3145,17 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       And removal with nothing to remove, which ends up pointed at its own board.
     */
     if (castsRemoval(state, option.action) && !somethingToRemove(state, seat)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And a sweep fired at a table this seat is winning, which is the one mistake an *offered* cast
+      can make that a paid one mostly cannot: miracle puts Terminus on the stack in its controller's
+      own draw step, before the turn that board was built for. On unless turned off; see
+      `BotOptions.sparesItsOwnBoard`.
+    */
+    if (opts.sparesItsOwnBoard !== false && sweepsEveryCreature(state, option.action)
+      && sweepTakesMoreThanItGives(state, seat)) {
       dropped += 1;
       continue;
     }

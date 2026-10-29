@@ -10,7 +10,7 @@
 import { describe, it, expect } from "vitest";
 import {
   applyAction, botAction, createGame, customDeck, evaluate, legalActions, packView, playOut,
-  seatToAct, unpackView, viewFor,
+  pendingDeclaration, seatToAct, unpackView, viewFor,
   type Action, type GameState, type SeatIndex,
 } from './index.js';
 import {
@@ -1343,6 +1343,135 @@ describe('removal with nothing to remove', () => {
     // And at the creature it does not control, which is the aim the search picks for itself.
     expect(cast?.type === 'auto:cast' ? cast.targets : [])
       .toEqual([{ kind: 'card', id: find(board, 1, 'battlefield', 'Hill Giant') }]);
+  });
+});
+
+describe('a sweep aimed at the board it is winning', () => {
+  /*
+    The seventeenth of the "spent on nothing" family, and the first one about a card that does
+    exactly what it says.
+
+    `offers.mjs` followed every offered cast in 288 games of Skyward Writ and found **52 Terminus
+    casts that bottomed 32 of the caster's own creatures and 41 of the opponent's** — a card spent
+    to break roughly even on board — and nine of the fifty-two were cast by the seat that was
+    *ahead* on creatures when it cast them. Those nine are what this rule is about: miracle puts
+    Terminus on the stack in its controller's own draw step, which is the one moment in the game
+    when the board in front of it is the board it built.
+
+    The search cannot see it, for the reason its own comment gives: in the offer window there is no
+    option but the cast, so the best of a one-element list is the cast however the position scores.
+    What the board can say is whose creatures the sweep takes, and that is a fact.
+
+    On by default: see `BotOptions.sparesItsOwnBoard` and D205 for what it is worth in games, which
+    is level bot-against-bot and +8 and +17 of 288 to the deck that holds the sweeper.
+  */
+  const sweeping = (mine: readonly string[], theirs: readonly string[]): GameState => {
+    const board = tapAllLands(advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'ember-rush' },
+      hands: { 0: ['Terminus'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains', 'Plains', 'Plains', ...mine],
+        1: ['Mountain', ...theirs],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    /*
+      Everything the draw step handed it goes back, so the sweep is the only play on the table.
+
+      Without this the first version of the control below failed for a reason that was not the
+      rule: the card drawn on the way to the main phase was a Swords to Plowshares, and a bot that
+      kills the one creature it is facing instead of sweeping the board is not a bot declining a
+      sweep. A one-option position is the only one that isolates the choice.
+    */
+    const keep = find(board, 0, 'hand', 'Terminus');
+    let s = board;
+    for (const id of ids(s, 0, 'hand')) {
+      if (id === keep) continue;
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    return s;
+  };
+  /** A 4/4, a 2/2 and a 2/2 of its own against one 1/1 of theirs: the sweep it should not cast. */
+  const ahead = (): GameState => sweeping(
+    ['Serra Angel', 'Leonin Skyhunter', 'Paladin en-Vec'], ['Raging Goblin'],
+  );
+  /** And the other way round, which is the board a sweeper is for. */
+  const behind = (): GameState => sweeping(
+    ['Healer\'s Hawk'], ['Shivan Dragon', 'Hill Giant', 'Borderland Marauder'],
+  );
+
+  it('is declined from ahead and cast from behind', () => {
+    const board = ahead();
+    const card = find(board, 0, 'hand', 'Terminus');
+    // Offered either way: the table is never lied to about what the rules allow.
+    expect(legalActions(board, 0).plays.some((play) => play.card === card)).toBe(true);
+    const held = botAction(board, 0);
+    expect(held?.type === 'auto:cast' && held.card === card).toBe(false);
+
+    const losing = behind();
+    const cast = botAction(losing, 0);
+    expect(cast?.type).toBe('auto:cast');
+    expect(cast?.type === 'auto:cast' ? cast.card : null)
+      .toBe(find(losing, 0, 'hand', 'Terminus'));
+  });
+
+  it('is cast from ahead with the rule off, which is the behaviour it changes', () => {
+    const board = ahead();
+    const chosen = botAction(board, 0, { sparesItsOwnBoard: false });
+    expect(chosen?.type === 'auto:cast'
+      && chosen.card === find(board, 0, 'hand', 'Terminus')).toBe(true);
+  });
+
+  it('declines the offer in the draw step, and the card stays in the hand', () => {
+    /*
+      The whole point of the finding: 99 offers made and 99 taken across 288 games, because a pass
+      was never one of the options. Miracle is the one offer where declining keeps the card, so the
+      measurement of the decline is the card still being in hand afterwards.
+    */
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'ember-rush' },
+      battlefield: {
+        0: ['Plains', 'Serra Angel', 'Leonin Skyhunter', 'Paladin en-Vec'],
+        1: ['Mountain', 'Raging Goblin'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'library', 'Terminus'),
+      toZone: 'library', position: 'top',
+    });
+    // On to seat 0's next draw step, which is the only window the keyword has.
+    for (let i = 0; i < 200 && s.pendingOfferedCast === null; i += 1) {
+      const owed = pendingDeclaration(s);
+      if (owed !== null) {
+        for (const seat of owed.seats) {
+          s = owed.kind === 'attackers'
+            ? apply(s, { type: 'auto:attack', by: seat, attackers: [] })
+            : apply(s, { type: 'auto:block', by: seat, blocks: [] });
+        }
+        continue;
+      }
+      const discard = s.pendingDiscard;
+      if (discard !== null) {
+        s = apply(s, {
+          type: 'auto:discard', by: discard.seat, card: ids(s, discard.seat, 'hand')[0]!,
+        });
+        continue;
+      }
+      if (s.priority === null) break;
+      s = apply(s, { type: 'auto:pass', by: s.priority });
+    }
+    const offer = s.pendingOfferedCast;
+    expect(offer?.seat).toBe(0);
+    expect(offer?.cost).toBe('{W}');
+
+    const answer = botAction(s, 0);
+    expect(answer?.type).toBe('auto:pass');
+    const after = apply(s, answer!);
+    expect(after.pendingOfferedCast).toBeNull();
+    expect(after.instances[offer!.card]?.zone).toBe('hand');
+    // And the board it declined to sweep is untouched.
+    expect(ids(after, 0, 'battlefield').length).toBe(ids(s, 0, 'battlefield').length);
   });
 });
 
