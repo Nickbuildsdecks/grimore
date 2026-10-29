@@ -529,3 +529,23 @@ them apart in one run each: ninjutsu had 19 unblocked attackers and 2 ninjas in 
 never fires" is not a diagnosis; it is the question. Count how often the play was *available* before
 deciding whether the bot or the card is at fault.
 
+
+**Count the candidates, not only the windows.** The lesson above got the Ravager half right. Its row
+was offered 434 times and the bot took it 0 times, which said *judgement* rather than *zone* — and
+the fix moved it to 4. Four, of 434. Tallying the candidates themselves, bucketed by the reason the
+new rule declined each one, said why in one run: in all **434** of those windows the only artifact on
+offer was **the Ravager itself**, and the Equipment that did appear was already **attached** 89 times
+and unattached once. So the bot was not mostly refusing good food; there mostly was none, because
+every non-creature artifact in that deck is Equipment or a Vehicle and both stay in use. "Offered"
+counts the question. What answers it is the list of things that could have paid, named and counted
+one by one — which also turned a bot question into a *deck* question, and those have different fixes.
+
+**The browser suite is where a wording claim lives, and it finds more than wording.** `LIST=artifact`
+exists for one sentence: the feeding bar now carries three different costs through one mode, and the
+words are all that distinguish them. An engine test knows the cost and cannot know what was said
+about it. The scenario's first run caught the sentence correctly — and also stopped dead on turn
+three for two thousand moves, because a dying Arcbound Worker's "up to one target" trigger opened a
+prompt the table had **no button on at all**. Every trigger in the pool before modular had a target
+it was obliged to take, so nothing had ever needed one. A scenario built to read one string found an
+unanswerable prompt in the same run; that is the argument for building the deck rather than trusting
+the claim.

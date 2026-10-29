@@ -43,6 +43,11 @@ export type ArenaMode =
     opposites: a sacrifice puts a creature in a graveyard, and ninjutsu's return puts an unblocked
     attacker back in its owner's hand. One mode rather than two, because the gesture is identical —
     tap one of a lit set of your own permanents — and only the field and the wording differ.
+
+    **Which permanents** is a third question and is deliberately not in this union: an artifact cost
+    is still a sacrifice, so it fills the same field, and only the wording changes. The bar reads
+    `play.sacrificeKind` for that. Folding it in here would make `cost` mean two things at once —
+    what happens to the permanent, and what kind of permanent it may be.
   */
   | { kind: "feeding"; play: LegalPlay; cost: "sacrifice" | "returned" }
   /** A triggered ability of yours waiting to be aimed. Shaped like `targeting`, sent differently. */
@@ -205,12 +210,29 @@ export function allowedAim(
 
 /** Total targets a play wants, counting a `count: 2` spec twice. */
 export function targetsWanted(play: LegalPlay): number {
-  return play.targetSpecs.reduce((n, spec) => n + Math.max(1, spec.count ?? 1), 0)
+  return specsWanted(play.targetSpecs)
 }
 
 /** The fewest targets that make the play castable — "up to one" may legally take none. */
 export function targetsRequired(play: LegalPlay): number {
-  return play.targetSpecs.reduce((n, spec) => n + (spec.optional ? 0 : Math.max(1, spec.count ?? 1)), 0)
+  return specsRequired(play.targetSpecs)
+}
+
+/*
+  The same two questions about a bare spec list, which is what a **trigger** waiting to be aimed
+  carries — it has no play to read them off.
+
+  Lifted out rather than written twice because the pair stopped agreeing. The choosing branch below
+  had the required count inlined as the wanted count, on a comment that said a trigger's targets are
+  never optional; modular made that false and the table went unanswerable. Two readings of one fact
+  drifted the moment the fact changed, which is the argument for one function.
+*/
+export function specsWanted(specs: readonly LegalPlay["targetSpecs"][number][]): number {
+  return specs.reduce((n, spec) => n + Math.max(1, spec.count ?? 1), 0)
+}
+
+export function specsRequired(specs: readonly LegalPlay["targetSpecs"][number][]): number {
+  return specs.reduce((n, spec) => n + (spec.optional ? 0 : Math.max(1, spec.count ?? 1)), 0)
 }
 
 /**
@@ -490,8 +512,12 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
           return { mode: { ...mode, chosen: mode.chosen.filter((t) => targetKey(t) !== key) }, action: null }
         }
         const chosen = [...mode.chosen, event.target]
-        const wanted = mode.specs.reduce((n, spec) => n + Math.max(1, spec.count ?? 1), 0)
-        if (chosen.length >= wanted) return { mode: IDLE, action: { type: "auto:choose", targets: chosen } }
+        // The **most** it can take, which is when there is nothing left to ask: an optional spec
+        // still has a target to offer, so sending at the required count would send a trigger with
+        // one target while the player was still choosing a second.
+        if (chosen.length >= specsWanted(mode.specs)) {
+          return { mode: IDLE, action: { type: "auto:choose", targets: chosen } }
+        }
         return { mode: { ...mode, chosen }, action: null }
       }
       if (mode.kind !== "targeting") return { mode, action: null }
@@ -610,10 +636,16 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
         return { mode: IDLE, action: { type: "auto:decide", cards: [...mode.chosen] } }
       }
       if (mode.kind === "choosing") {
-        // A trigger's targets are never optional: it was only put on the stack because legal ones
-        // existed, so confirming early would send an ability the engine refuses.
-        const wanted = mode.specs.reduce((n, spec) => n + Math.max(1, spec.count ?? 1), 0)
-        if (mode.chosen.length < wanted) return { mode, action: null }
+        /*
+          The **required** count, which this used to get wrong on a comment that was true when it
+          was written: "a trigger's targets are never optional, it was only put on the stack because
+          legal ones existed". Modular is the first trigger here that says "you may", and "up to one
+          target artifact creature" is legal with none — so the ability goes on the stack whether or
+          not anything can be pointed at, and a table that required a target had no answer to give.
+          Found by `LIST=artifact`: a deck with eight Arcbound creatures stopped dead on turn three,
+          the prompt open and no card lit, for two thousand moves.
+        */
+        if (mode.chosen.length < specsRequired(mode.specs)) return { mode, action: null }
         return { mode: IDLE, action: { type: "auto:choose", targets: [...mode.chosen] } }
       }
       return { mode, action: null }

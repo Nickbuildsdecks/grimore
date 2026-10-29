@@ -229,11 +229,29 @@ export interface LegalPlay {
   /** A mana ability resolves immediately, which the UI shows differently. */
   readonly isManaAbility: boolean;
   /**
-   * Creatures that could be sacrificed to pay for this, when its cost asks for one. Empty for
+   * Permanents that could be sacrificed to pay for this, when its cost asks for one. Empty for
    * everything else — a cost is paid as the ability is activated, so the choice travels with the
    * play rather than being asked for afterwards.
+   *
+   * Creatures for every cost but one, and `sacrificeKind` below says which: the Arcbound Ravager's
+   * list is artifacts, and most of them are not creatures at all.
    */
   readonly sacrificeOptions: readonly string[];
+  /**
+   * Set when the cost eats an **artifact** rather than a creature, and absent otherwise — the
+   * Ravager's outlet, and nothing else in this pool.
+   *
+   * The list alone cannot be read for this, which is why it is a field rather than something each
+   * reader works out. An artifact cost on a board whose only artifact is a Juggernaut offers one
+   * artifact creature, and that is indistinguishable from a creature cost: a reader guessing from
+   * the candidates would guess wrong exactly where the board is narrowest.
+   *
+   * Two readers would otherwise each invent it. The bar has to ask the question in the right words,
+   * and "tap a creature to sacrifice" over an artifact cost names the wrong half of the board. And
+   * the bot's judgement about what it minds losing is a different judgement for a Bonesplitter than
+   * for a Centaur Courser — see `spentArtifact` for how different.
+   */
+  readonly sacrificeKind?: 'artifact';
   /**
    * Unblocked attackers that could be **returned to hand** to pay for this, when its cost asks for
    * one — ninjutsu, and nothing else so far (CR 702.49a).
@@ -1640,6 +1658,8 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         ...(zone === 'graveyard' ? { fromGraveyard: true } : {}),
         targetSpecs: specs, candidates, isManaAbility: ability.produces !== undefined,
         sacrificeOptions: victims,
+        // Which kind of cost that list is for, read off the cost rather than guessed from the list.
+        ...(ability.cost.sacrifice === 'artifact' ? { sacrificeKind: 'artifact' as const } : {}),
         ...(ninjas.length === 0 ? {} : { returnOptions: ninjas }),
       });
     }

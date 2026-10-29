@@ -17659,3 +17659,161 @@ describe('modular: counters that move from a dying creature to a living one', ()
     expect(scriptFor('Arcbound Ravager')?.modular).toEqual({ count: 1 });
   });
 });
+
+describe('the bot feeds a spent artifact to an artifact cost', () => {
+  /*
+    The rule D221 asked for (D222), and the reason it exists is a number: the Arcbound Ravager's
+    "Sacrifice an artifact" row was offered **437 times across 48 bot games and taken 0**, because
+    the branch answering it was the creature branch, whose first rule is "never feed anything with
+    text of its own". Over an artifact cost that rule is not merely unhelpful, it is backwards —
+    nearly every artifact is only text — so it refused the whole pool and the Ravager sat there as
+    a 1/1 for the length of every game it was drawn in.
+
+    The replacement asks whether the artifact is *doing anything*, and the tests below are its three
+    clauses plus the ordering. The first of them is the one that matters most often, and it is not
+    the one the task was about.
+  */
+  const ravagerBoard = (alongside: readonly string[]): GameState => {
+    let s = arena({
+      decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+      hands: { 0: ['Arcbound Ravager'] },
+      battlefield: { 0: ['Plains', 'Plains', 'Plains', 'Plains', ...alongside], 1: ['Island'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    return drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Arcbound Ravager'),
+    }), 40);
+  };
+
+  /** What the bot feeds the Ravager, by name, or `null` if it declines to feed it at all. */
+  const fed = (start: GameState, opts: Parameters<typeof botAction>[2]): string | null => {
+    let s = start;
+    const ravager = find(s, 0, 'battlefield', 'Arcbound Ravager');
+    for (let i = 0; i < 12; i++) {
+      const action = botAction(s, 0, opts);
+      if (action === null) return null;
+      if (action.type === 'auto:activate' && action.card === ravager) {
+        return action.sacrifice === undefined ? null : nameOf(s, action.sacrifice);
+      }
+      if (action.type === 'auto:pass') return null;
+      s = apply(s, action);
+    }
+    return null;
+  };
+
+  it('never eats itself, which is the clause that fires in every window there is', () => {
+    /*
+      The Ravager is an artifact, so the engine offers it as a candidate for its own cost — and
+      correctly, because that is what the card says. The instrument counting the pool says this is
+      not an edge case but *the* case: across 434 windows in 48 games the Ravager was the only
+      candidate on offer in all 434 of them.
+
+      So a naive "eat the cheapest artifact" would have the bot sacrifice the Ravager to put a
+      counter on the Ravager, which is a card thrown in the bin for nothing. Reading `isCreature`
+      off its characteristics is what refuses it, and the refusal is the whole ability going
+      unused — which is right, because with nothing but itself there is nothing to pay with.
+    */
+    const s = ravagerBoard([]);
+    const play = legalActions(s, 0).plays.find((p) => p.sacrificeKind === 'artifact');
+    expect(play?.sacrificeOptions).toContain(find(s, 0, 'battlefield', 'Arcbound Ravager'));
+    expect(fed(s, {})).toBeNull();
+  });
+
+  it('eats an Equipment that is lying there unattached', () => {
+    const s = ravagerBoard(['Bonesplitter']);
+    expect(fed(s, {})).toBe('Bonesplitter');
+    // And with the rule off — the bot as it was, which is the control the rule is measured
+    // against. Note the sense: here `false` is the old behaviour rather than the new one, because
+    // this flag adds a play instead of dropping one.
+    expect(fed(s, { feedsArtifacts: false })).toBeNull();
+  });
+
+  it('and leaves an Equipment that is on a creature alone', () => {
+    /*
+      An equipped Bonesplitter is +2/+0 on an attacker; the same card in the second column is a
+      card. `attachedTo` is the one fact that tells those apart, which is why the rule is about the
+      board rather than about the card — the same Bonesplitter is fodder on one turn and
+      untouchable on the next.
+
+      This is the clause that decides what the rule is *worth*: the pool instrument found the
+      Ravager's Equipment attached 89 times across 48 games and unattached once, because the bot
+      equips the moment it can. See D222 — the rule is right and the deck gives it almost nothing
+      to do.
+    */
+    let s = ravagerBoard(['Bonesplitter', 'Elite Vanguard']);
+    const axe = find(s, 0, 'battlefield', 'Bonesplitter');
+    const vanguard = find(s, 0, 'battlefield', 'Elite Vanguard');
+    const equip = legalActions(s, 0).plays.find((p) => p.card === axe && p.kind === 'activate');
+    expect(equip).toBeDefined();
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: axe, abilityIndex: equip!.abilityIndex ?? 0,
+      targets: [{ kind: 'card', id: vanguard }],
+    }), 40);
+    expect(s.instances[axe]!.attachedTo).toBe(vanguard);
+    expect(fed(s, {})).toBeNull();
+  });
+
+  it('reads "is it a creature" off the board, so an uncrewed Vehicle is fodder and a crewed one is not', () => {
+    /*
+      A Vehicle is where the printed type line and the board disagree, which is exactly why the
+      clause reads characteristics instead. Uncrewed, a Sky Skiff is an artifact doing nothing.
+      Crewed, it is a 2/3 flier — and eating a body for a +1/+1 counter is the creature arithmetic
+      this branch exists to stay out of.
+    */
+    const idle = ravagerBoard(['Sky Skiff']);
+    expect(fed(idle, {})).toBe('Sky Skiff');
+
+    let s = ravagerBoard(['Sky Skiff', 'Elite Vanguard']);
+    const skiff = find(s, 0, 'battlefield', 'Sky Skiff');
+    const crew = legalActions(s, 0).plays.find((p) => p.card === skiff && p.kind === 'activate');
+    expect(crew).toBeDefined();
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: skiff, abilityIndex: crew!.abilityIndex ?? 0,
+    }), 40);
+    expect(characteristicsOf(s, s.instances[skiff]!).isCreature).toBe(true);
+    expect(fed(s, {})).toBeNull();
+  });
+
+  it('takes the cheapest of them, by mana value', () => {
+    // A Bonesplitter at {1} and a Loxodon Warhammer at {3}, both idle. Mana value is a fair proxy
+    // for what an artifact cost to get and a poor one for what it is worth now, which the rule says
+    // out loud rather than pretending otherwise.
+    const s = ravagerBoard(['Bonesplitter', 'Loxodon Warhammer']);
+    expect(fed(s, {})).toBe('Bonesplitter');
+  });
+
+  it('and will not eat a mana source, which no deck in this pool can make it do', () => {
+    /*
+      The clause that guards the next deck rather than this one. The only artifact cost in the pool
+      is the Ravager's and Forge Alliance has no rocks, so nothing here exercises it — which is why
+      the test says what it needs with a deck of its own rather than hunting for one that happens
+      to have both cards. A bot that ate its own Mind Stone to grow a 1/1 would be converting two
+      mana a turn into one point of power, permanently.
+    */
+    const affinity = customDeck({
+      id: 'ravager-and-rocks',
+      name: 'Ravager and rocks',
+      entries: [
+        { name: 'Arcbound Ravager', count: 4 }, { name: 'Mind Stone', count: 4 },
+        { name: 'Plains', count: 52 },
+      ],
+    }).deck;
+    let s = arena({
+      decks: { 0: 'ravager-and-rocks', 1: 'tidal-mind' },
+      deckSpecs: { 'ravager-and-rocks': affinity },
+      hands: { 0: ['Arcbound Ravager'] },
+      battlefield: { 0: ['Plains', 'Plains', 'Mind Stone'], 1: ['Island'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Arcbound Ravager'),
+    }), 40);
+    const stone = find(s, 0, 'battlefield', 'Mind Stone');
+    // Offered by the engine, because the card says "an artifact" and a Mind Stone is one.
+    const play = legalActions(s, 0).plays.find((p) => p.sacrificeKind === 'artifact');
+    expect(play?.sacrificeOptions).toContain(stone);
+    expect(fed(s, {})).toBeNull();
+  });
+});

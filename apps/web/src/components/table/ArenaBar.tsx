@@ -19,7 +19,8 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
   attackRead, decisionLabel, dividedAmount, manaPips, orderingDone, pactAsked, pactOffers,
-  playsForCard, primaryMove, specAt, targetKey, targetName, targetsRequired, targetsWanted,
+  playsForCard, primaryMove, specAt, specsRequired, specsWanted, targetKey, targetName,
+  targetsRequired, targetsWanted,
   type ArenaEvent, type ArenaMode,
 } from "@/lib/arena"
 import { pactWords } from "@grimore/rules-engine"
@@ -211,11 +212,19 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             The wording is the whole reason the mode says which cost it is: "tap a creature to
             sacrifice" over a ninjutsu swap would tell the player they are about to lose the
             creature they are in fact getting back.
+
+            And the third wording comes off the play rather than the mode, because the mode's `cost`
+            says what happens to the permanent and this says which permanents it may be — two
+            different questions that would collide in one union. Over an Arcbound Ravager half the
+            cards it is pointing at are not creatures, so "tap a creature" names the wrong half of
+            the board.
           */}
           <span className="text-[var(--g-text-muted)]">
             {mode.cost === "returned"
               ? "tap an unblocked attacker to return to your hand"
-              : "tap a creature to sacrifice"}
+              : mode.play.sacrificeKind === "artifact"
+                ? "tap an artifact to sacrifice"
+                : "tap a creature to sacrifice"}
           </span>
           <Button size="sm" variant="ghost" className="ml-auto" data-testid="cancel-mode" onClick={() => dispatch({ kind: "cancel" })}>
             <X className="size-3.5" /> Cancel
@@ -226,7 +235,27 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
       {mode.kind === "choosing" ? (
         <div data-testid="choose-prompt" className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-semibold text-[var(--g-text-high)]">{mode.description}</span>
-          <span className="text-[var(--g-text-muted)]">choose a target</span>
+          {/*
+            "or none" when the trigger says "you may", because the two are different questions and
+            the player has to be able to tell which one they are being asked. A modular creature's
+            counters go on "up to one target artifact creature" (CR 702.43b), so none is an answer.
+          */}
+          <span className="text-[var(--g-text-muted)]">
+            {specsRequired(mode.specs) === 0 ? "choose a target, or none" : "choose a target"}
+          </span>
+          {/*
+            And the button that answers it, which was missing — the whole prompt had no control on
+            it, on the assumption that a trigger always has a target it must take. A dying Arcbound
+            Worker with no other artifact creature on the board stopped the table permanently: the
+            ability was on the stack, the prompt was open, and nothing on screen could answer it.
+          */}
+          {specsRequired(mode.specs) < specsWanted(mode.specs)
+            && mode.chosen.length >= specsRequired(mode.specs) ? (
+            <Button size="sm" data-testid="confirm-choice" onClick={() => dispatch({ kind: "confirm" })}>
+              <Check className="size-3.5" />
+              {mode.chosen.length === 0 ? "Choose nothing" : "Confirm"}
+            </Button>
+          ) : null}
           <span className="ml-auto text-[10px] uppercase tracking-wide text-[var(--g-text-muted)]">
             the ability is already on the stack
           </span>

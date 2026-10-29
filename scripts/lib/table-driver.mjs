@@ -461,14 +461,25 @@ export async function makeMove(
   }
 
   if (await has(page, 'feed-prompt')) {
-    // An ability whose cost is a sacrifice: the creatures that can pay for it are lit.
+    /*
+      An ability whose cost is paid with a permanent: the ones that can pay for it are lit.
+
+      The prompt's own words travel back in the label, the way the offered-cast branch does it,
+      because what the bar *says* here is a claim worth checking rather than a detail. There are
+      three costs behind this one mode now — a creature sacrificed, an unblocked attacker returned
+      to hand, and an artifact sacrificed — and the sentence is the only thing on screen that tells
+      the player which of the three they are about to do. A run that said "fed a sacrifice outlet"
+      could not tell "tap a creature to sacrifice" from the same words over a ninjutsu swap, which
+      would be telling the player they are losing a creature they are getting back.
+    */
+    const said = (await text(page, 'feed-prompt')).replace(/\s+/g, ' ').slice(0, 160);
     const lit = page.locator('[data-testid^="card-"].ring-\\[var\\(--g-status-info\\)\\]');
     if ((await lit.count()) > 0) {
       await tap(lit.first());
-      return 'fed a sacrifice outlet';
+      return `fed a sacrifice outlet: ${said}`;
     }
     await press(page, 'cancel-mode');
-    return 'backed out of a sacrifice';
+    return `backed out of a sacrifice: ${said}`;
   }
 
   // A triggered ability waiting to be aimed blocks everything, so it is answered first. The board
@@ -484,8 +495,20 @@ export async function makeMove(
       await tap(seatButtons.first());
       return 'aimed a trigger at a player';
     }
-    // Nothing lit anywhere: the table is asking for a target it is not showing, which is a defect
-    // in the table rather than something to wait out.
+    /*
+      Declining, for a trigger whose targets are optional — "up to one target artifact creature"
+      (CR 702.43b) is legal with none, so a board with nothing to point at still has an answer.
+
+      Checked after the lit cards rather than before them, because declining a trigger that *could*
+      hit something is a worse play than taking it, and this driver takes the simplest legal move
+      rather than the cleverest. It is only ever pressed when there was nothing lit at all.
+    */
+    if (await has(page, 'confirm-choice')) {
+      await press(page, 'confirm-choice');
+      return 'declined an optional trigger';
+    }
+    // Nothing lit anywhere and nothing to decline: the table is asking for a target it is not
+    // showing, which is a defect in the table rather than something to wait out.
     return null;
   }
 

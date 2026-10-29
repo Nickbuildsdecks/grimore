@@ -12801,3 +12801,127 @@ not feed it; and the rule it needs — for an **artifact** cost, prefer an artif
 creature and is not currently attached — is its own piece, with its own before-and-after count and its
 own duel. The alternative was to quietly drop the Ravager and lose the only card in the pool that can
 pay an artifact cost, which would hide an engine gap behind a tidy number.
+
+## D222 — Feeding the artifact cost, and the stall the scenario found on its way there
+
+D221 shipped the Arcbound Ravager and measured its "Sacrifice an artifact" row **offered 437 times
+across 48 bot games and activated 0 times**, and named the reason: the branch answering it was the
+*creature* branch, whose first rule is "never feed anything with text of its own". Over an artifact
+cost that rule is not merely unhelpful, it is backwards — nearly every artifact is only text, a
+Loxodon Warhammer is a rules box with no body at all — so it refused the whole pool and the Ravager
+sat there as a 1/1 for the length of every game it was drawn in. This is the rule that answers it.
+
+### One fact, and the two readers that would otherwise each invent it
+
+`LegalPlay.sacrificeKind` is set to `'artifact'` when the cost eats one, and absent otherwise. A
+field rather than something each reader works out, because the candidate list cannot be read for it:
+an artifact cost on a board whose only artifact is a Juggernaut offers one artifact creature, which
+is indistinguishable from a creature cost — so a reader guessing from the candidates would guess
+wrong exactly where the board is narrowest.
+
+Two readers need it. The **bar**, which has to ask in the right words, and the **bot**, whose
+judgement about what it minds losing is a different judgement for a Bonesplitter than for a Centaur
+Courser. `sacrificeOptions`' own docblock was stale from the moment D221 shipped — it said
+"creatures" — and is now "permanents", with the kind beside it.
+
+### The rule: is this artifact doing anything?
+
+`spentArtifact` replaces the creature branch's two rules, which are both arithmetic about losing a
+body and neither of which is a sentence about an artifact. Three clauses, each a fact about the
+board rather than about the card:
+
+- **Not currently a creature**, read off `characteristicsOf` and not the printed type line, which is
+  the whole difference between a Sky Skiff somebody crewed and the same card sitting idle. A crewed
+  Vehicle is a body in a combat.
+- **Not attached.** An equipped Darksteel Plate is the reason its holder is still alive; the same
+  card unattached is a card.
+- **Not a mana source**, which nothing in this pool exercises — the only artifact cost here is the
+  Ravager's and Forge Alliance has no rocks. In anyway, because a bot that eats its own Sol Ring to
+  grow a 1/1 is a bug waiting for the next deck, and the clause is one question about the card. It
+  is tested with a deck the test builds for itself, which is what `deckSpecs` is for.
+
+Cheapest by mana value among what is left, and that is the weak part, said out loud: mana value is a
+fair proxy for what an artifact cost to get and a poor one for what it is worth now. The judgement it
+misses is real — an unattached Warhammer with a creature to carry it is live, the same card on an
+empty board is not — and it is a question about next turn.
+
+`BotOptions.feedsArtifacts` is on by default, and it is the one flag in that family whose `false` is
+the *old* behaviour rather than the new one: every other filter there drops a play the default takes,
+this one adds a play the default makes. Hence an explicit `=== false` at the gate rather than
+`?? true`, which would read as though not feeding were the rule.
+
+### What it is worth, and the number that says why it is small
+
+Activations across the same 48 games, same seeds, the flag the only difference: **0 → 4**.
+
+Four, of 434 windows. The honest follow-up was to ask why, and the first instrument could not say —
+counting windows told ninjutsu's zone problem from this judgement problem, but "the bot declined"
+turned out to be wrong about *most* of those 434. So the candidates themselves were tallied, bucketed
+by the clause that refused each one:
+
+| across 48 games, at every window the row was offered | |
+| --- | --- |
+| the only artifact on offer was **the Ravager itself** | **434** of 434 |
+| an Equipment on offer and **already attached** | 89 |
+| an Equipment on offer and **idle** | 1 |
+
+So the rule's most frequent job is not feeding the Ravager at all — it is **refusing to let the
+Ravager eat itself**, which the engine offers because the card says "an artifact" and not "another".
+A naive "eat the cheapest artifact" would bin the card for a counter on nothing, in every one of
+those 434 windows. And the reason the rule only fires four times is a fact about the *deck* rather
+than the bot: every non-creature artifact in Forge Alliance is Equipment or a Vehicle, and both stay
+in use. There mostly is no spent artifact to spend.
+
+That also kills the obvious refinement before it was written. "Unattached **and** nothing could carry
+it" sounds stricter and better; it collapses to *never*, because the Ravager is itself a creature
+that can hold Equipment, so while it lives there is always somewhere for the Equipment to go. "Not
+attached" is the strongest usable reading of "spent" in this pool.
+
+### The stall the scenario found, which was not what it was built for
+
+`LIST=artifact` exists for one sentence. The feeding bar now carries three costs through one mode —
+sacrifice a creature, return an unblocked attacker to your hand, sacrifice an artifact — and the
+words it prints are the only thing on screen that says which. Over an Arcbound Ravager the default
+wording is actively wrong: half the cards it lights are not creatures, so "tap a creature to
+sacrifice" sends the player looking for one and leaves the bar apparently unresponsive. An engine
+test knows the cost and cannot know what was said about it, so the claim is pinned in a browser.
+
+It caught the sentence on its first run. It also **stopped dead on turn three and sat there for two
+thousand moves**: a prompt open, nothing lit, and nothing on screen able to answer it.
+
+A dying Arcbound Worker's modular trigger asks for "up to one target artifact creature" (CR
+702.43b). Zero is a legal answer, so the ability goes on the stack whether or not the board has
+anything to point at — and the choosing prompt **had no control on it at all**. The reducer said why,
+in a comment that was true when it was written: *"a trigger's targets are never optional: it was only
+put on the stack because legal ones existed."* Modular is the first trigger here that says "you may",
+and it falsified that sentence the moment D221 shipped. Three suites missed it, correctly: the
+engine's tests answer with `auto:choose, targets: []` directly, which is a path the table never
+offered, and no starter deck puts enough Arcbound creatures on one board to reach it.
+
+The fix is three lines of arithmetic and a button. `specsWanted` and `specsRequired` were lifted out
+of `targetsWanted`/`targetsRequired` so the two readings of "how many targets" cannot drift again —
+the inlined copy in the choosing branch is exactly what drifted. A tap sends at the **most** the
+specs can take; the button sends at the **fewest**, and reads "Choose nothing" with none chosen. The
+hint under the description now says "choose a target, or none" when the trigger says you may.
+
+This is the second defect in a row that a browser row found in code three suites had passed, and the
+shape is the same both times: a claim about what the **player** can see or do, which every layer
+below the browser is structurally unable to make.
+
+### What the rule is worth, measured, and the control that says the instrument works
+
+`bot-duel` across every deck pairing, both seatings, three seed sets, the flag the only difference:
+
+| seed set | `feedsArtifacts: false` vs the default |
+| --- | --- |
+| 3300 | 467-467 (2 unfinished) of 936 |
+| 8800 | 469-467 of 936 |
+| 5500 | 466-468 (2 unfinished) of 936 |
+
+Flat three times, which is the smell D216 named and the same reading D220 got for the ninja rule. So
+it was checked rather than reported: the **positive** control on this build, `lookahead: false`, came
+back **91-220 of 312**. The instrument is emphatically live; a rule that changes four plays in 48
+games of one deck in a field of thirteen has nothing for it to see. That is the distinction the
+README lesson draws — a negative control proves the harness is fair, a positive control proves it is
+connected — and this is the second rule in a row where only the second control made the flat reading
+mean anything.

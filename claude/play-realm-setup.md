@@ -166,7 +166,7 @@ is waiting for — **Pass**, **Resolve Lightning Bolt**, **Next step**, **Declar
 | Play a huge creature that **does not stay** | Two creatures come with a countdown and shroud, so nothing in this pool can target them. **Calciderm** ({3}{W} 5/5 in Forge Alliance) has **vanishing 4** and **Blastoderm** ({2}{G}{G} 5/5 in Kindle Grove) has **fading 3** — and despite the different numbers both give you **three** turns of a 5/5, because vanishing goes when the last counter is removed and fading when there is none left to remove. The counter is on the card face, so count it rather than the turns. A proliferate buys one more. |
 | Cast something they **cannot answer** | Two cards have **split second**: **Sudden Shock** ({1}{R} instant in Arc Tempest, two damage) and **Krosan Grip** ({2}{G} instant in Blight Vector, destroy an artifact or enchantment). While one is on the stack nobody may cast a spell or activate anything but a mana ability — including you, which is the half people get wrong — so a hand tapped on in that window says *a spell with split second is on the stack* rather than going quietly grey. It is not uncounterable: a Chalice of the Void already on the battlefield counters it regardless. The window is not free and not always worth it: the Shock deals a damage less than the Lightning Strike beside it, and that damage measured as worth more than the keyword. |
 | Swap a creature in **after blockers** | **Ninja of the Deep Hours** ({1}{U} 2/2 in Skyward Writ) has **ninjutsu {1}{U}**: once one of your creatures is through unblocked, pay {1}{U}, send that creature back to your **hand**, and the Ninja arrives tapped and attacking in its place — drawing you a card when it connects. You keep both cards, which is why the bar says "return" rather than "sacrifice". The only play in this pool that happens after blockers and still changes what damage lands, and the one card here worth *not* casting on turn two. |
-| Grow a creature by **eating your own artifacts** | **Arcbound Ravager** ({2} 0/0 in Forge Alliance) has **modular 1** and "Sacrifice an artifact: put a +1/+1 counter on it" — the pool's only cost that spends an artifact, so a Bonesplitter that has done its job becomes permanent power. **Arcbound Worker** ({1} 0/0, modular 1) is the cheap version. Both are printed **0/0** and alive only because of their counter, so a −1/−1 from a Contagion Clasp kills them outright; and when either dies you may move its counters to another artifact creature — *may*, because the legal targets include your opponent's. |
+| Grow a creature by **eating your own artifacts** | **Arcbound Ravager** ({2} 0/0 in Forge Alliance) has **modular 1** and "Sacrifice an artifact: put a +1/+1 counter on it" — the pool's only cost that spends an artifact, so a Bonesplitter that has done its job becomes permanent power. **Arcbound Worker** ({1} 0/0, modular 1) is the cheap version. Both are printed **0/0** and alive only because of their counter, so a −1/−1 from a Contagion Clasp kills them outright; and when either dies you may move its counters to another artifact creature — *may*, because the legal targets include your opponent's, so the bar offers **Choose nothing** beside the prompt and that is a real answer rather than a way out of it. |
 | Take somebody's graveyard away | Three cards answer the graveyard, and they answer it three different ways. **Planar Void** in Blight Vector is a {B} enchantment: *whenever another card is put into a graveyard from anywhere, exile that card* — so while it is on the table nobody has a graveyard at all, including its own controller. No flashback, no escape, no delve, no Raise Dead, and a Lhurgoyf stays a 0/1. It is a trigger rather than a replacement, which is exactly how the card is printed: the card really does reach the graveyard and really is exiled afterwards, so a Blood Artist still sees the creature die. **Scavenging Ooze** in Delta Bloom is the patient version — {1}{G} for a 2/2, then {G} as often as you like to exile one card from any graveyard, and if it was a creature card the Ooze gets a +1/+1 counter and you gain a life. Point it at the card somebody is about to escape or delve with and it is removal and a clock at once. **Rest in Peace** in Skyward Writ is the third and the most absolute: {1}{W}, it exiles every graveyard as it arrives, and after that *a card that would be put into a graveyard from anywhere is exiled instead*. The difference from the Void is one word and it matters at the table — “instead” means the card never reaches the graveyard, so a creature that would have died **did not die**: a Blood Artist drains for nothing, a Cruel Celebrant sees nothing, and a Gravedigger has nothing to look at. It is symmetrical and printed that way; Skyward Writ is simply the deck whose sixty cards never wanted a graveyard. In a **pod** that changes, because that deck's commander is Hanna, Ship's Navigator, who buys an artifact or enchantment back out of the graveyard this card has just turned off. |
 | Work out why your creature is bigger than its card | Three creatures are **lords**: they change the other creatures of their own type. Stromkirk Captain in Ashen Rite gives other **Vampires** +1/+1 and first strike, Knight Exemplar in Skyward Writ gives other **Knights** +1/+1 and indestructible, and Imperious Perfect in Rot Harvest gives other **Elves** +1/+1. None of them pumps itself — "other" is printed on all three. The board always shows the current size, and it changes the instant the lord arrives or leaves, with nothing to click: a Knight with three damage on it that was surviving because of the Exemplar dies the moment the Exemplar does. |
 | Attack with **three** creatures on purpose | Four cards pay you for the *shape* of an attack rather than for the creature making it, and all four decide on the attackers you **declared** — what happens to them afterwards does not change the trigger. **Firemane Avenger** ({2}{R}{W} 3/3 flier in Forge Alliance) has **battalion**: on any turn it and at least two other creatures attack, it throws three damage at anything and you gain three life. **Sunhome Stalwart** ({1}{W} 2/1 first strike, the same deck) has **mentor**: every time it attacks it puts a **permanent** +1/+1 counter on another attacking creature with less power — so a Soldier token that attacks beside it twice is a 3/3, and the table only ever offers you the creatures that are both attacking and smaller. **Goblin Wardriver** ({1}{R} 2/2 in Kindle Grove) has **battle cry**: every *other* attacker gets +1/+0 for the turn, which turns a board of medium creatures into a board of bad blocks. And **Topan Freeblade** ({1}{W} 2/2 vigilance in Verdant Guard) has **renown 1**: the first time it connects with a player it keeps a +1/+1 counter and is *renowned* forever after, so it attacks as a 2/2, comes back a 3/3 and is still untapped to block. Renown happens once — the card checks whether it is renowned already — and only on damage that actually takes life: a blocked swing, or one stopped by a Fog, gives it nothing. |
@@ -961,6 +961,7 @@ LIST=echo node scripts/e2e-solo.mjs    # a deck asked for mana in its own upkeep
 LIST=upkeep node scripts/e2e-solo.mjs  # a deck whose upkeep question gets dearer every turn — 26-27 checks
 LIST=level node scripts/e2e-solo.mjs   # a deck with a creature that grows by being paid for — 26 checks
 LIST=vanish node scripts/e2e-solo.mjs  # a deck whose best creatures come with a countdown on them — 26 checks
+LIST=artifact node scripts/e2e-solo.mjs # a deck that pays its costs with spare artifacts — 25 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -1039,6 +1040,7 @@ LIST=echo node scripts/e2e-solo.mjs              # a question raised in the upke
 LIST=upkeep node scripts/e2e-solo.mjs            # the same question at two different prices, as it climbs
 LIST=level node scripts/e2e-solo.mjs             # a row pressed on the battlefield, and the body the card face then shows
 LIST=vanish node scripts/e2e-solo.mjs            # a counter on the card face, read at more than one number
+LIST=artifact node scripts/e2e-solo.mjs          # the bar asking for an artifact rather than a creature
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
@@ -1053,7 +1055,7 @@ in the table rather than the rules, which is what a browser suite is for.
 `LIST=costs` is the second of those scenarios and asks a wider question: **evoke, dash and bestow
 each add a second row to a card already in your hand**, and the table is the only place the choice
 between the two rows is made — the engine's own tests build the action by hand, so a row offered
-wrongly, or a bestow that never asked which creature to enchant, would pass all 1134 of them. The
+wrongly, or a bestow that never asked which creature to enchant, would pass all 1140 of them. The
 deck is six Mulldrifters, eight Mardu Scouts, six Boon Satyrs and twelve guildgates to cast them
 with, and the run **requires all three rows to be pressed**.
 
@@ -1263,16 +1265,30 @@ because a Calciderm beside a Blastoderm shows `time 4` and `fade 3` on the first
 with nothing having counted down. Four Calciderms and four Blastoderms; three runs, 26 of 26 each,
 having read `fade 3, 2, 1` off one game and `time 4, 3, 2, 1` off another.
 
-Two of those checks are about how the table **looks** rather than what it does, which is new and
+`LIST=artifact` is the seventeenth, and the only one whose subject is a **sentence**. One mode of the
+bar carries three different costs — sacrifice a creature, return an unblocked attacker to your hand,
+sacrifice an artifact — and the words it prints are the only thing on screen that says which. Over an
+Arcbound Ravager the default wording is actively wrong: half the cards it lights are not creatures, so
+"tap a creature to sacrifice" sends the player looking for one and leaves the bar apparently
+unresponsive. The engine knows the cost and cannot know what was said about it, so the check is here.
+
+It found more than it was built for. The first run stopped dead on turn three and sat there for two
+thousand moves with a prompt open and nothing on screen able to answer it: a dying Arcbound Worker's
+modular trigger asks for "up to one target artifact creature", and the choosing prompt had no button
+on it at all — written when every trigger in the pool had a target it *had* to take. A board with
+eight Arcbound creatures is the first one to reach it. The prompt now draws **Choose nothing**, and
+the sentence under it reads "choose a target, or none" when the trigger says you may.
+
+Two of the checks are about how the table **looks** rather than what it does, which is new and
 worth saying why. A card at this table leans towards the cursor with a foil sheen that follows it,
 and the board has its own mana embers drifting behind it — and both are written as CSS variables a
 pointer handler sets, so nothing that does not move a real pointer can see them. The browser suite
 hovers a card and reads the variables back, which is the only honest way to check a thing whose
 whole existence is in the browser.
 
-The layers under them have their own suites: `packages/rules-engine` (1134 tests, including whole
+The layers under them have their own suites: `packages/rules-engine` (1140 tests, including whole
 games played out by bots that only ever send moves the engine offered them — four-seat Commander
-pods as well as duels), `apps/web` (221 tests, the interaction reducer behind every prompt and the deck panel) and
+pods as well as duels), `apps/web` (223 tests, the interaction reducer behind every prompt and the deck panel) and
 `apps/realtime`
 (43 tests against live Redis, including two socket clients playing to a finish, one person
 playing the server, a deal struck with the server's own seat, and two players rematching on

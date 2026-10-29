@@ -542,12 +542,43 @@ describe("aiming a triggered ability", () => {
   })
 
   it("will not confirm an ability that is still missing a target", () => {
-    // A trigger only went on the stack because legal targets existed, so sending it half-aimed
-    // would be sending something the engine refuses.
+    // A trigger with a required target cannot be sent half-aimed: the engine refuses it, and the
+    // button does nothing rather than showing the player an error they cannot act on.
     const mode = arenaReducer(IDLE, {
       kind: "startChoosing", specs, candidates, description: "deals 4 damage",
     }).mode
     expect(arenaReducer(mode, { kind: "confirm" }).action).toBeNull()
+  })
+
+  /*
+    And the trigger that says "you may", which is the one the table had no answer to at all.
+
+    Modular is the first: "you may put its +1/+1 counters on up to one target artifact creature"
+    (CR 702.43b). None is a legal answer, so the ability goes on the stack whether or not anything
+    can be pointed at — and until this, the choosing prompt required a target and drew no button.
+    A dying Arcbound Worker with no other artifact creature stopped the table permanently, which is
+    how `LIST=artifact` found it: two thousand moves on turn three with the prompt open.
+  */
+  const maybe = [{ kind: "permanent" as const, description: "another target artifact creature", optional: true }]
+
+  it("sends a 'you may' trigger with no targets when the player declines", () => {
+    const mode = arenaReducer(IDLE, {
+      kind: "startChoosing", specs: maybe, candidates: [[]], description: "move its counters",
+    }).mode
+    expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+      type: "auto:choose", targets: [],
+    })
+  })
+
+  it("and still sends it aimed when the player picks the one target it may take", () => {
+    // The other half: optional means the target may be declined, not that it is ignored. A spec
+    // that takes one still sends on the first tap, with nothing left to ask.
+    const mode = arenaReducer(IDLE, {
+      kind: "startChoosing", specs: maybe, candidates, description: "move its counters",
+    }).mode
+    expect(arenaReducer(mode, { kind: "pickTarget", target: card("bear") }).action).toEqual({
+      type: "auto:choose", targets: [card("bear")],
+    })
   })
 })
 

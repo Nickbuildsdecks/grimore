@@ -363,6 +363,58 @@ function cheapestCreature(state: GameState, ids: readonly string[]): string | nu
 }
 
 /**
+ * The artifact this seat minds losing least, for a cost that eats an artifact rather than a
+ * creature — and `null` when there is none it does not mind, which is a refusal and not a shortage.
+ *
+ * `cheapestCreature` cannot answer this, and not because of a type check. Both of its rules are
+ * about creatures. It ranks a card with text **above** a body, and the branch that calls it then
+ * refuses any trade where the fodder is bigger than what it feeds. Pointed at an artifact cost the
+ * first rule is not merely unhelpful, it is backwards: nearly every artifact is *only* text — a
+ * Loxodon Warhammer is a rules box with no body at all — so "has text of its own" refuses the
+ * entire pool. That is exactly what D221 measured. The Ravager's "Sacrifice an artifact" row was
+ * offered **437 times across 48 games and taken 0**, and the card sat there as a 1/1 all game.
+ *
+ * So an artifact cost asks a different question: not "is this a card or a body" but **"is this
+ * artifact doing anything right now"**. Three facts answer it, and each is a fact about the board
+ * rather than about the card.
+ *
+ * *Not currently a creature*, read off its characteristics and not its printed type line, which is
+ * the whole difference between a Sky Skiff somebody crewed and the same card sitting idle. A crewed
+ * Vehicle is a body in a combat, and eating a body for a +1/+1 counter is the creature arithmetic
+ * this branch exists to stay clear of.
+ *
+ * *Not attached.* An equipped Darksteel Plate is the reason its holder is still alive; the same
+ * card unattached is a card. Attachment is the one fact that tells those two apart, and it is why
+ * the rule is about the board state rather than the card — the same Warhammer is fodder on one turn
+ * and untouchable on the next.
+ *
+ * *Not a mana source.* Nothing in this pool exercises it: the only artifact cost here is the
+ * Ravager's and Forge Alliance has no rocks. It is in anyway, because a bot that eats its own Sol
+ * Ring to grow a 1/1 is a bug waiting for the next deck to arrive, and the check is one question
+ * about the card rather than a guess about the board.
+ *
+ * Cheapest by mana value among what is left — and that is the weak part of this, said out loud.
+ * Mana value is a fair proxy for what an artifact cost to get and a poor one for what it is worth
+ * now, and the judgement it misses is a real one: an unattached Warhammer with a creature to carry
+ * it is live, and the same card on an empty board is not. That distinction is a question about next
+ * turn, which is a different piece of work from this one.
+ */
+function spentArtifact(state: GameState, ids: readonly string[]): string | null {
+  let best: { id: string; cmc: number } | null = null;
+  for (const id of ids) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    if (characteristicsOf(state, inst).isCreature) continue;
+    if (inst.attachedTo !== null) continue;
+    const def = state.cardDefs[inst.defKey];
+    if ((scriptFor(def?.name)?.abilities ?? []).some((a) => a.produces !== undefined)) continue;
+    const cmc = def?.cmc ?? 0;
+    if (best === null || cmc < best.cmc) best = { id, cmc };
+  }
+  return best?.id ?? null;
+}
+
+/**
  * The other way round, for a spec the card marks `friendly`: my own side only.
  *
  * **Me before my creatures**, which is a judgement rather than an obvious ordering. A shield on a
@@ -1433,6 +1485,28 @@ function candidateActions(
         });
         continue;
       }
+      /*
+        An artifact cost, which is a different judgement and therefore a different branch
+        (CR 702.43b's "Sacrifice an artifact").
+
+        Not folded into the creature path below for the same reason ninjutsu is not folded into it:
+        that path's two rules are both arithmetic about losing a creature, and neither sentence is
+        true of an artifact. `spentArtifact` says what replaces them. The refusal is the same shape
+        either way — nothing it is willing to lose means the ability is not used — but what it is
+        willing to lose is the whole question, and the two costs answer it differently.
+      */
+      if (play.sacrificeKind === 'artifact') {
+        const spent = spentArtifact(state, play.sacrificeOptions);
+        if (spent === null) continue;
+        out.push({
+          action: {
+            type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+            sacrifice: spent,
+            ...(targets.length > 0 ? { targets: [...targets] } : {}),
+          },
+        });
+        continue;
+      }
       if (play.sacrificeOptions.length > 0) {
         const fodder = cheapestCreature(state, play.sacrificeOptions);
         if (fodder === null) continue;
@@ -1545,6 +1619,21 @@ export interface BotOptions {
    * was, kept as the control. See `aSwapIsComing` for what "the moment" means.
    */
   readonly holdsNinjas?: boolean;
+  /**
+   * Whether to pay an **artifact** cost with an artifact that is doing nothing. Default **on**.
+   *
+   * On is the only reason the pool's one artifact cost is ever paid. D221 measured the Arcbound
+   * Ravager's outlet offered 437 times across 48 games and activated **zero** times, and the
+   * diagnosis was the opposite of ninjutsu's: not a zone problem where the play never came up, but
+   * a judgement problem where it came up constantly and the bot declined every time — because the
+   * creature path it was being asked through refuses fodder with text of its own, and every artifact
+   * in Forge Alliance has text.
+   *
+   * Off is the bot as it was, kept as the control, and it is a refusal rather than a different
+   * choice: with the flag off the activation is dropped and the Ravager stays a 1/1. See
+   * `spentArtifact` for the rule and D222 for what it is worth.
+   */
+  readonly feedsArtifacts?: boolean;
 }
 
 /**
@@ -2376,6 +2465,18 @@ function animationCouldMatter(state: GameState, seat: SeatIndex, action: Action)
  * `untapBoughtSomething` asks about directly — counted here as well, every tapped land would be
  * worth untapping whether or not there was anything to spend it on.
  */
+/**
+ * Whether this activation pays its cost with an artifact, for the control flag to drop.
+ *
+ * Reads the cost off the script rather than the play, because by the time an action exists the play
+ * it came from is gone and `sacrifice` alone cannot say which kind of cost it paid.
+ */
+function feedsAnArtifact(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:activate' || action.sacrifice === undefined) return false;
+  const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
+  return scriptFor(name)?.abilities?.[action.abilityIndex ?? 0]?.cost.sacrifice === 'artifact';
+}
+
 function pointlessToHandBack(state: GameState, play: LegalPlay): boolean {
   if (play.kind !== 'activate') return false;
   const name = state.cardDefs[state.instances[play.card]?.defKey ?? '']?.name;
@@ -3449,6 +3550,18 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     */
     if ((opts.holdsNinjas ?? true) && castsANinja(state, option.action)
       && aSwapIsComing(state, seat)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And the control for the artifact cost, which is the family read backwards.
+
+      Every other filter here is a rule the bot gains: the default drops the play and `false` is the
+      bot as it was. This one is a rule the bot gained in `candidateActions`, so the default keeps
+      the play and `false` is the bot as it was. Hence the explicit `=== false` — an `?? true` here
+      would read as though not feeding were the rule. See `BotOptions.feedsArtifacts`.
+    */
+    if (opts.feedsArtifacts === false && feedsAnArtifact(state, option.action)) {
       dropped += 1;
       continue;
     }

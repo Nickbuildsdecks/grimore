@@ -47,7 +47,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * for mana in its own upkeep (`ECHO_LIST`), `LIST=upkeep` one whose upkeep question gets **dearer**
  * every turn (`UPKEEP_LIST`), `LIST=level` one whose creatures grow by being paid for
  * (`LEVEL_LIST`), `LIST=vanish` one whose creatures arrive on a clock the card face shows running
- * down (`VANISH_LIST`), and `LIST=earned` one
+ * down (`VANISH_LIST`), `LIST=artifact` one that pays a cost with a spare artifact rather than a
+ * creature (`ARTIFACT_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -228,7 +229,15 @@ const myMove = (page) => isMyMove(page);
   is a Forest the Bloodbraid Elf needed.
 */
 const takeTurn = (page) =>
-  makeMove(page, 0, { aggression: 1, abilities: LIST === 'proliferate' || LIST === 'level' });
+  /*
+    And under `LIST=artifact`, where the cost is the whole point and costs no mana at all: the
+    Ravager's row is "Sacrifice an artifact" with no mana part, so turning abilities on here takes
+    nothing away from the spells, which is the objection that keeps it off everywhere else.
+  */
+  makeMove(page, 0, {
+    aggression: 1,
+    abilities: LIST === 'proliferate' || LIST === 'level' || LIST === 'artifact',
+  });
 
 async function main() {
   await setShotDir(SHOT_DIR);
@@ -487,6 +496,31 @@ const VANISH_LIST = [
   '4 Llanowar Elves', '4 Topan Freeblade', '4 Centaur Courser',
   '4 Swords to Plowshares', '4 Giant Growth', '4 Rampant Growth', '2 Pacifism',
 ].join('\n');
+
+/**
+ * A deck whose costs are paid with **artifacts**, for the one sentence on the table that says so.
+ *
+ * The bar asks three different questions through one mode — sacrifice a creature, return an
+ * unblocked attacker to your hand, sacrifice an artifact — and the sentence it prints is the only
+ * thing on screen that distinguishes them. The third of those is new (D222) and no other list can
+ * produce it: the Arcbound Ravager is the pool's only artifact cost, it lives in one deck, and
+ * `LIST=vanish` and the rest never put one on the board.
+ *
+ * Twelve Equipment and four Vehicles against eight artifact creatures, which is the ratio the
+ * scenario needs rather than a deck anybody would build. The Ravager is an artifact itself, so a
+ * board with nothing but Ravagers offers the row and has nothing the rule will pay it with — the
+ * pool instrument found exactly that in 434 windows of 434. Twelve spare Equipment is how a browser
+ * run gets a board where something *else* can pay.
+ *
+ * Mono-white plus colourless, for the lesson `LIST=costs` paid for twice: a scenario needing two
+ * colours fails on its mana base rather than on the thing it is testing.
+ */
+const ARTIFACT_LIST = [
+  '24 Plains',
+  '4 Arcbound Ravager', '4 Arcbound Worker',
+  '4 Bonesplitter', '4 Basilisk Collar', '4 Darksteel Plate', '4 Sky Skiff',
+  '4 Juggernaut', '4 Elite Vanguard', '4 Doomed Traveler',
+].join('\n');
   const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
   watchForReactWarnings(page, '', reactWarnings);
@@ -562,6 +596,8 @@ const VANISH_LIST = [
         ? LEVEL_LIST
         : LIST === 'vanish'
         ? VANISH_LIST
+        : LIST === 'artifact'
+        ? ARTIFACT_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -746,6 +782,16 @@ const VANISH_LIST = [
      * different numbers is a countdown, one reading is a decoration.
      */
     const clockFaces = new Set();
+    /**
+     * Every sentence the feeding bar printed this run, under `LIST=artifact`.
+     *
+     * The words rather than the fact, because one mode now carries three costs and the sentence is
+     * all that tells them apart. "Tap a creature to sacrifice" over an Arcbound Ravager would be
+     * naming the wrong half of the board — half the cards it is pointing at are not creatures —
+     * and the engine cannot catch that: it knows the cost, and what it is asked here is what the
+     * table *said* about it.
+     */
+    const feedWords = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
     let stuck = 0;
@@ -804,6 +850,10 @@ const VANISH_LIST = [
         if (typeof did === 'string' && /^chose a player: /.test(did)) playersChosen.add(did);
         if (typeof did === 'string' && /^chose a word: .*Echo \{1\}\{R\}/.test(did)) {
           echoAnswers.add(did.replace(/—.*$/, '').trim());
+        }
+        if (typeof did === 'string'
+          && /^(fed a sacrifice outlet|backed out of a sacrifice): /.test(did)) {
+          feedWords.add(did.replace(/^[^:]+: /, ''));
         }
         if (LIST === 'level' && typeof did === 'string' && /chose a play: Level up/.test(did)) {
           levelPlays.add(did);
@@ -913,7 +963,7 @@ const VANISH_LIST = [
     const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
-      || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish'
+      || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish' || LIST === 'artifact'
       ? 5 : 3;
     /*
       What "not yet" means for this list.
@@ -954,11 +1004,19 @@ const VANISH_LIST = [
       // Two readings of one clock, which is a countdown rather than a label.
       : LIST === 'vanish'
       ? !hasACountdown(clockFaces)
+      /*
+        The artifact sentence, and only that one. A run that fed a creature outlet has proved the
+        mode and not the wording — and the wording is the claim, because it is the half the engine
+        cannot make. Several games, because the board has to have a Ravager and a spare Equipment at
+        the same moment, which is a fact about the shuffle.
+      */
+      : LIST === 'artifact'
+      ? ![...feedWords].some((w) => /tap an artifact to sacrifice/i.test(w))
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
-      || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish')
+      || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish' || LIST === 'artifact')
       && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
@@ -973,6 +1031,7 @@ const VANISH_LIST = [
         : LIST === 'upkeep' ? `${upkeepPrices.size} distinct upkeep prices`
         : LIST === 'level' ? `${levelPlays.size} level-ups, ${levelledBodies.size} levelled bodies`
         : LIST === 'vanish' ? `clocks seen: ${[...clockFaces].join(', ') || 'none'}`
+        : LIST === 'artifact' ? `feeding sentences: ${[...feedWords].join(' | ') || 'none'}`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -1207,6 +1266,25 @@ const VANISH_LIST = [
       check('and the card face shows the body the band gives it',
         levelledBodies.size > 0, `bodies seen: ${[...levelledBodies].join(', ')}`);
       for (const did of [...levelPlays].slice(0, 2)) console.log(`      ${did}`);
+    } else if (LIST === 'artifact') {
+      /*
+        The sentence the bar prints over an artifact cost, which is the half of D222 no engine test
+        can make.
+
+        `legalActions` knows the cost is an artifact one, and `scripts.test.ts` pins that it is and
+        pins what the bot feeds it. Neither of them can say what the player reads, and over this
+        cost the default wording is actively wrong: "tap a creature to sacrifice" above a board
+        where the lit cards are a Bonesplitter and a Darksteel Plate names the wrong half of the
+        board, and a player who takes it at its word looks for a creature and finds the bar
+        unresponsive.
+
+        One check and not two, because the question here is a single sentence rather than a
+        progression — unlike the clocks below, where one reading is a label and two are a countdown.
+      */
+      check('the bar asks for an artifact when the cost is an artifact',
+        [...feedWords].some((w) => /tap an artifact to sacrifice/i.test(w)),
+        `sentences seen: ${[...feedWords].join(' | ') || 'none'}`);
+      for (const w of [...feedWords].slice(0, 3)) console.log(`      ${w}`);
     } else if (LIST === 'vanish') {
       /*
         A clock the player can read, and a clock that is actually running.

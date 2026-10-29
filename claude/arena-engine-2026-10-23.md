@@ -6270,6 +6270,52 @@ told them apart. The rule it needs is its own piece (D221 says which rule); the 
 drop the Ravager quietly and lose the only card that can pay an artifact cost, hiding an engine gap
 behind a tidy number.
 
+### Feeding the artifact cost, and the stall the scenario found (D222)
+
+The rule that answers D221's zero. `LegalPlay.sacrificeKind` says when a cost eats an **artifact**
+rather than a creature — a field rather than an inference, because an artifact cost on a board whose
+only artifact is a Juggernaut offers one artifact *creature*, which is indistinguishable from a
+creature cost. Two readers need it and would otherwise each invent it: the bar, which has to ask in
+the right words, and the bot, whose judgement about what it minds losing is a different judgement for
+a Bonesplitter than for a Centaur Courser.
+
+`spentArtifact` is the judgement, and it asks **"is this artifact doing anything right now"** rather
+than the creature branch's "is this a card or a body". Three clauses, each a fact about the board:
+not currently a creature (read off characteristics, so a crewed Sky Skiff is a body and the same card
+idle is not), not attached (an equipped Darksteel Plate is why its holder is alive), and not a mana
+source (unexercised by this pool and in anyway, with a deck the test builds for itself). Cheapest by
+mana value among the rest, which is the weak part and is said so.
+
+**0 → 4 activations** across the same 48 games. Four, of 434 windows — and tallying the *candidates*
+rather than the windows says why, which is the correction to the lesson written one piece earlier:
+
+| at every window the row was offered, across 48 games | |
+| --- | --- |
+| the only artifact on offer was **the Ravager itself** | **434** of 434 |
+| an Equipment on offer and already **attached** | 89 |
+| an Equipment on offer and **idle** | 1 |
+
+So the rule's most frequent job is refusing to let the Ravager **eat itself** — which the engine
+offers, correctly, because the card says "an artifact" and not "another" — and the reason it fires
+only four times is a fact about the *deck*: every non-creature artifact in Forge Alliance is Equipment
+or a Vehicle, and both stay in use. It also kills the obvious refinement before it was written:
+"unattached **and** nothing could carry it" collapses to never, because the Ravager is itself a
+creature that can hold Equipment.
+
+**And the browser row found a stall it was not built for.** `LIST=artifact` exists for one sentence
+(the bar now carries three costs through one mode, and the words are all that distinguish them). Its
+first run caught that — and then stopped dead on turn three for two thousand moves, a prompt open with
+nothing on screen able to answer it. A dying Arcbound Worker's modular trigger asks for "up to one
+target artifact creature", zero is a legal answer, and the choosing prompt **had no control on it at
+all**: the reducer's own comment said "a trigger's targets are never optional", which was true until
+modular shipped one commit earlier. The engine's tests answer with `auto:choose, targets: []`
+directly, a path the table never offered, and no starter deck puts enough Arcbound creatures on one
+board to reach it. `specsWanted`/`specsRequired` are now lifted out so the two readings of "how many
+targets" cannot drift again, a tap sends at the most the specs can take, and the button — **Choose
+nothing** — sends at the fewest. Second defect running that a browser row found in code three suites
+had passed, and the same shape both times: a claim about what the *player* can see, which no layer
+below the browser can make.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
