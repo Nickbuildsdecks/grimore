@@ -4534,7 +4534,7 @@ export const SKYWARD_WRIT: DeckSpec = {
     { card: MASTER_OF_PEARLS, count: 1 },
     // A one-drop that blocks in the air and gains the life back, which is what the matchups this
     // deck loses actually ask for.
-    { card: HEALERS_HAWK, count: 1 },
+    { card: HEALERS_HAWK, count: 2 },
     /*
       Thalia, Guardian of Thraben, for the Youthful Knight.
 
@@ -4752,7 +4752,7 @@ export const SKYWARD_WRIT: DeckSpec = {
       It cost the second Healer's Hawk and the second Leonin Skyhunter, which are the two least of
       its fliers and both of which the pool keeps a copy of elsewhere.
     */
-    { card: TERMINUS, count: 2 },
+    { card: TERMINUS, count: 1 },
   ],
 };
 
@@ -5320,7 +5320,8 @@ export const ARC_TEMPEST: DeckSpec = {
       that can cast it: a Preordain puts the Wrath on **top** of the library, and the next card you
       draw is the first card you drew that turn.
     */
-    { card: THUNDEROUS_WRATH, count: 2 },
+    { card: THUNDEROUS_WRATH, count: 1 },
+    { card: FIREBOLT, count: 1 },
   ],
 };
 

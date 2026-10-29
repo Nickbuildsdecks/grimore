@@ -61,6 +61,8 @@ let declined = 0;
  * trigger is still on the stack, which is rare and named rather than corrected.
  */
 let cascadeCasts = 0;
+/** Offers that came from a cascade trigger, as opposed to madness or miracle. */
+let cascadeOffers = 0;
 
 /** Whether a card's script carries the keyword, asked of the script rather than of a list here. */
 const hasCascade = (name) => (scriptFor(name)?.triggers ?? [])
@@ -205,6 +207,10 @@ function duel(seed, decks) {
     */
     if (now !== null && now.card !== offer?.card) {
       bump(byCascader, nameOf(s, now.source));
+      // Cascade's own offers, counted apart from the other two keywords' so the "found nothing"
+      // line below compares like with like. Without this it subtracted every madness and miracle
+      // offer from the cascade casts and printed a negative number.
+      if (hasCascade(nameOf(s, now.source))) cascadeOffers += 1;
       bump(hits, nameOf(s, now.card));
       // `bottom` is cascade's pile and is absent for the other two keywords, which read as depth
       // one: a madness or miracle offer digs through nothing at all.
@@ -242,7 +248,7 @@ const mean = depths.length === 0
 console.log(`${SUBJECT}: ${games} games, seeds ${SEEDS} from ${SEED0}`);
 console.log(`${total} offers made, ${mean} cards exiled each (the card offered included)`);
 console.log(`of them: ${cast} cast, ${declined} declined`);
-console.log(`${cascadeCasts} cascade cards were cast, so ${cascadeCasts - total} of those found`
+console.log(`${cascadeCasts} cascade cards were cast, so ${cascadeCasts - cascadeOffers} of those found`
   + ' nothing at all (or were still on the stack when the game ended). A madness card that was'
   + ' discarded with no mana up makes no offer either, and shows up only as a card in a graveyard.');
 console.log('');
