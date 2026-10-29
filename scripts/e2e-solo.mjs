@@ -139,19 +139,26 @@ const COSTS_LIST = [
  *   a table that asked would hang on a question the engine refuses. It is also dearer than printed,
  *   so twenty lands is not greed — six of them have to be out at once.
  *
- * Sixteen Monastery Swiftspears are the **clock**, and they are here because the version without
- * one did not finish. Twenty-four burn spells and no bodies against a control deck is a game
- * neither side can close: one run passed four hundred and fifty times without reaching a winner.
- * A prowess creature that grows with every spell in this list is what turns it back into a game,
- * and `OPPONENT_DECK` above is the other half of that fix.
+ * Twelve Monastery Swiftspears are the **clock** and eight Sol Rings are the **mana**, and both are
+ * here because of what the list did without them. Twenty-four burn spells and no bodies against a
+ * control deck is a game neither side can close: one run passed four hundred and fifty times
+ * without reaching a winner. A prowess creature that grows with every spell in this list fixed
+ * that — and then fixed it too well, because the next run played **three whole games in
+ * twenty-nine moves** and never saw a sixth land, so the overloaded row was never on the sheet.
+ *
+ * Which is the honest shape of the problem: one row wants a turn of combat behind it and the other
+ * wants six mana, and those pull in opposite directions. Mana rocks are what a player would add to
+ * a deck that means to overload on time, so eight Sol Rings are what the list adds: three Mountains
+ * and two Sol Rings is {3}{R}{R}{R} on turn four, and an artifact spell is a noncreature spell, so
+ * each one is a prowess trigger as well. `OPPONENT_DECK` above is the other half of the clock.
  *
  * Mono-red on purpose: `LIST=costs` needed three colours and failed its first run on the mana base
  * rather than on a keyword, and the fix was twelve guildgates. This list has nothing to fix.
  */
 const EARNED_LIST = [
-  '20 Mountain',
+  '18 Mountain', '8 Sol Ring',
   '8 Skewer the Critics', '8 Mizzium Mortars',
-  '8 Lightning Bolt', '16 Monastery Swiftspear',
+  '6 Lightning Bolt', '12 Monastery Swiftspear',
 ].join('\n');
 
 const myMove = (page) => isMyMove(page);
