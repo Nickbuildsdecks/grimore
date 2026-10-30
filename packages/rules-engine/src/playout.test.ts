@@ -1750,6 +1750,95 @@ describe('the mana an answer in hand is waiting for', () => {
     expect(botAction(withReal, 0)?.type).toBe('auto:pass');
   });
 
+  /*
+    And a foretell, which is the play this rule could not see at all until #218.
+
+    Found by a deck change turning the control above red, not by this rule's own tests: a foretell
+    costs {2} out of the same lands, so a seat holding a Counterspell on two Islands would hide a
+    card for later and find it could not answer anything now. Arc Tempest is the deck for it — the
+    pool has three foretell cards and two of them are here, beside the Counterspells.
+  */
+  /**
+   * One foretellable card and no other, which this board has to say explicitly.
+   *
+   * `advanceTo` crosses the draw step, so a seat holds one card the test did not choose — and Arc
+   * Tempest has three foretell cards, so the draw can quietly add a *second* foretell option.
+   * Measured while writing this: with two on offer the bot passes even with the rule off, so a
+   * board that did not control for it would read as the rule firing when it was not. Everything
+   * foretellable except the named card goes back to the bottom of the library.
+   */
+  const withForetell = (keep: string, hand: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'ember-rush' },
+      hands: { 0: [...hand], 1: ['Lightning Bolt'] },
+      battlefield: { 0: ['Island', 'Island'], 1: ['Mountain'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    for (const id of [...ids(s, 0, 'hand')]) {
+      const name = nameOf(s, id);
+      if (name === keep || scriptFor(name)?.foretell === undefined) continue;
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    return s;
+  };
+
+  /** The foretell half is on by default too, so again the control is the arm that says so. */
+  const NO_FORETELL_RULE = { reserveAgainstForetell: false } as const;
+
+  it('does not foretell a card when that spends the mana the answer needs', () => {
+    const board = withForetell('Behold the Multiverse', ['Counterspell', 'Behold the Multiverse']);
+    const behold = find(board, 0, 'hand', 'Behold the Multiverse');
+    // Offered, as always — the rules allow it and the table is never lied to.
+    expect(legalActions(board, 0).plays
+      .some((play) => play.card === behold && play.kind === 'foretell')).toBe(true);
+
+    // Without the foretell half, the hole: {2} off two Islands and the Counterspell is dead.
+    const greedy = botAction(board, 0, NO_FORETELL_RULE);
+    expect(greedy?.type === 'auto:foretell' && greedy.card === behold).toBe(true);
+
+    // With it — the default — the turn is spent holding the answer instead.
+    expect(botAction(board, 0)?.type).toBe('auto:pass');
+  });
+
+  it('and does not foretell the answer itself either, which a cast of it would be allowed', () => {
+    /*
+      The second half of #218, and the subtler one. The rule has always exempted "the answer
+      itself", because refusing to *cast* a counterspell would be the rule eating the thing it
+      exists to protect. **Foretelling one is not casting it**: the card goes to exile face down,
+      the {2} is gone, and this turn's answer is gone with it — so the exemption is about a cast,
+      and the pre-#218 reading would have let this through on the strength of Saw It Coming being
+      a counterspell.
+    */
+    const board = withForetell('Saw It Coming', ['Counterspell', 'Saw It Coming']);
+    const saw = find(board, 0, 'hand', 'Saw It Coming');
+    expect(legalActions(board, 0).plays
+      .some((play) => play.card === saw && play.kind === 'foretell')).toBe(true);
+    const greedy = botAction(board, 0, NO_FORETELL_RULE);
+    expect(greedy?.type === 'auto:foretell' && greedy.card === saw).toBe(true);
+    expect(botAction(board, 0)?.type).toBe('auto:pass');
+  });
+
+  it('and leaves the foretell alone when there is mana to spare, like every other play', () => {
+    /*
+      The half that keeps it from being a tax, same as the cast case: four lands pay {2} for the
+      foretell and still leave {U}{U} for the Counterspell, so the rule has no opinion.
+    */
+    let rich = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'ember-rush' },
+      hands: { 0: ['Counterspell', 'Behold the Multiverse'], 1: ['Lightning Bolt'] },
+      battlefield: { 0: ['Island', 'Island', 'Island', 'Island'], 1: ['Mountain'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    for (const id of [...ids(rich, 0, 'hand')]) {
+      const name = nameOf(rich, id);
+      if (name === 'Behold the Multiverse' || scriptFor(name)?.foretell === undefined) continue;
+      rich = apply(rich, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    const behold = find(rich, 0, 'hand', 'Behold the Multiverse');
+    const chosen = botAction(rich, 0);
+    expect(chosen?.type === 'auto:foretell' && chosen.card === behold).toBe(true);
+  });
+
   it('and a table where both seats hold mana back still reaches a winner', async () => {
     /*
       The one way a rule that answers "pass" could break the game rather than the bot.

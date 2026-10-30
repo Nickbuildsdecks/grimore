@@ -1829,6 +1829,24 @@ export interface BotOptions {
    */
   readonly reserveForAnswers?: boolean;
   /**
+   * Whether `reserveForAnswers` also covers a **foretell** (CR 702.143a).
+   *
+   * Its own flag rather than folded into the rule above, because a correctness fix to a measured
+   * rule still owes a measurement: the rule's docblock is three paragraphs of numbers, and widening
+   * what it catches without re-reading them would be helping itself to their authority.
+   *
+   * The hole was exact. `spendsAnAnswersMana` looked at `auto:cast` and `auto:activate` only, and a
+   * foretell costs {2} out of the same lands — so a seat holding a Counterspell on two Islands
+   * would foretell a card and then be unable to answer anything. It was found by a deck change
+   * turning an unrelated test red (#218, D234), not by the rule's own tests, which is the usual way.
+   *
+   * **Off is the bot as it was, and is the control this was measured against.** The pool holds three
+   * foretell cards in two decks — Saw It Coming in Tidal Mind and Arc Tempest, Behold the Multiverse
+   * in Arc Tempest — and both are the decks that also hold the answers, so the rule's reach is
+   * concentrated where it matters and small in absolute terms. See D235 for what that measured.
+   */
+  readonly reserveAgainstForetell?: boolean;
+  /**
    * Whether to decline a symmetric sweep that takes more off this seat's board than the opponents'.
    *
    * **On by default, and the measurement says level — which is not why it is on.** Bot against bot
@@ -3100,6 +3118,11 @@ function affordableAnswerInHand(state: GameState, seat: SeatIndex): ManaCost | n
 /**
  * Whether making this play would spend the mana an answer in hand is waiting for.
  *
+ * It covers `auto:cast`, `auto:activate` and `auto:foretell`. The third was missing until #218 and
+ * the hole it left was exact: a foretell costs {2} out of the same lands, so a bot holding a
+ * Counterspell on two Islands would foretell a card and find the answer uncastable — spending the
+ * very mana this rule exists to keep free, through the one play it did not look at.
+ *
  * **The thirteenth of the drop-this-option family, and the one with the longest history behind
  * it.** Two earlier attempts at the same idea were *evaluation terms* — a point for each untapped
  * land while the hand held something castable at instant speed (D68), and an answer in hand priced
@@ -3146,8 +3169,9 @@ function affordableAnswerInHand(state: GameState, seat: SeatIndex): ManaCost | n
  *   - **Affordable before, unaffordable after.** A play that leaves the answer payable is not
  *     dropped, so the rule costs nothing on a turn with mana to spare — which is most turns late
  *     in a game and no turns early in one.
- *   - **Never the answer itself**, and never a land: the land drop is taken before the search and
- *     adds mana rather than spending it.
+ *   - **Never the answer itself when it is being *cast***, and never a land: the land drop is taken
+ *     before the search and adds mana rather than spending it. A **foretell** of an answer is not
+ *     exempt, which is the correction #218 carries — see the comment on that line.
  *
  * If every option is dropped the loop's own fallback passes, which is this rule working: a turn
  * spent holding two mana is what a person does with a Counterspell in hand.
@@ -3162,12 +3186,26 @@ function affordableAnswerInHand(state: GameState, seat: SeatIndex): ManaCost | n
  * is here.
  */
 function spendsAnAnswersMana(
-  state: GameState, after: GameState, seat: SeatIndex, action: Action,
+  state: GameState, after: GameState, seat: SeatIndex, action: Action, opts: BotOptions,
 ): boolean {
-  if (action.type !== 'auto:cast' && action.type !== 'auto:activate') return false;
+  if (action.type !== 'auto:cast' && action.type !== 'auto:activate'
+    && action.type !== 'auto:foretell') {
+    return false;
+  }
   if (state.activeSeat !== seat || state.stackOrder.length > 0) return false;
   const def = state.cardDefs[state.instances[action.card]?.defKey ?? ''];
-  if (def !== undefined && canCounterASpell(def)) return false;
+  /*
+    Never the answer itself — **and only when it is being cast**.
+
+    Casting an answer *is* answering, so refusing it would be the rule eating the thing it exists to
+    protect. Foretelling one is not: the card goes to exile face down, the {2} is gone, and this
+    turn's answer is gone with it. So the exemption is about a cast, and a foretell of a
+    counterspell is as much "spending the answer's mana" as a foretell of anything else.
+  */
+  if (action.type === 'auto:cast' && def !== undefined && canCounterASpell(def)) return false;
+  // And the foretell half is a flag, because a correctness fix to a measured rule still has to be
+  // measured. See `BotOptions.reserveAgainstForetell`.
+  if (action.type === 'auto:foretell' && opts.reserveAgainstForetell === false) return false;
   /*
     Nobody to answer, which is the one case where this rule is pure tax.
 
@@ -4107,7 +4145,8 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       the family and the first about a *later* turn rather than this one. See
       `spendsAnAnswersMana` for the measurement that asked for it.
     */
-    if (opts.reserveForAnswers !== false && spendsAnAnswersMana(state, after, seat, option.action)) {
+    if (opts.reserveForAnswers !== false
+      && spendsAnAnswersMana(state, after, seat, option.action, opts)) {
       dropped += 1;
       continue;
     }

@@ -14172,3 +14172,100 @@ expected `auto:pass`. Not noise: `spendsAnAnswersMana` opens with a check for `a
 second half of it, which is that the rule's `canCounterASpell` exemption is right for casting an
 answer and wrong for foretelling one. The test strips foretell cards out of that hand meanwhile, so
 it keeps testing the reservation rather than the hole, and says so.
+
+---
+
+## D235 — The one play the mana-reservation rule could not see
+
+`spendsAnAnswersMana` is the thirteenth of the drop-this-option family and the one with the most
+numbers behind it: three decks, 598 answer windows, and a rule that took Tidal Mind from countering
+4% of the spells it held an answer for to countering 48% of them. Its docblock is three paragraphs
+of measurement.
+
+It opened with this line:
+
+```js
+if (action.type !== 'auto:cast' && action.type !== 'auto:activate') return false;
+```
+
+**A foretell costs {2}, out of the same lands.** So a seat holding a Counterspell on two Islands
+would hide a card for later and discover it could not answer anything now — spending the exact mana
+this rule exists to keep free, through the one play it never looked at.
+
+### How it was found, which is the part worth keeping
+
+Not by this rule's own tests, which are thorough and all passed. By **moving a deck**: two transform
+cards went into Arc Tempest for D234, which changed what the bot draws, which turned an unrelated
+control assertion in `playout.test.ts` from `auto:pass` into `auto:foretell`.
+
+A bot test that reads a drawn card has two reasons its answer can change — the deck order moved, or
+the bot is wrong — and the whole value here was in asking which. "Which deck change broke this" would
+have produced a test fix and left the bug. The question that found it was "**is the new answer
+wrong**".
+
+### Two halves, and the second is the subtle one
+
+The gate now covers `auto:foretell`. That alone would not have closed the hole, because of the
+rule's fourth narrowing condition — *never the answer itself*:
+
+```js
+if (def !== undefined && canCounterASpell(def)) return false;
+```
+
+That is **right for a cast and wrong for a foretell**. Casting an answer *is* answering, so refusing
+it would be the rule eating the thing it exists to protect. Foretelling one is not: the card goes to
+exile face down, the {2} is gone, and this turn's answer is gone with it. And the card that made this
+concrete is Saw It Coming — a counterspell *with* foretell — so the exemption would have waved
+through the exact play that prompted the task.
+
+So the exemption is now conditioned on `action.type === 'auto:cast'`, and a foretell of a
+counterspell is as much "spending the answer's mana" as a foretell of anything else.
+
+### What it is worth, measured
+
+Behind `BotOptions.reserveAgainstForetell` so the fix could be priced against the bot as it was —
+a correctness fix to a *measured* rule still owes a measurement, and widening what the rule catches
+without re-reading its numbers would be helping itself to their authority.
+
+`bot-duel`, six seed sets, both decks that hold foretell cards:
+
+```
+negative control, {} vs {}:                              144-144 of 288
+arc-tempest, {} vs {"reserveAgainstForetell": false}:    144-144 of 288
+tidal-mind,  {} vs {"reserveAgainstForetell": false}:    144-144 of 288
+```
+
+**Level — and identical to the negative control, which is a warning rather than a result.** A rule
+that fires should move *something*, even to no net effect. `disagree.mjs` exists for exactly this
+ambiguity and its docblock says so in its first line: a flat scoreboard means either "it changes the
+choices and they are worth nothing" or "it changes nothing", and only a decision count tells them
+apart. That count is being read.
+
+The expectation, stated before the number so it can be wrong: the coincidence is narrow. The pool
+holds **three** foretell cards in two decks — Saw It Coming in Tidal Mind and Arc Tempest, Behold the
+Multiverse in Arc Tempest — and `held-answers.mjs` already measured this bot **tapped out in 54% to
+87%** of the windows where it held an answer at all. "An affordable answer in hand, a foretell
+available, and the foretell breaking the answer" asks all three to coincide.
+
+If that is what the count says, this ships as **correctness rather than as a win**, the same way
+`asksForPeace` did (D232): the rule is right, it is pinned by tests, it costs nothing, and claiming
+a measured improvement from a level scoreboard would be the thing this file exists to stop.
+
+### The flag stays either way
+
+Not because it might be turned off, but because **two of the three tests need it as their control**.
+"The bot does not foretell here" is worth exactly as much as the proof that it *would* have —
+`blindToShuffle` is in the codebase for the same reason, and the lesson is written in
+`scripts/measure/README.md`: give a fairness fix a flag so the cheat can be priced.
+
+### What also came out of writing the tests
+
+The first draft of the exemption test failed, and not because the fix was wrong. `advanceTo` crosses
+the draw step, so the seat holds one card the test did not choose — and Arc Tempest has three
+foretell cards, so the draw can quietly add a **second** foretell option. Measured on the spot: with
+two foretells on offer the bot passes *even with the rule off*, so a board that did not control for
+it would have read as the rule firing when it was not.
+
+Which is the same lesson as the one that found the bug, from the other side: a position that depends
+on an uncontrolled draw is an instrument with two inputs. The helper now puts every foretellable card
+except the named one back into the library, and says why.
