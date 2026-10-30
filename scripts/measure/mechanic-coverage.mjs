@@ -125,25 +125,35 @@ const note = (mechanic, card) => {
 };
 
 /*
-  And the cards that put a keyword on the board from **inside an effect**, which is the blind spot
-  this file shipped with and the one that made its first published number wrong.
+  And the cards that **hand a keyword out** rather than having it, which is where this file's first
+  two published numbers both went wrong.
 
-  A keyword on a card is readable three ways — printed in the text, declared in `script.keywords`,
-  granted by an `equipBonus` — and all three are data. The fourth way is a `pump(..., { keywords:
-  ['hexproof'] })` inside an `onResolve`, which is a **closure**: there is no property to read, so
-  the first run counted hexproof at one card (Sigarda) when Blossoming Defense and Dive Down both
-  grant it. "Rests on one card" was published about a keyword three cards put into play.
+  There are two readings of "how many cards hold hexproof up" and only one of them is the question.
+  A card *has* the keyword if it is printed in its text or declared in `script.keywords` — that is
+  data, and it is what the first version counted. A card *puts the keyword on the board* in three
+  more ways, and only the first of those is data too:
 
-  The only thing available about a closure is its source, so that is what this reads. Which makes
-  it a **reader's signal rather than a count**, for a reason worth stating: a function that mentions
-  `'hexproof'` might be granting it or might be checking for it — a removal spell filtering for
-  creatures it can legally target mentions the same string. So these are tallied and printed
-  separately, never silently added to the data count, and the thin filter uses the **sum** because
-  the question this file answers is "could cutting one card take this mechanic out of the pool",
-  and for that an over-count is the safe direction.
+   - `equipBonus.keywords` — Darksteel Plate is not indestructible, it makes a creature so
+   - a `statics` entry's `effect.keywords` — Knight Exemplar's other Knights
+   - `pump(..., { keywords: ['hexproof'] })` inside an `onResolve` — a **closure** with no property
 
-  Same posture as `card-promises.mjs`: a reader's instrument with its false positives declared,
-  because narrowing until the output is clean is narrowing until it finds nothing.
+  The first version read the printed text, `script.keywords` and `equipBonus`, and called that the
+  count. It published **hexproof rests on one card**; hexproof is on four, because Blossoming
+  Defense, Dive Down and Bristling Hydra all grant it from inside a closure. Then the fix for that
+  read closure *source* and still missed Knight Exemplar, whose grant is a plain object and so says
+  nothing when stringified.
+
+  So the walk is now the whole script tree: a string **equal to** a keyword anywhere in it, plus a
+  quoted keyword in any function's source, which is the only thing a closure will say about itself.
+  And the line between the two columns is the honest one — **a card's own keywords, and the ones it
+  gives away** — rather than the accident of which grants happen to be readable.
+
+  It is a **reader's signal and not a count**, for a reason worth stating: a function mentioning
+  `'hexproof'` might grant it or might check for it, the way a removal spell filtering for legal
+  targets does. So grants print in their own column, never silently added, and the thin filter uses
+  the sum, because the question here is "could cutting one card take this mechanic out of the pool"
+  and for that an over-count is the safe direction. Same posture as `card-promises.mjs`: declared
+  false positives beat narrowing until the output is clean.
 */
 const viaEffect = new Map();
 const noteEffect = (mechanic, card) => {
@@ -152,15 +162,37 @@ const noteEffect = (mechanic, card) => {
   viaEffect.set(mechanic, found);
 };
 
-/** Every function reachable in a script, as source, which is all a closure will say about itself. */
-const effectSource = (value, depth = 0) => {
-  if (depth > 4 || value === null || value === undefined) return '';
-  if (typeof value === 'function') return value.toString();
-  if (Array.isArray(value)) return value.map((v) => effectSource(v, depth + 1)).join('\n');
-  if (typeof value === 'object') {
-    return Object.values(value).map((v) => effectSource(v, depth + 1)).join('\n');
-  }
-  return '';
+const KEYWORD_SET = new Set(KEYWORDS);
+
+/**
+ * Every keyword a script mentions anywhere, by either route.
+ *
+ * `strings` are keyword-valued strings found in the tree — exact equality, so a `description`
+ * reading "destroy target non-indestructible creature" is not a match. `source` is the text of
+ * every function reachable in it.
+ */
+const keywordsMentionedIn = (script) => {
+  const found = new Set();
+  const seen = new Set();
+  const walk = (value, depth) => {
+    if (depth > 6 || value === null || value === undefined) return;
+    if (typeof value === 'string') {
+      if (KEYWORD_SET.has(value)) found.add(value);
+      return;
+    }
+    if (typeof value === 'function') {
+      const src = value.toString();
+      for (const keyword of KEYWORDS) {
+        if (src.includes(`'${keyword}'`) || src.includes(`"${keyword}"`)) found.add(keyword);
+      }
+      return;
+    }
+    if (typeof value !== 'object' || seen.has(value)) return;
+    seen.add(value);
+    for (const child of Array.isArray(value) ? value : Object.values(value)) walk(child, depth + 1);
+  };
+  walk(script, 0);
+  return found;
 };
 
 /*
@@ -207,17 +239,21 @@ for (const [name, card] of everyCard()) {
     text is "Flying" and has no script at all, and the script's `keywords` finds the one that is
     granted by an effect.
   */
-  for (const keyword of printedKeywords(card.oracleText ?? '')) note(`keyword ${keyword}`, name);
-  for (const keyword of script?.keywords ?? []) note(`keyword ${keyword}`, name);
-  for (const granted of script?.equipBonus?.keywords ?? []) note(`keyword ${granted}`, name);
+  /*
+    The keywords the card **has**: printed in its text, or declared on its script. `equipBonus` is
+    deliberately not here — a Darksteel Plate is not indestructible, it makes something else so,
+    and counting it as a card that has the keyword is what hid the gap.
+  */
+  const own = new Set([
+    ...printedKeywords(card.oracleText ?? ''),
+    ...(script?.keywords ?? []),
+  ]);
+  for (const keyword of own) note(`keyword ${keyword}`, name);
 
-  // The fourth route: a keyword handed out while something resolves. See `viaEffect`.
+  // And the ones it gives away, by any of the three routes. See `viaEffect`.
   if (script !== undefined) {
-    const source = effectSource(script);
-    for (const keyword of KEYWORDS) {
-      if (source.includes(`'${keyword}'`) || source.includes(`"${keyword}"`)) {
-        noteEffect(`keyword ${keyword}`, name);
-      }
+    for (const keyword of keywordsMentionedIn(script)) {
+      if (!own.has(keyword)) noteEffect(`keyword ${keyword}`, name);
     }
   }
 }
@@ -271,7 +307,7 @@ for (const row of shown) {
   console.log(`${count}  ${row.mechanic}${why === undefined ? '' : '   (expected)'}`);
   if (row.cards.length > 0 && row.cards.length <= 5) console.log(`       ${row.cards.join(', ')}`);
   if (row.granted.length > 0 && row.granted.length <= 5) {
-    console.log(`       + in an effect: ${row.granted.join(', ')}`);
+    console.log(`       + gives it away: ${row.granted.join(', ')}`);
   }
   if (why !== undefined) console.log(`       ${why}`);
 }

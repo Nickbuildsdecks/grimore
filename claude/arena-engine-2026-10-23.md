@@ -6779,19 +6779,25 @@ a card in a deck to exist — has been kept without exception. It is a test now 
 convention, with a standing control, because a negative result nobody re-runs stops being true
 quietly.
 
-**Eighteen rest on exactly one card**, and **indestructible is the one that matters**: Darksteel
-Plate, with nothing granting it in an effect either, which makes it the thinnest real mechanic in
-the pool and the only row of the eighteen about *rules coverage* rather than pool design. The rest
-are keyword mechanics whose single card *is* the pool's whole use of them, which is a cheaper kind
-of thin, and writing cards for those is not work this evidence asks for.
+**Seventeen rest on exactly one card, and none of them is a gap.** Every one is a `script` field or
+a `trigger` kind — a keyword mechanic whose single card *is* the pool's whole use of it. Ninjutsu
+has one card because the pool has one ninja. **No keyword is thin at all**: myriad is at one by
+design (D228) and every other one of the eighteen has two or more cards putting it on the board.
 
-That count says eighteen and not nineteen because the first run of the instrument **undercounted
-hexproof by a factor of four** and this section said so. A keyword is readable three ways that are
-data — printed, `script.keywords`, `equipBonus` — and a fourth that is not: granted inside an
-`onResolve`, which is a closure with no property to read. Sigarda has hexproof printed; Blossoming
-Defense, Dive Down and Bristling Hydra all hand it out. The instrument now reads the closure's own
-source and prints effect grants in their own column as a reader's signal rather than a count, since
-a function mentioning a keyword may be checking for it rather than granting it.
+That number arrived third. The instrument's first two runs **undercounted** the keyword rows, and
+both errors were published before being caught. A keyword is readable from properties — printed in
+the text, `script.keywords` — and it is also handed out three ways that properties do not show: an
+`equipBonus`, a `statics` entry's effect, and a `pump(..., { keywords: [...] })` inside a closure.
+Run one said hexproof rested on one card; it is on five. Run two read closure source and still
+missed Knight Exemplar, whose grant is a plain object. The scan now walks the whole script tree, and
+the two columns are the line that means something — **the keywords a card has, and the ones it gives
+away**. Indestructible, the row that looked thinnest, has three cards giving it away by three
+different routes.
+
+**Both errors pointed the same way: they made the pool look worse than it is**, which is the
+direction that gets acted on, and both were found by trying to act rather than by re-reading. So the
+file over-counts on purpose now, calls its second column a reader's signal, and says in its own
+docblock which bound it is.
 
 And the run falsified a sentence rather than a number: the docs said in five places that
 `becomes-tapped` is the engine's card-less trigger, and the #221 write-up above used it as the

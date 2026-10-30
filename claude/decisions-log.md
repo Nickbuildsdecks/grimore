@@ -14677,3 +14677,48 @@ And the route to this one is worth noting because it is not the one the last fou
 come from a number that could not be true — it came from **starting the follow-up work the finding
 asked for**, and reading the pool properly in order to do it. The instrument was wrong in a
 direction that made the pool look worse than it is, which is the direction that gets acted on.
+
+### The settled numbers, after a third pass — and these supersede both of the above
+
+Reading the pool to write the indestructible card found the *second* blind spot, and it is the same
+shape as the first. Knight Exemplar grants indestructible from a `statics` entry whose effect is a
+**plain object**, so stringifying functions said nothing about it; Fleecemane Lion grants both
+hexproof and indestructible while monstrous, the same way. The scan now walks the whole script tree
+for a string **equal to** a keyword as well as reading every closure's source.
+
+And the line between the two columns moved to the one that is actually meaningful: **the keywords a
+card has, and the ones it gives away.** `equipBonus` used to sit in the first column, which is how
+the gap hid — a Darksteel Plate is not indestructible, it makes something else so.
+
+```
+78 mechanics declared, 0 with no card at all, 17 thin and unexplained
+
+  keyword indestructible  3   gives it away: Darksteel Plate, Fleecemane Lion, Knight Exemplar
+  keyword hexproof        5   has it: Sigarda — gives it away: Blossoming Defense, Bristling
+                              Hydra, Dive Down, Fleecemane Lion
+```
+
+**So the conclusion is the opposite of the one this entry reached, and #224 is closed unwritten.**
+No keyword in the pool is thin — myriad is at one by design (D228) and every other one of the
+eighteen has two or more cards putting it on the board. Indestructible has three, by three different
+routes: an Equipment's grant, a conditional static a creature puts on itself, and a static one
+creature puts on others. That is better coverage than most of the list.
+
+The seventeen thin rows are now **all** `script` fields and `trigger` kinds, and every one of them
+is the cheap kind of thin: a keyword mechanic whose single card *is* the pool's whole use of it.
+Ninjutsu has one card because the pool has one ninja. There is no gap there to close, and writing
+cards to close it would be the failure mode D237 names.
+
+### What the three passes are actually a lesson about
+
+**A static audit of a dynamic engine undercounts, and it took three passes to stop** — properties,
+then closure source, then the whole tree. Each pass was found by trying to *act* on the previous
+one's output, not by re-reading it: the hexproof miss surfaced when #224's slot needed picking, the
+indestructible miss when its card needed choosing. Re-reading the instrument found nothing both
+times.
+
+Which is the argument for the shape the file now has. It reports two columns rather than one and
+calls the second a **reader's signal**, it over-counts rather than under-counts on purpose, and it
+says in its own docblock which bound it is and in which direction. An audit that cannot be exactly
+right should be wrong in the direction that makes you look, and both of the published errors here
+were wrong in the direction that makes you act.

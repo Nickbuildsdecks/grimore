@@ -664,9 +664,9 @@ every card has a script and every script has a card. Nothing asked how many card
 up — and #220 found out the expensive way: two singletons were cut from `arc-tempest` to pay for two
 new cards, and 26 tests broke, because each was the only card in the pool exercising its mechanic.
 A starter-deck one-of is load-bearing and nothing said which. `mechanic-coverage.mjs` counts, and
-sorts ascending so the fragile rows are the first thing on the screen: **18 mechanics in this pool
-rest on one card**, and the one that matters is indestructible — Darksteel Plate, with nothing
-granting it in an effect either.
+sorts ascending so the fragile rows are the first thing on the screen: **17 mechanics in this pool
+rest on one card**, and none of them is a gap — every one is a keyword mechanic whose single card
+*is* the pool's whole use of it, the way ninjutsu has one card because the pool has one ninja.
 
 Its first run also found the other shape, the quiet one. **Zero of 78 mechanics are declared with no
 card at all** — which is a better result than it sounds, because it means the rule that a keyword
@@ -675,21 +675,28 @@ five places in the docs still made, one of them written the same morning: `becom
 the engine's card-less trigger, because City of Brass has carried it since #69. The true version is
 stronger, which is the usual way round — no trigger kind in this engine has *ever* had no card.
 
-**A keyword granted inside an effect is invisible to a count of properties, and that made the first
-published number wrong by a factor of four.** The run said hexproof rested on one card. It rests on
-four: Sigarda has it printed, and Blossoming Defense, Dive Down and Bristling Hydra each hand it out
-while resolving — `pump(..., { keywords: ['hexproof'] })` inside a closure, where there is no
-property to read. The fix is to read the only thing a closure will say about itself, its source,
-which turns the column into a **reader's signal rather than a count**: a function mentioning
-`'hexproof'` may be granting it or filtering for it. So effect grants print separately and are never
-silently added, and the thin filter uses the sum, because for "could cutting one card take this out
-of the pool" an over-count is the safe direction. The general form: **a static audit of a dynamic
-engine is a lower bound, and the honest move is to say which bound and in which direction.**
+**A static audit of a dynamic engine undercounts, and it took this one three passes to stop.** A
+keyword is readable from properties — printed in the text, `script.keywords` — and it is also handed
+out three ways that properties do not show: an `equipBonus`, a `statics` entry's effect, and a
+`pump(..., { keywords: [...] })` inside a closure. Pass one read properties and published **hexproof
+rests on one card**; it rests on five. Pass two read every closure's source and still missed Knight
+Exemplar, whose grant is a plain object and says nothing when stringified. Pass three walks the
+whole script tree for a string equal to a keyword as well as reading the closures, and moved the
+line between the two columns to the one that means something: **the keywords a card has, and the
+ones it gives away.** `equipBonus` used to sit in the first column, which is exactly how the gap
+hid — a Darksteel Plate is not indestructible, it makes something else so.
 
-And the route matters. This one was not found by a number that could not be true, the way the last
-four were — it was found by **starting the follow-up work the finding asked for**, and having to
-read the pool properly to do it. The error pointed the same way all four of those did: it made the
-pool look worse than it is, which is the direction that gets acted on.
+Two consequences for the shape of the file. The grant column is a **reader's signal rather than a
+count**, because a function mentioning `'hexproof'` may be granting it or filtering for it, so it
+prints separately and is never silently added; and the thin filter uses the sum, because for "could
+cutting one card take this out of the pool" an over-count is the safe direction.
+
+**And both published errors were found by trying to act on the output, not by re-reading it** — the
+hexproof miss when the follow-up task needed a slot picked, the indestructible miss when it needed a
+card chosen. Re-reading found nothing either time. Both pointed the same way, too: they made the
+pool look worse than it is, which is the direction that gets acted on. The general form: **an audit
+that cannot be exactly right should be wrong in the direction that makes you look, and should say in
+its own docblock which bound it is and which way.**
 
 **Where the list of mechanics comes from is the whole design, and the alternative is a count of last
 month's engine.** It is read out of the source: the field names of `CardScript`, the `kind` literals
