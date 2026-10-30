@@ -1795,6 +1795,23 @@ export interface BotOptions {
    *
    * Floor and ceiling both matter. It must stay **below `LAND_ON_BOARD`** or a land drop lowers the
    * score and the bot stops playing lands, which cost 60 games out of 60 the one time it happened.
+   * And it must stay **at or above `LIBRARY_CARD`** (0.3), because a draw is worth
+   * `handCardValue - LIBRARY_CARD` and below that the bot would be paid to avoid drawing.
+   *
+   * **Measured, and the answer is that it is inert rather than harmful (D243).** 936 paired games
+   * per arm against the stock 1.5: `1.0` read 467-468, `0.6` read 467-468, `0.3` read 466-468.
+   * Level across a five-fold cut, and `disagree.mjs` says it is a real wash rather than a dead
+   * switch — the setting changes **112 of 16,761 decisions**, almost all of them casts and
+   * activations, and those changes are worth nothing.
+   *
+   * The reason is worth more than the result. **A calibration measures positions; a search compares
+   * plays.** What decides a choice is not a term's correlation with outcomes but its *variation
+   * across the options on offer*, and hand size barely varies across them — nearly every play under
+   * comparison is a cast, every cast moves one card out of the hand, so this contributes a
+   * near-constant `-handCardValue` to the whole slate and cancels out of the comparison. It can be
+   * badly wrong about which player is ahead while being almost silent about which play is best.
+   *
+   * So the default stays at 1.5 and the option stays for the next person who wants to re-ask.
    */
   readonly handCardValue?: number;
   /**

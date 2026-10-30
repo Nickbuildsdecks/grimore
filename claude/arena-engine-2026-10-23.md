@@ -6884,6 +6884,34 @@ confirmed.
 The other twenty-eight harnesses are changed but not re-run. Any absolute rate dated before this has
 the error bars of its seed count rather than its game count.
 
+## The inverted term is inert, and the reason reframes the problem (#227, D243)
+
+D241 found cards-in-hand predicting the winner at 42-46% in the mid-game, on the second-largest
+weight in the evaluation. #227 lowered it. 936 paired games per arm against the stock 1.5:
+
+```
+handCardValue   1.0 → 467-468     0.6 → 467-468     0.3 → 466-468
+```
+
+Level across a five-fold cut. And a real wash rather than a dead switch: `disagree.mjs` says the
+setting changes **112 of 16,761 decisions**, almost all casts and activations, and those changes are
+worth nothing. (Two identical records across different settings is exactly the reading the README's
+standing rule exists for.)
+
+**Why a badly calibrated term can be an irrelevant one, which is the part worth keeping.** A
+calibration measures *positions*; a search compares *plays*. What decides a choice is not a term's
+correlation with outcomes but its **variation across the options on offer at one decision** — and
+hand size barely varies across them. Nearly every play under comparison is a cast, every cast moves
+one card out of the hand, so the term contributes a near-constant amount to the whole slate and
+cancels out of the comparison.
+
+So the open problem's question changes shape: **not which terms predict the winner, but which terms
+discriminate between the plays actually offered.** Those can be measured apart, and #228 is the
+instrument for it.
+
+The weight stays at 1.5, with a floor nobody had noticed: `LIBRARY_CARD` is 0.3, a draw is worth
+`handCardValue − 0.3`, and below 0.3 the bot would be paid to avoid drawing.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -14982,3 +14982,76 @@ The other twenty-eight harnesses are **changed but not re-run**. Re-deriving eve
 this log is a much larger job than the fix, and the honest position is written into the README
 instead: a rate published before this has the error bars of its seed count rather than its game
 count, and the three above are the measured example of how far that can be off.
+
+---
+
+## D243 — The inverted term is inert, and a calibration measures positions while a search compares plays
+
+D241 found the one component of `evaluate` that points the wrong way: the cards-in-hand margin
+predicts the winner at 46%, 42% and 44% across turns 5-16, worse than a coin in the bands where a
+search can still change anything. `CARD_IN_HAND` is 1.5, the second-largest weight in the function.
+#227 lowered it and measured. `bot-duel`, 936 paired games per arm, against stock:
+
+```
+handCardValue   record vs 1.5 (stock)
+   1.0             467-468
+   0.6             467-468
+   0.3             466-468
+```
+
+**Level, across a five-fold cut**, and two of the three records identical to the game.
+
+### It is a wash and not a dead switch, which is the thing that had to be checked
+
+Two identical records across different settings is a reading to be suspicious of, and the README's
+standing rule covers exactly this: *run `disagree.mjs` before calling a flat `bot-duel` result a
+wash*, because "the setting changes nothing" and "the setting changes things that are worth
+nothing" produce the same scoreboard. At 0.3 against stock:
+
+```
+auto:cast       3103 decisions    65 differed   2%
+auto:activate   1043              39            4%
+auto:attack     1558               5            0%
+auto:block       640               2            0%
+auto:turnUp       17               1            6%
+                                 ---
+                   112 of 16,761 decisions, 0.67%
+```
+
+So the weight reaches the search, changes about one decision in a hundred and fifty, and those
+changes are worth nothing at all.
+
+### Why a badly calibrated term can be an irrelevant one
+
+This is the part worth keeping, because it is a correction to the natural reading of D241 and it
+changes how the open problem should be attacked.
+
+**A calibration measures positions. A search compares plays.** Those are different questions, and a
+term can be badly wrong about the first while being nearly silent on the second — because what
+decides a choice is not the term's correlation with outcomes, it is the term's **variation across
+the options on offer at one decision**. Hand size barely varies across them: almost every play under
+comparison is a cast, every cast moves exactly one card out of the hand, so the term contributes a
+near-constant `−handCardValue` to the whole slate and cancels out of the comparison. The options it
+*can* separate are the few that differ in cards spent, which is why the differences show up in casts
+and activations and essentially nowhere else.
+
+So D241's finding stands as a fact about the function and does not imply what it looks like it
+implies. **The right question for "an evaluation worth searching with" is not which terms predict
+the winner, it is which terms discriminate between the plays actually offered** — and those can be
+measured apart. That reframing is worth more than the weight.
+
+It also finishes the story D68 and D69 started. They raised this price and the bot got slightly
+worse; lowering it does nothing. A term that is nearly constant across a slate cannot help, and
+pushing it far enough in either direction only starts to distort the few comparisons it does touch.
+
+### So the weight stays at 1.5, and there is a floor under it that is not zero
+
+No change. And removing the term is not the simplification it looks like, because of a second term:
+`LIBRARY_CARD` is 0.3, so drawing a card is worth `handCardValue − 0.3`. **At 0.3 a draw is worth
+exactly nothing, and below it drawing becomes a cost the bot would avoid.** The 0.3 arm is level,
+which says even "a draw scores zero" does not move the needle — but it is the floor, and it is a
+floor the `LAND_ON_BOARD` note in the docblock did not mention because nobody had looked down.
+
+Recorded as a no-change with a mechanism, which is the second one of those in this log in two days
+(D237 was the first). The measurement that produced it was worth running precisely because the
+answer was not the one the previous entry pointed at.
