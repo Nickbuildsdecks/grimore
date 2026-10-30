@@ -14429,6 +14429,13 @@ Calciderm's four expiries were hidden inside its "left with 1 counter" bucket, a
 were really four. The suspend judgement in this entry — believe the `?` rows because nothing in this
 pool answers a card in exile — held exactly, 29 of 29.
 
+**Second forward note (D242).** Both of those numbers were measured on the old seeding, where a
+whole pass over the field shared one shuffle (D240). Re-measured with a seed per game, over two
+independent bases: Thing in the Ice's clock count is **10 and 11**, not 21, and its expiry rate
+**20% and 18%**, not 10%. The entry's headline — that it never once reaches one counter left — was
+true of its sample and is not a law: one of the eleven at the second base did. The conclusion
+stands on the distribution (one in eleven), not on the word *never*.
+
 ---
 
 ## D238 — A clock running out is a fact in the log, and two of three inferences about it were wrong
@@ -14549,6 +14556,18 @@ has carried that trigger since #69, and `mechanic-coverage.mjs` found it an hour
 was written. The conclusion stands and is better supported than the argument given for it — **no
 trigger kind in this engine has ever had no card behind it**, so `expired` as a trigger would have
 been the first of its kind rather than the second.
+
+**Second forward note (D242): every number in the table above was measured on the old seeding and
+two of them were off by half.** The engine change this entry is about is unaffected — `expired` is a
+fact in the log and the four tests still pass — but the rates it published are not. With a seed per
+game, over two independent bases: Calciderm **26% and 30%** against the 13% above, Thing in the Ice
+**20% and 18%** against 10%, Search for Tomorrow **93% and 82%** against a perfect 100%. Blastoderm
+at 22% and 21% was the one that happened to be right.
+
+So the entry's two headline sentences both need restating. "The printed price is collected 8 times
+in 50" is really about **one in four** (15 of 62, then 13 of 49). And "suspend converts 29 of 29" —
+offered above as a judgement call vindicated — converts about **nine times in ten**; the perfect
+record was the shared shuffle, not the mechanic.
 
 ---
 
@@ -14890,3 +14909,76 @@ principle: there is exactly one moment in a round where both seats have had the 
 turns, and a comparison between seats has to be taken there or not at all. The harness now samples
 that moment and records both seats' views of it, which makes the base rate 50% by construction and
 the ladder symmetric — so a lopsided ladder is a bug rather than a finding.
+
+---
+
+## D242 — The seeding fix applied, and the first re-measurement halves two published rates
+
+#226, the one-line change D240 asked for, across all 29 harnesses that had it. Every one now derives
+its seed from the loop indices rather than using `SEED0 + i` for a whole pass over the field.
+
+### Three kinds of harness, and getting the difference wrong would have been silent
+
+The change is not "a seed per game" everywhere, which is what makes it worth doing carefully rather
+than with a regular expression.
+
+- **Absolute readings** — twenty-two of them, from `countdowns` to `killed-by` to `cast-counts` —
+  want a seed per game. They are the ones the bug actually hurt.
+- **`deck-probe` and `pod-slot`** also want a seed per game, and get it safely for a reason worth
+  stating: their two arms are two calls to the same `record(ctx)` function, which re-runs the
+  identical loop, so a seed derived from the loop indices is the *same* seed in both arms.
+- **`bot-duel` and `pod-duel` want the opposite.** Their two (or four) calls are not two games, they
+  are the two **arms** — the same decks with the bots swapped, the same table with TESTED and
+  CONTROL rotated round the seats. Those must keep sharing a seed, and giving them one each would
+  have quietly destroyed the pairing the whole file is built on. So they get a seed per *pairing*
+  and per *table* instead.
+
+The negative control is what says it worked, and it is exact: **`bot-duel` with the same bot in both
+arms reads 156-156**. Identical arms, identical score, which is only possible if both are still
+playing the same games.
+
+And the indices rather than a counter, everywhere. A counter works today and desynchronises the arms
+of a paired harness the first time one of them skips a game — an early `break`, a guard, an
+unfinished game — which is the kind of failure that produces a plausible number and no error.
+
+### What it changed, on the first harness re-measured
+
+`countdowns.mjs`, 936 games, two independent seed bases, against D238's numbers from the old seeding:
+
+```
+card                  D238 (shared)   base 3300   base 9000
+Calciderm                 13%            26%         30%
+Thing in the Ice          10%            20%         18%
+Search for Tomorrow      100%            93%         82%
+Blastoderm                22%            22%         21%
+Rift Bolt                100%           100%        100%
+```
+
+**Two of the five were off by half**, and the two independent bases agree with each other to within
+a few points — which is the result that matters, because it says the new numbers are measurements
+and the old ones were a sample of one shuffle.
+
+Thing in the Ice's *denominator* moved as much as its rate: 21 clocks under the old seeding, **10
+and 11** under the new. A shared shuffle does not merely bias how often a thing happens, it changes
+how often the thing is even drawn.
+
+### Two published conclusions restated, and one word retracted
+
+- D238's "the printed price is collected **8 times in 50**" is really about **one in four** — 15 of
+  62, then 13 of 49.
+- D238's "**suspend converts 29 of 29**", offered as a judgement call vindicated, converts about
+  **nine times in ten**. The perfect record was the shared shuffle rather than the mechanic.
+- D237's "Thing in the Ice **never once** reaches one counter left" was true of its sample and is
+  not a law: one of the eleven at the second base did. The entry's conclusion survives on the
+  distribution — one in eleven is still nothing for a reshape to work with — but not on the word.
+
+**None of the paired conclusions in this log moves**, which is the point D240 made and this entry
+confirms: every slot and rule here was priced by a difference between two arms over the same seeds,
+and the shared shuffle cancelled out of all of them.
+
+### What was not done
+
+The other twenty-eight harnesses are **changed but not re-run**. Re-deriving every absolute rate in
+this log is a much larger job than the fix, and the honest position is written into the README
+instead: a rate published before this has the error bars of its seed count rather than its game
+count, and the three above are the measured example of how far that can be off.

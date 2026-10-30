@@ -54,11 +54,22 @@ function duel(seed, decks) {
   }
 }
 
+/*
+  A seed of its own for every game. One `seed` is one RNG stream, the stream shuffles seat 0's deck
+  and then seat 1's, and the same stream yields the same index permutation however different the
+  deck list is — so a whole pass over the field on one seed was one shuffle wearing every pairing,
+  and an absolute rate printed below had the error bars of its seed count rather than its game
+  count. Measured in D240. Derived from the loop indices rather than a counter, because a counter
+  desynchronises the arms of a paired harness the moment one of them skips a game.
+*/
+const seedFor = (pass, a, b, order) =>
+  SEED0 + (((pass * ALL.length + a) * ALL.length + b) * 2) + order;
+
 for (let i = 0; i < SEEDS; i++) {
   for (let a = 0; a < ALL.length; a++) {
     for (let b = a + 1; b < ALL.length; b++) {
-      duel(SEED0 + i, [ALL[a], ALL[b]]);
-      duel(SEED0 + i, [ALL[b], ALL[a]]);
+      duel(seedFor(i, a, b, 0), [ALL[a], ALL[b]]);
+      duel(seedFor(i, a, b, 1), [ALL[b], ALL[a]]);
     }
   }
 }

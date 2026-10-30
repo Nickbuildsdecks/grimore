@@ -6846,6 +6846,44 @@ should do. #227 lowers it and measures.
 Three harness bugs before any of it was readable, each caught by a number that could not be true —
 two turn-parity bugs in the sampling, and the seeding finding that became D240.
 
+## A seed per game, and the first re-measurement halves two published rates (#226, D242)
+
+D240 found that one `seed` was one RNG stream shuffling every deck in a pass over the field with the
+same index permutation, so 156 games at one seed were one shuffle wearing 156 pairings. The fix is
+in, across all twenty-nine harnesses that had it.
+
+**It is not "a seed per game" everywhere**, which is what made it worth doing by hand. Twenty-two
+absolute readings want one. `deck-probe` and `pod-slot` want one too, and get it safely because
+their arms are two calls to the same loop, so a seed from the loop indices is the same seed in both.
+**`bot-duel` and `pod-duel` want the opposite** — their repeated calls are the *arms*, the same
+decks with the bots swapped and the same table with the seats rotated, so they must keep sharing a
+seed. Giving those a seed each would have destroyed the pairing silently. The negative control says
+it worked and says it exactly: **`bot-duel` with the same bot in both arms reads 156-156.**
+
+`countdowns` was re-measured first, over two independent bases:
+
+```
+card                  D238 (shared)   base 3300   base 9000
+Calciderm                 13%            26%         30%
+Thing in the Ice          10%            20%         18%
+Search for Tomorrow      100%            93%         82%
+Blastoderm                22%            22%         21%
+```
+
+**Two of five were off by half**, and the two new bases agree with each other — which is what says
+they are measurements rather than samples of one shuffle. Thing in the Ice's *denominator* moved as
+much as its rate (21 clocks became 10 and 11), because a shared shuffle changes how often a card is
+drawn at all.
+
+Three published statements restated: the vanishing/fading price is collected about **one in four**
+rather than one in six; **suspend converts about nine times in ten** rather than 29 of 29, which was
+the shuffle and not the mechanic; and D237's "never once reaches one counter" was true of its sample
+and not a law — one of eleven did. No **paired** conclusion in the log moves, which is D240's point
+confirmed.
+
+The other twenty-eight harnesses are changed but not re-run. Any absolute rate dated before this has
+the error bars of its seed count rather than its game count.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

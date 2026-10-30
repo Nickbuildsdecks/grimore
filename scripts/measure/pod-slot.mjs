@@ -118,6 +118,14 @@ const others = (n) => [0, 1, 2].map((i) => ALL[(n * 3 + i * 4) % ALL.length])
   .filter((id) => id !== SUBJECT);
 
 /** The subject's record across every table and every seat it can occupy. */
+/*
+  A seed per game, which is safe here where it would not be in `pod-duel`: the arms of this probe
+  are the two `record()` calls, which re-run this identical loop, so a seed derived from the loop
+  indices is the same seed in both. One seed for a whole pass meant the tables in it shared a
+  shuffle (D240).
+*/
+const seedFor = (pass, t, shift) => SEED0 + ((pass * ALL.length + t) * 4) + shift;
+
 function record(ctx) {
   let won = 0; let lost = 0; let unfinished = 0;
   const bySeat = [0, 0, 0, 0];
@@ -132,7 +140,7 @@ function record(ctx) {
           if (seat === shift) decks.push(SUBJECT);
           else decks.push(field[k++ % field.length]);
         }
-        const winner = pod(SEED0 + i, decks, ctx);
+        const winner = pod(seedFor(i, t, shift), decks, ctx);
         if (winner === null) unfinished += 1;
         else if (winner === shift) { won += 1; bySeat[shift] += 1; } else lost += 1;
       }

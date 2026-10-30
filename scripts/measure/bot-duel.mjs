@@ -83,6 +83,19 @@ function duel(seed, decks, opts) {
 }
 
 let won = 0; let lost = 0; let draw = 0;
+/*
+  A seed per **pairing**, deliberately not per game — which is the opposite of what the absolute
+  harnesses needed and for the same underlying reason.
+
+  One seed was being used for a whole pass over the field, so the 156 games in it were one shuffle
+  wearing 156 pairings (D240). That had to go. But the two calls below are not two games, they are
+  the two **arms**: the same decks with the bots swapped, so that whatever the matchup is worth,
+  both arms get it exactly once. They must keep sharing a seed or the pairing this file is built on
+  is gone, and the tell would be the negative control — the same bot in both arms reads exactly
+  468-468, and it reads exactly that *because* the games are the same games.
+*/
+const seedFor = (pass, a, b) => SEED0 + (pass * ALL.length + a) * ALL.length + b;
+
 const started = Date.now();
 for (let i = 0; i < SEEDS; i++) {
   for (let a = 0; a < ALL.length; a++) {
@@ -91,9 +104,10 @@ for (let i = 0; i < SEEDS; i++) {
       if (SUBJECT !== '' && ALL[a] !== SUBJECT && ALL[b] !== SUBJECT) continue;
       // The same pairing twice with only the bots swapped, so the decks stay put: whatever the
       // matchup is worth, both arms get it exactly once.
-      const first = duel(SEED0 + i, [ALL[a], ALL[b]], [TESTED, CONTROL]);
+      const seed = seedFor(i, a, b);
+      const first = duel(seed, [ALL[a], ALL[b]], [TESTED, CONTROL]);
       if (first === 0) won += 1; else if (first === 1) lost += 1; else draw += 1;
-      const second = duel(SEED0 + i, [ALL[a], ALL[b]], [CONTROL, TESTED]);
+      const second = duel(seed, [ALL[a], ALL[b]], [CONTROL, TESTED]);
       if (second === 1) won += 1; else if (second === 0) lost += 1; else draw += 1;
     }
   }

@@ -736,8 +736,36 @@ Worse than noise: the shared seed **biased** the one reading that could be compa
 independent ones. Correlated games make an outcome more predictable from a position than it really
 is, so the bias flattered the thing being measured. The general form: **a sample that shares a
 random stream is smaller than its denominator and not merely noisier — check which of your readings
-is a difference and which is a level, because only the difference is safe.** #226 carries the
-one-line fix for the rest of the directory.
+is a difference and which is a level, because only the difference is safe.**
+
+**The fix is in, across all twenty-nine harnesses (D242), and it is not "a seed per game"
+everywhere.** Three kinds of file want three different things, and getting the difference wrong
+would have been silent:
+
+- the twenty-two **absolute** readings want a seed per game — they are what the bug hurt;
+- `deck-probe` and `pod-slot` also want one, and get it safely because their two arms are two calls
+  to the same `record(ctx)` loop, so a seed derived from the loop indices is the same seed in both;
+- **`bot-duel` and `pod-duel` want the opposite.** Their repeated calls are not two games, they are
+  the two arms — the same decks with the bots swapped, the same table with the seats rotated — and
+  they must keep sharing a seed or the pairing the file is built on is gone. A seed per *pairing*
+  and per *table* instead.
+
+Always from the loop indices, never a counter: a counter works today and desynchronises the arms
+the first time one of them skips a game, which produces a plausible number and no error. The
+negative control is the proof and it is exact — **`bot-duel` with the same bot in both arms reads
+156-156.**
+
+**What a rate published before this is worth.** `countdowns` was re-measured first, over two
+independent bases, and **two of its five rates were off by half**: Calciderm 13% became 26% and 30%,
+Thing in the Ice 10% became 20% and 18%, and Search for Tomorrow's perfect 100% became 93% and 82%.
+The two new bases agree with each other to within a few points, which is what says they are
+measurements. Thing in the Ice's *denominator* moved too — 21 clocks became 10 and 11 — because a
+shared shuffle changes how often a card is even drawn, not just what happens to it.
+
+The other twenty-eight are changed but **not re-run**: re-deriving every absolute rate in the log is
+a much larger job than the fix. So read any absolute rate dated before D242 as having the error
+bars of its seed count rather than its game count, with those three as the measured example of how
+far that can be off.
 
 **A static audit of a dynamic engine undercounts, and it took this one three passes to stop.** A
 keyword is readable from properties — printed in the text, `script.keywords` — and it is also handed

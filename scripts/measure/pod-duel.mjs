@@ -91,6 +91,14 @@ const seated = (n) => {
   return out;
 };
 
+/*
+  A seed per **table**, not per game. One seed for a whole pass meant every table in it shared a
+  shuffle (D240); but the four rotations below are the arms — the same table with TESTED and
+  CONTROL moved around the seats — and they have to keep sharing a seed or each arm stops playing
+  the same table as the other.
+*/
+const seedFor = (pass, t) => SEED0 + (pass * ALL.length) + t;
+
 let tested = 0; let control = 0; let unfinished = 0;
 const started = Date.now();
 for (let i = 0; i < SEEDS; i++) {
@@ -99,7 +107,7 @@ for (let i = 0; i < SEEDS; i++) {
     // Four rotations, so each arm plays each seat once per table.
     for (let shift = 0; shift < 4; shift++) {
       const opts = [0, 1, 2, 3].map((seat) => ((seat + shift) % 2 === 0 ? TESTED : CONTROL));
-      const winner = pod(SEED0 + i, decks, opts);
+      const winner = pod(seedFor(i, t), decks, opts);
       if (winner === null) unfinished += 1;
       else if (opts[winner] === TESTED) tested += 1;
       else control += 1;

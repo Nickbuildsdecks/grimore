@@ -211,12 +211,30 @@ function duel(seed, decks) {
   }
 }
 
+/*
+  A seed of its own for every game, which is **not** what this file did when D237 and D238 were
+  measured, and the difference is not cosmetic.
+
+  One `seed` is one RNG stream, the stream shuffles seat 0's deck and then seat 1's, and the same
+  stream produces the same *index* permutation however different the deck list is. Every starter
+  deck is built the same way, so at a fixed seed the opening hand holds the same number of lands in
+  every pairing in the field — measured at zero variance across 156 of them. So `SEED0 + i` for a
+  whole pass meant 156 games that were one shuffle wearing 156 deck pairings, and a rate printed
+  below over "936 games" had the error bars of **six** trials. D240 has the measurement.
+
+  Derived from the loop indices as a pure function rather than from a counter. A counter would work
+  here, where there is one arm, and would desynchronise the arms of a paired harness the moment one
+  of them skipped a game — so the indices are the habit worth keeping even where it costs nothing.
+*/
+const seedFor = (pass, a, b, order) =>
+  SEED0 + ((pass * ALL.length + a) * ALL.length + b) * 2 + order;
+
 let games = 0;
 for (let i = 0; i < SEEDS; i++) {
   for (let a = 0; a < ALL.length; a++) {
     for (let b = a + 1; b < ALL.length; b++) {
-      duel(SEED0 + i, [ALL[a], ALL[b]]); games += 1;
-      duel(SEED0 + i, [ALL[b], ALL[a]]); games += 1;
+      duel(seedFor(i, a, b, 0), [ALL[a], ALL[b]]); games += 1;
+      duel(seedFor(i, a, b, 1), [ALL[b], ALL[a]]); games += 1;
     }
   }
 }

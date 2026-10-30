@@ -126,15 +126,29 @@ function duel(seed, decks, ctx) {
  * one that wins five everywhere is a change about card quality. Without the split both read as
  * one number.
  */
+/*
+  A seed per game, and the arms stay paired because this is a **pure function of the loop indices**.
+
+  One seed used for a whole pass meant the 24 games in it shared a shuffle (D240), so the absolute
+  `stock:` and `variant:` lines below were worth a handful of trials rather than hundreds. The two
+  calls here are the two *orders* of a pairing, not two arms — the arms are the two `record()`
+  calls, which re-run this identical loop. Deriving the seed from `(pass, j, order)` therefore gives
+  both arms the same games, which is the whole design: the negative control is that a variant
+  identical to stock prints the same record twice (151-137 and 151-137), and that must still hold.
+
+  A counter would also work today and would break silently the first time one arm skipped a game.
+*/
+const seedFor = (pass, j, order) => SEED0 + ((pass * FIELD.length + j) * 2) + order;
+
 function record(ctx) {
   let won = 0; let lost = 0; let draw = 0;
   const each = new Map(FIELD.map((id) => [id, { won: 0, lost: 0 }]));
   for (let i = 0; i < SEEDS; i++) {
-    for (const other of FIELD) {
+    for (const [j, other] of FIELD.entries()) {
       const row = each.get(other);
-      const first = duel(SEED0 + i, [SUBJECT, other], ctx);
+      const first = duel(seedFor(i, j, 0), [SUBJECT, other], ctx);
       if (first === 0) { won += 1; row.won += 1; } else if (first === 1) { lost += 1; row.lost += 1; } else draw += 1;
-      const second = duel(SEED0 + i, [other, SUBJECT], ctx);
+      const second = duel(seedFor(i, j, 1), [other, SUBJECT], ctx);
       if (second === 1) { won += 1; row.won += 1; } else if (second === 0) { lost += 1; row.lost += 1; } else draw += 1;
     }
   }
