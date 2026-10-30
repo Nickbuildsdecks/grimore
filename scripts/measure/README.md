@@ -54,6 +54,7 @@ it.
 | `pod-slot.mjs` | is a **deck slot** worth anything in a four-seat pod, for a card that is blank in a duel? | `SUBJECT=forge-alliance CHANGE='Blade of Selves:-1' node scripts/measure/pod-slot.mjs` |
 | `card-promises.mjs` | does every card **do what its own text says**, or does a script carry less than the card reads? | `node scripts/measure/card-promises.mjs` |
 | `halves-use.mjs` | which face of a two-faced card gets used, and was the land the only one? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
+| `transform-use.mjs` | does a **transforming** card ever turn over, on which turn, and into what board? | `SEEDS=6 node scripts/measure/transform-use.mjs` |
 | `metalcraft.mjs` | how often is a conditional static actually **on**? | `SEEDS=5 node scripts/measure/metalcraft.mjs` |
 | `mill.mjs` | does the mill deck win by decking, and how close does it get? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/mill.mjs` |
 | `killed-by.mjs` | what took the last of this deck's life, on what turn, holding what? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/killed-by.mjs` |
@@ -231,6 +232,29 @@ one-mana +2/+2 wearing a second name. And for an adventurer the honest number is
 adventures were cast, it is **how many creatures came back out of exile**: Garenbrig Carver is 65
 adventures and 62 returns, which is the mechanic working, while a card at 65 and 9 would be a
 sorcery that had quietly eaten a creature.
+
+**And a card with a second *state* needs the same split asked of the state rather than the cast —
+which is the one case in this family where the action stream is no use.** `transform-use.mjs` is
+`morph-use` for a transforming card, and the mechanics differ in a way that decides the whole
+design: a morph turning up is an **action** (`auto:turnUp`), so a harness can watch what the bot
+does, while a transform happens inside an effect's resolution and is recorded in
+`GameState.transformed`, which `settle` drains before anything outside the engine could read it. So
+this one watches the **board** after every action and asks whether a permanent is now wearing a
+different face.
+
+Which brings its own trap, and it sprang on the first run. The file reported **two "flips back to a
+front face" in a pool where no card flips back** — a result that, if real, would have been a bug in
+the transform code shipped an hour earlier. It was the instrument: `relocate` restores the front
+face on the way off the battlefield (CR 712.4a), so a transformed Insectile Aberration that is
+bounced and recast arrives as a Delver of Secrets, and a detector that remembered the back face
+across the two zones read a fresh cast as a permanent turning over. **The lesson is the one this
+file keeps relearning from a new direction: a state-watching instrument has to forget state when
+the thing it is watching stops existing**, and the tell was that the surprising number pointed at
+somebody else's bug rather than at its own.
+
+That column is now the standing check on the claim it falsified: D234 says the symmetric half of
+`transformPermanent` is exercised by no card in the pool, and every run of this harness prints
+whether that is still true, so the claim cannot quietly go stale.
 
 **For a modal card the question is not "which half" but "was the other one needed".** The back face
 of a modal double-faced card is a *land*, so a split of the uses says almost nothing on its own —
