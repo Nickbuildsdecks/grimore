@@ -1090,20 +1090,24 @@ const PERMANENT_ON_BOARD = 3;
 
 /** Everything one seat has, from that seat's point of view. */
 function seatValue(state: GameState, seat: SeatIndex, opts: BotOptions = {}): number {
-  let total = (state.seats[seat]?.life ?? 0) * LIFE_WEIGHT;
-  total += (state.zones[`${seat}:hand`] ?? []).length * (opts.handCardValue ?? CARD_IN_HAND);
-  total += (state.zones[`${seat}:library`] ?? []).length * LIBRARY_CARD;
+  const w = opts.weights ?? {};
+  let total = (state.seats[seat]?.life ?? 0) * (w.life ?? LIFE_WEIGHT);
+  total += (state.zones[`${seat}:hand`] ?? []).length * (w.hand ?? CARD_IN_HAND);
+  total += (state.zones[`${seat}:library`] ?? []).length * (w.library ?? LIBRARY_CARD);
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
     const ch = characteristicsOf(state, inst);
-    if (ch.isLand) total += LAND_ON_BOARD;
-    else if (ch.isCreature) total += creatureValue(state, id);
+    if (ch.isLand) total += w.land ?? LAND_ON_BOARD;
+    else if (ch.isCreature) total += creatureValue(state, id) * (w.creature ?? 1);
     // A planeswalker's loyalty is its life *and* its spell-per-turn, so a counter on one is worth
     // about what a point of life is worth. Without this the search could not see what a plus
     // ability bought and stopped using them — three activations across sixteen games, where the
     // bot it replaced managed more than one per planeswalker it cast.
-    else total += PERMANENT_ON_BOARD + (inst.counters['loyalty'] ?? 0) * LIFE_WEIGHT;
+    else {
+      total += (w.permanent ?? PERMANENT_ON_BOARD)
+        + (inst.counters['loyalty'] ?? 0) * (w.life ?? LIFE_WEIGHT);
+    }
   }
   return total;
 }
@@ -1774,46 +1778,44 @@ export interface BotOptions {
    */
   readonly lookahead?: boolean;
   /**
-   * What a card in hand is worth to the evaluation. `CARD_IN_HAND` (1.5) by default.
+   * Overrides for the evaluation's weights, for measuring one term at a time.
    *
-   * An option rather than a constant because **it is the one component of the evaluation that
-   * measurably points the wrong way** (D241). Calibrated against outcomes over 936 games, the
-   * hand-size margin predicts the winner at 46%, 42% and 44% across turns 5-16 — worse than a coin
-   * in the bands where a search can still change anything — while the evaluation as a whole reads
-   * 61-73% there and every other component is either level with it or merely inert.
+   * Every key defaults to the constant above it — `life` to `LIFE_WEIGHT`, `hand` to
+   * `CARD_IN_HAND`, and so on — so `{}` is the shipping bot exactly, which is the control every
+   * measurement here is read against.
    *
-   * That is not a licence to make it negative. A card in hand is a resource, and a bot scoring one
-   * below zero would discard to raise its own score. The causal reading runs the other way: a seat
-   * holding cards it has not cast is a seat that *could not cast them*, so hand size is a symptom
-   * of being behind rather than a cause of it — and a function that scores part of "I am behind" as
-   * "I am ahead" is worth less than one that leaves it out.
+   * It exists because of what #227 found and #228 asks. D241 calibrated the evaluation against
+   * outcomes and named cards-in-hand as the one component pointing the wrong way (42-46% in the
+   * mid-game, on the second-largest weight). D243 lowered it over 936 paired games per arm and
+   * found it **inert**: level across a five-fold cut, while genuinely changing 112 of 16,761
+   * decisions.
    *
-   * Lowering is also the untried direction. D68 and D69 both raised the price of a card in hand,
-   * as an answer, and both made the bot play worse — D69's table has it casting *more*
-   * counterspells as the price went up. If the term is inverted, that is exactly what raising it
-   * should do, which makes those two measurements evidence for this one rather than against it.
+   * The reason generalises and is why this is a whole record rather than one field. **A calibration
+   * measures positions; a search compares plays.** What decides a choice is not a term's
+   * correlation with outcomes but its *variation across the options on offer at one decision* —
+   * and hand size barely varies across them, since nearly every candidate is a cast and every cast
+   * moves one card out of the hand. So the term contributes a near-constant amount to the whole
+   * slate and cancels out of the comparison. Any of these weights could be in the same position,
+   * and zeroing each in turn is how you find out which ones are not.
    *
-   * Floor and ceiling both matter. It must stay **below `LAND_ON_BOARD`** or a land drop lowers the
-   * score and the bot stops playing lands, which cost 60 games out of 60 the one time it happened.
-   * And it must stay **at or above `LIBRARY_CARD`** (0.3), because a draw is worth
-   * `handCardValue - LIBRARY_CARD` and below that the bot would be paid to avoid drawing.
+   * Two floors and a ceiling, all three measured the hard way:
    *
-   * **Measured, and the answer is that it is inert rather than harmful (D243).** 936 paired games
-   * per arm against the stock 1.5: `1.0` read 467-468, `0.6` read 467-468, `0.3` read 466-468.
-   * Level across a five-fold cut, and `disagree.mjs` says it is a real wash rather than a dead
-   * switch — the setting changes **112 of 16,761 decisions**, almost all of them casts and
-   * activations, and those changes are worth nothing.
-   *
-   * The reason is worth more than the result. **A calibration measures positions; a search compares
-   * plays.** What decides a choice is not a term's correlation with outcomes but its *variation
-   * across the options on offer*, and hand size barely varies across them — nearly every play under
-   * comparison is a cast, every cast moves one card out of the hand, so this contributes a
-   * near-constant `-handCardValue` to the whole slate and cancels out of the comparison. It can be
-   * badly wrong about which player is ahead while being almost silent about which play is best.
-   *
-   * So the default stays at 1.5 and the option stays for the next person who wants to re-ask.
+   *  - `hand` must stay **below `land`**, or a land drop lowers the score and the bot stops playing
+   *    lands. That cost 60 games out of 60 the one time it happened.
+   *  - `hand` must stay **at or above `library`**, because a draw is worth `hand - library` and
+   *    below that the bot would be paid to avoid drawing.
+   *  - `creature` is a multiplier on `creatureValue` **inside the evaluation only**. The same
+   *    function is read by the combat heuristics — whether a trade is good, which blocker to kill —
+   *    and scaling it there would be measuring a different thing under this name.
    */
-  readonly handCardValue?: number;
+  readonly weights?: {
+    readonly life?: number;
+    readonly hand?: number;
+    readonly library?: number;
+    readonly land?: number;
+    readonly permanent?: number;
+    readonly creature?: number;
+  };
   /**
    * Whether the search stops where its action happened rather than wherever auto-pass carried the
    * table. On, and here to be turned off: it is the control this was measured against, and the

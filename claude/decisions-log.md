@@ -15055,3 +15055,11 @@ floor the `LAND_ON_BOARD` note in the docblock did not mention because nobody ha
 Recorded as a no-change with a mechanism, which is the second one of those in this log in two days
 (D237 was the first). The measurement that produced it was worth running precisely because the
 answer was not the one the previous entry pointed at.
+
+**Forward note (#228).** The `handCardValue` option this entry was measured with has been
+generalised into `BotOptions.weights`, a record with a key per term — `life`, `hand`, `library`,
+`land`, `permanent`, `creature` — each defaulting to the constant it overrides. So the arms above
+read `{"weights":{"hand":1.0}}` now. The reason is the reason this entry gives: hand is not special,
+any of these terms could be in the same position, and zeroing each in turn is how you find out which
+ones are not. The empty override is the shipping bot by construction and changes **0** of 16,761
+decisions, which is the control the new `term-leverage.mjs` runs on every pass.
