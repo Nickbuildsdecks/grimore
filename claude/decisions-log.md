@@ -14284,3 +14284,76 @@ it would have read as the rule firing when it was not.
 Which is the same lesson as the one that found the bug, from the other side: a position that depends
 on an uncontrolled draw is an instrument with two inputs. The helper now puts every foretellable card
 except the named one back into the library, and says why.
+
+---
+
+## D236 — The transform cards turn over less than half the time, and the slot's gain is probably the bodies
+
+D234 priced the Delver + Thing in the Ice slot at seven to thirteen points over the second Lightning
+Bolt and second Counterspell, on two disjoint seed sets. **It could not say why**, and the candidate
+stories wanted opposite follow-ups. `transform-use.mjs` (#219) asks the mechanic rather than the
+slot. 936 games, six seed sets, every pairing in both seats:
+
+```
+card                 deck          cast  flipped  of casts  turn  board  first
+Delver of Secrets    arc-tempest     85       38      45%   10.3    3.2   t4
+Thing in the Ice     arc-tempest     49        2       4%   18.5    1.0   t14
+```
+
+Turns count every seat's turn, so 10.3 is a seat's fifth and t4 is a seat's second.
+
+### The small sample would have been published as a wrong number
+
+The first run was one seed set, 156 games, and read **Delver at 12 of 16 — 75%**. The full field
+reads **38 of 85 — 45%**. Same instrument, same code, thirty points apart.
+
+That is worth more than the measurement it qualifies. The commit that added the harness said, in so
+many words, that 16 and 12 casts were too small to carry a conclusion and the write-up would wait.
+Had it not waited, this entry would be claiming Delver flips three times in four, which is not true,
+and the number would have gone into the player cheat sheet and been read by somebody deciding
+whether to keep the card.
+
+**The rule is not "take bigger samples".** It is that a denominator under about twenty earns a
+direction and not a rate, and this file now has an example of exactly how far wrong the rate can be.
+
+### What the cards actually do
+
+**Delver of Secrets flips fewer than half the times it is cast**, on average around its controller's
+fifth turn, earliest its second. So it is not the turn-two clock the card is famous for — in this
+pool it is a {U} 1/1 that becomes a 3/2 flier about half the time, usually not early. Real, modest,
+and nothing like the story the card's reputation tells.
+
+**Thing in the Ice flipped twice in forty-nine casts.** Four percent. Around turn eighteen. And both
+times the board held **one** creature, so the printed "return all non-Horror creatures to their
+owners' hands" — the whole reason the back face is a 7/8 and not a 4/4 — has never once mattered in
+936 games.
+
+### Which means the slot gain is almost certainly not the mechanic
+
+This is the deflating read and it is the one the numbers support. Arc Tempest gained seven to
+thirteen points from a swap whose two cards are, in practice, **a 1/1 that sometimes grows wings and
+a 0/4 that blocks**. A 0/4 defender for {1}{U} is genuinely good in a deck whose problem is living
+long enough to cast its spells, and that is a different card from the one the slot was chosen for.
+
+So D234's measurement stands and D234's *explanation* was never offered — which is the right way
+round, because the probe measured a swap and the swap did win. What is now on record is that
+crediting the win to transform would have been wrong, and nobody had yet.
+
+**The cards stay.** D229's rule is the reason they are here at all: a keyword needs a card in a deck
+to exist in the pool, and transform now has two with a mechanic the tests pin. Pulling Thing in the
+Ice because its back face is unreachable would take the pool's only `transformed` trigger with it.
+
+### The better question, filed rather than guessed at
+
+"Replace it" is the lazy move. The interesting question is **how close it gets**: Thing in the Ice
+needs four instants or sorceries cast after it lands, out of a library that is twenty-five of sixty,
+so a 4% flip rate is either "the deck never gets there" or "it dies first", and those want different
+answers. An instrument that read the ice counters remaining when the permanent left the battlefield
+or the game ended would say which — one counter short is a card that needs one fewer, and four
+counters left is a card that needs replacing. #220.
+
+### And the instrument's own negative control held
+
+`0 flips back to a front face` across 936 games, which is the standing check on D234's claim that
+the symmetric half of `transformPermanent` is exercised by no card in this pool. It is still true,
+and it is now true on evidence rather than on inspection.

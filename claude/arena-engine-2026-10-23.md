@@ -6659,6 +6659,39 @@ the deck at all turned a playout test red with `auto:foretell` where it expected
 **not noise**: `spendsAnAnswersMana` only looks at `auto:cast` and `auto:activate`, so a foretell
 spends the very mana the rule exists to protect. That is #218.
 
+### And then the transform cards were measured, and the slot's gain is not the mechanic (D236)
+
+`transform-use.mjs` asks what D234's probe could not: does the second face ever get reached? 936
+games, six seed sets —
+
+```
+card                 cast  flipped  of casts  turn  board  first
+Delver of Secrets      85       38      45%   10.3    3.2   t4
+Thing in the Ice       49        2       4%   18.5    1.0   t14
+```
+
+Delver flips **fewer than half** the times it is cast, around its controller's fifth turn. Thing in
+the Ice flipped **twice in forty-nine**, and both times the board held one creature — so Awoken
+Horror's "return all non-Horror creatures", the whole reason its back face is a 7/8, has never
+mattered.
+
+So Arc Tempest's seven to thirteen points came from **a 1/1 that sometimes grows wings and a 0/4
+that blocks**, which is a good two-drop in a deck whose problem is living long enough to cast its
+spells, and is not the card the slot was chosen for. D234's measurement stands; crediting it to
+transform would have been wrong, and nobody had yet.
+
+**The thing worth keeping is about the first run, not the cards.** One seed set read Delver at
+12 of 16 — **75%**. The full field reads 38 of 85 — **45%**. Same instrument, thirty points apart.
+The harness commit said at the time that 16 casts was too small to carry a conclusion and the
+write-up would wait; had it not waited, the cheat sheet would now be telling players a card flips
+three times in four. The rule is not "take bigger samples" — it is that a denominator under about
+twenty earns a direction and not a rate, and there is now an example of how far wrong the rate goes.
+
+The cards stay: transform needs a card in the pool to exist at all (D229), and Thing in the Ice
+carries the only `transformed` trigger. What it *needs* is #220's question — the ice counters left
+when it stops being able to flip, which tells "never gets there" apart from "dies first" and is the
+difference between a reshape and a cut.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
