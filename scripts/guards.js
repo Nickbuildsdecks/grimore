@@ -192,6 +192,92 @@ function checkSingleInitDb() {
 }
 checkSingleInitDb();
 
+/**
+ * Every mechanic a player can read on a card has to be explained in the player documentation.
+ *
+ * `claude/play-realm-setup.md` carries the cheat sheet two people actually sit down with, and it
+ * had fallen two keywords behind without anything saying so: **regenerate** (five cards across
+ * three decks, with a cost most players get wrong) and **prowess** (two cards) were in the pool,
+ * player-facing, and mentioned nowhere in it. Found by auditing by hand, which is exactly the kind
+ * of check that is done once and then rots.
+ *
+ * **The list of mechanics is derived rather than written here**, which is what makes this worth
+ * having rather than a second thing to forget. A mechanic is required to be documented when a
+ * player can *read its name on a card* — so the candidates are the engine's `KEYWORDS` and the
+ * `CardScript` field names, and the filter is whether the word appears in some card's printed
+ * `oracleText`. A field like `removesACreature` is a hint for the bot and names nothing on any
+ * card, so it is skipped without anybody having to say so; a keyword printed on a card cannot be.
+ *
+ * Reads source rather than `dist`, because guards run before the build in CI.
+ */
+function checkPlayerDocCoversEveryMechanic() {
+  let keywordsSrc; let scriptTypesSrc; let decksSrc; let doc;
+  try {
+    keywordsSrc = readFileSync(join('packages', 'rules-engine', 'src', 'characteristics.ts'), 'utf8');
+    scriptTypesSrc = readFileSync(join('packages', 'rules-engine', 'src', 'scriptTypes.ts'), 'utf8');
+    decksSrc = readFileSync(join('packages', 'rules-engine', 'src', 'starterDecks.ts'), 'utf8');
+    doc = readFileSync(join('claude', 'play-realm-setup.md'), 'utf8');
+  } catch {
+    return; // not a checkout that has the engine and its docs
+  }
+
+  const keywordBlock = /export const KEYWORDS = \[([\s\S]*?)\] as const;/.exec(keywordsSrc);
+  const fieldBlock = /export interface CardScript \{([\s\S]*?)\n\}/.exec(scriptTypesSrc);
+  if (keywordBlock === null || fieldBlock === null) {
+    console.error('[guards] could not read KEYWORDS or CardScript out of the engine source, so the');
+    console.error('[guards] player-doc check would pass by seeing nothing. Fix the parse.');
+    bad++;
+    return;
+  }
+
+  const keywords = [...keywordBlock[1].matchAll(/'([a-z ' -]+)'/g)].map((m) => m[1]);
+  const fields = [...fieldBlock[1].matchAll(/^ {2}readonly ([a-zA-Z]+)\??:/gm)]
+    // `levelUp` is printed "level up", `splitSecond` "split second", and so on.
+    .map((m) => m[1].replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase());
+
+  /*
+    Only what a player can read on a card: the `oracleText` values, and nothing else in the file.
+
+    The first draft lowercased the whole source and asked whether the word appeared anywhere in it,
+    which is not the same question and said so immediately — it demanded a cheat-sheet row for
+    `decisions`, which is a `CardScript` field and is printed on no card in any game of Magic. It
+    was matching the file's own comments. Extracting the quoted `oracleText` values is the question
+    that was meant.
+  */
+  const printed = [...decksSrc.matchAll(/oracleText:\s*(?:'((?:[^'\\]|\\.)*)'|`((?:[^`\\]|\\.)*)`)/g)]
+    .map((m) => m[1] ?? m[2] ?? '')
+    .join('\n')
+    .toLowerCase();
+  // The cheat sheet is the table; prose elsewhere in the file is not where a player looks.
+  const table = doc.split('\n').filter((l) => l.startsWith('| ')).join('\n').toLowerCase();
+
+  /*
+    And the control, because this check's passing result is a zero and a broken extraction is also
+    a zero. Both halves of the filter are asserted against a mechanic that is known to be printed
+    and known to be documented: if `printed` comes back empty every mechanic is filtered out and
+    the check passes by seeing nothing, which is the one way it can be silently useless.
+  */
+  if (!printed.includes('flying') || !table.includes('flying')) {
+    console.error('[guards] the player-doc check cannot see "flying" on a card or in the cheat');
+    console.error('[guards] sheet, so its extraction is broken and a pass would mean nothing.');
+    bad++;
+    return;
+  }
+
+  const missing = [...new Set([...keywords, ...fields])]
+    .filter((m) => m.length > 3 && printed.includes(m) && !table.includes(m))
+    .sort();
+  if (missing.length > 0) {
+    console.error(`[guards] ${missing.length} mechanic(s) printed on cards and absent from the`);
+    console.error('[guards] player cheat sheet in claude/play-realm-setup.md:');
+    for (const m of missing) console.error(`[guards]   ${m}`);
+    console.error('[guards] Add a row to the "What you want to do | How" table, or if it is not');
+    console.error('[guards] player-facing, say so in the engine rather than leaving it undocumented.');
+    bad += missing.length;
+  }
+}
+checkPlayerDocCoversEveryMechanic();
+
 if (bad) {
   console.error(`[guards] ${bad} violation(s)`);
   process.exit(1);

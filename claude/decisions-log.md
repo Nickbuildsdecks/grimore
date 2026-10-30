@@ -15147,3 +15147,37 @@ decisive and wrong. Together they rule out the whole family of fixes that consis
 number, and they point at the same place: **the function needs a term that sees something it
 currently cannot** — and the honest next step is to find out what a player reads off a turn-six board
 that none of life, creatures, lands, hand or library can express.
+
+## D245 — Derive the list of documented mechanics, and give the guard a control
+
+The player cheat sheet in `claude/play-realm-setup.md` had fallen two keywords behind without
+anything saying so, and the audit that found them (`regenerate`, `prowess`) was a hand pass over 80
+mechanics — right the day it was run and stale the next time a card was scripted. Same reasoning
+that turned #223's finding into a test: a check worth doing once is worth doing on every push.
+
+So `scripts/guards.js` now requires every mechanic a player can **read on a card** to appear in that
+sheet's table, and the decision is in how the list is obtained. **Derived, not written here.** The
+candidates are the engine's own `KEYWORDS` and the `CardScript` field names, de-camelCased so
+`splitSecond` becomes "split second"; the filter is whether the word appears in some card's printed
+`oracleText`. Nobody maintains a list and nobody maintains an exception list either: a bot hint like
+`removesACreature` names nothing on any card and drops out by itself, and a keyword a player can
+read cannot. It parses source rather than `dist`, because guards run before the build in CI.
+
+The filter is the whole design, and the first draft had it wrong in a way that announced itself: it
+asked whether the word appeared anywhere in `starterDecks.ts`, and demanded a cheat-sheet row for
+`decisions` — a `CardScript` field printed on no card in any game of Magic. It was matching the
+file's own comments. "Printed on a card" means the quoted `oracleText` values and nothing else in
+the file.
+
+It found a third gap on the first honest run, and the shape of the gap is the argument for deriving
+the list from *printed* names rather than from mechanics: a row for the mechanic already existed —
+"Cast a spell that costs a creature" — and it never used the words on the card. A player holding
+Bone Splinters or Village Rites reads "As an additional cost to cast this spell, sacrifice a
+creature" and looks for that phrase. A guard keyed to what the engine calls things would have passed.
+
+**And the guard carries its own control**, by the standard `scripts/measure/README.md` sets for any
+instrument whose interesting result is a zero: a pass is a zero and a broken extraction is also a
+zero, so both halves of the filter are asserted against `flying` — known to be printed, known to be
+documented. If the `oracleText` extraction ever comes back empty, every candidate is filtered out
+and the check passes by seeing nothing, which is the one way it could be silently useless. Verified
+the other way too, by renaming the phrase in the doc and watching it fail on exactly one mechanic.

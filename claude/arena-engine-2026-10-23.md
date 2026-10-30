@@ -6979,6 +6979,45 @@ pregame screen, and is not. Fixed to point at the launcher like its three siblin
 by-hand form kept and the variable in it, and the same warning added to the setup doc's
 *Proving it works*.
 
+## The cheat-sheet audit became a guard, and the guard found a third gap
+
+The audit that found `regenerate` and `prowess` was a pass over 80 mechanics done by hand, which is
+the kind of check that is right the day it is run and wrong the next time a card is scripted. So it
+is a guard now, and **the list of mechanics is derived rather than written down**: the candidates
+are the engine's `KEYWORDS` and the `CardScript` field names (de-camelCased, so `splitSecond`
+becomes "split second"), and a candidate is *required* to be documented only when its name appears
+in some card's printed `oracleText`. That filter is what keeps it honest in both directions —
+`removesACreature` is a hint for the bot, names nothing on any card, and is skipped without anybody
+having to maintain an exception list; a keyword a player can read cannot be.
+
+It reads source rather than `dist`, because `scripts/guards.js` runs **before** the build in CI.
+
+It found a third gap immediately, and the gap is instructive: there *was* a row for the mechanic —
+"Cast a spell that costs a creature" — and it never used the words printed on the card. A player
+holding **Bone Splinters** ({B} sorcery in Ashen Rite and Dawn Tithe) or **Village Rites** ({B}
+instant in Ashen Rite) reads *"As an additional cost to cast this spell, sacrifice a creature"* and
+searches the sheet for that phrase. The row now carries it, plus the two things the phrase implies,
+both read off the implementation rather than asserted from the rules:
+
+- It is a **cost**, not a target. `autoActions.ts` takes the sacrifice as part of the cast and the
+  creature is in the graveyard before anybody holds priority, so it cannot be saved in reply and
+  killing it in response cannot deny the spell. The UI asks in that order too: `arenaReducer` goes
+  to `feeding` before `targeting`, because the rules put the cost before the targets.
+- A cost you cannot pay is not one you may pay (CR 601.2h). `legalActions.ts` does not offer the
+  spell at all with no creature on the board — it reads *it asks for a creature to sacrifice, and
+  you have none* rather than sitting on the stack waiting for one.
+
+**And the guard carries its own control**, by the same standard the measure directory holds its
+instruments to: its passing result is a zero, and a broken extraction is also a zero. So both
+halves of the filter are asserted against `flying`, a mechanic known to be printed and known to be
+documented — if `printed` ever comes back empty, every candidate is filtered out and the check
+passes by seeing nothing, which is the one way it could be silently useless. Checked the other way
+too, by renaming the phrase in the doc and watching it fail on exactly one mechanic.
+
+The first draft of the filter asked whether the word appeared anywhere in `starterDecks.ts`, which
+is a different question and said so at once: it demanded a cheat-sheet row for `decisions`, a
+`CardScript` field printed on no card in any game of Magic. It was matching the file's own comments.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
