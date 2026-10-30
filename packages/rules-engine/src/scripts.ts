@@ -33,6 +33,7 @@ import {
   becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, EVOKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer, FADE, TIME, enterAttacking,
+  transformPermanent,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
@@ -1188,6 +1189,145 @@ const THERMO_ALCHEMIST: CardScript = {
       on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' },
       description: 'untap Thermo-Alchemist',
       effect: (c) => tap(c.state, c.source, false),
+    },
+  ],
+};
+
+/*
+  ── Transform: the two cards that turn over ───────────────────────────────────────────────────────
+
+  Both faces of both cards live here, and the arrangement **is** the implementation: a transform
+  moves the permanent's `defKey` to the other face, so `scriptFor` then finds the back face's script
+  by name and the front one stops applying. Defender is on Thing in the Ice and not on Awoken
+  Horror, so a 0/4 that cannot attack becomes a 7/8 that can, and nothing had to be removed.
+
+  Insectile Aberration has no script at all, which is the same point from the other side: its whole
+  back face is "Flying", `printedKeywords` reads a keyword-only line straight off the oracle text,
+  and a card that needs nothing run needs nothing written.
+*/
+
+/*
+  The counter Thing in the Ice carries, named `ICE_COUNTER` because `ICE` is already the back
+  half of the Fire // Ice split card. A local constant rather than one of `effects.ts`'s exported
+  counter keys, because nothing but this card reads it: `FADE` and `TIME` live there because the
+  engine's own upkeep pass counts them down, and an ice counter is only ever removed by the card
+  that put it on.
+*/
+const ICE_COUNTER = 'ice';
+
+/** Whether the card in this instance is an instant or a sorcery, read off its own type line. */
+const isInstantOrSorcery = (state: GameState, id: string): boolean => {
+  const def = state.cardDefs[state.instances[id]?.defKey ?? ''];
+  const line = parseTypeLine(def?.typeLine);
+  return hasType(line, 'instant') || hasType(line, 'sorcery');
+};
+
+/**
+ * Delver of Secrets: the upkeep look, the optional reveal, and the flip.
+ *
+ * The reveal is **asked**, because it is printed as a choice and there is somewhere to ask it —
+ * unlike myriad's "may", which happens inside a declaration (D229). It is asked as a `library-top`
+ * question for one specific reason: that channel already sends the card to the seat being asked and
+ * to nobody else (see `canIdentify`), so "look at the top card of your library" works without
+ * leaking it to the table. A `ChoiceDecisionSpec` would have had to put the card's name in a prompt,
+ * and a prompt goes to every seat.
+ *
+ * The question is put **every** upkeep, whatever is on top, and that is deliberate rather than
+ * lazy: a question asked only when the answer mattered would tell the opponent what the top card is
+ * by the mere fact of being asked. So there is no `filter`, the choice is always available, and the
+ * effect reads the type of whatever came back.
+ *
+ * `pick` is what stops the bot getting it exactly backwards. The standing answer for `library-top`
+ * is scry's — "choose a land once you have five, so it goes to the bottom" — and here choosing a
+ * card *reveals* it. Without the hint a bot would hide every instant and bottom nothing.
+ *
+ * The revealed card is not marked `revealed` on its instance, which is a deliberate small
+ * deviation: that flag is sticky, so a card shown here would still be public after it was drawn
+ * into a hand three turns later. What the table actually needs to know — that the creature turned
+ * over — it gets from the transform itself.
+ */
+const DELVER_OF_SECRETS: CardScript = {
+  name: 'Delver of Secrets',
+  triggers: [
+    {
+      on: { kind: 'step', step: 'upkeep', of: 'you' },
+      description: 'look at the top card of your library; you may reveal it, and if it is an instant or sorcery, transform this',
+      decisions: [{
+        who: 'controller',
+        from: 'library-top',
+        look: 1,
+        prompt: 'Reveal the top card of your library?',
+        min: 0,
+        max: 1,
+        pick: (state, _chooser, candidates) => candidates.filter((id) => isInstantOrSorcery(state, id)),
+      }],
+      effect: (c) => ((c.decisions[0]?.ids ?? []).some((id) => isInstantOrSorcery(c.state, id))
+        ? transformPermanent(c.state, c.source)
+        : c.state),
+    },
+  ],
+};
+
+/**
+ * Thing in the Ice: four counters, one off per spell, and the flip when the last one goes.
+ *
+ * One trigger does both halves, because the card prints them as one sentence — "remove an ice
+ * counter. **Then** if it has no ice counters on it, transform it" — and two triggers would be two
+ * objects on the stack that an opponent could answer between.
+ *
+ * `entersWith` is printed data rather than script behaviour, the same as a leveler's bands, so the
+ * counters arrive through the replacement effect that puts them on rather than through an entry
+ * trigger that would go on the stack after the 0/4 had already sat there with nothing on it.
+ *
+ * The guard on a counter already being gone is not paranoia: the flip leaves the permanent on the
+ * battlefield with the same id, so a second instant cast after it has turned over would reach this
+ * trigger again if the front face's script were still the active one. It is not — `defKey` has
+ * moved — but the guard says so where the reader is, and costs nothing.
+ */
+const THING_IN_THE_ICE: CardScript = {
+  name: 'Thing in the Ice',
+  keywords: ['defender'],
+  entersWith: { counter: ICE_COUNTER, amount: 4 },
+  triggers: [
+    {
+      on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' },
+      description: 'remove an ice counter from Thing in the Ice, then transform it if it has none',
+      effect: (c) => {
+        if ((c.state.instances[c.source]?.counters[ICE_COUNTER] ?? 0) <= 0) return c.state;
+        const next = addCounters(c.state, c.source, ICE_COUNTER, -1);
+        return (next.instances[c.source]?.counters[ICE_COUNTER] ?? 0) === 0
+          ? transformPermanent(next, c.source)
+          : next;
+      },
+    },
+  ],
+};
+
+/**
+ * Awoken Horror: the pool's first `transformed` trigger, and a bounce that spares its own kind.
+ *
+ * "When this creature transforms into Awoken Horror" is written **here**, on the back face, and
+ * that is the whole of how the engine knows which face it became: the flip moves `defKey` before
+ * `settle` raises the event, so the script that receives it is the face the permanent now is.
+ *
+ * Non-Horror, so it spares itself — it is a Kraken Horror — and spares nothing else in this pool.
+ * Returning rather than destroying is what makes it a reset instead of a sweeper: nothing dies, so
+ * nothing that watches a death sees anything, and every creature on the table is a card to be cast
+ * again.
+ */
+const AWOKEN_HORROR: CardScript = {
+  name: 'Awoken Horror',
+  triggers: [
+    {
+      on: { kind: 'transformed' },
+      description: "return all non-Horror creatures to their owners' hands",
+      effect: (c) => battlefield(c.state, (id) => {
+        const inst = c.state.instances[id];
+        if (inst === undefined) return false;
+        const ch = characteristicsOf(c.state, inst);
+        if (!ch.isCreature) return false;
+        return !hasSubtype(parseTypeLine(c.state.cardDefs[inst.defKey]?.typeLine), 'Horror');
+      }).reduce((state, id) => bounceToHand(state, id), c.state),
     },
   ],
 };
@@ -8021,6 +8161,9 @@ const ALL: readonly CardScript[] = [
   SELESNYA_CHARM, SOUL_MANIPULATION, GRIM_DISCOVERY,
   DOOMED_TRAVELER, DOOMED_DISSENTER, GOBLIN_ARSONIST, PHYREXIAN_ARENA, GLORIOUS_ANTHEM,
   THERMO_ALCHEMIST,
+  // Transform. Insectile Aberration is absent on purpose: its whole back face is "Flying", which
+  // `printedKeywords` reads off the oracle text, so it needs no script.
+  DELVER_OF_SECRETS, THING_IN_THE_ICE, AWOKEN_HORROR,
   BLOOD_ARTIST, ZULAPORT_CUTTHROAT, SOUL_WARDEN, IMPACT_TREMORS,
   FIREBALL, SECURE_THE_WASTES, MIND_SPRING, EXSANGUINATE, HURRICANE,
   MAGMA_JET, PREORDAIN, OMENSPEAKER,

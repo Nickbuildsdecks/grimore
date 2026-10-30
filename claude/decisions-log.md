@@ -14026,3 +14026,140 @@ hunt and #178 was closed on a hundred clean runs afterwards, so it is most likel
 is at
 <https://github.com/Nickbuildsdecks/grimore/actions/runs/40803141013/job/123215709926>
 until 27 January. Every other `legacy-postgres` job in those 150 runs passed.
+
+---
+
+## D234 — Transform: the third way a card has two faces, and the one field all three move
+
+The pool had two of the three double-faced shapes and the engine had the mechanism for all of them
+without knowing it. A modal DFC points the instance's `defKey` at its back face as it is **played**;
+a morph points `defKey` at the real card when it is **turned up**. Transform (CR 701.28, CR 712) is
+the same pointer moved at a third moment: while the permanent sits on the battlefield, by an effect.
+
+So `transformPermanent` is eleven lines, and that is the finding rather than a disappointment.
+`defKey` is what every reader downstream looks a face up through — `characteristicsOf`, the script
+registry, combat, the bot's evaluation, the definitions the table draws — so a 1/1 Human Wizard that
+turns over **is** a 3/2 flying Insect to all of them, and not one of them had to be told that cards
+have backs. `printedDefKey` already remembered the front face for Clone, and `relocate` already put
+it back on the way off the battlefield, which is CR 712.4a for free: a transformed Delver in a
+graveyard is a Delver, which is the card that could be reanimated.
+
+Written **symmetric**, because the rule is: transform turns over whichever face is up. Nothing in
+this pool transforms twice and the second half is therefore untested by any card, so it is tested by
+itself. A one-way assumption built in here is the kind that is wrong years later and costs nothing
+now.
+
+### The ninth member of the detect-rather-than-announce family
+
+`transformed` joins `entered`, `died`, `left`, `drew`, `toGraveyard`, `discarded`, `exiled` and
+`copied`, and it is the simplest of them: a list of ids, because the only fact it has to carry is
+*which permanent*.
+
+**Which face it became needs no recording, and that is the design rather than a shortcut.** The flip
+moves `defKey` before `settle` raises the event, so the script that receives the event is already
+the face the permanent now is. "When this creature transforms into Awoken Horror" is therefore a
+trigger written **on Awoken Horror** — put it on the front face instead and it fires on transforming
+back. The printed wording is the name of the script it is written on.
+
+It is recorded rather than raised at the flip for the family's usual reason: `transformPermanent`
+lives below the module that can `raise`. The contrast with morph is worth keeping: `turned-face-up`
+*is* raised at its own call site, because turning a morph up is a player action with the seat in
+hand, and a transform is almost always an effect resolving, where there is no action to hang it on.
+
+### Two cards, and the one that needed a new hook
+
+**Thing in the Ice // Awoken Horror** needed nothing new. `entersWith` put the four ice counters on
+as printed data; one trigger does both halves of "remove an ice counter. **Then** if it has no ice
+counters on it, transform it", because the card prints them as one sentence and two triggers would
+be two objects an opponent could answer between. Defender is on the front face's script and not on
+the back's, so a 0/4 that cannot attack becomes a 7/8 that can with nothing removed from anything.
+
+**Delver of Secrets** needed one, and the reason is about hidden information rather than about
+transform.
+
+The card reads "look at the top card of your library. You may reveal that card." A choice needs the
+player to see the card, and the obvious shape — a `ChoiceDecisionSpec` whose prompt names it — is a
+**leak**: `view.ts` builds `awaiting` once and puts its `prompt` in every seat's view. So Delver asks
+a `library-top` *cards* question instead, which is the channel scry already uses and which `view.ts`
+sends to the asked seat and to nobody else (`canIdentify`, and the cards-without-a-zone-list block).
+The prompt stays generic and the card travels privately.
+
+And the question is put **every** upkeep, over a land as readily as over an instant, with no
+`filter`. A question asked only when the answer mattered would tell the opponent the top card is an
+instant or a sorcery by the mere fact of being asked — the existence of the question leaks what the
+prompt was careful not to.
+
+That left the bot answering it exactly backwards. `library-top` had one standing answer and it was
+scry's — *choose a land, so it goes to the bottom* — and here choosing a card **reveals** it, so the
+bot would have hidden every instant and revealed the cards Delver does not care about. The fix is
+`CardsDecisionSpec.pick`, the card twin of `ChoiceDecisionSpec.best`: the card answers its own
+question because only the card knows what its question means, and `preferredCards` reaches the spec
+the way `preferredOption` and `preferredAmount` already do.
+
+**Named `pick` and not `best` for a concrete reason**, recorded so nobody tidies it: two members of
+the `DecisionSpec` union carrying a field of the same name with different signatures leaves
+TypeScript unable to infer the parameters of *either* inside a spec literal. Sharing the name would
+have meant annotating every existing `best` in the pool to pay for one new field.
+
+One deliberate small deviation: the revealed card is **not** marked `revealed` on its instance. That
+flag is sticky, so a card shown here would still be public three turns later in a hand. What the
+table needs to know — that the creature turned over — it gets from the transform itself.
+
+### Insectile Aberration has no script, and the suite had to learn that was allowed
+
+The back face's whole text is "Flying". `printedKeywords` reads a keyword-only line straight off the
+oracle text, so the card works with nothing written — and the deck-coverage test flagged it, because
+its exemption was "a creature whose text is *empty*".
+
+Generalised to the real rule: a card needs no script when its whole printed text is keywords the
+engine already grants. Every comma- and newline-separated piece has to be a keyword
+`printedKeywords` returned, so "Flying, whenever this attacks, draw a card" is still a card that
+needs one. That is a better rule than a transform-shaped exemption would have been, and `card-promises.mjs`
+reads clean on all four faces (351 cards, 249 promising something, 0 gaps, control still firing).
+
+### The deck slot, and a thing about this file rather than about the deck
+
+Both cards went into **Arc Tempest**, which is not a close call: Delver wants a library that is
+twenty-five instants and sorceries out of sixty and Thing in the Ice wants four of them cast, which
+that deck does by turn five on an ordinary draw. It also ran seven creatures, fewer than anything
+else in the pool.
+
+The first attempt cut Burst Lightning and Lava Spike and **broke twenty-six existing tests**, which
+is the finding worth keeping: nearly every one-of in that deck is either the pool's only copy of a
+mechanic or the card a test reaches for by name. Every candidate cut was referenced somewhere —
+Firebolt least at three mentions, Twincast most at forty. So the payment came from two **doubles**
+instead, the second Lightning Bolt and the second Counterspell, which leaves every existing test a
+copy to find.
+
+### The slot, priced rather than asserted
+
+`deck-probe` with the change reversed — the two transform cards out, the second Bolt and the second
+Counterspell back — across all twelve opponents, 34 paired games each, 408 in total:
+
+```
+stock (with the transform pair):  196-212   48.0%
+variant (the list it replaced):   168-240   41.2%
+the change: -28 of 408 for the old list
+```
+
+Per matchup the old list is **worse in ten of twelve, level in one and better in one** (ashen-rite,
++4). That consistency is worth more than the aggregate: `deck-probe`'s documented floor is ±20 games
+on 288 paired games, so −28 on 408 is only just outside a floor scaled to this sample, and a single
+number that size would be a direction rather than a size. Ten matchups moving the same way is not a
+noise shape.
+
+**What this is not.** It is one seed set; a second disjoint one has not been read yet, and the
+file's own discipline is to disbelieve anything smaller than the gap between two seed sets. And it
+prices *this swap* — two creatures against a Bolt and a Counterspell — not the cards in the
+abstract. It is reported here because the alternative was shipping the slot on the sentence "no
+claim that this is stronger", which turns out to have been too modest.
+
+### And a hole in the bot that only showed up because the deck moved
+
+Changing Arc Tempest turned `playout.test.ts`'s Squelch control red with `auto:foretell` where it
+expected `auto:pass`. Not noise: `spendsAnAnswersMana` opens with a check for `auto:cast` or
+`auto:activate`, so **a foretell walks straight past the one rule written to keep answer mana free**
+— {2} off two Islands, and the Counterspell in hand is no longer castable. Filed as #218 with the
+second half of it, which is that the rule's `canCounterASpell` exemption is right for casting an
+answer and wrong for foretelling one. The test strips foretell cards out of that hand meanwhile, so
+it keeps testing the reservation rather than the hole, and says so.

@@ -53,7 +53,8 @@ import type {
   DecisionSpec, DecisionSpecOf, ModeDef, ReplacementEvent, TargetSpec, TriggerEvent,
 } from './scriptTypes.js';
 import {
-  isChoiceDecision, isCountersDecision, isNumberDecision, isTargetDecision, targetCount,
+  isCardsDecision, isChoiceDecision, isCountersDecision, isNumberDecision, isTargetDecision,
+  targetCount,
 } from './scriptTypes.js';
 import {
   checkTargets, hasAnyLegalTargets, legalTargets, liveTargets, stillHasLegalTarget, stillTheObject,
@@ -851,6 +852,8 @@ function triggerMatches(
     // Narrowed to its own permanent by `raise`, like the two above: a morph turning over is its
     // own business, and the one thing worth checking is already checked by being in that list.
     case 'turned-face-up':
+    // And a transform, for exactly the same reason.
+    case 'transformed':
       return true;
     // Its own permanent only, which `raise` has already narrowed the watcher list to.
     case 'combat-damage':
@@ -977,7 +980,8 @@ function raise(
   // always included: it may be the watcher, and for a death it is in a graveyard by now rather
   // than on the battlefield.
   const selfOnly = new Set([
-    'becomes-tapped', 'leaves', 'combat-damage', 'targeted', 'turned-face-up', 'chapter',
+    'becomes-tapped', 'leaves', 'combat-damage', 'targeted', 'turned-face-up', 'transformed',
+    'chapter',
   ]);
   const everyBattlefield = apnapSeats(next).flatMap((seat) => {
     const mine = [...listAt(next, zoneKey(seat, 'battlefield'))].filter((id) => id !== subject);
@@ -1759,10 +1763,16 @@ function settle(state: GameState, before: GameState): GameState {
       it, exactly as the zone-change family works.
     */
     const copies = next.copied ?? [];
+    /*
+      And the permanents turned over, which is the simplest member of the family: the flip has
+      already moved `defKey`, so an id is the whole of what the event needs (see
+      `GameState.transformed`).
+    */
+    const turned = next.transformed ?? [];
     next = {
       ...next,
       died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [], exiled: [],
-      copied: [],
+      copied: [], transformed: [],
       // Drained here with the rest, and *after* the replacement passes above have read it: a
       // discard is a fact about a move that has already happened, and madness is the one thing
       // that asks about it.
@@ -1877,6 +1887,15 @@ function settle(state: GameState, before: GameState): GameState {
         it has resolved or been countered. Nothing printed with magecraft asks which spell it was.
       */
       next = raise(next, { kind: 'spell-cast', how: 'copied', types }, controller);
+    }
+    /*
+      And the transforms, raised after the copies and before the arrivals for no reason beyond
+      reading order: nothing in the pool watches two of these at once, and a permanent that
+      transformed did not enter, die, leave or reach a graveyard.
+    */
+    for (const id of turned) {
+      if (next.instances[id]?.zone !== 'battlefield') continue;
+      next = raise(next, { kind: 'transformed' }, next.instances[id]?.zoneSeat, id);
     }
     for (const { card, from, controller, wasCreature } of banished) {
       next = raise(
@@ -2644,6 +2663,29 @@ export function preferredOption(state: GameState): string | undefined {
   // Only a word the question actually offered: a card's own hint is still checked against the
   // list, because a hint that named something else would be a refused action and a stopped table.
   return picked !== undefined && pending.options.includes(picked) ? picked : pending.options[0];
+}
+
+/**
+ * Which **cards** the engine's opponent would pick for the question that is outstanding.
+ *
+ * The card twin of `preferredOption`, reached the same way and for the same reason: the spec lives
+ * behind `decisionSpecsFor` and the bot has no business knowing which ability is resolving. See
+ * `CardsDecisionSpec.pick`, and `decideCards` for the standing answers this overrides.
+ *
+ * Returns undefined when the card wrote no hint, which is almost always, and filters whatever it
+ * did write down to ids the question actually offered.
+ */
+export function preferredCards(state: GameState): readonly string[] | undefined {
+  const pending = state.pendingDecision;
+  if (pending === null || pending.from === undefined) return undefined;
+  const object = state.stackObjects[pending.stackId];
+  if (object === undefined) return undefined;
+  const specs = decisionSpecsFor(state, object);
+  const spec = specs[pending.resume.plan[pending.resume.at]?.specIndex ?? -1];
+  if (spec === undefined || !isCardsDecision(spec)) return undefined;
+  const picked = spec.pick?.(state, pending.seat, pending.candidates);
+  if (picked === undefined) return undefined;
+  return picked.filter((id) => pending.candidates.includes(id)).slice(0, pending.max);
 }
 
 /**

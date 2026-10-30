@@ -101,7 +101,7 @@ export interface LevelBand {
 /**
  * A card with more than one castable face, and which kind of printing it is.
  *
- * Three kinds, because the rules differ in a few places and nowhere else:
+ * Four kinds, because the rules differ in a few places and nowhere else:
  *
  * - `split`: the card is **only** castable as one of its halves, and the whole card's printed
  *   characteristics — the combined cost, the summed mana value — are what it has everywhere but
@@ -117,6 +117,13 @@ export interface LevelBand {
  *   card in `printedDefKey`, so every script, ability and mana source downstream reads the land
  *   with no changes at all — and `relocate`, which already restores `printedDefKey` on the way off
  *   the battlefield, makes the card in the graveyard the front face again (CR 712.4a).
+ * - `transform`: a transforming double-faced card (CR 712, CR 701.28). The **same pointer flip as
+ *   `modal`, made to happen later**: the card is cast and enters as its front face like any other
+ *   creature, and an effect turns it over while it is on the battlefield. `transformPermanent`
+ *   moves `defKey` to the other face and back, and because every reader downstream looks the face
+ *   up through `defKey`, a 1/1 that transforms is a 3/2 flier to characteristics, to the script
+ *   registry, to combat and to the table without any of them being told. Leaving the battlefield
+ *   restores the front face through the same `printedDefKey` the other two use (CR 712.4a).
  *
  * Everything else about the three is the same, which is why they share a field: a face is a
  * definition, casting one is a cast, and the half on the stack is the half that resolves.
@@ -128,7 +135,7 @@ export interface LevelBand {
  * rather than find out.
  */
 export interface CardFaces {
-  readonly kind: 'split' | 'adventure' | 'modal';
+  readonly kind: 'split' | 'adventure' | 'modal' | 'transform';
   readonly cards: readonly CardDef[];
 }
 

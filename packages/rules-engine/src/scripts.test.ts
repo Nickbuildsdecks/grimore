@@ -18,10 +18,11 @@ import {
   hasType,
   legalActions,
   parseTypeLine,
-  packView, parseManaCost, pendingDeclaration, proliferate, proliferateCandidates, protectedFrom,
+  packView, parseManaCost, pendingDeclaration, printedKeywords, proliferate,
+  proliferateCandidates, protectedFrom,
   pump, pumpAll, pumpTeam, scriptFor,
   scriptedCardNames,
-  staticEffect, timesCost, unpackView, viewFor,
+  staticEffect, timesCost, transformPermanent, unpackView, viewFor,
   type ContinuousEffect,
 } from './index.js';
 import {
@@ -6291,6 +6292,25 @@ describe('what a card says reaches the effect', () => {
   });
 });
 
+/**
+ * Whether a card's whole printed text is keywords the engine grants without a script.
+ *
+ * Empty text has always counted, which is what "vanilla" meant. This generalises it to the other
+ * card that needs nothing run: Insectile Aberration's entire back face is "Flying", and
+ * `printedKeywords` reads a keyword-only line straight off the oracle text, so writing a script for
+ * it would be writing a script that does what the engine already does.
+ *
+ * Every comma- and newline-separated piece has to be a keyword `printedKeywords` returned, so a
+ * card reading "Flying, whenever this attacks, draw a card" is still a card that needs a script.
+ */
+const keywordsOnly = (card: { readonly oracleText?: string }): boolean => {
+  const text = (card.oracleText ?? '').trim();
+  if (text === '') return true;
+  const granted = new Set(printedKeywords(text));
+  return text.split(/[\n,]+/).map((part) => part.trim().toLowerCase()).filter(Boolean)
+    .every((part) => granted.has(part));
+};
+
 describe('deck coverage', () => {
   it('scripts every card in both starter decks that needs one', () => {
     const missing: string[] = [];
@@ -6305,14 +6325,16 @@ describe('deck coverage', () => {
           the recursion, because a player can cast either.
         */
         for (const face of card.faces?.cards ?? []) {
-          if (scriptFor(face.name) === undefined) missing.push(`${face.name} (${face.typeLine})`);
+          if (scriptFor(face.name) === undefined && !keywordsOnly(face)) {
+            missing.push(`${face.name} (${face.typeLine})`);
+          }
         }
         if (card.faces?.kind === 'split') continue;
         if (scriptFor(card.name) !== undefined) continue;
         // A vanilla creature does not need a script: its body and its printed keywords are enough.
         // An adventurer's own text is the adventure, which the face above has already covered.
         const vanilla = /creature/i.test(card.typeLine)
-          && ((card.faces === undefined ? card.oracleText : '') ?? '').trim() === '';
+          && keywordsOnly(card.faces === undefined ? card : { ...card, oracleText: '' });
         if (!vanilla) missing.push(`${card.name} (${card.typeLine})`);
       }
     }
@@ -18895,5 +18917,261 @@ describe('the bot asks for peace, which is the only thing it ever says first', (
     expect(move(s, 1)).toEqual({
       type: 'pact:respond', by: 1, pact: offered.id, accept: false,
     });
+  });
+});
+
+describe('transform, the third way a card can have two faces', () => {
+  /*
+    `defKey` is the whole mechanism (D234). A modal card points it at the back face as it is played
+    and a morph points it at the real card when it turns up; a transform moves it while the
+    permanent sits on the battlefield, and because every reader downstream — characteristics, the
+    script registry, combat, the bot, the table — looks the face up through that one field, nothing
+    else in the engine had to learn that cards have backs.
+
+    So these tests assert the *consequences* rather than the pointer: a 1/1 Human Wizard with no
+    keywords becomes a 3/2 with flying, a 0/4 with defender becomes a 7/8 that can attack, and the
+    card in the graveyard afterwards is the front face again.
+  */
+
+  /** Declines whatever question is outstanding, which is how a test skips a reveal it did not set up. */
+  const decline = (s: GameState): GameState => (s.pendingDecision === null
+    ? s
+    : drain(apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: [] }), 40));
+
+  /**
+   * Arc Tempest with a Delver out and a named card on top of the library, stopped on its question.
+   *
+   * No `advanceTo` on purpose. `arena` hands the table over **on upkeep with the trigger already on
+   * the stack**, which is exactly the moment this card is about, and `advanceTo` would refuse to
+   * cross a step with a question outstanding. So the card is put on top first and `drain` then
+   * resolves the trigger into the question.
+   *
+   * The library has no option on `arena`, so the card goes in through the hand and is put back on
+   * top — the same move the kit makes to empty an opening hand.
+   */
+  const withDelver = (onTop: string): GameState => {
+    let s = arena({
+      decks: { 0: 'arc-tempest', 1: 'tidal-mind' },
+      battlefield: { 0: ['Island', 'Island', 'Mountain', 'Delver of Secrets'] },
+      hands: { 0: [onTop] },
+      turn: 6,
+      firstSeat: 0,
+    });
+    const card = find(s, 0, 'hand', onTop);
+    s = apply(s, { type: 'card:move', by: 0, card, toZone: 'library', position: 'top' });
+    return drain(s, 40);
+  };
+
+  it('asks every upkeep whether to reveal, whatever is on top', () => {
+    /*
+      **Asked unconditionally, and that is the rule rather than an oversight.** A question put only
+      when the answer mattered would tell the opponent that the top card is an instant or a sorcery
+      by the mere fact of being asked, and `awaiting` carries a prompt to every seat. So the choice
+      is offered over a land too, where taking it does nothing at all.
+    */
+    const land = withDelver('Island');
+    expect(land.pendingDecision?.prompt).toMatch(/reveal the top card/i);
+    expect(land.pendingDecision?.seat).toBe(0);
+  });
+
+  it('transforms into a 3/2 flier when the revealed card is an instant', () => {
+    const s = drain(decide(withDelver('Lightning Bolt'), ['Lightning Bolt']), 40);
+    const back = find(s, 0, 'battlefield', 'Insectile Aberration');
+    const ch = characteristicsOf(s, s.instances[back]!);
+    expect([ch.power, ch.toughness]).toEqual([3, 2]);
+    expect(ch.keywords.has('flying')).toBe(true);
+  });
+
+  it("and the flying comes off the back face's own printed line, with no script at all", () => {
+    /*
+      Insectile Aberration is deliberately unscripted: its whole text is "Flying", and
+      `printedKeywords` grants a keyword-only line to a card the registry has never heard of. The
+      assertion is both halves — the keyword is there, and nothing is written to put it there.
+    */
+    expect(scriptFor('Insectile Aberration')).toBeUndefined();
+    const s = drain(decide(withDelver('Counterspell'), ['Counterspell']), 40);
+    const back = find(s, 0, 'battlefield', 'Insectile Aberration');
+    expect(characteristicsOf(s, s.instances[back]!).keywords.has('flying')).toBe(true);
+  });
+
+  it('stays a 1/1 when the reveal is declined, because the card prints "may"', () => {
+    // Choosing nothing is declining: the spec is min 0, so an empty answer is legal.
+    const s = decline(withDelver('Lightning Bolt'));
+    const delver = find(s, 0, 'battlefield', 'Delver of Secrets');
+    const ch = characteristicsOf(s, s.instances[delver]!);
+    expect([ch.power, ch.toughness]).toEqual([1, 1]);
+    expect(ch.keywords.has('flying')).toBe(false);
+  });
+
+  it('and stays a 1/1 when the card revealed is a land, which is the card doing nothing', () => {
+    const s = drain(decide(withDelver('Island'), ['Island']), 40);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Delver of Secrets');
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Insectile Aberration');
+  });
+
+  it('the bot reveals an instant and leaves a land, which the scry rule would get backwards', () => {
+    /*
+      `library-top` had one standing answer and it was scry's: choose a land, so it goes to the
+      bottom. Here choosing a card *reveals* it, so that rule would hide every instant and reveal
+      exactly the cards Delver does not care about. `CardsDecisionSpec.pick` is what the card uses
+      to answer its own question, and this is the test that it is consulted.
+    */
+    const spell = withDelver('Lightning Bolt');
+    const revealed = drain(apply(spell, botAction(spell, 0, {})!), 40);
+    expect(namesIn(revealed, 0, 'battlefield')).toContain('Insectile Aberration');
+
+    const land = withDelver('Island');
+    const kept = drain(apply(land, botAction(land, 0, {})!), 40);
+    expect(namesIn(kept, 0, 'battlefield')).toContain('Delver of Secrets');
+  });
+
+  it('is the front face again once it leaves the battlefield (CR 712.4a)', () => {
+    /*
+      The same rule `relocate` already kept for a Clone that copied something: a copy effect and a
+      transform both live in `defKey`, and `printedDefKey` is what puts the card back. A
+      transformed Delver in a graveyard is a Delver, which is what could be reanimated.
+    */
+    let s = drain(decide(withDelver('Lightning Bolt'), ['Lightning Bolt']), 40);
+    const back = find(s, 0, 'battlefield', 'Insectile Aberration');
+    s = drain(destroy(s, back), 40);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Delver of Secrets');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Insectile Aberration');
+  });
+
+  it('enters with four ice counters, through the replacement effect rather than a trigger', () => {
+    /*
+      **Cast rather than placed, because that is the only way to see this.** `arena` puts a
+      permanent straight onto the battlefield without running the replacement effects that would
+      have applied on the way in — the same thing that made Arcbound Worker useless to the affinity
+      tests — so a placed Thing in the Ice has no counters at all and the tests below put them on by
+      hand. This one pays the two mana and watches them arrive.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'tidal-mind' },
+      battlefield: { 0: ['Island', 'Island'] },
+      hands: { 0: ['Thing in the Ice'] },
+      turn: 6,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Thing in the Ice'), targets: [],
+    }), 40);
+    const thing = find(s, 0, 'battlefield', 'Thing in the Ice');
+    expect(s.instances[thing]?.counters['ice']).toBe(4);
+  });
+
+  /**
+   * Arc Tempest with a Thing in the Ice out, its counters put on by hand, and four one-ofs to cast.
+   *
+   * Four of the five Mountains are needed and not padding: Bolt, Lava Spike and Burst Lightning are
+   * each {R} and Lightning Strike is {1}{R}, so the turn costs four red and one generic. All four
+   * are singletons in this deck, which is why they are these four and not two Bolts.
+   */
+  const FOUR_SPELLS = ['Lightning Bolt', 'Lava Spike', 'Lightning Strike', 'Burst Lightning'];
+  const withThing = (extra: Readonly<Record<number, readonly string[]>> = {}): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'tidal-mind' },
+      battlefield: {
+        0: ['Island', 'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain',
+          'Thing in the Ice', ...(extra[0] ?? [])],
+        1: ['Island', ...(extra[1] ?? [])],
+      },
+      hands: { 0: FOUR_SPELLS },
+      turn: 6,
+      firstSeat: 0,
+    }), 'precombat-main');
+    return addCounters(s, find(s, 0, 'battlefield', 'Thing in the Ice'), 'ice', 4);
+  };
+
+  /** Casts all four one-ofs at the opposing seat, which is four ice counters off. */
+  const castFour = (start: GameState): GameState => FOUR_SPELLS.reduce((s, name) => drain(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name),
+    targets: [{ kind: 'player', seat: 1 }],
+  }), 60), start);
+
+  it('counts down one counter per instant or sorcery and transforms on the fourth', () => {
+    const start = withThing();
+    const thing = find(start, 0, 'battlefield', 'Thing in the Ice');
+    const s = castFour(start);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Awoken Horror');
+    const horror = find(s, 0, 'battlefield', 'Awoken Horror');
+    const ch = characteristicsOf(s, s.instances[horror]!);
+    expect([ch.power, ch.toughness]).toEqual([7, 8]);
+    expect(s.instances[horror]?.counters['ice']).toBeUndefined();
+    // The same object throughout: a transform is not a new permanent (CR 712.4).
+    expect(horror).toBe(thing);
+  });
+
+  it('has defender until it flips, and the 7/8 does not', () => {
+    const start = withThing();
+    const thing = find(start, 0, 'battlefield', 'Thing in the Ice');
+    expect(characteristicsOf(start, start.instances[thing]!).keywords.has('defender')).toBe(true);
+    // Defender is on the front face's script, so moving `defKey` takes it away with no removal.
+    const s = castFour(start);
+    expect(characteristicsOf(s, s.instances[thing]!).keywords.has('defender')).toBe(false);
+  });
+
+  it("and its transform trigger returns every non-Horror creature, sparing itself", () => {
+    /*
+      "When this creature transforms into Awoken Horror" is written on the **back face**, which is
+      how the engine knows which face it became: the flip moves `defKey` before `settle` raises the
+      event, so the script that receives it is the face the permanent now is.
+
+      Returning rather than destroying is what makes it a reset and not a sweeper — nothing dies,
+      so nothing that watches a death sees anything, and every creature is a card to cast again.
+    */
+    const s = castFour(withThing({ 0: ['Monastery Swiftspear'], 1: ["Man-o'-War"] }));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Awoken Horror');
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Monastery Swiftspear');
+    expect(namesIn(s, 0, 'hand')).toContain('Monastery Swiftspear');
+    expect(namesIn(s, 1, 'battlefield')).not.toContain("Man-o'-War");
+    expect(namesIn(s, 1, 'hand')).toContain("Man-o'-War");
+  });
+
+  it('is symmetric: turning a transformed permanent over again gives the front face back', () => {
+    /*
+      CR 701.28 words transform as turning over whichever face is up. Nothing in this pool
+      transforms twice, so this is the half of `transformPermanent` no card uses — written and
+      tested anyway, because a one-way assumption built in here is the kind that is wrong years
+      later and cheap now.
+    */
+    const s = withThing();
+    const thing = find(s, 0, 'battlefield', 'Thing in the Ice');
+    const back = transformPermanent(s, thing);
+    expect(nameOf(back, thing)).toBe('Awoken Horror');
+    expect(nameOf(transformPermanent(back, thing), thing)).toBe('Thing in the Ice');
+  });
+
+  it('does nothing to a card that is not on the battlefield, which has no face turned up', () => {
+    const s = decline(advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'tidal-mind' },
+      hands: { 0: ['Thing in the Ice'] },
+      turn: 6,
+      firstSeat: 0,
+    }), 'precombat-main'));
+    const inHand = find(s, 0, 'hand', 'Thing in the Ice');
+    expect(transformPermanent(s, inHand)).toBe(s);
+  });
+
+  it("and the transform trigger is its own permanent's business only", () => {
+    /*
+      `transformed` is in the self-only list beside `turned-face-up`: a card that watched somebody
+      else's werewolf turn over would be reading the board, and nothing is printed that does.
+
+      So a Delver transforms next to an un-flipped Thing in the Ice, and the Thing's *back face*
+      trigger must not fire off it — which here means the board is not swept. The Delver's own flip
+      is the control: it did happen.
+    */
+    let s = withDelver('Lightning Bolt');
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'library', 'Thing in the Ice'),
+      toZone: 'battlefield', position: 'top',
+    });
+    s = drain(decide(s, ['Lightning Bolt']), 60);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Delver of Secrets');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Insectile Aberration');
+    // Still on the battlefield and still its front face: nothing swept it, and it did not flip.
+    expect(namesIn(s, 0, 'battlefield')).toContain('Thing in the Ice');
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Awoken Horror');
   });
 });

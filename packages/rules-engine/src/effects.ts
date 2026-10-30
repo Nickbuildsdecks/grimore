@@ -17,7 +17,7 @@ import {
   characteristicsOf, hasType, parseTypeLine, protectedFrom, type ContinuousEffect,
   type EffectDuration, type Keyword,
 } from './characteristics.js';
-import { defKeyFor, zoneKey, type CardDef, type CardInstance } from './cards.js';
+import { defKeyFor, facesOf, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import {
   drawFromLibrary, listAt, normaliseDef, relocate, requireInstance, withInstance, withZones,
 } from './cardActions.js';
@@ -1478,6 +1478,58 @@ export function becomeCopyOf(state: GameState, id: string, copying: string): Gam
     printedDefKey: self.printedDefKey ?? self.defKey,
   });
 }
+
+/**
+ * "Transform it" — turn a permanent over to its other face (CR 701.28).
+ *
+ * The same one-field move as `becomeCopyOf` and as the modal land `playLand` puts down, and that
+ * is the whole implementation: `defKey` is what every reader downstream looks a face up through, so
+ * pointing it at the other face makes a 1/1 Human Wizard into a 3/2 flying Insect for
+ * characteristics, for the script registry, for combat, for the bot and for the table, none of
+ * which has to learn that cards have backs. `printedDefKey` remembers the front face, and
+ * `relocate` already puts it back on the way off the battlefield (CR 712.4a).
+ *
+ * **Symmetric, because the rules word it that way**: transform turns over whichever face is up, so
+ * a permanent already showing its back goes back to its front. Nothing in this pool transforms
+ * twice, and writing the half that is used and leaving the other to a future caller is how a wrong
+ * one-way assumption gets built in.
+ *
+ * Refused everywhere but the battlefield, which is the rule rather than a guard: a card in a hand
+ * or a graveyard has no face turned up to turn over (CR 712.3), and a *spell* on the stack is its
+ * front face until it resolves.
+ *
+ * The flip is **recorded rather than announced** — `GameState.transformed`, drained by `settle`,
+ * which is what makes "when this creature transforms into Awoken Horror" an ordinary triggered
+ * ability. This function lives below the module that can `raise`, exactly as `copySpellOnStack`
+ * does, and the family exists so that a caller cannot forget.
+ *
+ * Not built, and said rather than discovered: a permanent that is **both** a copy and transformed.
+ * `printedDefKey` holds one memory and the two mechanics want it for different things, so a Clone
+ * of a Delver could not go back to being a Clone. Nothing in the pool is one; a card that needs it
+ * should give the instance a second field with a test, rather than find out.
+ */
+export function transformPermanent(state: GameState, id: string): GameState {
+  const self = state.instances[id];
+  if (self === undefined || self.zone !== 'battlefield') return state;
+  const printed = self.printedDefKey;
+  /*
+    Already turned over, so this turns it back: the front face is in `printedDefKey` and clearing
+    the field is what says "this permanent is the card it is printed as" again.
+  */
+  if (printed !== undefined) {
+    return withInstance(recordTransform(state, id), id, { defKey: printed, printedDefKey: undefined });
+  }
+  const back = facesOf(state.cardDefs[self.defKey])[0];
+  if (back === undefined) return state;
+  const backKey = defKeyFor(back);
+  if (state.cardDefs[backKey] === undefined) return state;
+  return withInstance(recordTransform(state, id), id, { defKey: backKey, printedDefKey: self.defKey });
+}
+
+/** The flip, written down for `settle` to raise. Automated tables only, like the rest of the family. */
+const recordTransform = (state: GameState, id: string): GameState => (state.automated
+  ? { ...state, transformed: [...(state.transformed ?? []), id] }
+  : state);
 
 /**
  * `keyOverride` decides where the definition is registered, for a copy whose characteristics are

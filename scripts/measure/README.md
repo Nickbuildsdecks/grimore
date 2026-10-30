@@ -661,3 +661,20 @@ one reason: a test that asserts "the bot's answer does not change" is worth exac
 proof that it *could* have changed. With the flag off the same sweep reads 9 and the same regression
 position moves; with it on both read zero. That pairing is in `playout.test.ts` as two tests rather
 than one, and `hidden-info.mjs` takes `BOT=` so it can run both arms itself.
+
+**A starter deck's one-ofs are load-bearing, and changing a deck changes what the bot draws.** Two
+cards had to go into Arc Tempest for D234, and cutting the two most redundant pieces of burn broke
+**twenty-six existing tests**: nearly every one-of in that deck is either the pool's only copy of a
+mechanic or the card a test reaches for by name, and every candidate was referenced somewhere —
+Firebolt least at three mentions, Twincast most at forty. Reducing a *double* to a single breaks
+nothing, because a test only needs one copy to find, so that is where a new slot should come from
+unless the measurement says otherwise.
+
+The second half is less obvious and more useful. The same change turned a `playout.test.ts` control
+red with `auto:foretell` where it expected `auto:pass` — because `advanceTo` crosses the draw step,
+so a deck's order decides what the bot is holding when a test asks it to choose. **That was a real
+hole in the bot rather than a brittle test** (#218: `spendsAnAnswersMana` never looks at
+`auto:foretell`, so a foretell spends the exact mana the rule exists to keep free). A bot test that
+reads a drawn card is an instrument whose reading can change for two different reasons, and telling
+them apart is worth the minute it takes: the question to ask is not "which deck change broke this"
+but "is the new answer wrong".

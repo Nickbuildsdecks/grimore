@@ -334,6 +334,26 @@ export type TriggerEvent =
    */
   | { readonly kind: 'turned-face-up' }
   /**
+   * "When this creature transforms into ~" — a transforming double-faced card's own trigger
+   * (CR 701.28, CR 603.2).
+   *
+   * Its own permanent only, like `turned-face-up` and for the same reason: a card that watched
+   * somebody else's werewolf turn over would be reading the board, and nothing is printed that
+   * does.
+   *
+   * **Which face it became is not a field on the event, and that is the design rather than a
+   * shortcut.** A transform moves the instance's `defKey` before `settle` raises this, so the
+   * script that receives it is already the face the permanent now *is* — put the trigger on the
+   * back face and it fires on transforming into that face, put it on the front and it fires on
+   * transforming back. The printed wording "transforms into Awoken Horror" is therefore the name
+   * of the script it is written on, which is the same trick that lets a modal card's back face
+   * carry its own abilities.
+   *
+   * Like `turned-face-up` it is **not** an entry trigger: the permanent was already on the
+   * battlefield, is not a new object, and its `etb` has long since fired.
+   */
+  | { readonly kind: 'transformed' }
+  /**
    * "Whenever ~ deals combat damage to a player."
    *
    * To a *player*, always: that is the half of the templating the cards in this pool use and the
@@ -586,6 +606,31 @@ export interface CardsDecisionSpec {
   readonly max?: number;
   /** Which cards in that zone qualify. Without one, any card in the zone does. */
   readonly filter?: (state: GameState, id: string, chooser: SeatIndex) => boolean;
+  /**
+   * Which cards the engine's own opponent picks, written by the card.
+   *
+   * The twin of `ChoiceDecisionSpec.best` and here for the same reason: only the card knows what
+   * its question *means*. **Named `pick` rather than `best` deliberately**: two members of the
+   * `DecisionSpec` union carrying a field of the same name and different signatures leaves
+   * TypeScript unable to infer the parameters of *either* inside a spec literal, so sharing the
+   * name would have put `state: GameState, chooser: SeatIndex` annotations on every existing
+   * `best` in the pool to pay for one new field here. The bot has one standing answer per zone — bottom a land once you have
+   * five, take the best card out of a library or a graveyard, give up the worst out of a hand —
+   * and those answers are right for the questions they were written for.
+   *
+   * They are wrong for Delver of Secrets, which is the card that needed this. "Look at the top
+   * card of your library. You may reveal that card" shares its zone with scry and means the
+   * opposite: choosing the card is *revealing* it, so the scry rule — which chooses a card in
+   * order to bottom it — would reveal exactly the cards Delver does not care about and hide the
+   * instants it transforms on.
+   *
+   * Undefined falls back to the standing answer, which is why almost every card leaves it out. The
+   * engine checks the returned ids against the question's own candidate list, so a hint that named
+   * something else is ignored rather than becoming a refused action and a stopped table.
+   */
+  readonly pick?: (
+    state: GameState, chooser: SeatIndex, candidates: readonly string[],
+  ) => readonly string[] | undefined;
   /** Never set on this shape; the four are told apart by which of these is present. */
   readonly options?: never;
   readonly range?: never;
@@ -808,6 +853,10 @@ export type DecisionSpecOf = DecisionSpec | ((state: GameState, source: string) 
 /** Whether a question is the kind whose answer is a word. Narrows for TypeScript as well. */
 export const isChoiceDecision = (spec: DecisionSpec): spec is ChoiceDecisionSpec =>
   spec.options !== undefined;
+
+/** Whether a question is the kind whose answer is a set of cards: the one with a zone. */
+export const isCardsDecision = (spec: DecisionSpec): spec is CardsDecisionSpec =>
+  spec.from !== undefined;
 
 /** Whether a question is the kind whose answer is a number. */
 export const isNumberDecision = (spec: DecisionSpec): spec is NumberDecisionSpec =>

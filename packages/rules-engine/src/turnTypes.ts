@@ -731,6 +731,23 @@ export interface AutomationState {
    */
   readonly copied: readonly CopiedSpell[];
   /**
+   * Permanents **turned over** since the last settle: transform (CR 701.28).
+   *
+   * The ninth member of the detect-rather-than-announce family — `entered`, `died`, `left`, `drew`,
+   * `toGraveyard`, `discarded`, `exiled`, `copied` — and the simplest of them, because the fact it
+   * has to carry is only *which permanent*. Which face it became needs no recording: the flip has
+   * already moved `defKey`, so by the time `settle` raises the event the active script **is** the
+   * back face's, and "when this creature transforms into Awoken Horror" is a trigger written on
+   * Awoken Horror rather than a lookup.
+   *
+   * Here rather than raised at the flip for the family's usual reason: `transformPermanent` lives
+   * below the module that can `raise`, so the fact is written where it happens. And unlike morph's
+   * `turned-face-up` — which *is* raised at its own call site, because turning a morph up is a
+   * player action with the seat in hand — a transform is almost always caused by an effect
+   * resolving, where there is no action to hang it on.
+   */
+  readonly transformed: readonly string[];
+  /**
    * Cards that went from a **hand** to a graveyard since the last settle: discards.
    *
    * The narrowest of the zone-change lists, and the one that exists for a mechanic rather than for

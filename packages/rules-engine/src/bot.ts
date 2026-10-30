@@ -19,7 +19,7 @@ import { zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
   bottomOwed, hasAnyLegalTargets, modesOf, pendingDeclaration, pendingRetarget, preferredAmount,
-  preferredOption, stillDeciding,
+  preferredCards, preferredOption, stillDeciding,
 } from './automation.js';
 import {
   characteristicsOf, hasSubtype, hasType, parseTypeLine, type Keyword,
@@ -189,6 +189,11 @@ function newTargetFor(
 function decideCards(
   state: GameState, seat: SeatIndex, ask: NonNullable<LegalActions['mustDecide']>,
 ): string[] {
+  // A card that answers its own question gets to, ahead of every standing rule below: the rules
+  // below are right for the questions they were written for and the card knows when it is asking a
+  // different one. See `CardsDecisionSpec.pick`.
+  const own = preferredCards(state);
+  if (own !== undefined) return [...own];
   // Scry is neither gaining nor losing: the answer is "which of these do I not want to draw", and
   // the only thing the bot knows about wanting is mana. So it bottoms a land once it has enough
   // of them and keeps everything else, which is the one scry decision that is obviously right and

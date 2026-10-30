@@ -6606,6 +6606,57 @@ copying it, reimplements the server's check, and runs it over every tag this fil
 suffixes each. Verified by breaking it — `SAFE_LETTERS = 'crapjmq'` fails with
 `wp_g_rcrap would be refused for "crap"`. The suite reads 28 of 28.
 
+### Transform, which turned out to be one field moved at a third moment (D234)
+
+The pool had two of the three double-faced shapes. A modal DFC points the instance's `defKey` at its
+back face as it is **played**; a morph points `defKey` at the real card when it is **turned up**.
+Transform is the same pointer moved while the permanent sits on the battlefield, so
+`transformPermanent` is eleven lines — and that is the finding, not a disappointment. `defKey` is
+what characteristics, the script registry, combat, the bot and the table all look a face up through,
+so a 1/1 Human Wizard that turns over **is** a 3/2 flying Insect to every one of them without any of
+them being told that cards have backs. `printedDefKey` and `relocate` already gave CR 712.4a for
+free: a transformed Delver in a graveyard is a Delver.
+
+`transformed` is the ninth member of the detect-rather-than-announce family and the simplest — a
+list of ids, because **which face it became needs no recording.** The flip moves `defKey` before
+`settle` raises the event, so the script receiving it is already the face the permanent now is:
+"when this creature transforms into Awoken Horror" is a trigger *written on Awoken Horror*, and the
+printed wording is the name of the script it lives on.
+
+Two cards. **Thing in the Ice // Awoken Horror** needed nothing new — `entersWith` for the four ice
+counters, one trigger for "remove one, then transform if none remain" because the card prints it as
+one sentence, and defender simply gone once the 0/4 is a 7/8 because defender was on the front
+face's script. **Delver of Secrets** needed one hook, and the reason is hidden information rather
+than transform: "look at the top card of your library, you may reveal it" needs the player to see a
+card, and a prompt naming it would leak — `awaiting` carries one prompt to every seat. So it asks a
+`library-top` cards question, the channel scry already uses, which goes to the asked seat alone. The
+question is put *every* upkeep over anything, because a question asked only when it mattered would
+leak through its own existence.
+
+That left the bot answering backwards — `library-top`'s one standing answer is scry's "choose a
+land so it goes to the bottom", and here choosing *reveals*. `CardsDecisionSpec.pick` is the card
+twin of `ChoiceDecisionSpec.best`, and the card now answers its own question.
+
+Insectile Aberration has **no script at all**: its whole text is "Flying", which `printedKeywords`
+grants. The deck-coverage test had to learn that was allowed, and its exemption is now the real rule
+— a card needs no script when its whole printed text is keywords the engine already grants — which
+is better than a transform-shaped exemption would have been.
+
+And the slot is priced rather than asserted. `deck-probe` with the change reversed, across all
+twelve opponents and 408 paired games: **196-212 (48.0%) with the transform pair against 168-240
+(41.2%) for the second Bolt and second Counterspell it replaced** — 28 games, with the old list
+worse in ten of twelve matchups, level in one and better in one. The consistency matters more than
+the total, because ±20 on 288 games is the probe's floor and −28 on 408 is only just past a scaled
+one. One seed set; a second has not been read.
+
+Two things worth carrying forward that have nothing to do with transform. **A starter deck's
+one-ofs are load-bearing for the test suite**: cutting Burst Lightning and Lava Spike to make room
+broke twenty-six existing tests, every candidate cut was referenced somewhere (Firebolt least at
+three mentions, Twincast most at forty), and the payment came from two doubles instead. And moving
+the deck at all turned a playout test red with `auto:foretell` where it expected `auto:pass` —
+**not noise**: `spendsAnAnswersMana` only looks at `auto:cast` and `auto:activate`, so a foretell
+spends the very mana the rule exists to protect. That is #218.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

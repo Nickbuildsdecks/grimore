@@ -3252,6 +3252,69 @@ const WAX_WANE: CardDef = {
   spells, and the tempo it gives up for that is a turn.
 */
 
+/*
+  And the fourth kind: a **transforming** double-faced card (CR 712).
+
+  The difference from the modal pair below is *when* the pointer moves rather than how. A modal card
+  decides which face it is as it is played and stays that face; a transforming one is cast and
+  enters as its front face like any other creature, and an effect turns it over later. Both are one
+  field — `defKey` — and `transformPermanent` is the whole of the second case.
+
+  Two things about the back faces are printed data and easy to get wrong. They have **no mana cost**,
+  because nothing ever casts them. And their **mana value is the front face's** (CR 712.4c): a
+  transformed Thing in the Ice is still a two-mana permanent to anything that counts mana values on
+  the battlefield, so `cmc` carries the front's number even though `manaCost` is empty.
+*/
+
+const DELVER_OF_SECRETS: CardDef = {
+  name: 'Delver of Secrets',
+  typeLine: 'Creature — Human Wizard',
+  manaCost: '{U}',
+  cmc: 1,
+  oracleText: 'At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform Delver of Secrets.',
+  colors: ['U'],
+  power: '1',
+  toughness: '1',
+  faces: {
+    kind: 'transform',
+    cards: [{
+      // No script at all: the back face is a keyword-only line, which `printedKeywords` reads.
+      name: 'Insectile Aberration',
+      typeLine: 'Creature — Human Insect',
+      manaCost: '',
+      cmc: 1,
+      oracleText: 'Flying',
+      colors: ['U'],
+      power: '3',
+      toughness: '2',
+    }],
+  },
+};
+
+const THING_IN_THE_ICE: CardDef = {
+  name: 'Thing in the Ice',
+  typeLine: 'Creature — Horror',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  oracleText: 'Defender\nThing in the Ice enters the battlefield with four ice counters on it.\nWhenever you cast an instant or sorcery spell, remove an ice counter from Thing in the Ice. Then if it has no ice counters on it, transform it.',
+  colors: ['U'],
+  power: '0',
+  toughness: '4',
+  faces: {
+    kind: 'transform',
+    cards: [{
+      name: 'Awoken Horror',
+      typeLine: 'Creature — Kraken Horror',
+      manaCost: '',
+      cmc: 2,
+      oracleText: "When this creature transforms into Awoken Horror, return all non-Horror creatures to their owners' hands.",
+      colors: ['U'],
+      power: '7',
+      toughness: '8',
+    }],
+  },
+};
+
 const HAGRA_MAULING: CardDef = {
   name: 'Hagra Mauling',
   typeLine: 'Instant',
@@ -5859,9 +5922,33 @@ export const ARC_TEMPEST: DeckSpec = {
     { card: GELECTRODE, count: 2 },
     { card: THERMO_ALCHEMIST, count: 2 },
     { card: ENIGMA_DRAKE, count: 1 },
+    /*
+      And the two **transform** creatures, paid for by the second Lightning Bolt and the second
+      Counterspell.
+
+      This is the deck they belong in and it is not close. Delver of Secrets wants a library that is
+      twenty-five instants and sorceries out of sixty; Thing in the Ice wants four of them cast,
+      which this deck does by turn five on an ordinary draw. They are also what the deck was
+      shortest of — it ran seven creatures, fewer than anything else in the pool — and a one-mana
+      1/1 that becomes a 3/2 flier and a two-mana 0/4 that holds the ground until it is a 7/8 are
+      bodies that cost the plan nothing.
+
+      **Two doubles trimmed rather than two singletons cut**, which is a deliberate choice about
+      this file rather than about the deck: nearly every one-of in here is the pool's only copy of a
+      mechanic or the card a test reaches for by name, and cutting one orphans work elsewhere for no
+      gain. The second Bolt is the most redundant card in a deck that keeps ten other pieces of
+      burn, and Counterspell's {U}{U} is the hardest cost in a twelve-blue-source deck by the
+      description's own account — one copy plus Saw It Coming, Squelch and Swerve is still the
+      interaction the deck had.
+
+      **No claim that this is stronger.** The slot has not been priced, and D229's rule applies: a
+      keyword needs a card in a deck to exist in the pool at all, and that is why these are here.
+    */
+    { card: DELVER_OF_SECRETS, count: 1 },
+    { card: THING_IN_THE_ICE, count: 1 },
 
     // ── Twelve spells that point at a face ──
-    { card: LIGHTNING_BOLT, count: 2 },
+    { card: LIGHTNING_BOLT, count: 1 },
     /*
       The pool's split card, for the last Shock.
 
@@ -6005,7 +6092,7 @@ export const ARC_TEMPEST: DeckSpec = {
       is the narrow one, and it is narrow in the right direction, since six of the nine decks here
       win with creatures.
     */
-    { card: COUNTERSPELL, count: 2 },
+    { card: COUNTERSPELL, count: 1 },
     /*
       Squelch for the Essence Scatter, and the cut was worth more than the card again.
 
