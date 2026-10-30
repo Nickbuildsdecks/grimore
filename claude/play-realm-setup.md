@@ -944,7 +944,14 @@ The code box is still there and still the way into an unlisted table. **Join** t
 Four browser suites, one per way of playing. All need the stack running and Playwright available
 (`npm i -D playwright`, or `PLAYWRIGHT_PATH=...`). Screenshots land in `e2e-shots/`.
 
+**Start the stack with the launcher, not by hand.** `scripts/play.mjs` sets `VITE_REALTIME_URL`, and
+the browser needs it: there is deliberately no `/socket.io` proxy in `vite.config.ts`, so without
+that variable the page opens a socket to the dev server and gets nothing. The suites then time out
+waiting for the pregame screen, which looks like a broken table and is not.
+
 ```bash
+PLAY_HOST=127.0.0.1 node scripts/play.mjs &   # both servers, with the variable set
+
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 73 checks
 node scripts/e2e-arena.mjs      # two browsers, rules engine           — 52-58 checks
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks

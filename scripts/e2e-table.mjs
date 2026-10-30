@@ -11,11 +11,24 @@
  * cannot see is genuinely not in their browser. The card backs are asserted to carry no name,
  * because the server never sent one.
  *
- * Run it yourself:
+ * Run it yourself, the same way as its three siblings:
+ *   PLAY_HOST=127.0.0.1 node scripts/play.mjs &
+ *   node scripts/e2e-table.mjs
+ *
+ * **Use the launcher.** These instructions used to spell the servers out by hand and were missing
+ * one variable, which is worth recording because of how the failure reads: the web app addresses
+ * the table server through `VITE_REALTIME_URL`, there is deliberately **no** `/socket.io` proxy in
+ * `vite.config.ts` (the upgrade was reset before reaching the target), and without the variable the
+ * browser opens a socket to the dev server, gets nothing, and this test times out on
+ * `[data-testid="pregame"]` — which looks exactly like a broken pregame screen and is not. The
+ * three other `e2e-*` scripts have pointed at `play.mjs` since it existed; this one was the oldest
+ * and kept its hand-rolled copy.
+ *
+ * By hand, if you want the pieces separate — note the last line of the vite command:
  *   redis-server --daemonize yes --save '' --appendonly no
  *   pnpm -r --filter './packages/*' run build && pnpm --filter @grimore/realtime run build
  *   PORT=4100 REDIS_URL=redis://127.0.0.1:6379 node apps/realtime/dist/server.js &
- *   (cd apps/web && ./node_modules/.bin/vite --port 5100) &
+ *   (cd apps/web && VITE_REALTIME_URL=http://127.0.0.1:4100 ./node_modules/.bin/vite --port 5100) &
  *   node scripts/e2e-table.mjs
  *
  * Screenshots land in the directory given by SHOT_DIR (default ./e2e-shots), so a failure can be

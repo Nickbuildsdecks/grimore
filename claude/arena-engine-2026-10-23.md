@@ -6948,6 +6948,37 @@ and nothing else** — pass, decide, choose, discard, order and playLand are 0.0
 **blocks are the most weight-sensitive decision in the game**, 27.7% changing without `creature` and
 20.9% without `life`.
 
+## The whole stack, driven through real browsers after today's engine change
+
+Worth recording because none of it is in CI — the browser suites need a running stack and a
+Chromium, so the thing that proves "two people can sit down and play" is the thing nobody runs
+automatically. Run against the branch as it stands, after the `expired` engine change, the
+`BotOptions.weights` refactor and twenty-nine harness edits:
+
+```
+scripts/e2e-table.mjs    two browsers, tabletop mode          73/73
+scripts/e2e-arena.mjs    two browsers, rules engine           51/51
+scripts/e2e-pod.mjs      four browsers, a Commander pod       42/42
+scripts/e2e-solo.mjs     one browser, against the computer    24/24
+                                                             ------
+                                                             190/190
+```
+
+Including the checks that are not about features: no uncaught exceptions in any browser, no React
+warnings, nothing the table depends on failing to load, the opponent's hand genuinely absent from
+the other browser rather than merely hidden, and the whole table fitting a phone without sideways
+scrolling.
+
+**And a documentation bug worth more than the green ticks**, because it cost two attempts and the
+failure lies about its cause. `e2e-table.mjs` is the oldest of the four and kept hand-rolled launch
+instructions when `scripts/play.mjs` arrived; those instructions omit `VITE_REALTIME_URL`. There is
+deliberately **no** `/socket.io` proxy in `vite.config.ts` — the WebSocket upgrade was reset before
+reaching the target — so without that variable the browser opens a socket to the dev server, gets
+nothing, and the suite times out on `[data-testid="pregame"]`. Which reads exactly like a broken
+pregame screen, and is not. Fixed to point at the launcher like its three siblings, with the
+by-hand form kept and the variable in it, and the same warning added to the setup doc's
+*Proving it works*.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
