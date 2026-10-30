@@ -18662,3 +18662,113 @@ describe('myriad, the first keyword in this pool that reads the number of people
     expect(sources).toEqual(['Blade of Selves']);
   });
 });
+
+describe('magecraft, and the half of two cards that a stale comment said was unreachable', () => {
+  /*
+    Both magecraft cards are printed "Whenever you cast **or copy** an instant or sorcery spell",
+    and for eight entries the copy half did nothing. The comment above them in `scripts.ts` said
+    why, and it was true when it was written: nothing in the pool copied an instant or a sorcery,
+    so a cast event was the whole of what these cards could see. **Twincast arrived (D131) and
+    nothing noticed** — a copy of a spell is not cast (CR 707.12), so the cast event cannot see one.
+
+    Found by `scripts/measure/card-promises.mjs`, which reads every card's text and asks whether its
+    script carries what the text promises. Worth saying that it was found through *that comment*
+    rather than through the heuristic: the instrument put two cards' ward and magecraft in front of a
+    reader, and the reader read the lines next to them.
+
+    One deck here with Twincast and both magecraft cards in it, which is a configuration a player
+    can actually reach: the lobby takes a pasted list (D125) and `customDeck` resolves any name the
+    pool knows. Across the shipped decks the three live apart — Twincast in Arc Tempest, the Witch
+    in Tidal Mind, the Elite in Verdant Guard — which is the other half of why nobody noticed.
+  */
+  const magecraftDeck = customDeck({
+    id: 'magecraft-test',
+    name: 'Magecraft Test',
+    entries: [
+      { name: 'Twincast', count: 4 },
+      { name: 'Lightning Bolt', count: 4 },
+      { name: 'Sedgemoor Witch', count: 2 },
+      { name: 'Dragonsguard Elite', count: 2 },
+      { name: 'Monastery Swiftspear', count: 2 },
+      { name: 'Island', count: 24 },
+      { name: 'Mountain', count: 22 },
+    ],
+  }).deck;
+
+  /** Seat 0 with the three watchers out, five lands tapped, a Bolt and a Twincast in hand. */
+  const table = (): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'magecraft-test', 1: 'ember-rush' },
+      deckSpecs: { 'magecraft-test': magecraftDeck },
+      hands: { 0: ['Lightning Bolt', 'Twincast'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Island', 'Mountain', 'Mountain',
+          'Sedgemoor Witch', 'Dragonsguard Elite', 'Monastery Swiftspear'],
+        1: ['Mountain'],
+      },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0);
+  };
+
+  /** Bolt at the opponent, Twincast at the Bolt, everything resolved, every question declined. */
+  const boltAndCopyIt = (s: GameState): GameState => {
+    let next = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    });
+    const bolt = next.stackOrder[0]!;
+    next = apply(next, {
+      type: 'auto:cast', by: 0, card: find(next, 0, 'hand', 'Twincast'),
+      targets: [{ kind: 'card', id: bolt }],
+    });
+    next = drain(next, 60);
+    for (let i = 0; i < 10 && next.pendingDecision !== null; i += 1) {
+      next = drain(apply(next, { type: 'auto:decide', by: next.pendingDecision.seat, cards: [] }), 60);
+    }
+    return next;
+  };
+
+  it('fires for the copy as well as for the two casts, which is three Pests and not two', () => {
+    /*
+      The arithmetic is the assertion. Two spells are **cast** — the Bolt and the Twincast, both
+      instants — and one spell is **copied**, when the Twincast resolves. So magecraft fires three
+      times, and before this was fixed it fired twice.
+    */
+    const s = boltAndCopyIt(table());
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Pest')).toHaveLength(3);
+  });
+
+  it('and on the other magecraft card, which counts in twos', () => {
+    // Two +1/+1 counters per fire, so six rather than four.
+    const s = boltAndCopyIt(table());
+    const elite = find(s, 0, 'battlefield', 'Dragonsguard Elite');
+    expect(s.instances[elite]?.counters['+1/+1']).toBe(6);
+  });
+
+  it('but prowess does not see the copy, because a copy is not cast (CR 707.12)', () => {
+    /*
+      The negative control, and the reason `how` defaults to `cast` rather than to `any`. Prowess is
+      a `spell-cast` trigger written long before any of this and it asks for nothing new, so it must
+      count the two casts and ignore the copy: a 1/2 Swiftspear ends this line a 3/4, not a 4/5.
+
+      Storm, cascade and a Chalice of the Void are the same question with the same answer, and they
+      get it from the same default — which is the whole reason the copy rides the cast event with a
+      discriminator instead of arriving as an event of its own that every old watcher would have had
+      to learn to ignore.
+    */
+    const s = boltAndCopyIt(table());
+    const spear = find(s, 0, 'battlefield', 'Monastery Swiftspear');
+    expect(power(s, spear)).toBe(3);
+    expect(characteristicsOf(s, s.instances[spear]!).toughness).toBe(4);
+  });
+
+  it('and the copy is drained rather than left to fire again on the next settle', () => {
+    // The family's own invariant: `settle` empties the list it read, so a second settle with no
+    // new copy raises nothing. A record that outlived its settle would fire magecraft every time
+    // anything happened for the rest of the turn.
+    const s = boltAndCopyIt(table());
+    expect(s.copied).toEqual([]);
+  });
+});

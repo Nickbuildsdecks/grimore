@@ -13744,3 +13744,74 @@ the one nobody gets to read. One occurrence of a four-word mismatch cost more th
 and the fix was moving three lines.
 
 If it recurs, it names itself. That is the whole of what this entry claims.
+
+## D231 — Magecraft's "or copy" half, wrong for eight entries, and the audit that found it
+
+The suite asserts every castable face in every deck **has** a script. Nothing asserted that a script
+carries everything its card's printed text **promises**, and that is the worst shape of bug this
+project can have: a card that silently does less than it reads throws nothing, fails no test, and
+costs a player a game they cannot tell they lost to the engine rather than to their own misreading.
+
+So `scripts/measure/card-promises.mjs` reads every card's `oracleText`, derives what it promised,
+and reports the cards whose script does not carry it.
+
+### What it found
+
+**Dragonsguard Elite and Sedgemoor Witch** are both printed "Magecraft — Whenever you cast **or
+copy** an instant or sorcery spell", and the copy half did nothing. The comment above them said so
+and said why:
+
+> nothing in this pool copies an instant or a sorcery, so a `spell-cast` trigger is the whole of
+> what these cards do at this table. Said out loud rather than silently approximated, because the
+> day something does copy one this is the line that is wrong.
+
+That was true when it was written. **Twincast arrived (D131) and nothing noticed for eight entries.**
+A copy of a spell is not cast (CR 707.12) — nobody announces it and no cost is paid — so the cast
+event could not see one, and two cards quietly did half of what they read. Reachable by a player,
+not only in theory: the lobby takes a pasted list (D125) and `customDeck` resolves any name the pool
+knows, so Twincast and either magecraft card can sit in one deck. Across the shipped decks the three
+live apart, which is the other half of why nobody noticed.
+
+### The fix: one event with a discriminator, not a second event
+
+`spell-cast` gains `how?: 'cast' | 'copied' | 'any'`, and **the matcher defaults to `cast`**. That
+default is the whole design: every watcher older than this clause keeps seeing exactly what it saw,
+so storm still counts spells cast, cascade still fires on a cast, prowess still pumps on a cast and a
+Chalice of the Void still answers one. Magecraft asks for `any`, which is the printed reading and the
+only card shape in the pool that wants it. A second event kind would have meant teaching every
+existing watcher to ignore something new, which is the same choice backwards.
+
+The copy is recorded where it is made and raised by `settle`, which makes `GameState.copied` the
+eighth member of the detect-rather-than-announce family — `entered`, `died`, `left`, `drew`,
+`toGraveyard`, `discarded`, `exiled`. `copySpellOnStack` lives below the module that can `raise`, so
+a caller that had to remember to announce it is a caller that eventually does not. What is recorded
+is the copy's **types** and whose copy it is rather than an id, because a copy of a spell is not a
+card: it is a stack object with a synthetic id that has resolved or been countered long before
+anything reads it.
+
+Four tests, and the arithmetic is the assertion: a Bolt cast, a Twincast cast, and the copy the
+Twincast makes is **three** magecraft fires, so three Pests and six counters rather than two and
+four. The negative control is prowess on the same board — a 1/2 Monastery Swiftspear ends that line
+a 3/4 and not a 4/5, because it counted the casts and not the copy.
+
+### What the instrument is worth, which is not what its gap count says
+
+Its first run reported **172 gaps**, its second **25**, its third **0** — and only one of those three
+numbers was ever about the pool. 172 was a bug in its own field lookup (a promise with no colon read
+`script[undefined]`). 25 was a table of field names written from memory, when embalm, eternalize,
+unearth, cycling, crew, undying, persist, extort, storm, cascade and ward are carried by `abilities`
+or `triggers` rather than by a field of their own; the table is now **derived from the pool** by
+asking which fields the cards printing each keyword actually use. Only then is 0 the pool's answer.
+
+Which is a sharp instance of the lesson I wrote into the measure README earlier the same day — before
+trusting a flat reading, ask whether the harness is capable of a non-flat one — so the instrument now
+answers that question about itself on **every run**: two cards are planted, one promising flying with
+no script to carry it and one promising nothing, and the run prints what each reported. If the
+planted gap ever stops being flagged, every clean run after that point means nothing, and that line
+is what says so.
+
+**And the real find came through a comment rather than through the heuristic.** The audit put two
+cards' ward and magecraft in front of a reader and the reader read the lines next to them. That is
+worth knowing about what this kind of instrument is for: not a gate that passes or fails, but a way
+of walking a reader past two hundred and forty-five cards' worth of text in the places most likely to
+be stale.

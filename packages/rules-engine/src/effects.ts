@@ -963,11 +963,26 @@ export function copySpellOnStack(
     ...(moved ? { targets: [aimedAt!], targetSeqs: targetSeqsFor(state, [aimedAt!]) } : {}),
     description: `${object.description} (copy)`,
   };
+  /*
+    And the copy is recorded, which is magecraft's "or copy" half (see `GameState.copied`).
+
+    Recorded here rather than announced by the caller, because this is the one place a copy is
+    made and therefore the one place that cannot forget — the same argument the whole
+    `died`/`left`/`entered`/`exiled` family is built on. `raise` lives above this module, so
+    `settle` turns the record into the event.
+
+    The **types** are read off the copied card rather than stored as a reference, because a stack
+    object is gone by the time anything reads it. `typeLine` is parsed the same way a cast's event
+    does it, so "instant or sorcery" means the same thing either way round.
+  */
+  const types = parseTypeLine(state.cardDefs[object.cardKey]?.typeLine).types
+    .map((t) => t.toLowerCase());
   return {
     ...state,
     autoSeq: seq,
     stackObjects: { ...state.stackObjects, [copyId]: copy },
     stackOrder: [...state.stackOrder, copyId],
+    ...(state.automated ? { copied: [...(state.copied ?? []), { types, controller }] } : {}),
   };
 }
 

@@ -52,6 +52,7 @@ it.
 | `poison.mjs` | is the poison win condition reached, or only theoretical? | `SEEDS=6 node scripts/measure/poison.mjs` |
 | `pod-duel.mjs` | is a bot setting worth anything in a **four-seat pod**? | `ALWAYS=dawn-tithe TESTED='{"chaseTheCrown":false}' SEEDS=3 node scripts/measure/pod-duel.mjs` |
 | `pod-slot.mjs` | is a **deck slot** worth anything in a four-seat pod, for a card that is blank in a duel? | `SUBJECT=forge-alliance CHANGE='Blade of Selves:-1' node scripts/measure/pod-slot.mjs` |
+| `card-promises.mjs` | does every card **do what its own text says**, or does a script carry less than the card reads? | `node scripts/measure/card-promises.mjs` |
 | `halves-use.mjs` | which face of a two-faced card gets used, and was the land the only one? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
 | `metalcraft.mjs` | how often is a conditional static actually **on**? | `SEEDS=5 node scripts/measure/metalcraft.mjs` |
 | `mill.mjs` | does the mill deck win by decking, and how close does it get? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/mill.mjs` |
@@ -606,6 +607,15 @@ is about, the *variant* column must come out identical in both arms — 151-137 
 181-107 and 181-107. That is not a coincidence to note, it is the pairing being proved: with no
 Ravager on the board the flag cannot change anything, and any difference there would mean the two arms
 were not playing the same games. A control you get for free beats one you have to schedule.
+
+**An audit that reports nothing is indistinguishable from an audit that *cannot* report
+anything — so make it prove otherwise on every run.** `card-promises` read 172 gaps, then 25, then
+0, and only the last number was ever about the pool: the first was a bug in its own field lookup,
+the second a table of script field names written from memory rather than derived from the cards. It
+now plants two cards every run — one promising flying with no script to carry it, one promising
+nothing — and prints what each reported, so a clean run is evidence instead of an absence. The
+general form: **an instrument whose negative result is the interesting one has to carry its own
+positive control**, and that control has to run every time rather than the day somebody wonders.
 
 **A harness's shape decides which cards it can see at all, and `deck-probe` could not see a whole
 class of them.** Every one of its games is a duel, so a card whose text reads "for each opponent"

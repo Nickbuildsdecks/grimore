@@ -700,6 +700,14 @@ function triggerMatches(
         spell is simply not what this trigger is about, however the rest of it reads.
       */
       if (want.self === true) return isSubject;
+      /*
+        A cast or a copy, and the default is `cast` so that every watcher older than this clause
+        keeps seeing exactly what it saw before. A copy of a spell is not cast (CR 707.12), so
+        storm, cascade, prowess and a Chalice of the Void must all miss it — and magecraft, which
+        is printed "cast **or copy**", is the one thing in the pool that asks for both.
+      */
+      const how = want.how ?? 'cast';
+      if (how !== 'any' && (e.how ?? 'cast') !== how) return false;
       const by = want.by ?? 'you';
       if (by === 'you' && actorSeat !== sourceSeat) return false;
       if (by === 'opponent' && actorSeat === sourceSeat) return false;
@@ -1743,9 +1751,18 @@ function settle(state: GameState, before: GameState): GameState {
       `ReplacementEvent` has three members and not four.
     */
     const banished = next.exiled ?? [];
+    /*
+      And the spells copied onto the stack, which is magecraft's other half (see `GameState.copied`).
+
+      A copy is not a cast (CR 707.12), so it cannot ride the cast event's own path — nothing
+      announces a copy and no cost is paid for one. `copySpellOnStack` records it and this drains
+      it, exactly as the zone-change family works.
+    */
+    const copies = next.copied ?? [];
     next = {
       ...next,
       died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [], exiled: [],
+      copied: [],
       // Drained here with the rest, and *after* the replacement passes above have read it: a
       // discard is a fact about a move that has already happened, and madness is the one thing
       // that asks about it.
@@ -1846,6 +1863,21 @@ function settle(state: GameState, before: GameState): GameState {
       loop that argument is the seat the subject belonged to, and this is the same question asked
       before the zone change rather than after it.
     */
+    for (const { types, controller } of copies) {
+      /*
+        Raised as a `spell-cast` carrying `how: 'copied'` rather than as an event of its own.
+
+        One event with a discriminator, because a card that watches both reads them as one thing —
+        magecraft is a single triggered ability printed "cast **or** copy", and two events would
+        make it two abilities on the stack for a card that has one. Everything that must *not* see
+        a copy — storm, cascade, prowess, a Chalice of the Void — gets that for free from the
+        matcher's default of `cast`.
+
+        No `object`: the copy is a stack object with no card, and by the time this ability resolves
+        it has resolved or been countered. Nothing printed with magecraft asks which spell it was.
+      */
+      next = raise(next, { kind: 'spell-cast', how: 'copied', types }, controller);
+    }
     for (const { card, from, controller, wasCreature } of banished) {
       next = raise(
         next,

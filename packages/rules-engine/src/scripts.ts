@@ -5215,20 +5215,30 @@ const PEST: CardScript = {
 };
 
 /*
-  The two ward cards, and the one thing about them that is not scripted.
+  The two ward cards, and the clause that was wrong here for eight entries.
 
   Both are printed "Magecraft — Whenever you cast **or copy** an instant or sorcery spell", and the
-  copy half is not here: the engine's cast event fires on casting, and nothing in this pool copies
+  copy half used to be missing. The comment that stood here said why: "nothing in this pool copies
   an instant or a sorcery, so a `spell-cast` trigger is the whole of what these cards do at this
-  table. Said out loud rather than silently approximated, because the day something does copy one
-  this is the line that is wrong.
+  table" — and it ended with the right instinct, that the day something did copy one this would be
+  the line that was wrong.
+
+  **Twincast arrived (D131) and nothing noticed.** A copy of a spell is not cast (CR 707.12), so the
+  cast event could not see it and these two silently did half of what they read. Found by
+  `card-promises.mjs`, which is an audit of exactly this — whether a script carries everything its
+  card's text promises — and found through this comment rather than through the heuristic, which is
+  worth knowing about how that instrument actually pays off.
+
+  Both now ask for `how: 'any'`, which is the printed reading, and `settle` raises the copy. See
+  D231.
 */
 const DRAGONSGUARD_ELITE: CardScript = {
   name: 'Dragonsguard Elite',
   triggers: [
     ward('Dragonsguard Elite', '{1}'),
     {
-      on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' },
+      // Magecraft: a cast **or** a copy, which is the whole of what `how` exists for.
+      on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery', how: 'any' },
       description: 'put two +1/+1 counters on Dragonsguard Elite',
       effect: (c) => addCounters(c.state, c.source, '+1/+1', 2),
     },
@@ -5241,7 +5251,7 @@ const SEDGEMOOR_WITCH: CardScript = {
   triggers: [
     ward('Sedgemoor Witch', '{3}'),
     {
-      on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' },
+      on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery', how: 'any' },
       description: 'create a 1/1 black Pest creature token',
       effect: (c) => createToken(c.state, c.controller, PEST_TOKEN, 1),
     },

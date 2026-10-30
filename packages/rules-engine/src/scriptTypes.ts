@@ -384,6 +384,26 @@ export type TriggerEvent =
        * `EffectContext.answering`, the same channel ward uses for the spell that targeted it.
        */
       readonly object?: string;
+      /**
+       * Whether a **cast** or a **copy** counts — magecraft's "whenever you cast **or copy** an
+       * instant or sorcery spell" (CR 702.?? reminder text; the rule underneath is CR 707.12,
+       * which is why the card has to say both).
+       *
+       * **A copy of a spell is not cast.** It is put onto the stack by an effect, nobody announces
+       * it, and no cost is paid — which is exactly why every card with magecraft spells the two
+       * out and why storm, cascade, Chalice of the Void and prowess must *not* see it. So the
+       * default is `cast`, and every watcher written before this one keeps counting what it always
+       * counted: `storm` counts spells cast this turn, a Chalice answers a spell somebody cast.
+       *
+       * `any` is the magecraft reading and the only one in the pool. `copied` alone is not printed
+       * on anything here and exists because the other two make it free.
+       *
+       * It took a Twincast to matter. The two magecraft cards carried a comment saying the copy
+       * half was unreachable — "nothing in this pool copies an instant or a sorcery" — which was
+       * true when it was written and stopped being true when Twincast arrived (D131), and nothing
+       * noticed for eight entries. See D231.
+       */
+      readonly how?: 'cast' | 'copied' | 'any';
     }
   /**
    * "Whenever this permanent becomes the target of a spell or ability" (CR 115.7, CR 702.21b).

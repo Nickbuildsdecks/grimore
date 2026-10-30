@@ -62,6 +62,20 @@ export const STEP_LABELS: Readonly<Record<Step, string>> = Object.freeze({
  * wreckage — one field per word of the printed phrase this exists for, "a **creature** **you
  * control** is exiled" (CR 400.7).
  */
+/**
+ * One spell copied onto the stack, as `settle` needs to read it back.
+ *
+ * Deliberately not an instance id. A copy of a spell exists only as a stack object (CR 707.12),
+ * `copySpellOnStack` gives it a synthetic `cp<n>` id, and it has resolved or been countered long
+ * before anything asks — so this carries what the event needs and nothing that would dangle.
+ */
+export interface CopiedSpell {
+  /** The copy's card types, lowercased, exactly as a cast raises them. */
+  readonly types: readonly string[];
+  /** Whose copy it is: the controller a magecraft trigger compares itself against. */
+  readonly controller: SeatIndex;
+}
+
 export interface ExiledCard {
   readonly card: string;
   /**
@@ -702,6 +716,20 @@ export interface AutomationState {
    * initial deal is not either — the table is not automated yet while a deck is being loaded.
    */
   readonly exiled: readonly ExiledCard[];
+  /**
+   * Spells **copied** onto the stack since the last settle, for magecraft's "or copy" half.
+   *
+   * The newest member of the detect-rather-than-announce family — `entered`, `died`, `left`,
+   * `drew`, `toGraveyard`, `discarded`, `exiled` — and here for the same reason all of them are:
+   * the copy is made by `copySpellOnStack`, which lives below the module that can `raise`, so the
+   * fact is **recorded where it happens** and the event is raised by `settle`. A caller that had
+   * to remember to announce it is a caller that eventually does not.
+   *
+   * A copy of a spell is not a card, so what is recorded is the copy's **types** and whose copy it
+   * is rather than an instance id: the stack object is gone by the time anything could read it,
+   * and the types are the whole of what a magecraft trigger asks.
+   */
+  readonly copied: readonly CopiedSpell[];
   /**
    * Cards that went from a **hand** to a graveyard since the last settle: discards.
    *
