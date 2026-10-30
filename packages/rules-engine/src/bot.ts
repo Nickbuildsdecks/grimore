@@ -1840,10 +1840,13 @@ export interface BotOptions {
    * would foretell a card and then be unable to answer anything. It was found by a deck change
    * turning an unrelated test red (#218, D234), not by the rule's own tests, which is the usual way.
    *
-   * **Off is the bot as it was, and is the control this was measured against.** The pool holds three
-   * foretell cards in two decks — Saw It Coming in Tidal Mind and Arc Tempest, Behold the Multiverse
-   * in Arc Tempest — and both are the decks that also hold the answers, so the rule's reach is
-   * concentrated where it matters and small in absolute terms. See D235 for what that measured.
+   * **Off is the bot as it was, and is the control this was measured against.** What it is worth:
+   * `bot-duel` reads 144-144 of 288 on both decks that hold foretell cards, which is also what two
+   * identical bots read, so the scoreboard says nothing on its own. `disagree.mjs` says what it
+   * actually does — **5 of 35 foretell decisions changed, and 0 of the other 54,935** — so the rule
+   * fires on about one foretell in seven, and a foretell is one decision in sixteen hundred. Too few
+   * plays to move a win rate; exactly the play a person notices when it costs them a Counterspell.
+   * On by default as correctness rather than as a measured win. D235 has the account.
    */
   readonly reserveAgainstForetell?: boolean;
   /**

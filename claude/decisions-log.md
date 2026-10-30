@@ -14239,17 +14239,32 @@ tidal-mind,  {} vs {"reserveAgainstForetell": false}:    144-144 of 288
 that fires should move *something*, even to no net effect. `disagree.mjs` exists for exactly this
 ambiguity and its docblock says so in its first line: a flat scoreboard means either "it changes the
 choices and they are worth nothing" or "it changes nothing", and only a decision count tells them
-apart. That count is being read.
+apart.
 
-The expectation, stated before the number so it can be wrong: the coincidence is narrow. The pool
-holds **three** foretell cards in two decks — Saw It Coming in Tidal Mind and Arc Tempest, Behold the
-Multiverse in Arc Tempest — and `held-answers.mjs` already measured this bot **tapped out in 54% to
-87%** of the windows where it held an answer at all. "An affordable answer in hand, a foretell
-available, and the foretell breaking the answer" asks all three to coincide.
+It is the first of the two, and the count is worth having exactly:
 
-If that is what the count says, this ships as **correctness rather than as a win**, the same way
-`asksForPeace` did (D232): the rule is right, it is pinned by tests, it costs nothing, and claiming
-a measured improvement from a level scoreboard would be the thing this file exists to stop.
+```
+action            decisions   differed
+auto:foretell           35        5   14%
+...every other kind      -        0    0%
+all                  54970        5    0%
+```
+
+**So the rule fires, and my stated expectation was wrong in its framing.** I put on record before
+running it that "the coincidence is narrow" — the rarity was right, and the implication I was
+reaching for, that this might change nothing, was not. It changes **14% of foretell decisions**. What
+is rare is the decision itself: 35 foretells in 54,970 decisions is 0.06% of everything this bot is
+ever asked, so five corrected plays across a full field cannot move 288 games, and `bot-duel`
+reading 144-144 is the arithmetic of that rather than evidence of inertness.
+
+The denominator deserves naming: 5 of 35 is one in seven of a sample of thirty-five, so "about one
+foretell in seven" is the honest shape and 14% is a number with two significant figures it has not
+earned.
+
+So it ships as **correctness rather than as a win**, the same footing `asksForPeace` took (D232) —
+but on a sharper claim than that one could make. Not "this is right and unmeasurable": *this changes
+about one foretell in seven, and a foretell is one decision in sixteen hundred, which is too few
+plays to move a scoreboard and exactly the plays a person would notice losing a Counterspell to.*
 
 ### The flag stays either way
 
