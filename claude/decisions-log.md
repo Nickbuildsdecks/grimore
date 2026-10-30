@@ -14722,3 +14722,82 @@ calls the second a **reader's signal**, it over-counts rather than under-counts 
 says in its own docblock which bound it is and in which direction. An audit that cannot be exactly
 right should be wrong in the direction that makes you look, and both of the published errors here
 were wrong in the direction that makes you act.
+
+---
+
+## D240 — One seed is one shuffle wearing 156 deck pairings
+
+Found while building `eval-calibration.mjs` for #225, and it is worth more than the task that
+produced it.
+
+The harness reported that **seat 0 won 27% of the field**. Seat 0 is always on the play here, and
+being on the play is an advantage, so that is a reading that cannot be true. Mirror matches — same
+deck both sides, where the seat is the only asymmetry — came out 25-27 and 28-24, so the engine has
+no seat bias. The harness did.
+
+### What it is
+
+Every file in `scripts/measure/` loops `for (let i = 0; i < SEEDS; i++)` and hands `SEED0 + i` to
+every game in that pass over the field. One `seed` is one RNG stream. The stream shuffles seat 0's
+deck and then seat 1's, and **the same stream produces the same index permutation however different
+the deck list is**. Every starter deck is built the same way, so the permutation lands on the same
+kind of card in all of them.
+
+Measured directly, opening hands over 156 pairings at a fixed seed:
+
+```
+seed 3300: seat 0 opens on 4.00 lands, mean over 156 pairings — variance ZERO
+seed 3301: 2.08
+seed 3302: 3.00, again zero
+seed 3303: 1.15, with 144 of the 156 opening on one land or none
+```
+
+Zero variance across 156 different decks is the whole finding in one number. **156 games at one seed
+are one shuffle wearing 156 deck pairings.**
+
+The field-level consequence is as large as that implies. Seat 0's share of the whole field, by seed:
+**42-114, 63-93, 108-47, 115-41** — 27% to 74%, settling at 53% over the four, which is the play/draw
+advantage and is the right answer. With a seed per game instead, two passes gave **79-76 and 82-74**,
+seat 0 at 52%.
+
+### Why nothing has broken on it
+
+**Paired designs cancel it.** `deck-probe` and `bot-duel` run stock and variant over the same seeds,
+so the shared shuffle is common to both arms and drops out of the difference they report. Every
+slot and rule priced in this log was priced that way, and those conclusions stand.
+
+And the thing that should have given it away was in the log already, read as a happy accident:
+`bot-duel`'s negative control is **exactly 468-468** and `deck-probe`'s is **151-137 and 151-137**.
+Two arms of a stochastic measurement agreeing to the game is not luck and was never luck — it is
+the shared shuffle doing its job. The README called it "a control you get for free". It was free
+because the games were the same games.
+
+### What is not immune, and the part that is worse than noise
+
+An **absolute rate** is not immune, and this directory is mostly absolute rates: `cast-counts`
+conversion percentages, `killed-by`, `mill`, `poison`, `countdowns`, `transform-use`, `monarch`,
+`infect-clock`, `creature-fate`. A rate quoted over "936 games, six seed sets" has the error bars of
+**six** trials, not 936.
+
+And the shared seed does not merely widen the bars, it **biases** them — which the one reading that
+could be taken both ways shows directly. `eval-calibration`'s mid-game sign accuracy:
+
+```
+shared seed per pass:   54%  70%  77%  79%  77%  67%   (turn bands 1-4 … 25+)
+one seed per game:      53%  62%  69%  73%  72%  79%
+```
+
+Correlated games make an outcome more predictable from a position than it really is, so the old
+seeding **flattered the thing being measured** by seven to ten points in exactly the bands that
+matter. An instrument that shares a random stream is not a noisy version of the right answer.
+
+### The rule this leaves
+
+**A sample that shares a random stream is smaller than its denominator, and the question to ask of
+any reading here is whether it is a difference or a level** — only the difference is safe. #226
+carries the one-line fix for the rest of the directory, with the pairing and the negative controls
+as the check that nothing broke on the way.
+
+This is the fifth finding in two days that came from a reading that could not be true rather than
+from scrutinising a conclusion, and the largest of them. The previous four were about one card or
+one instrument. This one is about the denominator on most of this log.

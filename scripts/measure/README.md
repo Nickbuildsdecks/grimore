@@ -54,6 +54,7 @@ it.
 | `pod-slot.mjs` | is a **deck slot** worth anything in a four-seat pod, for a card that is blank in a duel? | `SUBJECT=forge-alliance CHANGE='Blade of Selves:-1' node scripts/measure/pod-slot.mjs` |
 | `card-promises.mjs` | does every card **do what its own text says**, or does a script carry less than the card reads? | `node scripts/measure/card-promises.mjs` |
 | `mechanic-coverage.mjs` | **how many cards hold each mechanic up** — which are on one card, and which the engine declares and nothing reaches? | `node scripts/measure/mechanic-coverage.mjs` |
+| `eval-calibration.mjs` | **does the bot's evaluation predict who wins**, and which of its components carries the signal? | `SEEDS=6 node scripts/measure/eval-calibration.mjs` |
 | `halves-use.mjs` | which face of a two-faced card gets used, and was the land the only one? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
 | `transform-use.mjs` | does a **transforming** card ever turn over, on which turn, and into what board? | `SEEDS=6 node scripts/measure/transform-use.mjs` |
 | `countdowns.mjs` | a permanent with a **clock** on it — how many counters were left when it stopped being able to spend them? | `SEEDS=6 node scripts/measure/countdowns.mjs` |
@@ -674,6 +675,42 @@ needs a card in a deck to exist (D229) has been kept without exception. And it f
 five places in the docs still made, one of them written the same morning: `becomes-tapped` is not
 the engine's card-less trigger, because City of Brass has carried it since #69. The true version is
 stronger, which is the usual way round — no trigger kind in this engine has *ever* had no card.
+
+**One seed is one shuffle wearing 156 deck pairings, and every harness in this directory has been
+treating it as 156 games.** This is the most load-bearing thing on this page, so it goes before the
+rest.
+
+Every file here loops `for (let i = 0; i < SEEDS; i++)` and hands `SEED0 + i` to every game in that
+pass over the field. One `seed` is one RNG stream; the stream shuffles seat 0's deck and then seat
+1's; and **the same stream produces the same index permutation however different the deck list is.**
+Every starter deck is built the same way, so at a fixed seed the opening hand holds the same number
+of lands in every pairing. Measured, 156 pairings per seed:
+
+```
+seed 3300: seat 0 opens on 4.00 lands, mean over 156 pairings — and the variance is ZERO
+seed 3302: 3.00, again zero
+seed 3303: 1.15, with 144 of the 156 opening on one land or none
+```
+
+The field-level consequence is as large as that implies. Seat 0 is always on the play here, so it
+should win a little over half of a balanced field. By seed it won **42-114, 63-93, 108-47,
+115-41** — a swing from 27% to 74%, settling at 53% over the four, which is the play/draw advantage
+and is the right answer. Give every game its own seed instead and the passes agree: **79-76 and
+82-74**, seat 0 at 52%.
+
+**Paired designs are immune, and that is why no conclusion here has broken on it.** `deck-probe` and
+`bot-duel` run both arms over the same seeds, so the shared shuffle cancels in the difference they
+report — and it is exactly why their negative control comes out *identical* (151-137 and 151-137,
+468-468) rather than merely close. That identity was never luck; it was the shared shuffle doing its
+job. What is **not** immune is an absolute rate, and this page is full of them.
+
+Worse than noise: the shared seed **biased** the one reading that could be compared both ways.
+`eval-calibration`'s mid-game sign accuracy read 70-79% with shared seeds and 62-73% with
+independent ones. Correlated games make an outcome more predictable from a position than it really
+is, so the bias flattered the thing being measured. The general form: **a sample that shares a
+random stream is smaller than its denominator and not merely noisier — check which of your readings
+is a difference and which is a level, because only the difference is safe.** #226 carries the
+one-line fix for the rest of the directory.
 
 **A static audit of a dynamic engine undercounts, and it took this one three passes to stop.** A
 keyword is readable from properties — printed in the text, `script.keywords` — and it is also handed
