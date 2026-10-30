@@ -6806,6 +6806,46 @@ true version is stronger — no trigger kind here has ever had no card — so th
 supported than the argument given for it. Fourth finding in two days from a reading that could not
 be true, and the first about a claim rather than a count.
 
+## The evaluation is honest but blunt, and one term points the wrong way (#225, D240, D241)
+
+`Next` has said for months that *"what is missing is not depth, it is an evaluation worth searching
+with"*. Nobody had asked the testable version: `evaluate` is a sum of life, hand, library, lands and
+creature power-plus-toughness, which is a theory about Magic, and a theory that says who is ahead
+can be read against who won.
+
+936 games, one position per round, recorded from both seats' views so the base rate is exactly 50%:
+
+```
+win rate by margin, turns 5-12        sign accuracy by turn band
+       < -20      7%                  turn   total  life  board  lands  hand  library
+   -10 .. -3     33%                  5-8      61%   58%    60%    51%   46%     50%
+     -3 .. 3     50%                  9-12     70%   66%    67%    53%   42%     50%
+     3 .. 10     66%                  13-16    73%   69%    70%    53%   44%     48%
+       >= 20     93%                  25+      78%   74%    72%    55%   55%     59%
+```
+
+**It is well calibrated.** Monotonic, symmetric, crossing 50% at exactly a margin of zero. No
+systematic bias — which is the property that matters for a search, since a biased evaluation makes a
+deeper search prefer worse lines with more confidence. And **the sum beats every one of its parts in
+every band**, which is a direct defence of the shape four deleted terms left behind.
+
+**What it is not is sharp early.** 61% at turns 5-8 is the number that bounds what depth can buy,
+because that is the band where a search can still change an outcome. An evaluation that is honest
+but blunt cannot be fixed by looking further ahead — every leaf is scored by the same blunt
+function. That is a sharper statement of the open problem than the one `Next` was making: the
+trouble is discrimination, not bias.
+
+**And cards in hand point the wrong way** — 46%, 42%, 44% across turns 5-16, worse than a coin in
+the bands that matter, on the second-largest weight in the function. Not a licence to flip the sign:
+hand size is a *symptom* of being behind (you could not cast what you drew), not a cause. But a
+function scoring a position partly by hand size is scoring part of "I am behind" as "I am ahead",
+and that is testable. It also explains D68 and D69 rather than contradicting them: both raised the
+price of a card in hand and both made the bot worse, which is what raising an already-inverted term
+should do. #227 lowers it and measures.
+
+Three harness bugs before any of it was readable, each caught by a number that could not be true —
+two turn-parity bugs in the sampling, and the seeding finding that became D240.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -6865,7 +6905,18 @@ be true, and the first about a claim rather than a count.
    while this environment cannot reach Scryfall, and a type line is the minimum the engine needs to
    tell a land from a spell. Worth building where the data exists, not here — and the refusal is
    written so that it starts working the moment the data does.
-3. A stronger opponent still. It plays each option out — plays, attacks and blocks — and keeps the
+3. **A stronger opponent still — and this item's diagnosis has changed (D241).** The standing
+   claim below was "what is missing is not depth: it is an evaluation worth searching with", with no
+   evidence about *how* the evaluation fell short. It is now measured: the function is **honest but
+   blunt**. Its ladder is monotonic and crosses 50% at a margin of zero, with no systematic bias,
+   and the sum beats every one of its components in every turn band — so depth was never being
+   wasted on a function that lies about which side is ahead. What it lacks is **discrimination
+   early**: 61% sign accuracy at turns 5-8, which is the only band where a search can still change
+   an outcome, and no amount of depth repairs that because every leaf is scored by the same blunt
+   function. One term is actively inverted (cards in hand, 42-46% mid-game, #227). The rest of this
+   item stands as written.
+
+   A stronger opponent still. It plays each option out — plays, attacks and blocks — and keeps the
    position it likes best, which is worth better than two games in three against the bot it
    replaced. But one ply is one ply: the simulation stops at the end of the current combat, so it
    cannot see the swing back on the opponent's next turn. "A spell is worth more later than now" has

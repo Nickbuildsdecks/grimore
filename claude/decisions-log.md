@@ -14801,3 +14801,92 @@ as the check that nothing broke on the way.
 This is the fifth finding in two days that came from a reading that could not be true rather than
 from scrutinising a conclusion, and the largest of them. The previous four were about one card or
 one instrument. This one is about the denominator on most of this log.
+
+---
+
+## D241 — The evaluation is honest but blunt, and the hand term points the wrong way
+
+#225 asked the question the progress doc's `Next` has been asking in prose for months: *"what is
+missing is not depth, it is an evaluation worth searching with."* Four terms have been deleted after
+measurement (D116), two attempts at pricing an answer in hand failed (D68, D69), and the standing
+conclusion was about the **shape** of the function rather than any weight in it — but nobody had
+asked the testable version. `evaluate` is a sum of life, hand, library, lands and creature
+power-plus-toughness. That is a theory about Magic, and a theory that says who is ahead can be read
+against who won.
+
+`eval-calibration.mjs`, 936 games with a seed each (D240), one position per round sampled at the
+start of seat 0's turn and recorded from both seats' points of view, so the base rate is exactly 50%.
+
+### It is well calibrated, and that is the first half of the answer
+
+```
+win rate by evaluation margin, turns 5-12          sign accuracy by turn band
+       < -20      104 samples     7%               turn   total  life  board  lands  hand  library
+  -20 .. -10      538            17%               1-4      53%   51%    52%    50%   50%     49%
+   -10 .. -3     1544            33%               5-8      61%   58%    60%    51%   46%     50%
+     -3 .. 3     2999            50%               9-12     70%   66%    67%    53%   42%     50%
+     3 .. 10     1575            66%               13-16    73%   69%    70%    53%   44%     48%
+    10 .. 20      550            83%               17-24    75%   70%    70%    52%   49%     52%
+       >= 20      106            93%               25+      78%   74%    72%    55%   55%     59%
+```
+
+Monotonic, symmetric, crossing 50% exactly at a margin of zero. A +10 margin wins 83% and a -10
+loses 83%. **There is no systematic bias in it** — which is the property that actually matters for a
+search, because a biased evaluation makes a deeper search prefer worse lines with more confidence.
+Depth was never being wasted on a function that lies about which side is ahead.
+
+**And the sum beats every one of its parts, in every band.** 61% against board's 60% at turns 5-8,
+70% against 67% at 9-12, 78% against life's 74% at 25+. That is a direct defence of the shape four
+deleted terms left behind: life and board each carry most of the signal, and added together they
+carry more than either. The thing the log has been suspicious of for a long time turns out to be the
+best part of this function.
+
+### What it is not, is sharp early
+
+61% at turns 5-8 — a seat's third or fourth turn — is the number that bounds what depth can buy.
+That is the band where a search can still change an outcome; by the 17-24 band the function is at
+75% and the game is mostly decided without it. **An evaluation that is honest but blunt early cannot
+be fixed by looking further ahead**, because every leaf it reaches is scored by the same blunt
+function. That is the sharpest statement of the open problem anyone has had here, and it is not the
+one the `Next` list was making: the trouble is discrimination, not bias.
+
+### The one term that measurably points the wrong way
+
+**Cards in hand: 46%, 42%, 44% across turns 5-16.** Worse than a coin, consistently, in exactly the
+bands that matter — and `CARD_IN_HAND = 1.5` is the second-largest weight in the function, behind
+only a creature's power plus toughness.
+
+Lands (51-55%) and library (48-52%) carry no signal either, but they are merely inert. Hand is
+*inverted*: a seat holding more cards than its opponent is losing more often than not, and the
+evaluation scores it as ahead.
+
+**What that licenses and what it does not.** It does not say the weight's sign should flip: cards in
+hand are a resource, and a bot that scored them negatively would dump its hand to raise its own
+score. The causal reading is the other way round — a seat with a big hand is a seat that *could not
+cast* what it drew, so hand size is a **symptom** of being behind rather than a cause of it. What
+the number does say is that a function scoring a position partly by hand size is scoring part of "I
+am behind" as "I am ahead", and that is a testable claim about a weight rather than a theory about
+Magic. #227 lowers it and measures.
+
+This also explains D68 and D69 rather than contradicting them. Both tried pricing an answer in hand
+**above** a generic card and both made the bot play worse — D69's table shows it casting *more*
+counterspells as the price went up. If the hand term is already inverted against outcomes, raising
+it moves the evaluation further in the wrong direction, which is exactly what those two measurements
+found and could not explain at the time.
+
+### Three bugs in the harness before any of this was readable, all caught the same way
+
+1. **Turn parity.** Sampling once per `turn` lands on alternate seats, and at the start of seat 1's
+   turn seat 0 has had one more land drop — every time, whoever is winning. The land row read
+   **38% in every band**. Not a fact about Magic.
+2. **The same bug wearing different clothes.** Fixed by sampling each seat on its own turn, which
+   has the identical problem with the sign reversed: on its own turn a seat has had one more land
+   drop than its opponent. The land row came back at **41%**. A parity bug fixed by changing which
+   parity is not fixed.
+3. **The seed**, which is D240 and the largest thing this task produced.
+
+Each was caught by a number that could not be true, and the fix for the first two is the same
+principle: there is exactly one moment in a round where both seats have had the same number of
+turns, and a comparison between seats has to be taken there or not at all. The harness now samples
+that moment and records both seats' views of it, which makes the base rate 50% by construction and
+the ladder symmetric — so a lopsided ladder is a bug rather than a finding.

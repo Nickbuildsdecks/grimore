@@ -676,6 +676,33 @@ five places in the docs still made, one of them written the same morning: `becom
 the engine's card-less trigger, because City of Brass has carried it since #69. The true version is
 stronger, which is the usual way round — no trigger kind in this engine has *ever* had no card.
 
+**An evaluation can be asked whether it is right, and ours had never been asked.** `eval-calibration`
+samples one position per round and reads the bot's own `evaluate` against who actually won. Over 936
+games the ladder is monotonic and crosses 50% at a margin of zero — 7% at worse than -20, 93% at
+better than +20 — and **the sum beats every one of its components in every turn band**, which is the
+best defence the function's shape has ever had. What the same table shows is that it is **blunt
+early**: 61% sign accuracy at turns 5-8, the only band where a search can still change an outcome.
+That bounds what depth can buy, because every leaf a deeper search reaches is scored by the same
+blunt function (D241).
+
+The component columns are the actionable half, and they are why the harness reports them separately
+rather than only scoring the total. Lands and library sit at 50% and are inert; **cards in hand sit
+at 42-46% in the mid-game and are inverted**, on the second-largest weight in the function. A
+component that anti-predicts is not automatically a weight with the wrong sign — hand size is a
+symptom of being behind rather than a cause — but it is a testable claim about a weight instead of a
+theory about Magic, which is more than this problem had before. The general form: **when a composite
+score disappoints, calibrate its parts separately; the part that points the wrong way is a lead and
+the part that points nowhere is dead weight, and a single accuracy figure tells you neither.**
+
+Three bugs before the first believable output, each caught by a number that could not be true, and
+the first two are the same bug twice. Sampling once per `turn` lands on alternate seats, and at the
+start of seat 1's turn seat 0 has had one more land drop — the land row read **38% in every band**.
+Fixing it by sampling each seat on its own turn has the identical problem with the sign reversed: on
+its own turn a seat has had one more land drop than its opponent, and the row came back at **41%**.
+**A parity bug fixed by changing which parity is not fixed.** There is exactly one moment in a round
+where both seats have had the same number of turns, and a comparison between seats has to be taken
+there or not at all. The third was the seed, below.
+
 **One seed is one shuffle wearing 156 deck pairings, and every harness in this directory has been
 treating it as 156 games.** This is the most load-bearing thing on this page, so it goes before the
 rest.
