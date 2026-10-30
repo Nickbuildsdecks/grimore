@@ -749,7 +749,27 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
         roll gave it, and at the end of the game it is a finished table still asking a question.
         One occurrence of that message cost a session's worth of guessing which.
       */
-      expect(view.automation!.awaiting, 'just after both opening hands were settled').toBeNull();
+      /*
+        The stalls first, and that ordering is the point.
+
+        `stalls` was only asserted at the *end* of this test, and every one of `runBots`' silent
+        ways out happens here as easily as there: a server seat owed a move at declare-attackers
+        whose move was refused, or offered none, or ran the five-hundred-move guard out, leaves the
+        table exactly as this assertion finds it — `awaiting` holding the bot's question. So one
+        stall in this window failed on the line below with "expected { kind: 'attackers', seats:
+        [ 1 ] } to be null" and the stall's own reason, which says precisely what happened, was
+        never printed at all. That is the shape of CI run 324 and the reason #178 stayed open.
+
+        Asserted rather than merely reported, because a stall here is a real failure: the server
+        has stopped playing its own turn and a person at this table would be looking at a board
+        waiting for an opponent that is never going to move.
+      */
+      expect(stalls, `a server seat stalled before the first turn: ${JSON.stringify(stalls)}`)
+        .toEqual([]);
+      expect(
+        view.automation!.awaiting,
+        `just after both opening hands were settled (stalls: ${JSON.stringify(stalls)})`,
+      ).toBeNull();
       expect(view.turn).toBeGreaterThanOrEqual(1);
 
       // Play it out by only ever doing what the table offers.
@@ -845,7 +865,10 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       // outstanding at the end — a game that ends mid-resolution has not ended. A combat
       // declaration is the one of those questions the engine derives rather than stores, which is
       // how it used to survive the end of a game; see `pendingDeclaration`.
-      expect(view.automation!.awaiting, 'once the game had a winner').toBeNull();
+      expect(
+        view.automation!.awaiting,
+        `once the game had a winner (stalls: ${JSON.stringify(stalls)})`,
+      ).toBeNull();
       /*
         And the server's seat was never left with nothing to do.
 
