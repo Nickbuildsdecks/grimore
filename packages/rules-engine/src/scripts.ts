@@ -33,7 +33,7 @@ import {
   becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, EVOKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer, FADE, TIME, enterAttacking,
-  transformPermanent,
+  transformPermanent, recordExpiry,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
@@ -1295,9 +1295,12 @@ const THING_IN_THE_ICE: CardScript = {
       effect: (c) => {
         if ((c.state.instances[c.source]?.counters[ICE_COUNTER] ?? 0) <= 0) return c.state;
         const next = addCounters(c.state, c.source, ICE_COUNTER, -1);
-        return (next.instances[c.source]?.counters[ICE_COUNTER] ?? 0) === 0
-          ? transformPermanent(next, c.source)
-          : next;
+        if ((next.instances[c.source]?.counters[ICE_COUNTER] ?? 0) > 0) return next;
+        // Recorded for consistency rather than from need: this is the one clock whose expiry leaves
+        // the permanent where it was, so an instrument *could* see it from the board. Recording all
+        // four keeps `expired` meaning "a clock ran out" rather than "the ones you could not
+        // otherwise see", which is a contract nobody would remember.
+        return transformPermanent(recordExpiry(next, c.source, ICE_COUNTER), c.source);
       },
     },
   ],
@@ -7040,9 +7043,10 @@ function vanishingTrigger(count: number): TriggerDef {
     condition: (c) => (c.state.instances[c.source]?.counters[TIME] ?? 0) > 0,
     effect: (c) => {
       const next = addCounters(c.state, c.source, TIME, -1);
-      return (next.instances[c.source]?.counters[TIME] ?? 0) > 0
-        ? next
-        : moveToGraveyard(next, [c.source]);
+      if ((next.instances[c.source]?.counters[TIME] ?? 0) > 0) return next;
+      // The sacrifice wipes the counters on the way to the graveyard, so without this the log — and
+      // every instrument reading it — cannot tell this from a removal spell. See `GameState.expired`.
+      return moveToGraveyard(recordExpiry(next, c.source, TIME), [c.source]);
     },
   };
 }
@@ -7068,7 +7072,10 @@ function fadingTrigger(count: number): TriggerDef {
     description: `Fading ${count} — a fade counter comes off, or this is sacrificed`,
     effect: (c) => ((c.state.instances[c.source]?.counters[FADE] ?? 0) > 0
       ? addCounters(c.state, c.source, FADE, -1)
-      : moveToGraveyard(c.state, [c.source])),
+      // Fading's expiry is the upkeep where there is *nothing to remove*, so the counters are
+      // already gone by the time this fires — which is exactly why it has to be said rather than
+      // inferred from them. See `GameState.expired`.
+      : moveToGraveyard(recordExpiry(c.state, c.source, FADE), [c.source])),
   };
 }
 

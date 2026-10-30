@@ -55,6 +55,7 @@ it.
 | `card-promises.mjs` | does every card **do what its own text says**, or does a script carry less than the card reads? | `node scripts/measure/card-promises.mjs` |
 | `halves-use.mjs` | which face of a two-faced card gets used, and was the land the only one? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
 | `transform-use.mjs` | does a **transforming** card ever turn over, on which turn, and into what board? | `SEEDS=6 node scripts/measure/transform-use.mjs` |
+| `countdowns.mjs` | a permanent with a **clock** on it — how many counters were left when it stopped being able to spend them? | `SEEDS=6 node scripts/measure/countdowns.mjs` |
 | `metalcraft.mjs` | how often is a conditional static actually **on**? | `SEEDS=5 node scripts/measure/metalcraft.mjs` |
 | `mill.mjs` | does the mill deck win by decking, and how close does it get? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/mill.mjs` |
 | `killed-by.mjs` | what took the last of this deck's life, on what turn, holding what? | `SUBJECT=tidal-mind SEEDS=6 node scripts/measure/killed-by.mjs` |
@@ -255,6 +256,30 @@ somebody else's bug rather than at its own.
 That column is now the standing check on the claim it falsified: D234 says the symmetric half of
 `transformPermanent` is exercised by no card in the pool, and every run of this harness prints
 whether that is still true, so the claim cannot quietly go stale.
+
+**A clock on a permanent needs the same question asked of the counters rather than the card, and the
+last counter coming off took an engine change to be observable at all.** `countdowns.mjs` reads how
+many counters were left when a clock stopped being able to spend them, because a cast count cannot
+say whether the promise printed on the card was ever kept: Thing in the Ice was cast forty-nine
+times and flipped twice (D236), and that is either a deck that never gets there or a permanent that
+dies first. **The distribution is the diagnosis rather than the mean** — one counter left is a
+reshape (D156's shape) and four left is a cut — and a single average of 2.5 hides which you have.
+For Thing in the Ice the answer was neither (D237): fourteen of twenty-one clocks still had all four.
+
+It reads state rather than actions for `transform-use`'s reason, since nothing in the action stream
+announces a counter coming off, and it keys on the **instance**, so a permanent that leaves and
+comes back is a new clock rather than a continuation. That is what the rules say: a permanent that
+changes zones is a new object with no counters on it.
+
+Two traps, and both were caught by a number that could not be true. The first draft pinned a zone
+per counter key, and `time` is **shared** between suspend, whose clock runs in exile, and vanishing,
+whose runs on the battlefield; Calciderm read `ran out 0%`, impossible for an unanswered vanishing
+creature, and that impossibility is what found it. The second was not the harness's fault and could
+not be fixed here: three of the pool's four clocks **destroy or move their object on expiry**, and
+counters are wiped on the way out, so "the clock ran out" and "somebody killed it holding its last
+counter" leave an identical board. Those rows printed `?` and said so. The fix was in the engine
+(D238) — `GameState.expired` is recorded where the last counter comes off and drained into the
+persistent log — and the harness now asks the log instead of trying to infer it from the board.
 
 **For a modal card the question is not "which half" but "was the other one needed".** The back face
 of a modal double-faced card is a *land*, so a split of the uses says almost nothing on its own —

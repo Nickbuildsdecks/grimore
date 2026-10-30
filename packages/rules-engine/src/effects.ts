@@ -1526,6 +1526,27 @@ export function transformPermanent(state: GameState, id: string): GameState {
   return withInstance(recordTransform(state, id), id, { defKey: backKey, printedDefKey: self.defKey });
 }
 
+/**
+ * A clock that ran out, written down for the **log** rather than for `raise`.
+ *
+ * Called by the four things that spend a counter to nothing: vanishing, fading, suspend and Thing in
+ * the Ice. See `GameState.expired` for why this is recorded at all and why it is not an event.
+ *
+ * Automated tables only, like the rest of the family: a table in manual mode has no clock ticking.
+ */
+export const recordExpiry = (state: GameState, card: string, counter: string): GameState => (
+  state.automated
+    ? {
+      ...state,
+      expired: [...(state.expired ?? []), {
+        card,
+        counter,
+        // Read now rather than at drain time: see `ExpiredClock.name`.
+        name: state.cardDefs[state.instances[card]?.defKey ?? '']?.name ?? 'a permanent',
+      }],
+    }
+    : state);
+
 /** The flip, written down for `settle` to raise. Automated tables only, like the rest of the family. */
 const recordTransform = (state: GameState, id: string): GameState => (state.automated
   ? { ...state, transformed: [...(state.transformed ?? []), id] }

@@ -168,6 +168,7 @@ export function createGame(options: CreateGameOptions): GameState {
     exiled: [],
     copied: [],
     transformed: [],
+    expired: [],
     discarded: [],
     delayed: [],
     step: 'precombat-main',
@@ -722,6 +723,7 @@ function reduce(state: GameState, action: Action, ctx: ActionContext): Outcome {
         exiled: [],
         copied: [],
         transformed: [],
+        expired: [],
         discarded: [],
         delayed: [],
         step: 'precombat-main',
@@ -785,6 +787,26 @@ export function applyAction(state: GameState, action: Action, ctx: ActionContext
   // whatever caused it.
   const notes = isReset ? [] : consequences(state, next);
   if (notes.length > 0) message += `; ${notes.join(', ')}`;
+  /*
+    And the clocks that ran out, which go into the **log** rather than into `raise`.
+
+    This is the one member of the detect-rather-than-announce family whose consumer is the record
+    rather than a card — see `GameState.expired` for why it is not an event. Drained here because
+    `applyAction` is the one place that writes a log entry for an action, so the fact lands in the
+    same entry as everything else the action did, and the list never outlives it.
+
+    Placed with the other consequences and ahead of the eliminations and the win, because a clock
+    running out is a thing that happened to the board and those two are what the board then came
+    to — a line reading "Nick wins; Blastoderm's last fade counter is gone" has them backwards.
+  */
+  const ranOut = next.expired ?? [];
+  if (ranOut.length > 0) {
+    data['expired'] = ranOut.map((e) => ({ ...e }));
+    message += `; ${ranOut
+      .map((e) => `${e.name}'s last ${e.counter} counter is gone`)
+      .join(', ')}`;
+    next = { ...next, expired: [] };
+  }
   if (resolved.eliminations.length > 0) {
     data['eliminations'] = resolved.eliminations;
     message += '; ' + resolved.eliminations
@@ -797,6 +819,7 @@ export function applyAction(state: GameState, action: Action, ctx: ActionContext
       ? '; game over with no winner'
       : `; ${seatName(next, next.winnerSeat)} wins`;
   }
+
 
   next = appendLog(next, { by: action.by, type: action.type, message, data });
   return next;

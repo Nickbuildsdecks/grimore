@@ -76,6 +76,21 @@ export interface CopiedSpell {
   readonly controller: SeatIndex;
 }
 
+/** One clock that ran out: which object, which counter it was counting, and what it was called. */
+export interface ExpiredClock {
+  readonly card: string;
+  readonly counter: string;
+  /**
+   * The object's name **as the clock ran out**, which is not always what it is called afterwards.
+   *
+   * Thing in the Ice is the case: its last ice counter coming off is what transforms it, so by the
+   * time `applyAction` writes the log the permanent is an Awoken Horror and a name read then says
+   * the Horror had ice counters on it. Carried for the same reason `ExiledCard` carries its facts —
+   * the moment is gone by the time anything asks.
+   */
+  readonly name: string;
+}
+
 export interface ExiledCard {
   readonly card: string;
   /**
@@ -747,6 +762,33 @@ export interface AutomationState {
    * resolving, where there is no action to hang it on.
    */
   readonly transformed: readonly string[];
+  /**
+   * Clocks that **ran out** since the last action: a counter counted down to nothing.
+   *
+   * The family's tenth fact and the only one that is **not raised as an event**, which is the whole
+   * design and is worth saying plainly. The other nine are recorded where they happen because a
+   * card wants to know; this one is recorded because **nothing outside the engine can tell it
+   * happened at all**, and no card wants to know.
+   *
+   * Why it cannot be seen: the engine wipes an object's counters when it changes zone, and three of
+   * the four clocks destroy or move their object the moment they expire — vanishing and fading
+   * sacrifice the creature, suspend casts the card out of exile. So "the clock ran out" and "the
+   * object left holding its last counter" both end up as *counters gone, object elsewhere*: the same
+   * observation. `countdowns.mjs` had to print a `?` for two of its rows and say so (D237).
+   *
+   * Why it is **not** a `TriggerEvent`: nothing printed watches a clock expiring. Vanishing and
+   * fading have no payoff cards, and suspend's "cast it when the last counter is removed" is a rule
+   * the engine implements directly rather than a trigger a card carries. A trigger kind nothing
+   * fires is the thing this engine already declines to add — `becomes-tapped` is deliberately
+   * card-less and the engine summary says so.
+   *
+   * So it is drained into the **log** rather than into `raise`, by `applyAction`, which is the one
+   * consumer that wants it: `LogEntry.data.expired` names the card and the counter, the message says
+   * which keyword did it, and the log is *persistent*, so an instrument reading state between
+   * actions can see it. A list drained into `raise` would have been invisible to exactly the harness
+   * that needed it — which is why `transform-use.mjs` has to watch the board instead.
+   */
+  readonly expired: readonly ExpiredClock[];
   /**
    * Cards that went from a **hand** to a graveyard since the last settle: discards.
    *

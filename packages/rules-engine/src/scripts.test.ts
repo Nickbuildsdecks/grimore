@@ -13474,6 +13474,29 @@ describe('suspend: a card cast on turn two for turn five', () => {
     expect(seen?.zone).toBe('exile');
     expect(seen?.counters?.['time']).toBe(2);
   });
+
+  it('writes the clock running out into the log, where the cast cannot take it away', () => {
+    /*
+      The clock expiring is the moment suspend exists for, and it is the one thing about suspend
+      that leaves **no trace on the board**: the counter comes off and the same upkeep casts the
+      card out of exile, so by the time anything looks, there is a spell on the stack and an empty
+      exile zone. `countdowns.mjs` was reading counters and could only infer it (#221, D238).
+
+      So it goes in the log instead, with the counter key on it — `time`, which suspend shares with
+      vanishing, and which is why the entry names the counter rather than the keyword.
+    */
+    let s = holding('Rift Bolt', ['Mountain']);
+    const bolt = find(s, 0, 'hand', 'Rift Bolt');
+    s = apply(s, { type: 'auto:suspend', by: 0, card: bolt });
+    expect(s.instances[bolt]!.counters['time']).toBe(1);
+
+    s = untilOffered(s);
+    const entry = s.log[s.log.length - 1];
+    expect(entry?.data?.['expired']).toEqual([
+      { card: bolt, counter: 'time', name: 'Rift Bolt' },
+    ]);
+    expect(entry?.message).toMatch(/Rift Bolt's last time counter is gone/);
+  });
 });
 
 describe('extort: an optional cost paid while the trigger resolves', () => {
@@ -17156,6 +17179,79 @@ describe('vanishing and fading: the same clock, read one turn apart', () => {
     expect(scriptFor('Calciderm')?.vanishing).toEqual({ count: 4 });
     expect(scriptFor('Blastoderm')?.fading).toEqual({ count: 3 });
   });
+
+  /*
+    And the clock running out is now a **fact in the log**, which it was not before (#221, D238).
+
+    The reason it had to be: the engine wipes an object's counters when it changes zone, and both
+    these keywords sacrifice the creature the moment the clock expires — so "the clock ran out" and
+    "a removal spell answered it holding its last counter" both end up as *counters gone, object in
+    the graveyard*, the same observation. `countdowns.mjs` could not split the two and printed a `?`
+    for both rows (D237).
+
+    It is written into `LogEntry.data.expired` rather than raised as a trigger, because nothing
+    printed watches a clock expiring and a trigger kind nothing fires is what this engine declines
+    to add. See `GameState.expired`.
+  */
+  /** The `expired` entries in the log of the last action, which is where the fact lands. */
+  const expiriesIn = (s: GameState): readonly { card: string; counter: string; name: string }[] =>
+    (s.log[s.log.length - 1]?.data?.['expired'] ?? []) as readonly {
+      card: string; counter: string; name: string;
+    }[];
+
+  it('says in the log that a vanishing clock ran out, and which counter it was', () => {
+    let s = calciderm();
+    for (const _ of [1, 2, 3]) s = myNextUpkeep(s);
+    // Three upkeeps in, nothing has expired: a counter coming off is not a clock running out.
+    expect(expiriesIn(s)).toEqual([]);
+
+    s = myNextUpkeep(s);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Calciderm');
+    expect(expiriesIn(s)).toEqual([
+      { card: expect.any(String), counter: 'time', name: 'Calciderm' },
+    ]);
+    expect(s.log[s.log.length - 1]?.message).toMatch(/Calciderm's last time counter is gone/);
+  });
+
+  it('and does not say it when a removal spell answers one holding its last counter', () => {
+    /*
+      **The control, and the whole reason the field exists.** Without it "expired" would be a field
+      that is set whenever one of these dies, which is exactly the ambiguity it was added to remove —
+      and the measurement it unblocks would be no better than the inference it replaced.
+
+      A Calciderm with one time counter left, killed by something other than its own clock. The
+      board reads identically to the expiry above: no counters, card in the graveyard. The log is
+      what tells them apart.
+    */
+    let s = calciderm();
+    for (const _ of [1, 2, 3]) s = myNextUpkeep(s);
+    const id = find(s, 0, 'battlefield', 'Calciderm');
+    expect(s.instances[id]!.counters['time']).toBe(1);
+
+    s = drain(destroy(s, id), 40);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Calciderm');
+    expect(s.instances[id]?.counters['time'] ?? 0).toBe(0);
+    // Same board, and the record says this one was answered rather than expired.
+    expect(expiriesIn(s)).toEqual([]);
+  });
+
+  it('and says it for fading, where the counters were already gone before the sacrifice', () => {
+    /*
+      Fading's expiry is the upkeep on which there is *nothing to remove*, so by the time the
+      sacrifice happens the counters have been at zero for a turn. That is the sharpest case for
+      saying it rather than inferring it from counters: there are none to read.
+    */
+    let s = blastoderm();
+    for (const _ of [1, 2, 3]) s = myNextUpkeep(s);
+    expect(s.instances[find(s, 0, 'battlefield', 'Blastoderm')]!.counters['fade'] ?? 0).toBe(0);
+    expect(expiriesIn(s)).toEqual([]);
+
+    s = myNextUpkeep(s);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Blastoderm');
+    expect(expiriesIn(s)).toEqual([
+      { card: expect.any(String), counter: 'fade', name: 'Blastoderm' },
+    ]);
+  });
 });
 
 describe('split second: the spell nobody gets to answer', () => {
@@ -19100,6 +19196,19 @@ describe('transform, the third way a card can have two faces', () => {
     expect(s.instances[horror]?.counters['ice']).toBeUndefined();
     // The same object throughout: a transform is not a new permanent (CR 712.4).
     expect(horror).toBe(thing);
+    /*
+      And the log says the clock ran out (#221, D238). This is the one of the four clocks whose
+      expiry leaves the object where it was, so a harness could infer it here — it is recorded
+      anyway, so that `expired` means "a clock ran out" rather than "the ones you could not
+      otherwise see". See `GameState.expired`.
+    */
+    const entry = s.log.filter((e) => e.data?.['expired'] !== undefined).at(-1);
+    // And the name is the one it had **as the clock ran out**, not the face it is wearing now: the
+    // Horror never had ice counters on it. See `ExpiredClock.name`.
+    expect(entry?.data?.['expired']).toEqual([
+      { card: thing, counter: 'ice', name: 'Thing in the Ice' },
+    ]);
+    expect(entry?.message).toMatch(/Thing in the Ice's last ice counter is gone/);
   });
 
   it('has defender until it flips, and the 7/8 does not', () => {

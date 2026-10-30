@@ -6714,13 +6714,60 @@ Incidentally: **suspend resolves 29 clocks out of 29** (Rift Bolt in 1.5 turns, 
 in 3). And the two rows the harness cannot split — vanishing and fading, where expiry destroys the
 object and so looks identical to being answered — are what #221 is for.
 
+## A clock running out is a fact in the log now (#221, D238)
+
+The engine wipes an object's counters when it changes zone, and three of the pool's four clocks
+destroy or move their object the moment they expire. So "the clock ran out" and "something answered
+it holding its last counter" were **the same observation**, and the harness above had to print `?`
+for two of its rows.
+
+`GameState.expired` is the tenth member of the detect-rather-than-announce family and the only one
+**not raised as an event**. Nothing printed watches a clock expire — vanishing and fading have no
+payoff cards, suspend's cast is a rule the engine runs itself — so a trigger kind for it would fire
+for nobody, which is what this engine declines to add (`becomes-tapped` is deliberately card-less).
+And a list drained into `raise` would have been invisible to the one consumer that wanted it, which
+is the trap `transformed` sprang. So it is recorded at the four expiry sites and drained into the
+**persistent log**: `LogEntry.data.expired`, plus a line a player can read — *"Calciderm's last time
+counter is gone"*, which is the difference between a creature that went to its own clock and one
+that was answered.
+
+```
+card                     clock  started  ran out    left  ended  turns held
+Calciderm                time        32     4  13%      11     17    4.5
+Search for Tomorrow      time        23    23 100%       0      0    3.0
+Thing in the Ice         ice         21     2  10%      10      9    2.9
+Blastoderm               fade        18     4  22%       2     12    5.8
+Rift Bolt                time         6     6 100%       0      0    1.5
+```
+
+**Three of the five rows are identical to D237's, and the two that moved are exactly the two that
+printed `?`** — which is the measurement checking itself. The old zone comparison was wholly wrong
+for vanishing (0 recorded, 4 real, all four hidden in the "left with 1 counter" bucket) and
+accidentally nearly right for fading (5 recorded, 4 real). An inference right on three rows and
+nearly right on a fourth is the worst kind to ship: no amount of staring finds it.
+
+And the cards: **the printed price is collected 8 times in 50.** One Calciderm or Blastoderm in six
+pays its drawback; the rest of the time the game ends around it (29 of 50 still on the battlefield)
+or something answers it first. Blastoderm's clock lasts 5.8 table turns, about 2.9 of its
+controller's, which is the three turns the player cheat sheet promises — so that claim is measured
+now. Whether a 5/5 for four with a drawback that fires one time in six is priced right is a real
+`deck-probe` question and is **filed, not answered**: D237's lesson was that inventing an edit to
+justify a measurement is the quieter failure than being wrong.
+
+The harness needed one fix the engine change exposed. Its first full-field run read **Blastoderm
+0%**, impossible for a creature sacrificed if it survives four upkeeps: `countdowns.mjs` closed a
+clock as soon as the counters were gone, and fading's expiry is the upkeep *after* that. Third
+finding in a row from a rate that **could not be true** rather than one that looked wrong.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
    it, and the four ways a card can ask a player something — a mode, targets, a cost, a
    mid-resolution decision — are all in place. Adding a card is a few declarative lines. Every
    keyword and every static scope now has a card behind it, the subtype scope included;
-   `becomes-tapped` is the one trigger left without one, and deliberately so (see the entry above).
+   `becomes-tapped` is the one trigger left without one, and deliberately so (see the entry above) —
+   and a **clock running out is deliberately not a trigger at all** (#221, D238): nothing printed
+   watches one, so it is a fact in the log instead of an event with no listener.
    **A draw is an event now** (`draws`, with `you` and `opponent` halves and no `any`, because
    nothing printed here wants one), which was the most frequent thing in the engine and the one
    nothing could read — so "whenever you draw a card" and its mirror are both a few declarative

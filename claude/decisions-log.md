@@ -14423,3 +14423,124 @@ Calciderm and Blastoderm are where the unmeasurable rows bite: 17 of Calciderm's
 Blastoderm's 18 were still on the battlefield when the game ended, which is a vanishing creature
 doing its job, and the rest cannot be split between "the clock ran out" and "somebody killed it on
 its last counter". #221 is the engine change that would separate them.
+
+**Forward note (D238).** Those rows are now split, and two of the three numbers above were wrong:
+Calciderm's four expiries were hidden inside its "left with 1 counter" bucket, and Blastoderm's five
+were really four. The suspend judgement in this entry — believe the `?` rows because nothing in this
+pool answers a card in exile — held exactly, 29 of 29.
+
+---
+
+## D238 — A clock running out is a fact in the log, and two of three inferences about it were wrong
+
+#221 proposed a tenth member of the detect-rather-than-announce family, raised as a `TriggerEvent`
+like the nine before it. **Both halves of that were wrong, and the task said to check the first
+before building:** *"whether any card would want the event, or only the harness. Decide that first;
+it changes the size of the work by a lot."*
+
+### Nothing printed watches a clock expire, so it is not an event
+
+Vanishing and fading have no payoff cards — the expiry *is* the drawback. Suspend's "cast it when
+the last time counter is removed" is a rule the engine implements directly in `tickSuspended`, not a
+trigger a card carries. Thing in the Ice's flip is written as its own ability counting its own
+counters. So a `TriggerEvent` for expiry would be a kind **nothing fires**, which is the thing this
+engine already declines to add on purpose: `becomes-tapped` is deliberately card-less and says so.
+
+### And a list `settle` drains into `raise` would have been invisible to the one consumer
+
+This is the same trap `transformed` sprang (D234): `settle` drains these lists and raises them
+inside one action, so anything outside the engine reading state between actions never sees them.
+`transform-use.mjs` has to watch the board for exactly that reason. An `expired` list drained the
+same way would have been unreadable by `countdowns.mjs`, which is the only thing that wanted it.
+
+So: `GameState.expired` is recorded at the four sites that spend a counter to nothing
+(`vanishingTrigger`, `fadingTrigger`, `tickSuspended`, Thing in the Ice's trigger) and drained by
+`applyAction` into the **persistent log** — `LogEntry.data.expired`, plus a line in the message. The
+log is the record, so the fact outlives the action that caused it.
+
+One detail worth the field it costs: `ExpiredClock` carries the object's **name as the clock ran
+out**. Thing in the Ice is why — its last ice counter coming off is what transforms it, so a name
+read at log time says *"Awoken Horror's last ice counter is gone"*, and the Horror never had ice
+counters on it. Same reason `ExiledCard` carries its facts: the moment is gone by the time anything
+asks.
+
+### What it was worth: 936 games, six seed sets
+
+```
+card                     clock  started  ran out    left  ended  turns held
+Calciderm                time        32     4  13%      11     17    4.5
+    left with — 4:1 3:8 1:2
+    game ended with — 4:5 3:6 2:3 1:3
+Search for Tomorrow      time        23    23 100%       0      0    3.0
+Thing in the Ice         ice         21     2  10%      10      9    2.9
+    left with — 4:6 2:4
+    game ended with — 4:8 3:1
+Blastoderm               fade        18     4  22%       2     12    5.8
+    left with — 3:1 2:1
+    game ended with — 3:2 2:2 1:7 0:1
+Rift Bolt                time         6     6 100%       0      0    1.5
+```
+
+**The measurement validates itself, and this is the part worth keeping.** Three of the five rows are
+*identical* to D237's, to the game: Thing in the Ice (21/2/10/9/2.9), Search for Tomorrow (23/23) and
+Rift Bolt (6/6). Those are the three where the old zone-comparison could be right — `ice`, whose
+expiry leaves the permanent where it was, and the two suspend cards, where D237 argued the `?` could
+be believed because nothing in this pool answers a card in exile. **The two rows that moved are
+exactly the two that printed `?`.** A change that moved everything would have meant the engine was
+now disagreeing with arithmetic; a change that moved nothing would have meant it was not being read.
+
+And D237's judgement call is now evidence rather than an argument: suspend converts **29 of 29**.
+
+### The two inferences that were wrong, in opposite directions
+
+- **Vanishing was wholly wrong: 0 expiries recorded, 4 real.** The last counter comes off and the
+  sacrifice happens inside the same trigger, so a poll between actions sees "1 counter" and then
+  "gone" — indistinguishable from removal. All four expiries sat inside the "left with 1 counter"
+  bucket, which drops from 6 to 2.
+- **Fading was nearly right by accident: 5 recorded, 4 real.** Its counters reach zero a full turn
+  before the sacrifice, so "no counters, still on the battlefield" looked like an expiry — and it is,
+  four times out of five. The fifth was a Blastoderm that spent its clock and then the game ended
+  (the new `game ended with — 0:1` row).
+
+An inference that is right on three rows, wrong on one and accidentally nearly right on the fifth is
+the worst kind to have shipped: it would have survived any amount of staring at it.
+
+### The harness's own bug, caught by the same tell as the last two
+
+The first full-field run with the engine change read **Blastoderm: 0 ran out, 0%** — impossible, for
+a creature that is sacrificed if it survives four upkeeps. The cause was `countdowns.mjs`, not the
+engine: it closed a clock the moment the counters were gone, and **fading's expiry is the upkeep
+after that**, by which time the tag was deleted and the engine's word went unread. Fixed by keeping
+a spent-but-present clock open until either the engine says it expired or the object leaves.
+
+That is the third finding in a row from a **rate that could not be true** rather than a rate that
+looked wrong: Calciderm's 0% found the shared-`time`-zone bug (D237), "2 flips back" in a pool where
+nothing flips back found the `relocate` bug (D236), and now Blastoderm's 0%. An instrument cannot
+check its own reasoning, but it can check its output against a fact about the game, and that keeps
+working.
+
+### What the cards say, filed rather than acted on
+
+**The printed price is collected 8 times in 50.** Calciderm 4 of 32, Blastoderm 4 of 18 — so a
+Calciderm or a Blastoderm pays its drawback about one time in six, and the other five it is a 5/5 for
+four mana with shroud and no downside, because the game ends around it (29 of 50 were still on the
+battlefield at the end) or something answers it first (13 of 50).
+
+Blastoderm's clocks last **5.8 table turns**, about 2.9 of its controller's, which is the three turns
+the player cheat sheet promises — so that claim is now measured and holds. Calciderm's 4.5 is shorter
+for a reason that is not its clock: it is answered early 11 times in 32 against Blastoderm's 2 in 18,
+and *what* answers it is `creature-fate.mjs`'s question rather than a guess for this entry.
+
+Whether a 5/5 for four whose drawback fires one time in six is correctly priced is a real question
+and a `deck-probe` one. It is **not** answered here and nothing is changed on the strength of it,
+for D237's reason: three measurements on an adjacent slot ended in a no-change, and inventing an
+edit to justify a measurement is the quieter failure mode than being wrong.
+
+### Tests
+
+Four, one per expiry site, and the second is the point of the whole change: **a Calciderm destroyed
+while holding its last time counter records no expiry.** Board identical to the real expiry — no
+counters, card in the graveyard — and the log is what tells them apart. Without that control
+`expired` would be a field set whenever one of these dies, which is the ambiguity it exists to
+remove.
+

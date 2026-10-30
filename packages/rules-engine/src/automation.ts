@@ -33,6 +33,7 @@ import {
 } from './combat.js';
 import {
   DASHED, EVOKED, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, counterSpell, destroy,
+  recordExpiry,
   draw,
   drawLater, exileCard, loseLife, mill, suspendedCast,
   madnessOffer, miracleOffer,
@@ -489,7 +490,13 @@ function tickSuspended(state: GameState, seat: SeatIndex): GameState {
     const inst = next.instances[id];
     if (inst === undefined || (inst.counters[TIME] ?? 0) <= 0) continue;
     next = addCounters(next, id, TIME, -1);
-    if ((next.instances[id]?.counters[TIME] ?? 0) === 0 && finished === undefined) finished = id;
+    if ((next.instances[id]?.counters[TIME] ?? 0) === 0) {
+      // Recorded for the log, because the cast that follows moves the card out of exile and takes
+      // the evidence with it — see `GameState.expired`. Every card that finishes is recorded, not
+      // only the one that gets to be cast now: the clock ran out either way.
+      next = recordExpiry(next, id, TIME);
+      if (finished === undefined) finished = id;
+    }
   }
   if (finished === undefined || next.pendingOfferedCast !== null) return next;
   return suspendedCast(next, finished);
