@@ -5382,6 +5382,13 @@ worth changing was changed: every `node --test` script now runs the **spec repor
 a `✖ failing tests:` block with the name and the assertion at the *end* of the output. A tail is
 enough next time.
 
+> **Corrected by D233: a tail was never going to be enough, and believing it was cost five days.**
+> GitHub appends each service container's own log to the job log after the step, which here is ~300
+> lines, so a tail of this job is all Postgres teardown whatever the reporter does. The whole log
+> comes back in one call — `get_job_logs` with `return_content: true` and no `tail_lines` — and run
+> 235's named the failing test on the first read. It was the moderation filter refusing a randomly
+> generated username, and nothing to do with Postgres.
+
 **And the lead that looked obvious was a dead end, which is worth writing down so nobody follows
 it.** The Postgres container log is full of `column "id" does not exist` and one `duplicate key
 value violates unique constraint "players_pkey"`, and both are *handled*: `db.js`'s `run()` appends
@@ -9595,6 +9602,12 @@ It is the right shape — a race, on a cold database, invisible locally — but 
 outcome is an "already exists" refusal that leaves the schema correct, and the suite passed 25 of 25
 cold-start runs locally both before and after the fix. So this is a real bug fixed on its own merits,
 not a diagnosis. #111 keeps its instruction to wait for an occurrence and to add no retry.
+
+> **Closed in D233, and this section's judgement held up.** It was not this race. The occurrence
+> never needed waiting for either: run 235's own log named the failing test as soon as it was read
+> in full instead of by tail. The cause was `newPlayer` generating a random username that the
+> legacy moderation filter refused — a 400 before the test under test began, in the suite's own
+> helper, and nothing to do with Postgres or with any database at all.
 
 ### What guards it
 
@@ -13885,3 +13898,131 @@ threat, making a threat, trading a target for a target. **None of those is price
 board**, which is the line `offerPact` draws and the reason it is one function rather than a
 vocabulary. The day there is a model of what another player does next, that list is what to spend it
 on.
+
+---
+
+## D233 — The Postgres flake that was never about Postgres: a test that invented a name the product refuses
+
+Task #111 has sat open since 25 October. CI run 235 failed the `legacy-postgres` job with 25 of 26
+passing, the next run of a superset of the same code passed, and the commit under test had touched
+only the rules engine, `apps/web` and docs — not `server.js`, not `db.js`, not `test/`. Three
+sessions of suspects came and went. The task's own standing instruction was the right one: **wait
+for an occurrence and read the named failure, and do not add a retry.**
+
+### It had already occurred, and the log was still there
+
+The thing that closed this was not a new occurrence. It was reading the one we had — properly.
+
+The earlier entry on this flake said the job log was "reachable only through the GitHub tool's
+*tail*", that the signed blob URL for the whole file is blocked by this environment's egress proxy
+(it is — `curl` gets a 403 from the proxy), and that switching every `node --test` script to the
+**spec reporter** would therefore make "a tail enough next time". **The first part was true and the
+conclusion was wrong, and that is why this stayed open for five days.**
+
+Two things it got wrong. The reporter change came *after* run 235, so run 235's output is plain TAP,
+which prints `not ok 15` and its error block **inline at the point of failure** rather than in a
+summary at the end. And GitHub appends the service containers' own logs to the job log after the
+step finishes — here ~300 lines of Postgres `initdb` chatter and `RETURNING id` retries. A 150-line
+tail of this job is *entirely* container teardown. It would have been, with the spec reporter too.
+
+What works is asking for the whole thing: `get_job_logs` with `return_content: true` and **no**
+`tail_lines`. The file is 736 lines, it comes back in one call, and it says:
+
+```
+not ok 15 - the reset response is identical for an account that does not exist
+  location: 'test/postgres-write-paths.test.js:863:1'
+  error: |-
+    register p: {"error":"Inappropriate content detected. Please choose a different name."}
+
+    400 !== 200
+  stack: newPlayer (test/postgres-write-paths.test.js:269:10)
+```
+
+Not a 500, not a schema race, not a connection drop. A 400, from the moderation filter, on the
+registration the test helper performs before the test under test begins.
+
+`newPlayer` built its username as ``wp_${tag}_${Math.random().toString(36).slice(2, 8)}`` — six
+random base-36 characters. `server.js` runs every registration past `isProfane()`, which lowercases
+the name, strips every non-alphanumeric character, and asks whether a word from its eleven-word list
+is a **substring** of what is left. Sooner or later six random characters spell one.
+
+Measured rather than estimated, over 20,000,000 draws of the exact generator against the exact
+filter: **8.8 × 10⁻⁶ per registration, which over the suite's 32 registrations is once in 3,552
+runs.** The branch has ~380 CI runs and the job has been green in all but this one, which is the
+rate behaving itself. Expected count across everything this suite has ever run is well under one,
+and we drew it once.
+
+### Why three sessions of suspects missed it
+
+Every ruled-out suspect was a thing visible in the **Postgres container's** log — the `RETURNING id`
+retries, the `players_pkey` duplicate, the DDL refused by the double `initDb()`. The job is called
+`legacy-postgres`, the container log is long and alarming, and the diff was in the rules engine, so
+the search went looking for a database fault. The failing line was in neither the container log nor
+the diff. It was in the test's own name generator, and it would flake the same way against SQLite.
+**The job's name was the misdirection.** D187 had already written down one correction of this exact
+shape (a container log *is* evidence, sometimes); this is the complementary one — the job's subject
+is not necessarily the failure's subject.
+
+Worth being blunt about the cost: one whole-log read would have closed this at any point in those
+five days, and a tail had been tried and had come back looking like a Postgres problem, which fed
+the misdirection rather than correcting it. Two rules out of that. **The next unexplained CI failure
+gets its whole log read first, before any hypothesis is formed about it** — and **a log tail that
+comes back with no test output in it has told you nothing**, so it must not be read as though the
+test output were absent.
+
+### The fix: arithmetic, not a smaller probability
+
+A retry would have hidden it. Re-rolling the name until the filter accepts it would have hidden it
+too, and both leave the same bug in place for anyone who copies the helper. So the suffix is a
+counter, and its digits come from `j m q v w x z` — **the seven letters that appear in no word on
+the filter's list**. A refused name is now impossible rather than rare.
+
+The alphabet is letters and not digits deliberately. `packages/shared`'s filter — the one legacy is
+expected to adopt — folds `1` to `i`, `5` to `s`, `4` to `a` and turns the remaining non-letters
+into single-character wildcards, so a numeric suffix reads as a word there *more* readily, not less.
+Measured, for the record: the shared filter rejects 2.4 × 10⁻⁴ of the old random usernames, 28 times
+the legacy rate, and `9.4 × 10⁻⁴` of the random names in `apps/api/src/account-recovery.test.ts`.
+That second one has never flaked for a reason worth knowing — `apps/api`'s `routes/auth.ts` does not
+call the moderation filter on a username at all, so there is nothing there to trip. Left alone; it
+is not a flake, and a change there would be noise.
+
+The two direct registrations in "the password policy is enforced on register and on reset" moved to
+the same generator. They were never exposed — `server.js` checks the password policy *before*
+`isProfane`, and they send a deliberately weak password, so the policy error always won — but that
+is immunity by statement ordering in a file neither test mentions, which is not a thing to rely on.
+
+### The guard, with its own positive control
+
+`SAFE_LETTERS` is only safe relative to a word list that lives somewhere else and can grow. So a
+plain `test` in the same file reads `badWords` out of `server.js` rather than copying it,
+reimplements the server's check, and runs it over the **whole** generated name — every tag
+`newPlayer` is called with in the file, 400 suffixes each — so a word straddling the join between
+tag and suffix is caught as well. Add `wanker` to the server's list and this fails loudly on the
+next run instead of flaking a registration months later.
+
+Verified by breaking it on purpose, which is the only thing that distinguishes a guard from a
+comment. With `SAFE_LETTERS` set to `crapjmq`:
+
+```
+✖ no account name this suite can generate is one the server refuses
+  AssertionError: wp_g_rcrap would be refused for "crap"
+```
+
+Restored, and the suite reads 28 of 28.
+
+### And the assertion message
+
+``register ${tag}: ${JSON.stringify(reg.body)}`` named the refusal but not what was refused. The one
+time it fired, the missing word was the username. It carries it now. A message that prints the
+server's answer and withholds the question is half a diagnosis, and this suite exists because half a
+diagnosis cost months once already.
+
+### The loose end, named rather than quietly dropped
+
+Scanning runs 232–381 for anything unread turned up exactly one other failure: run 324
+(`20eb22e`, 29 October), where the **`v2`** job failed at `pnpm test`. That commit is from the #178
+hunt and #178 was closed on a hundred clean runs afterwards, so it is most likely that family — but
+**I did not read its named failure**, and saying so is better than implying it was checked. Its log
+is at
+<https://github.com/Nickbuildsdecks/grimore/actions/runs/40803141013/job/123215709926>
+until 27 January. Every other `legacy-postgres` job in those 150 runs passed.

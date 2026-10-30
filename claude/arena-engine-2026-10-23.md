@@ -6567,6 +6567,45 @@ rules always disagree, so 26 offers across thirteen pods produced 25 refusals an
 identically. Near-inert between bots is what makes it safe to turn on; the value is the table a
 person sits at, and that is stated as itself rather than dressed up as a win.
 
+### The Postgres flake, closed, and it was never about Postgres (D233)
+
+The one CI failure this branch has carried unexplained since 25 October — `legacy-postgres`, 25 of 26
+passing, green on a rerun of a superset of the same code. Three sessions ruled out suspects in the
+Postgres container's log. The answer was in the test file.
+
+`newPlayer` built its username from six random base-36 characters, and `server.js` runs every
+registration past a filter that lowercases the name, strips the punctuation and asks whether one of
+eleven words is a **substring** of what is left. Sooner or later six random characters spell one.
+Measured over 20,000,000 draws of the exact generator against the exact filter: once in 113,000
+registrations, so **once in 3,552 runs of this suite**. We drew it once in ~380.
+
+Two things are worth carrying forward more than the fix is.
+
+**The job's name was the misdirection.** `legacy-postgres` prints the service container's whole log
+after the step, which is ~300 alarming lines, and the diff was in the rules engine, so the search
+kept looking for a database fault. The failing line was in neither the container log nor the diff,
+and it would flake identically against SQLite.
+
+**A log tail that contains no test output has told you nothing.** The earlier session concluded that
+switching to the spec reporter would make "a tail enough next time". It would not: the container
+teardown is appended *after* the test output, so a 150-line tail of this job is all Postgres and no
+tests, whatever the reporter does. The whole log comes back in one call — `get_job_logs` with
+`return_content: true` and no `tail_lines` — and run 235's named the test, the assertion and the
+server's refusal on the first read.
+
+The fix is arithmetic rather than a smaller probability, because #111's standing instruction was *do
+not add a retry* and re-rolling the name would have been one in spirit. The suffix is a counter now,
+over `j m q v w x z` — the seven letters that appear in no word on the filter's list — so a refused
+name is impossible rather than rare. Letters and not digits on purpose: `packages/shared`'s filter,
+which legacy is expected to adopt, folds `1` to `i` and `5` to `s` and wildcards the rest, so digits
+read as words there *more* readily.
+
+And a guard with its own positive control, because `SAFE_LETTERS` is only safe relative to a word
+list that lives elsewhere and can grow: a plain test reads `badWords` out of `server.js` rather than
+copying it, reimplements the server's check, and runs it over every tag this file uses against 400
+suffixes each. Verified by breaking it — `SAFE_LETTERS = 'crapjmq'` fails with
+`wp_g_rcrap would be refused for "crap"`. The suite reads 28 of 28.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

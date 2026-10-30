@@ -257,13 +257,15 @@ test.after(async () => {
  * `test`, with the server's own error lines attached to whatever the body throws.
  *
  * This suite drives the legacy server over HTTP, so a failing assertion usually says "expected 200,
- * got 500" and the reason is in a log this process is holding and nobody prints. CI run 235 failed
- * one of these 26 tests, passed on a rerun of a superset of the same code, and cost the whole
- * diagnosis: the spec reporter now names which test failed, and this names *why* — the server's own
- * log, trimmed to the last sixty lines, in the message of the error the runner prints.
+ * got 500" and the reason is in a log this process is holding and nobody prints. This attaches it:
+ * the server's own log, trimmed to the last sixty lines, in the message of the error the runner
+ * prints. On failure only, so a green run says nothing extra.
  *
- * Attached on failure only, so a green run says nothing extra. See task #111; the one thing this
- * must not become is a retry.
+ * Added for the flake in task #111, which it did not end up catching -- that one was a **400**, from
+ * the moderation filter, on a randomly generated username, and the assertion's own message said so
+ * all along. What closed #111 was reading the job log in full instead of by tail (D233), and the
+ * generator above `newPlayer` is the fix. This stays, because a 500 out of one of these routes still
+ * arrives with its reason in a log nobody would otherwise see.
  */
 const pgTest = (name, fn) => test(name, { skip }, async (t) => {
   try {
@@ -283,10 +285,88 @@ const pgTest = (name, fn) => test(name, { skip }, async (t) => {
   }
 });
 
+/*
+  Unique account names, from a counter and a seven-letter alphabet rather than from `Math.random()`.
+
+  **This is the diagnosis of the flake in task #111, and the fix for it.** CI run 235 failed one of
+  these 26 tests and for five days nobody could say which, because the job log had only ever been
+  read by tail and a tail of this job is all Postgres container teardown. Read in full, it said:
+
+      not ok 15 - the reset response is identical for an account that does not exist
+        register p: {"error":"Inappropriate content detected. Please choose a different name."}
+        400 !== 200
+
+  Nothing to do with Postgres. `newPlayer` built its username out of six random base-36 characters,
+  and `server.js` runs every registration past `isProfane()`, which lowercases the name, strips every
+  non-alphanumeric character and asks whether a word from its list is a *substring* of what is left.
+  Six random characters spell one of those words about once in 113,000, which is once in 3,552 runs
+  of this suite -- measured over 20M draws of the exact generator, not estimated. A test that invents
+  user input will eventually invent input the product is designed to refuse.
+
+  So the suffix is a counter now, and its digits come from `j m q v w x z`: the seven letters that
+  appear in no word on the filter's list. That makes a rejected name arithmetically impossible rather
+  than merely unlikely, which is the difference between this being fixed and this being rarer. The
+  alphabet is letters and not digits on purpose -- the shared filter in `packages/shared` folds `1`
+  to `i` and `5` to `s` and turns the rest into wildcards, so a numeric suffix is *more* likely to
+  read as a word there, not less, and legacy is expected to adopt that filter.
+
+  Unique per run is all that is needed: the suite creates and drops its own database every time.
+*/
+const SAFE_LETTERS = 'jmqvwxz';
+let nameSeq = 0;
+
+/** The next suffix: unique within the run, and unreadable as any word the filter refuses. */
+function nextSuffix() {
+  let n = nameSeq++;
+  let out = '';
+  do {
+    out = SAFE_LETTERS[n % SAFE_LETTERS.length] + out;
+    n = Math.floor(n / SAFE_LETTERS.length);
+  } while (n > 0);
+  return out;
+}
+
+/*
+  And the proof that it stays impossible, rather than a sentence claiming it is.
+
+  `SAFE_LETTERS` is only safe relative to a word list kept in `server.js`, and a list is a thing that
+  grows. So this reads the list out of the server instead of copying it, reimplements the server's
+  own check, and runs it over the whole name -- for every tag `newPlayer` is called with in this
+  file, so a word straddling the join between tag and suffix is caught as well. Adding `wanker` to
+  the server's list fails here, loudly and on every run, instead of flaking one registration in some
+  thousands some months from now.
+
+  Needs no database, so it is a plain `test` and reports rather than skipping.
+*/
+test('no account name this suite can generate is one the server refuses', () => {
+  const source = readFileSync(join(ROOT, 'server.js'), 'utf8');
+  const listed = /const badWords = \[([^\]]*)\]/.exec(source);
+  assert.ok(listed, 'server.js no longer declares badWords where this guard looks for it');
+  const words = (listed[1].match(/'([^']+)'/g) ?? []).map((w) => w.slice(1, -1));
+  assert.ok(words.length >= 11, `expected the legacy word list, got ${words.length} entries`);
+
+  // Legacy's check, exactly: lowercase, drop every non-alphanumeric, ask for a substring.
+  const refusedFor = (name) => {
+    const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return words.find((w) => normalized.includes(w));
+  };
+
+  const tags = [...readFileSync(__filename, 'utf8').matchAll(/newPlayer\('([^']+)'\)/g)]
+    .map((m) => m[1]);
+  assert.ok(tags.length > 20, `expected this file's newPlayer tags, found ${tags.length}`);
+  for (const tag of new Set(tags)) {
+    for (let i = 0; i < 400; i++) {
+      const name = `wp_${tag}_${nextSuffix()}`;
+      const word = refusedFor(name);
+      assert.equal(word, undefined, `${name} would be refused for "${word}"`);
+    }
+  }
+});
+
 /** A registered, logged-in player, with its own cookie jar. */
 async function newPlayer(tag) {
   const client = makeClient();
-  const username = `wp_${tag}_${Math.random().toString(36).slice(2, 8)}`;
+  const username = `wp_${tag}_${nextSuffix()}`;
   const reg = await client('/api/auth/register', {
     method: 'POST',
     body: {
@@ -296,7 +376,9 @@ async function newPlayer(tag) {
       email: `${username}@example.test`,
     },
   });
-  assert.equal(reg.status, 200, `register ${tag}: ${JSON.stringify(reg.body)}`);
+  // With the username, because the one time this fired the refusal was *about* the username and
+  // the message did not carry it. See the block above `nextSuffix`.
+  assert.equal(reg.status, 200, `register ${tag} as ${username}: ${JSON.stringify(reg.body)}`);
   // Registration deliberately does not start a session ("You can now log in"), so the cookie this
   // client needs comes from an explicit login.
   const login = await client('/api/auth/login', {
@@ -996,10 +1078,10 @@ pgTest('the password policy is enforced on register and on reset', async () => {
   const weak = await client('/api/auth/register', {
     method: 'POST',
     body: {
-      username: `pol_${Math.random().toString(36).slice(2, 8)}`,
+      username: `pol_${nextSuffix()}`,
       password: 'password',
       storeNickname: 'Policy',
-      email: `pol_${Math.random().toString(36).slice(2, 8)}@example.test`,
+      email: `pol_${nextSuffix()}@example.test`,
     },
   });
   assert.equal(weak.status, 400, 'a blocklisted password must be refused on register');
@@ -1008,10 +1090,10 @@ pgTest('the password policy is enforced on register and on reset', async () => {
   const sequential = await makeClient()('/api/auth/register', {
     method: 'POST',
     body: {
-      username: `pol2_${Math.random().toString(36).slice(2, 8)}`,
+      username: `pol2_${nextSuffix()}`,
       password: '12345678',
       storeNickname: 'Policy',
-      email: `pol2_${Math.random().toString(36).slice(2, 8)}@example.test`,
+      email: `pol2_${nextSuffix()}@example.test`,
     },
   });
   assert.equal(sequential.status, 400, '12345678 cleared the old length-only policy');
