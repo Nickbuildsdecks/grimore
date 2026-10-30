@@ -18603,6 +18603,55 @@ describe('myriad, the first keyword in this pool that reads the number of people
     expect(viewFor(s, null).seats.find((seat) => seat.index === 3)?.spared['0']).toBe(4);
   });
 
+  it('exiles the copies even if the Equipment that granted the keyword is answered first', () => {
+    /*
+      The reason the instruction lives on the **token** rather than in a register somewhere, and the
+      case that would break any other arrangement: myriad is granted, so the thing that knows about
+      the copies can leave the battlefield in the middle of the combat they are attacking in.
+      Destroy the Blade after the declaration and the copies are still owed an exile — they are not
+      the Blade's bookkeeping, they are permanents carrying their own instruction.
+
+      A real line of play rather than a contrivance: the Blade is an artifact and most decks in this
+      pool answer artifacts.
+    */
+    let s = swing(podWithBlade());
+    expect(s.combat.attacks).toHaveLength(3);
+    s = destroy(s, find(s, 0, 'battlefield', 'Blade of Selves'));
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Blade of Selves');
+    s = drain(advanceTo(s, 'end-combat'), 80);
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Serra Angel')).toHaveLength(1);
+  });
+
+  it('says so on the attack, because three creatures appeared that nobody declared', () => {
+    /*
+      D42 and D65's complaint, in the one place it would bite hardest. The declaration line names
+      what was *declared* — one Angel at one seat — and the board then holds two more attackers it
+      does not mention. A player who sent one creature and watched three arrive, with nothing
+      anywhere saying where the other two came from, would reasonably think the table had made a
+      mistake.
+
+      Grouped by the creature that made them rather than one clause per copy, because that is the
+      shape of what happened: one attack, and the keyword put a body in front of everybody else.
+    */
+    const s = swing(podWithBlade());
+    const line = s.log.at(-1)!.message;
+    expect(line).toContain('myriad: Serra Angel also attacks');
+    // Both of the other two seats named, in one clause rather than two.
+    const named = s.seats.filter((seat) => seat.index !== 0 && seat.index !== 1)
+      .map((seat) => seat.name ?? `Seat ${seat.index}`);
+    for (const name of named) expect(line).toContain(name);
+  });
+
+  it('and says nothing at all at a two-player table, where it did nothing', () => {
+    const s = swing(advanceTo(arena({
+      decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Serra Angel', 'Blade of Selves'] },
+      turn: 6,
+      firstSeat: 0,
+    }), 'precombat-main'));
+    expect(s.log.at(-1)!.message).not.toContain('myriad');
+  });
+
   it('declares the keyword on the Equipment, so the pool can be audited for it', () => {
     expect(scriptFor('Blade of Selves')?.equipBonus?.keywords).toEqual(['myriad']);
     // And it is the only source of myriad in the pool: a creature printed with it would be a

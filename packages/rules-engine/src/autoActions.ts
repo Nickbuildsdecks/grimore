@@ -1640,8 +1640,11 @@ const cardName = (state: GameState, id: string): string => {
  * that goodwill without asking. Written down rather than smoothed over, and the pod instrument is
  * what says whether the copies are even worth it.
  */
-function myriadCopies(state: GameState, attacker: SeatIndex): GameState {
+function myriadCopies(
+  state: GameState, attacker: SeatIndex,
+): { readonly state: GameState; readonly made: readonly MyriadCopy[] } {
   let next = state;
+  const made: MyriadCopy[] = [];
   // Read off the declaration as it stands, because the loop below appends to it: a snapshot, or
   // the copies would make copies of the copies.
   const declared = [...next.combat.attacks];
@@ -1652,11 +1655,50 @@ function myriadCopies(state: GameState, attacker: SeatIndex): GameState {
     for (const seat of next.seats) {
       if (seat.index === attacker || seat.eliminated) continue;
       if (seat.index === attack.defender) continue;
-      const made = copiesAttacking(next, attacker, attack.attacker, seat.index);
-      next = made;
+      const before = next;
+      next = copiesAttacking(next, attacker, attack.attacker, seat.index);
+      // Recorded only when one was actually made, so a copy the engine could not create — a card
+      // definition it cannot read — does not get announced as though it had been.
+      if (next !== before) {
+        made.push({ of: cardName(before, attack.attacker), defender: seat.index });
+      }
     }
   }
-  return next;
+  return { state: next, made };
+}
+
+/** One copy myriad made, for the line the table reads. See the message in `declareAttackers`. */
+interface MyriadCopy {
+  readonly of: string;
+  readonly defender: SeatIndex;
+}
+
+/**
+ * "— myriad: Serra Angel also attacks B and C", or nothing at all.
+ *
+ * Grouped by the creature that made them rather than one clause per copy, because that is the
+ * shape of what happened: one attack with one creature, and the keyword put a body in front of
+ * everybody else. Two cards with myriad in the same declaration therefore read as two clauses,
+ * which is also right.
+ *
+ * Read off the state **after** the copies were made, which is the one subtlety: the seats are
+ * named from `next`, and a seat eliminated by this very declaration cannot be among them because
+ * `myriadCopies` skipped it.
+ */
+function myriadLine(state: GameState, made: readonly MyriadCopy[]): string {
+  if (made.length === 0) return '';
+  const byCard = new Map<string, SeatIndex[]>();
+  for (const copy of made) {
+    byCard.set(copy.of, [...(byCard.get(copy.of) ?? []), copy.defender]);
+  }
+  const clauses = [...byCard.entries()].map(([name, seats]) => {
+    const names = seats.map((seat) => seatName(state, seat));
+    const people = names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    return `${name} also attacks ${people}`;
+  });
+  return ` — myriad: ${clauses.join('; ')}`;
 }
 
 /** One myriad token, made and marked. Split out so the loop above reads as the rule it is. */
@@ -1795,7 +1837,8 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     event. The last of those is not a nicety: a myriad token is a copy of a creature with myriad,
     and a copy that triggered would make copies of its own, forever.
   */
-  next = myriadCopies(next, action.by);
+  const myriad = myriadCopies(next, action.by);
+  next = myriad.state;
   /*
     One event per attack, carrying who declared it and what it is aimed at.
 
@@ -1841,10 +1884,19 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
           .join(', ')}`)
       // Said on the attack rather than in a line of its own, because it is not a second thing that
       // happened: breaking your word *is* this attack, read by a table that remembers the deal.
-      + broken.map((p) => ` — breaking a deal: ${pactLine(state, p.from, p.to, p.kind)}`).join(''),
+      + broken.map((p) => ` — breaking a deal: ${pactLine(state, p.from, p.to, p.kind)}`).join('')
+      /*
+        And myriad's copies, for the same reason and a sharper one: they are not a second thing that
+        happened either, but unlike a broken promise they are **three more creatures on the board**
+        that the declaration above does not mention. Without this line a player sends one attacker
+        and watches two more appear with nothing anywhere saying where they came from, which is the
+        complaint D42 and D65 are about — the log saying what was played rather than what happened.
+      */
+      + myriadLine(next, myriad.made),
     data: {
       attackers: attacks.map((a) => a.attacker),
       ...(broken.length === 0 ? {} : { brokePacts: broken.map((p) => p.id) }),
+      ...(myriad.made.length === 0 ? {} : { myriad: myriad.made.length }),
     },
   };
 }
