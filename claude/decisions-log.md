@@ -14357,3 +14357,69 @@ counters left is a card that needs replacing. #220.
 `0 flips back to a front face` across 936 games, which is the standing check on D234's claim that
 the symmetric half of `transformPermanent` is exercised by no card in this pool. It is still true,
 and it is now true on evidence rather than on inspection.
+
+---
+
+## D237 — Thing in the Ice never reaches one counter, so there is nothing to reshape
+
+#220 asked which of two diagnoses explained a 4% flip rate (D236): the deck never gets there, or the
+permanent dies first. Those want opposite fixes — one counter short is a reshape, four left is a cut
+— and `countdowns.mjs` reads the number that tells them apart. 936 games, six seed sets:
+
+```
+card                 clock  started  ran out   left  ended  turns held
+Thing in the Ice     ice         21        2    10     9      2.9
+    left the battlefield with — 4 counters ×6, 2 ×4
+    game ended with          — 4 counters ×8, 3 ×1
+```
+
+**Fourteen of twenty-one clocks still had all four counters**, which means the controller cast *not
+one* instant or sorcery while the permanent was alive. Four more got halfway. One reached three. It
+**never once reached one counter left.**
+
+So the answer is neither of the two the task proposed, and the third is sharper than both: the card
+is not answered before it converts and it is not one spell short — **it arrives too late to start.**
+Nine of the twenty-one were still sitting on the battlefield when the game finished, eight of those
+with four counters, and it holds its clock for 2.9 turns, which in a duel is about one and a half of
+its controller's. Half the time it is answered, half the time the game simply ends around it, and in
+both cases it has usually seen nothing.
+
+### Which means: change nothing, and that is the finding
+
+A reshape has nothing to work with. "One fewer ice counter" converts the four cases that reached two
+and none of the fourteen that reached four. Two fewer converts the same four. The clock is not the
+problem and shortening it is not the fix.
+
+And the slot does not want fixing. D236 already established that Arc Tempest's seven-to-thirteen
+points come from the **bodies** — a 1/1 that sometimes grows wings and a 0/4 that blocks — and a 0/4
+defender for {1}{U} is a good card in a deck whose problem is living long enough to cast its spells.
+The measurement that priced the slot and the measurement that explains it now agree, and they agree
+on a card doing something other than what its name suggests.
+
+The card also stays for the reason D229 put it there: transform needs a card in the pool to exist at
+all, and Thing in the Ice carries the only `transformed` trigger. Pulling it for an unreachable back
+face would take the mechanic's only trigger with it, to fix a slot that is winning.
+
+**This entry exists to record a no-change, which is the outcome an investigation is most likely to
+talk itself out of.** Three measurements were spent on this slot and the honest conclusion is that
+the deck is right and the card is misnamed. Inventing an edit to justify the spend is the failure
+mode, and it is a quieter one than being wrong.
+
+### What else the instrument said, incidentally
+
+```
+Search for Tomorrow  time        23       23     0     0      3.0
+Rift Bolt            time         6        6     0     0      1.5
+Calciderm            time        32        0    15    17      4.5
+Blastoderm           fade        18        5     2    11      4.7
+```
+
+**Suspend resolves, 29 clocks out of 29.** The `?` caveat on `time` applies in principle — expiry
+and being answered are the same observation — but in practice nothing in this pool answers a card in
+exile, so there is no competing explanation for a suspended card's counters reaching zero. Both
+suspend cards convert every time, Rift Bolt in 1.5 turns and Search for Tomorrow in 3.
+
+Calciderm and Blastoderm are where the unmeasurable rows bite: 17 of Calciderm's 32 and 11 of
+Blastoderm's 18 were still on the battlefield when the game ended, which is a vanishing creature
+doing its job, and the rest cannot be split between "the clock ran out" and "somebody killed it on
+its last counter". #221 is the engine change that would separate them.

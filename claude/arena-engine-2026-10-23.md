@@ -6692,6 +6692,28 @@ carries the only `transformed` trigger. What it *needs* is #220's question — t
 when it stops being able to flip, which tells "never gets there" apart from "dies first" and is the
 difference between a reshape and a cut.
 
+### And the answer for Thing in the Ice is "change nothing" (D237)
+
+`countdowns.mjs` reads how many counters were left when a clock stopped being spendable. 936 games:
+**21 clocks on Thing in the Ice, 2 ran out, and it never once reached one counter left.** Fourteen of
+the twenty-one still had all four, meaning its controller cast not one instant or sorcery while it
+was alive; nine were still on the battlefield when the game ended, eight of those with four.
+
+So neither diagnosis #220 proposed was right, and the third is sharper: the card is not answered
+before it converts and it is not one spell short — **it arrives too late to start**. Which means a
+reshape has nothing to work with. One fewer counter converts the four cases that reached two and
+none of the fourteen that reached four.
+
+**Three measurements on this slot and the conclusion is that the deck is right and the card is
+misnamed.** D234 priced the swap and it won; D236 found the win was the bodies; D237 finds the clock
+unreachable. The card stays because transform needs a card in the pool (D229) and this one carries
+the only `transformed` trigger. Recording a no-change is the point — inventing an edit to justify
+three measurements is the quieter failure mode than being wrong.
+
+Incidentally: **suspend resolves 29 clocks out of 29** (Rift Bolt in 1.5 turns, Search for Tomorrow
+in 3). And the two rows the harness cannot split — vanishing and fading, where expiry destroys the
+object and so looks identical to being answered — are what #221 is for.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
