@@ -18772,3 +18772,128 @@ describe('magecraft, and the half of two cards that a stale comment said was unr
     expect(s.copied).toEqual([]);
   });
 });
+
+describe('the bot asks for peace, which is the only thing it ever says first', () => {
+  /*
+    The pod's conversation was a monologue. The engine has had three preset deals and `answerPact`
+    since D91, but `answerPact` only ever *answered* — so in a solo pod, one person against three
+    bots, nothing at the table had ever spoken to the player first. They offered, the bots agreed,
+    and the politics the `hit you N` and `spared you N` tallies record ran one way.
+
+    `offerPact` is the one deal a bot can price without modelling anybody's future, which is the
+    objection its own docblock raised against offering at all: asking for peace from the player
+    whose **open board can already kill it** is a fact about the battlefield now, and it is the same
+    fact `answerPact` reads from the other side to decline a deal from somebody who is dead on the
+    board.
+  */
+  const podWhereSeatOneIsLethal = (life = 6): GameState => {
+    let s = advanceTo(arena({
+      format: 'pod',
+      seats: 4,
+      decks: { 0: 'tidal-mind', 1: 'ember-rush', 2: 'hollow-tide', 3: 'dawn-tithe' },
+      battlefield: {
+        0: ['Island', 'Island'],
+        // Enough power, untapped, to kill seat 0 outright.
+        1: ['Mountain', 'Ball Lightning', 'Hellrider'],
+      },
+      turn: 6,
+      firstSeat: 0,
+    }), 'precombat-main');
+    // Seat 0 low enough that seat 1's open board is lethal, which is the whole condition.
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life } : seat)) };
+    return s;
+  };
+
+  /** What this seat would do, with the rule on unless told otherwise. */
+  const move = (s: GameState, seat: 0 | 1 | 2 | 3, opts = {}): Action | null =>
+    botAction(s, seat, opts);
+
+  it('offers a truce to the seat whose open board can kill it', () => {
+    const s = podWhereSeatOneIsLethal();
+    expect(move(s, 0)).toEqual({
+      type: 'pact:offer', by: 0, seat: 1, kind: 'truce-until-your-turn',
+    });
+  });
+
+  it('and offers a truce rather than a one-way promise, because it has to pay for what it asks', () => {
+    /*
+      `truce-until-your-turn` binds **both** seats (see `promises` in pacts.ts). That is the point
+      and not an accident: a bot that asked for protection and promised nothing would be begging,
+      and a player has no reason to take it. Giving up its own right to attack is what makes this a
+      trade — and `keepsItsWord` means the promise is worth something, since this bot honours every
+      deal it takes.
+    */
+    const s = podWhereSeatOneIsLethal();
+    const offer = move(s, 0) as { kind: string };
+    expect(offer.kind).toBe('truce-until-your-turn');
+  });
+
+  it('says nothing when nobody at the table can kill it', () => {
+    // The condition is lethality, not fear: at a comfortable life total there is nothing to ask
+    // for, and a bot that asked anyway would be the noise its own docblock warns about.
+    const s = podWhereSeatOneIsLethal(40);
+    expect(move(s, 0)).not.toEqual(
+      expect.objectContaining({ type: 'pact:offer' }),
+    );
+  });
+
+  it('says nothing when a live pact already covers it', () => {
+    let s = podWhereSeatOneIsLethal();
+    s = drain(apply(s, { type: 'pact:offer', by: 0, seat: 1, kind: 'truce-until-your-turn' }));
+    const offered = s.pacts.at(-1)!;
+    s = drain(apply(s, { type: 'pact:respond', by: 1, pact: offered.id, accept: true }));
+    expect(move(s, 0)).not.toEqual(expect.objectContaining({ type: 'pact:offer' }));
+  });
+
+  it('keeps one offer outstanding at a time rather than one per opponent', () => {
+    // Two seats could be asked on this board if the rule were per-opponent. An unanswered offer is
+    // a conversation already in progress, and a table where one seat has three open asks reads as
+    // noise rather than as politics.
+    let s = podWhereSeatOneIsLethal();
+    s = { ...s, seats: s.seats.map((seat) => seat) };
+    s = drain(apply(s, move(s, 0)!));
+    expect(s.pacts.filter((p) => p.status === 'offered' && p.from === 0)).toHaveLength(1);
+    expect(move(s, 0)).not.toEqual(expect.objectContaining({ type: 'pact:offer' }));
+  });
+
+  it('does not ask again the same turn once it has been told no', () => {
+    /*
+      The record answers this rather than a counter, which is why declined pacts are never swept:
+      the offer that was refused is still in `state.pacts` with the turn it was made on.
+    */
+    let s = podWhereSeatOneIsLethal();
+    s = drain(apply(s, move(s, 0)!));
+    const offered = s.pacts.at(-1)!;
+    s = drain(apply(s, { type: 'pact:respond', by: 1, pact: offered.id, accept: false }));
+    expect(s.pacts.at(-1)?.status).toBe('declined');
+    expect(move(s, 0)).not.toEqual(expect.objectContaining({ type: 'pact:offer' }));
+  });
+
+  it('and says nothing at all with the rule turned off, which is what it was measured against', () => {
+    const s = podWhereSeatOneIsLethal();
+    expect(move(s, 0, { asksForPeace: false })).not.toEqual(
+      expect.objectContaining({ type: 'pact:offer' }),
+    );
+  });
+
+  it('is refused by another bot, because the two rules are one board reading from opposite sides', () => {
+    /*
+      Worth pinning rather than discovering twice. `offerPact` asks when an opponent's open power is
+      at least its life; `answerPact` accepts when its own open power is *less* than the offerer's
+      life. The same number, compared the same way, from each side — so a bot asked by a bot in the
+      position that prompts the ask says no.
+
+      Which is correct play rather than a defect: "I can kill you, so no deal" is what a person says
+      too. It is also why this rule cannot be priced bot-to-bot, and why its value is the table it
+      makes for a human rather than a win rate. Thirteen pods on the same seeds with the rule off
+      and on: 26 offers, 25 declined, winner and length identical in 12 of 13. See D232.
+    */
+    let s = podWhereSeatOneIsLethal();
+    s = drain(apply(s, move(s, 0)!));
+    const offered = s.pacts.at(-1)!;
+    expect(offered.status).toBe('offered');
+    expect(move(s, 1)).toEqual({
+      type: 'pact:respond', by: 1, pact: offered.id, accept: false,
+    });
+  });
+});

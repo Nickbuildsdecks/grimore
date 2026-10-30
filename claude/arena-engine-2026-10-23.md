@@ -6548,6 +6548,25 @@ the card is good**: it ships because a keyword needs a card in a deck to exist i
 and the likely repair is making the printed "may" real, because a cost past the one-ply horizon is
 something this project teaches by hand.
 
+### The bot asks for peace (D232)
+
+`answerPact` has only ever answered, for a reason its own docblock gives: a deal buys somebody's
+future behaviour and nothing in the bot models that. The exception is the one offer whose value is in
+the **present** — asking for peace from the player whose open board can already kill you — and that
+is the same board fact `answerPact` reads from the other side to decline a deal from somebody who is
+dead on the board. One reading, two directions, and it makes the pod's conversation two-way for the
+first time.
+
+It offers a **truce**, which binds both ways, so the bot pays for what it asks rather than begging.
+Three conditions bound the noise: the seat must be able to kill it, no live pact may cover it
+already, and one offer may be outstanding at a time — a seat that has said no this turn is not asked
+again, answered from the record rather than a counter.
+
+The measurement is the interesting part. **`pod-duel` cannot price this**: bot to bot the two mirrored
+rules always disagree, so 26 offers across thirteen pods produced 25 refusals and 12 of 13 pods ended
+identically. Near-inert between bots is what makes it safe to turn on; the value is the table a
+person sits at, and that is stated as itself rather than dressed up as a win.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -6639,5 +6658,14 @@ something this project teaches by hand.
    what they promised (D189). **And the other direction is now recorded too** (D227): every strip also reads
    `spared you N`, the attacking power that seat could legally have aimed at you and sent somewhere
    else, which is the one reading that tells a player who chose to leave you alone from a player
-   who was never able to attack you. What is still missing is the *conversation* — there is no table
-   talk beyond the chat panel and the three preset deals.
+   who was never able to attack you. **And the table talks back now** (D232): a bot *offers* a truce
+   to the seat whose open board can already kill it, which is the one deal it can price without
+   modelling anybody's future — the same board reading `answerPact` uses from the other side. Before
+   that nothing at this table had ever spoken to the player first.
+
+   Bot to bot it is near-inert and honestly so, because the two rules are one reading from opposite
+   sides: 26 offers across thirteen pods produced 25 refusals, and the winner was identical in 12 of
+   13. It is on by default because the value is the table a person sits at rather than a win rate,
+   which is a claim made on its own terms. What is still missing is the rest of the conversation —
+   asking for help, pointing at a threat, making one, trading a target for a target — and none of
+   those is priceable from the present board, which is the line `offerPact` draws.

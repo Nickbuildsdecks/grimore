@@ -13815,3 +13815,73 @@ cards' ward and magecraft in front of a reader and the reader read the lines nex
 worth knowing about what this kind of instrument is for: not a gate that passes or fails, but a way
 of walking a reader past two hundred and forty-five cards' worth of text in the places most likely to
 be stale.
+
+## D232 — The bot asks for peace: the one deal it can price, and the only thing it ever says first
+
+The pod's conversation was a monologue. Three preset deals and `answerPact` have been here since
+D91, and `answerPact` only ever **answered** — so in a solo pod, one person against three bots and
+the way this table is most often played, nothing had ever spoken to the player first. They offered,
+the bots agreed, and the politics the `hit you N` and `spared you N` tallies record ran one way.
+
+`answerPact`'s docblock explained why it never offered, and the reasoning was right: what a deal buys
+is somebody else's **future** behaviour, nothing in the bot models that, and "a bot that offered
+deals it had no way to value would be making noise at the table, which is worse than silence."
+
+### The exception, and why it is one
+
+There is exactly one offer whose value is entirely in the **present**: asking for peace from the
+player whose open board can already kill you. That is not a guess about next turn, it is a fact about
+the battlefield now — and it is the same fact, read from the other side, that `answerPact` already
+uses to decline a deal from somebody who is dead on the board. One board reading, two directions.
+
+It offers a **truce**, which binds both ways (`promises` in `pacts.ts`), and that is the point rather
+than an accident: a bot that asked for protection and promised nothing would be begging, and a player
+has no reason to take it. Giving up its own right to attack is what makes it a trade, and
+`keepsItsWord` means the promise is worth something.
+
+The noise objection is answered rather than ignored, because it was the real risk. Three conditions,
+all needed: the seat must be able to kill this one, no live pact may already cover it, and **one
+offer outstanding at a time**. A seat that has already said no this turn is not asked again, and the
+record answers that rather than a counter — declined pacts are never swept, so the refused offer is
+still there with the turn it was made on.
+
+### The measurement, and the thing it cannot measure
+
+**`pod-duel` cannot price this, and not for want of games.** Bot to bot, nearly every one of these
+offers is refused *by construction*: `offerPact` asks when an opponent's open power is at least its
+life, `answerPact` accepts when its own open power is **less** than the offerer's life. The same
+number, compared the same way, from each side — so a bot asked in the position that prompts the ask
+says no. Thirteen pods, the same seeds with the rule off and on:
+
+```
+26 offers, 25 declined, 1 accepted
+winner and length identical in 12 of 13 pods
+```
+
+The one that differed is the machinery working end to end rather than an anomaly: the board moved
+between the offer and the answer, the truce was taken, and `keepsItsWord` kept it.
+
+So between bots the rule is **near-inert**, which is what makes turning it on safe, and the value is
+all on the other side of the table. **It is on by default and the reason is not a win rate**, which
+is worth saying plainly rather than dressing a play-experience change as a measured one. Every other
+flag in `BotOptions` defaults to whatever a paired run preferred; this one defaults to on because a
+computer that asks you for a truce when your board can kill it is a different table to sit at, and
+because a flag nothing turns on is a feature no player ever sees.
+
+One consequence a player will meet immediately: **the bots will almost always refuse your offers
+too**, for the same mirrored reason. That is correct play rather than a defect — "I can kill you, so
+no deal" is what a person at a table says — and it is now pinned by a test so nobody rediscovers it
+as a bug.
+
+### What this is not
+
+No UI work: `pactAsked` keys on "an offer whose `to` is me" and does not care who made it, so a
+bot's offer renders in the existing prompt with Agree / No deal and is already covered by
+`arena.test.ts`. Claimed on that basis rather than on a browser run, which would only re-confirm the
+same function.
+
+And the rest of a pod's conversation is still missing, deliberately: asking for help, pointing at a
+threat, making a threat, trading a target for a target. **None of those is priceable from the present
+board**, which is the line `offerPact` draws and the reason it is one function rather than a
+vocabulary. The day there is a model of what another player does next, that list is what to spend it
+on.

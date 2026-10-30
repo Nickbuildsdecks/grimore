@@ -1784,6 +1784,35 @@ export interface BotOptions {
    */
   readonly chaseTheCrown?: boolean;
   /**
+   * Whether this bot ever **offers** a deal, and not only answers one (see `offerPact`).
+   *
+   * **On by default, and the reason is not a win rate.** This is the one rule in this interface
+   * whose value is the table rather than the record, and the honest account of what was measured is
+   * worth having in full.
+   *
+   * `pod-duel` cannot price it, and not for want of games: **bot to bot, nearly every one of these
+   * offers is refused by construction.** `offerPact` asks for peace exactly when an opponent's open
+   * board can kill it, and `answerPact` accepts exactly when its own open board *cannot* kill the
+   * offerer — the same board reading from opposite sides, so the two always disagree. Thirteen pods,
+   * the same seeds with the flag off and on: **26 offers, 25 declined, 1 accepted**, and the winner
+   * and the length were identical in 12 of the 13. The one that differed is the machinery working
+   * end to end — the board moved between the offer and the answer, the truce was taken, and
+   * `keepsItsWord` kept it.
+   *
+   * So between bots it is near-inert, which is what makes turning it on safe, and the value is all
+   * on the other side of the table. In a solo pod — one person and three bots, which is how this
+   * table is most often played — nothing had ever spoken to the player **first**: they offer, the
+   * bots answer, and the politics the `hit you N` and `spared you N` tallies record is a monologue.
+   * A computer that asks you for a truce when your board can kill it is a different table to sit
+   * at, and that claim stands on its own rather than behind a number. Off is the control the
+   * measurement above used.
+   *
+   * Note what the mirror means for a human: the bots will almost always refuse *your* offers for
+   * the same reason, and that is correct play rather than a bug. "I can kill you, so no deal" is
+   * what a person at a table says too.
+   */
+  readonly asksForPeace?: boolean;
+  /**
    * Whether to keep back the mana an answer in hand is waiting for, on this seat's own turn.
    *
    * **On by default, and on for a reason the record does not give.** See `spendsAnAnswersMana` for
@@ -3594,6 +3623,60 @@ function answerPact(state: GameState, seat: SeatIndex): Action | null {
   return { type: 'pact:respond', by: seat, pact: offer.id, accept };
 }
 
+/**
+ * The one deal this bot can price, and therefore the only one it offers (see `GameState.pacts`).
+ *
+ * `answerPact` above explains why it never offered before, and the reasoning was right: what a deal
+ * buys is somebody else's **future** behaviour, nothing in here models that, and a bot offering
+ * deals it cannot value would be making noise at the table — which is worse than silence.
+ *
+ * There is exactly one exception, and it is an exception because its value is entirely in the
+ * **present**: asking for peace from the player whose open board can already kill you. That is not
+ * a guess about what they will do next turn, it is a fact about the battlefield right now — and it
+ * is the same fact, read from the other side, that `answerPact` already uses to decline a deal from
+ * somebody who is dead on the board. One board reading, two directions.
+ *
+ * **It offers a truce, which binds both ways** (see `promises` in `pacts.ts`). That is the point
+ * rather than an accident: a bot that asked for protection and promised nothing would be begging,
+ * and a player has no reason to take it. Giving up its own right to attack that seat is what makes
+ * the offer a trade, and `keepsItsWord` means the promise is worth something — this bot honours
+ * every deal it takes.
+ *
+ * **The noise objection is answered rather than ignored**, because it is the real risk. Three
+ * conditions, and all three are needed: the seat has to be able to kill this one, no live pact may
+ * already cover it, and this seat may have at most one offer outstanding at a time. A seat that has
+ * already said no this turn is not asked again — declined pacts stay in `state.pacts`, so that is
+ * answerable from the record rather than from a counter. Together those bound it to roughly one
+ * offer per threatening opponent per turn, and in a duel to one offer at a time.
+ *
+ * What it does **not** do is ask for help, point at a threat or make a threat of its own. Those are
+ * the rest of a pod's conversation and none of them is priceable from the present board, which is
+ * the line this function draws.
+ */
+function offerPact(state: GameState, seat: SeatIndex): Action | null {
+  const life = state.seats[seat]?.life ?? 0;
+  // One offer at a time from this seat, whoever it was to.
+  if (state.pacts.some((p) => p.status === 'offered' && p.from === seat)) return null;
+  for (const foe of foesOf(state, seat)) {
+    // Can they kill me if they swing? A board fact, and the whole of the judgement.
+    if (openPower(state, foe) < life) continue;
+    // Already covered, so there is nothing to ask for.
+    if (pactProtects(state, foe, seat)) continue;
+    /*
+      And they have not already turned this down this turn. Asking twice in one turn is exactly
+      the noise the docblock above warns about, and the record makes it answerable: a declined
+      pact is never swept, so the offer that was refused is still there to be read.
+    */
+    const refused = state.pacts.some(
+      (p) => p.from === seat && p.to === foe && p.status === 'declined'
+        && p.offeredTurn === state.turn,
+    );
+    if (refused) continue;
+    return { type: 'pact:offer', by: seat, seat: foe, kind: 'truce-until-your-turn' };
+  }
+  return null;
+}
+
 export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = {}): Action | null {
   if (!state.automated || state.finished) return null;
   if (state.openingHands) {
@@ -3666,6 +3749,18 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
   */
   const deal = answerPact(state, seat);
   if (deal !== null) return deal;
+
+  /*
+    And a deal of its own, which is the only thing this bot ever says first.
+
+    After answering rather than before: a seat holding an offer should settle that before making
+    one, or two tables' worth of offers cross in the air and the record reads as noise. Off by
+    default until it is measured — see `BotOptions.asksForPeace`.
+  */
+  if (opts.asksForPeace !== false) {
+    const ask = offerPact(state, seat);
+    if (ask !== null) return ask;
+  }
 
   const owed = pendingDeclaration(state);
   if (owed !== null && owed.seats.includes(seat)) {
