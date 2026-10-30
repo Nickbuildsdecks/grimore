@@ -19,7 +19,15 @@
  *
  *   SEEDS=1 node scripts/measure/term-leverage.mjs
  *   SEEDS=2 node scripts/measure/term-leverage.mjs      # the field twice
- *   TERMS=hand,life node scripts/measure/term-leverage.mjs   # just these
+ *   TERMS=hand,life node scripts/measure/term-leverage.mjs           # just these
+ *   SUBJECT=hollow-tide TERMS=library node scripts/measure/term-leverage.mjs   # where it acts
+ *
+ * **`SUBJECT` exists because a field average drowns a term that matters to one deck**, which is a
+ * lesson this directory already learned about `bot-duel` and the slot probe and which applies here
+ * for the same reason. `library` reads 0.2% across the whole field — and it is in the evaluation
+ * *for* the mill deck, whose whole plan it is the only term that can see. A number that low is a
+ * statement about twelve decks that do not care, not about the one that does. With `SUBJECT` set,
+ * only that deck's own decisions are counted.
  *
  * **Leverage is measured by ablation, which is exact.** The game is played by the shipping bot, and
  * at every decision each ablated bot is asked the same position. A term whose removal changes no
@@ -42,7 +50,12 @@ import {
 const ALL = Object.keys(STARTER_DECKS);
 const SEEDS = Number(process.env.SEEDS ?? 1);
 const SEED0 = Number(process.env.SEED0 ?? 3300);
+const SUBJECT = process.env.SUBJECT ?? '';
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
+if (SUBJECT !== '' && STARTER_DECKS[SUBJECT] === undefined) {
+  console.log(`no deck called ${SUBJECT}. Known: ${ALL.join(', ')}`);
+  process.exit(1);
+}
 
 /*
   The terms, and what taking one away means.
@@ -96,6 +109,14 @@ tally.set(CONTROL_TERM, new Map());
 const arms = [[CONTROL_TERM, {}], ...terms.map(([name, w]) => [name, w])];
 
 function duel(seed, decks) {
+  /*
+    Whose decisions count. With no `SUBJECT`, both seats' — the field reading. With one, only the
+    seat playing it, because the question becomes "what does this term decide *for this deck*" and
+    an opponent's decisions are the field average again, wearing a filter.
+  */
+  const counted = SUBJECT === ''
+    ? [0, 1]
+    : [0, 1].filter((seat) => decks[seat] === SUBJECT);
   let s = createGame({ id: `g${seed}`, format: 'modern', players: PLAYERS, seed });
   for (const seat of [0, 1]) {
     s = applyAction(s, { type: 'deck:load', by: seat, seat, deckId: decks[seat] }, { isHost: true });
@@ -112,10 +133,12 @@ function duel(seed, decks) {
     */
     const stock = botAction(s, seat, {});
     if (stock === null) break;
-    const want = JSON.stringify(stock);
-    for (const [name, weights] of arms) {
-      const theirs = botAction(s, seat, { weights });
-      note(name, stock.type, JSON.stringify(theirs) === want);
+    if (counted.includes(seat)) {
+      const want = JSON.stringify(stock);
+      for (const [name, weights] of arms) {
+        const theirs = botAction(s, seat, { weights });
+        note(name, stock.type, JSON.stringify(theirs) === want);
+      }
     }
     const before = s.stateVersion;
     try { s = applyAction(s, stock); } catch { break; }
@@ -136,6 +159,8 @@ const started = Date.now();
 for (let i = 0; i < SEEDS; i++) {
   for (let a = 0; a < ALL.length; a++) {
     for (let b = a + 1; b < ALL.length; b++) {
+      // With a SUBJECT, only its own pairings are worth playing at all.
+      if (SUBJECT !== '' && ALL[a] !== SUBJECT && ALL[b] !== SUBJECT) continue;
       duel(seedFor(i, a, b, 0), [ALL[a], ALL[b]]); games += 1;
       duel(seedFor(i, a, b, 1), [ALL[b], ALL[a]]); games += 1;
     }
@@ -148,8 +173,10 @@ const total = (rows) => [...rows.values()].reduce((t, r) => t + r.n, 0);
 const differed = (rows) => [...rows.values()].reduce((t, r) => t + r.differed, 0);
 
 const decisions = total(tally.get(CONTROL_TERM));
-console.log(`${games} games, ${SEEDS} pass${SEEDS === 1 ? '' : 'es'} over the field, `
-  + `${decisions} decisions, ${((Date.now() - started) / 1000).toFixed(0)}s`);
+console.log(`${games} games, ${SEEDS} pass${SEEDS === 1 ? '' : 'es'} over `
+  + `${SUBJECT === '' ? 'the field' : `${SUBJECT}'s pairings`}, ${decisions} `
+  + `${SUBJECT === '' ? '' : `of ${SUBJECT}'s own `}decisions, `
+  + `${((Date.now() - started) / 1000).toFixed(0)}s`);
 console.log('each arm is asked the same position the shipping bot played, so this is an ablation');
 console.log('');
 

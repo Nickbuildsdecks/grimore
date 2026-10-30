@@ -6912,6 +6912,42 @@ instrument for it.
 The weight stays at 1.5, with a floor nobody had noticed: `LIBRARY_CARD` is 0.3, a draw is worth
 `handCardValue − 0.3`, and below 0.3 the bot would be paid to avoid drawing.
 
+## No term is both decisive and wrong (#228, D244)
+
+D243 said to stop asking which terms predict the winner and start asking which ones separate the
+plays. `term-leverage.mjs` answers it by ablation — each term removed, every arm asked the same
+position the shipping bot played — which is exact rather than estimated. 16,761 decisions, crossed
+with D241's calibration:
+
+```
+term        leverage   sign accuracy (turns 9-12)
+creature      6.4%        67%     decides most, predicts best
+life          2.3%        66%     decides much, predicts well
+hand          0.9%        42%     decides little, predicts worst
+library       0.2%        50%     decides little, predicts nothing
+land          0.1%        53%     decides least, predicts nothing
+control       0.0%         —
+```
+
+**The cell that would be a problem is empty.** High leverage *and* poor calibration is where a weight
+costs games, and nothing is in it. The weights are already sorted: the terms that decide are the
+terms that are right. **No weight in this function is costing games** — which closes the
+retune-a-weight avenue on evidence rather than by exhaustion, after four deleted terms (D116), two
+failed attempts (D68, D69) and a wash (D243) had only managed it between them.
+
+Two rows that look like dead weight and are not. **`library` at 0.2% is a field average drowning a
+term that belongs to one deck** — it is in the evaluation *for* the mill deck, and measured on
+hollow-tide's own decisions it reads 1.0% and 3.8% of its casts. Added `SUBJECT` to the harness for
+it, and the lesson generalises: before calling a term inert, ask whether the instrument could see it
+being otherwise. And **`land` at 0.1% is a constraint, not a discriminator** — the land drop is a
+rule taken before the search runs, so `playLand` is 0.0% for every term, and a weight whose job is to
+make an inequality hold should have no leverage.
+
+Also a map worth having: the evaluation reaches **casts, activations, attacks, blocks and turn-ups
+and nothing else** — pass, decide, choose, discard, order and playLand are 0.0% for every term. And
+**blocks are the most weight-sensitive decision in the game**, 27.7% changing without `creature` and
+20.9% without `life`.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -6971,16 +7007,25 @@ The weight stays at 1.5, with a floor nobody had noticed: `LIBRARY_CARD` is 0.3,
    while this environment cannot reach Scryfall, and a type line is the minimum the engine needs to
    tell a land from a spell. Worth building where the data exists, not here — and the refusal is
    written so that it starts working the moment the data does.
-3. **A stronger opponent still — and this item's diagnosis has changed (D241).** The standing
-   claim below was "what is missing is not depth: it is an evaluation worth searching with", with no
-   evidence about *how* the evaluation fell short. It is now measured: the function is **honest but
-   blunt**. Its ladder is monotonic and crosses 50% at a margin of zero, with no systematic bias,
-   and the sum beats every one of its components in every turn band — so depth was never being
-   wasted on a function that lies about which side is ahead. What it lacks is **discrimination
-   early**: 61% sign accuracy at turns 5-8, which is the only band where a search can still change
-   an outcome, and no amount of depth repairs that because every leaf is scored by the same blunt
-   function. One term is actively inverted (cards in hand, 42-46% mid-game, #227). The rest of this
-   item stands as written.
+3. **A stronger opponent still — and this item's diagnosis is now settled (D241, D243, D244).**
+   The claim below is that *"what is missing is not depth: it is an evaluation worth searching
+   with"*, and it stood for months with no evidence about **how** the evaluation fell short. Three
+   measurements have now answered that, and between them they rule out the entire family of fixes
+   that consists of changing a number:
+
+   - The function is **honest**. Its ladder is monotonic, crosses 50% at a margin of zero, carries
+     no systematic bias, and the sum beats every one of its components in every turn band — so depth
+     was never being wasted on a function that lies about which side is ahead.
+   - It is **blunt early**: 61% sign accuracy at turns 5-8, the only band where a search can still
+     change an outcome. No amount of depth repairs that, because every leaf is scored by the same
+     blunt function.
+   - Its one badly calibrated term is **inert** (cards in hand, 42-46% mid-game: a five-fold cut
+     moved 936 paired games by one), and **no term is both decisive and wrong** — the high-leverage,
+     poor-calibration cell is empty.
+
+   So the next move is a **term that sees something the function currently cannot**, and the open
+   question is what a player reads off a turn-six board that none of life, creatures, lands, hand or
+   library can express. The rest of this item stands as written.
 
    A stronger opponent still. It plays each option out — plays, attacks and blocks — and keeps the
    position it likes best, which is worth better than two games in three against the bot it

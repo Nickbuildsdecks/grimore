@@ -15063,3 +15063,87 @@ read `{"weights":{"hand":1.0}}` now. The reason is the reason this entry gives: 
 any of these terms could be in the same position, and zeroing each in turn is how you find out which
 ones are not. The empty override is the shipping bot by construction and changes **0** of 16,761
 decisions, which is the control the new `term-leverage.mjs` runs on every pass.
+
+---
+
+## D244 — The terms that decide are the terms that are right, and the dangerous cell is empty
+
+#228, the question D243 said to ask instead of D241's. A calibration measures positions; a search
+compares plays; so the useful question is not which terms predict the winner but which terms
+**separate the plays on offer**. `term-leverage.mjs` answers it by ablation — each term removed, every
+arm asked the same position the shipping bot played — which makes it exact rather than estimated:
+the real search on the real positions, with no sampling argument to make.
+
+156 games, 16,761 decisions, one pass over the field:
+
+```
+term          changed  of all     cast  activate   attack   block   turnUp
+creature         1070    6.4%    23.7%      5.5%     6.4%   27.7%     5.9%
+life              381    2.3%     4.5%      3.9%     4.3%   20.9%     0.0%
+hand              150    0.9%     2.7%      5.4%     0.3%    0.5%     5.9%
+permanent         140    0.8%     4.2%      0.1%     0.4%    0.5%     0.0%
+library            31    0.2%     0.9%      0.3%     0.0%    0.0%     0.0%
+land               21    0.1%     0.6%      0.0%     0.1%    0.0%     0.0%
+(control)           0    0.0%        —         —        —       —        —
+```
+
+### Crossed with D241's calibration, the table sorts itself
+
+```
+term        leverage    sign accuracy (turns 9-12)
+creature      6.4%          67%   decides most, predicts best
+life          2.3%          66%   decides much, predicts well
+hand          0.9%          42%   decides little, predicts worst
+library       0.2%          50%   decides little, predicts nothing
+land          0.1%          53%   decides least, predicts nothing
+```
+
+**The cell that would be a problem is empty.** High leverage *and* poor calibration is where a weight
+costs games, and nothing is in it: the two terms that decide things are the two that predict well,
+the term that predicts badly decides almost nothing, and the terms that predict nothing decide
+nothing. The evaluation's weights are, in effect, already sorted.
+
+That closes the retune-a-weight avenue on evidence rather than by exhaustion, which is what four
+deleted terms (D116), two failed answer-in-hand attempts (D68, D69) and D243's wash had only managed
+between them. **No weight in this function is costing games.** If the bot is to get better, the
+change is a term that does not exist yet, not a number that does.
+
+### Two rows that look like dead weight and are not
+
+**`library` at 0.2% is a field average drowning a term that belongs to one deck**, which is a lesson
+this directory already learned about `bot-duel` against the slot probe and which applied here before
+anybody tripped over it. The term is in the evaluation *for* the mill deck, whose entire plan it is
+the only term that can see. Measured where it acts — `SUBJECT=hollow-tide`, counting only that
+deck's own decisions — it reads **1.0%, and 3.8% of its casts**: five times its field number. Added
+`SUBJECT` to the harness for exactly this, and the general form is worth keeping: **before calling a
+term inert, ask whether the instrument could see it being otherwise.**
+
+**`land` at 0.1% is a constraint rather than a discriminator, and zero is success for that kind of
+term.** The bot's docblock records that the land drop is taken as a *rule* before the search runs,
+because with a card in hand worth more than a land in play a land drop lowered the score and the bot
+stopped playing lands — 60 games out of 60. So `LAND_ON_BOARD` does not exist to choose between
+plays; it exists to make an inequality hold. The table confirms it from the other side: **`playLand`
+is 0.0% for every single term**, so the one decision the land weight is about is not a search
+decision at all. A weight whose job is to satisfy an inequality should have no leverage, and this one
+does not.
+
+### And the map of what the evaluation touches at all
+
+`playLand`, `pass`, `decide`, `choose`, `discard` and `order` are **0.0% for every term**. The
+evaluation reaches casts, activations, attacks, blocks and turn-ups, and nothing else — every other
+decision in this engine is made by a rule or a heuristic. That is worth knowing before anybody
+proposes a term about one of them.
+
+**Blocks are the most weight-sensitive decision in the game**: 27.7% of them change without
+`creature` and 20.9% without `life`, against 23.7% and 4.5% of casts. A block is a question about
+whether to take damage and what to trade, so it reads both of the terms that matter, and it is the
+one decision type where life is nearly as decisive as the board.
+
+### Where this leaves the open problem
+
+D241 said the evaluation is honest but blunt early (61% sign accuracy at turns 5-8) and that depth
+cannot repair bluntness. D243 said the one badly calibrated term is inert. This says no term is both
+decisive and wrong. Together they rule out the whole family of fixes that consists of changing a
+number, and they point at the same place: **the function needs a term that sees something it
+currently cannot** — and the honest next step is to find out what a player reads off a turn-six board
+that none of life, creatures, lands, hand or library can express.

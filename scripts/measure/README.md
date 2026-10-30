@@ -55,6 +55,8 @@ it.
 | `card-promises.mjs` | does every card **do what its own text says**, or does a script carry less than the card reads? | `node scripts/measure/card-promises.mjs` |
 | `mechanic-coverage.mjs` | **how many cards hold each mechanic up** — which are on one card, and which the engine declares and nothing reaches? | `node scripts/measure/mechanic-coverage.mjs` |
 | `eval-calibration.mjs` | **does the bot's evaluation predict who wins**, and which of its components carries the signal? | `SEEDS=6 node scripts/measure/eval-calibration.mjs` |
+| `term-leverage.mjs` | **which of the evaluation's terms actually decide anything** — what changes when each is taken away? | `SEEDS=1 node scripts/measure/term-leverage.mjs` |
+| `term-leverage.mjs` | …and measured where a term acts, rather than drowned in a field average | `SUBJECT=hollow-tide TERMS=library node scripts/measure/term-leverage.mjs` |
 | `halves-use.mjs` | which face of a two-faced card gets used, and was the land the only one? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
 | `transform-use.mjs` | does a **transforming** card ever turn over, on which turn, and into what board? | `SEEDS=6 node scripts/measure/transform-use.mjs` |
 | `countdowns.mjs` | a permanent with a **clock** on it — how many counters were left when it stopped being able to spend them? | `SEEDS=6 node scripts/measure/countdowns.mjs` |
@@ -675,6 +677,34 @@ needs a card in a deck to exist (D229) has been kept without exception. And it f
 five places in the docs still made, one of them written the same morning: `becomes-tapped` is not
 the engine's card-less trigger, because City of Brass has carried it since #69. The true version is
 stronger, which is the usual way round — no trigger kind in this engine has *ever* had no card.
+
+**A term's weight tells you nothing about whether it decides anything, and the two questions have
+different instruments.** `eval-calibration` asks whether a term predicts the winner — a property of
+**positions**. `term-leverage` asks what the bot does differently when the term is removed — a
+property of **choices**. A term can be badly wrong about the first and silent on the second, which is
+what happened to cards-in-hand (D243): it anti-predicts at 42% and a five-fold cut to it moved 936
+paired games by one. The reason is that what decides a choice is a term's *variation across the
+options on offer*, and hand size barely varies — nearly every candidate is a cast, every cast moves
+one card out of the hand, so the term contributes a near-constant amount to the whole slate and
+cancels out.
+
+**Leverage by ablation is exact, which is rare here.** Every arm is asked the same position the
+shipping bot played, so there is no sampling argument to make: it is the real search on the real
+positions, and a term whose removal changes no decision decides nothing whatever its weight says.
+Crossed with the calibration, the table sorts itself (D244) — creature 6.4% leverage and 67%
+accuracy, life 2.3% and 66%, hand 0.9% and 42%, land 0.1% and 53%. **The cell that would be a
+problem, high leverage with poor calibration, is empty**, which closes the retune-a-weight avenue on
+evidence rather than by exhaustion.
+
+Two rows that look like dead weight and are not, and both are lessons about the instrument rather
+than the engine. **`library` at 0.2% is a field average drowning a term that belongs to one deck** —
+it exists for the mill deck, and `SUBJECT=hollow-tide` reads it at 1.0% and 3.8% of that deck's
+casts, five times its field number. That is the same lesson this page already records about
+`bot-duel` against the slot probe, and the general form is: **before calling a term inert, ask
+whether the instrument could see it being otherwise.** And **`land` at 0.1% is a constraint rather
+than a discriminator** — the land drop is taken as a rule before the search runs, so the one decision
+that weight is about is not a search decision at all (`playLand` is 0.0% for every term). Its job is
+to make an inequality hold, and **zero leverage is success for that kind of term.**
 
 **An evaluation can be asked whether it is right, and ours had never been asked.** `eval-calibration`
 samples one position per round and reads the bot's own `evaluate` against who actually won. Over 936
