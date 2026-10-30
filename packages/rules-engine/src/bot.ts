@@ -1089,9 +1089,9 @@ const PERMANENT_ON_BOARD = 3;
 */
 
 /** Everything one seat has, from that seat's point of view. */
-function seatValue(state: GameState, seat: SeatIndex): number {
+function seatValue(state: GameState, seat: SeatIndex, opts: BotOptions = {}): number {
   let total = (state.seats[seat]?.life ?? 0) * LIFE_WEIGHT;
-  total += (state.zones[`${seat}:hand`] ?? []).length * CARD_IN_HAND;
+  total += (state.zones[`${seat}:hand`] ?? []).length * (opts.handCardValue ?? CARD_IN_HAND);
   total += (state.zones[`${seat}:library`] ?? []).length * LIBRARY_CARD;
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
@@ -1129,12 +1129,12 @@ function seatValue(state: GameState, seat: SeatIndex): number {
  * opponent gets smaller because one of them is gone. In a two-player game the two readings are the
  * same number, which is why none of the duel measurements in this file move.
  */
-export function evaluate(state: GameState, seat: SeatIndex): number {
+export function evaluate(state: GameState, seat: SeatIndex, opts: BotOptions = {}): number {
   if (state.finished) return state.winnerSeat === seat ? 1e6 : -1e6;
   if (state.seats[seat]?.eliminated === true) return -1e6;
   let theirs = 0;
-  for (const foe of foesOf(state, seat)) theirs += seatValue(state, foe);
-  return seatValue(state, seat) - theirs / Math.max(1, state.seats.length - 1);
+  for (const foe of foesOf(state, seat)) theirs += seatValue(state, foe, opts);
+  return seatValue(state, seat, opts) - theirs / Math.max(1, state.seats.length - 1);
 }
 
 /**
@@ -1774,6 +1774,30 @@ export interface BotOptions {
    */
   readonly lookahead?: boolean;
   /**
+   * What a card in hand is worth to the evaluation. `CARD_IN_HAND` (1.5) by default.
+   *
+   * An option rather than a constant because **it is the one component of the evaluation that
+   * measurably points the wrong way** (D241). Calibrated against outcomes over 936 games, the
+   * hand-size margin predicts the winner at 46%, 42% and 44% across turns 5-16 — worse than a coin
+   * in the bands where a search can still change anything — while the evaluation as a whole reads
+   * 61-73% there and every other component is either level with it or merely inert.
+   *
+   * That is not a licence to make it negative. A card in hand is a resource, and a bot scoring one
+   * below zero would discard to raise its own score. The causal reading runs the other way: a seat
+   * holding cards it has not cast is a seat that *could not cast them*, so hand size is a symptom
+   * of being behind rather than a cause of it — and a function that scores part of "I am behind" as
+   * "I am ahead" is worth less than one that leaves it out.
+   *
+   * Lowering is also the untried direction. D68 and D69 both raised the price of a card in hand,
+   * as an answer, and both made the bot play worse — D69's table has it casting *more*
+   * counterspells as the price went up. If the term is inverted, that is exactly what raising it
+   * should do, which makes those two measurements evidence for this one rather than against it.
+   *
+   * Floor and ceiling both matter. It must stay **below `LAND_ON_BOARD`** or a land drop lowers the
+   * score and the bot stops playing lands, which cost 60 games out of 60 the one time it happened.
+   */
+  readonly handCardValue?: number;
+  /**
    * Whether the search stops where its action happened rather than wherever auto-pass carried the
    * table. On, and here to be turned off: it is the control this was measured against, and the
    * measurement is the reason it is on. See `noAutoPass`.
@@ -2225,7 +2249,7 @@ function throughCombat(state: GameState): GameState {
  * than in dead code. See `claude/decisions-log.md`, D62.
  */
 function scoreDeclaration(
-  state: GameState, seat: SeatIndex, action: Action, stopAtAction: boolean,
+  state: GameState, seat: SeatIndex, action: Action, stopAtAction: boolean, opts: BotOptions,
 ): number | null {
   let after: GameState;
   try {
@@ -2235,7 +2259,7 @@ function scoreDeclaration(
   } catch {
     return null;
   }
-  return evaluate(throughCombat(after), seat);
+  return evaluate(throughCombat(after), seat, opts);
 }
 
 type AttackPlan = { attacker: string; defender: SeatIndex; planeswalker?: string }[];
@@ -2597,7 +2621,7 @@ function declareBySearch(
     if (opts.lookahead === false) return fallback;
     return bestPlan(state, seat, plans.map((orders) => ({
       type: 'auto:order', by: seat, orders,
-    } as Action)), stopsAtAction(opts), opts.blindToShuffle !== false) ?? fallback;
+    } as Action)), stopsAtAction(opts), opts.blindToShuffle !== false, opts) ?? fallback;
   }
   if (kind === 'attackers') {
     const plans = attackPlans(state, seat, opts);
@@ -2605,20 +2629,20 @@ function declareBySearch(
     if (opts.lookahead === false) return fallback;
     return bestPlan(state, seat, plans.map((attackers) => ({
       type: 'auto:attack', by: seat, attackers,
-    } as Action)), stopsAtAction(opts), opts.blindToShuffle !== false) ?? fallback;
+    } as Action)), stopsAtAction(opts), opts.blindToShuffle !== false, opts) ?? fallback;
   }
   const plans = blockPlans(state, seat);
   const fallback: Action = { type: 'auto:block', by: seat, blocks: plans[0]! };
   if (opts.lookahead === false) return fallback;
   return bestPlan(state, seat, plans.map((blocks) => ({
     type: 'auto:block', by: seat, blocks,
-  } as Action)), stopsAtAction(opts), opts.blindToShuffle !== false) ?? fallback;
+  } as Action)), stopsAtAction(opts), opts.blindToShuffle !== false, opts) ?? fallback;
 }
 
 /** The highest-scoring of a set of declarations, or null when none of them can be applied. */
 function bestPlan(
   state: GameState, seat: SeatIndex, actions: readonly Action[], stopAtAction: boolean,
-  fair: boolean,
+  fair: boolean, opts: BotOptions,
 ): Action | null {
   let best: Action | null = null;
   let bestScore = -Infinity;
@@ -2626,7 +2650,7 @@ function bestPlan(
   // position, and flattening a sixty-card library is not worth doing forty times over.
   const blind = fair ? asTheySee(state, seat) : state;
   for (const action of actions) {
-    const score = scoreDeclaration(blind, seat, action, stopAtAction);
+    const score = scoreDeclaration(blind, seat, action, stopAtAction, opts);
     if (score === null) continue;
     // `>` again, so the heuristic's own plan — which is always first — wins a tie. A search that
     // changed the play for a rounding error would be impossible to reason about from a log.
@@ -4153,7 +4177,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       dropped += 1;
       continue;
     }
-    const score = evaluate(after, seat);
+    const score = evaluate(after, seat, opts);
     // `>` rather than `>=` keeps the heuristic order as the tie-break: the options arrive
     // best-first by the old shallow ranking, so two plays that look identical one move out are
     // separated by the cheaper judgement rather than by whichever happened to be enumerated last.
