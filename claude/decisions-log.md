@@ -13584,3 +13584,117 @@ None of the four arms clears the ±20 floor on its own, so "six games a card" is
 across four comparisons rather than a reading — the kind of thing to re-measure the next time this
 deck is balanced, and the kind of thing that would have been written up as a win if the probe had
 been skipped.
+
+## D229 — Myriad: the first card in the pool whose rules text reads differently at four seats
+
+Every keyword in this engine is worth something in a duel. Flying, deathtouch, infect, affinity,
+prowess — all of them are facts about a board, and a two-player table shows every one. A pod has had
+nothing of its own: the monarch is a rule rather than a card, goad points at somebody else but
+functions with one opponent, and the deals and the two politics tallies are information rather than
+text. **Myriad is the first card whose printed text does nothing at all at two seats and three
+things at four** (CR 702.111a), which is the reason it was worth the engine work.
+
+### The keyword the engine acts on
+
+`KEYWORDS` held sixteen facts the rules consult. Myriad is the seventeenth entry and the only
+**instruction** among them, and it is in that list rather than in a card's `triggers` for one
+reason: **Blade of Selves grants it**. Granting is all `PumpOptions.keywords` can do, and this
+engine has no machinery for handing another permanent a *triggered* ability — so the keyword is the
+declaration and `declareAttackers` is the implementation. The card itself is four lines, exactly like
+the Basilisk Collar handing out deathtouch.
+
+The composition is the work, and it is three primitives that have existed separately for a while
+and had never been put together:
+
+- `copyAsToken`'s machinery — a token of a nontoken's **printed** card (CR 707.2), from embalm;
+- `enterAttacking` — a permanent that arrives in a combat already in progress, tapped and attacking
+  a named player, from ninjutsu;
+- a marker on the token that the end-of-combat step reads, which is `DASHED`'s shape.
+
+`addTokens` is new, and it is the whole of the refactor: `createToken` returns a `GameState` and
+myriad is the one caller in the engine that needs the **ids** of what it made — to put each one into
+combat against a particular player, and to mark it. Diffing the battlefield before and after would
+be the alternative and it would be wrong the first time a token's arrival makes another one.
+
+### Where it runs, which is the rules rather than a choice
+
+`myriadCopies` is called **after** everything else in `declareAttackers`: after the attacks are
+built, after the pacts it broke are recorded, after the sparing tally is read, and after
+`tapAttackers`. That ordering is the rule. Every record this function keeps is about the
+**declaration**, and a myriad token was never declared as an attacker (CR 508.4) — so it breaks no
+promise, changes no sparing tally, counts towards no battalion, and raises no `attacks` event.
+
+The last of those is load-bearing rather than tidy: a myriad token is a copy of a creature with
+myriad, so a token that triggered the keyword would make tokens of its own and those would make
+more. Nothing guards against that in the loop. The reason three Angels is three rather than nine is
+that the declaration is the only thing that runs myriad at all.
+
+### What is deliberately missing, and it is the half that matters
+
+The printed text is "**you may** create a token", and the engine takes every copy, every time. There
+is nowhere to ask: this engine's questions are asked while a stack object resolves, and this happens
+inside a declaration. The planeswalker half of the clause ("or a planeswalker they control") is
+missing for the same reason.
+
+In a duel that is exactly right, because there is nothing to decline. In a pod it is a real
+deviation, and it is the one the measurement immediately ran into.
+
+### What it is worth, which needed an instrument that did not exist
+
+`deck-probe` prices a slot against the field and **every one of its games is a duel**, so a card
+whose text reads "for each opponent" measures as precisely the noise floor and the harness says
+nothing. That is a structural hole and myriad is the first card to fall in it, so
+`scripts/measure/pod-slot.mjs` is the sibling: the subject deck sits at every table with three
+opponents chosen from the seed, and each table is played four times with the subject moved one seat
+along, so it occupies every seat equally often and turn order cancels. Paired, like `deck-probe` —
+both arms play the same seeds, the same opponents and the same seats — and its zero is arithmetic
+rather than evidence for the same reason `pod-duel`'s is, so the floor has to come from re-running a
+real arm on disjoint seeds.
+
+Two readings, 52 pods each, Forge Alliance with the Blade against Forge Alliance with the Ajani's
+Pridemate it displaced:
+
+```
+                       seeds 3300        seeds 5100
+stock (Blade):            4-48              2-50
+variant (Pridemate):     15-37              6-46
+the change:              -11 of 52         -4 of 52
+```
+
+**The direction is the same on both arms and the magnitude is inside the instrument's own noise, and
+the second fact is established by the instrument itself rather than assumed.** The harness's
+docblock says to get the floor by running a real arm twice on disjoint seeds, and that is exactly
+what the *variant* column is: the same sixty cards, played against the same field, reading **15 and
+6**. A spread of nine on an unchanged deck is the floor, so −11 is barely outside it and −4 is well
+inside. Fifty-two pods cannot resolve a one-card change.
+
+So the honest conclusion is narrow and worth stating plainly: **the Blade is not an improvement, it
+is probably a small cost, and how much is unmeasured.** It ships anyway, and the reasoning is a
+judgement rather than a number — the keyword needs a card in a starter deck to exist at all
+(`poolIndex` is built from `STARTER_DECKS`, so a card in no deck is not in the pool), and the
+engine's ability to play myriad is worth more to this project than one slot's win rate in a format
+whose baseline Forge Alliance already sits under. What is not claimed is that the card is good.
+
+Also worth recording because it is a fact about the **format** rather than the card: Forge Alliance
+wins 4%–29% of its pods across these four arms against a 25% baseline, which is a much wider band
+than any duel reading in this project. A pod has three opponents and three chances to be attacked,
+and the per-seat splits here are single digits. Any future pod slot question needs far more games
+than a duel question, and `pod-slot`'s docblock now says so.
+
+Two candidate explanations for the cost, and the honest position is that the instrument has not
+separated them:
+
+- **The politics story does not actually follow from this bot's rules.** "Myriad makes you the
+  archenemy" is the natural reading and `foeOrder` contradicts it: these bots attack the opponent
+  with the **lowest life**, and myriad pushes all three opponents down while its controller stays
+  at forty. By that rule the copies should make somebody *else* the target.
+- **The horizon story is likelier.** Blade of Selves is {3} for **no stats** and equip {3} on top,
+  and its entire payoff happens in a combat the bot cannot see from the main phase where it decides
+  to cast and equip it. That is the same one-ply horizon that hid the pumps, the ritual and goad
+  (D68, D69), and the keyword with the closest shape to this one — goad — is in the pool precisely
+  because its value is a fact about the table rather than something a search can find.
+
+The repair, when it comes, is the "may": the choice belongs in the declaration, with a bot rule to
+make it, because a cost past the search horizon is a thing this project teaches by hand rather than
+by weight. That is a later entry, and it needs a bigger `pod-slot` sample to be able to show its own
+effect at all.

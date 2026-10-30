@@ -32,7 +32,8 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  DASHED, EVOKED, REGENERATION, SEAT_CHOICE, TIME, addCounters, counterSpell, destroy, draw,
+  DASHED, EVOKED, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, counterSpell, destroy,
+  draw,
   drawLater, exileCard, loseLife, mill, suspendedCast,
   madnessOffer, miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
@@ -575,6 +576,24 @@ function onEnterStep(state: GameState, step: Step): GameState {
       return dealCombatDamage(next, false);
 
     case 'end-combat':
+      /*
+        Myriad's tokens go, and they go **before** the combat is cleared (CR 702.111a).
+
+        Order matters for one reason: exiling a permanent that is still an attacker leaves the
+        attack behind it, and `relocate` is what notices. Clearing combat first would strand the
+        tokens' attacks in a combat nobody owns for the instant between the two statements — which
+        nothing would read, but a reader of this function would have to prove that.
+
+        Every marked permanent rather than a list kept somewhere, which is the point of marking
+        them: a token whose granting Equipment was answered mid-combat still goes, a token stolen by
+        a Mind Control still goes, and a game state loaded out of Redis still knows which bodies
+        were borrowed. See `MYRIAD`.
+      */
+      for (const seat of next.seats) {
+        for (const id of [...listAt(next, zoneKey(seat.index, 'battlefield'))]) {
+          if ((next.instances[id]?.counters[MYRIAD] ?? 0) > 0) next = exileCard(next, id);
+        }
+      }
       // "Until end of combat" is a duration the engine declared and nothing expired, which meant
       // an effect using it would have lasted the rest of the game. The step the name points at is
       // the only place it could ever have been dropped.

@@ -8024,6 +8024,17 @@ const ALL: readonly CardScript[] = [
     'equipped creature gets +3/+0 and has trample and lifelink'),
   equipment('Basilisk Collar', '{2}', { keywords: ['deathtouch', 'lifelink'] },
     'equipped creature has deathtouch and lifelink'),
+  /*
+    And the Equipment that grants a keyword the **engine** acts on rather than the rules read.
+
+    Four lines like every other Equipment here, and that is the whole claim of the engine work
+    behind it: myriad is in `KEYWORDS`, `declareAttackers` is where it happens, and a card that
+    hands it to a creature is `{ keywords: ['myriad'] }` exactly as the Collar hands out deathtouch.
+    See `myriadCopies`, and D229 for what it is worth at four seats and what it is worth at two
+    (nothing).
+  */
+  equipment('Blade of Selves', '{3}', { keywords: ['myriad'] },
+    'equipped creature has myriad'),
   cyclingLand('Barren Moor', 'B'),
   cyclingLand('Forgotten Cave', 'R'),
   cyclingLand('Lonely Sandbar', 'U'),

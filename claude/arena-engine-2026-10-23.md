@@ -6516,6 +6516,38 @@ the error, and specifically: an archetype's land count does not transfer to a de
 contains the keyword. What shipped is one card for one Swiftspear with the land count untouched, and
 Myr Enforcer is out of the pool. See D228 for all four arms.
 
+### Myriad, and the pod's first card of its own (D229)
+
+Every keyword in this engine is worth something in a duel, and a pod has had no card of its own: the
+monarch is a rule, goad works with one opponent, the deals and the two politics tallies are
+information rather than text. Myriad is the first card whose printed text does **nothing at all** at
+two seats — "for each opponent other than defending player" — and three things at four (CR 702.111a).
+
+It is the seventeenth entry in `KEYWORDS` and the only **instruction** among sixteen facts, because
+**Blade of Selves grants it** and granting is all `PumpOptions.keywords` can do. So the keyword is a
+declaration and `declareAttackers` is the implementation, and the card is four lines like the
+Basilisk Collar handing out deathtouch. The composition is three primitives that existed separately
+and had never met: a token copy of a nontoken's printed card (embalm), a permanent that arrives in a
+combat already in progress (ninjutsu), and a marker the end-of-combat step reads (dash's shape).
+`addTokens` is the one new thing — `createToken` returns a state, and myriad is the only caller that
+needs the **ids** of what it made.
+
+Where it runs is the rules rather than tidiness: after the attacks, the broken pacts, the sparing
+tally and the tapping, because a myriad token was never **declared** (CR 508.4) — so it breaks no
+promise, moves no tally, counts towards no battalion and raises no `attacks` event. That last one is
+load-bearing: a token that triggered the keyword would make tokens of its own, forever.
+
+What is missing is the printed "**you may**", and there is nowhere to ask — this engine's questions
+are asked while a stack object resolves and this happens inside a declaration. In a duel that is
+right; in a pod it is a real deviation, and the measurement went straight at it. `pod-slot.mjs` is the new harness it needed —
+`deck-probe` makes every game a duel and therefore cannot see this card at all — and it says the
+Blade costs Forge Alliance **11 of 52 pods on one seed set and 4 on another**, with the *unchanged*
+variant arm itself reading 15 and 6 across those seed sets. A spread of nine on a deck that did not
+change is the floor, so the direction is consistent and the size is unmeasured. **D229 does not claim
+the card is good**: it ships because a keyword needs a card in a deck to exist in the pool at all,
+and the likely repair is making the printed "may" real, because a cost past the one-ply horizon is
+something this project teaches by hand.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

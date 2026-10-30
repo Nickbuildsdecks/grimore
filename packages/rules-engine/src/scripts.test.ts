@@ -18454,3 +18454,162 @@ describe('affinity, which is a cost the board decides', () => {
     expect([...new Set(affine)]).toEqual(['Frogmite']);
   });
 });
+
+describe('myriad, the first keyword in this pool that reads the number of people at the table', () => {
+  /*
+    Blade of Selves, and the one keyword in `KEYWORDS` the engine *acts on* (CR 702.111a).
+
+    Three primitives this engine has had for a while, composed for the first time: a token copy of a
+    nontoken's printed card, a permanent that arrives already attacking a named player, and a
+    marker that remembers to exile it at end of combat. The composition is the work; see
+    `myriadCopies`.
+
+    Every test here is a **pod**, because there is no other kind of table this card does anything
+    at. That is not a limitation of the tests — it is the card.
+  */
+  const podWithBlade = (lands = 3): GameState => advanceTo(arena({
+    format: 'pod',
+    seats: 4,
+    decks: { 0: 'forge-alliance', 1: 'tidal-mind', 2: 'ember-rush', 3: 'hollow-tide' },
+    battlefield: {
+      // Exactly enough to equip, plus whatever a test needs on top: `plays` and the equip cost are
+      // paid out of this board, so a test short of a land fails on the mana rather than the rule.
+      0: [...Array.from({ length: lands }, () => 'Mountain'), 'Serra Angel', 'Blade of Selves'],
+    },
+    turn: 6,
+    firstSeat: 0,
+  }), 'precombat-main');
+
+  /** Equips the Blade onto the Angel and swings at seat 1. */
+  const swing = (s: GameState): GameState => {
+    const blade = find(s, 0, 'battlefield', 'Blade of Selves');
+    const angel = find(s, 0, 'battlefield', 'Serra Angel');
+    let next = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: blade, abilityIndex: 0,
+      targets: [{ kind: 'card', id: angel }],
+    }), 40);
+    next = advanceTo(next, 'declare-attackers');
+    return apply(next, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: angel, defender: 1 }],
+    });
+  };
+
+  it('makes one token copy per opponent it is not attacking, each aimed at a different seat', () => {
+    const s = swing(podWithBlade());
+    // Three attackers off one declaration: the Angel at seat 1, and a copy at each of the other two.
+    expect(s.combat.attacks).toHaveLength(3);
+    expect([...s.combat.attacks.map((a) => a.defender)].sort()).toEqual([1, 2, 3]);
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Serra Angel')).toHaveLength(3);
+  });
+
+  it('and the copies do not make copies, which is the whole reason they are not declared', () => {
+    /*
+      A myriad token is a copy of a creature with myriad, so a token that triggered the keyword
+      would make tokens of its own and those would make more. The rule that stops it is not a guard
+      in the loop: a permanent put onto the battlefield attacking was never **declared** as an
+      attacker (CR 508.4), and the declaration is the only thing that runs myriad at all.
+
+      Three Angels rather than nine is the whole assertion.
+    */
+    const s = swing(podWithBlade());
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Serra Angel')).toHaveLength(3);
+  });
+
+  it('does nothing whatsoever at a two-player table, which is what the card says', () => {
+    /*
+      "For each opponent other than defending player" — with one opponent there is never such a
+      player, so the Blade is three mana and an equip cost for a creature that gets nothing. Worth a
+      test rather than a remark: this is the first card in the pool whose rules text reads
+      differently at four seats than at two, and the version that quietly made a copy anyway would
+      be a different card.
+    */
+    const s = swing(advanceTo(arena({
+      decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Serra Angel', 'Blade of Selves'] },
+      turn: 6,
+      firstSeat: 0,
+    }), 'precombat-main'));
+    expect(s.combat.attacks).toHaveLength(1);
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Serra Angel')).toHaveLength(1);
+  });
+
+  it('hits three different players for the same damage, which is what it is for', () => {
+    let s = swing(podWithBlade());
+    s = drain(advanceTo(s, 'end-combat'), 80);
+    // A 4/4 at each of them, nobody blocking.
+    expect(life(s, 1)).toBe(36);
+    expect(life(s, 2)).toBe(36);
+    expect(life(s, 3)).toBe(36);
+    expect(life(s, 0)).toBe(40);
+  });
+
+  it('exiles the copies at end of combat and leaves the original alone', () => {
+    let s = swing(podWithBlade());
+    s = drain(advanceTo(s, 'end-combat'), 80);
+    const angels = namesIn(s, 0, 'battlefield').filter((n) => n === 'Serra Angel');
+    expect(angels).toHaveLength(1);
+    // And the one left is the card, not a token: a token that left the battlefield ceases to exist
+    // (CR 111.7), so the exile zone holds nothing either.
+    expect(s.instances[find(s, 0, 'battlefield', 'Serra Angel')]?.isToken).toBe(false);
+    expect(namesIn(s, 0, 'exile').filter((n) => n === 'Serra Angel')).toHaveLength(0);
+  });
+
+  it('copies the printed card, so the Equipment on the original does not arm the copies', () => {
+    /*
+      A copy is of the card rather than of the creature (CR 707.2), which here is load-bearing
+      twice: the Blade that granted the keyword is not copied — so the copies do not have myriad in
+      any way that could matter — and neither is anything else attached. A Bonesplitter on the
+      original makes a 6/4 and leaves two 4/4s.
+    */
+    let s = podWithBlade(5);
+    const bonesplitter = find(s, 0, 'library', 'Bonesplitter');
+    s = apply(s, { type: 'card:move', by: 0, card: bonesplitter, toZone: 'battlefield' });
+    const angel = find(s, 0, 'battlefield', 'Serra Angel');
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: bonesplitter, abilityIndex: 0,
+      targets: [{ kind: 'card', id: angel }],
+    }), 40);
+    s = swing(s);
+    const powers = s.combat.attacks
+      .map((a) => characteristicsOf(s, s.instances[a.attacker]!).power)
+      .sort((a, b) => a - b);
+    expect(powers).toEqual([4, 4, 6]);
+  });
+
+  it('counts the players left, not the players who started: an eliminated seat is no opponent', () => {
+    // CR 800.4a. Falls out of asking the seats rather than counting them once at the start, which
+    // is why a pod down to two makes one copy instead of three.
+    let s = podWithBlade();
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 3 ? { ...seat, eliminated: true } : seat)) };
+    s = swing(s);
+    expect(s.combat.attacks).toHaveLength(2);
+    expect([...s.combat.attacks.map((a) => a.defender)].sort()).toEqual([1, 2]);
+  });
+
+  it('leaves the declaration-derived records alone, because the copies were never in it', () => {
+    /*
+      The sharpest thing about myriad in *this* engine, and the reason the keyword runs where it
+      does. `declareAttackers` keeps four records about the declaration — the attacks, whose
+      promises it broke, whose board it left alone, and how big it was — and a myriad token belongs
+      in none of them.
+
+      `spared` is the one worth asserting, because it is this project's own invention and the one a
+      reader would most expect to be wrong: seat 2's tally should say the Angel could have come at
+      them and went elsewhere. The copy that then arrived attacking seat 2 does not cancel that —
+      the player chose where to send the attack, and the copies are what the card did afterwards.
+    */
+    const s = swing(podWithBlade());
+    expect(viewFor(s, null).seats.find((seat) => seat.index === 2)?.spared['0']).toBe(4);
+    expect(viewFor(s, null).seats.find((seat) => seat.index === 3)?.spared['0']).toBe(4);
+  });
+
+  it('declares the keyword on the Equipment, so the pool can be audited for it', () => {
+    expect(scriptFor('Blade of Selves')?.equipBonus?.keywords).toEqual(['myriad']);
+    // And it is the only source of myriad in the pool: a creature printed with it would be a
+    // second entry here, and there is none.
+    const sources = scriptedCardNames().filter(
+      (name) => scriptFor(name)?.equipBonus?.keywords?.includes('myriad') === true,
+    );
+    expect(sources).toEqual(['Blade of Selves']);
+  });
+});

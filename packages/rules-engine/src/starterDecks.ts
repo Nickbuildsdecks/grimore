@@ -288,6 +288,40 @@ const BONESPLITTER: CardDef = {
   colors: [],
 };
 
+/**
+ * Blade of Selves: the pool's first **myriad**, and a card that is blank in a duel.
+ *
+ * "Equipped creature has myriad" — whenever it attacks, for each opponent other than the one it is
+ * attacking, a token copy of it arrives tapped and attacking that player, and the tokens are exiled
+ * at end of combat (CR 702.111a). With one opponent there is never an opponent other than the
+ * defending player, so across every two-player table in this pool it is three mana and an equip
+ * cost for nothing at all.
+ *
+ * That is the reason it is here. Every other keyword in this engine is worth something in a duel,
+ * and a pod has had no card whose value is a fact about the **number of people at the table** — the
+ * monarch is a rule rather than a card, goad points at somebody else but works with one opponent,
+ * and the deals and the politics tallies are information rather than text. This is the first card
+ * whose rules text reads differently at four seats, which is what makes it worth the engine work:
+ * myriad is the only keyword in `KEYWORDS` the engine *acts on*, because an Equipment granting it
+ * cannot be a card's triggered ability.
+ *
+ * On an Equipment rather than on a creature on purpose. It is the version of myriad that can go on
+ * the biggest body available rather than being stuck on one, which is the whole of what makes the
+ * keyword frightening at a real table, and it is a card I can put in a deck that already runs four
+ * Equipment and knows how to equip them.
+ */
+const BLADE_OF_SELVES: CardDef = {
+  name: 'Blade of Selves',
+  typeLine: 'Artifact — Equipment',
+  manaCost: '{3}',
+  cmc: 3,
+  oracleText: 'Equipped creature has myriad. (Whenever this creature attacks, for each opponent '
+    + 'other than defending player, you may create a token that\u2019s a copy of this creature '
+    + 'that\u2019s tapped and attacking that player or a planeswalker they control. Exile those '
+    + 'tokens at end of combat.)\nEquip {3}',
+  colors: [],
+};
+
 const MAGMA_JET: CardDef = {
   name: 'Magma Jet',
   typeLine: 'Instant',
@@ -4578,7 +4612,23 @@ export const FORGE_ALLIANCE: DeckSpec = {
     // One damage, or four with the condition met — read as it resolves, so answering an artifact in
     // between turns it back into a Shock.
     { card: GALVANIC_BLAST, count: 1 },
-    { card: AJANIS_PRIDEMATE, count: 1 },
+    /*
+      Myriad, for **Ajani's Pridemate** (D229).
+
+      The slot is the cheapest one in the deck by the standard D228 arrived at the hard way, and
+      this is the first time that standard has been applied before the fact rather than after: an
+      audit of what every test in the repository names found the Pridemate referenced by **nothing
+      at all**, and it keeps two other homes in the pool (Verdant Guard and Dawn Tithe both run it),
+      so taking this copy costs the engine no card. It is also the right card to cut on its own
+      terms — a 2/2 that grows on lifegain, in a deck whose lifegain is two Equipment and a
+      Warhammer.
+
+      What it buys is a card that is **blank in a duel and frightening at four seats**, which is
+      something this pool has never had. Three mana and equip {3} is a real price for an effect that
+      does nothing at all in half the games this deck plays; whether that trade is worth a slot is
+      a question for the pod instrument rather than for this comment.
+    */
+    { card: BLADE_OF_SELVES, count: 1 },
     { card: SERRA_ANGEL, count: 1 },
     /*
       The second Angel's slot, spent on **vanishing**.

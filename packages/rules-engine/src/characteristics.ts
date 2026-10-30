@@ -31,6 +31,19 @@ export const KEYWORDS = [
   'flying', 'reach', 'vigilance', 'haste', 'trample', 'first strike', 'double strike',
   'deathtouch', 'lifelink', 'hexproof', 'shroud', 'indestructible', 'menace', 'defender',
   'prowess', 'flash', 'infect',
+  /*
+    Myriad, and the one keyword in this list the engine *acts on* rather than reads (CR 702.111a).
+
+    Every other entry here is a fact the rules consult — a flier cannot be blocked by a ground
+    creature, deathtouch makes any damage lethal, infect changes what damage does. Myriad is an
+    instruction: "whenever this creature attacks, for each opponent other than the defending
+    player, you may create a token that's a copy of this creature that's tapped and attacking that
+    player". It is in this list rather than in a card's `triggers` because **Blade of Selves grants
+    it**, and granting a keyword is all `PumpOptions.keywords` can do — there is no machinery in
+    this engine for handing another permanent a triggered ability. So the keyword is the
+    declaration and `declareAttackers` is the implementation.
+  */
+  'myriad',
 ] as const;
 export type Keyword = (typeof KEYWORDS)[number];
 

@@ -24,7 +24,8 @@ import {
   type AutoOrderAction,
 } from './automation.js';
 import {
-  SEAT_CHOICE, TIME, addCounters, addToPool, bottomPile, counterSpell, draw, energyOf, loseLife,
+  MYRIAD, SEAT_CHOICE, TIME, addCounters, addToPool, addTokens, bottomPile, counterSpell, draw,
+  energyOf, enterAttacking, loseLife,
   mill, moveToHand, removeFromCombat,
   poolOf, spendEnergy,
 } from './effects.js';
@@ -1604,6 +1605,77 @@ const cardName = (state: GameState, id: string): string => {
   return inst === undefined ? 'a creature' : state.cardDefs[inst.defKey]?.name ?? 'a creature';
 };
 
+/**
+ * Myriad's copies: one per opponent this attack was **not** aimed at (CR 702.111a).
+ *
+ * "Whenever this creature attacks, for each opponent other than the defending player, you may
+ * create a token that's a copy of this creature that's tapped and attacking that player." Three
+ * primitives this engine already had, composed for the first time: `copyAsToken` makes a token of
+ * a nontoken's printed card, `enterAttacking` puts a permanent into a combat already in progress,
+ * and a counter on the token remembers to exile it at end of combat.
+ *
+ * **A keyword a duel cannot show.** With one opponent there is never an opponent other than the
+ * defending player, so this returns the state it was given and the card is a plain Equipment. Its
+ * whole value is a fact about the number of people at the table, which is why nothing in this pool
+ * had it until the pod did.
+ *
+ * Three details that are the rules rather than choices:
+ *
+ * - **Each copy attacks a different player**, and only players. The real card offers "or a
+ *   planeswalker they control" and this does not, because the choice would need a question asked
+ *   at declaration time and the engine asks questions while resolving. Attacking the player is the
+ *   printed default and the one a card without the choice still reads correctly.
+ * - **Eliminated seats are not opponents** (CR 800.4a). A pod down to two players makes one copy,
+ *   not three, and that falls out of asking the seats rather than counting them at the start.
+ * - **The token is a copy of the printed card** (CR 707.2), so a Bonesplitter on the original does
+ *   not arm the copies and neither does the Blade that granted the keyword. That is also what
+ *   stops the copies from having myriad themselves in any way that matters — they are not
+ *   declared, so the keyword never fires for them.
+ *
+ * **What is deliberately not here is the "may".** The printed text is a choice and the engine takes
+ * the copies every time, for the reason the planeswalker clause is missing: there is nowhere to ask.
+ * In a duel that is exactly right (there is nothing to decline). In a pod it is a real deviation
+ * and it cuts against this project's own politics work — a free body attacking a player you had
+ * been leaving alone is precisely what `spared you N` was built to make visible, and myriad spends
+ * that goodwill without asking. Written down rather than smoothed over, and the pod instrument is
+ * what says whether the copies are even worth it.
+ */
+function myriadCopies(state: GameState, attacker: SeatIndex): GameState {
+  let next = state;
+  // Read off the declaration as it stands, because the loop below appends to it: a snapshot, or
+  // the copies would make copies of the copies.
+  const declared = [...next.combat.attacks];
+  for (const attack of declared) {
+    const inst = next.instances[attack.attacker];
+    if (inst === undefined || inst.zone !== 'battlefield') continue;
+    if (!characteristicsOf(next, inst).keywords.has('myriad')) continue;
+    for (const seat of next.seats) {
+      if (seat.index === attacker || seat.eliminated) continue;
+      if (seat.index === attack.defender) continue;
+      const made = copiesAttacking(next, attacker, attack.attacker, seat.index);
+      next = made;
+    }
+  }
+  return next;
+}
+
+/** One myriad token, made and marked. Split out so the loop above reads as the rule it is. */
+function copiesAttacking(
+  state: GameState, controller: SeatIndex, original: string, defender: SeatIndex,
+): GameState {
+  const inst = state.instances[original];
+  if (inst === undefined) return state;
+  const def = state.cardDefs[inst.defKey];
+  if (def === undefined) return state;
+  const { state: withToken, created } = addTokens(state, controller, def, 1);
+  const id = created[0];
+  if (id === undefined) return state;
+  // Marked before it is put into combat, so a state read at any point after this says what the
+  // token is for. See `MYRIAD`.
+  const marked = addCounters(withToken, id, MYRIAD, 1);
+  return enterAttacking(marked, id, controller, { defender });
+}
+
 function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
   requireAutomated(state);
   if (state.step !== 'declare-attackers') throw new EngineError('RULE_NOT_APPLICABLE', 'it is not the declare attackers step');
@@ -1711,6 +1783,19 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
     },
   };
   next = tapAttackers(next, next.combat);
+  /*
+    Myriad, which is the only keyword in this engine that adds attackers to the combat it is in
+    (CR 702.111a).
+
+    Run **after** `tapAttackers` and after everything above it, and the order is the whole of the
+    rules here. Every record this function keeps is about the *declaration* — which attacks were
+    declared, whose promises that broke, whose board was left alone, how many creatures and how
+    many people were in it — and a myriad token was never declared as an attacker (CR 508.4). So it
+    breaks no pact, changes no sparing tally, counts towards no battalion, and raises no `attacks`
+    event. The last of those is not a nicety: a myriad token is a copy of a creature with myriad,
+    and a copy that triggered would make copies of its own, forever.
+  */
+  next = myriadCopies(next, action.by);
   /*
     One event per attack, carrying who declared it and what it is aimed at.
 

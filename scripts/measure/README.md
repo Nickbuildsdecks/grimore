@@ -51,6 +51,7 @@ it.
 | `monarch.mjs` | who takes the crown, how long it is held, and what it drew | `SEEDS=6 node scripts/measure/monarch.mjs` |
 | `poison.mjs` | is the poison win condition reached, or only theoretical? | `SEEDS=6 node scripts/measure/poison.mjs` |
 | `pod-duel.mjs` | is a bot setting worth anything in a **four-seat pod**? | `ALWAYS=dawn-tithe TESTED='{"chaseTheCrown":false}' SEEDS=3 node scripts/measure/pod-duel.mjs` |
+| `pod-slot.mjs` | is a **deck slot** worth anything in a four-seat pod, for a card that is blank in a duel? | `SUBJECT=forge-alliance CHANGE='Blade of Selves:-1' node scripts/measure/pod-slot.mjs` |
 | `halves-use.mjs` | which face of a two-faced card gets used, and was the land the only one? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
 | `metalcraft.mjs` | how often is a conditional static actually **on**? | `SEEDS=5 node scripts/measure/metalcraft.mjs` |
 | `mill.mjs` | does the mill deck win by decking, and how close does it get? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/mill.mjs` |
@@ -605,6 +606,14 @@ is about, the *variant* column must come out identical in both arms — 151-137 
 181-107 and 181-107. That is not a coincidence to note, it is the pairing being proved: with no
 Ravager on the board the flag cannot change anything, and any difference there would mean the two arms
 were not playing the same games. A control you get for free beats one you have to schedule.
+
+**A harness's shape decides which cards it can see at all, and `deck-probe` could not see a whole
+class of them.** Every one of its games is a duel, so a card whose text reads "for each opponent"
+measures as exactly the noise floor: myriad in a two-player game is blank, the probe returns zero,
+and the number is true and useless. That is not noise to push through with more seeds — no sample
+size fixes an instrument that cannot produce the effect. `pod-slot.mjs` is the sibling that can, and
+the general lesson is worth more than the card: **before trusting a flat reading, ask whether the
+harness is capable of a non-flat one.**
 
 **A conversion rate is castability, not value, and the two come apart hardest on the cards you
 most want to read it about.** `cast-counts`' percentage is "cast, of the games it was in hand", and

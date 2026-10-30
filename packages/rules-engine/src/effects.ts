@@ -548,6 +548,24 @@ export const EVOKED = 'evoked';
 export const DASHED = 'dashed';
 
 /**
+ * The marker on a **myriad** token, which is the thing that remembers to exile it (CR 702.111a).
+ *
+ * "Exile those tokens at end of combat" is a delayed consequence with no card to own it: myriad can
+ * be *granted* — Blade of Selves hands it to whatever it is attached to — so there is no script to
+ * hang a delayed trigger on, and the Equipment coming off mid-combat must not strand the tokens on
+ * the battlefield forever.
+ *
+ * So the token carries the instruction rather than anything else holding a list of it. That is the
+ * same move `DASHED` makes and it buys the same two things: the end-of-combat step has one question
+ * to ask of the board ("which permanents are marked?") rather than a register to keep in step with
+ * reality, and a game state loaded out of Redis mid-combat still knows which bodies are borrowed.
+ *
+ * Exiled rather than sacrificed, which is what the keyword says and is not the same thing: nothing
+ * sees these die, so a Blood Artist drains for nothing and the Ravager gets no counter.
+ */
+export const MYRIAD = 'myriad';
+
+/**
  * The counters a **suspended** card waits on, in exile (CR 702.62b).
  *
  * The one counter in this engine that is not on a permanent, and the reason that works at all is
@@ -1454,6 +1472,22 @@ export function becomeCopyOf(state: GameState, id: string, copying: string): Gam
 export function createToken(
   state: GameState, seat: SeatIndex, card: CardDef, count = 1, keyOverride?: string,
 ): GameState {
+  return addTokens(state, seat, card, count, keyOverride).state;
+}
+
+/**
+ * `createToken`, and the ids of what it made.
+ *
+ * Every caller but one wants the state and nothing else, which is why `createToken` is the shape
+ * this module exports and this is the shape underneath it. **Myriad** is the one: it has to put
+ * each token it creates into combat against a particular player and then remember it to exile at
+ * end of combat, and neither of those is possible from a `GameState` that has merely grown some
+ * permanents. Diffing the battlefield before and after would be the alternative, and it would be
+ * wrong the first time a token's arrival makes another one.
+ */
+export function addTokens(
+  state: GameState, seat: SeatIndex, card: CardDef, count = 1, keyOverride?: string,
+): { readonly state: GameState; readonly created: readonly string[] } {
   const def = normaliseDef(card);
   const key = keyOverride ?? defKeyFor(def);
   const cardDefs = { ...state.cardDefs, [key]: state.cardDefs[key] ?? def };
@@ -1476,9 +1510,12 @@ export function createToken(
   // Impact Tremors watching for it. `createToken` writes the zone directly rather than going
   // through `relocate`, which is why it has to say so here.
   const entered = state.automated ? [...state.entered, ...created] : state.entered;
-  return withZones({ ...state, cardDefs, instances, instanceSeq: seq, entered }, {
-    [bf]: [...listAt(state, bf), ...created],
-  });
+  return {
+    state: withZones({ ...state, cardDefs, instances, instanceSeq: seq, entered }, {
+      [bf]: [...listAt(state, bf), ...created],
+    }),
+    created,
+  };
 }
 
 /**
