@@ -13698,3 +13698,49 @@ The repair, when it comes, is the "may": the choice belongs in the declaration, 
 make it, because a cost past the search horizon is a thing this project teaches by hand rather than
 by weight. That is a later entry, and it needs a bigger `pod-slot` sample to be able to show its own
 effect at all.
+
+## D230 — The realtime whole-game failure, closed on a hundred runs rather than on a cause
+
+CI run 324 failed `apps/realtime`'s "plays a whole game on its own against the server" with
+`expected { kind: 'attackers', seats: [ 1 ] } to be null`, on a commit that changed nothing but a
+browser script. It has not recurred. #178 held it open with an explicit exit criterion — another
+occurrence that names the assertion, or **a hundred runs of the suite with none** — and this is the
+hundred: 100 consecutive runs, 0 failures, which is 4,300 test executions of a suite whose 43 tests
+include the whole-game play-out twice over.
+
+**What that does and does not establish is worth being exact about, because the two are easy to
+blur.** A hundred clean runs is the weaker of the two kinds of evidence the task would accept. It
+closes the task on the terms the task set, and it does not identify the cause. The failure is still
+unreproduced.
+
+What *is* established is narrower and came from reading rather than running, and both halves rule a
+candidate out by construction:
+
+- **The suspect #178 named is impossible.** It proposed a race between `runBots` taking the
+  server's first turn and the view the test reads straight after `auto:keep`. `runBots` is called
+  synchronously inside the same read-modify-write as the action, so the ack's `stateVersion` already
+  carries every move the bots made, and the test waits for a state event at least that version
+  before reading. There is no window.
+- **The other candidate is not one either.** `seatsToAct` and the view's `awaiting` both derive from
+  `pendingDeclaration`, so they cannot disagree about who is owed a move — which was the obvious way
+  for `runBots` to think a person was on the clock while the table still showed the bot's question.
+
+Which leaves **a bot stall**, and the reason a whole session went into guessing at it: `stalls` was
+collected from the first action and asserted only at the *end* of the test, a hundred lines after the
+assertion that fails. Every one of `runBots`' silent ways out — a refused move, `botAction` offering
+none, the five-hundred-move guard running out with a server seat still owed — fires that callback and
+leaves the table in exactly the state the failing assertion reports. So the CI line we saw is what a
+stall in that window *looks like*, and the stall's own reason, which names the move and the step, was
+never printed.
+
+Both halves of that are closed now: the stalls are asserted immediately after `auto:keep`, before the
+`awaiting` assertion, because a stall there is a real failure rather than a detail — a person at that
+table is looking at a board waiting for an opponent that will never move. And both `awaiting`
+assertions carry the stall list in their message.
+
+**The lesson is about test ordering rather than about concurrency.** An assertion that can only fail
+*downstream* of a condition another assertion checks has to come second, or the cheaper diagnosis is
+the one nobody gets to read. One occurrence of a four-word mismatch cost more than the fix for it,
+and the fix was moving three lines.
+
+If it recurs, it names itself. That is the whole of what this entry claims.
