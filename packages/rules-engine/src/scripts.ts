@@ -3586,6 +3586,9 @@ const sacrificeSelf = (c: EffectContext): GameState => (
 
 const BALL_LIGHTNING: CardScript = {
   name: 'Ball Lightning',
+  // See `CardScript.leavesAtEndOfTurn`: the trigger below is what happens, and the flag is how the
+  // bot knows it is coming. Without it the evaluation holds the creature back to protect it.
+  leavesAtEndOfTurn: true,
   triggers: [
     {
       on: { kind: 'step', step: 'end', of: 'any' },
@@ -6246,6 +6249,8 @@ const DREGSCAPE_ZOMBIE: CardScript = {
 const HELLSPARK_ELEMENTAL: CardScript = {
   name: 'Hellspark Elemental',
   keywords: ['trample', 'haste'],
+  // As on Ball Lightning: the end-step sacrifice below is the rule, this is the bot's warning.
+  leavesAtEndOfTurn: true,
   abilities: [unearth('{1}{R}', () => HELLSPARK_ELEMENTAL)],
   triggers: [
     {

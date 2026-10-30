@@ -19376,3 +19376,86 @@ describe('transform, the third way a card can have two faces', () => {
     expect(namesIn(s, 0, 'battlefield')).not.toContain('Awoken Horror');
   });
 });
+
+describe('a creature that cannot be kept attacks anyway', () => {
+  /*
+    The one bot rule in this engine that is a dominance argument rather than a judgement (D246).
+
+    `creatureValue` is power, toughness and keyword values; `seatValue` counts permanents. Nothing
+    in the evaluation reads a clock, so a Ball Lightning scores as a creature you keep — and over
+    936 games `leaving-creatures.mjs` counted 18 attacks declined by a Ball Lightning or a Hellspark
+    Elemental that was sacrificed at the end of that same turn.
+
+    Three tests, and the second two are what keep the rule honest: it has to fire where the loss is
+    imaginary and *not* fire where the loss is real.
+
+    The first test asks the rule both ways, because it has two halves and needs both: with
+    `lookahead: false` the attack heuristic answers on its own, and with the search on the plan set
+    answers. Over 936 games the heuristic half alone was nearly inert — the search was overruling
+    it, declining 10 of 97 positions the heuristic declined 0 of — so a test that only asked the
+    shallow bot would pass on half a rule.
+  */
+  const facing = (mine: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'ember-rush', 1: 'hollow-tide' },
+    battlefield: {
+      // Nemesis of Reason is a 3/7: it kills a 6/1 and survives it, which is `worthAttacking`'s
+      // "it dies for nothing" and the only shape of blocker that keeps a creature home.
+      0: ['Mountain', 'Mountain', 'Mountain', ...mine],
+      1: ['Swamp', 'Nemesis of Reason'],
+    },
+    turn: 5, firstSeat: 0,
+  }), 'declare-attackers');
+
+  const attacks = (s: GameState, name: string, opts: Parameters<typeof botAction>[2]): boolean => {
+    const action = botAction(s, 0, opts);
+    return action?.type === 'auto:attack'
+      && action.attackers.some((a) => nameOf(s, a.attacker) === name);
+  };
+
+  it('swings a Ball Lightning into the blocker that eats it for nothing', () => {
+    const s = facing(['Ball Lightning']);
+    // The heuristic half, and the bot as it was beside it: the control the field count is read
+    // against.
+    expect(attacks(s, 'Ball Lightning', { lookahead: false })).toBe(true);
+    expect(attacks(s, 'Ball Lightning', { lookahead: false, attacksWithLeavers: false })).toBe(false);
+    // And the half that actually decides the shipping bot's attacks: with the search on, no plan
+    // on offer holds the creature back, so there is no dominated declaration for it to choose.
+    expect(attacks(s, 'Ball Lightning', {})).toBe(true);
+  });
+
+  it('and still keeps a creature home when the loss is real', () => {
+    /*
+      The negative control, and the reason the rule is not "attack with everything". A Hill Giant is
+      a 3/3 into the same 3/7: it dies, the blocker lives, and it would have been there next turn —
+      so the attack costs a creature and the rule must not reach it.
+    */
+    const s = facing(['Hill Giant']);
+    expect(attacks(s, 'Hill Giant', { lookahead: false })).toBe(false);
+  });
+
+  it('and every card that sacrifices itself at end of turn says so on its script', () => {
+    /*
+      `leavesAtEndOfTurn` changes nothing the engine does — the end-step trigger is what happens —
+      so a card carrying the trigger without the flag is a card the bot throws away, and a card
+      carrying the flag without the trigger is a lie. Both directions asserted, from the triggers
+      rather than from a list: the next card printed with that text is covered or this fails.
+    */
+    const cards = Object.values(STARTER_DECKS).flatMap((deck) =>
+      [...deck.cards.map((c) => c.card), deck.commander!]
+        .flatMap((c) => [c, ...(c.faces?.cards ?? [])]));
+    const sacrificesAtEnd: string[] = [];
+    const declares: string[] = [];
+    for (const card of cards) {
+      const script = scriptFor(card.name);
+      if (script === undefined) continue;
+      const trigger = (script.triggers ?? []).some((t) => (
+        t.on.kind === 'step' && t.on.step === 'end' && t.description.startsWith('sacrifice')));
+      if (trigger) sacrificesAtEnd.push(card.name);
+      if (script.leavesAtEndOfTurn === true) declares.push(card.name);
+    }
+    const unique = (names: readonly string[]) => [...new Set(names)].sort();
+    // The parse, asserted before anything is compared against it: an empty pair would agree.
+    expect(unique(sacrificesAtEnd)).toEqual(['Ball Lightning', 'Hellspark Elemental']);
+    expect(unique(declares)).toEqual(unique(sacrificesAtEnd));
+  });
+});

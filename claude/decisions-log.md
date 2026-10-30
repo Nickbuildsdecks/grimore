@@ -15181,3 +15181,100 @@ zero, so both halves of the filter are asserted against `flying` — known to be
 documented. If the `oracleText` extraction ever comes back empty, every candidate is filtered out
 and the check passes by seeing nothing, which is the one way it could be silently useless. Verified
 the other way too, by renaming the phrase in the doc and watching it fail on exactly one mechanic.
+
+## D246 — The first change out of the closed avenue, and the search overruled it
+
+#222, reframed. Its original premise was wrong — D242's per-game seeding re-measured the
+vanishing/fading drawback at about one game in four rather than one in six — but the question it was
+asking survived the correction and turned out to be the one D244 had pointed at: **is a clock priced
+at all?** Read the code and the answer is flatly no. `creatureValue` is power, toughness and keyword
+values; `seatValue` counts permanents and creatures; nothing anywhere reads a countdown. A Ball
+Lightning scores as a creature you keep.
+
+### Measured first, and the pool has exactly one mistake of this kind
+
+`scripts/measure/leaving-creatures.mjs`, 936 games. It counts the four decisions a clock would change
+the sign of, and three of them came back clean:
+
+```
+attacks declined by a creature on its last turn      18   <- the mistake
+removal spent on an opponent's leaving creature       5   <- none of it waste (see below)
+a card spent on your own                             12   <- none of it waste either
+blocks declined by one                                0   <- structurally impossible
+```
+
+The 18 are **Hellspark Elemental 10 of 78 and Ball Lightning 8 of 56**, 13% and 14% of the attacks
+they were offered, and these are the two cards in this pool whose entire function is one attack. A
+Ball Lightning that stays home is six mana of card for nothing.
+
+**Blocks cannot appear here at all**, which is worth saying because a zero that is structural is not
+a zero that might change: a creature that is gone at the end of this turn is not around for the
+opponent's combat, so it is never a legal blocker.
+
+**And the removal column had the opposite sign to the one it first showed.** The first reading said
+five cards were spent on an opponent's creature that was leaving anyway, which sounds like pure
+waste. Adding the **step** to the table turned it over: every one was cast in `declare-attackers` or
+earlier, so the Maze of Ith and the Darkblast pointed at an attacking Ball Lightning stopped six
+damage, which is the whole job of both cards. Same for the own-creature column — a Rancor returns to
+its owner's hand and a Bonesplitter stays on the battlefield, so neither is lost with the body. The
+instrument would have published an accusation without that column.
+
+### The rule is a dominance argument, not a weight
+
+A creature that will not exist after this turn **cannot block in between and cannot attack again**,
+so attacking with it risks nothing it was going to keep: the worst case of attacking is no damage,
+and the certain case of staying home is no damage. There is nothing to tune, which is the first time
+that has been true of a change to `bot.ts`.
+
+Deliberately narrower than "has a clock", and the two near misses are the reason the rule is right:
+
+ - **not a dashed creature**, which returns to its owner's **hand** — one that dies in combat is a
+   card lost.
+ - **not a vanishing or fading creature on its last counter**, which dies at the next *upkeep*,
+   after the opponent's turn, so it is still there to block. Losing it costs a block.
+
+So the three cases are `leavesAtEndOfTurn` (a new flag on `CardScript`, carried by Ball Lightning and
+Hellspark Elemental, where the sacrifice is printed text rather than a keyword), `UNEARTHED` and
+`MYRIAD`. A test holds the flag to the trigger in both directions.
+
+### And then the search overruled it, which is the finding
+
+The rule went into `worthAttacking`, and the field count moved from **18 to 16**. A reading that
+small against a rule whose unit test proves it fires is the kind of impossibility this project has
+learned to chase rather than explain. Asking both bots the same positions said why:
+
+```
+                       declined
+Ball Lightning       heuristic   0 of 34      search   5 of 34
+Hellspark Elemental  heuristic   0 of 45      search   5 of 45
+Dregscape Zombie     heuristic   0 of 18      search   0 of 18
+```
+
+**The heuristic declined none of 97 and the search declined 10.** `evaluate` scores a board with the
+creature still standing on it higher and has no way to see that it is going away, so `declareBySearch`
+was picking the plan that held it back over the heuristic's own declaration.
+
+The fix that worked is in the **plan set**: `attackPlans` folds a leaver into every plan, the way
+`legalDeclaration` already folds in CR 508.1d's forced attackers and the way `keepsItsWord` applies a
+pact to every plan rather than scoring it as one option. A dominated declaration is simply never
+offered. All four end-of-turn rows then read **0**, and every row that should not have moved did not
+— Calciderm, Blastoderm and Mardu Scout are unchanged at 1 apiece.
+
+**Not in the evaluation, and this is the part worth remembering.** Zeroing a leaver in `creatureValue`
+would reach the same declaration and break something worse: the position after casting a Ball
+Lightning is scored *before* its damage lands, so a creature worth nothing on the board is a cast
+worth nothing, and the bot would have stopped casting the card at all.
+
+### What it is worth
+
+```
+the whole field          473-463 of 936
+ember-rush's pairings    148-140 of 288
+kindle-grove's pairings  145-143 of 288
+dawn-tithe's pairings    146-142 of 288
+```
+
+Small, and **honestly** small: +8 of 288 is inside the noise of a 288-game paired probe on its own.
+What is worth something is that four independent readings agree in sign and none of them lost, on a
+change that touches about 158 declarations in 936 games. The reason to keep it is the dominance
+argument; the win rate is a check that the argument did not cost anything, not the case for it.

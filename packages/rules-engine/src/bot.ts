@@ -28,7 +28,7 @@ import {
   attackAimIssue, canAttack, canBlock, damageOrdersOwed, forcedAttackers, legalAttackers,
   legalDefenders,
 } from './combat.js';
-import { SEAT_CHOICE, creaturesControlledBy, poolOf } from './effects.js';
+import { MYRIAD, SEAT_CHOICE, UNEARTHED, creaturesControlledBy, poolOf } from './effects.js';
 import { applyAction } from './engine.js';
 import { canAfford, costValue, parseManaCost, type ManaCost } from './mana.js';
 import { scriptFor } from './scripts.js';
@@ -726,6 +726,35 @@ function foeOrder(
     });
 }
 
+/**
+ * Whether this creature will not exist after this turn **however the combat goes**.
+ *
+ * The one fact about a clock the evaluation can act on, and the reason it is this narrow fact
+ * rather than "does it have a countdown" is that only this one makes the conclusion a *dominance*
+ * argument. A creature that is gone before its controller's next turn cannot block in between and
+ * cannot attack again, so an attack with it risks nothing it was going to keep: the worst case is
+ * no damage, and staying home is the worst case with certainty. There is no weight to tune here,
+ * which is what D244 said the next change to this file would have to look like.
+ *
+ * Three ways to be that creature, and two near misses that are deliberately not:
+ *
+ *  - `leavesAtEndOfTurn` — a Ball Lightning, a Hellspark Elemental. Printed text, so it is a flag
+ *    on the script rather than a keyword, and `scripts.test.ts` holds it to the trigger.
+ *  - `UNEARTHED` — exiled at the end of the turn (CR 702.84a), and exile is for good.
+ *  - `MYRIAD` — a token copy exiled at end of combat (CR 702.111a), which ceases to exist.
+ *  - **not** `DASHED`: a dashed creature returns to its owner's **hand**, so one that dies in
+ *    combat is a card lost and one that survives can be cast again. The loss is real.
+ *  - **not** a vanishing or fading creature with its last counter: it dies at the next upkeep, which
+ *    is *after* the opponent's turn, so it is still there to block. Losing it costs a block.
+ */
+function leavesBeforeNextTurn(state: GameState, id: string): boolean {
+  const inst = state.instances[id];
+  if (inst === undefined) return false;
+  if ((inst.counters[UNEARTHED] ?? 0) > 0 || (inst.counters[MYRIAD] ?? 0) > 0) return true;
+  const name = state.cardDefs[inst.defKey]?.name;
+  return name !== undefined && scriptFor(name)?.leavesAtEndOfTurn === true;
+}
+
 function chooseAttackers(
   state: GameState, seat: SeatIndex, opts: BotOptions = {},
 ): { attacker: string; defender: SeatIndex }[] {
@@ -755,6 +784,16 @@ function chooseAttackers(
   };
 
   const worthAttacking = (attackerId: string, foe: SeatIndex): boolean => {
+    /*
+      A creature that will not be here after this turn attacks, whatever is across the table.
+
+      Everything below this line weighs what the attack might **cost**, and for this creature the
+      answer is nothing: see `leavesBeforeNextTurn`. Measured before it was written, which is what
+      every rule in this file has had to be — over 936 games `leaving-creatures.mjs` counted 18
+      attacks declined by a Ball Lightning or a Hellspark Elemental that was sacrificed at the end
+      of that same turn, and a Ball Lightning that does not attack is six mana of card for nothing.
+    */
+    if (opts.attacksWithLeavers !== false && leavesBeforeNextTurn(state, attackerId)) return true;
     const blockers = readyBlockers(state, foe)
       .filter((blockerId) => canBlock(state, blockerId, attackerId, foe) === null);
     if (blockers.length === 0) return true;
@@ -1941,6 +1980,30 @@ export interface BotOptions {
    */
   readonly holdsNinjas?: boolean;
   /**
+   * Whether a creature that **will not be here after this turn** attacks regardless of the blocks
+   * waiting for it. On by default, and the one rule in this file that is not a judgement.
+   *
+   * Everything else in `worthAttacking` weighs what an attack might cost. For a body that is
+   * sacrificed or exiled at the end of this turn the answer is nothing — it cannot block on the
+   * opponent's turn and it will not be there to attack again — so the worst case of attacking is no
+   * damage and the certain case of staying home is no damage. `leavesBeforeNextTurn` says which
+   * creatures those are, and is deliberately narrower than "has a clock".
+   *
+   * Measured before it was written, over 936 games (`scripts/measure/leaving-creatures.mjs`): **18
+   * attacks declined** by a Ball Lightning or a Hellspark Elemental that died at the end of the
+   * same turn, 13% and 14% of the ones they were offered. Off is the bot as it was, kept as the
+   * control arm a paired probe needs.
+   *
+   * It takes **two** halves, and that it takes two is the finding. The heuristic alone (in
+   * `worthAttacking`) moved the field count from 18 to 16, because the search over plans was
+   * overruling it: asked the same 97 positions, the heuristic declined 0 and the search declined
+   * 10. `evaluate` scores a board with the creature still standing on it higher and has no way to
+   * see that it is going away. So the second half is in `attackPlans`, which folds a leaver into
+   * every plan rather than scoring the plan that holds it back — and *not* in the evaluation,
+   * where zeroing a leaver would also make casting a Ball Lightning look like a card thrown away.
+   */
+  readonly attacksWithLeavers?: boolean;
+  /**
    * Whether to pay an **artifact** cost with an artifact that pays you for going. Default **on**,
    * and this default has been set three times by three measurements rather than once by taste.
    *
@@ -2330,7 +2393,38 @@ function attackPlans(state: GameState, seat: SeatIndex, opts: BotOptions = {}): 
     "attack with nothing", which is the plan a player picks when the swing back would kill them —
     so the forced creatures are folded into each plan instead, aimed at whoever is weakest.
   */
-  return plans.map((plan) => keepsItsWord(state, seat, legalDeclaration(state, seat, plan)));
+  /*
+    And every plan swings with the creatures that **cannot be kept**.
+
+    Folded into each plan rather than offered as one plan among several, which is the same move
+    `keepsItsWord` makes below and the same move `legalDeclaration` makes for CR 508.1d's forced
+    attackers — and here for the same reason: there is nothing to weigh. A creature that will not
+    exist after this turn cannot block in between and cannot attack again, so a plan that holds it
+    back is dominated by the identical plan that does not, and offering the dominated one to the
+    search is offering it a mistake.
+
+    **Measured, and the measurement is why this is here and not only in `worthAttacking`.** The
+    heuristic rule alone changed almost nothing over 936 games — 18 declines before, 16 after — and
+    asking both bots the same positions said why: across 97 offers the *heuristic* declined 0 and
+    the *search* declined 10. The rule was right and the search was overruling it, because
+    `evaluate` scores a board with the creature still on it higher and cannot see that it is going
+    away. Zeroing a leaver in the evaluation would have reached the same declaration and broken
+    something worse: the position after casting a Ball Lightning is scored *before* its damage, so
+    a creature worth nothing on the board is a cast worth nothing, and the bot would have stopped
+    casting the card at all. Narrowing the plans leaves the cast alone.
+  */
+  const leavers = opts.attacksWithLeavers === false
+    ? []
+    : able.filter((id) => leavesBeforeNextTurn(state, id));
+  const swinging = leavers.length === 0 || nearest === undefined ? plans : plans.map((plan) => {
+    const already = new Set(plan.map((entry) => entry.attacker));
+    // Aimed where the plan is already going, so folding one in does not re-point the attack: the
+    // plan's own first defender, or the nearest foe when the plan is "attack with nothing".
+    const defender = plan[0]?.defender ?? nearest.index;
+    return [...plan, ...leavers.filter((id) => !already.has(id)).map((attacker) => ({ attacker, defender }))];
+  });
+
+  return swinging.map((plan) => keepsItsWord(state, seat, legalDeclaration(state, seat, plan)));
 }
 
 /**

@@ -7018,6 +7018,46 @@ The first draft of the filter asked whether the word appeared anywhere in `start
 is a different question and said so at once: it demanded a cheat-sheet row for `decisions`, a
 `CardScript` field printed on no card in any game of Magic. It was matching the file's own comments.
 
+## A clock is not priced, and the search was overruling the fix (#222, D246)
+
+D244 closed the retune-a-weight avenue on evidence and said the next change would have to be a term
+that sees something the evaluation cannot. A clock is the plainest such thing: `creatureValue` is
+power, toughness and keyword values, so a Ball Lightning scores as a creature you keep.
+
+`scripts/measure/leaving-creatures.mjs` priced the mistake before anything was written, over 936
+games, and the pool has exactly one of this kind: **18 attacks declined** by a Ball Lightning or a
+Hellspark Elemental that was sacrificed at the end of that same turn — 13% and 14% of the attacks
+they were offered, and these are the two cards whose whole function is one attack.
+
+The rule is a **dominance argument** rather than a weight, which is a first for `bot.ts`: a creature
+that will not exist after this turn cannot block in between and cannot attack again, so the worst
+case of attacking is no damage and the certain case of staying home is no damage. It is deliberately
+narrower than "has a clock" — a *dashed* creature returns to its owner's hand, and a vanishing one on
+its last counter dies at the next upkeep, which is after the opponent's turn, so both can still lose
+something real.
+
+**And then the search overruled it, which is the finding.** The rule went into `worthAttacking` and
+the field count moved from 18 to 16. Asking both bots the same positions said why: across 97 offers
+the heuristic declined **0** and the search declined **10** — `evaluate` scores a board with the
+creature still on it higher. So the fix that works is in the **plan set**, where `attackPlans` folds
+a leaver into every plan the way CR 508.1d's forced attackers already are, and the dominated
+declaration is never offered. All four end-of-turn rows then read 0, and every row that should not
+have moved did not. Not in the evaluation, deliberately: the position after casting a Ball Lightning
+is scored before its damage, so a leaver worth nothing on the board is a cast worth nothing.
+
+Worth, paired: 473-463 of 936 on the field, and 148-140, 145-143 and 146-142 of 288 on the three
+decks that hold the cards. Small and honestly small — none of those is distinguishable from zero on
+its own — but four readings agreeing in sign with none of them losing. The case for the rule is the
+dominance argument; the win rate is the check that it cost nothing.
+
+**One finding came out with the opposite sign to the one it first had**, and it is the reason the
+harness records the step. Its first reading said five cards had been spent on an opponent's creature
+that was leaving anyway. Every one turned out to be cast in `declare-attackers` or earlier: the Maze
+of Ith and the Darkblast aimed at an attacking Ball Lightning stopped six damage, which is the whole
+job of both cards. Nor is the own-creature column waste — a Rancor returns to hand and a Bonesplitter
+stays on the battlefield. So the honest statement is the opposite of the draft one: **the bot does
+not waste cards on creatures that are leaving.**
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

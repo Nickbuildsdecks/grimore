@@ -59,6 +59,7 @@ it.
 | `term-leverage.mjs` | …and measured where a term acts, rather than drowned in a field average | `SUBJECT=hollow-tide TERMS=library node scripts/measure/term-leverage.mjs` |
 | `halves-use.mjs` | which face of a two-faced card gets used, and was the land the only one? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
 | `transform-use.mjs` | does a **transforming** card ever turn over, on which turn, and into what board? | `SEEDS=6 node scripts/measure/transform-use.mjs` |
+| `leaving-creatures.mjs` | a creature the bot **cannot see is leaving** — what does it decline, and what gets spent on it? | `SEEDS=6 node scripts/measure/leaving-creatures.mjs` |
 | `countdowns.mjs` | a permanent with a **clock** on it — how many counters were left when it stopped being able to spend them? | `SEEDS=6 node scripts/measure/countdowns.mjs` |
 | `metalcraft.mjs` | how often is a conditional static actually **on**? | `SEEDS=5 node scripts/measure/metalcraft.mjs` |
 | `mill.mjs` | does the mill deck win by decking, and how close does it get? | `SUBJECT=hollow-tide SEEDS=6 node scripts/measure/mill.mjs` |
@@ -695,6 +696,34 @@ Crossed with the calibration, the table sorts itself (D244) — creature 6.4% le
 accuracy, life 2.3% and 66%, hand 0.9% and 42%, land 0.1% and 53%. **The cell that would be a
 problem, high leverage with poor calibration, is empty**, which closes the retune-a-weight avenue on
 evidence rather than by exhaustion.
+
+**And the first change that came out of that closed avenue was not a weight, and it took two
+attempts because the first one was overruled.** D244 said the next move would have to be a term
+that sees something the function cannot, and a clock is the plainest such thing: `creatureValue` is
+power, toughness and keyword values, so a Ball Lightning scores as a creature you keep.
+`leaving-creatures.mjs` priced the mistake before anything was written — **18 attacks declined**
+over 936 games by a Ball Lightning or a Hellspark Elemental that was sacrificed at the end of that
+same turn, which is the whole card thrown away, and these are the two cards whose entire function
+is one attack.
+
+The lesson is what happened next. A rule in the attack heuristic moved the field count from 18 to
+**16**, and a reading that small against a rule that unit tests prove fires is the sort of
+impossibility this directory has learned to chase. Asking both bots the same 97 positions said why:
+the *heuristic* declined 0 and the *search* declined 10. **The rule was right and the search was
+overruling it**, because `evaluate` scores a board with the creature still standing on it higher
+and cannot see it is going away. The fix that worked is in the **plan set** — a creature that
+cannot be kept is folded into every plan, the way CR 508.1d's forced attackers already are, so the
+dominated declaration is never offered — and all four end-of-turn rows then read **0 of 158**,
+while every row that should not have moved did not. Not in the evaluation, deliberately: the
+position after casting a Ball Lightning is scored *before* its damage, so a leaver worth nothing on
+the board is a cast worth nothing, and the bot would have stopped casting the card.
+
+**The step column in that harness is the part worth copying.** Its first reading said five cards
+had been spent on an opponent's creature that was leaving anyway, which sounds like pure waste and
+was not: a Maze of Ith or a Darkblast pointed at an attacking Ball Lightning *before damage* stops
+six, which is the whole job of both cards. Recording the step turned an accusation into a finding
+with the opposite sign — the bot does not waste removal on leavers — and without it the write-up
+would have been confidently wrong.
 
 Two rows that look like dead weight and are not, and both are lessons about the instrument rather
 than the engine. **`library` at 0.2% is a field average drowning a term that belongs to one deck** —

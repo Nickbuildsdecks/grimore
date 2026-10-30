@@ -1317,6 +1317,29 @@ export interface CardScript {
    */
   readonly removesACreature?: boolean;
   /**
+   * "This body is not a permanent" — it sacrifices itself at the beginning of the end step.
+   *
+   * A Ball Lightning, a Hellspark Elemental: six or four damage once, and then the card is gone. The
+   * sacrifice is **printed text rather than a keyword**, so it is a trigger like any other and this
+   * flag changes nothing the engine does — the trigger does all of the work, and a card declaring
+   * the flag without the trigger would be a lie a test catches.
+   *
+   * What it is for is the bot, which cannot otherwise know. `creatureValue` is power, toughness and
+   * keywords and `seatValue` counts permanents; **nothing in the evaluation reads a clock**, so a
+   * creature that is sacrificed in an hour's time scores as a creature you keep. That costs the bot
+   * a specific, provable mistake rather than a judgement: measured over 936 games
+   * (`scripts/measure/leaving-creatures.mjs`), it declined 18 attacks with a Ball Lightning or a
+   * Hellspark Elemental that was going to die at the end of that same turn — holding back a creature
+   * it could not hold, which is the whole card thrown away.
+   *
+   * Deliberately **not** the same question as "does it have a countdown". A vanishing creature with
+   * one counter left is still there to block on the opponent's turn, and a *dashed* creature returns
+   * to its owner's **hand**, so losing either in combat costs something real. This flag is only for
+   * a body that will not exist after this turn however the combat goes, which is what makes the
+   * conclusion a dominance argument instead of a weight.
+   */
+  readonly leavesAtEndOfTurn?: boolean;
+  /**
    * "This spell's whole effect is to keep one of your own creatures alive" — a protection trick.
    *
    * The third of the family, and the one whose measurement was the most lopsided: 64 cast across
