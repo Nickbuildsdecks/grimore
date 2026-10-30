@@ -6642,12 +6642,14 @@ grants. The deck-coverage test had to learn that was allowed, and its exemption 
 — a card needs no script when its whole printed text is keywords the engine already grants — which
 is better than a transform-shaped exemption would have been.
 
-And the slot is priced rather than asserted. `deck-probe` with the change reversed, across all
-twelve opponents and 408 paired games: **196-212 (48.0%) with the transform pair against 168-240
-(41.2%) for the second Bolt and second Counterspell it replaced** — 28 games, with the old list
-worse in ten of twelve matchups, level in one and better in one. The consistency matters more than
-the total, because ±20 on 288 games is the probe's floor and −28 on 408 is only just past a scaled
-one. One seed set; a second has not been read.
+And the slot is priced rather than asserted, on **two disjoint seed sets**. `deck-probe` with the
+change reversed, all twelve opponents, 408 paired games each: the transform pair reads **196-212
+(48.0%)** and **201-207 (49.3%)**; the second Bolt and second Counterspell it replaced read
+**168-240 (41.2%)** and **148-260 (36.3%)**. The stock arm's own spread across the two seed sets is
+five games, which is the floor measured rather than assumed, and both effects (−28, −53) clear it.
+Across twenty-four matchup readings the old list is worse in twenty-one, level in two, better in
+one. **The direction is settled; the size is not pinned tighter than seven to thirteen points**,
+because the two measurements of one change differ by more than the floor.
 
 Two things worth carrying forward that have nothing to do with transform. **A starter deck's
 one-ofs are load-bearing for the test suite**: cutting Burst Lightning and Lava Spike to make room

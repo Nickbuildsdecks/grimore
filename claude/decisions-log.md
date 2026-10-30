@@ -14137,22 +14137,31 @@ copy to find.
 Counterspell back — across all twelve opponents, 34 paired games each, 408 in total:
 
 ```
-stock (with the transform pair):  196-212   48.0%
-variant (the list it replaced):   168-240   41.2%
-the change: -28 of 408 for the old list
+                          SEED0=3300        SEED0=5100
+stock (transform pair):   196-212  48.0%    201-207  49.3%
+variant (what it replaced): 168-240  41.2%    148-260  36.3%
+the change for the old list:  -28 of 408       -53 of 408
 ```
 
-Per matchup the old list is **worse in ten of twelve, level in one and better in one** (ashen-rite,
-+4). That consistency is worth more than the aggregate: `deck-probe`'s documented floor is ±20 games
-on 288 paired games, so −28 on 408 is only just outside a floor scaled to this sample, and a single
-number that size would be a direction rather than a size. Ten matchups moving the same way is not a
-noise shape.
+**Two disjoint seed sets, and the floor measured rather than assumed.** The README's discipline is
+to run a *real* arm twice on disjoint seeds and disbelieve anything smaller than the gap. The stock
+arm read **196 and 201** across the two — a spread of five on 408 games — and the variant arm read
+**168 and 148**, a spread of twenty. So the floor here is somewhere between five and twenty games,
+and both effects (−28, −53) clear it.
 
-**What this is not.** It is one seed set; a second disjoint one has not been read yet, and the
-file's own discipline is to disbelieve anything smaller than the gap between two seed sets. And it
-prices *this swap* — two creatures against a Bolt and a Counterspell — not the cards in the
-abstract. It is reported here because the alternative was shipping the slot on the sentence "no
-claim that this is stronger", which turns out to have been too modest.
+Per matchup, across all twenty-four readings the old list is **worse in twenty-one, level in two and
+better in one** (ashen-rite on the first seed set, +4; it read −6 on the second). That is not a noise
+shape.
+
+**What is and is not settled.** The direction is settled: the transform pair beats the second
+Lightning Bolt and the second Counterspell in this deck, comfortably. The *size* is not pinned any
+tighter than "between about 28 and 53 games of 408", roughly seven to thirteen points, because the
+two measurements of the same change differ by more than the floor — which is the honest reading of
+two samples rather than an average of them presented as one number.
+
+And it prices **this swap** — two creatures against a Bolt and a Counterspell — not the cards in
+the abstract. Reported because the alternative was shipping the slot on "no claim that this is
+stronger", which turns out to have been too modest.
 
 ### And a hole in the bot that only showed up because the deck moved
 
