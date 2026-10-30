@@ -6724,7 +6724,11 @@ for two of its rows.
 `GameState.expired` is the tenth member of the detect-rather-than-announce family and the only one
 **not raised as an event**. Nothing printed watches a clock expire — vanishing and fading have no
 payoff cards, suspend's cast is a rule the engine runs itself — so a trigger kind for it would fire
-for nobody, which is what this engine declines to add (`becomes-tapped` is deliberately card-less).
+for nobody, which is what this engine declines to add — and the true version of that claim is
+stronger than the one first written here. This section said `becomes-tapped` was the card-less
+precedent; `mechanic-coverage.mjs` then found **City of Brass** sitting on it (#223, D239). The
+engine has in fact **never** shipped a trigger kind with no card behind it, so `expired` as a
+trigger would have been the first rather than the second.
 And a list drained into `raise` would have been invisible to the one consumer that wanted it, which
 is the trap `transformed` sprang. So it is recorded at the four expiry sites and drained into the
 **persistent log**: `LogEntry.data.expired`, plus a line a player can read — *"Calciderm's last time
@@ -6759,15 +6763,46 @@ The harness needed one fix the engine change exposed. Its first full-field run r
 clock as soon as the counters were gone, and fading's expiry is the upkeep *after* that. Third
 finding in a row from a rate that **could not be true** rather than one that looked wrong.
 
+## Nineteen mechanics rest on one card, and none on none (#223, D239)
+
+The suite asserts every card has a script and every script has a card. Neither direction asks how
+many cards hold a **mechanic** up — and #220 found what that costs by accident: two singletons cut
+from `arc-tempest` broke 26 tests, because each was the only card in the pool exercising its
+mechanic.
+
+`mechanic-coverage.mjs` counts 78 mechanics (41 `CardScript` fields, 19 trigger kinds, 18 keywords),
+read out of the TypeScript rather than from a list beside it, so one added tomorrow shows up without
+anybody remembering.
+
+**Zero are declared with no card at all**, which is the better finding: D229's rule — a keyword needs
+a card in a deck to exist — has been kept without exception. It is a test now as well as a
+convention, with a standing control, because a negative result nobody re-runs stops being true
+quietly.
+
+**Nineteen rest on exactly one card.** Hexproof (Sigarda) and indestructible (Darksteel Plate) are
+the two worth a second, because both are evergreen with a large rules surface and each is one cut
+from being untested by any game the pool can play. The other seventeen are keyword mechanics whose
+single card *is* the pool's whole use of them, which is a cheaper kind of thin. Writing those cards
+is a separate call and is not made on this evidence.
+
+And the run falsified a sentence rather than a number: the docs said in five places that
+`becomes-tapped` is the engine's card-less trigger, and the #221 write-up above used it as the
+precedent for not making `expired` one. **City of Brass has carried that trigger since #69.** The
+true version is stronger — no trigger kind here has ever had no card — so that decision is better
+supported than the argument given for it. Fourth finding in two days from a reading that could not
+be true, and the first about a claim rather than a count.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
    it, and the four ways a card can ask a player something — a mode, targets, a cost, a
    mid-resolution decision — are all in place. Adding a card is a few declarative lines. Every
    keyword and every static scope now has a card behind it, the subtype scope included;
-   `becomes-tapped` is the one trigger left without one, and deliberately so (see the entry above) —
-   and a **clock running out is deliberately not a trigger at all** (#221, D238): nothing printed
-   watches one, so it is a fact in the log instead of an event with no listener.
+   **every trigger kind now has at least one card**, `becomes-tapped` included — City of Brass
+   since #69, and `mechanic-coverage.mjs` confirms 0 of 78 mechanics are declared with no card at
+   all (#223, D239). What this list used to say about `becomes-tapped` being the card-less one is
+   stale. And a **clock running out is deliberately not a trigger at all** (#221, D238): nothing
+   printed watches one, so it is a fact in the log instead of an event with no listener.
    **A draw is an event now** (`draws`, with `you` and `opponent` halves and no `any`, because
    nothing printed here wants one), which was the most frequent thing in the engine and the one
    nothing could read — so "whenever you draw a card" and its mirror are both a few declarative

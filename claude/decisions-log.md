@@ -14544,3 +14544,108 @@ counters, card in the graveyard — and the log is what tells them apart. Withou
 `expired` would be a field set whenever one of these dies, which is the ambiguity it exists to
 remove.
 
+**Forward note (D239).** The `becomes-tapped` precedent cited above does not exist: City of Brass
+has carried that trigger since #69, and `mechanic-coverage.mjs` found it an hour after this entry
+was written. The conclusion stands and is better supported than the argument given for it — **no
+trigger kind in this engine has ever had no card behind it**, so `expired` as a trigger would have
+been the first of its kind rather than the second.
+
+---
+
+## D239 — Nineteen mechanics rest on one card, none on none, and one doc claim was false
+
+#223 asked the question the suite cannot: `deck coverage` asserts every card has a script and every
+script has a card, and nothing asked how many cards hold a **mechanic** up. #220 found out what that
+costs by accident — two singletons cut from `arc-tempest` to pay for two new cards broke **26
+tests**, because each was the only card in the pool exercising its mechanic, and nothing said which
+one-ofs were load-bearing.
+
+`mechanic-coverage.mjs` counts and sorts ascending. 78 mechanics: 41 `CardScript` fields that are
+mechanics rather than plumbing, 19 `TriggerEvent` kinds, 18 keywords.
+
+### The headline is the row that is empty
+
+**Zero of 78 are declared with no card at all.** That is the better of the two findings, and it is
+a claim about four years of discipline rather than about this run: D229's rule — a keyword needs a
+card in a deck to exist in the pool — has been kept without a single exception, including through
+every week where the engine work landed before the cards did.
+
+It is now a test as well as a convention (`has a card behind every mechanic it declares`), because
+a negative result nobody re-runs stops being true quietly. The realistic failure is a field added
+for an engine change whose cards never arrive: it throws nothing, fails nothing, and leaves a
+capability only the docs believe in. **With its own standing control**, to the measure README's
+standard: a mechanic nothing could carry goes through the same filter every run and has to come
+back, because "no orphans" and "cannot see orphans" otherwise read identically.
+
+### And nineteen rest on exactly one card
+
+```
+  1  keyword hexproof            Sigarda, Host of Herons
+  1  keyword indestructible      Darksteel Plate
+  1  script affinity             Frogmite
+  1  script bestow               Boon Satyr
+  1  script copiesACreature      Clone
+  1  script cumulativeUpkeep     Mystic Remora
+  1  script dash                 Mardu Scout
+  1  script evoke                Mulldrifter
+  1  script fading               Blastoderm
+  1  script goadsOpponents       Disrupt Decorum
+  1  script madness              Fiery Temper
+  1  script makesMana            Dark Ritual
+  1  script ninjutsu             Ninja of the Deep Hours
+  1  script overload             Mizzium Mortars
+  1  script spectacle            Skewer the Critics
+  1  script vanishing            Calciderm
+  1  script xIsANumberToMatch    Chalice of the Void
+  1  trigger attacks-unblocked   Ophidian
+  1  trigger to-exile            Soulherder
+```
+
+Three more are at one **on purpose** and marked as such: myriad is granted by Blade of Selves rather
+than printed (D228), `transformed` has only Awoken Horror by design (D234), and `becomes-tapped` has
+City of Brass because every other card that would use it charges you for your own mana (#69).
+
+**Hexproof and indestructible are the two worth a second card.** Both are evergreen with a large
+rules surface — hexproof interacts with every targeting decision the bot makes, indestructible with
+every destroy, every sweeper and every lethal-damage state-based action — and each is one cut away
+from being untested by any game the pool can play. The rest are keyword mechanics whose single card
+*is* the pool's whole use of them, which is a different and much cheaper kind of thin.
+
+### The claim the first believable run falsified
+
+The docs said in five places that `becomes-tapped` is the engine's one trigger with no card behind
+it, and **D238 said it this morning** — as the precedent for not making `expired` a trigger. The run
+printed `1 trigger becomes-tapped — City of Brass`. #69 gave that trigger a card and the claim has
+been stale ever since; the entries that state it in the present tense were written after.
+
+**The true version is stronger than the one I used.** No trigger kind in this engine has *ever* had
+no card behind it, so `expired` as a trigger would have been the first of its kind rather than the
+second. #221's conclusion is unchanged and better supported; what was wrong was the supporting
+rhetoric, which is the part nobody checks. A forward note is on D238 and the two live claims — the
+progress doc's `Next` list and its #221 section — are corrected in place.
+
+**This is the fourth time in two days a finding came from a reading that could not be true**, and
+the first time one of them was about a sentence rather than a number: Calciderm's 0% (D237), two
+flips back in a pool where nothing flips back (D236), Blastoderm's 0% (D238), and now a precedent
+cited for a decision that did not exist. The instrument that found it was written for a different
+question entirely and took four hours.
+
+### Two bugs before the first believable output, both found the same way
+
+The declaration parse ended the `TriggerEvent` union at `/^\n/m`, which matches at offset **zero**
+because `^` is also the start of the string — so the kind list came back empty. That one the
+instrument's own guard caught, which is why the guard exists: an audit whose list is empty reports
+that the engine can do nothing, and must exit non-zero rather than print it.
+
+The second got past the guard. The counts read `TriggerDef.event` where the field is `on`, so every
+trigger kind read zero *again*, with the parse working. An optional-chained read of a field that
+does not exist throws nothing and logs nothing. What caught it was `0 trigger etb` in a pool with
+**41** of them.
+
+### What is not done here
+
+Writing second cards for the nineteen is a separate call and is **not** made on this evidence.
+D237's lesson applies directly: the instrument comes first, and "these are fine" is a legitimate
+outcome for most of this list, because a keyword mechanic with one card is the pool's whole use of
+that keyword rather than a gap. Hexproof and indestructible are the two where the thinness is about
+*rules coverage* rather than about pool design, and those are filed.

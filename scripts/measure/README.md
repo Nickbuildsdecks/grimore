@@ -53,6 +53,7 @@ it.
 | `pod-duel.mjs` | is a bot setting worth anything in a **four-seat pod**? | `ALWAYS=dawn-tithe TESTED='{"chaseTheCrown":false}' SEEDS=3 node scripts/measure/pod-duel.mjs` |
 | `pod-slot.mjs` | is a **deck slot** worth anything in a four-seat pod, for a card that is blank in a duel? | `SUBJECT=forge-alliance CHANGE='Blade of Selves:-1' node scripts/measure/pod-slot.mjs` |
 | `card-promises.mjs` | does every card **do what its own text says**, or does a script carry less than the card reads? | `node scripts/measure/card-promises.mjs` |
+| `mechanic-coverage.mjs` | **how many cards hold each mechanic up** — which are on one card, and which the engine declares and nothing reaches? | `node scripts/measure/mechanic-coverage.mjs` |
 | `halves-use.mjs` | which face of a two-faced card gets used, and was the land the only one? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
 | `transform-use.mjs` | does a **transforming** card ever turn over, on which turn, and into what board? | `SEEDS=6 node scripts/measure/transform-use.mjs` |
 | `countdowns.mjs` | a permanent with a **clock** on it — how many counters were left when it stopped being able to spend them? | `SEEDS=6 node scripts/measure/countdowns.mjs` |
@@ -656,6 +657,36 @@ is about, the *variant* column must come out identical in both arms — 151-137 
 181-107 and 181-107. That is not a coincidence to note, it is the pairing being proved: with no
 Ravager on the board the flag cannot change anything, and any difference there would mean the two arms
 were not playing the same games. A control you get for free beats one you have to schedule.
+
+**The suite checks both directions of the card question and neither direction of the mechanic
+question, and that gap costs an afternoon when you find it by accident.** `deck coverage` asserts
+every card has a script and every script has a card. Nothing asked how many cards hold a *mechanic*
+up — and #220 found out the expensive way: two singletons were cut from `arc-tempest` to pay for two
+new cards, and 26 tests broke, because each was the only card in the pool exercising its mechanic.
+A starter-deck one-of is load-bearing and nothing said which. `mechanic-coverage.mjs` counts, and
+sorts ascending so the fragile rows are the first thing on the screen: **19 mechanics in this pool
+rest on one card**, hexproof and indestructible among them.
+
+Its first run also found the other shape, the quiet one. **Zero of 78 mechanics are declared with no
+card at all** — which is a better result than it sounds, because it means the rule that a keyword
+needs a card in a deck to exist (D229) has been kept without exception. And it falsified a claim
+five places in the docs still made, one of them written the same morning: `becomes-tapped` is not
+the engine's card-less trigger, because City of Brass has carried it since #69. The true version is
+stronger, which is the usual way round — no trigger kind in this engine has *ever* had no card.
+
+**Where the list of mechanics comes from is the whole design, and the alternative is a count of last
+month's engine.** It is read out of the source: the field names of `CardScript`, the `kind` literals
+of `TriggerEvent`, and the exported `KEYWORDS`. A literal list written beside them would be a second
+thing to forget, which is `card-promises.mjs`'s own lesson and this file nearly repeated it. The cost
+is that a reformatting of either declaration could silently empty the list, so the parse is checked
+and the run **exits non-zero** rather than reporting that the engine can do nothing.
+
+Two bugs before the first believable output, both caught by a count that could not be true. The
+declaration parse ended the union at `/^\n/m`, which matches at offset zero because `^` is also the
+start of the string, so every trigger kind read zero — the guard caught that one. Then the counts
+read `TriggerDef.event` where the field is `on`, so every trigger kind read zero *again*, this time
+with the parse working. An optional-chained read of a field that does not exist throws nothing and
+logs nothing; what caught it was `0 trigger etb` in a pool with 41 of them.
 
 **An audit that reports nothing is indistinguishable from an audit that *cannot* report
 anything — so make it prove otherwise on every run.** `card-promises` read 172 gaps, then 25, then

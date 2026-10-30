@@ -10,8 +10,11 @@
  * decks either has a script or is a permanent that works without one, so a card cannot be added to
  * a deck and quietly do nothing.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
+  KEYWORDS,
   SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, botAction, canAttack, canBlock,
   destroy,
   characteristicsOf, customDeck,
@@ -6359,6 +6362,95 @@ describe('deck coverage', () => {
     // would say so.
     const orphans = scriptedCardNames().filter((name) => !printed.has(name));
     expect(orphans).toEqual([]);
+  });
+
+  it('has a card behind every mechanic it declares', () => {
+    /*
+      D229's rule, as a test rather than a convention: **a keyword needs a card in a deck to exist
+      in the pool.** Until now that was kept by hand, and the two tests above cannot check it —
+      they ask whether every card has a script and every script has a card, which says nothing
+      about whether every *mechanic* has a card.
+
+      `mechanic-coverage.mjs` says the pool passes this today, 0 of 78. The reason it is also a test
+      is the one the measure README makes about `card-promises`: a negative result that nobody
+      re-runs stops being true quietly. The realistic failure is a `CardScript` field or a
+      `TriggerEvent` kind added for an engine change whose cards never arrive — which throws
+      nothing, fails nothing, and leaves a capability that only the docs believe in.
+
+      The declared surface is read out of `scriptTypes.ts` rather than listed here, because a list
+      here is a second place to forget the next mechanic. Same move the legacy Postgres suite makes
+      with `badWords` (#111). If the parse ever stops working the counts all read zero, so the
+      parse is asserted first — a test that cannot see anything must not pass.
+    */
+    const src = readFileSync(join(__dirname, 'scriptTypes.ts'), 'utf8').split('\n');
+    const bodyAfter = (header: string): readonly string[] => {
+      const at = src.findIndex((line) => line.startsWith(header));
+      expect(at, `${header} not found — the parse below would read nothing`).toBeGreaterThan(-1);
+      const body: string[] = [];
+      for (const line of src.slice(at + 1)) {
+        if (line !== '' && !line.startsWith(' ')) break;
+        body.push(line);
+      }
+      return body;
+    };
+
+    /*
+      The `CardScript` fields that are plumbing rather than mechanics — every card has a `name`,
+      nearly every spell an `onResolve`. Listed rather than filtered by a threshold, because a
+      threshold would also hide a mechanic that happens to be popular.
+    */
+    const plumbing = new Set([
+      'name', 'targets', 'onResolve', 'beforeDecisions', 'decisions', 'modal', 'keywords',
+      'triggers', 'abilities', 'statics', 'replaces', 'costModifiers', 'additionalCost',
+    ]);
+    const fields = bodyAfter('export interface CardScript {')
+      .flatMap((line) => [...line.matchAll(/^ {2}readonly ([a-zA-Z]+)\??:/g)].map((m) => m[1]!))
+      .filter((field) => !plumbing.has(field));
+    const kinds = [...new Set(bodyAfter('export type TriggerEvent =')
+      .flatMap((line) => [...line.matchAll(/\bkind: '([a-z-]+)'/g)].map((m) => m[1]!)))];
+    // The parse, asserted before anything is counted against it.
+    expect(fields.length).toBeGreaterThan(30);
+    expect(kinds.length).toBeGreaterThan(15);
+
+    const carried = new Set<string>();
+    const cards = [
+      ...Object.values(STARTER_DECKS).flatMap((deck) =>
+        [...deck.cards.map((c) => c.card), deck.commander!]
+          .flatMap((c) => [c, ...(c.faces?.cards ?? [])])),
+      // A token's trigger is as real as a card's, and a token is in nobody's deck.
+      ...TOKEN_DEFS,
+    ];
+    for (const card of cards) {
+      const script = scriptFor(card.name);
+      for (const field of Object.keys(script ?? {})) carried.add(`script ${field}`);
+      for (const trigger of script?.triggers ?? []) carried.add(`trigger ${trigger.on.kind}`);
+      for (const keyword of printedKeywords(card.oracleText ?? '')) carried.add(`keyword ${keyword}`);
+      for (const keyword of script?.keywords ?? []) carried.add(`keyword ${keyword}`);
+      for (const granted of script?.equipBonus?.keywords ?? []) carried.add(`keyword ${granted}`);
+    }
+
+    const orphansAmong = (declared: readonly string[]): readonly string[] =>
+      declared.filter((mechanic) => !carried.has(mechanic));
+
+    const declared = [
+      ...fields.map((f) => `script ${f}`),
+      ...kinds.map((k) => `trigger ${k}`),
+      ...KEYWORDS.map((k) => `keyword ${k}`),
+    ];
+    expect(orphansAmong(declared)).toEqual([]);
+
+    /*
+      **And the control, which runs every time rather than the day somebody wonders.** An empty
+      result above means either that every mechanic has a card or that this test can no longer see
+      one — a parse that drifted, a shape that changed — and those read identically. So a mechanic
+      nothing could possibly carry is put through the same filter, and it has to come back.
+
+      Proven by hand once as well: a `nobodyCarriesThis?: true` planted in `CardScript` made the
+      assertion above fail with exactly that name. The line below is that experiment, kept.
+    */
+    expect(orphansAmong([...declared, 'script nothingDeclaresThis'])).toEqual([
+      'script nothingDeclaresThis',
+    ]);
   });
 
   it('gives every scripted mana cost a cost the engine can pay', () => {
