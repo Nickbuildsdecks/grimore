@@ -7058,6 +7058,47 @@ job of both cards. Nor is the own-creature column waste — a Rancor returns to 
 stays on the battlefield. So the honest statement is the opposite of the draft one: **the bot does
 not waste cards on creatures that are leaving.**
 
+## Soulbond, and the first link between two permanents that is not an attachment (#229, D247)
+
+Every join this engine had between two permanents was an **attachment** — `attachedTo` on the Aura
+or the Equipment, pointing one way, because one host carries several Auras. A pair is the opposite
+shape: symmetric, exclusive, and it breaks by state-based action rather than by anything moving.
+
+Three pieces, and the middle one is the interesting part:
+
+- `CardInstance.pairedWith`, written on **both** halves, because either card is the one a player
+  happens to tap. On the instance for the reason `MYRIAD` is: a register elsewhere is a register
+  that falls out of step with the battlefield.
+- `ContinuousEffect.scope` gained `{ kind: 'pair' }` — **the only scope here whose membership
+  changes while the effect sits there**. Every other static fixes the cards it reaches as its
+  permanent enters; a pair is made and broken turns later. So the effect is created once and asks
+  `source.pairedWith` every time it is read, which makes "as long as this creature is paired" a
+  condition that holds itself rather than an `ids` list to edit from the three places a pair breaks.
+- Two pairing triggers rather than one, because one printed line is two questions: this creature
+  arriving asks *which* of several candidates (a declinable target), and somebody else arriving
+  asks *whether* to pair with the newcomer (a word).
+
+**Breaking it is a pass over the board, and one case is why.** A member can die, be exiled, be
+bounced, stop being a creature — or **change controller**, which moves nothing and raises nothing.
+An Act of Treason on half a pair leaves both creatures alive and ends the pair anyway (CR 702.95b),
+so a hook-based version would have missed the case the rules spell out.
+
+The cards are **Wolfir Silverheart** ({4}{G}{G} 4/4, +4/+4 to each half) and **Trusted Forcemage**
+({1}{G}{G} 2/2, +1/+1), both into Verdant Guard — the only deck here that plays four creatures,
+which is the only deck a pair is worth anything in. Checked rather than assumed, because this is
+where ninjutsu failed before D219: across 96 games they landed **37 times and paired 33 of them**,
+the four misses being boards whose other creatures were already spoken for.
+
+Priced against the two cards they replaced, 288 games an arm: **191-97 with soulbond against
+175-113 without**, +16. Both cuts kept their card in the pool — the Ambush Viper at Kindle Grove,
+Secure the Wastes at Forge Alliance — which is this list's own rule for a cut and cost two tests a
+change of deck. The field table afterwards reads Verdant Guard at **58%, fourth of thirteen**, so
+the change made a mid-table deck good rather than making an outlier.
+
+A player sees the pair: a **PAIR** badge on the card's corner and "paired with ⟨name⟩" on its own
+sheet, because a Grizzly Bears reading 6/6 is only legible if the thing lending it the points is
+on screen.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

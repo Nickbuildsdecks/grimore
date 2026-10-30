@@ -329,6 +329,16 @@ export function CardFace({ card, size = "board", onSelect, selected, highlight, 
         </span>
       ) : null}
       {/*
+        Soulbond. On the opposite corner from ATT so a creature that is both enchanted and paired
+        shows both, and a word rather than an icon for the same reason every other badge here is:
+        the card sheet names the partner, and this is what tells a player to open it.
+      */}
+      {card.pairedWith !== undefined ? (
+        <span className="absolute bottom-0 right-0 rounded-tl bg-[var(--g-status-info)] px-1 text-[6px] font-bold uppercase text-black">
+          PAIR
+        </span>
+      ) : null}
+      {/*
         The foil sheen: a soft highlight that follows the cursor across the card.
 
         Last in the card so it lies over the art, the text and the badges, which is where a

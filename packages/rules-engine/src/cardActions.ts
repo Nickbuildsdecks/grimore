@@ -365,8 +365,37 @@ export function relocate(
       everywhere else — including on the way to exile, which is where an adventure goes.
     */
     ...(toZone === 'stack' ? {} : { castAs: undefined }),
+    /*
+      And a soulbond pair breaks as either member leaves (CR 702.95b).
+
+      Here rather than only in the state-based action, for the reason the copy and the split card
+      above are here: this is the one place a card changes zone, and a pair that outlived the zone
+      change would be a pointer into the graveyard that the next pass over the board would have to
+      notice. The *other* member is cleared by `unpairAllFrom` below, because a pair is symmetric
+      and this line only reaches the card that moved.
+    */
+    pairedWith: undefined,
   });
-  return detachAllFrom(next, inst.id);
+  return unpairAllFrom(detachAllFrom(next, inst.id), inst.id);
+}
+
+/**
+ * Clears `pairedWith` on whatever was paired with `id`, so no pair outlives its other half.
+ *
+ * `detachAllFrom`'s twin, and the asymmetry between them is the difference between the two kinds
+ * of link: several things can be attached to one host, so that one sweeps, while exactly one thing
+ * can be paired with a card — but it sweeps anyway rather than reading `inst.pairedWith`, because
+ * the instance has already had the field cleared by the time this runs and a second source of
+ * truth is how the two halves get out of step.
+ */
+function unpairAllFrom(state: GameState, id: string): GameState {
+  let instances: Record<string, CardInstance> | null = null;
+  for (const [key, inst] of Object.entries(state.instances)) {
+    if (inst.pairedWith !== id) continue;
+    instances ??= { ...state.instances };
+    instances[key] = { ...inst, pairedWith: undefined };
+  }
+  return instances === null ? state : { ...state, instances };
 }
 
 /** Clears `attachedTo` on anything pointing at `id`, so nothing is left attached to a gone card. */

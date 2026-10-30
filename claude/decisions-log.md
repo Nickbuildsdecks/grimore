@@ -15278,3 +15278,78 @@ Small, and **honestly** small: +8 of 288 is inside the noise of a 288-game paire
 What is worth something is that four independent readings agree in sign and none of them lost, on a
 change that touches about 158 declarations in 936 games. The reason to keep it is the dominance
 argument; the win rate is a check that the argument did not cost anything, not the case for it.
+
+## D247 — Soulbond, and the first link between two permanents that is not an attachment
+
+#229. Every join this engine had between two permanents was an **attachment**: `attachedTo`, set on
+the Aura or the Equipment, pointing one way, because one host can carry several Auras and each Aura
+has exactly one host. A soulbond pair is the opposite shape — symmetric, exclusive, and it breaks by
+state-based action rather than by anything moving — so it needed its own fact and its own scope.
+
+### Three decisions, and the first is the one the rest follow from
+
+**The pair lives on the instance** (`CardInstance.pairedWith`), written on **both** halves. Written on
+both because either card is the one a player happens to tap, and a reader that had to know which of
+the two carried the keyword is a reader that will forget. On the instance rather than in a register on
+`GameState`, for the reason `MYRIAD` gives: a fact about an instance is already per-permanent, already
+serialised to Redis and already visible on the card, and a list elsewhere is a list that can fall out
+of step with the battlefield.
+
+**The bonus is a static with a live scope.** `ContinuousEffect.scope` gained `{ kind: 'pair' }`, which
+is the only scope here whose membership *changes* while the effect sits there. Every other static is
+created as its permanent enters with the cards it reaches fixed at that moment; a pair is made and
+broken turns later. So the effect is created once, with `duration: 'permanent'`, and asks
+`source.pairedWith` every time it is read — unpaired, it reaches nobody, which is "as long as this
+creature is paired with another creature" holding itself. The alternative was adding and removing an
+`ids` effect from the three places a pair can break, and the third one would have been forgotten.
+
+**The pairing is two triggers on the card, not one.** "You may pair this creature with another
+unpaired creature you control when either enters the battlefield" is one printed line and two
+questions: this creature arriving finds a board that may hold several candidates, so the question is
+*which* — a declinable target; somebody else arriving leaves only the newcomer, so the question is
+*whether* — a word, which is what `ChoiceDecisionSpec` is for. One trigger would have had to ask the
+harder question in both cases, and a prompt offering a choice of one is noise the engine refuses to
+generate anywhere else.
+
+### Breaking it is a state-based action, and one case is why
+
+`breakEndedPairs` is a pass over the board in `stateBasedActions` rather than a hook on each way a
+pair can end, because the list is longer than it looks: a member can die, be exiled, be bounced, stop
+being a creature because an effect set its type — or **change controller**, which moves nothing and
+raises nothing. An Act of Treason on half a pair leaves both creatures alive on the battlefield and
+ends the pair anyway (CR 702.95b), and a hook-based version would have missed exactly the case the
+rules spell out. `relocate` also clears the field on a zone change, which is not a duplicate: it
+stops a pointer into a graveyard existing between the move and the next check.
+
+### The cards, and the bot uses them
+
+**Wolfir Silverheart** ({4}{G}{G} 4/4, +4/+4 to each half) and **Trusted Forcemage** ({1}{G}{G} 2/2,
++1/+1), both into Verdant Guard — the only deck in this pool that plays four creatures, which is the
+only deck a pair is worth anything in.
+
+Checked rather than assumed, because this is where ninjutsu failed before D219: across 96 games of
+Verdant Guard's pairings the two landed **37 times and paired 33 of them**. The four that did not
+were boards whose only other creatures were already spoken for. It pairs with whatever is there —
+a Fleecemane Lion seven times, a Llanowar Elves three, a Beast token three.
+
+### What the slots are worth
+
+Priced before the write-up rather than after, against the two cards they replaced (`deck-probe`,
+Verdant Guard's pairings, 288 games an arm):
+
+```
+with soulbond                    191-97
+Ambush Viper + Secure the Wastes 175-113      -16
+```
+
+Both cuts followed this list's own rule: the Ambush Viper is still in the pool at Kindle Grove and
+Secure the Wastes at Forge Alliance, so both cards, both scripts and the instant-speed X cost all
+keep a home. Two tests had to move with them, which is the cost of that rule and is cheaper than the
+alternative.
+
+The field table afterwards puts **Verdant Guard at 58%**, fourth of thirteen, so the change made a
+mid-table deck good rather than making an outlier: ember-rush 82%, kindle-grove 67%, dawn-tithe 65%,
+verdant-guard 58%, then the rest down to blight-vector at 29%. Ember Rush has read 74–82% in every
+table since #96 and is the pool's standing balance problem; some small part of this reading is D246,
+which is worth +8 of 288 to it in the paired probe, and 96 games a deck cannot resolve a move that
+size.

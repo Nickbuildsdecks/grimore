@@ -1056,6 +1056,18 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
     .filter((name): name is string => name !== undefined)
   for (const name of held) out.push(`holding ${name}`)
   /*
+    Who it is paired with, for soulbond.
+
+    Named rather than flagged, for the reason the Aura's host is named: the badge is on screen to
+    explain a body nothing else on the table accounts for. A Grizzly Bears reading 3/3 is only
+    legible if the player can see which creature is lending it the point — and killing either half
+    shrinks the other, so the link is the whole decision rather than a decoration.
+  */
+  if (card.pairedWith !== undefined) {
+    const partner = view.cards[card.pairedWith]
+    out.push(`paired with ${partner?.card?.name ?? "a creature"}`)
+  }
+  /*
     Its current body, for anything that currently *is* a creature.
 
     The third clause used to be `card.card?.power !== undefined` — "the card has power printed on

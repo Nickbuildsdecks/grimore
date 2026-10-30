@@ -32,7 +32,8 @@ import {
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
-  DASHED, EVOKED, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, counterSpell, destroy,
+  DASHED, EVOKED, MYRIAD, REGENERATION, SEAT_CHOICE, TIME, addCounters, breakEndedPairs,
+  counterSpell, destroy,
   recordExpiry,
   draw,
   drawLater, exileCard, loseLife, mill, suspendedCast,
@@ -1458,6 +1459,22 @@ export function stateBasedActions(state: GameState): GameState {
     const live = expireEffects(next, 'never' as ContinuousEffect['duration']);
     if (live.length !== next.effects.length) {
       next = { ...next, effects: live };
+      changed = true;
+    }
+
+    /*
+      CR 702.95b: a pair whose two members are no longer two creatures one player controls is
+      broken.
+
+      Last in the pass and deliberately, because what it reads is the board *after* this round of
+      deaths: a Wolfir Silverheart that just died has already been moved, so the pair it was half of
+      is ended by the time this looks. And it is a pass over the board rather than a hook on each
+      way a pair can end, because one of those ways — a change of controller — moves nothing and
+      raises nothing. See `breakEndedPairs`.
+    */
+    const unpaired = breakEndedPairs(next);
+    if (unpaired !== next) {
+      next = unpaired;
       changed = true;
     }
 
@@ -3199,6 +3216,24 @@ function applyStatics(
       effects: [...next.effects, {
         id: `fx${seq}`, source: id, controller, scope, duration: 'permanent', createdTurn: next.turn,
         ...modsFrom(entry.effect),
+      }],
+    };
+  }
+  /*
+    And soulbond's, which is a static with one difference: its scope is the **pair**, which is made
+    and broken long after this runs. See `ContinuousEffect`'s `pair` scope — the effect sits here
+    for the permanent's whole life and reaches nobody while it is unpaired, so there is nothing to
+    add when a pair forms and nothing to remove when it breaks.
+  */
+  if (script?.soulbond !== undefined) {
+    const seq = next.autoSeq + 1;
+    next = {
+      ...next,
+      autoSeq: seq,
+      effects: [...next.effects, {
+        id: `fx${seq}`, source: id, controller, scope: { kind: 'pair' },
+        duration: 'permanent', createdTurn: next.turn,
+        ...modsFrom(script.soulbond.effect),
       }],
     };
   }

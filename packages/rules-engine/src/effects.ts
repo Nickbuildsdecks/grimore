@@ -1527,6 +1527,59 @@ export function transformPermanent(state: GameState, id: string): GameState {
 }
 
 /**
+ * Pairs two creatures for **soulbond** (CR 702.95a), writing the fact on both.
+ *
+ * Both, because a pair is symmetric and exclusive: either member's `pairedWith` has to be enough
+ * to find the other, or every reader needs to know which of the two carried the keyword. The
+ * static that grants the pair its bonus is `scope: 'pair'` on the soulbonded creature, and it
+ * reads `source.pairedWith` — so this one write is what turns the ability on.
+ *
+ * Refuses rather than overwrites when either card is already paired, is not on the battlefield, or
+ * is the same card as the other: "another **unpaired** creature you control" is the whole
+ * restriction, and a pairing made in spite of it would leave an orphaned half behind.
+ */
+export const pairCreatures = (state: GameState, a: string, b: string): GameState => {
+  const first = state.instances[a];
+  const second = state.instances[b];
+  if (a === b || first === undefined || second === undefined) return state;
+  if (first.zone !== 'battlefield' || second.zone !== 'battlefield') return state;
+  if (first.pairedWith !== undefined || second.pairedWith !== undefined) return state;
+  return withInstance(withInstance(state, a, { pairedWith: b }), b, { pairedWith: a });
+};
+
+/**
+ * Breaks every pair whose two members are no longer two creatures one player controls
+ * (CR 702.95b), as a state-based action.
+ *
+ * A pass over the board rather than a hook on each of the ways a pair can end, which is the same
+ * choice the rest of `stateBasedActions` makes and for the same reason: the list of ways is longer
+ * than it looks. A member can die, be exiled, be bounced, stop being a creature because an effect
+ * set its type, or change controller — and the last of those moves nothing and raises nothing, so
+ * a hook-based version would miss it in exactly the case the rules spell out.
+ *
+ * `relocate` also clears the field on a zone change, which is not a duplicate of this: it keeps a
+ * pointer into the graveyard from ever existing between the move and the next check.
+ */
+export const breakEndedPairs = (state: GameState): GameState => {
+  let next = state;
+  for (const [id, inst] of Object.entries(state.instances)) {
+    const other = inst.pairedWith;
+    if (other === undefined) continue;
+    const partner = next.instances[other];
+    const stillPaired = partner !== undefined
+      && partner.pairedWith === id
+      && inst.zone === 'battlefield' && partner.zone === 'battlefield'
+      && inst.zoneSeat === partner.zoneSeat
+      && characteristicsOf(next, inst).isCreature
+      && characteristicsOf(next, partner).isCreature;
+    if (stillPaired) continue;
+    next = withInstance(next, id, { pairedWith: undefined });
+    if (partner !== undefined) next = withInstance(next, other, { pairedWith: undefined });
+  }
+  return next;
+};
+
+/**
  * A clock that ran out, written down for the **log** rather than for `raise`.
  *
  * Called by the four things that spend a counter to nothing: vanishing, fading, suspend and Thing in

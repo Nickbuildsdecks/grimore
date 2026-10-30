@@ -60,6 +60,14 @@ export interface VisibleCard {
    * Journey to Nowhere is holding their creature cannot work out what killing it would give back.
    */
   readonly exiledBy?: string;
+  /**
+   * The creature this one is **paired** with, for soulbond (CR 702.95).
+   *
+   * Public, like the pair itself: both creatures are face up on a battlefield and the bonus they
+   * share is visible in their printed-versus-current sizes, so a player who could not see *which*
+   * two were paired would be reading a 3/3 Grizzly Bears with nothing on the table to explain it.
+   */
+  readonly pairedWith?: string;
   readonly isToken: boolean;
   readonly isCommander: boolean;
   readonly card?: CardDef;
@@ -299,6 +307,7 @@ export interface PackedCard {
   readonly counters?: Readonly<Record<string, number>>;
   readonly attachedTo?: string;
   readonly exiledBy?: string;
+  readonly pairedWith?: string;
   readonly damage?: number;
   readonly power?: number;
   readonly toughness?: number;
@@ -360,6 +369,7 @@ export function packView(view: GameView): PackedView {
     if (Object.keys(card.counters).length > 0) packed.counters = card.counters;
     if (card.attachedTo !== null) packed.attachedTo = card.attachedTo;
     if (card.exiledBy !== undefined) packed.exiledBy = card.exiledBy;
+    if (card.pairedWith !== undefined) packed.pairedWith = card.pairedWith;
     // The computed characteristics, which only a battlefield creature has at all. `damage` and the
     // two bodies travel as they are, zero included, because a zero is a fact about a creature.
     if (card.damage !== undefined) packed.damage = card.damage;
@@ -396,6 +406,7 @@ export function unpackView(packed: PackedView): GameView {
       counters: card.counters ?? {},
       attachedTo: card.attachedTo ?? null,
       ...(card.exiledBy === undefined ? {} : { exiledBy: card.exiledBy }),
+      ...(card.pairedWith === undefined ? {} : { pairedWith: card.pairedWith }),
       isToken: card.isToken === true,
       isCommander: card.isCommander === true,
       ...(def === undefined ? {} : { card: def }),
@@ -478,6 +489,7 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
     counters: inst.counters,
     attachedTo: inst.attachedTo,
     ...(inst.exiledBy === undefined ? {} : { exiledBy: inst.exiledBy }),
+    ...(inst.pairedWith === undefined ? {} : { pairedWith: inst.pairedWith }),
     isToken: inst.isToken,
     isCommander: inst.isCommander,
   };

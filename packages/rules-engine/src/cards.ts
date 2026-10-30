@@ -184,6 +184,27 @@ export interface CardInstance {
    */
   readonly exiledBy?: string;
   /**
+   * The other half of a **soulbond** pair (CR 702.95): the creature this one is paired with.
+   *
+   * The first link in this engine between two permanents that is not an attachment, and the two
+   * are different in every way that matters. An attachment is **one-directional** — the Aura knows
+   * its host, the host knows nothing — because one host can carry several Auras and each Aura has
+   * exactly one host. A pair is **symmetric and exclusive**: each member is paired with the other
+   * and with nothing else, so the fact is written on both and `pairedWith` on either one is enough
+   * to find the pair.
+   *
+   * Recorded here rather than in a register on `GameState`, for the reason `MYRIAD` gives: a fact
+   * about an instance is already per-permanent, already serialised to Redis and already visible on
+   * the card, and a list somewhere else is a list that can fall out of step with the battlefield.
+   * A pair breaks by state-based action the moment either member stops being a creature its
+   * controller controls, and that check is a pass over the board rather than a register to keep.
+   *
+   * Only ever set while **both** members are on the battlefield. `relocate` clears it, so a
+   * creature that dies and comes back is unpaired, which is what the rules say — it is a new
+   * object.
+   */
+  readonly pairedWith?: string;
+  /**
    * The turn this card was foretold, which is the only reason the engine has to remember it
    * (CR 702.143b: a foretold card cannot be cast on the turn it was foretold).
    *

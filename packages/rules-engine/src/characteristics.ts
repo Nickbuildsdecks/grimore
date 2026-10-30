@@ -197,6 +197,21 @@ export interface ContinuousEffect {
       }
     | { readonly kind: 'all-creatures' }
     /**
+     * **The two creatures of a soulbond pair**, read off the board rather than written down
+     * (CR 702.95a).
+     *
+     * The only scope here whose membership *changes* while the effect sits there, and that is the
+     * whole reason it is a scope rather than an `ids` list. Every other static is created as its
+     * permanent enters, with the cards it reaches fixed at that moment; a pair is made and broken
+     * by state-based action long after the Wolfir Silverheart arrived, and an `ids` list would
+     * have to be edited in step with it from three places that break pairs.
+     *
+     * So the effect is created once, with `duration: 'permanent'`, and asks `source.pairedWith`
+     * every time it is read. Unpaired, it reaches nobody at all — "as long as this creature is
+     * paired with another creature" is a condition that holds itself.
+     */
+    | { readonly kind: 'pair' }
+    /**
      * One player, rather than any permanent.
      *
      * The only scope here that names a seat, and the only one `characteristicsOf` can never match,
@@ -533,6 +548,18 @@ function effectApplies(
         && hasSubtype(typeLine, effect.scope.subtype);
     case 'all-creatures':
       return creature;
+    /*
+      A pair reaches its two members and nobody else, and the source has to still be there.
+
+      Read live, which is the point of the scope: unpaired, `pairedWith` is absent and this is
+      false for everything, so the static is off without anybody having removed it.
+    */
+    case 'pair': {
+      const source = state.instances[effect.source];
+      if (source === undefined || source.zone !== 'battlefield') return false;
+      if (source.pairedWith === undefined) return false;
+      return instance.id === effect.source || instance.id === source.pairedWith;
+    }
     // A seat scope is about the player, not their permanents: nothing on the battlefield is in it.
     case 'seat':
       return false;

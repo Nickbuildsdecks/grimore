@@ -1915,6 +1915,30 @@ export interface CardScript {
     readonly effect: PumpOptions;
   }[];
   /**
+   * **Soulbond** (CR 702.95): pair this creature with another unpaired creature you control as
+   * either of them enters, and while they are paired each of them gets what this says.
+   *
+   * Declared rather than written as a `statics` entry, although it ends up as one, because the
+   * scope is the thing that is new. Every other static reaches a set of cards fixed when the
+   * permanent arrived; this one reaches *the pair*, which is made and broken by state-based action
+   * afterwards — so it is created with `scope: 'pair'` and asks `pairedWith` every time it is read.
+   * See `ContinuousEffect`'s `pair` scope for why that is better than editing an `ids` list from
+   * the three places a pair can break.
+   *
+   * `effect` is in the `PumpOptions` vocabulary because every soulbond ever printed reads "each of
+   * those creatures gets +N/+N" or "each of those creatures has <keyword>" — the keyword's whole
+   * grammar is a continuous effect on two creatures, and a card that said anything else would be a
+   * different mechanic.
+   *
+   * **The pairing itself is two triggers on the card**, not something the engine does, and a card
+   * declaring `soulbond` must carry both — which `soulbondTriggers()` is for and which a test
+   * holds, the same arrangement `dash` and `dashReturn()` have. Two rather than one because the
+   * printed ability fires on either creature entering and the two cases ask the player different
+   * questions: when the soulbonded creature arrives there may be several unpaired creatures to
+   * choose between, and when somebody else arrives the only question is whether to pair with *it*.
+   */
+  readonly soulbond?: { readonly effect: PumpOptions };
+  /**
    * What this permanent does to the **cost of other people's spells** while it is on the
    * battlefield: a Goblin Electromancer, a Thalia, a Sphere of Resistance.
    *

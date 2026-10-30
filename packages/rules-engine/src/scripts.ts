@@ -33,7 +33,7 @@ import {
   becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, EVOKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer, FADE, TIME, enterAttacking,
-  transformPermanent, recordExpiry,
+  transformPermanent, recordExpiry, pairCreatures,
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
@@ -8152,6 +8152,125 @@ const FATE_UNRAVELER: CardScript = {
   ],
 };
 
+/**
+ * Soulbond's pairing ability, written out as the two triggers the keyword abbreviates (CR 702.95a).
+ *
+ * "You may pair this creature with another unpaired creature you control when either enters the
+ * battlefield" is one printed line and **two questions**, which is why it is two triggers rather
+ * than one with a branch in it:
+ *
+ *  - this creature arriving finds a board that may hold several unpaired creatures, so the question
+ *    is *which one* — a target, declinable, the way every printed "you may" in this engine is;
+ *  - somebody else arriving leaves only one candidate, the newcomer, so the question is *whether* —
+ *    a word, and `ChoiceDecisionSpec` is the shape for that.
+ *
+ * One trigger would have had to ask the harder question in both cases, and a prompt offering a
+ * choice of one is noise the engine already refuses to generate elsewhere.
+ *
+ * A card declaring `soulbond` must carry both, which a test holds — the same arrangement `dash` has
+ * with `dashReturn()`. Nothing here is the engine's: `pairCreatures` writes the pair, and the bonus
+ * is a `scope: 'pair'` static that `applyStatics` adds as the creature enters.
+ */
+const PAIR_THEM = 'Pair them';
+
+const unpairedFriends = (
+  state: GameState, source: string, controller: SeatIndex,
+): readonly string[] => creaturesControlledBy(state, controller)
+  .filter((id) => id !== source && state.instances[id]?.pairedWith === undefined);
+
+const soulbondTriggers = (): readonly TriggerDef[] => [
+  {
+    on: { kind: 'etb' },
+    description: 'pair it with another unpaired creature you control',
+    // Asked only when there is something to ask about. An unpaired creature arriving next to a
+    // board of already-paired creatures has no legal pairing, and a prompt with nothing in it is
+    // worse than no prompt.
+    condition: (c) => c.state.instances[c.source]?.pairedWith === undefined
+      && unpairedFriends(c.state, c.source, c.controller).length > 0,
+    targets: [{
+      kind: 'creature',
+      description: 'another unpaired creature you control',
+      optional: true,
+      // Its own side, and the pairing is a gift: without this the bot's default aim is the enemy
+      // board, where `pairCreatures` would refuse every candidate. See `TargetSpec.friendly`.
+      friendly: true,
+      filter: (state, candidate, controller, source) => candidate.kind === 'card'
+        && candidate.id !== source
+        && creatureYouControl(state, candidate, controller)
+        && state.instances[candidate.id]?.pairedWith === undefined,
+    }],
+    effect: (c) => {
+      const partner = firstCardTarget(c);
+      return partner === null ? c.state : pairCreatures(c.state, c.source, partner);
+    },
+  },
+  {
+    on: { kind: 'etb', who: 'another', of: 'you', what: 'creature' },
+    description: 'pair it with the creature that entered',
+    /*
+      Both halves unpaired, checked as the ability resolves rather than when it was put on the
+      stack, which is what an intervening-if clause means (CR 603.4) and what makes two creatures
+      entering at once behave: the first pairing takes, and the second ability finds its own source
+      already paired and does nothing.
+    */
+    condition: (c) => c.subject !== undefined
+      && c.state.instances[c.source]?.pairedWith === undefined
+      && c.state.instances[c.subject]?.pairedWith === undefined,
+    decisions: [{
+      who: 'controller',
+      prompt: 'Pair them?',
+      options: [PAIR_THEM, 'Leave them unpaired'],
+      /*
+        The bot pairs, always, and this is a fact about the pool rather than a weight. Every
+        soulbond printed here gives the pair +N/+N, which costs nothing and can only be lost by the
+        creature leaving anyway — so there is no board a player would read and decline on. A card
+        whose soulbond bonus had a downside would want its own answer here, and would be a different
+        card.
+      */
+      best: () => PAIR_THEM,
+    }],
+    effect: (c) => {
+      if (c.subject === undefined || chosenOption(c) !== PAIR_THEM) return c.state;
+      return pairCreatures(c.state, c.source, c.subject);
+    },
+  },
+];
+
+/**
+ * Wolfir Silverheart: six mana for a 4/4, and an 8/8 standing next to another 8/8.
+ *
+ * The card soulbond was printed around, and the reason the mechanic is worth an engine rather than
+ * a keyword: +4/+4 **twice** is eight points of board for six mana, and all of it is rented. Kill
+ * either creature and the other shrinks by four in the same instant — so the removal spell an
+ * opponent has been holding is suddenly worth two cards, and the player who paired has to decide
+ * which of the two they can least afford to lose.
+ *
+ * It is also the pool's first bonus that **moves**: when the pair breaks, this creature may pair
+ * again with the next creature to arrive, so the same card can carry a different board later.
+ * Nothing else in this pool does that; an Aura and an Equipment both have to be moved by hand or
+ * not at all.
+ */
+const WOLFIR_SILVERHEART: CardScript = {
+  name: 'Wolfir Silverheart',
+  soulbond: { effect: { power: 4, toughness: 4 } },
+  triggers: [...soulbondTriggers()],
+};
+
+/**
+ * Trusted Forcemage: the same mechanic at three mana, where the pair is the point rather than the
+ * payoff.
+ *
+ * Second card for soulbond (D239's rule: a mechanic on one card is a mechanic one deck change can
+ * delete), and deliberately the cheap one. A 2/2 for three that makes a 3/3 and is a 3/3 is a fair
+ * body on an empty board and a good one on a board that already has something, which is the choice
+ * soulbond is actually about — whether to hold the creature a turn for a better partner.
+ */
+const TRUSTED_FORCEMAGE: CardScript = {
+  name: 'Trusted Forcemage',
+  soulbond: { effect: { power: 1, toughness: 1 } },
+  triggers: [...soulbondTriggers()],
+};
+
 const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
@@ -8281,6 +8400,7 @@ const ALL: readonly CardScript[] = [
   SUDDEN_SHOCK, KROSAN_GRIP,
   NINJA_OF_THE_DEEP_HOURS,
   ARCBOUND_WORKER, ARCBOUND_RAVAGER, ICHOR_WELLSPRING,
+  WOLFIR_SILVERHEART, TRUSTED_FORCEMAGE,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

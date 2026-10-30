@@ -403,6 +403,45 @@ const SIEGE_WURM: CardDef = {
 };
 
 /*
+  Soulbond: two cards, both green, both in the deck that makes creatures (CR 702.95).
+
+  The mechanic is a **pair**, so it is worth nothing in a deck that plays one creature at a time
+  and everything in a deck that plays four — which is Verdant Guard and nowhere else in this pool.
+  The two differ by where the pair sits on the curve: the Forcemage is cast *into* a board and the
+  Silverheart is cast to win with one, and a deck that wants both is the deck both belong in.
+
+  Note what the printed text does not say: there is no "if" and no cost. The pairing is free and
+  the bonus is a static, which is why the whole mechanic is one script field and two triggers —
+  see `CardScript.soulbond`.
+*/
+const SOULBOND_REMINDER = 'Soulbond (You may pair this creature with another unpaired creature '
+  + 'when either enters the battlefield. They remain paired for as long as you control both of them.)';
+
+const TRUSTED_FORCEMAGE: CardDef = {
+  name: 'Trusted Forcemage',
+  typeLine: 'Creature — Human Shaman',
+  manaCost: '{1}{G}{G}',
+  cmc: 3,
+  power: '2',
+  toughness: '2',
+  oracleText: `${SOULBOND_REMINDER}\nAs long as Trusted Forcemage is paired with another creature, `
+    + 'each of those creatures gets +1/+1.',
+  colors: ['G'],
+};
+
+const WOLFIR_SILVERHEART: CardDef = {
+  name: 'Wolfir Silverheart',
+  typeLine: 'Creature — Werewolf',
+  manaCost: '{4}{G}{G}',
+  cmc: 6,
+  power: '4',
+  toughness: '4',
+  oracleText: `${SOULBOND_REMINDER}\nAs long as Wolfir Silverheart is paired with another creature, `
+    + 'each of those creatures gets +4/+4.',
+  colors: ['G'],
+};
+
+/*
   Morph: three cards, one per half of what the mechanic is for (CR 702.37).
 
   All three are cast the same way — {3}, face down, a 2/2 with no name — and what separates them is
@@ -3577,8 +3616,17 @@ export const VERDANT_GUARD: DeckSpec = {
     { card: GLORIOUS_ANTHEM, count: 1 },
     { card: CENTAUR_COURSER, count: 1 },
     { card: AJANIS_PRIDEMATE, count: 1 },
-    // A blocker that arrives after the attack is declared, and a body that replaces itself.
-    { card: AMBUSH_VIPER, count: 1 },
+    /*
+      **Trusted Forcemage for the Ambush Viper**, and the pool's first soulbond card.
+
+      Three mana for a 2/2 that makes a 3/3 and is a 3/3 is four points of board in a deck that
+      already has bodies to pair with, which is the whole question the mechanic asks — and the
+      answer is only ever yes in this list. The slot is the **Ambush Viper**, a {1}{G} 2/2 with
+      flash and deathtouch that is still in the pool at Kindle Grove, so the card and its script
+      keep a home: this deck's version of that role is the Giant Spider below it, which blocks the
+      thing a green deck is actually short of.
+    */
+    { card: TRUSTED_FORCEMAGE, count: 1 },
     { card: ELVISH_VISIONARY, count: 1 },
     // A 2/4 that stops a flier without being one, which is the one thing a green deck is short of.
     { card: GIANT_SPIDER, count: 1 },
@@ -3692,7 +3740,20 @@ export const VERDANT_GUARD: DeckSpec = {
       is still in it, so the mechanic, the script and the turn it is for are all still here.
     */
     { card: BOON_SATYR, count: 1 },
-    { card: SECURE_THE_WASTES, count: 1 },
+    /*
+      **Wolfir Silverheart for the Secure the Wastes**, and soulbond's other half.
+
+      Six mana for eight points of board across two creatures, every one of them rented: kill
+      either half and the other shrinks by four in the same instant, which is a real cost and the
+      reason the card is fair. It is the deck's second six-drop beside the Siege Wurm, and it is
+      the better one on a board that already has something to pair with — which, in the deck whose
+      plan is a wide board, is most boards it lands on.
+
+      The slot is the deck's **second** X spell by the same rule the Boon Satyr above it followed:
+      Secure the Wastes is still in the pool at Forge Alliance, so the card, the script and the
+      instant-speed X cost all keep a home.
+    */
+    { card: WOLFIR_SILVERHEART, count: 1 },
     /*
       Nissa, Voice of Zendikar for the second Rampant Growth, and this deck's second planeswalker.
 

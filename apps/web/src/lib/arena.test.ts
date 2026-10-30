@@ -1741,6 +1741,27 @@ describe("cardBadges", () => {
     expect(cardBadges(v, host)).toContain("Pacifism")
   })
 
+  it("names the creature a soulbond pair is paired with, on both halves", () => {
+    /*
+      The badge is on screen to explain a body nothing else accounts for: a Grizzly Bears next to a
+      Wolfir Silverheart reads 6/6, and only the link says why. Both halves carry it, because the
+      pair is symmetric and either card is the one a player happens to tap.
+    */
+    const wolfir = permanent({
+      id: "wolfir", pairedWith: "bears", power: 8, toughness: 8,
+      card: { name: "Wolfir Silverheart", typeLine: "Creature — Werewolf", manaCost: "{4}{G}{G}", cmc: 6, oracleText: "", colors: ["G"] },
+    })
+    const bears = permanent({ id: "bears", pairedWith: "wolfir", power: 6, toughness: 6 })
+    const v = view({
+      automation: automation(),
+      cards: { wolfir, bears } as unknown as GameView["cards"],
+    })
+    expect(cardBadges(v, wolfir)).toContain("paired with Grizzly Bears")
+    expect(cardBadges(v, bears)).toContain("paired with Wolfir Silverheart")
+    // And an unpaired creature says nothing about a pair at all.
+    expect(cardBadges(v, permanent({ id: "lone" })).some((b) => b.startsWith("paired"))).toBe(false)
+  })
+
   it("says nothing about a card that is not on the battlefield", () => {
     const v = view({ automation: automation() })
     expect(cardBadges(v, permanent({ zone: "hand" }))).toEqual([])

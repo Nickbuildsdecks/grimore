@@ -23,7 +23,7 @@ import {
   parseTypeLine,
   packView, parseManaCost, pendingDeclaration, printedKeywords, proliferate,
   proliferateCandidates, protectedFrom,
-  pump, pumpAll, pumpTeam, scriptFor,
+  pump, pumpAll, pumpTeam, gainControl, scriptFor,
   scriptedCardNames,
   staticEffect, timesCost, transformPermanent, unpackView, viewFor,
   type ContinuousEffect,
@@ -2749,13 +2749,16 @@ describe('spells with {X} in the cost, chosen as the spell is cast', () => {
       Five Plains for two casts: X=3 spends four of them and the fifth pays the {W} of the second,
       which is the one being asked about — nothing is created for X=0.
 
-      **One copy, cast twice**, put back into hand between by hand. The deck holds a single Secure
-      the Wastes since the Boon Satyr took the second slot, and what this test is about is X rather
-      than the card: the same card cast for a different X is exactly the comparison, and a tabletop
-      move between the two is the cheapest way to make it.
+      **One copy, cast twice**, put back into hand between by hand. What this test is about is X
+      rather than the card: the same card cast for a different X is exactly the comparison, and a
+      tabletop move between the two is the cheapest way to make it.
+
+      Out of **Forge Alliance**, which is where the pool's remaining copy lives: Verdant Guard gave
+      its second Secure the Wastes to the Boon Satyr and its last one to the Wolfir Silverheart, so
+      the card, the script and the instant-speed X cost are all still here and all in one deck.
     */
     let s = withMana(1, ['Secure the Wastes'],
-      ['Plains', 'Plains', 'Plains', 'Plains', 'Plains']);
+      ['Plains', 'Plains', 'Plains', 'Plains', 'Plains'], [], 'forge-alliance');
     const wastes = find(s, 1, 'hand', 'Secure the Wastes');
     s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: wastes, x: 3 }));
     expect(countOf(s, 1, 'battlefield', 'Warrior')).toBe(3);
@@ -2953,7 +2956,9 @@ describe('eight that needed nothing new', () => {
 
   it('Ambush Viper can be cast on their turn, and kills what it blocks', () => {
     let s = arena({
-      decks: { 1: 'verdant-guard' }, hands: { 1: ['Ambush Viper'] },
+      // Kindle Grove, which is the pool's remaining home for the card: Verdant Guard's copy was
+      // the slot the Trusted Forcemage took.
+      decks: { 1: 'kindle-grove' }, hands: { 1: ['Ambush Viper'] },
       battlefield: { 1: ['Forest', 'Forest'], 0: ['Hill Giant'] },
       turn: 4, firstSeat: 0,
     });
@@ -19457,5 +19462,156 @@ describe('a creature that cannot be kept attacks anyway', () => {
     // The parse, asserted before anything is compared against it: an empty pair would agree.
     expect(unique(sacrificesAtEnd)).toEqual(['Ball Lightning', 'Hellspark Elemental']);
     expect(unique(declares)).toEqual(unique(sacrificesAtEnd));
+  });
+});
+
+describe('soulbond: the first link between two permanents that is not an attachment', () => {
+  /*
+    Pairing (CR 702.95). Everything else in this engine that joins two permanents is an
+    *attachment*: one-directional, because one host can carry several Auras. A pair is symmetric and
+    exclusive, it breaks by state-based action rather than by anything moving, and the bonus it
+    carries reaches both halves at once.
+
+    The tests are the four things that make it a mechanic rather than a static: it pairs on this
+    creature's arrival, it pairs on somebody else's, it can be declined, and it **breaks** — which
+    is the half a player feels, because the survivor shrinks in the same instant.
+  */
+  const board = (hand: readonly string[], mine: readonly string[] = []): GameState =>
+    withMana(0, hand, [...Array.from({ length: 8 }, () => 'Forest'), 'Plains'], mine, 'verdant-guard');
+
+  /** Answers the pairing prompt with a named creature, or declines when `null`. */
+  const answer = (s: GameState, name: string | null): GameState => {
+    expect(s.pendingChoice?.seat).toBe(0);
+    return passBoth(apply(s, {
+      type: 'auto:choose', by: 0,
+      targets: name === null ? [] : [{ kind: 'card' as const, id: find(s, 0, 'battlefield', name) }],
+    }));
+  };
+
+  /** Answers the other trigger, whose question is a word rather than a target. */
+  const sayYes = (start: GameState): GameState => {
+    // The trigger goes on the stack as the newcomer resolves, so the question is one pass further
+    // on than the creature spell was.
+    const s = drain(start, 20);
+    expect(s.pendingDecision?.options).toEqual(['Pair them', 'Leave them unpaired']);
+    return drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Pair them' }), 20);
+  };
+
+  it('pairs on arrival, and both halves get the bonus', () => {
+    let s = board(['Trusted Forcemage'], ['Grizzly Bears']);
+    s = answer(cast(s, 0, 'Trusted Forcemage'), 'Grizzly Bears');
+    const mage = find(s, 0, 'battlefield', 'Trusted Forcemage');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    // Written on both, which is what makes either one enough to find the pair.
+    expect(s.instances[mage]!.pairedWith).toBe(bears);
+    expect(s.instances[bears]!.pairedWith).toBe(mage);
+    // A 2/2 and a 2/2 are a 3/3 and a 3/3: the static reaches the pair, not the source.
+    expect([power(s, mage), toughness(s, mage)]).toEqual([3, 3]);
+    expect([power(s, bears), toughness(s, bears)]).toEqual([3, 3]);
+  });
+
+  it('and can be declined, because the printed word is "may"', () => {
+    let s = board(['Trusted Forcemage'], ['Grizzly Bears']);
+    s = answer(cast(s, 0, 'Trusted Forcemage'), null);
+    const mage = find(s, 0, 'battlefield', 'Trusted Forcemage');
+    expect(s.instances[mage]!.pairedWith).toBeUndefined();
+    expect(power(s, mage)).toBe(2);
+    expect(power(s, find(s, 0, 'battlefield', 'Grizzly Bears'))).toBe(2);
+  });
+
+  it('pairs with a creature that arrives later, which is the second half of the ability', () => {
+    /*
+      The trigger nothing else in this pool has: "or another creature enters". It fires on the
+      newcomer rather than on the source, so the only question is whether to pair — a word rather
+      than a target, which is why there are two triggers and not one.
+    */
+    let s = board(['Trusted Forcemage', 'Grizzly Bears']);
+    // Nothing to pair with yet, so the first trigger's condition fails and nothing is asked.
+    s = cast(s, 0, 'Trusted Forcemage');
+    expect(s.pendingChoice).toBeNull();
+    const mage = find(s, 0, 'battlefield', 'Trusted Forcemage');
+    expect(s.instances[mage]!.pairedWith).toBeUndefined();
+
+    s = sayYes(cast(s, 0, 'Grizzly Bears'));
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect(s.instances[mage]!.pairedWith).toBe(bears);
+    expect(power(s, mage)).toBe(3);
+    expect(power(s, bears)).toBe(3);
+  });
+
+  it('breaks when half of it dies, and the survivor shrinks in the same instant', () => {
+    /*
+      The whole cost of the mechanic, and the reason a six-mana 4/4 that makes eight points of
+      board is a fair card: the removal spell an opponent was holding is worth two cards now, and
+      the player who paired had to decide which half they could least afford to lose.
+    */
+    let s = board(['Wolfir Silverheart'], ['Grizzly Bears']);
+    s = answer(cast(s, 0, 'Wolfir Silverheart'), 'Grizzly Bears');
+    const wolfir = find(s, 0, 'battlefield', 'Wolfir Silverheart');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect([power(s, wolfir), power(s, bears)]).toEqual([8, 6]);
+
+    s = drain(destroy(s, bears), 20);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Grizzly Bears');
+    // Four points of the Wolfir went with it, and nothing is left pointing at a card in a graveyard.
+    expect(s.instances[wolfir]!.pairedWith).toBeUndefined();
+    expect([power(s, wolfir), toughness(s, wolfir)]).toEqual([4, 4]);
+  });
+
+  it('breaks on a change of control, which moves nothing and raises nothing', () => {
+    /*
+      The case that makes the break a **state-based action** rather than a hook. "They remain
+      paired for as long as you control both of them" (CR 702.95b) is not about zones: Act of
+      Treason leaves both creatures on the battlefield and both alive, and the pair still ends.
+      Nothing is raised for a pass over the board to have missed, which is why there is one.
+    */
+    let s = board(['Wolfir Silverheart'], ['Grizzly Bears']);
+    s = answer(cast(s, 0, 'Wolfir Silverheart'), 'Grizzly Bears');
+    const wolfir = find(s, 0, 'battlefield', 'Wolfir Silverheart');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect(power(s, bears)).toBe(6);
+
+    s = drain(gainControl(s, bears, 1), 20);
+    expect(s.instances[wolfir]!.pairedWith).toBeUndefined();
+    expect(s.instances[bears]!.pairedWith).toBeUndefined();
+    expect(power(s, wolfir)).toBe(4);
+    expect(power(s, bears)).toBe(2);
+  });
+
+  it('will not pair with a creature that is already paired', () => {
+    /*
+      "Another **unpaired** creature you control" is the whole restriction, and it is enforced in
+      `pairCreatures` as well as in the target filter — a pairing made in spite of it would leave
+      an orphaned half behind, pointing at a creature that points somewhere else.
+    */
+    let s = board(['Trusted Forcemage', 'Wolfir Silverheart'], ['Grizzly Bears']);
+    s = answer(cast(s, 0, 'Trusted Forcemage'), 'Grizzly Bears');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const mage = find(s, 0, 'battlefield', 'Trusted Forcemage');
+
+    // The Wolfir arrives to a board whose only other creatures are both spoken for, so there is
+    // nothing legal to point at and the table never stops to ask.
+    s = cast(s, 0, 'Wolfir Silverheart');
+    expect(s.pendingChoice).toBeNull();
+    const wolfir = find(s, 0, 'battlefield', 'Wolfir Silverheart');
+    expect(s.instances[wolfir]!.pairedWith).toBeUndefined();
+    expect(s.instances[bears]!.pairedWith).toBe(mage);
+    expect(power(s, wolfir)).toBe(4);
+  });
+
+  it('and every card declaring soulbond carries both of the pairing triggers', () => {
+    /*
+      The flag is the bonus and the triggers are the pairing, and a card with one and not the other
+      is a card that does less than it reads — the same arrangement `dash` has with `dashReturn()`,
+      and held the same way. Derived from the scripts rather than listed here, so the next soulbond
+      card is covered the day it is written.
+    */
+    const declared = scriptedCardNames().filter((name) => scriptFor(name)?.soulbond !== undefined);
+    expect(declared).toEqual(['Trusted Forcemage', 'Wolfir Silverheart']);
+    for (const name of declared) {
+      const triggers = scriptFor(name)?.triggers ?? [];
+      const etb = triggers.filter((t) => t.on.kind === 'etb');
+      expect(etb.map((t) => t.on.kind === 'etb' ? (t.on.who ?? 'self') : '')).toEqual(['self', 'another']);
+    }
   });
 });
