@@ -125,6 +125,45 @@ const note = (mechanic, card) => {
 };
 
 /*
+  And the cards that put a keyword on the board from **inside an effect**, which is the blind spot
+  this file shipped with and the one that made its first published number wrong.
+
+  A keyword on a card is readable three ways — printed in the text, declared in `script.keywords`,
+  granted by an `equipBonus` — and all three are data. The fourth way is a `pump(..., { keywords:
+  ['hexproof'] })` inside an `onResolve`, which is a **closure**: there is no property to read, so
+  the first run counted hexproof at one card (Sigarda) when Blossoming Defense and Dive Down both
+  grant it. "Rests on one card" was published about a keyword three cards put into play.
+
+  The only thing available about a closure is its source, so that is what this reads. Which makes
+  it a **reader's signal rather than a count**, for a reason worth stating: a function that mentions
+  `'hexproof'` might be granting it or might be checking for it — a removal spell filtering for
+  creatures it can legally target mentions the same string. So these are tallied and printed
+  separately, never silently added to the data count, and the thin filter uses the **sum** because
+  the question this file answers is "could cutting one card take this mechanic out of the pool",
+  and for that an over-count is the safe direction.
+
+  Same posture as `card-promises.mjs`: a reader's instrument with its false positives declared,
+  because narrowing until the output is clean is narrowing until it finds nothing.
+*/
+const viaEffect = new Map();
+const noteEffect = (mechanic, card) => {
+  const found = viaEffect.get(mechanic) ?? new Set();
+  found.add(card);
+  viaEffect.set(mechanic, found);
+};
+
+/** Every function reachable in a script, as source, which is all a closure will say about itself. */
+const effectSource = (value, depth = 0) => {
+  if (depth > 4 || value === null || value === undefined) return '';
+  if (typeof value === 'function') return value.toString();
+  if (Array.isArray(value)) return value.map((v) => effectSource(v, depth + 1)).join('\n');
+  if (typeof value === 'object') {
+    return Object.values(value).map((v) => effectSource(v, depth + 1)).join('\n');
+  }
+  return '';
+};
+
+/*
   Every castable face as well as every card, because a mechanic lives on the half that has it: the
   adventure on an adventurer, the spell on a modal double-faced card, each half of a split. The
   same walk `deck coverage` does, for the same reason.
@@ -171,6 +210,16 @@ for (const [name, card] of everyCard()) {
   for (const keyword of printedKeywords(card.oracleText ?? '')) note(`keyword ${keyword}`, name);
   for (const keyword of script?.keywords ?? []) note(`keyword ${keyword}`, name);
   for (const granted of script?.equipBonus?.keywords ?? []) note(`keyword ${granted}`, name);
+
+  // The fourth route: a keyword handed out while something resolves. See `viaEffect`.
+  if (script !== undefined) {
+    const source = effectSource(script);
+    for (const keyword of KEYWORDS) {
+      if (source.includes(`'${keyword}'`) || source.includes(`"${keyword}"`)) {
+        noteEffect(`keyword ${keyword}`, name);
+      }
+    }
+  }
 }
 
 /*
@@ -191,15 +240,22 @@ if (SCRIPT_FIELDS.length === 0 || TRIGGER_KINDS.length === 0) {
 }
 
 const rows = [...new Set([...declared, ...carriers.keys()])]
-  .map((mechanic) => ({
-    mechanic,
-    cards: [...(carriers.get(mechanic) ?? [])].sort(),
-    declaredOnly: !carriers.has(mechanic),
-  }))
-  .sort((a, b) => a.cards.length - b.cards.length || a.mechanic.localeCompare(b.mechanic));
+  .map((mechanic) => {
+    const cards = [...(carriers.get(mechanic) ?? [])].sort();
+    // Only the ones the data does not already have: a card counted twice is not a second card.
+    const granted = [...(viaEffect.get(mechanic) ?? [])].filter((c) => !cards.includes(c)).sort();
+    return {
+      mechanic,
+      cards,
+      granted,
+      reach: cards.length + granted.length,
+      declaredOnly: !carriers.has(mechanic) && !viaEffect.has(mechanic),
+    };
+  })
+  .sort((a, b) => a.reach - b.reach || a.mechanic.localeCompare(b.mechanic));
 
 const THIN = 2;
-const shown = ALL ? rows : rows.filter((r) => r.cards.length < THIN);
+const shown = ALL ? rows : rows.filter((r) => r.reach < THIN);
 
 console.log(`${declared.length} mechanics declared in the engine, ${rows.length} counted`);
 console.log(`${SCRIPT_FIELDS.length} CardScript fields read, ${TRIGGER_KINDS.length} trigger kinds, `
@@ -211,9 +267,12 @@ console.log('');
 
 for (const row of shown) {
   const why = EXPECTED_THIN.get(row.mechanic);
-  const count = String(row.cards.length).padStart(3);
+  const count = String(row.reach).padStart(3);
   console.log(`${count}  ${row.mechanic}${why === undefined ? '' : '   (expected)'}`);
-  if (row.cards.length > 0 && row.cards.length <= 4) console.log(`       ${row.cards.join(', ')}`);
+  if (row.cards.length > 0 && row.cards.length <= 5) console.log(`       ${row.cards.join(', ')}`);
+  if (row.granted.length > 0 && row.granted.length <= 5) {
+    console.log(`       + in an effect: ${row.granted.join(', ')}`);
+  }
   if (why !== undefined) console.log(`       ${why}`);
 }
 
@@ -222,7 +281,7 @@ for (const row of shown) {
   A run whose last line is zero is a pool where every fragile mechanic is fragile on purpose, and
   that is the state worth being able to get back to.
 */
-const unexplained = rows.filter((r) => r.cards.length < THIN && !EXPECTED_THIN.has(r.mechanic));
+const unexplained = rows.filter((r) => r.reach < THIN && !EXPECTED_THIN.has(r.mechanic));
 console.log('');
 console.log(`${unexplained.length} thin and unexplained, ${rows.filter((r) => r.declaredOnly).length} `
   + 'declared with no card at all');

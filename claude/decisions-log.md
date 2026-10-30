@@ -14649,3 +14649,31 @@ D237's lesson applies directly: the instrument comes first, and "these are fine"
 outcome for most of this list, because a keyword mechanic with one card is the pool's whole use of
 that keyword rather than a gap. Hexproof and indestructible are the two where the thinness is about
 *rules coverage* rather than about pool design, and those are filed.
+
+### Forward note, written an hour later: the hexproof number above is wrong
+
+Starting #224 — the second card for the two thin rows — meant reading the pool, and the pool said
+hexproof already has four cards. **Sigarda has it printed; Blossoming Defense, Dive Down and
+Bristling Hydra all hand it out while they resolve.** "Hexproof rests on one card" was wrong by a
+factor of four, and it is published above and in a commit message.
+
+The cause is a blind spot in the instrument rather than a typo. A keyword is readable three ways —
+printed in the text, declared in `script.keywords`, granted by an `equipBonus` — and all three are
+*data*. The fourth way is `pump(..., { keywords: ['hexproof'] })` inside an `onResolve`, which is a
+**closure**: there is no property to read, so the count simply could not see it.
+
+Fixed by reading what a closure will say about itself, which is its source. That makes it a
+**reader's signal and not a count** — a function mentioning `'hexproof'` may be granting it or
+checking for it — so effect grants are tallied and printed in their own column, never silently
+added, and the thin filter uses the sum because for "could one cut take this out of the pool" an
+over-count is the safe direction. Same posture as `card-promises.mjs`, declared false positives and
+all.
+
+What survives: **indestructible is genuinely on one card.** Darksteel Plate, and nothing grants it
+in an effect either, which makes it the thinnest real mechanic in the pool and the one row of the
+nineteen that is about rules coverage rather than pool design. #224 is now about that alone.
+
+And the route to this one is worth noting because it is not the one the last four took. It did not
+come from a number that could not be true — it came from **starting the follow-up work the finding
+asked for**, and reading the pool properly in order to do it. The instrument was wrong in a
+direction that made the pool look worse than it is, which is the direction that gets acted on.

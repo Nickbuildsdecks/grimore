@@ -6779,11 +6779,19 @@ a card in a deck to exist — has been kept without exception. It is a test now 
 convention, with a standing control, because a negative result nobody re-runs stops being true
 quietly.
 
-**Nineteen rest on exactly one card.** Hexproof (Sigarda) and indestructible (Darksteel Plate) are
-the two worth a second, because both are evergreen with a large rules surface and each is one cut
-from being untested by any game the pool can play. The other seventeen are keyword mechanics whose
-single card *is* the pool's whole use of them, which is a cheaper kind of thin. Writing those cards
-is a separate call and is not made on this evidence.
+**Eighteen rest on exactly one card**, and **indestructible is the one that matters**: Darksteel
+Plate, with nothing granting it in an effect either, which makes it the thinnest real mechanic in
+the pool and the only row of the eighteen about *rules coverage* rather than pool design. The rest
+are keyword mechanics whose single card *is* the pool's whole use of them, which is a cheaper kind
+of thin, and writing cards for those is not work this evidence asks for.
+
+That count says eighteen and not nineteen because the first run of the instrument **undercounted
+hexproof by a factor of four** and this section said so. A keyword is readable three ways that are
+data — printed, `script.keywords`, `equipBonus` — and a fourth that is not: granted inside an
+`onResolve`, which is a closure with no property to read. Sigarda has hexproof printed; Blossoming
+Defense, Dive Down and Bristling Hydra all hand it out. The instrument now reads the closure's own
+source and prints effect grants in their own column as a reader's signal rather than a count, since
+a function mentioning a keyword may be checking for it rather than granting it.
 
 And the run falsified a sentence rather than a number: the docs said in five places that
 `becomes-tapped` is the engine's card-less trigger, and the #221 write-up above used it as the
