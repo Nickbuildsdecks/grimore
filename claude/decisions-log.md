@@ -17552,3 +17552,75 @@ a pod containing a card none of those tables seated, or about the browser pod, o
 person is sitting at making different choices than a bot would. The audit is as wide as its
 pairings, which is the shape D267 named — a check whose premise is wider than its fixture — and the
 honest version of this entry is the narrow one.
+
+## D273 — What the castable term costs in time, and the weight sweep that says the number barely matters
+
+Two loose ends from D271, both closed, and the second one is the more interesting.
+
+### The time, which shipping the term did not measure
+
+`castableInHand` calls `canAfford` once per non-land card in hand, and `canAfford` runs the mana
+solver. While the term shipped at zero a short-circuit skipped all of it — #253's commit called that
+a correctness requirement rather than a saving, since an arm computing a term it multiplies by
+nothing makes two arms of a cost measurement play identical games at different speeds, the error
+D264 withdrew a figure for. Flipping the default to 1 turns the short-circuit off, so the solver now
+runs at every search leaf in every game, with a person waiting on the bot. **That cost was never
+measured, and shipping without measuring it was the gap.**
+
+`pod-pace` gained an arm to measure it, and the shape of the measurement is most of the work. The
+tempting version — run the file twice, once per setting, compare the two ms/move — compares two
+different *sets of games*: the moment the arms disagree about a move the positions diverge, and a
+term that makes the bot play longer games reads as one that is slower per decision, or hides being
+one. So the stock bot drives and **both arms are timed on the same position**, which makes it an
+ablation with no sampling argument to make. The call order alternates by move, because the first of
+two calls on one position pays for whatever the second then finds warm.
+
+| | per decision, shipping | ablated | the term |
+| --- | --- | --- | --- |
+| 4 seats, 731 moves | 5.51 ms | 5.43 ms | **+0.08** |
+| 4 seats, 287 moves | 9.32 ms | 9.41 ms | **−0.09** |
+| 4 seats, 192 moves | 7.07 ms | 6.92 ms | **+0.15** |
+| 2 seats, 105 moves | 2.24 ms | 2.08 ms | +0.16 |
+| 2 seats, 159 moves | 1.91 ms | 1.99 ms | −0.08 |
+| 2 seats, 376 moves | 1.18 ms | 1.12 ms | +0.06 |
+| 2 seats, 129 moves | 3.61 ms | 3.29 ms | +0.32 |
+
+**Two of the seven readings are negative, and a cost cannot be negative** — which is the tell that
+the instrument's noise is wider than the effect. The mean is about +0.09 ms per decision against a
+1.2–9.4 ms baseline, so the honest statement is *below the noise floor at seven games*, bounded well
+under a tenth of a millisecond, and incapable of mattering to somebody at a table. Not "zero".
+
+Corroborated from the other direction by the whole-game pace, which is a weaker claim and worth
+having anyway. D268's baseline on these seeds, measured before the term shipped: **8.4 / 11.3 / 9.6
+ms/move**. Now: **7.0 / 11.3 / 9.5**. No slowdown. Weaker because the move counts moved too
+(653/255/185 → 731/287/192) — the term changes the bot's decisions, so those are different games,
+which is exactly the divergence the ablation above exists to avoid.
+
+**And a footgun fixed on the way, because it nearly produced a false finding here.** With the arm
+set, every move pays for *two* searches, so the `ms/move` on that line runs about 1.7× a plain
+run's — 13.0 where the plain run reads 7.0. Compared against the README's published pace that is a
+60% regression that does not exist, and I read it as one for a minute before the arithmetic
+(`%` in botAction dropped from 72% to 42%, which is the second call) explained it. The line now says
+`[both arms timed: NOT a pace, see below]` and the docblock says it first.
+
+### The weight sweep, and what it actually found
+
+D271 shipped `castable` at 1 and recorded that 0.5 and 2 were unmeasured. Both, against the shipping
+1, three disjoint seed sets each, 936 paired games apiece:
+
+| arm vs the shipping 1 | 3300 | 4100 | 5200 | |
+| --- | --- | --- | --- | --- |
+| `castable: 0.5` | −2 | +6 | −11 | signs disagree |
+| `castable: 2` | +13 | +4 | −7 | signs disagree |
+
+Under D258 disagreeing signs mean **not measured**, so neither is distinguishable from 1. The
+caveat at the constant can be sharpened from *other weights are unmeasured* to **other weights are
+measured and indistinguishable**: across a fourfold range the number does not matter.
+
+That is D243's lesson arriving a second time, on the term that was supposed to be the exception. D243
+closed the retune-a-weight avenue on cards-in-hand — a fivefold cut moved 936 games by one — and the
+new term's whole argument was that the *shape* was wrong rather than the weight. Its own weight then
+turns out to be just as flat. **Two terms, same conclusion: this evaluation is insensitive to its
+weights and sensitive to what it can see.** Which closes the retune avenue on the new term too,
+before anybody opens it, and says where the next gain is: another thing the function cannot see, not
+another number.

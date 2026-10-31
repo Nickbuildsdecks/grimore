@@ -40,6 +40,11 @@ const MOVES = Number(process.env.MOVES ?? 4000);
   An arm to price, as JSON `BotOptions`. Unset, this file does what it always did: time the shipping
   bot playing whole games.
 
+  **It changes what `ms/move` on the line above means, and that number must not be read as a pace.**
+  Two searches run at every position instead of one, so it lands around 1.7x a plain run's figure and
+  would read as a regression against the ones in the README. The per-decision numbers below it are
+  the readings; the pace comes from a run with `BOT` unset.
+
   Set, it answers "what does this setting cost in milliseconds", and the shape of that question is
   an **ablation rather than a race**. The tempting version — run the whole file twice, once per
   setting, and compare the two ms/move — compares two *different sets of games*, because the moment
@@ -117,7 +122,12 @@ for (let g = 0; g < GAMES; g += 1) {
     `${SEATS} seats, seed ${seed}: ${moves} moves in ${(ms / 1000).toFixed(1)}s`
     + ` = ${(ms / Math.max(1, moves)).toFixed(1)} ms/move`
     + ` (${(botMs / ms * 100).toFixed(0)}% in botAction)`
-    + `, turn ${s.turn ?? '?'}, ${s.finished ? 'finished' : 'UNFINISHED'}`,
+    + `, turn ${s.turn ?? '?'}, ${s.finished ? 'finished' : 'UNFINISHED'}`
+    // Said on the line itself, because the number looks like a pace and is not one. With BOT set,
+    // every move pays for TWO botAction calls, so ms/move runs ~1.7x a plain run's and would read
+    // as a regression against the figures in the README if anyone compared them. It nearly did
+    // here: 13.0 against a recorded 8.4 on the same seed, which is 8.4 plus a second search.
+    + (BOT === null ? '' : ' [both arms timed: NOT a pace, see below]'),
   );
   if (BOT !== null) {
     /*

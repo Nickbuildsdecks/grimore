@@ -776,11 +776,24 @@ when a third seed set flipped Harm's Way's sign, and it is the first evaluation 
 since — D264's `exposed` had no consistent direction and is still shipped at zero. So this one ships
 **on**, at a weight of 1, which puts a castable card at 2.5 against a land's 2.5 and a permanent's 3.
 
-Two things the result does not say, both recorded at the constant rather than here. **Other weights
-are unmeasured**: 0.5 and 2 would each cost three more seed sets, and 1 is the number that was
-tested, not the number that won a sweep. And the published deck table was measured with the term
-**off** — a symmetric change to both seats' evaluation largely cancels in the *relative* win rates
-that table reads, but nobody has re-measured it at this default.
+**And then the weight turned out not to matter, which is the same lesson arriving twice.** 0.5 and 2
+were each run against the shipping 1 over three disjoint seed sets: 0.5 came back −2, +6, −11 and 2
+came back +13, +4, −7. Disagreeing signs mean not measured (D258), so across a **fourfold range
+nothing separates them from 1**. D243 closed the retune-a-weight avenue on the raw count — a
+fivefold cut moved 936 games by one — and this term's whole argument was that the *shape* was wrong
+rather than the weight; its own weight is just as flat. Two terms, one conclusion: **this evaluation
+is insensitive to its weights and sensitive to what it can see.** The next gain is another thing the
+function cannot see, not another number.
+
+Its time cost is below a noise floor too (D273): an ablation timing both arms on identical positions
+put it at about +0.09 ms per decision against a 1.2–9.4 ms baseline, with **two of seven readings
+negative**, and the whole-game pace unchanged at 7.0/11.3/9.5 ms/move against a pre-term
+8.4/11.3/9.6. Worth checking rather than assuming, because `canAfford` runs the mana solver per hand
+card and the zero short-circuit that used to skip it no longer fires.
+
+One thing still not re-measured: the published deck table was baselined with the term **off**. A
+symmetric change to both seats' evaluation largely cancels in the *relative* win rates that table
+reads, which is why shipping did not wait on it.
 
 **And flipping a default means flipping the instrument that measures it.** `term-leverage`'s
 `castable` arm ran the `exposed` way round, turning the term *on*, because an ablation of a term that

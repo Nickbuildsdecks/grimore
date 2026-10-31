@@ -1035,10 +1035,21 @@ const LIBRARY_CARD = 0.3;
  * sign holding every time, which is the bar D242 set after a third seed set flipped Harm's Way.
  * D264's `exposed` had no consistent direction and stayed at zero; this one does, so it ships on.
  *
- * `1` puts a castable card at 1.5 + 1 = 2.5, just under a land on the battlefield (2.5) and well
- * under a permanent (3) — a hand you can use is nearly a land, a hand you cannot is a hand. **Other
- * weights are unmeasured.** 0.5 and 2 would each cost three more seed sets, and the honest statement
- * is that 1 is the number that was tested rather than the number that won a sweep.
+ * `1` puts a castable card at 1.5 + 1 = 2.5, level with a land on the battlefield and under a
+ * permanent (3) — a hand you can use is nearly a land, a hand you cannot is a hand.
+ *
+ * **The number barely matters, which is measured rather than assumed (D273).** 0.5 and 2 were each
+ * run against this default over three disjoint seed sets: 0.5 came back −2, +6, −11 and 2 came back
+ * +13, +4, −7. Disagreeing signs mean not measured (D258), so across a fourfold range nothing
+ * separates them from 1. Do not spend a run narrowing it; the next gain is another thing the
+ * function cannot see, not another number — which is D243's conclusion about the raw count arriving
+ * a second time, on the term that was meant to be its exception.
+ *
+ * The time it costs is also measured and also below a noise floor: an ablation timing both arms on
+ * identical positions put it at about +0.09 ms per decision against a 1.2–9.4 ms baseline, with two
+ * of seven readings *negative*, and whole-game pace unchanged at 7.0/11.3/9.5 ms/move against a
+ * pre-term 8.4/11.3/9.6. `canAfford` runs the mana solver per hand card and the zero short-circuit
+ * no longer fires, so this was worth checking rather than assuming.
  *
  * Worth knowing what this does *not* claim: the published deck table was measured with the term off.
  * A symmetric change to both seats' evaluation largely cancels in *relative* deck win rates, which
