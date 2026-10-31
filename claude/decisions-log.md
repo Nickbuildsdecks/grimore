@@ -17135,3 +17135,67 @@ raised**, because that would discard the only number protecting the post-game ca
 suite should take both readings with separate budgets is a real decision and needs more than one
 mid-game reading before a number is set, which is the rule D266 applied to the pod's own figure.
 Left open as #251.
+
+## D268 — A one-in-N failure that is not in the code: thirty clean runs, and what that is worth
+
+#247 opened on a single failing assertion: one full `pnpm -r test` run reported
+`apps/api src/account-recovery.test.ts (23 tests | 1 failed)`, 1 failed and 300 passed. The failing
+test's name was lost, and the task was to name it.
+
+It is closed without a name, which is the honest outcome, and the elimination is the part worth
+keeping.
+
+### Ruled out by reading, not by running
+
+Each of these was the obvious explanation and each is wrong:
+
+- **Postgres is not shared.** Every test file that needs a database does
+  `CREATE DATABASE grimore_*_${Date.now()}` in `beforeAll` and drops it in `afterAll`, so two
+  packages cannot see each other's tables. A same-millisecond name collision would fail `beforeAll`
+  and take all 23 tests, not one.
+- **Nothing flushes Redis.** Zero hits for `flushall`/`flushdb` across `apps`, `packages`, `scripts`
+  and `test`.
+- **The limiters are in-memory, not Redis.** `accountRecovery.ts` builds
+  `rateLimit({ windowMs: 15*60*1000 })` with no `store`, so express-rate-limit's MemoryStore is per
+  `createApp`, i.e. per test file, per process. A bucket cannot be shared across packages.
+- **Expiry is not a wall-clock race.** Both expiry tests force it with
+  `UPDATE password_resets SET expires_at = now() - interval '1 second'` rather than waiting.
+- **IP collision is designed against.** `nextIp()` hands every request its own `10.80.x.y`, and the
+  three throttling tests use their own fixed `10.9{1,2,3}.0.N` blocks.
+
+### Then thirty runs of the whole workspace
+
+| | |
+| --- | --- |
+| full-suite iterations | **30** |
+| failures | **0** |
+| tests per run | 2054 (`apps/api` 301 of them) |
+| total test executions | ~61,600 |
+
+Checked for vacuity before believing it, because a loop that does not run the suite proves nothing:
+every run logs `apps/api test: Tests 301 passed (301)`, `account-recovery` appears in all thirty
+logs, and each totals 2054. Also checked that the gate cannot be served from a cache — CI runs
+`pnpm -r ... run test` directly, not the root `v2:test` script that wraps turbo.
+
+### What is left, and why it is not code
+
+Thirty clean runs plus three earlier full runs, four isolated `apps/api` runs and one isolated run of
+the file itself. The recorded candidate is environmental, and the evidence for it is already in this
+repository: the PR body documents an occasion when **this container's scratch Postgres and Redis were
+reaped mid-run**, `psql` refused connections, and every test failed at once. A partial version of
+that — one connection dropped at one moment — produces exactly one unreproducible assertion failure
+out of 301 and leaves nothing behind to find.
+
+### The correction worth recording
+
+The task said the test's name "was lost to a grep", as though the tooling had not reported it. The
+tooling reported it fine: `apps/api` has no vitest config, so the default reporter names failing
+tests in full. **I grepped the output and threw the name away.** That is the whole reason this cost
+thirty runs instead of one reading, and the fix is a habit rather than a change: keep the full output
+of a run you may need to diagnose. The loop here writes one log per iteration for that reason.
+
+### What would reopen it
+
+A second sighting. If it recurs, the full log will name the test, and these five eliminations mean
+the first place to look is the one thing they do not cover: whether the database that test file
+created was still reachable at the moment the assertion ran.
