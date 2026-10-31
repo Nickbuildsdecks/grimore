@@ -38,15 +38,21 @@ const BOT = JSON.parse(process.env.BOT ?? '{}');
 /*
   One deck's list changed, and the **whole field** re-measured with it in place.
 
-  This exists because of the lesson D194 wrote down and D247 then walked straight into: a paired
-  `deck-probe` swaps cards inside one deck and amplifies whatever its seeds gave it, while the table
-  re-measures every pairing and lets the rest of the field move too. Where the two disagree, believe
-  the table. D194's probe wanted to call a six-card change +47 of 288 and the table said +4; D247's
-  wanted +16 for two cards and the table said −1.
+  This exists because a slot change owes a reading of the **whole field**, which is the one question
+  a probe cannot answer: a probe reports what the change did to the subject, and the table also
+  reports what it did to the other twelve decks. In the Dawn Tithe re-ask of D258 every other deck
+  gained a game or three off the weaker list without changing a card.
 
-  So "confirm it on the table" is the step every slot change owes, and until now taking it meant
-  editing `starterDecks.ts`, rebuilding, running, reverting and rebuilding again — four chances to
-  publish a table of a deck list that is not in the repository. Now it is an argument:
+  What it is **not** for is checking a probe's number against a table's. The two harnesses derive
+  their seeds differently (compare the `seedFor` below with `deck-probe`'s), so the two readings are
+  different samples and differ by up to thirty games with nothing wrong at all — 3 and 17 games on
+  unchanged decks in D258's own runs. That comparison produced the "believe the table" rule of D203
+  and D247 and both conclusions were wrong. Pair the arms inside one instrument, read two seed sets,
+  and keep the table for the field.
+
+  Taking that reading used to mean editing `starterDecks.ts`, rebuilding, running, reverting and
+  rebuilding again — four chances to publish a table of a deck list that is not in the repository.
+  Now it is an argument:
 
     SUBJECT=verdant-guard CHANGE='Wolfir Silverheart:-1,Secure the Wastes:+1' \
       SEEDS=12 node scripts/measure/deck-table.mjs

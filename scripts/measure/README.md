@@ -731,13 +731,27 @@ while every row that should not have moved did not. Not in the evaluation, delib
 position after casting a Ball Lightning is scored *before* its damage, so a leaver worth nothing on
 the board is a cast worth nothing, and the bot would have stopped casting the card.
 
-**A paired probe can get the sign wrong, and the table is the only thing that catches it.** D194
-already found a `deck-probe` overstating a six-card change by a factor of ten — +47 of 288 against
-the table's +4 — and wrote down the rule: a probe swaps cards inside one deck and amplifies whatever
-its seeds gave it, while the table re-measures every pairing and lets the field move too, so where
-the two disagree, believe the table. D247 then found the sharper version: the probe priced two
-soulbond cards at **+16** and the table, run once with them and once with them reverted on the same
-seeds, read **−8**. Not an overstatement — the opposite direction.
+**Pair the arms, read two seed sets, and never set a probe reading against a table reading.** Three
+rules, replacing the one this page carried for four entries, and D258 has the measurement behind
+each.
+
+The old rule was *believe the table*: D203 found a `deck-probe` calling a six-card change +47 of 288
+where the table said +4, D247 found a probe pricing two soulbond cards at **+16** where the table
+said **−8** — a sign reversal rather than an overstatement — and both concluded that a probe
+amplifies whatever its seeds gave it while the table lets the whole field move. **That comparison
+was never valid.** The two harnesses derive their seeds differently, so a probe reading and a table
+reading of the same deck are two different samples: on decks with *no change at all* they differ by
+3 and 17 games here, which is the whole of D257's thirty-game spread before either arm has moved a
+card. And the amplification mechanism does not apply to the row that was being read — `deck-table`
+plays each pairing once per seed per order and credits both decks, so the subject's own row is the
+same 288 pairings the probe plays. Letting the field move changes the *other* twelve rows.
+
+Re-asked with both sides paired, the instruments agree on the sign on both changes. What they do not
+give is a number: the **same paired probe on two seed sets** reads +30 and +18 on one change and −18
+and −1 on the other. Pairing removes the reshuffle between the arms; it cannot remove the game, and
+how far a changed card diverges the play is itself a function of the seed. So a single paired
+288-game reading carries about **fifteen games** of its own, and a slot change is measured only when
+it clears that on both sets. A change that does not is unresolved, and saying so is the result.
 
 So "confirm it on the table" is the step every slot change owes, and `deck-table.mjs` now takes
 `SUBJECT` and `CHANGE` so taking it is an argument rather than an edit to `starterDecks.ts`, a

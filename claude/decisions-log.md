@@ -11048,6 +11048,14 @@ to ten times the table. A paired probe swaps cards inside one deck and amplifies
 gave it; the table re-measures the whole field and lets the field move too. Where the two disagree,
 believe the table — and never publish the probe alone.
 
+**That lesson is withdrawn by D258, and this entry's number with it.** Neither comparison above had
+paired arms (D257), and the mechanism the paragraph proposes does not exist for the row it was read
+off: `deck-table` plays the subject's own 288 games over the same pairings the probe does, so
+letting the field move changes the other twelve rows and not this one. Re-asked with canonical
+lists, these six cards are worth **about +20 of 288** on the table and +18 to +30 on the probe —
+two to three times the +11 this entry believed, and the probe it dismissed was the closer of the
+two. The slot stands; the lesson drawn from it was backwards.
+
 ```
  76%  218-70   ember-rush        (was 75%, 215-73)
  69%  198-90   dawn-tithe        (was 65%, 187-101)   <- the six cards
@@ -15349,9 +15357,16 @@ Ambush Viper + Secure the Wastes 175-113      -16
 **That number is wrong, and the way it is wrong is the entry.** Confirmed on the field table at the
 canonical seeds — the same field, once with the two cards and once with them reverted — Verdant
 Guard reads **60% (173-115) with soulbond and 63% (181-107) without**. Eight games the other way.
-The probe did not merely overstate the gain, as D194's did by a factor of ten; it got the **sign**
-wrong, which is the first time that has happened here and is the strongest case yet for the rule
-D194 already wrote down: *never publish the probe alone.*
+The probe did not merely overstate the gain, as D203's did; it got the **sign** wrong, which is the
+first time that has happened here and is the strongest case yet for the rule D203 already wrote
+down: *never publish the probe alone.*
+
+**Corrected by D258, twice over.** Neither arm of either reading was paired — D257 is why — and
+re-asked with canonical lists the cards cost this deck somewhere between 2 and 18 games of 288
+rather than eight, with the direction confirmed on three readings and the size not resolvable at
+this sample count. The rule the paragraph above leans on is also wrong: a probe and a table never
+play the same games, so their disagreement was never evidence about either instrument. What
+replaced it is in D258.
 
 So the slot costs Verdant Guard about three points, and the cards ship anyway. The reason is the
 mechanic rather than the record: D229's rule is that a keyword needs a card in a deck to exist at
@@ -15386,11 +15401,11 @@ isolated by re-running the same field with just that one turned off:
 direction. Three decks hold a creature that cannot be kept and only the one whose Ball Lightning is
 a six-power attacker gained measurably.
 
-**And almost none of the movement since D194's published table belongs to this session.** Dawn
+**And almost none of the movement since D203's published table belongs to this session.** Dawn
 Tithe is six points up, Kindle Grove eight, Ashen Rite seven, Tidal Mind nine down, Skyward Writ
 five down — and the two isolations above account for four games in total. Whatever moved the rest
 predates both changes, which is a thing worth knowing before anybody reads this table as a result.
-The spread is **49 points**, wider than D194's 42, and the top two rows are the problem: Ember Rush
+The spread is **49 points**, wider than D203's 42, and the top two rows are the problem: Ember Rush
 at 77% has never been below 74% in any table since D114, and Dawn Tithe is now beside it.
 
 ## D248 — The spread is the pilot as much as the decks, and no card in Ember Rush carries it
@@ -16053,12 +16068,20 @@ comparison can: the same instrument, the same seeds, the same canonical lists, d
 change. `deck-probe` was always built that way and this is the first time its arms have genuinely
 been paired.
 
-Which re-opens something. D194 and D247 both found the probe disagreeing with the table and both
-wrote down the rule "believe the table"; D194's probe said +47 where the table said +4, and D247's
+**Half of that is wrong, and D258 has the measurement.** Pairing is necessary and it is not
+sufficient: the same paired probe run on two seed sets reads +30 and +18 on one change and −18 and
+−1 on another, so a paired 288-game comparison has an error bar of its own of about **fifteen
+games**. Both re-prices below rest on a single paired reading and neither was entitled to the
+confidence it was given — see D258 for what each is worth on two.
+
+Which re-opens something. D203 and D247 both found the probe disagreeing with the table and both
+wrote down the rule "believe the table"; D203's probe said +47 where the table said +4, and D247's
 said +16 where the table said −8. The probe's arms were not paired then and the table comparisons
 were not paired either, so **neither of those disagreements is evidence about which instrument to
 trust** — they are two noisy readings disagreeing. The rule those entries wrote down should not be
 leaned on until it is re-asked with the paired probe, and the entries are marked accordingly.
+**Re-asked in D258**, which replaces it: pair the arms, then either instrument answers, and never
+set a probe reading against a table reading at all.
 
 **The new baseline**, canonical lists, SEEDS=12 SEED0=4400, 288 games a deck, with ±10 points of
 error bar on every row and the two-sample spread above as the evidence for it:
@@ -16073,3 +16096,121 @@ error bar on every row and the two-sample spread above as the evidence for it:
 Published with the error bar attached rather than as thirteen numbers, because the honest reading of
 this table is "four decks clearly ahead, one clearly behind, and eight that this instrument cannot
 order".
+
+## D258 — Pairing the arms is necessary and not sufficient, and the probe-against-table comparison was never a comparison at all
+
+#240. D257 re-opened two entries and this closes them, then re-opens D257 itself. Both of the
+re-asked entries had found `deck-probe` disagreeing with `deck-table` about a slot, both wrote down
+the rule *believe the table*, and D257 pointed out that neither instrument's arms had been paired at
+the time. Re-asked here with canonical lists on both sides — and the answer is that the rule was
+never testable, and that the rule D257 put in its place is half right.
+
+**First, the citation, because it has been wrong in five places.** The rule belongs to **D203**
+(embalm and eternalize, six cards into Dawn Tithe). D194 is evoke, whose probe read +10 and −14 on
+two seed sets and whose slot shipped as level — it never found a probe overstating anything. D247,
+D257, `scripts/measure/README.md` and `deck-table.mjs`'s own docblock all attributed the rule to
+D194, and D247 attributed D203's published table to it as well. Corrected in all of them. A rule
+cited to the wrong entry is a rule nobody can check, and this one went unchecked for four entries.
+
+### The two re-asks
+
+`deck-probe` runs stock and variant over one seed set; the table was run three times — stock, then
+once per change — at the canonical `SEEDS=12 SEED0=4400`, 288 games a deck.
+
+```
+dawn-tithe     209-79 with the six cards   189-99 reverted     +20
+verdant-guard  195-93 with soulbond        193-95 reverted      -2
+```
+
+| | old probe | old table | paired probe | paired table |
+| --- | --- | --- | --- | --- |
+| D203, six cards into Dawn Tithe | +47 / +19 | +11 | **+30** | **+20** |
+| D247, two cards into Verdant Guard | +16 | −8 | **−18** | **−2** |
+
+Paired, the two instruments agree on the **sign** in both cases. D247's recorded sign disagreement
+was the unpaired probe being wrong, not a difference between instruments.
+
+### Why that comparison could never have settled anything
+
+Each table run prints the subject's own row and each probe prints its stock arm, so every run above
+also measured the same deck twice with **no change at all**:
+
+```
+dawn-tithe      209-79 table   206-82 probe     3 games apart
+verdant-guard   195-93 table   178-109 probe   17 games apart
+```
+
+Because the two harnesses derive their seeds differently, and a seed is a shuffle:
+
+```
+deck-probe:  SEED0 + ((pass * FIELD.length + j) * 2) + order
+deck-table:  SEED0 + (((pass * ALL.length + a) * ALL.length + b) * 2) + order
+```
+
+A probe reading and a table reading are therefore **two different samples**, carrying the whole of
+D257's thirty-game error bar before either arm has changed a card. Today's gaps between the paired
+readings — ten games on D203, sixteen on D247 — are the size of the gaps on the unchanged decks.
+Nothing is left over for an instrument-class effect to explain.
+
+**And the mechanism the old rule rested on does not apply to the row it was read off.** D203's
+argument was that "a paired probe swaps cards inside one deck and amplifies whatever the seeds gave
+it, while the table re-measures every pairing and lets the field move too". The second half is true
+and is the table's whole value. The first half is not true of the number both entries compared:
+`deck-table` plays each pairing once per seed per order and credits both decks, so the subject's row
+is twelve opponents × twelve seeds × two orders = **288 games over the same pairings the probe
+plays**. For the subject's own win count the two instruments measure the *same quantity*. Letting
+the field move changes the other twelve rows, not the one being read.
+
+Two entries explained a difference by a mechanism that cannot produce it, and the simpler
+explanation — two samples from a distribution ten points wide — has been available since D240 gave
+every game its own seed.
+
+### The finding that matters more: a paired probe has an error bar of its own
+
+D257's replacement rule was that a paired comparison *can* resolve a one-card change. It cannot, not
+at this sample count. The same paired probe, same change, same canonical lists, two seed sets:
+
+```
+                                        4400    7000
+D203  six cards into Dawn Tithe          +30     +18
+D247  two cards into Verdant Guard       -18      -1
+```
+
+Pairing gives both arms the same libraries, which removes the reshuffle D257 found. What it cannot
+remove is the game: the changed card diverges the play from the first turn it is drawn, and **how
+far it diverges is itself a function of the seed**. So a paired 288-game reading carries about
+fifteen games of its own, which is the same order as most of the effects this project
+publishes.
+
+**Which puts two of D257's own numbers back in question**, because both rest on a single paired
+reading: `#230`'s granting cards re-priced at −14, and `#239`'s Harm's Way **corrected in place from
+−10 to +12**, a sign reversal claimed on one draw from a distribution fifteen games wide. Neither is
+withdrawn — the second reading of each is measuring as this is written and will be recorded beneath
+this entry — but neither was entitled to the confidence it was given, and the Harm's Way reversal is
+the one to distrust: a change of sign on a reading whose error bar straddles zero is the exact
+mistake this entry is about.
+
+### What the two slots are worth, and the practice that replaces the rule
+
+- **D203's six cards are worth about +20 of 288 to Dawn Tithe** (+18, +20, +30 on three readings),
+  two to three times the +11 that entry published as "+4 points on the instrument that answers this
+  question". The probe it dismissed was the closer of the two. The deck sits second either way.
+- **D247's two soulbond cards cost Verdant Guard between 2 and 18 games of 288** (−1, −2, −18),
+  against the 8 it published. Direction confirmed three times, size not resolvable here. The cards
+  ship on D229's terms regardless, and that entry's reasoning is untouched.
+
+So *believe the table* becomes three rules, none of which is about which instrument to trust:
+
+1. **Pair the arms.** One instrument, one seed set, canonical lists, the two arms differing only by
+   the change. Necessary, and this entry is why it is not sufficient.
+2. **Read a slot on at least two seed sets, and publish the range.** One paired reading is one draw
+   from a distribution about fifteen games wide. A change that does not clear that on both
+   sets has not been measured, and saying so is the result.
+3. **Never set a probe reading against a table reading.** They are different samples and will differ
+   by up to thirty games with nothing wrong at all. That comparison has produced two published
+   conclusions and both were wrong. Run the table for the question only it answers: what the change
+   did to **everybody else** — in table A every other deck gained a game or three off Dawn Tithe's
+   weaker list without changing a card, and in table B the field barely moved.
+
+Deliberately not done: the two harnesses are not given a shared seed formula. It would make the
+comparison in rule 3 meaningful, and rule 3 is that nobody should be making it.

@@ -7097,9 +7097,13 @@ Forge Alliance — which is this list's own rule for a cut and cost two tests a 
 **And the slot is where this entry earns its keep, because the probe lied about the sign.**
 `deck-probe` priced the two cards at **+16 of 288** (191-97 against 175-113). The field table at the
 canonical seeds, run once with them and once with them reverted, reads Verdant Guard at **60% with
-and 63% without** — eight games the other way. D194 had already found a probe overstating a slot by
+and 63% without** — eight games the other way. D203 had already found a probe overstating a slot by
 a factor of ten; this is the first time one has had the sign wrong, and it is the strongest case yet
 for the rule that entry wrote down: never publish the probe alone.
+
+**Both halves of that are corrected by D258.** Neither reading had paired arms, the probe-against-
+table comparison was never valid in the first place, and re-asked properly the two cards cost this
+deck somewhere between 2 and 18 games of 288 rather than eight.
 
 The cards ship anyway, and for the mechanic rather than the record: a keyword needs a card in a deck
 to exist (D229), Verdant Guard is the only deck here a pair is worth anything in, and a deck fourth
@@ -7459,14 +7463,55 @@ confirmed). **#239's Harm's Way is +12 of 288 to Forge Alliance** where the unpa
 −10 — a sign reversal, and D255 is corrected in place.
 
 The rule that follows: an unpaired comparison at 288 games cannot resolve a one-card change. A
-paired one can. It also re-opens D194 and D247, whose "believe the table over the probe" rule was
+paired one can. It also re-opens D203 and D247, whose "believe the table over the probe" rule was
 drawn from disagreements between two unpaired readings — not evidence about either instrument.
+
+**And "a paired one can" is too strong — D258 measured it.** The same paired probe on two seed sets
+reads +30 and +18 on one change and −18 and −1 on another, so a paired 288-game reading carries
+about fifteen games of its own. Pairing removes the reshuffle between the arms, not the game: a
+changed card diverges the play from the turn it is drawn and how far is itself seed-dependent. Both
+re-prices above rest on a single paired reading, and the Harm's Way sign reversal is the one to
+distrust.
 
 **The new baseline** (canonical, SEEDS=12 SEED0=4400, ±10 points a row): ember-rush 75%,
 dawn-tithe 73%, verdant-guard 68%, kindle-grove 67%, ashen-rite 50%, forge-alliance 45%,
 arc-tempest 44%, delta-bloom 42%, blight-vector 41%, rot-harvest 40%, skyward-writ 39%,
 hollow-tide 36%, tidal-mind 30%. Read as: four decks clearly ahead, one clearly behind, and eight
 this instrument cannot order.
+
+### The rule that was never testable, and the error bar on the one instrument we trust (D258)
+
+#240 re-asked the two entries D257 re-opened, and the answer closed them and re-opened D257.
+
+**"Believe the table" was never a comparison.** D203 and D247 both read a `deck-probe` number
+against a `deck-table` number, disagreed, and concluded the table was the honest instrument. The two
+harnesses derive their seeds differently, so those are **two different samples of the same
+quantity** — on decks with no change at all they differ by 3 and 17 games in these very runs. And
+the mechanism the rule proposed, that a probe amplifies its seeds while the table lets the field
+move, does not apply to the row that was being read: `deck-table` plays each pairing once per seed
+per order and credits both decks, so the subject's own row is the same 288 pairings the probe plays.
+Letting the field move changes the other twelve rows.
+
+Paired on both sides, the instruments agree on the sign in both cases:
+
+```
+dawn-tithe     209-79 with D203's six cards   189-99 reverted   +20   (probe: +30)
+verdant-guard  195-93 with D247's soulbond    193-95 reverted    -2   (probe: -18)
+```
+
+So D203's six cards are worth **about +20 of 288**, two to three times the +11 that entry believed —
+the probe it dismissed was the closer of the two — and D247's two cards cost Verdant Guard somewhere
+between 2 and 18 rather than the 8 it published.
+
+**And pairing is necessary without being sufficient**, which is the finding worth carrying forward.
+The same paired probe on two seed sets reads +30 and +18 on one change and −18 and −1 on the other:
+a paired 288-game reading carries about **fifteen games** of its own, because pairing gives both arms
+the same libraries but cannot stop the changed card diverging the game from the turn it is drawn.
+
+Three rules replace the one: pair the arms; read two seed sets and publish the range, because a
+change that does not clear it on both has not been measured; and never set a probe reading against a
+table reading at all — run the table for the question only it answers, which is what the change did
+to everybody else.
 
 ## Next
 
