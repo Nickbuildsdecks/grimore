@@ -89,17 +89,22 @@ const TERMS = {
   */
   exposed: { exposed: 1 },
   /*
-    The same shape of question as `exposed` and the same direction, for the same reason: `castable`
-    ships at zero, so an ablation of it would read a clean 0.0% and mean nothing. This arm turns it
-    on.
+    An ordinary ablation again, and it was not when it was written (#253, D271).
 
-    What it asks (#253): the `hand` row above ablates a **raw count** of cards in hand, and that
-    count cannot tell a hand you can pay for from a hand you cannot. This arm prices the cards the
-    seat could actually cast, so a non-zero number here against an inert `hand` row would say the
-    term was the wrong *shape* rather than the wrong weight — which is the one reading #227's
-    conclusion ("cards in hand are worth little") could not distinguish itself from.
+    The question: the `hand` row above ablates a **raw count** of cards in hand, and that count
+    cannot tell a hand you can pay for from a hand you cannot. This row prices the cards the seat
+    could actually cast, so a non-zero number here against an inert `hand` row says the term was
+    the wrong *shape* rather than the wrong weight — the one reading #227's conclusion ("cards in
+    hand are worth little") could not distinguish itself from.
+
+    It ran the `exposed` way round, turned **on**, while the term shipped at zero. Three disjoint
+    seed sets on `bot-duel` (479-454, 469-465, 471-462) earned it a default of 1, so `{ castable: 0 }`
+    is now a real ablation and the row means what every other row means. Flipping this with the
+    default is not optional bookkeeping: left as `{ castable: 1 }` it would be an override that
+    overrides nothing, read a clean 0.0%, and the zero-row check below would call the term
+    unscorable — which is exactly the silence it was added to break.
   */
-  castable: { castable: 1 },
+  castable: { castable: 0 },
 };
 
 const want = (process.env.TERMS ?? '').split(',').map((t) => t.trim()).filter(Boolean);

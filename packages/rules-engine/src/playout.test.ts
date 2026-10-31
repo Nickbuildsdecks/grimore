@@ -2669,11 +2669,13 @@ describe('the opponent cannot read your hand', () => {
  * things you cannot pay for score the same. These pin the arithmetic of the term that tells them
  * apart.
  *
- * **Isolated by ablation rather than by exporting the function**, and **both weights named**, for
- * the two reasons the block below gives: the public evaluation is the stronger claim because it
- * says the term reaches the number the search compares, and `castable` ships at 0 so comparing
- * against the default would make every assertion here read zero and pass — D263's vacuous-assertion
- * trap, in the file that caught it.
+ * **Isolated by ablation rather than by exporting the function**, and **both weights named**. The
+ * public evaluation is the stronger claim because it says the term reaches the number the search
+ * compares; naming both weights is what keeps the arithmetic pinned to the term rather than to
+ * whatever the default happens to be. When these were written the term shipped at 0, and leaving a
+ * weight implicit would have made every assertion here read zero and pass — D263's
+ * vacuous-assertion trap, in the file that caught it. It ships at 1 now (D271) and the same
+ * assertions still read in cards, which is the point of naming both ends.
  *
  * Only seat 0 is ever given a hand. `arena` empties both opening hands, so seat 1's count stays 0
  * and `evaluate`'s subtraction of the opponents' average cannot move these numbers.
@@ -2727,14 +2729,16 @@ describe('the cards in hand I can actually pay for', () => {
     expect(payable(tapped)).toBe(0);
   });
 
-  it('is off by default, and this fails if that changes', () => {
+  it('is on at one by default, and this fails if that changes', () => {
     /*
-      The guard D264 asks for. The term ships at zero, so the shipped evaluation must equal the
-      explicit ablation — and if somebody turns it on without measuring, this is what says so.
+      The guard, pointed the other way round now that the term is on (D271). It shipped at zero and
+      three disjoint seed sets earned the one -- 479-454, 469-465, 471-462 -- so the shipped
+      evaluation must equal the explicit weight of one and differ from the ablation. If somebody
+      changes the number without re-measuring, this is what says so.
     */
     const board = arena({ hands: { 0: ['Lightning Bolt'] }, battlefield: { 0: ['Mountain'] } });
-    expect(evaluate(board, 0)).toBe(evaluate(board, 0, { weights: { castable: 0 } }));
-    expect(evaluate(board, 0)).not.toBe(evaluate(board, 0, { weights: { castable: 1 } }));
+    expect(evaluate(board, 0)).toBe(evaluate(board, 0, { weights: { castable: 1 } }));
+    expect(evaluate(board, 0)).not.toBe(evaluate(board, 0, { weights: { castable: 0 } }));
   });
 });
 

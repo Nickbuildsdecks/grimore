@@ -17416,3 +17416,79 @@ The message names two causes rather than one, for the same reason the `bot-duel`
 about something the probed games never contain scores zero honestly, and a narrow `SUBJECT` can
 arrange that by itself. Unlike `bot-duel` this does not exit non-zero — the other rows in the table
 are still valid, so the cost of a typo here is one bad row rather than a whole wasted run.
+
+## D271 — The hand term was the wrong shape, not the wrong weight, and the shape ships on
+
+#227 lowered the weight on cards-in-hand because it was the one term pointing the wrong way, and
+D243 closed the subject: cards-in-hand anti-predicts the winner at 42%, and cutting its weight
+five-fold moved 936 paired games by **one**. The diagnosis was the right one and it was about
+variation — what decides a choice is how a term differs *across the options on offer*, and hand size
+barely differs. Nearly every candidate is a cast, every cast moves one card out of the hand, so the
+term adds a near-constant to the whole slate and cancels.
+
+What that reasoning does not cover: **"cards in hand" and "cards in hand I can pay for" are
+different terms, and only the first was ever measured.** The second varies exactly where the first
+does not, because the candidates at a cast decision differ in what they leave the seat able to do
+next — which a count cannot see at all, at any weight. #227's conclusion ("cards in hand are worth
+little") and "the evaluation is asking the wrong question about the hand" produce the same number,
+and nothing up to now could tell them apart.
+
+### Both instruments say the same thing
+
+Leverage, by ablation, over 156 games and 17451 decisions:
+
+| term | changed | of all | cast | activate | attack | block |
+| --- | --- | --- | --- | --- | --- | --- |
+| exposed | 242 | 1.4% | 1.7% | 1.0% | 7.0% | 9.6% |
+| **castable** | **157** | **0.9%** | **4.8%** | 0.2% | 0.1% | 0.0% |
+| hand | 155 | 0.9% | 2.8% | 4.4% | 0.3% | 0.9% |
+
+Nearly the same total as `hand` and pointed somewhere else entirely: 4.8% of **cast** decisions
+against `hand`'s 2.8%, while `hand`'s own leverage sits on activations. That is the hypothesis in a
+table — the new term decides the decision a count cannot inform.
+
+Win rate on `bot-duel`, three **disjoint** seed sets, 936 paired games each:
+
+| seed set | `{"weights":{"castable":1}}` vs stock |
+| --- | --- |
+| 3300 | **479-454** (+25) |
+| 4100 | 469-465 (+4) |
+| 5200 | 471-462 (+9) |
+
+1419-1381 of 2808, **+1.35 points, sign holding all three times**. That is the bar D242 set when a
+third seed set flipped Harm's Way's sign, and it is the first evaluation term to clear it since.
+D264's `exposed` had no consistent direction and is still shipped at zero; this one does, so
+`CASTABLE_IN_HAND` goes to **1** — a castable card at 1.5 + 1 = 2.5, level with a land on the
+battlefield and under a permanent's 3. A hand you can use is nearly a land; a hand you cannot is a
+hand.
+
+The per-set spread is worth stating rather than averaging away: +25 clears this harness's observed
+noise (±6 on a term known to be firing), +4 does not, +9 does. The aggregate is the statistic the
+paired design supports — the three sets are disjoint and every game is played twice with the arms
+swapped — but one set on its own would not have been enough to ship on, which is the whole reason
+three are run.
+
+### What the result does not say
+
+**Other weights are unmeasured.** 0.5 and 2 are each three more seed sets, and the honest statement
+is that 1 is the number that was tested, not the number that won a sweep. Recorded at the constant.
+
+**The deck table was measured with the term off.** A symmetric change to both seats' evaluation
+largely cancels in the *relative* deck win rates that table reads, which is why this is a note rather
+than a blocker, but nobody has re-measured it at the new default.
+
+### A default and its ablation are one change
+
+`term-leverage`'s `castable` arm ran the `exposed` way round — turning the term *on* — because an
+ablation of a term that ships at zero reads a clean 0.0% and means nothing. The moment the default
+became 1, that arm became an override that overrides nothing, and the zero-row check added hours
+earlier the same day would have reported the term as one the evaluation cannot see: the exact silence
+it was written to break, triggered by the exact change it was written alongside. Flipped to
+`{ castable: 0 }` in the same commit. The guard test in `playout.test.ts` is turned around the same
+way, from *off by default and this fails if that changes* to *on at one*, so the next person to move
+the number has to come back here first.
+
+The six arithmetic tests did not need touching, and that is the payoff from naming **both** weights
+in the ablation helper rather than leaning on the default (D263's trap, avoided when they were
+written). They measured the term rather than the configuration, so they read the same before and
+after the default moved. 1309 rules-engine tests pass with the bot's evaluation changed under them.

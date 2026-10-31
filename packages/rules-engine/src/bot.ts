@@ -1018,12 +1018,33 @@ const CARD_IN_HAND = 1.5;
  * a seat on three cards is in trouble the search can now see.
  */
 const LIBRARY_CARD = 0.3;
-/*
-  Off by default, so the shipped bot is unchanged until a measurement says otherwise. The same
-  discipline D264 used for `exposed`: a term arrives at zero, and the number that turns it on has to
-  be earned.
-*/
-const CASTABLE_IN_HAND = 0;
+/**
+ * A card in hand this seat can actually pay for, over and above the raw count (#253, D271).
+ *
+ * The term exists because `CARD_IN_HAND` is a count, and a count cannot tell a hand of three live
+ * spells from a hand of three things you have no mana for. It arrived at **zero** under D264's
+ * discipline — a term is shipped off until a number earns it — and the number came in:
+ *
+ * | seed set | TESTED {castable:1} vs stock |
+ * | --- | --- |
+ * | 3300 | 479-454 (+25) |
+ * | 4100 | 469-465 (+4) |
+ * | 5200 | 471-462 (+9) |
+ *
+ * Three **disjoint** seed sets, 2808 paired games, 1419-1381 aggregate: a 1.35 point edge with the
+ * sign holding every time, which is the bar D242 set after a third seed set flipped Harm's Way.
+ * D264's `exposed` had no consistent direction and stayed at zero; this one does, so it ships on.
+ *
+ * `1` puts a castable card at 1.5 + 1 = 2.5, just under a land on the battlefield (2.5) and well
+ * under a permanent (3) — a hand you can use is nearly a land, a hand you cannot is a hand. **Other
+ * weights are unmeasured.** 0.5 and 2 would each cost three more seed sets, and the honest statement
+ * is that 1 is the number that was tested rather than the number that won a sweep.
+ *
+ * Worth knowing what this does *not* claim: the published deck table was measured with the term off.
+ * A symmetric change to both seats' evaluation largely cancels in *relative* deck win rates, which
+ * is what that table reads, but it has not been re-measured at this default.
+ */
+const CASTABLE_IN_HAND = 1;
 /*
   An answer in hand priced above a generic card: measured, and worth nothing.
 

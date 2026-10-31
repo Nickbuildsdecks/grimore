@@ -7842,6 +7842,40 @@ D267's shape, moved from the code into the instrument: **ask what the check woul
 checks were broken.** The positive control passed identically whether the arm's key was real or
 nonsense, which means it was never evidence about the key.
 
+### The hand term was the wrong shape, not the wrong weight (#253, D271)
+
+#227 lowered the weight on cards-in-hand, and D243 closed the subject: the term anti-predicts the
+winner at 42%, and a five-fold cut moved 936 paired games by one. The diagnosis was right and it was
+about *variation* — what decides a choice is how a term differs across the options on offer, and hand
+size barely differs, because nearly every candidate is a cast and every cast moves one card out.
+
+What it did not cover is that **"cards in hand" and "cards in hand I can pay for" are different
+terms**, and only the first had ever been measured. The second varies precisely where the first does
+not: the candidates at a cast decision differ in what they leave the seat able to do next. #227's
+conclusion and "the evaluation is asking the wrong question about the hand" produce the same number,
+and nothing could tell them apart until there was a second term to compare.
+
+Both instruments agree. Leverage: 157 of 17451 decisions, nearly the same total as `hand` and
+pointed somewhere else entirely — **4.8% of cast decisions** against `hand`'s 2.8%, while `hand`'s own
+leverage sits on activations. Win rate, three disjoint seed sets of 936 paired games: **479-454,
+469-465, 471-462** — 1419-1381, +1.35 points, sign holding every time. That is D242's bar, and the
+first evaluation term to clear it since; D264's `exposed` had no consistent direction and is still
+shipped at zero. So `CASTABLE_IN_HAND` goes to **1**: a castable card at 2.5, level with a land and
+under a permanent. A hand you can use is nearly a land; a hand you cannot is a hand.
+
+The spread is worth stating rather than averaging away — +25 clears the harness's observed ±6, +4
+does not, +9 does — which is the whole reason three disjoint sets are run rather than one long one.
+Other weights are unmeasured and the deck table was baselined with the term off; both are recorded at
+the constant rather than implied.
+
+The part that nearly went wrong: `term-leverage`'s `castable` arm ran *on* rather than off, because
+ablating a term that ships at zero reads a clean 0.0%. Flipping the default turns that arm into an
+override that overrides nothing — and the zero-row check added hours earlier would have reported the
+term as one the evaluation cannot see, the exact silence it was written to break, on the exact change
+it was written beside. **A default and its ablation are one change, not two.** The six arithmetic
+tests needed no edit at all, which is the payoff from naming both weights instead of leaning on the
+default: they measure the term, not the configuration.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

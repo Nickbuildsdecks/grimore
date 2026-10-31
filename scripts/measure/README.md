@@ -750,6 +750,42 @@ accuracy, life 2.3% and 66%, hand 0.9% and 42%, land 0.1% and 53%. **The cell th
 problem, high leverage with poor calibration, is empty**, which closes the retune-a-weight avenue on
 evidence rather than by exhaustion.
 
+**The hand term was the wrong shape, not the wrong weight — and the shape is worth 1.35 points.**
+D243 closed the retune-a-weight avenue on cards-in-hand: it anti-predicts at 42%, and cutting its
+weight five-fold moved 936 paired games by one. The diagnosis above says why — hand size barely
+varies across the options on offer. But "a count of cards in hand" and "a count of cards in hand I
+can pay for" are different *terms*, and only the first was ever measured. The second varies exactly
+where the first does not: the candidates at a cast decision differ in what they leave you able to do
+next, which a raw count cannot see.
+
+It reads that way in both instruments. Leverage: **157 of 17451 decisions, 4.8% of casts** against
+`hand`'s 2.8% — concentrated on the one decision kind a count cannot inform, while `hand`'s own
+leverage sits on activations. Win rate on `bot-duel`, three **disjoint** seed sets:
+
+| seed set | `{castable: 1}` vs stock |
+| --- | --- |
+| 3300 | **479-454** (+25) |
+| 4100 | 469-465 (+4) |
+| 5200 | 471-462 (+9) |
+
+1419-1381 of 2808 paired games, +1.35 points, sign holding all three times. That is the bar D242 set
+when a third seed set flipped Harm's Way's sign, and it is the first evaluation term to clear it
+since — D264's `exposed` had no consistent direction and is still shipped at zero. So this one ships
+**on**, at a weight of 1, which puts a castable card at 2.5 against a land's 2.5 and a permanent's 3.
+
+Two things the result does not say, both recorded at the constant rather than here. **Other weights
+are unmeasured**: 0.5 and 2 would each cost three more seed sets, and 1 is the number that was
+tested, not the number that won a sweep. And the published deck table was measured with the term
+**off** — a symmetric change to both seats' evaluation largely cancels in the *relative* win rates
+that table reads, but nobody has re-measured it at this default.
+
+**And flipping a default means flipping the instrument that measures it.** `term-leverage`'s
+`castable` arm ran the `exposed` way round, turning the term *on*, because an ablation of a term that
+ships at zero reads a clean 0.0% and means nothing. The moment the default became 1 that arm became
+an override that overrides nothing — and the zero-row check added the same day would have called the
+term unscorable, which is precisely the silence it exists to break. A default and its ablation are
+one change, not two.
+
 **And the first change that came out of that closed avenue was not a weight, and it took two
 attempts because the first one was overruled.** D244 said the next move would have to be a term
 that sees something the function cannot, and a clock is the plainest such thing: `creatureValue` is
