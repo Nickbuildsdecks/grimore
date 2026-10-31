@@ -45,6 +45,16 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('api (requires DATABASE_URL + REDIS
     expect(r.body).toEqual({ ready: true, checks: { db: 'ok', redis: 'ok' } });
   });
 
+  // Legacy's two liveness paths. They are wired into docker-compose's healthcheck and whatever
+  // external uptime monitor is pointed at the domain, so both have to keep answering once a reverse
+  // proxy sends /api here — a monitor reading 404 as "down" pages for a healthy service.
+  it.each(['/health', '/api/health'])("answers legacy's liveness path %s", async (path) => {
+    const r = await request(app).get(path);
+    expect(r.status).toBe(200);
+    expect(r.body.status).toBe('ok');
+    expect(typeof r.body.uptime).toBe('number');
+  });
+
   it('unknown routes return the error envelope', async () => {
     const r = await request(app).get('/api/nope');
     expect(r.status).toBe(404);

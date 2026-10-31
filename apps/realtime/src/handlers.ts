@@ -18,11 +18,26 @@ import {
   type PodErrorEvent,
   type ServerToClientEvents,
 } from '@grimore/shared';
-import { makePlayerId, PodError, type PodSnapshot, type PodStore } from './pod.js';
+import {
+  makePlayerId, PodError, toSeatSnapshot,
+  type DeckListSummary, type PodSnapshot, type PodStore,
+} from './pod.js';
 import { TokenBucket, type RateLimitOptions, DEFAULT_RATE_LIMIT } from './ratelimit.js';
 
 export type AckResult =
-  | { ok: true; code?: string; seat?: number; seatToken?: string; playerId?: string; stateVersion?: number }
+  | {
+      ok: true; code?: string; seat?: number; seatToken?: string; playerId?: string;
+      stateVersion?: number;
+      /**
+       * What the server read in a pasted decklist, for the player who pasted it.
+       *
+       * On the ack rather than only in the broadcast state, because the question it answers is the
+       * sender's own: how many cards came through, how many different ones, and *which* of them the
+       * engine's pool does not have. Everybody at the table gets the counts in `PodSeat.list`; only
+       * the player who pasted it gets the names, which is the same line their own deck is on.
+       */
+      deck?: DeckListSummary;
+    }
   | { ok: false; error: PodErrorEvent };
 export type Ack = (result: AckResult) => void;
 
@@ -44,10 +59,15 @@ export const podRoom = (code: string): string => `pod:${code}`;
 const RAW_CAPS: Record<ClientEventName, number> = {
   'pod:create': 512,
   'pod:join': 512,
+  'pod:watch': 128,
   'pod:leave': 64,
   'pod:ready': 64,
   'pod:chat': CHAT_MAX_BYTES + 64,
+  // A pasted decklist: the schema caps the text at twenty thousand characters, and the frame is
+  // that plus a name and the JSON around it.
+  'pod:deck': 21_000,
   'pod:action': ACTION_MAX_BYTES + 128,
+  'pod:undo': 64,
   'pod:list': 128,
 };
 
@@ -60,18 +80,37 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
   const graceTimers = new Set<NodeJS.Timeout>();
   const rateOpts = opts.rateLimit ?? DEFAULT_RATE_LIMIT;
 
-  const broadcast = (code: string, snapshot: PodSnapshot | null): void => {
-    if (snapshot) io.to(podRoom(code)).emit('pod:state', snapshot);
+  /**
+   * Sends every socket in the pod the state *as its own seat may see it*, never the raw game state.
+   *
+   * One payload per socket rather than one per room: `dealTable` compacts seat indices when the
+   * table is dealt, so a seat-numbered room joined at sit-down time can be the wrong room by the
+   * time the game starts. Resolving each socket's seat from the authoritative snapshot by playerId
+   * cannot go stale that way. A socket with no seat (a watcher) gets the spectator view.
+   */
+  const broadcast = async (code: string, snapshot: PodSnapshot | null): Promise<void> => {
+    if (!snapshot) return;
+    const sockets = await io.in(podRoom(code)).fetchSockets();
+    for (const member of sockets) {
+      const seat = snapshot.pod.seats.find((s) => s.playerId === member.data.playerId)?.seat ?? null;
+      member.emit('pod:state', toSeatSnapshot(snapshot, seat));
+    }
   };
 
-  const fail = (socket: RealtimeSocket, ack: Ack | undefined, code: PodErrorEvent['code'], message: string): void => {
-    const error: PodErrorEvent = { code, message: message.slice(0, 500) };
+  const fail = (
+    socket: RealtimeSocket, ack: Ack | undefined, code: PodErrorEvent['code'], message: string,
+    stateVersion?: number,
+  ): void => {
+    const error: PodErrorEvent = {
+      code, message: message.slice(0, 500),
+      ...(stateVersion === undefined ? {} : { stateVersion }),
+    };
     socket.emit('pod:error', error);
     if (typeof ack === 'function') ack({ ok: false, error });
   };
 
   const reportError = (socket: RealtimeSocket, ack: Ack | undefined, event: string, err: unknown): void => {
-    if (err instanceof PodError) return fail(socket, ack, err.code, err.message);
+    if (err instanceof PodError) return fail(socket, ack, err.code, err.message, err.stateVersion);
     if (err instanceof z.ZodError) {
       const msg = err.issues.map((i) => `${i.path.join('.') || 'payload'}: ${i.message}`).join('; ');
       return fail(socket, ack, 'bad_payload', msg);
@@ -143,10 +182,13 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
 
     on('pod:create', async (input, ack) => {
       if (socket.data.podCode) throw new PodError('already_in_pod', 'leave your current pod first');
+      // The create payload may name the player; the handshake name is only a fallback for a client
+      // that does not send one.
+      if (input.playerName) socket.data.name = input.playerName;
       const result = await store.create(input, { playerId: socket.data.playerId, name: socket.data.name ?? 'Host' });
       seatSocket(result);
       ack?.({ ok: true, code: result.pod.code, seat: 0, seatToken: result.seatToken, playerId: result.playerId, stateVersion: result.stateVersion });
-      broadcast(result.pod.code, result);
+      await broadcast(result.pod.code, result);
       log.info({ code: result.pod.code, playerId: result.playerId }, 'pod created');
     });
 
@@ -158,8 +200,38 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
       socket.data.name = input.name;
       seatSocket(result);
       ack?.({ ok: true, code: input.code, seat: result.seat, seatToken: result.seatToken, playerId: result.playerId, stateVersion: result.stateVersion });
-      broadcast(input.code, result);
+      await broadcast(input.code, result);
       log.info({ code: input.code, seat: result.seat, reclaimed: result.reclaimed }, 'player joined');
+    });
+
+    /*
+      Watching: in the room, out of the game.
+
+      No seat, so `broadcast` sends this socket the spectator view — both hands hidden, no legal
+      moves — and every handler that calls `requireSeat` refuses it, which is every handler that
+      changes anything. The pod's status is not checked: a watcher arriving mid-game is the usual
+      case, and a table that only admitted watchers in the lobby would be useless for the thing
+      people actually want to watch.
+    */
+    on('pod:watch', async (input, ack) => {
+      if (socket.data.podCode && socket.data.podCode !== input.code) {
+        throw new PodError('already_in_pod', 'leave your current pod first');
+      }
+      if (socket.data.seat !== undefined) {
+        throw new PodError('already_in_pod', 'you are seated at this table; leave your seat to watch');
+      }
+      const snapshot = await store.get(input.code);
+      if (!snapshot) throw new PodError('not_found', 'no table with that code');
+      socket.data.podCode = input.code;
+      // Kept for the chat and for nothing else: a watcher with no name talked as "Player", which
+      // is what one of the two people playing is called. See `pod:chat`.
+      if (input.name !== undefined) socket.data.name = input.name;
+      void socket.join(podRoom(input.code));
+      ack?.({ ok: true, code: input.code, stateVersion: snapshot.stateVersion });
+      // Only this socket needs the state: nobody at the table has to be told somebody is watching,
+      // and a broadcast would be one view per seat for no reason.
+      socket.emit('pod:state', toSeatSnapshot(snapshot, null));
+      log.info({ code: input.code, playerId: socket.data.playerId }, 'watcher joined');
     });
 
     const leavePod = async (): Promise<void> => {
@@ -169,7 +241,7 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
       socket.data.seatToken = undefined;
       await socket.leave(podRoom(code));
       const snap = await store.leave(code, playerId);
-      broadcast(code, snap);
+      await broadcast(code, snap);
     };
 
     on('pod:leave', async (_input, ack) => {
@@ -181,24 +253,87 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
       const { code, playerId } = requireSeat();
       const snap = await store.ready(code, playerId, input.ready);
       ack?.({ ok: true, stateVersion: snap.stateVersion });
-      broadcast(code, snap);
+      await broadcast(code, snap);
+    });
+
+    /*
+      A decklist somebody pasted in, for their own seat.
+
+      The text is parsed by the **server** — see `PodStore.setDeck` — and the ack carries what it
+      read rather than what the browser guessed: how many cards, how many different ones, how many
+      of them the engine's pool does not have and which. That last list is the thing the player
+      needs: a list with twelve unreadable cards can still be played on the tabletop, and the one
+      question they will ask is which twelve.
+
+      Broadcast as well as acked, because the *table* needs the summary too: the host decides
+      whether to start an automated game, and a seat whose list has cards the engine cannot read
+      makes that impossible — better to say so in the lobby than to have `auto:start` refused.
+    */
+    on('pod:deck', async (input, ack) => {
+      const { code, playerId } = requireSeat();
+      const { snapshot, summary } = await store.setDeck(code, playerId, input);
+      ack?.({ ok: true, stateVersion: snapshot.stateVersion, deck: summary });
+      await broadcast(code, snapshot);
     });
 
     on('pod:action', async (input, ack) => {
       const { code, playerId } = requireSeat();
       const snap = await store.applyAction(code, playerId, input.action, input.expectedVersion);
       ack?.({ ok: true, stateVersion: snap.stateVersion });
-      broadcast(code, snap);
+      await broadcast(code, snap);
     });
 
+    /*
+      Taking back the last thing that happened at the table.
+
+      The host's call and nobody else's: it is the one affordance here that rewrites what has
+      already happened, and in a hidden-information game that is not a power to hand round. The
+      store holds exactly one step, so there is nothing to say in the payload — and `nothing_to_undo`
+      comes back when there is nothing there, which the table reads as "hide the button" rather
+      than as an error worth showing anybody.
+
+      Announced in the table's chat rather than written into the game's log, because the log is the
+      engine's and the restored state carries the log it had — the undone move's own line is gone
+      from it, which is correct, since it did not happen. What everybody at the table does need to
+      see is that somebody took something back, and that is a message, not a rule.
+    */
+    on('pod:undo', async (_input, ack) => {
+      const { code, playerId } = requireSeat();
+      const snap = await store.undo(code, playerId);
+      ack?.({ ok: true, stateVersion: snap.stateVersion });
+      io.to(podRoom(code)).emit('pod:chat', {
+        id: randomUUID(),
+        seat: null,
+        name: 'Table',
+        text: `${socket.data.name ?? 'The host'} took back the last move.`,
+        at: Date.now(),
+      });
+      await broadcast(code, snap);
+    });
+
+    /*
+      Table talk, and the one thing the server has to say about it that the client cannot.
+
+      A watcher may talk — `requireSeat` asks only that the socket is *in* a pod, and it has been
+      that way since watching was built. What it may not do is look like a player: with no seat and
+      no name the line used to read "Player", which is exactly what somebody at the table is
+      called, and a spectator's "I'm responding to that" acted on as an opponent's is a wrong move
+      made in good faith.
+
+      So `watching` is set here from the socket's own seat rather than inferred downstream from
+      `seat === null`. The client's idea of who is a spectator is not the guarantee; this is — the
+      same rule the privacy default in D132 follows.
+    */
     on('pod:chat', async (input, ack) => {
       const { code } = requireSeat();
+      const watching = socket.data.seat === undefined;
       io.to(podRoom(code)).emit('pod:chat', {
         id: randomUUID(),
         seat: socket.data.seat ?? null,
-        name: socket.data.name ?? 'Player',
+        name: socket.data.name ?? (watching ? 'Watcher' : 'Player'),
         text: input.text,
         at: Date.now(),
+        ...(watching ? { watching: true } : {}),
       });
       ack?.({ ok: true });
     });
@@ -218,14 +353,14 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
         .markDisconnected(code, playerId)
         .then((res) => {
           if (!res) return;
-          broadcast(code, res.snapshot);
+          void broadcast(code, res.snapshot);
           const timer = setTimeout(() => {
             graceTimers.delete(timer);
             void store
               .reapDisconnected(code, playerId, res.at)
               .then((r) => {
                 if (r.changed) {
-                  broadcast(code, r.snapshot);
+                  void broadcast(code, r.snapshot);
                   log.info({ code, playerId }, 'seat reaped after grace window');
                 }
               })

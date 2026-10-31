@@ -1,0 +1,1504 @@
+/**
+ * The shapes the automated engine adds to the game state: steps, priority, the stack, combat.
+ *
+ * Kept in their own module rather than bolted onto `types.ts` because they are the vocabulary of a
+ * different layer. The tabletop needs none of them — two people passing priority verbally is the
+ * whole of its turn structure — and a table running in manual mode leaves every one of these at its
+ * empty value.
+ */
+import type { CardInstance, ZoneId } from './cards.js';
+import type { ContinuousEffect, GrantedTriggerRef } from './characteristics.js';
+import type { ManaPool } from './mana.js';
+import type { SeatIndex } from './types.js';
+
+/**
+ * Every step of a turn, in order. Phases that contain no steps (the main phases) appear once.
+ *
+ * `first-strike-damage` is a real step that only exists when a creature in combat has first or
+ * double strike (CR 510.4); modelling it as an always-present step that is skipped when empty is
+ * simpler than conditionally inserting one, and produces the same sequence.
+ */
+export const STEPS = [
+  'untap',
+  'upkeep',
+  'draw',
+  'precombat-main',
+  'begin-combat',
+  'declare-attackers',
+  'declare-blockers',
+  'first-strike-damage',
+  'combat-damage',
+  'end-combat',
+  'postcombat-main',
+  'end',
+  'cleanup',
+] as const;
+export type Step = (typeof STEPS)[number];
+
+export const STEP_LABELS: Readonly<Record<Step, string>> = Object.freeze({
+  untap: 'Untap',
+  upkeep: 'Upkeep',
+  draw: 'Draw',
+  'precombat-main': 'Main phase 1',
+  'begin-combat': 'Beginning of combat',
+  'declare-attackers': 'Declare attackers',
+  'declare-blockers': 'Declare blockers',
+  'first-strike-damage': 'First strike damage',
+  'combat-damage': 'Combat damage',
+  'end-combat': 'End of combat',
+  'postcombat-main': 'Main phase 2',
+  end: 'End step',
+  cleanup: 'Cleanup',
+});
+
+/**
+ * One card that reached exile, and the three facts about the moment before it did.
+ *
+ * Every other zone-change list in `GameState` is a list of ids, because every other event can be
+ * read off the card where it ended up. Exile cannot: the zone belongs to the card's **owner**
+ * rather than to whoever controlled the permanent, the counters are already gone, and a creature
+ * card exiled out of a graveyard sits in it looking exactly like a creature that was on the
+ * battlefield a moment ago. So the facts travel with the event instead of being inferred from the
+ * wreckage — one field per word of the printed phrase this exists for, "a **creature** **you
+ * control** is exiled" (CR 400.7).
+ */
+/**
+ * One spell copied onto the stack, as `settle` needs to read it back.
+ *
+ * Deliberately not an instance id. A copy of a spell exists only as a stack object (CR 707.12),
+ * `copySpellOnStack` gives it a synthetic `cp<n>` id, and it has resolved or been countered long
+ * before anything asks — so this carries what the event needs and nothing that would dangle.
+ */
+export interface CopiedSpell {
+  /** The copy's card types, lowercased, exactly as a cast raises them. */
+  readonly types: readonly string[];
+  /** Whose copy it is: the controller a magecraft trigger compares itself against. */
+  readonly controller: SeatIndex;
+}
+
+/** One clock that ran out: which object, which counter it was counting, and what it was called. */
+export interface ExpiredClock {
+  readonly card: string;
+  readonly counter: string;
+  /**
+   * The object's name **as the clock ran out**, which is not always what it is called afterwards.
+   *
+   * Thing in the Ice is the case: its last ice counter coming off is what transforms it, so by the
+   * time `applyAction` writes the log the permanent is an Awoken Horror and a name read then says
+   * the Horror had ice counters on it. Carried for the same reason `ExiledCard` carries its facts —
+   * the moment is gone by the time anything asks.
+   */
+  readonly name: string;
+}
+
+export interface ExiledCard {
+  readonly card: string;
+  /**
+   * The zone it came from, which is what tells a blink from a cost.
+   *
+   * "A creature you control is exiled" is about a permanent leaving the battlefield; a card exiled
+   * from a graveyard to pay for escape, or from a hand to foretell, is not that — and after the
+   * move the two are indistinguishable.
+   */
+  readonly from: ZoneId;
+  /**
+   * Who controlled it as it left. For a permanent that is its controller; for a card anywhere else
+   * it is the seat whose zone it was in, which is the same question that zone can answer.
+   */
+  readonly controller: SeatIndex;
+  /**
+   * Whether it was a creature as it left, asked of `characteristicsOf` before the move.
+   *
+   * Not read from the printed type line, which would call an animated land a land and a
+   * face-down 2/2 nothing at all (CR 707.2) — the question a card asks is what was on the
+   * battlefield, and that is a fact about the board rather than about the cardboard.
+   */
+  readonly wasCreature: boolean;
+}
+
+/**
+ * One scheduled delayed trigger (CR 603.7).
+ *
+ * It names a trigger the card already has — `abilityIndex` into `CardScript.triggers`, marked
+ * `delayed` there so the ordinary event path never fires it — plus everything the ability will
+ * need when it does fire, because by then the board may say none of it: which permanent it was
+ * about, who controls it, and what to call it in the log.
+ */
+export interface DelayedTrigger {
+  readonly id: string;
+  /** The card whose script holds the ability. May have left the battlefield by now. */
+  readonly source: string;
+  readonly controller: SeatIndex;
+  /** Index into that card's `triggers`. */
+  readonly abilityIndex: number;
+  /** The step it fires at the beginning of. */
+  readonly step: Step;
+  /**
+   * Whose turn's step. `you` is the controller's own next one — "at the beginning of **your** next
+   * end step" — and `any` is the next occurrence whoever's turn it is, which is what "at end of
+   * combat" means: the combat is happening on somebody else's turn as often as not.
+   */
+  readonly of: 'you' | 'any';
+  /** The permanent the ability is about, for "that creature". See `StackObject.subject`. */
+  readonly subject?: string;
+  readonly description: string;
+  /**
+   * The turn it was scheduled on, so "the **next** end step" cannot be the one already in
+   * progress. A delayed trigger created during an end step waits for the following turn's
+   * (CR 603.7b).
+   */
+  readonly createdTurn: number;
+  /** The step it was scheduled in, for the same reason. */
+  readonly createdStep: Step;
+}
+
+/** Steps in which a player may cast a sorcery-speed spell (their own main phase, empty stack). */
+export const MAIN_STEPS: readonly Step[] = Object.freeze(['precombat-main', 'postcombat-main']);
+export const COMBAT_STEPS: readonly Step[] = Object.freeze([
+  'begin-combat', 'declare-attackers', 'declare-blockers', 'first-strike-damage', 'combat-damage', 'end-combat',
+]);
+/** Steps in which nobody receives priority (CR 502.1, 514.1). */
+export const NO_PRIORITY_STEPS: readonly Step[] = Object.freeze(['untap', 'cleanup']);
+
+/**
+ * Something a spell or ability can be pointed at.
+ *
+ * Three shapes, and the third one is the odd one. A **card** covers a permanent on the battlefield,
+ * a card in a graveyard, and a spell on the stack — a spell *is* a card, which is why "counter
+ * target spell" needed nothing of its own. A **player** is a seat.
+ *
+ * An **ability** on the stack is neither. It has no card anywhere: `pushAbility` gives it a
+ * synthetic `ab<n>` id and the object in `stackObjects` is all there is of it, which is exactly why
+ * it needs its own kind rather than borrowing `card`. Everything that reads a target has to answer
+ * for it honestly, and the answers are mostly "nothing":
+ *
+ * - it is in no zone, so the zone checks do not apply and "still on the stack" is the whole of its
+ *   legality;
+ * - it has no `objectSeq`, so it cannot be a *different object* the way a bounced creature is
+ *   (CR 400.7) — it either is still there or it is gone;
+ * - it has no permanent to carry hexproof, shroud, protection or ward, so none of those touch it;
+ * - and it ceases to exist the moment it resolves, which is what makes "counter target ability" a
+ *   card you have to hold rather than a card you cast on your own turn.
+ */
+export type Target =
+  | { readonly kind: 'card'; readonly id: string }
+  | { readonly kind: 'player'; readonly seat: SeatIndex }
+  | { readonly kind: 'ability'; readonly id: string };
+
+export const targetKey = (t: Target): string => {
+  switch (t.kind) {
+    case 'card': return `card:${t.id}`;
+    case 'ability': return `ability:${t.id}`;
+    default: return `player:${t.seat}`;
+  }
+};
+
+/**
+ * Something waiting to resolve.
+ *
+ * A spell's id is its card instance id, so the card physically sits in the stack zone and the
+ * object describes how it was cast. An ability has no card, so it gets a synthetic id — which is
+ * why the stack zone and this map are separate: an ability on the stack has no card to put there.
+ */
+export interface StackObject {
+  readonly id: string;
+  readonly kind: 'spell' | 'activated' | 'triggered';
+  /** Instance the spell is, or the permanent the ability came from. */
+  readonly source: string;
+  readonly controller: SeatIndex;
+  readonly cardKey: string;
+  /** Which of the source's abilities, for activated and triggered objects. */
+  readonly abilityIndex?: number;
+  /**
+   * Where this triggered ability was **defined**, when the permanent that has it did not print it.
+   *
+   * `source` is still the permanent whose event fired it — the ability belongs to the creature it
+   * was granted to (CR 113.6), so "this creature" means the holder and the controller is the
+   * holder's — but the definition is on somebody else's card. Without this the resolution would
+   * look up `abilityIndex` in the holder's own `triggers` and find a different ability, or none.
+   *
+   * It carries the granting card's **name** rather than its instance, because the ability is
+   * independent of its source once it is on the stack (CR 608.2): the Aura can be destroyed, or
+   * the pair broken, while the trigger waits, and it still has to resolve. See `GrantedTriggerRef`.
+   */
+  readonly grantedBy?: GrantedTriggerRef;
+  readonly targets: readonly Target[];
+  /**
+   * The stack object this triggered ability is *about*, for a trigger that watched something
+   * happen to an object rather than to a player or a permanent.
+   *
+   * Ward is the only thing that needs it and needs it absolutely: "counter it unless that player
+   * pays" has no referent at all without knowing which `it`, and by the time the ward ability
+   * resolves the spell is one of several on the stack. It travels on the object for exactly the
+   * reason `attacked` does — the event is gone by the time anything reads it.
+   */
+  readonly answering?: string;
+  /**
+   * The attack a ninjutsu ability's source is about to **join**, captured when the cost was paid
+   * (CR 702.49a).
+   *
+   * It travels on the object for the same reason `attacked` and `answering` do: the attacker that
+   * was returned to hand is out of combat by the time this ability resolves, so the defender it was
+   * aimed at no longer exists anywhere in the board. Without this the ninja would arrive attacking
+   * nobody, or — worse — attacking whoever happened to still be in `combat.attacks`.
+   *
+   * Named for what it carries rather than for the keyword, because any effect that puts a permanent
+   * onto the battlefield already attacking wants exactly this and nothing else.
+   */
+  readonly enteringAttack?: {
+    readonly defender: SeatIndex;
+    readonly planeswalker?: string;
+  };
+  /**
+   * Which **object** each card target was when it was chosen, by instance id (CR 400.7).
+   *
+   * A separate map rather than a field on `Target` so that nothing downstream — the wire, the
+   * table, the bot — has to know this exists: a target is still `{kind, id}` everywhere it is
+   * read. The one reader is the fizzle check in `resolveTop`, which treats a card that has since
+   * changed zones as gone, so a creature exiled and returned is not the creature the removal was
+   * aimed at. See `CardInstance.objectSeq`.
+   */
+  /**
+   * The counters the permanent this ability is about had **before** the event (CR 608.2h).
+   *
+   * Carried on the object because the board cannot answer it any more: `relocate` wipes a
+   * permanent's counters as it leaves the battlefield, so by the time a death trigger resolves
+   * there is nothing left to count. A Hangarback Walker makes one Thopter per +1/+1 counter it
+   * *had*, which is the only thing in this pool that asks — and the reason this is a counters map
+   * rather than a whole snapshot of the instance.
+   */
+  readonly subjectCounters?: Readonly<Record<string, number>>;
+  readonly targetSeqs?: Readonly<Record<string, number>>;
+  readonly x?: number;
+  /**
+   * How many spells had been cast this turn **before this one** (CR 702.40a).
+   *
+   * Storm's whole number, snapshotted as the spell is cast rather than counted when the trigger
+   * resolves — because by then the count has moved: an opponent answering a storm spell casts a
+   * spell of their own, and those were not cast "before it". Set on every spell rather than only
+   * on the ones with storm, for the usual reason: a field set in one place is a field that cannot
+   * be forgotten in another, and the number is one addition.
+   */
+  readonly castNumber?: number;
+  /**
+   * How much of a divided quantity each of `targets` was assigned, position by position
+   * (CR 601.2d). Absent on everything that divides nothing, which is almost everything.
+   *
+   * Aligned with `targets` rather than keyed by target, and that alignment is maintained where
+   * the list is: a target dropped by the fizzle check takes its share out with it, and a
+   * redirected target keeps the share of the slot it took over (CR 114.6 changes what a spell is
+   * pointed at and not how it was divided). Keyed by target would survive both on its own and
+   * would mean every reader learning what a target's key is to ask a question about a number.
+   */
+  readonly division?: readonly number[];
+  /**
+   * Whether this spell's kicker was paid.
+   *
+   * On the stack object for the same reason X is: it was chosen as the spell was cast, both
+   * players can read it before deciding whether to respond, and the effect needs it on
+   * resolution. Absent on everything without a kicker.
+   */
+  readonly kicked?: boolean;
+  /**
+   * Whether this spell's buyback was paid (CR 702.26a).
+   *
+   * The flashback flag's opposite number and on the object for exactly the same reason: where the
+   * card goes as it leaves the stack depends on how it was cast, and by then nothing else
+   * remembers. Flashback sends it to exile whatever happened; this sends it to its owner's **hand**
+   * — but only if the spell **resolved**, which is the half that cannot be read here. A countered
+   * buyback spell goes to the graveyard like any other, so `spellLeavesStack` is told whether it
+   * resolved by the caller, the same way the adventure branch is.
+   */
+  readonly boughtBack?: true;
+  /**
+   * Whether this spell was cast with flashback (CR 702.33a).
+   *
+   * On the stack object because the card's destination depends on it and the card does not: a
+   * spell cast from the graveyard is **exiled** as it leaves the stack, countered or resolved, and
+   * by then the only thing that remembers how it was cast is this.
+   */
+  readonly flashback?: true;
+  /**
+   * Whether this spell is the adventure half of an adventurer card.
+   *
+   * Beside `flashback` because it answers the same question — where the card goes as it leaves the
+   * stack — and because, like flashback, nothing else remembers by then which half was cast. An
+   * adventure that finishes resolving is exiled, and its owner may cast the creature from there.
+   */
+  readonly adventure?: true;
+  /**
+   * Whether this spell was cast for its evoke cost (CR 702.74a).
+   *
+   * Beside `flashback` and `adventure` because it answers the same kind of question — what becomes
+   * of the card once this object is gone — and a sharper version of it: those two are about which
+   * zone the card goes to, and this one is about whether the permanent that arrives gets to stay.
+   * The stack object is the last thing that knows, so it writes the fact onto the permanent as it
+   * arrives. See `EVOKED`.
+   */
+  readonly evoked?: true;
+  /**
+   * Whether this spell was cast for its dash cost (CR 702.109a).
+   *
+   * Beside `evoked` and read at the same moment, for the opposite consequence: the permanent that
+   * arrives gets haste and a return to its owner's hand at the beginning of the next end step.
+   * Both are arranged where the spell resolves, because that is the last place anything knows how
+   * it was paid for.
+   */
+  readonly dashed?: true;
+  /**
+   * Whether this spell was cast for its bestow cost (CR 702.103b).
+   *
+   * Beside `evoked` and `dashed`, and read one step earlier than either: this one changes what the
+   * *spell* is rather than what the permanent does afterwards, so the card itself carries the fact
+   * from the moment it is announced (see `CardInstance.bestowed`). The flag is on the stack object
+   * too, because the resolution has to know to attach the permanent to what it targeted rather
+   * than putting an ordinary creature onto the battlefield.
+   */
+  readonly bestowed?: true;
+  /**
+   * Whether this spell was cast for its spectacle cost (CR 702.137a).
+   *
+   * On the stack object with the other three for the same reason: both players can read what a
+   * spell cost before deciding whether to answer it, and a Skewer the Critics for {R} is a
+   * different card from one for {2}{R} — not in what it does, but in what the rest of the turn
+   * looked like.
+   */
+  readonly spectacled?: true;
+  /**
+   * Whether this spell was cast for its overload cost (CR 702.96).
+   *
+   * The one flag of the five that changes what the resolution *does* rather than what it cost, so
+   * `completeResolution` reads it to choose between the card's two effects. On the stack object
+   * because it is public from the moment the spell is announced and because both players need it:
+   * an overloaded spell has no targets, so there is nothing to protect and nothing to redirect, and
+   * a player deciding whether to counter it is deciding about a sweeper rather than a removal
+   * spell.
+   */
+  readonly overloaded?: true;
+  /**
+   * Whether this spell was cast **from its controller's hand** with rebound (CR 702.88a).
+   *
+   * Set as the spell is announced, because by the time it has resolved the card is on the stack and
+   * nothing remembers which zone it came from — and the zone is the whole of the condition: the
+   * rebound cast itself happens from exile, so a spell that remembered nothing would exile itself
+   * again every upkeep for the rest of the game. See `CardScript.rebound`.
+   */
+  readonly rebounding?: true;
+  /**
+   * How many times this spell's replicate cost was paid, and so how many copies it makes.
+   *
+   * A number rather than a flag, which is what makes it different from every other keyword on this
+   * object: the count is part of what was paid, and the trigger that makes the copies reads it from
+   * here the way storm's reads `castNumber`. See `CardScript.replicate`.
+   */
+  readonly replicated?: number;
+  /**
+   * The modes chosen for a modal spell, as indices into its script's `modal.modes`, in printed
+   * order. Chosen as the spell was cast (CR 601.2b) and public from that moment, which is why it
+   * lives on the stack object rather than anywhere private.
+   */
+  readonly modes?: readonly number[];
+  /**
+   * For a triggered ability that fired off an attack: what that attack was aimed at.
+   *
+   * Carried here because "deals 1 damage to the player or planeswalker it's attacking" is about
+   * the attack that caused the trigger, and by the time the ability resolves the board no longer
+   * says what it was aimed at — the attacker may be dead and the attack removed from combat.
+   */
+  readonly attacked?: AttackedTarget;
+  /**
+   * For a block trigger: the attacker the block was against (CR 509.1a).
+   *
+   * Travels for the same reason `attacked` does, and a sharper one. "That creature" in a block
+   * trigger is the attacker this creature blocked, and nothing on the board says which that was by
+   * the time the ability resolves: another creature may have been declared on the same attacker,
+   * the attack may have been removed from combat, and a blocker is only a tapped creature.
+   */
+  readonly blocked?: string;
+  /**
+   * For a triggered ability that fired off something happening to a permanent: which permanent.
+   *
+   * Travels with the object for the same reason `attacked` does, and the reason is sharper here.
+   * "That creature" is resolved when the ability resolves, not when it triggered — and by then the
+   * board may hold two more creatures that entered after this one, so looking for "the creature
+   * that entered" would find the wrong one. The id is enough: if the permanent has gone, the
+   * ability finds nothing and does nothing, which is what the rules say happens (CR 603.3d).
+   */
+  readonly subject?: string;
+  /**
+   * The player whose action caused this triggered ability, for a trigger that has to say "**that**
+   * player" (CR 603.3d).
+   *
+   * The third of the same family as `attacked` and `subject`, and the one that is about a person
+   * rather than a thing: "whenever an opponent casts a noncreature spell, **that player** loses 2
+   * life" has no referent without it, and in a two-player game the wrong reading — every opponent
+   * — is indistinguishable from the right one, which is exactly the kind of bug a pod finds a year
+   * later. Not the ability's controller: that is `controller`.
+   *
+   * **Absent means the actor was the source's own controller**, which `raise` leaves off rather
+   * than writing out. That was offered while every card asking the question asked it about an
+   * *opponent*; Ruric Thar is the first that taxes the table including its own side, and reading
+   * an absent actor as "nobody" made it deal no damage to its controller at all. A card reading
+   * this field wants `actor ?? controller`.
+   */
+  readonly actor?: SeatIndex;
+  /**
+   * The stack object this one is a **copy** of (CR 707.10), when it is one.
+   *
+   * Its presence is also what says there is no card here: a copy of a spell is not a card, so
+   * `instances[id]` is empty for it and nothing may put it in a graveyard when it has resolved.
+   * Readers that need a card off a spell go through `source`, which on a copy is still the
+   * original's instance — the characteristics are the original's, and that is where they are read
+   * from.
+   */
+  readonly copyOf?: string;
+  /** What to show in the stack, written when the object was put there. */
+  readonly description: string;
+}
+
+/**
+ * What one attack was declared against, kept small enough to copy onto a trigger.
+ *
+ * The seat is always there, because it is that player's planeswalker being attacked and that
+ * player who declares blockers; the planeswalker is only there when the attack was aimed at one.
+ */
+export interface AttackedTarget {
+  readonly defender: SeatIndex;
+  readonly planeswalker?: string;
+}
+
+export interface CombatAttack {
+  readonly attacker: string;
+  readonly defender: SeatIndex;
+  /**
+   * A planeswalker this attack is aimed at instead of the player (CR 506.2).
+   *
+   * The seat stays, because it is still *that player's* planeswalker being attacked and it is
+   * still that player who declares blockers. Only where the damage lands changes.
+   */
+  readonly planeswalker?: string;
+  /** In damage-assignment order, which is the order the attacker's controller chose. */
+  readonly blockers: readonly string[];
+  /**
+   * Which object the attacker was when it was declared, and which objects the blockers were.
+   *
+   * A permanent that leaves the battlefield is removed from combat (CR 506.4), and a card that
+   * comes back is a new object (CR 400.7) — so a creature blinked out and back mid-combat is not
+   * the creature that was declared, however much its id says otherwise. Compared in
+   * `dealCombatDamage`, which is the only place it changes an outcome.
+   *
+   * It is the blockers' *seqs* that are compared rather than their presence in the list, because
+   * the list is also what says the attacker is **blocked**: a chump blocker that dies still
+   * stops the damage (CR 509.1h), so nothing may be removed from it.
+   */
+  readonly attackerSeq?: number;
+  readonly blockerSeqs?: Readonly<Record<string, number>>;
+}
+
+export interface CombatState {
+  readonly attacks: readonly CombatAttack[];
+  /** Set once the first-strike damage step has happened, so it does not happen twice. */
+  readonly firstStrikeDealt: boolean;
+  /**
+   * Whether the attacking player has finished declaring. Needed as its own flag because "attacked
+   * with nothing" and "has not declared yet" both leave `attacks` empty, and the first must end the
+   * step while the second must block it.
+   */
+  readonly attackersDeclared: boolean;
+  /** Defending seats that have finished declaring blockers, for the same reason. */
+  readonly blockersDeclaredBy: readonly SeatIndex[];
+  /**
+   * Whether the attacking player has settled the damage assignment order (CR 509.2).
+   *
+   * Its own flag for the same reason as the two above: once the order is answered, each attack's
+   * `blockers` list *is* the order, so there is nothing left in the board to say whether anybody
+   * was asked. Only set when an order was actually owed, and never asked twice.
+   */
+  readonly damageOrdered: boolean;
+}
+
+export const EMPTY_COMBAT: CombatState = Object.freeze({
+  attacks: [], firstStrikeDealt: false, attackersDeclared: false, blockersDeclaredBy: [],
+  damageOrdered: false,
+});
+
+/** The automation half of the game state. Absent values mean a table in manual mode. */
+export interface AutomationState {
+  /** True when the engine runs the rules. False is the manual tabletop. */
+  readonly automated: boolean;
+  /**
+   * The seats that asked to be offered *every* priority, rather than have the engine pass for them
+   * when passing is their only legal move.
+   *
+   * Auto-pass is on by default, because without it a real game asks each player twenty-five times
+   * a turn to confirm they still cannot do anything. A player who wants every priority — to bluff,
+   * or to watch each step go by — turns it off, and this is the list of who has.
+   *
+   * **Per seat rather than per table, which is the point of the list.** It was one boolean, so one
+   * player asking to see every step made the engine stop for *both* of them: the other player was
+   * then pestered twenty-five times a turn for a setting they never touched. Stops are a preference
+   * about how you want to be asked, not a rule about the game, and two people at one table can
+   * reasonably want different answers.
+   *
+   * Read through `autoPassFor`, which treats a missing entry as "on" — so a game stored before
+   * this list existed comes back with everybody auto-passing, which is what it had.
+   */
+  readonly autoPassOff: readonly SeatIndex[];
+  /**
+   * Seats that have given a **standing answer** to the dredge question (CR 702.52a), by seat index.
+   *
+   * The second preference on this state and the same kind of thing as `autoPassOff`: it is about
+   * how you want to be *asked*, not about the game. A dredge card in a graveyard stops the table
+   * every single draw step for as long as it is there, which is correct and is also twenty taps a
+   * game for an answer most players give the same way every time.
+   *
+   * So a seat may say `always` or `never` and the engine answers for them, saying so through the
+   * replacement channel so the cards do not move silently. **Absent is "ask", and that is the
+   * default on purpose**: a mechanic that answers itself without being told to is the bug the whole
+   * offer family exists to avoid, and the measured bot numbers in D210 are numbers about a bot that
+   * is asked.
+   *
+   * Keyed by `String(seat)` rather than a list because there are three answers and a list can only
+   * carry two. See `auto:dredgeStops`.
+   */
+  readonly dredgeStops: Readonly<Record<string, 'always' | 'never'>>;
+  readonly step: Step;
+  /** Seat holding priority, or null in a step where nobody gets it. */
+  readonly priority: SeatIndex | null;
+  /** Seats that have passed since the last time something happened. */
+  readonly passed: readonly SeatIndex[];
+  readonly stackObjects: Readonly<Record<string, StackObject>>;
+  /** Stack order, bottom first — the last id is the one that resolves next. */
+  readonly stackOrder: readonly string[];
+  /** Mana pools, keyed by seat index as a string so the state stays JSON-safe. */
+  readonly pools: Readonly<Record<string, ManaPool>>;
+  readonly combat: CombatState;
+  readonly effects: readonly ContinuousEffect[];
+  /** Lands played this turn per seat, for the one-per-turn rule. */
+  readonly landsPlayed: Readonly<Record<string, number>>;
+  /**
+   * Extra land drops a seat has been given this turn (CR 505.5b): an Explore, a Azusa.
+   *
+   * A separate count rather than a smaller `landsPlayed`, because the two mean different things
+   * and a card may read either: how many lands you have played is a fact about the turn, and how
+   * many more you may play is a permission that something gave you. Reset in the untap step with
+   * `landsPlayed`, since a permission that outlived its turn would be a different card.
+   */
+  readonly extraLands: Readonly<Record<string, number>>;
+  /** Source of synthetic ids for ability stack objects and effects. */
+  readonly autoSeq: number;
+  /**
+   * Abilities scheduled to trigger later, each exactly once (CR 603.7).
+   *
+   * The family of printed text this exists for is "**at end of combat**, destroy that creature"
+   * and "**at the beginning of the next end step**, return it to the battlefield": something
+   * happens now, and something else happens at a named time, once. Every other trigger in the
+   * engine fires at the moment its event happens, so none of this was expressible — and it cannot
+   * be faked with a step trigger, because a step trigger fires every turn for as long as its
+   * permanent is on the battlefield and this one fires once whether or not the permanent is still
+   * there.
+   *
+   * On the state rather than on the permanent for exactly that reason: the Flickerwisp that exiled
+   * something can be destroyed before the end step and the card still comes back, because the
+   * delayed ability has already been created and stopped belonging to it (CR 603.7d). Drained by
+   * the step it names.
+   */
+  readonly delayed: readonly DelayedTrigger[];
+  /** Set when a player has lost by trying to draw from an empty library (CR 704.5b). */
+  readonly drewFromEmpty: readonly SeatIndex[];
+  /**
+   * Permanents that have moved from the battlefield to a graveyard and whose death nobody has
+   * announced yet. Drained by `settle`, which raises a `dies` event for each.
+   *
+   * This exists because "dies" means *put into a graveyard from the battlefield* (CR 700.4) — not
+   * "noticed by state-based actions", which is all it used to mean. A creature destroyed by Doom
+   * Blade, or sacrificed to pay a cost, never passes through the lethal-damage check, so its
+   * trigger never fired; two call sites had been patched to announce their own deaths by hand and
+   * every other one was silently wrong. `relocate` is the single place a card changes zone, so it
+   * records the fact and `settle` interprets it: a script cannot be forgotten because nothing
+   * announces itself.
+   */
+  readonly died: readonly string[];
+  /**
+   * Permanents that have left the battlefield since the last `settle`, for leave-the-battlefield
+   * triggers (CR 603.6c). Wider than `died`, which is only the ones that reached a graveyard: a
+   * permanent that was exiled or bounced left too, and the cards that exiled something "until this
+   * leaves" have to give it back either way.
+   */
+  readonly left: readonly string[];
+  /**
+   * Tokens that have ceased to exist since the last `settle`, kept just long enough to raise their
+   * own triggers (CR 111.7, CR 603.6d).
+   *
+   * A token that leaves the battlefield stops existing immediately, which used to mean its death
+   * trigger found no source and never fired — written down in `relocate` as "a real limitation,
+   * and no token in the pool has one", and true right up until Sedgemoor Witch's Pest. The rules
+   * are clear that it should fire: a leave-the-battlefield ability triggers from the game state as
+   * it was *before* the event, so a 1/1 that says "when this dies, you gain 1 life" pays the life
+   * even though nothing is left to point at.
+   *
+   * So the instance is removed from its zone and detached immediately, as it must be — nothing
+   * should see a token sitting in a graveyard — and its last state is kept here for `raise` to
+   * read. `settle` clears the list once it has drained `died` and `left`, which is the moment the
+   * token has no further business in the game.
+   */
+  readonly vanished: Readonly<Record<string, CardInstance>>;
+  /**
+   * What replacement effects did since the last action was announced, in words.
+   *
+   * Recorded and drained the way `died` is, and for a reason that is about the *player* rather than
+   * about triggers: a replaced death produces no event anybody can log, so without this a creature
+   * dies to a Doom Blade and silently turns up in exile with a Zombie beside it, and the card that
+   * did it is nowhere on screen. `reduceAutoAction` drains the notes onto the message of the action
+   * that provoked them, which is where a player is already looking.
+   */
+  readonly replacements: readonly string[];
+  /**
+   * Creatures that have dealt combat damage to a *player* and whose damage nobody has announced
+   * yet, with the seat each one hit. Drained by `settle` alongside `died` and `entered`.
+   *
+   * The fourth member of the detect-rather-than-announce family, and it has to be recorded rather
+   * than compared: the other three can be found by looking at the board, and a life total going
+   * down does not say which creature took it there. `dealCombatDamage` is the one place combat
+   * damage is dealt, so it is the one place that knows — and it records a hit only when the damage
+   * actually landed, so a swing stopped by a Fog, a prevention shield or protection raises nothing,
+   * which is what "deals damage" means (CR 702.15a says the same for lifelink).
+   *
+   * The seat travels with it because the ability needs it: "that player mills" is about whoever was
+   * hit, which in a pod is not the only opponent. It is handed to the ability through the same
+   * `attacked` channel an attack trigger uses, so there is one way an ability learns which player
+   * its event was about rather than two.
+   */
+  readonly dealtCombatDamage: readonly { readonly creature: string; readonly defender: SeatIndex }[];
+  /**
+   * One entry per card drawn and not yet announced — the seat that drew it. Drained by `settle`.
+   *
+   * The fifth member of the detect-rather-than-announce family, and the second that **cannot** be
+   * found by comparing two states. `died`, `entered` and `left` are all visible on the board
+   * afterwards; a draw is not, because a card arriving in a hand is not the same thing as a card
+   * being drawn. A Diabolic Tutor, a Gravedigger and a Man-o'-War all put a card in a hand without
+   * anybody drawing one, so a hand-size comparison would fire "whenever you draw a card" on all
+   * three — and a draw whose card is immediately discarded would make the comparison come out
+   * level and fire on nothing. `draw` is the one place a card is actually drawn, so it is the one
+   * place that knows.
+   *
+   * Per *card* rather than per draw: "draw three cards" is three events, which is what the rules
+   * say (CR 121.2) and what makes a Chasm Skulker three counters bigger rather than one.
+   *
+   * It records only the cards that were really drawn. A seat drawing from an empty library draws
+   * nothing and loses the game (CR 704.5b), and nothing should trigger off the card it did not get.
+   *
+   * **Each entry carries the card and its place in the seat's turn**, which it did not when it was
+   * only a seat index. Miracle is why (D204): "you may cast this for its miracle cost when you draw
+   * it, if it's the **first** card you drew this turn" (CR 702.94a) is a question about a particular
+   * card *and* about its position, and `nth` is the only honest way to say the second half — a count
+   * compared afterwards cannot tell the first card of a `draw(2)` from the second, because by then
+   * both have arrived. `nth` is one-based and counts that seat's own draws since the turn began,
+   * which is what `cardsDrawnThisTurn` is the running total of.
+   */
+  readonly drew: readonly {
+    readonly seat: SeatIndex;
+    readonly card: string;
+    /** One-based: this card was the `nth` this seat drew this turn. */
+    readonly nth: number;
+  }[];
+  /**
+   * Cards that have arrived in somebody's graveyard and whose arrival nobody has announced yet.
+   * Drained by `settle`.
+   *
+   * The sixth member of the detect-rather-than-announce family, and the one that makes the
+   * graveyard an event rather than only a place. `died` is the battlefield half of this and was
+   * never the whole of it: the printed wording is "put into a graveyard **from anywhere**", and
+   * three of those anywheres are not deaths — a card milled off a library, a card discarded from
+   * a hand, and a spell that finishes resolving. Nothing in the engine could see any of them.
+   *
+   * Recorded in `relocate` for the reason every member of this family is: that is the one place a
+   * card changes zone, so it is the one place that cannot forget. A card already in a graveyard
+   * that moves within it is not arriving, and the initial deal is not either — the table is not
+   * automated yet when a test or a deck loader puts cards anywhere.
+   *
+   * It is **not** the same list as `died` and the two are both raised: a creature destroyed in
+   * combat is a death *and* a card put into a graveyard, which is exactly what the two printed
+   * wordings say about it.
+   */
+  readonly toGraveyard: readonly string[];
+  /**
+   * Cards that have reached **exile** since the last settle, with the facts the move destroys.
+   * Drained by `settle`.
+   *
+   * The seventh member of the detect-rather-than-announce family and the last zone change that was
+   * invisible to a card: a blink, a Journey to Nowhere, an escape cost, a foretell, a suspend and a
+   * spell exiled instead of buried all end up here, and until this list existed nothing in the
+   * engine could see any of them.
+   *
+   * **The only list in this family that carries more than an id**, and the reason is the one
+   * printed phrase that wants it. "Whenever a creature you control is exiled" asks three questions
+   * about the moment before the move — was it a creature, who controlled it, and did it come from
+   * the battlefield at all — and an exile zone belongs to a card's *owner*, holds the card with its
+   * counters already wiped, and keeps a creature card from a graveyard beside a creature that was
+   * on the battlefield a moment ago. So each of those three is answered in `relocate`, where it is
+   * still true, rather than guessed at afterwards from a card sitting in exile.
+   *
+   * Recorded for the reason the other six are: `relocate` is the one place a card changes zone, so
+   * it is the one place that cannot forget. Moving within exile is not arriving in it, and the
+   * initial deal is not either — the table is not automated yet while a deck is being loaded.
+   */
+  readonly exiled: readonly ExiledCard[];
+  /**
+   * Spells **copied** onto the stack since the last settle, for magecraft's "or copy" half.
+   *
+   * The newest member of the detect-rather-than-announce family — `entered`, `died`, `left`,
+   * `drew`, `toGraveyard`, `discarded`, `exiled` — and here for the same reason all of them are:
+   * the copy is made by `copySpellOnStack`, which lives below the module that can `raise`, so the
+   * fact is **recorded where it happens** and the event is raised by `settle`. A caller that had
+   * to remember to announce it is a caller that eventually does not.
+   *
+   * A copy of a spell is not a card, so what is recorded is the copy's **types** and whose copy it
+   * is rather than an instance id: the stack object is gone by the time anything could read it,
+   * and the types are the whole of what a magecraft trigger asks.
+   */
+  readonly copied: readonly CopiedSpell[];
+  /**
+   * Permanents **turned over** since the last settle: transform (CR 701.28).
+   *
+   * The ninth member of the detect-rather-than-announce family — `entered`, `died`, `left`, `drew`,
+   * `toGraveyard`, `discarded`, `exiled`, `copied` — and the simplest of them, because the fact it
+   * has to carry is only *which permanent*. Which face it became needs no recording: the flip has
+   * already moved `defKey`, so by the time `settle` raises the event the active script **is** the
+   * back face's, and "when this creature transforms into Awoken Horror" is a trigger written on
+   * Awoken Horror rather than a lookup.
+   *
+   * Here rather than raised at the flip for the family's usual reason: `transformPermanent` lives
+   * below the module that can `raise`, so the fact is written where it happens. And unlike morph's
+   * `turned-face-up` — which *is* raised at its own call site, because turning a morph up is a
+   * player action with the seat in hand — a transform is almost always caused by an effect
+   * resolving, where there is no action to hang it on.
+   */
+  readonly transformed: readonly string[];
+  /**
+   * Clocks that **ran out** since the last action: a counter counted down to nothing.
+   *
+   * The family's tenth fact and the only one that is **not raised as an event**, which is the whole
+   * design and is worth saying plainly. The other nine are recorded where they happen because a
+   * card wants to know; this one is recorded because **nothing outside the engine can tell it
+   * happened at all**, and no card wants to know.
+   *
+   * Why it cannot be seen: the engine wipes an object's counters when it changes zone, and three of
+   * the four clocks destroy or move their object the moment they expire — vanishing and fading
+   * sacrifice the creature, suspend casts the card out of exile. So "the clock ran out" and "the
+   * object left holding its last counter" both end up as *counters gone, object elsewhere*: the same
+   * observation. `countdowns.mjs` had to print a `?` for two of its rows and say so (D237).
+   *
+   * Why it is **not** a `TriggerEvent`: nothing printed watches a clock expiring. Vanishing and
+   * fading have no payoff cards, and suspend's "cast it when the last counter is removed" is a rule
+   * the engine implements directly rather than a trigger a card carries. A trigger kind nothing
+   * fires is the thing this engine already declines to add — `becomes-tapped` is deliberately
+   * card-less and the engine summary says so.
+   *
+   * So it is drained into the **log** rather than into `raise`, by `applyAction`, which is the one
+   * consumer that wants it: `LogEntry.data.expired` names the card and the counter, the message says
+   * which keyword did it, and the log is *persistent*, so an instrument reading state between
+   * actions can see it. A list drained into `raise` would have been invisible to exactly the harness
+   * that needed it — which is why `transform-use.mjs` has to watch the board instead.
+   */
+  readonly expired: readonly ExpiredClock[];
+  /**
+   * Cards that went from a **hand** to a graveyard since the last settle: discards.
+   *
+   * The narrowest of the zone-change lists, and the one that exists for a mechanic rather than for
+   * a wording: madness replaces the discard itself (CR 702.35a), so the engine has to be able to
+   * tell a discarded card from a milled one and from a spell that has finished resolving. By the
+   * time anything reads `toGraveyard` the card has moved and where it came from is gone, so the
+   * question is answered where the move happens — see `relocate` — and drained by `settle`.
+   */
+  readonly discarded: readonly string[];
+  /**
+   * Permanents that have arrived on the battlefield and whose entry nobody has announced yet.
+   * Drained by `settle` alongside `died`.
+   *
+   * The same story as `died`, and found the same way. `etb` was raised at exactly one call site —
+   * a permanent spell finishing its resolution — so a creature put onto the battlefield by
+   * Zombify never triggered, and a token never triggered at all. Krenko's Goblins, Izoni's
+   * Insects and Talrand's Drakes all arrived silently. Recorded where the card actually moves,
+   * announced in one place.
+   *
+   * A permanent changing controller is **not** entering the battlefield, so only a move from
+   * somewhere else counts.
+   */
+  readonly entered: readonly string[];
+  /**
+   * A cleanup-step discard that is blocking the turn from ending. Hand size is a real decision a
+   * player has to make, so the engine stops and waits rather than discarding for them.
+   */
+  readonly pendingDiscard: { readonly seat: SeatIndex; readonly count: number } | null;
+  /**
+   * Seats that have settled on their opening hand.
+   *
+   * A London mulligan draws a fresh seven and owes one card to the bottom of the library for each
+   * mulligan taken (CR 103.4c). The redraw is a physical move the tabletop already makes; what
+   * needs tracking is the debt, because a player who mulliganed twice and started with seven cards
+   * has not mulliganed at all. `auto:start` refuses while anybody still owes.
+   */
+  readonly kept: readonly SeatIndex[];
+  /**
+   * True between the engine taking over and the first turn beginning, while opening hands are
+   * settled. Nobody holds priority and no step has started.
+   */
+  readonly openingHands: boolean;
+  /**
+   * A triggered ability on the stack that still needs its targets chosen.
+   *
+   * Targets for a trigger are chosen as it is put on the stack (CR 603.3d), by its controller —
+   * which is a decision, and the engine will not make it. Nothing else happens until it is
+   * answered: no priority, no resolution, no step change. The same shape as `pendingDiscard`, for
+   * the same reason.
+   */
+  readonly pendingChoice: {
+    readonly seat: SeatIndex;
+    /** The stack object the targets belong to. */
+    readonly stackId: string;
+    /** What is being asked for, in words. */
+    readonly description: string;
+    /** How many targets are still to choose, in order. */
+    readonly remaining: number;
+  } | null;
+  /**
+   * A resolution that has stopped to ask somebody a question.
+   *
+   * Targets are chosen before a spell is on the stack; *this* is the other kind of decision — the
+   * one a card asks for while it is resolving, and the one that kept tutors, "choose one" and an
+   * opponent's own-choice discard off the scripted list entirely. Searching a library for a card is
+   * not a target: it is not chosen when the spell is cast, it cannot be responded to, and the cards
+   * it chooses between are in a hidden zone.
+   *
+   * The spell stays **on the stack** while this is outstanding, so both tables still show what is
+   * resolving, and nothing else happens until it is answered: no priority, no further resolution,
+   * no step change. `resume` is what the engine needs to pick the resolution back up — the answers
+   * so far and which question is next — and it is part of the state rather than a closure because
+   * the state is serialised to Redis between one action and the next.
+   */
+  /**
+   * A ward waiting to be paid (CR 702.21), and the spell or ability it will counter if it is not.
+   *
+   * The third thing that stops the table dead, and the one that stops it for the player who is
+   * *not* resolving anything: a ward's triggered ability belongs to the warded permanent's
+   * controller, but the question it asks belongs to whoever did the targeting. So `seat` here is
+   * never the controller of the ability that set it — which is the whole reason it could not be
+   * folded into `pendingDecision`, whose `seat` is a chooser inside somebody else's resolution.
+   *
+   * `counters` is the stack object that goes away when the answer is no. It is remembered here
+   * rather than worked out later because by the time the answer arrives the ward's own ability has
+   * left the stack, and nothing else on the table says what it was about.
+   */
+  readonly pendingPayment: {
+    /** Who may pay: the controller of the spell or ability that did the targeting. */
+    readonly seat: SeatIndex;
+    /** The ward cost, in the printed `{2}` form. */
+    readonly cost: string;
+    /** Shown to the player paying, in their own words. */
+    readonly prompt: string;
+    /** The stack object countered if they decline, or cannot pay. */
+    readonly counters: string;
+    /** The warded permanent, for the table to point at. */
+    readonly source: string;
+  } | null;
+  /**
+   * A card somebody may cast **without paying its mana cost**, and the pile it came out of
+   * (CR 702.85a, CR 601.2h).
+   *
+   * The fourth thing that stops the table dead, and the first one that stops it to offer a *play*
+   * rather than to ask a question. Cascade exiles cards off the top of a library until a cheap
+   * enough one turns up and then says "you may cast it": the cast is an ordinary cast — it chooses
+   * targets and modes, it can be countered, it rings every cast trigger on the table — and the only
+   * thing unusual about it is that nothing is paid. So it goes through `castSpell` like every other
+   * cast, with this field as the permission, rather than through a second cast path that would have
+   * to re-answer forty lines of questions about timing, targets and triggers.
+   *
+   * `bottom` is the rest of the exiled pile, which goes to the bottom of its owner's library in a
+   * random order once this is answered either way. It is remembered here because by the time the
+   * answer arrives the cascade ability has left the stack and nothing else on the table says which
+   * cards were part of it.
+   *
+   * **Declining is answered by passing priority**, which is why there is no second action for it:
+   * the table already draws one button for "I am done here", and an offered cast nobody wants is the
+   * same gesture as a priority nobody wants. See `castSpell`'s `offered` branch and `passPriority`.
+   */
+  /**
+   * How many spells have been cast this turn, by anybody (CR 702.40a).
+   *
+   * The first thing this engine counts about a *turn* rather than about a permanent or a seat, and
+   * it exists for storm: "copy this spell for each spell cast before it this turn" cannot be
+   * answered from the board, the graveyards or the stack — a Lightning Bolt cast and resolved two
+   * spells ago has left no trace anywhere else. Everybody's spells, not this seat's, which is the
+   * rule and also the thing that makes a storm count in a pod frightening.
+   *
+   * Reset in the cleanup step with the rest of what "this turn" means. The number a particular
+   * spell cares about is the one *before* it, which is why each spell also carries
+   * `StackObject.castNumber`: this field is the running total and that one is the snapshot.
+   */
+  readonly spellsCastThisTurn: number;
+  /**
+   * How much life each seat has **lost this turn**, keyed by seat index as a string.
+   *
+   * The second thing this engine remembers about a turn rather than about a permanent or a seat,
+   * and it exists for spectacle: "you may cast this for its spectacle cost if an opponent lost life
+   * this turn" (CR 702.137a) cannot be answered from the board or from the life totals. A player on
+   * eighteen may have been on twenty a moment ago or for the last four turns, and a Seat's
+   * `damageFrom` tally is the whole game rather than this turn — and counts damage rather than
+   * life, which is not the same thing: an opponent who paid two life to a Mana Confluence has lost
+   * life and taken no damage.
+   *
+   * Recorded wherever a seat's life goes down, which is two places and only two — `dealDamage` to a
+   * player and `loseLife` — for the reason `relocate` records every zone change: one place per kind
+   * of move means no path can forget. Damage replaced by poison is **not** life lost, which is the
+   * rule (CR 120.3) and matters: an infect deck's hits do not turn on a spectacle cost.
+   *
+   * Reset in the cleanup step beside `spellsCastThisTurn`, and for the same reason: life lost in
+   * somebody's end step was lost *this* turn.
+   */
+  readonly lifeLostThisTurn: Readonly<Record<string, number>>;
+  /**
+   * How many cards each seat has **drawn this turn**, keyed by seat index as a string.
+   *
+   * The third thing this engine remembers about a turn rather than about a permanent or a seat, and
+   * the third member of a family that keeps growing for the same reason: a keyword asked a question
+   * the board could not answer. Storm needed `spellsCastThisTurn`, spectacle needed
+   * `lifeLostThisTurn`, and miracle needs this one (CR 702.94a).
+   *
+   * Counted in `draw` and nowhere else, which is the discipline `drew` already follows: a card put
+   * into a hand by a Gravedigger or a Diabolic Tutor was not *drawn*, so it does not count here
+   * either, and a seat drawing from an empty library draws nothing and adds nothing.
+   *
+   * Reset in the cleanup step beside the other two. The number miracle cares about is the one
+   * **before** the card arrived, which is why each entry in `drew` carries its own `nth` rather
+   * than reading this field after the fact.
+   */
+  readonly cardsDrawnThisTurn: Readonly<Record<string, number>>;
+  /**
+   * Draws the engine owes a seat and has not taken yet, one entry per card, oldest first.
+   *
+   * Dredge is why, and it is the only thing in this engine that replaces a **draw** rather than a
+   * zone change (CR 702.52a). Every other replacement happens to a card that is already moving, so
+   * `settle` can ask about it after the fact; a draw that may be replaced has to be asked about
+   * *before* the card is taken, and nothing in the effect vocabulary can stop the table to ask —
+   * `draw` lives below the layer that knows what a script is, and a resolution cannot be paused
+   * anywhere except a decision spec.
+   *
+   * So the draw is **deferred** instead. `drawLater` records it here, the surrounding effect
+   * finishes, and the first thing the next `settle` does is drain this list: each owed draw either
+   * raises `pendingDredge` or is simply taken. Which means a card may only defer a draw that is
+   * the *last* thing it does — a card that reads what it drew calls `draw` and is never offered a
+   * dredge. See `drawLater` for that rule written out.
+   *
+   * One entry per card rather than a count per seat, because the queue has to survive a dredge
+   * taken in the middle of it: "each player draws a card" owes two draws to two seats, and a
+   * `draw 3` whose first card is dredged still owes two.
+   */
+  readonly drawsOwed: readonly SeatIndex[];
+  /**
+   * A dredge on offer: an owed draw this seat may replace by milling instead (CR 702.52a).
+   *
+   * The sixth thing that stops the table dead, and the only one that is not about a card on the
+   * stack — there is nothing resolving, nothing targeted and nothing being cast. What is waiting is
+   * a draw, held in `drawsOwed`, and the answer decides whether it happens at all.
+   *
+   * `mill` is the dredge number, and the library must hold at least that many cards or the question
+   * is not asked (CR 702.52a) — which is also what keeps it from being a way to deck yourself for
+   * free. `card` is the one being offered: a graveyard with two dredge cards offers the cheaper of
+   * them, the same "one at a time" concession `tickSuspended` makes, because the alternative is a
+   * third kind of question for a case this pool cannot build.
+   */
+  readonly pendingDredge: {
+    /** Whose draw it is. */
+    readonly seat: SeatIndex;
+    /** The card in their graveyard that would come back. */
+    readonly card: string;
+    /** How many cards go from the top of their library to their graveyard instead. */
+    readonly mill: number;
+    /** Shown to the player deciding, in their own words. */
+    readonly prompt: string;
+  } | null;
+  readonly pendingOfferedCast: {
+    /** Who may cast it: the controller of the ability that offered it. */
+    readonly seat: SeatIndex;
+    /** The card in exile, face up, that may be cast. */
+    readonly card: string;
+    /** Shown to the player deciding, in their own words. */
+    readonly prompt: string;
+    /**
+     * What it costs, in the printed `{R}` form — absent for a cast with **nothing** paid.
+     *
+     * The field that makes this one offer rather than two. Cascade offers a cast without paying
+     * the mana cost (CR 702.85a); madness offers a cast for a *different* cost (CR 702.35a), which
+     * is the same question with a price on it and the same answer either way. An offer with a cost
+     * the seat cannot pay is not made: a cost that cannot be paid is not a cost you may pay
+     * (CR 601.2h), and the card simply goes where declining would have sent it.
+     */
+    readonly cost?: string;
+    /**
+     * The other cards exiled with it, bound for the bottom of the library in a random order.
+     *
+     * Cascade's pile. Absent for an offer that exiled nothing else, which is every madness card.
+     */
+    readonly bottom?: readonly string[];
+    /**
+     * Where the card goes if the offer is declined: the graveyard, rather than staying in exile.
+     *
+     * Madness is the reason. A cascade hit that is declined is already where it belongs — in exile,
+     * on its way to the bottom of the library with the rest of the pile — but a madness card
+     * declined goes to the graveyard it was being discarded to in the first place (CR 702.35a), so
+     * declining has to finish the move the replacement interrupted.
+     */
+    readonly toGraveyard?: true;
+    /**
+     * Declining leaves the card exactly where it is, which for miracle is the **hand**.
+     *
+     * The third disposition, and the one that is not a move at all. A cascade hit declined is
+     * already where it belongs and goes to the bottom with its pile; a madness card declined
+     * finishes the discard it interrupted. A miracle card declined is simply a card in your hand
+     * that you chose not to cast for {R} — you may still cast it later for its printed cost, which
+     * is the whole shape of the keyword (CR 702.94a). Without this the decline path would bottom
+     * the card, which is how the first version of it behaved and is a strictly worse card than the
+     * printed one.
+     */
+    readonly stays?: true;
+    /**
+     * Whether the cast **must** be taken if it can be (CR 702.62c): suspend's, and nothing else's.
+     *
+     * Three of the four offers are permissions — "you may cast this" — and declining is a real
+     * answer. A suspended card whose last time counter has come off is not a permission: the rules
+     * say you cast it. So `legalActions` offers no pass while this stands, and the only way past
+     * the question is the cast itself — or an engine that takes the offer back because the cast
+     * cannot be made at all, which is the same `settleOffer` path an unpayable madness cost uses.
+     */
+    readonly mandatory?: true;
+    /** The spell or permanent whose keyword did this, for the table to point at. */
+    readonly source: string;
+  } | null;
+  readonly pendingDecision: {
+    /** Who answers. Not always the controller: a discard is chosen by the player discarding. */
+    readonly seat: SeatIndex;
+    /** The stack object that is resolving. */
+    readonly stackId: string;
+    readonly prompt: string;
+    /** Instance ids that may be chosen, computed when the question is asked. */
+    readonly candidates: readonly string[];
+    readonly min: number;
+    readonly max: number;
+    /**
+     * Where they are being chosen from, which is what the table needs to draw the picker. Absent
+     * for a question whose answer is a word rather than a card — see `options`.
+     */
+    readonly from?: DecisionZone;
+    /**
+     * The words to choose between, when that is what the question is: a creature type, a colour,
+     * "tap" or "untap". Present exactly when `from` is absent, and the table draws a row of
+     * buttons instead of lighting up cards.
+     */
+    readonly options?: readonly string[];
+    /**
+     * The numbers on offer, when the answer is a number rather than a card or a word. Present
+     * exactly when `from`, `options` and `targetChoices` are all absent, and the table draws a row
+     * of numbers.
+     */
+    readonly numbers?: { readonly min: number; readonly max: number };
+    /**
+     * The targets on offer, when the answer is **where something else on the stack is pointed**:
+     * "you may choose new targets for the copy".
+     *
+     * Full targets rather than ids, because a target is a card *or* a player and the table has to
+     * draw both. The one it already has is in the list, since choosing the same target again is a
+     * legal answer to "you may choose new targets" — and `min` is nought, because declining is as
+     * well. See `TargetDecisionSpec`.
+     */
+    readonly targetChoices?: readonly Target[];
+    /**
+     * Whether this is proliferate's question, whose candidates are **permanents and players**
+     * (CR 701.27a).
+     *
+     * A flag rather than something read off the list, because the list is sometimes all cards: on
+     * a board where nobody has poison or energy, proliferate's candidates are permanents only, and
+     * a reader that inferred the shape from a `seat:` id would see an ordinary card question and
+     * draw it as one. The table needs to know which it is to light the seat strips, and the bot
+     * needs to know to pick by whose counters they are.
+     */
+    readonly counters?: true;
+    readonly resume: {
+      /** Every question this resolution asks, in order: a spec index and who answers it. */
+      readonly plan: readonly { readonly seat: SeatIndex; readonly specIndex: number }[];
+      /** Which question in the plan is outstanding. */
+      readonly at: number;
+      readonly answers: readonly DecisionAnswer[];
+    };
+  } | null;
+}
+
+/** Where a mid-resolution decision chooses its cards from. */
+/**
+ * Where the cards a decision is about live.
+ *
+ * `library` is a search — the whole library, open to its owner while they look. `library-top` is
+ * the other way a player ever sees their own library: the top few cards, face up to them and to
+ * nobody else, which is scry and everything shaped like it.
+ */
+/**
+ * Where a mid-resolution question looks.
+ *
+ * All but the last are the **chooser's own** zone, which is what every card asking one of these
+ * questions means: your library, your hand, your graveyard, your battlefield.
+ *
+ * `any-battlefield` is the exception and the only one that crosses the table: "choose any creature
+ * on the battlefield" is a question about the whole board, which is what a Clone asks. It is its
+ * own zone rather than a flag because the candidate list *is* the authorisation the answer is
+ * checked against — a question that looked at one battlefield and accepted an answer from another
+ * would be a hole, and keeping the two in the same place is what stops that.
+ */
+export type DecisionZone =
+  | 'library' | 'library-top' | 'hand' | 'graveyard' | 'battlefield' | 'any-battlefield';
+
+/** One answered decision, in the order the card asked. */
+export interface DecisionAnswer {
+  readonly seat: SeatIndex;
+  readonly ids: readonly string[];
+  /**
+   * The word chosen, for a question whose answer is not a card — "Vampire", "white", "untap".
+   *
+   * The string rather than its index, because the string is what the effect needs and an index is
+   * a second thing that can be out of step with the list it indexes. It is checked against the
+   * spec's own `options` when the answer arrives, so a crafted action cannot invent one.
+   */
+  readonly option?: string;
+  /**
+   * The number chosen, for a question whose answer is neither a card nor a word — "pay X life".
+   *
+   * Checked against the range the spec computed when the question was asked, so a crafted action
+   * cannot pay nine life out of a four-life range. See `NumberDecisionSpec`.
+   */
+  readonly amount?: number;
+  /**
+   * The target chosen, for a question about where something else on the stack is pointed.
+   *
+   * Absent when the answer was to decline, which "you may choose new targets" always allows — so
+   * the effect reads "absent means leave it alone" rather than needing a second field to say so.
+   */
+  readonly target?: Target;
+}
+
+// ── Automated actions ────────────────────────────────────────────────────────────────────────────
+export interface AutoStartAction {
+  readonly type: 'auto:start'; readonly by: SeatIndex; readonly firstSeat?: SeatIndex;
+  /**
+   * Defaults to true, for every seat. False starts the table with auto-pass off for everybody,
+   * which is what a test that wants to walk a game in lock-step asks for. See
+   * `AutomationState.autoPassOff`.
+   */
+  readonly autoPass?: boolean;
+}
+/** Turns auto-passing on or off mid-game, which is a table setting rather than a game rule. */
+/**
+ * The attacking player's damage assignment order (CR 509.2), for every attack that needed one.
+ *
+ * One action for the whole combat rather than one per attacker: the order is a turn-based action
+ * taken once, and asking a player four questions in a row for a four-creature swing is four
+ * chances to lose track of which creature the prompt is about.
+ */
+export interface AutoOrderAction {
+  readonly type: 'auto:order';
+  readonly by: SeatIndex;
+  readonly orders: readonly { readonly attacker: string; readonly blockers: readonly string[] }[];
+}
+
+/** One seat's own stops setting. `by` is whose preference it is, and nobody else's changes. */
+export interface AutoStopsAction { readonly type: 'auto:stops'; readonly by: SeatIndex; readonly autoPass: boolean }
+/**
+ * Sets this seat's standing answer to the dredge question, or clears it (CR 702.52a).
+ *
+ * `'ask'` removes the entry, which is the default and the state a table starts in. The other two
+ * are the two buttons, given once instead of every turn. See `GameState.dredgeStops`.
+ */
+export interface AutoDredgeStopsAction {
+  readonly type: 'auto:dredgeStops'; readonly by: SeatIndex;
+  readonly standing: 'ask' | 'always' | 'never';
+}
+export interface AutoPlayLandAction {
+  readonly type: 'auto:playLand'; readonly by: SeatIndex; readonly card: string;
+  /**
+   * The back face of a modal double-faced card, played as a land instead of the card being cast
+   * as its front face (CR 712): an index into `CardDef.faces.cards`.
+   *
+   * Refused on a card with no such face, and refused when the face named is not a land — a client
+   * sending either has misread the card, and a land drop spent on something that is not a land is
+   * the kind of mistake a player cannot undo.
+   */
+  readonly half?: number;
+}
+export interface AutoCastAction {
+  readonly type: 'auto:cast'; readonly by: SeatIndex; readonly card: string;
+  readonly targets?: readonly Target[]; readonly x?: number;
+  /** For a modal spell: which modes, as indices into its script's `modal.modes`. */
+  readonly modes?: readonly number[];
+  /**
+   * For a spell that divides a quantity among its targets (CR 601.2d): how much each of `targets`
+   * is assigned, in the same order.
+   *
+   * Announced with the spell, like X and the modes, because that is when the division is chosen
+   * and it cannot be changed afterwards. Refused on a spell that divides nothing, and refused
+   * when it does not add up — a client that sent a short division would be casting a spell whose
+   * damage went nowhere.
+   */
+  readonly division?: readonly number[];
+  /** Pay the kicker (CR 702.32a). Refused on a spell that has none. */
+  readonly kicked?: boolean;
+  /**
+   * Pay the buyback cost (CR 702.26a). Refused on a spell that has none, on a **permanent** spell —
+   * which never leaves the stack for a graveyard, so the cost would buy nothing — and beside an
+   * alternative cost, which replaces the printed cost that buyback adds to.
+   */
+  readonly buyback?: boolean;
+  /**
+   * Pay the replicate cost this many times (CR 702.56). Refused on a spell that has none, on a
+   * count below one, and beside an alternative cost — a spell is cast for one cost, and replicate
+   * adds to the printed one rather than replacing it.
+   *
+   * A number rather than a flag because the whole keyword is the count: it is the first cost in
+   * this engine that can be paid more than once on a single casting.
+   */
+  readonly replicate?: number;
+  /**
+   * Cast it from your graveyard for its flashback cost (CR 702.33). Refused on a card with no
+   * flashback, and on one that is not in your graveyard.
+   */
+  readonly flashback?: boolean;
+  /**
+   * Cast it from your graveyard for its escape cost (CR 702.139). Refused on a card with no
+   * escape, on one that is not in your graveyard, and when there are not enough *other* cards in
+   * there to pay with.
+   *
+   * Which cards get exiled does not travel on the action: it is the engine's choice, like the
+   * creatures convoke taps, and a client naming them would be a client deciding which of its own
+   * cards to spend. `graveyardFodder` is the order, and it is the same function `legalActions`
+   * used to decide this play was offerable.
+   */
+  readonly escape?: boolean;
+  /** The creature sacrificed for an additional cost, when the spell asks for one. */
+  readonly sacrifice?: string;
+  /**
+   * Cast it out of exile for its foretell cost (CR 702.143b). Refused on a card that was not
+   * foretold, on one foretold by somebody else, and on one foretold this turn.
+   */
+  readonly foretold?: boolean;
+  /**
+   * Cast it because something offered you the cast: for nothing, or for a different cost
+   * (CR 702.85a, CR 702.35a).
+   *
+   * Refused unless `pendingOfferedCast` names this seat and this card, which is what makes it a
+   * permission rather than a cheat: the flag does not grant the cast, it claims an offer the
+   * engine has already made and is holding the table open for. Everything else about the cast is
+   * ordinary — targets, modes and an additional cost are all still chosen and still paid.
+   *
+   * X travels with it only as nought. "Without paying its mana cost" means X in that cost is nought
+   * (CR 107.3b), so a client sending an X is refused rather than quietly charged nothing for a
+   * Fireball of twenty.
+   */
+  readonly offered?: boolean;
+  /**
+   * Cast it for its evoke cost, which is cheaper and sacrifices the permanent as it arrives
+   * (CR 702.74a). Refused on a card with no evoke.
+   *
+   * An ordinary cast in every other way — from the hand, at the card's own timing, with its own
+   * targets — which is why it is a flag on the cast rather than an action of its own. What it
+   * changes is not the casting but the permanent, and that change is made where the permanent
+   * arrives.
+   */
+  readonly evoked?: boolean;
+  /**
+   * Cast it for its dash cost: cheaper, hasty, and back in your hand at the beginning of the next
+   * end step (CR 702.109a). Refused on a card with no dash.
+   *
+   * An ordinary cast in every other way, like `evoked`, and refused beside it and beside every
+   * other alternative cost for the same reason: a spell is cast for one cost.
+   */
+  readonly dashed?: boolean;
+  /**
+   * Cast it as an Aura for its bestow cost, enchanting the creature it targets (CR 702.103b).
+   * Refused on a card with no bestow, and refused beside every other alternative cost.
+   *
+   * The targets travel on the action as they do for any other spell that points at something: a
+   * bestowed cast **must** have one, because an Aura spell with no target is not a legal cast.
+   */
+  readonly bestowed?: boolean;
+  /**
+   * Cast it for its spectacle cost, which is legal only if an opponent lost life this turn
+   * (CR 702.137a). Refused on a card with no spectacle, refused beside another alternative cost,
+   * and refused when nobody has lost any life — an alternative cost you may not pay is not one you
+   * may announce (CR 601.2b).
+   */
+  readonly spectacled?: boolean;
+  /**
+   * Cast it for its overload cost, which makes it affect everything and target nothing
+   * (CR 702.96). Refused on a card with no overload, and refused beside another alternative cost.
+   * Targets sent with it are refused the way any other unwanted target is: an overloaded spell
+   * does not point at anything.
+   */
+  readonly overloaded?: boolean;
+  /**
+   * Cast it face down as a 2/2 creature for {3} (CR 702.37a). Refused on a card with no morph.
+   *
+   * No targets, no modes, no X and no kicker travel with it, and each of those is refused rather
+   * than ignored: a face-down spell has no text, so there is nothing on it for any of them to be
+   * about.
+   */
+  readonly faceDown?: boolean;
+  /**
+   * Which face of a card printed with more than one to cast: an index into `CardDef.faces.cards`
+   * (CR 708).
+   *
+   * Required on a split card, which has no castable face of its own — "Cast Fire // Ice" is not a
+   * play — and optional on an adventurer, where leaving it out casts the creature. Refused on a
+   * card with no second face, rather than ignored: a client sending one has misread the card, and
+   * a cast that silently fell back to the printed face would resolve the wrong spell.
+   */
+  readonly half?: number;
+}
+/**
+ * Exile a card from your hand face down for {2}, to be cast later (CR 702.143a).
+ *
+ * A **special action**, like turning a morph face up: no stack, nothing to respond to. The two are
+ * the engine's only special actions and they are opposites — one hides a card and the other
+ * reveals one.
+ */
+/**
+ * Exile a card from your hand with time counters on it, to be cast for nothing later
+ * (CR 702.62a).
+ *
+ * The third special action, and foretell's near-twin: a play from your hand that is not a cast,
+ * pays a cost of its own, and ends with the card in exile. The differences are that the card is
+ * **public** — everyone can see what is coming and count the turns — and that what casts it later
+ * is the engine rather than the player. See `CardScript.suspend`.
+ */
+export interface AutoSuspendAction {
+  readonly type: 'auto:suspend'; readonly by: SeatIndex; readonly card: string;
+}
+
+export interface AutoForetellAction {
+  readonly type: 'auto:foretell'; readonly by: SeatIndex; readonly card: string;
+}
+/**
+ * Turn your own face-down permanent face up for its morph cost (CR 702.37b).
+ *
+ * A **special action**, not an ability and not a cast: it uses no stack, so there is no window in
+ * which an opponent may answer it, which is most of what players use morph for. All it needs is
+ * the card — the cost is the one printed on it, and a client naming its own cost would be a client
+ * deciding what the card says.
+ */
+export interface AutoTurnUpAction {
+  readonly type: 'auto:turnUp'; readonly by: SeatIndex; readonly card: string;
+}
+export interface AutoActivateAction {
+  readonly type: 'auto:activate'; readonly by: SeatIndex; readonly card: string;
+  readonly abilityIndex: number; readonly targets?: readonly Target[];
+  /** The creature sacrificed to pay for it, when the ability's cost asks for one. */
+  readonly sacrifice?: string;
+  /**
+   * The unblocked attacker **returned to hand** to pay for it — ninjutsu's cost (CR 702.49a).
+   *
+   * A second field rather than a second meaning for `sacrifice`, because the two costs do opposite
+   * things to the permanent they take: one puts a creature in a graveyard and the other puts one
+   * back in a hand. A single field would make every reader of this action guess which.
+   */
+  readonly returned?: string;
+}
+export interface AutoPassAction { readonly type: 'auto:pass'; readonly by: SeatIndex }
+export interface AutoAttackAction {
+  readonly type: 'auto:attack'; readonly by: SeatIndex;
+  readonly attackers: readonly {
+    readonly attacker: string;
+    readonly defender: SeatIndex;
+    /** A planeswalker that seat controls, attacked instead of the player (CR 506.2). */
+    readonly planeswalker?: string;
+  }[];
+}
+export interface AutoBlockAction {
+  readonly type: 'auto:block'; readonly by: SeatIndex;
+  readonly blocks: readonly { readonly blocker: string; readonly attacker: string }[];
+}
+export interface AutoDiscardAction { readonly type: 'auto:discard'; readonly by: SeatIndex; readonly card: string }
+/** Answers a triggered ability's request for targets. */
+export interface AutoChooseAction {
+  readonly type: 'auto:choose'; readonly by: SeatIndex; readonly targets: readonly Target[];
+}
+/** Answers a question a card asked while it was resolving. */
+export interface AutoDecideAction {
+  readonly type: 'auto:decide'; readonly by: SeatIndex;
+  /**
+   * The cards chosen, for a question whose answer is cards.
+   *
+   * **Optional, because the handler has always treated it as optional** and this declaration was
+   * the thing that was wrong. `decide` in `autoActions.ts` types its own parameter with `cards?`
+   * and reads `action.cards ?? []`, so a question answered with a word, a number or a target has
+   * never needed to send an empty array — and most of this engine's questions are one of those
+   * three. The required version was unenforceable in the one place it mattered (a client sends
+   * JSON) and cost twelve `cards: []` on test call sites that were not wrong, which is where it was
+   * found: `typecheck:tests` had never been run in CI. It is the only reader in the workspace.
+   */
+  readonly cards?: readonly string[];
+  /**
+   * The word chosen, for a question whose answer is a word. Carried on the same action as `cards`
+   * rather than on one of its own, because it is the same question at the same moment in the same
+   * resolution — a second action would be a second thing the table has to know when to send.
+   */
+  readonly option?: string;
+  /** The number chosen, for a question whose answer is a number. Same action, same reason. */
+  readonly amount?: number;
+  /**
+   * The target chosen, for a question about where a copy is pointed. Omitted to decline, which is
+   * why this action has no separate "no thank you" — see `TargetDecisionSpec.optional`.
+   */
+  readonly target?: Target;
+}
+/**
+ * Answers a ward (CR 702.21): pay the cost, or let the spell or ability be countered.
+ *
+ * The only question in this engine that is asked of a player because of *somebody else's*
+ * permanent, and the only one whose answer is mana rather than a card — which is why it is its own
+ * action rather than another `auto:decide`. `pay: false` is a real answer and not a refusal to
+ * answer: declining is often right, and the engine has to be able to tell the difference between
+ * "no" and a table that has stopped.
+ */
+export interface AutoPayAction {
+  readonly type: 'auto:pay'; readonly by: SeatIndex; readonly pay: boolean;
+}
+/**
+ * Answers a dredge (CR 702.52a): mill for it, or take the draw it would have replaced.
+ *
+ * `dredge: false` is a real answer rather than a refusal to answer, the same distinction
+ * `auto:pay` makes: declining takes the ordinary draw, and the dredge card stays in the graveyard
+ * for the next one.
+ */
+export interface AutoDredgeAction {
+  readonly type: 'auto:dredge'; readonly by: SeatIndex; readonly dredge: boolean;
+}
+/** Settles on an opening hand, putting back one card for each mulligan taken. */
+export interface AutoKeepAction {
+  readonly type: 'auto:keep'; readonly by: SeatIndex;
+  /** Cards to put on the bottom of the library, exactly as many as are owed. */
+  readonly bottom?: readonly string[];
+}
+
+export type AutoAction =
+  | AutoStartAction | AutoPlayLandAction | AutoCastAction | AutoActivateAction
+  | AutoPassAction | AutoAttackAction | AutoBlockAction | AutoOrderAction | AutoDiscardAction
+  | AutoStopsAction | AutoKeepAction | AutoChooseAction | AutoDecideAction | AutoPayAction
+  | AutoTurnUpAction | AutoForetellAction | AutoSuspendAction | AutoDredgeAction
+  | AutoDredgeStopsAction;
+
+export const AUTO_ACTION_TYPES: readonly AutoAction['type'][] = Object.freeze([
+  'auto:start', 'auto:playLand', 'auto:cast', 'auto:activate', 'auto:pass', 'auto:attack',
+  'auto:block', 'auto:order', 'auto:discard', 'auto:stops', 'auto:keep', 'auto:choose',
+  'auto:decide', 'auto:pay', 'auto:turnUp', 'auto:foretell', 'auto:suspend',
+  'auto:dredge', 'auto:dredgeStops',
+]);
+
+export const isAutoAction = (action: { type: string }): action is AutoAction =>
+  (AUTO_ACTION_TYPES as readonly string[]).includes(action.type);
+

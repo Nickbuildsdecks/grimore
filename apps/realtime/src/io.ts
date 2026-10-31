@@ -79,7 +79,13 @@ export async function createRealtime(opts: RealtimeOptions): Promise<Realtime> {
     allowUpgrades: false,
     maxHttpBufferSize: MAX_HTTP_BUFFER_SIZE,
     connectionStateRecovery: { maxDisconnectionDuration: RECOVERY_WINDOW_MS, skipMiddlewares: true },
-    cors: { origin: allowedOrigins.length > 0 ? allowedOrigins : false },
+    // Must agree with `allowRequest` below, which treats an empty allow list as "any origin".
+    // `origin: false` means the opposite — deny every cross-origin request — so with no
+    // SOCKET_ALLOWED_ORIGINS configured the two contradicted each other and every browser on a
+    // different origin got an opaque 403 on the handshake while `allowRequest` was saying yes.
+    // That is the default configuration, so a table simply could not be joined from a browser
+    // until an allow list was set, and the error said nothing about origins.
+    cors: { origin: allowedOrigins.length > 0 ? allowedOrigins : true },
     allowRequest: (req, cb) => {
       const origin = req.headers.origin;
       const ok = originAllowed(origin, allowedOrigins);
@@ -89,7 +95,18 @@ export async function createRealtime(opts: RealtimeOptions): Promise<Realtime> {
     ...(adapterRedis ? { adapter: createAdapter(adapterRedis) } : {}),
   });
 
-  const store = new PodStore(redis, opts.store);
+  const store = new PodStore(redis, {
+    ...opts.store,
+    /*
+      A table waiting on a seat the server plays, with the reason.
+
+      Warned rather than thrown: the human's action has already been applied and is worth keeping,
+      and a seat that cannot move stalls itself rather than failing somebody else's move. It is a
+      defect every time it fires — a pod where nobody is on the clock is a dead table — so it is
+      worth finding in a log rather than in a browser suite's idle timeout.
+    */
+    onBotStall: ({ code, reason }) => log.warn({ pod: code, reason }, 'server seats cannot move'),
+  });
   const dispose = registerHandlers(io, store, log, { ...(opts.rateLimit ? { rateLimit: opts.rateLimit } : {}) });
 
   let closed = false;

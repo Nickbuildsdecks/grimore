@@ -1,0 +1,295 @@
+/**
+ * Which of the evaluation's terms actually decide anything?
+ *
+ * D241 calibrated `evaluate` against outcomes and named cards-in-hand as the component pointing the
+ * wrong way. D243 lowered it over 936 paired games and found it **inert** — level across a five-fold
+ * cut, while genuinely changing 112 of 16,761 decisions. The reason is the finding, and it is why
+ * this file exists:
+ *
+ * **A calibration measures positions. A search compares plays.**
+ *
+ * What decides a choice is not a term's correlation with outcomes, it is the term's **variation
+ * across the options on offer at one decision**. Hand size barely varies across them — nearly every
+ * candidate is a cast, every cast moves one card out of the hand — so the term contributes a
+ * near-constant amount to the whole slate and cancels out of the comparison. It can be badly wrong
+ * about which *player* is ahead while being almost silent about which *play* is best.
+ *
+ * So the useful question is not which terms predict the winner. It is which terms **separate the
+ * plays**, and that is answered by taking each one away and counting what the bot does differently.
+ *
+ *   SEEDS=1 node scripts/measure/term-leverage.mjs
+ *   SEEDS=2 node scripts/measure/term-leverage.mjs      # the field twice
+ *   TERMS=hand,life node scripts/measure/term-leverage.mjs           # just these
+ *   SUBJECT=hollow-tide TERMS=library node scripts/measure/term-leverage.mjs   # where it acts
+ *
+ * **`SUBJECT` exists because a field average drowns a term that matters to one deck**, which is a
+ * lesson this directory already learned about `bot-duel` and the slot probe and which applies here
+ * for the same reason. `library` reads 0.2% across the whole field — and it is in the evaluation
+ * *for* the mill deck, whose whole plan it is the only term that can see. A number that low is a
+ * statement about twelve decks that do not care, not about the one that does. With `SUBJECT` set,
+ * only that deck's own decisions are counted.
+ *
+ * **Leverage is measured by ablation, which is exact.** The game is played by the shipping bot, and
+ * at every decision each ablated bot is asked the same position. A term whose removal changes no
+ * decision decides nothing, whatever its weight says and whatever a calibration says about it.
+ * There is no sampling argument to make: it is the real search on the real positions.
+ *
+ * Read with D241's calibration beside it, because **the interesting cell is high leverage and poor
+ * calibration** — a term that does separate the slate and separates it the wrong way. That is where
+ * a weight would actually be costing games, and nothing has looked there before.
+ *
+ * Reads `packages/rules-engine/dist/index.js`, so build first:
+ *
+ *     pnpm --filter @grimore/rules-engine build
+ *     SEEDS=1 node scripts/measure/term-leverage.mjs
+ */
+import {
+  applyAction, botAction, createGame, evaluate, seatsToAct, STARTER_DECKS,
+} from '../../packages/rules-engine/dist/index.js';
+
+const ALL = Object.keys(STARTER_DECKS);
+const SEEDS = Number(process.env.SEEDS ?? 1);
+const SEED0 = Number(process.env.SEED0 ?? 3300);
+const SUBJECT = process.env.SUBJECT ?? '';
+const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
+if (SUBJECT !== '' && STARTER_DECKS[SUBJECT] === undefined) {
+  console.log(`no deck called ${SUBJECT}. Known: ${ALL.join(', ')}`);
+  process.exit(1);
+}
+
+/*
+  The terms, and what taking one away means.
+
+  Zeroing rather than nudging, on purpose. A nudge measures a weight; zero measures the **term** —
+  "does the bot play differently when it cannot see this at all" — and that is the question. A term
+  whose removal changes nothing is not mispriced, it is absent, and no amount of tuning reaches it.
+
+  `creature` is the one exception and takes a small value rather than zero: at zero the evaluation
+  cannot see creatures at all, and a bot that scores a board of 5/5s the same as an empty one is not
+  a useful comparison, it is a different program. A tenth of its value keeps creatures ordered
+  against each other while making them nearly irrelevant against everything else.
+*/
+const TERMS = {
+  life: { life: 0 },
+  hand: { hand: 0 },
+  library: { library: 0 },
+  land: { land: 0 },
+  permanent: { permanent: 0 },
+  creature: { creature: 0.1 },
+  /*
+    The only term here that is about two boards rather than one seat's piles (#241): power opposite
+    this seat that nothing of its own can block.
+
+    **This row runs the opposite way round to every other one**, and it has to. D264 measured the
+    term and left its default at **zero**, so `{ exposed: 0 }` would be an override that overrides
+    nothing and the row would read a clean 0.0% — an ablation of a term that is already absent. The
+    arm here turns it *on* instead, so the number means "what would the bot do differently if it
+    could see this", which is the same question every other row asks and the only form of it that
+    is answerable for a term that does not ship.
+  */
+  exposed: { exposed: 1 },
+  /*
+    An ordinary ablation again, and it was not when it was written (#253, D271).
+
+    The question: the `hand` row above ablates a **raw count** of cards in hand, and that count
+    cannot tell a hand you can pay for from a hand you cannot. This row prices the cards the seat
+    could actually cast, so a non-zero number here against an inert `hand` row says the term was
+    the wrong *shape* rather than the wrong weight — the one reading #227's conclusion ("cards in
+    hand are worth little") could not distinguish itself from.
+
+    It ran the `exposed` way round, turned **on**, while the term shipped at zero. Three disjoint
+    seed sets on `bot-duel` (479-454, 469-465, 471-462) earned it a default of 1, so `{ castable: 0 }`
+    is now a real ablation and the row means what every other row means. Flipping this with the
+    default is not optional bookkeeping: left as `{ castable: 1 }` it would be an override that
+    overrides nothing, read a clean 0.0%, and the zero-row check below would call the term
+    unscorable — which is exactly the silence it was added to break.
+  */
+  castable: { castable: 0 },
+  /*
+    The same board as `exposed`, read as a clock instead of as a quantity (#258). Both run the
+    `exposed` way round — turned **on** — because both ship at zero.
+
+    Two arms rather than one because the shape is the open question and this instrument is the cheap
+    way to settle it. `clockRate` is smooth (the quantity scaled by how little life is left, and at
+    full life it is exactly `exposed`), so it can move any decision that changes either number.
+    `clockTurns` is discrete and capped, so it moves only on a play that changes the count of their
+    turns — which should make its leverage lower and each changed decision mean more. A term with
+    four times the leverage and no win rate is a worse bet than one with a quarter of it and a sign
+    that holds, so the number to read here is *where* each one acts rather than how big it is.
+  */
+  clockRate: { clockRate: 1 },
+  clockTurns: { clockTurns: 1 },
+};
+
+const want = (process.env.TERMS ?? '').split(',').map((t) => t.trim()).filter(Boolean);
+const terms = Object.entries(TERMS).filter(([name]) => want.length === 0 || want.includes(name));
+if (terms.length === 0) {
+  console.log(`TERMS matched nothing. Known: ${Object.keys(TERMS).join(', ')}`);
+  process.exit(1);
+}
+
+/** term -> action kind -> { n, differed }. The stock bot's own row is the denominator. */
+const tally = new Map(terms.map(([name]) => [name, new Map()]));
+/*
+  And how often each term changed the **score** rather than the decision, which is the one thing
+  that tells a term apart from a typo.
+
+  A row at zero changed decisions has two readings and they want opposite work: the term is scored
+  and never decisive (interesting — it means the evaluation can see the thing and the thing never
+  separates the plays), or the key is not a weight at all, which `evaluate` falls back past in
+  silence exactly as `botAction` does with an unknown option. D270 cost fifteen minutes a seed set
+  to that silence one level up; this is the same question asked where it is cheap.
+
+  Only reported for rows that ended at zero, so the table keeps its shape.
+*/
+const scored = new Map(terms.map(([name]) => [name, 0]));
+const note = (term, kind, same) => {
+  const rows = tally.get(term);
+  const row = rows.get(kind) ?? { n: 0, differed: 0 };
+  row.n += 1;
+  if (!same) row.differed += 1;
+  rows.set(kind, row);
+};
+
+/*
+  And the control, which has to be in every run rather than in a note about a run.
+
+  An empty override is the shipping bot by construction — every key falls back to its constant — so
+  it must differ on **zero** decisions. If it ever differs, the override plumbing is reaching
+  something it should not and every number above it is measuring that instead of a term. Same
+  standard the measure README sets for `card-promises`: an instrument whose interesting result is a
+  zero has to carry its own positive and negative controls, and run them every time.
+*/
+const CONTROL_TERM = '(control: no override)';
+tally.set(CONTROL_TERM, new Map());
+const arms = [[CONTROL_TERM, {}], ...terms.map(([name, w]) => [name, w])];
+
+function duel(seed, decks) {
+  /*
+    Whose decisions count. With no `SUBJECT`, both seats' — the field reading. With one, only the
+    seat playing it, because the question becomes "what does this term decide *for this deck*" and
+    an opponent's decisions are the field average again, wearing a filter.
+  */
+  const counted = SUBJECT === ''
+    ? [0, 1]
+    : [0, 1].filter((seat) => decks[seat] === SUBJECT);
+  let s = createGame({ id: `g${seed}`, format: 'modern', players: PLAYERS, seed });
+  for (const seat of [0, 1]) {
+    s = applyAction(s, { type: 'deck:load', by: seat, seat, deckId: decks[seat] }, { isHost: true });
+  }
+  s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, { isHost: true });
+  s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, { isHost: true });
+  for (let move = 0; move < 4000 && !s.finished; move++) {
+    const seat = seatsToAct(s)[0];
+    if (seat === undefined) break;
+    /*
+      The stock bot decides, and every arm is asked the *same* position. That is what makes this an
+      ablation rather than a comparison of two games: the moment one arm were allowed to play on,
+      the positions would diverge and the counts would be about different games.
+    */
+    const stock = botAction(s, seat, {});
+    if (stock === null) break;
+    if (counted.includes(seat)) {
+      const want = JSON.stringify(stock);
+      const base = evaluate(s, seat, {});
+      for (const [name, weights] of arms) {
+        const theirs = botAction(s, seat, { weights });
+        note(name, stock.type, JSON.stringify(theirs) === want);
+        // One extra `evaluate` per arm per position: cheap next to a `botAction` that searches.
+        if (evaluate(s, seat, { weights }) !== base) scored.set(name, (scored.get(name) ?? 0) + 1);
+      }
+    }
+    const before = s.stateVersion;
+    try { s = applyAction(s, stock); } catch { break; }
+    if (s.stateVersion === before) break;
+  }
+}
+
+/*
+  A seed of its own for every game (D240): one seed is one RNG stream, and the same stream yields the
+  same index permutation however different the deck list is, so a pass over the field on one seed is
+  one shuffle wearing every pairing.
+*/
+const seedFor = (pass, a, b, order) =>
+  SEED0 + (((pass * ALL.length + a) * ALL.length + b) * 2) + order;
+
+let games = 0;
+const started = Date.now();
+for (let i = 0; i < SEEDS; i++) {
+  for (let a = 0; a < ALL.length; a++) {
+    for (let b = a + 1; b < ALL.length; b++) {
+      // With a SUBJECT, only its own pairings are worth playing at all.
+      if (SUBJECT !== '' && ALL[a] !== SUBJECT && ALL[b] !== SUBJECT) continue;
+      duel(seedFor(i, a, b, 0), [ALL[a], ALL[b]]); games += 1;
+      duel(seedFor(i, a, b, 1), [ALL[b], ALL[a]]); games += 1;
+    }
+  }
+}
+
+const KINDS = ['auto:cast', 'auto:activate', 'auto:attack', 'auto:block', 'auto:playLand',
+  'auto:pass', 'auto:decide', 'auto:choose', 'auto:discard', 'auto:order', 'auto:turnUp'];
+const total = (rows) => [...rows.values()].reduce((t, r) => t + r.n, 0);
+const differed = (rows) => [...rows.values()].reduce((t, r) => t + r.differed, 0);
+
+const decisions = total(tally.get(CONTROL_TERM));
+console.log(`${games} games, ${SEEDS} pass${SEEDS === 1 ? '' : 'es'} over `
+  + `${SUBJECT === '' ? 'the field' : `${SUBJECT}'s pairings`}, ${decisions} `
+  + `${SUBJECT === '' ? '' : `of ${SUBJECT}'s own `}decisions, `
+  + `${((Date.now() - started) / 1000).toFixed(0)}s`);
+console.log('each arm is asked the same position the shipping bot played, so this is an ablation');
+console.log('');
+
+const pct = (n, of) => (of === 0 ? '   —' : `${((100 * n) / of).toFixed(1)}%`.padStart(6));
+const head = ['term'.padEnd(26), 'changed'.padStart(9), 'of all'.padStart(7)];
+console.log([...head, ...KINDS.map((k) => k.replace('auto:', '').padStart(9))].join(''));
+
+/*
+  Ordered by how much each term decides, which is the whole point of the table: the question is
+  which terms separate the plays, so the answer should be readable top to bottom.
+*/
+const ordered = [...tally.entries()]
+  .sort((x, y) => differed(y[1]) - differed(x[1]) || x[0].localeCompare(y[0]));
+
+for (const [name, rows] of ordered) {
+  const cells = KINDS.map((kind) => {
+    const row = rows.get(kind);
+    return row === undefined || row.n === 0 ? '   —'.padStart(9) : pct(row.differed, row.n).padStart(9);
+  });
+  console.log([
+    name.padEnd(26),
+    String(differed(rows)).padStart(9),
+    pct(differed(rows), total(rows)),
+    ...cells,
+  ].join(''));
+}
+
+/*
+  The zero rows, told apart. A term that scores and never decides is a finding about the game; a
+  term that never even scores is a misspelled key, and the two look identical in the table above.
+*/
+const inert = ordered.filter(([name, rows]) => name !== CONTROL_TERM && differed(rows) === 0);
+if (inert.length > 0) {
+  console.log('');
+  for (const [name] of inert) {
+    const n = scored.get(name) ?? 0;
+    if (n > 0) {
+      console.log(`${name}: 0 decisions, but changed the score in ${n} positions`
+        + ' — scored and never decisive, which is a finding about the game rather than a typo');
+    } else {
+      console.log(`!! ${name}: 0 decisions AND never changed the score in any of the ${decisions}`);
+      console.log('!! positions, so the evaluation cannot see it at all. Either the name is not a');
+      console.log('!! weight (check the weights block in packages/rules-engine/src/bot.ts — an');
+      console.log('!! unknown key falls back past in silence, D270), or the term is about something');
+      console.log('!! these games never contain, which a narrow SUBJECT can do on its own.');
+    }
+  }
+}
+
+const bad = tally.get(CONTROL_TERM);
+console.log('');
+if (differed(bad) > 0) {
+  console.log(`CONTROL FAILED: an empty override changed ${differed(bad)} decisions, which it cannot`);
+  console.log('do if it is the shipping bot. Every row above is measuring the plumbing, not a term.');
+  process.exit(1);
+}
+console.log('control held: an empty override changed 0 decisions, so the rows above are terms');

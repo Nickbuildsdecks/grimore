@@ -21,14 +21,11 @@ export default defineConfig({
         target: process.env.VITE_API_PROXY_TARGET ?? "http://localhost:4000",
         changeOrigin: true,
       },
-      // Routes not yet ported out of server.js (Moxfield import, password reset, Google sign-in) are
-      // called through this prefix — see legacyUrl() in src/lib/apiClient.ts. The prefix is stripped so
-      // the legacy server still sees its own /api/... paths.
-      "/legacy-api": {
-        target: process.env.VITE_LEGACY_PROXY_TARGET ?? "http://localhost:3000",
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/legacy-api/, ""),
-      },
+      // No /socket.io entry on purpose. Proxying the Play Realm socket through here did not carry
+      // the WebSocket upgrade reliably (the upgrade was reset before reaching the target), so in
+      // development the browser addresses the table server directly via VITE_REALTIME_URL, which
+      // `scripts/play.mjs` sets for you. In production one reverse proxy serves both on one origin
+      // and that variable is not set at all — see the Caddyfile.
     },
   },
 })

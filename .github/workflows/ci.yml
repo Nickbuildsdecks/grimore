@@ -61,6 +61,13 @@ jobs:
       - run: node scripts/guards.js
       - run: pnpm -r --filter './packages/*' run build
       - run: pnpm -r --filter './packages/*' --filter './apps/*' run typecheck
+      # The test files, which `typecheck` deliberately excludes and vitest only transpiles. This
+      # step exists because the script did not: rules-engine has had `typecheck:tests` since the
+      # suite was written, nothing ever ran it, and by the time anybody looked it was 22 errors
+      # deep -- one of which was an assertion reading `seat.energy`, a field that does not exist,
+      # so it compared `undefined ?? 0` against 0 and passed on any board (D263). A recursive run
+      # skips packages without the script, so this covers whichever of them grows one.
+      - run: pnpm -r --filter './packages/*' --filter './apps/*' run typecheck:tests
       - run: pnpm -r --filter './packages/*' --filter './apps/*' run test
       # The legacy job runs this too, but skips it: the parity check needs packages/shared built, which
       # only this job does. It is the guard that the duplicated CommonJS copies of the token discipline

@@ -23,6 +23,11 @@ class MailNotConfiguredError extends Error {
 /**
  * Picks a transport from the environment.
  *
+ * Each returned transport carries `configured`, which callers check BEFORE doing any per-account work.
+ * A recovery route that only discovers a missing transport at the send has already resolved the account,
+ * so it answers differently for a known account than an unknown one -- an enumeration oracle that stays
+ * open for as long as mail is misconfigured.
+ *
  * `MAIL_TRANSPORT=console` wins over `SMTP_URL` on purpose, so a developer with production credentials
  * in their environment cannot mail real users by accident.
  */
@@ -30,6 +35,7 @@ function createMailer(env = process.env) {
   if (env.MAIL_TRANSPORT === 'console') {
     return {
       name: 'console',
+      configured: true,
       async send(message) {
         // Recipient and subject only. The body is where the token is, and nobody controls who reads
         // logs later.
@@ -43,6 +49,7 @@ function createMailer(env = process.env) {
     if (!env.MAIL_FROM) {
       return {
         name: 'misconfigured',
+        configured: false,
         async send() {
           throw new Error('SMTP_URL is set but MAIL_FROM is not. A real send needs a From address.');
         },
@@ -53,6 +60,7 @@ function createMailer(env = process.env) {
     // SMTP_URL that cannot be honoured must fail loudly rather than appear to work.
     return {
       name: 'smtp-unimplemented',
+      configured: false,
       async send() {
         throw new Error(
           'SMTP_URL is set but the legacy server has no SMTP client installed. Add nodemailer and wire ' +
@@ -63,6 +71,7 @@ function createMailer(env = process.env) {
   }
   return {
     name: 'fail-closed',
+    configured: false,
     async send() {
       throw new MailNotConfiguredError();
     },

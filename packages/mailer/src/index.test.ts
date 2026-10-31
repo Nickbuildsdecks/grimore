@@ -98,3 +98,16 @@ describe('memory transport', () => {
     expect(t.last()).toBeUndefined();
   });
 });
+
+describe('configured', () => {
+  it('is false for the fail-closed default and true for transports that can deliver', () => {
+    // Callers check this BEFORE resolving an account. A recovery route that only finds out at the send
+    // has already looked the account up, so it answers differently for a known account than an unknown
+    // one — an enumeration oracle that stays open for as long as mail is misconfigured.
+    expect(selectTransport({}).configured).toBe(false);
+    expect(new FailClosedTransport().configured).toBe(false);
+    expect(new ConsoleTransport().configured).toBe(true);
+    expect(new MemoryTransport().configured).toBe(true);
+    expect(selectTransport({ mailTransport: 'console' }).configured).toBe(true);
+  });
+});
