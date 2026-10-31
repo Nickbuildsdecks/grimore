@@ -16854,3 +16854,75 @@ running three-seed-set measurement, which would have had set 1 reading one build
 another. Killed and re-run on a frozen build both times. **A measurement that spans a rebuild is not
 a measurement**, and the rule is the same one D261 arrived at from the other side: a reading is a
 claim about one build.
+
+## D265 — A three-line CSS change that presented as four gameplay failures
+
+A permanent turns a quarter turn when it taps, and everything drawn inside it turns too. An
+attacking creature read **"1/2 ATTACKING FRIEND" running up the side of the card**. Arena turns the
+card and leaves the overlay upright, and so should this.
+
+The fix is three lines and the interesting part is not the fix.
+
+### Why the obvious repair does not work
+
+Counter-rotating the badge strip inside the card is the first idea. It fails on geometry: the
+button's box is **portrait** (`aspect-[2.5/3.5]`), so a child rotated back by -90° is a portrait box
+laid over a **landscape** on-screen footprint, and it overflows the card top and bottom. Sizing the
+child to the footprint means width = the card's height and height = the card's width, which differs
+per size and per breakpoint and has to be undone again when the card untaps.
+
+The slot wrapper is already the right box in both orientations — `SLOT` when upright,
+`TAPPED_SLOT` when turned — and **it is never rotated**. So the strip moves onto the slot and needs
+no transform at all. One real cost, recorded in the comment rather than discovered later: outside
+the button is outside its `overflow-hidden`, so the strip squares off the card's rounded bottom
+corners by a pixel.
+
+**Vigilance falls out of this for free**, which is the nicest property of reading `tapped` rather
+than reasoning about attacks: a vigilant creature attacks without tapping, stays unrotated, and its
+badges were never a problem.
+
+### What it broke, and why the symptom pointed nowhere near the cause
+
+The arena suite went **54/54 to 46/50**, and the four failures were:
+
+```
+FAIL  a land played from hand reaches the battlefield
+FAIL  the bar shows the mana available to spend
+FAIL  combat asks the attacking player to declare
+FAIL  life totals move because the rules moved them
+```
+
+Not one of them mentions a badge. The move log said why, once read: where a passing run shows
+`chose a play: Play Plains`, this one showed twenty turns of `primary: Pass` and
+`discarded to hand size`. The driver had stopped playing cards entirely.
+
+`tryToPlayFromZone` decided whether a card was playable by reading `textContent` of **the card**
+and matching `/playable/i`. The badges were inside the card. The moment they left it, every card in
+every zone read as unplayable, the driver fell through to `primary-move` on every turn, and a whole
+game went by with nothing cast.
+
+### The repair, and the rule
+
+The driver now reads the badge off the **slot** and taps the **card** inside it — two locators where
+there was one, and the split is the point: the slot carries what the card *says*, the card is what
+you press. The whole failure is written into that function's docblock, because the next person to
+move something out of a card element will hit it the same way.
+
+**The rule this is an instance of.** A test that identifies a thing by scraping rendered text has
+taken a dependency on layout that neither side declares. It is the same family as D262's browser
+check that named a card by hand and D263's `typecheck:tests` that nothing ran: a coupling nobody
+wrote down, which fails somewhere other than where it was made. The difference here is that the
+coupling was *load-bearing for every suite at once* — four browser suites share this driver — and
+the failure was loud but misdirected, which is in some ways worse than silence. A silent failure
+you eventually audit for; a loud one in the wrong place sends you to the engine.
+
+### Verification
+
+Arena **53/53** with all four regressed checks recovered, table **73/73**, solo **24/24**, plus
+guards, the workspace typecheck and `apps/web`'s 226 tests. CI green on the pushed head.
+
+**What is asserted and what is not.** The strip is outside the element carrying `--card-rot`, so
+the rotation cannot reach it — that is structural, not observed. I have **not** photographed a
+rotated card carrying an upright badge: both badge-bearing creatures in the new screenshots have
+vigilance, so they attacked without tapping. The claim is about the DOM, and it is worth being
+precise that the picture confirming it has not been taken.

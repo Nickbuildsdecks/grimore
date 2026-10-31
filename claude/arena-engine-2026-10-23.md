@@ -7701,6 +7701,30 @@ read the step before the action and never matched `first-strike-damage`. Plus on
 twice I rebuilt `dist` in the middle of a three-seed-set run, and **a measurement that spans a
 rebuild is not a measurement**.
 
+### A three-line CSS change that presented as four gameplay failures (#248, D265)
+
+A permanent turns a quarter turn when it taps and everything drawn inside it turns too, so an
+attacking creature read "1/2 ATTACKING FRIEND" up the side of the card. Counter-rotating the strip
+inside the card fails on geometry — the card's box is portrait, so a child rotated back overflows a
+landscape footprint — but the **slot** wrapper is already the right box in both orientations and is
+never rotated, so the badges move there and need no transform at all. Vigilance falls out for free.
+
+Then the arena suite went 54/54 to **46/50**, and the four failures were a land not reaching the
+battlefield, the mana bar, attackers never being declared and life never moving. None of them
+mentions a badge. The move log gave it away: twenty turns of `primary: Pass` where a passing run
+shows `chose a play: Play Plains`. `tryToPlayFromZone` decided a card was playable by reading
+`textContent` of the **card** and matching /playable/ — and the badges had just left the card, so
+every card in every zone read as unplayable and the driver stopped casting anything.
+
+The driver reads the slot and taps the card inside it now, with the failure written into its
+docblock. Same family as D262 and D263: a coupling nobody wrote down, failing somewhere other than
+where it was made — except this one is load-bearing for all four browser suites at once, and was
+loud but misdirected, which sends you to the engine rather than to the layout.
+
+Arena 53/53 with all four recovered, table 73/73, solo 24/24. What is asserted is structural — the
+strip is outside the element carrying `--card-rot` — and not photographic: both badge-bearing
+creatures in the new screenshots have vigilance, so they attacked untapped.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
