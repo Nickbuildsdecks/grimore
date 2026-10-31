@@ -73,6 +73,7 @@ it.
 | `infect-clock.mjs` | of the infect creatures it could attack with, how many does it send? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/infect-clock.mjs` |
 | `creature-fate.mjs` | what takes its creatures away, and how long do they live? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/creature-fate.mjs` |
 | `wasted-plays.mjs` | which of the bot's plays bought nothing at all? | `SEEDS=4 node scripts/measure/wasted-plays.mjs` |
+| `granted-abilities.mjs` | when one permanent hands another a triggered ability, does it ever fire — and what is it handed to? | `SUBJECT=skyward-writ SEEDS=6 node scripts/measure/granted-abilities.mjs` |
 | `hidden-info.mjs` | does the computer opponent read what it cannot see? | `SEEDS=2 node scripts/measure/hidden-info.mjs` |
 | `offers.mjs` | what does the engine offer you to cast — a cascade hit, a madness card, a **miracle** off the top — and is it taken? | `SUBJECT=arc-tempest SEEDS=12 node scripts/measure/offers.mjs` |
 | `storm.mjs` | how many spells does a turn actually hold, and what was the count on each storm spell? | `SUBJECT=arc-tempest SEEDS=4 node scripts/measure/storm.mjs` |

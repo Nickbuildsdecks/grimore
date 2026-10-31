@@ -15718,3 +15718,72 @@ now honour layer 6 properly, which makes the two inconsistent; the printed half 
 gap and is a task rather than a half-fix folded in here. And the bot's three readers of
 `script.triggers` (`hasOwnText`, `paysForLeaving`, `arrivesAgain`) still see printed text only, so
 a Grizzly Bears carrying an Ophidian Eye reads to the sacrifice-fodder filter as a body.
+
+## D252 — The bot was enchanting the opponent's creature, which is a gift rather than a waste
+
+D251 left Skyward Writ eighteen games of 288 worse and named the Aura as the suspect, with the
+bot's eagerness as the guess. The guess was wrong in the right direction, and the instrument that
+settled it is new.
+
+**`granted-abilities.mjs`** asks the question whose answer separates "the effect is weak" from "the
+bot misplays it": per grant that reaches the battlefield, how many times did the granted ability
+trigger, and how often was everything holding it gone before it fired once. It counts triggers by
+reading `StackObject.grantedBy`, which is the engine's own record of a granted ability, so it cannot
+drift from what the rules did; and it reads the host off the state every move rather than off the
+cast, because an Aura's host is only known once the spell resolves and a pair is made by a trigger
+later still. A run where nothing was granted exits non-zero, for the reason `leaving-creatures` does.
+
+Its first output, 48 games:
+
+```
+Ophidian Eye
+    10 grants reached the battlefield
+     0 times the granted ability triggered
+  handed to: Warrior, Hidden Dragonslayer, Youthful Knight, Gurmag Angler,
+             Impassioned Orator, Llanowar Elves, Kiora's Follower, Hellrider
+```
+
+**Six of those eight creatures belong to the opponent.** A granted ability belongs to the creature
+holding it (CR 113.6), so an Ophidian Eye on their Gurmag Angler draws cards *for them*. That is not
+a wasted card, it is a card given away — strictly worse than not casting it, and the whole of the
+deck's lost games is a plausible size for it.
+
+**The cause was a hint that was never applied.** `TargetSpec.friendly` has existed since the
+prevention shields: not a restriction, just advice to the bot, whose default is "the enemy and the
+enemy's creatures" — right for the removal and the burn that are most of what targets anything in
+this pool and exactly backwards for a bonus. Seven specs carried it. `chooseTargets`' own docblock
+named the gap in as many words — *"a pump spell gets aimed at an enemy creature — legal, and
+wasteful. Fixing that in general needs the bot to read the script's intent, which is a different
+piece of work"* — and `TargetSpec.friendly` repeated it: *"the pump spells do not carry this yet …
+fixing it there is a change to five cards' measured behaviour rather than a flag."*
+
+Both were right about the cost and wrong about the stakes: the word for an Ophidian Eye on their
+creature is not *wasteful*. So the hint is applied now, on eleven specs: a shared
+`TARGET_CREATURE_HELPED` for Giant Growth, Titanic Growth, Shield's Might, Crimson Wisps,
+Distortion Strike, Tainted Strike, Wax and Selesnya Charm's pump mode; `friendly: true` on the Aura
+targets of Angelic Gift, Robe of Mirrors and Ophidian Eye; and on `BESTOW_TARGET`, which is a fact
+about the keyword rather than about Boon Satyr — bestow is only ever printed as a bonus.
+
+A derived test holds it: every Aura whose effect only helps must be aimed friendly, read off the
+scripts rather than from a list, with Pacifism as the control in the other direction so the check is
+about *bonuses* rather than about Auras.
+
+**And the win rate does not move.** The field at the canonical seeds, before and after, 288 games a
+deck: verdant-guard +3, skyward-writ +2, dawn-tithe +1, five decks −1, four unchanged. Biggest move
+three games, which is inside the noise floor of this instrument.
+
+That is worth stating plainly rather than dressing up: **this is a correctness fix worth nothing
+measurable.** The reason is arithmetic rather than mysterious — the eleven cards are one-ofs and
+two-ofs cast a handful of times per 288 games, and even a play that is strictly a gift cannot move a
+rate it only gets to make three times a game set. It does *not* recover D251's eighteen games, and
+anyone reading that entry should not expect it to.
+
+What it does buy is a bot that no longer makes a play a person would call a misclick, which matters
+for the thing this engine is for — somebody sitting opposite it — and a hint that is now applied
+everywhere it belongs rather than in the seven places somebody remembered.
+
+**Still open.** With the aim corrected, the Eye now lands on its own side and *still* fires zero
+times in 48 games: the hosts are a Wall of Air, an Omenspeaker, a Healer's Hawk. `friendly` says
+which side, not which creature, and a combat-damage trigger on a 0/4 defender is worth nothing. The
+next rule is "aim a combat-damage bonus at a creature that can attack", which is a board reading
+rather than a flag, and `granted-abilities` is now the instrument that would price it.

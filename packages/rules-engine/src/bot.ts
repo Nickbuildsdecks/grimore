@@ -292,10 +292,16 @@ const foesOf = (state: GameState, seat: SeatIndex): SeatIndex[] =>
 /**
  * Picks targets for a play, preferring the opponent and the opponent's creatures.
  *
- * It has no idea what a card does, so a pump spell gets aimed at an enemy creature — legal, and
- * wasteful. Fixing that in general needs the bot to read the script's intent, which is a different
- * piece of work; what matters here is that every choice comes from the candidate list the engine
+ * It has no idea what a card does, so the sign has to be declared on the card: `TargetSpec.friendly`
+ * is the hint, and what matters here is that every choice comes from the candidate list the engine
  * produced, so a bad choice is still a legal one.
+ *
+ * This docblock used to say a pump spell "gets aimed at an enemy creature — legal, and wasteful",
+ * and that reading them was a different piece of work. It was done in D252, for a worse reason than
+ * waste: an Ophidian Eye aimed at the opponent's creature does not throw the card away, it hands
+ * the *opponent* a draw trigger, because a granted ability belongs to the creature holding it
+ * (CR 113.6). Eleven specs carry the hint now, and `granted-abilities` is the instrument that found
+ * the one that mattered.
  *
  * The exception is a spec the card marks `friendly`, which is the one case where the default is not
  * merely wasteful but the whole cost of the card: a prevention shield aimed at an opponent prevents

@@ -72,6 +72,19 @@ const ANY_TARGET: TargetSpec = { kind: 'any', description: 'any target' };
 /** The same spec on a card that *helps* what it points at. See `TargetSpec.friendly`. */
 const ANY_TARGET_HELPED: TargetSpec = { kind: 'any', description: 'any target', friendly: true };
 const TARGET_CREATURE: TargetSpec = { kind: 'creature', description: 'target creature' };
+/**
+ * The same spec on a card that **helps** what it points at. See `TargetSpec.friendly`.
+ *
+ * Eight spells and three Auras use it, and before D252 none of them did: the bot's default is "the
+ * enemy and the enemy's creatures", which is right for the removal and the burn that are most of
+ * what targets anything in this pool and exactly backwards for a pump. The hint had existed since
+ * the prevention shields and was carried by seven specs; the pump spells were named as the gap in
+ * `chooseTargets`' own docblock and left, and `granted-abilities` found what that cost: an Ophidian
+ * Eye enchanting the *opponent's* creature, so the opponent drew the cards.
+ */
+const TARGET_CREATURE_HELPED: TargetSpec = {
+  kind: 'creature', description: 'target creature', friendly: true,
+};
 const TARGET_PLAYER: TargetSpec = { kind: 'player', description: 'target player' };
 
 const creatureYouControl = (state: GameState, candidate: Target, controller: SeatIndex): boolean =>
@@ -390,7 +403,7 @@ const GIANT_GROWTH: CardScript = {
   name: 'Giant Growth',
   // Wears off at end of turn, so it is held for the combat. See `expiresAtEndOfTurn`.
   expiresAtEndOfTurn: true,
-  targets: [TARGET_CREATURE],
+  targets: [TARGET_CREATURE_HELPED],
   onResolve: (c) => {
     const id = firstCardTarget(c);
     return id === null ? c.state : pump(c.state, [id], c.source, c.controller, { power: 3, toughness: 3 });
@@ -764,7 +777,8 @@ const RAISE_THE_ALARM: CardScript = {
 const ANGELIC_GIFT: CardScript = {
   name: 'Angelic Gift',
   aura: {
-    target: { kind: 'creature', description: 'enchant creature' },
+    // A bonus, so the bot aims it at its own side. See `TargetSpec.friendly`.
+    target: { kind: 'creature', description: 'enchant creature', friendly: true },
     effect: { keywords: ['flying'] },
   },
   triggers: [
@@ -1345,7 +1359,7 @@ const SELESNYA_CHARM: CardScript = {
         description: 'Target creature gets +2/+2 and gains trample until end of turn',
         // Only this mode of the three wears off; the other two exile and make a token.
         expiresAtEndOfTurn: true,
-        targets: [TARGET_CREATURE],
+        targets: [TARGET_CREATURE_HELPED],
         effect: (c) => {
           const id = firstCardTarget(c);
           return id === null
@@ -3742,7 +3756,8 @@ const BOGGART_BRUTE: CardScript = { name: 'Boggart Brute', keywords: ['menace'] 
 const ROBE_OF_MIRRORS: CardScript = {
   name: 'Robe of Mirrors',
   aura: {
-    target: { kind: 'creature', description: 'enchant creature' },
+    // A bonus, so the bot aims it at its own side. See `TargetSpec.friendly`.
+    target: { kind: 'creature', description: 'enchant creature', friendly: true },
     effect: { keywords: ['shroud'] },
   },
 };
@@ -3852,7 +3867,7 @@ const TITANIC_GROWTH: CardScript = {
   name: 'Titanic Growth',
   // Wears off at end of turn, so it is held for the combat. See `expiresAtEndOfTurn`.
   expiresAtEndOfTurn: true,
-  targets: [TARGET_CREATURE],
+  targets: [TARGET_CREATURE_HELPED],
   onResolve: (c) => {
     const id = firstCardTarget(c);
     return id === null ? c.state : pump(c.state, [id], c.source, c.controller, { power: 4, toughness: 4 });
@@ -4195,7 +4210,7 @@ const MUTAVAULT: CardScript = {
  */
 const CRIMSON_WISPS: CardScript = {
   name: 'Crimson Wisps',
-  targets: [TARGET_CREATURE],
+  targets: [TARGET_CREATURE_HELPED],
   onResolve: (c) => {
     const id = firstCardTarget(c);
     if (id === null) return draw(c.state, c.controller, 1);
@@ -5478,18 +5493,13 @@ export const PLANT_TOKEN: CardDef = {
   power: '0', toughness: '1', oracleText: '', colors: ['G'],
 };
 
-/** The two specs Ajani wants: a creature being *helped*, which is advice the bot needs. */
-const CREATURE_HELPED: TargetSpec = {
-  kind: 'creature', description: 'target creature', friendly: true,
-};
-
 const AJANI_CALLER_OF_THE_PRIDE: CardScript = {
   name: 'Ajani, Caller of the Pride',
   abilities: [
     {
       cost: { loyalty: 1 },
       description: '+1: Put a +1/+1 counter on target creature.',
-      targets: [CREATURE_HELPED],
+      targets: [TARGET_CREATURE_HELPED],
       effect: (c) => {
         const id = firstCardTarget(c);
         return id === null ? c.state : addCounters(c.state, id, '+1/+1', 1);
@@ -5498,7 +5508,7 @@ const AJANI_CALLER_OF_THE_PRIDE: CardScript = {
     {
       cost: { loyalty: -3 },
       description: '−3: Target creature gains flying and double strike until end of turn.',
-      targets: [CREATURE_HELPED],
+      targets: [TARGET_CREATURE_HELPED],
       // The card this deck is built to point it at is a Serra Angel or a Leonin Skyhunter: double
       // strike on something that already gets through is the fastest clock in the pool.
       effect: (c) => {
@@ -6543,7 +6553,7 @@ const DISTORTION_STRIKE: CardScript = {
   rebound: true,
   // Wears off at end of turn, so the bot holds it for a combat. See `expiresAtEndOfTurn`.
   expiresAtEndOfTurn: true,
-  targets: [TARGET_CREATURE],
+  targets: [TARGET_CREATURE_HELPED],
   triggers: [reboundCast()],
   onResolve: (c) => {
     const id = firstCardTarget(c);
@@ -7584,7 +7594,7 @@ const PHYREXIAN_CRUSADER: CardScript = {
  */
 const TAINTED_STRIKE: CardScript = {
   name: 'Tainted Strike',
-  targets: [{ kind: 'creature', description: 'target creature' }],
+  targets: [TARGET_CREATURE_HELPED],
   onResolve: (c) => {
     const id = firstCardTarget(c);
     return id === null
@@ -7672,7 +7682,7 @@ const ICE: CardScript = {
 const WAX: CardScript = {
   name: 'Wax',
   expiresAtEndOfTurn: true,
-  targets: [TARGET_CREATURE],
+  targets: [TARGET_CREATURE_HELPED],
   onResolve: (c) => {
     const id = firstCardTarget(c);
     return id === null ? c.state : pump(c.state, [id], c.source, c.controller, { power: 2, toughness: 2 });
@@ -7718,7 +7728,7 @@ const VENTURE_DEEPER: CardScript = {
 const SHIELDS_MIGHT: CardScript = {
   name: "Shield's Might",
   expiresAtEndOfTurn: true,
-  targets: [TARGET_CREATURE],
+  targets: [TARGET_CREATURE_HELPED],
   onResolve: (c) => {
     const id = firstCardTarget(c);
     return id === null ? c.state : pump(c.state, [id], c.source, c.controller, { power: 3, toughness: 3 });
@@ -8349,7 +8359,8 @@ const TANDEM_LOOKOUT: CardScript = {
 const OPHIDIAN_EYE: CardScript = {
   name: 'Ophidian Eye',
   aura: {
-    target: { kind: 'creature', description: 'enchant creature' },
+    // A bonus, so the bot aims it at its own side. See `TargetSpec.friendly`.
+    target: { kind: 'creature', description: 'enchant creature', friendly: true },
     effect: { grants: [0] },
   },
   grantedTriggers: [{

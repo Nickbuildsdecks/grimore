@@ -7301,6 +7301,41 @@ whatever creature is there, and an Aura on a creature an opponent can kill is a 
 a bot rule with a task of its own rather than a guess folded in here. The cards ship for the
 mechanic, with the number in the open.
 
+## The bot was enchanting the opponent's creature (#235, D252)
+
+D251 left Skyward Writ eighteen games of 288 worse and guessed that the bot was spending its Aura
+too eagerly. The guess was wrong in the right direction, and a new instrument settled it.
+
+`granted-abilities.mjs` asks the one question that separates "the effect is weak" from "the bot
+misplays it": per grant that reaches the battlefield, how many times did the granted ability
+trigger, and how often was everything holding it gone before it fired once. It counts by reading
+`StackObject.grantedBy`, the engine's own record of a granted ability, so it cannot drift from what
+the rules did.
+
+Its first output: **Ophidian Eye reached the battlefield ten times and the ability triggered zero
+times**, and six of the eight creatures it was handed to belonged to the *opponent*. A granted
+ability belongs to the creature holding it (CR 113.6), so the Eye on their Gurmag Angler draws cards
+for them — not a wasted card, a card given away.
+
+The cause was a hint nobody had applied. `TargetSpec.friendly` has existed since the prevention
+shields and is advice to the bot rather than a restriction; the bot's default is "the enemy and the
+enemy's creatures", which is right for removal and burn and backwards for a bonus. Seven specs
+carried it, and both `chooseTargets` and `TargetSpec.friendly` named the pump spells as the gap and
+called it waste. The word for an Eye on their creature is not waste. Eleven specs carry it now — a
+shared `TARGET_CREATURE_HELPED` for eight spells, three Aura targets, and `BESTOW_TARGET`, which is
+a fact about the keyword rather than about Boon Satyr. A derived test holds it, with Pacifism as the
+control in the other direction.
+
+**The win rate does not move**: biggest change three games of 288, four decks unchanged, which is
+inside this instrument's noise. Worth saying plainly — a correctness fix worth nothing measurable,
+because eleven one-ofs get to make the play three times a game set. It does not recover D251's
+eighteen games. What it buys is a bot that no longer makes a play a person would call a misclick.
+
+Still open: aimed at its own side, the Eye still fires zero times in 48 games, because `friendly`
+says which *side* and not which creature — the hosts are a Wall of Air and an Omenspeaker, and a
+combat-damage trigger on a 0/4 defender is worth nothing. "Aim a combat-damage bonus at a creature
+that can attack" is a board reading rather than a flag, and this instrument would now price it.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

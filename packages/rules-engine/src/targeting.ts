@@ -21,7 +21,17 @@ import type { GameState, SeatIndex } from './types.js';
  * a field twenty-nine of them eventually get wrong, and this is also the spec `castSpell` checks
  * the action against — one constant, so the offer and the cast cannot disagree.
  */
-export const BESTOW_TARGET: TargetSpec = { kind: 'creature', description: 'enchant creature' };
+/**
+ * What a bestowed creature spell enchants (CR 702.103b).
+ *
+ * `friendly`, unconditionally, and that is a fact about the keyword rather than about the one card
+ * that has it: bestow is only ever printed as a bonus, so an Aura made this way is thrown away on
+ * an opponent's creature. The hint is advice to the bot and not a restriction, so enchanting
+ * somebody else's creature stays legal — see `TargetSpec.friendly`.
+ */
+export const BESTOW_TARGET: TargetSpec = {
+  kind: 'creature', description: 'enchant creature', friendly: true,
+};
 
 /**
  * The graveyard-pointing kinds, and the printed type each one requires. `null` means any card.

@@ -70,8 +70,12 @@ export interface TargetSpec {
    * the engine does not read either, and both exist because the bot cannot work out intent from an
    * effect it has not run yet.
    *
-   * The pump spells have the same problem and do **not** carry this yet: `chooseTargets` says so,
-   * and fixing it there is a change to five cards' measured behaviour rather than a flag.
+   * **The pump spells carry it now** (D252), and the paragraph that used to sit here said they did
+   * not and that fixing it would be "a change to five cards' measured behaviour rather than a
+   * flag". That was right about the cost and wrong about the size: it is eleven specs, eight on
+   * spells and three on Auras, plus `BESTOW_TARGET` — and what made it worth doing was finding out
+   * what the omission had been doing. `granted-abilities` caught an Ophidian Eye enchanting the
+   * **opponent's** creature, which hands the opponent the card draw: not a wasted spell, a gift.
    */
   readonly friendly?: boolean;
   /**

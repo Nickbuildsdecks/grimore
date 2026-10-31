@@ -26,7 +26,7 @@ import {
   pump, pumpAll, pumpTeam, gainControl, scriptFor,
   scriptedCardNames,
   staticEffect, timesCost, transformPermanent, unpackView, viewFor,
-  type ContinuousEffect,
+  type ContinuousEffect, type PumpOptions,
 } from './index.js';
 import {
   advanceTo, apply, arena, choices, countOf, damageOn, decide, drain, find, ids, life, nameOf,
@@ -19804,6 +19804,51 @@ describe('a granted triggered ability: the first ability on a permanent that did
     const swung = connect(regranted, 'Leonin Skyhunter');
     expect(life(swung, 1)).toBe(19);
     expect(held(swung)).toBe(beforeRegranted + 1);
+  });
+
+  it('and every Aura whose effect is a bonus tells the bot to aim it at its own side', () => {
+    /*
+      Derived rather than listed, and it exists because of what the omission did (D252).
+
+      `TargetSpec.friendly` is advice to the bot, not a restriction: its default is "the enemy and
+      the enemy's creatures", which is right for the removal and the burn that are most of what
+      targets anything here and backwards for a bonus. `granted-abilities` caught an Ophidian Eye
+      enchanting the **opponent's** creature — which does not throw the card away, it hands the
+      opponent the draw trigger, because a granted ability belongs to the creature holding it
+      (CR 113.6).
+
+      So: an Aura or a bestow whose effect only *helps* must say so. The inverse is the control
+      below, because a check that demanded the flag everywhere would also demand it on a Pacifism.
+    */
+    const helps = (effect: PumpOptions | undefined): boolean =>
+      effect !== undefined
+      && ((effect.power ?? 0) > 0 || (effect.toughness ?? 0) > 0
+        || (effect.keywords ?? []).length > 0 || effect.grants !== undefined
+        || effect.protectionFrom !== undefined)
+      && effect.cantAttack !== true && effect.cantBlock !== true
+      && effect.losesAllAbilities !== true;
+
+    let checked = 0;
+    for (const name of scriptedCardNames()) {
+      const script = scriptFor(name)!;
+      if (script.aura !== undefined && helps(script.aura.effect)) {
+        checked += 1;
+        expect(script.aura.target.friendly, `${name} is a bonus and should be aimed friendly`)
+          .toBe(true);
+      }
+      // A bestowed permanent is always a bonus, and its spec is shared: `BESTOW_TARGET`.
+      if (script.bestow !== undefined) {
+        checked += 1;
+        expect(helps(script.bestow.effect), `${name}'s bestow effect should be a bonus`).toBe(true);
+      }
+    }
+    // The control: a check that found nothing would pass, and so would one that had stopped
+    // reading the pool.
+    expect(checked).toBeGreaterThanOrEqual(4);
+    // And the other direction, so this is a statement about bonuses rather than about Auras: a
+    // Pacifism is aimed at the enemy and must stay that way.
+    expect(scriptFor('Pacifism')?.aura?.target.friendly).toBeUndefined();
+    expect(helps(scriptFor('Pacifism')?.aura?.effect)).toBe(false);
   });
 
   it('and both cards that grant one declare it the same way', () => {
