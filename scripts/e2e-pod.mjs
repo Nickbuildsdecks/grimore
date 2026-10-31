@@ -619,6 +619,18 @@ async function tryCommander(page, seat, seen) {
     read 845 times and never said playable" is a sentence that names the bug, where a bare
     "commander never cast" would have sent somebody into the engine. `slotsIn` exists so the next
     reader does not have to learn this a third time.
+
+    **Two known causes, if this check ever fails again**, because the same sentence has now meant
+    two different things:
+
+      1. this one — something reads the card where the badge is on the slot;
+      2. a **stale table-server `dist/`**, which is the one recorded in `scripts/play.mjs`: Vite
+         serves the web app from source but the realtime server does not, so a build older than
+         the engine answers with last week's rules. That is why `play.mjs` rebuilds on every
+         start, and it is only reachable now by starting the stack some other way.
+
+    Check which before assuming either: (1) shows a card whose text is right and whose badge is
+    missing, (2) shows a table behaving like an older engine in more places than this.
   */
   const slot = slotsIn(page, `zone-command-${seat}`).first();
   if ((await slot.count()) === 0) return false;
