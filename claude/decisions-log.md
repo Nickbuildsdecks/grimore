@@ -16720,3 +16720,125 @@ invoked. The project has three now (the browser suites in D262, this script, and
 own KNOWN list, which is at least read). The lesson is narrow and worth stating: **a script in a
 package.json that no pipeline calls is not a check, it is a comment.** Either wire it in or delete
 it.
+
+## D264 — The evaluation's first term about two boards, measured three ways and left switched off
+
+`evaluate` is a sum of independent piles. Life, hand size, library, a value per permanent, each
+summed for one seat, and the whole is that seat's total minus the average of the others. A sum of
+piles can express **"their board is bigger than mine"** and structurally cannot express **"their
+board can attack into mine and mine cannot attack back"** — a fact about the *pairing* of two
+boards, and the thing a player actually reads before swinging with everything. Two 2/2s against one
+4/4 is level by every term above and badly one-sided in play.
+
+So #241 has been open since D244, and I argued against building it twice on the grounds that D258's
+±20-of-288 floor made it unmeasurable. **That reasoning was wrong**, and worth correcting before
+anything else: it confused *unmeasurable by win rate* with *unmeasurable*. `term-leverage` and
+`disagree` measure decisions by ablation on the real positions the real bot played — there is no
+sampling argument to make, so a term's leverage is **exact**. The floor applies to win rates. It
+does not apply to "does the bot play differently, and where".
+
+### The term
+
+`exposedPower(state, seat)`: the power on opponents' boards that nothing of this seat's can block.
+Greedy, biggest attacker first, each blocker spent once, menace consuming two. Three choices in it
+are about *when* the question is asked, and it is asked about **their next turn**:
+
+- **Their tapped creatures still count** — they untap before they attack. Summoning sickness is
+  ignored for the same reason.
+- **My tapped creatures are not blockers.** This is the asymmetry and the whole point: my creatures
+  untap in *my* untap step, which comes after their turn, so a creature I tapped this turn by
+  attacking with it cannot block on theirs. Before this, tapping out and swinging with the board
+  cost the evaluation nothing. **Vigilance falls out for free**, which is the nicest thing about
+  reading `tapped` rather than reasoning about attacks: a vigilant attacker is still in the blocker
+  list, so a Serra Angel's swing is correctly priced as costing no defence, with no line of code
+  about vigilance anywhere.
+- **Legality is asked of `canBlock`**, which already carries flying, reach, Walls, protection from a
+  colour, "can't be blocked" and landwalk — the last read off the *defender's* lands, so a River Boa
+  is unanswerable here against the blue decks and ordinary against the rest. A hand-rolled power
+  comparison would have got every one of those wrong, and D144 is the precedent: evasion is worth
+  what the board opposite it makes it worth.
+
+Nine tests in `playout.test.ts` pin the arithmetic, isolated by ablation rather than by exporting
+the function: `evaluate` at `exposed: 0` minus `evaluate` at `exposed: 1` is exactly the term's
+contribution. Both weights are named, which matters now the default is zero — comparing against the
+default would make every assertion read zero and pass, the vacuous-assertion trap D263 caught in
+this very file.
+
+### Three measurements, and only one of them in its favour
+
+**It is not inert.** `term-leverage`, one pass of the field, 18,065 decisions:
+
+```
+exposed    268 changed  1.5%      cast 1.8%   attack 7.9%   block 11.3%   order 5.5%
+control      0 changed  0.0%      (an empty override, so the row above is the term)
+```
+
+7.9% of attack declarations and 11.3% of blocks is both real and exactly where a term about combat
+should land. D243's hand-size term, for contrast, moved 112 of 16,761 — 0.67% — and was inert.
+
+**The win rate does not move.** `bot-duel`, the term against the ablated bot, three seed sets:
+
+```
+4400   153-159 of 312      -6
+4688   157-155 of 312      +2
+5000   160-152 of 312      +8
+```
+
+The sign disagrees across the three, which under D258 is **not measured** rather than level.
+
+**It does not do the thing it was written to do.** This is the finding. A win rate cannot answer
+"are the changed attacks the *right* ones", so `crack-back.mjs` was written to ask the term's own
+claim: does a seat that swings with its blockers die to the attack that comes back less often? A
+**fatal crack-back** is a seat that declared a non-empty attack on turn N, was attacked by somebody
+on turn N+1, and lost on turn N+1. On the first seed set it came back **higher** — 17 against 15 —
+not lower.
+
+Against all that: games run about **9% longer** (540 turns to 590 over 26 games) and the bot
+declines to swing in **19% of combats instead of 8%**, with the same number of attackers in total
+and the same number per real swing. It is more cautious without being more effective.
+
+### Decided: the weight ships at zero, and everything else is kept
+
+A change that lengthens every game, cannot be shown to win one, and misses its own hypothesis does
+not ship on by default. That is the standard D116 set when it deleted four terms and D255 followed
+when it withdrew Harm's Way, and the fact that this term is *structurally* the one thing the
+evaluation cannot say does not exempt it — "the evaluation cannot express this" is a reason to try,
+not a reason to keep.
+
+What stays: the computation, its nine tests, the `term-leverage` row, and `crack-back.mjs`. The
+expensive part of this was never the code, and the next person to have this idea should find the
+measurement rather than rebuild it. A test fails if the default moves, to send them here first.
+
+### Four things I got wrong on the way, all of them about measuring rather than coding
+
+1. **The first cost reading was meaningless.** I timed the term on against the term ablated and
+   reported 20% per move. But both arms *computed* the term — the ablated one multiplied by zero —
+   so the difference was the two arms playing different games (7.9% of attacks differ, so they
+   diverge within a few turns), not the cost of the computation. The honest experiment holds
+   behaviour fixed and varies only the wasted work: the same ablated arm on a build that
+   short-circuits a zero weight against one that does not, identical 2,860 moves both sides.
+   **0.23ms a move, about 7%.** The short-circuit is now in the engine, which is also what makes
+   every ablation arm honest rather than a full-price no-op.
+2. **An attribution experiment contaminated by `process.env`.** To split the cost between list
+   building and `canBlock` I gated two early returns on `process.env.PROBE`, and reading
+   `process.env` per call is slow enough in V8 to dominate the thing being measured — the arm that
+   did *less* work came out slower than the arm that did more. Withdrawn; the ~2% figure it produced
+   is not in this entry.
+3. **An early exit that bought nothing, kept for a reason that is not the one I wrote.** Stopping
+   at the first legal blocker instead of filtering the whole list read 4.7s against 4.5s, i.e.
+   noise, because an ordinary blocker list is two or three creatures. It is kept because it bounds
+   the wide board — the 462-goblin position in this file's history would be 462 `canBlock` calls per
+   attacker under the filter — and the comment says that now instead of claiming a saving.
+4. **`crack-back`'s first definition of a combat death was wrong twice over.** It classified the
+   action the life loss happened during, reading `state.step` *before* applying the action (the pass
+   that advances into damage is issued in `declare-blockers`) and testing
+   `includes('combat-damage')`, which does not match `first-strike-damage`. Both errors undercount
+   and neither errors. Redefined so no attribution is needed at all: "somebody declared an attack at
+   this seat" is a fact about an action the instrument already sees. The corrected counts are three
+   to four times larger, which is how much was being missed.
+
+And a fifth, about process rather than measurement: I rebuilt `dist` twice in the middle of a
+running three-seed-set measurement, which would have had set 1 reading one build and sets 2-3
+another. Killed and re-run on a frozen build both times. **A measurement that spans a rebuild is not
+a measurement**, and the rule is the same one D261 arrived at from the other side: a reading is a
+claim about one build.

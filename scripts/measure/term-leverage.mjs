@@ -76,6 +76,18 @@ const TERMS = {
   land: { land: 0 },
   permanent: { permanent: 0 },
   creature: { creature: 0.1 },
+  /*
+    The only term here that is about two boards rather than one seat's piles (#241): power opposite
+    this seat that nothing of its own can block.
+
+    **This row runs the opposite way round to every other one**, and it has to. D264 measured the
+    term and left its default at **zero**, so `{ exposed: 0 }` would be an override that overrides
+    nothing and the row would read a clean 0.0% — an ablation of a term that is already absent. The
+    arm here turns it *on* instead, so the number means "what would the bot do differently if it
+    could see this", which is the same question every other row asks and the only form of it that
+    is answerable for a term that does not ship.
+  */
+  exposed: { exposed: 1 },
 };
 
 const want = (process.env.TERMS ?? '').split(',').map((t) => t.trim()).filter(Boolean);

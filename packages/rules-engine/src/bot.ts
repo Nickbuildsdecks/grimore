@@ -1172,6 +1172,168 @@ const PERMANENT_ON_BOARD = 3;
   same shape of answer the mana-up term got, for the same underlying reason.
 */
 
+/**
+ * What a point of unanswerable incoming power costs — **zero, measured and rejected** (D264).
+ *
+ * The argued weight was 1.0, in the same units as a point of life, because that is literally what
+ * it is: power nothing of mine can stop is life I lose on their next turn. It is not *more* than
+ * life — they have to untap, declare, and survive whatever I do in between — so pricing it above a
+ * point of life would make the bot fear the attack more than the damage.
+ *
+ * At 1.0 it was measured three ways and only one of them came back in its favour:
+ *
+ *  - **It is not inert.** `term-leverage` at one pass of the field: 268 of 18,065 decisions
+ *    changed, 7.9% of attack declarations and 11.3% of blocks, which is both real and exactly
+ *    where a term about combat should land. D243's hand-size term, for contrast, moved 0.67%.
+ *  - **The win rate does not move.** `bot-duel` against the ablated bot on three seed sets:
+ *    153-159, 157-155, 160-152 of 312. The sign disagrees across the sets, which under D258 means
+ *    not measured rather than level.
+ *  - **It does not do the thing it was written to do.** `crack-back.mjs` exists because of this
+ *    term and asks its actual claim — does a seat that swings with its blockers die to the attack
+ *    that comes back less often? It came back **higher**, 17 against 15, not lower.
+ *
+ * Against that: games run about 9% longer and the bot declines to swing in 19% of combats instead
+ * of 8%. A change that lengthens every game, cannot be shown to win one, and misses its own
+ * hypothesis does not ship on by default — the standard D116 set when it deleted four terms and
+ * D255 followed when it withdrew Harm's Way.
+ *
+ * **Everything is kept** — the computation, its nine tests, the `term-leverage` row, the new
+ * instrument — because the expensive part of this was never the code. Set `weights.exposed` to try
+ * it again; `playout.test.ts` has a test that fails if the default moves, to send whoever does
+ * that to this comment first.
+ */
+const EXPOSED_POWER = 0;
+
+/**
+ * Power on the opponents' boards that nothing of mine can block.
+ *
+ * **The one thing `evaluate` structurally cannot say.** Everything else in this file is a sum over
+ * one seat's own piles — life, hand, library, a value per permanent — and `evaluate` subtracts one
+ * seat's total from the average of the others. A sum of independent piles can express "their board
+ * is bigger than mine" and cannot express "their board can attack into mine and mine cannot attack
+ * back", which is a fact about the *pairing* of two boards and the thing a player actually reads
+ * when deciding whether to attack with everything. Two 2/2s against one 4/4 is roughly level by
+ * every term above and badly one-sided in play.
+ *
+ * Three asymmetries make it worth having, and each is a deliberate choice about *when* the question
+ * is asked. It is asked about **their next turn**:
+ *
+ *  - **Their tapped creatures still count.** They untap before they attack, so tapped is not a fact
+ *    about the attack being priced. Summoning sickness is ignored for the same reason: a creature
+ *    cast this turn is a legal attacker on their next one.
+ *  - **My tapped creatures do not count as blockers.** This is the asymmetry and the whole value of
+ *    the term. My creatures untap in *my* untap step, which comes after their turn — so a creature
+ *    I tapped this turn, by attacking with it or by crewing or by paying a cost with it, cannot
+ *    block on their turn. Before this term, tapping out and swinging with the whole board looked
+ *    free. **Vigilance falls out of this for nothing**, which is the nicest thing about reading
+ *    `tapped` rather than reasoning about attacks: a vigilant creature attacks without tapping, so
+ *    it is still in the blocker list, and the term prices a Serra Angel's swing as costing no
+ *    defence — correctly, and without a line of code about vigilance anywhere.
+ *  - **Legality is asked of the engine, not reimplemented.** `canBlock` carries flying, reach,
+ *    Walls, protection from a colour, "can't be blocked", "can't block", and landwalk — which is
+ *    read off the *defender's* lands, so a River Boa is unanswerable here against the blue decks
+ *    and ordinary against the rest. A hand-rolled power comparison would have got every one of
+ *    those wrong, and D144's contextual-keyword term is the precedent: evasion is worth what the
+ *    board opposite it makes it worth.
+ *
+ * **Greedy, one blocker per attacker, biggest attacker first.** A blocker that answers their 5/5
+ * is not also available for their 3/3, which is what makes a single big blocker opposite three
+ * creatures read as two of them getting through. It is not the optimal assignment — that is a
+ * bipartite matching and this is called at every node of a search — and the error it makes is in
+ * the safe direction: greedy-by-size can leave power counted as unanswered that a cleverer
+ * assignment would have stopped, so the bot is told it is *more* exposed than it is rather than
+ * less.
+ *
+ * **Blocking is counted as answering even when the blocker dies.** A chump block stops the damage,
+ * which is the question this term asks; what the block *costs* is already priced by the creature
+ * terms above and by the combat heuristics, which read `exchange` and will decline a bad block when
+ * the turn actually comes. Pricing the loss here too would be the same fact charged twice.
+ *
+ * **Menace** (CR 702.110b) needs two legal blockers to be stopped at all, so it consumes two.
+ *
+ * **What it costs** is measured in D264 and the measurement needed two attempts, which is worth
+ * recording here because the first one is the obvious one and it is wrong. Comparing the bot with
+ * the term against the bot with the weight ablated does **not** measure what the term costs to
+ * compute: the two arms play different games (the term changes 7.9% of attack declarations, so the
+ * games diverge within a few turns) and the per-move difference is mostly that. The honest
+ * experiment holds the *behaviour* fixed and varies only the wasted work — the same ablated arm on
+ * a build that short-circuits the zero weight against one that does not — and that is the number
+ * in D264.
+ */
+function exposedPower(state: GameState, seat: SeatIndex): number {
+  /*
+    My blockers: untapped creatures that can block at all, cheapest body first.
+
+    Sorted ascending by `creatureValue` and spent in that order, so a 1/1 answers their 5/5 before
+    a 5/5 does. That is the right greed for *this* question — the term asks whether the damage can
+    be stopped, not at what price — and it leaves the big blocker available for the next attacker.
+  */
+  const ranked: { id: string; value: number }[] = [];
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined || inst.tapped) continue;
+    const ch = characteristicsOf(state, inst);
+    if (!ch.isCreature || ch.cantBlock) continue;
+    // The sort key computed once per blocker rather than inside the comparator. `creatureValue`
+    // calls `characteristicsOf`, which applies the layers, and a comparator calls it O(n log n)
+    // times — the single most expensive thing in the first version of this function.
+    let value = ch.power + ch.toughness;
+    for (const keyword of ch.keywords) value += KEYWORD_VALUE[keyword] ?? 0;
+    ranked.push({ id, value });
+  }
+  ranked.sort((a, b) => a.value - b.value);
+  const blockers = ranked.map((row) => row.id);
+
+  /** Their attackers, biggest power first: the one I most want to answer gets the first blocker. */
+  const attackers: { id: string; power: number; menace: boolean }[] = [];
+  for (const foe of foesOf(state, seat)) {
+    for (const id of listAt(state, zoneKey(foe, 'battlefield'))) {
+      const inst = state.instances[id];
+      if (inst === undefined) continue;
+      const ch = characteristicsOf(state, inst);
+      if (!ch.isCreature || ch.cantAttack || ch.power <= 0) continue;
+      attackers.push({ id, power: ch.power, menace: ch.keywords.has('menace') });
+    }
+  }
+  attackers.sort((a, b) => b.power - a.power);
+
+  const spent = new Set<string>();
+  let exposed = 0;
+  for (const attack of attackers) {
+    const need = attack.menace ? 2 : 1;
+    /*
+      Stops at the first `need` blockers that can legally block, rather than filtering the whole
+      list and taking a slice of it. The same answer, since both take the cheapest legal blockers
+      in order.
+
+      **It bought nothing measurable and is kept anyway**, which is worth saying plainly because
+      the first version of this comment claimed a saving: timed over twelve whole games it was
+      4.7s against 4.5s, i.e. noise. The reason is that an ordinary blocker list is two or three
+      creatures long, so filtering it and stopping early cost the same. What it bounds is the wide
+      board — the 462-goblin position in the comment on `evaluate`'s denominator is real, and
+      there the filter is 462 `canBlock` calls per attacker where this is about one.
+
+      It is an optimisation and not a shortcut: `canBlock` is still the only thing that decides
+      legality, so a new piece of evasion added to it is read here the day it lands. A fast path
+      that tested for evasion itself would be the D260 failure — a second reader of a rule, going
+      quiet rather than wrong when the rule grows.
+    */
+    const found: string[] = [];
+    for (const id of blockers) {
+      if (spent.has(id)) continue;
+      if (canBlock(state, id, attack.id, seat) !== null) continue;
+      found.push(id);
+      if (found.length === need) break;
+    }
+    if (found.length < need) {
+      exposed += attack.power;
+      continue;
+    }
+    for (const id of found) spent.add(id);
+  }
+  return exposed;
+}
+
 /** Everything one seat has, from that seat's point of view. */
 function seatValue(state: GameState, seat: SeatIndex, opts: BotOptions = {}): number {
   const w = opts.weights ?? {};
@@ -1222,7 +1384,24 @@ export function evaluate(state: GameState, seat: SeatIndex, opts: BotOptions = {
   if (state.seats[seat]?.eliminated === true) return -1e6;
   let theirs = 0;
   for (const foe of foesOf(state, seat)) theirs += seatValue(state, foe, opts);
-  return seatValue(state, seat, opts) - theirs / Math.max(1, state.seats.length - 1);
+  /*
+    And the one term that is about neither seat's pile but about the two boards together: power
+    opposite me that nothing of mine can block. Subtracted here rather than folded into either
+    `seatValue` call because it is not a property of a seat — asking it of a foe would mean asking
+    how exposed *they* are, which is a different and much weaker question in a pod, where it would
+    be answered against the whole rest of the table including me.
+
+    `w.exposed ?? EXPOSED_POWER`, with 0 as the ablation `term-leverage` uses.
+  */
+  const weight = opts.weights?.exposed ?? EXPOSED_POWER;
+  // Short-circuited at zero rather than multiplied by it, which is both obviously right and
+  // necessary: a weight of zero is the ablation every instrument in `scripts/measure` uses for
+  // this term, and without this the ablated arm pays the term's full cost to reach a contribution
+  // of nothing. The first cost reading taken here was invalid for exactly that reason — it
+  // compared an arm that computed the term against an arm that also computed it, and the
+  // difference it found was the two arms playing different games.
+  const exposed = weight === 0 ? 0 : exposedPower(state, seat) * weight;
+  return seatValue(state, seat, opts) - theirs / Math.max(1, state.seats.length - 1) - exposed;
 }
 
 /**
@@ -1920,6 +2099,11 @@ export interface BotOptions {
     readonly land?: number;
     readonly permanent?: number;
     readonly creature?: number;
+    /**
+     * Unblockable incoming power, priced per point against this seat (see `exposedPower`). 0 is the
+     * ablation, and the control this term was measured against.
+     */
+    readonly exposed?: number;
   };
   /**
    * Whether the search stops where its action happened rather than wherever auto-pass carried the

@@ -7668,6 +7668,38 @@ passing, because every fix was a type and not a behaviour — except the energy 
 tests what it claims to. **A script in a package.json that no pipeline calls is not a check, it is a
 comment.**
 
+### The evaluation's first term about two boards, measured and switched off (#241, D264)
+
+`evaluate` is a sum of independent piles — life, hand, library, a value per permanent, one seat's
+total minus the average of the others. It can say "their board is bigger than mine" and
+structurally cannot say "their board can attack into mine and mine cannot attack back", which is a
+fact about the *pairing* and the thing a player reads before swinging with everything. #241 had
+been open since D244, and I argued against it twice on the grounds that D258's ±20 floor made it
+unmeasurable. **That was wrong and is corrected here**: the floor is about win rates. `term-leverage`
+ablates on the real positions the real bot played, so a term's leverage is exact.
+
+Built it — reusing the engine's own `canBlock`, so flying, reach, Walls, protection and landwalk
+come for free, and vigilance falls out of reading `tapped` with no code about vigilance anywhere.
+Nine tests pin the arithmetic. Then measured it three ways, and only one came back in its favour:
+**1.5% of all decisions changed, 7.9% of attack declarations and 11.3% of blocks** (so not inert —
+D243's hand term was 0.67% and was); **the win rate did not move**, 153-159, 157-155, 160-152 across
+three seed sets with the sign disagreeing, which is "not measured"; and **it did not do the thing it
+was written to do** — a new instrument, `crack-back.mjs`, asks whether a seat that swings with its
+blockers dies to the return attack less often, and the answer was 17 against 15, higher. Games also
+run ~9% longer and the bot declines to swing in 19% of combats instead of 8%.
+
+So the weight ships at **zero** and everything else is kept: the computation, the tests, the
+`term-leverage` row, the instrument, and a test that fails if the default moves. "The evaluation
+cannot express this" is a reason to try, not a reason to keep.
+
+Four of my own measurement errors are written up in D264 because each is a reusable trap: a cost
+reading that compared two arms playing different games (the real figure, with behaviour held fixed,
+is 0.23ms a move); an attribution probe whose `process.env` read dominated what it measured; an
+early exit kept for a reason other than the one first claimed for it; and a damage attribution that
+read the step before the action and never matched `first-strike-damage`. Plus one about process:
+twice I rebuilt `dist` in the middle of a three-seed-set run, and **a measurement that spans a
+rebuild is not a measurement**.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

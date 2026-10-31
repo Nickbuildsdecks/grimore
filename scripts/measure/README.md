@@ -58,6 +58,7 @@ it.
 | `eval-calibration.mjs` | **does the bot's evaluation predict who wins**, and which of its components carries the signal? | `SEEDS=6 node scripts/measure/eval-calibration.mjs` |
 | `term-leverage.mjs` | **which of the evaluation's terms actually decide anything** — what changes when each is taken away? | `SEEDS=1 node scripts/measure/term-leverage.mjs` |
 | `term-leverage.mjs` | …and measured where a term acts, rather than drowned in a field average | `SUBJECT=hollow-tide TERMS=library node scripts/measure/term-leverage.mjs` |
+| `crack-back.mjs` | does a seat that **swings with its blockers** die to the attack that comes back? | `node scripts/measure/crack-back.mjs` |
 | `halves-use.mjs` | which face of a two-faced card gets used, and was the land the only one? | `SEEDS=5 node scripts/measure/halves-use.mjs` |
 | `transform-use.mjs` | does a **transforming** card ever turn over, on which turn, and into what board? | `SEEDS=6 node scripts/measure/transform-use.mjs` |
 | `leaving-creatures.mjs` | a creature the bot **cannot see is leaving** — what does it decline, and what gets spent on it? | `SEEDS=6 node scripts/measure/leaving-creatures.mjs` |

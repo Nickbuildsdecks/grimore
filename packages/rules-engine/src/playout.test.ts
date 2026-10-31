@@ -2637,3 +2637,131 @@ describe('the opponent cannot read your hand', () => {
     expect(differed).toBeGreaterThan(0);
   });
 });
+
+/**
+ * The one term that is about two boards rather than one seat's piles (#241).
+ *
+ * Every other term in `evaluate` is a sum over one seat — life, hand, library, a value per
+ * permanent — and the whole is one seat's total minus the average of the others. A sum of
+ * independent piles can say "their board is bigger than mine" and cannot say "their board can
+ * attack into mine and mine cannot attack back", which is a fact about the *pairing* and the thing
+ * a player reads before swinging with everything. `exposedPower` is that term; these pin its
+ * arithmetic.
+ *
+ * **Isolated by ablation rather than by exporting the function.** `evaluate` at `exposed: 0` minus
+ * `evaluate` at `exposed: 1` is exactly the term's contribution, because nothing else in the two
+ * calls differs and every other weight keeps its default — so `exposure()` reads it in points of
+ * power with no access to the internals. Asserting on the public evaluation is also the stronger
+ * claim: it says the term reaches the number the search actually compares.
+ *
+ * **Both weights are named rather than one of them left to the default**, which matters because
+ * the default is 0: D264 measured the term and did not ship it on. Comparing against the default
+ * would make every assertion below read zero and pass, which is the vacuous-assertion trap D263
+ * caught in this very file.
+ *
+ * Seat 0 is Ember Rush and seat 1 Verdant Guard, which is `arena`'s default and the reason the
+ * boards below are built from those two lists.
+ */
+describe('the power opposite me that nothing of mine can block', () => {
+  /** The term's contribution at a weight of one, in points of power. */
+  const exposure = (s: GameState, seat: SeatIndex = 0): number =>
+    evaluate(s, seat, { weights: { exposed: 0 } }) - evaluate(s, seat, { weights: { exposed: 1 } });
+
+  const tapFor = (s: GameState, seat: SeatIndex, id: string): GameState =>
+    applyAction(s, { type: 'card:tap', by: seat, card: id, tapped: true }, HOST);
+
+  it('is nothing when there is no creature opposite', () => {
+    expect(exposure(arena({ battlefield: { 0: ['Hill Giant'], 1: ['Forest'] } }))).toBe(0);
+  });
+
+  it('is nothing when an untapped creature of mine can legally block it', () => {
+    // Their 2/2 against my 3/3: the damage can be stopped, so none of it is exposed. A block that
+    // *loses* the blocker still answers the attack — what it costs is the creature terms' business
+    // and the combat heuristics', and pricing it here as well would charge one fact twice.
+    expect(exposure(arena({ battlefield: { 0: ['Hill Giant'], 1: ['Grizzly Bears'] } }))).toBe(0);
+  });
+
+  it('is their whole power when my only blocker is tapped', () => {
+    /*
+      **The asymmetry the term exists for.** My creatures untap in *my* untap step, which comes
+      after their turn — so a creature I tapped this turn, by attacking with it or by paying a cost
+      with it, cannot block on theirs. Before this term, tapping out and swinging with the whole
+      board cost the evaluation nothing.
+    */
+    const board = arena({ battlefield: { 0: ['Hill Giant'], 1: ['Grizzly Bears'] } });
+    expect(exposure(tapFor(board, 0, find(board, 0, 'battlefield', 'Hill Giant')))).toBe(2);
+  });
+
+  it('counts their tapped creatures anyway, because they untap before they attack', () => {
+    // The mirror of the test above and the other half of the same choice about *when* the question
+    // is asked: tapped is a fact about now, and the attack being priced is on their next turn.
+    const board = arena({ battlefield: { 0: ['Mountain'], 1: ['Grizzly Bears'] } });
+    expect(exposure(board)).toBe(2);
+    expect(exposure(tapFor(board, 1, find(board, 1, 'battlefield', 'Grizzly Bears')))).toBe(2);
+  });
+
+  it('asks the engine about evasion instead of comparing power', () => {
+    // A ground 3/3 cannot stop a 4/4 flier, and no amount of power and toughness says so. The term
+    // calls `canBlock`, which carries flying, reach, Walls, protection, "can't be blocked" and
+    // landwalk — the same lesson as D144's contextual-keyword term: evasion is worth what the
+    // board opposite it makes it worth.
+    expect(exposure(arena({ battlefield: { 0: ['Hill Giant'], 1: ['Serra Angel'] } }))).toBe(4);
+  });
+
+  it('and reach answers a flier, where a bigger ground creature does not', () => {
+    // Decks swapped, so the reaching creature is mine and the dragon theirs. A 2/4 Spider stops a
+    // 5/5 Shivan Dragon and a 2/2 Bear does not, which is the whole of the claim.
+    const swapped = { decks: { 0: 'verdant-guard', 1: 'ember-rush' } };
+    expect(exposure(arena({
+      ...swapped, battlefield: { 0: ['Giant Spider'], 1: ['Shivan Dragon'] },
+    }))).toBe(0);
+    expect(exposure(arena({
+      ...swapped, battlefield: { 0: ['Grizzly Bears'], 1: ['Shivan Dragon'] },
+    }))).toBe(5);
+  });
+
+  it('spends each blocker once, so a second attacker gets through', () => {
+    // One blocker against their 2/2 and 1/1. Biggest attacker first: the Bears take my Hill Giant
+    // and the Traveler is unanswered. Greedy and deliberately so — the optimal assignment is a
+    // bipartite matching and this is called at every node of a search.
+    expect(exposure(arena({
+      battlefield: { 0: ['Hill Giant'], 1: ['Grizzly Bears', 'Doomed Traveler'] },
+    }))).toBe(1);
+  });
+
+  it('gives the biggest attacker the cheapest blocker, so a coverable board reads as covered', () => {
+    /*
+      Two blockers against their 3/3 and 2/2, all four on the ground. Blockers are sorted ascending
+      by `creatureValue` and spent in that order, so my 2/2 Marauder answers their Courser and my
+      3/3 Hill Giant is still free for their Bears. Spending the big body first would leave the
+      2/2 attacker counted as unanswered on a board that answers everything.
+    */
+    expect(exposure(arena({
+      battlefield: {
+        0: ['Hill Giant', 'Borderland Marauder'],
+        1: ['Centaur Courser', 'Grizzly Bears'],
+      },
+    }))).toBe(0);
+  });
+
+  it('is a cost, not a bonus', () => {
+    // The sign, asserted on the public evaluation rather than inferred from the helper above.
+    const safe = arena({ battlefield: { 0: ['Hill Giant'], 1: ['Grizzly Bears'] } });
+    const tappedOut = tapFor(safe, 0, find(safe, 0, 'battlefield', 'Hill Giant'));
+    const w = { weights: { exposed: 1 } };
+    expect(evaluate(tappedOut, 0, w)).toBeLessThan(evaluate(safe, 0, w));
+  });
+
+  it('contributes nothing at the weight the bot actually ships with', () => {
+    /*
+      The default, asserted so that "it is off" is a tested fact rather than a line in a comment.
+      D264 measured this term three ways — 1.5% of decisions changed, the field win rate level
+      across three seed sets with the sign disagreeing, and no reduction in the fatal crack-backs
+      it was written to prevent — and left it at zero. If somebody turns it on, this test is the
+      one that fails and sends them to that entry.
+    */
+    const board = arena({ battlefield: { 0: ['Hill Giant'], 1: ['Serra Angel'] } });
+    const tappedOut = tapFor(board, 0, find(board, 0, 'battlefield', 'Hill Giant'));
+    expect(evaluate(tappedOut, 0)).toBe(evaluate(tappedOut, 0, { weights: { exposed: 0 } }));
+  });
+});
