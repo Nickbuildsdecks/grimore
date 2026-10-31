@@ -1284,7 +1284,74 @@ const EXPOSED_POWER = 0;
      the question becomes how exposed *they* are to the whole rest of the table including me, which
      is a different and much weaker question.
 */
+/**
+ * What a point of unanswerable incoming power costs **when you are nearly dead** — a term that won
+ * a duel, doubled a pod, and is therefore still **zero** (#258, D275).
+ *
+ * `exposedPower * startingLife / life`, so at full life and a weight of one it is *exactly* D264's
+ * rejected term, and at a third of a seat's life three times that.
+ *
+ * **It wins duels, and this is the measurement, not a hope.** Three disjoint seed sets on
+ * `bot-duel`, 936 paired games each:
+ *
+ * | seed set | `{clockRate:1}` vs stock |
+ * | --- | --- |
+ * | 3300 | 470-462 (+8) |
+ * | 4100 | 480-454 (+26) |
+ * | 5200 | 471-462 (+9) |
+ *
+ * 1421-1378 of 2808, **+1.5 points with the sign holding every time** — D242's bar, and a wider
+ * margin than `castable` earned at it. `term-leverage` said where it would come from before the win
+ * rate was spent: **14.2% of attack declarations**, the largest single-decision-kind figure any term
+ * in that table has posted, nearly double the same board's linear reading.
+ *
+ * **And then the four-seat instrument said what it costs.** The same eight pods, paired on the same
+ * seeds, with this at one and at zero:
+ *
+ * | | moves | turns |
+ * | --- | --- | --- |
+ * | zero | 3429 | 422 |
+ * | one | **7062** (2.06x) | **611** (1.45x) |
+ *
+ * Every pod still finished, and three of the eight ran three to five times longer: 192 moves became
+ * 989, 287 became 1344, 618 became 1663, and turn 40 became turn 95. Duels went slightly *shorter*,
+ * so this is specific to four seats — which makes sense from the computation: `exposedPower` sums
+ * what **three** opponents could send, a pod seat therefore reads as very exposed, and scaling that
+ * by urgency makes it decline to tap its blockers. It is D264's own "declines to swing in 19% of
+ * combats instead of 8%", amplified by the scaling and by having three opponents.
+ *
+ * So the standard D264 set has to be read exactly: *a change that lengthens every game, cannot be
+ * shown to win one, and misses its own hypothesis does not ship on by default.* This one **can** be
+ * shown to win one, so that rule does not decide it — and a term that wins a duel while doubling a
+ * pod has not earned a **global** default, in a project whose headline format is the pod. It stays
+ * at zero until the pod has its own win rate, which `pod-duel` is the instrument for.
+ *
+ * Everything is kept — the computation, ten tests, two `term-leverage` rows, the duel result above —
+ * on the grounds D264 kept `exposed`: the expensive part was never the code. Turning this on is one
+ * character, and `playout.test.ts` has a test that fails when it changes, to send whoever does it
+ * here.
+ *
+ * **D264's information is right and D264's shape was wrong, and that part stands whatever happens
+ * to the default.** Eight power is three turns at twenty life and one turn at seven; the flat term
+ * scores those identically, and no weight repairs it because the fault is the shape. The weight here
+ * is not swept either, because D273 found `castable` flat across a fourfold range and concluded this
+ * evaluation is insensitive to its weights — one is the number that was measured.
+ */
 const CLOCK_RATE = 0;
+/**
+ * The same clock as an integer — *"I'm dead in two"* — **zero, measured and not taken** (#258).
+ *
+ * `min(CLOCK_CAP, ceil(life / power))`. It moved **110 of 17,604 decisions, 3.8% of attacks**:
+ * *below* the linear term it was meant to beat, and a quarter of what the scaled form carries. Its
+ * own comment predicted that — a capped integer only moves when a play changes the count, and most
+ * plays do not — and having built both is what makes the conclusion available at all. With only
+ * this form the honest reading would have been "the clock is weaker than the quantity", which is
+ * the opposite of what `clockRate` then showed.
+ *
+ * Kept, with its tests and its `term-leverage` row, on the same grounds D264 kept `exposed`: the
+ * expensive part was never the code. No win rate was spent on it, so "level" is not claimed —
+ * only that it decides less.
+ */
 const CLOCK_TURNS = 0;
 /*
   Where a clock stops being a fact worth acting on. Six of their turns is long enough for the game

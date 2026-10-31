@@ -2966,9 +2966,15 @@ describe('how many turns this board leaves me', () => {
 
   it('both ship off, and this fails if either default moves', () => {
     /*
-      The guard D264 asks for and D271 had to turn around. Both forms ship at zero, so the shipped
-      evaluation must equal both explicit ablations — and whoever turns one on without three
-      disjoint seed sets behind it gets sent to the comment on `CLOCK_RATE` by this failing.
+      The guard, and it has been turned around twice in one day, which is the record worth keeping
+      (D275). `clockRate` **won** its three disjoint seed sets in a duel — 470-462, 480-454,
+      471-462, +1.5 points — and was shipped on for about twenty minutes, until the four-seat
+      instrument said the same change makes a pod take **twice the moves and 45% more turns**. A
+      term that wins a duel and doubles a pod has not earned a global default, so both forms are
+      back at zero pending the pod's own win rate.
+
+      Whoever turns one on gets sent to the comments on `CLOCK_RATE` and `CLOCK_TURNS` by this
+      failing, which is where both halves of that are written down.
     */
     const board = arena({ battlefield: { 0: ['Hill Giant'], 1: ['Serra Angel'] } });
     expect(evaluate(board, 0)).toBe(evaluate(board, 0, { weights: { clockRate: 0 } }));

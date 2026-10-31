@@ -17727,3 +17727,86 @@ correctness requirement rather than a saving (D264's withdrawn figure). And the 
 `getFormat(state.format).startingLife`, not a literal: a duel starts at 20 and a pod at 40, so a
 literal 20 would have read every pod position at twice the pressure it has. There is a test for
 that.
+
+## D275 — A term that won its duel, doubled a pod, and is still switched off
+
+`clockRate` cleared every bar this project has set for an evaluation term, and then the four-seat
+instrument said something the duel could not, and the default went back to zero. Both halves are the
+entry; neither is the finding on its own.
+
+### It wins duels, and that is measured
+
+Three disjoint seed sets on `bot-duel`, 936 paired games each:
+
+| seed set | `{clockRate:1}` vs stock |
+| --- | --- |
+| 3300 | 470-462 (+8) |
+| 4100 | **480-454 (+26)** |
+| 5200 | 471-462 (+9) |
+
+1421-1378 of 2808, **+1.5 points, sign holding every time** — D242's bar, and a wider margin than
+`castable` earned at it. The leverage predicted where it would come from before the win rate was
+spent: 14.2% of attack declarations, the largest single-decision-kind figure any term in
+`term-leverage` has posted and nearly double the same board's linear reading. It was shipped on,
+tests repointed, guard turned around, for about twenty minutes.
+
+### And then the pod
+
+`pod-pace`, the same eight pods, paired on the same seeds, at one and at zero:
+
+| | moves | turns |
+| --- | --- | --- |
+| zero | 3429 | 422 |
+| one | **7062** (2.06x) | **611** (1.45x) |
+
+Every pod still finished, which is the first thing to check and not the interesting part. Three of
+the eight ran three to five times longer: **192 moves became 989, 287 became 1344, 618 became 1663,
+and turn 40 became turn 95.** Duels went slightly *shorter* on the same instrument, so this is
+specific to four seats.
+
+The mechanism falls out of the computation rather than needing a hypothesis. `exposedPower` sums what
+**three** opponents could send against one seat's blockers, so a pod seat reads as very exposed;
+scaling that by urgency makes it decline to tap its blockers; nobody attacks and the game grinds. It
+is D264's own observation — *"declines to swing in 19% of combats instead of 8%"* — amplified by the
+scaling and by having three opponents instead of one.
+
+### Why that decides it, and the rule it does not invoke
+
+D264's standard is specific and worth quoting rather than paraphrasing: *a change that lengthens every
+game, cannot be shown to win one, and misses its own hypothesis does not ship on by default.* This
+one **can** be shown to win one and hits its hypothesis exactly, so that rule does not apply. The
+reason for holding is a different and simpler one: **a term measured in duels and never in a pod has
+not earned a global default, in a project whose headline format is the pod.** Doubling the length of
+a four-seat game is not a rounding error in a product where a person sits down to play one.
+
+So `CLOCK_RATE` is back to zero pending `pod-duel`'s own answer, which is running. Three outcomes and
+all three are informative: a pod win rate that holds up makes this a real tradeoff for a human to
+decide (a stronger opponent against a game that takes twice as long); one that is flat says the term
+is a duel-only gain; one that is negative says the length *is* the effect.
+
+### What this cost and what it is worth
+
+Twenty minutes of being shipped, two rebuilds, and the guard test turned around twice in one
+afternoon — which is the record worth keeping rather than hiding, because the sequence is the lesson.
+The duel measurement was correct, complete by the project's own published bar, and **still not enough
+to ship on**, because the bar was written for a two-seat harness and the product is not two-seat.
+That is D267's shape one more time: *a check whose premise is wider than its fixture.* The premise was
+"this term makes the bot better"; the fixture was 2808 duels.
+
+Everything is kept — the computation, ten tests, two `term-leverage` rows, both candidate shapes, the
+duel result — on the grounds D264 kept `exposed`: the expensive part was never the code. Turning it on
+is one character, and `playout.test.ts` fails when it changes.
+
+### The part that stands either way
+
+**D264's information was right and D264's shape was wrong.** The unanswerable-power reading is worth
++1.5 points in a duel when it is scaled by how little life is left, and worth nothing flat. Eight
+power is three turns at twenty life and one turn at seven; a linear term scores those identically and
+no weight repairs it, because the fault is the shape. Taken with D271 — the hand count was the wrong
+shape too, and its replacement won — that is now two for two, and the third leg of the same argument
+is D273's: *this evaluation is insensitive to its weights and sensitive to what it can see.*
+
+And the discrete form is why both were built. `clockTurns` — the integer a player says out loud —
+moved 110 of 17,604 decisions and 3.8% of attacks, **below** the linear term it was meant to beat.
+Had only that shape been built, the honest conclusion would have been "the clock is weaker than the
+quantity", which is the opposite of what is true.
