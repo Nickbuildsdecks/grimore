@@ -43,6 +43,14 @@
  *   the spell was never cast, which is the whole point of it.
  * - **Mana.** A ritual's mana is in the pool, which this does not read, and the play that spends it
  *   is the next action rather than this one.
+ * - **Prevention** was one of these and is not any more. A shield changes no count of cards, bodies
+ *   or life, so every prevention spell in the pool read as a play that bought nothing: Harm's Way
+ *   scored 3 of 3 and Divine Deflection 3 of 4 on the runs that found it. The fingerprint sums the
+ *   prevention on the table now, so a shield cast *is* a change and only a shield that bought
+ *   nothing reads as one — which is what the row is supposed to mean. It is worth leaving the story
+ *   here rather than only the fix: this blind spot was invisible for eleven increments because
+ *   nothing in the pool had a shield as its *whole* effect until the redirection cards (D255), and
+ *   the two that did have one, a Holy Day and a Samite Healer, were never near the top of the list.
  * - **Where a bonus is.** The fingerprint sums power and keywords across the battlefield, so an
  *   Equipment *moved* from one creature to a bigger one changes nothing in it — the sum is the same
  *   and only the carrier is different. That is why the equipment rows do not fall to zero after
@@ -123,6 +131,25 @@ function fingerprint(state, payer) {
       zone(state, seat.index, 'exile'), zone(state, seat.index, 'library'),
     ].join(','));
   }
+  /*
+    And the prevention sitting on the table, which is the one kind of value with nowhere to live.
+
+    Everything above is a count of cards, bodies or life. A shield is none of those: a Holy Day, a
+    Samite Healer's tap, a Harm's Way all leave every number above exactly as it was, so **every
+    prevention spell in the pool read as a play that bought nothing** — Harm's Way scored 3 of 3 on
+    the run that found this, which is as wrong as a row in this list can be.
+
+    Summed as a quantity rather than counted as effects, because that is what is bought: a shield
+    for two is worth twice a shield for one, and a blanket Fog has no quantity at all and so is
+    counted as one. Only the shields and the blankets, not every continuous effect — an anthem is
+    already visible in the power sum above and would be double-counted here.
+  */
+  let prevention = 0;
+  for (const effect of state.effects ?? []) {
+    prevention += effect.preventsDamageAmount ?? 0;
+    if (effect.preventsCombatDamage === true) prevention += 1;
+  }
+  parts.push(`fx${prevention}`);
   return parts.join('|');
 }
 

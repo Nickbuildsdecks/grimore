@@ -15927,3 +15927,45 @@ card** — what the bot does with it, as D252 did — rather than about which sl
 go. That is true as far as it goes and it is what the opponent is entitled to know; what it does not
 show is the destination, which the caster chose and can see on their own card. A view field for it
 would be plumbing for one line of text on two cards, and the honest place for the complaint is here.
+
+## D256 — The instrument could not see a shield, so every prevention spell read as waste
+
+Found by running `wasted-plays` on the deck that had just been given a redirection card, and reading
+the row rather than filing it:
+
+```
+    3 of    3 100%  Harm's Way  [forge-alliance]
+```
+
+A card that bought nothing every single time it was cast. It is not a card problem and it is not a
+bot problem: the fingerprint `wasted-plays` compares either side of a play is counts of **cards,
+bodies and life** — life and poison, permanents per seat, power, toughness, keywords, counters,
+untapped permanents, and the four zone sizes. A prevention shield changes none of them. So a shield
+cast with a Lightning Bolt in the air and a shield cast into an empty board produce the identical
+fingerprint, and the instrument reported both as waste.
+
+The fingerprint now sums the prevention on the table — `preventsDamageAmount` as a quantity, plus
+one for each blanket `preventsCombatDamage` — which makes a shield cast a change like any other.
+Before and after on two decks, 48 games each:
+
+```
+forge-alliance   Harm's Way  3 of 3  ->  1 of 3
+skyward-writ     Holy Day    3 of 7  ->  gone
+                 Divine Deflection 3 of 4  ->  gone
+                 total  9 of 543 (2%)  ->  3 of 543 (1%)
+```
+
+Six false positives removed and one real suspect left standing, which is the right outcome: a Harm's
+Way that genuinely absorbed nothing is a play that bought nothing, and that is what the row is
+supposed to mean.
+
+**Why it went unnoticed for eleven increments is the part worth keeping.** `wasted-plays` has been
+read a dozen times since #162 and prevention was never near the top of its list, because until the
+redirection cards nothing in the pool had a shield as its *whole* effect: Healing Salve's other mode
+gains life, a Samite Healer's tap is an activation among many, and Holy Day sat at 3 of 7 in a list
+whose top row was 79%. A new card put a 100% row in front of the question and the blind spot became
+visible — which is the argument for adding cards to a pool with instruments pointed at it, and for
+reading an instrument's whole output rather than its top line.
+
+The header of the instrument now tells that story beside its other blind spots, because the next
+person to meet a 100% row deserves to know which of them have been fixed.

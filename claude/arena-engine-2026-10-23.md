@@ -7413,6 +7413,25 @@ finding reproduced on a different deck and card. Two cut-set comparisons on two 
 back within three games of each other, so the next negative card is a question about the card rather
 than about its slot.
 
+## The instrument could not see a shield (D256)
+
+Found by reading `wasted-plays` on the deck that had just been given a redirection card: `3 of 3
+100%  Harm's Way`. A card that bought nothing every time it was cast — and neither a card problem
+nor a bot one. The fingerprint it compares either side of a play is counts of cards, bodies and
+life, and a prevention shield changes none of them, so a shield cast with a Bolt in the air and one
+cast into an empty board looked identical.
+
+The fingerprint sums the prevention on the table now. Before and after, 48 games a deck: Harm's Way
+3 of 3 → 1 of 3; Holy Day 3 of 7 and Divine Deflection 3 of 4 → both gone; Skyward Writ's whole
+list 9 of 543 → 3 of 543. Six false positives removed, one real suspect left, which is what the row
+is supposed to mean.
+
+Why it survived eleven increments is the part worth keeping: nothing in the pool had a shield as its
+*whole* effect until these cards, so prevention was never near the top of the list — Holy Day sat at
+3 of 7 under a top row of 79%. A new card put a 100% row in front of the question. That is the
+argument for adding cards to a pool with instruments pointed at it, and for reading an instrument's
+whole output rather than its top line.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
