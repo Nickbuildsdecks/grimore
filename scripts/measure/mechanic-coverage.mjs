@@ -123,6 +123,14 @@ const EXPECTED_THIN = new Map([
     does not carry it, and Dark Ritual being alone here is the field working.
   */
   ['script makesMana', 'a bot hint for a spell whose whole effect is mana, not for permanents that make it — see Burning-Tree Emissary'],
+  /*
+    Same shape as `makesMana`, found the same way: the claim was written at the carrier rather than
+    anywhere this file looks. Chalice of the Void's comment reads "the one card in the pool where a
+    bigger X is a worse card", and that is the design claim rather than a count. Every other X spell
+    here wants X as large as the mana allows — a Fireball, a Mind Spring — and the flag exists to
+    mark the exception. One exception is the field working.
+  */
+  ['script xIsANumberToMatch', 'marks the exception, not a class: the one card here where a bigger X is a worse card'],
 ]);
 
 /*
@@ -144,6 +152,7 @@ const EXPECTED_THIN = new Map([
   one host through the proxy, and the moment that happens none of it is engine work.
 */
 const NEEDS_CARD_DATA = 'wants a second card; a printed keyword with many real cards, blocked on verified text (D259)';
+const NEEDS_TRIGGER_CARD = 'wants a second card; a printed trigger template with real cards behind it, blocked on verified text (D259)';
 const BLOCKED_THIN = new Map([
   ['script affinity', NEEDS_CARD_DATA],
   ['script bestow', NEEDS_CARD_DATA],
@@ -158,6 +167,16 @@ const BLOCKED_THIN = new Map([
   ['script overload', NEEDS_CARD_DATA],
   ['script spectacle', NEEDS_CARD_DATA],
   ['script vanishing', NEEDS_CARD_DATA],
+  /*
+    The two trigger rows, worded separately because a trigger is a template rather than a keyword.
+    Checked before being listed, because a one-card trigger could just as easily have meant the pool
+    was expressing the same thing by another route — which is precisely what `makesMana` turned out
+    to be. It is not the case here: `attacks-unblocked` has one declaration and `to-exile` has one,
+    and nothing else in the pool reaches the same event a different way. So these are genuine
+    one-card rows whose second card is text.
+  */
+  ['trigger attacks-unblocked', NEEDS_TRIGGER_CARD],
+  ['trigger to-exile', NEEDS_TRIGGER_CARD],
 ]);
 
 /** name -> the cards that carry it. A Set, because a card with two faces must not count twice. */

@@ -17209,7 +17209,11 @@ job it was written for.
 
 The rows were not equally mysterious, and separating them is the whole change.
 
-### One row was thin on purpose, with the reason already in the codebase
+*(Numbers below are the first pass. The follow-up section at the end resolved the last three rows,
+so the instrument now reads 5 / 15 / 0 / 0. The commit message for the first pass says 4 / 13 / 3
+and is left as it was.)*
+
+### Two rows were thin on purpose, with the reason already in the codebase
 
 `makesMana` is **not** "this card produces mana". It is a bot hint meaning *the whole effect of this
 spell is mana, so the search cannot see what the card did*. Burning-Tree Emissary carries the
@@ -17255,8 +17259,39 @@ for the companion rule that a mechanic without a card does not exist. The substa
 was right and is applied consistently — the attribution was not, and I repeated it often enough to
 be worth correcting in the place that will outlive the conversation.
 
+### The follow-up that reached zero
+
+The three rows left open were resolved the same afternoon, and the same pattern explains two of
+them: **the claim was written at the carrier rather than anywhere this file looks.**
+
+`xIsANumberToMatch` carries its own answer at Chalice of the Void — *"the one card in the pool where
+a bigger X is a worse card."* That is a design claim, not a count. Every other X spell here wants X
+as large as the mana allows, and the flag exists to mark the exception; one exception is the field
+working. So it joins `makesMana` in the by-design list, for the same reason and found the same way.
+
+`trigger attacks-unblocked` and `trigger to-exile` needed a check rather than a reading, because a
+one-card trigger could just as easily mean the pool reaches the same event by another route — which
+is exactly what `makesMana` turned out to be. It is not the case here: each has a single declaration
+and nothing else in the pool expresses either event differently. So they are genuine one-card rows
+whose second card is text, worded separately from the keywords because a trigger is a template
+rather than a keyword.
+
+```
+5 thin by design, 15 waiting on card data, 0 thin and unexplained, 0 declared with no card at all
+```
+
+Zero unexplained is the state this file's own comment says is worth being able to get back to: *"a
+run whose last line is zero is a pool where every fragile mechanic is fragile on purpose."* It now
+says something stronger than that — every fragile row is either fragile on purpose or fragile for one
+named external reason, and **the fifteen is one host away from not being fragile at all.**
+
 ### What did not change
 
 The pool. No card was added, no mechanic was altered, and the reach counts are identical. This
 changes only what the instrument says about what it found, which was the thing standing between the
 file and being used.
+
+Worth saying because it is the third time today: twice in this entry the explanation already existed
+in the codebase and the instrument could not see it, both times written at the card rather than at
+the mechanic. That is the same shape as D267 from the other direction — there a check could not see a
+bug because of where it looked; here a check could not see an *answer* for the same reason.
