@@ -15787,3 +15787,49 @@ times in 48 games: the hosts are a Wall of Air, an Omenspeaker, a Healer's Hawk.
 which side, not which creature, and a combat-damage trigger on a 0/4 defender is worth nothing. The
 next rule is "aim a combat-damage bonus at a creature that can attack", which is a board reading
 rather than a flag, and `granted-abilities` is now the instrument that would price it.
+
+## D253 — Which creature, not which side: a rule that works and is worth nothing
+
+D252 taught the bot which *side* to put a bonus on. The Ophidian Eye immediately started landing on
+a Wall of Air, which is the next question and a different one: `creatureValue` is power plus
+toughness plus keywords, so a 0/4 flying Wall scores 5.5 and a 1/1 flying lifelink Healer's Hawk
+scores 4. The Wall is the better creature by that measure, for every purpose except a trigger that
+reads "whenever this creature deals damage to a player".
+
+So `TargetSpec.helpsInCombat` is the third hint of its family, after `friendly` and `blinks`: this
+bonus is only paid off by the creature dealing combat damage, so rank the creatures that can
+**never** attack below the ones that can. A fact rather than a weight, which is the shape D246
+settled on — `defender` and a blanket `cantAttack` are permanent, where tapped and summoning-sick
+wear off and a bonus that lasts outlives them. Four specs carry it: Ophidian Eye's Aura, Distortion
+Strike, Tainted Strike and Crimson Wisps. A Giant Growth deliberately does not — pumping a blocker
+to win a fight is half of what that card is for, and a Wall is often the right answer.
+
+**It does exactly what it says.** `granted-abilities` over 144 games, the rule on and off via
+`BotOptions.helpsAnAttacker`:
+
+```
+ on: Healer's Hawk x6, Hanna x5, Hidden Dragonslayer x4, Paladin en-Vec x4, Omenspeaker x3, Wall x2
+off: Wall of Air x5, Healer's Hawk x4, Wall x3, Serra Angel x3, Paladin en-Vec x3, Basilica Guards x3
+```
+
+**And it is worth nothing.** The same runs: the granted ability fired **6 times with the rule on and
+6 times with it off**, 0.12 against 0.13 per grant. The field table at the canonical seeds moves by
+one game in each direction and leaves ten of thirteen decks untouched.
+
+The reason is in the same output rather than mysterious: **28 of 49 grants lost every creature
+holding them before firing once.** Skyward Writ's creatures die; which of them is wearing the Aura
+when they die does not matter. A rule about choosing between two creatures cannot help a deck whose
+problem is that both of them are dead.
+
+**Kept anyway, on D216's terms rather than on a win rate.** That entry shipped a bot rule that was
+near-inert bot-to-bot — 26 truce offers, 25 refusals, the winner identical in 12 of 13 pods — and
+said so: *"it is on by default because the value is the table a person sits at rather than a win
+rate, which is a claim made on its own terms."* This is the same claim. A person playing against
+this engine will see the Aura go onto a wall and draw the obvious conclusion about their opponent,
+and no measurement here can price that. The rule is declarative, has no number in it, and comes with
+the flag that proves it is inert; a unit test asserts both arms on a two-creature board, so the
+claim stays honest if somebody later wonders whether it does anything.
+
+What it must not be read as: a recovery of D251's eighteen games. Two rules in a row (D252, D253)
+have now measured flat on that deck, and the instrument says why — the cards are weak in that list
+and the bot was never the whole of it.

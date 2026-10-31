@@ -85,6 +85,19 @@ const TARGET_CREATURE: TargetSpec = { kind: 'creature', description: 'target cre
 const TARGET_CREATURE_HELPED: TargetSpec = {
   kind: 'creature', description: 'target creature', friendly: true,
 };
+
+/**
+ * And the same spec for a bonus that is only paid off by an **attack**: see
+ * `TargetSpec.helpsInCombat`.
+ *
+ * Three spells rather than all eight, and the line between them is what the card is for. A Giant
+ * Growth pumps a blocker to win a fight as often as it pumps an attacker, and a Wall is sometimes
+ * exactly the right answer; "can't be blocked", infect damage and haste are worth nothing at all on
+ * a creature that is never going to attack.
+ */
+const TARGET_ATTACKER_HELPED: TargetSpec = {
+  ...TARGET_CREATURE_HELPED, helpsInCombat: true,
+};
 const TARGET_PLAYER: TargetSpec = { kind: 'player', description: 'target player' };
 
 const creatureYouControl = (state: GameState, candidate: Target, controller: SeatIndex): boolean =>
@@ -4210,7 +4223,7 @@ const MUTAVAULT: CardScript = {
  */
 const CRIMSON_WISPS: CardScript = {
   name: 'Crimson Wisps',
-  targets: [TARGET_CREATURE_HELPED],
+  targets: [TARGET_ATTACKER_HELPED],
   onResolve: (c) => {
     const id = firstCardTarget(c);
     if (id === null) return draw(c.state, c.controller, 1);
@@ -6553,7 +6566,7 @@ const DISTORTION_STRIKE: CardScript = {
   rebound: true,
   // Wears off at end of turn, so the bot holds it for a combat. See `expiresAtEndOfTurn`.
   expiresAtEndOfTurn: true,
-  targets: [TARGET_CREATURE_HELPED],
+  targets: [TARGET_ATTACKER_HELPED],
   triggers: [reboundCast()],
   onResolve: (c) => {
     const id = firstCardTarget(c);
@@ -7594,7 +7607,7 @@ const PHYREXIAN_CRUSADER: CardScript = {
  */
 const TAINTED_STRIKE: CardScript = {
   name: 'Tainted Strike',
-  targets: [TARGET_CREATURE_HELPED],
+  targets: [TARGET_ATTACKER_HELPED],
   onResolve: (c) => {
     const id = firstCardTarget(c);
     return id === null
@@ -8359,8 +8372,15 @@ const TANDEM_LOOKOUT: CardScript = {
 const OPHIDIAN_EYE: CardScript = {
   name: 'Ophidian Eye',
   aura: {
-    // A bonus, so the bot aims it at its own side. See `TargetSpec.friendly`.
-    target: { kind: 'creature', description: 'enchant creature', friendly: true },
+    /*
+      A bonus, so the bot aims it at its own side — and at a creature that can *attack*, because
+      the trigger it grants reads "deals damage to a player". See `TargetSpec.friendly` and
+      `TargetSpec.helpsInCombat`: without the second one this landed on a Wall of Air, which can
+      never deal damage to anybody.
+    */
+    target: {
+      kind: 'creature', description: 'enchant creature', friendly: true, helpsInCombat: true,
+    },
     effect: { grants: [0] },
   },
   grantedTriggers: [{

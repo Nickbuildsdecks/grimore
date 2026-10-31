@@ -19806,6 +19806,37 @@ describe('a granted triggered ability: the first ability on a permanent that did
     expect(held(swung)).toBe(beforeRegranted + 1);
   });
 
+  it('and the bot puts it on the creature that can attack rather than the biggest one', () => {
+    /*
+      `friendly` says which *side*; this is which *creature* (D253). The bot orders its own
+      creatures by `creatureValue` — power plus toughness plus keywords — and by that measure a 0/4
+      flying Wall of Air (5.5) beats a 1/1 flying lifelink Healer's Hawk (4). It does, for every
+      purpose except a trigger that reads "whenever this creature deals damage to a player", which
+      a Wall will never do.
+
+      A board with exactly those two creatures on it, so the assertion is about the ordering and
+      nothing else; and asserted through `botAction` rather than by calling the ranking, because
+      what matters is the play the bot actually makes. The flag is the control: with
+      `helpsAnAttacker: false` the same board gives the old answer, which is what makes this a test
+      of the rule rather than of the board.
+    */
+    const board = (): GameState => advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+      battlefield: { 0: ['Island', 'Island', 'Wall of Air', "Healer's Hawk"] },
+      hands: { 0: ['Ophidian Eye'] },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+    const aimOf = (opts: Parameters<typeof botAction>[2]): string | undefined => {
+      const s = board();
+      const action = botAction(s, 0, opts);
+      if (action?.type !== 'auto:cast') return undefined;
+      const aimed = action.targets?.[0];
+      return aimed?.kind === 'card' ? nameOf(s, aimed.id) : undefined;
+    };
+    expect(aimOf({})).toBe("Healer's Hawk");
+    expect(aimOf({ helpsAnAttacker: false })).toBe('Wall of Air');
+  });
+
   it('and every Aura whose effect is a bonus tells the bot to aim it at its own side', () => {
     /*
       Derived rather than listed, and it exists because of what the omission did (D252).

@@ -102,6 +102,32 @@ export interface TargetSpec {
    */
   readonly blinks?: boolean;
   /**
+   * Advice to the bot: this bonus is only paid off by the creature **dealing combat damage**.
+   *
+   * The third hint of its kind, and it exists because `friendly` turned out to answer only half the
+   * question. `friendly` says which *side* to aim at; D252 applied it to eleven specs and the
+   * Ophidian Eye promptly started landing on a Wall of Air and an Omenspeaker, where a trigger that
+   * reads "whenever this creature deals damage to a player" fires exactly never. The bot's
+   * ordering among its own creatures is `creatureValue` — power plus toughness plus keywords — and
+   * by that measure a 0/4 flying Wall (5.5) is a better creature than a 1/1 flying lifelink
+   * Healer's Hawk (4). It is, for every purpose except this one.
+   *
+   * So this is not "the best creature" but "a creature that can attack at all", and it is a fact
+   * rather than a weight: `defender` and a blanket `cantAttack` are permanent, where tapped and
+   * summoning-sick wear off and a bonus that lasts outlives them. A spec carrying this ranks the
+   * creatures that can never attack below the ones that can, and changes nothing else.
+   *
+   * Only for a bonus whose *whole* value is in the attack. A Giant Growth deliberately does not
+   * carry it: pumping a blocker to win a fight is half of what the card is for, and a Wall is often
+   * the right answer. Four specs do: Ophidian Eye's Aura, Distortion Strike ("can't be blocked"),
+   * Tainted Strike (infect damage) and Crimson Wisps (haste).
+   *
+   * Not a restriction, like `friendly` and `blinks`: enchanting the Wall stays legal, because a
+   * player may have a reason this cannot see. `BotOptions.helpsAnAttacker` is the flag that prices
+   * the change.
+   */
+  readonly helpsInCombat?: boolean;
+  /**
    * A quantity split among the targets of this spec, announced as the spell is cast (CR 601.2d):
    * "Arc Lightning deals 3 damage divided as you choose among one, two, or three targets."
    *

@@ -329,9 +329,21 @@ function chooseTargets(
       // And what being blinked does to the thing pointed at, which no ordering of "whose is it"
       // can see. See `TargetSpec.blinks` and `BotOptions.blinksWell`.
       const blinks = spec.blinks === true && opts.blinksWell !== false;
-      const score = blinks
+      const scored = blinks
         ? (t: Target): number => base(t) + blinkAdjust(state, t, foes)
         : base;
+      /*
+        And whether the creature can attack at all, for a bonus that is only paid off by an attack.
+
+        Subtracted from the ranking rather than filtering the candidate list, so the play is still
+        made when a Wall is the only creature there: a bonus on a creature that cannot attack is
+        worth little, and worth more than a card left in hand. See `TargetSpec.helpsInCombat`.
+      */
+      const combatOnly = spec.helpsInCombat === true && opts.helpsAnAttacker !== false;
+      const score = combatOnly
+        ? (t: Target): number => scored(t)
+          - (t.kind === 'card' && neverAttacks(state, t.id) ? 100 : 0)
+        : scored;
       const bestFirst = [...candidates].sort((a, b) => score(b) - score(a));
       // And the one blink that is never a play, dropped rather than ranked last: see
       // `blinkDestroysMine`. Only where declining is legal, which is what `optional` means.
@@ -522,6 +534,21 @@ function blinkLoss(state: GameState, inst: CardInstance): number {
     else loss += other.zoneSeat === inst.zoneSeat ? 25 : -25;
   }
   return loss;
+}
+
+/**
+ * Whether this creature can **never** attack, which is a fact about it rather than about this turn.
+ *
+ * `defender` and a blanket `cantAttack` (a Pacifism) are the two, and both are permanent. Tapped
+ * and summoning-sick are deliberately not here: they wear off, and a bonus that lasts outlives
+ * them — a Rancor on a creature that is tapped today is a fine Rancor. See
+ * `TargetSpec.helpsInCombat`.
+ */
+function neverAttacks(state: GameState, id: string): boolean {
+  const inst = state.instances[id];
+  if (inst === undefined) return false;
+  const ch = characteristicsOf(state, inst);
+  return ch.keywords.has('defender') || ch.cantAttack;
 }
 
 /** Whether blinking this permanent runs an arrival trigger of its own again. */
@@ -2087,6 +2114,21 @@ export interface BotOptions {
    * instrument and the probe both read.
    */
   readonly blinksWell?: boolean;
+  /**
+   * Whether a bonus whose whole value is in the attack is aimed at a creature that can attack.
+   *
+   * D252 taught the bot which *side* to put a bonus on and the Ophidian Eye immediately started
+   * landing on a Wall of Air: `creatureValue` is power plus toughness plus keywords, and by that
+   * measure a 0/4 flying Wall outranks every flier in Skyward Writ. `granted-abilities` read the
+   * result — ten grants, zero triggers.
+   *
+   * `false` is the bot as it was, which is the arm the probe runs against. On, the creatures that
+   * can **never** attack (a `defender`, a blanket `cantAttack`) rank below the ones that can, for
+   * the four specs that declare `TargetSpec.helpsInCombat` and nothing else. A fact rather than a
+   * weight, which is the same shape D246 settled on: tapped and summoning-sick wear off, and a
+   * bonus that lasts outlives them.
+   */
+  readonly helpsAnAttacker?: boolean;
 }
 
 /**

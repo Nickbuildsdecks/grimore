@@ -7336,6 +7336,31 @@ says which *side* and not which creature — the hosts are a Wall of Air and an 
 combat-damage trigger on a 0/4 defender is worth nothing. "Aim a combat-damage bonus at a creature
 that can attack" is a board reading rather than a flag, and this instrument would now price it.
 
+## Which creature, not which side — a rule that works and is worth nothing (#238, D253)
+
+D252 taught the bot which *side* to put a bonus on; the Ophidian Eye then landed on a Wall of Air,
+because `creatureValue` is power plus toughness plus keywords and a 0/4 flying Wall (5.5) outranks a
+1/1 flying lifelink Healer's Hawk (4). It does, for every purpose except a trigger that reads
+"whenever this creature deals damage to a player".
+
+`TargetSpec.helpsInCombat` is the third hint of that family, after `friendly` and `blinks`: rank the
+creatures that can **never** attack below the ones that can. A fact rather than a weight —
+`defender` and a blanket `cantAttack` are permanent, where tapped and summoning-sick wear off. Four
+specs carry it; Giant Growth deliberately does not, because pumping a blocker is half of what that
+card is for.
+
+It does what it says — the hosts go from Walls and Basilica Guards to Healer's Hawks and Hidden
+Dragonslayers — and **it is worth nothing**: the granted ability fired 6 times with the rule on and
+6 times with it off over 144 games, and the field table moves one game in each direction. The reason
+is in the same output: 28 of 49 grants lost every creature holding them before firing once. Skyward
+Writ's creatures die, and which one wears the Aura when they die does not matter.
+
+Kept on D216's terms rather than on a win rate: a person playing against this engine will see the
+Aura go onto a wall and draw the obvious conclusion, and no measurement here prices that. The rule
+is declarative, has no number in it, ships with the flag that proves it inert, and a unit test
+asserts both arms. It is not a recovery of D251's eighteen games, and two rules in a row have now
+measured flat on that deck.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
