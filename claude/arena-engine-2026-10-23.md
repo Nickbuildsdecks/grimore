@@ -7552,8 +7552,12 @@ cards and a Treasure) into Tidal Mind.
 
 And `spent-permanents.mjs` asks what a unit test cannot — whether the position ever comes up. Tidal
 Mind over 96 games: **16 Treasures created, 13 spent by their own controller (81%)**, none removed,
-three left standing when the game ended. Against the line this deleted that number is zero by
-construction.
+three left standing when the game ended. Skyward Writ's Clues over the same count: **35 created, 35
+spent (100%)**, none left over. Against the line this deleted both numbers are zero by construction.
+
+Which is the right way round for what the two cards are: a Clue is two mana for a card whenever you
+like, and a deck that holds mana up always has a turn with two spare, where a Treasure is mana for a
+turn that may never arrive.
 
 Food is deliberately left out: it needs a real card, and a Food card's printed text cannot be
 verified from this container. The engine work it will need is none.

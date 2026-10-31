@@ -16343,6 +16343,23 @@ see the mana — which makes this the first slot in a while whose value is a beh
 win rate, and the right way round: the card does what it says, and `deck-probe` could not have
 resolved its handful of games anyway (D258).
 
+And Skyward Writ's Clues, 96 games, which is the contrast worth having:
+
+```
+Clue
+    35 created
+    35 spent by their own controller  (100%)
+     0 taken away by somebody else
+     0 still on the battlefield when the game ended
+```
+
+**Every Clue is cashed and four Treasures in five are**, which is the right way round for what the
+two cards are. A Clue is two mana for a card at a moment of your choosing, and in a deck that holds
+mana up and passes there is almost always a turn with two spare; a Treasure is mana for a turn that
+may never come, so the three left standing are games that ended before the deck needed them. Neither
+number is a judgement about the slot — it is the mechanic working, which is what these runs are
+for.
+
 `cast-counts` says Pirate's Prize is cast in 35% of the games it reaches hand, the lowest row in
 that deck and about right for a four-mana sorcery in a deck of answers.
 
