@@ -500,6 +500,8 @@ interface ManaSourceEntry {
   readonly choose?: boolean;
   /** Life the tap costs, for a land that charges you for the colour. */
   readonly life?: number;
+  /** Using it sacrifices it: a Treasure, which makes one mana once. See `ManaSource.sacrifices`. */
+  readonly sacrifices?: boolean;
 }
 
 /**
@@ -700,6 +702,17 @@ export function delvePlan(
 
 export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[] {
   const free: ManaSourceEntry[] = [];
+  /*
+    Sources that are **spent** rather than tapped, queued between the free ones and the painful
+    ones (see `ManaSource.sacrifices` for why order is all this needs to be).
+
+    Ahead of a life cost rather than behind it, which is the one judgement in here. A Treasure
+    exists to be spent and a life total cannot be rebuilt, so cracking the Treasure before paying
+    a Mana Confluence is the play a person makes at any life total worth protecting — and the
+    painful sources already drop out of this list entirely once the life is nearly gone, so the
+    low-life case was never the one at risk.
+  */
+  const spent: ManaSourceEntry[] = [];
   const painful: ManaSourceEntry[] = [];
   const life = state.seats[seat]?.life ?? 0;
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
@@ -714,13 +727,26 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
     const script = scriptFor(state.cardDefs[inst.defKey]?.name);
     const ch = characteristicsOf(state, inst);
     const abilities = script?.abilities ?? [];
-    let usable: { index: number; produces: readonly ManaType[]; life: number; energy: number }[] = [];
+    let usable: {
+      index: number; produces: readonly ManaType[]; life: number; energy: number; sacrifices: boolean;
+    }[] = [];
     for (let i = 0; i < abilities.length; i++) {
       const ability = abilities[i]!;
       if (ability.produces === undefined || ability.produces.length === 0) continue;
       if (ability.cost.mana !== undefined) continue;
-      if (!ability.cost.tap) continue;
-      if (ability.cost.sacrificeSelf) continue;
+      /*
+        `{T}` **or** a sacrifice of itself, where it used to be `{T}` and never a sacrifice.
+
+        The old line refused any mana ability that sacrificed its own permanent, which made a
+        Treasure token unplayable rather than merely unusual: the engine would create one, the
+        auto-tapper would not see its mana, `canAfford` would say no, and the card the Treasure was
+        made for would sit in hand with the Treasure sitting beside it. Nothing would have errored.
+
+        A sacrifice is a cost this seat can always decide about from what it already has, which is
+        the test this list applies to every other non-mana cost — the same reason a life cost
+        counts and an energy cost counts once there is energy for it.
+      */
+      if (!ability.cost.tap && !ability.cost.sacrificeSelf) continue;
       if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
       // A cost you cannot pay is not a cost you may pay (CR 118.4) — and paying down to nothing
       // is a legal way to lose the game, so the engine stops one short of it.
@@ -739,7 +765,11 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
       const energyCost = ability.cost.energy ?? 0;
       if (energyCost > 0 && energyOf(state, seat) < energyCost) continue;
       usable.push({
-        index: i, produces: ability.produces as readonly ManaType[], life: cost, energy: energyCost,
+        index: i,
+        produces: ability.produces as readonly ManaType[],
+        life: cost,
+        energy: energyCost,
+        sacrifices: ability.cost.sacrificeSelf === true,
       });
     }
     /*
@@ -757,9 +787,20 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
     if (usable.some((u) => u.life === 0 && u.energy === 0)) {
       usable = usable.filter((u) => u.life === 0 && u.energy === 0);
     }
+    /*
+      And the same rule one step further: a permanent that can make mana *without* eating itself
+      does that, and its sacrifice row is left for the player.
+
+      Mind Stone is the card — `{T}: Add {C}` beside `{1}, {T}, Sacrifice: Draw a card` — and it is
+      safe today only because the second row costs mana and is filtered out above. The next rock
+      printed with a free sacrifice row would have had the auto-tapper eating it for one mana on
+      turn three, which is the Mutavault mistake in `payFrom` wearing different clothes.
+    */
+    if (usable.some((u) => !u.sacrifices)) usable = usable.filter((u) => !u.sacrifices);
     if (usable.length === 0) continue;
     const cost = usable[0]!.life;
-    const bucket = cost > 0 ? painful : free;
+    const eats = usable[0]!.sacrifices;
+    const bucket = eats ? spent : cost > 0 ? painful : free;
     // One source per permanent, because tapping it is what pays — and several tap abilities on
     // one permanent are a *choice* between them, not a sum. That is what a dual land is: two
     // abilities, one tap, one mana. Treating them as a sum would offer spells nobody can cast.
@@ -767,6 +808,7 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
       bucket.push({
         key: id, produces: usable[0]!.produces, abilityIndex: usable[0]!.index,
         ...(cost > 0 ? { life: cost } : {}),
+        ...(eats ? { sacrifices: true } : {}),
       });
       continue;
     }
@@ -776,9 +818,10 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
       abilityIndex: usable[0]!.index,
       choose: true,
       ...(cost > 0 ? { life: cost } : {}),
+      ...(eats ? { sacrifices: true } : {}),
     });
   }
-  return [...free, ...painful];
+  return [...free, ...spent, ...painful];
 }
 
 /** The sources `legalActions` asks about affordability, as `manaSources` reports them. */

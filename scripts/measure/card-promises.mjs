@@ -157,7 +157,23 @@ function carried(card, promise) {
   const named = KEYWORD_FIELDS.find(([word]) => word === head);
   if (named !== undefined) return named[1].some((field) => script[field] !== undefined);
   switch (tail ?? head) {
-    case 'trigger': return (script.triggers ?? []).length > 0 || script.saga === true;
+    /*
+      A promised trigger is carried by `triggers`, by a saga's chapters — or by `grantedTriggers`,
+      which is the card declaring an ability for *something else* to have (D251).
+
+      That last one is the fourth reader of `script.triggers` to be caught not knowing about granted
+      abilities, after the bot's three in #236, and it is the same false positive in the same shape:
+      Ophidian Eye's whole text is "enchanted creature has 'Whenever this creature deals damage to a
+      player, draw a card'", so its printed `triggers` list is empty and this audit called the card
+      unscripted. The ability exists, fires, and has a test; what was missing was the question.
+
+      Worth the comment rather than the one-line fix on its own, because the shape recurs: a new way
+      to carry an ability is a new blind spot in every instrument that enumerates the old ways, and
+      nothing warns you — the audit simply reports a gap that is not there, or worse, stops
+      reporting one that is.
+    */
+    case 'trigger': return (script.triggers ?? []).length > 0 || script.saga === true
+      || (script.grantedTriggers ?? []).length > 0;
     case 'ability': return (script.abilities ?? []).length > 0;
     case 'protection': return (script.statics ?? []).some((s) => s.effect?.protectionFrom !== undefined)
       || script.onResolve !== undefined || (script.triggers ?? []).length > 0;

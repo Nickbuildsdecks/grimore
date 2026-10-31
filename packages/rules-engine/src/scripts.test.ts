@@ -3120,6 +3120,112 @@ describe('mana that is not a land', () => {
   });
 });
 
+describe('Treasure and Clue: a permanent that is spent', () => {
+  /**
+   * Tidal Mind on turn six with `hand` in hand and `board` out, stopped where plays are legal.
+   *
+   * A Grizzly Bears opposite throughout, because the cheap spell these tests pay for is an Unsummon
+   * and a spell with no legal target is never offered — which would look exactly like a cost the
+   * engine could not pay and prove nothing about the mana.
+   */
+  const table = (hand: readonly string[], board: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'tidal-mind' }, hands: { 0: hand }, battlefield: { 0: board, 1: ['Grizzly Bears'] },
+    turn: 6, firstSeat: 0,
+  }), 'precombat-main');
+
+  const nameOf = (s: GameState, id: string): string | undefined =>
+    s.cardDefs[s.instances[id]?.defKey ?? '']?.name;
+  const countOn = (s: GameState, seat: 0 | 1, name: string): number =>
+    ids(s, seat, 'battlefield').filter((id) => nameOf(s, id) === name).length;
+
+  it("Pirate's Prize draws two and leaves a Treasure behind", () => {
+    let s = table(["Pirate's Prize"], ['Island', 'Island', 'Island', 'Island']);
+    const before = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', "Pirate's Prize"),
+    })));
+    // Two cards, less the Prize itself leaving hand.
+    expect(ids(s, 0, 'hand').length).toBe(before + 1);
+    expect(countOn(s, 0, 'Treasure')).toBe(1);
+  });
+
+  it('and the Treasure pays for a spell, which is what `manaSources` used to refuse', () => {
+    /*
+      The gap this closes. `manaSources` skipped any mana ability that sacrificed its own permanent,
+      so before this the Treasure sat on the battlefield and the engine behaved as though it were
+      not there: the Unsummon would not be offered and the cast would be refused.
+
+      One Island, tapped for the Prize already, so the Treasure is the only mana on the board.
+    */
+    let s = table(["Pirate's Prize", 'Unsummon'], ['Island', 'Island', 'Island', 'Island']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', "Pirate's Prize"),
+    })));
+    const treasure = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Treasure')!;
+    expect(treasure).toBeDefined();
+    // Every land is tapped: whatever pays for the Unsummon is the Treasure.
+    for (const id of ids(s, 0, 'battlefield')) {
+      if (nameOf(s, id) === 'Island') expect(s.instances[id]!.tapped).toBe(true);
+    }
+    expect(legalActions(s, 0).plays.some((p) => p.name === 'Unsummon')).toBe(true);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Unsummon'),
+      targets: [{ kind: 'card', id: bears }],
+    })));
+    expect(s.instances[bears]!.zone).toBe('hand');
+    // Spent, not tapped: a token that leaves the battlefield ceases to exist, so the instance is
+    // gone rather than sitting in a graveyard — and the next untap step finds nothing to untap.
+    expect(s.instances[treasure]).toBeUndefined();
+    expect(countOn(s, 0, 'Treasure')).toBe(0);
+  });
+
+  it('and a land is spent before a Treasure is', () => {
+    // The ordering `manaSources` exists to get right: a Treasure you did not need is a card you
+    // keep. One untapped Island beside the Treasure, one one-mana spell, and the Island pays.
+    let s = table(["Pirate's Prize", 'Unsummon'], ['Island', 'Island', 'Island', 'Island', 'Island']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', "Pirate's Prize"),
+    })));
+    const treasure = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Treasure')!;
+    const spare = ids(s, 0, 'battlefield')
+      .find((id) => nameOf(s, id) === 'Island' && !s.instances[id]!.tapped)!;
+    expect(spare).toBeDefined();
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Unsummon'),
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Grizzly Bears') }],
+    })));
+    // The land paid and the Treasure is still there. Which the solver gets right for a reason
+    // worth knowing: a Treasure makes all five colours, and the colour branch reaches for the
+    // *least* flexible source that can pay a pip, so an Island beats it to a {U} every time.
+    expect(s.instances[spare]!.tapped).toBe(true);
+    expect(s.instances[treasure]).toBeDefined();
+    expect(countOn(s, 0, 'Treasure')).toBe(1);
+  });
+
+  it('Thraben Inspector investigates, and the Clue cashes in for a card', () => {
+    /*
+      The control for all of the above. A Clue is `{2}, Sacrifice this artifact: Draw a card`, which
+      is Mind Stone's second row with a different payoff — and `sacrificeSelf` has been a payable
+      activation cost since that card was written, so this half needed no engine change at all. If
+      the Clue works and the Treasure does not, the fault is in the mana path and nowhere else.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ' }, hands: { 0: ['Thraben Inspector'] },
+      battlefield: { 0: ['Plains', 'Plains', 'Plains'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Thraben Inspector'),
+    })));
+    expect(countOn(s, 0, 'Clue')).toBe(1);
+    const clue = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Clue')!;
+    const before = ids(s, 0, 'hand').length;
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: clue, abilityIndex: 0 }));
+    expect(ids(s, 0, 'hand').length).toBe(before + 1);
+    expect(s.instances[clue]).toBeUndefined();
+  });
+});
+
 describe('exile until this leaves the battlefield', () => {
   /** Seat 1 on a white deck, with `lands` tapped for mana, `hand` in hand and `theirs` opposite. */
   const white = (

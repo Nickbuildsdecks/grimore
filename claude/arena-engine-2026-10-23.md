@@ -7532,6 +7532,32 @@ change that does not clear it on both has not been measured; and never set a pro
 table reading at all — run the table for the question only it answers, which is what the change did
 to everybody else.
 
+### Treasure and Clue, and the mana source that is spent (D259)
+
+The pool had no Treasure, Clue or Food, and the reason was an engine refusal rather than an
+oversight: `manaSources` skipped any mana ability that sacrificed its own permanent, so a Treasure
+was a token the engine could **create and never spend** — the auto-tapper would not count its mana,
+the cast would be refused, and nothing anywhere would say why.
+
+`ManaSource.sacrifices` now carries "this source is consumed" from `manaSources` through `solveTap`
+to `tapSources`, which sacrifices the permanent instead of leaving it tapped. The ordering needed no
+new preference: the solver already reaches for the *least* flexible source that can pay a coloured
+pip, so a Swamp beats a Treasure to a {B} on its own, and the generic tie is broken by putting the
+consumed sources behind the free ones in the list.
+
+**The Clue is the control and needed nothing** — `{2}, Sacrifice: Draw a card` is Mind Stone's
+second row, and a sacrifice has been a payable activation cost since that card. Two cards make them:
+**Thraben Inspector** ({W} 1/2, investigate) into Skyward Writ and **Pirate's Prize** ({3}{U}, two
+cards and a Treasure) into Tidal Mind.
+
+And `spent-permanents.mjs` asks what a unit test cannot — whether the position ever comes up. Tidal
+Mind over 96 games: **16 Treasures created, 13 spent by their own controller (81%)**, none removed,
+three left standing when the game ended. Against the line this deleted that number is zero by
+construction.
+
+Food is deliberately left out: it needs a real card, and a Food card's printed text cannot be
+verified from this container. The engine work it will need is none.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

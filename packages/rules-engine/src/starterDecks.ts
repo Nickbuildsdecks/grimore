@@ -2224,6 +2224,26 @@ const AMBUSH_VIPER: CardDef = {
   colors: ['G'],
 };
 
+const THRABEN_INSPECTOR: CardDef = {
+  name: 'Thraben Inspector',
+  typeLine: 'Creature \u2014 Human Soldier',
+  manaCost: '{W}',
+  cmc: 1,
+  power: '1',
+  toughness: '2',
+  oracleText: 'When Thraben Inspector enters the battlefield, investigate. (Create a colorless Clue artifact token with "{2}, Sacrifice this artifact: Draw a card.")',
+  colors: ['W'],
+};
+
+const PIRATES_PRIZE: CardDef = {
+  name: "Pirate's Prize",
+  typeLine: 'Sorcery',
+  manaCost: '{3}{U}',
+  cmc: 4,
+  oracleText: 'Draw two cards. Create a Treasure token. (It is an artifact with "{T}, Sacrifice this artifact: Add one mana of any color.")',
+  colors: ['U'],
+};
+
 const ELVISH_VISIONARY: CardDef = {
   name: 'Elvish Visionary',
   typeLine: 'Creature \u2014 Elf Shaman',
@@ -4010,7 +4030,11 @@ export const TIDAL_MIND: DeckSpec = {
     { card: ISLAND, count: 6 },
     { card: SWAMP, count: 8 },
     { card: DIMIR_GUILDGATE, count: 2 },
-    { card: LONELY_SANDBAR, count: 2 },
+    // One, not two: the second is Pirate's Prize's slot. The cycling land stays in the deck and in
+    // the pool (Skyward Writ runs two), and what the deck gets back is a card that draws two and
+    // leaves a Treasure behind — four mana for two cards and a Cancel still up under five lands.
+    { card: LONELY_SANDBAR, count: 1 },
+    { card: PIRATES_PRIZE, count: 1 },
     /*
       Two lands that are also creatures, for an Island and a Swamp.
 
@@ -5324,7 +5348,7 @@ export const SKYWARD_WRIT: DeckSpec = {
     // and have to decide whether it can afford its own mana. It cost a Plains.
     { card: MANA_CONFLUENCE, count: 1 },
     { card: LONELY_SANDBAR, count: 2 },
-    { card: SECLUDED_STEPPE, count: 2 },
+    { card: SECLUDED_STEPPE, count: 1 },
     /*
       The ground, which this deck does not intend to win — and which the first version of it lost
       on, 1-9 against both aggro decks over sixty measured games.
@@ -5350,6 +5374,10 @@ export const SKYWARD_WRIT: DeckSpec = {
       the card's own payoff, Ajani's Pridemate, is not in this list at all.
     */
     { card: MASTER_OF_PEARLS, count: 1 },
+    // A 1/2 for {W} that is also a card, which is two of this deck's jobs in a slot — and a second
+    // body for its own Tandem Lookout to pair with. The second Secluded Steppe is the slot, so the
+    // cycling land stays in the deck and in the pool.
+    { card: THRABEN_INSPECTOR, count: 1 },
     // A one-drop that blocks in the air and gains the life back, which is what the matchups this
     // deck loses actually ask for.
     { card: HEALERS_HAWK, count: 1 },

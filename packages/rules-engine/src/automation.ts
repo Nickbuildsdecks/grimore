@@ -2221,7 +2221,21 @@ function settlePayment(state: GameState): GameState {
 function tapSources(state: GameState, seat: SeatIndex, picks: readonly ManaPick[]): GameState {
   let next = state;
   for (const pick of picks) {
+    /*
+      A consumed source is **sacrificed** rather than tapped, which is its printed cost: a Treasure
+      says "{T}, Sacrifice this artifact: add one mana of any color", and the sacrifice is the half
+      that matters because the permanent does not come back next untap step.
+
+      Tapped as well as sacrificed, in that order, so the two facts are both true of the object that
+      left: `{T}` is part of the cost, a tapped Treasure cannot pay it, and anything watching the
+      tap sees one. The sacrifice goes through `relocate` for the reason every other sacrifice does
+      — a token put into a graveyard ceases to exist there, and that is one rule in one place.
+    */
     next = withInstance(next, pick.key, { tapped: true });
+    if (pick.sacrifices === true) {
+      const inst = next.instances[pick.key];
+      if (inst !== undefined) next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+    }
     if (pick.life !== undefined) next = loseLife(next, seat, pick.life);
     // What the solver decided this one made — for a dual, the single colour it was tapped for.
     for (const type of pick.types) next = setPool(next, seat, addMana(poolOf(next, seat), type, 1));

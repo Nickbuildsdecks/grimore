@@ -16261,3 +16261,94 @@ The negative control for the multi-set path is the old one per set: an empty `CH
 variant identical to stock, so every set must read exactly zero, and the summary says that in those
 words rather than falling through to "the sets disagree". Checked at `SETS=3 SEEDS=1`: `+0, +0, +0`,
 spread 0, on three sets that each played different games (12-12, 13-11, 15-9 stock).
+
+
+## D259 — Treasure and Clue, and the mana source that is spent rather than tapped
+
+The pool had no Treasure, no Clue and no Food — the artifact tokens a modern casual game is largely
+made of — and the reason was not that nobody had got round to them. `manaSources` held this line:
+
+```ts
+if (ability.cost.sacrificeSelf) continue;
+```
+
+A mana ability that sacrifices its own permanent was refused, so a Treasure was a token the engine
+could **create and never spend**: the auto-tapper would not count its mana, `canAfford` would say
+no, and the spell the Treasure was made for would sit in hand beside it with nothing anywhere to say
+why. Nothing would have thrown. That is the shape of bug this project keeps finding — a card that is
+quietly worse than its text — and it is why the pool's token list was all bodies.
+
+### The fix is a flag carried three hops, and the ordering was already right
+
+`ManaSource.sacrifices` says the source is **consumed** by using it; `solveTap` carries it onto the
+pick beside `life`; `tapSources` sacrifices the permanent instead of leaving it tapped. Tapped *and*
+sacrificed, in that order, because `{T}` is part of the printed cost — a tapped Treasure cannot pay
+it, and anything watching a tap sees one.
+
+**What needed no code is the part worth recording.** A Treasure makes one of five colours, and the
+solver's colour branch already reaches for the *least* flexible source that can pay a pip — so a
+Swamp is spent before a Treasure that could also have made black, with no preference written
+anywhere. For a generic pip a `choose` source sizes at one mana and ties with a basic land, and that
+tie is broken by list order, so `manaSources` queues the consumed sources behind the free ones and
+the existing machinery does the rest. The one judgement is that they go **ahead** of the painful
+ones: a Treasure exists to be spent and a life total cannot be rebuilt, and the painful sources
+already drop out of the list once the life is nearly gone, so the low-life case was never at risk.
+
+One guard is speculative and says so in its comment: a permanent offering both a free tap for mana
+and a free sacrifice for mana keeps the tap. No card in the pool has that shape — Mind Stone's
+sacrifice row costs mana and is filtered out earlier — so the branch is untested and is there
+because the next rock printed that way would otherwise be eaten for one mana on turn three.
+
+### Two tokens, and the Clue is the control
+
+**Clue** (`{2}, Sacrifice this artifact: Draw a card`) needed **no engine change at all**: it is Mind
+Stone's second row with a different payoff, and `sacrificeSelf` has been a payable activation cost
+since that card was written. It is in here precisely for that — if the Clue cashes in and the
+Treasure does not, the fault is in the mana path and nowhere else.
+
+**Thraben Inspector** ({W} 1/2, "when this enters, investigate") into Skyward Writ, for the second
+Secluded Steppe: a one-drop blocker that becomes a card, which is two of that deck's jobs in a slot,
+and a second body for its own Tandem Lookout to pair with. "Investigate" is written as the token
+rather than as a keyword, on the same test myriad passes and this fails: a keyword earns its place
+when the rules have to *consult* it, and nothing ever asks whether an effect was an investigation.
+
+**Pirate's Prize** ({3}{U}, draw two and make a Treasure) into Tidal Mind, for the second Lonely
+Sandbar. The slot argument is not ramp — that deck's late turns have always had mana and nothing to
+spend it on — it is the turn the card is cast: four mana for two cards leaves one mana behind, so the
+Prize and a Cancel fit under five lands where the Prize alone would end the turn.
+
+### Measured: the position comes up, and the bot takes it
+
+`spent-permanents.mjs` is new and asks the question a unit test cannot, because a unit test puts the
+Treasure on the board and the spell in hand on purpose: **per game, how many were created, how many
+were spent by their own controller, and how many were still sitting there at the end.** Telling a
+spend from a removal is the only part that needed thought — a token that leaves the battlefield is
+deleted outright, and this pool holds a Disenchant — so a disappearance is attributed to the action
+it happened during: spending happens inside the controller's own cast, where a Disenchant is
+somebody else's.
+
+Tidal Mind, 96 games:
+
+```
+Treasure
+    16 created
+    13 spent by their own controller  (81%)
+     0 taken away by somebody else
+     3 still on the battlefield when the game ended
+```
+
+Four in five are spent, and the three left over are games that ended before the mana was wanted.
+Against the `continue` this entry deletes that number is zero by construction — the engine could not
+see the mana — which makes this the first slot in a while whose value is a behaviour rather than a
+win rate, and the right way round: the card does what it says, and `deck-probe` could not have
+resolved its handful of games anyway (D258).
+
+`cast-counts` says Pirate's Prize is cast in 35% of the games it reaches hand, the lowest row in
+that deck and about right for a four-mana sorcery in a deck of answers.
+
+### Food is deliberately absent
+
+The third member of the family needs a card, D229's rule is that a mechanic without one does not
+exist, and I cannot verify a Food card's printed text from this container — Scryfall is unreachable.
+Inventing the text of a real card is worse than leaving the mechanic out, so it is out, and the
+engine work above is what Food will need when the data is there: nothing.

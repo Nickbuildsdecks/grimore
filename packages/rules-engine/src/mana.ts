@@ -293,6 +293,19 @@ export interface ManaSource {
    * first source it found, so the end of the list is the back of the queue.
    */
   readonly life?: number;
+  /**
+   * The source is **consumed** by using it: a Treasure sacrifices itself as the cost of its own
+   * mana ability, so it makes one mana once and then is gone.
+   *
+   * Carried rather than weighed, for the same reason as `life`. Which is worth saying because the
+   * solver's existing preferences happen to be right about it already: a Treasure makes any of
+   * five colours, and the colour branch picks the *least* flexible source that can make what is
+   * short, so a Swamp is always reached for before a Treasure that could also make black. The
+   * generic branch sizes a `choose` source at one mana, which ties with a basic land and is broken
+   * by list order — so `manaSources` puts the consumed sources after the free ones and the queue
+   * does the rest.
+   */
+  readonly sacrifices?: boolean;
 }
 
 /** What tapping one source actually added, which a choice source only settles when it is tapped. */
@@ -301,6 +314,9 @@ export interface ManaPick {
   readonly types: readonly ManaType[];
   /** Life owed for this tap, carried from the source so the caller can charge it. */
   readonly life?: number;
+  /** This source is **spent**, not tapped: sacrificed as its own cost. Carried through for the
+   *  caller, exactly like `life`, because paying it is a different act from tapping. */
+  readonly sacrifices?: boolean;
 }
 
 /**
@@ -459,9 +475,12 @@ export function solveTap(
       ? [wanted ?? source.produces[0]!]
       : source.produces;
     for (const type of types) working = addMana(working, type, 1);
-    chosen.push(source.life === undefined
-      ? { key: source.key, types }
-      : { key: source.key, types, life: source.life });
+    chosen.push({
+      key: source.key,
+      types,
+      ...(source.life === undefined ? {} : { life: source.life }),
+      ...(source.sacrifices === true ? { sacrifices: true } : {}),
+    });
   }
   return canPay(working, cost, xAmount) ? chosen : null;
 }

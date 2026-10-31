@@ -979,6 +979,36 @@ export const THOPTER_TOKEN: CardDef = {
   power: '1', toughness: '1', oracleText: 'Flying', colors: [],
 };
 
+/*
+  Treasure and Clue, the two tokens in this pool that are **resources rather than bodies**.
+
+  Every other token here is a creature: it attacks, blocks, dies. These are artifacts whose whole
+  text is an ability that eats them, and between them they cover the two halves of that shape —
+  one spends itself for mana, the other spends itself for a card.
+
+  **The Clue needed nothing.** `{2}, Sacrifice this artifact: Draw a card` is Mind Stone's second
+  row with a different cost, and `AbilityCost.sacrificeSelf` has been paid at activation since
+  that card was written. It is in here as the control: if the Clue works and the Treasure does not,
+  the fault is in the mana path and nowhere else.
+
+  **The Treasure needed a rule.** `manaSources` refused any mana ability that sacrificed its own
+  permanent, so before this a Treasure was a token the engine could create and never spend: the
+  auto-tapper would not count it, `canAfford` would say no, and the spell it was made for would sit
+  in hand beside it with nothing in the log to say why. See `ManaSource.sacrifices`.
+
+  Five abilities and one sacrifice, which is Birds of Paradise's shape (`manaSources` collapses
+  them into one source that makes one of five colours) with the tap replaced by the card itself.
+*/
+export const TREASURE_TOKEN: CardDef = {
+  name: 'Treasure', typeLine: 'Token Artifact — Treasure', manaCost: '', cmc: 0,
+  oracleText: '{T}, Sacrifice this artifact: Add one mana of any color.', colors: [],
+};
+
+export const CLUE_TOKEN: CardDef = {
+  name: 'Clue', typeLine: 'Token Artifact — Clue', manaCost: '', cmc: 0,
+  oracleText: '{2}, Sacrifice this artifact: Draw a card.', colors: [],
+};
+
 export const KNIGHT_TOKEN: CardDef = {
   name: 'Knight', typeLine: 'Token Creature — Knight', manaCost: '', cmc: 0,
   power: '2', toughness: '2', oracleText: 'Vigilance', colors: ['W'],
@@ -2880,6 +2910,46 @@ const ELVISH_VISIONARY: CardScript = {
   }],
 };
 
+/**
+ * Thraben Inspector: a 1/2 for {W} that comes with a card attached to it.
+ *
+ * "Investigate" is one word for "create a Clue token" (CR 701.33), and it is written out as the
+ * token rather than as a keyword for the reason myriad is a keyword and this is not: a keyword
+ * earns its place when the rules have to *consult* it, and nothing in this game ever asks whether
+ * an effect was an investigation. One card's trigger is one card's trigger.
+ *
+ * Into Skyward Writ, which is the deck in this pool that plays the most one-ofs and the fewest
+ * cards that replace themselves: a 1/2 blocker on turn one that becomes a card on turn four is two
+ * of that deck's jobs in a slot, and it is the second body that deck has for its own Tandem
+ * Lookout to pair with.
+ */
+const THRABEN_INSPECTOR: CardScript = {
+  name: 'Thraben Inspector',
+  triggers: [{
+    on: { kind: 'etb' },
+    description: 'investigate',
+    effect: (c) => createToken(c.state, c.controller, CLUE_TOKEN),
+  }],
+};
+
+/**
+ * Pirate's Prize: two cards and a Treasure, which is the first card here that makes mana out of a
+ * spell rather than out of a permanent.
+ *
+ * Into Tidal Mind, and the slot is the argument. That deck has been the pool's weakest since D139
+ * and its diagnosis has never moved: it answers things, kills nobody, and its late turns have mana
+ * and nothing to spend it on — which is the one deck a Treasure is *not* ramp for. What the Treasure
+ * buys there is the turn this card is cast: four mana for two cards leaves one mana behind, so the
+ * Prize and a Cancel fit under five lands, where the Prize alone would end the turn.
+ *
+ * The second Lonely Sandbar is the slot, which keeps the card in the pool at Skyward Writ and the
+ * cycling land in the deck.
+ */
+const PIRATES_PRIZE: CardScript = {
+  name: "Pirate's Prize",
+  onResolve: (c) => createToken(draw(c.state, c.controller, 2), c.controller, TREASURE_TOKEN),
+};
+
 /** Read the Bones: two cards and a look at two more, paid for in life. */
 const READ_THE_BONES: CardScript = {
   name: 'Read the Bones',
@@ -2931,6 +3001,44 @@ const BIRDS_OF_PARADISE: CardScript = {
     description: `{T}: Add {${colour}}.`,
     produces: [colour],
   })),
+};
+
+/**
+ * Treasure: the Birds' five abilities, paid for with the permanent instead of with a tap.
+ *
+ * The token a dozen cards in print make and the first mana source in this engine that is **spent**.
+ * `manaSources` collapses the five rows into one source that makes one of five colours, exactly as
+ * it does for the bird, and then `tapSources` sacrifices it rather than leaving it tapped — so it
+ * makes one mana, once, and the next untap step finds nothing to untap.
+ *
+ * The ordering that matters is not in here. A Treasure makes every colour, and the solver reaches
+ * for the *least* flexible source that can pay a coloured pip, so a Swamp is always spent before a
+ * Treasure that could also have made black. For a generic pip the two tie and the list order
+ * decides, which is why `manaSources` queues the consumed sources behind the free ones.
+ */
+const TREASURE: CardScript = {
+  name: 'Treasure',
+  abilities: COLOURS.map((colour) => ({
+    cost: { tap: true, sacrificeSelf: true },
+    description: `{T}, Sacrifice this artifact: Add {${colour}}.`,
+    produces: [colour],
+  })),
+};
+
+/**
+ * Clue: the same shape with a card at the end of it, and the control for the Treasure.
+ *
+ * Mind Stone's second row with no tap and a different payoff, which is the point — this needed no
+ * engine change at all, because a sacrifice has been a payable activation cost since that card. A
+ * run where the Clue is cashed and the Treasure is not is a mana-path fault and nothing else.
+ */
+const CLUE: CardScript = {
+  name: 'Clue',
+  abilities: [{
+    cost: { mana: '{2}', sacrificeSelf: true },
+    description: '{2}, Sacrifice this artifact: Draw a card.',
+    effect: (c) => drawLater(c.state, c.controller, 1),
+  }],
 };
 
 // ── Exile until this leaves the battlefield ──────────────────────────────────────────────────────
@@ -6069,6 +6177,9 @@ export const TOKEN_DEFS: readonly CardDef[] = [
   GOBLIN_TOKEN, DRAKE_TOKEN, SPIRIT_TOKEN, ZOMBIE_TOKEN, KNIGHT_TOKEN, BEAST_TOKEN, ELEPHANT_TOKEN,
   SOLDIER_TOKEN, WARRIOR_TOKEN, INSECT_TOKEN, PEST_TOKEN, WALL_TOKEN, ELEMENTAL_TOKEN,
   ELF_WARRIOR_TOKEN, CAT_TOKEN, PLANT_TOKEN, THOPTER_TOKEN, SQUID_TOKEN, GOAT_TOKEN,
+  // The two that are resources rather than bodies, and the first tokens here whose whole text is
+  // an ability that eats them.
+  TREASURE_TOKEN, CLUE_TOKEN,
 ];
 
 /*
@@ -8501,7 +8612,8 @@ const ALL: readonly CardScript[] = [
   BANISHER_PRIEST, JOURNEY_TO_NOWHERE, BANISHING_LIGHT,
   NATURALIZE, DISENCHANT, BLOSSOMING_DEFENSE, DIVE_DOWN, JUGGERNAUT, DISRUPT_DECORUM, KALITAS,
   PALADIN_EN_VEC,
-  SOL_RING, MIND_STONE, BIRDS_OF_PARADISE,
+  SOL_RING, MIND_STONE, BIRDS_OF_PARADISE, TREASURE, CLUE,
+  THRABEN_INSPECTOR, PIRATES_PRIZE,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,
   HELLRIDER, BALL_LIGHTNING, CLOUDSHIFT, SOULHERDER, FROGMITE,
