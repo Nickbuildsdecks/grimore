@@ -44,6 +44,7 @@ it.
 | `cast-counts.mjs` | …and how often does it press *this* button? | `SUBJECT=delta-bloom CHANGE="Kiora's Follower:+1,Rampant Growth:-1" SEEDS=6 node scripts/measure/cast-counts.mjs` |
 | `bot-duel.mjs` | what is this change to the *opponent* worth? | `TESTED='{"lookahead":false}' SEEDS=3 node scripts/measure/bot-duel.mjs` |
 | `bot-duel.mjs` | …the same question six times faster, for a rule only one deck can fire | `SUBJECT=skyward-writ TESTED='{"blinksWell":false}' SEEDS=6 node scripts/measure/bot-duel.mjs` |
+| `bot-duel.mjs` | …price a term that changes no decision anyway, past the pre-flight that refuses to | `ALLOW_INERT=1 TESTED='{"holdsNinjas":false}' node scripts/measure/bot-duel.mjs` |
 | `disagree.mjs` | does that change alter any decisions at all? | `TESTED='{"lookahead":false}' SEEDS=2 node scripts/measure/disagree.mjs` |
 | `step-drift.mjs` | how far does the table move on one action? | `SEEDS=2 node scripts/measure/step-drift.mjs` |
 | `morph-use.mjs` | which half of a morph does the bot take, and does it follow through? | `SEEDS=3 node scripts/measure/morph-use.mjs` |
@@ -617,6 +618,34 @@ One more run told them apart: `lookahead: false` on the same harness is **90-221
 instrument is emphatically live and the rule really is level. The negative control (identical bots
 scoring exactly even) proves the harness is *fair*; a positive control proves it is *connected*, and
 they are different questions.
+
+
+**A positive control proves the harness is connected, not that *this arm* is.** The lesson above is
+right about the question and tests the wrong subject, and it took a second run of the same shape to
+see it. `TESTED='{"castable":1}'` is a plausible-looking typo for `{"weights":{"castable":1}}` — a
+weight lives under `weights`, not at the top level — and `botAction` ignores a `BotOptions` key it
+does not know, which is correct for an options bag and silent. So the field was never set, **both
+arms were the stock bot**, and three seed sets came back **467-467, 467-467, 466-466**: fifteen
+minutes each to reproduce this file's own arithmetic negative control. `lookahead: false` would have
+passed its positive control the whole time, because `lookahead` is a real field; what was broken was
+one arm's key, not the instrument.
+
+So `bot-duel` now asks the question per-arm and up front: both arms are handed the same ~2000
+positions played by the shipping bot, and if **no decision ever differs** the run stops non-zero
+before spending 936 games. A real arm is found in a second or two (`{"weights":{"castable":1}}`
+disagrees by decision 71, a targeted spell against an X spell; `lookahead: false` by decision 10).
+It is deliberately not a list of the keys `BotOptions` has — that is a second reader of a type that
+already has one, and it would go quiet rather than wrong the next time the type grows (D260).
+
+**And it cannot tell a typo from a window that never opens, which is a fact about the measurement
+rather than a hole in the check.** `holdsNinjas` is a real field, read on every filter decision —
+and it trips the guard, across all 13 pairings, because the ninja-in-hand-with-an-unblocked-attacker
+window opened **0** times in 95 declare-blockers steps. Its 467-467 was a true reading of a rule
+that almost never fires, and the guard would have said so in twenty seconds rather than fifteen
+minutes. Both causes read as "no decision differed", so the failure message names both and the knob
+for each: the field name for the first, `SUBJECT` and `PROBE_DECISIONS` for the second. If the probe
+cannot find a disagreement, 936 games will not find one either, and the thing worth measuring is how
+often the window exists at all.
 
 
 **Two zeros, two diagnoses, one instrument.** Ninjutsu fired zero times and the Arcbound Ravager's

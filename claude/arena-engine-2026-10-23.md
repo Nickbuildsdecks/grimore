@@ -7810,6 +7810,38 @@ its move cap measures a post-game board: a mid-game stop that read `overflow 41p
 **not** raised to match — a pod reads 2.88–3.21 screens mid-game against 2.35 set from a post-game
 2.23, and raising it would discard the only number protecting the post-game case (#251).
 
+### The same shape in the instrument: an arm that never reached the bot (#254, D270)
+
+`bot-duel` hands `TESTED` straight to `botAction` as `BotOptions`, and `botAction` ignores a key it
+does not know — correct for an options bag, and silent. A weight lives at `opts.weights.castable`,
+so `TESTED='{"castable":1}'` sets a field nobody reads and **both arms become the stock bot**. Three
+seed sets, fifteen minutes each: **467-467, 467-467, 466-466**. That is not a weak signal, it is this
+harness's own arithmetic negative control — identical bots play the same games and each is credited
+one win per pairing, so the tie is exact by construction. I was composing "level across three seed
+sets" as a statement about the term when the perfection of the tie stopped me.
+
+The README already carried the lesson, from the day the ninja holding rule read 467-467: *a reading
+identical to the control needs a positive control before you call it level*, and `lookahead: false`
+duly came back 90-221. Right question, wrong subject. `lookahead` is a real field, so that control
+passes while a *different* arm's key is being dropped on the floor. Fair, connected, and
+**this-arm-connected** are three questions, and only the third was at issue.
+
+So the check is now a per-arm pre-flight, and deliberately not a list of `BotOptions` field names —
+that would be a second reader of a type that already has one, going quiet rather than wrong the next
+time the type grows (D260). Both arms are asked the same ~2000 positions the shipping bot plays; no
+disagreement anywhere means a non-zero exit before 936 games are spent. A real arm is found in a
+second: `{"weights":{"castable":1}}` diverges at decision 71 on a targeted spell against an X spell.
+
+The part worth keeping is what it cannot tell apart. `holdsNinjas` is a real field, read on every
+filter decision, and it trips the guard across all thirteen pairings — because the window never
+opens: 19 unblocked attackers, 2 ninjas in hand, **0** both, in 95 declare-blockers steps. So that
+rule's 467-467 was a true reading of a rule that almost never fires, and the guard would have said so
+in twenty seconds rather than fifteen minutes. Two causes, opposite fixes, so the message names both.
+
+D267's shape, moved from the code into the instrument: **ask what the check would do if the thing it
+checks were broken.** The positive control passed identically whether the arm's key was real or
+nonsense, which means it was never evidence about the key.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

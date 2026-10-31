@@ -17322,3 +17322,79 @@ Worth saying because it is the third time today: twice in this entry the explana
 in the codebase and the instrument could not see it, both times written at the card rather than at
 the mechanic. That is the same shape as D267 from the other direction — there a check could not see a
 bug because of where it looked; here a check could not see an *answer* for the same reason.
+
+## D270 — A harness that ignores an unrecognised arm key, and the typo that read as a finding
+
+`bot-duel.mjs` measures a change to the *opponent*: two bots play every deck pairing in both seats on
+identical seeds, so the matchup and the seat cancel and what is left is the setting. The setting
+arrives as JSON in `TESTED` and goes straight to `botAction` as `BotOptions`.
+
+`botAction` ignores a key it does not know. That is right for an options bag and silent, and the
+combination is a trap: a weight lives at `opts.weights.castable`, and `TESTED='{"castable":1}'` is a
+plausible-looking way to write it. It sets a field nobody reads. **Both arms are then the stock bot.**
+
+Three seed sets came back **467-467, 467-467, 466-466** — fifteen minutes each. That is not a weak
+result, it is this file's own *arithmetic* negative control: two identical bots play the same games
+and each gets credited one win per pairing, so the tie is exact by construction. I had the three
+numbers in front of me and was composing "level across three seed sets" as a statement about the
+term. The only reason I stopped is that the tie was *perfect* three times running, which a real term
+has no reason to be. A term that happened to land on 470-464 would have gone into this log as a
+finding, and the finding would have been about nothing.
+
+### Why the existing control did not catch it
+
+The README already has the lesson, written when the ninja holding rule read 467-467:
+
+> A reading identical to the control needs a *positive* control before you call it level. […]
+> `lookahead: false` on the same harness is **90-221 of 312**, so the instrument is emphatically live.
+
+That reasoning is right about the question and tests the wrong subject. `lookahead` is a real field,
+so a positive control on it passes while *another* arm's key is being dropped. The negative control
+proves the harness is **fair**; a positive control on a different arm proves the harness is
+**connected**; neither says anything about whether *this* arm reached the bot. That is a per-arm
+question and it needed a per-arm check.
+
+### The check
+
+An empirical pre-flight, not a list of key names. Play the field with the shipping bot and ask both
+arms every position; if no decision ever differs, stop non-zero before spending 936 games:
+
+```
+arm is connected: differs by decision 71, turn 4 precombat-main
+  tested:  {"by":1,"card":"c1_95","targets":[{"id":"c0_42","kind":"card"}],"type":"auto:cast"}
+  control: {"by":1,"card":"c1_110","type":"auto:cast","x":1}
+```
+
+A hardcoded list of `BotOptions` fields would have been the obvious implementation and the wrong
+one: a second reader of a type that already has one, which goes quiet rather than wrong the next time
+the type grows (D260). The empirical version reads the type through the only thing that authoritatively
+knows it — `botAction` itself. Cost is one to two seconds on a real arm, against 900 seconds wasted.
+
+Both actions are printed rather than their types, because the interesting disagreements are two
+`auto:cast`s naming different cards and `auto:cast vs auto:cast` says nothing. Above, the two arms
+diverge on a targeted spell against an X spell, which is visibly a real decision rather than a
+coin-flip in a tie-break.
+
+### What the check cannot tell apart, said out loud
+
+`holdsNinjas` is a real field, read on every filter decision — **and it trips the guard**, across all
+thirteen pairings, 1815 positions, not one disagreement. The cause is not a typo. It is the README's
+own finding about that rule: in 95 declare-blockers steps the bot had an unblocked attacker 19 times
+and a ninja in hand 2 times and the two together **0** times, because it casts the ninja as a 2/2 the
+moment it can. The window never opens.
+
+So two different things read as "no decision differed" and they want opposite fixes — a field name
+for one, `SUBJECT` or `PROBE_DECISIONS` for the other — and the failure message names both rather
+than asserting the one I happened to hit. The useful consequence is that the ninja rule's 467-467 was
+a **true** reading all along, of a rule that almost never fires, and this guard would have said so in
+twenty seconds instead of fifteen minutes. A measurement that cannot move is worth knowing about
+*before* it is taken, not after it is interpreted.
+
+### The shape, again
+
+This is D267's shape in the instrument rather than in the code: a check whose premise is wider than
+its fixture. The positive control's premise was "the arm is connected" and its fixture only ever saw
+a different arm. Three entries today have turned out to be that same shape, and the general form is
+worth keeping: **ask what the check would do if the thing it is checking were broken.** The positive
+control passes identically whether `TESTED`'s key is real or nonsense, which means it was never
+evidence about the key.

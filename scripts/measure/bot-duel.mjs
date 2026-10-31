@@ -31,6 +31,11 @@
  * of the rule and a full run prices all of it. Run the subject first for the fast answer, then the
  * field to be sure what was measured was the whole rule.
  *
+ * **Before any games are played the arm is checked for being connected at all**: both arms are
+ * asked the same few thousand positions, and if no decision ever differs the run stops with a
+ * non-zero exit instead of spending fifteen minutes to report an arithmetic tie. See the block
+ * above `started` for why that is worth a pre-flight, and `ALLOW_INERT=1` for running anyway.
+ *
  * The negative control costs nothing to reason about and is worth saying out loud: with `TESTED`
  * and `CONTROL` identical the two arms are the *same game* played twice, so the score is exactly
  * even by construction rather than approximately even by luck — 156-156 of 312 on the day `SUBJECT`
@@ -95,6 +100,118 @@ let won = 0; let lost = 0; let draw = 0;
   468-468, and it reads exactly that *because* the games are the same games.
 */
 const seedFor = (pass, a, b) => SEED0 + (pass * ALL.length + a) * ALL.length + b;
+
+/*
+  Does the arm under test change anything at all? Asked before 936 games are spent on it.
+
+  `TESTED` is parsed straight out of the environment and handed to `botAction` as `BotOptions`, and
+  `botAction` ignores a key it does not know. That is the correct behaviour for an options bag and a
+  trap for a measuring harness: `TESTED='{"castable":1}'` is a plausible-looking typo for
+  `{"weights":{"castable":1}}`, it sets a field no one reads, **both arms are then the stock bot**,
+  and the run comes back 467-467. Which is this file's own negative control — the two arms are the
+  same game played twice, so the tie is arithmetic rather than evidence. It cost three seed sets and
+  fifteen minutes, and the only reason it was caught is that the tie was *perfect* three times over;
+  a term that happened to land on 470-464 would have been written up as a real result.
+
+  So the check is not a list of the keys `BotOptions` has — that would be a second reader of a type
+  that already has one, and it would go quiet rather than wrong the next time the type grows (D260).
+  It is empirical: play a few games with the shipping bot, and at every decision ask *both* arms the
+  position. If no decision ever comes back different, the arm is inert, and whatever the score says
+  afterwards is a statement about this harness and not about the setting.
+
+  The probe is the same ablation `term-leverage` runs, which is why the budget is set where it is:
+  that instrument saw the thinnest real term so far move 157 of 17451 decisions, 0.9%, so ~3000
+  decisions is around twenty expected differences and a long way from a coin flip. It stops at the
+  first one.
+
+  It cannot tell a typo from a rule whose window never opens, and it does not pretend to: both
+  read as "no decision differed", and the message says so and names the knob for each. That is not
+  a weakness of the check so much as a real fact about the measurement — `holdsNinjas` is a field
+  that exists and is read, and it trips this guard, because the ninja-in-hand-with-an-unblocked-
+  attacker window opened 0 times in 95 declare-blockers steps (see the README). Its 467-467 was a
+  true reading of a rule that almost never fires, and this guard would have said that up front for
+  the price of twenty seconds instead of fifteen minutes.
+
+  Two ways past it, both deliberate:
+    - identical arms are skipped outright, because the negative control is a thing you run on purpose;
+    - `ALLOW_INERT=1` runs anyway, for measuring that a term which changes no decision also changes
+      no games.
+*/
+const stable = (v) => JSON.stringify(v, (_k, x) =>
+  (x !== null && typeof x === 'object' && !Array.isArray(x)
+    ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]]))
+    : x));
+const PROBE = Number(process.env.PROBE_DECISIONS ?? 3000);
+const ALLOW_INERT = process.env.ALLOW_INERT === '1';
+
+/** The first decision the two arms disagree about, or null if they never do. */
+function firstDisagreement(budget) {
+  let seen = 0;
+  let pairings = 0;
+  for (let a = 0; a < ALL.length && seen < budget; a++) {
+    const b = (a + 1) % ALL.length;
+    if (SUBJECT !== '' && ALL[a] !== SUBJECT && ALL[b] !== SUBJECT) continue;
+    const seed = seedFor(0, a, b);
+    pairings += 1;
+    let s = createGame({ id: `probe${seed}`, format: 'modern', players: PLAYERS, seed });
+    for (const seat of [0, 1]) {
+      s = applyAction(s, { type: 'deck:load', by: seat, seat, deckId: [ALL[a], ALL[b]][seat] }, { isHost: true });
+    }
+    s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, { isHost: true });
+    s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, { isHost: true });
+    for (let move = 0; move < 4000 && !s.finished && seen < budget; move++) {
+      const seat = seatsToAct(s)[0];
+      if (seat === undefined) break;
+      // Driven by CONTROL, which is the shipping line, so the positions are the ones the bot
+      // actually reaches rather than ones only the tested arm would walk into.
+      const control = botAction(s, seat, CONTROL);
+      const tested = botAction(s, seat, TESTED);
+      seen += 1;
+      if (stable(tested) !== stable(control)) {
+        return { decisions: seen, pairings, turn: s.turn, step: s.step, tested, control };
+      }
+      if (control === null) break;
+      const before = s.stateVersion;
+      try { s = applyAction(s, control); } catch { break; }
+      if (s.stateVersion === before) break;
+    }
+  }
+  return { decisions: seen, pairings, none: true };
+}
+
+if (stable(TESTED) === stable(CONTROL)) {
+  console.log(`negative control: both arms ${stable(TESTED)}, so an exact tie is the expected result`);
+} else {
+  const diff = firstDisagreement(PROBE);
+  if (diff.none === true) {
+    console.log('');
+    console.log(`!! the arm under test changes no decision in ${diff.decisions} positions across`);
+    console.log(`!! ${diff.pairings} pairing(s): botAction answered ${stable(CONTROL)} and`);
+    console.log(`!! ${stable(TESTED)} identically every time. Whatever the score below says, it is`);
+    console.log('!! a statement about this harness and not about the setting — two bots that never');
+    console.log('!! disagree are the same game played twice, which ties exactly by construction.');
+    console.log('!!');
+    console.log('!! Two things look like this and they need opposite fixes:');
+    console.log('!!');
+    console.log('!!  1. a key BotOptions does not have, which botAction ignores in silence. A');
+    console.log('!!     weight belongs at {"weights":{"<name>":1}}, not {"<name>":1} — check the');
+    console.log('!!     name against BotOptions in packages/rules-engine/src/bot.ts.');
+    console.log('!!  2. a rule whose situation never came up in the games probed. A rule that can');
+    console.log('!!     only fire off a card in one deck wants SUBJECT=<that deck>, which narrows');
+    console.log('!!     the probe as well as the run; a rule that fires late wants a bigger');
+    console.log('!!     PROBE_DECISIONS. If neither finds a disagreement, 936 games will not');
+    console.log('!!     either, and the thing to measure is how often the window exists at all.');
+    console.log('!!');
+    console.log('!! ALLOW_INERT=1 runs anyway, to price a term that genuinely moves no decision.');
+    process.exit(1);
+  }
+  // Both actions printed rather than just their types: the interesting disagreements are two
+  // `auto:cast`s naming different cards, and "auto:cast vs auto:cast" says nothing.
+  const short = (a) => { const t = stable(a); return t.length > 110 ? `${t.slice(0, 107)}...` : t; };
+  console.log(`arm is connected: differs by decision ${diff.decisions}, turn ${diff.turn} ${diff.step}`);
+  console.log(`  tested:  ${short(diff.tested)}`);
+  console.log(`  control: ${short(diff.control)}`);
+}
 
 const started = Date.now();
 for (let i = 0; i < SEEDS; i++) {
