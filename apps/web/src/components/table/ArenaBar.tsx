@@ -801,8 +801,21 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
         </div>
       ) : null}
 
-      {/* Mana, and the primary action. */}
-      <div className="flex items-center gap-2">
+      {/*
+        Mana, and the primary action.
+
+        `min-w-0 overflow-x-auto` for the reason the tabletop's own control bar carries
+        `overflow-x-auto`, and this row did not: it is the one row in this bar that neither wraps
+        nor scrolls, so on a phone it sized itself to its content — the mana pips, the step, the
+        primary action, the stops toggle and Concede — and pushed the whole table sideways. Measured
+        rather than guessed: a mid-game four-seat pod at 390px had a document 431px wide, and the
+        single element past the edge with no scrolling ancestor was this row's Concede button.
+
+        It only ever showed mid-game. Every layout check in the suite ran after the game was over,
+        when the board is at its emptiest and this row is at its shortest (#251), so a bar that had
+        been overflowing since it replaced the manual one read as fitting.
+      */}
+      <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
         <span data-testid="mana-pool" className="flex items-center gap-1">
           {pool.length === 0 ? (
             <span className="text-[10px] uppercase tracking-wide text-[var(--g-text-muted)]">no mana</span>

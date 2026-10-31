@@ -7779,6 +7779,37 @@ number. A third finding fell out of forcing the checks against a mid-game board 
 post-game one — a full four-seat board overflows a phone by 17px, and every layout check in the
 suite has only ever measured the emptiest board of the game (#251).
 
+### A check whose premise was wider than its fixture (#251, D267)
+
+One row in `ArenaBar` — mana pips, step, primary action, stops toggle, Concede — was
+`flex items-center gap-2` where every other row in that bar wraps. On a phone it sized itself to its
+content and pushed the whole table sideways, for the length of every automated game, which is every
+game a player using the rules engine has ever played.
+
+The fix was already written down one file away: the tabletop's own bar carries `overflow-x-auto`, and
+`PlayTable.tsx` explains why a flex child needs `min-w-0` for it to work at all. The engine's bar
+inherited neither when it replaced the manual one.
+
+Finding it needed the right filter rather than more looking. Every element past 390px is 42 of them,
+the worst 265px over, all of it cards inside rows that are *meant* to scroll — and an element inside
+an `overflow-x: auto` ancestor cannot widen the document. Elements with no scrolling ancestor:
+exactly one, the Concede button, `+41px`, the whole overflow. The check reports that now instead of
+`overflow 17px`, computed only on failure.
+
+**Why nothing caught it is the part worth keeping.** Every layout check in the solo suite runs after
+the game reaches a winner — when the board is emptiest *and* `view.finished` has removed Concede and
+the primary action from the bar. The row under test was never on screen when the check ran. That is
+the fourth instance this week of one shape, and it now has a name: a check whose premise is wider
+than its fixture. D262 named a card by hand, D263 existed and never ran, D266 could not be
+contradicted, this one asserted "any board" and only ever saw one. None was a wrong assertion; each
+was a correct assertion pointed somewhere it could not fail.
+
+Verified against the failing condition, which took three attempts because a run that finishes inside
+its move cap measures a post-game board: a mid-game stop that read `overflow 41px` now passes, arena
+53/53 with both control-bar checks, web 226/226. The mid-game screens-tall budgets are deliberately
+**not** raised to match — a pod reads 2.88–3.21 screens mid-game against 2.35 set from a post-game
+2.23, and raising it would discard the only number protecting the post-game case (#251).
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

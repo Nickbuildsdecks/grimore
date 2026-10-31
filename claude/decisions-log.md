@@ -17049,3 +17049,64 @@ A smaller one, which cost fifteen minutes: the pod run was piped through `tail`,
 buffered and the suite looked stalled while it was in fact playing. I diagnosed "stall" from a CPU
 sample and was wrong; the move log said `move 270` all along. Don't pipe a browser suite through
 anything that buffers.
+
+## D267 — The engine's control bar overflowed a phone all game, and no check could see it
+
+One row in `ArenaBar` — the one holding the mana pips, the step, the primary action, the stops
+toggle and Concede — was `flex items-center gap-2`. Every other row in that bar is `flex-wrap`.
+That one sized itself to its content on a phone and pushed the whole table sideways, for the entire
+length of every automated game, which is every game a player using the rules engine has ever
+played.
+
+### The fix was already written down, one file away
+
+`PlayTable.tsx`'s own tabletop bar carries `overflow-x-auto`, and the file carries the explanation:
+a flex child without `min-w-0` defaults to `min-width: auto`, sizes to its widest child, refuses to
+shrink, and **stops the inner `overflow-x-auto` ever taking effect.** When the engine's bar replaced
+the manual one it did not inherit either property. So this is not a new failure mode — it is the
+documented one, in the component that replaced the component the documentation is attached to.
+
+### Finding it needed the right filter, not more looking
+
+Listing every element whose right edge is past 390px gives **42 of them, the worst 265px over**, and
+every one is noise: they are cards inside zone rows, which are *meant* to scroll sideways, and an
+element inside an `overflow-x: auto` ancestor cannot widen the document at all.
+
+Filtering to elements with **no scrolling ancestor between them and the root** leaves exactly one:
+
+```
+OVERFLOW doc=390 scrollWidth=431 unconstrained=1
+  +41px button[concede] left=349 w=82
+```
+
+One element, the whole 41px. The check used to report `overflow 17px`, which is true and sends you
+hunting; it now reports what widened the document, computed only on failure because walking every
+element and reading a computed style on each is not something to do on every run for a line nobody
+reads. That is D265's lesson applied to the check that needed it — a loud failure in the wrong place
+costs more than a quiet one.
+
+### Why nothing caught it: the fixture never matched the premise
+
+**Every layout check in `e2e-solo.mjs` runs after the game has reached a winner.** At that moment
+the board is at its emptiest *and* `view.finished` has removed Concede and the primary action from
+the bar. So the row under test was never on screen when the check ran. "A solo table fits a phone"
+is a claim about any board; its fixture was the one board in the game where the bug cannot appear.
+
+It took three attempts to reproduce deliberately, because a run that finishes inside its move cap
+measures a post-game board. Stopping mid-game (Combat damage, turn 21, 45 moves) reproduces it, and
+the same run passes with the fix.
+
+That is the fourth instance of one shape this week, and the shape is now worth naming on its own:
+**a check whose premise is wider than its fixture.** D262's browser check named a card by hand,
+D263's typecheck existed and never ran, D266's claim had no measurement that could contradict it,
+and this one asserted "any board" while only ever seeing one. None of them was a wrong assertion.
+Each was a correct assertion pointed somewhere it could not fail.
+
+### What is deliberately not done
+
+The mid-game readings exceed the shipped screens-tall budgets — a four-seat pod reads 2.88–3.21
+screens mid-game against a budget of 2.35 set from a post-game 2.23. **The budget is not being
+raised**, because that would discard the only number protecting the post-game case. Whether the
+suite should take both readings with separate budgets is a real decision and needs more than one
+mid-game reading before a number is set, which is the rule D266 applied to the pod's own figure.
+Left open as #251.

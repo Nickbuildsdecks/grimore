@@ -1742,7 +1742,55 @@ const ARTIFACT_LIST = [
     await page.waitForTimeout(400);
     const overflow = await page.evaluate(() =>
       document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    check('a solo table fits a phone', overflow <= 1, `overflow ${overflow}px`);
+    /*
+      And when it does not fit, say what is doing it.
+
+      `overflow 17px` is a true sentence that sends you hunting. The first thing anybody does with
+      it is list every element whose right edge is past 390px — which on this table is 42 of them,
+      the worst 265px over, every one a card inside a zone row. All noise: a row that scrolls
+      sideways is *meant* to, and an element inside an `overflow-x: auto` ancestor cannot widen the
+      document at all.
+
+      What can widen it is an element with no scrolling ancestor between it and the root, and that
+      is a short list worth printing. The failure mode it is looking for is known and has bitten
+      this table before — `PlayTable.tsx` carries a comment about it: a flex child without
+      `min-w-0` defaults to `min-width: auto`, sizes itself to its widest child, refuses to shrink,
+      and stops the inner `overflow-x-auto` ever taking effect.
+
+      Computed only when the check fails, because walking every element and reading a computed
+      style on each is not something to do on every run for a line nobody reads.
+    */
+    const fits = overflow <= 1;
+    const culprits = fits ? null : await page.evaluate(() => {
+      const docW = document.documentElement.clientWidth;
+      const scrolls = (el) => {
+        const o = getComputedStyle(el).overflowX;
+        return o === 'auto' || o === 'scroll' || o === 'hidden';
+      };
+      const out = [];
+      for (const el of document.querySelectorAll('*')) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || Math.round(r.right - docW) <= 1) continue;
+        let contained = false;
+        for (let q = el.parentElement; q && q !== document.documentElement; q = q.parentElement) {
+          if (scrolls(q)) { contained = true; break; }
+        }
+        if (contained) continue;
+        out.push({
+          over: Math.round(r.right - docW),
+          tid: el.getAttribute('data-testid') ?? '',
+          tag: el.tagName.toLowerCase(),
+          cls: (el.className?.toString?.() ?? '').slice(0, 80),
+        });
+      }
+      out.sort((x, y) => y.over - x.over);
+      return out.slice(0, 6);
+    });
+    check('a solo table fits a phone', fits, culprits === null
+      ? `overflow ${overflow}px`
+      : `overflow ${overflow}px; widened by ${culprits.length === 0
+        ? 'nothing with an unscrolled ancestor — look at the root containers'
+        : culprits.map((c) => `+${c.over}px ${c.tag}${c.tid ? `[${c.tid}]` : ''} "${c.cls}"`).join(' | ')}`);
 
     /*
       And fits it in a number of screens a person will actually scroll.
