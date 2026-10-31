@@ -7108,6 +7108,9 @@ A player sees the pair: a **PAIR** badge on the card's corner and "paired with �
 sheet, because a Grizzly Bears reading 6/6 is only legible if the thing lending it the points is
 on screen.
 
+**Driven through a real browser now, which it was not when this entry was first written** — see
+the section below.
+
 ## The spread is the pilot as much as the decks (#231, D248)
 
 Ember Rush has read 74–82% in every field table since D114 and had never had a card cut, so #231 set
@@ -7213,6 +7216,43 @@ causes would have produced a confident wrong answer of the kind D119 warns about
 
 `ashen-rite +24` and `delta-bloom −18` in the **search** column are still open and need a different
 instrument, because there is no "search off, filters on" arm to compare against.
+
+## The pair is drawn, and the badge was invisible to the instrument (#234)
+
+Soulbond was the one mechanic with a prompt that shipped without a browser drive, and #229's closing
+note said so in as many words: every other prompt-carrying mechanic got one (#174, #177, #210), this
+one had unit coverage for both prompt shapes and nothing that had seen either on a screen.
+`LIST=soulbond node scripts/e2e-solo.mjs` is that drive, and it is **27 of 27**.
+
+It is three claims rather than one, because soulbond asks two different questions through two
+different prompts and then draws a third thing:
+
+- the soulbonded creature arriving asks *which* of your unpaired creatures to pair with — a
+  declinable `optional/friendly` target, captured off `aimed a trigger: …unpaired…`;
+- any *other* creature arriving beside an unpaired soulbond creature asks *whether* to pair, whose
+  answer is a word rather than a card — the table drew it as a primary button reading
+  `Pair them?`;
+- and the board names the partner on the card, read off `zone-battlefield-0` on every move:
+  `PAIRED WITH TRUSTED FORCEMAGE`, `PAIRED WITH CENTAUR COURSER`, `PAIRED WITH GIANT SPIDER` across
+  two games.
+
+The list is eight soulbond creatures and sixteen cheap bodies, because both prompts need *two*
+creatures and a stock Verdant Guard draws its two pair cards in a game or two out of five.
+
+**The finding is in the third claim, and it is about the instrument.** The first run caught both
+prompts and **zero** badges, which reads as a pair the engine made and the screen never drew — a
+real bug, if it were true. It was the regex: the badge span carries `uppercase`, Chromium applies
+`text-transform` *before* handing text to `innerText`, so `cardBadges` writes "paired with Grizzly
+Bears" and the board reads "PAIRED WITH GRIZZLY BEARS". Case-insensitive, three distinct partners
+appear immediately.
+
+Worth writing down because the mistake was invisible from either side: `arena.test.ts` asserts the
+exact lowercase string on `cardBadges` and passes, the browser draws the badge correctly, and only
+the scan between them was wrong. Every other board scan in that suite matches a card name or a body
+like `3/3` — neither of which a transform touches — which is why 24 checks' worth of innerText
+reading has never met this. A measurement that fails for a reason that has nothing to do with the
+thing measured is the failure mode D119 is about, and the only defence here was that the claim was
+specific enough to be worth a second look rather than filing as a bug.
 
 ## Next
 

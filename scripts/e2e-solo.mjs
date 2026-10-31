@@ -48,7 +48,8 @@ const SOLO_POD = process.env.SOLO_POD === '1';
  * every turn (`UPKEEP_LIST`), `LIST=level` one whose creatures grow by being paid for
  * (`LEVEL_LIST`), `LIST=vanish` one whose creatures arrive on a clock the card face shows running
  * down (`VANISH_LIST`), `LIST=artifact` one that pays a cost with a spare artifact rather than a
- * creature (`ARTIFACT_LIST`), and `LIST=earned` one
+ * creature (`ARTIFACT_LIST`), `LIST=soulbond` one built to **pair** its creatures, for the two
+ * prompts and the badge the mechanic raises (`SOULBOND_LIST`), and `LIST=earned` one
  * built for the two alternative costs whose **rows** behave unlike any other row, see
  * `EARNED_LIST`.
  *
@@ -541,6 +542,31 @@ const BLINK_LIST = [
 ].join('\n');
 
 /**
+ * A deck that **pairs**, for the two prompts and the badge only soulbond raises.
+ *
+ * Soulbond is the first link in this engine between two permanents that is not an attachment
+ * (D247), and it asks the player two different questions through two different prompts: the
+ * soulbonded creature arriving asks *which* unpaired creature of yours to pair with (a declinable
+ * target), and any other creature arriving asks *whether* to pair with it (a word). The engine's
+ * own tests build both answers by hand, so a prompt that never appeared, or a pair the board never
+ * drew, would pass every one of them.
+ *
+ * Eight soulbond creatures rather than the two Verdant Guard runs, and sixteen cheap bodies for
+ * them to pair with: the scenario needs a creature already standing when the Forcemage lands, which
+ * is the whole of the mechanic and a fact about the shuffle otherwise. The Forcemage carries it at
+ * three mana; the Silverheart is six and arrives in the games that go long.
+ *
+ * Mono-green, for the lesson `LIST=costs` paid for twice: a scenario needing two colours fails on
+ * its mana base rather than on the thing it is testing.
+ */
+const SOULBOND_LIST = [
+  '24 Forest',
+  '4 Trusted Forcemage', '4 Wolfir Silverheart',
+  '4 Grizzly Bears', '4 Llanowar Elves', '4 Centaur Courser', '4 Giant Spider',
+  '4 Giant Growth', '4 Rampant Growth', '4 Prey Upon',
+].join('\n');
+
+/**
  * A deck whose spells get cheaper as the board fills, for the badge that says so.
  *
  * The table has drawn "what the board did to this cost" beside the printed one since D132 — a
@@ -653,6 +679,8 @@ const ARTIFACT_LIST = [
         ? BLINK_LIST
         : LIST === 'affinity'
         ? AFFINITY_LIST
+        : LIST === 'soulbond'
+        ? SOULBOND_LIST
         : STARTER_DECKS['ember-rush'].cards
           .map((entry) => `${entry.count} ${entry.card.name}`).join('\n');
       await tid(page, 'paste-list').click();
@@ -866,6 +894,17 @@ const ARTIFACT_LIST = [
       and this is the only check in the project that the number is drawn.
     */
     const cheapRows = new Set();
+    /*
+      Soulbond's three readings, and they are three different claims.
+
+      `pairTargets` is the prompt the soulbonded creature raises as it lands — which of your
+      creatures to pair with. `pairWords` is the other prompt, the one any *other* creature raises:
+      whether to pair at all, answered with a word. `pairedFaces` is the badge, read off the board,
+      which is the only evidence the answer reached the screen rather than only the state.
+    */
+    const pairTargets = new Set();
+    const pairWords = new Set();
+    const pairedFaces = new Set();
     const blinkPrompts = new Set();
     const blinkDeclines = new Set();
     const herderBodies = new Set();
@@ -937,6 +976,37 @@ const ARTIFACT_LIST = [
         }
         if (typeof did === 'string' && /^aimed a trigger: .*blink/i.test(did)) {
           blinkPrompts.add(did.replace(/^aimed a trigger: /, ''));
+        }
+        if (typeof did === 'string' && /^aimed a trigger: .*unpaired/i.test(did)) {
+          pairTargets.add(did.replace(/^aimed a trigger: /, ''));
+        }
+        if (typeof did === 'string' && /^chose a word: .*Pair them/i.test(did)) {
+          pairWords.add(did.replace(/^chose a word: /, ''));
+        }
+        if (LIST === 'soulbond') {
+          /*
+            The badge, read on **every** move rather than after the answer.
+
+            A pair is made as a creature enters and broken the moment either half leaves, so the
+            window is whatever the run happens to be looking at — the same reason the vanishing
+            clocks are sampled this way rather than once at the end, where the creature is usually
+            dead.
+          */
+          const board = await page.locator('[data-testid="zone-battlefield-0"]').innerText()
+            .catch(() => '');
+          /*
+            Case-insensitively, because `innerText` is what the badge **looks** like rather than
+            what the code wrote. The badge span carries `uppercase`, and Chromium applies
+            `text-transform` before handing the text over — so `cardBadges` writes "paired with
+            Grizzly Bears" and the board reads "PAIRED WITH GRIZZLY BEARS". The first run of this
+            mode caught both prompts and no badge at all, which read as a pair the screen never
+            drew; it was the flag on this regex. Every other board scan here matches a card name or
+            a body like "3/3", neither of which a transform touches, which is why this is the first
+            place it has come up.
+          */
+          for (const hit of board.matchAll(/paired with ([^\n]{1,40})/gi)) {
+            pairedFaces.add(hit[0].replace(/\s+/g, ' ').trim());
+          }
         }
         if (typeof did === 'string' && /^declined an optional trigger: .*blink/i.test(did)) {
           blinkDeclines.add(did.replace(/^declined an optional trigger: /, ''));
@@ -1062,7 +1132,7 @@ const ARTIFACT_LIST = [
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
       || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish' || LIST === 'artifact'
-      || LIST === 'blink' || LIST === 'affinity'
+      || LIST === 'blink' || LIST === 'affinity' || LIST === 'soulbond'
       ? 5 : 3;
     /*
       What "not yet" means for this list.
@@ -1127,12 +1197,20 @@ const ARTIFACT_LIST = [
       */
       : LIST === 'affinity'
       ? cheapRows.size === 0
+      /*
+        All three: the two prompts and the badge. A run that answered one of the two questions has
+        proved half a mechanic, and a run that answered both without the badge appearing has proved
+        the bar rather than the board. Which of the two prompts a game raises first is the shuffle's
+        business, which is what the extra deals are for.
+      */
+      : LIST === 'soulbond'
+      ? pairTargets.size === 0 || pairWords.size === 0 || pairedFaces.size === 0
       : !Object.values(altCasts).every((n) => n > 0));
     while ((LIST === 'costs' || LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
       || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish' || LIST === 'artifact'
-      || LIST === 'blink' || LIST === 'affinity')
+      || LIST === 'blink' || LIST === 'affinity' || LIST === 'soulbond')
       && games < dealBudget && wantsAnotherGame()) {
       if (!(await has(page, 'game-over'))) break;
       console.log(`      dealing again: ${LIST === 'miracle' ? `${miracleOffers.size} miracle offers`
@@ -1150,6 +1228,7 @@ const ARTIFACT_LIST = [
         : LIST === 'artifact' ? `feeding sentences: ${[...feedWords].join(' | ') || 'none'}`
         : LIST === 'blink' ? `${blinkPrompts.size} blink prompts, bodies: ${[...herderBodies].join(', ') || 'none'}`
         : LIST === 'affinity' ? `${cheapRows.size} rows with a reduction drawn on them`
+        : LIST === 'soulbond' ? `${pairTargets.size} pairing targets, ${pairWords.size} answers, ${pairedFaces.size} badges`
         : JSON.stringify(altCasts)} after ${games} game(s)`);
       if (!(await dealAgain())) break;
       games += 1;
@@ -1445,6 +1524,29 @@ const ARTIFACT_LIST = [
       check('a row says what the board did to its cost, and the cast is taken at that price',
         cheapRows.size > 0, `rows seen: ${[...cheapRows].slice(0, 3).join(' | ') || 'none'}`);
       for (const row of [...cheapRows].slice(0, 3)) console.log(`      ${row}`);
+    } else if (LIST === 'soulbond') {
+      /*
+        The two prompts and the badge, which are three claims nothing else in the project can make.
+
+        The engine's tests answer both pairing questions by hand — they build the choice and the
+        word and assert `pairedWith` on both halves — so a table that raised neither prompt, or
+        raised them with no way to answer, would pass all seven of them. And the badge is the only
+        evidence the pair reached the **screen**: a Grizzly Bears reading 3/3 with nothing on the
+        card to say why is a board a player cannot read, which is the whole reason `cardBadges`
+        names the partner.
+
+        The two prompts are different questions on purpose (D247): the soulbonded creature arriving
+        asks *which* of your creatures, and any other creature arriving asks *whether*. One trigger
+        would have asked the harder question in both cases, and this is the run that proves both
+        shapes exist on a real table.
+      */
+      check('a soulbond creature arriving asks which of your creatures to pair it with',
+        pairTargets.size > 0, `prompts: ${[...pairTargets].slice(0, 2).join(' | ') || 'none'}`);
+      check('and a creature arriving beside one already out asks whether to pair them',
+        pairWords.size > 0, `answers: ${[...pairWords].slice(0, 2).join(' | ') || 'none'}`);
+      check('and the pair is named on the card, so a 3/3 Grizzly Bears is legible',
+        pairedFaces.size > 0, `badges: ${[...pairedFaces].slice(0, 3).join(' | ') || 'none'}`);
+      for (const face of [...pairedFaces].slice(0, 3)) console.log(`      ${face}`);
     } else if (LIST === 'vanish') {
       /*
         A clock the player can read, and a clock that is actually running.

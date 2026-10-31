@@ -15603,3 +15603,34 @@ confident wrong answer of exactly the kind D119 warns about.
 `ashen-rite +24` and `delta-bloom −18` in the **search** column are still open, and they need a
 different instrument: there is no "search off, filters on" arm, so the two cannot be separated the
 way the filters were.
+
+## D250 — Soulbond through a real browser, and a badge the instrument could not see
+
+`LIST=soulbond node scripts/e2e-solo.mjs`, 27 of 27. Soulbond was the last mechanic with a prompt
+that shipped without a browser drive — #229 closed saying so, because every other prompt-carrying
+mechanic got one (#174, #177, #210) and this one had only unit coverage for the two prompt shapes.
+
+Three claims, because soulbond asks two different questions and then draws a third thing: the
+soulbonded creature arriving asks **which** of your unpaired creatures to pair with (a declinable
+`optional/friendly` target); any other creature arriving beside an unpaired soulbond creature asks
+**whether** to pair, answered with a word (the table drew it as a primary button reading
+`Pair them?`); and the board names the partner on the card itself. The list is eight soulbond
+creatures and sixteen cheap bodies, because both prompts need *two* creatures and a stock Verdant
+Guard draws its two pair cards in a game or two out of five.
+
+**The finding is in the third claim and it is about the instrument, not the engine.** The first run
+caught both prompts and zero badges — which reads as a pair the engine made and the screen never
+drew. It was the regex. The badge span carries `uppercase`; Chromium applies `text-transform`
+*before* handing text to `innerText`; so `cardBadges` writes "paired with Grizzly Bears" and the
+board reads `PAIRED WITH GRIZZLY BEARS`. Case-insensitive, three distinct partners appear at once
+(`PAIRED WITH TRUSTED FORCEMAGE`, `PAIRED WITH CENTAUR COURSER`, `PAIRED WITH GIANT SPIDER`).
+
+Worth a decision number because the error was invisible from both ends: `arena.test.ts` asserts the
+exact lowercase string and passes, the browser draws the badge correctly, and only the scan between
+them was wrong. Every other board scan in that suite matches a card name or a body like `3/3` —
+neither of which a transform touches — which is why twenty-odd checks' worth of `innerText` reading
+has never met this. The rule it leaves behind: **`innerText` is what the element looks like, not
+what the code wrote**, so a scan for prose that a stylesheet might transform is case-insensitive or
+it is not a scan. The only reason this was caught rather than filed as an engine bug is that the
+claim was narrow enough — *this* badge, naming *that* card — to be worth one look at the regex
+before believing it.

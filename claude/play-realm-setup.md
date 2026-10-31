@@ -978,6 +978,7 @@ LIST=level node scripts/e2e-solo.mjs   # a deck with a creature that grows by be
 LIST=vanish node scripts/e2e-solo.mjs  # a deck whose best creatures come with a countdown on them — 26 checks
 LIST=artifact node scripts/e2e-solo.mjs # a deck that pays its costs with spare artifacts — 25 checks
 LIST=blink node scripts/e2e-solo.mjs   # a deck whose end step asks which of your own creatures to blink — 26 checks
+LIST=soulbond node scripts/e2e-solo.mjs # a deck that pairs its creatures off, and the pair named on the card — 27 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the
@@ -1058,6 +1059,7 @@ LIST=level node scripts/e2e-solo.mjs             # a row pressed on the battlefi
 LIST=vanish node scripts/e2e-solo.mjs            # a counter on the card face, read at more than one number
 LIST=artifact node scripts/e2e-solo.mjs          # the bar asking for an artifact rather than a creature
 LIST=blink node scripts/e2e-solo.mjs             # a question about your own board, and the counter its answer pays for
+LIST=soulbond node scripts/e2e-solo.mjs          # two prompts for one keyword, and the partner's name on the card
 ```
 
 `LIST=cascade` is the one scenario in this list that changes the *deck* rather than the matchup, and
