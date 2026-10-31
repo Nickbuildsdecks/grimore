@@ -20,6 +20,7 @@ import {
   characteristicsOf, customDeck,
   hasType,
   legalActions,
+  manaSources,
   parseTypeLine,
   packView, parseManaCost, pendingDeclaration, printedKeywords, proliferate,
   proliferateCandidates, protectedFrom,
@@ -4406,6 +4407,79 @@ describe('setting what a creature is, and copying it', () => {
     expect(ch.keywords.has('flying')).toBe(true);
     // And it is still a 1/1: layer 6 and layer 7b are different layers.
     expect([ch.power, ch.toughness]).toEqual([1, 1]);
+  });
+
+  it('takes the abilities the layer system never sees too: a trigger and an activation', () => {
+    /*
+      Layer 6 reaches further than the keywords (CR 613.1f), and until D254 it did not.
+
+      `characteristicsOf` has always honoured "loses all abilities" for keywords and for the
+      statics the layers read, and nothing honoured it for the two kinds of ability the layers
+      never see: the triggers `raise` collects off the script, and the activations `legalActions`
+      offers. So a Frogged Blood Artist went on draining when something died and a Frogged Llanowar
+      Elves went on tapping for mana — a 1/1 with no text doing two things its text box no longer
+      says.
+
+      One board for both, and both directions: the control is the same creature before the Frog,
+      because a test that only asserted the silence would pass against an engine that had broken
+      the cards outright.
+    */
+    const list = customDeck({
+      id: 'frog-and-friends',
+      name: 'Frog and Friends',
+      entries: [
+        { name: 'Turn to Frog', count: 4 },
+        { name: 'Blood Artist', count: 4 },
+        { name: 'Llanowar Elves', count: 4 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Island', count: 22 },
+        { name: 'Forest', count: 22 },
+      ],
+    }).deck;
+    const board = (): GameState => advanceTo(arena({
+      decks: { 0: 'frog-and-friends', 1: 'verdant-guard' },
+      deckSpecs: { 'frog-and-friends': list },
+      battlefield: {
+        0: ['Island', 'Island', 'Island', 'Blood Artist', 'Llanowar Elves', 'Grizzly Bears'],
+      },
+      hands: { 0: ['Turn to Frog'] },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+
+    // The control: the Elves taps for green and the Artist's trigger is live.
+    const before = board();
+    const elvesId = find(before, 0, 'battlefield', 'Llanowar Elves');
+    expect(manaSources(before, 0).some((entry) => entry.key === elvesId)).toBe(true);
+
+    const frog = (s: GameState, name: string): GameState => drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Turn to Frog'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', name) }],
+    }), 20);
+
+    // A frogged mana creature taps for nothing, and is not offered as a source.
+    const elvesGone = frog(board(), 'Llanowar Elves');
+    const frogged = find(elvesGone, 0, 'battlefield', 'Llanowar Elves');
+    expect(manaSources(elvesGone, 0).some((entry) => entry.key === frogged)).toBe(false);
+
+    /*
+      And a frogged Blood Artist raises nothing when something dies.
+
+      Read off the **stack** rather than off a life total, because the Artist's trigger targets a
+      player and the engine stops to ask which one: with two seats there are two legal answers, so
+      the ability sits on the stack waiting rather than resolving, and a life total is the same
+      either way. What the rule is about is whether the trigger happens at all.
+    */
+    const bearsOf = (s: GameState): string => find(s, 0, 'battlefield', 'Grizzly Bears');
+    const triggers = (s: GameState): number => s.stackOrder
+      .filter((id) => s.stackObjects[id]?.kind === 'triggered').length;
+
+    const artistGone = frog(board(), 'Blood Artist');
+    expect(triggers(drain(destroy(artistGone, bearsOf(artistGone)), 40))).toBe(0);
+
+    // The same death with the Artist untouched, which is what makes the silence above a statement
+    // about the Frog rather than about the Artist.
+    const live = board();
+    expect(triggers(drain(destroy(live, bearsOf(live)), 40))).toBe(1);
   });
 
   it('Clone enters as a copy of anything on the table, and is a Clone again when it dies', () => {

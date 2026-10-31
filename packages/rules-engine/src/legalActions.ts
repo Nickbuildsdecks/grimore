@@ -12,7 +12,7 @@
  */
 import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
-import { characteristicsOf, hasType } from './characteristics.js';
+import { allAbilitiesLost, characteristicsOf, hasType } from './characteristics.js';
 import {
   atSorcerySpeed, bottomOwed, modeCombinations, modeTargetSpecs, modesOf, pendingDeclaration,
   sacrificeOptions, stackTop, unblockedAttackersOf,
@@ -708,6 +708,9 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
     // A face-down permanent is a 2/2 creature with no abilities, so it taps for nothing — a
     // face-down Forest is not a Forest (CR 707.2).
     if (isFaceDownPermanent(inst)) continue;
+    // And a permanent whose abilities have been taken away taps for nothing: a Frogged Llanowar
+    // Elves is a 1/1 with no text (CR 613.1f). See `allAbilitiesLost`.
+    if (allAbilitiesLost(state, inst)) continue;
     const script = scriptFor(state.cardDefs[inst.defKey]?.name);
     const ch = characteristicsOf(state, inst);
     const abilities = script?.abilities ?? [];
@@ -794,6 +797,9 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
     if (inst === undefined || inst.tapped) continue;
+    // Nothing to reach for on a permanent with no abilities left. Kept in step with `manaSources`,
+    // which is the point of both: one answer to "what can this seat pay".
+    if (allAbilitiesLost(state, inst)) continue;
     const script = scriptFor(state.cardDefs[inst.defKey]?.name);
     const ch = characteristicsOf(state, inst);
     for (const ability of script?.abilities ?? []) {
@@ -1551,6 +1557,14 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
     if (inst === undefined) continue;
     // Face down is face down: no name, no types, no abilities to activate (CR 707.2).
     if (isFaceDownPermanent(inst)) continue;
+    /*
+      Nor has a permanent that has lost all abilities got any to activate (CR 613.1f).
+
+      Only on the battlefield, because that is the only zone a continuous effect reaches: this loop
+      also walks the hand and the graveyard for cycling, unearth, embalm and ninjutsu, and a card
+      there is not something a Turn to Frog has ever been pointed at.
+    */
+    if (zone === 'battlefield' && allAbilitiesLost(state, inst)) continue;
     const script = scriptFor(state.cardDefs[inst.defKey]?.name);
     const ch = characteristicsOf(state, inst);
     const abilities: readonly AbilityDef[] = script?.abilities ?? [];

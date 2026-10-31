@@ -7361,6 +7361,28 @@ is declarative, has no number in it, ships with the flag that proves it inert, a
 asserts both arms. It is not a recovery of D251's eighteen games, and two rules in a row have now
 measured flat on that deck.
 
+## Layer 6 reaches further than the keywords (#237, D254)
+
+A rules bug found while building #230 and deliberately left out of it. "Loses all abilities" is
+layer 6 (CR 613.1f) and `characteristicsOf` has honoured it since #88 — for keywords, and for the
+statics the layers read. Nothing honoured it for the two kinds of ability the layers never see: the
+triggers `raise` collects off the script, and the activations `legalActions` offers in all three
+places it offers them. So a Frogged Blood Artist went on draining when something died, and a Frogged
+Llanowar Elves went on tapping for green — and that second one means `manaSources`, the single
+answer to "what can this seat pay", was offering plays it could not afford.
+
+`allAbilitiesLost` is the one question, asked in those four places. No timestamp reading, unlike
+`grantedTriggersOn`: a card's own text is there from the moment it is on the battlefield, so every
+"loses all abilities" is later than it. Only a *granted* ability can arrive after the Frog, which is
+why the collection loop clears the **script** rather than skipping the watcher — a Frogged creature
+still gets what something else grants it afterwards.
+
+Worth nothing on the field: the table at the canonical seeds is identical, all thirteen decks. That
+is three flat results in a row (D252, D253, D254), and the pattern is worth naming rather than
+repeating — a change that corrects what one card does to one permanent cannot move a thirteen-deck
+field, and measuring it is still right, because the alternative is a changelog full of improvements
+nobody priced.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

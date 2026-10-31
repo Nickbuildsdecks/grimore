@@ -15833,3 +15833,47 @@ claim stays honest if somebody later wonders whether it does anything.
 What it must not be read as: a recovery of D251's eighteen games. Two rules in a row (D252, D253)
 have now measured flat on that deck, and the instrument says why — the cards are weak in that list
 and the bot was never the whole of it.
+
+## D254 — Layer 6 reaches further than the keywords: a Frogged Blood Artist was still draining
+
+Found while building D251, left out of it on purpose, and it is a rules bug rather than a bot one.
+
+"Loses all abilities" is layer 6 (CR 613.1f), and `characteristicsOf` has honoured it since #88 —
+for **keywords**, and for the statics the layer system reads. Nothing honoured it for the two kinds
+of ability the layers never see:
+
+- the **triggers** `raise` collects, which come off the card's script. The watcher loop asked only
+  whether the permanent was face down (CR 707.2), so a Frogged Blood Artist went on draining every
+  time something died.
+- the **activations** `legalActions` offers, in all three places it offers them —`manaSources`,
+  `potentialMana` and the play list. So a Frogged Llanowar Elves went on tapping for green.
+
+Both are a 1/1 with no text doing something its text box no longer says, and the second one is worse
+than it looks: `manaSources` is the single answer to "what can this seat pay", so the engine was
+*offering* plays it should not have been able to afford.
+
+`allAbilitiesLost(state, instance)` is the one question, asked in those four places. No timestamp
+reading, unlike `grantedTriggersOn`, and that is a fact rather than a shortcut: a card's own text is
+there from the moment it is on the battlefield, so every "loses all abilities" is later than it and
+takes it. Only a *granted* ability can arrive after the Frog, which is why that function walks the
+list and this one does not — and the two together are now the whole of layer 6 for abilities.
+
+In the collection loop it clears the **script** rather than skipping the watcher, which is the
+ordering: a Frogged creature still gets the abilities something else is granting it afterwards.
+
+Held by a test with both directions on one board: the Elves is offered as a mana source before the
+Frog and not after; a death raises the Artist's trigger before and raises nothing after. Read off
+the **stack** rather than off a life total, because the Artist's trigger targets a player and the
+engine stops to ask which — so the life total is the same either way and the question is whether the
+trigger happens at all. The first version of that test asserted the life total and failed on the
+control, which is the control doing its job.
+
+**And it is worth nothing on the field**: the table at the canonical seeds is identical, all
+thirteen decks, to the game before the fix. Turn to Frog is one card in one deck and the bot points
+it at whatever is biggest, which is rarely something whose ability was doing the work.
+
+That is three flat results in a row (D252, D253, D254) and the pattern is worth naming rather than
+repeating: **a change that corrects what one card does to one permanent cannot move a thirteen-deck
+field, and measuring it is still the right thing to do** — because the alternative is a changelog
+full of improvements nobody priced, and because the two that turned out to matter this session
+(D249's filter bug at twelve points, D251's slot at six) were found by the same instruments.

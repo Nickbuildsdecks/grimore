@@ -22,7 +22,7 @@
  * which kills something else) comes out right.
  */
 import {
-  characteristicsOf, expireEffects, grantedTriggersOn, hasSubtype, hasType,
+  allAbilitiesLost, characteristicsOf, expireEffects, grantedTriggersOn, hasSubtype, hasType,
   type ContinuousEffect, type GrantedTriggerRef,
 } from './characteristics.js';
 import {
@@ -1215,8 +1215,19 @@ function raise(
     if (!fromGraveyard && !fromStack && inst.zone !== 'battlefield') continue;
     // From the instance resolved above rather than by id, so a vanished token's own script is
     // still found: `scriptOf` reads `instances`, and a token that ceased to exist is not in it.
-    // A face-down permanent has no abilities, so it watches nothing (CR 707.2).
-    const script = isFaceDownPermanent(inst) ? undefined : scriptFor(next.cardDefs[inst.defKey]?.name);
+    /*
+      A face-down permanent has no abilities, so it watches nothing (CR 707.2) — and neither does
+      one whose abilities have been taken away (CR 613.1f, layer 6).
+
+      The second clause is newer than the rest and was a real gap: a Frogged Blood Artist went on
+      draining when something died, because this loop asked only about the face. It is `undefined`
+      rather than a `continue`, so the permanent is still asked about the abilities something else
+      is *granting* it below — which is the layer-6 ordering, where a grant made after the Frog
+      survives it.
+    */
+    const script = isFaceDownPermanent(inst) || allAbilitiesLost(next, inst)
+      ? undefined
+      : scriptFor(next.cardDefs[inst.defKey]?.name);
     /*
       Its printed triggers, and then the ones somebody else is handing it.
 

@@ -960,6 +960,34 @@ export function combatDamagePrevented(state: GameState, instance: CardInstance):
 }
 
 /**
+ * Whether every ability this permanent had has been taken away — layer 6, "loses all abilities"
+ * (CR 613.1f).
+ *
+ * Asked of a permanent rather than of an ability, because that is the shape of the effect: a Turn
+ * to Frog does not remove one thing, it empties the text box. `characteristicsOf` has always
+ * honoured it for *keywords* and for the statics that reach the layer system; this is the same
+ * question for the two kinds of ability the layers never see — the triggers `raise` collects and
+ * the activations `legalActions` offers. Without it a Frogged Blood Artist still drained on a
+ * death and a Frogged Llanowar Elves still tapped for mana, which is a 1/1 with no abilities doing
+ * two things its text box no longer says.
+ *
+ * No timestamp reading, unlike `grantedTriggersOn`, and that is a fact about printed abilities
+ * rather than a simplification: a card's own text is there from the moment it is on the
+ * battlefield, so every "loses all abilities" is later than it and takes it. Only a *granted*
+ * ability can arrive after the Frog, which is why that function walks the list and this one does
+ * not.
+ */
+export function allAbilitiesLost(state: GameState, instance: CardInstance): boolean {
+  const def = state.cardDefs[instance.defKey];
+  const line = parseTypeLine(def?.typeLine);
+  const creature = hasType(line, 'creature');
+  return (state.effects ?? []).some(
+    (effect) => effect.losesAllAbilities === true
+      && effectApplies(state, effect, instance, creature, line),
+  );
+}
+
+/**
  * A triggered ability one permanent is currently handing another: whose card defines it, and which
  * of that card's `grantedTriggers` it is.
  *
