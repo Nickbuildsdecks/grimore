@@ -3224,6 +3224,45 @@ describe('Treasure and Clue: a permanent that is spent', () => {
     expect(ids(s, 0, 'hand').length).toBe(before + 1);
     expect(s.instances[clue]).toBeUndefined();
   });
+
+  it('and both tokens offer their row to a player, in the words printed on them', () => {
+    /*
+      The half a person actually touches, and the one the tests above skip by activating directly.
+
+      A human can only press a row the table hands them, so "the ability works" and "the ability is
+      offered" are two claims and this is the second. It also checks the words, because the row is
+      the only place the cost appears: a Clue that offered "Draw a card" with no mention of the two
+      mana or the sacrifice would be a button nobody could price.
+
+      The Treasure matters here for a different reason. Its mana is normally spent by the
+      auto-tapper, which a player never sees — so without this row there would be no way to crack
+      one deliberately, and holding a Treasure back for a colour you know is coming is the whole
+      skill the card has.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ' }, hands: { 0: ['Thraben Inspector'] },
+      battlefield: { 0: ['Plains', 'Plains', 'Plains'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Thraben Inspector'),
+    })));
+    const clue = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Clue')!;
+    const row = legalActions(s, 0).plays.find((p) => p.card === clue);
+    expect(row?.kind).toBe('activate');
+    expect(row?.description).toMatch(/Sacrifice this artifact: Draw a card/);
+    expect(row?.manaCost).toBe('{2}');
+
+    let t = table(["Pirate's Prize"], ['Island', 'Island', 'Island', 'Island', 'Island']);
+    t = drain(passBoth(apply(t, {
+      type: 'auto:cast', by: 0, card: find(t, 0, 'hand', "Pirate's Prize"),
+    })));
+    const treasure = ids(t, 0, 'battlefield').find((id) => nameOf(t, id) === 'Treasure')!;
+    const rows = legalActions(t, 0).plays.filter((p) => p.card === treasure);
+    // Five rows, one per colour, which is what the card says and what Birds of Paradise offers.
+    expect(rows.length).toBe(5);
+    expect(rows.every((r) => /Sacrifice this artifact: Add \{[WUBRG]\}/.test(r.description)))
+      .toBe(true);
+  });
 });
 
 describe('exile until this leaves the battlefield', () => {
