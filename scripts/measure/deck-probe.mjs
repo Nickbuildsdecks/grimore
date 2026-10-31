@@ -20,6 +20,7 @@
 import {
   applyAction, createGame, botAction, seatsToAct, STARTER_DECKS,
 } from '../../packages/rules-engine/dist/index.js';
+import { canonicalDecks } from './decks.mjs';
 
 const SUBJECT = process.env.SUBJECT ?? 'tidal-mind';
 /*
@@ -155,9 +156,17 @@ function record(ctx) {
   return { won, lost, draw, each };
 }
 
-const before = record({});
+/*
+  Both arms get **canonically ordered** lists, which is what makes them comparable at all.
+
+  A deck's written order decides its pre-shuffle order and so decides the games (D257), and the
+  variant this builds puts a card the deck did not already hold at the end of the list — so without
+  this the stock arm and the variant arm differed by the change *and* by a reshuffle of everything
+  else. See `canonicalDecks`.
+*/
+const before = record(canonicalDecks(STARTER_DECKS));
 console.log(`stock:   ${before.won}-${before.lost}${before.draw ? ` (${before.draw} unfinished)` : ''}`);
-const after = record({ decks: { [SUBJECT]: VARIANT } });
+const after = record(canonicalDecks(STARTER_DECKS, { [SUBJECT]: VARIANT }));
 console.log(`variant: ${after.won}-${after.lost}${after.draw ? ` (${after.draw} unfinished)` : ''}`);
 for (const other of FIELD) {
   const b = before.each.get(other); const a = after.each.get(other);

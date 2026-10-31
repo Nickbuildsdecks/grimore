@@ -12,6 +12,7 @@
 import {
   applyAction, createGame, botAction, seatsToAct, STARTER_DECKS,
 } from '../../packages/rules-engine/dist/index.js';
+import { canonicalDecks } from './decks.mjs';
 
 const SUBJECT = process.env.SUBJECT ?? 'tidal-mind';
 /*
@@ -79,7 +80,13 @@ function listFor(id) {
 }
 
 const SUBJECT_LIST = listFor(SUBJECT);
-const CTX = CHANGE.length === 0 ? { isHost: true } : { isHost: true, decks: { [SUBJECT]: SUBJECT_LIST } };
+/*
+  Canonically ordered, like every harness that compares two arms: a list's written order decides the
+  pre-shuffle order and so decides the games (D257). Without it a run with `CHANGE` and a run
+  without are not the same experiment, and the whole point of this one is to read the difference
+  between two pilots or two lists card by card.
+*/
+const CTX = { isHost: true, ...canonicalDecks(STARTER_DECKS, CHANGE.length === 0 ? {} : { [SUBJECT]: SUBJECT_LIST }) };
 const size = (d) => d.cards.reduce((n, e) => n + e.count, 0);
 if (size(SUBJECT_LIST) !== size(STARTER_DECKS[SUBJECT])) {
   console.log(`!! the variant is ${size(SUBJECT_LIST)} cards against the deck's ${size(STARTER_DECKS[SUBJECT])}`);

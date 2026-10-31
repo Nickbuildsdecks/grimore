@@ -7432,6 +7432,42 @@ Why it survived eleven increments is the part worth keeping: nothing in the pool
 argument for adding cards to a pool with instruments pointed at it, and for reading an instrument's
 whole output rather than its top line.
 
+## Two tables of the same thirteen decks disagree by thirty games (D257)
+
+The most consequential finding in a while, and it is about the measurement rather than the engine.
+
+**Deck list order changes the games.** `deck:load` builds the library in entry order and then
+shuffles, and a shuffle permutes *indices*: the same seed over two arrays holding the same sixty
+cards in a different order gives two different libraries. `deck-order.mjs` rotates one entry of
+Forge Alliance's own list to the end and reads **9 of 40 games reached a different winner**. That
+mattered here because `CHANGE` appends an added card at the end of the list while the same change
+typed into the registry sits beside the cards it is like — so two arms meant to differ by one card
+differed by one card *and* a reshuffle of the other fifty-nine. `canonicalDecks` sorts every deck
+the same way in the harnesses (not in the engine, where the order is arbitrary anyway and where
+sorting broke twelve tests pinned to their boards), and `deck-order` now reads 0 of 40 canonical.
+
+**And then the control that matters more.** Two canonical tables of the same thirteen decks,
+differing only in which seeds they used: blight-vector −30, ember-rush −24, verdant-guard −19,
+forge-alliance +18, rot-harvest +18, hollow-tide +14. **Up to thirty games — ten points — between
+two honest measurements of the same deck.** That is the error bar on a 288-game table, and it is
+wider than almost every per-deck effect in these documents.
+
+**So two of today's slot claims were re-priced with arms that are actually paired** — `deck-probe`
+runs stock and variant over the same seeds, which with canonical ordering now means the same
+libraries. #230's two granting cards cost Skyward Writ **14 of 288** (the unpaired reading was −18:
+confirmed). **#239's Harm's Way is +12 of 288 to Forge Alliance** where the unpaired reading said
+−10 — a sign reversal, and D255 is corrected in place.
+
+The rule that follows: an unpaired comparison at 288 games cannot resolve a one-card change. A
+paired one can. It also re-opens D194 and D247, whose "believe the table over the probe" rule was
+drawn from disagreements between two unpaired readings — not evidence about either instrument.
+
+**The new baseline** (canonical, SEEDS=12 SEED0=4400, ±10 points a row): ember-rush 75%,
+dawn-tithe 73%, verdant-guard 68%, kindle-grove 67%, ashen-rite 50%, forge-alliance 45%,
+arc-tempest 44%, delta-bloom 42%, blight-vector 41%, rot-harvest 40%, skyward-writ 39%,
+hollow-tide 36%, tidal-mind 30%. Read as: four decks clearly ahead, one clearly behind, and eight
+this instrument cannot order.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

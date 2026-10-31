@@ -73,11 +73,22 @@ it.
 | `infect-clock.mjs` | of the infect creatures it could attack with, how many does it send? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/infect-clock.mjs` |
 | `creature-fate.mjs` | what takes its creatures away, and how long do they live? | `SUBJECT=blight-vector SEEDS=6 node scripts/measure/creature-fate.mjs` |
 | `wasted-plays.mjs` | which of the bot's plays bought nothing at all? | `SEEDS=4 node scripts/measure/wasted-plays.mjs` |
+| `deck-order.mjs` | does the order a deck's entries were written in change the games? (it did — D257) | `node scripts/measure/deck-order.mjs` |
 | `granted-abilities.mjs` | when one permanent hands another a triggered ability, does it ever fire — and what is it handed to? | `SUBJECT=skyward-writ SEEDS=6 node scripts/measure/granted-abilities.mjs` |
 | `hidden-info.mjs` | does the computer opponent read what it cannot see? | `SEEDS=2 node scripts/measure/hidden-info.mjs` |
 | `offers.mjs` | what does the engine offer you to cast — a cascade hit, a madness card, a **miracle** off the top — and is it taken? | `SUBJECT=arc-tempest SEEDS=12 node scripts/measure/offers.mjs` |
 | `storm.mjs` | how many spells does a turn actually hold, and what was the count on each storm spell? | `SUBJECT=arc-tempest SEEDS=4 node scripts/measure/storm.mjs` |
 | `dredge.mjs` | is a dredge ever offered, is it taken, and how short does the library get? | `SUBJECT=rot-harvest SEEDS=4 node scripts/measure/dredge.mjs` |
+
+**Pair your arms, or do not believe the difference.** Two canonical 288-game tables of the same
+thirteen decks, differing only in which seeds they used, disagree by up to **thirty games** on one
+deck (D257). So an *unpaired* comparison — today's table against a table from a previous commit, or
+a stock table against a variant table — cannot resolve a one-card change, and one such reading
+published a sign that the paired measurement reversed. What works is the same instrument, the same
+seeds, the same canonically ordered lists, differing only by the change: `deck-probe` runs both arms
+that way in one go, and `deck-table`'s `SUBJECT`/`CHANGE` is comparable to a `deck-table` run of the
+stock list at the same seeds **because** both now canonicalise. `deck-order.mjs` is the regression
+check on that last clause.
 
 `hidden-info` asks the fairness question, and it is the one no win rate answers: it puts the same
 position to the bot twice, the second time with **every card the acting seat cannot identify dealt

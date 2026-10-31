@@ -22,7 +22,7 @@ import {
   preferredCards, preferredOption, stillDeciding,
 } from './automation.js';
 import {
-  characteristicsOf, hasSubtype, hasType, parseTypeLine, type Keyword,
+  characteristicsOf, grantedTriggersOn, hasSubtype, hasType, parseTypeLine, type Keyword,
 } from './characteristics.js';
 import {
   attackAimIssue, canAttack, canBlock, damageOrdersOwed, forcedAttackers, legalAttackers,
@@ -370,7 +370,19 @@ function chooseTargets(
  * is exactly the mistake the fodder rule below was making.
  */
 function hasOwnText(state: GameState, id: string): boolean {
-  const script = scriptFor(state.cardDefs[state.instances[id]?.defKey ?? '']?.name);
+  const inst = state.instances[id];
+  if (inst === undefined) return false;
+  /*
+    Text it was **given** counts, which is newer than the rest and is the point of the name being
+    wrong now.
+
+    A vanilla Grizzly Bears is a body and a Grizzly Bears under an Ophidian Eye is a card engine,
+    and the printed script says the same thing about both (D251, D252). So an ability something
+    else is handing it is read off the effects rather than off the card: this is the question "is
+    this a card or is it a body", and a borrowed ability makes it a card as surely as a printed one.
+  */
+  if (grantedTriggersOn(state, inst).length > 0) return true;
+  const script = scriptFor(state.cardDefs[inst.defKey]?.name);
   if (script === undefined) return false;
   return (script.triggers?.length ?? 0) > 0 || (script.abilities?.length ?? 0) > 0
     || (script.statics?.length ?? 0) > 0;

@@ -19970,6 +19970,70 @@ describe('a granted triggered ability: the first ability on a permanent that did
     expect(held(swung)).toBe(beforeRegranted + 1);
   });
 
+  it('and the bot will not feed a creature that is carrying one to a sacrifice cost', () => {
+    /*
+      The other side of the grant, and the reason `hasOwnText` is now a question about the board
+      rather than about the card (D257).
+
+      That function answers "is this a card or is it a body", and the sacrifice-fodder filter uses
+      it: a Blood Artist is 0/1 and the engine of its deck, a Centaur Courser is 3/3 and a body.
+      A vanilla Grizzly Bears is a body and a Grizzly Bears under an Ophidian Eye is a card engine,
+      and the printed script says the same thing about both — so until this it would have been fed
+      to a Vampire Aristocrat for two points of power.
+
+      One board, two arms, and the Eye is the only difference: with it on the Bears the bot declines
+      the activation, and without it the bot takes the two points.
+
+      A 1/1 flier as the fodder rather than a Grizzly Bears, because the filter has a second rule
+      beside this one: it will not eat a creature whose power is at least the outlet's, so a 2/2 fed
+      to a 2/2 is declined for a reason that has nothing to do with text and the control arm would
+      have failed for the wrong reason — which is what the first version of this test did.
+    */
+    const list = customDeck({
+      id: 'eye-and-outlet',
+      name: 'Eye and Outlet',
+      entries: [
+        { name: 'Ophidian Eye', count: 4 },
+        { name: 'Vampire Aristocrat', count: 4 },
+        { name: "Healer's Hawk", count: 4 },
+        { name: 'Island', count: 24 },
+        { name: 'Swamp', count: 24 },
+      ],
+    }).deck;
+    const board = (): GameState => advanceTo(arena({
+      decks: { 0: 'eye-and-outlet', 1: 'verdant-guard' },
+      deckSpecs: { 'eye-and-outlet': list },
+      battlefield: { 0: ['Island', 'Island', 'Vampire Aristocrat', "Healer's Hawk"] },
+      hands: { 0: ['Ophidian Eye'] },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+    const eats = (s: GameState): boolean => {
+      // Only the sacrifice activation is in question, so anything else the bot wants to do first is
+      // not an answer: ask for the plays it would make and look for that one.
+      for (let i = 0; i < 12; i += 1) {
+        const action = botAction(s, 0, {});
+        if (action === null) return false;
+        if (action.type === 'auto:activate'
+          && nameOf(s, action.card) === 'Vampire Aristocrat') return true;
+        const before = s.stateVersion;
+        s = apply(s, action);
+        if (s.stateVersion === before) return false;
+      }
+      return false;
+    };
+
+    // Without the Eye it is a body, and two points of power is worth a 1/1 to this bot.
+    expect(eats(advanceTo(board(), 'declare-attackers'))).toBe(true);
+
+    // With the Eye on it, it is a card: the engine still offers the activation and the bot declines.
+    const base = board();
+    const enchanted = drain(apply(base, {
+      type: 'auto:cast', by: 0, card: find(base, 0, 'hand', 'Ophidian Eye'),
+      targets: [{ kind: 'card', id: find(base, 0, 'battlefield', "Healer's Hawk") }],
+    }), 20);
+    expect(eats(advanceTo(enchanted, 'declare-attackers'))).toBe(false);
+  });
+
   it('and the bot puts it on the creature that can attack rather than the biggest one', () => {
     /*
       `friendly` says which *side*; this is which *creature* (D253). The bot orders its own

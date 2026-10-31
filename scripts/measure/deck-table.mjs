@@ -5,6 +5,7 @@
  * orientations of every pairing on the same seeds, so who goes first cancels out.
  */
 import { applyAction, createGame, botAction, seatsToAct, STARTER_DECKS } from '../../packages/rules-engine/dist/index.js';
+import { canonicalDecks } from './decks.mjs';
 
 /*
   Every deck in the pool, read from the registry rather than written out here.
@@ -100,7 +101,15 @@ function variant() {
   Asserted rather than assumed, because a change that is also a change of deck size measures two
   things at once and the number would look like a card.
 */
-const CTX = CHANGE.length === 0 ? {} : { decks: { [SUBJECT]: variant() } };
+/*
+  Every deck canonically ordered, and the variant with them. See `canonicalDecks` — without it the
+  arm with a change and the arm without are not comparable, because a list's written order decides
+  the pre-shuffle order and so decides the games (D257).
+*/
+const CTX = canonicalDecks(
+  STARTER_DECKS,
+  CHANGE.length === 0 ? {} : { [SUBJECT]: variant() },
+);
 if (CHANGE.length > 0) {
   const size = (d) => d.cards.reduce((n, e) => n + e.count, 0);
   const stock = size(STARTER_DECKS[SUBJECT]);

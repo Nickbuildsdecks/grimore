@@ -15687,7 +15687,12 @@ D239's reason, but the second one is doing more than making a count: the two rea
 different builders — `applyStatics` and `addAuraEffect` — which is the only evidence that the
 `PumpOptions` decision carried to every builder rather than to the one written first.
 
-**And the slot is a negative result, measured rather than hoped.** Skyward Writ over 288 games at
+**And the slot is a negative result, measured rather than hoped** — and it survived D257's audit,
+which is worth saying because the sibling claim in D255 did not. Re-priced with `deck-probe`'s
+paired arms the two cards cost **14 games of 288** (116-170 with them, 130-158 without) against the
+−18 read here: same sign, same size, same conclusion.
+
+Skyward Writ over 288 games at
 the canonical seeds: **139-149 stock, 121-167 with the two cards in** for a Raise the Alarm and the
 second Man-o'-War. That is eighteen games, about six points, and it drops the deck from 48% to 42%.
 
@@ -15909,18 +15914,32 @@ what it deals. Tests hold the three claims that are new: the points land on the 
 card pays out **what it absorbed** rather than what it printed (X of four against four damage deals
 four; X of one deals one; X of nothing does nothing at all), and the side scope is one shield.
 
-**The slot cost ten games, and the slot is not why.** Forge Alliance over 288 games at the canonical
-seeds: 148-140 stock, **138-150** with Harm's Way in for the second Loxodon Warhammer, **137-151**
-with it in for a Secluded Steppe instead. One game apart. That is D251's finding reproduced on a
-different deck and a different card: **where a new card goes is not the cost, the card is.** It
-ships on the same terms (D229: a keyword needs a card in a deck to exist), the land version is the
-one in the repository because it reads as the more defensible list and measures the same, and Skyward
-Writ's half is noise either way (−2).
+**The slot cost ten games, and the slot is not why.** — **corrected: Harm's Way is worth +12, and
+everything in the next two paragraphs was shuffle noise read as signal. D257 has the control and
+the paired measurement.** The original text is kept because the mistake is the useful part of it.
+
+Forge Alliance over 288 games at the canonical seeds: 148-140 stock, **138-150** with Harm's Way in
+for the second Loxodon Warhammer, **137-151** with it in for a Secluded Steppe instead. One game
+apart. That is D251's finding reproduced on a different deck and a different card: **where a new
+card goes is not the cost, the card is.** It ships on the same terms (D229: a keyword needs a card
+in a deck to exist), the land version is the one in the repository because it reads as the more
+defensible list and measures the same, and Skyward Writ's half is noise either way (−2).
 
 Worth naming as a method rather than a coincidence: two cut-set comparisons, on two decks, have now
 both come back within three games of each other. **Trying a second slot is cheap and has twice told
 us the same thing, so the next time a new card measures negative the question to ask is about the
 card** — what the bot does with it, as D252 did — rather than about which slot it took.
+
+**Both paragraphs are wrong, and instructively.** All three numbers are *unpaired* comparisons — a
+stock table against a variant table — and D257 then measured two honest tables of the same deck
+differing by up to thirty games for reasons that have nothing to do with its list. Two unpaired
+readings agreeing to within three games is not evidence that the slot does not matter; it is two
+draws from a wide distribution landing near each other.
+
+Re-priced with `deck-probe`, whose arms share their seeds and (since D257) their pre-shuffle order,
+so the shuffle cancels: **Harm's Way is +12 of 288 to Forge Alliance** — 147-141 with it, 135-153
+without. The card is good for the deck. The method that survives is the opposite of the one this
+entry proposed: **pair the arms**, and one run answers the question.
 
 **Known limit, written down rather than discovered.** The table shows a redirect as prevention: a
 `shielded: 2` on the seat and on each of its permanents, with nothing saying where the points will
@@ -15969,3 +15988,88 @@ reading an instrument's whole output rather than its top line.
 
 The header of the instrument now tells that story beside its other blind spots, because the next
 person to meet a 100% row deserves to know which of them have been fixed.
+
+## D257 — Two tables of the same thirteen decks disagree by thirty games, and one published sign was wrong
+
+This is the most consequential entry in a while and it is about the measurement rather than the
+engine. Three things were measured, in this order, each because the one before it did not add up.
+
+**1. The order a deck's list is written in changes the games it plays.** `deck:load` builds the
+library in entry order and then shuffles it, and a shuffle is a permutation of *indices*: the same
+seed applied to two arrays holding the same sixty cards in a different order gives two different
+libraries. `deck-order.mjs` is the experiment — Forge Alliance against Ember Rush, forty seeds, the
+same sixty cards with the first entry rotated to the end — and it reads **9 of 40 games reached a
+different winner**.
+
+That is harmless at a real table and not harmless here. Every instrument that prices a slot runs the
+same field twice and reads the difference, and the two arms were getting their lists by different
+routes: `deck-table`'s and `deck-probe`'s `CHANGE` **append** a card the deck did not already hold
+at the end of the list, while the same change typed into `starterDecks.ts` sits beside the cards it
+is like. Two arms meant to differ by one card differed by one card *and* a reshuffle of the other
+fifty-nine.
+
+`canonicalDecks` fixes it in the harnesses rather than in the engine: every deck is sorted by card
+name before it is handed over, so both arms share a pre-shuffle order and a shared seed means a
+shared library. In the harness because a deck's pre-shuffle order is arbitrary either way — the
+engine is not wrong — and because sorting inside `deck:load` re-shuffles every seed in the project
+at once, which broke twelve tests pinned to boards they were written against. `deck-order.mjs`
+reports both arms and is the regression check: `9 of 40` as written, `0 of 40` canonical.
+
+**2. And then the control that matters more.** Two canonical tables of the same thirteen decks,
+differing only in which seeds they used (288 games a deck each):
+
+```
+                 4400     7000    diff
+blight-vector   117-171   87-201   -30
+ember-rush      216-72   192-96    -24
+verdant-guard   195-93   176-112   -19
+forge-alliance  131-157  149-139   +18
+rot-harvest     115-173  133-155   +18
+hollow-tide     105-183  119-169   +14
+delta-bloom     121-167  112-176    -9
+...five more within eight
+```
+
+**Up to thirty games, ten points, between two honest measurements of the same deck.** That is the
+error bar on a 288-game table, and it is wider than almost every per-deck effect this project has
+published. The order finding above is a special case of it: a reshuffle is a reshuffle however it
+is caused.
+
+**3. So the two slot claims from today were re-priced with arms that are actually paired**, and one
+of them had the sign wrong. `deck-probe` runs stock and variant over the same seeds, which with
+canonical ordering now means the same libraries, so the shuffle cancels instead of being sampled
+twice:
+
+- **#230's two granting cards** cost Skyward Writ **14 games of 288** (116-170 with them, 130-158
+  without). The unpaired reading was −18; same sign, same size, and D251's conclusion stands.
+- **#239's Harm's Way is worth +12 games of 288 to Forge Alliance** (147-141 with it, 135-153
+  without). The unpaired reading was **−10**. That is a sign reversal, and D255 is corrected in
+  place.
+
+**What follows, and it is a rule rather than an observation.** An unpaired comparison at 288 games —
+today's table against a table from a previous commit, or a stock table against a variant table —
+cannot resolve a one-card change, because its noise floor is wider than the change. A **paired**
+comparison can: the same instrument, the same seeds, the same canonical lists, differing only by the
+change. `deck-probe` was always built that way and this is the first time its arms have genuinely
+been paired.
+
+Which re-opens something. D194 and D247 both found the probe disagreeing with the table and both
+wrote down the rule "believe the table"; D194's probe said +47 where the table said +4, and D247's
+said +16 where the table said −8. The probe's arms were not paired then and the table comparisons
+were not paired either, so **neither of those disagreements is evidence about which instrument to
+trust** — they are two noisy readings disagreeing. The rule those entries wrote down should not be
+leaned on until it is re-asked with the paired probe, and the entries are marked accordingly.
+
+**The new baseline**, canonical lists, SEEDS=12 SEED0=4400, 288 games a deck, with ±10 points of
+error bar on every row and the two-sample spread above as the evidence for it:
+
+```
+75% ember-rush   73% dawn-tithe   68% verdant-guard  67% kindle-grove
+50% ashen-rite   45% forge-alliance  44% arc-tempest  42% delta-bloom
+41% blight-vector  40% rot-harvest  39% skyward-writ  36% hollow-tide
+30% tidal-mind
+```
+
+Published with the error bar attached rather than as thirteen numbers, because the honest reading of
+this table is "four decks clearly ahead, one clearly behind, and eight that this instrument cannot
+order".
