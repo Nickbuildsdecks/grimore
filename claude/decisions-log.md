@@ -16916,10 +16916,39 @@ coupling was *load-bearing for every suite at once* — four browser suites shar
 the failure was loud but misdirected, which is in some ways worse than silence. A silent failure
 you eventually audit for; a loud one in the wrong place sends you to the engine.
 
+### A second reader, one suite apart
+
+Three suites passed and the fourth did not. `tryCommander` in `e2e-pod.mjs` is its own function
+**because** the command zone is the one place a spell is cast from that is not the hand — so the
+shared driver never looks there, and fixing the shared driver did not reach it. Same read, same
+failure:
+
+```
+FAIL  a commander is cast from the command zone through the real UI
+      — the command zone was read 845 times and never said playable
+```
+
+Two readers found one suite apart is the point at which patching call sites stops being the answer.
+`slotsIn` now sits beside `cardsIn` in the driver, with a docblock stating the rule: use it when the
+question is *what the card says*, use `cardsIn` to press a card, read its name or count a zone. The
+rest of the tree was checked for other readers before fixing rather than one suite at a time; the
+only other hit reads a tooltip.
+
+**Why this one cost minutes and the first cost hours**: the pod check counts its reads and prints
+the text it saw. "Read 845 times and never said playable" names the bug. A bare "commander never
+cast" would have sent me into the engine, which is exactly what the arena failure did. Same class of
+bug, opposite diagnostic quality — and the difference is entirely in what the check chose to report
+when it failed.
+
+That sentence has now meant two different things, so both are recorded at the call site: this, and
+a **stale table-server `dist/`** (the session that made `play.mjs` rebuild on every start — Vite
+serves the web app from source, the realtime server does not).
+
 ### Verification
 
-Arena **53/53** with all four regressed checks recovered, table **73/73**, solo **24/24**, plus
-guards, the workspace typecheck and `apps/web`'s 226 tests. CI green on the pushed head.
+All four browser suites on the final head: arena **53/53** with the four regressed checks recovered,
+table **73/73**, solo **24/24**, pod **42/42** with the commander cast restored. Plus guards, the
+workspace typecheck and `apps/web`'s 226 tests. CI green.
 
 **What is asserted and what is not.** The strip is outside the element carrying `--card-rot`, so
 the rotation cannot reach it — that is structural, not observed. I have **not** photographed a

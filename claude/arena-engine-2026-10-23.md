@@ -7721,9 +7721,22 @@ docblock. Same family as D262 and D263: a coupling nobody wrote down, failing so
 where it was made — except this one is load-bearing for all four browser suites at once, and was
 loud but misdirected, which sends you to the engine rather than to the layout.
 
-Arena 53/53 with all four recovered, table 73/73, solo 24/24. What is asserted is structural — the
-strip is outside the element carrying `--card-rot` — and not photographic: both badge-bearing
-creatures in the new screenshots have vigilance, so they attacked untapped.
+Three suites passed and the fourth found a **second reader**: `tryCommander` in `e2e-pod.mjs`,
+which is its own function precisely because the command zone is the one place a spell is cast from
+that is not the hand — so the shared driver never looks there and the fix did not reach it. "The
+command zone was read 845 times and never said playable." Two readers one suite apart is where
+patching call sites stops being the answer, so `slotsIn` now sits beside `cardsIn` with the rule in
+its docblock, and the tree was checked for others before fixing.
+
+Why that one cost minutes where the arena failure cost hours: the pod check counts its reads and
+prints the text it saw, so the message names the bug. The arena check said a land did not reach the
+battlefield. Same class of bug, opposite diagnostic quality, and the difference is entirely in what
+each check chose to report on failure.
+
+All four green on the final head: arena 53/53 with the four recovered, table 73/73, solo 24/24, pod
+42/42 with the commander cast restored. What is asserted is structural — the strip is outside the
+element carrying `--card-rot` — and not photographic: both badge-bearing creatures in the new
+screenshots have vigilance, so they attacked untapped.
 
 ## Next
 
