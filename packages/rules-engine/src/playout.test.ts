@@ -9,8 +9,8 @@
  */
 import { describe, it, expect } from "vitest";
 import {
-  applyAction, botAction, createGame, customDeck, evaluate, legalActions, packView, playOut,
-  pendingDeclaration, scriptFor, seatToAct, STARTER_DECKS, unpackView, viewFor,
+  applyAction, botAction, createGame, customDeck, energyOf, evaluate, legalActions, packView,
+  playOut, pendingDeclaration, scriptFor, seatToAct, STARTER_DECKS, unpackView, viewFor,
   type Action, type GameState, type SeatIndex,
 } from './index.js';
 import {
@@ -2053,12 +2053,21 @@ describe('the removal spell that pays for itself, which the same rule was refusi
 
   it('is cast with no energy banked, because the spell brings its own', () => {
     const s = holdingIt(['Monastery Swiftspear']);
-    // Nothing in the pool: the whole point is that the three energy arrive as it resolves.
-    expect(s.seats[0]!.energy ?? 0).toBe(0);
+    /*
+      Nothing in the pool: the whole point is that the three energy arrive as it resolves.
+
+      Read through `energyOf`, which is a correction rather than a tidy-up: this asserted
+      `s.seats[0]!.energy ?? 0`, and `Seat` has no `energy` — energy lives in `counters` under the
+      key `ENERGY`, because the field was always "arbitrary named counters". So the expression was
+      `undefined ?? 0` and the assertion was **vacuous**: it would have read zero with three energy
+      banked. Nothing caught it because `typecheck:tests` had never run in CI (D263) and vitest
+      transpiles rather than typechecks.
+    */
+    expect(energyOf(s, 0)).toBe(0);
     const action = botAction(s, 0);
     expect(action?.type).toBe('auto:cast');
-    expect(s.cardDefs[s.instances[action?.card ?? '']?.defKey ?? '']?.name)
-      .toBe('Harnessed Lightning');
+    const cast = action?.type === 'auto:cast' ? action.card : '';
+    expect(s.cardDefs[s.instances[cast]?.defKey ?? '']?.name).toBe('Harnessed Lightning');
   });
 
   it('and still is not cast with nothing of theirs to point at', () => {

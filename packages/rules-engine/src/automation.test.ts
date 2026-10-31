@@ -840,7 +840,15 @@ describe('legalActions', () => {
     }), 'precombat-main');
     const bolt = legalActions(s, 0).plays.find((p) => p.name === 'Lightning Bolt')!;
     expect(bolt.targetSpecs.length).toBe(1);
-    const keys = bolt.candidates[0]!.map((t) => (t.kind === 'card' ? nameFor(s, t.id) : `player ${t.seat}`)).sort();
+    // Three kinds, all three named: an ability on the stack is a legal target for a Bolt in this
+    // engine (#115), and labelling it rather than assuming player-or-card is what keeps the
+    // assertion below honest — an ability showing up here fails the equality instead of reading
+    // `player undefined`.
+    const keys = bolt.candidates[0]!.map((t) => (
+      t.kind === 'card' ? nameFor(s, t.id)
+        : t.kind === 'player' ? `player ${t.seat}`
+          : `ability ${t.id}`
+    )).sort();
     // Both players and the 2/2 — but not hexproof Sigarda.
     expect(keys).toEqual(['Grizzly Bears', 'player 0', 'player 1']);
     s = apply(s, { type: 'auto:pass', by: 0 });

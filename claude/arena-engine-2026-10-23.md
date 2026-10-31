@@ -7640,6 +7640,34 @@ What that does **not** gate is the browser suites themselves — a broken select
 control, a React warning. It narrows the silent rot to the data dependency and leaves the browser
 dependency a manual step, which is the honest summary.
 
+### A check that existed and never ran, and the assertion it hid (#246, D263)
+
+`packages/rules-engine` has had a `typecheck:tests` script since the suite was written, and nothing
+ever ran it: CI runs `typecheck`, which points at `tsconfig.json` and excludes the test files, and
+vitest transpiles rather than typechecks. Found while verifying D262 rather than while looking for
+it, 22 errors deep.
+
+One of them was a test that could not fail. `expect(s.seats[0]!.energy ?? 0).toBe(0)` — `Seat` has
+no `energy`; it lives at `counters['energy']`. So the expression was `undefined ?? 0`, and "Harnessed
+Lightning is cast with no energy banked, because the spell brings its own" would have passed with
+three energy in the pool, which is the one condition it exists to rule out. That is the argument for
+typechecking tests in a sentence: a wrong assertion is invisible by construction, because the thing
+that would notice it is the thing being tested.
+
+One of the 22 was the *type* being wrong rather than the test. `AutoDecideAction.cards` was
+required, while `decide` — its only reader in the workspace — declares `cards?` and reads
+`action.cards ?? []`. Making the declaration agree with the handler fixed twelve errors in one line,
+and immediately produced a new one at a test reading `chosen.cards` without a guard, which is the
+type doing its job. The rest were a stray argument to `proliferateCandidates`, a `who` read off
+trigger-event union members that do not all carry it, a target ternary that assumed player-or-card
+where an ability is also legal (#115), a `Set<Keyword>` asked about arbitrary card lines, and some
+optional chaining.
+
+`typecheck:tests` is now a CI step and `pnpm run v2:typecheck:tests`. Engine suite unchanged at 1292
+passing, because every fix was a type and not a behaviour — except the energy assertion, which now
+tests what it claims to. **A script in a package.json that no pipeline calls is not a check, it is a
+comment.**
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -34,7 +34,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS } from './scripts.js';
-import type { GameState, SeatIndex } from './types.js';
+import type { Action, GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
 
 const BASICS = new Set(['Mountain', 'Forest', 'Plains', 'Island', 'Swamp']);
@@ -6668,7 +6668,9 @@ describe('what a card says reaches the effect', () => {
 const keywordsOnly = (card: { readonly oracleText?: string }): boolean => {
   const text = (card.oracleText ?? '').trim();
   if (text === '') return true;
-  const granted = new Set(printedKeywords(text));
+  // `Set<string>` rather than the inferred `Set<Keyword>`: the parts being tested are arbitrary
+  // lines off a card, and asking a keyword-typed set about one is what the compiler objected to.
+  const granted = new Set<string>(printedKeywords(text));
   return text.split(/[\n,]+/).map((part) => part.trim().toLowerCase()).filter(Boolean)
     .every((part) => granted.has(part));
 };
@@ -15331,7 +15333,7 @@ describe('cascade: a spell that casts the next one for nothing', () => {
     expect(nameOf(s, offer?.card ?? '')).toBe('Lightning Bolt');
     expect(offer?.prompt).toContain('Bloodbraid Elf cascades into Lightning Bolt');
     // The land it walked past is exiled with it, waiting for the bottom of the library.
-    expect(offer?.bottom.map((id) => nameOf(s, id))).toEqual(['Mountain']);
+    expect(offer?.bottom?.map((id) => nameOf(s, id))).toEqual(['Mountain']);
     expect(namesIn(s, 0, 'exile').sort()).toEqual(['Lightning Bolt', 'Mountain']);
 
     // The table is stopped: nobody holds priority, and the only seat with anything to do is the
@@ -15417,7 +15419,7 @@ describe('cascade: a spell that casts the next one for nothing', () => {
     // Flametongue Kavu costs {3}{R} and so does the Elf, so it is exiled and passed over.
     const s = cast(cascading(['Flametongue Kavu', 'Lightning Bolt']));
     expect(nameOf(s, s.pendingOfferedCast?.card ?? '')).toBe('Lightning Bolt');
-    expect(s.pendingOfferedCast?.bottom.map((id) => nameOf(s, id))).toEqual(['Flametongue Kavu']);
+    expect(s.pendingOfferedCast?.bottom?.map((id) => nameOf(s, id))).toEqual(['Flametongue Kavu']);
   });
 
   it('refuses an offered cast nobody offered, and an X on one that was', () => {
@@ -15680,7 +15682,7 @@ describe('madness: a card discarded into exile, and a cheaper cast out of it', (
         type: 'auto:cast', by: 0, card: find(board(lands), 0, 'hand', 'Faithless Looting'),
       }), 8);
       const chosen = botAction(s, 0);
-      return chosen?.type === 'auto:decide' ? chosen.cards.map((id) => nameOf(s, id)) : [];
+      return chosen?.type === 'auto:decide' ? (chosen.cards ?? []).map((id) => nameOf(s, id)) : [];
     };
 
     expect(discardsChosen(2)).toContain('Fiery Temper');
@@ -17588,7 +17590,10 @@ describe('vanishing and fading: the same clock, read one turn apart', () => {
     */
     let s = calciderm();
     const id = find(s, 0, 'battlefield', 'Calciderm');
-    expect(proliferateCandidates(s, 0)).toContain(id);
+    // `proliferateCandidates` takes the state alone — it lists every permanent and player with a
+    // counter, whoever controls them, because proliferate chooses across the table (CR 701.27a).
+    // The stray `0` here was ignored at runtime and the assertion was right anyway.
+    expect(proliferateCandidates(s)).toContain(id);
     s = proliferate(s, [id]);
     expect(s.instances[id]!.counters['time']).toBe(5);
 
@@ -18461,7 +18466,10 @@ describe('Ichor Wellspring, the artifact that pays you for leaving', () => {
       to **`another`** there and to `self` on the five board events. Left implicit, this would be a
       card that draws whenever anybody else's card is binned.
     */
-    expect(script?.triggers?.every((t) => t.on.who === 'self')).toBe(true);
+    // `'who' in t.on` first, because not every trigger kind in the union carries the field — a
+    // `leaves` event has no `who` at all — and a kind that lacks it should fail this, which is
+    // exactly what the narrowed read does.
+    expect(script?.triggers?.every((t) => 'who' in t.on && t.on.who === 'self')).toBe(true);
   });
 });
 

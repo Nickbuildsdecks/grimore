@@ -16653,3 +16653,70 @@ A second thing surfaced while verifying and is **not** mine to fix inside this c
 `scripts.test.ts`, identically with and without this change (verified by stashing it). CI runs
 `typecheck`, which excludes the test files, so nothing runs it. Vitest transpiles rather than
 typechecks, so the suite is green and the types are not. Recorded as its own task.
+
+## D263 — A check that existed and never ran, and the assertion it was hiding
+
+`packages/rules-engine` has had a `typecheck:tests` script since the suite was written. Nothing runs
+it. CI's v2 job runs `typecheck`, which points at `tsconfig.json` and **excludes the test files**;
+vitest transpiles rather than typechecks, so the suite was green and the types were not. By the time
+this was looked at — while verifying D262, not while looking for it — it was **22 errors** deep.
+
+The point of fixing them is not tidiness. One was a test that could not fail:
+
+```ts
+expect(s.seats[0]!.energy ?? 0).toBe(0);   // Seat has no `energy`
+```
+
+Energy lives at `seat.counters['energy']` (the field was always "arbitrary named counters", and
+`ENERGY` names the key so the second user does not start a second pile). So the expression was
+`undefined ?? 0`, the assertion read 0 on **any** board, and the test — "Harnessed Lightning is cast
+with no energy banked, because the spell brings its own" — would have passed with three energy in the
+pool, which is the exact condition it exists to rule out. It now reads `energyOf(s, 0)` and passes
+non-vacuously.
+
+That is the whole argument for running a typechecker over test files: a wrong assertion in a test is
+invisible by construction, because the thing that would notice it is the thing being tested.
+
+### The one type that was wrong rather than the test
+
+`AutoDecideAction.cards` was `readonly string[]`, required. `decide` in `autoActions.ts` types its
+own parameter as `cards?` and reads `action.cards ?? []`, and it is the only reader of the field in
+the workspace — so the handler had always treated it as optional while the public action type did
+not. Most questions this engine asks are answered with a word, a number or a target, and those
+answers were being made to carry an empty array for a question about cards. It is `cards?` now,
+which fixed twelve of the twenty-two in one line and made the declaration agree with the handler.
+A required field on an action a client sends as JSON was unenforceable where it mattered anyway.
+
+Promptly earned: the looser type immediately produced a *new* error at a test reading
+`chosen.cards.map(...)` without a guard, which is the type doing its job.
+
+### The rest, and what each one was
+
+- **`proliferateCandidates(s, 0)`** — the function takes the state alone, because proliferate
+  chooses across the whole table (CR 701.27a). The stray seat argument was ignored at runtime and
+  the assertion was right regardless.
+- **`t.on.who`** — `who` is on seven of the trigger-event union's members and not on others
+  (`leaves` has none). Narrowed with `'who' in t.on`, so a kind that lacks the field fails the
+  assertion rather than reading `undefined`.
+- **`bolt.candidates[0]`** — the ternary tested `kind === 'card'` and then read `.seat`, which an
+  `ability` target does not have. An ability on the stack *is* a legal target for a Bolt here
+  (#115), so all three kinds are labelled; an ability appearing now fails the equality instead of
+  printing `player undefined`.
+- **`new Set(printedKeywords(text))`** — inferred as `Set<Keyword>` and then asked about arbitrary
+  lines off a card. `Set<string>`.
+- **Three `?.` and one `?? []`** on optional fields, and one `Action` imported from `types.js`
+  rather than `turnTypes.js`.
+
+### The gate
+
+`typecheck:tests` is now a CI step and a root script (`pnpm run v2:typecheck:tests`). A recursive
+pnpm run skips packages without the script, so it covers whichever package grows one next. The
+engine suite is unchanged at 1292 passing: every fix above was a type, not a behaviour — except the
+energy assertion, which now tests what it claims to.
+
+**The class this belongs to.** D260 named it: an instrument that goes quiet rather than wrong. This
+is the same failure one level up — a *check* that goes quiet rather than wrong, because it is never
+invoked. The project has three now (the browser suites in D262, this script, and `card-promises`'s
+own KNOWN list, which is at least read). The lesson is narrow and worth stating: **a script in a
+package.json that no pipeline calls is not a check, it is a comment.** Either wire it in or delete
+it.

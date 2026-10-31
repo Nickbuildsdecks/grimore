@@ -15,6 +15,7 @@
     "preflight": "node scripts/preflight.js",
     "v2:build": "turbo run build --filter=./packages/* --filter=./apps/*",
     "v2:typecheck": "turbo run typecheck --filter=./packages/* --filter=./apps/*",
+    "v2:typecheck:tests": "pnpm -r --filter './packages/*' --filter './apps/*' run typecheck:tests",
     "v2:test": "turbo run test --filter=./packages/* --filter=./apps/*",
     "v2:guards": "node scripts/guards.js",
     "v2:migrate": "pnpm --filter @grimore/db migrate",

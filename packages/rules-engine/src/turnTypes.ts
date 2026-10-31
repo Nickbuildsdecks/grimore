@@ -1429,7 +1429,19 @@ export interface AutoChooseAction {
 }
 /** Answers a question a card asked while it was resolving. */
 export interface AutoDecideAction {
-  readonly type: 'auto:decide'; readonly by: SeatIndex; readonly cards: readonly string[];
+  readonly type: 'auto:decide'; readonly by: SeatIndex;
+  /**
+   * The cards chosen, for a question whose answer is cards.
+   *
+   * **Optional, because the handler has always treated it as optional** and this declaration was
+   * the thing that was wrong. `decide` in `autoActions.ts` types its own parameter with `cards?`
+   * and reads `action.cards ?? []`, so a question answered with a word, a number or a target has
+   * never needed to send an empty array — and most of this engine's questions are one of those
+   * three. The required version was unenforceable in the one place it mattered (a client sends
+   * JSON) and cost twelve `cards: []` on test call sites that were not wrong, which is where it was
+   * found: `typecheck:tests` had never been run in CI. It is the only reader in the workspace.
+   */
+  readonly cards?: readonly string[];
   /**
    * The word chosen, for a question whose answer is a word. Carried on the same action as `cards`
    * rather than on one of its own, because it is the same question at the same moment in the same
