@@ -1305,26 +1305,31 @@ const EXPOSED_POWER = 0;
  * rate was spent: **14.2% of attack declarations**, the largest single-decision-kind figure any term
  * in that table has posted, nearly double the same board's linear reading.
  *
- * **And then the four-seat instrument said what it costs.** The same eight pods, paired on the same
- * seeds, with this at one and at zero:
+ * **And then the four-seat instrument found a bug in the units, which is what the pod cost was.** The
+ * first version of this term divided by nothing, so it summed what **three** opponents could send
+ * and compared it against **one** seat's life. The same eight pods, paired on the same seeds:
  *
  * | | moves | turns |
  * | --- | --- | --- |
  * | zero | 3429 | 422 |
- * | one | **7062** (2.06x) | **611** (1.45x) |
+ * | one, table-wide | 7062 (2.06x) | 611 (1.45x) |
+ * | one, per opponent | **4439** (1.29x) | **468** (1.11x) |
  *
- * Every pod still finished, and three of the eight ran three to five times longer: 192 moves became
- * 989, 287 became 1344, 618 became 1663, and turn 40 became turn 95. Duels went slightly *shorter*,
- * so this is specific to four seats — which makes sense from the computation: `exposedPower` sums
- * what **three** opponents could send, a pod seat therefore reads as very exposed, and scaling that
- * by urgency makes it decline to tap its blockers. It is D264's own "declines to swing in 19% of
- * combats instead of 8%", amplified by the scaling and by having three opponents.
+ * At four seats the undivided term read roughly three times the pressure for the same per-opponent
+ * threat, the bot stopped tapping its blockers, nobody attacked and the pod ground on: 192 moves
+ * became 989, 287 became 1344, turn 40 became turn 95. And its pod win rate was **50-54 and 52-52**
+ * of 104 pods — flat to slightly negative, for twice the length.
  *
- * So the standard D264 set has to be read exactly: *a change that lengthens every game, cannot be
- * shown to win one, and misses its own hypothesis does not ship on by default.* This one **can** be
- * shown to win one, so that rule does not decide it — and a term that wins a duel while doubling a
- * pod has not earned a **global** default, in a project whose headline format is the pod. It stays
- * at zero until the pod has its own win rate, which `pod-duel` is the instrument for.
+ * Dividing by the opponents the table started with is the fix, and it was already sitting eight
+ * lines below applied to `seatValue` for exactly this reason (D276). Most of the bloat was the
+ * missing denominator. Duels are untouched by construction — one opponent, divisor one — which is
+ * why the three seed sets above still read on this term.
+ *
+ * It stays at **zero** regardless until the pod win rate at the fixed scale comes in, because the
+ * standard D264 set has to be read exactly: *a change that lengthens every game, cannot be shown to
+ * win one, and misses its own hypothesis does not ship on by default.* This one **can** be shown to
+ * win a duel, so that rule does not decide it — but a term measured in duels and once-wrong in pods
+ * does not get a global default in a project whose headline format is the pod.
  *
  * Everything is kept — the computation, ten tests, two `term-leverage` rows, the duel result above —
  * on the grounds D264 kept `exposed`: the expensive part was never the code. Turning this on is one
@@ -1632,9 +1637,31 @@ export function evaluate(state: GameState, seat: SeatIndex, opts: BotOptions = {
     // costs nothing and a division by zero would poison every score above it — cannot divide.
     const life = Math.max(1, state.seats[seat]?.life ?? 1);
     if (weight !== 0) pressure += power * weight;
-    // At full life this is `power * weight` exactly, which is what makes it comparable with the
-    // row above rather than a different term wearing a new name (#258).
-    if (rateWeight !== 0) pressure += power * (getFormat(state.format).startingLife / life) * rateWeight;
+    /*
+      At full life in a **duel** this is `power * weight` exactly, which is what makes it comparable
+      with the row above rather than a different term wearing a new name (#258).
+
+      Divided by the opponents the table started with, which is the same denominator `evaluate`
+      already applies to their `seatValue` eight lines below, and for the same reason it gives there
+      — *am I ahead of the table* rather than *is the rest of the table small*. Not dividing was an
+      inconsistency rather than a choice, and it is what made the term unusable in a pod (D276):
+      `exposedPower` sums what **three** opponents could send against one seat's blockers, while
+      `life` stays one seat's, so a weight calibrated against one opponent reads three times the
+      pressure at four seats. The bot then declined to tap its blockers, nobody attacked, and a pod
+      took twice the moves for no win rate.
+
+      `state.seats.length` and not the living opponents, for the reason the division below spells
+      out at length: dividing by survivors makes killing a player change the scale, and a term whose
+      units move when somebody dies is a term the search cannot compare across a turn.
+
+      **At two seats this is arithmetically unchanged** — one opponent, so the divisor is one — which
+      is why the three duel seed sets behind this term still read on it. `playout.test.ts` asserts
+      that identity directly.
+    */
+    if (rateWeight !== 0) {
+      const opponents = Math.max(1, state.seats.length - 1);
+      pressure += (power / opponents) * (getFormat(state.format).startingLife / life) * rateWeight;
+    }
     if (turnsWeight !== 0) {
       const turns = power <= 0 ? CLOCK_CAP : Math.min(CLOCK_CAP, Math.ceil(life / power));
       pressure -= turns * turnsWeight;

@@ -17810,3 +17810,76 @@ And the discrete form is why both were built. `clockTurns` — the integer a pla
 moved 110 of 17,604 decisions and 3.8% of attacks, **below** the linear term it was meant to beat.
 Had only that shape been built, the honest conclusion would have been "the clock is weaker than the
 quantity", which is the opposite of what is true.
+
+## D276 — The pod answer, and the inconsistency that was the whole problem
+
+D275 held `clockRate` at zero pending the pod's own win rate. It came in, and it is the reason the
+hold was right:
+
+| seed set | `{clockRate:1}` vs stock, 104 pods |
+| --- | --- |
+| 3300 | 50-54 (−4) |
+| 4100 | 52-52 (0) |
+
+**Flat to slightly negative, against +1.5 points in a duel** — and costing twice the moves to get
+there. A term that wins one format, does nothing in the other and doubles its length is not a term
+with a tuning problem; it is a term whose units are wrong in one of the two.
+
+(52-52 is exactly `pod-duel`'s arithmetic control value, which today of all days deserved a check.
+The arm is connected: `pod-pace` counted 25, 39 and 32 changed decisions in those four-seat games,
+and `bot-duel`'s pre-flight found it disagreeing by decision 20. With a real arm the four rotations
+are four different games, so the tie is genuine and not the construction.)
+
+### What was actually wrong, which was not the weight
+
+`exposedPower` sums what **every** opponent could send against one seat's blockers. `life` is one
+seat's. So the ratio between them is not comparable across formats: at four seats a seat reads
+roughly three times the pressure for the same per-opponent threat, a weight calibrated against one
+opponent over-fears, the bot declines to tap its blockers, nobody attacks, and the pod grinds.
+
+**And the fix was already sitting eight lines below, applied to a different term for exactly this
+reason.** `evaluate` divides the opponents' `seatValue` by the seats the table started with, and its
+docblock explains why at length: *"the average rather than the sum, so a four-player pod is scored on
+'am I ahead of the table' instead of on 'is the rest of the table small'."* The clock term did not
+divide. That was an inconsistency, not a decision — I wrote it without noticing the precedent in the
+same function.
+
+```
+pressure += (power / opponents) * (startingLife / life) * weight
+```
+
+with `opponents = seats.length - 1`, the table's starting count rather than the survivors, for the
+reason the division below already gives: dividing by survivors makes killing a player change the
+scale, and a term whose units move when somebody dies cannot be compared across a turn.
+
+**At two seats this is arithmetically unchanged** — one opponent, divisor one — so the three duel
+seed sets behind the term still read on it, and no duel measurement needed re-running.
+`playout.test.ts` asserts that identity directly rather than leaving it as a claim.
+
+### What the division bought
+
+The same eight pods, paired on the same seeds:
+
+| | moves | turns |
+| --- | --- | --- |
+| clock off | 3429 | 422 |
+| on, table-wide | 7062 (2.06x) | 611 (1.45x) |
+| **on, per opponent** | **4439 (1.29x)** | **468 (1.11x)** |
+
+So most of the bloat was the missing denominator: 2.06x becomes 1.29x in moves and 1.45x becomes
+1.11x in turns. Eleven percent more turns is the same order as the 9% D264 reported for its own term,
+rather than a pod that takes twice as long. The pod win rate at this scale is running.
+
+### The lesson, which is not about clocks
+
+**A term that mixes a table-wide quantity with a per-seat one has units, and units have to be checked
+against the format rather than the harness.** Nothing in the duel measurement could have caught this,
+because at two seats the bug does not exist — the divisor is one. That is D267's shape for the fourth
+time today and the sharpest instance of it: the premise was "this term makes the bot better", the
+fixture was 2808 duels, and *the defect was invisible in the fixture by construction*.
+
+The general form worth keeping: **before measuring a term, ask which of its inputs are per-seat and
+which are table-wide, and whether the ratio means the same thing at two seats and at four.** `life`,
+`hand`, `library`, `land` and `permanent` are all per-seat and all fine. `exposedPower` is the first
+term in this evaluation that reads the whole table at once, and it is the first one to need this
+question asked.

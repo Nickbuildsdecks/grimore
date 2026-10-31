@@ -2959,8 +2959,19 @@ describe('how many turns this board leaves me', () => {
       battlefield: { 0: ['Hill Giant'], 1: ['Serra Angel'] },
     });
     expect(exposure(pod)).toBe(4);
-    expect(rate(pod)).toBeCloseTo(4, 10);
-    // And the turns form reads the cap at 40 life against 4 power, where 20 life read five.
+    /*
+      Two scalings, and the second one is what makes the term usable at four seats at all (D276).
+      The 40 life halves it against a duel's 20, and the **three** opponents divide it again, because
+      `exposedPower` sums the whole table's attackers while `life` is one seat's. So the same 4 power
+      reads 4 / 3 here rather than 4 — a third of a duel's pressure per opponent, which is what a
+      weight calibrated in a duel means.
+
+      Without this division the term read three times the pressure in a pod, the bot stopped tapping
+      its blockers, and a pod took twice the moves for no win rate.
+    */
+    expect(rate(pod)).toBeCloseTo(4 / 3, 10);
+    // And the turns form reads the cap at 40 life against 4 power, where 20 life read five. It is
+    // not divided: a count of turns is already per-seat, which is the point of the integer form.
     expect(turns(pod)).toBe(6);
   });
 
