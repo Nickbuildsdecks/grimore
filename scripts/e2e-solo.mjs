@@ -1872,6 +1872,25 @@ const ARTIFACT_LIST = [
       What is left is almost all the opponents' face-down hands — seven identical card backs, a
       hundred pixels a seat, saying only a number the seat header already shows. Worth revisiting,
       and not worth changing on my own: it is the tabletop metaphor, and style is the player's call.
+
+      **These two budgets are post-game on purpose, and the overflow check below is not.** That
+      asymmetry is deliberate rather than an oversight, so it is written down here (#252).
+
+      Sideways overflow is a defect or it is nothing: the table fits a phone or it does not, one
+      reading settles it, and it had a real bug behind it that only a live game could show (D267).
+      So that one is taken mid-game at a fixed point.
+
+      Height is a density question, and at a mid-game pod it reads 2.88-3.21 screens against the
+      2.35 below. Nothing there is broken — a board with cards on it is taller than a board without,
+      and the one density item anybody has identified is the face-down hands above, which is Nick's
+      call and not a number. Two more budgets to maintain would buy a guard against a regression in
+      something nobody has called wrong.
+
+      What would change this: somebody deciding a mid-game pod is too tall to play on a phone. Then
+      measure at the same fixed point the overflow check uses, twice, and set budgets from readings
+      that reproduce — the way these two were, and the way the laptop pair in the next block was.
+      **Do not raise 2.35 or 1.6 to accommodate a mid-game reading**; those protect the post-game
+      case and are the only numbers doing it.
     */
     const screens = await page.evaluate(() =>
       document.documentElement.scrollHeight / window.innerHeight);
