@@ -747,11 +747,24 @@ plays each pairing once per seed per order and credits both decks, so the subjec
 same 288 pairings the probe plays. Letting the field move changes the *other* twelve rows.
 
 Re-asked with both sides paired, the instruments agree on the sign on both changes. What they do not
-give is a number: the **same paired probe on two seed sets** reads +30 and +18 on one change and −18
-and −1 on the other. Pairing removes the reshuffle between the arms; it cannot remove the game, and
-how far a changed card diverges the play is itself a function of the seed. So a single paired
-288-game reading carries about **fifteen games** of its own, and a slot change is measured only when
-it clears that on both sets. A change that does not is unresolved, and saying so is the result.
+give is a number. Four changes through the same paired probe on two disjoint seed sets each:
+
+```
+                                        4400    7000   spread
+D203  six cards into Dawn Tithe          +30     +18      12
+D247  two cards into Verdant Guard       -18      -1      17
+D255  Harm's Way into Forge Alliance     +12      +5       7
+D251  granting cards into Skyward Writ   -14     -19       5
+```
+
+Pairing removes the reshuffle between the arms; it cannot remove the game, and how far a changed
+card diverges the play is itself a function of the seed. So the **size** of a paired 288-game
+reading is worth about ±10 — and the **sign agreed in all eight readings**, which is what a slot
+decision needs, since a card is kept or cut on direction rather than on a game count.
+
+`deck-probe` enforces that now: `SETS` defaults to 2, every run prints its per-set deltas and their
+spread, and the summary says whether the sets agreed on the sign or whether the change is simply not
+measured at this sample count. `SETS=1` labels its own output a look rather than a measurement.
 
 So "confirm it on the table" is the step every slot change owes, and `deck-table.mjs` now takes
 `SUBJECT` and `CHANGE` so taking it is an argument rather than an edit to `starterDecks.ts`, a

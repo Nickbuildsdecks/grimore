@@ -15705,7 +15705,9 @@ different builders — `applyStatics` and `addAuraEffect` — which is the only 
 **And the slot is a negative result, measured rather than hoped** — and it survived D257's audit,
 which is worth saying because the sibling claim in D255 did not. Re-priced with `deck-probe`'s
 paired arms the two cards cost **14 games of 288** (116-170 with them, 130-158 without) against the
-−18 read here: same sign, same size, same conclusion.
+−18 read here: same sign, same size, same conclusion. **Confirmed on a second seed set in D258**
+(108-180 against 127-161, −19), so the slot costs this deck 14 to 19 of 288 and the number here is
+a range rather than a figure.
 
 Skyward Writ over 288 games at
 the canonical seeds: **139-149 stock, 121-167 with the two cards in** for a Raise the Alarm and the
@@ -15954,7 +15956,12 @@ draws from a wide distribution landing near each other.
 Re-priced with `deck-probe`, whose arms share their seeds and (since D257) their pre-shuffle order,
 so the shuffle cancels: **Harm's Way is +12 of 288 to Forge Alliance** — 147-141 with it, 135-153
 without. The card is good for the deck. The method that survives is the opposite of the one this
-entry proposed: **pair the arms**, and one run answers the question.
+entry proposed: **pair the arms**.
+
+**And not "one run answers the question" — D258 measured that too.** A second seed set reads
+145-143 against 140-148, **+5**, so the card is worth +5 to +12 and the sign reversal above is real
+while its size was never resolved. A paired reading carries about ±10 of its own, which is why
+`deck-probe` now reads two seed sets by default.
 
 **Known limit, written down rather than discovered.** The table shows a redirect as prevention: a
 `shielded: 2` on the seat and on each of its permanents, with nothing saying where the points will
@@ -16168,27 +16175,32 @@ every game its own seed.
 ### The finding that matters more: a paired probe has an error bar of its own
 
 D257's replacement rule was that a paired comparison *can* resolve a one-card change. It cannot, not
-at this sample count. The same paired probe, same change, same canonical lists, two seed sets:
+at this sample count. Four changes through the same paired probe on two disjoint seed sets each,
+288 games an arm — including the two numbers D257 itself published off a single reading:
 
 ```
-                                        4400    7000
-D203  six cards into Dawn Tithe          +30     +18
-D247  two cards into Verdant Guard       -18      -1
+                                        4400    7000   spread
+D203  six cards into Dawn Tithe          +30     +18      12
+D247  two cards into Verdant Guard       -18      -1      17
+D255  Harm's Way into Forge Alliance     +12      +5       7
+D251  granting cards into Skyward Writ   -14     -19       5
 ```
 
 Pairing gives both arms the same libraries, which removes the reshuffle D257 found. What it cannot
 remove is the game: the changed card diverges the play from the first turn it is drawn, and **how
-far it diverges is itself a function of the seed**. So a paired 288-game reading carries about
-fifteen games of its own, which is the same order as most of the effects this project
-publishes.
+far it diverges is itself a function of the seed**. So the size of a paired 288-game reading is
+worth about ±10 — the same order as most of the effects this project publishes, and the reason two
+entries were published with numbers they had not earned.
 
-**Which puts two of D257's own numbers back in question**, because both rest on a single paired
-reading: `#230`'s granting cards re-priced at −14, and `#239`'s Harm's Way **corrected in place from
-−10 to +12**, a sign reversal claimed on one draw from a distribution fifteen games wide. Neither is
-withdrawn — the second reading of each is measuring as this is written and will be recorded beneath
-this entry — but neither was entitled to the confidence it was given, and the Harm's Way reversal is
-the one to distrust: a change of sign on a reading whose error bar straddles zero is the exact
-mistake this entry is about.
+**What that table also says is the useful half: the sign agreed in all eight readings.** Four
+changes, two independent samples each, no reversal. That is what a slot decision actually needs — a
+card is kept or cut on direction, not on a game count — so a paired probe is a sound instrument read
+for what it can answer and an unsound one read for a number.
+
+**And on that reading both of D257's re-prices stand.** `#230`'s granting cards cost Skyward Writ
+**14 to 19 of 288**, confirming that entry. `#239`'s Harm's Way is positive on both sets, **+5 to
++12**, so the sign reversal D255 was corrected to is real — the unpaired −10 had the wrong size and
+the wrong direction. Each is two readings now rather than one, and each is published as a range.
 
 ### What the two slots are worth, and the practice that replaces the rule
 
@@ -16204,8 +16216,13 @@ So *believe the table* becomes three rules, none of which is about which instrum
 1. **Pair the arms.** One instrument, one seed set, canonical lists, the two arms differing only by
    the change. Necessary, and this entry is why it is not sufficient.
 2. **Read a slot on at least two seed sets, and publish the range.** One paired reading is one draw
-   from a distribution about fifteen games wide. A change that does not clear that on both
-   sets has not been measured, and saying so is the result.
+   from a distribution about twenty games wide. A change whose sets disagree on the sign has not
+   been measured, and saying so is the result rather than a third run read as a tie-break.
+   `deck-probe` now does this itself: `SETS` defaults to 2, the deltas and their spread print under
+   every run, and the summary says whether the sets agreed. `SETS=1` still works and labels its own
+   output a look rather than a measurement. The sets are adjacent blocks of `SEEDS * opponents * 2`
+   seeds, sized off the loop's own bound so they cannot overlap — a hand-picked offset that did
+   would make the second set a partial re-run and the spread would read smaller than it is.
 3. **Never set a probe reading against a table reading.** They are different samples and will differ
    by up to thirty games with nothing wrong at all. That comparison has produced two published
    conclusions and both were wrong. Run the table for the question only it answers: what the change
@@ -16214,3 +16231,8 @@ So *believe the table* becomes three rules, none of which is about which instrum
 
 Deliberately not done: the two harnesses are not given a shared seed formula. It would make the
 comparison in rule 3 meaningful, and rule 3 is that nobody should be making it.
+
+The negative control for the multi-set path is the old one per set: an empty `CHANGE` builds a
+variant identical to stock, so every set must read exactly zero, and the summary says that in those
+words rather than falling through to "the sets disagree". Checked at `SETS=2 SEEDS=2`: `+0, +0`,
+spread 0.

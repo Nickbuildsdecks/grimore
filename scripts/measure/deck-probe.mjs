@@ -16,6 +16,13 @@
  * cannot be", and until now that claim was unmeasured. Point it at a legend whose text is *dead* in
  * the subject deck — Balan in a deck with no Equipment — and the difference is what the real
  * commander is worth.
+ *
+ * SETS is how many disjoint seed sets to read the change on, two by default, because one reading
+ * gives the direction and not the size (D258). The summary at the end says which of those two it
+ * managed, and a run whose sets disagree on the sign says so instead of printing a number.
+ *
+ *     SUBJECT=dawn-tithe CHANGE='Serra Angel:+1,Sacred Cat:-1' SEEDS=12 node scripts/measure/deck-probe.mjs
+ *     SETS=1 SUBJECT=tidal-mind CHANGE='Mulldrifter:+1,Think Twice:-1' node scripts/measure/deck-probe.mjs
  */
 import {
   applyAction, createGame, botAction, seatsToAct, STARTER_DECKS,
@@ -34,6 +41,23 @@ const SUBJECT = process.env.SUBJECT ?? 'tidal-mind';
 const ALL = Object.keys(STARTER_DECKS);
 const SEEDS = Number(process.env.SEEDS ?? 17);
 const SEED0 = Number(process.env.SEED0 ?? 3300);
+/*
+  How many **disjoint seed sets** to read the same change on, because one is not a measurement.
+
+  D258 ran four changes through this harness on two seed sets each and the deltas came back +30/+18,
+  −18/−1, +12/+5 and −14/−19: the **sign agreed in all eight readings** and the magnitudes differed
+  by 12, 17, 7 and 5 games. So a single paired 288-game reading tells you the direction and is worth
+  about ±10 on the size — which is the same order as most of the effects this project publishes, and
+  is why two entries were published with numbers they had not earned.
+
+  Pairing the arms (`canonicalDecks`, below) removes the reshuffle *between* the arms. It cannot
+  remove the game: a changed card diverges the play from the turn it is drawn, and how far it
+  diverges is itself a function of the seed. Nothing fixes that except more seeds.
+
+  Default two, so the spread is in every output and nobody has to remember to look for it. `SETS=1`
+  is a quick look and says so in its own output.
+*/
+const SETS = Number(process.env.SETS ?? 2);
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
 
 /*
@@ -139,17 +163,25 @@ function duel(seed, decks, ctx) {
 
   A counter would also work today and would break silently the first time one arm skipped a game.
 */
-const seedFor = (pass, j, order) => SEED0 + ((pass * FIELD.length + j) * 2) + order;
+/*
+  One set consumes exactly this many seeds, so set `k` starts past the end of set `k-1` and no game
+  is ever played twice. Written as the loop's own bound rather than a round number for that reason:
+  a hand-picked offset that overlapped would make the second set a partial re-run of the first and
+  the spread would read smaller than it is.
+*/
+const STRIDE = SEEDS * FIELD.length * 2;
+const seedFor = (set, pass, j, order) =>
+  SEED0 + (set * STRIDE) + ((pass * FIELD.length + j) * 2) + order;
 
-function record(ctx) {
+function record(ctx, set) {
   let won = 0; let lost = 0; let draw = 0;
   const each = new Map(FIELD.map((id) => [id, { won: 0, lost: 0 }]));
   for (let i = 0; i < SEEDS; i++) {
     for (const [j, other] of FIELD.entries()) {
       const row = each.get(other);
-      const first = duel(seedFor(i, j, 0), [SUBJECT, other], ctx);
+      const first = duel(seedFor(set, i, j, 0), [SUBJECT, other], ctx);
       if (first === 0) { won += 1; row.won += 1; } else if (first === 1) { lost += 1; row.lost += 1; } else draw += 1;
-      const second = duel(seedFor(i, j, 1), [other, SUBJECT], ctx);
+      const second = duel(seedFor(set, i, j, 1), [other, SUBJECT], ctx);
       if (second === 1) { won += 1; row.won += 1; } else if (second === 0) { lost += 1; row.lost += 1; } else draw += 1;
     }
   }
@@ -164,12 +196,55 @@ function record(ctx) {
   this the stock arm and the variant arm differed by the change *and* by a reshuffle of everything
   else. See `canonicalDecks`.
 */
-const before = record(canonicalDecks(STARTER_DECKS));
-console.log(`stock:   ${before.won}-${before.lost}${before.draw ? ` (${before.draw} unfinished)` : ''}`);
-const after = record(canonicalDecks(STARTER_DECKS, { [SUBJECT]: VARIANT }));
-console.log(`variant: ${after.won}-${after.lost}${after.draw ? ` (${after.draw} unfinished)` : ''}`);
-for (const other of FIELD) {
-  const b = before.each.get(other); const a = after.each.get(other);
-  const move = a.won - b.won;
-  console.log(`  ${b.won}-${b.lost} -> ${a.won}-${a.lost}  ${move >= 0 ? '+' : ''}${move}  v ${other}`);
+const STOCK = canonicalDecks(STARTER_DECKS);
+const VARIED = canonicalDecks(STARTER_DECKS, { [SUBJECT]: VARIANT });
+const signed = (n) => `${n >= 0 ? '+' : ''}${n}`;
+const deltas = [];
+
+for (let set = 0; set < SETS; set++) {
+  const before = record(STOCK, set);
+  const after = record(VARIED, set);
+  const delta = after.won - before.won;
+  deltas.push(delta);
+  if (SETS > 1) console.log(`\nset ${set + 1} of ${SETS}, ${SEEDS} seeds from ${SEED0 + set * STRIDE}`);
+  console.log(`stock:   ${before.won}-${before.lost}${before.draw ? ` (${before.draw} unfinished)` : ''}`);
+  console.log(`variant: ${after.won}-${after.lost}${after.draw ? ` (${after.draw} unfinished)` : ''}  ${signed(delta)}`);
+  // The per-opponent breakdown on the first set only: thirteen rows per set is a wall, and the
+  // question a breakdown answers — which matchup moved — is asked of one set at a time anyway.
+  if (set > 0) continue;
+  for (const other of FIELD) {
+    const b = before.each.get(other); const a = after.each.get(other);
+    console.log(`  ${b.won}-${b.lost} -> ${a.won}-${a.lost}  ${signed(a.won - b.won)}  v ${other}`);
+  }
+}
+
+/*
+  And the reading, which is the part that was being left to the person holding the output.
+
+  A change is **measured** when every set agrees on the sign; the size is then the range, not a
+  single number. When the sets disagree the honest answer is that this harness cannot resolve the
+  change at this sample count, and that is a result worth printing rather than a run worth repeating
+  until it comes out the other way.
+*/
+if (SETS > 1) {
+  const low = Math.min(...deltas); const high = Math.max(...deltas);
+  console.log('');
+  console.log(`deltas: ${deltas.map(signed).join(', ')}   (spread ${high - low} games)`);
+  if (low > 0 || high < 0) {
+    console.log(`every set agrees on the sign, so the change is worth ${signed(low)} to ${
+      signed(high)} of ${STRIDE} a set  (direction measured, size only to within the spread)`);
+  } else if (low === 0 && high === 0) {
+    // Which is also the negative control: an empty CHANGE must land here, because a variant
+    // identical to stock has to play identical games. If it ever does not, the arms are not paired
+    // and nothing else this harness prints can be read.
+    console.log('every set read exactly zero. With a real CHANGE that is a card worth nothing; with');
+    console.log('an empty one it is the negative control passing — identical arms, identical games.');
+  } else {
+    console.log('the sets disagree on the sign, so this change is NOT measured at this sample');
+    console.log('count. More seeds, or a bigger change — not a third run read as a tie-break.');
+  }
+} else {
+  console.log('');
+  console.log('one seed set, which is a look rather than a measurement: D258 found paired readings');
+  console.log('of the same change 5 to 17 games apart. Re-run with SETS=2 before publishing it.');
 }

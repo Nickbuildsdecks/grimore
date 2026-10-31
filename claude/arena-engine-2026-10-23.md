@@ -7466,12 +7466,12 @@ The rule that follows: an unpaired comparison at 288 games cannot resolve a one-
 paired one can. It also re-opens D203 and D247, whose "believe the table over the probe" rule was
 drawn from disagreements between two unpaired readings — not evidence about either instrument.
 
-**And "a paired one can" is too strong — D258 measured it.** The same paired probe on two seed sets
-reads +30 and +18 on one change and −18 and −1 on another, so a paired 288-game reading carries
-about fifteen games of its own. Pairing removes the reshuffle between the arms, not the game: a
-changed card diverges the play from the turn it is drawn and how far is itself seed-dependent. Both
-re-prices above rest on a single paired reading, and the Harm's Way sign reversal is the one to
-distrust.
+**And "a paired one can" is too strong — D258 measured it.** Four changes on two seed sets each read
++30/+18, −18/−1, +12/+5 and −14/−19: the **size** of a paired 288-game reading is worth about ±10,
+because pairing removes the reshuffle between the arms and not the game. What it does get right is
+the **direction** — the sign agreed in all eight readings — so both re-prices above stand, as ranges
+rather than figures: the granting cards cost Skyward Writ 14 to 19, and Harm's Way is +5 to +12, so
+its sign reversal is real.
 
 **The new baseline** (canonical, SEEDS=12 SEED0=4400, ±10 points a row): ember-rush 75%,
 dawn-tithe 73%, verdant-guard 68%, kindle-grove 67%, ashen-rite 50%, forge-alliance 45%,
@@ -7504,9 +7504,11 @@ the probe it dismissed was the closer of the two — and D247's two cards cost V
 between 2 and 18 rather than the 8 it published.
 
 **And pairing is necessary without being sufficient**, which is the finding worth carrying forward.
-The same paired probe on two seed sets reads +30 and +18 on one change and −18 and −1 on the other:
-a paired 288-game reading carries about **fifteen games** of its own, because pairing gives both arms
-the same libraries but cannot stop the changed card diverging the game from the turn it is drawn.
+Four changes on two disjoint seed sets each read +30/+18, −18/−1, +12/+5 and −14/−19 — so the
+**size** of a paired 288-game reading is worth about ±10, because pairing gives both arms the same
+libraries but cannot stop the changed card diverging the game from the turn it is drawn. The
+**sign**, though, agreed in all eight readings, which is what a slot decision needs. `deck-probe`
+now reads two sets by default and prints the spread and that verdict under every run.
 
 Three rules replace the one: pair the arms; read two seed sets and publish the range, because a
 change that does not clear it on both has not been measured; and never set a probe reading against a
