@@ -15565,9 +15565,41 @@ one-deck bug fix should look like. It widens the spread by a point, because the 
 already third — worth saying rather than hiding, and not a reason to leave a bot refusing to cast a
 deck's removal.
 
-### What is left on the filter family
+### Arc Tempest's sixteen are not a bug, and that is the methodological half
 
-`ashen-rite +24` and `delta-bloom −18` in the search column, and `arc-tempest −16` in the filter
-column, are three more rows of this size that nobody has looked at. The instrument for each is the
-one used here: `cast-counts` with `BOT='{"wasteFilters":false}"'`, read by card, which turns a
-twelve-point win-rate difference into a list of cards the bot stopped casting.
+`arc-tempest −16` was read next (#233), with the same instrument, and it does **not** come apart the
+same way. The whole diff, 144 games each arm:
+
+```
+Counterspell          31 casts with the filters   ->   21 without
+Phoenix of Ash       178 pumps with them          ->  224 without
+Saw It Coming         30 casts / 10 foretells     ->   24 / 21
+Gelectrode           125 pings                    ->  142
+```
+
+Those are one rule's trade rather than a mistake, and the rule is `reserveForAnswers`, which is part
+of the family: holding mana up buys **ten more Counterspells** and costs **forty-six firebreathing
+pumps**. So the obvious next question was whether the reservation is what the deck is losing, and
+the answer is the other way round. The field with it off:
+
+```
+hollow-tide   109 -> 96    (the rule is worth +13 to it)
+arc-tempest   127 -> 122   (+5)
+tidal-mind     79 -> 83    (-4)
+... nothing else moves by more than four
+```
+
+**The reservation rule is worth +13 of 288 to Hollow Tide and +5 to Arc Tempest**, which nobody had
+priced per deck before, and it is not the source of Arc Tempest's loss.
+
+So the finding is a negative one with a lesson in it: **a cast-count diff between two pilots is
+confounded by divergence.** The two arms play different games from move one, so a card's count
+drifts for reasons that have nothing to do with the rule under test — and `castsAnExpiringPump` only
+looks at casts, so the Phoenix row cannot be it. Only a signal far larger than drift is readable,
+and the Harnessed Lightning row (7 against 39, with a mechanism confirmed by reading the code) was
+that. Arc Tempest's rows are drift-sized, and reading them as causes would have produced a
+confident wrong answer of exactly the kind D119 warns about.
+
+`ashen-rite +24` and `delta-bloom −18` in the **search** column are still open, and they need a
+different instrument: there is no "search off, filters on" arm, so the two cannot be separated the
+way the filters were.

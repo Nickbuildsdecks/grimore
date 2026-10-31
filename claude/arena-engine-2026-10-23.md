@@ -7199,8 +7199,20 @@ else**, nine of the other twelve decks within a single game. It widens the sprea
 the deck it fixes was already third, which is worth saying and is not a reason to leave a bot
 refusing to cast a deck's removal spell.
 
-The same instrument has three more rows this size nobody has read: `ashen-rite +24` and
-`delta-bloom −18` in the search column, `arc-tempest −16` in the filter column.
+**The second row read does not come apart the same way, and that is the methodological half.**
+`arc-tempest −16` diffs into one rule's trade rather than a mistake: holding mana up for an answer
+buys ten more Counterspells and costs forty-six firebreathing pumps on a Phoenix of Ash. Pricing
+that rule on the field says it is **worth +13 of 288 to Hollow Tide and +5 to Arc Tempest** — the
+opposite of the hypothesis, and a number nobody had per deck before.
+
+So the lesson: **a cast-count diff between two pilots is confounded by divergence.** The arms play
+different games from move one, so a card's count drifts for reasons unrelated to the rule under
+test. Only a signal far larger than drift is readable, and Harnessed Lightning's 7-against-39 with a
+mechanism confirmed in the code was that; Arc Tempest's rows are drift-sized, and reading them as
+causes would have produced a confident wrong answer of the kind D119 warns about.
+
+`ashen-rite +24` and `delta-bloom −18` in the **search** column are still open and need a different
+instrument, because there is no "search off, filters on" arm to compare against.
 
 ## Next
 
