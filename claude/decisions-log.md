@@ -17199,3 +17199,64 @@ of a run you may need to diagnose. The loop here writes one log per iteration fo
 A second sighting. If it recurs, the full log will name the test, and these five eliminations mean
 the first place to look is the one thing they do not cover: whether the database that test file
 created was still reachable at the moment the assertion ran.
+
+## D269 — An instrument that cried wolf seventeen times, and the number worth acting on
+
+`mechanic-coverage.mjs` ended every run with "17 thin and unexplained". Its own comment says why
+that is a problem: *"an instrument whose known-good rows are undocumented gets re-investigated every
+time somebody runs it."* Seventeen is not a list anybody reads, so the file had stopped doing the
+job it was written for.
+
+The rows were not equally mysterious, and separating them is the whole change.
+
+### One row was thin on purpose, with the reason already in the codebase
+
+`makesMana` is **not** "this card produces mana". It is a bot hint meaning *the whole effect of this
+spell is mana, so the search cannot see what the card did*. Burning-Tree Emissary carries the
+counter-case with a measurement in its own comment: with the flag, `cast-counts` read 46%; without
+it, 101%, because a 2/2 for two is worth casting on its own. So a mana rock and a bird correctly do
+not carry it, and Dark Ritual standing alone is the field working exactly as designed.
+
+The reason existed. It was written at the card that does not carry the flag, which is not where an
+instrument counting carriers would ever look.
+
+### Thirteen rows are gaps with an external blocker, which is a different thing
+
+Every one is a printed Magic keyword with many real cards behind it — affinity, bestow, cumulative
+upkeep, dash, evoke, fading, goad, madness, ninjutsu, overload, spectacle, vanishing, and the clone.
+A second card for any of them is **data, not engine work**: nothing needs building, only text.
+
+So they get their own map and one shared sentence rather than thirteen copies of it, because
+thirteen copies of one sentence is how a list stops being read. The summary now reports them
+separately:
+
+```
+4 thin by design, 13 waiting on card data, 3 thin and unexplained, 0 declared with no card at all
+unexplained: script xIsANumberToMatch, trigger attacks-unblocked, trigger to-exile
+```
+
+**That 13 is the number worth acting on.** It is the size of the prize for allowing one host through
+the egress proxy, and the moment that happens none of it is engine work — which is a thing Nick can
+weigh, where "17 thin" was not.
+
+### Three rows are left unexplained, deliberately
+
+`xIsANumberToMatch`, `trigger attacks-unblocked` and `trigger to-exile`. I am not confident enough
+about a second card for those specific shapes to put them in either map, and the instrument's bar for
+the by-design list is the right one: *"these are claims about the pool's design, not excuses."*
+Silencing a row I have not resolved would be an excuse. Three named rows is a list somebody reads.
+
+### A correction to my own citation
+
+I spent this session citing "D229's rule" for *inventing the text of a real card is worse than
+leaving the mechanic out*. D229 is about myriad reading differently at four seats. The sentence is
+**D259's**, written when Food was left out for exactly this reason, and D229 is what the log cites
+for the companion rule that a mechanic without a card does not exist. The substance of the blocker
+was right and is applied consistently — the attribution was not, and I repeated it often enough to
+be worth correcting in the place that will outlive the conversation.
+
+### What did not change
+
+The pool. No card was added, no mechanic was altered, and the reach counts are identical. This
+changes only what the instrument says about what it found, which was the thing standing between the
+file and being used.

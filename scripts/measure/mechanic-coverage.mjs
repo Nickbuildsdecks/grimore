@@ -114,6 +114,50 @@ const EXPECTED_THIN = new Map([
   ['trigger transformed', 'one card by design — Awoken Horror is the pool\'s only transform trigger (D234)'],
   ['keyword myriad', 'granted by Blade of Selves rather than printed, so one is the whole mechanic (D228)'],
   ['keyword infect', 'the win condition Blight Vector is built around; concentrated on purpose (D138)'],
+  /*
+    Thin by design and the reason was already in the codebase, just not where this file looks.
+    `makesMana` is not "this card produces mana" — it is a bot hint meaning *the whole effect is
+    mana, so the search cannot see what the card did*. Burning-Tree Emissary carries the counter-case
+    with a measurement: with the flag `cast-counts` read 46%, without it 101%, because a 2/2 for two
+    is worth casting on its own. So a mana rock or a bird is priced by the evaluation and correctly
+    does not carry it, and Dark Ritual being alone here is the field working.
+  */
+  ['script makesMana', 'a bot hint for a spell whose whole effect is mana, not for permanents that make it — see Burning-Tree Emissary'],
+]);
+
+/*
+  And the rows that **want** a second card and cannot have one from here.
+
+  Different from `EXPECTED_THIN` on purpose. Those rows are claims that one card is the whole
+  mechanic; these are gaps with an external blocker, and collapsing the two would lose the
+  distinction that matters — whether somebody has thought about the row, or whether it is waiting on
+  something nobody in this container can supply.
+
+  Every one of these is a printed Magic keyword with many real cards behind it, so a second card is
+  **data and not engine work**: nothing here needs building, only text. D259 set the rule when Food
+  was left out for the same reason — "inventing the text of a real card is worse than leaving the
+  mechanic out" — and `api.scryfall.com` is denied by this environment's egress proxy, so the text
+  cannot be verified. The reason is written once here rather than thirteen times, because thirteen
+  copies of one sentence is how a list stops being read.
+
+  **The count of this map is the number worth acting on.** It is the size of the prize for allowing
+  one host through the proxy, and the moment that happens none of it is engine work.
+*/
+const NEEDS_CARD_DATA = 'wants a second card; a printed keyword with many real cards, blocked on verified text (D259)';
+const BLOCKED_THIN = new Map([
+  ['script affinity', NEEDS_CARD_DATA],
+  ['script bestow', NEEDS_CARD_DATA],
+  ['script copiesACreature', NEEDS_CARD_DATA],
+  ['script cumulativeUpkeep', NEEDS_CARD_DATA],
+  ['script dash', NEEDS_CARD_DATA],
+  ['script evoke', NEEDS_CARD_DATA],
+  ['script fading', NEEDS_CARD_DATA],
+  ['script goadsOpponents', NEEDS_CARD_DATA],
+  ['script madness', NEEDS_CARD_DATA],
+  ['script ninjutsu', NEEDS_CARD_DATA],
+  ['script overload', NEEDS_CARD_DATA],
+  ['script spectacle', NEEDS_CARD_DATA],
+  ['script vanishing', NEEDS_CARD_DATA],
 ]);
 
 /** name -> the cards that carry it. A Set, because a card with two faces must not count twice. */
@@ -316,9 +360,12 @@ console.log(ALL
 console.log('');
 
 for (const row of shown) {
-  const why = EXPECTED_THIN.get(row.mechanic);
+  const design = EXPECTED_THIN.get(row.mechanic);
+  const blocked = BLOCKED_THIN.get(row.mechanic);
+  const why = design ?? blocked;
   const count = String(row.reach).padStart(3);
-  console.log(`${count}  ${row.mechanic}${why === undefined ? '' : '   (expected)'}`);
+  const tag = design !== undefined ? '   (expected)' : blocked !== undefined ? '   (blocked)' : '';
+  console.log(`${count}  ${row.mechanic}${tag}`);
   if (row.cards.length > 0 && row.cards.length <= 5) console.log(`       ${row.cards.join(', ')}`);
   if (row.granted.length > 0 && row.granted.length <= 5) {
     console.log(`       + gives it away: ${row.granted.join(', ')}`);
@@ -331,7 +378,14 @@ for (const row of shown) {
   A run whose last line is zero is a pool where every fragile mechanic is fragile on purpose, and
   that is the state worth being able to get back to.
 */
-const unexplained = rows.filter((r) => r.reach < THIN && !EXPECTED_THIN.has(r.mechanic));
+const thin = rows.filter((r) => r.reach < THIN);
+const byDesign = thin.filter((r) => EXPECTED_THIN.has(r.mechanic));
+const waiting = thin.filter((r) => BLOCKED_THIN.has(r.mechanic));
+const unexplained = thin.filter((r) => !EXPECTED_THIN.has(r.mechanic) && !BLOCKED_THIN.has(r.mechanic));
 console.log('');
-console.log(`${unexplained.length} thin and unexplained, ${rows.filter((r) => r.declaredOnly).length} `
-  + 'declared with no card at all');
+console.log(`${byDesign.length} thin by design, ${waiting.length} waiting on card data, `
+  + `${unexplained.length} thin and unexplained, `
+  + `${rows.filter((r) => r.declaredOnly).length} declared with no card at all`);
+if (unexplained.length > 0) {
+  console.log(`unexplained: ${unexplained.map((r) => r.mechanic).join(', ')}`);
+}
