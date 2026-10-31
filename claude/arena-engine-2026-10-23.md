@@ -7141,8 +7141,13 @@ hollow-tide      38%      38%      0
 blight-vector    30%      31%     +1
 ```
 
-One move of lookahead is worth **thirty-two games to Ember Rush and thirty-one away from Tidal
-Mind** — four to five times the best cut anybody could find in Ember Rush's sixty cards. The spread
+That is **thirty-two games to Ember Rush and thirty-one away from Tidal Mind** — four to five
+times the best cut anybody could find in Ember Rush's sixty cards.
+
+**It is not "one move of lookahead", though, and the next section is the correction.**
+`lookahead: false` returns the first candidate before the filter loop runs, so it turns off the
+search *and* the twenty board-reading rules at once. Split properly, the filters are +37 of Ember
+Rush's thirty-two and the search is −5. The spread
 narrows from 49 points to 41 and the deviation across the thirteen decks from 14.8 to 11.6, so
 **about two fifths of the pool's imbalance is the pilot rather than the decks.** The direction is
 what the search's shape predicts: its gain is "do not throw creatures away, and point removal well",
@@ -7155,6 +7160,47 @@ this bot, and with a shallower one it is eleventh by one. Trimming the top is cl
 rather than exhaustion. And the lever that is left is the one this project has circled since D110:
 an evaluation worth searching with, because every point of pilot skill that helps a slow deck
 narrows the table a person picking a deck actually feels.
+
+## The filter family is the biggest pilot effect, and one of them refused a deck's removal (D249)
+
+D248's switch turned off two things at once. `bestPlay` returns the first candidate *before* the
+filter loop when lookahead is off, so `lookahead: false` skips the search **and** the twenty
+board-reading "this play buys nothing" rules — the ritual with nothing to spend it on, the Fog with
+nothing attacking, removal with nothing to remove, the pump that wears off, all of them.
+`BotOptions.wasteFilters` separates them, and the three arms say something nobody expected:
+
+```
+                 search      search      neither     filters   search
+                 + filters   only                    worth     worth
+ember-rush          223        186         191         +37       -5
+dawn-tithe          216        196         185         +20      +11
+kindle-grove        185        220         207         -35      +13
+ashen-rite          144        155         131         -11      +24
+arc-tempest         128        144         145         -16       -1
+delta-bloom         131        134         152          -3      -18
+tidal-mind           82         99         113         -17      -14
+```
+
+**The filters are the largest pilot effect in the pool** — +37 games to the best deck, −35 to the
+third — and D248's "one move of lookahead is thirty-two games to Ember Rush" was +37 from the
+filters and −5 from the search.
+
+**And −35 to Kindle Grove was one filter being wrong.** `cast-counts` with the family on and off,
+read by card, found it in one line: `Harnessed Lightning, 7 casts with the filters on and 39 with
+them off`. The card asks "pay how much energy?" and its own `beforeDecisions` puts three energy in
+the pool **before** the question — so `chosenNumberIsNothing`, which asked that question from the
+board before the cast, got `{min: 0, max: 0}`, got nought back from the card's own `best`, read it
+as "the card says nought buys this", and dropped the cast in 82% of the games the deck drew it.
+
+Fixed by narrowing the rule rather than simulating the card: a script with a `beforeDecisions` is
+not this rule's business, which is the line the function already draws around a question the card
+computes for itself. The field with the fix in: **+11 games to Kindle Grove and nothing anywhere
+else**, nine of the other twelve decks within a single game. It widens the spread by a point because
+the deck it fixes was already third, which is worth saying and is not a reason to leave a bot
+refusing to cast a deck's removal spell.
+
+The same instrument has three more rows this size nobody has read: `ashen-rite +24` and
+`delta-bloom −18` in the search column, `arc-tempest −16` in the filter column.
 
 ## Next
 

@@ -1817,6 +1817,27 @@ export interface BotOptions {
    */
   readonly lookahead?: boolean;
   /**
+   * Whether the **board-reading filters** run — the twenty "this play buys nothing" rules that drop
+   * a candidate before it is scored. On by default.
+   *
+   * It exists because D248 asked what the pilot is worth and could not get a clean answer.
+   * `lookahead: false` returns the first candidate *before* the filter loop, so it turns off the
+   * search **and** the whole family in one switch — a ritual with nothing to spend it on, a Fog with
+   * nothing attacking, removal with nothing to remove, a pump that wears off, a Clone with nothing
+   * to copy, all of them. The table run that way had Tidal Mind eleven points better and Ember Rush
+   * eleven worse, and there was no way to say which half of the switch did it.
+   *
+   * With this, the three arms separate: shipping is **search and filters**, `wasteFilters: false` is
+   * **search alone**, and `lookahead: false` is **neither**. That is the comparison, and it is the
+   * only reason the flag is here — nothing ships with it off.
+   *
+   * It covers the four rules that already have their own flags as well (`holdsNinjas`,
+   * `feedsArtifacts`, `sparesItsOwnBoard`, `reserveForAnswers`), deliberately: the point is to
+   * reproduce exactly what `lookahead: false` skips, so the two arms differ by the search and by
+   * nothing else.
+   */
+  readonly wasteFilters?: boolean;
+  /**
    * Overrides for the evaluation's weights, for measuring one term at a time.
    *
    * Every key defaults to the constant above it — `life` to `LIFE_WEIGHT`, `hand` to
@@ -3127,6 +3148,24 @@ function chosenNumberIsNothing(state: GameState, seat: SeatIndex, action: Action
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
   const script = name === undefined ? undefined : scriptFor(name);
   if (script?.decisions === undefined) return false;
+  /*
+    A card that changes the board **before** its own question is not this rule's business either,
+    and reading it anyway is what cost Kindle Grove twelve points of win rate.
+
+    Harnessed Lightning's question is "pay how much energy?", and its `beforeDecisions` puts three
+    energy into the pool first — so the range the card offers is three wide, and the range this
+    function computes, from the board *before* the cast, is `{min: 0, max: 0}`. The card's `best`
+    then has nothing to spend and returns nought, the test reads "the card itself says nought buys
+    this", and the cast is dropped. Measured: the deck cast its own removal spell **7 times in 144
+    games with the filters on and 39 with them off** (D249), and the filter family as a whole is
+    worth −35 games of 288 to that deck.
+
+    Excluded rather than simulated. Running `beforeDecisions` here would mean building an
+    `EffectContext` for a spell that has not been cast — no stack object, no source, no chosen
+    targets — which is the same reason the `typeof spec === 'function'` line above gives up: a
+    question the card works out for itself cannot be asked from outside.
+  */
+  if (script.beforeDecisions !== undefined) return false;
   return script.decisions.some((spec) => {
     /*
       A question the card works out when it is asked is not this rule's business, and cannot be.
@@ -4075,6 +4114,12 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     after, which is public either way, and `legalActions` has already run on the real state.
   */
   const blind = opts.blindToShuffle === false ? state : asTheySee(state, seat);
+  /*
+    Whether the twenty board-reading filters below run at all. See `BotOptions.wasteFilters`: they
+    are a family and they are measured as one, because until D248 there was no way to ask what they
+    were worth without also turning the search off.
+  */
+  const filtersOn = opts.wasteFilters !== false;
   for (const option of options) {
     const after = simulate(blind, option.action, stopsAtAction(opts));
     if (after === null) continue;
@@ -4085,13 +4130,13 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       ritual, which the next decision then drops on its own terms — so the first was cast on a
       promise that is not kept. Rare, and cheaper than teaching the search to look two plays deep.
     */
-    if (castsARitual(state, option.action) && !ritualBoughtSomething(state, after, seat)) {
+    if (filtersOn && castsARitual(state, option.action) && !ritualBoughtSomething(state, after, seat)) {
       dropped += 1;
       continue;
     }
     // And the same judgement for a Fog with nothing attacking. Not a weight: a card that prevents
     // damage nobody is dealing has done nothing at all, which is a fact about the board.
-    if (castsAPrevention(state, option.action) && !preventionCanMatter(state, seat, option.action)) {
+    if (filtersOn && castsAPrevention(state, option.action) && !preventionCanMatter(state, seat, option.action)) {
       dropped += 1;
       continue;
     }
@@ -4116,7 +4161,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       Measured because it had to be: without it the keyword fired zero times in 48 games. See
       `BotOptions.holdsNinjas` and D219.
     */
-    if ((opts.holdsNinjas ?? true) && castsANinja(state, option.action)
+    if (filtersOn && (opts.holdsNinjas ?? true) && castsANinja(state, option.action)
       && aSwapIsComing(state, seat)) {
       dropped += 1;
       continue;
@@ -4131,17 +4176,17 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       construction, and the same probe now reads **+1 and +3** — so it is on again. See
       `BotOptions.feedsArtifacts` for why a reading that small still moved the default.
     */
-    if (opts.feedsArtifacts === false && feedsAnArtifact(state, option.action)) {
+    if (filtersOn && opts.feedsArtifacts === false && feedsAnArtifact(state, option.action)) {
       dropped += 1;
       continue;
     }
     // The eighth: a land turned into a creature with nothing to attack or block. See
     // `animationCouldMatter` for the 854 presses that bought nothing.
-    if (animatesSomething(state, option.action) && !animationCouldMatter(state, seat, option.action)) {
+    if (filtersOn && animatesSomething(state, option.action) && !animationCouldMatter(state, seat, option.action)) {
       dropped += 1;
       continue;
     }
-    if (castsAProtection(state, option.action) && !creatureOfYoursIsThreatened(state, seat)) {
+    if (filtersOn && castsAProtection(state, option.action) && !creatureOfYoursIsThreatened(state, seat)) {
       dropped += 1;
       continue;
     }
@@ -4155,7 +4200,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       creature really is bigger. What the board can say is whether there is a better moment
       coming, which is a fact.
     */
-    if (castsAnExpiringPump(state, option.action)
+    if (filtersOn && castsAnExpiringPump(state, option.action)
       && !expiringPumpCanMatter(state, seat, option.action)
       && !offerCannotWait(state, seat, option.action)) {
       dropped += 1;
@@ -4164,7 +4209,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     /*
       And removal with nothing to remove, which ends up pointed at its own board.
     */
-    if (castsRemoval(state, option.action) && !somethingToRemove(state, seat)) {
+    if (filtersOn && castsRemoval(state, option.action) && !somethingToRemove(state, seat)) {
       dropped += 1;
       continue;
     }
@@ -4174,7 +4219,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       own draw step, before the turn that board was built for. On unless turned off; see
       `BotOptions.sparesItsOwnBoard`.
     */
-    if (opts.sparesItsOwnBoard !== false && sweepsEveryCreature(state, option.action)
+    if (filtersOn && opts.sparesItsOwnBoard !== false && sweepsEveryCreature(state, option.action)
       && sweepTakesMoreThanItGives(state, seat)) {
       dropped += 1;
       continue;
@@ -4183,7 +4228,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       And an Equipment moved from one creature to another that is no bigger, which is the shell
       outside D35's "not the creature it is already on". See `equipMovesSideways`.
     */
-    if (equipMovesSideways(state, seat, option.action)) {
+    if (filtersOn && equipMovesSideways(state, seat, option.action)) {
       dropped += 1;
       continue;
     }
@@ -4191,7 +4236,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       And an ability the card allows and the board makes pointless: a second adapt, which puts no
       counters on anything. See `activationBuysNothing`.
     */
-    if (activationBuysNothing(state, seat, option.action)) {
+    if (filtersOn && activationBuysNothing(state, seat, option.action)) {
       dropped += 1;
       continue;
     }
@@ -4202,14 +4247,14 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       Vector's creatures were being killed by its own Naturalize, which can legally destroy an
       artifact creature and had nothing else to point at. See `destroysOneOfItsOwn`.
     */
-    if (destroysOneOfItsOwn(state, seat, option.action)) {
+    if (filtersOn && destroysOneOfItsOwn(state, seat, option.action)) {
       dropped += 1;
       continue;
     }
     /*
       And a Clone with nothing to copy, which is a 0/0 that dies as it arrives.
     */
-    if (castsACopy(state, option.action) && !somethingToCopy(state)) {
+    if (filtersOn && castsACopy(state, option.action) && !somethingToCopy(state)) {
       dropped += 1;
       continue;
     }
@@ -4221,7 +4266,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       attack me. The search cannot see that either — `simulate` ends with this combat, and the
       attack goad forces comes round on their turn.
     */
-    if (castsAGoad(state, option.action) && !goadHasSomewhereToSend(state, seat)) {
+    if (filtersOn && castsAGoad(state, option.action) && !goadHasSomewhereToSend(state, seat)) {
       dropped += 1;
       continue;
     }
@@ -4234,7 +4279,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       would foretell on turn two instead of playing a creature. What the board can say is whether
       the mana was going to be spent anyway.
     */
-    if (foretells(state, option.action) && !specialIsSpareMana(state, seat, option.action)) {
+    if (filtersOn && foretells(state, option.action) && !specialIsSpareMana(state, seat, option.action)) {
       dropped += 1;
       continue;
     }
@@ -4243,7 +4288,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       one is three damage on turn two, and the search sees a card gone and a mana spent for nothing.
       Same fact, same function — spend it when the mana had no better home.
     */
-    if (option.action.type === 'auto:suspend'
+    if (filtersOn && option.action.type === 'auto:suspend'
       && !specialIsSpareMana(state, seat, option.action)) {
       dropped += 1;
       continue;
@@ -4259,7 +4304,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       bodies taken out of the combat. The search scores the board after the crew and the Vehicle is
       genuinely a creature, so the trade looks offered.
     */
-    if (crewsAVehicle(state, option.action) && !crewBuysMoreThanItCosts(state, seat, option.action)) {
+    if (filtersOn && crewsAVehicle(state, option.action) && !crewBuysMoreThanItCosts(state, seat, option.action)) {
       dropped += 1;
       continue;
     }
@@ -4267,7 +4312,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       And an untap that puts the board back where it found it, which is the eleventh of the family
       and the only one about a cycle rather than a card. See `untapBoughtSomething`.
     */
-    if (untapsSomething(state, option.action)
+    if (filtersOn && untapsSomething(state, option.action)
       && !untapBoughtSomething(state, after, seat, option.action)) {
       dropped += 1;
       continue;
@@ -4276,7 +4321,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       And a spell whose own number comes out nought, which is the twelfth of the family and the
       first about a question rather than a play. See `chosenNumberIsNothing`.
     */
-    if (chosenNumberIsNothing(state, seat, option.action)) {
+    if (filtersOn && chosenNumberIsNothing(state, seat, option.action)) {
       dropped += 1;
       continue;
     }
@@ -4285,7 +4330,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       the family and the first about a *later* turn rather than this one. See
       `spendsAnAnswersMana` for the measurement that asked for it.
     */
-    if (opts.reserveForAnswers !== false
+    if (filtersOn && opts.reserveForAnswers !== false
       && spendsAnAnswersMana(state, after, seat, option.action, opts)) {
       dropped += 1;
       continue;

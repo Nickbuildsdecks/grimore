@@ -15448,13 +15448,21 @@ hollow-tide      38%      38%      0
 blight-vector    30%      31%     +1
 ```
 
-**The pilot is worth four to five times any card change I could find.** One move of lookahead is
-thirty-two games to Ember Rush and thirty-one away from Tidal Mind; the best cut to Ember Rush's
-sixty cards was seven.
+**The pilot is worth four to five times any card change I could find.** Thirty-two games to Ember
+Rush and thirty-one away from Tidal Mind, where the best cut to Ember Rush's sixty cards was seven.
+
+**But not "one move of lookahead", and the correction is D249.** `lookahead: false` returns the
+first candidate *before* the filter loop runs, so it turns off the search **and** the twenty
+board-reading "this play buys nothing" rules in one switch. Read with the third arm D249 adds —
+search on, filters off — the shipping bot's thirty-two games to Ember Rush are **+37 from the
+filters and −5 from the search**, and Tidal Mind's thirty-one are about half each. The paragraph
+below is right about the pilot and wrong about which half of it; `wasteFilters` exists now so the
+question has an answer.
 
 The spread narrows from **49 points to 41**, and the standard deviation across the thirteen decks
 from 14.8 to 11.6 — so **about two fifths of the pool's imbalance, measured as variance, is the
-pilot rather than the decks**. The direction is the one the shape of the search predicts: its gain
+pilot rather than the decks**, where "the pilot" means the search and the filter family together
+(D249 splits them: 14.8 shipping, 13.6 with the filters off, 11.6 with both off). The direction is the one the shape of the search predicts: its gain
 is "do not throw creatures away, and point removal well", which is most of what an aggro deck and a
 removal deck do, and almost none of what a control deck's value is — holding a card for the moment
 it is for, which a one-move search cannot see at all.
@@ -15475,3 +15483,91 @@ to any deck list, which is the result and not a failure to find one.
 evaluation, which D244 showed has no mispriced weight and D246 showed can be improved by giving it a
 fact it could not see. Every point of pilot skill that helps a slow deck narrows the table, and the
 table is the thing a person picking a deck actually feels.
+
+## D249 — The filter family is the largest pilot effect in the pool, and one of them was broken
+
+D248's switch turned off two things at once, and taking them apart found a twelve-point bug.
+
+### `lookahead: false` was never only about depth
+
+`bestPlay` returns `options[0]` before the filter loop when lookahead is off, so that flag skips the
+search **and** the twenty board-reading "this play buys nothing" rules: a ritual with nothing to
+spend it on, a Fog with nothing attacking, removal with nothing to remove, a pump that wears off, a
+Clone with nothing to copy, a goad with nowhere to send, a crew that costs more than it buys, and
+the rest. D248 read the whole difference as the search. `BotOptions.wasteFilters` exists now so the
+arms separate — shipping is search and filters, `wasteFilters: false` is search alone,
+`lookahead: false` is neither — and it covers the four rules with flags of their own as well, so the
+middle arm differs from the last by the search and by nothing else.
+
+Three tables, canonical seeds, 288 games a deck:
+
+```
+                 search      search      neither     filters   search
+                 + filters   only                    worth     worth
+ember-rush          223        186         191         +37       -5
+dawn-tithe          216        196         185         +20      +11
+kindle-grove        185        220         207         -35      +13
+verdant-guard       173        167         163          +6       +4
+forge-alliance      144        131         124         +13       +7
+ashen-rite          144        155         131         -11      +24
+skyward-writ        130        133         137          -3       -4
+delta-bloom         131        134         152          -3      -18
+arc-tempest         128        144         145         -16       -1
+rot-harvest         117        118         122          -1       -4
+hollow-tide         109        101         110          +8       -9
+blight-vector        85         81          88          +4       -7
+tidal-mind           82         99         113         -17      -14
+```
+
+**The filters, not the search, are the largest pilot effect in this pool**: +37 games to the best
+deck and −35 to the third. Deviation across the thirteen decks goes 14.8 shipping → 13.6 with the
+filters off → 11.6 with both off, so each half narrows the table and the search narrows it more.
+
+### And −35 to Kindle Grove was one filter being wrong
+
+`cast-counts` with the family on and off says where it went, by card, and the two readings are not
+subtle:
+
+```
+kindle-grove   Harnessed Lightning    7 casts on   ->   39 off
+ember-rush     Mutavault            104 uses on   -> 1015 off
+```
+
+The Mutavault row is a filter earning its keep: `animationCouldMatter` stops nine hundred
+pointless animations of a land into a 2/2. The Harnessed Lightning row is a filter being broken.
+
+**The card brings its own number.** Harnessed Lightning asks "pay how much energy?" and its
+`beforeDecisions` puts **three energy in the pool before the question**, so the range it offers is
+three wide. `chosenNumberIsNothing` asked that question from the board *before* the cast, where the
+seat usually has no energy at all: the range came back `{min: 0, max: 0}`, the card's own `best` had
+nothing to spend and answered nought, and the rule read that as "the card itself says nought buys
+this" and dropped the cast. In 82% of the games the deck drew its own removal spell.
+
+Fixed by **narrowing the rule rather than simulating the card**: a script with a `beforeDecisions`
+is not this rule's business, which is the same line the function already draws around a question the
+card computes for itself (`typeof spec === 'function'`). Running `beforeDecisions` here would mean
+building an `EffectContext` for a spell that has not been cast — no stack object, no source, no
+targets. Two cards in the pool have a number question and only Harnessed Lightning has a
+`beforeDecisions`, so the fix is exactly as wide as the bug.
+
+The field, measured on the canonical seeds with the fix in:
+
+```
+ 77%  222-66   ember-rush      (-1)
+ 75%  216-72   dawn-tithe       (0)
+ 68%  196-92   kindle-grove   (+11)
+ 60%  173-115  verdant-guard    (0)
+ ... every other deck within three games, nine of them within one
+```
+
+**+11 games to the one deck that holds the card and nothing anywhere else**, which is what a
+one-deck bug fix should look like. It widens the spread by a point, because the deck it fixes was
+already third — worth saying rather than hiding, and not a reason to leave a bot refusing to cast a
+deck's removal.
+
+### What is left on the filter family
+
+`ashen-rite +24` and `delta-bloom −18` in the search column, and `arc-tempest −16` in the filter
+column, are three more rows of this size that nobody has looked at. The instrument for each is the
+one used here: `cast-counts` with `BOT='{"wasteFilters":false}"'`, read by card, which turns a
+twelve-point win-rate difference into a list of cards the bot stopped casting.

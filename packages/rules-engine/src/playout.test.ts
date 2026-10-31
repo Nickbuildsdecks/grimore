@@ -2019,6 +2019,56 @@ describe('the untap that puts the board back where it found it', () => {
   });
 });
 
+describe('the removal spell that pays for itself, which the same rule was refusing', () => {
+  /*
+    The other side of the number rule, and a twelve-point bug (D249).
+
+    Harnessed Lightning asks "pay how much energy?" and its own `beforeDecisions` puts **three
+    energy in the pool first**, so the question the card asks is three wide. `chosenNumberIsNothing`
+    asked it from the board *before* the cast, where the seat usually has no energy at all: the
+    range came back `{min: 0, max: 0}`, the card's own `best` had nothing to spend and answered
+    nought, and the filter read that as "the card says nought buys this" and dropped the cast.
+
+    Found by measuring the filter family rather than by reading it. Kindle Grove cast its own
+    removal spell **7 times in 144 games with the filters on and 39 with them off**, and the family
+    as a whole was worth −35 games of 288 to that deck — the largest effect of any pilot change in
+    the pool, pointing the wrong way.
+
+    Two tests: the spell is cast with no energy banked, and the Toxic Deluge rule above still fires,
+    which is the control that says the fix narrowed the rule rather than deleting it.
+  */
+  const holdingIt = (theirs: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'kindle-grove', 1: 'ember-rush' },
+      hands: { 0: ['Harnessed Lightning'] },
+      battlefield: { 0: ['Mountain', 'Mountain'], 1: [...theirs] },
+      turn: 4, firstSeat: 0, autoPass: true,
+    }), 'precombat-main');
+    for (const id of [...ids(s, 0, 'hand')]) {
+      if (s.cardDefs[s.instances[id]!.defKey]?.name === 'Harnessed Lightning') continue;
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    return s;
+  };
+
+  it('is cast with no energy banked, because the spell brings its own', () => {
+    const s = holdingIt(['Monastery Swiftspear']);
+    // Nothing in the pool: the whole point is that the three energy arrive as it resolves.
+    expect(s.seats[0]!.energy ?? 0).toBe(0);
+    const action = botAction(s, 0);
+    expect(action?.type).toBe('auto:cast');
+    expect(s.cardDefs[s.instances[action?.card ?? '']?.defKey ?? '']?.name)
+      .toBe('Harnessed Lightning');
+  });
+
+  it('and still is not cast with nothing of theirs to point at', () => {
+    // `removesACreature` is a different rule and it still holds, which is what keeps this fix from
+    // being "cast it always".
+    const action = botAction(holdingIt([]), 0);
+    expect(action?.type).not.toBe('auto:cast');
+  });
+});
+
 describe('the sweeper whose own number comes out nought', () => {
   /*
     The twelfth "spent on nothing" rule, and the first about a *question* rather than a play.
@@ -2525,35 +2575,55 @@ describe('the opponent cannot read your hand', () => {
     /*
       The control for the test above, and the reason it is here rather than in a comment: a test that
       asserts "no difference" is worth exactly as much as the proof that a difference was reachable.
-      This one replays the position that reproduces — `hollow-tide` v `kindle-grove` at the same seed,
-      turn 19 — with `blindToShuffle: false`, and asserts the bot **does** change its mind.
+      This one plays `hollow-tide` v `kindle-grove` with `blindToShuffle: false` and asserts the bot
+      **does** change its mind when the cards it cannot see are dealt out again.
 
       So the pair reads: with the shuffle hidden the answer is fixed, and with it visible the answer
       moves. If this test ever goes green, the one above has stopped checking anything.
-    */
-    let s = createGame({
-      id: 'honest-hollow-tide', format: 'modern', players: PLAYERS, seed: 4242,
-    });
-    s = applyAction(s, { type: 'deck:load', by: 0, seat: 0, deckId: 'hollow-tide' }, HOST);
-    s = applyAction(s, { type: 'deck:load', by: 1, seat: 1, deckId: 'kindle-grove' }, HOST);
-    s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, HOST);
-    s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, HOST);
 
+      **Several seeds, stopping at the first that reproduces, and that is a repair.** It was pinned
+      to one game — seed 4242, turn 19 — and D249's one-line fix to `chosenNumberIsNothing` made
+      Kindle Grove cast a Harnessed Lightning it had been refusing, which diverged that game and
+      took the only difference in it with it. A control that a change in play can switch off is a
+      control that would have left the whole hidden-information assertion vacuous while reading
+      green. What it is entitled to assert is that a leak is **reachable**, not that it is reachable
+      in one particular game, so it looks at a handful and stops as soon as it finds one: the usual
+      cost is still one game.
+    */
     const peeking = { blindToShuffle: false } as const;
-    let differed = 0;
-    for (let move = 0; move < 1200 && !s.finished; move += 1) {
-      const seat = seatToAct(s);
-      if (seat === null) break;
-      const chosen = botAction(s, seat, peeking);
-      if (chosen === null) break;
-      if (s.pendingChoice === null && s.pendingDecision === null
-        && !s.seats.some((row) => row.searching)) {
-        const other = botAction(scramble(s, seat, move * 31 + 7), seat, peeking);
-        if (JSON.stringify(other) !== JSON.stringify(chosen)) differed += 1;
+    const leaksAt = (seed: number): number => {
+      let s = createGame({
+        id: `honest-hollow-tide-${seed}`, format: 'modern', players: PLAYERS, seed,
+      });
+      s = applyAction(s, { type: 'deck:load', by: 0, seat: 0, deckId: 'hollow-tide' }, HOST);
+      s = applyAction(s, { type: 'deck:load', by: 1, seat: 1, deckId: 'kindle-grove' }, HOST);
+      s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, HOST);
+      s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, HOST);
+      let differed = 0;
+      for (let move = 0; move < 1200 && !s.finished; move += 1) {
+        const seat = seatToAct(s);
+        if (seat === null) break;
+        const chosen = botAction(s, seat, peeking);
+        if (chosen === null) break;
+        if (s.pendingChoice === null && s.pendingDecision === null
+          && !s.seats.some((row) => row.searching)) {
+          const other = botAction(scramble(s, seat, move * 31 + 7), seat, peeking);
+          if (JSON.stringify(other) !== JSON.stringify(chosen)) differed += 1;
+        }
+        const before = s.stateVersion;
+        s = applyAction(s, chosen, HOST);
+        if (s.stateVersion === before) break;
       }
-      const before = s.stateVersion;
-      s = applyAction(s, chosen, HOST);
-      if (s.stateVersion === before) break;
+      return differed;
+    };
+
+    let differed = 0;
+    // 4249 is the one that reproduces today and is tried first, so the usual cost is one game;
+    // the rest are there so that the next change to how the bot plays does not silently switch the
+    // control off the way D249's did.
+    for (const seed of [4249, 4242, 4243, 4244, 4245, 4246, 4247, 4248, 4250, 4251]) {
+      differed = leaksAt(seed);
+      if (differed > 0) break;
     }
     expect(differed).toBeGreaterThan(0);
   });

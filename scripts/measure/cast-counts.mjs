@@ -26,6 +26,17 @@ const ALL = Object.keys(STARTER_DECKS);
 const FIELD = ALL.filter((id) => id !== SUBJECT);
 const SEEDS = Number(process.env.SEEDS ?? 8);
 const SEED0 = Number(process.env.SEED0 ?? 3300);
+/*
+  `BotOptions` for every seat, so "which cards does this deck use" can be asked of two pilots.
+
+  D248 is the question that needed it: the deep search is worth −11 points to Tidal Mind and +11 to
+  Ember Rush, and `disagree` says where the two pilots differ by *kind* of decision. This says it by
+  **card**, over whole games, which is the reading that distinguishes "it casts the Turn to Frog a
+  step later" from "it never casts it at all".
+
+    BOT='{"lookahead":false}' SUBJECT=tidal-mind SEEDS=6 node scripts/measure/cast-counts.mjs
+*/
+const BOT = JSON.parse(process.env.BOT ?? '{}');
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
 
 /*
@@ -110,7 +121,7 @@ function duel(seed, decks, mine) {
     }
     const seat = seatsToAct(s)[0];
     if (seat === undefined) break;
-    const action = botAction(s, seat);
+    const action = botAction(s, seat, BOT);
     if (action === null) break;
     if (seat === mine && (action.type === 'auto:cast' || action.type === 'auto:playLand')) {
       bump(nameOf(s, action.card), 'cast');
