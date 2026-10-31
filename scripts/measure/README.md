@@ -55,6 +55,9 @@ it.
 | `pod-duel.mjs` | is a bot setting worth anything in a **four-seat pod**? | `ALWAYS=dawn-tithe TESTED='{"chaseTheCrown":false}' SEEDS=3 node scripts/measure/pod-duel.mjs` |
 | `pod-slot.mjs` | is a **deck slot** worth anything in a four-seat pod, for a card that is blank in a duel? | `SUBJECT=forge-alliance CHANGE='Blade of Selves:-1' node scripts/measure/pod-slot.mjs` |
 | `pod-pace.mjs` | how fast is the engine itself, when a browser suite blames the bots for being slow? | `SEATS=4 GAMES=3 node scripts/measure/pod-pace.mjs` |
+| `pod-pace.mjs` | …and **what does a bot setting cost in milliseconds**, timed as an ablation on identical positions rather than as two races | `BOT='{"weights":{"castable":0}}' SEATS=4 GAMES=3 node scripts/measure/pod-pace.mjs` |
+| `unfinished.mjs` | **does the engine ever throw mid-game?** Every harness here swallows one; this is the only thing that reports it | `SEEDS=6 node scripts/measure/unfinished.mjs` |
+| `unfinished.mjs` | …and the same question for a **four-seat pod**, where a table with nobody to act (CR 800.4a) is the worse fault | `SEATS=4 SEEDS=12 node scripts/measure/unfinished.mjs` |
 | `card-promises.mjs` | does every card **do what its own text says**, or does a script carry less than the card reads? | `node scripts/measure/card-promises.mjs` |
 | `mechanic-coverage.mjs` | **how many cards hold each mechanic up** — which are on one card, and which the engine declares and nothing reaches? | `node scripts/measure/mechanic-coverage.mjs` |
 | `eval-calibration.mjs` | **does the bot's evaluation predict who wins**, and which of its components carries the signal? | `SEEDS=6 node scripts/measure/eval-calibration.mjs` |

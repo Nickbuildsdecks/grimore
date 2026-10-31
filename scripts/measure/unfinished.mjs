@@ -40,6 +40,22 @@
  * 288 games are the subject's 288 games:
  *
  *     SCHEME=probe SUBJECT=verdant-guard SEEDS=12 SEED0=4400 node scripts/measure/unfinished.mjs
+ *
+ * `SEATS=4` audits the **pod** instead, which is the format this file was missing and the one with
+ * more to go wrong in it. Three harnesses here play four-seat games — `pod-duel`, `pod-slot`,
+ * `pod-pace` — each ending its move loop with the same `catch { break; }`, and none of them has
+ * ever been asked whether it caught anything. The pod is also where the `nobody to act` end state
+ * below stops being hypothetical: the engine's own pod tests exist because CR 800.4a lets a table
+ * reach a state with no seat able to move, and a table that never ends is worse than a throw.
+ *
+ *     SEATS=4 SEEDS=6 node scripts/measure/unfinished.mjs
+ *     SEATS=4 ALWAYS=dawn-tithe SEEDS=6 node scripts/measure/unfinished.mjs
+ *
+ * It reproduces `pod-duel`'s tables and seeds, with one deliberate difference: that harness plays
+ * each table **four times**, rotating which seats carry `TESTED`, and with one bot in every seat —
+ * which is what this file plays — all four rotations are the *same game* on the same seed. Its own
+ * docblock says so. So the audit plays each table once: that is every **distinct** game `pod-duel`
+ * plays, which is what a throw hides in, rather than every game it counts.
  */
 import {
   applyAction, createGame, botAction, seatsToAct, STARTER_DECKS,
@@ -50,8 +66,23 @@ const ALL = Object.keys(STARTER_DECKS);
 const SUBJECT = process.env.SUBJECT ?? '';
 const SEEDS = Number(process.env.SEEDS ?? 2);
 const SEED0 = Number(process.env.SEED0 ?? 4400);
-const MOVES = Number(process.env.MOVES ?? 4000);
+const MOVES = Number(process.env.MOVES ?? (process.env.SEATS === '4' ? 8000 : 4000));
 const SCHEME = process.env.SCHEME ?? 'table';
+/*
+  How many seats. Two is a duel and the default, because that is what the harnesses this file was
+  written to certify were playing; four is a Commander pod, reproducing `pod-duel`'s tables.
+*/
+const SEATS = Number(process.env.SEATS ?? 2);
+if (SEATS !== 2 && SEATS !== 4) {
+  console.log(`SEATS must be 2 or 4, not ${SEATS}: the engine's formats are a duel and a four-seat pod.`);
+  process.exit(1);
+}
+/** One deck seated at every table, as `pod-duel` means it: a fault may need a card to be in play. */
+const ALWAYS = process.env.ALWAYS ?? '';
+if (ALWAYS !== '' && !ALL.includes(ALWAYS)) {
+  console.log(`no deck called ${ALWAYS}. One of: ${ALL.join(', ')}`);
+  process.exit(1);
+}
 /*
   Whether the move loop passes the ActionContext, **off by default because that is what the
   harnesses do**.
@@ -67,7 +98,10 @@ const SCHEME = process.env.SCHEME ?? 'table';
   so the default now matches the harnesses exactly and `CTX_IN_LOOP=1` is the comparison.
 */
 const CTX_IN_LOOP = process.env.CTX_IN_LOOP === '1';
-const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
+const PLAYERS = ['A', 'B', 'C', 'D'].slice(0, SEATS)
+  .map((name, i) => ({ playerId: `p${i}`, name }));
+const SEATING = [...Array(SEATS).keys()];
+const FORMAT = SEATS === 4 ? 'pod' : 'modern';
 const CTX = { isHost: true, ...canonicalDecks(STARTER_DECKS) };
 
 /** How each game ended, counted. */
@@ -77,8 +111,8 @@ const faults = new Map();
 const bump = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
 
 function duel(seed, decks) {
-  let s = createGame({ id: `g${seed}`, format: 'modern', players: PLAYERS, seed });
-  for (const seat of [0, 1]) {
+  let s = createGame({ id: `g${seed}`, format: FORMAT, players: PLAYERS, seed });
+  for (const seat of SEATING) {
     s = applyAction(s, { type: 'deck:load', by: seat, seat, deckId: decks[seat] }, CTX);
   }
   s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, CTX);
@@ -124,7 +158,29 @@ const tableSeed = (pass, a, b, order) =>
   SEED0 + (((pass * ALL.length + a) * ALL.length + b) * 2) + order;
 const probeSeed = (pass, j, order, field) => SEED0 + ((pass * field + j) * 2) + order;
 
-if (SCHEME === 'probe') {
+/*
+  Which four decks sit at each table, and the deck seated at all of them. Both copied from
+  `pod-duel` rather than shared with it, for the reason the seed formulas above are: the point is to
+  reproduce *that* harness's games, and a shared helper that drifted would hunt in the wrong set.
+*/
+const podTable = (n) => SEATING.map((i) => ALL[(n * 3 + i * 4) % ALL.length]);
+const podSeated = (n) => {
+  const decks = podTable(n);
+  if (ALWAYS === '' || decks.includes(ALWAYS)) return decks;
+  const out = [...decks];
+  out[n % 4] = ALWAYS;
+  return out;
+};
+const podSeed = (pass, t) => SEED0 + (pass * ALL.length) + t;
+
+if (SEATS === 4) {
+  for (let i = 0; i < SEEDS; i++) {
+    for (let t = 0; t < ALL.length; t++) {
+      bump(ends, duel(podSeed(i, t), podSeated(t)));
+      games += 1;
+    }
+  }
+} else if (SCHEME === 'probe') {
   if (SUBJECT === '') {
     console.log('SCHEME=probe needs a SUBJECT: a probe run is one deck against the rest.');
     process.exit(1);
@@ -151,8 +207,10 @@ if (SCHEME === 'probe') {
   }
 }
 
-console.log(`${games} games, ${SEEDS} seeds from ${SEED0}, ${SCHEME} pairings${
-  SUBJECT === '' ? '' : `, ${SUBJECT} only`}, ctx in loop: ${CTX_IN_LOOP ? 'yes' : 'no (as the harnesses do)'}`);
+console.log(`${games} ${SEATS === 4 ? 'pods' : 'games'}, ${SEEDS} seeds from ${SEED0}, ${
+  SEATS === 4 ? `pod-duel tables${ALWAYS === '' ? '' : `, ${ALWAYS} at every one`}` : `${SCHEME} pairings`}${
+  SEATS === 4 || SUBJECT === '' ? '' : `, ${SUBJECT} only`}, ctx in loop: ${
+  CTX_IN_LOOP ? 'yes' : 'no (as the harnesses do)'}`);
 console.log('');
 for (const [end, n] of [...ends].sort((x, y) => y[1] - x[1])) {
   console.log(`${String(n).padStart(5)}  ${(100 * n / games).toFixed(1).padStart(5)}%  ${end}`);
