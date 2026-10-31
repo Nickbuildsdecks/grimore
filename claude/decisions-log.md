@@ -17934,3 +17934,31 @@ gets its own three seed sets.
 Everything stays: the computation, ten tests, both candidate shapes, two `term-leverage` rows, and
 both halves of the measurement. The duel result is real and is the strongest evidence yet for the
 shape-over-weight thesis; the pod result is real and is why the thesis is not yet a shipped default.
+
+## D277 — A bot change belongs on the list of things that wants a browser run
+
+D262 left the four browser suites outside every gate on purpose, and said so plainly: *"a browser job
+needs a browser, servers, Redis and a minute a suite"*, so **running the four suites after any change
+to the table UI or the lobby remains a manual step.**
+
+That list is one item short. Today's change was to the **bot's evaluation** — `castable` shipped at 1,
+which moves 4.3% of its cast decisions and 1.0% of all of them — and a bot that plays differently
+walks the browser suites down different paths: different cards cast, different prompts raised,
+different boards to lay out. The gates that passed (guards, two typechecks, 2061 unit and integration
+tests) do not drive a browser. So the real player path had not been exercised since the engine's
+judgement changed, and nothing would have said so.
+
+Run against the live stack, with the shipped default:
+
+```
+e2e-solo    28/28     e2e-table   73/73
+e2e-arena   54/54     e2e-pod     42/42        197 checks, exit 0
+```
+
+Clean, which is the answer worth having rather than the interesting one: solo play, a two-browser
+duel, the arena table and a four-browser pod all still work with the new evaluation, including the
+control-bar and overflow checks #251 added. **A bot change is now on the list with UI and lobby
+changes**, and the reason is in one line: the bot chooses which paths these suites walk.
+
+Nothing in the code changed for this entry. It is a practice correction with a run behind it, which
+is the only kind worth writing down.
