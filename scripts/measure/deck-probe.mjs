@@ -42,22 +42,33 @@ const ALL = Object.keys(STARTER_DECKS);
 const SEEDS = Number(process.env.SEEDS ?? 17);
 const SEED0 = Number(process.env.SEED0 ?? 3300);
 /*
-  How many **disjoint seed sets** to read the same change on, because one is not a measurement.
+  How many **disjoint seed sets** to read the same change on, because one is not a measurement and
+  two is not either.
 
-  D258 ran four changes through this harness on two seed sets each and the deltas came back +30/+18,
-  −18/−1, +12/+5 and −14/−19: the **sign agreed in all eight readings** and the magnitudes differed
-  by 12, 17, 7 and 5 games. So a single paired 288-game reading tells you the direction and is worth
-  about ±10 on the size — which is the same order as most of the effects this project publishes, and
-  is why two entries were published with numbers they had not earned.
+  D258 priced four changes here and the number of sets kept changing the answer:
+
+      D203  six cards into Dawn Tithe         +30   +18   +21
+      D251  granting cards into Skyward Writ  -14   -19   -29
+      D247  two cards into Verdant Guard      -18    -1    +4
+      D255  Harm's Way into Forge Alliance    +12    +5   -13
+
+  On the first two sets the sign agreed on all four and the entry said so. **The third set flipped
+  two of them.** The two that held are the large effects, around ±20; the two that flipped each had
+  a reading near zero. So the floor on this instrument at 288 games a set is roughly ±20 games
+  **in direction, not only in size** — a smaller change is not measured here however the run comes
+  out, and the way that error presents itself is two sets agreeing by luck.
+
+  Hence three by default. It costs about three quarters of an hour for a number anybody can publish,
+  which is cheaper than the two entries that published one they could not.
 
   Pairing the arms (`canonicalDecks`, below) removes the reshuffle *between* the arms. It cannot
   remove the game: a changed card diverges the play from the turn it is drawn, and how far it
   diverges is itself a function of the seed. Nothing fixes that except more seeds.
 
-  Default two, so the spread is in every output and nobody has to remember to look for it. `SETS=1`
-  is a quick look and says so in its own output.
+  Every set is printed with the spread and the mean, so nobody has to remember to look for them.
+  `SETS=1` is a quick look and says so in its own output.
 */
-const SETS = Number(process.env.SETS ?? 2);
+const SETS = Number(process.env.SETS ?? 3);
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
 
 /*
@@ -221,18 +232,28 @@ for (let set = 0; set < SETS; set++) {
 /*
   And the reading, which is the part that was being left to the person holding the output.
 
-  A change is **measured** when every set agrees on the sign; the size is then the range, not a
-  single number. When the sets disagree the honest answer is that this harness cannot resolve the
-  change at this sample count, and that is a result worth printing rather than a run worth repeating
-  until it comes out the other way.
+  A change is **measured** when every set agrees on the sign; the size is then the mean, quoted with
+  the range. When the sets disagree the honest answer is that this harness cannot resolve the change
+  at this sample count, and that is a result worth printing rather than a run worth repeating until
+  it comes out the other way.
+
+  Two sets agreeing is called out as the weak case rather than the good one, because that is the
+  shape of the mistake D258 made: four changes, two sets each, all four signs agreed, and a third
+  set flipped two of them.
 */
 if (SETS > 1) {
   const low = Math.min(...deltas); const high = Math.max(...deltas);
+  const mean = deltas.reduce((a, b) => a + b, 0) / deltas.length;
   console.log('');
-  console.log(`deltas: ${deltas.map(signed).join(', ')}   (spread ${high - low} games)`);
+  console.log(`deltas: ${deltas.map(signed).join(', ')}   (spread ${high - low} games, mean ${
+    mean >= 0 ? '+' : ''}${mean.toFixed(1)})`);
   if (low > 0 || high < 0) {
-    console.log(`every set agrees on the sign, so the change is worth ${signed(low)} to ${
-      signed(high)} of ${STRIDE} a set  (direction measured, size only to within the spread)`);
+    console.log(`every set agrees on the sign: the change is worth ${signed(Math.round(mean))} of ${
+      STRIDE} a set, somewhere in ${signed(low)} to ${signed(high)}.`);
+    if (SETS < 3) {
+      console.log('Only two sets, which is the case to distrust — D258 had four changes agree on two');
+      console.log('sets each and a third set reversed two of them. Re-run with SETS=3.');
+    }
   } else if (low === 0 && high === 0) {
     // Which is also the negative control: an empty CHANGE must land here, because a variant
     // identical to stock has to play identical games. If it ever does not, the arms are not paired
@@ -241,10 +262,11 @@ if (SETS > 1) {
     console.log('an empty one it is the negative control passing — identical arms, identical games.');
   } else {
     console.log('the sets disagree on the sign, so this change is NOT measured at this sample');
-    console.log('count. More seeds, or a bigger change — not a third run read as a tie-break.');
+    console.log('count. More seeds, or a bigger change — not another run read as a tie-break.');
   }
 } else {
   console.log('');
   console.log('one seed set, which is a look rather than a measurement: D258 found paired readings');
-  console.log('of the same change 5 to 17 games apart. Re-run with SETS=2 before publishing it.');
+  console.log('of the same change up to 25 games apart, and two of its four changes changed sign');
+  console.log('between sets. Re-run with SETS=3 before publishing anything from this.');
 }

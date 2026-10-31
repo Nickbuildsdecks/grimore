@@ -7102,8 +7102,10 @@ a factor of ten; this is the first time one has had the sign wrong, and it is th
 for the rule that entry wrote down: never publish the probe alone.
 
 **Both halves of that are corrected by D258.** Neither reading had paired arms, the probe-against-
-table comparison was never valid in the first place, and re-asked properly the two cards cost this
-deck somewhere between 2 and 18 games of 288 rather than eight.
+table comparison was never valid in the first place, and re-asked properly the paired probe reads
+−18, −1 and +4 on three seed sets against the table's −2 — so what these cards are worth to this
+deck is below what 288 games can resolve, and the eight games above is a reading from inside that
+floor rather than a measurement of it.
 
 The cards ship anyway, and for the mechanic rather than the record: a keyword needs a card in a deck
 to exist (D229), Verdant Guard is the only deck here a pair is worth anything in, and a deck fourth
@@ -7466,12 +7468,11 @@ The rule that follows: an unpaired comparison at 288 games cannot resolve a one-
 paired one can. It also re-opens D203 and D247, whose "believe the table over the probe" rule was
 drawn from disagreements between two unpaired readings — not evidence about either instrument.
 
-**And "a paired one can" is too strong — D258 measured it.** Four changes on two seed sets each read
-+30/+18, −18/−1, +12/+5 and −14/−19: the **size** of a paired 288-game reading is worth about ±10,
-because pairing removes the reshuffle between the arms and not the game. What it does get right is
-the **direction** — the sign agreed in all eight readings — so both re-prices above stand, as ranges
-rather than figures: the granting cards cost Skyward Writ 14 to 19, and Harm's Way is +5 to +12, so
-its sign reversal is real.
+**And "a paired one can" is too strong — D258 measured it.** Four changes on three seed sets each:
++30/+18/+21, −14/−19/−29, −18/−1/+4 and +12/+5/−13. **Two of the four change sign between sets**, so
+the floor is about ±20 games in direction and not only in size. The granting cards survive it
+(negative three times); **Harm's Way does not** — D257's sign reversal and D255's +12 are both
+withdrawn, and that card's effect is simply below what 288 games can see.
 
 **The new baseline** (canonical, SEEDS=12 SEED0=4400, ±10 points a row): ember-rush 75%,
 dawn-tithe 73%, verdant-guard 68%, kindle-grove 67%, ashen-rite 50%, forge-alliance 45%,
@@ -7500,15 +7501,31 @@ verdant-guard  195-93 with D247's soulbond    193-95 reverted    -2   (probe: -1
 ```
 
 So D203's six cards are worth **about +20 of 288**, two to three times the +11 that entry believed —
-the probe it dismissed was the closer of the two — and D247's two cards cost Verdant Guard somewhere
-between 2 and 18 rather than the 8 it published.
+the probe it dismissed was the closer of the two — and what D247's two cards are worth is not
+resolvable here at all, which the three-set table below is why.
 
-**And pairing is necessary without being sufficient**, which is the finding worth carrying forward.
-Four changes on two disjoint seed sets each read +30/+18, −18/−1, +12/+5 and −14/−19 — so the
-**size** of a paired 288-game reading is worth about ±10, because pairing gives both arms the same
-libraries but cannot stop the changed card diverging the game from the turn it is drawn. The
-**sign**, though, agreed in all eight readings, which is what a slot decision needs. `deck-probe`
-now reads two sets by default and prints the spread and that verdict under every run.
+**And pairing is nowhere near sufficient**, which is the finding worth carrying forward. Four
+changes on three disjoint seed sets each:
+
+```
+                                        4400    7000    4688
+D203  six cards into Dawn Tithe          +30     +18     +21
+D251  granting cards into Skyward Writ   -14     -19     -29
+D247  two cards into Verdant Guard       -18      -1      +4
+D255  Harm's Way into Forge Alliance     +12      +5     -13
+```
+
+**Two of the four change sign between sets.** The two that hold are around ±20; the two that flip
+each have a reading near zero. So the floor here at 288 games a set is roughly ±20 games **in
+direction**, a smaller change is not measured however many times it is run, and the failure mode is
+two sets agreeing by luck — which is exactly the mistake this entry's own first draft made and
+published. `deck-probe` now reads three sets by default, prints each delta with the spread and the
+mean, and says in words whether the change was measured at all.
+
+The consequence for the balance work: a slot worth less than about twenty games of 288 cannot be
+priced by any instrument in this project, and several published numbers are smaller than that. Those
+slots get decided on the mechanic and on what a person sees at the table, which is what D229 and
+D216 already do.
 
 Three rules replace the one: pair the arms; read two seed sets and publish the range, because a
 change that does not clear it on both has not been measured; and never set a probe reading against a

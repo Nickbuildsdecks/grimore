@@ -746,25 +746,35 @@ card. And the amplification mechanism does not apply to the row that was being r
 plays each pairing once per seed per order and credits both decks, so the subject's own row is the
 same 288 pairings the probe plays. Letting the field move changes the *other* twelve rows.
 
-Re-asked with both sides paired, the instruments agree on the sign on both changes. What they do not
-give is a number. Four changes through the same paired probe on two disjoint seed sets each:
+Re-asked with both sides paired, the instruments agree on the sign on both changes. What neither
+gives is a number. Four changes through the same paired probe on three disjoint seed sets each, every
+figure the value of the **change**:
 
 ```
-                                        4400    7000   spread
-D203  six cards into Dawn Tithe          +30     +18      12
-D247  two cards into Verdant Guard       -18      -1      17
-D255  Harm's Way into Forge Alliance     +12      +5       7
-D251  granting cards into Skyward Writ   -14     -19       5
+                                        4400    7000    4688   spread
+D203  six cards into Dawn Tithe          +30     +18     +21      12
+D251  granting cards into Skyward Writ   -14     -19     -29      15
+D247  two cards into Verdant Guard       -18      -1      +4      22
+D255  Harm's Way into Forge Alliance     +12      +5     -13      25
 ```
 
-Pairing removes the reshuffle between the arms; it cannot remove the game, and how far a changed
-card diverges the play is itself a function of the seed. So the **size** of a paired 288-game
-reading is worth about ±10 — and the **sign agreed in all eight readings**, which is what a slot
-decision needs, since a card is kept or cut on direction rather than on a game count.
+**Two of the four change sign between sets**, and both of those have a reading near zero while the
+two that hold are around ±20. So the floor on this harness at 288 games a set is roughly **±20 games
+in direction, not merely in size**: a smaller change is not measured here however many times it is
+run, and the failure mode is two sets agreeing by luck. D258's first draft had the first two columns
+only, said "the sign agreed in all eight readings", and was published before the third set existed.
 
-`deck-probe` enforces that now: `SETS` defaults to 2, every run prints its per-set deltas and their
-spread, and the summary says whether the sets agreed on the sign or whether the change is simply not
-measured at this sample count. `SETS=1` labels its own output a look rather than a measurement.
+`deck-probe` enforces the lesson now. `SETS` defaults to 3; every set's delta prints with the spread
+and the mean; and the verdict is either "every set agrees, the change is worth the mean, in this
+range" or "the sets disagree, so this change is NOT measured at this sample count". Two sets agreeing
+is flagged as the weak case rather than the good one. `SETS=1` labels its own output a look rather
+than a measurement.
+
+**The practical consequence for this directory**: a slot worth less than about twenty games of 288
+cannot be priced by anything here, and several published numbers are smaller than that. The answer
+is not a bigger run every time — it is to stop asking for a number where the honest output is a
+direction, and to decide those slots on the mechanic and on what a person sees at the table, the way
+D229 and D216 do.
 
 So "confirm it on the table" is the step every slot change owes, and `deck-table.mjs` now takes
 `SUBJECT` and `CHANGE` so taking it is an argument rather than an edit to `starterDecks.ts`, a
