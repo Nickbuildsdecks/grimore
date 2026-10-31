@@ -17194,11 +17194,38 @@ tests in full. **I grepped the output and threw the name away.** That is the who
 thirty runs instead of one reading, and the fix is a habit rather than a change: keep the full output
 of a run you may need to diagnose. The loop here writes one log per iteration for that reason.
 
+### The mechanism, seen again the same afternoon
+
+Recorded because it is evidence rather than argument. A full-suite run a few hours after this entry
+failed in `packages/db` with one file failed and **no test failed** — 1 passed, 5 skipped, which is a
+suite-level error rather than an assertion. The cause was in the log:
+
+```
+Error: connect ECONNREFUSED 127.0.0.1:5432
+```
+
+`pg_isready` answered "no response" and `redis-cli` refused the connection. **Both scratch services
+had been reaped mid-session**, every database-dependent test failed at once, and restarting them gave
+2061 passed, exit 0, on the same tree.
+
+That is the mechanism this entry named as the remaining candidate, observed a second time and now
+with a log rather than a recollection. Being precise about what it does and does not establish: it
+proves the reaping happens and takes the suite down **wholesale**. #247's sighting was one assertion
+in 301. So this corroborates the mechanism and does not prove the single-test case, which needs the
+*partial* version of the same fault — one connection dropped at one moment rather than the service
+disappearing. The two are the same cause at different scales, which is why it is the leading
+candidate, and the honest gap is that only the loud version has ever been seen.
+
+Practical consequence, which is the part worth acting on: **check that Postgres and Redis are up
+before believing a database failure in this container**, because the loud version of this fault looks
+like a code regression for about thirty seconds. The restart is
+`service postgresql start && redis-server --daemonize yes`.
+
 ### What would reopen it
 
-A second sighting. If it recurs, the full log will name the test, and these five eliminations mean
-the first place to look is the one thing they do not cover: whether the database that test file
-created was still reachable at the moment the assertion ran.
+A second sighting of the *single-test* failure. If it recurs, the full log will name the test, and
+these five eliminations mean the first place to look is the one thing they do not cover: whether the
+database that test file created was still reachable at the moment the assertion ran.
 
 ## D269 — An instrument that cried wolf seventeen times, and the number worth acting on
 
