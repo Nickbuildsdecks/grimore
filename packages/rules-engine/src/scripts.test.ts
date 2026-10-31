@@ -3292,6 +3292,21 @@ describe('Treasure and Clue: a permanent that is spent', () => {
     expect(rows.length).toBe(5);
     expect(rows.every((r) => /Sacrifice this artifact: Add \{[WUBRG]\}/.test(r.description)))
       .toBe(true);
+
+    /*
+      And the whole way to what a client is handed, which is one step further than `legalActions`.
+
+      `automationFor` sets `you: legalActions(state, viewer)`, so the rows above travel verbatim —
+      asserted rather than assumed, because "the engine offers it" and "the table can draw it" are
+      two claims and the second is the one a person at the table depends on. The token also has to
+      BE in the view: a permanent whose rows arrive with no card to hang them on is a button
+      pointing at nothing.
+    */
+    const seen = viewFor(t, 0);
+    expect(seen.automation?.you?.plays.filter((p) => p.card === treasure).length).toBe(5);
+    expect(seen.cards[treasure]?.card?.name).toBe('Treasure');
+    expect(seen.cards[treasure]?.card?.oracleText)
+      .toMatch(/Sacrifice this artifact: Add one mana of any color/);
   });
 });
 
