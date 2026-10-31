@@ -17962,3 +17962,56 @@ changes**, and the reason is in one line: the bot chooses which paths these suit
 
 Nothing in the code changed for this entry. It is a practice correction with a run behind it, which
 is the only kind worth writing down.
+
+## D278 — A pod clock is not a scaling problem, it is a missing attack model
+
+D276 closed the clock as a duel term and named a follow-up: compute `exposedPower` per foe and take
+the **shortest** clock, since the sum over-fears and the mean under-fears. Before building it, the
+arithmetic was checked — and it refutes the follow-up.
+
+A pod seat with one 3/3 blocker, against three opponents holding one 2/2 each:
+
+| reading | unanswerable power |
+| --- | --- |
+| table-wide (the sum) | **4** |
+| two opponents | 2 |
+| **one opponent alone** | **0** |
+
+The per-foe reading is zero because `exposedPower` spends my blockers against whatever attackers it
+is shown, and shown one opponent's board it has the whole blocker pool for it. So **every**
+per-opponent clock on that board says "nothing can touch me", and the minimum of them says it too —
+on a board where four damage lands every turn. That is not an improvement on the mean; it is the
+worst of the three.
+
+So all three candidate objects are wrong in identifiable ways:
+
+| | what it computes | how it fails |
+| --- | --- | --- |
+| sum (undivided) | everyone attacks me every turn | over-fears diffuse threats; measured: pod −4, 0 and **2.06x** length |
+| mean (divided) | the threat is spread evenly | under-fears the one opponent who can kill me; measured: pod −8, 0, −4 at 1.29x |
+| min of per-foe clocks | each opponent attacks alone | reads **0** where 4 lands a turn, as above |
+
+### What the pod actually needs, and why the duel never needed it
+
+The quantity a player reads in a pod depends on **how many opponents point at them**, and that is
+not a property of the board — it is a property of what the other seats decide. My blockers are
+shared: the same 3/3 answers any one of those three 2/2s and cannot answer two. So the incoming
+damage is a function of the attack pattern, and no scaling of a board-wide sum recovers it.
+
+**That is why the duel measurement is so clean and could never have pointed at this.** With one
+opponent there is nothing to model: they attack or they do not, and the sum, the mean and the min are
+the same number. +1.5 points over 2808 duels is a real result about a term whose object is
+well-defined in that format and ill-defined in the other.
+
+The project does have the raw material for an attack model elsewhere — `chaseTheCrown`, the threat
+read on each opponent's strip, `offerPact`'s board reading, the `hit you N` / `spared you N` history
+(D189, D227) — and none of it is wired into `evaluate`. That is a much larger piece of work than a
+term, and naming it is the useful output here rather than attempting it.
+
+### What this closes
+
+`CLOCK_RATE` stays at zero with the duel result and both candidate shapes kept, and #259 is closed as
+**refuted by arithmetic rather than by a measurement** — thirty seconds of checking instead of three
+more seed sets in two formats. Worth noticing that the cheap check came last: the instinct after a
+negative pod result was to build the next variant, and the thing that was actually missing was one
+question asked of a three-creature board.

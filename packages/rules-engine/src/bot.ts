@@ -1345,10 +1345,22 @@ const EXPOSED_POWER = 0;
  * which under-fears the one opponent who can actually kill me, and that is the only one a clock is
  * about.
  *
- * What a player reads in a pod is neither — it is the **shortest of the per-opponent clocks**. In a
- * duel all three objects coincide, which is why the duel measurement is clean and could never have
- * exposed this. The follow-up is therefore a different term rather than another rescaling: compute
- * `exposedPower` per foe and take the minimum clock, and give it its own three seed sets.
+ * The obvious third candidate — the **shortest of the per-opponent clocks** — was checked before
+ * being built, and it is the worst of the three (D278). `exposedPower` spends my blockers against
+ * whatever attackers it is shown, so shown one opponent's board it has the whole pool for it: a seat
+ * with one 3/3 against three opponents holding a 2/2 each reads **4** unanswerable table-wide and
+ * **0** against any one of them. Every per-opponent clock on that board says nothing can touch me,
+ * and so does the minimum of them, on a board where four damage lands every turn.
+ *
+ * So all three objects are wrong, and the reason is not a scale factor. **The incoming damage in a
+ * pod depends on how many opponents point at me, which is not a property of the board** — my
+ * blockers are shared, and the same 3/3 answers any one of those 2/2s and cannot answer two. It
+ * needs an attack model, and `evaluate` has none; the raw material exists elsewhere in this file
+ * (`chaseTheCrown`, the threat read, `offerPact`'s board reading) and is not wired in.
+ *
+ * In a duel there is nothing to model — they attack or they do not, and the sum, the mean and the
+ * min are the same number. Which is exactly why the duel result is clean, and why it could never
+ * have pointed at any of this.
  *
  * Everything is kept — the computation, ten tests, two `term-leverage` rows, the duel result above —
  * on the grounds D264 kept `exposed`: the expensive part was never the code. Turning this on is one
