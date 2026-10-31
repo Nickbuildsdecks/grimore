@@ -934,15 +934,35 @@ export async function tryToPlayFromHand(page, seat, abilities = false) {
     ?? (abilities ? await tryToPlayFromZone(page, `zone-battlefield-${seat}`) : null);
 }
 
-/** Taps the first card in one zone that says it is playable, and takes one of its plays. */
+/**
+ * Taps the first card in one zone that says it is playable, and takes one of its plays.
+ *
+ * **The badge is read off the slot and the tap lands on the card inside it**, which is two
+ * locators where it used to be one, and the split is the whole point. A card's badges are drawn on
+ * its *slot* — the wrapper that is portrait normally and landscape when the permanent is tapped —
+ * rather than inside the card itself, because a card turns a quarter turn when it taps and
+ * anything inside it turns with it: badges nested in the card rendered "1/2 ATTACKING FRIEND"
+ * running up the side.
+ *
+ * That move broke this loop, and the failure is worth recording because it looked like anything
+ * but a CSS change. This read `textContent` of the **card** and matched /playable/, so the moment
+ * the badge left the card every card in every zone read as unplayable, the driver fell through to
+ * `primary-move` on every turn, and a whole arena run played twenty turns of nothing but Pass and
+ * discard-to-hand-size. Four end-of-run assertions failed — a land reaching the battlefield, the
+ * mana bar, attackers being declared, life moving — and not one of them named a badge.
+ *
+ * So the coupling is explicit now rather than accidental: the slot carries what the card *says*,
+ * the card is what you press.
+ */
 async function tryToPlayFromZone(page, zone) {
-  const playable = page.locator(`[data-testid="${zone}"] [data-testid^="card-"]`);
-  const count = await playable.count();
+  const slots = page.locator(`[data-testid="${zone}"] [data-testid^="slot-"]`);
+  const count = await slots.count();
   const order = [...Array(count).keys()].sort(() => Math.random() - 0.5);
   for (const i of order) {
-    const card = playable.nth(i);
-    const badges = await textOf(card);
+    const slot = slots.nth(i);
+    const badges = await textOf(slot);
     if (!/playable/i.test(badges)) continue;
+    const card = slot.locator('[data-testid^="card-"]').first();
     await tap(card);
     /*
       The sheet may not open, and that is not a failure.

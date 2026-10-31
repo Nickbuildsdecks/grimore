@@ -354,19 +354,39 @@ export function CardFace({ card, size = "board", onSelect, selected, highlight, 
             "radial-gradient(90px circle at var(--sheen-x,50%) var(--sheen-y,50%), rgba(255,255,255,0.30), rgba(255,255,255,0.06) 45%, transparent 70%)",
         }}
       />
-      {badges !== undefined && badges.length > 0 ? (
-        <span
-          data-testid={`badges-${card.id}`}
-          className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap justify-center gap-0.5 bg-black/55 px-0.5 py-px"
-        >
-          {badges.map((text) => (
-            <span key={text} className="text-[6px] font-semibold uppercase leading-tight tracking-wide text-white/90">
-              {text}
-            </span>
-          ))}
-        </span>
-      ) : null}
     </button>
+    {/*
+      The badges sit on the **slot**, not on the card.
+
+      They used to be the last child of the button, which is the natural place for them and is
+      wrong for one reason: the button carries `--card-rot`, so a tapped permanent turned its
+      badges with it and an attacking creature read "1/2 ATTACKING FRIEND" running up the side of
+      the card. A real table turns the card and leaves the words to the player's eye; Arena turns
+      the card and leaves the overlay upright.
+
+      Counter-rotating them inside the button was the first idea and it does not work cleanly: the
+      button's box is portrait, so a child rotated back by -90° is a portrait box laid over a
+      landscape footprint and overflows the card top and bottom. The slot is already the right box
+      in both orientations — `SLOT` when the card is upright, `TAPPED_SLOT` when it is turned — and
+      it is never rotated. Putting the strip there needs no transform at all, and it lands along
+      the true screen-bottom of the card either way.
+
+      Outside the button also means outside its `overflow-hidden`, so the strip squares off the
+      card's rounded bottom corners by a pixel. That is the whole cost, and it is less than a
+      badge nobody can read.
+    */}
+    {badges !== undefined && badges.length > 0 ? (
+      <span
+        data-testid={`badges-${card.id}`}
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-wrap justify-center gap-0.5 rounded-b-[6px] bg-black/55 px-0.5 py-px"
+      >
+        {badges.map((text) => (
+          <span key={text} className="text-[6px] font-semibold uppercase leading-tight tracking-wide text-white/90">
+            {text}
+          </span>
+        ))}
+      </span>
+    ) : null}
     </span>
   )
 }
