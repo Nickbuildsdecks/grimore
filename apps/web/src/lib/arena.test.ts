@@ -1762,6 +1762,20 @@ describe("cardBadges", () => {
     expect(cardBadges(v, permanent({ id: "lone" })).some((b) => b.startsWith("paired"))).toBe(false)
   })
 
+  it("says what an ability somebody else gave it actually does", () => {
+    /*
+      The one kind of text on this table that is not on the card a player can open (CR 113.6). A
+      Grizzly Bears under an Ophidian Eye draws a card every time it connects and its own box says
+      nothing about drawing — so a flag reading "has an extra ability" would tell a player that
+      something is happening without telling them what to plan around.
+    */
+    const bears = permanent({ id: "bears", granted: ["draw a card"] })
+    const v = view({ automation: automation(), cards: { bears } as unknown as GameView["cards"] })
+    expect(cardBadges(v, bears)).toContain("has draw a card")
+    // And a creature nobody is granting anything says nothing at all.
+    expect(cardBadges(v, permanent({ id: "lone" })).some((b) => b.startsWith("has "))).toBe(false)
+  })
+
   it("says nothing about a card that is not on the battlefield", () => {
     const v = view({ automation: automation() })
     expect(cardBadges(v, permanent({ zone: "hand" }))).toEqual([])

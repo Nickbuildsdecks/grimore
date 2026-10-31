@@ -15634,3 +15634,87 @@ what the code wrote**, so a scan for prose that a stylesheet might transform is 
 it is not a scan. The only reason this was caught rather than filed as an engine bug is that the
 claim was narrow enough — *this* badge, naming *that* card — to be worth one look at the regex
 before believing it.
+
+## D251 — A static that hands another permanent a triggered ability, and two cards that cost six points
+
+The structural gap the myriad docblock named in as many words: *"there is no machinery in this
+engine for handing another permanent a triggered ability."* A continuous effect could change what a
+creature **is** — bigger, flying, unable to block, a different colour, a different type — and
+nothing anywhere could give it something it **does**. That is why Blade of Selves' myriad had to be
+a keyword `declareAttackers` reads rather than an ability the Equipment hands out, and it is why
+a whole class of printed cards was unscriptable.
+
+**The design, and the one constraint that decided it.** A `TriggerDef` is a bag of functions and
+`GameState` is data that gets cloned, serialised and handed to a bot search, so the ability itself
+cannot live on an effect. So a grant is declared in two halves: the ability goes in
+`CardScript.grantedTriggers`, and `PumpOptions.grants` carries *indices into it*. The effect holds
+the indices; the grantor is its `source`; `scriptFor(name).grantedTriggers[i]` is the ability.
+
+Putting it on `PumpOptions` rather than in a declaration of its own is the whole of why this was a
+day's work instead of a week's. `modsFrom` is the single translation from "what a card says" to
+"what an effect holds", and the five builders that read it — an Aura's bonus, a bestowed one, an
+Equipment's, a `statics` entry and soulbond's pair — happen to be the complete list of ways a
+printed card grants anything. One field, and every scope the engine has already answers "who gets
+it": one card, a team, a creature type, or a soulbond `pair`, whose membership changes under the
+effect while it sits there. Duration and removal come free too: the grant goes away with the
+permanent that made it, by the same pass that takes away an anthem.
+
+**The ability belongs to the holder, not to the grantor** (CR 113.6). `source` on the stack object
+is the creature whose event fired it, so "whenever **this creature** deals damage" reads correctly
+when the thing saying it is an Aura on somebody else, and the controller is the creature's
+controller. The one thing that travels separately is `StackObject.grantedBy`, which carries the
+granting card's **name** rather than its instance — because an ability is independent of its source
+once it is on the stack (CR 608.2), so an Aura destroyed in the window before the trigger resolves
+still draws the card. A test holds that window open in the combat damage step and kills the Aura in
+it.
+
+**Collection is one function now, not two.** `fireTrigger` was pulled out of `raise`'s watcher loop
+so the printed and the granted case share everything after "does this match" — the intervening-if
+clause asked its first time, the five fields saying what the event was about, the obvious targets
+and the prompt when they are not obvious. A granted path that duplicated that would have been two
+copies drifting apart, which is the bug `modsFrom`'s own docblock is about. `abilityTargetSpecs` is
+the same move on the other side: three places looked a trigger's target specs up out of the
+holder's script, and all three now ask one function that knows about grants.
+
+Layer 6 comes out of the same loop shape the keyword clearing uses, so the timestamps are right
+(CR 613.1f): a Turn to Frog cast *after* an Ophidian Eye takes the draw trigger away, and an Eye
+cast after the Frog gives it back. Both halves are asserted on one board, because a version that
+cleared everything would pass the first and fail the second.
+
+**Two cards, two routes in.** Tandem Lookout ({2}{U} 1/1, soulbond) hands the ability to a pair;
+Ophidian Eye ({1}{U} Aura, flash) hands the same ability to one creature. Two rather than one for
+D239's reason, but the second one is doing more than making a count: the two reach `grants` by
+different builders — `applyStatics` and `addAuraEffect` — which is the only evidence that the
+`PumpOptions` decision carried to every builder rather than to the one written first.
+
+**And the slot is a negative result, measured rather than hoped.** Skyward Writ over 288 games at
+the canonical seeds: **139-149 stock, 121-167 with the two cards in** for a Raise the Alarm and the
+second Man-o'-War. That is eighteen games, about six points, and it drops the deck from 48% to 42%.
+
+Two things worth having asked. A second arm cut a Pacifism and a Rest in Peace instead and read
+**124-164** — three games of 288, which is noise — so *which* slots the cards take is not the cost,
+the cards are. That arm was also illegal, which only the suite knew: Skyward Writ is the only deck
+holding either card, and the deck-coverage test will not let a scripted card leave the pool
+altogether. `mechanic-coverage` did not catch it because it reads scripts; the test reads decks.
+Worth remembering as a rule — **a cut is not free just because the mechanic it serves has another
+card.**
+
+And `cast-counts` says the bot *casts* both of them, 70% and 101% of the games it draws them. So
+this is a card being bad rather than a card being dead, and the 101% is the suspected reason: the
+bot spends the Aura at the first opportunity, on whatever creature is there, and an Aura on a
+creature an opponent can kill is a two-for-one. That is the same family as the blink pricing #209
+fixed from the other side, it is a bot rule rather than a card problem, and it has a task of its
+own rather than a guess folded in here.
+
+The cards ship anyway, for the mechanic rather than for the record: a keyword needs a card in a
+deck to exist (D229), this is the pool's only home for a blue three-drop that wants a flier, and
+the machinery is the deliverable. But unlike D247, where a probe had the sign wrong and the table
+said −8, this number is not noise and is not being rounded away: six points, in the open, with the
+suspected cause named and the next instrument identified.
+
+**Still open, deliberately.** A permanent that loses all abilities keeps firing its *printed*
+triggers — the collection loop checks only for a face-down permanent (CR 707.2). Granted abilities
+now honour layer 6 properly, which makes the two inconsistent; the printed half is a pre-existing
+gap and is a task rather than a half-fix folded in here. And the bot's three readers of
+`script.triggers` (`hasOwnText`, `paysForLeaving`, `arrivesAgain`) still see printed text only, so
+a Grizzly Bears carrying an Ophidian Eye reads to the sacrifice-fodder filter as a body.

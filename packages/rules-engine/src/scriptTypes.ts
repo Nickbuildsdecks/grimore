@@ -1939,6 +1939,24 @@ export interface CardScript {
    */
   readonly soulbond?: { readonly effect: PumpOptions };
   /**
+   * Triggered abilities this card **gives to other permanents**: "both creatures have 'Whenever
+   * this creature deals damage to a player, draw a card'".
+   *
+   * A list on the card rather than an ability inside the `PumpOptions` that grants it, because a
+   * `TriggerDef` holds functions and the effect that carries it has to stay serialisable — see
+   * `ContinuousEffect.grants`, which holds *indices into this array*. So a grant is declared in
+   * two halves: the ability here, and `grants: [0]` on whichever `PumpOptions` hands it out. Any
+   * of them will do, which is the point: an Aura's `effect`, a bestowed one, an Equipment's bonus,
+   * a `statics` entry or `soulbond`'s pair all reach it through the same `modsFrom`.
+   *
+   * **The ability belongs to the creature that was given it, not to this card** (CR 113.6). It
+   * fires off that creature's events, its `c.source` is that creature, and its controller is that
+   * creature's controller — which is what makes "whenever **this creature** deals damage" read
+   * correctly when the thing saying it is an Aura on somebody else. Nothing extra is needed for
+   * that: the trigger is collected as though the holder had printed it.
+   */
+  readonly grantedTriggers?: readonly TriggerDef[];
+  /**
    * What this permanent does to the **cost of other people's spells** while it is on the
    * battlefield: a Goblin Electromancer, a Thalia, a Sphere of Resistance.
    *

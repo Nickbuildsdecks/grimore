@@ -7,7 +7,7 @@
  * empty value.
  */
 import type { CardInstance, ZoneId } from './cards.js';
-import type { ContinuousEffect } from './characteristics.js';
+import type { ContinuousEffect, GrantedTriggerRef } from './characteristics.js';
 import type { ManaPool } from './mana.js';
 import type { SeatIndex } from './types.js';
 
@@ -209,6 +209,19 @@ export interface StackObject {
   readonly cardKey: string;
   /** Which of the source's abilities, for activated and triggered objects. */
   readonly abilityIndex?: number;
+  /**
+   * Where this triggered ability was **defined**, when the permanent that has it did not print it.
+   *
+   * `source` is still the permanent whose event fired it — the ability belongs to the creature it
+   * was granted to (CR 113.6), so "this creature" means the holder and the controller is the
+   * holder's — but the definition is on somebody else's card. Without this the resolution would
+   * look up `abilityIndex` in the holder's own `triggers` and find a different ability, or none.
+   *
+   * It carries the granting card's **name** rather than its instance, because the ability is
+   * independent of its source once it is on the stack (CR 608.2): the Aura can be destroyed, or
+   * the pair broken, while the trigger waits, and it still has to resolve. See `GrantedTriggerRef`.
+   */
+  readonly grantedBy?: GrantedTriggerRef;
   readonly targets: readonly Target[];
   /**
    * The stack object this triggered ability is *about*, for a trigger that watched something

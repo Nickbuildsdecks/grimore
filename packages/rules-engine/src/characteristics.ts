@@ -290,6 +290,25 @@ export interface ContinuousEffect {
    */
   readonly protectionFrom?: readonly Color[];
   /**
+   * **Triggered abilities this effect hands the permanents in scope** (CR 113.6, 603.2) — the
+   * indices of entries in the *source card's* `grantedTriggers`.
+   *
+   * Indices rather than the ability itself, and that is the whole design. A `TriggerDef` is a bag
+   * of functions — a condition, an effect, a target filter — and `GameState` is data that is
+   * cloned, serialised and handed between a socket layer and a bot search. Putting a closure on an
+   * effect would have made the state uncloneable at the first card that used it. So the effect
+   * carries a *reference* and the script is still the single definition: the grantor is `source`,
+   * its card name comes off its instance, and `scriptFor(name).grantedTriggers[i]` is the ability.
+   *
+   * It rides here rather than on a declaration of its own because the hard parts are already
+   * solved on this object. Who gets it is `scope`, which can name one card (an Aura's host), a
+   * team, a creature type, or — the one that made this worth building — a soulbond `pair`, whose
+   * membership changes under the effect while it sits there. How long for is `duration`, and the
+   * effect is removed with the permanent that made it by the same pass that takes away an anthem.
+   * A second declaration would have had to re-answer all of that.
+   */
+  readonly grants?: readonly number[];
+  /**
    * Combat damage involving the permanents in scope does not happen — dealt **by** them and dealt
    * **to** them. A Fog is this with an all-creatures scope; a Maze of Ith is it scoped to one card.
    *
@@ -938,6 +957,62 @@ export function combatDamagePrevented(state: GameState, instance: CardInstance):
     (effect) => effect.preventsCombatDamage === true
       && effectApplies(state, effect, instance, creature, line),
   );
+}
+
+/**
+ * A triggered ability one permanent is currently handing another: whose card defines it, and which
+ * of that card's `grantedTriggers` it is.
+ *
+ * The card **name** rather than the grantor's instance id, because this reference outlives the
+ * grantor. An ability on the stack is independent of its source (CR 608.2), so a Tandem Lookout
+ * killed while its draw trigger is waiting to resolve still draws the card — and by then the
+ * effect is gone and the instance is in a graveyard. A name is the key `scriptFor` already uses,
+ * and it is as serialisable as the rest of the state.
+ */
+export interface GrantedTriggerRef {
+  readonly card: string;
+  readonly index: number;
+}
+
+/**
+ * Every triggered ability this permanent has been **given** by something else, in the order the
+ * effects granting them were created.
+ *
+ * Its printed triggers are not here: those come off its own script, and this is the other half —
+ * the one the engine had no machinery for at all, which is the gap the myriad docblock named and
+ * the reason Blade of Selves had to be a keyword the combat code reads rather than an ability.
+ *
+ * **Layer 6, with the timestamps that layer needs** (CR 613.1f), which is the whole reason this
+ * walks the list rather than filtering it: "loses all abilities" takes away what the creature has
+ * *now* and leaves anything granted afterwards alone. A Turn to Frog cast on a paired Tandem
+ * Lookout takes the draw trigger with it; pair the Frog with a Lookout afterwards and it draws
+ * again. Same loop, same ordering argument, same `state.effects` creation order as the keyword
+ * clearing in `characteristicsOf` — and deliberately the same shape, so the two cannot drift.
+ *
+ * A face-down permanent has no abilities at all (CR 707.2) and so can be handed none: an effect
+ * pointed at one reaches a 2/2 with no text.
+ */
+export function grantedTriggersOn(
+  state: GameState, instance: CardInstance,
+): readonly GrantedTriggerRef[] {
+  if (isFaceDownPermanent(instance)) return [];
+  const def = state.cardDefs[instance.defKey];
+  const line = parseTypeLine(def?.typeLine);
+  const creature = hasType(line, 'creature');
+  let out: GrantedTriggerRef[] | null = null;
+  for (const effect of state.effects ?? []) {
+    if (effect.grants === undefined && effect.losesAllAbilities !== true) continue;
+    if (!effectApplies(state, effect, instance, creature, line)) continue;
+    if (effect.losesAllAbilities === true) {
+      out = null;
+      continue;
+    }
+    const grantor = state.instances[effect.source];
+    const name = state.cardDefs[grantor?.defKey ?? '']?.name;
+    if (name === undefined) continue;
+    for (const index of effect.grants ?? []) (out ??= []).push({ card: name, index });
+  }
+  return out ?? [];
 }
 
 /**

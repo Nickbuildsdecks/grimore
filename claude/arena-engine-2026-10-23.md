@@ -7254,6 +7254,53 @@ reading has never met this. A measurement that fails for a reason that has nothi
 thing measured is the failure mode D119 is about, and the only defence here was that the claim was
 specific enough to be worth a second look rather than filing as a bug.
 
+## A static can hand another permanent a triggered ability (#230, D251)
+
+The structural hole the myriad docblock named: a continuous effect could change what a creature
+**is** — bigger, flying, unable to block, a different type — and nothing could give it something it
+**does**. "Each of those creatures has 'whenever this creature deals damage to a player, draw a
+card'" was unscriptable, which is why Blade of Selves' myriad had to be a keyword the combat code
+reads rather than an ability the Equipment hands out.
+
+It is two halves, and the reason is serialisation: a `TriggerDef` is a bag of functions and
+`GameState` is data that gets cloned and handed to a bot search, so the ability lives in
+`CardScript.grantedTriggers` and `PumpOptions.grants` carries *indices into it*. Putting it on
+`PumpOptions` is the whole of why this was small: `modsFrom` is the one translation from what a card
+says to what an effect holds, and the five builders that read it — an Aura's bonus, a bestowed one,
+an Equipment's, a `statics` entry, soulbond's pair — are the complete list of ways a printed card
+grants anything. Every scope the engine already has answers "who gets it", including the soulbond
+`pair` whose membership changes under the effect while it sits there; duration and removal come free.
+
+The ability belongs to the **holder**, not the grantor (CR 113.6), so "this creature" means the
+creature and the controller is its controller. The exception is `StackObject.grantedBy`, which
+carries the granting card's *name*: an ability is independent of its source once it is on the stack
+(CR 608.2), so an Aura destroyed in the window before the trigger resolves still draws the card —
+and a test holds that window open in the damage step and kills the Aura in it.
+
+Collection is one function rather than two: `fireTrigger` came out of `raise`'s watcher loop so the
+printed and granted cases share the intervening-if clause, the five fields saying what the event
+was, the obvious targets and the prompt when they are not. `abilityTargetSpecs` is the same move on
+the other side — three places looked target specs up in the holder's script and all three now ask
+one function. Layer 6 falls out of the same loop shape the keyword clearing uses, so a Turn to Frog
+cast after an Ophidian Eye takes the trigger away and one cast before it does not (CR 613.1f).
+
+**Two cards, two routes in**: Tandem Lookout ({2}{U} 1/1, soulbond) hands the ability to a pair and
+Ophidian Eye ({1}{U} Aura, flash) to one creature. Two for D239's reason, but the second is also the
+only evidence that the `PumpOptions` decision reached every builder — one goes through
+`applyStatics`, the other through `addAuraEffect`. A creature carrying a borrowed ability says what
+it is on its own sheet (`has draw a card`), because nothing in its text box does.
+
+**And the slot is a negative result.** Skyward Writ over 288 games at the canonical seeds: 139-149
+stock, **121-167** with the two cards in — eighteen games, about six points, 48% to 42%. A second
+arm cutting a Pacifism and a Rest in Peace instead read 124-164, three games of 288, so the cards
+are the cost rather than the slots; that arm was also illegal, which only the deck-coverage test
+knew, because Skyward Writ is the only deck holding either card. `cast-counts` says the bot casts
+both of the new ones (70% and 101% of the games it draws them), so this is a card being bad rather
+than dead — and the 101% is the suspected reason: the Aura is spent at the first opportunity on
+whatever creature is there, and an Aura on a creature an opponent can kill is a two-for-one. That is
+a bot rule with a task of its own rather than a guess folded in here. The cards ship for the
+mechanic, with the number in the open.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

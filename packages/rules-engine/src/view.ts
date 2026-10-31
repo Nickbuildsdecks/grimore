@@ -27,9 +27,12 @@
  */
 import { zoneKey, type CardDef, type CardInstance, type ZoneId } from './cards.js';
 import type { FormatId } from './formats.js';
-import { characteristicsOf, combatDamagePrevented, type Keyword } from './characteristics.js';
+import {
+  characteristicsOf, combatDamagePrevented, grantedTriggersOn, type Keyword,
+} from './characteristics.js';
 import { shieldOn } from './effects.js';
 import { legalActions, type LegalActions } from './legalActions.js';
+import { scriptFor } from './scripts.js';
 import { autoPassFor, pendingDeclaration, stillDeciding } from './automation.js';
 import { STEP_LABELS } from './turnTypes.js';
 import type { ManaPool } from './mana.js';
@@ -68,6 +71,18 @@ export interface VisibleCard {
    * two were paired would be reading a 3/3 Grizzly Bears with nothing on the table to explain it.
    */
   readonly pairedWith?: string;
+  /**
+   * Triggered abilities something **else** is giving this permanent, as the sentences they read
+   * (CR 113.6).
+   *
+   * Sent because a client cannot work them out. Every other ability on the table is printed on the
+   * card the player can open; a granted one is not written anywhere they can see, so a 1/1
+   * Leonin Skyhunter that draws a card every time it connects would be drawing cards for no
+   * visible reason — the Aura or the pair explains *that there is a reason*, and this says what it
+   * is. The descriptions rather than a flag, for the same reason the paired-with badge names the
+   * partner: "has an extra ability" is not something a player can plan around.
+   */
+  readonly granted?: readonly string[];
   readonly isToken: boolean;
   readonly isCommander: boolean;
   readonly card?: CardDef;
@@ -308,6 +323,7 @@ export interface PackedCard {
   readonly attachedTo?: string;
   readonly exiledBy?: string;
   readonly pairedWith?: string;
+  readonly granted?: readonly string[];
   readonly damage?: number;
   readonly power?: number;
   readonly toughness?: number;
@@ -370,6 +386,7 @@ export function packView(view: GameView): PackedView {
     if (card.attachedTo !== null) packed.attachedTo = card.attachedTo;
     if (card.exiledBy !== undefined) packed.exiledBy = card.exiledBy;
     if (card.pairedWith !== undefined) packed.pairedWith = card.pairedWith;
+    if (card.granted !== undefined) packed.granted = card.granted;
     // The computed characteristics, which only a battlefield creature has at all. `damage` and the
     // two bodies travel as they are, zero included, because a zero is a fact about a creature.
     if (card.damage !== undefined) packed.damage = card.damage;
@@ -407,6 +424,7 @@ export function unpackView(packed: PackedView): GameView {
       attachedTo: card.attachedTo ?? null,
       ...(card.exiledBy === undefined ? {} : { exiledBy: card.exiledBy }),
       ...(card.pairedWith === undefined ? {} : { pairedWith: card.pairedWith }),
+      ...(card.granted === undefined ? {} : { granted: card.granted }),
       isToken: card.isToken === true,
       isCommander: card.isCommander === true,
       ...(def === undefined ? {} : { card: def }),
@@ -513,6 +531,9 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
     this one checks.
   */
   const ch = characteristicsOf(state, inst);
+  const granted = grantedTriggersOn(state, inst)
+    .map((ref) => scriptFor(ref.card)?.grantedTriggers?.[ref.index]?.description)
+    .filter((text): text is string => text !== undefined);
   return {
     ...identified,
     // Power and toughness only for a creature. A land has neither, and sending the zeroes
@@ -528,6 +549,14 @@ function redact(state: GameState, inst: CardInstance, viewer: SeatIndex | null):
     */
     ...(ch.isCreature ? { isCreature: true as const } : {}),
     keywords: [...ch.keywords],
+    /*
+      And the abilities nothing printed on it, read off the effects reaching it right now.
+
+      Computed here rather than packed from a field on the instance, because there is no such
+      field: a granted ability is a reference on a continuous effect and lives exactly as long as
+      that effect does, which is what makes the badge disappear the moment the Aura does.
+    */
+    ...(granted.length === 0 ? {} : { granted }),
     ...(inst.frozen === true ? { frozen: true as const } : {}),
     ...(ch.cantAttack ? { cantAttack: true } : {}),
     ...(ch.cantBlock ? { cantBlock: true } : {}),

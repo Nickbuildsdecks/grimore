@@ -1744,6 +1744,18 @@ export interface PumpOptions {
   readonly definesSize?: ContinuousEffect['definesSize'];
   /** See `ContinuousEffect.while` — metalcraft, and any other "as long as" clause. */
   readonly while?: ContinuousEffect['while'];
+  /**
+   * See `ContinuousEffect.grants`: which of the granting card's `grantedTriggers` the creatures in
+   * scope are handed.
+   *
+   * Here rather than in a declaration of its own so that **every** builder carries it for nothing.
+   * `modsFrom` is the one translation from "what a card says" to "what an effect holds", and the
+   * five builders that read it are an Aura's bonus, a bestowed one, an Equipment's, a static and
+   * soulbond's pair — which happens to be the complete list of ways a printed card grants an
+   * ability. Adding a second declaration would have meant teaching each of those about it
+   * separately, which is the bug this function's own docblock is about.
+   */
+  readonly grants?: readonly number[];
   readonly duration?: EffectDuration;
 }
 
@@ -1787,6 +1799,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.setColors ? { setColors: opts.setColors } : {}),
     ...(opts.definesSize ? { definesSize: opts.definesSize } : {}),
     ...(opts.while ? { while: opts.while } : {}),
+    ...(opts.grants ? { grants: [...opts.grants] } : {}),
   };
 }
 

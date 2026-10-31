@@ -1068,6 +1068,15 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
     out.push(`paired with ${partner?.card?.name ?? "a creature"}`)
   }
   /*
+    And any ability something else is giving it (CR 113.6).
+
+    The one kind of text on this table that is **not** on the card a player can open: a Leonin
+    Skyhunter handed "whenever this creature deals damage to a player, draw a card" by an Ophidian
+    Eye has nothing in its own box to say so. Written as "has <sentence>" so it reads as an
+    addition rather than as a correction to the printed text.
+  */
+  for (const text of card.granted ?? []) out.push(`has ${text}`)
+  /*
     Its current body, for anything that currently *is* a creature.
 
     The third clause used to be `card.card?.power !== undefined` — "the card has power printed on

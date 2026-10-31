@@ -44,7 +44,7 @@ import { timesCost } from './mana.js';
 import type { Color } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
 import { legalTargets, retarget } from './targeting.js';
-import { targetKey, type Target } from './turnTypes.js';
+import { targetKey, type StackObject, type Target } from './turnTypes.js';
 
 /**
  * The biggest toughness on the battlefield, which is where a sweeper's useful range stops.
@@ -4828,6 +4828,31 @@ const CLOUDFIN_RAPTOR: CardScript = {
 */
 
 /**
+ * The specs an ability on the stack wants targets for — printed on its permanent, or granted to it.
+ *
+ * One function because there were three copies of this lookup and they now have to agree about one
+ * more thing: a granted ability is defined on the granting card, not on the permanent that has it
+ * (CR 113.6), so the holder's own `triggers` is the wrong array to index. The copies were in the
+ * prompt that asks for a trigger's targets, in the legal-actions snapshot the table renders that
+ * prompt from, and in the redirect check — three places that have to offer the same list, because
+ * a target the table draws and the engine then refuses is the failure mode this engine treats as a
+ * bug rather than a message.
+ */
+export function abilityTargetSpecs(
+  state: GameState, object: StackObject,
+): readonly TargetSpec[] {
+  if (object.abilityIndex === undefined) return [];
+  if (object.grantedBy !== undefined) {
+    return scriptFor(object.grantedBy.card)?.grantedTriggers?.[object.grantedBy.index]?.targets
+      ?? [];
+  }
+  const script = scriptFor(state.cardDefs[object.cardKey]?.name);
+  return (object.kind === 'activated'
+    ? script?.abilities?.[object.abilityIndex]?.targets
+    : script?.triggers?.[object.abilityIndex]?.targets) ?? [];
+}
+
+/**
  * The single target spec an object on the stack has, when it unambiguously has one.
  *
  * `null` for everything that cannot be redirected *soundly*: an object with no targets or several,
@@ -4852,13 +4877,7 @@ export function soleTargetSpecOf(state: GameState, id: string): TargetSpec | nul
   }
   // An activated or triggered ability. Its source is a permanent — or a token that has ceased to
   // exist, in which case there is no script to read and the ability is simply not redirectable.
-  const source = state.instances[object.source];
-  const script = scriptFor(state.cardDefs[source?.defKey ?? '']?.name);
-  if (script === undefined || object.abilityIndex === undefined) return null;
-  const def = object.kind === 'activated'
-    ? script.abilities?.[object.abilityIndex]
-    : script.triggers?.[object.abilityIndex];
-  const specs = def?.targets ?? [];
+  const specs = abilityTargetSpecs(state, object);
   return specs.length === 1 ? specs[0] ?? null : null;
 }
 
@@ -8271,6 +8290,75 @@ const TRUSTED_FORCEMAGE: CardScript = {
   triggers: [...soulbondTriggers()],
 };
 
+/**
+ * Tandem Lookout: the pair does not get bigger, it gets a **card** every time it connects.
+ *
+ * The card this engine's granting machinery was built for, and the reason the gap was worth
+ * closing rather than working around. Soulbond's other two cards hand out a body — +4/+4, +1/+1 —
+ * which `PumpOptions` could already say. This one hands out an *ability*, and nothing in the engine
+ * could express that at all: "each of those creatures has 'Whenever this creature deals damage to a
+ * player, draw a card'" is a triggered ability sitting on a permanent that never printed it, which
+ * is the structural hole the myriad docblock named in as many words.
+ *
+ * It is declared in two halves, which is what `ContinuousEffect.grants` is about: the ability is
+ * `grantedTriggers[0]` here, and `soulbond.effect` says `grants: [0]` — so the pair scope that
+ * already existed carries it, and the ability comes and goes with the pairing without anything
+ * having to notice. Break the pair and both creatures stop drawing; pair the Lookout with
+ * something else next turn and that creature starts.
+ *
+ * **The ability belongs to whichever creature has it** (CR 113.6), and that is the whole value of
+ * the card: pair it with something evasive and the *other* creature is the one drawing cards, which
+ * is a decision the player makes at the moment of pairing and cannot take back. "This creature" in
+ * the granted text means the holder, which falls out of the holder being the trigger's source
+ * rather than being special-cased.
+ */
+const TANDEM_LOOKOUT: CardScript = {
+  name: 'Tandem Lookout',
+  soulbond: { effect: { grants: [0] } },
+  triggers: [...soulbondTriggers()],
+  grantedTriggers: [{
+    /*
+      `combat-damage` without a `to`, for the reason Topan Freeblade's docblock gives: the engine
+      raises this event only for damage that actually took a player's life total down, which is
+      exactly "deals damage to a player". A blocked attacker and a swing stopped by a Fog draw
+      nothing, which is the printed card.
+    */
+    on: { kind: 'combat-damage' },
+    description: 'draw a card',
+    effect: (c) => draw(c.state, c.controller, 1),
+  }],
+};
+
+/**
+ * Ophidian Eye: the same granted ability through the **other** route, and the one that proves the
+ * claim.
+ *
+ * Tandem Lookout hands its draw trigger out through a soulbond pair; this hands the identical
+ * ability to one creature through an Aura. Two cards rather than one on purpose (D239: a mechanic
+ * resting on a single card is one deck change from gone), but the second card is doing more than
+ * making a count: the two reach `ContinuousEffect.grants` by completely different paths —
+ * `applyStatics`' pair scope and `addAuraEffect`'s `{ kind: 'cards' }` — and the whole argument
+ * for putting the grant on `PumpOptions` was that every builder would then carry it for nothing.
+ * A second card that used the same builder would have left that untested.
+ *
+ * Flash is the card's own text and it matters: cast in response to a blocker, the creature that was
+ * about to get through connects and draws. And the Aura being removal-bait cuts the other way from
+ * the Lookout — killing the enchanted creature takes the Eye with it, where killing the Lookout
+ * leaves its partner alive and merely unpaired.
+ */
+const OPHIDIAN_EYE: CardScript = {
+  name: 'Ophidian Eye',
+  aura: {
+    target: { kind: 'creature', description: 'enchant creature' },
+    effect: { grants: [0] },
+  },
+  grantedTriggers: [{
+    on: { kind: 'combat-damage' },
+    description: 'draw a card',
+    effect: (c) => draw(c.state, c.controller, 1),
+  }],
+};
+
 const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
@@ -8400,7 +8488,7 @@ const ALL: readonly CardScript[] = [
   SUDDEN_SHOCK, KROSAN_GRIP,
   NINJA_OF_THE_DEEP_HOURS,
   ARCBOUND_WORKER, ARCBOUND_RAVAGER, ICHOR_WELLSPRING,
-  WOLFIR_SILVERHEART, TRUSTED_FORCEMAGE,
+  WOLFIR_SILVERHEART, TRUSTED_FORCEMAGE, TANDEM_LOOKOUT, OPHIDIAN_EYE,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

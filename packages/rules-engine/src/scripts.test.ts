@@ -19607,7 +19607,7 @@ describe('soulbond: the first link between two permanents that is not an attachm
       card is covered the day it is written.
     */
     const declared = scriptedCardNames().filter((name) => scriptFor(name)?.soulbond !== undefined);
-    expect(declared).toEqual(['Trusted Forcemage', 'Wolfir Silverheart']);
+    expect(declared).toEqual(['Tandem Lookout', 'Trusted Forcemage', 'Wolfir Silverheart']);
     for (const name of declared) {
       const triggers = scriptFor(name)?.triggers ?? [];
       const etb = triggers.filter((t) => t.on.kind === 'etb');
@@ -19615,3 +19615,216 @@ describe('soulbond: the first link between two permanents that is not an attachm
     }
   });
 });
+
+describe('a granted triggered ability: the first ability on a permanent that did not print it', () => {
+  /*
+    The structural hole this closes (CR 113.6): until now a continuous effect could change what a
+    creature *is* — bigger, flying, unable to block — and nothing anywhere could give it something
+    it *does*. "Each of those creatures has 'whenever this creature deals damage to a player, draw a
+    card'" was unscriptable, which is also why Blade of Selves' myriad had to be a keyword the
+    combat code reads rather than an ability the card hands out.
+
+    Two cards reach it by different routes on purpose: Tandem Lookout through soulbond's pair scope
+    and Ophidian Eye through an Aura. The grant rides on `PumpOptions`, so the claim being tested is
+    that *every* builder carries it rather than the one that was written first.
+
+    The tests are the four things that make it an ability rather than a flag: it fires off the
+    holder's own event, it is the **holder's** ability rather than the grantor's, it goes away when
+    the thing granting it does, and once it is on the stack it no longer depends on either.
+  */
+  const BLUE = ['Island', 'Island', 'Island'];
+
+  /** Seat 0 on Skyward Writ with a board, mid-turn, nothing auto-passing. */
+  const table = (mine: readonly string[], hand: readonly string[] = []): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+      battlefield: { 0: [...BLUE, ...mine] },
+      hands: { 0: hand },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+
+  /** Swings the named creatures at seat 1 and plays the turn out to its end step. */
+  const connect = (s: GameState, ...names: readonly string[]): GameState => {
+    const attackers = names.map((name) => ({
+      attacker: find(s, 0, 'battlefield', name), defender: 1 as const,
+    }));
+    return drain(advanceTo(apply(advanceTo(s, 'declare-attackers'), {
+      type: 'auto:attack', by: 0, attackers,
+    }), 'end'), 80);
+  };
+
+  const held = (s: GameState): number => ids(s, 0, 'hand').length;
+
+  it('fires off the holder’s combat damage, for both halves of the pair', () => {
+    /*
+      Two attackers and two cards, which is the reading that distinguishes a granted ability from a
+      trigger on the grantor: if the Lookout's own card were watching, two creatures connecting
+      would fire it twice *as the Lookout* and a pair of one-sided readings would look identical.
+      The Skyhunter flies and seat 1 has nothing, so both get through.
+    */
+    let s = table(['Leonin Skyhunter'], ['Tandem Lookout']);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Tandem Lookout') });
+    s = drain(s, 20);
+    // The pairing prompt, answered with the only other creature there is.
+    expect(s.pendingChoice?.seat).toBe(0);
+    s = drain(apply(s, {
+      type: 'auto:choose', by: 0,
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
+    }), 20);
+    const lookout = find(s, 0, 'battlefield', 'Tandem Lookout');
+    expect(s.instances[lookout]!.pairedWith).toBe(find(s, 0, 'battlefield', 'Leonin Skyhunter'));
+
+    const before = held(s);
+    s = connect(s, 'Leonin Skyhunter');
+    // Three damage through and one card, drawn by the creature that never printed the ability.
+    expect(life(s, 1)).toBe(18);
+    expect(held(s)).toBe(before + 1);
+  });
+
+  it('and an Aura hands the same ability to one creature, which is the other route in', () => {
+    let s = table(['Leonin Skyhunter'], ['Ophidian Eye']);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ophidian Eye'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
+    }), 20);
+    const before = held(s);
+    s = connect(s, 'Leonin Skyhunter');
+    expect(life(s, 1)).toBe(18);
+    expect(held(s)).toBe(before + 1);
+  });
+
+  it('is gone the moment the thing granting it is', () => {
+    /*
+      The half a player feels, and the one an `ids` list would have got wrong: the ability is not
+      copied onto the creature, it is read off the effect every time an event is raised. So the
+      Aura leaving takes it with it, with nothing having to remember that it was ever there.
+    */
+    let s = table(['Leonin Skyhunter'], ['Ophidian Eye']);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ophidian Eye'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
+    }), 20);
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Ophidian Eye'),
+      toZone: 'graveyard',
+    });
+    const before = held(s);
+    s = connect(s, 'Leonin Skyhunter');
+    expect(life(s, 1)).toBe(18);
+    expect(held(s)).toBe(before);
+  });
+
+  it('and once it is on the stack it does not need the grantor any more (CR 608.2)', () => {
+    /*
+      Why the stack object carries the granting card's **name** rather than its instance. The
+      ability is independent of its source once it has triggered, so an Aura destroyed in the
+      window before it resolves still draws the card — and if the lookup went through the instance
+      on the battlefield there would be nothing left to look up.
+
+      The window is real rather than contrived: the trigger goes on the stack in the combat damage
+      step and both players get priority before it resolves, which is where an opponent's
+      Disenchant would go.
+    */
+    let s = table(['Leonin Skyhunter'], ['Ophidian Eye']);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ophidian Eye'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
+    }), 20);
+    const before = held(s);
+    /*
+      Attack and stop **in the damage step**, which is where the window is: `advanceTo` passes
+      priority to get where it is going, and a pass from both seats resolves the top of the stack —
+      so advancing any further than this is a drain by another name, which is how the first version
+      of this test asserted about a stack that was already empty.
+    */
+    s = advanceTo(apply(advanceTo(s, 'declare-attackers'), {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: find(s, 0, 'battlefield', 'Leonin Skyhunter'), defender: 1 }],
+    }), 'combat-damage');
+    const waiting = s.stackOrder
+      .map((id) => s.stackObjects[id]!)
+      .filter((object) => object.grantedBy !== undefined);
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]!.grantedBy?.card).toBe('Ophidian Eye');
+    // The ability belongs to the creature, not to the Aura: that is what `source` says.
+    expect(waiting[0]!.source).toBe(find(s, 0, 'battlefield', 'Leonin Skyhunter'));
+
+    s = apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Ophidian Eye'),
+      toZone: 'graveyard',
+    });
+    expect(held(drain(s, 80))).toBe(before + 1);
+  });
+
+  it('and a creature that loses all abilities loses the granted one too, in timestamp order', () => {
+    /*
+      Layer 6 (CR 613.1f), which is the rule a granted ability shares with a granted keyword: losing
+      all abilities takes away what the creature has *now* and leaves anything granted afterwards
+      alone. Both halves are asserted on the same board, because a version that cleared everything
+      would pass the first and fail the second.
+
+      A list of its own, because no starter deck holds both an Ophidian Eye and a Turn to Frog —
+      and `customDeck` looks a name up anywhere in the pool, so the test says what it needs.
+    */
+    const list = customDeck({
+      id: 'eye-and-frog',
+      name: 'Eye and Frog',
+      entries: [
+        { name: 'Ophidian Eye', count: 4 },
+        { name: 'Turn to Frog', count: 4 },
+        { name: 'Leonin Skyhunter', count: 4 },
+        { name: 'Island', count: 48 },
+      ],
+    }).deck;
+    const start = advanceTo(arena({
+      decks: { 0: 'eye-and-frog', 1: 'verdant-guard' },
+      deckSpecs: { 'eye-and-frog': list },
+      battlefield: { 0: [...BLUE, 'Island', 'Island', 'Leonin Skyhunter'] },
+      hands: { 0: ['Ophidian Eye', 'Turn to Frog'] },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+
+    const enchant = (s: GameState): GameState => drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ophidian Eye'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
+    }), 20);
+    const frog = (s: GameState): GameState => drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Turn to Frog'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
+    }), 20);
+
+    // Eye first, then the Frog: the Frog is later, so it takes the ability away.
+    const frogged = frog(enchant(start));
+    const beforeFrogged = held(frogged);
+    expect(held(connect(frogged, 'Leonin Skyhunter'))).toBe(beforeFrogged);
+
+    // Frog first, then the Eye: the grant is later, so the 1/1 draws.
+    const regranted = enchant(frog(start));
+    const beforeRegranted = held(regranted);
+    const swung = connect(regranted, 'Leonin Skyhunter');
+    expect(life(swung, 1)).toBe(19);
+    expect(held(swung)).toBe(beforeRegranted + 1);
+  });
+
+  it('and both cards that grant one declare it the same way', () => {
+    /*
+      Derived rather than listed, like the soulbond pairing check above: the grant is two halves —
+      an ability in `grantedTriggers` and a `grants` index on some `PumpOptions` — and a card with
+      one and not the other does nothing at all while reading as though it did.
+    */
+    const granting = scriptedCardNames().filter((name) => scriptFor(name)?.grantedTriggers !== undefined);
+    expect(granting.length).toBeGreaterThanOrEqual(2);
+    for (const name of granting) {
+      const script = scriptFor(name)!;
+      const handed = [
+        ...(script.soulbond === undefined ? [] : script.soulbond.effect.grants ?? []),
+        ...(script.aura === undefined ? [] : script.aura.effect.grants ?? []),
+        ...(script.bestow === undefined ? [] : script.bestow.effect.grants ?? []),
+        ...(script.statics ?? []).flatMap((entry) => entry.effect.grants ?? []),
+      ];
+      expect(handed.length).toBeGreaterThan(0);
+      for (const index of handed) expect(script.grantedTriggers![index]).toBeDefined();
+    }
+  });
+});
+

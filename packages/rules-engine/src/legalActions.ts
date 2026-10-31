@@ -25,7 +25,7 @@ import {
   addMana, canAfford, maxAffordableX, parseManaCost,
   type ManaCost, type ManaPool, type ManaType,
 } from './mana.js';
-import { scriptFor } from './scripts.js';
+import { abilityTargetSpecs, scriptFor } from './scripts.js';
 import {
   FORETELL_COST, MORPH_COST, morphCostText,
   type AbilityDef, type CardScript, type TargetSpec,
@@ -1832,12 +1832,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   let mustChoose: LegalActions['mustChoose'] = null;
   if (choice !== null && choice.seat === seat) {
     const object = state.stackObjects[choice.stackId];
-    const script = object === undefined ? undefined : scriptFor(state.cardDefs[object.cardKey]?.name);
-    const specs = (object?.abilityIndex === undefined
-      ? []
-      : object.kind === 'activated'
-        ? script?.abilities?.[object.abilityIndex]?.targets
-        : script?.triggers?.[object.abilityIndex]?.targets) ?? [];
+    const specs = object === undefined ? [] : abilityTargetSpecs(state, object);
     mustChoose = {
       description: choice.description,
       specs,

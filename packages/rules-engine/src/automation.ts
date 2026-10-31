@@ -22,9 +22,12 @@
  * which kills something else) comes out right.
  */
 import {
-  characteristicsOf, expireEffects, hasSubtype, hasType, type ContinuousEffect,
+  characteristicsOf, expireEffects, grantedTriggersOn, hasSubtype, hasType,
+  type ContinuousEffect, type GrantedTriggerRef,
 } from './characteristics.js';
-import { isFaceDownObject, isFaceDownPermanent, zoneKey, type CardDef } from './cards.js';
+import {
+  isFaceDownObject, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance,
+} from './cards.js';
 import { listAt, relocate, requireInstance, withInstance, withZones } from './cardActions.js';
 import {
   attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, dealCombatDamage,
@@ -52,7 +55,7 @@ import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './inter
 import { scriptFor, soleTargetSpecOf } from './scripts.js';
 import type {
   AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, CountersDecisionSpec,
-  DecisionSpec, DecisionSpecOf, ModeDef, ReplacementEvent, TargetSpec, TriggerEvent,
+  DecisionSpec, DecisionSpecOf, ModeDef, ReplacementEvent, TargetSpec, TriggerDef, TriggerEvent,
 } from './scriptTypes.js';
 import {
   isCardsDecision, isChoiceDecision, isCountersDecision, isNumberDecision, isTargetDecision,
@@ -926,6 +929,167 @@ function answeringFor(event: TriggerEvent): string | undefined {
   return undefined;
 }
 
+/**
+ * One trigger, asked whether this event fired it, and put on the stack if it did.
+ *
+ * Pulled out of `raise`'s watcher loop because there are now **two** places a permanent's
+ * triggered abilities come from: the ones printed on its own card, and the ones another permanent
+ * is handing it (`ContinuousEffect.grants`). Everything after "does this match" is identical for
+ * the two — the intervening-if clause asked its first time, the five fields saying what the event
+ * was about, the targets that are obvious and the prompt when they are not — and the version of
+ * this engine where that was duplicated for the granted case would have been two copies drifting
+ * apart, which is the bug `modsFrom`'s docblock is about.
+ *
+ * `holder` is the permanent whose ability this is, which for a granted trigger is **not** the card
+ * that defines it: the ability belongs to the creature it was given to (CR 113.6), so the
+ * condition, the targets and the resolution all read the holder as their source, and the
+ * controller is the holder's controller. `grantedBy` is the only thing that travels differently,
+ * and it travels to the stack object so the resolution can find the definition again.
+ *
+ * Returns the state unchanged when the trigger did not fire, which is most calls.
+ */
+function fireTrigger(
+  state: GameState, trigger: TriggerDef, holder: string, inst: CardInstance,
+  abilityIndex: number, event: TriggerEvent, actor: SeatIndex | undefined,
+  subject: string | undefined, fromStack: boolean, grantedBy?: GrantedTriggerRef,
+): GameState {
+  let next = state;
+  // A delayed trigger is scheduled, not watched for: the step it names drains it exactly once
+  // and the ordinary event path must never fire it (CR 603.7). See `TriggerDef.delayed`.
+  if (trigger.delayed === true) return next;
+  /*
+    A spell on the stack watches its own cast and nothing else.
+
+    Without this a card being cast would fire every battlefield trigger printed on it on the
+    way past: a Guttersnipe cast as a creature spell is not a Guttersnipe in play, and a
+    prowess creature does not get +1/+1 for being cast. `self` is what tells the two apart,
+    and it is asked here rather than in `triggerMatches` because this is a fact about where the
+    watcher *is* rather than about what the event was.
+  */
+  if (fromStack && !(trigger.on.kind === 'spell-cast' && trigger.on.self === true)) return next;
+  if (!triggerMatches(event, trigger.on, inst.zoneSeat, actor, holder === subject)) return next;
+  /*
+    The intervening-if clause, asked the first of its two times (CR 603.4).
+
+    Before the ability goes on the stack, not after: a trigger whose condition is false does
+    not trigger at all, so nobody gets to respond to it and nothing appears in the log. The
+    second ask is in `resolveTop`, where a condition that has since become false removes the
+    ability from the stack.
+  */
+  if (trigger.condition !== undefined && !trigger.condition({
+    state: next,
+    source: holder,
+    controller: inst.zoneSeat,
+    targets: [],
+    x: 0,
+    decisions: [],
+    kicked: false,
+    ...(subject === undefined ? {} : { subject }),
+    /*
+      And the object the event was about, which the *second* ask (in `resolveTop`) has always
+      had and this one did not.
+
+      A condition that reads the spell on the stack is the whole of what Chalice of the Void
+      is: "whenever a player casts a spell with mana value equal to the number of charge
+      counters on this". Without it here, the first ask would answer a different question from
+      the second — the ability would go on the stack for every spell anybody cast and then
+      vanish on resolution — which is observably the wrong card: an opponent would see a
+      trigger they could respond to for a spell that was never going to be countered.
+    */
+    ...(answeringFor(event) === undefined ? {} : { answering: answeringFor(event) }),
+    /*
+      And what the subject had on it, which the second ask has always had for the same reason.
+
+      Undying is the card that needs it: "if it had no +1/+1 counter on it" is an intervening-if
+      about a creature that is already in a graveyard with its counters taken off, so the only
+      place the answer survives is the snapshot the event carries. Without this line the first
+      ask would say yes for a creature that had a counter and the second would say no — the
+      ability would go on the stack for an opponent to respond to and then do nothing, which is
+      the shape of wrongness this clause exists to prevent.
+    */
+    ...('subjectCounters' in event && event.subjectCounters !== undefined
+      ? { subjectCounters: event.subjectCounters }
+      : {}),
+  })) return next;
+  const specs = trigger.targets ?? [];
+  /*
+    Which player this event was about, for the two events that are about one.
+
+    An attack trigger says who was attacked; a combat-damage trigger says who was hit. They are
+    the same question — "the player this ability's event happened to" — so they travel the same
+    way rather than growing a second field for the second card that needs it. See
+    `StackObject.attacked`.
+  */
+  const attacked = event.kind === 'attacks' || event.kind === 'attacks-unblocked'
+    ? event.attacked
+    : event.kind === 'combat-damage' && event.defender !== undefined
+      ? { defender: event.defender }
+      : undefined;
+  const answering = answeringFor(event);
+  // And which permanent it was about, for a trigger that has to say "that creature". Only for
+  // the three events that have a subject other than the watcher itself — a card watching its
+  // own arrival already knows which permanent it means.
+  const about: TriggerAbout = {
+    // Whoever did the thing, for "that player". Only when it is somebody other than the
+    // watcher: a card that means its own controller says `controller` and always could.
+    ...(actor === undefined || actor === inst.zoneSeat ? {} : { actor }),
+    ...(attacked === undefined ? {} : { attacked }),
+    ...(answering === undefined ? {} : { answering }),
+    ...(subject === undefined
+      || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
+        || event.kind === 'blocks' || event.kind === 'becomes-blocked'
+        || event.kind === 'attacks-unblocked' || event.kind === 'to-graveyard')
+      ? {}
+      : { subject }),
+    // The attacker a block was against, for "that creature". Its own field rather than the
+    // subject, because the subject of a block is the creature that blocked — which is almost
+    // always the watcher itself, and never the one the card is talking about.
+    ...((event.kind === 'blocks' || event.kind === 'becomes-blocked')
+      && event.blocked !== undefined
+      ? { blocked: event.blocked }
+      : {}),
+    // What it had on it before the event, for a trigger that counts counters that are gone by
+    // the time it resolves. See `StackObject.subjectCounters`.
+    ...(event.kind === 'dies' && event.subjectCounters !== undefined
+      ? { subjectCounters: event.subjectCounters }
+      : {}),
+  };
+  if (specs.length === 0) {
+    return pushAbility(
+      next, holder, inst.zoneSeat, abilityIndex, [], 'triggered', trigger.description, about,
+      grantedBy,
+    );
+  }
+  // A trigger that needs targets and has none legal is never put on the stack (CR 603.3c).
+  if (!hasAnyLegalTargets(next, specs, inst.zoneSeat, holder)) return next;
+  const auto = obviousTargets(next, specs, inst.zoneSeat, holder);
+  next = pushAbility(
+    next, holder, inst.zoneSeat, abilityIndex, auto ?? [], 'triggered', trigger.description, about,
+    grantedBy,
+  );
+  if (auto !== null) {
+    // An ability the engine aimed for its controller has its targets now, so anything it took
+    // aim at that wards gets to say so. See `raiseWard`.
+    return raiseWard(next, next.stackOrder[next.stackOrder.length - 1]!);
+  }
+  // Otherwise the controller chooses, and nothing happens until they do.
+  const stackId = next.stackOrder[next.stackOrder.length - 1]!;
+  return {
+    ...next,
+    // As with `pendingDecision` above: nothing happens until it is answered, so nobody holds
+    // priority. Leaving a seat named here is what let the *other* player's table offer a pass
+    // the engine then refused.
+    priority: null,
+    passed: [],
+    pendingChoice: {
+      seat: inst.zoneSeat,
+      stackId,
+      description: trigger.description,
+      remaining: specs.reduce((n, spec) => n + Math.max(1, spec.count ?? 1), 0),
+    },
+  };
+}
+
 function raise(
   state: GameState, event: TriggerEvent, actor?: SeatIndex, subject?: string,
 ): GameState {
@@ -1053,143 +1217,28 @@ function raise(
     // still found: `scriptOf` reads `instances`, and a token that ceased to exist is not in it.
     // A face-down permanent has no abilities, so it watches nothing (CR 707.2).
     const script = isFaceDownPermanent(inst) ? undefined : scriptFor(next.cardDefs[inst.defKey]?.name);
-    if (script?.triggers === undefined) continue;
-    for (let i = 0; i < script.triggers.length; i++) {
-      const trigger = script.triggers[i]!;
-      // A delayed trigger is scheduled, not watched for: the step it names drains it exactly once
-      // and the ordinary event path must never fire it (CR 603.7). See `TriggerDef.delayed`.
-      if (trigger.delayed === true) continue;
-      /*
-        A spell on the stack watches its own cast and nothing else.
+    /*
+      Its printed triggers, and then the ones somebody else is handing it.
 
-        Without this a card being cast would fire every battlefield trigger printed on it on the
-        way past: a Guttersnipe cast as a creature spell is not a Guttersnipe in play, and a
-        prowess creature does not get +1/+1 for being cast. `self` is what tells the two apart,
-        and it is asked here rather than in `triggerMatches` because this is a fact about where the
-        watcher *is* rather than about what the event was.
-      */
-      if (fromStack && !(trigger.on.kind === 'spell-cast' && trigger.on.self === true)) continue;
-      if (!triggerMatches(event, trigger.on, inst.zoneSeat, actor, id === subject)) continue;
-      /*
-        The intervening-if clause, asked the first of its two times (CR 603.4).
-
-        Before the ability goes on the stack, not after: a trigger whose condition is false does
-        not trigger at all, so nobody gets to respond to it and nothing appears in the log. The
-        second ask is in `resolveTop`, where a condition that has since become false removes the
-        ability from the stack.
-      */
-      if (trigger.condition !== undefined && !trigger.condition({
-        state: next,
-        source: id,
-        controller: inst.zoneSeat,
-        targets: [],
-        x: 0,
-        decisions: [],
-        kicked: false,
-        ...(subject === undefined ? {} : { subject }),
-        /*
-          And the object the event was about, which the *second* ask (in `resolveTop`) has always
-          had and this one did not.
-
-          A condition that reads the spell on the stack is the whole of what Chalice of the Void
-          is: "whenever a player casts a spell with mana value equal to the number of charge
-          counters on this". Without it here, the first ask would answer a different question from
-          the second — the ability would go on the stack for every spell anybody cast and then
-          vanish on resolution — which is observably the wrong card: an opponent would see a
-          trigger they could respond to for a spell that was never going to be countered.
-        */
-        ...(answeringFor(event) === undefined ? {} : { answering: answeringFor(event) }),
-        /*
-          And what the subject had on it, which the second ask has always had for the same reason.
-
-          Undying is the card that needs it: "if it had no +1/+1 counter on it" is an intervening-if
-          about a creature that is already in a graveyard with its counters taken off, so the only
-          place the answer survives is the snapshot the event carries. Without this line the first
-          ask would say yes for a creature that had a counter and the second would say no — the
-          ability would go on the stack for an opponent to respond to and then do nothing, which is
-          the shape of wrongness this clause exists to prevent.
-        */
-        ...('subjectCounters' in event && event.subjectCounters !== undefined
-          ? { subjectCounters: event.subjectCounters }
-          : {}),
-      })) continue;
-      const specs = trigger.targets ?? [];
-      /*
-        Which player this event was about, for the two events that are about one.
-
-        An attack trigger says who was attacked; a combat-damage trigger says who was hit. They are
-        the same question — "the player this ability's event happened to" — so they travel the same
-        way rather than growing a second field for the second card that needs it. See
-        `StackObject.attacked`.
-      */
-      const attacked = event.kind === 'attacks' || event.kind === 'attacks-unblocked'
-        ? event.attacked
-        : event.kind === 'combat-damage' && event.defender !== undefined
-          ? { defender: event.defender }
-          : undefined;
-      const answering = answeringFor(event);
-      // And which permanent it was about, for a trigger that has to say "that creature". Only for
-      // the three events that have a subject other than the watcher itself — a card watching its
-      // own arrival already knows which permanent it means.
-      const about: TriggerAbout = {
-        // Whoever did the thing, for "that player". Only when it is somebody other than the
-        // watcher: a card that means its own controller says `controller` and always could.
-        ...(actor === undefined || actor === inst.zoneSeat ? {} : { actor }),
-        ...(attacked === undefined ? {} : { attacked }),
-        ...(answering === undefined ? {} : { answering }),
-        ...(subject === undefined
-          || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
-            || event.kind === 'blocks' || event.kind === 'becomes-blocked'
-            || event.kind === 'attacks-unblocked' || event.kind === 'to-graveyard')
-          ? {}
-          : { subject }),
-        // The attacker a block was against, for "that creature". Its own field rather than the
-        // subject, because the subject of a block is the creature that blocked — which is almost
-        // always the watcher itself, and never the one the card is talking about.
-        ...((event.kind === 'blocks' || event.kind === 'becomes-blocked')
-          && event.blocked !== undefined
-          ? { blocked: event.blocked }
-          : {}),
-        // What it had on it before the event, for a trigger that counts counters that are gone by
-        // the time it resolves. See `StackObject.subjectCounters`.
-        ...(event.kind === 'dies' && event.subjectCounters !== undefined
-          ? { subjectCounters: event.subjectCounters }
-          : {}),
-      };
-      if (specs.length === 0) {
-        next = pushAbility(
-          next, id, inst.zoneSeat, i, [], 'triggered', trigger.description, about,
-        );
-        continue;
-      }
-      // A trigger that needs targets and has none legal is never put on the stack (CR 603.3c).
-      if (!hasAnyLegalTargets(next, specs, inst.zoneSeat, id)) continue;
-      const auto = obviousTargets(next, specs, inst.zoneSeat, id);
-      next = pushAbility(
-        next, id, inst.zoneSeat, i, auto ?? [], 'triggered', trigger.description, about,
-      );
-      if (auto !== null) {
-        // An ability the engine aimed for its controller has its targets now, so anything it took
-        // aim at that wards gets to say so. See `raiseWard`.
-        next = raiseWard(next, next.stackOrder[next.stackOrder.length - 1]!);
-        continue;
-      }
-      // Otherwise the controller chooses, and nothing happens until they do.
-      const stackId = next.stackOrder[next.stackOrder.length - 1]!;
-      next = {
-        ...next,
-        // As with `pendingDecision` above: nothing happens until it is answered, so nobody holds
-        // priority. Leaving a seat named here is what let the *other* player's table offer a pass
-        // the engine then refused.
-        priority: null,
-        passed: [],
-        pendingChoice: {
-          seat: inst.zoneSeat,
-          stackId,
-          description: trigger.description,
-          remaining: specs.reduce((n, spec) => n + Math.max(1, spec.count ?? 1), 0),
-        },
-      };
+      Two loops rather than one list, because the two are found in different places: a printed
+      trigger comes off the card's own script, and a granted one off the continuous effects
+      currently reaching this permanent (CR 113.6). They are collected in that order on purpose —
+      a permanent's own abilities exist before anything grants it another, and the order several
+      triggers of one permanent go on the stack in is the controller's to choose anyway (CR 603.3b).
+    */
+    for (const [i, trigger] of (script?.triggers ?? []).entries()) {
+      next = fireTrigger(next, trigger, id, inst, i, event, actor, subject, fromStack);
+    }
+    /*
+      And the granted ones. `grantedTriggersOn` answers "which, in what order, and with layer 6
+      applied"; the definition itself is looked up by card name, which is what makes the effect
+      carrying this serialisable. A reference to a card this build does not script is skipped
+      rather than thrown on, because a decklist can name a card the engine only half knows.
+    */
+    for (const ref of grantedTriggersOn(next, inst)) {
+      const granted = scriptFor(ref.card)?.grantedTriggers?.[ref.index];
+      if (granted === undefined) continue;
+      next = fireTrigger(next, granted, id, inst, ref.index, event, actor, subject, fromStack, ref);
     }
   }
   return next;
@@ -1288,6 +1337,14 @@ function pushAbility(
   state: GameState, source: string, controller: SeatIndex, abilityIndex: number,
   targets: readonly Target[], kind: 'activated' | 'triggered', description: string,
   about: TriggerAbout = {},
+  /**
+   * Which card defines this ability, when the permanent it belongs to did not print it.
+   *
+   * Its own parameter rather than another `TriggerAbout` field, because it is not of that kind:
+   * everything in `about` says what the *event* was, and this says where the *ability* came from.
+   * See `StackObject.grantedBy`.
+   */
+  grantedBy?: GrantedTriggerRef,
 ): GameState {
   const seq = state.autoSeq + 1;
   const id = `ab${seq}`;
@@ -1299,6 +1356,7 @@ function pushAbility(
     id, kind, source, controller,
     cardKey: inst?.defKey ?? '',
     abilityIndex, targets: [...targets], description,
+    ...(grantedBy === undefined ? {} : { grantedBy }),
     ...(about.attacked === undefined ? {} : { attacked: about.attacked }),
     ...(about.blocked === undefined ? {} : { blocked: about.blocked }),
     ...(about.answering === undefined ? {} : { answering: about.answering }),
@@ -3147,7 +3205,17 @@ interface Resolvable {
 }
 
 function abilityOrTrigger(script: CardScript | undefined, object: StackObject): Resolvable | undefined {
-  if (script === undefined || object.abilityIndex === undefined) return undefined;
+  if (object.abilityIndex === undefined) return undefined;
+  /*
+    A granted ability is defined on somebody else's card, so the holder's script is the wrong book
+    to look it up in (CR 113.6). Asked before the `script === undefined` guard rather than after,
+    because the holder may have no script at all — a vanilla Grizzly Bears handed a draw trigger
+    by a Tandem Lookout is the normal case, not the exotic one.
+  */
+  if (object.grantedBy !== undefined) {
+    return scriptFor(object.grantedBy.card)?.grantedTriggers?.[object.grantedBy.index];
+  }
+  if (script === undefined) return undefined;
   if (object.kind === 'activated') return script.abilities?.[object.abilityIndex];
   return script.triggers?.[object.abilityIndex];
 }

@@ -429,6 +429,44 @@ const TRUSTED_FORCEMAGE: CardDef = {
   colors: ['G'],
 };
 
+/*
+  Soulbond's third card, and the one the granting machinery exists for.
+
+  The other two hand the pair a bigger body, which a continuous effect could already say. This one
+  hands it an *ability*, which nothing in the engine could express until #230 — see
+  `CardScript.grantedTriggers`. The printed text is quoted inside the card's own text, which is
+  what a granted ability looks like on paper and the reason it needs machinery rather than a field:
+  the quoted part is a trigger that belongs to whichever creature is holding it.
+*/
+const TANDEM_LOOKOUT: CardDef = {
+  name: 'Tandem Lookout',
+  typeLine: 'Creature — Human Scout',
+  manaCost: '{2}{U}',
+  cmc: 3,
+  power: '1',
+  toughness: '1',
+  oracleText: `${SOULBOND_REMINDER}\nAs long as Tandem Lookout is paired with another creature, `
+    + "each of those creatures has \"Whenever this creature deals damage to a player, draw a card.\"",
+  colors: ['U'],
+};
+
+/*
+  And the same ability handed out by an Aura rather than by a pair, which is a different route
+  through the engine to the same place: `addAuraEffect` instead of `applyStatics`.
+
+  Flash is on the card and is most of what makes it playable: held up, it turns a creature that is
+  about to connect into a card, and the two mana are spent on the opponent's turn.
+*/
+const OPHIDIAN_EYE: CardDef = {
+  name: 'Ophidian Eye',
+  typeLine: 'Enchantment — Aura',
+  manaCost: '{1}{U}',
+  cmc: 2,
+  oracleText: 'Flash\nEnchant creature\nEnchanted creature has "Whenever this creature deals '
+    + 'damage to a player, draw a card."',
+  colors: ['U'],
+};
+
 const WOLFIR_SILVERHEART: CardDef = {
   name: 'Wolfir Silverheart',
   typeLine: 'Creature — Werewolf',
@@ -5357,7 +5395,28 @@ export const SKYWARD_WRIT: DeckSpec = {
       on the ground forever, and this deck already has two Fog Banks for the things that fly.
     */
     { card: THE_BIRTH_OF_MELETIS, count: 1 },
-    { card: RAISE_THE_ALARM, count: 1 },
+    /*
+      Tandem Lookout for the Raise the Alarm, and Ophidian Eye below for the second Man-o'-War:
+      the two cards the granting machinery was built for (#230).
+
+      They are in this deck rather than one of the other blue lists because of what the ability
+      does and who holds it: "each of those creatures has 'whenever this creature deals damage to a
+      player, draw a card'" is worth a card a turn in a deck whose creatures fly and nothing in a
+      deck whose creatures are chump blockers. Pair the Lookout with the Serra Angel and the Angel
+      draws; pair it with a Paladin en-Vec and the card nobody can remove draws. Which of them to
+      pair with is the decision, and it cannot be taken back.
+
+      **These two slots cost this deck about six points, and that is measured rather than hoped.**
+      288 games each at the canonical seeds: stock 139-149, with these two cards in 121-167. A
+      second arm that cut a Pacifism and a Rest in Peace instead read 124-164 — three games of 288,
+      which is noise — and then turned out to be illegal anyway, because this deck is the only one
+      holding either card and the deck-coverage test will not let a scripted card leave the pool.
+      So the slots are not the cost: the cards are. `cast-counts` says the bot casts both of them
+      (70% and 101% of the games it draws them), which makes this a card being bad rather than a
+      card being dead — see D251, where the bot's willingness to spend an Aura on a creature an
+      opponent can kill is the suspected reason and has a task of its own.
+    */
+    { card: TANDEM_LOOKOUT, count: 1 },
     /*
       Ajani, Caller of the Pride for the second Raise the Alarm.
 
@@ -5415,7 +5474,20 @@ export const SKYWARD_WRIT: DeckSpec = {
     // to. Against the two colours that hold this pool's removal it simply cannot be answered, and
     // it is the only card here that proves protection does all four of its jobs.
     { card: PALADIN_EN_VEC, count: 2 },
-    { card: MAN_O_WAR, count: 2 },
+    { card: MAN_O_WAR, count: 1 },
+    /*
+      Ophidian Eye for the second Man-o'-War, and the same granted ability by a different route.
+
+      Two cards for the mechanic rather than one (D239), and the second one earns its slot twice
+      over: it reaches `grants` through `addAuraEffect` where the Lookout reaches it through the
+      pair scope, so the two together are the evidence that putting the grant on `PumpOptions`
+      carried it to every builder rather than to one.
+
+      At the table it is the aggressive half of the pair. Flash means it is cast on the opponent's
+      turn, on a creature that is already past a blocker; and unlike the Lookout, killing the
+      creature answers both cards at once, which is the trade for two mana instead of three.
+    */
+    { card: OPHIDIAN_EYE, count: 1 },
     { card: SERRA_ANGEL, count: 1 },
     /*
       Voice of All for the second Serra Angel, which is this deck trading power for a turn.

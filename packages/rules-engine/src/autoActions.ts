@@ -31,7 +31,7 @@ import {
 } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
-import { scriptFor } from './scripts.js';
+import { abilityTargetSpecs, scriptFor } from './scripts.js';
 import { FORETELL_COST, MORPH_COST, type CardScript, type TargetSpec } from './scriptTypes.js';
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
@@ -2172,15 +2172,6 @@ function beginFirstTurn(state: GameState): GameState {
 
 // ── Choosing a trigger's targets ─────────────────────────────────────────────────────────────────
 
-/** The specs a stack object's ability wants targets for. */
-function specsForObject(state: GameState, object: StackObject): readonly TargetSpec[] {
-  const script = scriptFor(state.cardDefs[object.cardKey]?.name);
-  if (object.abilityIndex === undefined) return [];
-  return (object.kind === 'activated'
-    ? script?.abilities?.[object.abilityIndex]?.targets
-    : script?.triggers?.[object.abilityIndex]?.targets) ?? [];
-}
-
 /**
  * Answers a triggered ability's request for targets.
  *
@@ -2196,7 +2187,7 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
   const object = state.stackObjects[pending.stackId];
   if (object === undefined) throw new EngineError('RULE_NOT_APPLICABLE', 'that ability is no longer on the stack');
 
-  const specs = specsForObject(state, object);
+  const specs = abilityTargetSpecs(state, object);
   const check = checkTargets(state, specs, action.targets, action.by, object.source);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
   // And a *trigger* that divides something, refused for the same reason an activated ability is:
