@@ -16496,3 +16496,70 @@ could not see a granted trigger, `spent-permanents` could not see a printed card
 three were found by a human reading a whole output, never by a failing test. The guard turns one
 instance of that class into a CI failure. The class itself is still caught by reading output, which
 is the discipline the measurement README now carries as a rule rather than an anecdote.
+
+
+## D261 — The exception thirty-five harnesses swallow, and the clean sheet it turns out to be
+
+Every game-playing instrument in `scripts/measure` ends its move loop the same way:
+
+```js
+try { s = applyAction(s, action); } catch { break; }
+```
+
+**Thirty-five files, and not one reports that it caught anything.** If the engine throws during a
+bot's own legal action the game stops, the harness counts it as a game it played, and the number it
+prints is computed from a truncated game with no signal anywhere. `deck-probe` says
+`(1 unfinished)` and that is the whole of what this project knew about it — and "unfinished" is four
+different things wearing one word: the 4000-move cap, `botAction` returning null, `stateVersion` not
+advancing, and a throw.
+
+The last one is not a curiosity. `playout.test.ts` asserts the engine never refuses what it offered,
+so a throw there would violate an invariant the suite already claims to hold — and it would mean
+every number this directory has published, including today's, is short by the games it ate. That is
+the widest version of the quiet-failure class this session kept finding (#236, D256, D259, D260),
+and the only one that touches all of them at once.
+
+### The answer: no throws, and the four causes separated
+
+`unfinished.mjs` keeps every fault's message and action type, prints them deduplicated with the
+decks and the first seed, turn and step, and **exits non-zero on any throw**. Four runs on the
+current engine:
+
+```
+field, 1 seed            156 games    156 won    no throws, no stalls, no move caps
+field, 8 seeds          1248 games   1248 won    ditto
+field, 8 seeds, ctx     1248 games   1248 won    ditto  (the other arm, below)
+deck-probe's own 288     288 games    288 won    ditto  (SCHEME=probe, verdant-guard)
+```
+
+So the `catch` in thirty-five harnesses is swallowing nothing on this build, and their numbers are
+not truncated by faults they never reported. That is a claim about all of them, which is why the
+instrument plays the whole field rather than one deck, and it is worth having written down whichever
+way it came out.
+
+### Two things the hunt found that the clean sheet does not say
+
+**The instrument was not reproducing the harness it audits, and its own first real use caught it.**
+Replaying `deck-probe`'s 288 games came back 288 clean where the probe itself had reported one
+unfinished. The difference is one argument: every file here hands its `ActionContext` to
+`deck:load`, `game:start` and `auto:start` and then **drops it** in the loop, and this file was
+passing it. An audit that does not reproduce its subject cannot certify it, so the default now
+matches the harnesses exactly and `CTX_IN_LOOP=1` is the comparison arm — which answers a question
+nobody here had asked: **dropping the context mid-game changes nothing**, 1248 games to 1248 games,
+identical outcomes on both arms.
+
+**And the probe's unfinished game cannot be replayed at all, for a reason worth more than the
+game.** That reading predates D259: Lotus Petal, Pirate's Prize and Thraben Inspector changed three
+decks in the field and the consumed-mana-source rule changed what is affordable, so today's engine
+plays *different games* from the ones that `(1 unfinished)` came out of. A historical reading from a
+harness is not a reproducible observation once the engine has moved — which is the same lesson D258
+reached about comparing two harnesses' *numbers*, arriving from the other direction. A clean sheet
+from this instrument is a claim about the **current build**, and the only kind of claim it can be.
+
+### What this leaves
+
+The `catch { break; }` stays in all thirty-five, because the alternative — a throw taking down a
+1248-game run at game 900 — is worse than a game ending early, and the instrument that can tell you
+whether it ever happens now exists. **Run `unfinished.mjs` after any change to the engine's action
+handling**, which is where a throw would come from, and the swallowing goes back to being harmless
+rather than unexamined. It is cheap: 156 games on one seed takes under a minute.

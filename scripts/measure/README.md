@@ -731,6 +731,16 @@ while every row that should not have moved did not. Not in the evaluation, delib
 position after casting a Ball Lightning is scored *before* its damage, so a leaver worth nothing on
 the board is a cast worth nothing, and the bot would have stopped casting the card.
 
+**And the exception every harness here swallows is, on this build, swallowing nothing.** Each of
+these files ends its move loop with `try { ... } catch { break; }` and none of them report catching
+anything, so a throw would end a game early and be counted as a game played. `unfinished.mjs`
+separates the four causes of a game stopping without a winner — the move cap, a null action, no
+progress, and a throw — reports faults deduplicated with their message and first seed, and exits
+non-zero on any. 1248 games across the field, twice (once passing the context in the loop and once
+dropping it as these harnesses do), plus `deck-probe`'s own 288 replayed with `SCHEME=probe`: every
+game reached a winner. Run it after any change to the engine's action handling, which is the only
+place a throw would come from; one seed over the field takes under a minute (D261).
+
 **Read the whole output after adding a card, because an instrument fails by going quiet.** Three
 instruments in this directory have reported numbers that were wrong in one identical shape: a card
 gained a new way to carry something, and the reader that enumerated the old ways kept returning a
