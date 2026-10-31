@@ -17492,3 +17492,63 @@ The six arithmetic tests did not need touching, and that is the payoff from nami
 in the ablation helper rather than leaning on the default (D263's trap, avoided when they were
 written). They measured the term rather than the configuration, so they read the same before and
 after the default moved. 1309 rules-engine tests pass with the bot's evaluation changed under them.
+
+## D272 — The pod had never been audited for engine throws, and it comes back clean
+
+`unfinished.mjs` exists because of a pattern repeated in thirty-five files here:
+
+```js
+try { s = applyAction(s, action); } catch { break; }
+```
+
+and **not one of them reports that it caught anything**. So if the engine refuses an action the
+bot built out of its own `legalActions`, the game stops, the harness counts it as a game it played,
+and the number it prints is computed from a game that ended at an error. That is not bookkeeping:
+`playout.test.ts` asserts the engine never refuses what it offered, so a throw there is a violation
+of an invariant the suite already claims.
+
+What it audited was two-seat `format: 'modern'` only. **Three harnesses here play four-seat pods** —
+`pod-duel`, `pod-slot`, `pod-pace` — with the identical `catch`, and none had ever been asked. The
+pod is also where this file's `nobody to act` end state stops being hypothetical: the engine's pod
+tests exist because CR 800.4a lets a table reach a state with no seat able to move, and a table that
+never ends is worse than a throw.
+
+### The result
+
+```
+156 pods, 12 seeds from 4400, pod-duel tables                  156  100.0%  won
+78 pods, 6 seeds from 4400, dawn-tithe at every one             78  100.0%  won
+```
+
+234 pods, two deck mixes, **every one to a winner**. No throw, no `nobody to act`, no `no progress`,
+and no game hitting the 8000-move cap. So the `catch` in all three pod harnesses has caught nothing,
+and the numbers `pod-duel` and `pod-slot` have published are not short by games they ate.
+
+It is also the strongest evidence the project has for the claim it cares about most — that four
+people can play a whole Commander game — and it is in the format with three opponents, three
+politics rules and the 800.4a risk, rather than the duel.
+
+### Reproducing the harness, not approximating it
+
+Tables, seeds and `ALWAYS` seating are copied from `pod-duel` rather than shared with it, for the
+reason the duel seed formulas already are: the point is to replay *that harness's* games, and a
+shared helper that drifted would hunt in a different set — the mistake D258 found in comparing two
+harnesses' numbers.
+
+One deliberate difference, and `pod-duel`'s own docblock is the authority for it: that harness plays
+each table **four times**, rotating which seats carry `TESTED`, and with one bot in every seat —
+which is what this file plays — all four rotations are *the same game on the same seed*. Replaying
+all four would quadruple the runtime to re-audit identical games. So the audit plays each table
+once: every **distinct** game `pod-duel` plays, rather than every game it counts.
+
+`ctx in loop: no` as well, matching what the harnesses actually do. The first version of the duel
+audit passed the `ActionContext` and came back 288 clean where the probe itself had reported one
+unfinished — an instrument that does not reproduce the harness cannot certify it.
+
+### A clean sheet is a finding, and this one is narrow
+
+What it establishes: no engine throw in 234 pods on these tables. What it does not: anything about
+a pod containing a card none of those tables seated, or about the browser pod, or about a pod a
+person is sitting at making different choices than a bot would. The audit is as wide as its
+pairings, which is the shape D267 named — a check whose premise is wider than its fixture — and the
+honest version of this entry is the narrow one.

@@ -7876,6 +7876,30 @@ it was written beside. **A default and its ablation are one change, not two.** T
 tests needed no edit at all, which is the payoff from naming both weights instead of leaning on the
 default: they measure the term, not the configuration.
 
+### The pod had never been audited for engine throws (#256, D272)
+
+`unfinished.mjs` exists because thirty-five harnesses here end their move loop with
+`try { ... } catch { break; }` and none of them reports catching anything — so a throw truncates a
+game, the harness counts it as played, and its number is computed from a game that stopped at an
+error. It audited two-seat games only. The three pod harnesses carry the identical catch and had
+never been asked, and the pod is where the `nobody to act` end state stops being hypothetical: the
+engine's own pod tests exist for CR 800.4a, and a table nobody can move at is worse than a throw.
+
+**234 pods, two deck mixes, every one to a winner.** No throw, no stuck table, no move cap. So the
+catch in all three pod harnesses has caught nothing and their published numbers are not short by
+games they ate — and it is the strongest evidence yet for the claim the project cares about most,
+in the format with three opponents and the 800.4a risk rather than the duel.
+
+Tables, seeds and `ALWAYS` seating are copied from `pod-duel` rather than shared, because the point
+is to replay *that* harness's games. One deliberate difference, on its own docblock's authority: it
+plays each table four times rotating the arms, and with one bot in every seat all four rotations are
+the same game on the same seed — so the audit plays each table once, which is every *distinct* game
+it plays rather than every game it counts.
+
+Narrow on purpose. It says nothing about a pod seating a card these tables never did, nor about a
+pod a person is sitting at. The audit is as wide as its pairings — D267's shape — and the honest
+version of the claim is the narrow one.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
