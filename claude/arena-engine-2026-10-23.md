@@ -7685,7 +7685,8 @@ Nine tests pin the arithmetic. Then measured it three ways, and only one came ba
 D243's hand term was 0.67% and was); **the win rate did not move**, 153-159, 157-155, 160-152 across
 three seed sets with the sign disagreeing, which is "not measured"; and **it did not do the thing it
 was written to do** — a new instrument, `crack-back.mjs`, asks whether a seat that swings with its
-blockers dies to the return attack less often, and the answer was 17 against 15, higher. Games also
+blockers dies to the return attack less often, and across three seed sets the answer was 17-15,
+21-21 and 11-10: never lower, and the one reading whose three sets agree. Games also
 run ~9% longer and the bot declines to swing in 19% of combats instead of 8%.
 
 So the weight ships at **zero** and everything else is kept: the computation, the tests, the

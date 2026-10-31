@@ -1190,7 +1190,8 @@ const PERMANENT_ON_BOARD = 3;
  *    not measured rather than level.
  *  - **It does not do the thing it was written to do.** `crack-back.mjs` exists because of this
  *    term and asks its actual claim — does a seat that swings with its blockers die to the attack
- *    that comes back less often? It came back **higher**, 17 against 15, not lower.
+ *    that comes back less often? Three seed sets of 156 games an arm: 17-15, 21-21, 11-10. Never
+ *    lower on any of them, and the one reading here whose three sets agree.
  *
  * Against that: games run about 9% longer and the bot declines to swing in 19% of combats instead
  * of 8%. A change that lengthens every game, cannot be shown to win one, and misses its own

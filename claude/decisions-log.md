@@ -16790,8 +16790,20 @@ The sign disagrees across the three, which under D258 is **not measured** rather
 "are the changed attacks the *right* ones", so `crack-back.mjs` was written to ask the term's own
 claim: does a seat that swings with its blockers die to the attack that comes back less often? A
 **fatal crack-back** is a seat that declared a non-empty attack on turn N, was attacked by somebody
-on turn N+1, and lost on turn N+1. On the first seed set it came back **higher** — 17 against 15 —
-not lower.
+on turn N+1, and lost on turn N+1. Three seed sets, 156 games an arm each:
+
+```
+            on    off
+4400        17     15     +2
+4688        21     21      0
+5000        11     10     +1
+            49     46     +3 over 468 games an arm
+```
+
+Never lower on any set. This is the one place where the three sets **agree**, and they agree
+against the term — which is the opposite of the `bot-duel` reading above and is why it decides the
+question. A win rate whose sign flips across seed sets says nothing; a hypothesis that fails to
+hold on all three of them has been tested.
 
 Against all that: games run about **9% longer** (540 turns to 590 over 26 games) and the bot
 declines to swing in **19% of combats instead of 8%**, with the same number of attackers in total
