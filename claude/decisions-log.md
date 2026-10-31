@@ -15392,3 +15392,86 @@ five down — and the two isolations above account for four games in total. What
 predates both changes, which is a thing worth knowing before anybody reads this table as a result.
 The spread is **49 points**, wider than D194's 42, and the top two rows are the problem: Ember Rush
 at 77% has never been below 74% in any table since D114, and Dawn Tithe is now beside it.
+
+## D248 — The spread is the pilot as much as the decks, and no card in Ember Rush carries it
+
+#231 set out to trim Ember Rush, which has read 74–82% in every field table since D114 and had never
+had a card cut. It does not need a card cut, and the measurement that says so also says why four
+balance passes aimed at the bottom of the table never moved it.
+
+### Nine changes, 2,448 games, and the biggest moved seven
+
+Ember Rush was screened with `deck-probe` over its own pairings — six single swaps at 144 games an
+arm, then three multi-card shape changes at 288:
+
+```
+single swaps (stock 103-41)
+  Lightning Bolt -> Shock              105-39    +2
+  Monastery Swiftspear -> Hill Giant   103-41     0
+  Bonesplitter -> Mountain             108-36    +5
+  Thermo-Alchemist -> Mountain         108-35    +5
+  Ball Lightning -> Hill Giant         106-38    +3
+  Hellrider -> Hill Giant              106-38    +3
+
+shape changes (stock 206-82)
+  -2 Swiftspear -1 Marauder +2 Hill Giant +1 Mountain   206-82     0
+  -2 Bolt -1 Lava Spike -1 Strike +2 Mountain +2 Giant  204-83    -2
+  -1 Ball Lightning -1 Hellrider -1 Bolt +2 Giant +1 Mtn 199-89   -7
+```
+
+**Not one cut made the deck worse than the noise floor**, and four of the nine read as *improvements*
+— which is what a probe does when nothing is happening. `cast-counts` says the same thing from the
+other side: the deck casts everything. Lightning Bolt 135 times in 144 games, Monastery Swiftspear
+126, Shock 73, Thermo-Alchemist 55 casts and 191 activations, and the weakest cards in the list are
+a Lava Axe and a Hill Giant at 55% cast rates. There is no slot to take out, because the deck is
+forty-one cards that each cost one or two mana and each do something.
+
+### And then the pilot was measured, which nobody had done
+
+The whole field, canonical seeds, 288 games a deck, run twice: once with the shipping bot and once
+with `lookahead: false` on **both** seats — the same decks, a shallower pilot.
+
+```
+                deep   shallow   move
+kindle-grove     64%      72%     +8
+ember-rush       77%      66%    -11   (223 -> 191, thirty-two games)
+dawn-tithe       75%      64%    -11
+verdant-guard    60%      57%     -3
+delta-bloom      45%      53%     +8
+arc-tempest      44%      50%     +6
+skyward-writ     45%      48%     +3
+ashen-rite       50%      45%     -5
+forge-alliance   50%      43%     -7
+rot-harvest      41%      42%     +1
+tidal-mind       28%      39%    +11   (82 -> 113, thirty-one games)
+hollow-tide      38%      38%      0
+blight-vector    30%      31%     +1
+```
+
+**The pilot is worth four to five times any card change I could find.** One move of lookahead is
+thirty-two games to Ember Rush and thirty-one away from Tidal Mind; the best cut to Ember Rush's
+sixty cards was seven.
+
+The spread narrows from **49 points to 41**, and the standard deviation across the thirteen decks
+from 14.8 to 11.6 — so **about two fifths of the pool's imbalance, measured as variance, is the
+pilot rather than the decks**. The direction is the one the shape of the search predicts: its gain
+is "do not throw creatures away, and point removal well", which is most of what an aggro deck and a
+removal deck do, and almost none of what a control deck's value is — holding a card for the moment
+it is for, which a one-move search cannot see at all.
+
+### What this changes
+
+**Three things, and the first is a caveat on everything already written here.** Every balance entry
+in this log is a measurement of *deck × pilot*, and the pilot's share is large. A table saying Tidal
+Mind wins 28% is not saying the deck wins 28% in a person's hands, and D194's "this deck needs a way
+to win, not more time" survives that, but "Tidal Mind is the worst deck in the pool by eleven points"
+does not: with a different pilot it is eleventh by one.
+
+**Second, trimming the top is the wrong lever and is now closed on evidence** rather than on
+exhaustion — nine changes, 2,448 games, nothing above the floor. #231 is finished without a change
+to any deck list, which is the result and not a failure to find one.
+
+**Third, the lever that is left is the one this project has been circling since D110**: the bot's
+evaluation, which D244 showed has no mispriced weight and D246 showed can be improved by giving it a
+fact it could not see. Every point of pilot skill that helps a slow deck narrows the table, and the
+table is the thing a person picking a deck actually feels.

@@ -7108,6 +7108,54 @@ A player sees the pair: a **PAIR** badge on the card's corner and "paired with �
 sheet, because a Grizzly Bears reading 6/6 is only legible if the thing lending it the points is
 on screen.
 
+## The spread is the pilot as much as the decks (#231, D248)
+
+Ember Rush has read 74–82% in every field table since D114 and had never had a card cut, so #231 set
+out to cut one. It does not need one, and finding that out settled a bigger question.
+
+**Nine changes, 2,448 probed games, and the biggest moved seven of 288.** Six single swaps
+(a Lightning Bolt for a Shock, a Swiftspear for a Hill Giant, a Bonesplitter, a Thermo-Alchemist, a
+Ball Lightning, a Hellrider) and three multi-card shape changes to the curve and to the reach. Not
+one made the deck worse than the noise floor, and four read as *improvements*, which is what a probe
+does when nothing is happening. `cast-counts` agrees from the other side: the deck casts everything
+— Lightning Bolt 135 times in 144 games, a Thermo-Alchemist activated 191 times — and its weakest
+cards still get cast in 55% of games. There is no slot to take out.
+
+**So the pilot was measured instead, which nobody had done.** The same field on the same seeds, once
+with the shipping bot and once with `lookahead: false` on both seats:
+
+```
+                deep   shallow   move
+kindle-grove     64%      72%     +8
+ember-rush       77%      66%    -11   (223 -> 191, thirty-two games)
+dawn-tithe       75%      64%    -11
+verdant-guard    60%      57%     -3
+delta-bloom      45%      53%     +8
+arc-tempest      44%      50%     +6
+skyward-writ     45%      48%     +3
+ashen-rite       50%      45%     -5
+forge-alliance   50%      43%     -7
+rot-harvest      41%      42%     +1
+tidal-mind       28%      39%    +11   (82 -> 113, thirty-one games)
+hollow-tide      38%      38%      0
+blight-vector    30%      31%     +1
+```
+
+One move of lookahead is worth **thirty-two games to Ember Rush and thirty-one away from Tidal
+Mind** — four to five times the best cut anybody could find in Ember Rush's sixty cards. The spread
+narrows from 49 points to 41 and the deviation across the thirteen decks from 14.8 to 11.6, so
+**about two fifths of the pool's imbalance is the pilot rather than the decks.** The direction is
+what the search's shape predicts: its gain is "do not throw creatures away, and point removal well",
+which is most of what an aggro deck and a removal deck do and almost none of what a control deck's
+value is.
+
+Three consequences. Every balance entry in these docs is a measurement of **deck × pilot**, and the
+pilot's share is large — so "Tidal Mind is the worst deck by eleven points" is a statement about
+this bot, and with a shallower one it is eleventh by one. Trimming the top is closed on evidence
+rather than exhaustion. And the lever that is left is the one this project has circled since D110:
+an evaluation worth searching with, because every point of pilot skill that helps a slow deck
+narrows the table a person picking a deck actually feels.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
