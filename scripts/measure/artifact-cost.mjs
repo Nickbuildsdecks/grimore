@@ -56,13 +56,17 @@ if (process.env.AUDIT === '1') {
         abilities: script?.abilities?.length ?? 0,
         statics: script?.statics?.length ?? 0,
         triggers: script?.triggers?.length ?? 0,
+        // Printed and handed-out counted apart (D251, D260): an artifact that grants a trigger has
+        // no trigger of its own, and a column that summed them would read as though it did.
+        granted: script?.grantedTriggers?.length ?? 0,
       });
     }
   }
   console.log(`${seen.size} artifacts in the pool`);
   for (const [name, v] of [...seen].sort()) {
     console.log(`  ${name.padEnd(24)} ${v.creature ? 'creature' : '        '}`
-      + ` cmc ${v.cmc}  abilities ${v.abilities}  statics ${v.statics}  triggers ${v.triggers}`);
+      + ` cmc ${v.cmc}  abilities ${v.abilities}  statics ${v.statics}  triggers ${v.triggers}`
+      + `${v.granted > 0 ? `  grants ${v.granted}` : ''}`);
   }
   process.exit(0);
 }

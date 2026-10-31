@@ -232,6 +232,20 @@ for (const [name, card] of everyCard()) {
     for (const trigger of script.triggers ?? []) {
       if (trigger.on?.kind !== undefined) note(`trigger ${trigger.on.kind}`, name);
     }
+    /*
+      And the trigger kinds the card **hands out** rather than has (D251), which go in the grants
+      column for the same reason a granted keyword does: an Ophidian Eye does not have a
+      combat-damage trigger, it gives one to whatever it enchants.
+
+      Found by asking which files read `script.triggers` without knowing `grantedTriggers` exists —
+      this was one of five, after the bot's three in #236 and `card-promises`. **Inert today and
+      measured so**: the only granted kind in the pool is `combat-damage`, which five printed cards
+      already carry, so no row moves. What it buys is the day a kind is granted and printed nowhere,
+      which this instrument exists to notice and would have read as absent.
+    */
+    for (const trigger of script.grantedTriggers ?? []) {
+      if (trigger.on?.kind !== undefined) noteEffect(`trigger ${trigger.on.kind}`, name);
+    }
   }
   /*
     Keywords are read from the printed text and from the script's grant, because both are ways a

@@ -278,6 +278,113 @@ function checkPlayerDocCoversEveryMechanic() {
 }
 checkPlayerDocCoversEveryMechanic();
 
+/**
+ * Every reader of `script.triggers` has to know that `grantedTriggers` exists.
+ *
+ * A card can carry a triggered ability two ways since D251: printed on itself, or handed to it by
+ * something else. Everything written before that reads only the first, and the failure mode is the
+ * worst kind — **it goes quiet rather than wrong**. Five readers have been caught this way already:
+ * the bot's three in #236 (a sacrifice filter that fed a creature carrying an Ophidian Eye), then
+ * `card-promises`, which called the Eye an unscripted card because its whole text is an ability it
+ * gives away, and then four instruments in D260 of which `mechanic-coverage` is the one that
+ * matters: an instrument whose entire job is "which mechanics are held up by too few cards" could
+ * not see a trigger kind that no printed card carries.
+ *
+ * None of those errored. Each reported a number that was simply smaller than the truth.
+ *
+ * So the invariant is checked statically, because no self-test can catch it: a planted control
+ * written beside a reader encodes the same blind spot its author had. What a grep *can* do is
+ * notice the pairing — the shape all five shared — and fail on the PR that adds the sixth.
+ *
+ * A file where granted triggers are genuinely out of scope goes in EXEMPT with its reason, the way
+ * `card-promises`'s KNOWN and `mechanic-coverage`'s EXPECTED_THIN carry theirs. An exemption is a
+ * claim about the file, not a way to quiet the check.
+ *
+ * **What it does not check, found by trying to make it fail.** A file passes by *mentioning*
+ * `grantedTriggers` anywhere, a comment included — the first attempt to break this guard edited the
+ * read out of `mechanic-coverage` and it still passed, because the docblock above the read still
+ * named the field. So this is a tripwire for "did the author know the second list exists", which is
+ * exactly the mistake all seven readers made, and it is not a proof that the reading is right. The
+ * proof of the reading is the instrument's own output and its control.
+ */
+const TRIGGER_READER = /script\??\.(?:triggers|grantedTriggers)|\btriggers \?\? \[\]/;
+const GRANTS_AWARE = /grantedTriggers/;
+const EXEMPT = new Map([
+  // Defines the field, so it mentions it by construction; listed for the reader rather than the
+  // check, which its own definition satisfies anyway.
+  [join('packages', 'rules-engine', 'src', 'scriptTypes.ts'), 'declares the field'],
+  /*
+    Asks whether a card's **printed** text gives it a clock ("sacrifice Ball Lightning at end of
+    turn"), by name and with no board in hand. A granted trigger is a fact about an *instance* —
+    which permanent is holding it right now — so reading `grantedTriggers` off a name would answer
+    a different question. If a card is ever printed that hands another permanent a self-sacrifice
+    clock, the fix is `grantedTriggersOn(state, instance)` and a board, not this predicate.
+  */
+  [join('scripts', 'measure', 'leaving-creatures.mjs'), 'asks about printed text, by name'],
+  /*
+    Storm is a keyword on a spell, and the predicate reads `on.self === true` — a trigger about the
+    card itself as it is cast. Nothing in this pool hands storm to anything, and a permanent cannot
+    be given a cast trigger that fires for a different card's cast, so there is no granted form of
+    the thing being looked for.
+  */
+  [join('scripts', 'measure', 'storm.mjs'), 'storm is printed on the spell being cast'],
+]);
+
+function checkEveryTriggerReaderKnowsAboutGrants() {
+  const roots = [
+    join('packages', 'rules-engine', 'src'),
+    join('scripts', 'measure'),
+    join('apps'),
+  ];
+  const readers = [];
+  const blind = [];
+  const seen = (dir) => {
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const f of entries) {
+      const file = join(dir, f);
+      if (f === 'node_modules' || f === 'dist') continue;
+      if (statSync(file).isDirectory()) {
+        seen(file);
+        continue;
+      }
+      if (!/\.(ts|tsx|mjs|js)$/.test(f)) continue;
+      const src = readFileSync(file, 'utf8');
+      if (!TRIGGER_READER.test(src)) continue;
+      readers.push(file);
+      if (!GRANTS_AWARE.test(src) && !EXEMPT.has(file)) blind.push(file);
+    }
+  };
+  for (const r of roots) seen(r);
+
+  /*
+    The control, for the same reason `checkPlayerDocCoversEveryMechanic` has one: a grep that has
+    stopped matching anything passes silently, and a passing check that cannot fail is worse than
+    no check. The engine's own watcher is the reader that must always be found.
+  */
+  const watcher = join('packages', 'rules-engine', 'src', 'automation.ts');
+  if (!readers.includes(watcher)) {
+    console.error('[guards] the granted-trigger check cannot find the engine\'s own trigger reader');
+    console.error(`[guards] (${watcher}), so its pattern is broken and a pass would mean nothing.`);
+    bad++;
+    return;
+  }
+  if (blind.length > 0) {
+    console.error(`[guards] ${blind.length} file(s) read a card's triggers without knowing that`);
+    console.error('[guards] grantedTriggers exists (D251). Each will silently under-report a card');
+    console.error('[guards] whose ability was handed to it rather than printed on it:');
+    for (const f of blind) console.error(`[guards]   ${f}`);
+    console.error('[guards] Read both lists, or add the file to EXEMPT in this guard with the');
+    console.error('[guards] reason granted triggers are out of its scope.');
+    bad += blind.length;
+  }
+}
+checkEveryTriggerReaderKnowsAboutGrants();
+
 if (bad) {
   console.error(`[guards] ${bad} violation(s)`);
   process.exit(1);

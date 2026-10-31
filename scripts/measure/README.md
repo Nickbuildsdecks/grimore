@@ -731,6 +731,27 @@ while every row that should not have moved did not. Not in the evaluation, delib
 position after casting a Ball Lightning is scored *before* its damage, so a leaver worth nothing on
 the board is a cast worth nothing, and the bot would have stopped casting the card.
 
+**Read the whole output after adding a card, because an instrument fails by going quiet.** Three
+instruments in this directory have reported numbers that were wrong in one identical shape: a card
+gained a new way to carry something, and the reader that enumerated the old ways kept returning a
+number that was simply too small. `wasted-plays` could not see a prevention shield, so every Harm's
+Way read as a wasted play (D256). `card-promises` could not see a granted trigger, so Ophidian Eye —
+whose whole text is an ability it hands out — read as an unscripted card. `spent-permanents` derived
+its set from token oracle text, so Lotus Petal, a printed card with the same five rows, would have
+been invisible (D259). D260 then found that **seven** files read `script.triggers` without knowing
+`grantedTriggers` exists.
+
+None of them errored. Every one of them was found by a person reading a whole output and asking why
+a row looked too clean — never by a failing test, and a planted control would not have caught any of
+them, because a control written beside a predicate encodes the same blind spot its author had.
+
+So two rules. **One is mechanical**: `guards.js` fails a file that reads a card's triggers without
+mentioning the second list, which turns that one pairing into a CI failure (and its own limit is
+written in the guard: it checks that the author knew, not that the reading is right). **The other is
+not**: after adding a card or a new carrier shape, run the instruments over the deck that holds it
+and read **every** row, not the top one. D256 is the case for it — a new card put a 100% row in
+front of a question nobody had asked for eleven increments.
+
 **Pair the arms, read two seed sets, and never set a probe reading against a table reading.** Three
 rules, replacing the one this page carried for four entries, and D258 has the measurement behind
 each.

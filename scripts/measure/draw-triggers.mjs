@@ -51,12 +51,25 @@ const WATCHED = new Map();
 for (const deck of Object.values(STARTER_DECKS)) {
   for (const entry of deck.cards) {
     const script = scriptFor(entry.card.name);
-    (script?.triggers ?? []).forEach((trigger, index) => {
-      if (trigger.on.kind !== 'draws') return;
-      WATCHED.set(`${entry.card.name}:${index}`, {
-        card: entry.card.name, index, by: trigger.on.by ?? 'you',
+    /*
+      Printed triggers and **granted** ones (D251), because a card can hand one out as well as have
+      one and this table is about which draw triggers exist in the pool at all.
+
+      Inert today and measured so: the only granted kind in this pool is `combat-damage`, so no row
+      appears or moves. It is here because a granted `draws` trigger would have been invisible to
+      this instrument, and an instrument that reports a mechanic as absent when it is merely
+      unreadable is the failure this project keeps finding (#236, D256, D259, D260).
+    */
+    for (const [list, granted] of [[script?.triggers ?? [], false], [script?.grantedTriggers ?? [], true]]) {
+      list.forEach((trigger, index) => {
+        if (trigger.on.kind !== 'draws') return;
+        WATCHED.set(`${entry.card.name}:${granted ? 'g' : ''}${index}`, {
+          card: granted ? `${entry.card.name} (granted)` : entry.card.name,
+          index,
+          by: trigger.on.by ?? 'you',
+        });
       });
-    });
+    }
   }
 }
 

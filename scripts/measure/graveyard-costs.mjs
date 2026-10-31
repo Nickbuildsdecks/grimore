@@ -116,7 +116,11 @@ const ANSWERS = new Map();
 for (const deck of Object.values(STARTER_DECKS)) {
   for (const entry of deck.cards) {
     const script = scriptFor(entry.card.name);
-    if ((script?.triggers ?? []).some((trigger) => trigger.on.kind === 'to-graveyard')) {
+    // Printed or granted (D251, D260): a card can hand a to-graveyard trigger out as well as have
+    // one. Inert in this pool — the only granted kind is `combat-damage` — and here so the next
+    // granted trigger is not silently absent from this count.
+    if ([...(script?.triggers ?? []), ...(script?.grantedTriggers ?? [])]
+      .some((trigger) => trigger.on.kind === 'to-graveyard')) {
       ANSWERS.set(entry.card.name, 0);
     }
   }

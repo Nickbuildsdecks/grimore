@@ -16416,3 +16416,83 @@ The third member of the family needs a card, D229's rule is that a mechanic with
 exist, and I cannot verify a Food card's printed text from this container — Scryfall is unreachable.
 Inventing the text of a real card is worse than leaving the mechanic out, so it is out, and the
 engine work above is what Food will need when the data is there: nothing.
+
+
+## D260 — Seven readers of one field, and a guard for the class rather than the instance
+
+D251 gave a card two ways to carry a triggered ability: printed on itself, or handed to it by
+something else. Everything written before that reads only the first, and the failure mode is the
+worst kind — **it goes quiet rather than wrong**. Nothing errors. A number comes back smaller than
+the truth and looks like a finding.
+
+This session had already found two of them separately — the bot's three readers in #236, and
+`card-promises` calling Ophidian Eye an unscripted card because its whole text is an ability it
+gives away — so the question worth asking was not "where is the next one" but **how many are
+there**. Grepping for files that read `script.triggers` and never mention `grantedTriggers` found
+four more; writing the grep into a guard found **two more again**, because they reach the field by a
+different spelling (`triggers ?? []`) that the hand-grep missed. Seven readers, one field.
+
+### The four that were real, and the measurement that says they were inert
+
+- **`mechanic-coverage`** is the one that matters. Its entire job is "which mechanics are held up by
+  too few cards", and it counted trigger kinds off printed triggers only — so a kind that no printed
+  card carries would have read as **absent from the pool** by the instrument built to notice exactly
+  that. Fixed by noting granted kinds into the grants column rather than the carriers column, which
+  is the correct model and the one the keyword rows already use: an Ophidian Eye does not *have* a
+  combat-damage trigger, it gives one away.
+- **`draw-triggers`** watches `draws` triggers by name; a granted one was invisible.
+- **`graveyard-costs`** tested for a `to-graveyard` trigger the same way.
+- **`artifact-cost`**'s audit column printed `triggers 0` for an artifact that grants one.
+
+**All four were inert, and that is measured rather than assumed**: the only granted trigger kind in
+this pool is `combat-damage`, which five printed cards already carry, so `mechanic-coverage` reads
+the same 17 thin rows before and after. The fix is correctness with no number attached — which is
+the honest description, and the reason to make it anyway is that the instrument's job is to report
+an absence, and it was the one thing it could not see.
+
+### The two that were out of scope, with reasons rather than silence
+
+- **`leaving-creatures`** asks whether a card's *printed* text gives it a clock, by name and with no
+  board. A granted trigger is a fact about an **instance** — which permanent holds it right now —
+  so reading it off a name would answer a different question. If a card is ever printed that hands
+  another permanent a self-sacrifice clock, the fix is `grantedTriggersOn(state, instance)` and a
+  board, not that predicate.
+- **`storm`** reads `on.self === true`: a trigger about the card being cast. Storm is printed on a
+  spell, nothing hands it out, and a permanent cannot be given a trigger that fires for another
+  card's cast.
+
+Both are exemptions in the guard with those sentences attached, the way `card-promises`'s `KNOWN`
+and `mechanic-coverage`'s `EXPECTED_THIN` carry theirs. An exemption is a claim about the file.
+
+### Why a guard and not a control
+
+`card-promises` has a planted-card control, and the obvious move was to give every instrument one.
+**It would not have caught any of the seven.** A planted positive is written by the same author at
+the same moment as the predicate, so it encodes the same blind spot: a control written before D251
+would have planted a card with a printed trigger, passed, and proved nothing about granted ones. No
+self-test catches an unknown unknown.
+
+What a grep *can* do is notice the **pairing** — the shape all seven shared — and fail on the PR
+that adds the eighth. So `guards.js` now refuses a file that reads a card's triggers without
+mentioning that the second list exists.
+
+**And its own limit, found by trying to break it.** The first attempt deleted the granted read out of
+`mechanic-coverage` and the guard still passed, because the docblock above the read still named the
+field. A file passes by *mentioning* `grantedTriggers` anywhere, comment included. So this is a
+tripwire for "did the author know the second list exists" — which is exactly the mistake all seven
+made — and not a proof that the reading is correct. The proof of the reading is the instrument's own
+output and its control. Written down rather than quietly tightened, because a guard that is believed
+to check more than it does is the same failure one level up.
+
+Verified both ways: a temporary file reading `triggers` with no mention of grants fails the guard,
+and the guard passes again when it is removed.
+
+### The rule this leaves
+
+**When a card gains a new way to carry something, every reader of the old way is a blind spot until
+it is checked, and none of them will tell you.** Three instruments in this session reported numbers
+that were wrong in this exact shape — `wasted-plays` could not see a shield (D256), `card-promises`
+could not see a granted trigger, `spent-permanents` could not see a printed card (D259) — and all
+three were found by a human reading a whole output, never by a failing test. The guard turns one
+instance of that class into a CI failure. The class itself is still caught by reading output, which
+is the discipline the measurement README now carries as a rule rather than an anecdote.
