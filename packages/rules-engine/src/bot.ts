@@ -14,6 +14,8 @@
  * writing before the rules underneath them are trustworthy.
  */
 import { pactProtects } from './pacts.js';
+// For a clock's scale: a duel starts at 20 and a pod at 40, so the term cannot carry a literal (#258).
+import { getFormat } from './formats.js';
 import { crewPlan, legalActions, manaSources, type LegalActions, type LegalPlay } from './legalActions.js';
 import { zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { listAt } from './cardActions.js';
@@ -1243,6 +1245,58 @@ const PERMANENT_ON_BOARD = 3;
  */
 const EXPOSED_POWER = 0;
 
+/*
+  The same information, read as a clock instead of as a quantity — two candidate shapes, both off
+  (#258).
+
+  D264 priced unanswerable incoming power **linearly**, at 1.0 per point, and it measured flat three
+  ways. What that rules out is the linear reading, not the information: *eight power is three turns
+  at twenty life and one turn at seven*, and a linear term prices those identically. The one-turn
+  case is already handled — `lethalAgainst` and the block heuristics see a lethal attack coming —
+  so whatever is left lives in the two-to-four turn band, which is where a player decides whether to
+  race or to hold back and is exactly the band D244 measured the function as blunt in.
+
+  That is the same shape of claim that took the raw hand count to `castable` and won (D271): the
+  zone was right, the question asked of it was wrong. So it is worth asking twice, in the two forms
+  a person could mean, and `term-leverage` can tell them apart for 190 seconds before either costs a
+  win-rate run (D243):
+
+   - `clockRate` keeps the quantity and scales it by urgency. The term is
+     `exposedPower * startingLife / life`, so **at full life and a weight of 1 it is exactly D264's
+     term**, and at a third of its life a seat fears the same board three times as much. Smooth, so
+     it can move any decision that changes either number.
+   - `clockTurns` is what a player actually says out loud — *"I'm dead in two"* — capped, because
+     past about six turns a clock is not a fact anybody acts on. Discrete, so it moves only on a
+     play that changes the count, which should make its leverage lower and its leverage *meaningful*.
+
+  Both read `exposedPower`, which is the expensive part and is now computed once for all three
+  terms rather than per term.
+
+  Two deliberate omissions, named because they are the near misses:
+
+   - **Poison is not in it**, and the pool has an infect deck. A poison clock is `(10 - poison)` over
+     the infect power coming in, and `exposedPower` returns one number that does not separate infect
+     from ordinary damage. Splitting it means either a second pass over the attackers or changing a
+     function D264's term depends on, and neither belongs in a term that has not earned its place
+     yet. If this ships, that is the follow-up, and Blight Vector is the deck it is worth.
+   - **It is the defensive clock only** — their board against me, not mine against them. That is the
+     asymmetry `exposedPower` was built with and its docblock explains why: asked of a foe in a pod
+     the question becomes how exposed *they* are to the whole rest of the table including me, which
+     is a different and much weaker question.
+*/
+const CLOCK_RATE = 0;
+const CLOCK_TURNS = 0;
+/*
+  Where a clock stops being a fact worth acting on. Six of their turns is long enough for the game
+  to become a different game, and the cap is what keeps an empty board from scoring as infinitely
+  safe — with no attackers at all a seat reads `CLOCK_CAP` rather than `Infinity`.
+
+  It also sets where the term wakes up, which differs by format and is correct rather than awkward:
+  at 20 life it has something to say from 4 power upwards, and at a pod's 40 from 7. A board that
+  needs seven turns to kill a Commander player is not pressure.
+*/
+const CLOCK_CAP = 6;
+
 /**
  * Power on the opponents' boards that nothing of mine can block.
  *
@@ -1487,14 +1541,39 @@ export function evaluate(state: GameState, seat: SeatIndex, opts: BotOptions = {
     `w.exposed ?? EXPOSED_POWER`, with 0 as the ablation `term-leverage` uses.
   */
   const weight = opts.weights?.exposed ?? EXPOSED_POWER;
-  // Short-circuited at zero rather than multiplied by it, which is both obviously right and
-  // necessary: a weight of zero is the ablation every instrument in `scripts/measure` uses for
-  // this term, and without this the ablated arm pays the term's full cost to reach a contribution
-  // of nothing. The first cost reading taken here was invalid for exactly that reason — it
-  // compared an arm that computed the term against an arm that also computed it, and the
-  // difference it found was the two arms playing different games.
-  const exposed = weight === 0 ? 0 : exposedPower(state, seat) * weight;
-  return seatValue(state, seat, opts) - theirs / Math.max(1, state.seats.length - 1) - exposed;
+  const rateWeight = opts.weights?.clockRate ?? CLOCK_RATE;
+  const turnsWeight = opts.weights?.clockTurns ?? CLOCK_TURNS;
+  /*
+    Everything the two boards together say about this seat, in one number, because all three terms
+    read the same expensive fact.
+
+    Short-circuited when every weight is zero rather than multiplied by them, which is both
+    obviously right and necessary: zero is the ablation every instrument in `scripts/measure` uses,
+    and without this the ablated arm pays the full cost of `exposedPower` to reach a contribution of
+    nothing. The first cost reading taken here was invalid for exactly that reason — it compared an
+    arm that computed the term against an arm that also computed it, and the difference it found was
+    the two arms playing different games. One guard for all three, and `exposedPower` called **once**
+    however many of them are on.
+
+    `pressure` is subtracted, so a term that is bad for this seat adds to it and a term that is good
+    subtracts. The clock is the good one: having six turns left is worth more than having two.
+  */
+  let pressure = 0;
+  if (weight !== 0 || rateWeight !== 0 || turnsWeight !== 0) {
+    const power = exposedPower(state, seat);
+    // Floored at 1 so a seat on 0 life — which `evaluate` has already returned for, but the floor
+    // costs nothing and a division by zero would poison every score above it — cannot divide.
+    const life = Math.max(1, state.seats[seat]?.life ?? 1);
+    if (weight !== 0) pressure += power * weight;
+    // At full life this is `power * weight` exactly, which is what makes it comparable with the
+    // row above rather than a different term wearing a new name (#258).
+    if (rateWeight !== 0) pressure += power * (getFormat(state.format).startingLife / life) * rateWeight;
+    if (turnsWeight !== 0) {
+      const turns = power <= 0 ? CLOCK_CAP : Math.min(CLOCK_CAP, Math.ceil(life / power));
+      pressure -= turns * turnsWeight;
+    }
+  }
+  return seatValue(state, seat, opts) - theirs / Math.max(1, state.seats.length - 1) - pressure;
 }
 
 /**
@@ -2197,6 +2276,10 @@ export interface BotOptions {
      * ablation, and the control this term was measured against.
      */
     readonly exposed?: number;
+    /** The clock, as a quantity scaled by urgency (#258). At full life, exactly `exposed`. */
+    readonly clockRate?: number;
+    /** The clock, as the number of their turns this seat has left, capped at `CLOCK_CAP` (#258). */
+    readonly clockTurns?: number;
     /**
      * Cards in hand this seat can actually pay for, priced per card (see `castableInHand`). 0 is
      * the ablation and the control, the same shape as `exposed`.

@@ -17624,3 +17624,106 @@ turns out to be just as flat. **Two terms, same conclusion: this evaluation is i
 weights and sensitive to what it can see.** Which closes the retune avenue on the new term too,
 before anybody opens it, and says where the next gain is: another thing the function cannot see, not
 another number.
+
+### Follow-up: the deck table does not move, measured rather than predicted
+
+D271 shipped the castable term with one caveat left open — the published deck table was baselined
+with it **off**, and the argument for not waiting was that a symmetric change to both seats'
+evaluation largely cancels in the *relative* win rates that table reads. That was a prediction. Both
+arms, at the table's own canonical setting (`SEEDS=12 SEED0=4400`, 288 games a deck):
+
+| deck | off | on | Δ | | deck | off | on | Δ |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ember-rush | 76% | 73% | −3 | | arc-tempest | 45% | 44% | −1 |
+| dawn-tithe | 73% | 73% | 0 | | delta-bloom | 43% | 45% | +2 |
+| verdant-guard | 69% | 67% | −2 | | rot-harvest | 40% | 40% | 0 |
+| kindle-grove | 66% | 67% | +1 | | skyward-writ | 39% | 39% | 0 |
+| ashen-rite | 50% | 52% | +2 | | blight-vector | 39% | 36% | −3 |
+| forge-alliance | 46% | **50%** | **+4** | | hollow-tide | 35% | 36% | +1 |
+| | | | | | tidal-mind | 30% | 27% | −3 |
+
+The largest shift is forge-alliance at +4 points, ten games of 288, against a table this file has
+always quoted as carrying **±10 points a row** at exactly this setting. Every other row moves 3 or
+less. The ordering is intact, the four decks above 60% are the same four, the three below 36% are the
+same three, and nothing crosses a tier. **The published numbers are not stale and the balance work
+does not need redoing.**
+
+The off arm is also its own control: it reproduces the canonical table within one or two points on
+all thirteen rows (76/73/69/66/50/46/45/43/40/39/39/35/30 against the published
+75/73/68/67/50/45/44/42/41/40/39/36/30), which is what makes the comparison trustworthy rather than
+two runs that happen to differ.
+
+One thing seen and deliberately not claimed: the top of the table comes down slightly (76 → 73,
+69 → 67) while the middle comes up. A bot that plays both sides better compressing the field is a
+plausible story and ±10 a row is nowhere near enough to tell it, so it stays an observation.
+
+## D274 — The clock, in the two shapes a person could mean, and the one the leverage picks
+
+D273 ended by saying the next gain is something the function cannot see rather than another number.
+The plainest such thing is on the Next list and has been for months: **whether a seat dies in two
+turns or in six.**
+
+D264 priced unanswerable incoming power **linearly**, 1.0 per point, and measured it flat three ways
+— no win rate, and it missed its own hypothesis on `crack-back`. What that rules out is the linear
+reading, not the information. *Eight power is three turns at twenty life and one turn at seven*, and
+a linear term scores those identically; the one-turn case is already handled by `lethalAgainst` and
+the block heuristics, so whatever is left lives in the two-to-four turn band — which is where a
+player decides whether to race, and the band D244 measured the function as blunt in (61%).
+
+That is the same shape of claim that took the raw hand count to `castable` and won: **the zone was
+right and the question asked of it was wrong.** So it is worth asking twice, in the two forms a
+person could mean, and `term-leverage` can separate them for 269 seconds before either costs three
+seed sets:
+
+ - **`clockRate`** keeps the quantity and scales it by urgency: `exposedPower * startingLife / life`.
+   At full life and a weight of 1 it is **exactly D264's term** — the same number, not a near
+   relative, asserted as an identity in the tests — so anything it buys is attributable to the
+   scaling and nothing else.
+ - **`clockTurns`** is what a player says out loud, `min(6, ceil(life / power))`. Discrete, so it
+   moves only on a play that changes the count.
+
+### The leverage, which is not a close call
+
+| term | changed | of all | cast | activate | attack | block |
+| --- | --- | --- | --- | --- | --- | --- |
+| **clockRate** | **369** | **2.1%** | 2.3% | 1.4% | **14.2%** | 8.9% |
+| exposed | 241 | 1.4% | 1.6% | 0.6% | 7.9% | 9.4% |
+| castable | 168 | 1.0% | 4.3% | 2.7% | 0.0% | 0.2% |
+| clockTurns | 110 | 0.6% | 0.7% | 0.3% | 3.8% | 3.9% |
+
+156 games, 17,604 decisions, control held at zero. **14.2% of attack declarations is the largest
+single-decision-kind figure any term in this table has ever posted**, and it is nearly double the
+same board's linear reading. The scaling is doing the work, exactly where a term about a clock
+should: whether to swing.
+
+And `clockTurns` comes in *below* `exposed`, which is the prediction its own comment made — a capped
+integer only moves when a play changes the count, and most plays do not. Worth having asked: had only
+the discrete form been built, the honest conclusion would have been "the clock is weaker than the
+quantity", which is the opposite of what is true.
+
+**Leverage is necessary and not sufficient, and `exposed` is the standing proof** — 7.9% of attacks
+and flat across three seed sets. So this is a bet on the better form, not a result. Both ship at
+**zero** until three disjoint seed sets say otherwise, and `playout.test.ts` has the guard that fails
+if either default moves.
+
+### Two omissions, named in the code
+
+**Poison is not in the clock**, and the pool has an infect deck. A poison clock is `(10 − poison)`
+over the infect power coming in, and `exposedPower` returns one number that does not separate infect
+from ordinary damage; splitting it means either a second pass over the attackers or changing a
+function D264's term depends on, and neither belongs in a term that has not earned its place. If
+this ships, that is the follow-up, and Blight Vector is the deck it is worth.
+
+**It is the defensive clock only** — their board against me, not mine against them. That is
+`exposedPower`'s own asymmetry and its docblock gives the reason: asked of a foe in a pod the
+question becomes how exposed *they* are to the whole rest of the table including me, which is a
+different and much weaker question.
+
+### What the refactor bought
+
+`exposedPower` is the expensive part and all three terms read it, so `evaluate` now computes it
+**once** behind a single guard instead of per term. The zero short-circuit stays and is still a
+correctness requirement rather than a saving (D264's withdrawn figure). And the scale comes from
+`getFormat(state.format).startingLife`, not a literal: a duel starts at 20 and a pod at 40, so a
+literal 20 would have read every pod position at twice the pressure it has. There is a test for
+that.

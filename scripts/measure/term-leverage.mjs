@@ -105,6 +105,20 @@ const TERMS = {
     unscorable — which is exactly the silence it was added to break.
   */
   castable: { castable: 0 },
+  /*
+    The same board as `exposed`, read as a clock instead of as a quantity (#258). Both run the
+    `exposed` way round — turned **on** — because both ship at zero.
+
+    Two arms rather than one because the shape is the open question and this instrument is the cheap
+    way to settle it. `clockRate` is smooth (the quantity scaled by how little life is left, and at
+    full life it is exactly `exposed`), so it can move any decision that changes either number.
+    `clockTurns` is discrete and capped, so it moves only on a play that changes the count of their
+    turns — which should make its leverage lower and each changed decision mean more. A term with
+    four times the leverage and no win rate is a worse bet than one with a quarter of it and a sign
+    that holds, so the number to read here is *where* each one acts rather than how big it is.
+  */
+  clockRate: { clockRate: 1 },
+  clockTurns: { clockTurns: 1 },
 };
 
 const want = (process.env.TERMS ?? '').split(',').map((t) => t.trim()).filter(Boolean);

@@ -2845,3 +2845,135 @@ describe('the power opposite me that nothing of mine can block', () => {
     expect(evaluate(tappedOut, 0)).toBe(evaluate(tappedOut, 0, { weights: { exposed: 0 } }));
   });
 });
+
+/**
+ * The same board, read as a clock (#258).
+ *
+ * The block above prices unanswerable incoming power **linearly**, and D264 measured that flat three
+ * ways and left it at zero. These pin the arithmetic of the two shapes that say the linear reading
+ * was the problem rather than the information: *eight power is three turns at twenty life and one
+ * turn at seven*, and the term above scores those identically.
+ *
+ * Isolated by ablation with **both weights named**, for the reason the castable block gives: the
+ * public evaluation is the stronger claim, and leaning on a default of zero would make every
+ * assertion here read zero and pass (D263).
+ *
+ * `clockRate` is signed like `exposure` above — bigger is worse. `clockTurns` is signed the other
+ * way, because more turns left is better, and that is what the engine's `pressure` subtraction says
+ * too.
+ */
+describe('how many turns this board leaves me', () => {
+  /** Their power scaled by how little life is left. At full life, exactly `exposed`. */
+  const rate = (s: GameState, seat: SeatIndex = 0): number =>
+    evaluate(s, seat, { weights: { clockRate: 0 } }) - evaluate(s, seat, { weights: { clockRate: 1 } });
+  /** Their turns before this seat is dead, capped. */
+  const turns = (s: GameState, seat: SeatIndex = 0): number =>
+    evaluate(s, seat, { weights: { clockTurns: 1 } }) - evaluate(s, seat, { weights: { clockTurns: 0 } });
+  /** The same linear term the block above measures, for the one identity worth asserting. */
+  const exposure = (s: GameState, seat: SeatIndex = 0): number =>
+    evaluate(s, seat, { weights: { exposed: 0 } }) - evaluate(s, seat, { weights: { exposed: 1 } });
+
+  const tapFor = (s: GameState, seat: SeatIndex, id: string): GameState =>
+    applyAction(s, { type: 'card:tap', by: seat, card: id, tapped: true }, HOST);
+  const spend = (s: GameState, seat: SeatIndex, n: number): GameState =>
+    applyAction(s, { type: 'life:adjust', by: 0, seat, delta: -n }, HOST);
+
+  it('reads the cap when nothing can attack me', () => {
+    // Not Infinity, which is what the cap is for: an empty board opposite has to be a number the
+    // search can compare, and "six or more turns" is the honest reading of it.
+    expect(turns(arena({ battlefield: { 0: ['Hill Giant'], 1: ['Forest'] } }))).toBe(6);
+  });
+
+  it('reads the cap when the attack can be blocked, same as an empty board', () => {
+    // Their 2/2 against my untapped 3/3. `exposedPower` answers 0, so there is no clock, and the
+    // clock agrees with the term above about that.
+    const board = arena({ battlefield: { 0: ['Hill Giant'], 1: ['Grizzly Bears'] } });
+    expect(exposure(board)).toBe(0);
+    expect(turns(board)).toBe(6);
+  });
+
+  it('still reads the cap for a 2/2 getting through, because twenty life is ten turns', () => {
+    /*
+      The cap deciding something, and worth asserting rather than leaving implicit: a 2/2 chipping
+      at a seat on 20 needs ten turns, which is not pressure, and the term says so by reading the
+      same 6 an empty board reads. **This is the term declining to have an opinion**, which is the
+      behaviour that keeps it quiet in the early game where D244 found the function already fine.
+    */
+    const board = arena({ battlefield: { 0: ['Hill Giant'], 1: ['Grizzly Bears'] } });
+    const tappedOut = tapFor(board, 0, find(board, 0, 'battlefield', 'Hill Giant'));
+    expect(exposure(tappedOut)).toBe(2);
+    expect(turns(tappedOut)).toBe(6);
+  });
+
+  it('counts the turns once the board is big enough to matter', () => {
+    // A 4/4 flier against a ground blocker: 4 through, 20 life, five of their turns.
+    expect(turns(arena({ battlefield: { 0: ['Hill Giant'], 1: ['Serra Angel'] } }))).toBe(5);
+  });
+
+  it('is the same board and a different answer when the life total is low', () => {
+    /*
+      **The hypothesis in one assertion.** Both of these have the identical 4 power coming in and
+      nothing that can block it, so the linear term scores them the same — and one of them is two
+      turns from dead. This is the thing `exposed` structurally cannot say.
+    */
+    const board = arena({ battlefield: { 0: ['Hill Giant'], 1: ['Serra Angel'] } });
+    const low = spend(board, 0, 12);
+    expect(exposure(board)).toBe(exposure(low));
+    expect(turns(board)).toBe(5);
+    expect(turns(low)).toBe(2);
+  });
+
+  it('rounds up, because a turn that does not quite kill me is still a turn I get', () => {
+    // 4 power into 9 life is three turns, not 2.25: they hit for 4, 4 and 1.
+    const board = arena({ battlefield: { 0: ['Hill Giant'], 1: ['Serra Angel'] } });
+    expect(turns(spend(board, 0, 11))).toBe(3);
+  });
+
+  it('is exactly the linear term at full life, which is what makes the two comparable', () => {
+    /*
+      The identity the rate form is built around (#258). At starting life the scale is 1, so
+      `clockRate` at a weight of one *is* D264's term at a weight of one — the same number, not a
+      near relative. Everything that follows from turning it on is therefore attributable to the
+      scaling and nothing else.
+    */
+    const board = arena({ battlefield: { 0: ['Hill Giant'], 1: ['Serra Angel'] } });
+    const tappedOut = tapFor(board, 0, find(board, 0, 'battlefield', 'Hill Giant'));
+    for (const s of [board, tappedOut]) expect(rate(s)).toBeCloseTo(exposure(s), 10);
+  });
+
+  it('doubles when half the life is gone', () => {
+    // 4 power at 10 life: twice as frightening as the same 4 power at 20, which is the whole claim.
+    const board = arena({ battlefield: { 0: ['Hill Giant'], 1: ['Serra Angel'] } });
+    expect(rate(board)).toBeCloseTo(4, 10);
+    expect(rate(spend(board, 0, 10))).toBeCloseTo(8, 10);
+  });
+
+  it('takes its scale from the format, so a pod reads against forty rather than twenty', () => {
+    /*
+      A Commander seat starts at 40, so the same board is half as urgent there — and a literal 20 in
+      the term would have made every pod position read twice the pressure it has. The scale comes
+      from `getFormat(state.format).startingLife`.
+    */
+    const pod = arena({
+      format: 'pod', seats: 4, turn: 3,
+      battlefield: { 0: ['Hill Giant'], 1: ['Serra Angel'] },
+    });
+    expect(exposure(pod)).toBe(4);
+    expect(rate(pod)).toBeCloseTo(4, 10);
+    // And the turns form reads the cap at 40 life against 4 power, where 20 life read five.
+    expect(turns(pod)).toBe(6);
+  });
+
+  it('both ship off, and this fails if either default moves', () => {
+    /*
+      The guard D264 asks for and D271 had to turn around. Both forms ship at zero, so the shipped
+      evaluation must equal both explicit ablations — and whoever turns one on without three
+      disjoint seed sets behind it gets sent to the comment on `CLOCK_RATE` by this failing.
+    */
+    const board = arena({ battlefield: { 0: ['Hill Giant'], 1: ['Serra Angel'] } });
+    expect(evaluate(board, 0)).toBe(evaluate(board, 0, { weights: { clockRate: 0 } }));
+    expect(evaluate(board, 0)).toBe(evaluate(board, 0, { weights: { clockTurns: 0 } }));
+    expect(evaluate(board, 0)).not.toBe(evaluate(board, 0, { weights: { clockRate: 1 } }));
+    expect(evaluate(board, 0)).not.toBe(evaluate(board, 0, { weights: { clockTurns: 1 } }));
+  });
+});
