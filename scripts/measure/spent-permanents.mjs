@@ -1,5 +1,5 @@
 /**
- * Does a permanent that exists to be spent ever actually get spent?
+ * Does a permanent with an ability that eats it ever actually get spent?
  *
  * Treasure and Clue are the pool's first permanents whose whole text is an ability that eats them,
  * and they arrived with an engine change behind them: `manaSources` used to refuse any mana ability
@@ -32,7 +32,7 @@
  *     SUBJECT=skyward-writ node scripts/measure/spent-permanents.mjs
  */
 import {
-  applyAction, createGame, botAction, seatsToAct, STARTER_DECKS, TOKEN_DEFS,
+  applyAction, createGame, botAction, seatsToAct, STARTER_DECKS, CARD_SCRIPTS,
 } from '../../packages/rules-engine/dist/index.js';
 import { canonicalDecks } from './decks.mjs';
 
@@ -45,15 +45,25 @@ const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
 const CTX = { isHost: true, ...canonicalDecks(STARTER_DECKS) };
 
 /*
-  Which tokens are "spent" tokens, derived from the defs rather than named here.
+  Every permanent in the pool with an ability that **eats it**, derived from the scripts rather than
+  named here.
 
-  A token whose only ability sacrifices itself is one of these, and asking the def that question
-  means the next one is counted the day it is written — the rule every instrument in this directory
-  follows since a hand-written list silently measured an eleven-deck field.
+  Asking the scripts rather than listing the cards is the rule every instrument in this directory
+  follows since a hand-written list silently measured an eleven-deck field — and it is what turned
+  this from a Treasure-and-Clue counter into a reading of the whole family. The first version read
+  the token defs' oracle text for "sacrifice this artifact", which caught exactly the two tokens it
+  was written for and would have missed **Lotus Petal** the day it was added: a printed card with
+  the same five rows.
+
+  So the set is now every script with a `sacrificeSelf` cost anywhere in its abilities, which also
+  takes in Mind Stone, Tormod's Crypt and the Shambling Shell. Those are permanents that are spent
+  too, and "does the bot ever press the button that eats the permanent" is the same question about
+  all of them.
 */
 const SPENDABLE = new Set(
-  TOKEN_DEFS.filter((def) => /sacrifice this artifact/i.test(def.oracleText ?? ''))
-    .map((def) => def.name),
+  [...CARD_SCRIPTS.values()]
+    .filter((script) => (script.abilities ?? []).some((a) => a.cost?.sacrificeSelf === true))
+    .map((script) => script.name),
 );
 
 const per = new Map(); // name -> { made, spent, taken, left }
@@ -86,10 +96,17 @@ function duel(seed, decks, mine) {
     try { s = applyAction(s, action, CTX); } catch { break; }
     if (s.stateVersion === before) break;
 
-    // Gone, and attributed to the action it went during: the controller's own cast or activation
-    // is a spend, anything else is a removal. See the header.
+    /*
+      Gone, and attributed to the action it went during: the controller's own cast or activation is
+      a spend, anything else is a removal. See the header.
+
+      Two ways of being gone, because the family is no longer all tokens: a token that leaves the
+      battlefield is deleted from `instances` outright, where a printed card like Lotus Petal sits
+      in a graveyard afterwards. Reading only the first would have counted every Petal as still on
+      the battlefield for the rest of the game.
+    */
     for (const [id, name] of [...live]) {
-      if (s.instances[id] !== undefined) continue;
+      if (s.instances[id]?.zone === 'battlefield') continue;
       const own = action.by === mine && (action.type === 'auto:cast' || action.type === 'auto:activate');
       row(name)[own ? 'spent' : 'taken'] += 1;
       live.delete(id);
@@ -119,7 +136,7 @@ for (let i = 0; i < SEEDS; i++) {
 }
 
 console.log(`${SUBJECT}: ${games} games, seeds ${SEEDS} from ${SEED0}`);
-console.log(`tokens that are spent rather than played: ${[...SPENDABLE].join(', ') || 'none'}`);
+console.log(`permanents with an ability that eats them: ${[...SPENDABLE].join(', ') || 'none'}`);
 if (per.size === 0) {
   console.log('!! this deck made none of them in any game, so there is nothing here to read. Check');
   console.log('!! with cast-counts that the card which makes them is being cast at all before');

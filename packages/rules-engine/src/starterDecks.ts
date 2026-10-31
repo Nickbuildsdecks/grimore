@@ -2224,6 +2224,15 @@ const AMBUSH_VIPER: CardDef = {
   colors: ['G'],
 };
 
+const LOTUS_PETAL: CardDef = {
+  name: 'Lotus Petal',
+  typeLine: 'Artifact',
+  manaCost: '{0}',
+  cmc: 0,
+  oracleText: '{T}, Sacrifice Lotus Petal: Add one mana of any color.',
+  colors: [],
+};
+
 const THRABEN_INSPECTOR: CardDef = {
   name: 'Thraben Inspector',
   typeLine: 'Creature \u2014 Human Soldier',
@@ -4907,7 +4916,25 @@ export const FORGE_ALLIANCE: DeckSpec = {
     */
     { card: SKY_SKIFF, count: 1 },
     { card: RENEGADE_FREIGHTER, count: 1 },
-    { card: LOXODON_WARHAMMER, count: 2 },
+    { card: LOXODON_WARHAMMER, count: 1 },
+    /*
+      A **free** artifact that fixes a colour once, and the slot it takes is an artifact too.
+
+      That last part is the argument. This deck counts its artifacts three times over — the
+      Frogmite's affinity, the Etched Champion's metalcraft, and the Ravager's "sacrifice an
+      artifact" — so a swap that kept the count level was the only kind worth making, and the
+      second Loxodon Warhammer is the duplicate D255 already named as this list's most
+      expendable. One Warhammer out, one Petal in, and the three counts above are unchanged.
+
+      What the Petal adds on top of being an artifact is the second carrier for a mana source that
+      is **spent** (D259): before it, that whole path in the engine was held up by a Treasure token
+      in another deck. It is also the pool's first spell that costs nothing at all.
+
+      Not priced, and said plainly: a one-card change is below what any instrument here can resolve
+      (D258), so this ships on the mechanic and on the artifact count, which are claims that do not
+      need a win rate.
+    */
+    { card: LOTUS_PETAL, count: 1 },
     // The deck's only answer to an Equipment or an enchantment, which is what a board of swords
     // is most afraid of. Two Banishing Lights and no Disenchant since the metalcraft slots: the
     // Light answers any nonland permanent, which is the half of the job this pool actually needs.

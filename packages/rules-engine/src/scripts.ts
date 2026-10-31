@@ -2911,6 +2911,27 @@ const ELVISH_VISIONARY: CardScript = {
 };
 
 /**
+ * Lotus Petal: the Treasure as a printed card, and the pool's first spell that costs nothing.
+ *
+ * Same five rows and the same sacrifice, which is the point of having it: before this the engine's
+ * consumed-mana-source path (D259) was held up by a token in one deck, and a path with one carrier
+ * is a path that stops being exercised the day that card is cut.
+ *
+ * Into Forge Alliance, where it is three other things as well. That deck counts its artifacts for
+ * the Frogmite's affinity, for the Etched Champion's metalcraft and for the Ravager's sacrifice
+ * cost, and a Petal is all three for no mana — which is also why the slot it took is the second
+ * Loxodon Warhammer rather than a creature: one artifact out, one artifact in, every count level.
+ */
+const LOTUS_PETAL: CardScript = {
+  name: 'Lotus Petal',
+  abilities: COLOURS.map((colour) => ({
+    cost: { tap: true, sacrificeSelf: true },
+    description: `{T}, Sacrifice Lotus Petal: Add {${colour}}.`,
+    produces: [colour],
+  })),
+};
+
+/**
  * Thraben Inspector: a 1/2 for {W} that comes with a card attached to it.
  *
  * "Investigate" is one word for "create a Clue token" (CR 701.33), and it is written out as the
@@ -8613,7 +8634,7 @@ const ALL: readonly CardScript[] = [
   NATURALIZE, DISENCHANT, BLOSSOMING_DEFENSE, DIVE_DOWN, JUGGERNAUT, DISRUPT_DECORUM, KALITAS,
   PALADIN_EN_VEC,
   SOL_RING, MIND_STONE, BIRDS_OF_PARADISE, TREASURE, CLUE,
-  THRABEN_INSPECTOR, PIRATES_PRIZE,
+  THRABEN_INSPECTOR, PIRATES_PRIZE, LOTUS_PETAL,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,
   HELLRIDER, BALL_LIGHTNING, CLOUDSHIFT, SOULHERDER, FROGMITE,

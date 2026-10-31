@@ -16363,6 +16363,53 @@ for.
 `cast-counts` says Pirate's Prize is cast in 35% of the games it reaches hand, the lowest row in
 that deck and about right for a four-mana sorcery in a deck of answers.
 
+### A second carrier, because one is how a path stops being exercised
+
+**Lotus Petal** ({0} artifact, `{T}, Sacrifice: Add one mana of any color`) into Forge Alliance, for
+the second Loxodon Warhammer. It is the Treasure as a printed card, and it is here because a path
+with one carrier is a path that goes unexercised the day that card is cut — which this pool's own
+coverage instrument has been saying about seventeen other rows for a while.
+
+The slot argument is the artifact count. That deck reads its artifacts three times over — the
+Frogmite's affinity, the Etched Champion's metalcraft, and the Ravager's "sacrifice an artifact"
+cost — so the only swap worth making was one that kept the count level, and the second Warhammer is
+the duplicate D255 had already named as the list's most expendable. One artifact out, one artifact
+in, all three counts unchanged, and the Petal is a free artifact on turn one for a deck that wants
+exactly that. Not priced, and said plainly: a one-card change is below what any instrument here can
+resolve (D258), so it ships on the mechanic and on the count.
+
+It is also **the pool's first spell that costs nothing at all**, which is a path of its own: a test
+casts it off a board with no lands and then spends it on a Lightning Bolt, so "a free spell is
+offered" and "a free spell is castable" are both held.
+
+### And the instrument grew to the family, which is what caught the omission
+
+`spent-permanents` first derived its set from the token defs' oracle text, which caught exactly the
+two tokens it was written for — and would have missed Lotus Petal silently, because a printed card
+is not a token. It now asks the **scripts** instead: every script with a `sacrificeSelf` cost
+anywhere in its abilities. Same rule every instrument here follows, and the same failure it keeps
+preventing.
+
+That widened the question from "are Treasures spent" to "does the bot ever press a button that eats
+the permanent", and the answer is yes, across the whole family:
+
+```
+forge-alliance  Lotus Petal   21 created   16 spent (76%)   5 left standing
+skyward-writ    Clue          35 created   35 spent (100%)  0 left standing
+tidal-mind      Treasure      16 created   13 spent (81%)   3 left standing
+ashen-rite      Mind Stone    11 created   11 spent (100%)  0 left standing
+```
+
+Mind Stone's row had never been measured and is the one worth noting: that card has been in the pool
+since #49 and "a rock early, a card late" was a claim about what it is *for*. Eleven of eleven says
+the late half happens every game it is drawn. The two at 100% are the ones whose cost is mana the
+deck has spare; the two in the seventies are the ones whose cost is a colour the deck may not need
+before the game ends.
+
+Two carriers also needed widening in the other direction: the "gone" test was `instances[id] ===
+undefined`, which is true of a token and never of a card, so a Petal would have read as still on the
+battlefield for the rest of every game. It now reads the zone.
+
 ### Food is deliberately absent
 
 The third member of the family needs a card, D229's rule is that a mechanic without one does not

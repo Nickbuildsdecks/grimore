@@ -3225,6 +3225,36 @@ describe('Treasure and Clue: a permanent that is spent', () => {
     expect(s.instances[clue]).toBeUndefined();
   });
 
+  it('Lotus Petal costs nothing, and its mana is spent the same way a Treasure\u2019s is', () => {
+    /*
+      The second carrier for the consumed-mana-source path, and the pool's first spell with a
+      printed cost of {0} — so this asserts two things that had never been asserted together: that
+      a free spell is offered and castable with no mana at all, and that what it leaves behind is
+      spent rather than tapped.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'forge-alliance' }, hands: { 0: ['Lotus Petal', 'Lightning Bolt'] },
+      battlefield: { 0: [] }, turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    // No lands at all: if the Petal is castable here it is castable for nothing.
+    expect(ids(s, 0, 'battlefield')).toEqual([]);
+    expect(legalActions(s, 0).plays.some((p) => p.name === 'Lotus Petal')).toBe(true);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lotus Petal'),
+    })));
+    const petal = find(s, 0, 'battlefield', 'Lotus Petal');
+    expect(petal).toBeDefined();
+    // And it pays for the Bolt, which costs {R} off a board with no red source but this one.
+    expect(legalActions(s, 0).plays.some((p) => p.name === 'Lightning Bolt')).toBe(true);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(s.seats[1]!.life).toBe(17);
+    // Spent, not tapped. A card rather than a token, so it goes to the graveyard and stays there.
+    expect(s.instances[petal]!.zone).toBe('graveyard');
+  });
+
   it('and both tokens offer their row to a player, in the words printed on them', () => {
     /*
       The half a person actually touches, and the one the tests above skip by activating directly.
