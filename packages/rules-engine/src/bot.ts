@@ -1325,11 +1325,30 @@ const EXPOSED_POWER = 0;
  * missing denominator. Duels are untouched by construction — one opponent, divisor one — which is
  * why the three seed sets above still read on this term.
  *
- * It stays at **zero** regardless until the pod win rate at the fixed scale comes in, because the
- * standard D264 set has to be read exactly: *a change that lengthens every game, cannot be shown to
- * win one, and misses its own hypothesis does not ship on by default.* This one **can** be shown to
- * win a duel, so that rule does not decide it — but a term measured in duels and once-wrong in pods
- * does not get a global default in a project whose headline format is the pod.
+ * **The pod win rate at the fixed scale is in, and it is negative.** Three disjoint seed sets of 104
+ * pods: 48-56, 52-52, 50-54 — 150-162 of 312, −3.8 points, **never once above zero**. Held to the
+ * same standard that shipped the duel gain, that is negative rather than flat, and the division
+ * fixed the length without fixing the judgement.
+ *
+ * | | duel | pod |
+ * | --- | --- | --- |
+ * | win rate | **+1.5 points** (2808 games, sign holds) | **−3.8 points** (312 pods, never positive) |
+ * | length | slightly shorter | 1.29x moves, 1.11x turns |
+ *
+ * So this stays at **zero**, and no judgement call is needed to say so.
+ *
+ * **Why the pod differs is the useful part, and it is a statement about the pod.** *"Am I racing?"*
+ * has one answer in a duel and three in a pod, and this term computes one number — wrongly in both
+ * directions. Undivided it is the **sum**, what the table could send if everyone attacked me every
+ * turn: true of one opponent with nine power and equally true of three with three each, which is a
+ * far slower death, so it over-fears. Divided it is the **mean**: nine power on one seat reads three,
+ * which under-fears the one opponent who can actually kill me, and that is the only one a clock is
+ * about.
+ *
+ * What a player reads in a pod is neither — it is the **shortest of the per-opponent clocks**. In a
+ * duel all three objects coincide, which is why the duel measurement is clean and could never have
+ * exposed this. The follow-up is therefore a different term rather than another rescaling: compute
+ * `exposedPower` per foe and take the minimum clock, and give it its own three seed sets.
  *
  * Everything is kept — the computation, ten tests, two `term-leverage` rows, the duel result above —
  * on the grounds D264 kept `exposed`: the expensive part was never the code. Turning this on is one

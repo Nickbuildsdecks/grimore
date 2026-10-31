@@ -17883,3 +17883,54 @@ which are table-wide, and whether the ratio means the same thing at two seats an
 `hand`, `library`, `land` and `permanent` are all per-seat and all fine. `exposedPower` is the first
 term in this evaluation that reads the whole table at once, and it is the first one to need this
 question asked.
+
+### The pod answer at the corrected scale, which is negative, and what that says the term is
+
+Three disjoint seed sets, 104 pods each, with the per-opponent division in:
+
+| seed set | `{clockRate:1}` vs stock |
+| --- | --- |
+| 3300 | 48-56 (−8) |
+| 4100 | 52-52 (0) |
+| 5200 | 50-54 (−4) |
+
+150-162 of 312 pods, **−3.8 points, never once above zero**. Held to the same standard that shipped
+the duel gain — three disjoint sets, sign holding (D242) — that is not "flat", it is **negative**.
+And the division did not rescue it: the undivided term read −4 and 0 over two sets, the divided one
+reads −8, 0, −4 over three. What the division fixed was the *length* (2.06x moves to 1.29x), not the
+judgement.
+
+So the answer to #258 is clean and two-sided, and it needs no tie-break:
+
+| | duel | pod |
+| --- | --- | --- |
+| win rate | **+1.5 points** (2808 games, sign holds) | **−3.8 points** (312 pods, sign never positive) |
+| length | slightly shorter | 1.29x moves, 1.11x turns |
+
+`CLOCK_RATE` stays at **zero**. A term that is worth one and a half points in one format and costs
+nearly four in the other does not get a global default, and no judgement call is needed to say so.
+
+### And the measurements say what the term actually is
+
+This is the useful part, and it is a statement about the pod rather than about clocks.
+
+**"Am I racing?" has one answer in a duel and three in a pod, and this term computes one number.**
+Both scalings get that number wrong, in opposite directions:
+
+ - **Undivided**, it is the *sum* — what the whole table could send if everyone attacked me every
+   turn. True of one opponent with nine power, and also true of three with three each, which is a
+   much slower death because they are not all pointed at me. It over-fears, and the 2.06x length was
+   the bot flinching from an attack nobody was making.
+ - **Divided**, it is the *mean*. Nine power on one seat and nothing on the others reads three, which
+   under-fears the one opponent who can actually kill me — and that is the only one a clock is about.
+
+The object a player reads in a pod is neither: it is **the shortest of the per-opponent clocks**, who
+kills me first and in how many turns. In a duel those three objects coincide, which is exactly why
+the duel measurement is clean and could never have exposed this. That is the fifth instance today of
+a premise wider than its fixture, and the follow-up it names is concrete: compute `exposedPower` per
+foe rather than table-wide and take the minimum clock. It is a different term, not a rescaling, so it
+gets its own three seed sets.
+
+Everything stays: the computation, ten tests, both candidate shapes, two `term-leverage` rows, and
+both halves of the measurement. The duel result is real and is the strongest evidence yet for the
+shape-over-weight thesis; the pod result is real and is why the thesis is not yet a shipped default.
