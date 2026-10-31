@@ -52,6 +52,21 @@ const SEEDS = Number(process.env.SEEDS ?? 2);
 const SEED0 = Number(process.env.SEED0 ?? 4400);
 const MOVES = Number(process.env.MOVES ?? 4000);
 const SCHEME = process.env.SCHEME ?? 'table';
+/*
+  Whether the move loop passes the ActionContext, **off by default because that is what the
+  harnesses do**.
+
+  Every file in this directory hands `host` to `deck:load`, `game:start` and `auto:start` and then
+  drops it:
+
+      try { s = applyAction(s, action); } catch { break; }
+
+  The first version of this file passed it, which made the audit unfaithful to the thing it audits —
+  and it showed: replaying `deck-probe`'s own 288 games came back 288 clean where the probe itself
+  had reported one unfinished. An instrument that does not reproduce the harness cannot certify it,
+  so the default now matches the harnesses exactly and `CTX_IN_LOOP=1` is the comparison.
+*/
+const CTX_IN_LOOP = process.env.CTX_IN_LOOP === '1';
 const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
 const CTX = { isHost: true, ...canonicalDecks(STARTER_DECKS) };
 
@@ -79,7 +94,7 @@ function duel(seed, decks) {
     if (action === null) return 'no action';
     const before = s.stateVersion;
     try {
-      s = applyAction(s, action, CTX);
+      s = CTX_IN_LOOP ? applyAction(s, action, CTX) : applyAction(s, action);
     } catch (err) {
       /*
         The fault, kept rather than dropped — which is the whole reason this file exists.
@@ -137,7 +152,7 @@ if (SCHEME === 'probe') {
 }
 
 console.log(`${games} games, ${SEEDS} seeds from ${SEED0}, ${SCHEME} pairings${
-  SUBJECT === '' ? '' : `, ${SUBJECT} only`}`);
+  SUBJECT === '' ? '' : `, ${SUBJECT} only`}, ctx in loop: ${CTX_IN_LOOP ? 'yes' : 'no (as the harnesses do)'}`);
 console.log('');
 for (const [end, n] of [...ends].sort((x, y) => y[1] - x[1])) {
   console.log(`${String(n).padStart(5)}  ${(100 * n / games).toFixed(1).padStart(5)}%  ${end}`);
