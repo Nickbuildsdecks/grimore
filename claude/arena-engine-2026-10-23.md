@@ -7562,6 +7562,53 @@ turn that may never arrive.
 Food is deliberately left out: it needs a real card, and a Food card's printed text cannot be
 verified from this container. The engine work it will need is none.
 
+### Seven readers of one field, and a guard for the class (D260)
+
+D251 gave a card two ways to carry a triggered ability — printed, or handed to it by something else
+— and everything written before that reads only the first. The failure mode is the worst kind: **it
+goes quiet rather than wrong.** Nothing errors; a number comes back smaller than the truth and looks
+like a finding.
+
+Two had already been found separately this session (#236's three bot readers, `card-promises`
+calling Ophidian Eye unscripted), so the question became how many there are. A grep found four more;
+turning the grep into a CI guard found **two more again**, because they reach the field by a spelling
+the hand-grep missed. Seven readers, one field.
+
+The one that matters is `mechanic-coverage`, whose whole job is "which mechanics are held up by too
+few cards": it counted trigger kinds off printed triggers only, so a kind no printed card carries
+would read as **absent from the pool**, by the instrument built to notice exactly that. All four real
+cases are **inert today and measured so** — the only granted kind here is `combat-damage`, which five
+printed cards carry, so coverage reads the same 17 thin rows before and after. Two were genuinely out
+of scope and carry their reasons as exemptions.
+
+**Why a guard and not a control.** The obvious move was a planted control per instrument, like
+`card-promises` has. It would not have caught any of the seven: a planted positive is written by the
+same author at the same moment as the predicate, so it encodes the same blind spot. No self-test
+catches an unknown unknown. What a grep *can* do is notice the pairing and fail on the PR that adds
+the eighth — and the guard's own limit is written into it, found by trying to break it: a file passes
+by *mentioning* the second list, comments included, so it is a tripwire for "did the author know",
+not proof the reading is right.
+
+### The exception thirty-five harnesses swallow, and the clean sheet (D261)
+
+Every game-playing instrument here ends its loop with `try { ... } catch { break; }` and none report
+catching anything, so a throw would end a game early and still be counted as a game played.
+`deck-probe` says `(1 unfinished)` and that was the whole of what the project knew — "unfinished"
+being four things wearing one word: the move cap, a null action, no progress, and a throw.
+
+`unfinished.mjs` separates them, keeps every fault's message and action type, and exits non-zero on
+any throw. **Every game reaches a winner**: 156 of 156 on one seed, 1248 of 1248 on eight, 1248 again
+on the comparison arm, and `deck-probe`'s own 288 replayed with `SCHEME=probe`. So the swallowing is
+harmless on this build, which is a claim about all thirty-five.
+
+Two findings the clean sheet does not contain. The instrument **was not reproducing the harness it
+audits** and caught itself doing it — it passed the `ActionContext` inside the move loop where every
+harness drops it; the leftover arm then answered a question nobody had asked, which is that dropping
+the context mid-game changes nothing, 1248 to 1248. And the probe's unfinished game **cannot be
+replayed**, because that reading predates D259: three decks in the field changed, so today's engine
+plays different games. A historical harness reading stops being reproducible once the engine moves,
+which is D258's lesson arriving from the other direction.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
