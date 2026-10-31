@@ -910,6 +910,26 @@ const ARTIFACT_LIST = [
     const herderBodies = new Set();
     let lastTurn = (await readNumber(page, 'turn')) ?? 1;
     let turnsSeen = 0;
+    /*
+      The phone measured while the game is still going, which is the board that found D267.
+
+      Every other layout reading in this file is taken after `playOutGame` has reached a winner, and
+      that is the emptiest board of the game: the sweep and the concessions have cleared it, and
+      `view.finished` has taken the primary action and Concede out of the control bar. A bar that
+      had been overflowing since it replaced the manual one read as fitting, for exactly that reason
+      (#251).
+
+      So this one is taken mid-game, at a fixed point rather than wherever a move cap happened to
+      fall — the first turn change past six, which is late enough for four seats to have developed
+      a board and early enough that every game reaches it. Recorded here and asserted after the
+      loop, because a check inside the loop would report once per game rather than once per run.
+
+      Only the sideways overflow, deliberately. The screens-tall budgets want their own mid-game
+      numbers and the mid-game spread (2.88-3.21 screens) is wider than one reading can set a budget
+      from, so those stay post-game until somebody measures them properly. Sideways overflow has no
+      such problem: it either fits a phone or it does not.
+    */
+    let midPhone = null;
     let stuck = 0;
     /*
       One game, played to its end — and under `LIST=costs`, possibly not the only one.
@@ -1101,6 +1121,38 @@ const ARTIFACT_LIST = [
           lastTurn = turn;
         }
         if (turnsSeen === 3) await shot(page, 'mid-game');
+        if (turnsSeen >= 6 && midPhone === null) {
+          const was = page.viewportSize() ?? { width: 1280, height: 720 };
+          await page.setViewportSize({ width: 390, height: 844 });
+          await page.waitForTimeout(250);
+          midPhone = await page.evaluate(() => {
+            const docW = document.documentElement.clientWidth;
+            const scrolls = (el) => {
+              const o = getComputedStyle(el).overflowX;
+              return o === 'auto' || o === 'scroll' || o === 'hidden';
+            };
+            const free = [];
+            for (const el of document.querySelectorAll('*')) {
+              const r = el.getBoundingClientRect();
+              if (r.width === 0 || Math.round(r.right - docW) <= 1) continue;
+              let contained = false;
+              for (let q = el.parentElement; q && q !== document.documentElement; q = q.parentElement) {
+                if (scrolls(q)) { contained = true; break; }
+              }
+              if (!contained) {
+                free.push(`+${Math.round(r.right - docW)}px ${el.tagName.toLowerCase()}`
+                  + `${el.getAttribute('data-testid') ? `[${el.getAttribute('data-testid')}]` : ''}`);
+              }
+            }
+            return {
+              overflow: document.documentElement.scrollWidth - docW,
+              free: free.slice(0, 6),
+            };
+          });
+          await shot(page, 'mid-game-phone');
+          await page.setViewportSize(was);
+          await page.waitForTimeout(250);
+        }
       }
     };
 
@@ -1760,6 +1812,18 @@ const ARTIFACT_LIST = [
       Computed only when the check fails, because walking every element and reading a computed
       style on each is not something to do on every run for a line nobody reads.
     */
+    /*
+      The mid-game reading first, because it is the one with a bug behind it. A game that somehow
+      never reached seven turns reports that rather than passing quietly: a check that passes
+      because its fixture never arrived is the thing this whole entry is about.
+    */
+    check('a solo table fits a phone while the game is still going',
+      midPhone !== null && midPhone.overflow <= 1,
+      midPhone === null
+        ? `the game never reached a seventh turn, so this was never measured (${turnsSeen} turn changes)`
+        : `overflow ${midPhone.overflow}px${midPhone.free.length === 0 ? ''
+          : `; widened by ${midPhone.free.join(' | ')}`}`);
+
     const fits = overflow <= 1;
     const culprits = fits ? null : await page.evaluate(() => {
       const docW = document.documentElement.clientWidth;

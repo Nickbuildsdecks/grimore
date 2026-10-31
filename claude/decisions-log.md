@@ -17102,6 +17102,31 @@ D263's typecheck existed and never ran, D266's claim had no measurement that cou
 and this one asserted "any board" while only ever seeing one. None of them was a wrong assertion.
 Each was a correct assertion pointed somewhere it could not fail.
 
+### The check that can fail, and the proof that it can
+
+The fix without a guard would have left the next such regression exactly as invisible. So the solo
+suite now takes the sideways-overflow reading **while the game is still going**, at a fixed point
+rather than wherever a move cap happens to fall — the first turn change past six, late enough for
+four seats to have a board and early enough that every game reaches it. A game that somehow never
+gets there reports that rather than passing quietly, because a check that passes because its fixture
+never arrived is the whole subject of this entry.
+
+Shown to fail, not assumed to. Reverting only the `min-w-0 overflow-x-auto` and re-running puts both
+checks side by side in one run:
+
+```
+FAIL  a solo table fits a phone while the game is still going
+      — overflow 41px; widened by +41px button[concede]
+ ok   a solo table fits a phone
+```
+
+The same assertion, twice, on two fixtures. One names the bug and one cannot see it. That is the
+clearest statement of the shape I have, and it is worth more than the fix.
+
+Only the sideways overflow is taken mid-game, deliberately. It is a yes-or-no question — the table
+either fits a phone or it does not — so one reading settles it. The screens-tall budgets are not,
+which is the next section.
+
 ### What is deliberately not done
 
 The mid-game readings exceed the shipped screens-tall budgets — a four-seat pod reads 2.88–3.21
