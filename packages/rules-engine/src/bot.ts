@@ -1019,6 +1019,12 @@ const CARD_IN_HAND = 1.5;
  */
 const LIBRARY_CARD = 0.3;
 /*
+  Off by default, so the shipped bot is unchanged until a measurement says otherwise. The same
+  discipline D264 used for `exposed`: a term arrives at zero, and the number that turns it on has to
+  be earned.
+*/
+const CASTABLE_IN_HAND = 0;
+/*
   An answer in hand priced above a generic card: measured, and worth nothing.
 
   The diagnostic in D69 found the one thing this search demonstrably gets wrong: over sixty games
@@ -1335,11 +1341,65 @@ function exposedPower(state: GameState, seat: SeatIndex): number {
   return exposed;
 }
 
+/**
+ * How many cards in hand this seat could actually pay for right now.
+ *
+ * The hypothesis this exists to test. `seatValue` prices the hand as a **raw count**, so a
+ * five-card hand holding three castable spells and a five-card hand of things you cannot pay for
+ * score identically — and at turns five to eight, the one band where D244 measured the function as
+ * blunt (61% sign accuracy) and the only band where a search can still change an outcome, that
+ * difference is most of the position. So the suspicion is not that cards in hand are worth little,
+ * which is what #227 concluded when it lowered the weight, but that the term is a proxy for the
+ * wrong thing.
+ *
+ * **`canAfford` and not `potentialMana`**, and the distinction is the whole correctness of this
+ * function. `potentialMana` is documented as optimistic and "only ever shown": a dual land counts
+ * once for each colour it could make, so a hand needing {U}{U} would read as castable off a single
+ * Underground River. `canAfford` asks the solver, and is the same answer `legalActions` uses to
+ * decide what to offer and the payment itself uses to take it. One answer to "can this be paid for"
+ * is the rule here, for the reason D260 gives: a second reader of a cost rule goes quiet rather
+ * than wrong when the rule grows.
+ *
+ * Step-independent on purpose. Reading `legalActions().plays` would have been the shorter route and
+ * it is the wrong one: `plays` is empty when this seat has no priority, so a perfectly good hand
+ * would score zero on the opponent's turn and the term would be mostly noise about whose turn it
+ * is. That is #99's mistake in a new place — score the position, not the moment the search stopped.
+ *
+ * Lands are not counted. A land in hand is not a spell you can pay for, the land drop is once a
+ * turn rather than a function of mana, and lands on the battlefield are already a term of their
+ * own. Counting them here would make this partly a second land term.
+ *
+ * X in a cost is asked at X=0, which is the honest floor: an X spell with X=0 is castable, and what
+ * a bigger X is worth is a different question that `maxAffordableX` answers for the bot elsewhere.
+ */
+function castableInHand(state: GameState, seat: SeatIndex): number {
+  const pool = poolOf(state, seat);
+  const sources = manaSources(state, seat);
+  let able = 0;
+  for (const id of listAt(state, zoneKey(seat, 'hand'))) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const def = state.cardDefs[inst.defKey];
+    if (def === undefined) continue;
+    if (hasType(parseTypeLine(def.typeLine), 'land')) continue;
+    if (canAfford(pool, parseManaCost(def.manaCost), sources)) able += 1;
+  }
+  return able;
+}
+
 /** Everything one seat has, from that seat's point of view. */
 function seatValue(state: GameState, seat: SeatIndex, opts: BotOptions = {}): number {
   const w = opts.weights ?? {};
   let total = (state.seats[seat]?.life ?? 0) * (w.life ?? LIFE_WEIGHT);
   total += (state.zones[`${seat}:hand`] ?? []).length * (w.hand ?? CARD_IN_HAND);
+  /*
+    Short-circuited at zero weight, which is both the default and a correctness requirement rather
+    than a saving. `canAfford` runs a solver per hand card, so computing it for an arm that then
+    multiplies by nothing would make the two arms of a *cost* measurement play identical games at
+    different speeds — which is precisely the error D264 had to withdraw a figure for.
+  */
+  const castWeight = w.castable ?? CASTABLE_IN_HAND;
+  if (castWeight !== 0) total += castableInHand(state, seat) * castWeight;
   total += (state.zones[`${seat}:library`] ?? []).length * (w.library ?? LIBRARY_CARD);
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
@@ -2105,6 +2165,11 @@ export interface BotOptions {
      * ablation, and the control this term was measured against.
      */
     readonly exposed?: number;
+    /**
+     * Cards in hand this seat can actually pay for, priced per card (see `castableInHand`). 0 is
+     * the ablation and the control, the same shape as `exposed`.
+     */
+    readonly castable?: number;
   };
   /**
    * Whether the search stops where its action happened rather than wherever auto-pass carried the

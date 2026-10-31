@@ -2662,6 +2662,82 @@ describe('the opponent cannot read your hand', () => {
  * Seat 0 is Ember Rush and seat 1 Verdant Guard, which is `arena`'s default and the reason the
  * boards below are built from those two lists.
  */
+/**
+ * The cards in hand this seat can actually pay for (#253).
+ *
+ * `evaluate` prices the hand as a count, so a hand of three castable spells and a hand of three
+ * things you cannot pay for score the same. These pin the arithmetic of the term that tells them
+ * apart.
+ *
+ * **Isolated by ablation rather than by exporting the function**, and **both weights named**, for
+ * the two reasons the block below gives: the public evaluation is the stronger claim because it
+ * says the term reaches the number the search compares, and `castable` ships at 0 so comparing
+ * against the default would make every assertion here read zero and pass — D263's vacuous-assertion
+ * trap, in the file that caught it.
+ *
+ * Only seat 0 is ever given a hand. `arena` empties both opening hands, so seat 1's count stays 0
+ * and `evaluate`'s subtraction of the opponents' average cannot move these numbers.
+ *
+ * Seat 0 is Ember Rush: Mountains, and red spells costing {R} upwards.
+ */
+describe('the cards in hand I can actually pay for', () => {
+  /** The term's contribution at a weight of one, in cards. */
+  const payable = (s: GameState, seat: SeatIndex = 0): number =>
+    evaluate(s, seat, { weights: { castable: 1 } }) - evaluate(s, seat, { weights: { castable: 0 } });
+
+  it('is nothing with an empty hand', () => {
+    expect(payable(arena({ battlefield: { 0: ['Mountain'] } }))).toBe(0);
+  });
+
+  it('is nothing when the hand cannot be paid for at all', () => {
+    // A one-drop and no land. The count term scores this hand at one card; this one scores it at
+    // nothing, which is the whole point of the pair.
+    expect(payable(arena({ hands: { 0: ['Lightning Bolt'] } }))).toBe(0);
+  });
+
+  it('counts a spell the lands can pay for', () => {
+    expect(payable(arena({ hands: { 0: ['Lightning Bolt'] }, battlefield: { 0: ['Mountain'] } }))).toBe(1);
+  });
+
+  it('separates two hands the count term cannot tell apart', () => {
+    /*
+      The hypothesis in one assertion. Both hands hold two cards and one Mountain, so the `hand`
+      term gives them the same score; one of them can actually do something this turn.
+    */
+    const board = { battlefield: { 0: ['Mountain'] } };
+    const usable = arena({ ...board, hands: { 0: ['Lightning Bolt', 'Shock'] } });
+    const stuck = arena({ ...board, hands: { 0: ['Hill Giant', 'Fireball'] } });
+    expect(ids(usable, 0, 'hand')).toHaveLength(2);
+    expect(ids(stuck, 0, 'hand')).toHaveLength(2);
+    expect(payable(usable)).toBe(2);
+    expect(payable(stuck)).toBe(1);
+  });
+
+  it('does not count a land in hand', () => {
+    // A land is not a spell you pay for, the land drop is once a turn rather than a function of
+    // mana, and lands on the battlefield are already their own term.
+    expect(payable(arena({ hands: { 0: ['Mountain'] }, battlefield: { 0: ['Mountain'] } }))).toBe(0);
+  });
+
+  it('reads a tapped land as mana it does not have', () => {
+    const board = arena({ hands: { 0: ['Lightning Bolt'] }, battlefield: { 0: ['Mountain'] } });
+    expect(payable(board)).toBe(1);
+    const land = find(board, 0, 'battlefield', 'Mountain');
+    const tapped = applyAction(board, { type: 'card:tap', by: 0, card: land, tapped: true }, HOST);
+    expect(payable(tapped)).toBe(0);
+  });
+
+  it('is off by default, and this fails if that changes', () => {
+    /*
+      The guard D264 asks for. The term ships at zero, so the shipped evaluation must equal the
+      explicit ablation — and if somebody turns it on without measuring, this is what says so.
+    */
+    const board = arena({ hands: { 0: ['Lightning Bolt'] }, battlefield: { 0: ['Mountain'] } });
+    expect(evaluate(board, 0)).toBe(evaluate(board, 0, { weights: { castable: 0 } }));
+    expect(evaluate(board, 0)).not.toBe(evaluate(board, 0, { weights: { castable: 1 } }));
+  });
+});
+
 describe('the power opposite me that nothing of mine can block', () => {
   /** The term's contribution at a weight of one, in points of power. */
   const exposure = (s: GameState, seat: SeatIndex = 0): number =>

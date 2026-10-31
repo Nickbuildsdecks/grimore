@@ -88,6 +88,18 @@ const TERMS = {
     is answerable for a term that does not ship.
   */
   exposed: { exposed: 1 },
+  /*
+    The same shape of question as `exposed` and the same direction, for the same reason: `castable`
+    ships at zero, so an ablation of it would read a clean 0.0% and mean nothing. This arm turns it
+    on.
+
+    What it asks (#253): the `hand` row above ablates a **raw count** of cards in hand, and that
+    count cannot tell a hand you can pay for from a hand you cannot. This arm prices the cards the
+    seat could actually cast, so a non-zero number here against an inert `hand` row would say the
+    term was the wrong *shape* rather than the wrong weight — which is the one reading #227's
+    conclusion ("cards in hand are worth little") could not distinguish itself from.
+  */
+  castable: { castable: 1 },
 };
 
 const want = (process.env.TERMS ?? '').split(',').map((t) => t.trim()).filter(Boolean);
