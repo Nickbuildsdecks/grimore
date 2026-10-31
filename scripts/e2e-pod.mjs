@@ -29,7 +29,7 @@
  */
 import path from 'node:path';
 import {
-  chromium, check, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text, textOf, tap,
+  chromium, check, setShotDir, summarize, shot, waitFor, tid, cardsIn, slotsIn, has, text, textOf, tap,
   press, readNumber, expectEventually, isMyMove, makeMove, notePrompts, noteMove,
   watchForReactWarnings,
 } from './lib/table-driver.mjs';
@@ -610,9 +610,20 @@ async function main() {
  * never finds.
  */
 async function tryCommander(page, seat, seen) {
-  const card = cardsIn(page, `zone-command-${seat}`).first();
-  if ((await card.count()) === 0) return false;
-  const badges = (await card.textContent()) ?? '';
+  /*
+    The badge is read off the **slot** and the press lands on the card inside it.
+
+    This read the card and matched /playable/, which stopped working the day the badges moved onto
+    the slot so that a tapped permanent's overlay would stay upright (D265). The symptom was this
+    check's own message, and it is the reason that message counts its reads: "the command zone was
+    read 845 times and never said playable" is a sentence that names the bug, where a bare
+    "commander never cast" would have sent somebody into the engine. `slotsIn` exists so the next
+    reader does not have to learn this a third time.
+  */
+  const slot = slotsIn(page, `zone-command-${seat}`).first();
+  if ((await slot.count()) === 0) return false;
+  const card = slot.locator('[data-testid^="card-"]').first();
+  const badges = (await slot.textContent()) ?? '';
   if (!/playable/i.test(badges)) {
     // Recorded rather than ignored: "the commander was never castable" is a claim about the
     // engine, and this is the only place that can tell it apart from "the table never said so".

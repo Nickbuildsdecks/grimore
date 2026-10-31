@@ -154,6 +154,21 @@ export async function press(page, id) {
   return false;
 }
 export const cardsIn = (page, zoneTestId) => page.locator(`[data-testid="${zoneTestId}"] [data-testid^="card-"]`);
+/**
+ * The **slots** in a zone, which is where a card's badges are drawn.
+ *
+ * Use this, not `cardsIn`, whenever the question is *what the card says* — "playable", "attacking",
+ * "not crewed", a counter. A card turns a quarter turn when it taps and anything inside it turns
+ * with it, so the badges live on the slot (the wrapper that is portrait upright and landscape
+ * turned) and a `textContent` of the card no longer contains them. `cardsIn` is still right for
+ * pressing a card, reading `data-card-name`, or counting what is in a zone.
+ *
+ * Both readers of the playable badge were found the same way and a suite apart: `tryToPlayFromZone`
+ * here, which turned an arena run into twenty turns of Pass, and `tryCommander` in `e2e-pod.mjs`,
+ * which read the command zone 845 times and never once saw the word. The second is why this is a
+ * named helper rather than an inline locator in one place — see D265.
+ */
+export const slotsIn = (page, zoneTestId) => page.locator(`[data-testid="${zoneTestId}"] [data-testid^="slot-"]`);
 export const has = async (page, id) => (await tid(page, id).count()) > 0;
 /**
  * The text of an element, or '' when it is not there.
@@ -955,7 +970,7 @@ export async function tryToPlayFromHand(page, seat, abilities = false) {
  * the card is what you press.
  */
 async function tryToPlayFromZone(page, zone) {
-  const slots = page.locator(`[data-testid="${zone}"] [data-testid^="slot-"]`);
+  const slots = slotsIn(page, zone);
   const count = await slots.count();
   const order = [...Array(count).keys()].sort(() => Math.random() - 0.5);
   for (const i of order) {
