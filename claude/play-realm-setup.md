@@ -950,6 +950,13 @@ The code box is still there and still the way into an unlisted table. **Join** t
 Four browser suites, one per way of playing. All need the stack running and Playwright available
 (`npm i -D playwright`, or `PLAYWRIGHT_PATH=...`). Screenshots land in `e2e-shots/`.
 
+**Nothing runs these for you.** `.github/workflows/ci.yml` has no browser job, and `pnpm v2:test`
+filters to `./packages/*` and `./apps/*`, so `scripts/` is outside it by construction. They are a
+manual step after any change to the table UI, the lobby, or a deck — which is why the one part of
+them that *can* be gated now is: `customDeck.test.ts` checks that the pool still holds every card
+the twenty pasted `LIST=` decks name, because that dependency fails silently and looks like a
+broken pregame screen rather than a missing card (D262).
+
 **Start the stack with the launcher, not by hand.** `scripts/play.mjs` sets `VITE_REALTIME_URL`, and
 the browser needs it: there is deliberately no `/socket.io` proxy in `vite.config.ts`, so without
 that variable the page opens a socket to the dev server and gets nothing. The suites then time out

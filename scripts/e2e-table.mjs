@@ -184,19 +184,50 @@ async function main() {
       lands first, and because the panel is the same component in both places. The assertion is
       that it names cards: a panel that opens and says nothing would pass a "did it open" check.
 
-      The card named here is one the deck holds **three** of, which it was not at first: it asked
-      for Tidal Mind's single Counterspell, and a balance pass that cut that one card turned this
-      check red while the panel was working perfectly. A browser check that names a one-of is a
-      check about a deck list.
+      **The card is read out of the deck rather than written here**, and that is the whole lesson of
+      this block. It named Tidal Mind's single Counterspell first; a balance pass cut that one card
+      and turned this check red while the panel was working perfectly. Naming the three-of instead
+      moved the trap rather than removing it — a deck list is a thing the project changes, and this
+      suite is in neither CI nor `pnpm v2:test`, so the red would wait however many weeks until
+      somebody ran it by hand. Asking the engine which slot is deepest is the fix: the claim is
+      about the panel, which is what the check is for, and the deck list is free to move.
+
+      Deriving an assertion from the same source as the thing under test is usually how a check
+      stops checking, so note what this one still catches: the panel reads the deck over a socket
+      and renders it, and the name has to survive that. What it deliberately no longer catches is
+      "Tidal Mind contains a Vampire Nighthawk", which is `starterDecks.ts`'s business and not a
+      claim two browsers are needed to make.
     */
+    const { STARTER_DECKS } = await import(
+      new URL('../packages/rules-engine/dist/index.js', import.meta.url));
+    const peekDeck = STARTER_DECKS['tidal-mind'];
+    // Named rather than thrown on, because a TypeError three lines down reads like a broken suite
+    // and this is a deck that was renamed.
+    if (peekDeck === undefined) throw new Error('STARTER_DECKS has no tidal-mind to peek at');
+    // The deepest non-land slot. A land would be ambiguous against the "Lands" header below, and
+    // the deepest slot is the one a balance pass is least likely to cut to zero.
+    const deepest = peekDeck.cards
+      .filter((e) => !/Land/.test(e.card.typeLine))
+      .reduce((best, e) => (e.count > best.count ? e : best));
+    // The control, because a derivation that comes back with a one-of has quietly turned this into
+    // the check that already failed once. Two is the floor: at one copy, say so and stop.
+    if (deepest.count < 2) {
+      check('the deck peek has a card to name', false,
+        `deepest non-land slot is ${deepest.count}x ${deepest.card.name}`);
+    }
+    const commanderWord = (peekDeck.commander?.name ?? '').split(',')[0];
+    // The size too, for the same reason: sixty is the format today and the panel's job is to say
+    // what the deck actually is, not to agree with a number written in this file.
+    const peekTotal = peekDeck.cards.reduce((n, e) => n + e.count, 0);
     await tid(nick, 'solo-peek-tidal-mind').click();
     await waitFor(nick, 'peek-panel-tidal-mind');
     const peeked = (await tid(nick, 'peek-panel-tidal-mind').textContent()) ?? '';
     check('a deck says what is in it before you pick it',
-      peeked.includes('Vampire Nighthawk') && peeked.includes('Lands') && peeked.includes('60 cards'),
-      peeked.slice(0, 120));
+      peeked.includes(deepest.card.name) && peeked.includes('Lands')
+        && peeked.includes(`${peekTotal} cards`),
+      `looked for ${deepest.card.name} and ${peekTotal} cards: ${peeked.slice(0, 120)}`);
     check('and names the commander, which no decklist can show',
-      peeked.includes('Talrand'), peeked.slice(0, 120));
+      commanderWord !== '' && peeked.includes(commanderWord), peeked.slice(0, 120));
     await shot(nick, 'deck-contents');
     await tid(nick, 'solo-peek-tidal-mind').click();
     await nick.waitForSelector('[data-testid="peek-panel-tidal-mind"]', { state: 'detached', timeout: 5000 });

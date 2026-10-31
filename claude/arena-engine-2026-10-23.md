@@ -7609,6 +7609,37 @@ replayed**, because that reading predates D259: three decks in the field changed
 plays different games. A historical harness reading stops being reproducible once the engine moves,
 which is D258's lesson arriving from the other direction.
 
+### Four browser suites in no gate, and the half of that a test can hold (#245, D262)
+
+D259 changed three decks, and the four `scripts/e2e-*.mjs` suites are in neither
+`.github/workflows/ci.yml` (no browser job at all) nor `pnpm v2:test` (which filters to
+`./packages/*` and `./apps/*`, and `scripts/` is not a workspace package). So the only way to answer
+"did my deck changes break a browser suite" was to run them: `e2e-table` 73/73, `e2e-solo` 24/24
+against the changed Tidal Mind. Nothing broke.
+
+Two things could rot silently between those manual runs, and one of them already had once.
+`e2e-table` asserted a card **by name** on Tidal Mind's deck-peek panel; its own comment records
+that it first named the deck's single Counterspell, a balance pass cut that card, and the check went
+red while the panel worked perfectly. Naming the three-of instead had moved the trap rather than
+removing it — D259 edited this very deck. It now reads the deepest non-land slot out of
+`STARTER_DECKS`, with a control for the derivation coming back with a one-of: the claim "the panel
+names the deck's cards, and the name survives the socket and the render" is kept, and the claim
+"Tidal Mind contains a Vampire Nighthawk" is given up to `starterDecks.ts`, where it belongs.
+
+The second is bigger. `e2e-solo` carries twenty hand-written sixty-card lists — one per mechanic it
+drives through a browser — and 178 of their slots are **strings looked up in a pool that is the
+union of the starter decks**. Cut the last copy of a card from the last deck holding it and every
+list naming it becomes cardboard, `auto:start` refuses the table, and the suite times out on a
+screen that looks like a broken pregame and is not. Two of D259's three cuts went 2→1. So
+`customDeck.test.ts` now extracts every pasted list and puts it through the real `poolCardNamed`,
+`customDeck` and `deckIsAutomatable` — 41 tests, in a package CI already runs. Both failure paths
+were exercised rather than assumed: a renamed card fails two tests and prints the name, and
+defeating the extraction fails the control.
+
+What that does **not** gate is the browser suites themselves — a broken selector, a feed over a
+control, a React warning. It narrows the silent rot to the data dependency and leaves the browser
+dependency a manual step, which is the honest summary.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

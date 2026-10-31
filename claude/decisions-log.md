@@ -16563,3 +16563,93 @@ The `catch { break; }` stays in all thirty-five, because the alternative — a t
 whether it ever happens now exists. **Run `unfinished.mjs` after any change to the engine's action
 handling**, which is where a throw would come from, and the swallowing goes back to being harmless
 rather than unexamined. It is cheap: 156 games on one seed takes under a minute.
+
+## D262 — The four browser suites run in no gate at all, and one of them named a card by hand
+
+The question that started this was small: three decks changed in D259 (a Thraben Inspector into
+Skyward Writ, a Pirate's Prize into Tidal Mind, a Lotus Petal into Forge Alliance), and the browser
+suites are not in `pnpm v2:test`. Did any of them break?
+
+No. `e2e-table.mjs` 73/73, `e2e-solo.mjs` 24/24 against the changed Tidal Mind. But the answer took
+two Playwright runs to get and **could not have been got any other way**, which is the finding:
+
+- `.github/workflows/ci.yml` has three jobs and **no browser job**. Nothing in it mentions
+  playwright, chromium or `e2e`.
+- `pnpm v2:test` is `turbo run test --filter=./packages/* --filter=./apps/*`. `scripts/` is not a
+  workspace package, so the four suites are outside the filter by construction.
+
+Four suites, 24 to 73 checks each, covering the joints no unit test can reach — two isolated
+browser contexts, a socket each, a hidden hand that has to genuinely not be in the other browser —
+and they run **when somebody remembers to run them**. That is a reasonable place to be (a browser
+job needs a browser, servers, Redis and a minute a suite, and these take 30-90s each locally), but
+it is only reasonable if nothing silently *rots* between runs. Two things could.
+
+### The assertion that named a card, which had already failed once
+
+`e2e-table.mjs` asserted `peeked.includes('Vampire Nighthawk')` on Tidal Mind's deck-peek panel. Its
+own comment records the history: it asked for Tidal Mind's single Counterspell first, a balance pass
+cut that card, and the check went red while the panel was working perfectly. The repair at the time
+was to name the three-of instead — which **moved the trap rather than removing it**. A deck list is
+a thing this project edits every few days; D259 edited this very deck. The check survived only
+because I happened to leave the Nighthawks alone.
+
+It now reads the deepest non-land slot out of `STARTER_DECKS` and asserts *that* name, with a
+control for the case where the derivation comes back with a one-of. Deriving an assertion from the
+same source as the thing under test is usually how a check stops checking, so it is worth being
+precise about what moved: the claim "the panel names the cards in the deck" is kept, including that
+the name survives the socket and the render; the claim "Tidal Mind contains a Vampire Nighthawk" is
+given up, and it was never a claim worth two browsers — it is `starterDecks.ts`'s business.
+
+### The twenty pasted lists, and the half of the risk a test can hold
+
+`e2e-solo.mjs` carries twenty hand-written sixty-card lists, one per mechanic it drives through a
+browser: `LIST=cascade`, `LIST=soulbond`, `LIST=artifact` and seventeen more. 178 named slots, all
+strings.
+
+The pool those names resolve against is **the union of the starter decks** (`poolIndex` in
+`customDeck.ts` — there is deliberately no second registry). So the two move independently, and the
+failure is quiet in the worst way: a balance pass that takes the last copy of a card out of the last
+deck holding it removes that card from the pool, the list naming it becomes **cardboard**,
+`deckIsAutomatable` goes false, `auto:start` refuses the table, and the suite times out on
+`[data-testid="pregame"]` — which looks exactly like a broken pregame screen and is not. The same
+mistaken diagnosis is already recorded at the top of `e2e-table.mjs` for a missing
+`VITE_REALTIME_URL`. And with no gate, it would wait however many weeks until somebody ran the suite.
+
+Two of my three D259 slot cuts went 2→1. One more cut on the same cards and some of those lists go.
+
+So the half of this that a test *can* hold is now held, in `customDeck.test.ts`: every pasted list in
+`scripts/e2e-*.mjs` is extracted, every name looked up with the real `poolCardNamed`, and every list
+put through the real `customDeck` and `deckIsAutomatable`. 41 tests, in a package CI already runs.
+It does not assert the browser suite passes — that needs a browser — it asserts the pool still has
+every card those suites ask it for. Same shape as D260's granted-trigger guard: a tripwire on the PR
+that breaks the invariant, not a reproduction of the thing being protected.
+
+One claim in the first draft of that test was false and is worth recording as such: its comment said
+the lists must be sixty cards because `parseDecklist` refuses anything else. It does not.
+`DECKLIST_LIMITS` is a 250-card maximum with **no minimum**, and nothing in the engine, the server or
+the web app checks for sixty — a grep for an enforced size found only prose. Sixty is the suites'
+own convention. The assertion stays, because a list that has drifted off it is far likelier a
+dropped line than a deliberate fifty-nine, but it is now labelled a convention rather than a rule.
+
+**Both failure paths were exercised rather than assumed**, which is the lesson from D260's first
+negative test passing when it should not have:
+
+- renaming one card in `CASCADE_LIST` to `Bloodbraid Elk` fails two tests and prints the name;
+- rewriting `.join('\n')` so the extraction matches nothing fails the control (`expected 0 to be
+  greater than or equal to 15`) — and the suite's own test count dropping 57 → 17 is the thing the
+  control exists to catch.
+
+### What is still not gated, said plainly rather than left implied
+
+The browser suites themselves. A UI change that breaks a selector, a feed that covers a control, a
+React warning — those are still caught only by running them. The pool check narrows the class of
+silent rot to the part that is a *data* dependency; it does nothing about the part that is a
+*browser* dependency. Running the four suites after any change to the table UI or the lobby remains
+a manual step, and the honest summary of this entry is that it made one of two risks cheap to catch
+and documented the other.
+
+A second thing surfaced while verifying and is **not** mine to fix inside this change:
+`packages/rules-engine` has a `typecheck:tests` script that fails with 22 errors in
+`scripts.test.ts`, identically with and without this change (verified by stashing it). CI runs
+`typecheck`, which excludes the test files, so nothing runs it. Vitest transpiles rather than
+typechecks, so the suite is green and the types are not. Recorded as its own task.
