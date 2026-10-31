@@ -34,13 +34,91 @@ const PLAYERS = [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }];
 */
 const BOT = JSON.parse(process.env.BOT ?? '{}');
 
+/*
+  One deck's list changed, and the **whole field** re-measured with it in place.
+
+  This exists because of the lesson D194 wrote down and D247 then walked straight into: a paired
+  `deck-probe` swaps cards inside one deck and amplifies whatever its seeds gave it, while the table
+  re-measures every pairing and lets the rest of the field move too. Where the two disagree, believe
+  the table. D194's probe wanted to call a six-card change +47 of 288 and the table said +4; D247's
+  wanted +16 for two cards and the table said −1.
+
+  So "confirm it on the table" is the step every slot change owes, and until now taking it meant
+  editing `starterDecks.ts`, rebuilding, running, reverting and rebuilding again — four chances to
+  publish a table of a deck list that is not in the repository. Now it is an argument:
+
+    SUBJECT=verdant-guard CHANGE='Wolfir Silverheart:-1,Secure the Wastes:+1' \
+      SEEDS=12 node scripts/measure/deck-table.mjs
+
+  Same `CHANGE` grammar as `deck-swap` and `deck-probe`, including the `;` separator for the card
+  names with a comma in them, and the same rule about where a card comes from: a name the change
+  adds is looked up anywhere in the pool, which is where every card lives.
+*/
+const SUBJECT = process.env.SUBJECT ?? '';
+const CHANGE = (process.env.CHANGE ?? '')
+  .split((process.env.CHANGE ?? '').includes(';') ? ';' : ',')
+  .filter(Boolean)
+  .map((part) => {
+    const at = part.lastIndexOf(':');
+    return { name: part.slice(0, at).trim(), delta: Number(part.slice(at + 1)) };
+  });
+if (SUBJECT !== '' && STARTER_DECKS[SUBJECT] === undefined) {
+  console.log(`no deck called ${SUBJECT}. Known: ${ALL.join(', ')}`);
+  process.exit(1);
+}
+if (CHANGE.length > 0 && SUBJECT === '') {
+  console.log('CHANGE needs a SUBJECT: it is one deck\'s list that is being changed');
+  process.exit(1);
+}
+
+const defNamed = (name) => Object.values(STARTER_DECKS)
+  .flatMap((d) => d.cards).find((e) => e.card.name === name)?.card;
+
+function variant() {
+  const stock = STARTER_DECKS[SUBJECT];
+  const cards = [];
+  for (const entry of stock.cards) {
+    const change = CHANGE.find((c) => c.name === entry.card.name);
+    const count = entry.count + (change?.delta ?? 0);
+    if (count > 0) cards.push({ card: entry.card, count });
+  }
+  for (const change of CHANGE) {
+    if (change.delta <= 0) continue;
+    if (stock.cards.some((e) => e.card.name === change.name)) continue;
+    const card = defNamed(change.name);
+    if (card === undefined) throw new Error(`no card named ${change.name} in the pool`);
+    cards.push({ card, count: change.delta });
+  }
+  return { ...stock, cards };
+}
+
+/*
+  The deck override travels on the **action context**, which is the same channel `deck-probe` uses
+  and the reason neither harness has to touch the repository: `deck:load` reads `ctx.decks` in
+  preference to the registry.
+
+  Asserted rather than assumed, because a change that is also a change of deck size measures two
+  things at once and the number would look like a card.
+*/
+const CTX = CHANGE.length === 0 ? {} : { decks: { [SUBJECT]: variant() } };
+if (CHANGE.length > 0) {
+  const size = (d) => d.cards.reduce((n, e) => n + e.count, 0);
+  const stock = size(STARTER_DECKS[SUBJECT]);
+  const changed = size(CTX.decks[SUBJECT]);
+  console.log(`${SUBJECT}: ${stock} cards stock, ${changed} with the change`);
+  if (stock !== changed) {
+    console.log('!! the two lists are not the same size, so this measures deck size too');
+  }
+}
+
 function duel(seed, decks) {
   let s = createGame({ id: `g${seed}`, format: 'modern', players: PLAYERS, seed });
+  const host = { isHost: true, ...CTX };
   for (const seat of [0, 1]) {
-    s = applyAction(s, { type: 'deck:load', by: seat, seat, deckId: decks[seat] }, { isHost: true });
+    s = applyAction(s, { type: 'deck:load', by: seat, seat, deckId: decks[seat] }, host);
   }
-  s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, { isHost: true });
-  s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, { isHost: true });
+  s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, host);
+  s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, host);
   for (let move = 0; move < 4000 && !s.finished; move++) {
     const seat = seatsToAct(s)[0];
     if (seat === undefined) break;

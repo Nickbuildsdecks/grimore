@@ -15332,24 +15332,63 @@ Verdant Guard's pairings the two landed **37 times and paired 33 of them**. The 
 were boards whose only other creatures were already spoken for. It pairs with whatever is there —
 a Fleecemane Lion seven times, a Llanowar Elves three, a Beast token three.
 
-### What the slots are worth
-
-Priced before the write-up rather than after, against the two cards they replaced (`deck-probe`,
-Verdant Guard's pairings, 288 games an arm):
-
-```
-with soulbond                    191-97
-Ambush Viper + Secure the Wastes 175-113      -16
-```
+### What the slots are worth: the probe said +16 and the table says −8
 
 Both cuts followed this list's own rule: the Ambush Viper is still in the pool at Kindle Grove and
 Secure the Wastes at Forge Alliance, so both cards, both scripts and the instant-speed X cost all
 keep a home. Two tests had to move with them, which is the cost of that rule and is cheaper than the
 alternative.
 
-The field table afterwards puts **Verdant Guard at 58%**, fourth of thirteen, so the change made a
-mid-table deck good rather than making an outlier: ember-rush 82%, kindle-grove 67%, dawn-tithe 65%,
-verdant-guard 58%, then the rest down to blight-vector at 29%. Ember Rush has read 74–82% in every
-table since #96 and is the pool's standing balance problem; some small part of this reading is D246,
-which is worth +8 of 288 to it in the paired probe, and 96 games a deck cannot resolve a move that
-size.
+The slot was priced with `deck-probe` first, over Verdant Guard's pairings, 288 games an arm:
+
+```
+with soulbond                    191-97
+Ambush Viper + Secure the Wastes 175-113      -16
+```
+
+**That number is wrong, and the way it is wrong is the entry.** Confirmed on the field table at the
+canonical seeds — the same field, once with the two cards and once with them reverted — Verdant
+Guard reads **60% (173-115) with soulbond and 63% (181-107) without**. Eight games the other way.
+The probe did not merely overstate the gain, as D194's did by a factor of ten; it got the **sign**
+wrong, which is the first time that has happened here and is the strongest case yet for the rule
+D194 already wrote down: *never publish the probe alone.*
+
+So the slot costs Verdant Guard about three points, and the cards ship anyway. The reason is the
+mechanic rather than the record: D229's rule is that a keyword needs a card in a deck to exist at
+all, Verdant Guard is the only deck in this pool a pair is worth anything in, and a deck sitting
+fourth of thirteen at 60% can afford three points. What would not be worth doing is hunting for a
+neutral slot here, because the pool's problem is at the **top** of the table and not at the fourth
+row.
+
+### The table this leaves, and what the two changes in it are actually worth
+
+Measured on the canonical seeds (`SEEDS=12 SEED0=4400`, 288 games a deck), with each change
+isolated by re-running the same field with just that one turned off:
+
+```
+ 77%  223-65   ember-rush      (D246 is worth +4 of this; nothing else moved by more than 2)
+ 75%  216-72   dawn-tithe
+ 64%  185-103  kindle-grove
+ 60%  173-115  verdant-guard   (63% with D247's two cards reverted)
+ 50%  144-144  forge-alliance
+ 50%  144-144  ashen-rite
+ 45%  130-158  skyward-writ
+ 45%  131-157  delta-bloom
+ 44%  128-160  arc-tempest
+ 41%  117-171  rot-harvest
+ 38%  109-179  hollow-tide
+ 30%  85-203   blight-vector
+ 28%  82-206   tidal-mind
+```
+
+**D246 is worth +4 of 288 to Ember Rush and nothing to anybody else**, which is a quarter of what
+`bot-duel` read for it (+8 on that deck's own pairings, +10 across the field) and in the same
+direction. Three decks hold a creature that cannot be kept and only the one whose Ball Lightning is
+a six-power attacker gained measurably.
+
+**And almost none of the movement since D194's published table belongs to this session.** Dawn
+Tithe is six points up, Kindle Grove eight, Ashen Rite seven, Tidal Mind nine down, Skyward Writ
+five down — and the two isolations above account for four games in total. Whatever moved the rest
+predates both changes, which is a thing worth knowing before anybody reads this table as a result.
+The spread is **49 points**, wider than D194's 42, and the top two rows are the problem: Ember Rush
+at 77% has never been below 74% in any table since D114, and Dawn Tithe is now beside it.

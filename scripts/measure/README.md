@@ -34,6 +34,7 @@ it.
 | | question | run it |
 | --- | --- | --- |
 | `deck-table.mjs` | how does every deck do against every other? | `SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs` |
+| `deck-table.mjs` | …and the same table with **one deck's list changed**, which is the step a probe owes | `SUBJECT=verdant-guard CHANGE='Wolfir Silverheart:-1,Secure the Wastes:+1' SEEDS=12 SEED0=4400 node scripts/measure/deck-table.mjs` |
 | `deck-probe.mjs` | what would this slot change be worth? | `SUBJECT=tidal-mind CHANGE='Fog Bank:+1,Cancel:-1' SEEDS=17 node scripts/measure/deck-probe.mjs` |
 | `deck-probe.mjs` | is this slot bad, or badly played? | `BOT='{"sparesItsOwnBoard":false}' SUBJECT=skyward-writ CHANGE='Terminus:-1,Leonin Skyhunter:+1' SEEDS=12 node scripts/measure/deck-probe.mjs` |
 | `deck-probe.mjs` | what is the **commander** worth? | `SUBJECT=dawn-tithe COMMANDER='Balan, Wandering Knight' SEEDS=15 node scripts/measure/deck-probe.mjs` |
@@ -717,6 +718,19 @@ dominated declaration is never offered — and all four end-of-turn rows then re
 while every row that should not have moved did not. Not in the evaluation, deliberately: the
 position after casting a Ball Lightning is scored *before* its damage, so a leaver worth nothing on
 the board is a cast worth nothing, and the bot would have stopped casting the card.
+
+**A paired probe can get the sign wrong, and the table is the only thing that catches it.** D194
+already found a `deck-probe` overstating a six-card change by a factor of ten — +47 of 288 against
+the table's +4 — and wrote down the rule: a probe swaps cards inside one deck and amplifies whatever
+its seeds gave it, while the table re-measures every pairing and lets the field move too, so where
+the two disagree, believe the table. D247 then found the sharper version: the probe priced two
+soulbond cards at **+16** and the table, run once with them and once with them reverted on the same
+seeds, read **−8**. Not an overstatement — the opposite direction.
+
+So "confirm it on the table" is the step every slot change owes, and `deck-table.mjs` now takes
+`SUBJECT` and `CHANGE` so taking it is an argument rather than an edit to `starterDecks.ts`, a
+rebuild, a run, a revert and a second rebuild. Four of those five steps were chances to publish a
+table of a deck list that is not in the repository.
 
 **The step column in that harness is the part worth copying.** Its first reading said five cards
 had been spent on an opponent's creature that was leaving anyway, which sounds like pure waste and

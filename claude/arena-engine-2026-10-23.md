@@ -7089,11 +7089,20 @@ which is the only deck a pair is worth anything in. Checked rather than assumed,
 where ninjutsu failed before D219: across 96 games they landed **37 times and paired 33 of them**,
 the four misses being boards whose other creatures were already spoken for.
 
-Priced against the two cards they replaced, 288 games an arm: **191-97 with soulbond against
-175-113 without**, +16. Both cuts kept their card in the pool — the Ambush Viper at Kindle Grove,
-Secure the Wastes at Forge Alliance — which is this list's own rule for a cut and cost two tests a
-change of deck. The field table afterwards reads Verdant Guard at **58%, fourth of thirteen**, so
-the change made a mid-table deck good rather than making an outlier.
+Both cuts kept their card in the pool — the Ambush Viper at Kindle Grove, Secure the Wastes at
+Forge Alliance — which is this list's own rule for a cut and cost two tests a change of deck.
+
+**And the slot is where this entry earns its keep, because the probe lied about the sign.**
+`deck-probe` priced the two cards at **+16 of 288** (191-97 against 175-113). The field table at the
+canonical seeds, run once with them and once with them reverted, reads Verdant Guard at **60% with
+and 63% without** — eight games the other way. D194 had already found a probe overstating a slot by
+a factor of ten; this is the first time one has had the sign wrong, and it is the strongest case yet
+for the rule that entry wrote down: never publish the probe alone.
+
+The cards ship anyway, and for the mechanic rather than the record: a keyword needs a card in a deck
+to exist (D229), Verdant Guard is the only deck here a pair is worth anything in, and a deck fourth
+of thirteen at 60% can afford three points. Hunting a neutral slot at the fourth row would be
+optimising the wrong end of a table whose problem is the top two.
 
 A player sees the pair: a **PAIR** badge on the card's corner and "paired with ⟨name⟩" on its own
 sheet, because a Grizzly Bears reading 6/6 is only legible if the thing lending it the points is
