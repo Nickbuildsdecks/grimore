@@ -7900,6 +7900,42 @@ Narrow on purpose. It says nothing about a pod seating a card these tables never
 pod a person is sitting at. The audit is as wide as its pairings — D267's shape — and the honest
 version of the claim is the narrow one.
 
+### What the term costs, what its weight is worth, and the clock (#255, #257, #258, D273, D274)
+
+Three things D271 left open, closed, and one of them turned into the more useful finding.
+
+**Time.** `canAfford` runs the mana solver per hand card, and the zero short-circuit that used to
+skip it stopped firing when the default moved — so the solver now runs at every search leaf with a
+person waiting. Measured as an ablation timing both arms on the *same* positions, because running
+the file twice compares two different sets of games: about **+0.09 ms per decision** against a
+1.2–9.4 ms baseline, with **two of seven readings negative**, which is the tell that the noise is
+wider than the effect. Whole-game pace unchanged at 7.0/11.3/9.5 ms/move against a pre-term
+8.4/11.3/9.6. A footgun fixed on the way: with the arm set, every move pays for two searches, so
+that line's ms/move runs 1.7× a plain run's — 13.0 against the published 8.4, a 60% regression that
+does not exist, and I read it as one until the botAction share dropping from 72% to 42% explained it.
+
+**Weight.** 0.5 and 2 against the shipping 1, three disjoint seed sets each: −2/+6/−11 and
++13/+4/−7. Disagreeing signs mean not measured, so **across a fourfold range nothing separates them
+from 1**. That is D243's lesson arriving on the term that was meant to be its exception, and
+together they close a second avenue: *this evaluation is insensitive to its weights and sensitive to
+what it can see.*
+
+**The table.** The published deck table was baselined with the term off, and the argument for not
+waiting was that a symmetric change cancels in the relative win rates it reads. Now measured at its
+own canonical setting: largest shift **forge-alliance +4 points**, ten games of 288, against a table
+always quoted as ±10 a row. Ordering intact, no tier crossed, published numbers not stale. The off
+arm reproduces the canonical table within one or two points on all thirteen rows, which is what
+makes the comparison a comparison.
+
+**And the clock, built in both shapes because the shape is the question.** `clockRate` is
+`exposedPower × startingLife / life` — at full life and weight 1 it is *exactly* D264's rejected
+term, asserted as an identity — and it carries **14.2% of attack declarations**, the largest
+single-decision-kind figure any term here has posted, nearly double the linear reading. `clockTurns`,
+the integer a player says out loud, came in **below** the linear term. Had only that form been
+built, the honest conclusion would have been "the clock is weaker than the quantity", which is the
+opposite of what is true. Both ship off; leverage is necessary and not sufficient, and `exposed` is
+the standing proof of that.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -7976,8 +8012,31 @@ version of the claim is the narrow one.
      poor-calibration cell is empty.
 
    So the next move is a **term that sees something the function currently cannot**, and the open
-   question is what a player reads off a turn-six board that none of life, creatures, lands, hand or
-   library can express. The rest of this item stands as written.
+   question was what a player reads off a turn-six board that none of life, creatures, lands, hand
+   or library can express. **That question now has one answer that shipped and one being measured,
+   and both have the same shape — the zone was right and the question asked of it was wrong.**
+
+   - **What of my hand I can actually pay for** (#253, D271). The raw count cannot tell a hand of
+     three live spells from three things you have no mana for, and only the count had ever been
+     measured — so #227's "cards in hand are worth little" and "the evaluation asks the wrong
+     question about the hand" produced the same number. The new term carries 4.8% of **cast**
+     decisions against the count's 2.8%, and three disjoint seed sets came back 479-454, 469-465,
+     471-462: +1.35 points, sign holding every time. The first evaluation term to clear D242's bar
+     since. Shipped **on** at a weight of 1 — and then 0.5 and 2 both measured indistinguishable
+     from it, so the weight is flat across a fourfold range (D273).
+   - **Whether a seat dies in two turns or in six** (#258, D274). D264 priced the same unanswerable
+     incoming power *linearly* and it measured flat three ways; eight power is three turns at twenty
+     life and one turn at seven, and a linear term scores those identically. Scaled by urgency it
+     carries **14.2% of attack declarations**, the largest single-decision-kind figure any term in
+     that table has posted and nearly double the linear reading. Ships **off** pending three seed
+     sets. The discrete form a player says out loud — "I'm dead in two" — came in *below* the linear
+     term, which is why both were built.
+
+   **And the general lesson is now two for two, which closes a second avenue.** D243 found a
+   fivefold cut to the hand weight moved 936 games by one; a fourfold range on its replacement moves
+   nothing either. **This evaluation is insensitive to its weights and sensitive to what it can
+   see** — so neither depth nor tuning is where the next gain is, and the shape of a term is the
+   whole question. The rest of this item stands as written.
 
    A stronger opponent still. It plays each option out — plays, attacks and blocks — and keeps the
    position it likes best, which is worth better than two games in three against the bot it
