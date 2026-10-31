@@ -15877,3 +15877,53 @@ repeating: **a change that corrects what one card does to one permanent cannot m
 field, and measuring it is still the right thing to do** — because the alternative is a changelog
 full of improvements nobody priced, and because the two that turned out to matter this session
 (D249's filter bug at twelve points, D251's slot at six) were found by the same instruments.
+
+## D255 — Redirection, the last named gap in the replacement-effect family
+
+The progress doc has carried this line since #85: *"what is left is redirection ('the next time ~
+would deal damage, it deals it to ~ instead'), which nothing in the pool needs and which is not
+approximated."* It is in now, and it turned out to be the shield plus one field rather than a
+subsystem.
+
+**The design.** `ContinuousEffect.preventsDamageAmount` is already a quantity spent by the damage it
+absorbs; `redirectTo` says where the absorbed points go. `spendShields` reports what each
+redirecting shield took and `dealDamage` deals it — by **calling itself**, which is what makes the
+redirected damage a real damage event rather than a number written onto a life total: protection on
+the destination stops it, infect on the source poisons with it, a lifelink source gains the life, and
+a shield on the destination takes its share. `MAX_REDIRECTS` bounds the chain at four, because two
+redirects pointed at each other's protectees is a legal board and a real loop; past the limit the
+points are prevented, which is the safe direction to be wrong in.
+
+**And one scope, which is the part that is not obvious.** Both printed cards say "you and/or
+permanents you control", which is a *single* quantity over a player and everything they have — and
+no existing scope could say it. `seat` is the player alone, `controller-creatures` is the creatures
+alone, and two effects would have prevented twice as much. So `{ kind: 'seat-side', seat }` is the
+pool's second scope `characteristicsOf` can never match, read live so a creature that arrives after
+the shield is under it too. A test asserts the one-quantity reading directly: four points of attack
+take two from a Harm's Way in total, not two apiece.
+
+**Two cards.** Harm's Way ({W}, two points, into Forge Alliance for the second Secluded Steppe) and
+Divine Deflection ({X}{W}, into Skyward Writ for the second Paladin en-Vec). The second is the
+pool's eighth {X} spell and the first whose X is spent *twice* — once on what it stops and once on
+what it deals. Tests hold the three claims that are new: the points land on the chosen target, the
+card pays out **what it absorbed** rather than what it printed (X of four against four damage deals
+four; X of one deals one; X of nothing does nothing at all), and the side scope is one shield.
+
+**The slot cost ten games, and the slot is not why.** Forge Alliance over 288 games at the canonical
+seeds: 148-140 stock, **138-150** with Harm's Way in for the second Loxodon Warhammer, **137-151**
+with it in for a Secluded Steppe instead. One game apart. That is D251's finding reproduced on a
+different deck and a different card: **where a new card goes is not the cost, the card is.** It
+ships on the same terms (D229: a keyword needs a card in a deck to exist), the land version is the
+one in the repository because it reads as the more defensible list and measures the same, and Skyward
+Writ's half is noise either way (−2).
+
+Worth naming as a method rather than a coincidence: two cut-set comparisons, on two decks, have now
+both come back within three games of each other. **Trying a second slot is cheap and has twice told
+us the same thing, so the next time a new card measures negative the question to ask is about the
+card** — what the bot does with it, as D252 did — rather than about which slot it took.
+
+**Known limit, written down rather than discovered.** The table shows a redirect as prevention: a
+`shielded: 2` on the seat and on each of its permanents, with nothing saying where the points will
+go. That is true as far as it goes and it is what the opponent is entitled to know; what it does not
+show is the destination, which the caster chose and can see on their own card. A view field for it
+would be plumbing for one line of text on two cards, and the honest place for the complaint is here.

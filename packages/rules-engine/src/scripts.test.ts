@@ -5295,6 +5295,96 @@ describe('damage that does not happen', () => {
     return advanceTo(s, 'postcombat-main', 120);
   };
 
+  /*
+    Redirection: the one member of this family that moves the damage instead of eating it
+    (CR 615.9, #239).
+
+    Built out of the shield rather than beside it, so everything already asserted about a shield —
+    how many points it takes, that prevented damage gains no life and marks nothing, that it wears
+    off — is true of this too and is not re-asserted here. What is new is three things: the points
+    it absorbs are dealt somewhere else, it pays out **what it took** rather than what it printed,
+    and its scope is a whole side with one quantity over all of it.
+  */
+  /**
+   * Seat 1 casts the named white trick off five Plains, at the attack, aimed at the 1/1.
+   *
+   * The deck comes in as an argument because the two cards live in different ones: Harm's Way is
+   * Forge Alliance's and Divine Deflection is Skyward Writ's, and `arena` pulls a named card out of
+   * the library it is actually in.
+   */
+  const deflect = (
+    card: string, deck: string, extra: Record<string, unknown> = {},
+  ): GameState => {
+    let s = swingInto(
+      [card],
+      [...Array.from({ length: 5 }, () => 'Plains'), 'Leonin Skyhunter'],
+      deck,
+    );
+    for (const id of [...ids(s, 1, 'battlefield')].filter((i) => nameOf(s, i) === 'Plains')) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    return drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', card),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Raging Goblin') }],
+      ...extra,
+    })));
+  };
+
+  /** No blocks, then the combat played out: the defender has a creature and must say so. */
+  const letItThrough = (state: GameState): GameState => {
+    const s = advanceTo(state, 'declare-blockers');
+    return advanceTo(drain(apply(s, { type: 'auto:block', by: 1, blocks: [] })), 'postcombat-main', 120);
+  };
+
+  it("Harm's Way sends two of the damage at the creature dealing it", () => {
+    // A 3/3 and a 1/1 attacking into nothing: four damage coming, two of it prevented, and the two
+    // dealt to the 1/1 instead — which kills it, so the redirect is removal as well as a Fog.
+    const s = letItThrough(deflect("Harm's Way", 'forge-alliance'));
+    expect(life(s, 1)).toBe(18);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Raging Goblin');
+  });
+
+  it('and pays out what it absorbed rather than what it printed', () => {
+    /*
+      CR 615.9's "if damage is prevented this way, it deals **that much**". Divine Deflection for
+      four against four points of attack absorbs all four and deals four; the same spell with the
+      shield spent on nothing deals nothing, which is the half a card that printed its number could
+      not express.
+    */
+    const all = letItThrough(deflect('Divine Deflection', 'skyward-writ', { x: 4 }));
+    expect(life(all, 1)).toBe(20);
+    expect(namesIn(all, 0, 'graveyard')).toContain('Raging Goblin');
+
+    // X of one against four points: one absorbed, one dealt, three through.
+    const some = letItThrough(deflect('Divine Deflection', 'skyward-writ', { x: 1 }));
+    expect(life(some, 1)).toBe(17);
+    expect(namesIn(some, 0, 'graveyard')).toContain('Raging Goblin');
+
+    // And X of nothing is a card that did nothing at all: no shield, no damage, nobody dead.
+    const none = letItThrough(deflect('Divine Deflection', 'skyward-writ', { x: 0 }));
+    expect(life(none, 1)).toBe(16);
+    expect(namesIn(none, 0, 'graveyard')).not.toContain('Raging Goblin');
+  });
+
+  it('covers the player and their permanents with one quantity, not one each', () => {
+    /*
+      The `seat-side` scope, and the reason it had to exist: "you and/or permanents you control" is
+      a single shield over the pair. A shield per permanent would have read the same on the table
+      and prevented twice as much, which is the kind of wrong that only shows up in a game.
+    */
+    const s = deflect("Harm's Way", 'forge-alliance');
+    const mine = find(s, 1, 'battlefield', 'Leonin Skyhunter');
+    expect(viewFor(s, 1).seats[1]!.shielded).toBe(2);
+    expect(viewFor(s, 1).cards[mine]!.shielded).toBe(2);
+    // Not the other seat's, and not the other seat's creatures: it is one side.
+    expect(viewFor(s, 1).seats[0]!.shielded).toBeUndefined();
+    expect(viewFor(s, 1).cards[find(s, 0, 'battlefield', 'Hill Giant')]!.shielded).toBeUndefined();
+
+    // And four points of attack take two from it in total rather than two apiece.
+    const fought = letItThrough(s);
+    expect(life(fought, 1)).toBe(18);
+  });
+
   it('Fog stops the whole swing, in both directions', () => {
     let s = swingInto(['Fog'], ['Forest', 'Grizzly Bears'], 'verdant-guard');
     s = apply(s, { type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Forest'), abilityIndex: 0 });

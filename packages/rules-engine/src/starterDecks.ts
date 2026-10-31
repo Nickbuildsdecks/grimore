@@ -438,6 +438,36 @@ const TRUSTED_FORCEMAGE: CardDef = {
   what a granted ability looks like on paper and the reason it needs machinery rather than a field:
   the quoted part is a trigger that belongs to whichever creature is holding it.
 */
+/*
+  Redirection: the last member of the replacement-effect family (#239).
+
+  Everything else in this pool's prevention family stops damage. These two stop it and deal the same
+  points somewhere of your choosing, which is a different card built out of the same shield — see
+  `ContinuousEffect.redirectTo`. Two of them because a mechanic on one card is one deck change from
+  gone (D239), and they differ by where the number comes from: Harm's Way prints it and Divine
+  Deflection pays for it.
+*/
+const HARMS_WAY: CardDef = {
+  name: "Harm's Way",
+  typeLine: 'Instant',
+  manaCost: '{W}',
+  cmc: 1,
+  oracleText: 'The next 2 damage that a source of your choice would deal to you and/or permanents '
+    + 'you control this turn is dealt to target creature or player instead.',
+  colors: ['W'],
+};
+
+const DIVINE_DEFLECTION: CardDef = {
+  name: 'Divine Deflection',
+  typeLine: 'Instant',
+  manaCost: '{X}{W}',
+  cmc: 1,
+  oracleText: 'Prevent the next X damage that would be dealt to you and/or permanents you control '
+    + 'this turn. If damage is prevented this way, Divine Deflection deals that much damage to '
+    + 'target creature or player.',
+  colors: ['W'],
+};
+
 const TANDEM_LOOKOUT: CardDef = {
   name: 'Tandem Lookout',
   typeLine: 'Creature — Human Scout',
@@ -4668,7 +4698,22 @@ export const FORGE_ALLIANCE: DeckSpec = {
     { card: PLAINS, count: 8 },
     { card: MOUNTAIN, count: 8 },
     { card: BOROS_GUILDGATE, count: 3 },
-    { card: SECLUDED_STEPPE, count: 2 },
+    { card: SECLUDED_STEPPE, count: 1 },
+    /*
+      Harm's Way for the second Secluded Steppe, and the pool's first redirection (#239).
+
+      One white mana for two points of prevention that are then dealt to something of theirs, in the
+      deck most likely to have a creature worth protecting when the Bolt arrives: eleven creatures
+      and four Equipment. The twenty-first land's slot, because this deck's curve tops out at four
+      and a cycling land is the most replaceable card in a list that is never short of things to do.
+
+      **It costs this deck about ten games of 288 and the slot is not why.** Measured both ways: in
+      for the second Loxodon Warhammer it read 138-150, in for this land 137-151, against 148-140
+      stock. One game apart, which is the same answer D251 got about Skyward Writ — where the cards
+      go is not the cost, the cards are. It ships for the mechanic (D229: a keyword needs a card in
+      a deck to exist) with the number in the open, and D255 says what the bot does with it.
+    */
+    { card: HARMS_WAY, count: 1 },
     { card: ELITE_VANGUARD, count: 1 },
     /*
       The second Vanguard's slot, spent on **modular**.
@@ -5473,7 +5518,22 @@ export const SKYWARD_WRIT: DeckSpec = {
     // Two Skyhunters' worth of white two-drops already fly; this one does not and does not need
     // to. Against the two colours that hold this pool's removal it simply cannot be answered, and
     // it is the only card here that proves protection does all four of its jobs.
-    { card: PALADIN_EN_VEC, count: 2 },
+    { card: PALADIN_EN_VEC, count: 1 },
+    /*
+      Divine Deflection for the second Paladin en-Vec, and redirection's other half (#239).
+
+      {X}{W} is a Holy Day with a bill attached: X points of prevention over your whole side, and
+      the same X dealt to something of theirs. This deck is the one that wants it — it already holds
+      a Fog, a Healing Salve and a Samite Healer, so the turn it buys is a turn it knows what to do
+      with, and the X scales into the long game those cards are there to reach.
+
+      The second Paladin's slot rather than the Holy Day's, which was the first attempt and was
+      wrong: Holy Day is one of only two cards in the pool declaring `preventsDamage`, and this deck
+      is the only one holding it, so cutting it would have taken a scripted card out of the pool
+      altogether. The deck-coverage test says so; `mechanic-coverage` does not, because it reads
+      scripts and the test reads decks (D251).
+    */
+    { card: DIVINE_DEFLECTION, count: 1 },
     { card: MAN_O_WAR, count: 1 },
     /*
       Ophidian Eye for the second Man-o'-War, and the same granted ability by a different route.

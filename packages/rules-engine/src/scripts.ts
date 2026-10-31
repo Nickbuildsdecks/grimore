@@ -29,7 +29,8 @@ import {
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
-  exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, copyAsToken,
+  exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageToSide,
+  copyAsToken,
   becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, EVOKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer, FADE, TIME, enterAttacking,
@@ -2670,6 +2671,21 @@ function shieldFirstTarget(c: EffectContext, amount: number): GameState {
   const target = c.targets[0];
   if (target === undefined) return c.state;
   return preventDamage(c.state, c.source, c.controller, target, amount);
+}
+
+/**
+ * "Prevent the next N damage that would be dealt to you and/or permanents you control this turn,
+ * and deal that much to the target instead" — redirection (CR 615.9).
+ *
+ * The shape both redirection cards in the pool share, so the two differ by their cost and by where
+ * N comes from and by nothing else. The target is where the points *go*, not what is protected:
+ * the protected side is always the caster's, which is what the printed cards say and why neither of
+ * them targets it.
+ */
+function redirectToFirstTarget(c: EffectContext, amount: number): GameState {
+  const target = c.targets[0];
+  if (target === undefined || amount <= 0) return c.state;
+  return preventDamageToSide(c.state, c.source, c.controller, c.controller, amount, target);
 }
 
 /** Creature cards in a seat's own graveyard, which several cards in Rot Harvest count. */
@@ -8390,6 +8406,44 @@ const OPHIDIAN_EYE: CardScript = {
   }],
 };
 
+/**
+ * Harm's Way: the last member of the replacement-effect family, and the one that *moves* the damage
+ * rather than eating it (CR 615.9).
+ *
+ * Everything else in this pool's prevention family stops damage: a Fog, a Maze of Ith, a Samite
+ * Healer's shield. This one stops it and then deals the same points somewhere of your choosing, so
+ * the Lightning Bolt pointed at your face kills their two-drop. That is a different card from a
+ * shield even though it is built out of one — a shield is worth the life it saves (D90) and this is
+ * worth that plus whatever it hits.
+ *
+ * Two mana of effect for one, which is why the number is small: two points, fixed, and only on your
+ * own side. The redirected damage is a new damage event from the **same source**, so a protection
+ * from red creature cannot be hit with a redirected Bolt and an infect source poisons with it.
+ */
+const HARMS_WAY: CardScript = {
+  name: "Harm's Way",
+  // For the bot: a card whose whole effect expires at end of turn has done nothing unless
+  // something was coming. See `preventsDamage`.
+  preventsDamage: true,
+  targets: [ANY_TARGET],
+  onResolve: (c) => redirectToFirstTarget(c, 2),
+};
+
+/**
+ * Divine Deflection: the same effect with the number paid for.
+ *
+ * Second card for redirection (D239) and deliberately the scaling one: {X}{W} buys X points of
+ * prevention and X points of damage, so late in a game it is a Fog and a burn spell on one card.
+ * It is also the pool's eighth {X} spell and the first whose X is spent *twice* — once on what it
+ * stops and once on what it deals — which is one number doing two jobs rather than two numbers.
+ */
+const DIVINE_DEFLECTION: CardScript = {
+  name: 'Divine Deflection',
+  preventsDamage: true,
+  targets: [ANY_TARGET],
+  onResolve: (c) => redirectToFirstTarget(c, c.x),
+};
+
 const ALL: readonly CardScript[] = [
   basicLand('Mountain', 'R'),
   basicLand('Forest', 'G'),
@@ -8520,6 +8574,7 @@ const ALL: readonly CardScript[] = [
   NINJA_OF_THE_DEEP_HOURS,
   ARCBOUND_WORKER, ARCBOUND_RAVAGER, ICHOR_WELLSPRING,
   WOLFIR_SILVERHEART, TRUSTED_FORCEMAGE, TANDEM_LOOKOUT, OPHIDIAN_EYE,
+  HARMS_WAY, DIVINE_DEFLECTION,
 ];
 
 export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(

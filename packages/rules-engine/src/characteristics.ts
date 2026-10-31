@@ -25,6 +25,15 @@ import {
   type CardDef, type CardInstance, type LevelBand,
 } from './cards.js';
 import type { Color } from './mana.js';
+/*
+  Type-only, and the one import in this file that points back at a module which imports this one.
+
+  `turnTypes` needs `ContinuousEffect` for the state and this needs `Target` for a redirect's
+  destination. Both are erased at build time, so the cycle exists in the type graph and nowhere in
+  the output — which is the one kind of cycle worth accepting rather than breaking a type in half to
+  avoid.
+*/
+import type { Target } from './turnTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 
 export const KEYWORDS = [
@@ -221,7 +230,22 @@ export interface ContinuousEffect {
      * rather than falling through the default, so the next effect that wants a seat scope finds
      * the question already asked.
      */
-    | { readonly kind: 'seat'; readonly seat: SeatIndex };
+    | { readonly kind: 'seat'; readonly seat: SeatIndex }
+    /**
+     * **One player and the permanents they control** — "you and/or permanents you control".
+     *
+     * The second scope `characteristicsOf` can never match, and it exists for the same reason
+     * `seat` does: a prevention shield has to be able to cover something that is not a permanent.
+     * This one covers *both*, which is what the two redirection cards say and what no other scope
+     * here can express — `seat` is the player alone and `controller-creatures` is the creatures
+     * alone, and a card that covers the pair with **one** quantity cannot be two effects, because
+     * two would prevent twice as much.
+     *
+     * Read live rather than fixed as an id list, so a creature that arrives after the shield is
+     * under it too. That is the printed card: "damage that would be dealt to you and/or permanents
+     * you control this turn" does not name them when it resolves.
+     */
+    | { readonly kind: 'seat-side'; readonly seat: SeatIndex };
   readonly power?: number;
   readonly toughness?: number;
   readonly keywords?: readonly Keyword[];
@@ -341,6 +365,25 @@ export interface ContinuousEffect {
    * creature deathtouched, because none of it was dealt.
    */
   readonly preventsDamageAmount?: number;
+  /**
+   * Where the damage this shield absorbs is **dealt instead** (CR 615.9) — redirection.
+   *
+   * The last member of the replacement-effect family the engine had neither built nor approximated,
+   * and it turned out to be the shield plus one field rather than a subsystem: "the next 2 damage
+   * that would be dealt to you is dealt to target creature instead" is "prevent 2" and "deal what
+   * was prevented over there". So `preventsDamageAmount` is still what is spent and still what the
+   * table shows; this says what happens to the points it took.
+   *
+   * A `Target` fixed when the effect is created, which is what the two cards in the pool say: both
+   * choose the creature or player as they are cast. A redirect whose destination is *computed* when
+   * the damage happens — "deals that much damage to that source's controller" — is a different
+   * shape and no card here asks for it.
+   *
+   * The redirected damage is a new damage event from the **same source**, so protection, infect and
+   * lifelink all apply to it again; `dealDamage` recurses to get that for free, with a depth guard
+   * for a redirect pointed at something that redirects.
+   */
+  readonly redirectTo?: Target;
   /**
    * Power and toughness **set** to these, rather than added to: layer 7b (CR 613.4c).
    *
@@ -581,6 +624,13 @@ function effectApplies(
     }
     // A seat scope is about the player, not their permanents: nothing on the battlefield is in it.
     case 'seat':
+      return false;
+    /*
+      And a side scope reaches permanents, but only for *damage*: it carries a prevention quantity
+      and nothing else, so there is no characteristic here for it to modify. Said out loud rather
+      than left to the default, for the reason `seat` is.
+    */
+    case 'seat-side':
       return false;
     default:
       return false;

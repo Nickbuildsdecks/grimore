@@ -143,6 +143,15 @@ export const opponentsOf = (state: GameState, seat: SeatIndex): SeatIndex[] =>
 // ── Damage and life ──────────────────────────────────────────────────────────────────────────────
 
 /**
+ * How many times one damage event may be redirected before the rest is simply prevented.
+ *
+ * Four, which is more than any board in this pool can build and small enough that a cycle costs
+ * nothing. Two cards here redirect and each is one copy in one deck, so the realistic maximum is
+ * one hop; the guard is for the board that is legal rather than the board that happens.
+ */
+const MAX_REDIRECTS = 4;
+
+/**
  * Spends whatever prevention shields apply to this target against this much damage.
  *
  * Returns the damage that is **left** after they have taken what they can, and a state whose
@@ -159,22 +168,39 @@ export const opponentsOf = (state: GameState, seat: SeatIndex): SeatIndex[] =>
  */
 function spendShields(
   state: GameState, target: Target, amount: number,
-): { readonly state: GameState; readonly amount: number } {
+): {
+  readonly state: GameState;
+  readonly amount: number;
+  /** Where the points a redirecting shield took are to be dealt instead. See `redirectTo`. */
+  readonly redirects: readonly { readonly to: Target; readonly amount: number }[];
+} {
   let left = amount;
   let changed = false;
   const kept: ContinuousEffect[] = [];
+  const redirects: { to: Target; amount: number }[] = [];
   for (const effect of state.effects) {
     const shield = effect.preventsDamageAmount;
-    if (shield === undefined || shield <= 0 || left <= 0 || !shieldCovers(effect, target)) {
+    if (shield === undefined || shield <= 0 || left <= 0 || !shieldCovers(state, effect, target)) {
       kept.push(effect);
       continue;
     }
     const used = Math.min(shield, left);
     left -= used;
     changed = true;
+    /*
+      A redirecting shield reports what it took, and the caller deals it elsewhere (CR 615.9).
+
+      Reported rather than dealt here, because dealing damage from inside the function that spends
+      shields would mean `dealDamage` calling itself through a helper and the shield list being
+      rebuilt underneath the loop. The caller is the one place damage is ever marked, which is where
+      a second damage event belongs.
+    */
+    if (effect.redirectTo !== undefined && used > 0) {
+      redirects.push({ to: effect.redirectTo, amount: used });
+    }
     if (shield - used > 0) kept.push({ ...effect, preventsDamageAmount: shield - used });
   }
-  return { state: changed ? { ...state, effects: kept } : state, amount: left };
+  return { state: changed ? { ...state, effects: kept } : state, amount: left, redirects };
 }
 
 /**
@@ -189,17 +215,29 @@ export function shieldOn(state: GameState, target: Target): number {
   for (const effect of state.effects) {
     const shield = effect.preventsDamageAmount;
     if (shield === undefined || shield <= 0) continue;
-    if (shieldCovers(effect, target)) total += shield;
+    if (shieldCovers(state, effect, target)) total += shield;
   }
   return total;
 }
 
-/** Whether a shield is on this target: a permanent by id, or a player by seat. */
-function shieldCovers(effect: ContinuousEffect, target: Target): boolean {
+/**
+ * Whether a shield is on this target: a permanent by id, a player by seat, or either of them for a
+ * shield that covers a whole side.
+ *
+ * `state` is here for the side scope and only for it: "you and/or permanents you control" has to
+ * ask whose permanent this is, which the effect cannot say because the scope is read live.
+ */
+function shieldCovers(state: GameState, effect: ContinuousEffect, target: Target): boolean {
   // An ability cannot be damaged, so it cannot be shielded either. Said here as well as in
   // `dealDamage` because this is reached from `spendShields`, and a shield that matched an ability
   // id would be spent on damage that was never going to happen.
   if (target.kind === 'ability') return false;
+  if (effect.scope.kind === 'seat-side') {
+    // The player, or anything they control right now. See the `seat-side` scope.
+    return target.kind === 'player'
+      ? effect.scope.seat === target.seat
+      : state.instances[target.id]?.zoneSeat === effect.scope.seat;
+  }
   if (target.kind === 'player') {
     return effect.scope.kind === 'seat' && effect.scope.seat === target.seat;
   }
@@ -215,10 +253,23 @@ function shieldCovers(effect: ContinuousEffect, target: Target): boolean {
  */
 export function preventDamage(
   state: GameState, source: string, controller: SeatIndex, target: Target, amount: number,
+  /**
+   * Where the absorbed points are dealt instead — redirection rather than plain prevention
+   * (CR 615.9). See `ContinuousEffect.redirectTo`.
+   *
+   * A parameter on the same builder rather than a builder of its own, because the two are the same
+   * effect: a redirect *is* a shield, and every rule about how many points it takes, what order it
+   * takes them in and when it disappears is the same. The difference is one field, and a second
+   * builder would have had to repeat all of that to add it.
+   */
+  redirectTo?: Target,
 ): GameState {
   if (amount <= 0) return state;
   // Nothing can be prevented on an ability: see `dealDamage`.
   if (target.kind === 'ability') return state;
+  // Nor redirected *to* one: damage has nowhere to go on an ability (CR 120.3), so a redirect
+  // pointed at one would silently throw the points away rather than preventing them.
+  if (redirectTo?.kind === 'ability') return state;
   return pushEffect(state, {
     source,
     controller,
@@ -226,6 +277,34 @@ export function preventDamage(
       ? { kind: 'seat', seat: target.seat }
       : { kind: 'cards', ids: [target.id] },
     preventsDamageAmount: amount,
+    ...(redirectTo === undefined ? {} : { redirectTo }),
+    duration: 'end-of-turn',
+  });
+}
+
+/**
+ * "Prevent the next N damage that would be dealt to **you and/or permanents you control** this
+ * turn", with the absorbed points optionally dealt somewhere else (CR 615.1, 615.9).
+ *
+ * `preventDamage`'s sibling rather than a parameter on it, because the thing being protected is of
+ * a different kind: that one takes a `Target` and puts the shield on it, and this takes a *seat*
+ * and puts one shield over everything that seat has. One shield and not many, which is the whole
+ * reason the `seat-side` scope exists: the printed cards give a single quantity for the pair, and
+ * a shield per permanent would prevent that much damage several times over.
+ */
+export function preventDamageToSide(
+  state: GameState, source: string, controller: SeatIndex, seat: SeatIndex, amount: number,
+  redirectTo?: Target,
+): GameState {
+  if (amount <= 0) return state;
+  // Nothing can be redirected onto an ability: see `preventDamage`.
+  if (redirectTo?.kind === 'ability') return state;
+  return pushEffect(state, {
+    source,
+    controller,
+    scope: { kind: 'seat-side', seat },
+    preventsDamageAmount: amount,
+    ...(redirectTo === undefined ? {} : { redirectTo }),
     duration: 'end-of-turn',
   });
 }
@@ -264,6 +343,17 @@ export function dealDamage(
      * it: protection is from colours, so a colourless source gets through.
      */
     readonly source: string | null;
+    /**
+     * How many redirects this damage has already been through. Internal, and set only by
+     * `dealDamage` calling itself.
+     *
+     * A redirect is a new damage event (CR 615.9), so a shield on the *destination* applies to it —
+     * including one that redirects again, which two Harm's Ways pointed at each other's protectees
+     * would be. That is a legal board and a real loop, so the chain is bounded: past the limit the
+     * points are simply prevented, which is the safe direction to be wrong in (damage that does not
+     * happen rather than damage dealt twice) and is written down rather than discovered.
+     */
+    readonly redirectDepth?: number;
   },
 ): GameState {
   if (amount <= 0) return state;
@@ -291,6 +381,19 @@ export function dealDamage(
   const shielded = spendShields(next, target, amount);
   next = shielded.state;
   const left = shielded.amount;
+  /*
+    And the points a redirecting shield took go somewhere else (CR 615.9).
+
+    Through `dealDamage` again rather than written straight onto the destination, which is what
+    makes the redirected damage a real damage event: protection on the destination stops it, infect
+    on the source poisons with it, a lifelink source gains the life, and a shield there takes its
+    share. `MAX_REDIRECTS` bounds the chain — see `redirectDepth`.
+  */
+  const depth = opts.redirectDepth ?? 0;
+  for (const hop of shielded.redirects) {
+    if (depth >= MAX_REDIRECTS) continue;
+    next = dealDamage(next, hop.to, hop.amount, { ...opts, redirectDepth: depth + 1 });
+  }
   if (left <= 0) return next;
   /*
     Infect, which changes what the damage *becomes* rather than whether it is dealt (CR 702.90b).

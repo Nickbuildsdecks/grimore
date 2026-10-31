@@ -221,9 +221,11 @@ bug rather than a board.
   happen — now exists and is what the next one should use. **Protection from a colour (CR 702.16) is
   in as well**, all four of its rules, and so is **damage prevention with a quantity (CR 615)** —
   the shield that is spent a point at a time, survives partial use, covers every source of damage
-  and can sit on a player. That was the last of the named gaps in this family; what is left is
-  redirection ("the next time ~ would deal damage, it deals it to ~ instead"), which nothing in the
-  pool needs and which is not approximated.
+  and can sit on a player. **And redirection is in now too** (#239, D255) — "the next 2 damage that
+  would be dealt to you and/or permanents you control is dealt to target creature or player
+  instead", which is that shield plus a destination, dealt by `dealDamage` calling itself so the
+  moved damage is a real damage event. That was the last named gap in this family, and the paragraph
+  here used to say it was neither needed nor approximated.
 - ~~**Copy effects** and **characteristic-setting effects**~~: both in, as a token copy of a printed
   card, as "becomes 1/1 and loses all abilities", and — since `DecisionZone` grew
   `any-battlefield` — as a Clone that chooses what to enter as. What is left of the family is a copy
@@ -7382,6 +7384,34 @@ is three flat results in a row (D252, D253, D254), and the pattern is worth nami
 repeating — a change that corrects what one card does to one permanent cannot move a thirteen-deck
 field, and measuring it is still right, because the alternative is a changelog full of improvements
 nobody priced.
+
+## Redirection, the last named gap in the replacement-effect family (#239, D255)
+
+"What is left is redirection" has been in the not-done list since #85. It is in now, and it is the
+shield plus one field rather than a subsystem: `preventsDamageAmount` is already a quantity spent by
+the damage it absorbs, and `redirectTo` says where the absorbed points go. `dealDamage` deals them
+by calling **itself**, which is what makes the redirected damage a real damage event — protection on
+the destination stops it, infect poisons with it, lifelink gains the life, a shield there takes its
+share — with a four-deep bound, because two redirects pointed at each other's protectees is a legal
+board and a real loop.
+
+The part that is not obvious is the **scope**. Both printed cards say "you and/or permanents you
+control", which is one quantity over a player *and* everything they have, and no existing scope
+could say it: `seat` is the player alone, `controller-creatures` the creatures alone, and two
+effects would prevent twice as much. So `{ kind: 'seat-side' }` is the pool's second scope
+`characteristicsOf` can never match, read live so a creature arriving later is under it too.
+
+Two cards: **Harm's Way** ({W}, two points, Forge Alliance) and **Divine Deflection** ({X}{W},
+Skyward Writ) — the pool's eighth {X} spell and the first whose X is spent twice, once on what it
+stops and once on what it deals. Tests hold the three new claims: the points land on the chosen
+target, the card pays out what it **absorbed** rather than what it printed, and the side scope is
+one shield rather than one each.
+
+**The slot cost ten games and the slot is not why**: Forge Alliance reads 148-140 stock, 138-150
+with Harm's Way in for a Loxodon Warhammer, 137-151 with it in for a land. One game apart — D251's
+finding reproduced on a different deck and card. Two cut-set comparisons on two decks have now come
+back within three games of each other, so the next negative card is a question about the card rather
+than about its slot.
 
 ## Next
 
