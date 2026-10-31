@@ -1792,12 +1792,17 @@ const ARTIFACT_LIST = [
       boards are already on the screen together with room to spare. The budgets below are set from
       those readings the way the phone ones above were.
 
-      **The pod is deliberately not asserted here.** Its laptop reading has never been taken: this
-      suite's `SOLO_POD=1` run plays about 3.3 seconds a move against three searching bots, so a
-      game runs past `MAX_MOVES` rather than finishing, and it has not reached this block. A budget
-      set from no reading is a guess wearing a number, which is the thing the comment above refuses
-      to do. Both figures are printed in both modes, so the first pod run that does get here
-      reports them without anybody editing this file.
+      The pod answers both too, now that a run has reached this block: 1.41 screens, and all
+      **four** creature rows inside 331px of the same 800px viewport. Four boards at once, which is
+      the reading that matters most — a pod is the format this product is named for and the one
+      where "can I see everybody" is a real question rather than a rhetorical one.
+
+      It took three attempts to get that number, and the reason is worth leaving here. One
+      `SOLO_POD=1` run played 270 moves in fifteen minutes — about 3.3 seconds a move — and never
+      reached this block, which is what made the pod look unmeasurable (#250). It is not: the same
+      mode read a flat 253 ms/move over 220 moves, and a later run finished the game and printed
+      both figures. So a budget here is set from readings, like the ones above, and the outlier is
+      recorded as an outlier rather than as the pod's pace.
     */
     await page.setViewportSize({ width: 1440, height: 800 });
     await page.waitForTimeout(400);
@@ -1822,12 +1827,22 @@ const ARTIFACT_LIST = [
       ? '      only one creature row on screen, so there are no two boards to fit'
       : `      ${boards.rows} creature rows span ${boards.span}px of ${boards.viewport}px`);
     await shot(page, 'laptop');
-    if (!SOLO_POD) {
-      check('and on a laptop, where the screen is shorter rather than narrower',
-        laptop <= budget, `${laptop.toFixed(2)} screens, budget ${budget}`);
-      check('so both boards are on the screen at once, which is what the height is for',
-        boards !== null && boards.span <= boards.viewport, JSON.stringify(boards));
-    }
+    // Set from the readings above, and the same shape as the phone budgets: just enough headroom
+    // that the next thing added to a seat has to be paid for out of it.
+    const laptopBudget = SOLO_POD ? 1.6 : 1.3;
+    check('and on a laptop, where the screen is shorter rather than narrower',
+      laptop <= laptopBudget, `${laptop.toFixed(2)} screens, budget ${laptopBudget}`);
+    /*
+      Asserted against the whole viewport rather than a fraction of it, because this is the
+      player-facing claim and not a density budget: at a span wider than one screen you cannot read
+      your board against theirs without scrolling, and at anything under it you can. The duel uses
+      229px of 800 and the pod 331px, so both have room — but the threshold worth defending is the
+      screen, and the figures print either way.
+    */
+    check(SOLO_POD
+      ? 'so all four boards are on the screen at once, which is what the height is for'
+      : 'so both boards are on the screen at once, which is what the height is for',
+      boards !== null && boards.span <= boards.viewport, JSON.stringify(boards));
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(300);
 

@@ -17016,6 +17016,28 @@ so it runs past `MAX_MOVES` instead of reaching this block (#250). A budget set 
 guess wearing a number, which is exactly what the comment above refuses to do, so the pod prints and
 asserts nothing until a run gets there.
 
+### Correction, same day: the pod reading exists after all
+
+The paragraph above said the pod could not be asserted because `SOLO_POD=1` could not finish a game.
+That was true of one run and not of the mode. Three measurements later:
+
+- the engine plays a four-seat pod in **7–10 ms a move**, finishing in seconds
+  (`scripts/measure/pod-pace.mjs`, kept for exactly this kind of claim);
+- the browser driver's own cost in pod mode is **flat at 253 ms/move** over 220 moves, with no
+  growth as the board fills;
+- the `stuck` poll, which was the leading explanation, fires **0.0 times a move**.
+
+And a later run simply finished the game and printed the figures: **1.41 screens, four creature rows
+inside 331px of the 800px viewport.** All four boards on screen at once. So the pod is asserted now,
+with a budget set from that reading, and the 3.3 s/move run is recorded as an unexplained outlier
+(#250) rather than as the pod's pace. Three candidate causes — the bots, the driver's baseline, the
+stuck poll — are each ruled out by a measurement rather than by argument; machine contention is the
+cheapest remaining explanation and is not provable after the fact.
+
+Worth noting what the premature paragraph cost: nothing, because it asserted no budget. That was the
+point of leaving the pod unasserted rather than guessing a number for it — the gap was recorded as a
+gap, so closing it was an edit rather than a correction to a shipped figure.
+
 ### The reusable part
 
 I wrote a task's premise from screenshots while the number that refuted it was in the file I was

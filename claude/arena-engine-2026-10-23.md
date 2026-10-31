@@ -7759,9 +7759,25 @@ of this table than 800px of laptop. So the claim nothing could answer is the one
 hardest, and the absence of a measurement read like permission to assert one.
 
 Both figures are now guards in `e2e-solo.mjs` with budgets set from the readings, printed pass or
-fail. The pod is deliberately not asserted: its laptop reading still does not exist, because
-`SOLO_POD=1` plays about 3.3 seconds a move against three searching bots and runs past `MAX_MOVES`
-rather than reaching this block (#250, filed). A budget from no reading is a guess wearing a number.
+fail — **and the pod is asserted too**, which it was not when this section was first written. The
+pod reads **1.41 screens with all four creature rows inside 331px of the 800px viewport**: four
+boards at once, which is the reading that matters most in the format the product is named for.
+
+Getting that number took three attempts, and the detour is the more useful half. One `SOLO_POD=1`
+run played 270 moves in fifteen minutes — 3.3 seconds a move — and never reached the layout block,
+which is what made the pod look unmeasurable. Three explanations were ruled out by measurement
+rather than argument: the engine plays a four-seat pod in **7–10 ms a move** (now
+`scripts/measure/pod-pace.mjs`, so the next "the bots are slow" claim costs one command to refuse);
+the driver's own cost is **flat at 253 ms/move** over 220 moves with no growth as the board fills;
+and the `stuck` poll that was the leading suspect fires **0.0 times a move**. A later run finished
+the game and printed both figures. The outlier is recorded as an outlier (#250), machine contention
+being the cheapest remaining explanation and not provable after the fact.
+
+Leaving the pod unasserted rather than guessing a budget for it cost nothing, which was the point:
+the gap was recorded as a gap, so closing it was an edit rather than a correction to a shipped
+number. A third finding fell out of forcing the checks against a mid-game board instead of a
+post-game one — a full four-seat board overflows a phone by 17px, and every layout check in the
+suite has only ever measured the emptiest board of the game (#251).
 
 ## Next
 
