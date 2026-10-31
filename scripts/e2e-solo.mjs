@@ -1770,6 +1770,67 @@ const ARTIFACT_LIST = [
     check('and does not run to more screens than anybody will scroll',
       screens <= budget, `${screens.toFixed(2)} screens, budget ${budget}`);
 
+    /*
+      And the same question on a laptop, which nothing had ever asked.
+
+      Every screens-tall reading in this directory is taken at 390x844. That is the right worst
+      case for *width* — a phone is where a row overflows sideways — and the wrong one for
+      **height**, because a phone screen is tall relative to a card and a laptop is not. 844px of
+      phone holds more of this table than 800px of laptop, and the laptop is where somebody
+      actually sits down to play a long game. Checked rather than assumed: of the seven
+      `setViewportSize` calls in the four browser suites, six set the phone, and the only desktop
+      one (`e2e-table.mjs`) is restoring the viewport after the phone check, not measuring at it.
+
+      What the numbers are for. At more than one screen you cannot see both boards at once, and
+      reading your board against the opponent's is the thing a player does constantly — Arena
+      shows both. So the height is one reading and **the span of the creature rows against one
+      viewport** is the other, because the second is the actual question and the first is only a
+      proxy for it.
+
+      The duel answers both, and the answer is that the premise this check was written from was
+      wrong: 1.16 screens, and the two creature rows inside 229px of the 800px viewport. Both
+      boards are already on the screen together with room to spare. The budgets below are set from
+      those readings the way the phone ones above were.
+
+      **The pod is deliberately not asserted here.** Its laptop reading has never been taken: this
+      suite's `SOLO_POD=1` run plays about 3.3 seconds a move against three searching bots, so a
+      game runs past `MAX_MOVES` rather than finishing, and it has not reached this block. A budget
+      set from no reading is a guess wearing a number, which is the thing the comment above refuses
+      to do. Both figures are printed in both modes, so the first pod run that does get here
+      reports them without anybody editing this file.
+    */
+    await page.setViewportSize({ width: 1440, height: 800 });
+    await page.waitForTimeout(400);
+    const laptop = await page.evaluate(() =>
+      document.documentElement.scrollHeight / window.innerHeight);
+    const boards = await page.evaluate(() => {
+      // Can a player see their own creatures and an opponent's at the same time? The outer bounds
+      // of every creature row against one viewport, which is the question the page height only
+      // approximates.
+      const rows = [...document.querySelectorAll('[data-testid^="zone-creatures-"]')];
+      if (rows.length < 2) return null;
+      const tops = rows.map((r) => r.getBoundingClientRect().top + window.scrollY);
+      const bottoms = rows.map((r) => r.getBoundingClientRect().bottom + window.scrollY);
+      return {
+        rows: rows.length,
+        span: Math.round(Math.max(...bottoms) - Math.min(...tops)),
+        viewport: window.innerHeight,
+      };
+    });
+    console.log(`      on a 1440x800 laptop: ${laptop.toFixed(2)} screens tall`);
+    console.log(boards === null
+      ? '      only one creature row on screen, so there are no two boards to fit'
+      : `      ${boards.rows} creature rows span ${boards.span}px of ${boards.viewport}px`);
+    await shot(page, 'laptop');
+    if (!SOLO_POD) {
+      check('and on a laptop, where the screen is shorter rather than narrower',
+        laptop <= budget, `${laptop.toFixed(2)} screens, budget ${budget}`);
+      check('so both boards are on the screen at once, which is what the height is for',
+        boards !== null && boards.span <= boards.viewport, JSON.stringify(boards));
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(300);
+
     // Whatever the table is asking for has to be readable while it asks. The feed sits at the
     // bottom of the board and the prompt sits in the control bar, and on a phone they were the
     // same place: three lines of "Opponent III mulliganed to 6" straight over "Keep or mulligan?".

@@ -7738,6 +7738,31 @@ All four green on the final head: arena 53/53 with the four recovered, table 73/
 element carrying `--card-rot` — and not photographic: both badge-bearing creatures in the new
 screenshots have vigilance, so they attacked untapped.
 
+### The laptop nobody had measured, and a premise that did not survive it (#249, D266)
+
+#249 said a player on a laptop cannot see both boards at once, and called it the single biggest gap
+between this and a premium table. It is not true. On a 1440x800 laptop a duel reads **1.16 screens**
+and its two creature rows span **229px of the 800px viewport** — both boards on screen together with
+571px spare, reproduced across two independent games.
+
+Two things I had not checked before writing the task. The density pass had already happened, and the
+comment above the screens-tall budget says so (*"a duel was 1.37 and is 1.18"*) — the task's own last
+sentence quotes that number, so I read it off the suite and still wrote the premise from the
+screenshots. And that same comment records the one remaining item, the opponents' face-down hands, as
+deliberately left alone: *"it is the tabletop metaphor, and style is the player's call."* Still the
+position; still Nick's call rather than mine.
+
+What genuinely had never been measured is the laptop. Six of the seven `setViewportSize` calls in the
+four suites set 390x844, and the only desktop one is restoring the viewport after the phone check.
+Phone width is the right worst case sideways and the wrong one for height — 844px of phone holds more
+of this table than 800px of laptop. So the claim nothing could answer is the one the task asserted
+hardest, and the absence of a measurement read like permission to assert one.
+
+Both figures are now guards in `e2e-solo.mjs` with budgets set from the readings, printed pass or
+fail. The pod is deliberately not asserted: its laptop reading still does not exist, because
+`SOLO_POD=1` plays about 3.3 seconds a move against three searching bots and runs past `MAX_MOVES`
+rather than reaching this block (#250, filed). A budget from no reading is a guess wearing a number.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

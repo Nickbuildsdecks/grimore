@@ -16955,3 +16955,75 @@ the rotation cannot reach it — that is structural, not observed. I have **not*
 rotated card carrying an upright badge: both badge-bearing creatures in the new screenshots have
 vigilance, so they attacked without tapping. The claim is about the DOM, and it is worth being
 precise that the picture confirming it has not been taken.
+
+## D266 — The laptop nobody had measured, and a premise that did not survive it
+
+#249 was written from this session's own screenshots and asserted, as fact, that **"a player on a
+laptop cannot see both boards at once in an ordinary game, which is the single biggest gap between
+this and a premium table."** The measurement says otherwise, and how the task came to be wrong is
+the part worth keeping.
+
+### Two things I had not checked before writing it
+
+**The density pass had already happened.** The comment above the screens-tall budget in
+`scripts/e2e-solo.mjs` records it: *"A fresh pod was 2.51 screens and is 2.23 now that an empty zone
+is one line instead of two; a duel was 1.37 and is 1.18."* So "spends most of its height on empty
+rows" described the state before a change that had already shipped. The task's own last sentence
+quotes that 1.18 reading — I took the number off the suite and still wrote the premise from the
+pictures.
+
+**It also records that what is left was deliberately left alone**, and why: *"What is left is almost
+all the opponents' face-down hands — seven identical card backs, a hundred pixels a seat, saying only
+a number the seat header already shows. Worth revisiting, and not worth changing on my own: it is the
+tabletop metaphor, and style is the player's call."* That is still the position, and it is a question
+for Nick rather than a defect to fix unilaterally.
+
+### What genuinely had never been measured
+
+The laptop. Of the seven `setViewportSize` calls across the four browser suites, six set 390x844 and
+the only desktop one (`e2e-table.mjs:692`, 1280x900) is restoring the viewport after the phone check,
+not measuring at it. Phone width is the right worst case for *sideways* overflow. It is the wrong one
+for height: 844px of phone holds more of this table than 800px of laptop, and the laptop is where
+somebody sits down for a long game.
+
+So the one claim in #249 that nothing in the tree could answer is the one it asserted hardest.
+
+### The reading
+
+Two figures, because the page height is only a proxy for the question. The question is whether a
+player can read their own board against an opponent's without scrolling, so the second figure is the
+outer span of the creature rows against one viewport.
+
+| | duel, 1440x800 |
+| --- | --- |
+| page height | **1.16 screens** (phone reads 1.18) |
+| 2 creature rows span | **229px of the 800px viewport** |
+
+Both boards are already on the screen together, with 571px to spare. The premise is refuted, and
+reproduced: two independent games gave the same two numbers.
+
+### What shipped
+
+The measurement, as a guard rather than a print — the laptop reading never existed, and the reason
+#249 could be written at all is that nothing would have contradicted it. Budgets are set from the
+readings, the way the phone budgets above them were. Both figures print whether they pass or not,
+for the same reason the phone budget prints: a budget nobody can see the balance of gets spent
+without anybody noticing.
+
+**The pod is deliberately not asserted.** Its laptop reading still does not exist, because
+`SOLO_POD=1` cannot currently finish a game — about 3.3 seconds a move against three searching bots,
+so it runs past `MAX_MOVES` instead of reaching this block (#250). A budget set from no reading is a
+guess wearing a number, which is exactly what the comment above refuses to do, so the pod prints and
+asserts nothing until a run gets there.
+
+### The reusable part
+
+I wrote a task's premise from screenshots while the number that refuted it was in the file I was
+quoting. Both readings in that file were taken at phone size, so there was no laptop figure to
+contradict me — and *the absence of a measurement reads exactly like permission to assert one*. The
+check added here is worth less for the 1.16 than for making the next such claim falsifiable.
+
+A smaller one, which cost fifteen minutes: the pod run was piped through `tail`, so its progress log
+buffered and the suite looked stalled while it was in fact playing. I diagnosed "stall" from a CPU
+sample and was wrong; the move log said `move 270` all along. Don't pipe a browser suite through
+anything that buffers.
