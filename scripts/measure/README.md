@@ -648,6 +648,15 @@ cannot find a disagreement, 936 games will not find one either, and the thing wo
 often the window exists at all.
 
 
+**The same silence one level down, where it is cheap to break.** `term-leverage` nests correctly —
+it builds `{ weights }` itself — but a misspelled *weight name* inside that object is dropped just as
+quietly, and its symptom is a row reading `changed 0`, which is indistinguishable from a term that
+simply never decides anything. The tell is the **score**: ask `evaluate` the same positions, and a
+real weight moves the number even when it does not move the play. So every row that ends at zero now
+says which it was — `scored and never decisive`, which is a finding about the game, or `never changed
+the score in any of the N positions`, which is a name the evaluation cannot see. Proven by injecting
+`{ castabel: 1 }` next to `{ castable: 1 }`: 7 decisions and 0, and only the second gets the warning.
+
 **Two zeros, two diagnoses, one instrument.** Ninjutsu fired zero times and the Arcbound Ravager's
 sacrifice ability fired zero times, and the fixes are nothing alike. Counting the **windows** told
 them apart in one run each: ninjutsu had 19 unblocked attackers and 2 ninjas in hand and never both

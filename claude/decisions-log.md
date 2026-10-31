@@ -17398,3 +17398,21 @@ a different arm. Three entries today have turned out to be that same shape, and 
 worth keeping: **ask what the check would do if the thing it is checking were broken.** The positive
 control passes identically whether `TESTED`'s key is real or nonsense, which means it was never
 evidence about the key.
+
+### Follow-up: the same silence one level down
+
+`term-leverage` nests the weight correctly — it builds `{ weights }` itself, which is why its
+`castable` row was real while `bot-duel`'s arm was not. But a misspelled weight *name* inside that
+object is dropped just as quietly, and the symptom is a row reading `changed 0`: indistinguishable
+from a term that is scored and simply never decides anything.
+
+Those two want opposite work, and there is a sharper tell available here than in `bot-duel`: the
+**score**. A real weight moves `evaluate` even in positions where it does not move the play, and a
+name the evaluation cannot see moves nothing, ever. So every row ending at zero now says which it
+was. Proven by injecting `{ castabel: 1 }` beside `{ castable: 1 }` and running both: 7 decisions
+against 0, and only the second drew the warning — in the old output the two rows were identical.
+
+The message names two causes rather than one, for the same reason the `bot-duel` one does: a term
+about something the probed games never contain scores zero honestly, and a narrow `SUBJECT` can
+arrange that by itself. Unlike `bot-duel` this does not exit non-zero — the other rows in the table
+are still valid, so the cost of a typo here is one bad row rather than a whole wasted run.

@@ -44,7 +44,7 @@
  *     SEEDS=1 node scripts/measure/term-leverage.mjs
  */
 import {
-  applyAction, botAction, createGame, seatsToAct, STARTER_DECKS,
+  applyAction, botAction, createGame, evaluate, seatsToAct, STARTER_DECKS,
 } from '../../packages/rules-engine/dist/index.js';
 
 const ALL = Object.keys(STARTER_DECKS);
@@ -111,6 +111,19 @@ if (terms.length === 0) {
 
 /** term -> action kind -> { n, differed }. The stock bot's own row is the denominator. */
 const tally = new Map(terms.map(([name]) => [name, new Map()]));
+/*
+  And how often each term changed the **score** rather than the decision, which is the one thing
+  that tells a term apart from a typo.
+
+  A row at zero changed decisions has two readings and they want opposite work: the term is scored
+  and never decisive (interesting — it means the evaluation can see the thing and the thing never
+  separates the plays), or the key is not a weight at all, which `evaluate` falls back past in
+  silence exactly as `botAction` does with an unknown option. D270 cost fifteen minutes a seed set
+  to that silence one level up; this is the same question asked where it is cheap.
+
+  Only reported for rows that ended at zero, so the table keeps its shape.
+*/
+const scored = new Map(terms.map(([name]) => [name, 0]));
 const note = (term, kind, same) => {
   const rows = tally.get(term);
   const row = rows.get(kind) ?? { n: 0, differed: 0 };
@@ -159,9 +172,12 @@ function duel(seed, decks) {
     if (stock === null) break;
     if (counted.includes(seat)) {
       const want = JSON.stringify(stock);
+      const base = evaluate(s, seat, {});
       for (const [name, weights] of arms) {
         const theirs = botAction(s, seat, { weights });
         note(name, stock.type, JSON.stringify(theirs) === want);
+        // One extra `evaluate` per arm per position: cheap next to a `botAction` that searches.
+        if (evaluate(s, seat, { weights }) !== base) scored.set(name, (scored.get(name) ?? 0) + 1);
       }
     }
     const before = s.stateVersion;
@@ -226,6 +242,28 @@ for (const [name, rows] of ordered) {
     pct(differed(rows), total(rows)),
     ...cells,
   ].join(''));
+}
+
+/*
+  The zero rows, told apart. A term that scores and never decides is a finding about the game; a
+  term that never even scores is a misspelled key, and the two look identical in the table above.
+*/
+const inert = ordered.filter(([name, rows]) => name !== CONTROL_TERM && differed(rows) === 0);
+if (inert.length > 0) {
+  console.log('');
+  for (const [name] of inert) {
+    const n = scored.get(name) ?? 0;
+    if (n > 0) {
+      console.log(`${name}: 0 decisions, but changed the score in ${n} positions`
+        + ' — scored and never decisive, which is a finding about the game rather than a typo');
+    } else {
+      console.log(`!! ${name}: 0 decisions AND never changed the score in any of the ${decisions}`);
+      console.log('!! positions, so the evaluation cannot see it at all. Either the name is not a');
+      console.log('!! weight (check the weights block in packages/rules-engine/src/bot.ts — an');
+      console.log('!! unknown key falls back past in silence, D270), or the term is about something');
+      console.log('!! these games never contain, which a narrow SUBJECT can do on its own.');
+    }
+  }
 }
 
 const bad = tally.get(CONTROL_TERM);
