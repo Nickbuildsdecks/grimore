@@ -164,6 +164,23 @@ function Lobby({ table, name, setName }: { table: UseTable; name: string; setNam
         </p>
       </header>
 
+      {/*
+        The table that will never connect, said out loud.
+
+        The lobby is where this lands: somebody whose network blocks WebSockets never reaches a
+        table at all, and before this the only thing on their screen was a "connecting" pill in a
+        header they had not got to yet. The buttons below are left enabled — a handshake can recover
+        and the player is owed the attempt — so this is a sentence rather than a blocked screen.
+      */}
+      {table.trouble !== null ? (
+        <p
+          data-testid="connection-trouble"
+          className="rounded-md border border-[var(--g-mana-r)]/40 bg-[var(--g-mana-r)]/10 px-3 py-2 text-xs text-[var(--g-mana-r)]"
+        >
+          {table.trouble}
+        </p>
+      ) : null}
+
       <label className="flex flex-col gap-1.5">
         <span className="text-xs font-medium uppercase tracking-wide text-[var(--g-text-muted)]">Your name</span>
         <Input data-testid="player-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={32} />
@@ -1778,6 +1795,15 @@ function Board({ table }: { table: UseTable }) {
         {table.connection !== "connected" ? (
           <span data-testid="connection" className="rounded bg-[var(--g-mana-r)]/20 px-1.5 py-0.5 text-[var(--g-mana-r)]">
             {table.connection}
+          </span>
+        ) : null}
+        {/*
+          And the same sentence at a table that has dropped and is not getting back, where the pill
+          alone has been reading "connecting" for as long as the player has been staring at it.
+        */}
+        {table.trouble !== null ? (
+          <span data-testid="connection-trouble" className="text-[var(--g-mana-r)]">
+            {table.trouble}
           </span>
         ) : null}
         {/*

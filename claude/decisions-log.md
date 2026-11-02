@@ -18418,3 +18418,55 @@ described as a rule of the game; this one is a registry described as a number. T
 both times and it is not "be more careful": make the prose cite the thing that knows, or put a check
 on it. Two decks were added with a write-up each and neither touched the count above them, which is
 exactly how careful people produce a stale document.
+
+## D284 — The table that was never going to connect said "connecting" for ever
+
+`apps/web/src/lib/table.ts` had no `connect_error` handler. The realtime server is WebSocket-only
+(`transports: ['websocket']`, `allowUpgrades: false`) and the client matches it, so a network that
+blocks WebSockets cannot play — and what a player saw was socket.io retrying silently behind a pill
+reading `connecting`. The same screen for a server that is not running, a wrong
+`VITE_REALTIME_URL`, and an origin the server refuses. The setup notes have listed this under *what
+is not done* for months, ending "it would look like a table that never connects", and that was
+exactly right.
+
+The lobby now says, after three failed attempts:
+
+> Cannot reach the table at *&lt;address&gt;*. Either it is not running, or this network is blocking
+> WebSockets — the table needs them and has no fallback.
+
+### Three decisions in that sentence, and one of them is measured
+
+**It does not say which cause it is.** The temptation was to branch on the error's message and name
+the origin case separately. Pointed at a closed port in a real browser, every `connect_error`
+carries the message **`websocket error`** and nothing else — no status, no server text. So a branch
+could not have told a blocked network from a refused origin, and naming one would have been a guess
+dressed as a diagnosis. The raw error goes to the console for whoever runs the server; the player
+gets what is true in every case.
+
+**It waits three attempts.** One failure is ordinary — a reload racing its own teardown, a laptop
+waking, a phone changing network — and socket.io retries in about a second, so a banner on the first
+error would flash on tables that connect fine.
+
+**It is a sentence, not a blocked screen.** The lobby's inputs stay enabled: a handshake can
+recover, and a player who is told the table is unreachable is owed the attempt anyway.
+
+### What was checked, and where
+
+The sentence is four tests on a pure `connectionTrouble(attempts, url)` — silent on attempts one and
+two, names WebSockets and "no fallback" on three, names the address including the same-origin default
+(`VITE_REALTIME_URL` unset is the normal deployment, and "cannot reach the table at " with nothing
+after it is how this change would have sent somebody hunting a missing variable), and keeps saying it
+rather than going quiet on a long outage.
+
+Then in a real browser against a closed port: the banner appears about three seconds in — 2.8s and
+3.8s over two runs, which is three attempts at socket.io's randomised backoff — the lobby stays
+usable, and the console carries the raw error. The **console** needed its own decision once that run
+showed nine lines in four seconds: logged for the first few attempts and then one in ten, because an
+outage left open overnight would otherwise be the only thing in there.
+
+### What is still not done
+
+The fallback itself. Polling stays off, which is a server change with deployment consequences (long
+polling behind the Redis adapter wants sticky routing) and not one to make as a side effect of
+putting a sentence on screen. The gap is now **legible** rather than closed, and the setup notes say
+so in those terms.

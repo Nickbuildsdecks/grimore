@@ -1415,4 +1415,13 @@ decks they pasted in).
   costs nothing. Anything said beyond those three sentences is still between the people at the
   table, in the chat panel or out loud.
 - **Websocket only.** A network that blocks WebSockets cannot play, because the server has polling
-  disabled. Rare, but it would look like a table that never connects.
+  disabled. Rare, and it used to look like a table that never connects: there was no handler for a
+  failed handshake at all, so the socket retried for ever behind a small pill reading `connecting`.
+  **The table says it now** — after three failed attempts, about a second or two of real silence,
+  the lobby reads *"Cannot reach the table at this page's own address. Either it is not running, or
+  this network is blocking WebSockets — the table needs them and has no fallback"*, with the
+  configured `VITE_REALTIME_URL` in place of the default when there is one. It deliberately does not
+  guess which of the two it is: over a WebSocket-only handshake the client is not reliably handed
+  the server's own reason, so a refused upgrade and a refused origin can arrive looking identical,
+  and the raw error goes to the browser console for whoever is running the server. What is still not
+  done is the fallback itself — polling stays off.

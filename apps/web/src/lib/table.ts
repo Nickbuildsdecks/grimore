@@ -23,6 +23,48 @@ import type { Pod, PodErrorEvent, PodListEntry } from "@grimore/shared"
 
 /** Same-origin by default, which is how it runs behind one reverse proxy. */
 const REALTIME_URL: string = import.meta.env.VITE_REALTIME_URL ?? ""
+
+/**
+ * Failed handshakes to sit through before telling the player anything.
+ *
+ * One failure is ordinary: a reload races the old socket's teardown, a laptop wakes up, a phone
+ * changes network. socket.io retries on its own in about a second, so a banner on the first error
+ * would flash on tables that connect fine. Three is a second or two of real silence.
+ */
+const ATTEMPTS_BEFORE_SAYING = 3
+
+/**
+ * Why the table is not connecting, in a sentence a player can act on — or null, say nothing yet.
+ *
+ * **The failure this exists for is the one the setup notes name and nothing on screen did.** The
+ * server is WebSocket-only (`transports: ['websocket']`, `allowUpgrades: false` in
+ * `apps/realtime/src/io.ts`) and the client matches it, so a network that blocks WebSockets cannot
+ * play. There was no `connect_error` handler at all: socket.io retried forever, `connection` stayed
+ * `connecting`, and the whole of what a player saw was a small pill reading "connecting" — on a
+ * table that was never going to connect. Same screen for a server that is not running, a wrong
+ * `VITE_REALTIME_URL`, and an origin the server refuses.
+ *
+ * **It does not try to say which of those it is, and that is measured rather than assumed.** Pointed
+ * at a closed port in a real browser, every `connect_error` this handler received carried the
+ * message **`websocket error`** and nothing else — no status, no server text. So a branch on the
+ * error's message could not have told a blocked network from a refused origin, and a sentence that
+ * named one cause would have been a guess dressed as a diagnosis. The raw error goes to the console
+ * for whoever is running the server; the player gets the two things that are true of every case and
+ * that they can do something about.
+ *
+ * Checked the same way: the banner appears about **three seconds** after the page loads — 2.8s and
+ * 3.8s over two runs, which is three attempts at socket.io's own randomised backoff — and the
+ * lobby's inputs stay enabled behind it.
+ *
+ * Pure, and takes the url rather than reading the module constant, so the sentence can be read in a
+ * test rather than only in a browser.
+ */
+export function connectionTrouble(attempts: number, url: string): string | null {
+  if (attempts < ATTEMPTS_BEFORE_SAYING) return null
+  const where = url === "" ? "this page's own address" : url
+  return `Cannot reach the table at ${where}. Either it is not running, or this network is `
+    + "blocking WebSockets — the table needs them and has no fallback."
+}
 const STORE_KEY = "grimore.table.seat"
 /** Where the last decklist a player pasted is kept. See `readSavedList`. */
 const LIST_KEY = "grimore.table.list"
@@ -46,6 +88,13 @@ export interface ChatLine {
 
 export interface TableState {
   connection: Connection
+  /**
+   * Why the socket is not connecting, in a sentence for the player, or null.
+   *
+   * Distinct from `connection`, which says *that* it is not connected and has read `connecting`
+   * forever on a network that blocks WebSockets. See `connectionTrouble`.
+   */
+  trouble: string | null
   pod: Pod | null
   view: GameView | null
   stateVersion: number
@@ -273,6 +322,7 @@ export interface UseTable extends TableState {
 export function useTable(playerName: string): UseTable {
   const [state, setState] = useState<TableState>({
     connection: "connecting",
+    trouble: null,
     pod: null,
     view: null,
     stateVersion: 0,
@@ -313,6 +363,8 @@ export function useTable(playerName: string): UseTable {
    * the version the one before it produced, so a burst applies in full and in order.
    */
   const queueRef = useRef<Promise<void>>(Promise.resolve())
+  /** Consecutive failed handshakes, reset by a connect. See `connectionTrouble`. */
+  const attemptsRef = useRef(0)
   useEffect(() => {
     nameRef.current = playerName
     // Keep the handshake payload current for any later reconnect, without reconnecting now.
@@ -330,7 +382,8 @@ export function useTable(playerName: string): UseTable {
     socketRef.current = socket
 
     socket.on("connect", () => {
-      setState((s) => ({ ...s, connection: "connected" }))
+      attemptsRef.current = 0
+      setState((s) => ({ ...s, connection: "connected", trouble: null }))
       // The listed tables, asked for once the socket is up. Before this the lobby had nothing to
       // show on arrival and a player's only way in was a code somebody had sent them.
       socket.emit("pod:list", {})
@@ -353,6 +406,30 @@ export function useTable(playerName: string): UseTable {
     })
     socket.on("disconnect", () => setState((s) => ({ ...s, connection: "disconnected" })))
     socket.io.on("reconnect_attempt", () => setState((s) => ({ ...s, connection: "connecting" })))
+    /*
+      The handshake that never lands, which had no handler at all until now.
+
+      Counted rather than reported on the first error, because one failure is ordinary and socket.io
+      retries by itself — see `ATTEMPTS_BEFORE_SAYING`. The error itself goes to the console because
+      the person who can fix a refused origin or a wrong `VITE_REALTIME_URL` is whoever is running
+      the server, and the sentence on screen is for the player.
+    */
+    socket.on("connect_error", (err: Error) => {
+      attemptsRef.current += 1
+      /*
+        Logged for the first few attempts and then once in ten, because socket.io retries about
+        once a second for as long as the page is open: a line per attempt put nine of them in the
+        console in the four seconds this was first measured over, and an outage left open overnight
+        would be nothing else. The first ones are the diagnosis; the thinned ones say it is still
+        going.
+      */
+      const attempt = attemptsRef.current
+      if (attempt <= ATTEMPTS_BEFORE_SAYING + 1 || attempt % 10 === 0) {
+        console.warn(`[table] cannot reach the table server (attempt ${attempt}): ${err.message}`)
+      }
+      const trouble = connectionTrouble(attemptsRef.current, REALTIME_URL)
+      if (trouble !== null) setState((s) => ({ ...s, trouble }))
+    })
 
     socket.on("pod:state", (payload: { pod: Pod; state: PackedView | null; stateVersion: number }) => {
       versionRef.current = payload.stateVersion

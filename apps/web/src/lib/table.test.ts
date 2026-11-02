@@ -5,7 +5,7 @@
  * What is here is the thing that has to read well to a player who did nothing wrong.
  */
 import { describe, it, expect } from "vitest"
-import { moveName, pastedNote, showsBroadcastError } from "./table"
+import { connectionTrouble, moveName, pastedNote, showsBroadcastError } from "./table"
 
 describe("naming a move in an error banner", () => {
   it("says what the player tapped, not what the engine calls it", () => {
@@ -80,5 +80,41 @@ describe("what the table says about a list somebody pasted", () => {
 
   it("counts one card as a card", () => {
     expect(pastedNote({ ...base, total: 1 }).startsWith("1 card ·")).toBe(true)
+  })
+})
+
+describe("the table that is never going to connect", () => {
+  /*
+    The failure the setup notes have named for months and nothing on screen did (#266). The server
+    is WebSocket-only and so is the client, so a network that blocks WebSockets cannot play — and
+    there was no `connect_error` handler, so socket.io retried for ever behind a pill reading
+    "connecting". These pin the two decisions in the sentence that replaced it.
+  */
+  it("says nothing about the first failures, because socket.io is about to retry", () => {
+    // A reload racing its own teardown, a laptop waking up, a phone changing network. A banner
+    // that flashed on every one of those would be a banner players learn to ignore.
+    expect(connectionTrouble(1, "")).toBeNull()
+    expect(connectionTrouble(2, "")).toBeNull()
+  })
+
+  it("names WebSockets on the third, because that is the cause nothing else would explain", () => {
+    const said = connectionTrouble(3, "")
+    expect(said).not.toBeNull()
+    expect(said).toContain("WebSockets")
+    // And it says there is no fallback, which is the part that tells a player this will not come
+    // good on its own: the server sets `allowUpgrades: false`.
+    expect(said).toContain("no fallback")
+  })
+
+  it("names the address it is trying, including the same-origin default", () => {
+    // `VITE_REALTIME_URL` unset is the normal deployment — one reverse proxy, same origin — and a
+    // message reading "cannot reach the table at " with nothing after it is the version of this
+    // that sends somebody looking for a missing variable.
+    expect(connectionTrouble(3, "")).toContain("this page's own address")
+    expect(connectionTrouble(3, "wss://grimore.example")).toContain("wss://grimore.example")
+  })
+
+  it("keeps saying it once it has started, so a long outage does not go quiet", () => {
+    expect(connectionTrouble(9, "")).toBe(connectionTrouble(3, ""))
   })
 })
