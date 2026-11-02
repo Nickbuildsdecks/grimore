@@ -1504,7 +1504,15 @@ const CLOCK_CAP = 6;
  * blocker that answers their 5/5 is not also available for their 3/3, which is what makes a single
  * big blocker opposite three creatures read as two of them getting through. Between *opponents* it
  * is available again, because blocking does not tap it and my untap step comes after all of their
- * turns; the loop body says why at length (#264). It is not the optimal assignment — that is a
+ * turns; the loop body says why at length (#264).
+ *
+ * **And this was the only reader in the file with that fault**, which is worth recording so the next
+ * person does not go hunting for more. The other three places that call `canBlock` ask about *one*
+ * opponent by construction: the crack-back check and `aSwapIsComing` both take
+ * `readyBlockers(state, foe)` for a named foe, and the two block-choosing heuristics are inside a
+ * single combat. Checked after the fix rather than assumed.
+ *
+ * It is not the optimal assignment — that is a
  * bipartite matching and this is called at every node of a search — and the error it makes is in
  * the safe direction: greedy-by-size can leave power counted as unanswered that a cleverer
  * assignment would have stopped, so the bot is told it is *more* exposed than it is rather than
