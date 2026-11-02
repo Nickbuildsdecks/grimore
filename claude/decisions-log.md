@@ -18157,3 +18157,77 @@ cheap question both times: **ask what the thing actually does before modelling w
 refuted by one three-creature board; this was answered by counting what the bot sends. The
 expensive plan — build an attack model, measure it in two formats over six seed sets — was queued
 and would have been wasted, because it was aimed at the wrong defect.
+
+## D281 — pod-duel's noise floor is ±16 of 104, and it retracts a claim I published twice today
+
+The symmetric prediction from D280 — if caution loses a pod, aggression should win one — was tested
+with the lever already to hand, `clockRate` at **−1**, which makes a seat value being attacked and
+so swing more. `aggression.mjs` confirmed the lever is monotone before any win rate was spent:
+
+| weight | creatures sent | declines a declaration |
+| --- | --- | --- |
+| −1 | 2343 (+12.2%) | 19% |
+| 0 (shipping) | 2088 | 24% |
+| +1 | 1693 (−18.9%) | 42% |
+
+### The duel half confirms the mechanism emphatically
+
+Three disjoint seed sets, 936 paired games each: **408-527, 416-519, 406-530.** About **−12 points**,
+every set, which against the +1.5 the term earns at `+1` makes the duel response strongly monotone
+in the weight. Ignoring the crack-back is a disaster in a duel, and that is the clearest confirmation
+D280's mechanism could have: the term's whole effect is caution, and caution is worth real points at
+two seats.
+
+### The pod half retracts something instead
+
+Three disjoint seed sets of 104 pods, one unchanged arm: **60-44 (+16), 50-54 (−4), 44-60 (−16).**
+
+A range of **32 for a setting that did not change between runs.** That is `pod-duel`'s noise floor,
+and it is the first time anybody has measured it — which matters because **the file says to measure
+it before believing a difference, and I did not**:
+
+> **Get the floor by re-running a real arm on a different seed set instead.** Two runs of the same
+> setting on disjoint seeds differ by however much this harness wobbles, and that spread is the
+> number to disbelieve smaller results than. A pod is noisier than a duel by construction — three
+> opponents, three chances to be attacked — so expect it to be wide.
+
+I quoted that docblock earlier today, for its *other* warning about the arithmetic control, and did
+not do what this half of it says.
+
+**So the pod readings for the clock at `+1` — 48-56, 52-52, 50-54 — are retracted as a result.** I
+wrote them up as "−3.8 points, never once above zero" in D276, and repeated the figure in D280 and at
+`CLOCK_RATE`. They sit well inside ±16. Three draws landing at −8, 0 and −4 from a distribution
+centred near zero is unremarkable, and "never once above zero" is three coin flips, not evidence.
+**D242's three-disjoint-sets rule was applied without its precondition**: the rule tells you a sign
+that holds is believable, and it only means that once you know what a single reading wobbles by.
+
+### What survives, and it is most of it
+
+- **The duel result.** +1.5 points over 2808 games at `+1`, −12 over 2808 at `−1`, on a harness whose
+  floor *is* established (±6 observed) with 936 games a reading. Monotone and solid.
+- **The aggression figures.** 42% of declarations declined against 24%, −18.9% of creatures sent in a
+  pod against −7.7% in a duel. An **ablation on identical positions**, exact, no sampling argument.
+- **The length figures.** 2.06x moves undivided, 1.29x divided, paired on the same eight seeds.
+- **The superlinearity.** 4 unanswerable table-wide against 0 per-opponent, arithmetic, certain.
+
+What does *not* survive is one number: the clock's effect on who wins a pod. It is **unknown**, not
+negative.
+
+### The decision does not change, and is now better founded
+
+`CLOCK_RATE` stays at **zero**. The retracted reason was "it loses pods". The real reason is stronger:
+the pod win rate is unmeasured, and the pod *behaviour* change is large and exactly measured — a seat
+declining 42% of its attacks where the shipping bot declines 24%, in games running 1.29x the moves.
+Shipping a large unmeasured behavioural change to the format this project cares most about is the
+thing not to do, and that holds whichever way the win rate would have gone.
+
+### What a real pod reading costs
+
+At ±16 of 104, resolving a 4-point effect needs roughly ten times the games — about **1000 pods an
+arm, ninety minutes a reading**, three disjoint sets, so four to five hours for one question. Nothing
+in this project has ever spent that on a pod, which means **every pod win-rate number here is weaker
+than it reads**, mine included. The counts are fine — offers, politics, myriad, the throw audit — it
+is the *win rates* that need the floor quoted beside them.
+
+`pod-duel` should carry the floor in its docblock rather than an instruction to find it, so the next
+person reads ±16 instead of being told to go and measure it. Doing that now.

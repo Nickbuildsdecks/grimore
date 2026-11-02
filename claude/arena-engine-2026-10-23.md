@@ -7936,6 +7936,38 @@ built, the honest conclusion would have been "the clock is weaker than the quant
 opposite of what is true. Both ship off; leverage is necessary and not sufficient, and `exposed` is
 the standing proof of that.
 
+### A noise floor nobody had measured, and a claim retracted twice (#263, D281)
+
+The clock's story ended on a measurement that turned out to be of the harness rather than the term.
+
+Testing D280's symmetric prediction — if caution loses a pod, aggression should win one — meant
+running one unchanged arm over three disjoint pod seed sets. It read **60-44, 50-54, 44-60**: a range
+of **32 for a setting that did not move between runs**. That is `pod-duel`'s noise floor, ±16 of 104,
+fifteen percentage points, and it had never been measured.
+
+Which retracts a number I published twice the same day. The clock's pod readings — 48-56, 52-52,
+50-54 — were written up as *"−3.8 points, never once above zero"*. They sit well inside ±16. Three
+draws landing at −8, 0 and −4 from a distribution centred near zero is unremarkable, and "never once
+above zero" is three coin flips. **D242's three-disjoint-sets rule was applied without its
+precondition**: a sign that holds is only believable once you know what one reading wobbles by.
+
+The part that stings is that `pod-duel`'s own docblock says to measure the floor first, and I quoted
+that very paragraph earlier the same afternoon — for its *other* warning, about the arithmetic
+control — and skipped this half. So the fix is not a resolution to be more careful: **the floor now
+lives in the docblock as a number** rather than as homework. A precondition stated as homework gets
+skipped; `±16 of 104` does not.
+
+What survives is most of it, and it is the exact stuff rather than the sampled stuff: the duel win
+rates (+1.5 at weight 1, −12 at −1, over 2808 games each on a harness whose floor *is* known), the
+aggression ablation on identical positions (42% of declarations declined against 24%), the length
+figures, and the superlinearity arithmetic. What does not survive is one number — the clock's effect
+on who wins a pod, which is **unknown rather than negative**.
+
+And a standing consequence worth more than the retraction: **every pod win rate in this project is
+weaker than it reads** unless it quotes that floor. The counts are fine. Resolving a four-point pod
+effect needs about 1000 pods an arm, ninety minutes a reading, three disjoint sets — four to five
+hours for one question, which nothing here has ever spent.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
@@ -8028,9 +8060,17 @@ the standing proof of that.
      incoming power *linearly* and it measured flat three ways; eight power is three turns at twenty
      life and one turn at seven, and a linear term scores those identically. Scaled by urgency it
      carries **14.2% of attack declarations**, the largest single-decision-kind figure any term in
-     that table has posted and nearly double the linear reading. Ships **off** pending three seed
-     sets. The discrete form a player says out loud — "I'm dead in two" — came in *below* the linear
-     term, which is why both were built.
+     that table has posted and nearly double the linear reading. The discrete form a player says out
+     loud — "I'm dead in two" — came in *below* the linear term, which is why both were built.
+
+     **It ships off, and the reason took three corrections to get right.** +1.5 points over three
+     disjoint duel seed sets, and −12 at a negative weight, so the duel response is strongly
+     monotone: the term's whole effect is caution and caution wins at two seats. At four it makes the
+     bot decline **42% of its attack declarations against the shipping bot's 24%** and run games 1.29x
+     as long — exactly measured, on an ablation. Whether that *costs* pod games is **unknown**: the
+     −8/0/−4 first written up as a negative result sits inside a noise floor of ±16 of 104 that
+     nobody had measured, and D281 retracts it. Shipping a large unmeasured behavioural change to the
+     pod is the thing not to do, whichever way the win rate would have gone.
 
    **And the general lesson is now two for two, which closes a second avenue.** D243 found a
    fivefold cut to the hand weight moved 936 games by one; a fourfold range on its replacement moves

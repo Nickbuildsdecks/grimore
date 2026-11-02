@@ -17,10 +17,27 @@
  * could not have printed anything else. So unlike `bot-duel`, a 50-50 control here says nothing
  * about how noisy a pod is.
  *
- * **Get the floor by re-running a real arm on a different seed set instead.** Two runs of the same
- * setting on disjoint seeds differ by however much this harness wobbles, and that spread is the
- * number to disbelieve smaller results than. A pod is noisier than a duel by construction — three
- * opponents, three chances to be attacked — so expect it to be wide.
+ * **The floor is ±16 of 104 at `SEEDS=2`, and it is measured rather than left as an instruction
+ * (D281).** One unchanged arm on three disjoint seed sets read **60-44, 50-54, 44-60** — a range of
+ * 32 for a setting that did not move. So a single reading here wobbles by about sixteen games, which
+ * is **fifteen percentage points**, and anything smaller than that is not a result.
+ *
+ * That number is in this docblock because the instruction it replaces did not work. This file used
+ * to say "get the floor by re-running a real arm on a different seed set instead", and the next
+ * person to use it — reading that very paragraph, and quoting its *other* warning in a decision log
+ * the same afternoon — did not do it, and published a −8/0/−4 as a negative result. Three readings
+ * inside ±16 are three coin flips. **A precondition stated as homework gets skipped; a number in the
+ * docblock does not.**
+ *
+ * A pod is noisier than a duel by construction — three opponents, three chances to be attacked, and
+ * four rotations of a table that share a seed. To resolve a four-point effect here needs roughly ten
+ * times the games: about **1000 pods an arm, ninety minutes a reading**, three disjoint sets. Nothing
+ * in this project has spent that, so **every pod win rate recorded anywhere is weaker than it reads**
+ * unless it quotes this floor. The counts are unaffected — offers, politics, the throw audit — it is
+ * win rates that need ±16 beside them.
+ *
+ * Raise `SEEDS` and the floor narrows roughly as the square root: `SEEDS=8` is four times the games
+ * for half the wobble, which is the cheapest honest way to ask a pod question.
  *
  *   TESTED='{"chaseTheCrown":false}' SEEDS=3 node scripts/measure/pod-duel.mjs
  *   TESTED='{"chaseTheCrown":false}' SEEDS=3 SEED0=4100 node scripts/measure/pod-duel.mjs

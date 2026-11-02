@@ -1325,17 +1325,27 @@ const EXPOSED_POWER = 0;
  * missing denominator. Duels are untouched by construction — one opponent, divisor one — which is
  * why the three seed sets above still read on this term.
  *
- * **The pod win rate at the fixed scale is in, and it is negative.** Three disjoint seed sets of 104
- * pods: 48-56, 52-52, 50-54 — 150-162 of 312, −3.8 points, **never once above zero**. Held to the
- * same standard that shipped the duel gain, that is negative rather than flat, and the division
- * fixed the length without fixing the judgement.
+ * **The pod win rate is NOT measured, and an earlier version of this comment said it was (D281).**
+ * Three disjoint seed sets of 104 pods read 48-56, 52-52, 50-54, and that was written up as
+ * "−3.8 points, never once above zero" — a negative result. It is not one. `pod-duel`'s own docblock
+ * says to establish the floor by re-running a *real* arm on disjoint seeds before believing a
+ * difference, and nobody had: doing it later gave **+16, −4, −16 for one unchanged arm**, so a single
+ * reading at this sample size carries about ±16 of 104. The three readings above sit inside that,
+ * and three draws landing at −8, 0 and −4 from a distribution centred near zero is unremarkable.
+ * **D242's three-disjoint-sets rule was applied without its precondition.**
  *
  * | | duel | pod |
  * | --- | --- | --- |
- * | win rate | **+1.5 points** (2808 games, sign holds) | **−3.8 points** (312 pods, never positive) |
+ * | win rate | **+1.5 points** (2808 games, sign holds, ±6 floor) | **not measured** (±16 floor at 104 pods) |
  * | length | slightly shorter | 1.29x moves, 1.11x turns |
+ * | aggression | −7.7% sent, declines 22% vs 13% | **−18.9% sent, declines 42% vs 24%** |
  *
- * So this stays at **zero**, and no judgement call is needed to say so.
+ * So this stays at **zero**, for a cleaner reason than the retracted one: the pod win rate is
+ * unknown and the pod *behaviour* change is large and exactly measured — a seat that declines 42%
+ * of its attack declarations where the shipping bot declines 24%, in games that run 1.29x the moves.
+ * Shipping that globally would be shipping a large unmeasured change to the format this project
+ * cares most about. A real pod reading needs about ten times the games (~1000 pods an arm, roughly
+ * ninety minutes a reading), which nothing here has yet spent.
  *
  * **Why the pod differs is the useful part, and it is a statement about the pod.** *"Am I racing?"*
  * has one answer in a duel and three in a pod, and this term computes one number — wrongly in both
