@@ -18015,3 +18015,76 @@ term, and naming it is the useful output here rather than attempting it.
 more seed sets in two formats. Worth noticing that the cheap check came last: the instinct after a
 negative pod result was to build the next variant, and the thing that was actually missing was one
 question asked of a three-creature board.
+
+## D279 — The table does not ask questions it already knows the answer to, and the number says don't fix it
+
+A premium table asks a player things worth asking. Nobody had counted how often this one asks
+something with exactly one legal answer — a drawer that opens, interrupts the game, and offers the
+only move available.
+
+**The project already knew this mattered, one card at a time.** `LegalActions.mustCastOffered`
+carries a `mandatory` flag whose comment is the whole thesis:
+
+> a button that cannot be pressed is worse than no button — which is what the first run of
+> `LIST=suspend` showed, with "Cast it Decline" on a question that has one answer.
+
+That is written **at a card**. Nothing asked it of the whole set, which is D269's shape for the
+fourth time: the answer existed in the codebase and no instrument could see it.
+
+### The count
+
+`one-answer.mjs` replays bot games and asks `legalActions` of the seat about to act at every state,
+classifying whatever question is pending — so what it counts is what a *person* would have been
+asked, because bots answer these silently. 78 games on the deck that holds suspend:
+
+| question | asked | one answer | per game |
+| --- | --- | --- | --- |
+| declare attackers | 561 | 13 (2%) | 7.2 |
+| `mustCastOffered` | 23 | **11 (48%)** | 0.3 |
+| `mustSettleHand` | 194 | 0 | 2.5 |
+| declare blockers | 165 | 0 | 2.1 |
+| `mustDecide` | 65 | 0 | 0.8 |
+| `mustChoose` | 50 | 0 | 0.6 |
+
+1062 questions, **13.6 a game, and 24 of them (2%) had one answer.**
+
+### Why that is a decision not to change anything
+
+The two forced cases are real and both are rare: suspend's mandatory cast (11) and a declaration
+where every able creature must attack and there is one seat to aim at (13). Across 78 games that is
+**0.3 forced prompts a game** out of 13.6 questions. Auto-resolving them means an engine change on a
+rules path, its tests, a browser run (D277) and the full suite — to save a third of one button press
+a game. That is a worse trade than leaving it, and the arithmetic is the argument rather than taste.
+
+Worth reading the rest of the table the same way. Of 13.6 questions a game, **9.3 are declaring
+attackers and blockers** — that is Magic, every combat, not friction — and 2.5 are the opening hand.
+The questions a *card* asks come to about 1.5 a game. **The table is not over-asking**, which is the
+answer this was built to get and a better one than a list of things to fix.
+
+The instrument stays as a standing check: a future card whose prompt has one answer lights up a row
+that is currently zero outside those two cases.
+
+### Two corrections in one file, and the pattern behind them
+
+**Its first run reported 26 of 26 opening hands as forced — 81% of everything counted — and was
+wrong.** The test read `bottomOwed === 0` as "nothing left to decide"; it means *nothing goes under
+if you keep*, and the player may mulligan instead. The number was an artefact of my classifier, not
+a fact about the table, and it was one paragraph away from being written up as a finding.
+
+The reason the mistake was available is worth more than the mistake: `LegalActions` has **no "may
+mulligan" field**, because the mulligan is an ordinary card action rather than an `auto:` one. So
+nothing in the shape the instrument reads says whether a mulligan is on offer, and `bottomOwed` was
+a guess standing in for it. It now asks the engine — `applyAction` is pure, so offering a mulligan on
+a throwaway state costs one call and answers exactly the question. One answer per rule, from the
+thing that owns the rule (D260).
+
+**And then a zero from a freshly corrected classifier is worth nothing until it has been seen to
+report something.** `DECKS` seats named decks at every table, and on Kindle Grove — Rift Bolt and
+Search for Tomorrow — the `mustCastOffered` row reads 11 of 23. If it ever reads zero on a table
+holding Rift Bolt, the file is broken rather than the table clean. That is D263's trap, caught for
+the third time in this project and the second time today.
+
+Both corrections are the same shape as everything else this week: **a check that asserted something
+it had not established.** The classifier was not wrong about arithmetic, it was wrong about what the
+answer space was — and it had never asked. The habit that catches it is cheap and keeps paying: before
+believing a number, make the instrument produce the opposite number on purpose.
