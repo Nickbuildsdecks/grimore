@@ -18544,9 +18544,15 @@ asserts the state field.**
 A spectator has no connection pill at all — nothing on that screen has ever said anything about the
 socket — so a dropped watcher sat in front of a frozen board with no way to tell it from a slow one,
 and before the table deals, *"waiting for the table to deal"* is also what an unreachable server
-looks like to one. Both branches of the watching view now carry the same sentence, which completes
-the three screens that can be waiting on a handshake that will never land. `e2e-table`, which drives
-a third browser as a watcher, is 73/73 on it.
+looks like to one. Both branches of the watching view now carry the same sentence. `e2e-table`, which
+drives a third browser as a watcher, is 73/73 on it.
+
+**And then counting them found a fourth, which is why counting is worth doing.** The commit that
+added the watcher's said it completed "the three screens that can be waiting on a handshake"; there
+are four. `PreGame` — seated, picking a deck, waiting for the others — is the one that reads worst
+without it: *"Share this code"* in front of a player whose table will never hear them, above a seat
+list that cannot fill because nothing is getting through. It has the sentence now too. Four screens,
+one sentence, one source.
 
 ### And the four browser suites, because this touched the lobby's DOM
 

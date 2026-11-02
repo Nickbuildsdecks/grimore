@@ -550,6 +550,20 @@ function PreGame({ table }: { table: UseTable }) {
             {pod.code}
           </span>
         </p>
+        {/*
+          The fourth screen that can be waiting on a socket, and the one that reads worst without a
+          sentence: "share this code" in front of a player whose table will never hear them, and a
+          seat list that cannot fill because nothing is getting through. Same sentence as the lobby,
+          the table and the watching view.
+        */}
+        {table.trouble !== null ? (
+          <p
+            data-testid="connection-trouble"
+            className="rounded-md border border-[var(--g-mana-r)]/40 bg-[var(--g-mana-r)]/10 px-3 py-2 text-xs text-[var(--g-mana-r)]"
+          >
+            {table.trouble}
+          </p>
+        ) : null}
       </header>
 
       <section className="flex flex-col gap-2">
