@@ -1353,19 +1353,27 @@ const EXPOSED_POWER = 0;
  * as an ablation; treat it as history.
  *
  * So this stays at **zero**, for a cleaner reason than the retracted one: the pod win rate is
- * unknown and the pod *behaviour* change is large and exactly measured — a seat that declines 42%
- * of its attack declarations where the shipping bot declines 24%, in games that run 1.29x the moves.
+ * unknown and the pod *behaviour* change is large and exactly measured — a seat that declines 41%
+ * of its attack declarations where the shipping bot declines 24%, in games that ran 1.29x the moves
+ * on the build that figure was taken from.
  * Shipping that globally would be shipping a large unmeasured change to the format this project
  * cares most about. A real pod reading needs about ten times the games (~1000 pods an arm, roughly
  * ninety minutes a reading), which nothing here has yet spent.
  *
- * **Why the pod differs is the useful part, and it is a statement about the pod.** *"Am I racing?"*
- * has one answer in a duel and three in a pod, and this term computes one number — wrongly in both
- * directions. Undivided it is the **sum**, what the table could send if everyone attacked me every
- * turn: true of one opponent with nine power and equally true of three with three each, which is a
- * far slower death, so it over-fears. Divided it is the **mean**: nine power on one seat reads three,
- * which under-fears the one opponent who can actually kill me, and that is the only one a clock is
- * about.
+ * **Why the pod differs is the useful part, and half of what this paragraph used to say was wrong
+ * (#264, D282).** *"Am I racing?"* has one answer in a duel and three in a pod. It said the sum
+ * over-fears — "true of one opponent with nine power and equally true of three with three each,
+ * which is a far slower death" — and that is not a slower death. At ten life, nine unanswerable
+ * power on one seat takes me to 1 on their turn and kills me on their next, a full cycle later;
+ * three each on three seats takes me to 7, 4 and 1 across the cycle and kills me on the first of
+ * their turns in the next one. **Both die on the same turn**, because nine unanswerable power a
+ * cycle is nine either way, and with blockers no longer pooled across the table (#264) that is what
+ * the sum now measures. The sum is the right object.
+ *
+ * What is still true is the criticism of the *divisor*. Divided it is the **mean**: nine power on one
+ * seat reads three, which under-fears the one opponent who can actually kill me, and that is the only
+ * one a clock is about. So the open question for this term is the divisor rather than the sum, and
+ * `evaluate` says so where it applies it.
  *
  * The obvious third candidate — the **shortest of the per-opponent clocks** — was checked before
  * being built and rejected (D278), and **its arithmetic was wrong, though its conclusion survives**
@@ -1777,11 +1785,18 @@ export function evaluate(state: GameState, seat: SeatIndex, opts: BotOptions = {
       the same per-opponent board — and dividing turns the term from *damage per cycle* into *damage
       per opponent-turn*, which is the scale a weight calibrated in a duel was calibrated in.
 
-      So it is a scale choice now rather than a units fix, and it is the open question if either
-      clock is ever turned on: per cycle is arguably the quantity a player reads, and nothing here
-      has measured which is better, because a pod win rate needs about a thousand pods an arm at
-      this project's ±16 floor (D281). Left as it is because changing it would be a second
-      behavioural change with no measurement to pick between the two.
+      **And on the arithmetic this divisor now looks wrong rather than merely different**, which is
+      worth stating plainly even though it is still here. At ten life, nine unanswerable power on one
+      seat kills a turn later; three each on three seats kills on the same turn, because nine a cycle
+      is nine either way (the `CLOCK_RATE` comment does that sum). So damage **per cycle** is what
+      lethality depends on, the undivided sum is that quantity, and dividing by three reads a third
+      of the real pressure at four seats.
+
+      It is left in for one concrete reason: a pod win rate for `{clockRate:1}` **with this divisor**
+      is being measured as this is written (1040 pods an arm, three disjoint seed sets, against the
+      ±16-of-104 floor D281 established). Changing the term mid-measurement would throw that away.
+      Whichever way it comes out, asking the same question of the undivided form is the follow-up,
+      and it is a cheap one: this is one `/ opponents`.
 
       `state.seats.length` and not the living opponents, for the reason the division below spells
       out at length: dividing by survivors makes killing a player change the scale, and a term whose
