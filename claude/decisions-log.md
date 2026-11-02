@@ -18562,3 +18562,47 @@ mistyped code reads *"pod BRAVE-OTTER-42 does not exist"* — relevant, and with
 for a table in it. That is a wording problem rather than a silence, it needs sentences for a
 different set of cases (a player who never had a seat is not a player who lost one), and writing one
 function for both would have made one of the two wrong. Noted here instead of guessed at.
+
+## D286 — The clock's third shape, built because the arithmetic turned against the divisor
+
+`clockRate` divides `exposedPower` by the opponents the table started with. D276 added that as a
+units fix for a reading that was three times too large at four seats, and **most of that largeness
+was a bug** — `exposedPower` pooled one set of blockers across the whole table until #264. What is
+left is not an error: a pod seat really is attacked three times before its own next turn, so the
+undivided sum is the honest damage per cycle.
+
+And **damage per cycle is what lethality depends on**, which is the arithmetic that settles it. At
+ten life:
+
+| | their turns | dead on |
+| --- | --- | --- |
+| one opponent, 9 unanswerable | −9 → 1 life, then −9 | their second attack, a full cycle later |
+| three opponents, 3 each | −3 → 7, −3 → 4, −3 → 1, then −3 | the first of their turns in the next cycle |
+
+**Both die on the same turn.** Nine a cycle is nine either way, so the sum was the right object all
+along — the same conclusion D282 reached from the rules side — and dividing by three reads a third of
+the real pressure.
+
+### So the divisor is wrong, and it is still there
+
+`clockCycle` is `clockRate` without it: `exposedPower * startingLife / life`, undivided. **In a duel
+the two are identical** (one opponent, divisor one), which is exactly why this went unnoticed for as
+long as it did: every duel measurement in the project reads the same for both, and the divisor only
+exists at four seats.
+
+It is a **fourth weight** rather than a flag on `clockRate` for one concrete reason: a 1040-pod win
+rate for `{clockRate:1}` **with the divisor** was running as this was written (#268), and changing
+what that arm means mid-flight would have thrown away two hours of measurement. Once that reading is
+in, the same question can be asked of this arm against the same seeds.
+
+### Four tests, and it ships at zero
+
+The identity with D264's linear term at full life in a duel; the doubling at half life; the pod
+reading of **4 against `clockRate`'s 4/3**, which is the whole of the difference; and the guard that
+fails if the default moves. Plus a `term-leverage` arm, with a note that the row is only worth taking
+at four seats because in a duel it *is* `clockRate`.
+
+**Zero, and the reason is a discipline rather than a doubt.** The arithmetic favouring a shape is
+precisely what `exposed` had in D264 and what `clockRate` had in D275, and both were then measured
+and left off. A term whose shape is right and whose win rate is unknown is still a term with an
+unknown win rate.

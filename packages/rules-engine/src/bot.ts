@@ -1457,6 +1457,30 @@ const CLOCK_RATE = 0;
  * only that it decides less.
  */
 const CLOCK_TURNS = 0;
+/**
+ * The same clock **per cycle of their turns rather than per turn of theirs** — `clockRate` with the
+ * divisor taken out, zero and not yet measured (#268, D286).
+ *
+ * `exposedPower * startingLife / life`, undivided. In a **duel it is `clockRate` exactly**, because
+ * there the divisor is one; at four seats it is three times it. At full life in a duel it is also
+ * D264's `exposed` exactly, which makes the family one term read three ways: a quantity, that
+ * quantity scaled by urgency, and the same thing per opponent-turn.
+ *
+ * **It exists because the arithmetic turned against the divisor** (#264). `clockRate` divides by the
+ * opponents the table started with, and D276 justified that as a units fix for a reading that was
+ * three times too large at four seats. Most of that was a bug — `exposedPower` pooled one set of
+ * blockers across the whole table — and what is left is not an error at all: a pod seat really is
+ * attacked three times before its own next turn, so the undivided sum is the honest damage per
+ * cycle, and **damage per cycle is what lethality depends on**. At ten life, nine unanswerable power
+ * on one seat takes me to 1 on their turn and kills me a cycle later; three each on three seats
+ * takes me to 7, 4 and 1 and kills me on the first of their turns in the next cycle. Both die on the
+ * same turn. Nine a cycle is nine either way, and dividing by three reads a third of it.
+ *
+ * So this is the form the arithmetic favours, and it is **still at zero**, because the arithmetic
+ * favouring a shape is what D264 and D275 both had before a win rate said otherwise. It ships off
+ * until measured, and `playout.test.ts` fails if that changes.
+ */
+const CLOCK_CYCLE = 0;
 /*
   Where a clock stops being a fact worth acting on. Six of their turns is long enough for the game
   to become a different game, and the cap is what keeps an empty board from scoring as infinitely
@@ -1753,6 +1777,7 @@ export function evaluate(state: GameState, seat: SeatIndex, opts: BotOptions = {
   const weight = opts.weights?.exposed ?? EXPOSED_POWER;
   const rateWeight = opts.weights?.clockRate ?? CLOCK_RATE;
   const turnsWeight = opts.weights?.clockTurns ?? CLOCK_TURNS;
+  const cycleWeight = opts.weights?.clockCycle ?? CLOCK_CYCLE;
   /*
     Everything the two boards together say about this seat, in one number, because all three terms
     read the same expensive fact.
@@ -1769,7 +1794,7 @@ export function evaluate(state: GameState, seat: SeatIndex, opts: BotOptions = {
     subtracts. The clock is the good one: having six turns left is worth more than having two.
   */
   let pressure = 0;
-  if (weight !== 0 || rateWeight !== 0 || turnsWeight !== 0) {
+  if (weight !== 0 || rateWeight !== 0 || turnsWeight !== 0 || cycleWeight !== 0) {
     const power = exposedPower(state, seat);
     // Floored at 1 so a seat on 0 life — which `evaluate` has already returned for, but the floor
     // costs nothing and a division by zero would poison every score above it — cannot divide.
@@ -1821,6 +1846,17 @@ export function evaluate(state: GameState, seat: SeatIndex, opts: BotOptions = {
     if (turnsWeight !== 0) {
       const turns = power <= 0 ? CLOCK_CAP : Math.min(CLOCK_CAP, Math.ceil(life / power));
       pressure -= turns * turnsWeight;
+    }
+    /*
+      The same quantity **per cycle of their turns** rather than per turn of theirs: `clockRate`
+      without the divisor (#268). Identical to it in a duel, three times it at four seats, and the
+      form the arithmetic above now favours — nine unanswerable power a cycle kills on the same turn
+      whether it comes from one seat or three. Its own weight rather than a flag on `clockRate`,
+      because a measurement of the divided form was in flight when this was written and changing
+      what that arm means would have thrown it away.
+    */
+    if (cycleWeight !== 0) {
+      pressure += power * (getFormat(state.format).startingLife / life) * cycleWeight;
     }
   }
   return seatValue(state, seat, opts) - theirs / Math.max(1, state.seats.length - 1) - pressure;
@@ -2530,6 +2566,11 @@ export interface BotOptions {
     readonly clockRate?: number;
     /** The clock, as the number of their turns this seat has left, capped at `CLOCK_CAP` (#258). */
     readonly clockTurns?: number;
+    /**
+     * The clock per **cycle** of their turns: `clockRate` undivided (#268). Identical to `clockRate`
+     * in a duel, three times it at four seats, and at full life in a duel exactly `exposed`.
+     */
+    readonly clockCycle?: number;
     /**
      * Cards in hand this seat can actually pay for, priced per card (see `castableInHand`). 0 is
      * the ablation and the control, the same shape as `exposed`.

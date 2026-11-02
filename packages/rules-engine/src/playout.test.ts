@@ -2985,6 +2985,9 @@ describe('how many turns this board leaves me', () => {
   /** The same linear term the block above measures, for the one identity worth asserting. */
   const exposure = (s: GameState, seat: SeatIndex = 0): number =>
     evaluate(s, seat, { weights: { exposed: 0 } }) - evaluate(s, seat, { weights: { exposed: 1 } });
+  /** The clock per cycle of their turns: `rate` with the divisor taken out (#268). */
+  const cycle = (s: GameState, seat: SeatIndex = 0): number =>
+    evaluate(s, seat, { weights: { clockCycle: 0 } }) - evaluate(s, seat, { weights: { clockCycle: 1 } });
 
   const tapFor = (s: GameState, seat: SeatIndex, id: string): GameState =>
     applyAction(s, { type: 'card:tap', by: seat, card: id, tapped: true }, HOST);
@@ -3086,6 +3089,59 @@ describe('how many turns this board leaves me', () => {
     // And the turns form reads the cap at 40 life against 4 power, where 20 life read five. It is
     // not divided: a count of turns is already per-seat, which is the point of the integer form.
     expect(turns(pod)).toBe(6);
+  });
+
+  /*
+    The third shape: the same clock per **cycle** of their turns rather than per turn of theirs
+    (#268, D286). `clockRate` divides by the opponents the table started with, and after #264 the
+    arithmetic turned against that divisor — nine unanswerable power a cycle kills on the same turn
+    whether it comes from one seat or three, so dividing by three reads a third of the pressure. This
+    is the undivided form, and these pin that it is the same term in a duel and three times it in a
+    pod.
+  */
+
+  it('is exactly the linear term at full life in a duel, like the divided form', () => {
+    // Two seats, so the divisor is one and the two clock shapes agree; full life, so the urgency
+    // scaling is one and both agree with D264's quantity. One board, three terms, one number — which
+    // is what makes the family comparable rather than three unrelated readings.
+    const board = arena({ battlefield: { 0: ['Mountain'], 1: ['Serra Angel'] }, turn: 3 });
+    expect(exposure(board)).toBe(4);
+    expect(cycle(board)).toBeCloseTo(4, 10);
+    expect(cycle(board)).toBeCloseTo(rate(board), 10);
+  });
+
+  it('doubles when half the life is gone, like the divided form', () => {
+    const board = arena({ battlefield: { 0: ['Mountain'], 1: ['Serra Angel'] }, turn: 3 });
+    expect(cycle(spend(board, 0, 10))).toBeCloseTo(8, 10);
+  });
+
+  it('is three times the divided form in a pod, which is the whole of the difference', () => {
+    /*
+      The same 4 power at four seats. `rate` reads 4/3 — a third of a duel's pressure per opponent,
+      the scale a duel-calibrated weight was calibrated in. `cycle` reads 4 × 40/40 = 4: what the
+      cycle actually costs, undivided.
+
+      40 life rather than 20 halves both against a duel, so the comparison here is between the two
+      shapes at four seats rather than against the duel numbers above.
+    */
+    const pod = arena({
+      format: 'pod', seats: 4, turn: 3,
+      battlefield: { 0: ['Hill Giant'], 1: ['Serra Angel'] },
+    });
+    expect(exposure(pod)).toBe(4);
+    expect(rate(pod)).toBeCloseTo(4 / 3, 10);
+    expect(cycle(pod)).toBeCloseTo(4, 10);
+    expect(cycle(pod)).toBeCloseTo(rate(pod) * 3, 10);
+  });
+
+  it('is a cost, not a bonus, and ships off', () => {
+    const board = arena({ battlefield: { 0: ['Mountain'], 1: ['Serra Angel'] }, turn: 3 });
+    const w = { weights: { clockCycle: 1 } };
+    expect(evaluate(board, 0, w)).toBeLessThan(evaluate(board, 0, { weights: { clockCycle: 0 } }));
+    // The guard. It has never been measured — the arithmetic favours its shape and that is exactly
+    // what `exposed` and `clockRate` both had before a win rate said otherwise.
+    expect(evaluate(board, 0)).toBe(evaluate(board, 0, { weights: { clockCycle: 0 } }));
+    expect(evaluate(board, 0)).not.toBe(evaluate(board, 0, w));
   });
 
   it('both ship off, and this fails if either default moves', () => {

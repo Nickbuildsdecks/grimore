@@ -119,6 +119,15 @@ const TERMS = {
   */
   clockRate: { clockRate: 1 },
   clockTurns: { clockTurns: 1 },
+  /*
+    And the third shape: `clockRate` with its `/ opponents` divisor taken out, so the term is the
+    damage a whole cycle of their turns costs rather than what one of their turns costs (#268).
+
+    **In a duel this arm is `clockRate` exactly** — one opponent, divisor one — so a duel run of this
+    instrument reads the same leverage for both and the row is only worth taking at four seats. That
+    is not a flaw in the arm: it is why the divisor was invisible for as long as it was.
+  */
+  clockCycle: { clockCycle: 1 },
 };
 
 const want = (process.env.TERMS ?? '').split(',').map((t) => t.trim()).filter(Boolean);
