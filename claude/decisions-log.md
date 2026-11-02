@@ -18539,6 +18539,15 @@ sentences; the browser is what found the server's prose overwriting one of them 
 place of the other. **A failure path with no screen attached to it is not covered by a test that
 asserts the state field.**
 
+### The watcher, which is the third screen
+
+A spectator has no connection pill at all — nothing on that screen has ever said anything about the
+socket — so a dropped watcher sat in front of a frozen board with no way to tell it from a slow one,
+and before the table deals, *"waiting for the table to deal"* is also what an unreachable server
+looks like to one. Both branches of the watching view now carry the same sentence, which completes
+the three screens that can be waiting on a handshake that will never land. `e2e-table`, which drives
+a third browser as a watcher, is 73/73 on it.
+
 ### And the four browser suites, because this touched the lobby's DOM
 
 `e2e-table` 73, `e2e-arena` 51, `e2e-pod` 41, `e2e-solo` 28 — **193 checks clean** on the build

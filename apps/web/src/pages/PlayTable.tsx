@@ -2324,6 +2324,15 @@ function Watching({ table }: { table: UseTable }) {
         <p className="text-sm text-[var(--g-text-muted)]">
           Waiting for the table to deal. Nothing is being hidden from you that the players can see.
         </p>
+        {/*
+          A watcher gets the same sentence, which is the third of the three screens that can be
+          waiting on a socket that is never going to connect. Without it, "waiting for the table to
+          deal" is what an unreachable server looks like to a spectator — a sentence that is true of
+          a table about to start and of one they will never see.
+        */}
+        {table.trouble !== null ? (
+          <p data-testid="connection-trouble" className="text-xs text-[var(--g-mana-r)]">{table.trouble}</p>
+        ) : null}
         <Button variant="secondary" onClick={() => void table.leaveTable()}>Stop watching</Button>
       </div>
     )
@@ -2340,6 +2349,18 @@ function Watching({ table }: { table: UseTable }) {
           turn <span data-testid="turn">{view.turn}</span>
           {view.automation === null ? "" : ` · ${view.automation.stepLabel}`}
         </span>
+        {/*
+          And at a board that has stopped updating. A watcher has no connection pill — nothing on
+          this screen has ever said anything about the socket — so a dropped spectator has been
+          looking at a frozen table with no way to tell it from a slow one. Only the sentence, not a
+          pill: `trouble` is set after three failed handshakes, so by the time it is here the
+          connection is stuck rather than briefly away.
+        */}
+        {table.trouble !== null ? (
+          <span data-testid="connection-trouble" className="text-xs text-[var(--g-mana-r)]">
+            {table.trouble}
+          </span>
+        ) : null}
         {/*
           A watcher can talk, and until now had nowhere to type.
 
