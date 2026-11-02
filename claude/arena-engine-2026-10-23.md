@@ -8016,6 +8016,49 @@ Every number taken from D276 to D280 was correctly measured on a function that a
 question, and no amount of pairing, seed discipline or ablation discipline could have caught it —
 only reading the loop against the rules.
 
+### Three things a player sees, and none of them were found by a test (#265-#267, D283-D285)
+
+A pass over the things the table says to a person, rather than over what it computes.
+
+**The setup notes had been counting by hand.** `claude/play-realm-setup.md` is what somebody reads
+before sitting down: its deck section was headed *"Eleven starter decks"* with all thirteen
+described at length underneath, and three places said the engine knows *"three hundred and
+thirty-three"* cards where the pool holds **348**. Nobody wrote a wrong number — each was right when
+written, nothing connected it to the registry, and two decks and fifteen cards arrived without
+touching the prose above them. Fixed, and then made unable to recur: `mechanic-coverage.mjs` prints
+the pool in one line and the doc cites that command, `customDeck.ts` no longer carries a count at
+all, and a guard reads the registry statically and fails when the doc omits a deck or heads its
+section with the wrong number. Four negative controls, because a guard that cannot fail is D263's
+trap in a new place.
+
+**The table that is never going to connect said "connecting" for ever.** There was no
+`connect_error` handler at all. The server is WebSocket-only, so a network that blocks WebSockets
+cannot play — and socket.io retried silently behind a small pill, with the same screen for a server
+that is not running and for a wrong `VITE_REALTIME_URL`. The lobby now says so after three failed
+attempts, names the address, and deliberately does *not* say which cause it is: pointed at a closed
+port in a real browser, every `connect_error` carries the message **`websocket error`** and nothing
+else, so a branch on it would have been a guess dressed as a diagnosis.
+
+**And the seat that could not be reclaimed said nothing either.** A refused reclaim called
+`writeStored(null)` and left the player in the lobby with no explanation — the same screen as
+somebody who had never joined. It now names the table and what happened to it, classified on the
+error *code*, which unlike a socket handshake is an enumerated contract.
+
+The browser then said two things the unit tests could not. The server's own prose **won**: the
+`pod:error` broadcast arrives after the ack and `state.error` holds one string, so *"pod
+BRAVE-OTTER-42 does not exist"* replaced the sentence the ack had just written. That reversed a
+documented choice — `showsBroadcastError` kept `not_found` because *"a banner the player can act on
+is worth a duplicate"*, and the duplicate replaces rather than adds. And seeding storage to
+reproduce the failure showed **zod**: `readStored` checked the three fields were strings, so a seat
+left by an older build was sent anyway and the server's validator answered the player. It now
+validates against `PodJoinInput`, the schema the server will apply to that exact reclaim, so there
+is one reader of the rule rather than two (D260).
+
+The thread between all three: **a failure path with no screen attached to it is not covered by a
+test that asserts the state field.** Both silences were in the same forty lines and neither was
+found by a test — they were found by asking what a player sees when this fails, and then making it
+fail.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
