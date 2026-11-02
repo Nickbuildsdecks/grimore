@@ -49,8 +49,8 @@ const ATTEMPTS_BEFORE_SAYING = 3
  * handshake hands over no code at all. And the server's prose says *pod*, which is this codebase's
  * word and not the table's: every screen a player sees says table.
  *
- * `already_in_pod` is the one worth having a sentence for rather than a fallback: it means the
- * server still has this player seated, which is what a second tab on the same table looks like.
+ * Four codes get a sentence and everything else falls through to one that still names the table, so
+ * a code added to `PodErrorCode` later reads plainly rather than coming out as an empty banner.
  */
 export function rejoinTrouble(code: string, table: string): string {
   switch (code) {

@@ -18531,6 +18531,13 @@ sentences; the browser is what found the server's prose overwriting one of them 
 place of the other. **A failure path with no screen attached to it is not covered by a test that
 asserts the state field.**
 
+### And the four browser suites, because this touched the lobby's DOM
+
+`e2e-table` 73, `e2e-arena` 51, `e2e-pod` 41, `e2e-solo` 28 — **193 checks clean** on the build
+carrying D284 and D285. Two of them reload a browser mid-game, which means they exercise a real
+seat reclaim through the new `PodJoinInput` validation rather than only the refusals the unit tests
+cover: the happy path is checked by the thing that would notice if it broke.
+
 ### Left alone, and said rather than half-fixed
 
 `joinTable`, `watchTable` and `createTable` still show `res.error.message` on a refusal, which for a
