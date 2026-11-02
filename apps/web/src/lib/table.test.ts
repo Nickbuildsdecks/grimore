@@ -5,7 +5,7 @@
  * What is here is the thing that has to read well to a player who did nothing wrong.
  */
 import { describe, it, expect } from "vitest"
-import { connectionTrouble, moveName, pastedNote, showsBroadcastError } from "./table"
+import { connectionTrouble, moveName, pastedNote, rejoinTrouble, showsBroadcastError } from "./table"
 
 describe("naming a move in an error banner", () => {
   it("says what the player tapped, not what the engine calls it", () => {
@@ -46,9 +46,23 @@ describe("who owns a refusal", () => {
   it("but still shows what no caller is judging", () => {
     // Nothing on this client sends an event without an ack, so these reach the player twice over
     // rather than not at all. Shown, because a banner the player can act on is worth a duplicate.
-    expect(showsBroadcastError({ code: "not_found" })).toBe(true)
     expect(showsBroadcastError({ code: "bad_payload" })).toBe(true)
     expect(showsBroadcastError({ code: "internal" })).toBe(true)
+  })
+
+  it("and no longer shows a table that is not there, which was the one duplicate that cost something", () => {
+    /*
+      **This reverses the line above for one code** (#267). "Worth a duplicate" assumed the second
+      banner adds to the first; it replaces it. `state.error` holds one string, the broadcast lands
+      after the ack, and a failed reclaim therefore showed the server's own prose — "pod
+      BRAVE-OTTER-42 does not exist", measured in a browser — in place of the sentence the ack had
+      just written in the table's own words.
+
+      Only `not_found`, and only because all three paths that can raise it (join, watch, reclaim)
+      answer it on their ack. `bad_payload` and `internal` keep the duplicate: nothing on this
+      client has a better sentence for either.
+    */
+    expect(showsBroadcastError({ code: "not_found" })).toBe(false)
   })
 })
 
@@ -116,5 +130,46 @@ describe("the table that is never going to connect", () => {
 
   it("keeps saying it once it has started, so a long outage does not go quiet", () => {
     expect(connectionTrouble(9, "")).toBe(connectionTrouble(3, ""))
+  })
+})
+
+describe("the seat that could not be reclaimed", () => {
+  /*
+    The other silence (#267). A seat is remembered and reclaimed on every connect; when the reclaim
+    was refused the client forgot it and said nothing, so a player who reloaded after their table
+    had ended saw the same empty lobby as somebody who had never joined one.
+  */
+  it("says the table ended, and which table it was", () => {
+    // The code is the thing a player has: they typed it, or somebody sent it to them. A sentence
+    // without it cannot be matched against the game they think they are in.
+    expect(rejoinTrouble("not_found", "QF7K")).toContain("QF7K")
+    expect(rejoinTrouble("not_found", "QF7K")).toContain("has ended")
+  })
+
+  it("tells a started game apart from a vanished one", () => {
+    // Two different things to a player: one they could have got back into a minute earlier, one
+    // that is not there at all. The server distinguishes them and so should the sentence.
+    expect(rejoinTrouble("illegal_action", "QF7K")).toContain("has started")
+    expect(rejoinTrouble("illegal_action", "QF7K")).not.toContain("has ended")
+  })
+
+  it("stays neutral about which seat is in the way, because the code covers two", () => {
+    // `already_in_pod` is raised both for a socket that is already in a table and for a player
+    // already seated at the one being reclaimed. Naming either would be wrong half the time; the
+    // remedy is the same.
+    expect(rejoinTrouble("already_in_pod", "QF7K")).toContain("Leave that seat")
+  })
+
+
+  it("still says something for a code it has never seen", () => {
+    // A code added to `PodErrorCode` later must not come out as an empty banner or a thrown
+    // switch. It reads plainly and names the table.
+    expect(rejoinTrouble("some_code_from_the_future", "QF7K")).toBe("Could not get back to table QF7K.")
+  })
+
+  it("never says pod, which is this codebase's word and not the table's", () => {
+    for (const code of ["not_found", "illegal_action", "pod_full", "already_in_pod", "nonsense"]) {
+      expect(rejoinTrouble(code, "QF7K").toLowerCase()).not.toContain("pod")
+    }
   })
 })

@@ -18470,3 +18470,71 @@ The fallback itself. Polling stays off, which is a server change with deployment
 polling behind the Redis adapter wants sticky routing) and not one to make as a side effect of
 putting a sentence on screen. The gap is now **legible** rather than closed, and the setup notes say
 so in those terms.
+
+## D285 — The seat that could not be reclaimed, and two things found by looking at the screen
+
+A seat is remembered in `localStorage` and reclaimed on every connect, which is what makes a reload
+or a dropped phone rejoin the same game. When the reclaim was refused the client called
+`writeStored(null)` and **said nothing**. A player who reloaded after the grace window closed, or
+whose table had ended while their laptop was shut, landed in the lobby with no seat and no
+explanation — the same screen as somebody who had never joined a table at all. Same family as D284,
+found by looking for the rest of it.
+
+It now says, in the dismissible banner the lobby already has:
+
+> Table BRAVE-OTTER-42 has ended, so there was no seat to get back to.
+
+`rejoinTrouble(code, table)` classifies on the error **code**, which is an enumerated contract
+(`PodErrorCode`), so unlike D284's handshake this *is* reading rather than guessing. Four sentences:
+the table ended, the table started without this seat, the table is full, and a seat already held
+somewhere. The last stays neutral — `already_in_pod` covers both "this socket is in a table" and
+"this player is seated at the one being reclaimed", and naming either would be wrong half the time,
+while the remedy is the same.
+
+### And then the browser said two things the unit tests could not
+
+**One: the server's prose won.** The first browser run put *"pod BRAVE-OTTER-42 does not exist"* on
+screen — the server's own message, arriving as a `pod:error` broadcast *after* the ack whose sentence
+it replaced. `state.error` holds one string, so the duplicate is not additive.
+
+That reverses a documented choice. `showsBroadcastError` said of `not_found`: *"Nothing on this
+client sends an event without an ack, so these reach the player twice over rather than not at all.
+Shown, because a banner the player can act on is worth a duplicate."* The premise is right and the
+conclusion does not follow — the second banner replaces the first rather than adding to it, and the
+one it replaces is the better written of the two. `not_found` is now suppressed in the broadcast,
+and only `not_found`: all three paths that can raise it (join, watch, reclaim) answer it on their
+ack, where `bad_payload` and `internal` have no better sentence anywhere. The test that asserted the
+old answer now asserts the new one, next to the reasoning.
+
+**Two: a malformed stored seat showed zod.** Seeding storage with a made-up code to reproduce "the
+table has ended" produced, instead:
+
+> code: Pod code must look like WORD-WORD-NN; seatToken: String must contain at least 16 character(s)
+
+`readStored` checked that the three fields were strings and nothing else, so a seat left by an older
+build, a truncated write or a hand-edited value was sent anyway and the server's validator answered
+the player. It now validates against **`PodJoinInput`** — the schema the server will apply to that
+exact reclaim, exported from `@grimore/shared`, so this is the same answer rather than a second copy
+of the rules (D260). A stored seat that cannot be a valid request is not a seat, and starting at the
+lobby is what the existing catch already did for storage that will not parse. Reading `ok.data`
+rather than the raw fields also normalises: `PodCode` trims and upper-cases, so a seat stored in the
+wrong case comes back in the form the server indexes by.
+
+Verified in a browser both ways: the sentence survives the broadcast (banner at 1.9s, lobby usable,
+seat forgotten), and the malformed seat now produces no banner at all.
+
+### The pattern across D284 and D285
+
+Both silences were in the same forty lines, and neither was found by a test — they were found by
+asking *what does a player see when this fails?* and then making it fail. The unit tests pin the
+sentences; the browser is what found the server's prose overwriting one of them and zod text in
+place of the other. **A failure path with no screen attached to it is not covered by a test that
+asserts the state field.**
+
+### Left alone, and said rather than half-fixed
+
+`joinTable`, `watchTable` and `createTable` still show `res.error.message` on a refusal, which for a
+mistyped code reads *"pod BRAVE-OTTER-42 does not exist"* — relevant, and with this codebase's word
+for a table in it. That is a wording problem rather than a silence, it needs sentences for a
+different set of cases (a player who never had a seat is not a player who lost one), and writing one
+function for both would have made one of the two wrong. Noted here instead of guessed at.

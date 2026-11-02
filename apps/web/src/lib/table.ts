@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { io, type Socket } from "socket.io-client"
 import { unpackView, type GameView, type PackedView } from "@grimore/rules-engine"
-import type { Pod, PodErrorEvent, PodListEntry } from "@grimore/shared"
+import { PodJoinInput, type Pod, type PodErrorEvent, type PodListEntry } from "@grimore/shared"
 
 /** Same-origin by default, which is how it runs behind one reverse proxy. */
 const REALTIME_URL: string = import.meta.env.VITE_REALTIME_URL ?? ""
@@ -32,6 +32,45 @@ const REALTIME_URL: string = import.meta.env.VITE_REALTIME_URL ?? ""
  * would flash on tables that connect fine. Three is a second or two of real silence.
  */
 const ATTEMPTS_BEFORE_SAYING = 3
+
+/**
+ * Why getting back to a table did not work, in a sentence that names the table.
+ *
+ * **The other silence in this file** (#267). A seat is remembered in `localStorage` and reclaimed on
+ * every connect, which is what makes a reload or a dropped phone rejoin the same game — and when the
+ * reclaim is refused the client used to call `writeStored(null)` and say nothing. A player who
+ * reloaded after the grace window closed, or whose table had ended while their laptop was shut,
+ * landed in the lobby with no seat and no explanation: the same screen as somebody who had never
+ * had a table at all.
+ *
+ * Classified on the error **code** rather than shown as the server's own `message`, for two reasons.
+ * The codes are an enumerated contract (`PodErrorCode` in `@grimore/shared`), so reading them is
+ * reading rather than guessing — the thing `connectionTrouble` above could not do, because a socket
+ * handshake hands over no code at all. And the server's prose says *pod*, which is this codebase's
+ * word and not the table's: every screen a player sees says table.
+ *
+ * `already_in_pod` is the one worth having a sentence for rather than a fallback: it means the
+ * server still has this player seated, which is what a second tab on the same table looks like.
+ */
+export function rejoinTrouble(code: string, table: string): string {
+  switch (code) {
+    case "not_found":
+      return `Table ${table} has ended, so there was no seat to get back to.`
+    case "illegal_action":
+      return `Table ${table} has started, and the seat you had there is no longer yours.`
+    case "pod_full":
+      return `Table ${table} is full, so there was no seat to get back to.`
+    /*
+      Neutral on purpose. The code covers two situations — this socket is already in a table, and
+      this player is already seated at the one being reclaimed — and a sentence that named either
+      would be wrong half the time. The remedy is the same in both: give up the seat you have.
+    */
+    case "already_in_pod":
+      return `You are already seated at a table. Leave that seat before getting back to ${table}.`
+    default:
+      return `Could not get back to table ${table}.`
+  }
+}
 
 /**
  * Why the table is not connecting, in a sentence a player can act on — or null, say nothing yet.
@@ -168,16 +207,58 @@ export function showsBroadcastError(err: { readonly code: string }): boolean {
   if (err.code === "version_conflict" || err.code === "rate_limited") return false
   // An action's refusal. `send` decides whether the table had moved past it.
   if (err.code === "illegal_action" || err.code === "game_finished") return false
+  /*
+    A table that is not there, which every path reports for itself — and better (#267).
+
+    `not_found` reaches a client from three places: joining or watching a code that does not exist,
+    and reclaiming a stored seat whose table has ended. All three have an ack handler that says
+    something, and the reclaim's says it in the table's own words (`rejoinTrouble`). Left in, the
+    broadcast arrives after that ack and overwrites it with the server's own prose — which reads
+    "pod BRAVE-OTTER-42 does not exist", measured in a browser, and *pod* is this codebase's word
+    rather than the table's.
+
+    The same trade as the two codes above: an ack that times out rather than answering would now go
+    unreported. That is the accepted cost there too, and it buys a sentence a player can read.
+  */
+  if (err.code === "not_found") return false
   return true
 }
 
+/**
+ * The seat remembered from a previous visit, or null.
+ *
+ * **Validated against the server's own schema rather than by shape** (#267). Checking the three
+ * fields were strings was not enough: a stored seat left by an older build, a truncated write, or a
+ * value somebody edited by hand gets sent anyway, the server's zod rejects it, and what reaches the
+ * player is the validation text. That was measured, and it reads:
+ *
+ *     code: Pod code must look like WORD-WORD-NN; seatToken: String must contain at least 16
+ *     character(s)
+ *
+ * `PodJoinInput` is the schema the server will apply to the reclaim — exported from
+ * `@grimore/shared`, so this is the same answer rather than a second copy of the rules (D260: a
+ * second reader of a rule goes quiet rather than wrong when the rule grows). A stored seat that
+ * cannot be a valid request is not a seat; forgetting it and starting at the lobby is what the
+ * catch below already does for storage that will not parse at all.
+ */
 function readStored(): StoredSeat | null {
   try {
     const raw = localStorage.getItem(STORE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<StoredSeat>
-    if (typeof parsed.code === "string" && typeof parsed.seatToken === "string" && typeof parsed.name === "string") {
-      return { code: parsed.code, seatToken: parsed.seatToken, name: parsed.name }
+    // Exactly the object the reclaim would emit, so "would the server take this" is the question
+    // being asked and not an approximation of it.
+    const ok = PodJoinInput.safeParse({
+      code: parsed.code, name: parsed.name, seatToken: parsed.seatToken,
+    })
+    /*
+      `ok.data` rather than the raw fields, which is the smaller half of doing this properly:
+      `PodCode` trims and upper-cases, so a seat stored by an older build in the wrong case comes
+      back in the form the server indexes by. `seatToken` is optional in the schema — a first join
+      has none — so a stored seat without one is not a seat to reclaim.
+    */
+    if (ok.success && ok.data.seatToken !== undefined) {
+      return { code: ok.data.code, seatToken: ok.data.seatToken, name: ok.data.name }
     }
   } catch {
     /* A reload with unreadable storage just starts at the lobby. */
@@ -398,8 +479,15 @@ export function useTable(playerName: string): UseTable {
             seatRef.current = res.seat ?? null
             setState((s) => ({ ...s, seat: res.seat ?? null, code: stored.code }))
           } else {
-            // The table is gone or the grace window closed; forget it rather than retrying forever.
+            /*
+              The table is gone, or the grace window closed, or the game started without this seat.
+              Forgotten rather than retried for ever — and **said**, which it was not until #267: a
+              player who reloaded into an empty lobby had no way to tell a table that had ended from
+              a table they had never joined. The banner is dismissible and the lobby behind it works,
+              because the answer to "that game is over" is to start another one.
+            */
             writeStored(null)
+            setState((s) => ({ ...s, error: rejoinTrouble(res.error.code, stored.code) }))
           }
         },
       )
