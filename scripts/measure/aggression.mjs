@@ -2,10 +2,16 @@
  * Does a bot setting make the bot **passive**? Counts what it sends, not how long the game took.
  *
  * Written for a specific question the win rate could not answer (#262, D280). D275/D276 found the
- * clock term worth +1.5 points in a duel and −3.8 in a pod, and the pod arm's games ran 45% more
- * turns. The units were wrong too and fixing them cut the length (2.06x moves to 1.29x) **without
- * fixing the record** — so scaling was never the whole story, and "the games got longer" is a
- * symptom rather than a cause.
+ * clock term worth +1.5 points in a duel and read it as −3.8 in a pod, and the pod arm's games ran
+ * 45% more turns. **That −3.8 is retracted** (#263, D281): one unchanged arm over three disjoint pod
+ * seed sets spans 32 points, so a single 104-pod reading carries about ±16 and the three readings
+ * behind it sat inside that. The pod win rate is unmeasured, not negative.
+ *
+ * Which is exactly why this file exists and why it outlived the figure that prompted it. Counts of
+ * what the bot sends, on positions both arms are asked, have no such floor: this file's duel row has
+ * reproduced to the digit across builds (#264), and its pod row moved seven declarations of 851
+ * under a change to `exposedPower` that was predicted to move it a long way. A win rate at these
+ * sample sizes could not have said either thing.
  *
  * The hypothesis worth testing: *the clock makes the seat afraid of the attack coming back, so it
  * holds its blockers, and in a pod holding back is losing.* In a duel, surviving the swing and

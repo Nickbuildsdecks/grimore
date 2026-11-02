@@ -2824,6 +2824,119 @@ describe('the power opposite me that nothing of mine can block', () => {
     }))).toBe(0);
   });
 
+  /*
+    Three tests for the pod, where the question "can this be blocked" stops being one question
+    (#264). Seats 1, 2 and 3 are on Verdant Guard so each of them can field a Bear; seat 0 keeps
+    Ember Rush and its Hill Giant.
+  */
+
+  it('lets the same blocker answer each opponent, because blocking does not tap it', () => {
+    /*
+      **The pooled-blocker bug, and the rules fact that settles it.** Nothing taps a creature for
+      blocking, and a creature untaps only in its own controller's untap step (CR 502.1) — which
+      for me is after all three of their turns. So my untapped 3/3 blocks seat 1's Bear on seat 1's
+      turn, seat 2's Bear on seat 2's turn, and seat 3's on seat 3's: one blocker, three turns,
+      nothing unanswered.
+
+      The first version of this term kept **one** spent-blocker set across the whole table, so the
+      Giant answered the first Bear and the other two read as unanswered — 4 points of exposure on
+      a board that loses no life. That is where the term's pod pathology came from (D280): a seat
+      that reads three times the pressure it faces declines to tap its blockers, and a pod full of
+      bots that will not attack takes twice the moves for no win rate.
+    */
+    expect(exposure(arena({
+      format: 'pod', seats: 4, turn: 3,
+      decks: { 1: 'verdant-guard', 2: 'verdant-guard', 3: 'verdant-guard' },
+      battlefield: {
+        0: ['Hill Giant'], 1: ['Grizzly Bears'], 2: ['Grizzly Bears'], 3: ['Grizzly Bears'],
+      },
+    }))).toBe(0);
+  });
+
+  it('still spends a blocker once within one opponent\'s turn', () => {
+    /*
+      The other half of the same invariant, and the one a careless fix breaks. Blockers refresh
+      between **opponents**, not between attackers: seat 1 sends a 3/3 and a 2/2 into my one 3/3,
+      and only one of them can be blocked.
+
+      So seat 1 is worth 2 points here, seat 2's lone Bear is worth nothing — the Giant is
+      available again on seat 2's turn — and the total is 2. The pooled version answered 4: the
+      Courser took the only blocker and both Bears, on two different turns, read as unanswered.
+    */
+    expect(exposure(arena({
+      format: 'pod', seats: 4, turn: 3,
+      decks: { 1: 'verdant-guard', 2: 'verdant-guard', 3: 'verdant-guard' },
+      battlefield: {
+        0: ['Hill Giant'], 1: ['Centaur Courser', 'Grizzly Bears'], 2: ['Grizzly Bears'],
+      },
+    }))).toBe(2);
+  });
+
+  it('adds the opponents up rather than taking the worst of them', () => {
+    /*
+      Three Bears, no blocker, and the answer is 6 and not 2. Each of them attacks once before my
+      next turn, so a cycle of their turns costs six life, and the sum is the quantity a seat
+      actually loses.
+
+      Worth pinning because the alternative was proposed and refuted (#259, D279): a *minimum*
+      per-opponent clock reads nothing on a board where damage lands every turn, since no single
+      opponent kills me on their own. The max has the same fault in a smaller way. This term is
+      about a quantity of damage, and damage from three seats adds.
+    */
+    expect(exposure(arena({
+      format: 'pod', seats: 4, turn: 3,
+      decks: { 1: 'verdant-guard', 2: 'verdant-guard', 3: 'verdant-guard' },
+      battlefield: {
+        0: ['Mountain'], 1: ['Grizzly Bears'], 2: ['Grizzly Bears'], 3: ['Grizzly Bears'],
+      },
+    }))).toBe(6);
+  });
+
+  it('still charges the full table for tapping a blocker, which is why the fix rescued nothing', () => {
+    /*
+      **The arithmetic that explains a negative result** (#264, D282). D280 named the pooled blocker
+      pool as the reason the clock form of this term makes a pod bot passive, and predicted that
+      fixing it would make the caution comparable across formats. It did not: re-run on the fixed
+      build, the same 851 pod declarations gave 351 declines against the pooled build's 358 — seven
+      of 851.
+
+      This is why. The term's effect on an attack is not its *level* but what it charges for tapping
+      a blocker, and the fix moves those two in opposite directions. D280's own example, three
+      opponents holding two 2/2s each against my two blockers:
+
+      | | blockers untapped | blockers tapped (I attacked) | charged for attacking |
+      | --- | --- | --- | --- |
+      | pooled | 8 | 12 | 4 |
+      | per opponent | **0** | 12 | **12** |
+
+      The level falls from 8 to 0, which is the bug fixed and the honest reading of a board that
+      loses no life. The price of swinging with them **triples**, from 4 to 12 — because each of
+      those blockers was answering an attacker at every opponent's turn, and tapping them lets all
+      six through. So the term has *more* reason to hold back after the fix, not less, and the
+      measurement landing within seven declarations of the old one is the two effects roughly
+      cancelling.
+
+      The 8 and the 4 were measured rather than reasoned: the first draft of this comment guessed
+      the pooled level at 4, and hoisting the `spent` set back out of the loop for one run said 8.
+      Six 2/2s against two blockers is two blocked and **four** unanswered, which is four creatures
+      and eight power — D280 wrote it as "four unanswerable" and that was four creatures.
+    */
+    const board = arena({
+      format: 'pod', seats: 4, turn: 3,
+      decks: { 1: 'verdant-guard', 2: 'verdant-guard', 3: 'verdant-guard' },
+      battlefield: {
+        0: ['Hill Giant', 'Borderland Marauder'],
+        1: ['Grizzly Bears', 'Topan Freeblade'],
+        2: ['Grizzly Bears', 'Topan Freeblade'],
+        3: ['Grizzly Bears', 'Topan Freeblade'],
+      },
+    });
+    expect(exposure(board)).toBe(0);
+    let swung = tapFor(board, 0, find(board, 0, 'battlefield', 'Hill Giant'));
+    swung = tapFor(swung, 0, find(swung, 0, 'battlefield', 'Borderland Marauder'));
+    expect(exposure(swung)).toBe(12);
+  });
+
   it('is a cost, not a bonus', () => {
     // The sign, asserted on the public evaluation rather than inferred from the helper above.
     const safe = arena({ battlefield: { 0: ['Hill Giant'], 1: ['Grizzly Bears'] } });

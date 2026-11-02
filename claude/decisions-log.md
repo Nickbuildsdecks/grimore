@@ -18248,3 +18248,123 @@ was the same move as the error it was apologising for: a claim wider than what h
 
 `pod-duel` should carry the floor in its docblock rather than an instruction to find it, so the next
 person reads ±16 instead of being told to go and measure it. Doing that now.
+
+## D282 — A blocker is not spent by blocking: the pooled-blocker bug, and fixing it rescues nothing
+
+`exposedPower` kept **one** spent-blocker set across the whole table, so a blocker that answered
+seat 1's creature was unavailable against seat 2's. That is not the rules. **Nothing taps a creature
+for blocking**, and a creature untaps only in its own controller's untap step (CR 502.1) — which for
+me comes after *all three* of their turns. My untapped 3/3 blocks seat 1's Bear on seat 1's turn,
+seat 2's on seat 2's, and seat 3's on seat 3's.
+
+The fix is structural rather than a constant: gather the blockers once, then run the greedy
+assignment **per opponent**, each with its own spent set, and sum the unanswered power. At two seats
+it is arithmetically the same function — one opponent, one set — so every duel measurement in the
+project still reads on it.
+
+### What the old function said, and what the board actually costs
+
+Three opponents fielding a Bear each, against my one untapped 3/3:
+
+| | reading |
+| --- | --- |
+| pooled | 4 — the Giant answers one Bear, the other two "get through" |
+| per opponent | **0** |
+| what the board actually costs in life | **0** |
+
+Four points of pressure on a board that loses no life, and the error grows with the opponent count,
+so no divisor undoes it. Three new tests pin the arithmetic: the shared blocker across opponents,
+the blocker still spent once *within* one of their turns (the half a careless fix breaks), and the
+sum over opponents rather than the max.
+
+### D278's refuting example was wrong; its conclusion survives
+
+D278 rejected a **minimum** per-opponent clock with this: a seat with one 3/3 against three
+opponents holding a 2/2 each reads 4 table-wide and 0 against any one of them, "on a board where
+four damage lands every turn". No damage lands on that board at all — each 2/2 attacks alone into an
+untapped 3/3 that is untapped again on the next opponent's turn. The 4 *was* the pooling bug, and
+the honest reading is 0 everywhere, so the min agrees because everything agrees.
+
+The min is still the wrong object on arithmetic that holds: three opponents each with an
+**unblockable** 2/2 cost six life a cycle and the min reads two. That is now the test, rather than
+the refuted board.
+
+### And D280's central claim is withdrawn, narrowly
+
+D280 explained the clock's pod passivity as *"my blockers are shared, and the same 3/3 answers any
+one of those 2/2s and cannot answer two"*, and concluded the term needs an attack model `evaluate`
+does not have. The second half of that sentence is false: the same 3/3 answers **all three**, on
+three different turns. Blockers are not shared across opponents. The object the term computes — the
+sum over opponents of what each cannot be stopped from doing — is the right one, and is now what the
+code computes.
+
+**What that predicted did not happen, and this is the result worth having.** If pooled blockers were
+why the term made a pod bot passive, fixing them should have brought the caution down toward the
+duel's. Re-run on the fixed build, `aggression.mjs` on the same 851 pod declarations:
+
+| build | declarations | sent | sent nothing |
+| --- | --- | --- | --- |
+| shipping (both runs) | 851 | 2088 | 202 (24%) |
+| clock at 1, pooled (D280) | 851 | 1693 | 358 (42%) |
+| clock at 1, **fixed** | 851 | 1692 | **351 (41%)** |
+
+Seven declarations of 851. The duel control reproduces D280 to the digit — 406, 599, 89 (22%) —
+which is exactly what a fix that is arithmetically nothing at two seats should do, measured end to
+end rather than argued. **The shipping rows being identical to the count is what makes this a paired
+comparison**: the shipping bot has all three pressure weights at 0, so it never calls
+`exposedPower`, the games are the same games, and the 851 positions are the same positions.
+
+### Why it rescued nothing: a gradient, not a level
+
+An attack declaration is decided by what the term **charges for tapping a blocker**, not by what it
+reads at rest, and the fix moves those two in opposite directions. D280's own board — three
+opponents holding two 2/2s each against my two blockers:
+
+| | blockers untapped | blockers tapped (I swung) | charged for attacking |
+| --- | --- | --- | --- |
+| pooled | 8 | 12 | 4 |
+| per opponent | **0** | 12 | **12** |
+
+The level falls to the honest 0. The price of swinging **triples**, because each of those blockers
+was answering an attacker on every one of their turns, and tapping them lets all six through. The
+two effects roughly cancel in play, which is the 41% against 42%.
+
+So the passivity is the term's **shape**, not this bug: tapping a blocker is priced as incoming
+damage, which is true in a duel too (declines 22% against 13%) and simply has three opponents' power
+to multiply at four seats. Both clock weights stay at 0.
+
+**The 8 in that table was measured, not reasoned.** The first draft of it guessed 4; hoisting the
+spent set back out of the loop for one run said 8 — six 2/2s against two blockers is two blocked and
+four unanswered, four creatures and eight power, and D280's "four unanswerable" was four creatures.
+A one-minute measurement against a confident guess, on the same afternoon a confident guess had to
+be retracted (D281).
+
+### What is still unmodelled, named narrowly this time
+
+ - **Who points at me.** The term prices every opponent as attacking me with everything every turn.
+   In a pod they have three choices of victim, and this file's politics readers (`chaseTheCrown`,
+   the threat read, `offerPact`'s board reading) know something about which, and are not wired in.
+ - **Blocker attrition.** A chump blocker dies and is not there next turn, where this model has it
+   blocking forever. That is the function's existing deliberate omission — it declines to price what
+   a block costs, because the creature terms and the combat heuristics already do — but across a
+   *cycle* of turns it is the one place a per-turn reading leaks.
+
+### The divisor it leaves behind
+
+`clockRate` divides by the opponents the table started with, and D276 justified that as a units fix
+for the superlinearity. Most of that superlinearity was this bug. What is left is real and is not a
+bug: a pod seat is attacked three times before its own next turn, so `exposedPower` is honestly
+three times a duel's number at the same per-opponent board, and dividing turns the term from *damage
+per cycle* into *damage per opponent-turn* — the scale a duel-calibrated weight was calibrated in.
+
+So it is a scale choice now rather than a units fix, and it is the open question if either clock is
+ever turned on. Left alone: changing it would be a second behavioural change with nothing to pick
+between the two, and a pod win rate still costs ~1000 pods an arm at the ±16 floor.
+
+### The lesson that is not about blockers
+
+The bug survived three measurements, two instruments and a long docblock **because it was written
+down as a fact about the game rather than as a question about the code**. "My blockers are shared"
+reads like domain knowledge; it was a description of a loop. Every number D276 through D280 took was
+correctly measured on a function that answered the wrong question, and no amount of pairing, seed
+discipline or ablation discipline could have caught it — only reading the loop against the rules.

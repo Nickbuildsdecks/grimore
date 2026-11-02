@@ -1123,3 +1123,21 @@ hole in the bot rather than a brittle test** (#218: `spendsAnAnswersMana` never 
 reads a drawn card is an instrument whose reading can change for two different reasons, and telling
 them apart is worth the minute it takes: the question to ask is not "which deck change broke this"
 but "is the new answer wrong".
+
+**An ablation whose two arms call the same function is only as good as that function, and no amount
+of sampling discipline says otherwise.** `aggression.mjs` and the pod length figures measured the
+clock term five times across two instruments, paired on identical positions, with the stock bot
+driving so there was nothing to dispute about sampling. Every one of those readings was correct and
+every one was about a function that answered the wrong question: `exposedPower` pooled one set of
+blockers across the whole table, where a blocker that blocks on seat 1's turn is untapped again on
+seat 2's (#264, D282). The bug was in a docblock the whole time, phrased as *"my blockers are
+shared"* — which reads like a fact about Magic and was a description of a loop. Ablation discipline
+protects the comparison, not the premise; the premise needs the loop read against the rules.
+
+**And a sign that an instrument is measuring the right thing: its control reproduces to the digit
+across a real change.** The same `exposedPower` fix is arithmetically nothing at two seats, so
+`aggression.mjs`'s duel row had to come back identical — 406 declarations, 599 sent, 89 declines —
+and it did. Its pod row moved seven declarations of 851 under a change that was predicted to move it
+a long way, which is a negative result worth more than the win rate that could not resolve it. Pick
+a counting instrument over a win rate whenever the question can be put as a count: 851 paired
+declarations have no ±16 floor.

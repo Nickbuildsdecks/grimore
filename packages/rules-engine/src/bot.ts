@@ -1307,7 +1307,9 @@ const EXPOSED_POWER = 0;
  *
  * **And then the four-seat instrument found a bug in the units, which is what the pod cost was.** The
  * first version of this term divided by nothing, so it summed what **three** opponents could send
- * and compared it against **one** seat's life. The same eight pods, paired on the same seeds:
+ * and compared it against **one** seat's life. The same eight pods, paired on the same seeds —
+ * **and every figure in this table was taken before #264, on the build whose `exposedPower` pooled
+ * blockers across the table, so it over-reads the pressure by roughly the amount that bug added**:
  *
  * | | moves | turns |
  * | --- | --- | --- |
@@ -1337,8 +1339,18 @@ const EXPOSED_POWER = 0;
  * | | duel | pod |
  * | --- | --- | --- |
  * | win rate | **+1.5 points** (2808 games, sign holds, ±6 floor) | **not measured** (±16 floor at 104 pods) |
- * | length | slightly shorter | 1.29x moves, 1.11x turns |
- * | aggression | −7.7% sent, declines 22% vs 13% | **−18.9% sent, declines 42% vs 24%** |
+ * | length | slightly shorter | 1.29x moves, 1.11x turns † |
+ * | aggression | −7.7% sent, declines 22% vs 13% | **−18.9% sent, declines 42% vs 24%** † |
+ *
+ * † The aggression row was taken before #264, when `exposedPower` pooled blockers across the table.
+ * **Re-run on the fixed build it is the same number**: the same 851 pod declarations, 351 declines
+ * (41%) against 358 (42%), and −19.0% of creatures sent against −18.9%. The shipping row is
+ * identical to the count (851, 2088 sent, 202 declines) because the shipping bot never calls
+ * `exposedPower` at all, so the two runs are the same positions and this is a paired comparison
+ * rather than two samples. The duel control reproduces D280 to the digit as well — 406, 599, 89
+ * (22%) — which is what a fix that is arithmetically nothing at two seats should do, measured end
+ * to end rather than argued. The length row has not been re-run and no instrument here produces it
+ * as an ablation; treat it as history.
  *
  * So this stays at **zero**, for a cleaner reason than the retracted one: the pod win rate is
  * unknown and the pod *behaviour* change is large and exactly measured — a seat that declines 42%
@@ -1356,17 +1368,55 @@ const EXPOSED_POWER = 0;
  * about.
  *
  * The obvious third candidate — the **shortest of the per-opponent clocks** — was checked before
- * being built, and it is the worst of the three (D278). `exposedPower` spends my blockers against
- * whatever attackers it is shown, so shown one opponent's board it has the whole pool for it: a seat
- * with one 3/3 against three opponents holding a 2/2 each reads **4** unanswerable table-wide and
- * **0** against any one of them. Every per-opponent clock on that board says nothing can touch me,
- * and so does the minimum of them, on a board where four damage lands every turn.
+ * being built and rejected (D278), and **its arithmetic was wrong, though its conclusion survives**
+ * (#264, D282). The example was a seat with one 3/3 against three opponents holding a 2/2 each,
+ * said to read 4 unanswerable table-wide and 0 against any one of them, "on a board where four
+ * damage lands every turn". No damage lands on that board at all: each 2/2 attacks alone into an
+ * untapped 3/3 that is still untapped on the next opponent's turn, because **blocking does not tap
+ * a blocker and my untap step comes after all three of their turns**. The 4 was `exposedPower`
+ * pooling one set of blockers across the whole table, which is the bug #264 fixed; the honest
+ * reading of that board is 0, table-wide and per opponent alike, and the min agrees because every
+ * reading agrees.
  *
- * So all three objects are wrong, and the reason is not a scale factor. **The incoming damage in a
- * pod depends on how many opponents point at me, which is not a property of the board** — my
- * blockers are shared, and the same 3/3 answers any one of those 2/2s and cannot answer two. It
- * needs an attack model, and `evaluate` has none; the raw material exists elsewhere in this file
- * (`chaseTheCrown`, the threat read, `offerPact`'s board reading) and is not wired in.
+ * The min is still the wrong object, on arithmetic that holds: three opponents each with an
+ * **unblockable** 2/2 cost six life a cycle and the min reads two. `playout.test.ts` pins that case
+ * directly rather than the refuted one.
+ *
+ * **And the conclusion built on top of that example is withdrawn, narrowly.** "The incoming damage
+ * in a pod depends on how many opponents point at me, which is not a property of the board — my
+ * blockers are shared, and the same 3/3 answers any one of those 2/2s and cannot answer two" was
+ * the reason this file gave for needing an attack model. The second half is false: the same 3/3
+ * *does* answer all three, on three different turns, and blockers are not shared across opponents at
+ * all. The object this term computes — the sum over opponents of what each of them cannot be
+ * stopped from doing — is the right one, and it is now what the code computes.
+ *
+ * **And fixing it rescued nothing, which is the result worth having.** D280 named the pooled pool as
+ * the reason this term makes a pod bot passive; the honest reading of that prediction is that the
+ * caution should have come down towards the duel's. It moved seven declarations of 851. The reason
+ * is a gradient rather than a level, and it is arithmetic: on D280's own board — three opponents
+ * holding two 2/2s each against my two blockers — the pooled reading was 8 with my blockers untapped
+ * and 12 with them tapped, so attacking cost 4. Per opponent it is **0 and 12**, so attacking costs
+ * **12**. The level falls to the honest number and the price of swinging *triples*, because each
+ * blocker was answering an attacker on every one of their turns. An attack declaration is decided by
+ * what the term charges for tapping, not by what it reads at rest, and the two effects roughly
+ * cancel in play. `playout.test.ts` pins both columns.
+ *
+ * So the passivity is the term's **shape** and not this bug: tapping a blocker is priced as incoming
+ * damage, which is true in a duel too (declines 22% against 13%) and simply has three opponents'
+ * power to multiply at four seats.
+ *
+ * What is genuinely still unmodelled is smaller and worth naming exactly, because the overreaching
+ * version of this paragraph is what D282 corrects:
+ *
+ *  - **Who points at me.** The term prices every opponent as attacking me with everything every
+ *    turn. In a pod they have three choices of victim, and this file's politics readers
+ *    (`chaseTheCrown`, the threat read, `offerPact`'s board reading) know something about which,
+ *    and are not wired in.
+ *  - **Blocker attrition.** A blocker that chump-blocks dies and is not there next turn, where this
+ *    model has it blocking forever. That is a deliberate omission rather than an oversight — the
+ *    function's docblock declines to price what a block costs, because the creature terms and the
+ *    combat heuristics already do — but across a *cycle* of turns it is the one place the per-turn
+ *    reading leaks.
  *
  * In a duel there is nothing to model — they attack or they do not, and the sum, the mean and the
  * min are the same number. Which is exactly why the duel result is clean, and why it could never
@@ -1442,9 +1492,11 @@ const CLOCK_CAP = 6;
  *    those wrong, and D144's contextual-keyword term is the precedent: evasion is worth what the
  *    board opposite it makes it worth.
  *
- * **Greedy, one blocker per attacker, biggest attacker first.** A blocker that answers their 5/5
- * is not also available for their 3/3, which is what makes a single big blocker opposite three
- * creatures read as two of them getting through. It is not the optimal assignment — that is a
+ * **Greedy, one blocker per attacker, biggest attacker first — within one of their turns.** A
+ * blocker that answers their 5/5 is not also available for their 3/3, which is what makes a single
+ * big blocker opposite three creatures read as two of them getting through. Between *opponents* it
+ * is available again, because blocking does not tap it and my untap step comes after all of their
+ * turns; the loop body says why at length (#264). It is not the optimal assignment — that is a
  * bipartite matching and this is called at every node of a search — and the error it makes is in
  * the safe direction: greedy-by-size can leave power counted as unanswered that a cleverer
  * assignment would have stopped, so the bot is told it is *more* exposed than it is rather than
@@ -1490,9 +1542,34 @@ function exposedPower(state: GameState, seat: SeatIndex): number {
   ranked.sort((a, b) => a.value - b.value);
   const blockers = ranked.map((row) => row.id);
 
-  /** Their attackers, biggest power first: the one I most want to answer gets the first blocker. */
-  const attackers: { id: string; power: number; menace: boolean }[] = [];
+  let exposed = 0;
+  /*
+    **One opponent at a time, each against the whole blocker list.** The blockers are gathered once
+    above because they are the same creatures on every one of their turns, and that is the point:
+    nothing taps a creature for blocking, and a creature untaps only in its own controller's untap
+    step (CR 502.1), which for me comes after all three of their turns. So my untapped 3/3 blocks
+    seat 1's Bear on seat 1's turn, seat 2's on seat 2's, and seat 3's on seat 3's.
+
+    The first version of this function kept **one** `spent` set across the whole table, which said
+    the opposite — that a blocker used against one opponent was gone for the rest of them. On three
+    opponents fielding a Bear each it answered 4 points of exposure for a board that loses no life,
+    and that error is superlinear in the opponent count, so no weight repairs it. It is where the
+    term's pod pathology came from (D280): a seat told it faces three times the pressure it faces
+    declines to tap its blockers, and a table of bots that will not attack takes twice the moves for
+    no win rate.
+
+    **Summed, not maximised.** Each opponent attacks once before my next turn, so a cycle costs the
+    sum, and that is the quantity a seat loses. The minimum form was proposed for the clock and
+    refuted by arithmetic (#259, D279) — it reads nothing where damage lands every single turn — and
+    a maximum has the same fault more quietly.
+
+    **At two seats this function is unchanged**, arithmetically: one opponent, one `spent` set, the
+    same loop over the same attackers. Every duel measurement in this file still reads on it, and
+    `playout.test.ts` pins the pod arithmetic directly instead.
+  */
   for (const foe of foesOf(state, seat)) {
+    /** Their attackers, biggest power first: the one I most want to answer gets the first blocker. */
+    const attackers: { id: string; power: number; menace: boolean }[] = [];
     for (const id of listAt(state, zoneKey(foe, 'battlefield'))) {
       const inst = state.instances[id];
       if (inst === undefined) continue;
@@ -1500,42 +1577,46 @@ function exposedPower(state: GameState, seat: SeatIndex): number {
       if (!ch.isCreature || ch.cantAttack || ch.power <= 0) continue;
       attackers.push({ id, power: ch.power, menace: ch.keywords.has('menace') });
     }
-  }
-  attackers.sort((a, b) => b.power - a.power);
+    attackers.sort((a, b) => b.power - a.power);
 
-  const spent = new Set<string>();
-  let exposed = 0;
-  for (const attack of attackers) {
-    const need = attack.menace ? 2 : 1;
     /*
-      Stops at the first `need` blockers that can legally block, rather than filtering the whole
-      list and taking a slice of it. The same answer, since both take the cheapest legal blockers
-      in order.
-
-      **It bought nothing measurable and is kept anyway**, which is worth saying plainly because
-      the first version of this comment claimed a saving: timed over twelve whole games it was
-      4.7s against 4.5s, i.e. noise. The reason is that an ordinary blocker list is two or three
-      creatures long, so filtering it and stopping early cost the same. What it bounds is the wide
-      board — the 462-goblin position in the comment on `evaluate`'s denominator is real, and
-      there the filter is 462 `canBlock` calls per attacker where this is about one.
-
-      It is an optimisation and not a shortcut: `canBlock` is still the only thing that decides
-      legality, so a new piece of evasion added to it is read here the day it lands. A fast path
-      that tested for evasion itself would be the D260 failure — a second reader of a rule, going
-      quiet rather than wrong when the rule grows.
+      Spent blockers, and the set is **per opponent** — the one line that is the whole fix. Within
+      one of their turns a blocker still answers one attacker (two, against menace), which is the
+      half of the invariant a careless reset would break.
     */
-    const found: string[] = [];
-    for (const id of blockers) {
-      if (spent.has(id)) continue;
-      if (canBlock(state, id, attack.id, seat) !== null) continue;
-      found.push(id);
-      if (found.length === need) break;
+    const spent = new Set<string>();
+    for (const attack of attackers) {
+      const need = attack.menace ? 2 : 1;
+      /*
+        Stops at the first `need` blockers that can legally block, rather than filtering the whole
+        list and taking a slice of it. The same answer, since both take the cheapest legal blockers
+        in order.
+
+        **It bought nothing measurable and is kept anyway**, which is worth saying plainly because
+        the first version of this comment claimed a saving: timed over twelve whole games it was
+        4.7s against 4.5s, i.e. noise. The reason is that an ordinary blocker list is two or three
+        creatures long, so filtering it and stopping early cost the same. What it bounds is the wide
+        board — the 462-goblin position in the comment on `evaluate`'s denominator is real, and
+        there the filter is 462 `canBlock` calls per attacker where this is about one.
+
+        It is an optimisation and not a shortcut: `canBlock` is still the only thing that decides
+        legality, so a new piece of evasion added to it is read here the day it lands. A fast path
+        that tested for evasion itself would be the D260 failure — a second reader of a rule, going
+        quiet rather than wrong when the rule grows.
+      */
+      const found: string[] = [];
+      for (const id of blockers) {
+        if (spent.has(id)) continue;
+        if (canBlock(state, id, attack.id, seat) !== null) continue;
+        found.push(id);
+        if (found.length === need) break;
+      }
+      if (found.length < need) {
+        exposed += attack.power;
+        continue;
+      }
+      for (const id of found) spent.add(id);
     }
-    if (found.length < need) {
-      exposed += attack.power;
-      continue;
-    }
-    for (const id of found) spent.add(id);
   }
   return exposed;
 }
@@ -1684,12 +1765,23 @@ export function evaluate(state: GameState, seat: SeatIndex, opts: BotOptions = {
 
       Divided by the opponents the table started with, which is the same denominator `evaluate`
       already applies to their `seatValue` eight lines below, and for the same reason it gives there
-      — *am I ahead of the table* rather than *is the rest of the table small*. Not dividing was an
-      inconsistency rather than a choice, and it is what made the term unusable in a pod (D276):
-      `exposedPower` sums what **three** opponents could send against one seat's blockers, while
-      `life` stays one seat's, so a weight calibrated against one opponent reads three times the
-      pressure at four seats. The bot then declined to tap its blockers, nobody attacked, and a pod
-      took twice the moves for no win rate.
+      — *am I ahead of the table* rather than *is the rest of the table small*.
+
+      **What this divisor is for has changed, and the honest version is narrower than the one that
+      was here.** It was added because the term read roughly three times the pressure at four seats
+      (D276), and that had two causes. The larger was a bug: `exposedPower` pooled one set of
+      blockers across the whole table, so two of three identical opponents read as unanswerable on a
+      board that loses no life. That is fixed at the source (#264) and this divisor is no longer
+      what compensates for it. What is left is real and is not a bug — a pod seat is attacked three
+      times before its own next turn, so `exposedPower` is honestly three times a duel's number at
+      the same per-opponent board — and dividing turns the term from *damage per cycle* into *damage
+      per opponent-turn*, which is the scale a weight calibrated in a duel was calibrated in.
+
+      So it is a scale choice now rather than a units fix, and it is the open question if either
+      clock is ever turned on: per cycle is arguably the quantity a player reads, and nothing here
+      has measured which is better, because a pod win rate needs about a thousand pods an arm at
+      this project's ±16 floor (D281). Left as it is because changing it would be a second
+      behavioural change with no measurement to pick between the two.
 
       `state.seats.length` and not the living opponents, for the reason the division below spells
       out at length: dividing by survivors makes killing a player change the scale, and a term whose

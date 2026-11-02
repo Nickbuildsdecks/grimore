@@ -7974,6 +7974,48 @@ above, and it is mine.**
 Resolving a four-point pod effect needs about 1000 pods an arm, ninety minutes a reading, three
 disjoint sets — four to five hours for one question, which nothing here has ever spent.
 
+### A fact about the game that was a description of a loop (#264, D282)
+
+`exposedPower` — the evaluation's one term about two boards rather than one seat's piles — kept a
+single spent-blocker set across the whole table. A blocker that answered seat 1's creature was gone
+against seat 2's.
+
+That is not the rules. **Nothing taps a creature for blocking**, and a creature untaps only in its
+own controller's untap step, which for me comes after all three of their turns. The same untapped
+3/3 blocks seat 1's Bear on seat 1's turn, seat 2's on seat 2's, and seat 3's on seat 3's. Three
+opponents fielding a Bear each read as **four points of unanswerable pressure on a board that loses
+no life**, and the error grows with the opponent count, so no divisor undoes it. The fix is one
+`spent` set per opponent and the sum of what each cannot be stopped from doing; at two seats it is
+arithmetically the same function, so every duel number in the project still reads on it.
+
+Two published conclusions go with it. D278 rejected a *minimum* per-opponent clock on a board where
+"four damage lands every turn" — no damage lands on that board at all, and the 4 was the bug. The min
+is still the wrong object, on arithmetic that holds: three opponents each with an **unblockable** 2/2
+cost six a cycle and the min reads two. And D280's explanation of the clock's pod passivity — *"my
+blockers are shared, and the same 3/3 answers any one of those 2/2s and cannot answer two"* — is
+false in its second half, which was the reason this file gave for needing an attack model it does not
+have.
+
+**And fixing it rescued nothing, which is the result worth having.** If pooled blockers were why the
+term made a pod bot passive, the caution should have come down toward the duel's. Re-run on the same
+851 pod declarations it declined 351 against 358: seven of 851. The duel control reproduced to the
+digit, which is what a fix that is arithmetically nothing at two seats should do — measured rather
+than argued.
+
+The reason is a gradient rather than a level. An attack is decided by what the term charges for
+*tapping* a blocker, and on D280's own board the pooled reading charged 4 for swinging where the
+honest one charges **12** — each blocker was answering an attacker on every one of their turns, so
+tapping them lets all six through. The level falls to 0 and the price triples; in play the two
+roughly cancel. So the passivity is the term's shape, not this bug, and both clock weights stay at
+zero.
+
+The lesson is not about blockers. The bug survived three measurements, two instruments and a long
+docblock **because it had been written down as a fact about the game rather than as a question about
+the code**. "My blockers are shared" reads like domain knowledge; it was a description of a loop.
+Every number taken from D276 to D280 was correctly measured on a function that answered the wrong
+question, and no amount of pairing, seed discipline or ablation discipline could have caught it —
+only reading the loop against the rules.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
