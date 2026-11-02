@@ -7963,10 +7963,16 @@ aggression ablation on identical positions (42% of declarations declined against
 figures, and the superlinearity arithmetic. What does not survive is one number — the clock's effect
 on who wins a pod, which is **unknown rather than negative**.
 
-And a standing consequence worth more than the retraction: **every pod win rate in this project is
-weaker than it reads** unless it quotes that floor. The counts are fine. Resolving a four-point pod
-effect needs about 1000 pods an arm, ninety minutes a reading, three disjoint sets — four to five
-hours for one question, which nothing here has ever spent.
+The first version of this section ended by warning that every pod win rate in the project was weaker
+than it read. **That was the same error again** — a claim wider than what I had checked — and one grep
+disproves it. The myriad slot reading says the floor must come from re-running a real arm on disjoint
+seeds *and then does it* (4-48 and 2-50 over 52 pods each); `offerPact` says outright that `pod-duel`
+cannot price it and ships for a reason that is not a win rate. The practice was already right and
+already written down. **The only pod win rate ever published as a result here is the one retracted
+above, and it is mine.**
+
+Resolving a four-point pod effect needs about 1000 pods an arm, ninety minutes a reading, three
+disjoint sets — four to five hours for one question, which nothing here has ever spent.
 
 ## Next
 

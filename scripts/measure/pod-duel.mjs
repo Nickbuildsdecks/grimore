@@ -32,9 +32,12 @@
  * A pod is noisier than a duel by construction — three opponents, three chances to be attacked, and
  * four rotations of a table that share a seed. To resolve a four-point effect here needs roughly ten
  * times the games: about **1000 pods an arm, ninety minutes a reading**, three disjoint sets. Nothing
- * in this project has spent that, so **every pod win rate recorded anywhere is weaker than it reads**
- * unless it quotes this floor. The counts are unaffected — offers, politics, the throw audit — it is
- * win rates that need ±16 beside them.
+ * in this project has spent that. So **a pod win rate from this file is only a result if it quotes
+ * this floor** — and in fairness to what came before, the two measurements that could have fallen
+ * into this both stepped around it: the myriad slot reading established its own spread by re-running
+ * a real arm on disjoint seeds (4-48 and 2-50 over 52 pods each), and `offerPact` says outright that
+ * `pod-duel` cannot price it and ships for a reason that is not a win rate. The counts here are
+ * unaffected either way — offers, politics, the throw audit.
  *
  * Raise `SEEDS` and the floor narrows roughly as the square root: `SEEDS=8` is four times the games
  * for half the wobble, which is the cheapest honest way to ask a pod question.

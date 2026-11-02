@@ -18225,9 +18225,26 @@ thing not to do, and that holds whichever way the win rate would have gone.
 
 At ±16 of 104, resolving a 4-point effect needs roughly ten times the games — about **1000 pods an
 arm, ninety minutes a reading**, three disjoint sets, so four to five hours for one question. Nothing
-in this project has ever spent that on a pod, which means **every pod win-rate number here is weaker
-than it reads**, mine included. The counts are fine — offers, politics, myriad, the throw audit — it
-is the *win rates* that need the floor quoted beside them.
+in this project has ever spent that on a pod.
+
+**And a correction to the first version of this entry, which overreached.** It said every pod
+win-rate number here is weaker than it reads. That is unfair to the work it tars, and checking took
+one grep:
+
+ - The myriad measurement (`pod-slot`) says its zero *"is arithmetic rather than evidence for the
+   same reason `pod-duel`'s is, so the floor has to come from re-running a real arm on disjoint
+   seeds"* — **and then does exactly that**, two readings of 52 pods on seeds 3300 and 5100 reading
+   4-48 and 2-50. Same procedure I skipped, carried out, on an effect far outside any plausible
+   floor.
+ - `offerPact` opens with *"`pod-duel` cannot price this, and not for want of games"*, explains why
+   bot-to-bot offers are refused by construction, and says outright **"it is on by default and the
+   reason is not a win rate."**
+
+So the practice was already right and already written down. **The only pod win rate ever published
+as a result in this project is the one retracted above, and it is mine.** The gap was not a
+systemic blind spot; it was that the floor existed as an instruction rather than as a number, and I
+read the instruction and did not follow it. Writing a blanket warning about everyone else's numbers
+was the same move as the error it was apologising for: a claim wider than what had been checked.
 
 `pod-duel` should carry the floor in its docblock rather than an instruction to find it, so the next
 person reads ±16 instead of being told to go and measure it. Doing that now.
