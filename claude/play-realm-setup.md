@@ -14,7 +14,7 @@ anywhere, exactly as it can with cardboard, and the players apply the rules them
 with **Play as a tabletop**.
 
 Neither replaces the other. A rules engine has to be written card by card, so it only knows the
-cards somebody has scripted — three hundred and thirty-three, today, across thirteen starter decks. A
+cards somebody has scripted — three hundred and forty-eight, today, across thirteen starter decks. A
 tabletop works with every card ever printed on day one. So the engine handles what it knows, and **Move by hand** is
 one tap away inside Arena mode for anything it does not: an unscripted card is cast and resolved
 normally, and the log says it was not automated rather than pretending.
@@ -235,7 +235,7 @@ and a rematch gives the previous winner the second turn, the way a table does.
 The turn counter and the **Pass turn** button are bookkeeping, not enforcement — you can act on
 anybody's turn, which is what makes instants and responses work at all.
 
-### Eleven starter decks
+### Thirteen starter decks
 
 **Ember Rush** (mono-red aggro), **Verdant Guard** (green-white midrange, and the one deck with
 **two** planeswalkers in it now — Garruk Wildspeaker and **Nissa, Voice of Zendikar**, who makes a
@@ -1343,7 +1343,7 @@ decks they pasted in).
 
 - **A list of your own plays, but only the pool is automated.** Paste your decklist in the lobby and
   the table deals it (see *Play with your own list*). Every name the engine's pool has — the three
-  hundred and thirty-three cards in the thirteen starter decks, commanders included — becomes the real
+  hundred and forty-eight cards in the thirteen starter decks, commanders included — becomes the real
   card and is fully automated. Every name it does not becomes **cardboard**: a card with a name and
   nothing else, which the tabletop plays by hand with **Move by hand** for whatever it says in
   prose, and which Arena mode refuses by name rather than dealing a game with a card nobody can do
@@ -1351,8 +1351,11 @@ decks they pasted in).
   oracle text — which means a populated `cards` table, which means a machine that can reach
   Scryfall. Loading a saved Grimore deck rather than pasting text is the same gap: the deck source
   exists, the card data does not.
-- **The engine knows three hundred and thirty-three cards.** Everything in the thirteen starter decks,
-  plus the ten castable *faces* of the seven cards printed with more than one. It
+- **The engine knows three hundred and forty-eight cards.** Everything in the thirteen starter decks,
+  commanders included, plus the extra *faces* of the nine cards printed with more than one — three
+  splits, two adventures, two modal double-faced lands and two that transform. (Both counts are
+  printed by `node scripts/measure/mechanic-coverage.mjs`, which reads them off the pool, so they
+  can be rechecked in one command rather than trusted.) It
   stops and asks for every decision those cards need: a spell's targets, a trigger's targets (CR 603.3d), a
   sacrifice paid as a cost, how big X is, a mode on a modal spell, how a divided quantity is spent
   among its targets (CR 601.2d), a number chosen *as a spell resolves* rather than as it is cast

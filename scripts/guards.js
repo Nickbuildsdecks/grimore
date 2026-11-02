@@ -385,6 +385,109 @@ function checkEveryTriggerReaderKnowsAboutGrants() {
 }
 checkEveryTriggerReaderKnowsAboutGrants();
 
+/**
+ * The player documentation names every deck a player can pick, and counts them correctly.
+ *
+ * `claude/play-realm-setup.md` is what a person reads before sitting down at the table, and its
+ * deck section had been telling them there were **eleven** starter decks since the twelfth was
+ * added (#265). The body did describe all thirteen; the heading did not, and nothing could tell.
+ * Two decks were added, each with a write-up, and the count above them was not a thing either
+ * change touched.
+ *
+ * So the registry decides and the prose has to keep up. Two claims are checked, both of them
+ * structural rather than editorial:
+ *
+ *  - **Every registered deck is named somewhere in the doc.** A deck a player can choose from the
+ *    lobby and cannot read about is the real failure; the count is the symptom.
+ *  - **The deck section's heading says the right number, spelled out**, which is the form the doc
+ *    uses. Only the heading, not prose elsewhere: "a full table with two starter decks" is a
+ *    sentence about two of them, and a guard that failed on it would be a guard somebody turns off.
+ *
+ * Read statically out of `starterDecks.ts` rather than by importing the engine, because this runs
+ * before anything is built. The parse is narrow enough to break loudly: no registered decks found
+ * means the literal was reformatted, and that fails rather than passing an empty check — the same
+ * rule `scripts/measure/mechanic-coverage.mjs` states for reading a declaration out of source.
+ *
+ * Card counts are deliberately **not** checked here. "The engine knows N cards" needs the pool
+ * index, which needs the build, so the doc cites `node scripts/measure/mechanic-coverage.mjs` —
+ * which prints decks, cards, faces and tokens off the registry — instead of carrying a number
+ * nobody can verify while reading it.
+ */
+function checkPlayerDocNamesEveryStarterDeck() {
+  const NUMBER_WORDS = [
+    'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+    'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen',
+    'nineteen', 'twenty',
+  ];
+  const decksFile = join('packages', 'rules-engine', 'src', 'starterDecks.ts');
+  const docFile = join('claude', 'play-realm-setup.md');
+  let source;
+  let doc;
+  try {
+    source = readFileSync(decksFile, 'utf8');
+    doc = readFileSync(docFile, 'utf8');
+  } catch {
+    console.error(`[guards] cannot read ${decksFile} or ${docFile}; the deck-doc check cannot run`);
+    bad++;
+    return;
+  }
+
+  // The registry's own body: the lines between `export const STARTER_DECKS` and its closing brace.
+  const literal = source.slice(source.indexOf('export const STARTER_DECKS'));
+  const registered = [...literal.slice(0, literal.indexOf('});'))
+    .matchAll(/\[([A-Z_0-9]+)\.id\]:/g)].map((m) => m[1]);
+  if (registered.length === 0) {
+    console.error('[guards] found no decks in STARTER_DECKS, so the parse in this guard is broken');
+    console.error('[guards] and a pass would mean nothing. Fix the parse rather than the registry.');
+    bad++;
+    return;
+  }
+
+  const names = [];
+  for (const ident of registered) {
+    const at = source.indexOf(`export const ${ident}: DeckSpec = {`);
+    const name = at === -1
+      ? null
+      : /^\s*name: '([^']+)'/m.exec(source.slice(at, at + 600))?.[1] ?? null;
+    if (name === null) {
+      console.error(`[guards] cannot read a name for the registered deck ${ident}`);
+      bad++;
+      continue;
+    }
+    names.push(name);
+  }
+
+  for (const name of names) {
+    if (!doc.includes(name)) {
+      console.error(`[guards] ${docFile} never names the starter deck "${name}", which a player`);
+      console.error('[guards] can pick from the lobby. Describe it there, in the deck section.');
+      bad++;
+    }
+  }
+
+  const heading = /^### ([A-Za-z]+) starter decks$/m.exec(doc);
+  if (heading === null) {
+    console.error(`[guards] cannot find the "### <count> starter decks" heading in ${docFile},`);
+    console.error('[guards] so the deck count in it cannot be checked. Restore the heading or');
+    console.error('[guards] update this guard to match its new wording.');
+    bad++;
+    return;
+  }
+  const expected = NUMBER_WORDS[names.length];
+  if (expected === undefined) {
+    console.error(`[guards] ${names.length} starter decks is past this guard's number words;`);
+    console.error('[guards] extend NUMBER_WORDS.');
+    bad++;
+    return;
+  }
+  if (heading[1].toLowerCase() !== expected) {
+    console.error(`[guards] ${docFile} heads its deck section "${heading[1]} starter decks" and the`);
+    console.error(`[guards] registry holds ${names.length}. Say "${expected}".`);
+    bad++;
+  }
+}
+checkPlayerDocNamesEveryStarterDeck();
+
 if (bad) {
   console.error(`[guards] ${bad} violation(s)`);
   process.exit(1);

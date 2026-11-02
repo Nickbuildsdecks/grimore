@@ -370,6 +370,38 @@ const rows = [...new Set([...declared, ...carriers.keys()])]
 const THIN = 2;
 const shown = ALL ? rows : rows.filter((r) => r.reach < THIN);
 
+/*
+  The pool, in one line, because it is the number the player documentation keeps getting wrong.
+
+  `claude/play-realm-setup.md` tells a player how many decks there are and how many cards the engine
+  knows, and both counts were prose: the deck heading said eleven when the registry held thirteen,
+  and the card figure said 333 when the pool held 348 (#265). A count the code knows and a human
+  retypes drifts, which is this file's own founding lesson applied one level up — so the doc now
+  cites this command and the number comes from the registry.
+
+  Deliberately **not** `everyCard()`, which is the denominator the coverage rows below use: that
+  counts the faces of a split card separately and includes tokens, because a mechanic held up only
+  by a token is still held up. What a player means by "cards the engine knows" is the name they can
+  paste into the lobby, which is `poolCardNamed`'s index — one entry per printed card, commanders
+  included, no tokens.
+*/
+const pool = new Map();
+let multiFace = 0;
+let extraFaces = 0;
+for (const deck of Object.values(STARTER_DECKS)) {
+  for (const card of [...deck.cards.map((c) => c.card), deck.commander].filter(Boolean)) {
+    pool.set(card.name.trim().toLowerCase(), card);
+  }
+}
+for (const card of pool.values()) {
+  if (card.faces === undefined) continue;
+  multiFace += 1;
+  extraFaces += card.faces.cards.length;
+}
+
+console.log(`the pool: ${Object.keys(STARTER_DECKS).length} starter decks, ${pool.size} distinct `
+  + `cards (commanders included), ${multiFace} of them printed with more than one face `
+  + `(${extraFaces} extra faces), ${TOKEN_DEFS.length} tokens`);
 console.log(`${declared.length} mechanics declared in the engine, ${rows.length} counted`);
 console.log(`${SCRIPT_FIELDS.length} CardScript fields read, ${TRIGGER_KINDS.length} trigger kinds, `
   + `${KEYWORDS.length} keywords`);

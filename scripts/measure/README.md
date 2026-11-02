@@ -64,6 +64,7 @@ it.
 | `unfinished.mjs` | …and the same question for a **four-seat pod**, where a table with nobody to act (CR 800.4a) is the worse fault | `SEATS=4 SEEDS=12 node scripts/measure/unfinished.mjs` |
 | `card-promises.mjs` | does every card **do what its own text says**, or does a script carry less than the card reads? | `node scripts/measure/card-promises.mjs` |
 | `mechanic-coverage.mjs` | **how many cards hold each mechanic up** — which are on one card, and which the engine declares and nothing reaches? | `node scripts/measure/mechanic-coverage.mjs` |
+| `mechanic-coverage.mjs` | …and **the pool in one line** — decks, distinct cards, multi-face cards and tokens — which is what the player documentation cites instead of carrying the numbers (#265) | the first line of the same command |
 | `eval-calibration.mjs` | **does the bot's evaluation predict who wins**, and which of its components carries the signal? | `SEEDS=6 node scripts/measure/eval-calibration.mjs` |
 | `term-leverage.mjs` | **which of the evaluation's terms actually decide anything** — what changes when each is taken away? | `SEEDS=1 node scripts/measure/term-leverage.mjs` |
 | `term-leverage.mjs` | …and measured where a term acts, rather than drowned in a field average | `SUBJECT=hollow-tide TERMS=library node scripts/measure/term-leverage.mjs` |

@@ -18368,3 +18368,53 @@ down as a fact about the game rather than as a question about the code**. "My bl
 reads like domain knowledge; it was a description of a loop. Every number D276 through D280 took was
 correctly measured on a function that answered the wrong question, and no amount of pairing, seed
 discipline or ablation discipline could have caught it — only reading the loop against the rules.
+
+## D283 — The player documentation had been counting by hand, and was two decks and fifteen cards out
+
+`claude/play-realm-setup.md` is the thing a person reads before sitting down at the table. Its deck
+section was headed **"Eleven starter decks"** and the registry holds thirteen; three separate places
+said the engine knows **"three hundred and thirty-three"** cards and the pool index holds **348**;
+`customDeck.ts` — the docblock on the feature that resolves a pasted decklist — opened by saying the
+names are looked up in "the eleven starter decks".
+
+Nobody wrote a wrong number. Each was right when it was written and nothing connected it to the
+registry, so two decks and fifteen cards arrived and the prose did not move. The deck *bodies* were
+all written: all thirteen decks are described at length a few lines under a heading that says eleven.
+
+### Fixed, and then made unable to recur
+
+ - The heading, the three card figures, and `customDeck.ts` — which now says "the starter decks" and
+   carries no count at all, because that docblock has no reason to know how many there are.
+ - **"The ten castable faces of the seven cards printed with more than one"** is now the nine such
+   cards the registry holds: three splits (Wax // Wane, Fire // Ice, Assault // Battery), two
+   adventures (Merfolk Secretkeeper, Garenbrig Carver), two modal double-faced lands (Hagra Mauling,
+   Vastwood Fortification) and two that transform (Delver of Secrets, Thing in the Ice), with twelve
+   extra faces between them. The old clause was the one I nearly refreshed without checking: it is a
+   second count in the same sentence and it was wrong in a different direction.
+ - `mechanic-coverage.mjs` prints the pool in one line — decks, distinct cards, multi-face cards and
+   their extra faces, tokens — and the doc cites that command next to the figures. One command
+   rechecks every number in the sentence.
+ - A guard in `scripts/guards.js` reads the registry out of `starterDecks.ts` statically (it runs
+   before anything is built) and fails when the doc omits a registered deck's name, or heads its
+   deck section with the wrong spelled-out count.
+
+### What the guard deliberately does not check
+
+Prose elsewhere. "A full table with two starter decks" is a sentence about two of them, and a guard
+that failed on it is a guard somebody switches off — so only the one heading, which is a pool-size
+claim by construction. And not the card count: that needs the pool index, which needs the build,
+which is why the doc cites the command instead.
+
+**Four negative controls, because a guard that cannot fail is D263's trap in a new place.** The
+heading set back to "Eleven" fails; a deck's name removed from the doc fails and names the deck; the
+heading deleted fails; and renaming `STARTER_DECKS` so the parse finds nothing fails loudly with
+*"the parse in this guard is broken and a pass would mean nothing"* rather than passing an empty
+check — the rule `mechanic-coverage.mjs` states for reading a declaration out of source.
+
+### The shape, which is the same one as D282 a few hours earlier
+
+A fact the code knows, retyped into prose, and then diverging silently. D282's version was a loop
+described as a rule of the game; this one is a registry described as a number. The fix is the same
+both times and it is not "be more careful": make the prose cite the thing that knows, or put a check
+on it. Two decks were added with a write-up each and neither touched the count above them, which is
+exactly how careful people produce a stale document.

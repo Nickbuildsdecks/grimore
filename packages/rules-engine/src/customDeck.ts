@@ -3,7 +3,7 @@
  *
  * `parseDecklist` in `@grimore/shared` reads the text into counts and names and knows nothing about
  * cards; this is the other half, and it is here because the *pool* lives here. Every name is looked
- * up in the eleven starter decks: a hit is the real card, with its script, its mana cost and its
+ * up in the starter decks: a hit is the real card, with its script, its mana cost and its
  * type line, and plays exactly as it does in the deck it came from. A miss is **cardboard** — a
  * card with a name and nothing else, which is what a kitchen table is: you move it by hand and you
  * read it off the card in your hand.
