@@ -18464,6 +18464,14 @@ usable, and the console carries the raw error. The **console** needed its own de
 showed nine lines in four seconds: logged for the first few attempts and then one in ten, because an
 outage left open overnight would otherwise be the only thing in there.
 
+### And it does not break a phone, which #251 is the reason to check rather than assume
+
+A sentence is a layout change, and the last one of those presented as four gameplay failures because
+a control bar pushed the table sideways on a phone and no check could see it. Measured on the lobby
+with the connection failing: **375x812 reads scrollWidth 375 against innerWidth 375, and 320x568
+reads 320 against 320** — no sideways scroll at either, with the banner wrapping to 66px and 82px of
+height inside the column. Nothing to fix, which is the result rather than the absence of one.
+
 ### What is still not done
 
 The fallback itself. Polling stays off, which is a server change with deployment consequences (long
