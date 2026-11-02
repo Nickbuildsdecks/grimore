@@ -18088,3 +18088,72 @@ Both corrections are the same shape as everything else this week: **a check that
 it had not established.** The classifier was not wrong about arithmetic, it was wrong about what the
 answer space was — and it had never asked. The habit that catches it is cheap and keeps paying: before
 believing a number, make the instrument produce the opposite number on purpose.
+
+## D280 — Why the clock loses a pod: shared blockers make the reading superlinear, and the bot flinches
+
+D276 said the clock's pod problem was units, and the per-opponent division fixed the **length**
+(2.06x moves to 1.29x) without fixing the **record** (−8, 0, −4 over three seed sets). Something else
+was going on, and "the games got longer" was a symptom rather than a cause. `aggression.mjs` names
+it, on an ablation rather than an argument: the stock bot drives and both arms are asked the *same*
+declaration, so there is no sampling to dispute.
+
+### The measurement
+
+| arm | declarations | creatures sent | per declaration | sent nothing |
+| --- | --- | --- | --- | --- |
+| **pod**, shipping | 851 | 2088 | 2.45 | 202 (24%) |
+| **pod**, clock at 1 | 851 | 1693 | 1.99 | **358 (42%)** |
+| **duel**, shipping | 406 | 649 | 1.60 | 53 (13%) |
+| **duel**, clock at 1 | 406 | 599 | 1.48 | **89 (22%)** |
+
+The clock makes the bot cautious in **both** formats — and two and a half times more so in a pod:
+**−18.9%** of creatures sent against **−7.7%** in a duel, and declining 42% of declarations where
+the shipping bot declines 24%.
+
+The duel row is the control that makes the pod row mean anything. Had the arm declined equally in
+both, the finding would be "this term is passive" and the format explanation would be dead. It is
+not equal, and the gap is the finding.
+
+### And it is still the divided term, which is the part that matters
+
+This was measured on the build that **already divides by the opponents the table started with**. So
+the division did not make the caution comparable across formats, and the reason is structural rather
+than a scale factor:
+
+**`exposedPower` pools every opponent's attackers against one shared blocker pool, so unanswerable
+power is superlinear in the number of opponents.** Three opponents holding two 2/2s each, against my
+two blockers: six attackers, two get blocked, **four unanswerable**. One opponent holding two 2/2s
+against the same two blockers: **zero**. Divide the first by three and it is still 1.33 against 0.
+No single divisor undoes a superlinearity — which is the same arithmetic D278 demonstrated from the
+other side, and this is what it costs in play.
+
+### What that settles
+
+The chain is now measured end to end:
+
+1. The clock makes a seat fear the attack coming back, in proportion to the unanswerable power it
+   reads, so it holds its blockers rather than swinging.
+2. `exposedPower` reads *superlinearly* more at four seats, because blockers are shared, so the
+   caution is 2.5x stronger there and no scaling fixes it.
+3. **Mild caution wins a duel** (+1.5 points, −7.7% aggression) and **heavy caution loses a pod**
+   (−3.8 points, −18.9%). In a duel, surviving the swing and winning the attrition are the same
+   thing. At four seats they are not: a seat that never pressures anybody never wins, however long
+   it lives.
+
+So the clock cannot be made pod-safe by any weight or divisor, and **#262 is answered without
+building the attack model it was going to scope.** The question "how concentrated are pod attacks"
+was the wrong next question: the defect is not in how the term estimates who attacks, it is that the
+quantity it is built on does not scale with the table at all.
+
+An attack model would still be the thing that makes a pod clock possible, and it is now a bigger
+piece than D278 implied — it would have to replace `exposedPower`'s pooled greedy assignment with a
+per-opponent one that shares blockers honestly, which is the hard part D259 was closed on. Not
+tonight, and not as a term.
+
+### The method note
+
+This is the second time in two days that the cheap question beat the expensive one, and the same
+cheap question both times: **ask what the thing actually does before modelling why.** #259 was
+refuted by one three-creature board; this was answered by counting what the bot sends. The
+expensive plan — build an attack model, measure it in two formats over six seed sets — was queued
+and would have been wasted, because it was aimed at the wrong defect.
