@@ -311,13 +311,16 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
         write and its own broadcast, so the board arrives in pieces rather than after a freeze.
 
         `continueBots` returns null as soon as a batch does no work, which covers both "the
-        opponents are finished" and "a bot cannot move". **Only the first of those is reported**,
-        and this comment used to claim otherwise: `onBotStall` fires from `runBots` when its
-        five-hundred-move guard is spent, which a twenty-five-move budget makes unreachable, so a
-        seat that is owed a move and cannot make one now ends the chain in silence. Filed as #304;
-        it is the symptom #297 and #302 cost days of guessing at. The round cap is a backstop for
-        neither ending happening, and the ack has already gone, so a slow tail costs the player
-        nothing.
+        opponents are finished" and "a bot cannot move" — the second is a table that was already
+        broken, and `onBotStall` reports it: `runBots` calls its stall for a seat `botAction`
+        offered no move for, a move the engine refused, and a move that changed nothing, all three
+        inside the loop and none of them conditioned on the budget. The round cap is a backstop
+        for neither of those happening, and the ack has already gone, so a slow tail costs the
+        player nothing.
+
+        This comment was briefly "corrected" to say the opposite — that only the first ending is
+        reported — from the true observation that the *guard-exhaustion* report is unreachable
+        below the guard, generalised wrongly to every stuck seat. See D327.
       */
       let rounds = 0;
       for (; rounds < continuationRounds; rounds += 1) {

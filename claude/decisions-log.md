@@ -20364,3 +20364,50 @@ and keeps socket.io's ordering intact.
 
 The tally for this session's theme is now **eleven** instruments found reporting something they had
 not earned, of which **eight** were mine.
+
+## D327 — Correction: a stuck server seat *is* reported, and I deleted the assertion that proves it
+
+D325 removed `expect(stalled).toEqual([])` from the budget test, filed #304 against
+`continueBots` for ending a dead table in silence, and "corrected" a comment in `handlers.ts` to
+say so. All three came from one true observation generalised wrongly, and all three are now undone.
+
+**What is true.** `runBots`' "ran out with a seat still owed" report is guarded by
+`stopAt >= BOT_MOVE_GUARD`, so at a budget of 25 against a guard of 500 it cannot fire. That is
+why the shipping budget displaced it and why `reportBotStall` exists.
+
+**What I inferred, wrongly.** That a server seat which is owed a move and cannot make one therefore
+ends the chain in silence. It does not. `runBots` calls its stall in three more places, all inside
+the loop and none conditioned on the budget:
+
+```
+seat N is owed a move at turn T step and botAction offered none
+<action> by seat N at turn T step changed nothing
+<action> by seat N at turn T step was refused: <why>
+```
+
+Those are exactly the "a bot cannot move" cases. `continueBots` then returns null, the handler
+stops, and the report has already gone out through `onBotStall` — which, since D322 wired the
+caller's callbacks back up, reaches the caller.
+
+**The cost.** `expect(stalled).toEqual([])` was not vacuous, and deleting it dropped real coverage
+of the property the test is named for. Restored, and this time proved to discriminate rather than
+argued about: a one-shot synthetic stall at turn 2, which the table then recovers from, fails it
+and nothing else —
+
+```
+["synthetic one-shot stuck seat 1 at turn 2 upkeep"]: expected [ Array(1) ] to deeply equal []
+```
+
+A blunter break (every bot move stuck from turn 3) fails the `hasPriority` assertion first, so the
+one-shot was needed to show this assertion earns its place on its own.
+
+**#304 is closed as not a defect**, with its filing kept as the record of the error. Two notes
+worth keeping. First, the general lesson: "this *particular* report cannot fire" is not "this
+condition is unreported", and the way to tell is to read every call site of the callback rather
+than the one the change touched. Second, the thing that made it cheap to find was writing the claim
+down in a task and a comment where I would read it again.
+
+That makes three corrections of my own reasoning in this stretch — D321 (the count does bound the
+duration), D326 (the arm, not the marker, produced the zero), and this one — against which the
+measurements that settled them all existed only because the claims were written down somewhere they
+could be checked.

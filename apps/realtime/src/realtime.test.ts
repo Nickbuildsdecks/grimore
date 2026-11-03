@@ -190,6 +190,7 @@ describe.skipIf(!REDIS_URL)('the write budget, against the store (requires REDIS
       session has now found seven times.
     */
     const writes: number[] = [];
+    const stalled: string[] = [];
     const store = new PodStore(redis, {
       keyPrefix: `test:budget:${Date.now().toString(36)}:${process.pid}`,
       botMovesPerWrite: 1,
@@ -199,6 +200,7 @@ describe.skipIf(!REDIS_URL)('the write budget, against the store (requires REDIS
       onSlowWrite: ({ reason }) => {
         writes.push(Number(/and (\d+) server move/.exec(reason)?.[1] ?? -1));
       },
+      onBotStall: ({ reason }) => stalled.push(reason),
     });
     try {
       const pod = await podReadyToPlay(store);
@@ -250,13 +252,19 @@ describe.skipIf(!REDIS_URL)('the write budget, against the store (requires REDIS
       // And the table got somewhere: three bots took turns while the person did nothing.
       expect(view.turn, 'the pod never got past its first turn').toBeGreaterThan(1);
       /*
-        No `onBotStall` assertion here, deliberately. `runBots` reports "ran out with a seat still
-        owed" only when its *guard* is spent, and a budget below the guard makes that unreachable
-        — so `expect(stalled).toEqual([])` in this test could not have failed, whatever the budget
-        did. I wrote it, then caught it re-reading my own test. The property it was reaching for is
-        covered, and covered by something that can fail: the `hasPriority` break above, a `settle`
-        that throws rather than shrugging, and a turn counter that has to move.
+        And no server seat was left stuck, which is the other half of "bounding the write must not
+        strand the table".
+
+        This assertion was removed once, on the grounds that it could not fail: `runBots` reports
+        "ran out with a seat still owed" only when its **guard** is spent, which a budget of one
+        makes unreachable. That much is true and it is why the budget test cannot lean on *that*
+        report — but it is not the only one. `runBots` also stalls for a seat `botAction` offered
+        no move for, for a move the engine refused, and for a move that changed nothing, and all
+        three fire inside the loop whatever the budget is. So the assertion can fail, it fails on
+        exactly the condition this test is about, and deleting it cost real coverage for a day.
+        See D327; the reasoning that removed it is the same over-generalisation that produced it.
       */
+      expect(stalled, JSON.stringify(stalled)).toEqual([]);
     } finally {
       await store.flushPrefix();
     }
