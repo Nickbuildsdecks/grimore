@@ -121,6 +121,23 @@ const seedFor = (pass, t) => SEED0 + (pass * ALL.length) + t;
 
 let tested = 0; let control = 0; let unfinished = 0;
 const started = Date.now();
+/*
+  A running tally, printed per pass, which this file learned the expensive way.
+
+  `SEEDS=20` is 1040 pods and takes about an hour and a half; the first attempt at it was killed by
+  a container restart at **83 minutes** and produced **nothing at all**, because every number lived
+  in these three variables until the one `console.log` at the end. A reading of 988 pods would have
+  been a perfectly good answer to the question; zero was not.
+
+  So the line below is a checkpoint rather than progress chatter: each one is a complete, quotable
+  result over the pods finished so far, on whole passes (every table, all four rotations) so it is
+  never a half-rotated table. Anything that interrupts the run now leaves the last checkpoint
+  standing, and the final line is just the last one with the whole sample in it.
+
+  `process.stdout.write` with an explicit newline rather than `console.log` makes no difference to
+  flushing here — Node writes to a pipe synchronously for small strings — but a redirect into a file
+  is only visible to another process after the write, which is the case this exists for.
+*/
 for (let i = 0; i < SEEDS; i++) {
   for (let t = 0; t < ALL.length; t++) {
     const decks = seated(t);
@@ -133,6 +150,9 @@ for (let i = 0; i < SEEDS; i++) {
       else control += 1;
     }
   }
+  process.stdout.write(`  after ${i + 1} of ${SEEDS} passes: ${tested}-${control}`
+    + `${unfinished ? ` (${unfinished} unfinished)` : ''} of ${tested + control + unfinished} pods`
+    + ` [${Math.round((Date.now() - started) / 1000)}s]\n`);
 }
 const games = tested + control + unfinished;
 console.log(`${JSON.stringify(TESTED)} vs ${JSON.stringify(CONTROL)}: ${tested}-${control}`

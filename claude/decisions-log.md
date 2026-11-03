@@ -18720,3 +18720,27 @@ read: `dealDamage` attributes commander damage with `from?.isCommander === true`
 such flag — so the copies never counted towards the twenty-one, and the only thing wrong with three
 Balans attacking was that there were three of them. **The engine was already right about the half
 that would have been worse**, which is worth recording so nobody goes looking for it.
+
+## D289 — An instrument that loses everything on interruption, and the pod reading's real price
+
+The 1040-pod reading (#268) was killed by a **container restart at 83 minutes of CPU** and produced
+**nothing**. Every number lived in three local variables until one `console.log` at the end, so an
+interrupted run was worth zero pods rather than the eight hundred it had played.
+
+`pod-duel.mjs` now prints a **checkpoint per pass** — a complete, quotable result over the pods
+finished so far, on whole passes so it is never a half-rotated table. The final line is the last
+checkpoint with the whole sample in it. Anything that interrupts the run now leaves a reading
+standing, which is the difference between losing an hour and losing an hour's *answer*.
+
+### And the price of a pod reading was wrong by a factor of two
+
+One pass — 52 pods, every deck, all four rotations — takes **503 seconds** measured rather than
+guessed. So `SEEDS=20` is **about two hours and fifty minutes**, not the ninety minutes this file's
+docblock has claimed since D281. The two runs that were killed had reached roughly 500 pods each,
+not "nearly done" as the session notes said at the time.
+
+That matters for how the question gets asked. Three disjoint sets at 1040 pods is **eight and a half
+hours of compute**, or about three in parallel on four cores. With checkpoints it is no longer
+all-or-nothing: the run can be read at any pass and stopped when the sample is enough, and
+*"620 pods, 310-310"* is an honest answer where a truncated run used to be no answer at all.
+
