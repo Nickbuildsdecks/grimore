@@ -585,8 +585,9 @@ function checkPlayerDocQuotesEveryManaCost() {
     }
   }
   if (printed.size === 0 || decks.size === 0) {
-    console.error(`[guards] found no CardDef in ${decksFile}, so this guard's parse is broken and`);
-    console.error('[guards] a pass would mean nothing. Fix the parse rather than the doc.');
+    const missing = printed.size === 0 ? 'CardDef' : 'DeckSpec';
+    console.error(`[guards] found no ${missing} in ${decksFile}, so this guard's parse is broken`);
+    console.error('[guards] and a pass would mean nothing. Fix the parse rather than the doc.');
     bad++;
     return;
   }
@@ -636,6 +637,49 @@ function checkPlayerDocQuotesEveryManaCost() {
   }
 }
 checkPlayerDocQuotesEveryManaCost();
+
+/**
+ * Every script the player doc tells somebody to run has to exist.
+ *
+ * The doc's whole job is that a person can follow it, and the commands are the part they paste
+ * rather than read. A renamed harness leaves a line that fails with "Cannot find module" -- which
+ * reads, to the person following it, as the project being broken.
+ *
+ * Yield on the run that added it: **nothing**, all seven exist. It is here anyway because it is
+ * free and exact: file existence has no false positives, unlike the one check deliberately left
+ * out of the cost guard above (a keyword named in a card's parenthesis is not always a claim about
+ * *that* card -- "it does not die to trample damage" names a keyword the card does not have).
+ */
+function checkPlayerDocCommandsExist() {
+  const docFile = join('claude', 'play-realm-setup.md');
+  let doc;
+  try {
+    doc = readFileSync(docFile, 'utf8');
+  } catch {
+    console.error(`[guards] cannot read ${docFile}; the command check cannot run`);
+    bad++;
+    return;
+  }
+  const named = new Set(
+    [...doc.matchAll(/\bnode (scripts\/[A-Za-z0-9_/.-]+\.(?:mjs|js))/g)].map((m) => m[1]),
+  );
+  if (named.size === 0) {
+    console.error(`[guards] found no "node scripts/..." command in ${docFile}, so this guard`);
+    console.error('[guards] checked nothing. Either the doc stopped quoting them or the shape did.');
+    bad++;
+    return;
+  }
+  for (const script of named) {
+    try {
+      statSync(script);
+    } catch {
+      console.error(`[guards] ${docFile} says to run ${script}, which does not exist. Rename it`);
+      console.error('[guards] in the doc, or put the script back.');
+      bad++;
+    }
+  }
+}
+checkPlayerDocCommandsExist();
 
 if (bad) {
   console.error(`[guards] ${bad} violation(s)`);
