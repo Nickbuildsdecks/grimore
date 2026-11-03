@@ -268,3 +268,118 @@ describe('every deck the browser suites paste', () => {
     },
   );
 });
+
+/**
+ * A list resolved against card data as well as the pool.
+ *
+ * The third answer between "the pool has it" and "cardboard": a card nobody wrote a script for
+ * whose rules its own data already is. `fromCardData.ts` decides which cards qualify; what is
+ * asserted here is the **order** — pool, then data, then cardboard — and that a list the data
+ * covers becomes a table the rules engine will actually deal.
+ */
+describe('a pasted list resolved against card data', () => {
+  /** A row as the card table holds one. Only the fields a derivation reads. */
+  const bear = (name: string) => ({
+    name, type_line: 'Creature — Bear', oracle_text: '', mana_cost: '{1}{G}',
+    cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+  });
+  const woods = (name: string) => ({
+    name, type_line: 'Basic Land — Forest', oracle_text: '({T}: Add {G}.)', mana_cost: '',
+    cmc: 0, colors: [], layout: 'normal', produced_mana: ['G'],
+  });
+  const paragraph = (name: string) => ({
+    name, type_line: 'Creature — Human Wizard', mana_cost: '{2}{U}', cmc: 3, colors: ['U'],
+    layout: 'normal', power: '1', toughness: '3',
+    oracle_text: 'Whenever you cast a noncreature spell, put a +1/+1 counter on this creature.',
+  });
+
+  it('builds a playable card from data for a name the pool does not have', () => {
+    const { deck, unknown, fromData } = customDeck({
+      id: 'custom:0', name: 'Mine',
+      entries: [{ name: 'Datawood Bear', count: 4 }, { name: 'Datawood', count: 20 }],
+      data: [bear('Datawood Bear'), woods('Datawood')],
+    });
+    expect(unknown).toEqual([]);
+    expect(fromData).toEqual(['Datawood Bear', 'Datawood']);
+    // The point of the whole exercise: a list the pool has none of is now an Arena table.
+    expect(deckIsAutomatable(deck)).toBe(true);
+    expect(deck.cards[0]!.card.power).toBe('2');
+    expect(deck.cards[1]!.card.typeLine).toContain('Forest');
+  });
+
+  it('prefers the pool over the data, even when the data disagrees', () => {
+    /*
+      A hand-written script is always the best answer available, so a row carrying a pool card's
+      name must not displace it. Asserted with a row that is *wrong on purpose* — a Forest typed as
+      an Island — because a test whose row agreed with the pool would pass either way.
+    */
+    const { deck, fromData } = customDeck({
+      id: 'custom:0', name: 'Mine', entries: [{ name: 'Forest', count: 1 }],
+      data: [{
+        name: 'Forest', type_line: 'Basic Land — Island', oracle_text: '', mana_cost: '',
+        cmc: 0, colors: [], layout: 'normal', produced_mana: ['U'],
+      }],
+    });
+    expect(deck.cards[0]!.card.typeLine).toBe('Basic Land — Forest');
+    expect(fromData).toEqual([]);
+  });
+
+  it('leaves a card whose text is a paragraph as cardboard, and names it', () => {
+    const { deck, unknown, fromData } = customDeck({
+      id: 'custom:0', name: 'Mine',
+      entries: [{ name: 'Datawood Bear', count: 1 }, { name: 'Prowess Person', count: 1 }],
+      data: [bear('Datawood Bear'), paragraph('Prowess Person')],
+    });
+    // A row the derivation refuses is as good as a row nobody supplied.
+    expect(unknown).toEqual(['Prowess Person']);
+    expect(fromData).toEqual(['Datawood Bear']);
+    expect(deck.cards[1]!.card.typeLine).toBe('');
+    // And one unreadable card still refuses the Arena table, exactly as before.
+    expect(deckIsAutomatable(deck)).toBe(false);
+  });
+
+  it('matches a row by name the same way the pool is matched', () => {
+    const { unknown, fromData } = customDeck({
+      id: 'custom:0', name: 'Mine', entries: [{ name: '  dATAwood bEAR ', count: 1 }],
+      data: [bear('Datawood Bear')],
+    });
+    expect(unknown).toEqual([]);
+    expect(fromData).toHaveLength(1);
+  });
+
+  it('resolves a commander out of the data too', () => {
+    const { deck, unknown } = customDeck({
+      id: 'custom:0', name: 'Mine', entries: [{ name: 'Datawood', count: 99 }],
+      commander: 'Datawood Bear', data: [bear('Datawood Bear'), woods('Datawood')],
+    });
+    expect(unknown).toEqual([]);
+    expect(deck.commander?.power).toBe('2');
+    expect(deckIsAutomatable(deck)).toBe(true);
+  });
+
+  it('behaves exactly as before when no data is passed', () => {
+    // Every existing caller passes nothing, so this is the guard on all of them.
+    const { deck, unknown, fromData } = customDeck({
+      id: 'custom:0', name: 'Mine', entries: [{ name: 'Datawood Bear', count: 1 }],
+    });
+    expect(unknown).toEqual(['Datawood Bear']);
+    expect(fromData).toEqual([]);
+    expect(deckIsAutomatable(deck)).toBe(false);
+  });
+
+  it('counts a name nothing could make playable, not a name the pool lacks', () => {
+    /*
+      The rename that came with this change, and the reason for it. `unknown` used to mean "the
+      pool does not have it" and now means "nothing could make it playable" — because a table told
+      the first number would refuse to deal an Arena game it could have dealt. All three readers
+      of this field in `apps/realtime` report it to players as the cannot-read count, which is the
+      second question and always was.
+    */
+    const { unknown } = customDeck({
+      id: 'custom:0', name: 'Mine',
+      entries: [{ name: 'Datawood Bear', count: 1 }, { name: 'Prowess Person', count: 1 }],
+      data: [bear('Datawood Bear'), paragraph('Prowess Person')],
+    });
+    expect(unknown).toHaveLength(1);
+  });
+});

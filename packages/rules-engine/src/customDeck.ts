@@ -12,9 +12,26 @@
  * which is the good case and the one worth having. A list that is not can still be played, on the
  * tabletop, which is how two people play Magic with their own decks — and `auto:start` refuses such
  * a table rather than dealing an Arena game full of blank cards. See `deckIsAutomatable`.
+ *
+ * ## The middle case: a card nobody scripted whose data is its rules
+ *
+ * There is now a third answer between those two, and `data` is how a caller supplies it. A Grizzly
+ * Bears needs no code — it is a 2/2 — and a Forest needs only the mana ability its subtype grants
+ * it (CR 305.6). `fromCardData.ts` decides which cards qualify, conservatively and with a reason
+ * for every refusal; this file decides the **order**, which is the only judgement it adds:
+ *
+ *   1. the pool, by name — a hand-written script is always the best answer available;
+ *   2. the data, if the caller passed any — for the cards whose rules their data already is;
+ *   3. cardboard — unchanged, and still the right answer for a card whose text is a paragraph.
+ *
+ * `data` is optional and defaults to nothing, so every existing caller behaves exactly as before.
+ * It is passed in rather than looked up because this module is pure and the card table is not: the
+ * three callers in `apps/realtime` run inside a synchronous compare-and-set write where no query
+ * can happen, so the rows have to arrive as data or not at all.
  */
 import type { CardDef, DeckSpec } from './cards.js';
 import { STARTER_DECKS } from './starterDecks.js';
+import { cardFromData, type CardDataRow } from './fromCardData.js';
 
 /** One line of a pasted list. Mirrors `DecklistEntry` in `@grimore/shared` without importing it. */
 export interface CustomDeckEntry {
@@ -29,12 +46,36 @@ export interface CustomDeckInput {
   readonly entries: readonly CustomDeckEntry[];
   /** A name to put in the command zone, when the list named one. */
   readonly commander?: string;
+  /**
+   * Card rows for names the pool does not have, from whatever holds the card table.
+   *
+   * Matched by name, case- and space-insensitively, the same way the pool is. A row the derivation
+   * refuses is as good as a row that was never supplied: that card is cardboard, which is what it
+   * would have been anyway.
+   */
+  readonly data?: readonly CardDataRow[];
 }
 
 export interface CustomDeckResult {
   readonly deck: DeckSpec;
-  /** The names the pool does not have, in the spelling the list used, for the table to say so. */
+  /**
+   * The names that ended up as cardboard, in the spelling the list used, for the table to say so.
+   *
+   * **Not "the names the pool does not have"** any more, which is what it used to be and what its
+   * old comment said. With `data` supplied, a name the pool lacks may still be playable, and a
+   * table told otherwise would refuse to deal an Arena game it could have dealt. This is the list
+   * of names nothing could make playable, which is the question every reader was actually asking.
+   */
   readonly unknown: readonly string[];
+  /**
+   * Names the pool did not have and the data did: what the card table bought this list.
+   *
+   * Reported separately because the two numbers answer different questions. `unknown` is "can this
+   * table be played by the rules engine"; this is "how much of that is the import rather than the
+   * 348 hand-written cards", which is the only way to tell a card sync that worked from one that
+   * silently wrote nothing.
+   */
+  readonly fromData: readonly string[];
 }
 
 /**
@@ -81,27 +122,53 @@ function cardboard(name: string): CardDef {
   };
 }
 
-/** Builds a deck out of a pasted list, and says which of its names the pool did not have. */
+/** Builds a deck out of a pasted list, and says which of its names nothing could make playable. */
 export function customDeck(input: CustomDeckInput): CustomDeckResult {
   const unknown: string[] = [];
-  const cards = input.entries.map((entry) => {
-    const found = poolCardNamed(entry.name);
-    if (found === undefined) unknown.push(entry.name);
-    return { card: found ?? cardboard(entry.name), count: entry.count };
-  });
-  const commanderCard = input.commander === undefined ? undefined : poolCardNamed(input.commander);
-  if (input.commander !== undefined && commanderCard === undefined) unknown.push(input.commander);
+  const fromData: string[] = [];
+
+  /*
+    The supplied rows, by lower-cased name, built once rather than scanned per entry: a 100-card
+    list against a few hundred rows is the shape a caller handing over a whole collection would
+    produce, and that is 30,000 string comparisons for no reason.
+  */
+  const rows = new Map<string, CardDataRow>();
+  for (const row of input.data ?? []) {
+    const key = (row.name ?? '').trim().toLowerCase();
+    if (key !== '') rows.set(key, row);
+  }
+
+  /** The best card available under that name: the pool, then the data, then cardboard. */
+  const resolve = (name: string): CardDef => {
+    const pooled = poolCardNamed(name);
+    if (pooled !== undefined) return pooled;
+    const row = rows.get(name.trim().toLowerCase());
+    if (row !== undefined) {
+      const derived = cardFromData(row);
+      if (derived.ok) {
+        fromData.push(name);
+        return derived.def;
+      }
+    }
+    unknown.push(name);
+    return cardboard(name);
+  };
+
+  const cards = input.entries.map((entry) => ({
+    card: resolve(entry.name),
+    count: entry.count,
+  }));
+  const commanderCard = input.commander === undefined ? undefined : resolve(input.commander);
   return {
     deck: {
       id: input.id,
       name: input.name,
       description: 'A list somebody pasted in.',
-      ...(input.commander === undefined
-        ? {}
-        : { commander: commanderCard ?? cardboard(input.commander) }),
+      ...(commanderCard === undefined ? {} : { commander: commanderCard }),
       cards,
     },
     unknown,
+    fromData,
   };
 }
 

@@ -20736,3 +20736,77 @@ cardboard, which is the right answer for it. The next question is a measured one
 guess: run `tallyDerivations` over a real `oracle_cards` file and read what share of it comes
 through, and which refusal reasons are the common ones. That needs the import from D329 to have been
 run, which is Nick's call on a machine that can reach Scryfall.
+
+---
+
+## D332 — Measured: lands 61%, creatures 14%, everything else 0% (#308)
+
+`customDeck` now resolves a pasted name three ways instead of two — the pool, then any card rows the
+caller supplied, then cardboard — and `scripts/measure/derivable.mjs` answers the question that
+decides how much that is worth.
+
+The instrument's default arm reads the engine's **own 348 cards** back as data rows. Those are real
+cards with real printed text, so this is a measurement rather than an estimate; it is also thirteen
+decks assembled by hand to exercise sixty mechanics, so it is far heavier in paragraph-text cards
+than a list anybody plays. The share it reports is therefore a **floor**, and the script prints that
+caveat itself rather than leaving it in a header nobody reads.
+
+| | built | of | share |
+|---|---|---|---|
+| **Lands** | 17 | 28 | **60.7%** |
+| Creatures | 24 | 173 | 13.9% |
+| Instants | 0 | 69 | 0% |
+| Sorceries | 0 | 50 | 0% |
+| Artifacts | 0 | 18 | 0% |
+| Enchantments | 0 | 17 | 0% |
+| Planeswalkers | 0 | 5 | 0% |
+| **Overall** | **41** | **360** | **11.4%** |
+
+**The by-type row is the reading that transfers**, and it is why the script prints it. The aggregate
+is a fact about whatever set was measured; the rate *within a type* can be applied to a deck whose
+type mix you know. A Commander deck is about 37 lands and 30 creatures, and a real mana base is
+basics and simple duals rather than the pool's Mutavaults and cycling lands — so somewhere around a
+third of a hundred-card list should come through, almost all of it the mana base.
+
+Which is the same answer the probe in D331 gave from the other direction. The derivation's value is
+concentrated in lands; lands are the single largest block of a Commander deck; and the mana base is
+the part that has to work before any of the rest of the deck can do anything at all. That is a
+coherent result rather than a consolation one.
+
+The refusal shapes, grouped and counted, are the work queue:
+
+- **189 (52.5%) "cannot read the line"** — one unhandled line of text. The example is Mutavault:
+  `{1}: Mutavault becomes a 2/2 creature until end of turn.` This is the bucket to mine, and the
+  grouping is what makes it mineable: a thousand individual refusals is noise, twenty common line
+  shapes is a list of things to teach the reader.
+- **114 (31.7%) instants and sorceries**, which are nothing but their text and always will be.
+- **9 split and modal cards, 5 planeswalkers, 2 with a `*` in their power.**
+
+### Two things worth recording as decisions rather than code
+
+**`unknown` changed meaning, and the field is renamed in its docblock rather than in its name.** It
+used to be "the names the pool does not have"; it is now "the names nothing could make playable".
+All three readers in `apps/realtime` report it to players as the cannot-read count, which was always
+the second question — and a table told the first number would refuse to deal an Arena game it could
+have dealt. A new `fromData` reports what the card table bought, separately, because "can this be
+played" and "how much of that is the import rather than the 348 hand-written cards" are different
+questions and only the second can tell a card sync that worked from one that silently wrote nothing.
+
+**The realtime integration is not done, and it needs a decision that is Nick's.** `apps/realtime`
+has no database access at all — only Redis — and all three `customDeck` calls sit inside a
+synchronous compare-and-set write where no query can happen. So passing real rows means one of:
+
+1. give `apps/realtime` a Postgres pool (a new dependency on a service that currently has none);
+2. have it ask `apps/api` over HTTP for the rows;
+3. have `apps/api` resolve the list and park the rows in Redis for realtime to read.
+
+What it must **not** be is the client sending the rows with the paste, which is the one option that
+needs no new plumbing and is also a cheating vector: a player could hand over a row claiming a
+100/100 vanilla creature. Noting that explicitly because it is the option that looks easiest.
+
+Proved to discriminate, as usual: consult the data before the pool → the "prefers the pool" test
+fails alone (asserted with a row that is wrong on purpose, a Forest typed as an Island, because a
+row agreeing with the pool would pass either way); remove the data lookup → five of the seven new
+tests fail.
+
+Gate green: 2173 tests across 17 packages, 1399 in the engine.
