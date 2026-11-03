@@ -19645,3 +19645,39 @@ one place, with its file and line, so they can be read on purpose rather than st
 `api.scryfall.com` for card text; this waits on the Comprehensive Rules for rule text. Both are one
 allowed host away, and until then "the engine says X and I cannot check X" is the honest state of a
 row rather than a reason to change the code.
+
+## D309 — Half of CR 704.5a cannot be tested, and finding that out is the result
+
+`cr-claims.mjs` (D308) said CR 704.5a was claimed in two comments and written down by no test, and
+this one was not a false positive: the regeneration block's four tests cover a destroy spell, lethal
+combat damage, the whole board at once and a shield expiring — every way a shield *works* and no way
+it does not. The rule is that a creature with toughness 0 or less is **put into its graveyard**
+rather than destroyed, so neither a regeneration shield nor indestructible has anything to replace.
+
+The engine has had it right since the shield was written: both saves are guarded on
+`ch.toughness > 0`.
+
+**And only one of the two halves is testable, which is the part worth recording.** Take the guard
+off the *regeneration* branch and the shield is spent, the creature is tapped, and the next
+state-based pass kills it anyway for the same zero toughness — the graveyard reads the same either
+way. I found that out the way the engine's own CR 704.5e note says to: by breaking it on purpose and
+watching the new test pass. Take the guard off *indestructible* and the engine `continue`s past the
+creature, so a 2/1 at -1 toughness sits on the battlefield for the rest of the game — a difference
+a player would notice and a test can see.
+
+So the pair that shipped is deliberately asymmetric. The regeneration test asserts the board a
+player sees and says in its own docblock that it cannot distinguish the two implementations. The
+indestructible test is the one that pins the rule, and it is placed with the other indestructible
+tests rather than with the regeneration ones because that is where the discriminating guard is.
+
+**The general point, which is the third time this thread has come round** (D282, D302, and CR
+704.5e's note): a test that asserts the board can read identically whether the rule holds or not,
+and the only way to know which kind you have written is to break the engine on purpose. Doing that
+takes a minute and is the difference between a test and a comment with an `expect` in it.
+
+Both tests go through **Toxic Deluge**, which is not the pool's only way to shrink a creature —
+Golgari Charm's first mode, Night of Souls' Betrayal and Darkblast are all `-1/-1` — but is the only
+one whose amount the caster *chooses*, so it is the one that can zero any toughness rather than only
+a one-toughness body. Both assert the range the card computed (`{ min: 0, max: 1 }`) instead of
+hardcoding the answer: a creature added to either deck with two toughness would change that number,
+and the assertion says so rather than quietly testing something else.

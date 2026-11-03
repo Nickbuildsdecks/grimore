@@ -2505,6 +2505,54 @@ describe('replacement effects: regenerating, and entering with counters', () => 
     s = nextTurn(s);
     expect(s.instances[skeleton]!.counters['regeneration']).toBeUndefined();
   });
+
+  it('does not save a creature shrunk to zero toughness, because that is not destruction', () => {
+    /*
+      CR 704.5a, which the engine has implemented since the shield was written and nothing
+      asserted: a creature with toughness 0 or less is **put into its graveyard** rather than
+      destroyed, and a replacement for destruction has nothing to replace.
+
+      It is a play a player will make, which is why the board is worth asserting: regenerating
+      through a sweeper is exactly what the shield is bought for, and Toxic Deluge is the sweeper
+      that answers it. The Skeletons is a 1/1, so the card's own range offers 1, and -1/-1 is a
+      toughness of zero.
+
+      **And this test cannot tell the engine's implementation from the bug, which is worth knowing
+      rather than assuming.** Take the `toughness > 0` guard off the regeneration branch and the
+      shield is spent, the creature is tapped, and the next state-based pass kills it anyway for
+      the same zero toughness — the graveyard reads the same either way. Checked by doing exactly
+      that, the way CR 704.5e's graveyard count was checked by breaking `counterSpell` on purpose.
+      So what this one is for is the board a player sees; the half of the rule a test can actually
+      pin is **indestructible**, in `the keywords nothing in the pool carried`, where the same
+      guard removed leaves the creature alive for ever.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'hollow-tide', 1: 'rot-harvest' },
+      hands: { 0: ['Toxic Deluge'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Swamp'],
+        1: ['Swamp', 'Drudge Skeletons'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const skeleton = find(s, 1, 'battlefield', 'Drudge Skeletons');
+    // Seat 0 passes, so the Skeletons' controller can put the shield up before the sweeper is
+    // cast — at instant speed, which is the only way it is ever done.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, { type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Swamp'), abilityIndex: 0 });
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 1, card: skeleton, abilityIndex: 0 })));
+    // The shield is up and unspent, which is what makes the assertion below about the rule rather
+    // than about a creature that was going to die anyway.
+    expect(s.instances[skeleton]!.counters['regeneration']).toBe(1);
+
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Toxic Deluge'),
+    })));
+    // One is the whole range the card offers: nothing on the table has two toughness.
+    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 1 });
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], amount: 1 }));
+    expect(s.instances[skeleton]!.zone).toBe('graveyard');
+  });
 });
 
 describe('lands that make one of two colours', () => {
@@ -4272,6 +4320,57 @@ describe('the keywords nothing in the pool carried', () => {
     // The spell resolved rather than being countered for having no legal target, and did nothing.
     expect(namesIn(s, 1, 'graveyard')).toContain('Doom Blade');
     expect(s.instances[body]!.zone).toBe('battlefield');
+  });
+
+  it('and does not save one shrunk to zero toughness, which is the same rule (CR 704.5a)', () => {
+    /*
+      The discriminating half of CR 704.5a, and the reason it is here rather than beside the
+      regeneration tests: **indestructible is the only one of the two a test can tell apart.**
+
+      A creature with toughness 0 or less is put into its graveyard rather than destroyed, so
+      neither indestructible nor a regeneration shield has anything to replace. Take the guard off
+      the regeneration branch and the shield is spent, the creature is tapped, and the next
+      state-based pass kills it anyway for the same zero toughness — the board a player sees is
+      identical, which is the same shape as CR 704.5e's graveyard count (see `automation.ts`'s
+      audit table). Take it off *this* branch and the creature simply never dies: the engine
+      `continue`s past it and a 2/1 at -1 toughness sits on the battlefield for the rest of the
+      game. Verified by doing exactly that on purpose.
+
+      Toxic Deluge is the sweeper that asks the question, and its own range answers it: the
+      Vanguard is the biggest toughness on the table at 1, so the card offers 1, and -1/-1 is a
+      toughness of zero.
+    */
+    let s = arena({
+      decks: { 0: 'forge-alliance', 1: 'hollow-tide' },
+      hands: { 1: ['Toxic Deluge'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Elite Vanguard', 'Darksteel Plate'],
+        1: ['Island', 'Island', 'Swamp'],
+      },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0, 'battlefield')].filter((i) => BASICS.has(nameOf(s, i)))) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const body = find(s, 0, 'battlefield', 'Elite Vanguard');
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Darksteel Plate'), abilityIndex: 0,
+      targets: [{ kind: 'card', id: body }],
+    }));
+    // The keyword is really on it, which is what makes the death below about the rule.
+    expect(characteristicsOf(s, s.instances[body]!).keywords.has('indestructible')).toBe(true);
+
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Toxic Deluge'),
+    })));
+    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 1 });
+    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [], amount: 1 }));
+    expect(s.instances[body]!.zone).toBe('graveyard');
+    // And the Plate is still there, unattached: an Equipment does not follow its creature
+    // (CR 301.5c), which is the half of this board that is *not* the rule under test.
+    expect(s.instances[find(s, 0, 'battlefield', 'Darksteel Plate')]!.attachedTo).toBeNull();
   });
 
   it('Robe of Mirrors stops everybody targeting it, its own controller included', () => {

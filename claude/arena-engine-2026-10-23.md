@@ -8491,6 +8491,25 @@ cleared or passed when the monarch leaves the game needs the Comprehensive Rules
 `magic.wizards.com` does not resolve here any more than Scryfall does. So the file says in its own
 docblock what it is: a reading list, not a defect count.
 
+### Half of CR 704.5a cannot be tested, and finding that out is the result (#289, D309)
+
+The first row of the cr-claims list that was a real gap: the regeneration block's four tests cover
+every way a shield *works* and no way it does not, and CR 704.5a says a creature with toughness 0 or
+less is put into its graveyard rather than destroyed — so neither a shield nor indestructible has
+anything to replace. The engine has had it right since the shield was written; both saves are guarded
+on `ch.toughness > 0`.
+
+Only one half is testable. Take the guard off the regeneration branch and the shield is spent, the
+creature is tapped, and the next state-based pass kills it for the same zero toughness: the graveyard
+reads the same either way. Take it off indestructible and the creature never dies at all. So the pair
+that shipped is asymmetric on purpose — the regeneration test asserts the board a player sees and
+says in its docblock that it cannot distinguish the two implementations, and the indestructible test
+is the one that pins the rule, verified by breaking the guard and watching it fail.
+
+Third time round for the same thread (D282, D302, and the engine's own CR 704.5e note): a test that
+asserts the board can read identically whether the rule holds or not, and the only way to know which
+kind you wrote is to break the engine on purpose.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
