@@ -67,6 +67,7 @@
  */
 import type { CardDef } from './cards.js';
 import { parseTypeLine, hasType, printedKeywords } from './characteristics.js';
+import { drawLater } from './effects.js';
 import type { AbilityDef, CardScript } from './scriptTypes.js';
 import type { ManaType } from './mana.js';
 
@@ -257,11 +258,21 @@ function tapAbilities(produces: readonly ManaType[]): AbilityDef[] {
  * than leaving the mechanic out") and this is its sibling: **inventing the effect of a real card is
  * worse than leaving it cardboard.**
  *
- * Cycling sits just on the far side: its effect is always "draw a card", so it is nearly as safe —
- * but it needs an ability with an `effect` function rather than a data field, which means this
- * module reaching into `effects.js`, and a derived ability that *runs code* is a different
- * commitment from one that states a cost. Left out deliberately, and named here so the next reader
- * knows it was a decision.
+ * **Cycling is now done too, and the reason it was left out first was weaker than it sounded.** The
+ * objection was that it needs an ability with an `effect` function rather than a data field, so
+ * this module would have to reach into `effects.js`, and "a derived ability that runs code is a
+ * different commitment from one that states a cost".
+ *
+ * That conflates two things. Cycling's effect is not inferred from the card's English: CR 702.29a
+ * *defines* cycling as "Discard this card: Draw a card", so the only card-specific parameter is the
+ * cost — exactly as with morph. Whether the engine happens to implement the mechanic as a script
+ * field or as an ability carrying a function is a fact about the engine, not about how much is
+ * being guessed. Nothing is guessed either way.
+ *
+ * It is also where the value is. Five of the eleven lands the pool refuses are cycling lands, so
+ * teaching this moves lands from 61% to roughly 79% — and lands are where the measured share lives
+ * (D332). The line that still holds is the one below it: "When this enters, you gain 2 life" is
+ * English, and no keyword defines it.
  */
 function keywordWithCost(line: string): { field: 'morph' | 'echo'; mana: string; mega?: true } | null {
   const match = /^(Morph|Megamorph|Echo)\s+((?:\{[^}]*\})+)$/i.exec(line.trim());
@@ -275,6 +286,33 @@ function keywordWithCost(line: string): { field: 'morph' | 'echo'; mana: string;
   */
   if (word === 'echo') return { field: 'echo', mana };
   return word === 'megamorph' ? { field: 'morph', mana, mega: true } : { field: 'morph', mana };
+}
+
+/**
+ * `Cycling {2}` — the cost of the one ability every cycling card has (CR 702.29a).
+ *
+ * Typeless cycling only. The printed variants that cycle for a *kind* of card — landcycling,
+ * basic landcycling, "Swampcycling {2}" — search a library instead of drawing, which is a
+ * different ability and a different prompt, so they are not matched and the card is refused.
+ */
+function cyclingCost(line: string): string | null {
+  const match = /^Cycling\s+((?:\{[^}]*\})+)$/i.exec(line.trim());
+  return match === null ? null : match[1]!;
+}
+
+/**
+ * The ability a cycling cost buys, built the same way the hand-written cycling lands build theirs.
+ *
+ * `discardSelf` in the cost is what makes `legalActions` offer it from the **hand** rather than the
+ * battlefield, which is the whole of the card: a land that is never a dead draw because its
+ * late-game version is a cantrip.
+ */
+function cyclingAbility(cost: string): AbilityDef {
+  return {
+    cost: { mana: cost, discardSelf: true },
+    description: `Cycling ${cost} (${cost}, Discard this card: Draw a card.)`,
+    effect: (c) => drawLater(c.state, c.controller, 1),
+  };
 }
 
 const INTEGER = /^\d+$/;
@@ -353,9 +391,12 @@ export function cardFromData(row: CardDataRow): Derivation {
       something, and a land that does something is a land this module does not understand.
     */
     let entersTapped = false;
+    let cycling: string | null = null;
     const parsed: ManaType[] = [];
     for (const line of lines) {
       if (isEntersTappedLine(line, name)) { entersTapped = true; continue; }
+      const cycle = cyclingCost(line);
+      if (cycle !== null && cycling === null) { cycling = cycle; continue; }
       const mana = parseManaLine(line);
       if (mana === null) {
         return { ok: false, why: `${name}: cannot read the line "${line}"` };
@@ -400,7 +441,14 @@ export function cardFromData(row: CardDataRow): Derivation {
       script: {
         name,
         ...(entersTapped ? { entersTapped: true } : {}),
-        abilities: tapAbilities(produces),
+        /*
+          Mana first, cycling after, matching the hand-written cycling lands. `manaSources` only
+          looks at abilities with `produces`, so the order does not change what it finds — but a
+          script a reader can compare to its hand-written twin is worth more than one they cannot.
+        */
+        abilities: cycling === null
+          ? tapAbilities(produces)
+          : [...tapAbilities(produces), cyclingAbility(cycling)],
       },
     };
   }

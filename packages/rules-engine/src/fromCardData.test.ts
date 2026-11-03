@@ -87,6 +87,29 @@ describe('building a card from its printed data', () => {
       expect(tower.script?.abilities).toHaveLength(5);
     });
 
+    it('reads a cycling land: the mana, the tapped clause and the cantrip', () => {
+      /*
+        Five of the eleven lands this pool refuses were cycling lands, which is why this is worth
+        having at all — see D338. The text is the hand-written helper's own, reminder text included,
+        because that is what a real card prints.
+      */
+      const thicket = built({
+        name: 'Tranquil Thicket', type_line: 'Land — Forest', mana_cost: '', cmc: 0, colors: [],
+        power: null, toughness: null, produced_mana: ['G'],
+        oracle_text: 'Tranquil Thicket enters the battlefield tapped.\n{T}: Add {G}.'
+          + '\nCycling {2} ({2}, Discard this card: Draw a card.)',
+      });
+      expect(thicket.kind).toBe('mana-source');
+      expect(thicket.script?.entersTapped).toBe(true);
+      const abilities = thicket.script?.abilities ?? [];
+      // Mana first, cycling after, so the script reads like its hand-written twin.
+      expect(abilities).toHaveLength(2);
+      expect(abilities[0]?.produces).toEqual(['G']);
+      expect(abilities[1]?.cost).toEqual({ mana: '{2}', discardSelf: true });
+      expect(abilities[1]?.produces).toBeUndefined();
+      expect(abilities[1]?.effect).toBeTypeOf('function');
+    });
+
     it('builds a vanilla creature with no script at all', () => {
       const bear = built({ name: 'Grizzly Bears', oracle_text: '' });
       expect(bear.kind).toBe('vanilla-creature');
@@ -282,6 +305,20 @@ describe('building a card from its printed data', () => {
       })).toContain('When Test Ainok is turned face up');
     });
 
+    it('refuses typed cycling, which searches a library rather than drawing', () => {
+      /*
+        Landcycling and its relatives — "Swampcycling {2}", "Basic landcycling {1}{G}" — are a
+        different ability with a different prompt: they search a library, where plain cycling draws.
+        CR 702.29a defines only the typeless version as "Discard this card: Draw a card", so the
+        typed ones are refused rather than treated as cantrips.
+      */
+      expect(why({
+        name: 'Test Cycler', type_line: 'Land', mana_cost: '', cmc: 0, colors: [],
+        power: null, toughness: null, produced_mana: ['B'],
+        oracle_text: '{T}: Add {B}.\nSwampcycling {2}',
+      })).toContain('cannot read the line "Swampcycling {2}"');
+    });
+
     it('refuses a creature whose text has rules in it', () => {
       expect(why({ oracle_text: 'When Test Card enters, draw a card.' }))
         .toContain('cannot read the line "When Test Card enters, draw a card."');
@@ -443,6 +480,53 @@ describe('a derived card at a real table', () => {
     expect(onBoard.filter((n) => n.includes('Forest') || n.includes('Gate')).length)
       .toBeGreaterThan(0);
     expect(s.turn).toBeGreaterThan(1);
+  });
+
+  it('cycles a derived land from the hand, drawing a card and leaving it in the graveyard', () => {
+    /*
+      The end of the path for the one derived ability that **runs code** rather than stating a
+      cost. Everything before this is a cost or a keyword the engine already reads; a cycling
+      ability carries an `effect`, is offered from the **hand** rather than the battlefield because
+      of `discardSelf`, and has to actually draw. So it is driven rather than inspected.
+    */
+    const THICKET = defOf({
+      name: 'Derived Thicket', type_line: 'Land — Forest', mana_cost: '', cmc: 0, colors: [],
+      power: null, toughness: null, produced_mana: ['G'],
+      oracle_text: 'Derived Thicket enters the battlefield tapped.\n{T}: Add {G}.'
+        + '\nCycling {2} ({2}, Discard this card: Draw a card.)',
+    });
+    const CYCLE_DECK: DeckSpec = {
+      id: 'cycle', name: 'Cycling', description: 'a derived cycling land',
+      cards: [{ card: THICKET, count: 12 }, { card: FOREST, count: 48 }],
+    };
+    let s = advanceTo(arena({
+      deckSpecs: { cycle: CYCLE_DECK }, decks: { 0: 'cycle', 1: 'cycle' },
+      hands: { 0: ['Derived Thicket'] },
+      battlefield: { 0: ['Derived Forest', 'Derived Forest'] }, turn: 3,
+    }), 'precombat-main');
+
+    const held = find(s, 0, 'hand', 'Derived Thicket');
+    const cycle = legalActions(s, 0).plays
+      .find((p) => p.kind === 'activate' && p.card === held);
+    expect(cycle, 'cycling is offered on the card in hand').toBeDefined();
+
+    const handBefore = ids(s, 0, 'hand').length;
+    s = tapAllLands(s, 0);
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: held, abilityIndex: cycle!.abilityIndex ?? 0,
+    });
+    s = drain(passBoth(s));
+
+    /*
+      The card is in the graveyard and a replacement is in hand. Checked by **instance id**, not by
+      name: the deck is twelve of these, so the card drawn is quite often another Derived Thicket,
+      and the first draft of this assertion read the hand by name and failed for that reason. The
+      claim is "this card left and a card arrived", which only ids can say.
+    */
+    expect([...ids(s, 0, 'graveyard')]).toContain(held);
+    expect([...ids(s, 0, 'hand')]).not.toContain(held);
+    expect(ids(s, 0, 'hand').length, 'the cantrip replaced the card it discarded')
+      .toBe(handBefore);
   });
 
   it('never overrides a hand-written script, which is what keeps the pool unchanged', () => {

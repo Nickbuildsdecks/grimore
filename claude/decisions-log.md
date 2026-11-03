@@ -21064,3 +21064,66 @@ check and carrying on. That is defensible and is the reasoning `check-table-cont
 gives for being a separate file — if the table never deals, the seventy checks after it are reading
 a different game, so continuing would produce seventy misleading results rather than one clear
 one. Left as it is, deliberately, and written down so the next reader does not have to re-derive it.
+
+---
+
+## D338 — Cycling, the reasoning I used to exclude it, and the lookup that was missed (#308)
+
+D333 left cycling out and gave a reason. The reason was weaker than it sounded, and re-reading it
+is what produced this entry.
+
+The objection was: cycling needs an ability carrying an `effect` **function** rather than a data
+field, so `fromCardData` would have to reach into `effects.js`, and *"a derived ability that runs
+code is a different commitment from one that states a cost"*.
+
+That conflates two different things. What is worth being afraid of is **inferring an effect from a
+card's English**, because a card that silently does less than it reads throws nothing and fails no
+test. Cycling is not that: **CR 702.29a defines the keyword as "Discard this card: Draw a card"**,
+so the effect comes from the rules and the only card-specific parameter is the cost — exactly as
+with morph. Whether the engine implements a mechanic as a script field or as an ability holding a
+function is a fact about the engine, not a measure of how much is being guessed.
+
+It is also where the value was. **Five of the eleven lands the pool refused were cycling lands.**
+
+| | before | after |
+|---|---|---|
+| Lands | 17 of 28 — 60.7% | **22 of 28 — 78.6%** |
+| Overall | 43 of 360 — 11.9% | 48 of 360 — 13.3% |
+
+Lands are where the measured share lives (D332), so this is the largest single step the derivation
+has taken — five cards against morph-and-echo's two, and in the half of a deck that has to work
+before the rest of it can do anything.
+
+Typed cycling is refused: `Swampcycling {2}` and its relatives **search a library** rather than
+drawing, which is a different ability with a different prompt, and CR 702.29a defines only the
+typeless version. The line D333 drew still holds: "When this enters, you gain 2 life" is English,
+and no keyword defines it.
+
+### The lookup that was missed, and why only driving it could find that
+
+The end-to-end test earned its keep immediately. The derived cycling ability was **offered
+correctly** — `abilityIndex: 1`, `fromHand: true`, cost `{2}` — the cost was paid, the card went to
+the graveyard, the ability went on the stack, and it **resolved doing nothing**. No error, no
+refusal, no draw. A card that silently did half of what it reads, which is exactly the failure this
+module's whole design exists to avoid, arriving by a route the design did not cover.
+
+The cause: D331 wired five call sites and all five are **battlefield** lookups — `manaSources`,
+`potentialMana`, the ability-offering loop, the arrival hook, and `scriptOf`. It did not wire
+**`scriptOnStack`**, which is how a resolving spell or ability finds its `effect`. That one still
+read the hand-written registry by name, which has no entry for a derived card.
+
+Two things make it worth writing down rather than only fixing:
+
+- **An ability on the stack is the one lookup that can reach a card no longer in play.** A cycling
+  cost discards the card as the ability is activated, so by the time resolution runs the instance is
+  in the graveyard and the only thing left is `cardDefs[object.cardKey]` — which is precisely what
+  `scriptForCard` takes. The shape of this mechanic is what exposed the gap; a mana ability never
+  leaves the battlefield and would never have found it.
+- **Inspecting the derived script would not have caught it.** A unit test asserting that
+  `abilities[1].effect` is a function passes either way — the script was always right. What was
+  wrong was the engine's path to it, and only resolving the ability could say.
+
+Proved by break: revert `scriptOnStack` to `scriptFor` and the cycling test fails alone while the
+other 35 pass.
+
+Gate green: 2181 tests across 17 packages, 1407 in the engine.

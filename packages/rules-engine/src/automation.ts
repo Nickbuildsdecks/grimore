@@ -352,7 +352,22 @@ const scriptOf = (state: GameState, instanceId: string): CardScript | undefined 
 const scriptOnStack = (state: GameState, object: StackObject): CardScript | undefined => {
   const inst = state.instances[object.id];
   if (inst !== undefined && isFaceDownObject(inst)) return undefined;
-  return scriptFor(state.cardDefs[object.cardKey]?.name);
+  /*
+    `scriptForCard`, for the same reason `scriptOf` above uses it — and this is the one that was
+    missed, which cost a derived cycling land its cantrip.
+
+    The first wiring covered the *battlefield* lookups: offering an ability, paying for it,
+    arriving tapped. It did not cover this one, and the symptom is the worst shape available: the
+    ability was offered correctly, the cost was paid, the card went to the graveyard, the ability
+    went on the stack, it resolved — and nothing happened, because the script this looks the
+    `effect` up in was the hand-written registry, which has no entry for a derived card. No error,
+    no refusal, a card that silently did half of what it reads.
+
+    An ability on the stack is also the *only* lookup that can reach a card no longer in play: a
+    cycling cost discards the card as it is activated, so by the time this runs the only thing left
+    is `cardDefs[object.cardKey]`. That is exactly what `scriptForCard` takes.
+  */
+  return scriptForCard(state.cardDefs[object.cardKey]);
 };
 
 /** Sorcery timing: your own main phase, empty stack, and you hold priority. */
