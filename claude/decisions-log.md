@@ -19038,3 +19038,17 @@ have identified it even if the run had been stopped early, had anyone been readi
 One further chunk (seeds 7869+) was still running when this was written and is recorded in the
 ledger afterwards; at a margin of zero over 2280 pods it cannot change the conclusion, and 2280 is
 quoted because that is the sample the target named.
+
+**It landed at 76-78, and did not:** eighteen chunks, **1216-1218 of 2434 decided pods, −0.08
+points, −0.04 sigma, bound ±4.1 points.** The pre-registered figure and the everything-we-ran
+figure agree to within a tenth of a point, which is the last thing a null needs to say for itself.
+
+**And the calibration still reads the way D241 and D244 left it**, re-run on the current engine
+after the `exposedPower` fix and the `castable` term: 62% sign accuracy at turns 5-8 (D244 recorded
+61%), hand at 44% there and 38% at turns 9-12 (D241 recorded 42-46% mid-game). So nothing about the
+clock measurement moved the function's shape, and the diagnosis that the next gain is *a term that
+sees something new* rather than a weight stands untouched. Two things in that table are worth a
+future reader's attention and neither is acted on here: turns 1-4 read **51% with 574 of 1248
+samples exactly tied**, which may be honest — a turn-three board often genuinely is undetermined —
+and `hand` is still the one component that points the wrong way while being inert (D243), which is
+the pair that produced `castable` and may yet produce its mirror.
