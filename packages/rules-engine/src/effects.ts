@@ -1344,12 +1344,23 @@ export function scheduleDelayed(
   },
 ): GameState {
   const seq = state.autoSeq + 1;
+  /*
+    Which object the subject is *now*, so the ability cannot act on its replacement (CR 400.7).
+
+    Taken here because here is the only moment it is knowable: by the time the ability fires the
+    card may have been blinked, and the id alone cannot tell that apart from never having moved.
+    See `DelayedTrigger.subjectSeq`.
+  */
+  const subjectSeq = spec.subject === undefined
+    ? undefined
+    : state.instances[spec.subject]?.objectSeq ?? 0;
   return {
     ...state,
     autoSeq: seq,
     delayed: [...state.delayed, {
       id: `dl${seq}`,
       ...spec,
+      ...(subjectSeq === undefined ? {} : { subjectSeq }),
       createdTurn: state.turn,
       createdStep: state.step,
     }],

@@ -12101,6 +12101,93 @@ describe('delayed triggers: at end of combat, and at the next end step (CR 603.7
     expect(offered.length).toBeGreaterThan(0);
     expect(offered.some((t) => t.kind === 'card' && t.id === wisp)).toBe(false);
   });
+
+  /*
+    "That creature" is an object, not an id — and a blink makes a new one (CR 400.7).
+
+    The board is the play rather than a construction: the Basilisk attacks, you block it, and you
+    Cloudshift your own blocker in response. The blink takes it out of combat, so no damage is
+    dealt either way, and the creature that comes back is a **new object** that the Basilisk's
+    delayed "destroy the creature it fought" can no longer find. The engine destroyed it anyway,
+    because `relocate` hands a card back its own instance id and the script's own comment — "no
+    `destroy` of a creature that has left: `destroy` reads the instance and does nothing for a card
+    that is not on the battlefield" — is true only of a card that left and *stayed* gone.
+
+    This is the second register in the engine keyed on an instance id across a zone change; #283
+    fixed the first (continuous effects) and said in as many words that a new one would inherit the
+    bug. It did. The second test is the control: the same combat with the Cloudshift spent on a
+    creature that was not blocking, where the blocker still dies — so the first test is about which
+    object was blinked and not about a Cloudshift having been cast at all.
+  */
+  const basiliskCombat = (hand: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'delta-bloom', 1: 'verdant-guard' },
+    hands: { 1: [...hand] },
+    battlefield: {
+      0: ['Forest', 'Forest', 'Thicket Basilisk'],
+      1: ['Plains', 'Grizzly Bears', 'Centaur Courser'],
+    },
+    turn: 4, firstSeat: 0,
+  }), 'declare-attackers');
+
+  it('a blinked blocker is a new object, so the Basilisk cannot destroy it at end of combat', () => {
+    let s = basiliskCombat(['Cloudshift']);
+    const basilisk = find(s, 0, 'battlefield', 'Thicket Basilisk');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = passBoth(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: basilisk, defender: 1 }],
+    }));
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bears, attacker: basilisk }] }));
+    expect(s.delayed.length).toBe(1);
+    const was = s.instances[bears]!.objectSeq;
+
+    // Seat 0 passes so the blocker's controller can answer inside the declare-blockers step.
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, {
+      type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Plains'), abilityIndex: 0,
+    });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Cloudshift'),
+      targets: [{ kind: 'card', id: bears }],
+    })));
+    // Same id, back on the battlefield, and a different object: all three at once is the bug.
+    expect(s.instances[bears]!.zone).toBe('battlefield');
+    expect(s.instances[bears]!.objectSeq).not.toBe(was);
+
+    s = advanceTo(s, 'end-combat');
+    /*
+      The ability still **fires** (CR 603.7d) — the trigger has happened and the entry is spent;
+      what it has lost is its subject. Asserted on the stack rather than inferred from the empty
+      `delayed` list, because "dropped before it fired" and "fired at nothing" leave the same
+      board and only one of them is the rule.
+    */
+    expect(stackNames(s)).toContain('destroy Grizzly Bears');
+    expect(s.delayed.length).toBe(0);
+    s = drain(s);
+    expect(s.instances[bears]!.zone).toBe('battlefield');
+  });
+
+  it('and the control: a Cloudshift on something else does not save the blocker', () => {
+    let s = basiliskCombat(['Cloudshift']);
+    const basilisk = find(s, 0, 'battlefield', 'Thicket Basilisk');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = passBoth(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: basilisk, defender: 1 }],
+    }));
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bears, attacker: basilisk }] }));
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, {
+      type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Plains'), abilityIndex: 0,
+    });
+    // The same spell, the same combat, a different creature — the one that was not blocking.
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Cloudshift'),
+      targets: [{ kind: 'card', id: courser }],
+    })));
+    s = drain(advanceTo(s, 'end-combat'));
+    expect(s.instances[bears]!.zone).toBe('graveyard');
+    expect(s.instances[courser]!.zone).toBe('battlefield');
+  });
 });
 
 describe('the monarch, as a rule rather than a button (CR 720)', () => {

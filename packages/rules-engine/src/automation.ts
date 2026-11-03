@@ -281,9 +281,21 @@ function fireDelayed(state: GameState, step: Step): GameState {
   if (due.length === 0) return state;
   let next: GameState = { ...state, delayed: state.delayed.filter((e) => !due.includes(e)) };
   for (const entry of due) {
+    /*
+      "That creature" is the object the ability was scheduled about, not whatever now wears its id
+      (CR 400.7).
+
+      `relocate` hands a card back its own instance id, so a creature blinked out and straight back
+      reads as present — and a Thicket Basilisk's "destroy the creature it fought" killed the
+      Cloudshifted blocker that the rules say it can no longer find. The entry still fires, because
+      the trigger has happened (CR 603.7d); what it loses is its subject, and every effect that
+      reads one already does nothing without it. See `DelayedTrigger.subjectSeq`.
+    */
+    const sameObject = entry.subject === undefined || entry.subjectSeq === undefined
+      || (next.instances[entry.subject]?.objectSeq ?? 0) === entry.subjectSeq;
     next = pushAbility(
       next, entry.source, entry.controller, entry.abilityIndex, [], 'triggered', entry.description,
-      entry.subject === undefined ? {} : { subject: entry.subject },
+      entry.subject === undefined || !sameObject ? {} : { subject: entry.subject },
     );
   }
   return next;

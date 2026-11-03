@@ -7629,12 +7629,21 @@ const FLICKERWISP: CardScript = {
         if (id === null) return c.state;
         const name = nameOfCard(c.state, id);
         /*
-          Scheduled before the exile, and it matters: once the card is in exile `nameOfCard` still
-          reads it, but the *owner* the return needs is read when the delayed ability resolves, off
-          an instance that is still there. Exile is a zone the engine keeps cards in, so both are
-          safe — the order here is only so the log reads in the order a player saw it.
+          Exiled **first**, and then the return is scheduled about the card in exile.
+
+          This used to be the other way round, with a comment saying the order was only about how
+          the log reads. That stopped being true when a delayed ability started pinning which
+          *object* its subject is (CR 400.7, #285): a zone change makes a new object, so scheduling
+          first pinned the permanent on the battlefield and the card that arrived in exile no
+          longer matched it — the Flickerwisp's own tests caught that within a minute, which is the
+          best argument for the order being written down rather than inferred.
+
+          The name is read before the move for the log line, because `nameOfCard` wants an instance
+          and the one in exile is a different object. The *owner* the return needs is read when the
+          delayed ability resolves, off whatever is in exile then.
         */
-        const scheduled = scheduleDelayed(c.state, {
+        const exiled = exileCard(c.state, id);
+        return scheduleDelayed(exiled, {
           source: c.source,
           controller: c.controller,
           abilityIndex: delayedIndexOf(FLICKERWISP),
@@ -7643,7 +7652,6 @@ const FLICKERWISP: CardScript = {
           subject: id,
           description: `return ${name} to the battlefield`,
         });
-        return exileCard(scheduled, id);
       },
     },
     {

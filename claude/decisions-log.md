@@ -19536,3 +19536,42 @@ alone, which is invisible while the only way an Aura leaves is its host leaving 
 scoped to a card that is gone applies to nothing. Binned off a *living* illegal host, a Pacifism
 would have sat in the graveyard and gone on pacifying. That is the same latent leak the bestow and
 Equipment branches each call out in their own comments; this is the first case that could feel it.
+
+## D306 — The second register keyed on an instance id, and #283 said it would be there
+
+D304 closed the CR 400.7 work with a sentence about what was left: "a new register keyed by
+instance id will inherit this bug, and nothing in the types will say so." There was already one.
+`scheduleDelayed` stores its `subject` as a bare id and `fireDelayed` hands it to the ability, and
+`relocate` gives a card back its own id — so a delayed ability finds the replacement of the object
+it was about.
+
+**Thicket Basilisk is the reachable case and it is a play, not a board.** The Basilisk attacks, you
+block, and you Cloudshift your own blocker. The blink takes it out of combat so no damage is dealt,
+and the creature that comes back is a new object the delayed "destroy the creature it fought" can no
+longer find. The engine destroyed it. Two seats, two decks, one combat — more reachable than the
+pump bug that prompted the search for it.
+
+**The script's own comment was true of the wrong thing.** "No `destroy` of a creature that has left:
+`destroy` reads the instance and does nothing for a card that is not on the battlefield, which is
+the rule rather than a guard." That holds for a card that left and stayed gone, which is the only
+case anybody had in mind when it was written. A comment claiming a rule is worth no more than a test
+asserting it, and this one had outlived its truth by a zone change.
+
+**The ability still fires.** CR 603.7d: the trigger has happened, so the entry is spent and the
+ability goes on the stack; what it has lost is its subject. The test asserts that on the stack
+rather than inferring it from an empty `delayed` list, because "dropped before it fired" and "fired
+at nothing" leave the same board and only one of them is the rule.
+
+**Three users of `subject`, and checking the other two was not a formality.** Flickerwisp broke
+within a minute of the fix landing, because it scheduled the return *before* exiling the card: a
+zone change makes a new object, so the pinned seq was the permanent's and the card that arrived in
+exile did not match it. The order is now exile-then-schedule and the comment that used to say the
+order was "only so the log reads in the order a player saw it" says why it is load-bearing. Unearth
+needed nothing: its subject is itself, and the "or if it would leave the battlefield" replacement
+means it cannot be blinked at all.
+
+**The general shape, since this is twice now.** An instance id is not an identity across a zone
+change, and the engine has exactly one thing that *is* — `objectSeq`, which combat has used since it
+was written. Every place that remembers "this object" across time has to carry it: continuous
+effects do now (D304), delayed abilities do now, and combat always did. The next one will not
+announce itself either.

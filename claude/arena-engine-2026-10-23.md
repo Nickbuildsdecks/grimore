@@ -8434,6 +8434,30 @@ an attachment is not a target, so hexproof and shroud do not apply while protect
 that pins it is the one where a Blossoming Defense gives your own enchanted creature hexproof and the
 Pacifism stays — three of the four tests pass on the naive fix and that one does not.
 
+### A delayed ability found the replacement of the object it was about (#285, D306)
+
+D304 ended with a sentence about what was left — "a new register keyed by instance id will inherit
+this bug, and nothing in the types will say so" — and there was already one. `scheduleDelayed`
+stored its subject as a bare id, `relocate` gives a card back its own id, so a delayed ability found
+whatever now wore it.
+
+Thicket Basilisk is the reachable case and it is a play rather than a board: the Basilisk attacks,
+you block, you Cloudshift your own blocker. The blink takes it out of combat, and the creature that
+comes back is a new object the delayed "destroy the creature it fought" cannot find. The engine
+destroyed it. The script's own comment claimed the rule — "`destroy` reads the instance and does
+nothing for a card that is not on the battlefield" — which is true of a card that left and stayed
+gone, and that was the only case in mind when it was written.
+
+The entry now carries the subject's `objectSeq` and `fireDelayed` withholds the subject when they
+disagree. The ability still fires (CR 603.7d): the test asserts it on the stack, because "dropped
+before it fired" and "fired at nothing" leave the same board and only one is the rule.
+
+Checking the other two users of `subject` was not a formality. Flickerwisp broke at once — it
+scheduled the return before exiling the card, so the pinned seq was the permanent's and the card in
+exile did not match. Exile-then-schedule now, with the reason written down. Unearth needed nothing:
+its subject is itself and it cannot be blinked, because the leave-the-battlefield replacement exiles
+it instead.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

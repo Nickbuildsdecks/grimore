@@ -141,6 +141,19 @@ export interface DelayedTrigger {
   readonly of: 'you' | 'any';
   /** The permanent the ability is about, for "that creature". See `StackObject.subject`. */
   readonly subject?: string;
+  /**
+   * Which *object* the subject was, taken when the ability was scheduled (CR 400.7).
+   *
+   * An instance id is not an identity across a zone change: `relocate` gives the card back its own
+   * id, so a creature blinked out and straight back is a new object wearing the old name. "That
+   * creature" means the one the ability was about, and a delayed ability whose subject has become
+   * a different object has nothing to act on — which is the whole of the Cloudshift play against a
+   * Thicket Basilisk. `fireDelayed` compares this with `objectSeq` and withholds the subject when
+   * they disagree; the ability still fires, because the trigger has happened (CR 603.7d).
+   *
+   * Optional only because an entry with no `subject` has nothing to pin.
+   */
+  readonly subjectSeq?: number;
   readonly description: string;
   /**
    * The turn it was scheduled on, so "the **next** end step" cannot be the one already in
