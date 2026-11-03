@@ -488,6 +488,87 @@ function checkPlayerDocNamesEveryStarterDeck() {
 }
 checkPlayerDocNamesEveryStarterDeck();
 
+/**
+ * Every mana cost the player doc quotes has to be the cost the card actually has.
+ *
+ * The doc names cards in one shape -- `**Name** ({cost} ...)` -- eighty-three times, and a cost
+ * written there is a cost a player plans a turn around. The drift this catches is the same shape as
+ * the one #271 found by reading: the doc had said for 130 decisions that the opponent could not hold
+ * mana for a counterspell, long after it learned to. A document that contradicts the engine is worse
+ * than one that says nothing, because a reader has no way to tell.
+ *
+ * It caught one on the run that added it, and it was the one that costs something: Murderous
+ * Redcap's `{2}{B/R}{B/R}` was written `{2}{B}{R}`. Both coloured symbols are hybrid, so the card
+ * casts off four Swamps or four Mountains, and `{2}{B}{R}` tells a player they need one of each --
+ * on the pool's only hybrid card, in a doc that teaches hybrid mana two sections away.
+ *
+ * The shape is narrow on purpose and that is why it has no false positives: only a bolded name
+ * followed by a parenthesis that *starts* with mana symbols is read as a quoted cost, so prose that
+ * mentions a card without pricing it is left alone, and the trailing words inside the parenthesis
+ * ("1/1 in Ashen Rite", "sorcery") are ignored.
+ *
+ * Reads the card definitions out of `starterDecks.ts` **source** rather than the built engine,
+ * because guards run before anything is built -- and parses commanders too, since the doc quotes
+ * four of them and a commander is not in any deck's `cards`.
+ */
+function checkPlayerDocQuotesEveryManaCost() {
+  const decksFile = join('packages', 'rules-engine', 'src', 'starterDecks.ts');
+  const docFile = join('claude', 'play-realm-setup.md');
+  let source;
+  let doc;
+  try {
+    source = readFileSync(decksFile, 'utf8');
+    doc = readFileSync(docFile, 'utf8');
+  } catch {
+    console.error(`[guards] cannot read ${decksFile} or ${docFile}; the mana-cost check cannot run`);
+    bad++;
+    return;
+  }
+
+  // Every `const X: CardDef = { ... }`, keyed by printed name. A land has no `manaCost` at all,
+  // which reads as the empty string and can never match a quoted `{...}`.
+  const printed = new Map();
+  for (const chunk of source.split(/:\s*CardDef\s*=\s*\{/).slice(1)) {
+    const end = chunk.indexOf('\n};');
+    const body = end === -1 ? chunk : chunk.slice(0, end);
+    const named = /^\s*name: (?:'((?:[^'\\]|\\.)*)'|"([^"]*)")/m.exec(body);
+    if (named === null) continue;
+    const name = (named[1] ?? named[2]).replace(/\\'/g, "'");
+    printed.set(name, /^\s*manaCost: '([^']*)'/m.exec(body)?.[1] ?? '');
+  }
+  if (printed.size === 0) {
+    console.error(`[guards] found no CardDef in ${decksFile}, so this guard's parse is broken and`);
+    console.error('[guards] a pass would mean nothing. Fix the parse rather than the doc.');
+    bad++;
+    return;
+  }
+
+  let quoted = 0;
+  for (const match of doc.matchAll(/\*\*([^*\n]{2,48})\*\* \(([^)\n]{1,80})\)/g)) {
+    const lead = /^((?:\{[^}]+\})+)/.exec(match[2]);
+    if (lead === null) continue;
+    quoted++;
+    const name = match[1];
+    const actual = printed.get(name);
+    if (actual === undefined) {
+      console.error(`[guards] ${docFile} quotes a mana cost for "${name}", which is not a card in`);
+      console.error('[guards] starterDecks.ts. Fix the name, or the cost belongs to something else.');
+      bad++;
+      continue;
+    }
+    if (actual !== lead[1]) {
+      console.error(`[guards] ${docFile} prices "${name}" at ${lead[1]} and the card costs ${actual}.`);
+      bad++;
+    }
+  }
+  if (quoted === 0) {
+    console.error(`[guards] found no "**Name** ({cost})" in ${docFile}, so this guard checked`);
+    console.error('[guards] nothing. Either the doc stopped quoting costs or the shape changed.');
+    bad++;
+  }
+}
+checkPlayerDocQuotesEveryManaCost();
+
 if (bad) {
   console.error(`[guards] ${bad} violation(s)`);
   process.exit(1);

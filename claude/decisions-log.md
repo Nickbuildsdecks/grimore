@@ -19681,3 +19681,35 @@ one whose amount the caster *chooses*, so it is the one that can zero any toughn
 a one-toughness body. Both assert the range the card computed (`{ min: 0, max: 1 }`) instead of
 hardcoding the answer: a creature added to either deck with two toughness would change that number,
 and the assertion says so rather than quietly testing something else.
+
+## D310 — The doc priced the pool's only hybrid card as if it needed both colours
+
+The player doc quotes a card's mana cost in one shape — `**Name** ({cost} …)` — eighty-three times.
+Eighty-two of them match the card. **Murderous Redcap's `{2}{B/R}{B/R}` was written `{2}{B}{R}`.**
+
+That is the one of the eighty-three that costs a player something. Both coloured symbols are
+hybrid, so the Redcap casts off four Swamps or four Mountains; `{2}{B}{R}` says they need one of
+each, on the pool's only hybrid card, in a document that teaches hybrid mana two sections away
+(#167). A player with four Swamps reads the doc and does not try the card.
+
+**Found by asking the question in bulk rather than by reading.** Ten lines of node, 83 matches, one
+disagreement — which is the same method as `cr-claims.mjs` the hour before and a much better
+precision, because the shape being matched is narrow: only a bolded name followed by a parenthesis
+that *starts* with mana symbols counts as a quoted cost, so prose that merely mentions a card is
+left alone and the trailing words inside the parenthesis are ignored.
+
+**So it is a guard rather than a one-off.** `checkPlayerDocQuotesEveryManaCost` sits beside the
+deck-name guard #265 added, runs in the gate, reads the card definitions out of `starterDecks.ts`
+*source* (guards run before anything is built) and parses commanders too, since the doc prices four
+of them and a commander is not in any deck's `cards`. Verified by changing a cost in the doc on
+purpose and watching it fail.
+
+Two things it also checks, both because a guard that silently checks nothing is worse than no
+guard: that the parse found some card definitions at all, and that the doc still contains at least
+one quoted cost. Either coming back empty is reported as a broken guard rather than a pass.
+
+**The standing lesson, third time now** (#265 on deck counts, #271 on the counterspell line, this on
+a cost): the player doc is the one artefact in this repo that a human reads and nothing executes, so
+every class of claim in it that *can* be checked mechanically should be, and the classes that
+cannot — "the table feels fast", "this deck wants to attack" — are the ones worth a human's reading
+time.

@@ -8510,6 +8510,20 @@ Third time round for the same thread (D282, D302, and the engine's own CR 704.5e
 asserts the board can read identically whether the rule holds or not, and the only way to know which
 kind you wrote is to break the engine on purpose.
 
+### The doc priced the pool's only hybrid card as if it needed both colours (#290, D310)
+
+The player doc quotes a mana cost in one shape, `**Name** ({cost} …)`, eighty-three times. Eighty-two
+matched the card. Murderous Redcap's `{2}{B/R}{B/R}` was written `{2}{B}{R}` — both symbols are
+hybrid, so the card casts off four Swamps or four Mountains, and the doc told a player they needed
+one of each, two sections away from where it teaches hybrid mana.
+
+Found by asking in bulk rather than by reading: ten lines of node, 83 matches, one disagreement. The
+shape is narrow enough to have no false positives, so it became a guard —
+`checkPlayerDocQuotesEveryManaCost`, in the gate, reading the card definitions from `starterDecks.ts`
+source because guards run before any build, commanders included. It also fails if the parse finds no
+cards or the doc has no quoted costs, because a guard that silently checks nothing is worse than
+none.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
