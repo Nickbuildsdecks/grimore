@@ -72,10 +72,25 @@ const BUCKETS = [-20, -10, -3, 3, 10, 20];
   `castable` shipped at a weight of 1 on a win rate (+1.35 points over three seed sets) and a
   leverage reading (4.8% of cast decisions) — D271 — and this table, written at D241, predates it.
   So the newest term in the evaluation was the one nobody had ever asked the question this file
-  exists to ask: *does the seat it says is ahead actually win?* Reading it next to `hand`, which it
-  was built to replace, is the whole point: `hand` is a raw count that calibrates at 38-44%
-  mid-game, pointing the wrong way, and if the replacement was the right **shape** rather than the
-  right weight then it should not.
+  exists to ask: *does the seat it says is ahead actually win?*
+
+  **The answer is "barely", and that is the interesting part.** Over 1248 samples a band it reads
+  51 / 52 / 53 / 54 / 54 / 48 across the six bands — above 50% in five of six, consistently, and
+  only just. `hand`, the raw count it was built to replace, reads 50 / 44 / 38 / 42 / 46 / 44:
+  below 50% in five of six, and by more. So the replacement points the right way and the count
+  points backwards, which is what "right shape, wrong question" predicts — but castable is a much
+  weaker *predictor* than life (51-70%) or board (51-70%), while being worth +1.35 points in a win
+  rate that neither of those was ever asked for.
+
+  **That gap is the point of reading this table beside `term-leverage` rather than instead of it.**
+  A term earns games by separating the plays on offer at one decision, not by ranking the two
+  players; `castable` is the clean case where the two come apart, and D243's thesis is the reason.
+  Do not read a column here as a verdict on a term's worth in either direction.
+
+  **Do not read the 624-sample run either.** At `SEEDS=1` castable read 52 / 55 / 55 / 55 / 60 /
+  48 and the figures above halve the apparent effect. Those smaller numbers were committed before
+  the larger run finished, with a note saying so, and they were wrong about the magnitude while
+  right about the sign — the same shape of error D295 is about.
 
   Re-derived from the same primitives the bot uses rather than by calling its private
   `castableInHand`, which is not exported — the discipline above. One deliberate difference: the
