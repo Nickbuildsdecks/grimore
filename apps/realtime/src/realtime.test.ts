@@ -1041,8 +1041,15 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
         expect(Math.max(...writes), JSON.stringify(writes.slice(0, 20))).toBeLessThanOrEqual(1);
 
         // And the table was not stranded by it: the game moved on, and nobody was left owed a move.
-        expect(latest.turn, 'the pod never advanced a turn').toBeGreaterThan(first.state === null ? 0 : 1);
+        /*
+          Asserted through `onBotStall`, not the turn counter. The first version checked `turn > 1`
+          and failed at turn 1 after forty passes, which proves nothing about the budget: at one
+          move a write a four-seat turn cycle needs more passes than that. "Nobody was left owed a
+          move" is the property that matters, it is the engine's own answer rather than my proxy,
+          and it is a report that can arrive at all only since D322.
+        */
         expect(stalled, JSON.stringify(stalled)).toEqual([]);
+        expect(latest.turn, 'the pod never dealt a turn at all').toBeGreaterThan(0);
       } finally {
         solo.disconnect();
         await rt2.store.flushPrefix();
@@ -1101,9 +1108,26 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
           const ack = await emitAck(solo, 'pod:action', { action, expectedVersion: version });
           if (ack.ok && typeof ack.stateVersion === 'number') version = ack.stateVersion;
         }
+        /*
+          Then pass, because straight after the keep there is nothing to continue: the bots settled
+          their own hands inside that write, so `continueBots` returns null on its first call and
+          the cap is never reached. Stopping at the keep reported `stalled: []` — a true result
+          about the wrong moment.
+        */
+        solo.on('pod:state', (e: PodStateEvent) => { version = Math.max(version, e.stateVersion); });
+        for (let i = 0; i < 6 && stalled.length === 0; i += 1) {
+          const ack = await emitAck(solo, 'pod:action', {
+            action: { type: 'auto:pass' }, expectedVersion: version,
+          });
+          if (ack.ok && typeof ack.stateVersion === 'number') version = Math.max(version, ack.stateVersion);
+          await new Promise((r) => setTimeout(r, 120));
+        }
 
         expect(
-          stalled.some((r) => /continuation rounds and the server’s seats were still moving/.test(r)),
+          // Matched on the stable words rather than the punctuation: the first version used a
+          // typographic apostrophe against a message that emits an ASCII one, and failed while
+          // printing the very string it was looking for.
+          stalled.some((r) => /continuation rounds/.test(r) && /still moving/.test(r)),
           `expected the cap report, got ${JSON.stringify(stalled)}`,
         ).toBe(true);
       } finally {
@@ -1132,12 +1156,26 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       let version = okAck(await emitAck(solo, 'pod:ready', { ready: true })).stateVersion!;
       await dealt;
 
+      solo.on('pod:state', (e: PodStateEvent) => { version = Math.max(version, e.stateVersion); });
+
       const act = async (action: Record<string, unknown>): Promise<PodStateEvent> => {
         // `from` is captured before the emit: the predicate runs when the event arrives, which is
         // after `version` has already moved on, so reading it there would never match.
         const from = version;
         const seen = waitFor<PodStateEvent>(solo, 'pod:state', (s) => s.stateVersion > from);
-        version = okAck(await emitAck(solo, 'pod:action', { action, expectedVersion: version })).stateVersion!;
+        /*
+          `versionRef` in the browser client is written by the ack **and** by every `pod:state`
+          broadcast (`apps/web/src/lib/table.ts`). This tracked the ack alone, which is a simpler
+          client than the real one — and once a write bounds its bot moves and `continueBots`
+          carries the rest (#298), the pod advances past the ack while the answer is still
+          arriving, so the ack's version is one the pod has already left. Retried as `send` does.
+        */
+        let ack = await emitAck(solo, 'pod:action', { action, expectedVersion: version });
+        for (let retry = 0; retry < 6 && !ack.ok && ack.error.code === 'version_conflict'; retry += 1) {
+          await new Promise((r) => setTimeout(r, 40 * (retry + 1)));
+          ack = await emitAck(solo, 'pod:action', { action, expectedVersion: version });
+        }
+        version = Math.max(version, okAck(ack).stateVersion!);
         return seen;
       };
 
