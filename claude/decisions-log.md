@@ -19981,3 +19981,83 @@ an instrument rather than by an argument.
 One gap closed in passing: the first stall dump to carry the pod code printed an empty string,
 because `table-code` lives in the pre-game header that is gone once the game is dealt. The control
 bar's code has its own testid now, so a stalled table can still be found in Redis.
+
+## D319 — The driver reported two hundred and one passes it never sent
+
+`press` in `scripts/lib/table-driver.mjs` returns a boolean. `makeMove` discarded it:
+
+```js
+await press(page, 'primary-move');
+return `primary: ${label}`;
+```
+
+So a press Playwright refused was reported to the log, and to every check downstream, as a press
+that landed. On a stalled table that happened **201 times in one run** — the driver saying "primary:
+Pass" over and over while nothing was ever sent to the server.
+
+This is why every suspect for #297 came back innocent, and the list was long: the engine (52
+headless pods, every one to a winner), the pod bots, the rate limiter, a dropped socket, inert human
+moves, slow writes. Each was ruled out by an instrument, correctly, because none of them was ever
+involved. `podwatch` caught the state to prove it — `stuck-SLIVER-SPIRE-50.json`, turn 24, upkeep,
+activeSeat 0, priority 0, `passed: []`, stack empty, nothing pending, nobody eliminated, and
+`stateVersion` frozen at 193. A pod whose version never moves, with zero server errors, is a pod
+that was never asked to do anything.
+
+**The failure was in the instrument, and it was the kind that manufactures evidence rather than
+losing it.** A driver that silently drops a move makes the server look broken, and every hour spent
+on the server was spent on a fiction. It is the same shape as D314 and D318 one more time: a press
+that landed and a press that did not read identically, so they were one state.
+
+### The reason has to be captured where it happens
+
+The first diagnostic for this read the DOM after the failure: `elementFromPoint` at the button's
+centre, plus a list of full-width `fixed` overlays. It gave the same three readings sixteen times —
+`enabled, visible, pointer-events: auto` — which rules out disabled, hidden and pointer-opted-out
+and leaves the two answers that matter unseparated.
+
+Then, before spending another twenty-four pods on it, the obvious flaw: **`press` makes two attempts
+at a two-second timeout, so that read happens up to four seconds after the click was refused.** An
+overlay that closed in the meantime reads as a perfectly clear button — the answer that sends the
+hunt in the wrong direction, produced confidently.
+
+Playwright had already written the answer and `press` was throwing it away in a bare `catch {}`. Its
+call log names the element that "intercepts pointer events", quoted from the real markup, and says
+whether the button was ever "visible, enabled and stable" — written at the moment of the failure.
+`pressOrWhy` returns it; `press` keeps its boolean for the twenty-three call sites that do not care.
+The DOM read stays as corroboration, which is now its honest job: whether the obstruction is *still*
+there separates an overlay nobody closes from one that flickers.
+
+Checked against a button under a `fixed inset-0 z-50` veil and the same button uncovered — the exact
+three readings the stalled table gave. The covered one names `log-panel` by testid. **The check cost
+five seconds and the hunt it protects costs two hours**, which is the whole argument for running it.
+
+## D320 — A slow write's move count cannot say which fault it is
+
+D318 taught the server to report a slow write with its duration and its bot-move count, and said two
+samples are not a distribution. A census of ten pods — `SLOW_WRITE_MS=150`, every write above the
+noise floor — gave the distribution: 51 writes over 150ms, median 366ms, p90 1476ms, max 7814ms, ten
+at or above a second, one at or above four, none at eight.
+
+The worst five say something the count was never going to:
+
+```
+215 server moves  3831ms
+111 server moves  7814ms
+```
+
+**Duration does not track move count.** Per-decision cost dominates, and a write of many cheap
+searches and a write of a few expensive ones are the two faults — with opposite fixes. Bounding the
+moves per write fixes the first and cannot touch the second; if one search is over budget on its
+own, no bound on how many of them run will bring the write under eight seconds.
+
+So the report carries where the time went: how much of the write was spent inside `botAction`, and
+what the single worst decision cost. That separates four outcomes where the count separated two —
+many cheap searches, one search over budget alone, a cost that is not the bots at all (the engine
+clones a whole game state per move), and a human action slow by itself with no bot seats to blame.
+
+Timed with `performance.now()` rather than `Date.now()`: four hundred sub-millisecond decisions each
+rounded down to zero would report a write that spent all its time thinking as one that spent none,
+which is the measurement reading the opposite of the truth rather than merely imprecisely.
+
+**The fix for #298 is still unchosen, and deliberately so.** Choosing between three answers on two
+samples is what D315 is a record of going wrong.

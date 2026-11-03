@@ -8595,6 +8595,55 @@ exile, so the token is the only thing on the board that says which one won, and 
 the test. Two further rules (CR 702.21b, CR 601.2b) came off `cr-claims`'s uncited list by being
 read and found already tested: 88 to 86.
 
+## The hour the server was innocent (#297, D319)
+
+`press` in the browser driver returns a boolean saying whether the click landed. `makeMove`
+discarded it. So on a stalled table the driver reported **201 passes it never sent**, and the log
+read like a player patiently pressing a dead button — which is exactly what it was, except the
+button was alive and the press was being refused in the browser.
+
+Everything downstream of that was built on it. #297 had ruled out, each with its own instrument: the
+engine (52 headless pods, every one to a winner, no throw and nobody stuck), the pod bots, the rate
+limiter, a dropped socket, a human move that bought nothing, and slow writes. All six were honest
+results and all six were about things that were never involved. `podwatch` finally caught the state
+that proved it — a pod frozen at `stateVersion` 193 with an empty stack, nothing pending and nobody
+eliminated. A version that never moves, with no server errors, is a pod nobody asked to do anything.
+
+**The instrument was manufacturing evidence, not losing it**, which is the expensive kind of broken.
+
+Then nearly the same mistake twice. The first diagnostic for the failed press read the DOM
+afterwards, and `press` makes two attempts at a two-second timeout — so the read happens up to four
+seconds after the refusal, and an overlay that has since closed reads as a perfectly clear button.
+Playwright had written the answer already and `press` was dropping it in a bare `catch {}`: the call
+log names the element that "intercepts pointer events" from the real markup, at the moment it
+happened. That is the primary reading now; the DOM read says whether the obstruction is *still*
+there, which is a different and genuinely useful question.
+
+Verified against a button under a `fixed inset-0 z-50` veil and the same button uncovered — the
+three readings the stalled table gave sixteen times. Five seconds of checking, protecting a
+twenty-four-pod hunt that takes two hours.
+
+## A slow write now says where the time went (#298, D320)
+
+D318 found a write that took 17130ms and played 431 bot moves against a client that waits 8000.
+A ten-pod census of every write over 150ms then gave the shape: median 366ms, p90 1476ms, max
+7814ms, ten at or above a second, one at or above four.
+
+And it refuted the obvious fix. **Duration does not track move count** — 215 moves in 3831ms, 111
+moves in 7814ms — so per-decision cost dominates. A write of many cheap searches and a write of a
+few expensive ones are two different faults, and bounding the moves per write only helps the first:
+if one search is over budget on its own, no bound on how many run can save the write.
+
+So the report carries the time spent inside `botAction` and the cost of the single worst decision,
+which separates four outcomes where the count separated two. The fix for #298 stays unchosen until
+those numbers arrive from a real pod — picking among three answers on two samples is what D315 is a
+record of going wrong.
+
+One defect fell out of reading that code: `emit` in the web client resolves on the ack or at eight
+seconds and sets no state between, so the measured *median* slow write — a third of a second, and
+the p90 at a second and a half — is indistinguishable from a table that has stopped answering.
+Filed as #299, same class as #266 and #267 one layer up.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
