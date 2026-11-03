@@ -8,7 +8,7 @@
  * derived cards and play with it.
  */
 import { describe, it, expect } from 'vitest';
-import { cardFromData, tallyDerivations, type CardDataRow } from './fromCardData.js';
+import { cardFromData, type CardDataRow } from './fromCardData.js';
 import { scriptForCard, scriptFor } from './scripts.js';
 import { arena, apply, find, ids, nameOf, advanceTo, passBoth, drain, tapAllLands } from './testkit.js';
 import { legalActions, manaSources, potentialMana } from './legalActions.js';
@@ -240,26 +240,6 @@ describe('building a card from its printed data', () => {
       // No cross-check is possible, so the intrinsic subtype ability stands on its own.
       expect(forest.script?.abilities?.[0]?.produces).toEqual(['G']);
       expect(forest.def.colors).toEqual([]);
-    });
-  });
-
-  describe('tallying a batch', () => {
-    it('counts what it built by kind and keeps every refusal reason', () => {
-      const tally = tallyDerivations([
-        row({ name: 'Bear A', oracle_text: '' }),
-        row({ name: 'Bear B', oracle_text: 'Flying' }),
-        row({ name: 'Forest', type_line: 'Basic Land — Forest', oracle_text: '', mana_cost: '', cmc: 0, colors: [], power: null, toughness: null }),
-        row({ name: 'Starry', power: '*', toughness: '*' }),
-        row({ name: 'Bolt', type_line: 'Instant', power: null, toughness: null, oracle_text: 'Deals 3 damage.' }),
-      ]);
-      expect(tally.built).toBe(3);
-      expect(tally.byKind['vanilla-creature']).toBe(1);
-      expect(tally.byKind['keyword-creature']).toBe(1);
-      expect(tally.byKind['basic-land']).toBe(1);
-      // The reasons, not just the count: a count says nothing about what to script next.
-      expect(tally.refused).toHaveLength(2);
-      expect(tally.refused[0]).toContain('Starry');
-      expect(tally.refused[1]).toContain('Bolt');
     });
   });
 });

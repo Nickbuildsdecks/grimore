@@ -390,24 +390,19 @@ export function cardFromData(row: CardDataRow): Derivation {
   return { ok: false, why: `${name}: ${typeLineText} is not a card shape this reads` };
 }
 
-/** What a batch of rows came to, for a caller that wants to say how far the data gets it. */
-export interface DerivationTally {
-  readonly built: number;
-  readonly byKind: Readonly<Record<DerivedKind, number>>;
-  /** Every rejection's reason, in row order, so the common shapes can be counted. */
-  readonly refused: readonly string[];
-}
+/*
+  There was a `tallyDerivations(rows)` here, and it is gone on purpose.
 
-export function tallyDerivations(rows: readonly CardDataRow[]): DerivationTally {
-  const byKind: Record<DerivedKind, number> = {
-    'basic-land': 0, 'mana-source': 0, 'vanilla-creature': 0, 'keyword-creature': 0,
-    'blank-permanent': 0,
-  };
-  const refused: string[] = [];
-  let built = 0;
-  for (const row of rows) {
-    const result = cardFromData(row);
-    if (result.ok) { built += 1; byKind[result.kind] += 1; } else { refused.push(result.why); }
-  }
-  return { built, byKind, refused };
-}
+  It counted a batch by kind and collected the refusal reasons — the obvious companion to
+  `cardFromData`, and exactly the shape of API that gets written because it seems like it will be
+  wanted. Nothing wanted it. `scripts/measure/derivable.mjs` needs the share **by card type** and
+  the refused lines **grouped by what they open with**, because those are the two readings that are
+  actually useful, and neither belongs in this package: they are how a report is laid out, not what
+  a card is. So the script walks `cardFromData` itself and `tallyDerivations` had exactly one
+  caller, its own test.
+
+  A test over an export nobody calls is the same thing this session has spent the day finding: it
+  passes, it is green, and the only thing it proves is that the speculation compiles. Deleted rather
+  than left for the next reader to wonder whether something depends on it. The real "what did this
+  list derive" answer is `CustomDeckResult.fromData`, which a caller does read.
+*/
