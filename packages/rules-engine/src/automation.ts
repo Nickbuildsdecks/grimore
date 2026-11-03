@@ -1410,7 +1410,19 @@ function pushAbility(
  * | a creature with 0 toughness or lethal damage (CR 704.5a/g) | here, with regeneration and indestructible |
  * | the legend rule (CR 704.5j) | here, below the deaths (D288) |
  * | a token outside the battlefield ceasing to exist | `cardActions.ts`, in `relocate`, because it is a fact about the move |
+ * | a copy of a spell outside the stack ceasing to exist (CR 704.5e) | nowhere, and it cannot be otherwise — see below |
+ * | a creature attached to something becoming unattached (CR 704.5p) | in the Aura branch above: the pool's only attached creature is a bestowed one |
  * | a soulbond pair that is no longer two creatures (CR 702.95b) | here, last in the pass |
+ *
+ * **Nowhere, because the shape of the state already says it.** CR 704.5e is the one case with no
+ * check anywhere, and adding one would be writing a branch that cannot be reached: a copy of a
+ * spell is a stack object with no instance under its id (see `StackObject.copyOf`), so there is no
+ * card to put in a graveyard and no code path that could try. `counterSpell` looks the instance up
+ * by the *stack object's* id and finds nothing, so countering a copy removes it and stops — which
+ * is the rule, arrived at by construction rather than by enforcement. The test that pins it is the
+ * `instances[copy]` assertion in `scripts.test.ts`, not a graveyard count: a count of the cards
+ * left behind reads the same whether the rule holds or not, which was worth finding out by
+ * breaking `counterSpell` on purpose and watching the count pass anyway.
  *
  * **Not here, and deliberately:** the world rule, which needs a world enchantment and the pool has
  * none, and everything about Battles and Sieges, which this engine has no cards for. Both would be

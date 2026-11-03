@@ -18754,3 +18754,75 @@ hours of compute**, or about three in parallel on four cores. With checkpoints i
 all-or-nothing: the run can be read at any pass and stopped when the sample is enough, and
 *"620 pods, 310-310"* is an honest answer where a truncated run used to be no answer at all.
 
+
+## D290 — Two CR 704.5 rows the audit missed, and one of them cannot be written
+
+D288 put a table into `stateBasedActions` claiming to be the whole of CR 704.5 "audited against the
+rules rather than grown one card at a time". It had thirteen rows and the rule has fifteen cases.
+The two it skipped are the two that are not enforced *here*, which is exactly how a list goes wrong
+— the audit found the cases that needed code and stopped at the edge of the file.
+
+**CR 704.5p**, a creature attached to something becoming unattached, is handled: the pool's only
+attached creature is a bestowed one, and the Aura branch above already turns it back into a creature
+instead of binning it (`inst.bestowed === true`, which is bestow's own CR 702.103c). One row, no
+code.
+
+**CR 704.5e**, a copy of a spell outside the stack ceasing to exist, is the interesting one, because
+it has no check anywhere and adding one would be writing an unreachable branch. A copy of a spell is
+a stack object with no instance under its id, so there is no card to put in a graveyard and no path
+that could try. `counterSpell` looks the instance up by the *stack object's* id, finds nothing, and
+stops — which is the rule, arrived at by construction rather than by enforcement.
+
+**The part worth recording is how nearly I wrote a test that proved nothing.** The obvious assertion
+for 704.5e is a graveyard count: counter the Twincast copy, then check there is one Lightning Bolt
+and not two. I wrote it, it passed, and then — on the D287 habit of breaking the code to see the
+test fail — I made `counterSpell` fall back to `instances[object.source]`, which on a copy is the
+*original's* instance, and ran it again. **It still passed.** The original Bolt resolves and reaches
+the graveyard either way, so the count reads the same whether the rule holds or not. The assertion
+that actually pins the rule is the one the test already had before I touched it:
+`expect(s.instances[copy]).toBeUndefined()`. The shape of the state is the rule.
+
+So: two rows added, no code, and the reverted experiment written into the docblock so the next person
+who thinks a graveyard count would be a good test for this reads why it is not. Third time in this
+session that what a test asserts decided what a bug could hide behind (D282, D287), and the first
+time the answer was that the test I was about to add was the weaker one.
+
+## D291 — The doc told players the opponent cannot hold mana up, 130 decisions after it learned to
+
+The player doc describes the computer opponent twice: once in *You can play on your own* near the top
+and once in *What is not done* at the bottom. Both said it "will not hold a creature back to block or
+keep mana up for the counterspell in its hand".
+
+**The second half has been false since #60**, which built `reserveForAnswers` — the filter that
+keeps back the mana the cheapest answer in hand needs, on that seat's own turn, only when the play
+would make the answer unpayable. #148 found why it still was not working, #149 checked the judgement
+half, #152 narrowed it to answers with something to point at, and #218 corrected it for foretell.
+Five tasks. The doc never moved.
+
+**And the document contradicted itself**, which is what makes this worse than a stale line: Tidal
+Mind's entry under *Thirteen starter decks* carries the measured windows for exactly this rule —
+44% cast against 41% could-not-pay, where they read 7% and 87% before the fix — and names
+`reserveForAnswers: false` as the switch that puts the old version back. A reader meeting the
+summary first would conclude the opponent taps out; a reader meeting the deck entry first would
+conclude it does not. Nothing in the file said which was current.
+
+**The other two claims are true, and were being sold wrong.** It really does not hold a creature
+back to block and really does not search your reply — but neither is an undone feature. Both were
+built and measured and taken out: D110 for the reply, and for blockers a scoring bonus for an
+untapped creature that moved nothing at one point, **cost 26 games in 400 at two points**, and made
+the bot worse at four. In this pool attacking is right. "Not done" and "done, measured, and reverted
+because it lost games" are different facts about a program, and only one of them invites somebody to
+go and fix it.
+
+**The pace figures matched no measurement.** The doc said "under a millisecond a decision in a duel
+and about five in a four-seat pod". The recorded soak is D96: 200 unsteered four-seat pods, 89,188
+decisions, **2ms at the median, 7.6ms mean, p99 65ms**, and one decision in ninety thousand over two
+seconds. Not far out in magnitude, and not a number anybody had measured. Both paragraphs now carry
+the measured ones and say where they come from, and the tail is named rather than averaged away.
+
+No guard for this one. #265's guard works because deck names and counts are structured data a script
+can parse out of `starterDecks.ts`; "does the bot hold mana up" is a default on an options interface
+that prose has to describe in a sentence, and a guard that pattern-matched the sentence would fail
+the first time somebody rephrased it. What the paragraph carries instead is the symbol name
+(`reserveForAnswers`), the file, and the decision numbers — so the next person to change the default
+has a string to grep for.

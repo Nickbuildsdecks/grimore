@@ -8104,6 +8104,46 @@ that form, at zero and tested, waiting on the same question. And a real pod win 
 form is finally being spent on: 1040 pods an arm against a floor of about ±5, three disjoint seed
 sets.
 
+### The test I was about to add was the weaker one (#269 follow-up, D290)
+
+The CR 704.5 table D288 put into `stateBasedActions` claimed to be the whole rule and had thirteen
+of its fifteen cases. Both missing rows turned out to be rows that need no code here — 704.5p
+because the pool's only attached creature is a bestowed one the Aura branch already handles, and
+704.5e because a copy of a spell *cannot* be put anywhere: it has no instance under its stack id, so
+there is no card to bin and no path that could try.
+
+The part worth keeping is what happened when I tried to test 704.5e. The obvious assertion is a
+graveyard count — counter the Twincast copy, check there is one Lightning Bolt and not two. It
+passed. Then, on the habit D287 left behind, I broke `counterSpell` on purpose so that it would bin
+the copy through `source` (which on a copy is the *original's* instance) and ran it again. **It
+passed again**, because the original Bolt reaches the graveyard either way. The assertion that
+actually pins the rule was already in the test before I touched it: `instances[copy]` is undefined.
+Three times this session what a test asserts decided what a bug could hide behind, and this is the
+first time the answer was to delete my own test rather than add it.
+
+### A document that contradicted itself about its own opponent (#271, D291)
+
+The player doc describes the computer opponent in two places, and both said it "will not hold a
+creature back to block or keep mana up for the counterspell in its hand". The second half stopped
+being true at #60 and has been corrected four times since (#148, #149, #152, #218) — and all the
+while Tidal Mind's own deck entry, in the same file, carried the measured windows for the rule and
+named the switch that turns it off. A reader meeting the summary first concluded the opponent taps
+out; a reader meeting the deck entry first concluded it does not.
+
+The other two claims were true and sold wrong. It really does not hold a blocker back and really
+does not search your reply, but neither is undone work: both were built, measured and reverted —
+D110 for the reply, and for blockers a bonus on untapped creatures that moved nothing at one point,
+**cost 26 games in 400 at two**, and made the bot worse at four. In this pool attacking is right.
+"Not done" and "done, measured, reverted because it lost games" invite very different things from
+whoever reads them next.
+
+The pace figures matched no measurement at all — "under a millisecond a duel, about five a pod"
+against D96's recorded 200-pod soak of 2ms median, 7.6ms mean, p99 65ms, one decision in ninety
+thousand over two seconds. No guard for any of this: #265's guard works because deck counts are
+structured data, and a guard that pattern-matched an English sentence would fail the first time
+somebody rephrased it. What the paragraphs carry instead is the symbol name, the file and the
+decision numbers.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

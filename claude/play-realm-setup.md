@@ -26,9 +26,12 @@ button in the control bar.
 server plays. No code to share and nobody to wait for. The opponent mulligans, plays lands, casts
 spells, attacks and blocks, and before each play it tries every option it has and keeps the one
 that leaves the board it likes best — so it will not throw a sweeper at its own creatures or spend
-removal on the smallest thing you own. It is still not a strong player: it cannot see your reply,
-hold a creature back to block, or keep mana up for the counterspell in its hand. It is a real one,
-and it beats the version before it two games in three.
+removal on the smallest thing you own. It **does** keep mana up for the answer in its hand, so a
+turn where it casts nothing and passes with two Islands open is a turn it is holding the
+counterspell. It is still not a strong player: it cannot see your reply, and it will not hold a
+creature back to block. Both of those were built and measured and then taken out again rather than
+left undone — in this pool attacking is right, and a bot that keeps blockers home is a bot that
+never closes. It is a real one, and it beats the version before it two games in three.
 
 **Or a whole Commander pod on your own.** *Solo pod* in the same section deals a four-player
 Commander game against three opponents on three different decks — forty life each, a command zone
@@ -1377,11 +1380,23 @@ decks they pasted in).
   engine resolves by hand, and the log says it was not automated.
 - **The computer opponent is not a strong player.** It attacks only where the trade is not a
   loss, swings with everything when that is lethal, blocks the biggest thing each creature can
-  handle, casts the biggest spell it can afford and mulligans a hand with no land in it. What it
-  does not do is think about next turn: it will not hold a creature back to block or keep mana up
-  for the counterspell in its hand. It plays a real game; it does not plan one. It is, however,
-  **quick about it** — under a millisecond a decision in a duel and about five in a four-seat pod,
-  so the wait at a table is the network rather than the opponent.
+  handle, casts the biggest spell it can afford and mulligans a hand with no land in it. It also
+  **holds mana for the answer in its hand** — the cheapest one only, on its own turn, and only when
+  the play it is giving up would leave the answer unpayable, which is `reserveForAnswers` in
+  `bot.ts` and is on by default. Tidal Mind's entry under *Thirteen starter decks* above has the
+  measured windows (44% cast against 41% could-not-pay, where they used to read 7% and 87%) and the
+  switch that puts the old tapped-out version back. This paragraph said the opposite of all of it for a long time
+  after it stopped being true — the document contradicted itself, which is a mistake a reader has
+  no way to catch.
+  What it does not do is think about the turn after this one: it will not hold a creature back to
+  block, and it will not let you answer inside its own search. Neither is an undone feature — both
+  were built, measured and reverted (D110, and the untapped-creature bonus that cost 26 games in
+  400), because in this pool attacking is right. It plays a real game; it does not plan one.
+  It is, however, **quick about it**: over 200 unsteered four-seat pods and 89,188 decisions, a
+  decision takes **2ms at the median and 7.6ms on average**, with a 99th percentile of 65ms and one
+  decision in ninety thousand over two seconds. So the wait at a table is the network rather than
+  the opponent. Those are the numbers from the soak recorded as D96 rather than an
+  impression, and the figures this paragraph used to carry matched no measurement at all.
 - **No card images**, for the reason above.
 - **A pod plays, and the pod *interface* is plain.** Four browsers play one to a survivor every
   test run — commanders cast from the command zone and taxed, attacks aimed at whichever opponent
