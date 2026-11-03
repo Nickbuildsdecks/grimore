@@ -31,8 +31,14 @@
  *
  * A pod is noisier than a duel by construction — three opponents, three chances to be attacked, and
  * four rotations of a table that share a seed. To resolve a four-point effect here needs roughly ten
- * times the games: about **1000 pods an arm, ninety minutes a reading**, three disjoint sets. Nothing
- * in this project has spent that. So **a pod win rate from this file is only a result if it quotes
+ * times the games: about **1000 pods an arm**, three disjoint sets.
+ *
+ * **What that costs is measured now and it is twice what this docblock used to say** (D289). One
+ * pass — 52 pods, every deck, all four rotations — takes **503 seconds**, so `SEEDS=20` is about
+ * **two hours fifty**, not the ninety minutes claimed here since D281, and three disjoint sets is
+ * eight and a half hours of compute. The run prints a **checkpoint per pass** for that reason: a
+ * reading killed at 83 minutes used to be worth zero pods, and is now worth whatever it had
+ * played. So **a pod win rate from this file is only a result if it quotes
  * this floor** — and in fairness to what came before, the two measurements that could have fallen
  * into this both stepped around it: the myriad slot reading established its own spread by re-running
  * a real arm on disjoint seeds (4-48 and 2-50 over 52 pods each), and `offerPact` says outright that
