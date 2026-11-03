@@ -1146,8 +1146,33 @@ const ARTIFACT_LIST = [
           board as it actually stands.
         */
         if (movesOnThisTurn > 200) {
+          /*
+            Everything the page can still tell us, before the check reports.
+
+            The first stall cost an hour and left nothing behind: by the time anybody looked, the
+            run had died at the harness's time limit and the screenshots had been overwritten by
+            the next run. A stall is intermittent, so the one that happens is the only one there
+            is — the state goes in the failure detail rather than into a file somebody has to know
+            to look for.
+
+            The testids are the question "what is this table waiting for?", answered by the table
+            rather than guessed: every id on screen that names a prompt, a payment or a decision.
+            An empty list there is itself the finding — a table waiting on nothing, which is the
+            CR 800.4a shape (#277) rather than a question nobody answered.
+          */
+          const waiting = await page.evaluate(() => Array.from(
+            document.querySelectorAll('[data-testid]'),
+          ).map((el) => el.getAttribute('data-testid') ?? '')
+            .filter((id) => /prompt|pay|decide|choose|pick|offer|stack-/i.test(id))
+            .slice(0, 20));
+          const lives = [];
+          for (const s of [0, 1, 2, 3]) lives.push(await readNumber(page, `life-${s}`));
+          const step = await text(page, 'step-label').catch(() => '?');
+          await shot(page, 'stalled');
           check('the table kept moving', false,
-            `stuck on turn ${lastTurn} for ${movesOnThisTurn} moves, last action: ${did}`);
+            `stuck on turn ${lastTurn} for ${movesOnThisTurn} moves in ${step}; last action `
+            + `${did}; life ${JSON.stringify(lives)}; game-over ${await has(page, 'game-over')}; `
+            + `waiting on ${JSON.stringify(waiting)}`);
           break;
         }
         /*
