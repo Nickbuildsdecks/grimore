@@ -8696,9 +8696,10 @@ reached. Proved to discriminate by three deliberate breaks — the guard passed 
 `runBots` call sites, and `reportBotStall` swallowing its report — each of which fails it. The
 continuation break fails **only** because of the reporting added above.
 
-Stability, which is the whole point: **10 consecutive clean full-suite runs**, 46 passed, against
-3-in-6 failing before. One earlier run of six failed on the cap test with its message uncaptured;
-a 30-run hunt is recording full output rather than calling it a flake.
+Stability, which is the whole point: **40 consecutive clean full-suite runs**, 46 passed each,
+against 3-in-6 failing before. One earlier run of six failed on the cap test with its message
+uncaptured, so a 30-run hunt was armed to catch it rather than calling it a flake; it caught
+nothing, and the event stays recorded as one unreproduced failure of unknown cause.
 
 ## Next
 

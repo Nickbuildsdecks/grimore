@@ -20306,9 +20306,14 @@ work over.
 ### Stability, which is what the rewrite was for
 
 D324 measured the old pair at 3 of 6 full-suite runs failing with broadcast timeouts, and 0 of 6
-with them skipped. The store-level pair: **10 consecutive clean full-suite runs (46 passed)**, and
-14 consecutive clean runs of the cap test alone.
+with them skipped. The store-level pair: **40 consecutive clean full-suite runs (46 passed each)** —
+10 taken while the rewrite settled, then a 30-run hunt with full failure output armed and nothing to
+record — plus 14 consecutive clean runs of the cap test alone.
 
-One earlier full-suite run of 6 failed on the cap test and its message was not captured. Not called
-a flake and not left alone: a 30-run hunt is recording full failure output while the rest of this
-work proceeds. Until it reports, the pair is 10-of-11 full runs, not 11-of-11.
+One earlier run of six, before the orphaned docblock came out, failed on the cap test with its
+message uncaptured. It is not called a flake and it was not left alone: the hunt existed to catch
+it and did not, so it stays recorded as **one unreproduced event against 44 clean runs**, cause
+unknown, rather than attributed to anything. Note what the arithmetic does not support: at the rate
+that one failure implied, 30 runs had a better-than-four-in-five chance of reproducing it, so the
+most likely reading is that whatever it was is gone — but "most likely" is not "shown", and the
+event keeps its line.
