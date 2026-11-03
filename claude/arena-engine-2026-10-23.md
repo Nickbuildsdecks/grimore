@@ -8253,6 +8253,35 @@ Stated rather than discovered later: every pod figure in `scripts/measure/` pred
 2434 included. It retracts nothing, but a comparison spanning the commit is not a paired one, and
 both files say so.
 
+### Ten undecided pods, six of them one engine throw, four that cannot be replayed (#275, D298)
+
+`pod-duel` collapses five distinct ways a pod can stop into one silent `break` and reports it as
+`(N unfinished)`. #268 spent 2444 pods on the clock and ten ended that way.
+`scripts/measure/pod-unfinished.mjs` replays those seeds, arms and seating and names each cause,
+exiting non-zero on a throw.
+
+A correction first: I had said eight of 2442. The ledger's annotated chunks are 2, 6 and 2, so it is
+**ten of 2444 played**. The decided total is 2434 either way, which is what D295 quotes and computes
+on, so the conclusion does not move — the wrong number was one stated in passing, not one measured.
+
+Six of the ten reproduce, and every one is the same thing: **the engine refusing a deal the bot
+offered on behalf of a player who had left the game.** Two at seed 7830 (shifts 1 and 3, turn 29),
+four at seed 11253 (all four shifts, turn 26). Not the move cap, not a seat with nothing to do — an
+invariant violation, now isolated to its mechanism in #277: `seatsToAct` names a dead seat whenever
+a pending question does, and driving the bot for one produces a refused action in three of five
+cases.
+
+The conclusion it was asked to protect survives. The throws removed games rather than mis-scoring
+any; all ten were excluded from the denominator. What a throw can do is end a game that would have
+been decided, which is bounded by 10 of 2444 — 0.4 points against a 2 sigma bound of ±4.1.
+
+The four that do not reproduce are the finding worth keeping. The candidates are an engine
+difference between then and now, or an `ALWAYS=` setting on those runs — and **neither is checkable,
+because the ledger records seeds and margins and nothing else.** A long accumulated measurement with
+rows that cannot be audited is the same class of problem as a harness that swallows a throw: the
+number survives and the thing that would let you check it does not. Before the next long run, a
+ledger row needs the arm JSON, the commit, and the full command.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -63,6 +63,7 @@ it.
 | `one-answer.mjs` | …and shown able to find one, on the deck holding suspend — the one offer the engine itself marks mandatory | `DECKS=kindle-grove,ember-rush SEEDS=6 node scripts/measure/one-answer.mjs` |
 | `unfinished.mjs` | **does the engine ever throw mid-game?** Every harness here swallows one; this is the only thing that reports it | `SEEDS=6 node scripts/measure/unfinished.mjs` |
 | `unfinished.mjs` | …and the same question for a **four-seat pod**, where a table with nobody to act (CR 800.4a) is the worse fault | `SEATS=4 SEEDS=12 node scripts/measure/unfinished.mjs` |
+| `pod-unfinished.mjs` | **why does a particular pod stop without a winner?** `pod-duel` collapses five causes into one `(N unfinished)`; this replays its exact seeds, arms and seating and names each one, exiting non-zero on a throw | `SEED0=7830 SEEDS=3 node scripts/measure/pod-unfinished.mjs` |
 | `card-promises.mjs` | does every card **do what its own text says**, or does a script carry less than the card reads? | `node scripts/measure/card-promises.mjs` |
 | `mechanic-coverage.mjs` | **how many cards hold each mechanic up** — which are on one card, and which the engine declares and nothing reaches? | `node scripts/measure/mechanic-coverage.mjs` |
 | `mechanic-coverage.mjs` | …and **the pool in one line** — decks, distinct cards, multi-face cards and tokens — which is what the player documentation cites instead of carrying the numbers (#265) | the first line of the same command |

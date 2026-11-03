@@ -19172,3 +19172,54 @@ is still a null about that engine — but a number from before this commit and a
 are not the same measurement, and a comparison spanning it is not a paired one. Both `pod-duel.mjs`
 and `pod-unfinished.mjs` now say so in their docblocks, because the next person to compare across it
 will not have read this entry.
+
+## D298 — The eight undecided pods were ten, six of them are one engine throw, and four cannot be replayed
+
+`pod-duel` ends its move loop with five distinct causes collapsed into one silent `break`, reported
+only as `(N unfinished)`. #268 spent 2444 pods on the clock and ten of them ended that way.
+`pod-unfinished.mjs` replays those exact seeds, arms and seating and names each cause, with a
+non-zero exit if any is a throw — because a throw is the engine refusing an action the bot built out
+of its own `legalActions`, which is an invariant `playout.test.ts` asserts never breaks.
+
+**First, a correction to my own arithmetic.** I said eight undecided pods of 2442. The ledger's three
+annotated chunks are 2, 6 and 2, so it is **ten undecided of 2444 played**. The decided total is
+2434 either way, which is the figure D295 quotes and computes on, so nothing in that conclusion
+moves; the number I got wrong was the one I stated in passing rather than the one I measured.
+
+**Six of the ten reproduce, and every one of them is the same throw.**
+
+| chunk | ledger | replayed | cause |
+| --- | --- | --- | --- |
+| 7830-7868 | 2 | **2** | `pact:offer: seat 2 has been eliminated` — seed 7830, shifts 1 and 3, turn 29 |
+| 11217-11255 | 6 | **4** | `pact:offer: seat 1 has been eliminated` — seed 11253, all four shifts, turn 26 |
+| 7869-7907 | 2 | **0** | — |
+
+Not the move cap, not a seat with nothing to do: **the engine refusing a deal the bot offered on
+behalf of a player who had left the game.** Isolated by probe (#277): `seatsToAct` returns
+`[state.pendingX.seat]` for all six pending questions with no elimination check, so a question
+outstanding on a seat that is then eliminated makes the engine name a dead seat as the one it is
+waiting on. Driving the bot for that seat produces a refused action in three of five cases —
+`pendingChoice` to `auto:choose`, `pendingPayment` to `auto:pay`, and `pendingOfferedCast` to
+`pact:offer`, which is the one the pods hit. The pact falls out because a dead seat's life is 0, so
+`openPower(foe) < life` is false for every foe and `offerPact` always finds one.
+
+**The conclusion it was asked to protect survives.** The throws *removed* games rather than
+mis-scoring any: all ten were excluded from the denominator, so the margin was never computed on
+them. What a throw can do is end a game that would have been decided, and that is bounded by
+10 of 2444 — **0.4 percentage points**, against a 2 sigma bound of ±4.1. D295 stands.
+
+**Four cannot be replayed, and that is the finding worth keeping.** Two of chunk 11217's six and
+both of chunk 7869's do not reproduce on the current build. The candidates are an engine difference
+between when those chunks ran and now, or an `ALWAYS=` setting on those runs that seated a deck the
+replay does not — and **neither is checkable, because the ledger records seeds and margins and
+nothing else.** A chunk row carries no arms, no build, no environment. So a long accumulated
+measurement has rows in it that cannot be audited, which is the same class of problem as a harness
+that swallows a throw: the number survives and the thing that would let you check it does not.
+What the ledger needs, before the next long run, is the arm JSON, the commit, and the full command
+per row. Recorded rather than retrofitted — the rows that exist cannot be given a provenance they
+were never asked for.
+
+**And a replay is only a replay of the build the figures came from.** These six were reproduced on an
+engine that did not yet enforce CR 800.4a (D297); that commit changes the back half of every pod, so
+the same seeds now play different games. `pod-unfinished.mjs` says so in its docblock, and the result
+above is quoted with the build it was taken at rather than as a standing fact.
