@@ -9353,3 +9353,60 @@ this project's rules require, the A2UI renderer schemas, and the login form.
 
 Two suites time out against an external AI advisor service this environment cannot reach — the same
 blocked-service class as Scryfall. Left failing rather than made to pass.
+
+---
+
+## Checkpoint — two front doors, and three corrections of my own (#312, D347-D350)
+
+### The door people will actually use (D347)
+
+Running the legacy server for #311 raised a question nothing had asked: if somebody opens the
+address CLAUDE.md names — `http://localhost:3000` — and finds the Play Realm, does it work?
+
+`server.js` mounts the v2 SPA at `/react` whenever `apps/web/dist` exists, so the Play Realm is
+there. Driven with a real browser at `http://127.0.0.1:3000/react/play`:
+
+- the lobby renders **completely** — formats, name field, Create table
+- the socket opens to `ws://127.0.0.1:3000/socket.io/` and the **handshake succeeds**, because the
+  legacy server runs its own Socket.IO on that path
+- that instance has **zero** `pod:` handlers
+- "Nobody has an open table right now" reads as an empty lobby, and **no connection warning appears
+  at all**, because nothing is wrong with the connection
+- Create table said `the table did not answer` ten seconds later, and nothing else
+
+This is the mirror of #266 and worse than it: a connection that fails is visible, a connection that
+succeeds and goes nowhere looks like an empty room. `silentServerNote` now says the handshake was
+taken and the protocol was not answered — and deliberately does **not** say "wrong server", because
+a wedged table server produces the same timeout. The operator's remedy goes to the console.
+
+**The VM is unaffected, and that was read rather than assumed (D348):** `Caddyfile` sends
+`/socket.io/*` to `realtime:3000` and everything else to `app:3000`, and `deploy-gcp.ps1` builds
+`apps/web` and ships `apps/web/dist`. The broken door is specifically port 3000 reached directly,
+with no proxy in front — a local shape, not the deployment.
+
+Verified: `e2e-table` 73/73, `check-table-controls` 26/26, `e2e-arena` 53/53 with 5 skips, web
+suite 243 tests, gate 17/17.
+
+### Three corrections, two of them mine
+
+- **D349.** I reported `deck_cards.custom_tag` as a column "no schema anywhere creates". Both the
+  Postgres branch of `db.js` and `0001_baseline.sql` create it. The grep that established the claim
+  ended in `head -8`, and eight `server.js` hits came first — the contradicting evidence was in the
+  output I asked for and discarded before reading. The fix (adding it to the SQLite branch) stands;
+  the claim about Postgres did not.
+- **D350.** `claude/postgres-schema-gap-2026-09-27.md` says `direct_messages` and `password_resets`
+  are "the two nothing creates". Migration `0014` has created `password_resets` since that was
+  written. Of the nine tables local SQLite lacks, **eight are created by migrations 0007/0008/0009/
+  0014** — one cutover decision — and exactly one, `direct_messages`, is defined nowhere at all.
+- The docblock of the new audit script documented a `DB_PATH` variable that does not exist. A
+  documented flag that cannot work is the same fault as a check that cannot fail, committed in a
+  comment instead of in code.
+
+The pattern across all three: **a claim is a claim whether it is in a test, a comment or a
+document.** Two of these were caught by verifying rather than after shipping, which is the only
+reason they are corrections and not defects.
+
+### Reliability, unchanged
+
+`state-invariants.mjs`, 40 passes: **520 duel games, nine invariants checked after every action,
+zero broken.** Recorded as a negative rather than added to the code.
