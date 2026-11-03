@@ -20061,3 +20061,87 @@ which is the measurement reading the opposite of the truth rather than merely im
 
 **The fix for #298 is still unchosen, and deliberately so.** Choosing between three answers on two
 samples is what D315 is a record of going wrong.
+
+## D321 — Correction to D320: the per-decision ceiling is 163ms, so bounding the moves does work
+
+D320 said the move count could not diagnose a slow write, because duration does not track count, and
+concluded that bounding the moves per write "fixes the first and cannot touch the second". The
+conditional was right and I picked the wrong branch. The instrument it motivated settles it.
+
+A census of 22 writes above a 150ms threshold, with the new breakdown:
+
+```
+   took  moves   think  think%  worst  ms/move
+   2841     65    2245     79%    116       44
+   2279     73    1701     74%    141       31
+   1305     38    1125     86%     94       34
+    ...
+    183      9      48     26%     44       20
+```
+
+- **Deciding is 72% of the write (median).** The cost is the bots' search, not the engine's clone.
+- **The worst single `botAction` across all of them is 163ms**, against a client that gives up at
+  8000. That is a factor of 49.
+
+So per-decision cost dominates the *variance* — which is why duration cannot be predicted from the
+count, exactly as D320 said — but the count still **bounds** duration, because the per-decision cost
+has a ceiling. D320's error was treating "cannot predict" as "cannot bound". The progress doc's
+"weakens the bounding option" was premature in the same way, and is corrected there.
+
+`BOT_MOVES_PER_WRITE = 25` follows from the measurement: 8000 over 163 is 49 moves, halved for a
+decision worse than any yet seen. At the observed 45ms a move that is nearer 1.1s.
+
+The other half is `continueBots`: a write that stops on its budget with a server seat still owed a
+move has handed back a table nobody is on the clock for, which is a dead table. The socket handler
+calls it until a batch does no work — **termination on progress, not on "nothing owed"**, because a
+bot that cannot move leaves "owed" true for ever and spinning on exactly the broken tables would be
+the worst possible choice. It is not undoable, so the step the human's own action saved survives
+every continuation on top of it and an undo still removes the whole answer.
+
+What the player sees changes: a seventeen-second frozen board becomes one that arrives in pieces.
+
+## D322 — Two of the realtime suite's strongest assertions could never fail
+
+`createRealtime` built its store like this:
+
+```ts
+const store = new PodStore(redis, {
+  ...opts.store,
+  onBotStall: ({ code, reason }) => log.warn(…),
+  onNoProgress: ({ code, reason }) => log.warn(…),
+  onSlowWrite: ({ code, reason }) => log.warn(…),
+});
+```
+
+The spread comes first and the three assignments overwrite it. **A caller's version of all three was
+silently discarded.** And the realtime suite passes exactly those three in, collects them into
+arrays, and ends the whole-game test with:
+
+```ts
+expect(stalls, JSON.stringify(stalls)).toEqual([]);
+expect(noProgress, JSON.stringify(noProgress)).toEqual([]);
+```
+
+Those arrays could never hold anything. The suite's own comment calls an empty list "the claim worth
+making"; the claim was unmakeable. Same shape as the driver discarding `press`'s boolean (D319) and
+`tap`'s (#300), and the same lesson: **a report that cannot arrive is worse than no report, because
+the silence is read as good news.** Three instruments in two days, all of which answered "nothing
+wrong" by construction.
+
+Found by accident, trying to add a *fourth* callback for the per-write budget and getting
+`MAX MOVES IN ONE WRITE: 0` from a counter that fires on every write.
+
+Fixed by composing: `report(event, onward?)` logs and then calls the caller's handler, because both
+readers want it — the log is how a defect is found on a running table, the callback is how a test
+refuses to pass with one.
+
+### And the assertion, once live, fails about one run in nine
+
+Which is the point of it. With the callbacks wired and **no other change**, the whole-game solo test
+failed once in nine runs and then passed eight times in a row. So there is a real bot stall or inert
+human move in roughly a tenth of games, and it has been invisible for as long as the assertion has
+existed.
+
+**Not pushed yet.** A real assertion that fails one run in nine makes CI intermittently red, which is
+worse than the vacuous one it replaces until the defect underneath it is found. The honest order is:
+catch the failure message, fix what it names, then ship both together.

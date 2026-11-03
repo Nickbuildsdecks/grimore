@@ -8629,15 +8629,37 @@ D318 found a write that took 17130ms and played 431 bot moves against a client t
 A ten-pod census of every write over 150ms then gave the shape: median 366ms, p90 1476ms, max
 7814ms, ten at or above a second, one at or above four.
 
-And it refuted the obvious fix. **Duration does not track move count** — 215 moves in 3831ms, 111
-moves in 7814ms — so per-decision cost dominates. A write of many cheap searches and a write of a
-few expensive ones are two different faults, and bounding the moves per write only helps the first:
-if one search is over budget on its own, no bound on how many run can save the write.
+And it looked like it refuted the obvious fix. **Duration does not track move count** — 215 moves
+in 3831ms, 111 moves in 7814ms — so per-decision cost dominates, and I wrote that bounding the moves
+per write "only helps the first" of the two faults.
 
-So the report carries the time spent inside `botAction` and the cost of the single worst decision,
-which separates four outcomes where the count separated two. The fix for #298 stays unchosen until
-those numbers arrive from a real pod — picking among three answers on two samples is what D315 is a
-record of going wrong.
+So the report was taught to carry the time spent inside `botAction` and the cost of the single worst
+decision, which separates four outcomes where the count separated two. **And then it answered the
+question against me** (D321). Across 22 slow writes: deciding is 72% of the write, so the cost is
+the bots' search — and the worst single decision in any of them is **163ms**, against a client that
+waits 8000. A factor of 49.
+
+Per-decision cost dominates the *variance*, which is why duration cannot be predicted from the
+count. But the count still **bounds** duration, because the per-decision cost has a ceiling, and
+"cannot predict" is not "cannot bound". That was my error, and the sentence above is corrected
+rather than deleted because the reasoning is the part worth keeping.
+
+So the fix is the bound after all: 25 moves a write (8000 over 163, halved for a decision worse than
+any yet seen), with `continueBots` picking the table up in further writes until a batch does no
+work. The board arrives in pieces instead of freezing for seventeen seconds.
+
+Which turned up something larger on the way. Adding a fourth store callback to check the budget
+returned `MAX MOVES IN ONE WRITE: 0` — from a counter that fires on *every* write. `createRealtime`
+spreads `...opts.store` and then assigns `onBotStall`, `onNoProgress` and `onSlowWrite` over the
+top, so **a caller's version of all three was always discarded** — and the realtime suite passes
+exactly those three in and asserts at the end of the whole-game test that the first two are empty.
+They could not have been anything else. Its own comment calls an empty list "the claim worth
+making" (D322).
+
+With them actually wired and nothing else changed, that test **fails about one run in nine**. So
+there is a real bot stall or inert human move in roughly a tenth of games, invisible for as long as
+the assertion has existed. Held back rather than pushed: a live assertion that reddens CI one run in
+nine is worse than the dead one until the defect it names is fixed.
 
 One defect fell out of reading that code: `emit` in the web client resolves on the ack or at eight
 seconds and sets no state between, so the measured *median* slow write — a third of a second, and
