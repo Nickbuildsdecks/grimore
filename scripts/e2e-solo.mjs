@@ -1177,7 +1177,18 @@ const ARTIFACT_LIST = [
             the difference between knowing the table stopped and knowing why. The first two stalls
             were diagnosed down to a step and no further for exactly the want of it.
           */
-          const code = await text(page, 'table-code').catch(() => '?');
+          /*
+            The in-game bar's code first, then the pre-game header's.
+
+            The first stall dump to carry this field printed an empty string: `table-code` lives in
+            the header that is replaced once the game is dealt, so mid-game there is nothing to
+            read. `table-code-bar` is the one in the control bar, which is on screen exactly when a
+            stall can happen. Both are tried because the header is the one a pre-game failure would
+            have.
+          */
+          const code = (await has(page, 'table-code-bar'))
+            ? await text(page, 'table-code-bar').catch(() => '?')
+            : await text(page, 'table-code').catch(() => '?');
           /*
             And whether the page is still *connected*, which is the one explanation that covers
             both stalls seen so far.

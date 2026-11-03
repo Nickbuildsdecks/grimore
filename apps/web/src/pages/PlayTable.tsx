@@ -1805,7 +1805,14 @@ function Board({ table }: { table: UseTable }) {
             {isMyTurn ? "your turn" : `${view.seats[view.activeSeat]?.name ?? "opponent"}'s turn`}
           </span>
         )}
-        <span className="font-mono text-[var(--g-text-muted)]">{table.pod?.code}</span>
+        {/*
+          The code carries a testid of its own, because the one in the pre-game header is gone by
+          the time anything goes wrong. A browser suite that catches a stalled table mid-game needs
+          the code to find that pod's state on the server, and it read an empty string from the
+          header's `table-code` for exactly this reason: that element is not on screen once the
+          game has started.
+        */}
+        <span data-testid="table-code-bar" className="font-mono text-[var(--g-text-muted)]">{table.pod?.code}</span>
         {table.connection !== "connected" ? (
           <span data-testid="connection" className="rounded bg-[var(--g-mana-r)]/20 px-1.5 py-0.5 text-[var(--g-mana-r)]">
             {table.connection}

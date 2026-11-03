@@ -19936,3 +19936,48 @@ the remaining checks run and report the board as it actually stands. Two hundred
 anything real here, a whole pod game being about a hundred and eighty moves across forty-odd turn
 changes, and the first run with the check in place came back 29 of 29 with no stall line. Whether
 the stall is the #70 and #277 class — a table waiting on a seat that cannot move — is #297.
+
+## D318 — The table did not answer because the write took seventeen seconds
+
+Three browser runs failed *"the engine never refused anything the table offered"* with `Pass: the
+table did not answer`, `Block: …` and `Order: …`. That sentence is not the engine's. It is the
+**client's own eight-second ack timeout** (`emit`, in `apps/web/src/lib/table.ts`): the move was
+sent, the server did not answer inside eight seconds, and the page gave up — on a move it may well
+have applied.
+
+**One check was reporting two faults that want opposite fixes.** An engine refusal means the bar
+offered something the rules do not allow. A timeout means the write took longer than a person is
+asked to wait. The suite asks them separately now, and that is the same correction as D314: two
+states that read identically are one state as far as anybody debugging is concerned.
+
+Then the server was taught to say when a write is slow, because nothing did, and the numbers came
+back immediately. Sixteen `SOLO_POD` runs, two slow writes:
+
+```
+auto:cast by seat 0 at turn 22 draw             took 17130ms and 431 server moves
+auto:pass by seat 0 at turn 31 declare-attackers took  4415ms and 167 server moves
+```
+
+**Seventeen seconds and four hundred and thirty-one bot moves in one write**, against a client that
+waits eight. That is not a mystery, it is the design working as written: `runBots` plays every bot
+move it is owed inside the mutation the human's action provoked — deliberately, so that a bot's
+whole reply lands in one pod version and one broadcast — so a player with nothing to do for a few
+turns pays for *all* of those turns at once. The docblock already said "five hundred moves that end
+with the person on the clock is simply a long write". It did not say how long, and seventeen seconds
+is long enough that the page stops believing in the table.
+
+**The fix is not chosen yet, and two samples are not a distribution** (#298). Raising the client's
+timeout makes the error go away and leaves a seventeen-second frozen board. Bounding the moves per
+write needs a continuation, or the table stops with bots still owed a move — and the continuation is
+a real change to the write model, which wants its own test. Making a pod's bots think less is a
+third answer with its own cost, already measured elsewhere (D275 and the clock work).
+
+**And it is not the stall.** Run twelve of the sixteen stalled — turn 28, upkeep, stack empty,
+socket connected, nobody eliminated — with the slow-write count unchanged at two and no inert move
+reported. So slow writes join the engine, the bots, the rate limiter and a dropped socket on the
+list of things #297 is not. The useful shape of that list is that every entry on it was removed by
+an instrument rather than by an argument.
+
+One gap closed in passing: the first stall dump to carry the pod code printed an empty string,
+because `table-code` lives in the pre-game header that is gone once the game is dealt. The control
+bar's code has its own testid now, so a stalled table can still be found in Redis.
