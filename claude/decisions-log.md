@@ -19799,3 +19799,85 @@ looks the same until somebody counts the power.
 **78 games bought three rejected invariants and one fix.** That ratio is the argument for the file:
 the invariants I got wrong were cheaper to find than the bug they were looking for, and writing them
 down is what stops the next person rediscovering them.
+
+## D314 — A long game and a stuck table read the same, and one of them cost an hour
+
+`LIST=extort` spent moves 135 to 630 of one run printing nothing but `primary: Pass`, and the log
+could not say which of two very different things that was: a control mirror grinding through turn
+after turn with nothing to cast, or a table deadlocked on one priority. Both print the same line.
+I stopped the twenty-deck sequence to find out, which cost the eleven lists queued behind it.
+
+The answer was the first one — a re-run of the same list finished in about sixty moves, 28 of 28
+checks with one named skip, so that shuffle was slow rather than stuck. **The finding is not about
+extort.** It is that the solo suite's periodic line carried the move number and nothing else, so
+the one fact that separates the two cases was the one fact it did not print. It prints the turn
+now: a run that is only slow climbs, a run that is stuck does not, and the difference is visible
+in the first screenful instead of after the move budget runs out.
+
+That is the same lesson as #277 and the `nobody to act` invariant (D313) one level up. The engine
+learned to say "a table with nobody to act and nothing finished is a violation with a name"; the
+harness that drives a *browser* was still answering "what is happening?" with a number that goes
+up either way.
+
+## D315 — The spectacle row is a 30% shuffle, and the two fixes I built for it were both wrong
+
+`LIST=earned` requires two rows: a Skewer the Critics cast for its spectacle cost, and a Mizzium
+Mortars overloaded. One run failed with spectacle unpressed across all five deals. The suite's own
+docblock sets the bar — *"a required check that fails one run in four is not a check"* — so this
+needed fixing, and what it needed first was a number.
+
+**The first explanation was wrong, and measuring is what said so.** The driver aims a targeted
+spell at a lit card before it aims at a player, and Tidal Mind nearly always holds a creature — so
+every Lightning Bolt and every Skewer goes at the creature, the opponent never loses life, and the
+row that only exists on a turn an opponent has lost life is never on the sheet. That reads as a
+complete account of the failure. Three baseline re-runs **refuted** it: all three reached the row,
+on deals 1, 3 and 4. The condition is also earned in combat, and the combat route was open the
+whole time.
+
+**The second was wrong too, and this one I built before I measured it.** `atTheFace`, an option on
+the shared driver reversing those two branches for this list only, on the reasoning that a mono-red
+burn deck aims at the face anyway. Three runs with it: one failure with the row unpressed across
+five deals, two passes. No better than the baseline, and the likely reason is the first refutation
+read backwards — burn aimed at the face leaves the blockers alive, which closes the *combat* route
+to the same condition. It is reverted. An option nothing uses is worse than no option.
+
+What is left is arithmetic rather than a theory. The deals the row was first pressed on — 1, 3, 4,
+and more than 5 — put it near **p = 0.3 a shuffle**. Five deals miss `0.7^5` = 17% of the time,
+which is the one-run-in-four that was actually observed; twelve deals miss 1.4%, about one run in
+seventy. So `LIST=earned` gets a budget of twelve, and the reason that is not simply buying a green
+check with patience is that **the budget costs nothing except on the run that would have been red**:
+a run that finds the row on deal one still plays one game.
+
+**Both wrong guesses are in the file**, next to the budget they argued against, because the next
+person to look at a flaky required check will have the same first idea I did.
+
+## D316 — Two replacement effects for one event, which this pool can produce exactly once
+
+`cr-claims.mjs` (D308) ranks rules a comment claims and no test writes down, and its docblock is
+explicit that a row is a reading list rather than a defect count. Three rows read this pass, and
+the results are three different kinds of answer:
+
+- **CR 702.21b** (ward triggers off an ability) and **CR 601.2b** (a modal spell's modes are
+  announced as it is cast) are already tested, by an Icy Manipulator aimed at a warded creature and
+  by three tests on modal plays. Only the titles changed. 88 uncited becomes 86, and the two that
+  came off are off because somebody read them, which is the only way a row on that list should
+  clear.
+- **CR 616.1** — the choice between several applicable replacements belongs to the affected
+  object's controller — turned out to be partly untestable for the reason `automation.ts` already
+  says out loud: *"Nothing in this pool can produce two."* That is nearly true, and the exception is
+  the test: an **unearthed Dregscape Zombie** sacrificed under an opposing **Kalitas**. Its own "if
+  it would leave the battlefield, exile it instead" and Kalitas's "if a creature an opponent
+  controls would die, exile it instead and create a Zombie" both want the same event.
+
+One event is replaced once (CR 614.1), so `replaceZoneChange` asks the widest wording first and the
+*leave* is replaced before the *death* is ever considered — Kalitas never sees a death and gets no
+token. That is always the choice seat 1 would make if it were asked, which is why making it for
+them is a simplification rather than a wrong answer; it is still one of two legal orders, and a
+card whose own replacement is worse for it than an opponent's would turn the simplification into a
+bug.
+
+**Exile proves nothing in that test** — both replacements exile, and so does unearth's own end-step
+trigger — so the Zombie token is the only thing on the board that says which one won, and the
+control (the same outlet eating a Tormented Soul, which does hand Kalitas its token) is half the
+test. Verified discriminating the way D282 and D309 ask for: dropping the `!leaving.replaced` filter
+from the death pass makes it fail, and restoring it makes it pass.

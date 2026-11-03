@@ -1137,9 +1137,23 @@ about the harness:
   Tidal Mind gives games of 36 to 59 moves that press both rows: **three runs out of three**, where
   Ember Rush managed three out of four. A required check that fails one run in four is not a check.
 
-The deals are budgeted at **five games** rather than the three `LIST=costs` uses, for the reason the
-runs showed: whichever row a shuffle happens to offer, the other is usually a deal away, and a game
-under this list is short enough that a re-deal costs almost nothing.
+The deals are budgeted at **twelve games** rather than the three `LIST=costs` uses, for the reason
+the runs showed: whichever row a shuffle happens to offer, the other is usually a deal away, and a
+game under this list is short enough that a re-deal costs almost nothing.
+
+Twelve rather than five is a later correction, and the two wrong guesses that came before it are
+the useful part. The bullet above says three runs out of three; a fourth run went all five deals
+without the spectacle row, which made it a check failing about **one run in four** — below the bar
+that same bullet sets. The first explanation was that the row had become unreachable, because the
+driver aims a targeted spell at a lit card and Tidal Mind nearly always holds one, so the burn
+never goes at the player: **refuted** by three baseline re-runs that all reached the row, on deals
+1, 3 and 4. The second was that aiming the burn at the face would make it reliable: built,
+measured over three runs, and **reverted**, because one of those three failed with the row
+unpressed across all five deals — burning the face leaves the blockers alive and closes the
+*combat* route to the same condition, so it trades one source for another rather than adding one.
+What is left is arithmetic. The deals the row was first pressed on (1, 3, 4, and more than 5) put
+it near a 30% chance per shuffle; five deals miss 17% of the time and twelve miss 1.4%, about one
+run in seventy. A bigger budget costs nothing except on exactly the run that would have been red.
 
 `LIST=graveyard` is the fourth, and it is the first browser scenario that presses a button on a card
 **in the graveyard**. Flashback and escape made that row a place with *casts* in it, and the driver

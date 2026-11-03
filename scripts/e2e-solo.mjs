@@ -1112,13 +1112,25 @@ const ARTIFACT_LIST = [
             if (/Zombie/.test(face)) tokenFaces.add(face.slice(0, 120));
           }
         }
-        if (process.env.VERBOSE === '1') console.log(`      move ${moves}: ${did}`);
-        else if (moves % 15 === 0) console.log(`      move ${moves}: ${did}`);
         await page.waitForTimeout(60);
         const turn = await readNumber(page, 'turn');
         if (turn !== null && turn > lastTurn) {
           turnsSeen += turn - lastTurn;
           lastTurn = turn;
+        }
+        /*
+          The turn is read before the line is printed, and printed with it, because without it the
+          log cannot tell a long game from a stuck one.
+
+          `LIST=extort` spent **five hundred consecutive moves** printing `primary: Pass` and the
+          line said nothing about whether anything was happening: a table passing through the steps
+          of turn after turn and a table deadlocked on one priority look identical at `primary:
+          Pass`. With the turn on the line, a run that is only slow climbs and a run that is stuck
+          does not, and the difference is visible in the first screenful rather than after the
+          move budget runs out.
+        */
+        if (process.env.VERBOSE === '1' || moves % 15 === 0) {
+          console.log(`      move ${moves} (turn ${lastTurn}): ${did}`);
         }
         if (turnsSeen === 3) await shot(page, 'mid-game');
         if (turnsSeen >= 6 && midPhone === null) {
@@ -1173,14 +1185,38 @@ const ARTIFACT_LIST = [
     /*
       Deal again until both rows have been pressed, or the budget is out.
 
-      `LIST=earned` gets **five** games where `LIST=costs` gets three, and the reason is in the
-      numbers rather than in the keywords: a game under this list is about ten moves long — three
-      of them fit in twenty-seven — so a re-deal costs almost nothing, and which of the two rows a
-      game offers is a fact about the shuffle. Three runs of three games pressed spectacle five
-      times and overload none; three runs after the Sol Rings went in pressed overload three times
-      in one run and spectacle none. Both rows exist on every table; one shuffle does not see both.
+      `LIST=earned` gets **twelve** games where `LIST=costs` gets three, and the reason is in the
+      numbers rather than in the keywords: a game under this list is short — three of them fit in
+      twenty-seven moves — so a re-deal costs almost nothing, and which of the two rows a game
+      offers is a fact about the shuffle. Three runs of three games pressed spectacle five times
+      and overload none; three runs after the Sol Rings went in pressed overload three times in
+      one run and spectacle none. Both rows exist on every table; one shuffle does not see both.
+      Twelve rather than the five this list used to get is arithmetic off four measured runs — see
+      `dealBudget` below, which carries the sum and the two wrong guesses that came before it.
     */
-    const dealBudget = LIST === 'earned' || LIST === 'graveyard' || LIST === 'miracle'
+    /*
+      And `earned` gets **twelve**, which is the one budget in this file set by arithmetic.
+
+      Five was not enough, and the way it was not enough is worth the paragraph because the first
+      two explanations were both wrong. Four complete runs of this list pressed the spectacle row
+      on deal **1, 3 and 4**, and one run went all five deals without it. That is a row with
+      something near a 30% chance per shuffle, not a row that is broken: the first guess, that the
+      driver's preference for a lit card over the opponent's face made it unreachable, is refuted
+      by the three runs that reached it. The second guess, aiming the burn at the face, was built
+      and measured and reverted — three runs, one of them a failure with the row unpressed across
+      all five deals, because burning the face leaves Tidal Mind's blockers alive and closes the
+      *combat* route to the same condition.
+
+      So the honest fix is the budget, and the sum is: at p = 0.3 a deal, five deals miss 17% of
+      the time, which is the one-run-in-four this list was actually failing at; twelve deals miss
+      1.4%, about one run in seventy. **A larger budget costs nothing except exactly when it is
+      needed** — a run that finds the row on deal one still plays one game, and games under this
+      list are 36 to 59 moves. The only run that pays twelve games is the run that would otherwise
+      have been a red check.
+    */
+    const dealBudget = LIST === 'earned'
+      ? 12
+      : LIST === 'graveyard' || LIST === 'miracle'
       || LIST === 'rebound' || LIST === 'replicate' || LIST === 'extort' || LIST === 'suspend'
       || LIST === 'dredge' || LIST === 'buyback' || LIST === 'proliferate' || LIST === 'echo'
       || LIST === 'upkeep' || LIST === 'level' || LIST === 'vanish' || LIST === 'artifact'

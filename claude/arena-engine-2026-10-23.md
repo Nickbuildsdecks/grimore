@@ -8559,6 +8559,36 @@ and by source and not by scope. Nothing a player can see comes of it — a scope
 applies to nothing — but it is the same shape as the three CR 400.7 fixes, and the two places that
 prune a `cards` scope now prune it the same way.
 
+### A long game and a stuck table read the same (#294, D314)
+
+`LIST=extort` printed `primary: Pass` for five hundred consecutive moves and the log could not say
+whether that was a control mirror grinding through turns or a table deadlocked on one priority. It
+was the first — a re-run finished in sixty moves, 28 of 28 with one named skip — but finding that
+out cost the eleven lists queued behind it. The solo suite's periodic line carries the **turn**
+now, so a run that is only slow climbs and a run that is stuck does not.
+
+### The spectacle row is a 30% shuffle, and both fixes for it were wrong (#295, D315)
+
+`LIST=earned` was failing about one run in four on the row that only exists on a turn an opponent
+has lost life. Two explanations were built and both were refuted by measurement: that the driver's
+preference for a lit card made the row unreachable (three baseline runs reached it, on deals 1, 3
+and 4), and that aiming the burn at the opponent's face would make it reliable (three runs, one
+failure — burning the face leaves the blockers alive and closes the combat route to the same
+condition). The second one was code, and it is reverted.
+
+What fixed it is arithmetic: a row near p = 0.3 a shuffle misses 17% of the time in five deals and
+1.4% in twelve, so the budget is twelve. It costs nothing except on the run that would have been
+red.
+
+### Two replacement effects for one event (D316)
+
+The one place this pool can produce two: an unearthed Dregscape Zombie sacrificed under an opposing
+Kalitas. One event is replaced once (CR 614.1), the widest wording is asked first, so the Zombie's
+own "exile it instead" takes the event and Kalitas never sees a death — no token. Both replacements
+exile, so the token is the only thing on the board that says which one won, and the control is half
+the test. Two further rules (CR 702.21b, CR 601.2b) came off `cr-claims`'s uncited list by being
+read and found already tested: 88 to 86.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

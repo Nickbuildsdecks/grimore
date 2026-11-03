@@ -7089,6 +7089,63 @@ describe('a replacement effect from across the table', () => {
     expect(s.instances[dissenter]!.zone).toBe('exile');
     expect(namesIn(s, 1, 'battlefield')).not.toContain('Zombie');
   });
+
+  it('loses to the dying creature\u2019s own replacement (CR 614.1, CR 616.1)', () => {
+    /*
+      The one place in this pool where two replacement effects want the same event.
+
+      An unearthed Dregscape Zombie carries "if it would leave the battlefield, exile it instead",
+      and an opposing Kalitas carries "if a creature an opponent controls would die, exile it
+      instead and create a Zombie". Both apply to the same sacrifice. One event is replaced once
+      (CR 614.1), so only one of them happens, and CR 616.1 gives the choice to the affected
+      object's controller \u2014 seat 1 here, not Kalitas's.
+
+      The engine does not ask: `replaceZoneChange` runs the widest wording first, so *leaving* is
+      replaced before *dying* is ever considered, and a death that never happened cannot be
+      replaced. That is always the choice seat 1 would make, which is why making it for them is a
+      simplification rather than a wrong answer \u2014 but it is one of two legal orders, and if
+      this pool ever holds a card whose own replacement is worse for it than an opponent's, the
+      choice has to become a question.
+
+      **Exile proves nothing here**: both replacements exile, and so does unearth's own end-step
+      trigger. The Zombie token is the only thing on the board that says which one won, which is
+      why the control is half the test.
+    */
+    const table = (theirs: readonly string[], dead: readonly string[]): GameState => {
+      const s = advanceTo(arena({
+        decks: { 0: 'ashen-rite', 1: 'ashen-rite' },
+        graveyard: { 1: [...dead] },
+        battlefield: {
+          0: ['Kalitas, Traitor of Ghet'],
+          1: [...theirs, 'Vampire Aristocrat', 'Swamp', 'Swamp'],
+        },
+        turn: 5, firstSeat: 1,
+      }), 'precombat-main');
+      return tapAllLands(s, 1);
+    };
+    const eat = (state: GameState, victim: string): GameState => drain(passBoth(apply(state, {
+      type: 'auto:activate', by: 1, card: find(state, 1, 'battlefield', 'Vampire Aristocrat'),
+      abilityIndex: 0, sacrifice: victim,
+    })), 40);
+
+    let s = table([], ['Dregscape Zombie']);
+    const zombie = find(s, 1, 'graveyard', 'Dregscape Zombie');
+    s = drain(apply(s, { type: 'auto:activate', by: 1, card: zombie, abilityIndex: 0 }), 40);
+    expect(s.instances[zombie]!.zone).toBe('battlefield');
+
+    s = eat(s, zombie);
+    expect(s.instances[zombie]!.zone).toBe('exile');
+    // Its own clause took the event, so Kalitas never saw a death and got nothing for it.
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Zombie');
+
+    // The control, and the half that makes the line above mean anything: the same outlet eating a
+    // creature with no replacement of its own does hand Kalitas its token.
+    let c = table(['Tormented Soul'], []);
+    const soul = find(c, 1, 'battlefield', 'Tormented Soul');
+    c = eat(c, soul);
+    expect(c.instances[soul]!.zone).toBe('exile');
+    expect(namesIn(c, 0, 'battlefield')).toContain('Zombie');
+  });
 });
 
 describe('what a card says reaches the effect', () => {
