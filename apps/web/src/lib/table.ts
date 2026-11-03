@@ -98,6 +98,22 @@ export function rejoinTrouble(code: string, table: string): string {
  * Pure, and takes the url rather than reading the module constant, so the sentence can be read in a
  * test rather than only in a browser.
  */
+/**
+ * What the control bar says while a move of yours is with the server.
+ *
+ * Exported and pure because it is a decision rather than plumbing, which is the line this module's
+ * tests draw: `useTable` needs a socket and a server and the browser suites exercise it, but what
+ * the player reads has to be right on its own.
+ *
+ * The wording turns on whether the server is playing any seats. At a table where it is, nearly all
+ * of the wait is those seats deciding — the slow-write report puts a median 72% of a write inside
+ * `botAction` — so "opponents deciding" is what is actually happening. Against only people, the
+ * server is just slow to answer and saying anything about opponents would be a guess.
+ */
+export function waitingNote(seats: readonly { bot?: boolean }[] | undefined): string {
+  return (seats ?? []).some((s) => s.bot === true) ? "opponents deciding" : "sending your move"
+}
+
 export function connectionTrouble(attempts: number, url: string): string | null {
   if (attempts < ATTEMPTS_BEFORE_SAYING) return null
   const where = url === "" ? "this page's own address" : url
@@ -150,6 +166,21 @@ export interface TableState {
   code: string | null
   chat: ChatLine[]
   error: string | null
+  /**
+   * Whether a move of this player's is with the server and has been for long enough to say so.
+   *
+   * `emit` resolves on the ack or at eight seconds and used to set nothing in between, so from the
+   * player's seat a write that took a moment was **indistinguishable from a table that had stopped
+   * answering**: the board did not move, no button changed, and nothing said the move had been
+   * sent. The measured median of the slow writes is 366ms and the p90 1476ms, so this is not a
+   * rare state. Same defect as #266 and #267 one layer up.
+   *
+   * Set from a **count** of outstanding moves rather than a boolean, because `send` is queued and
+   * several can be in flight; a boolean cleared by the first ack would report the table idle while
+   * two moves were still out. And set only after a short delay, because the quarter-second writes
+   * that are most of a game must not make the bar flicker.
+   */
+  waiting: boolean
   /**
    * Tables whose host chose to list them, newest server answer first.
    *
@@ -412,9 +443,38 @@ export function useTable(playerName: string): UseTable {
     code: null,
     chat: [],
     error: null,
+    waiting: false,
     openTables: [],
   })
   const socketRef = useRef<Socket | null>(null)
+  /**
+   * How many of this player's moves are with the server, and the timer that decides to say so.
+   *
+   * The count goes up as a move is sent and down in a `finally`, so a throw cannot leave the table
+   * reading "waiting" for ever. On the way up from zero it starts a timer; on the way back down to
+   * zero it clears it. Only the timer sets `waiting`, which is what keeps a fast write silent.
+   */
+  const inFlightRef = useRef(0)
+  const waitingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Long enough that an ordinary write never shows, short enough to beat a player's patience. */
+  const SAY_WE_ARE_WAITING_AFTER_MS = 400
+  const startedWaiting = useCallback(() => {
+    inFlightRef.current += 1
+    if (inFlightRef.current > 1 || waitingTimerRef.current !== null) return
+    waitingTimerRef.current = setTimeout(() => {
+      waitingTimerRef.current = null
+      if (inFlightRef.current > 0) setState((s) => (s.waiting ? s : { ...s, waiting: true }))
+    }, SAY_WE_ARE_WAITING_AFTER_MS)
+  }, [])
+  const stoppedWaiting = useCallback(() => {
+    inFlightRef.current = Math.max(0, inFlightRef.current - 1)
+    if (inFlightRef.current > 0) return
+    if (waitingTimerRef.current !== null) {
+      clearTimeout(waitingTimerRef.current)
+      waitingTimerRef.current = null
+    }
+    setState((s) => (s.waiting ? { ...s, waiting: false } : s))
+  }, [])
   /**
    * The newest state, for the callbacks that must not read a captured copy.
    *
@@ -671,6 +731,14 @@ export function useTable(playerName: string): UseTable {
   const send = useCallback<UseTable["send"]>(
     (action, basedOn) => {
       const run = async (): Promise<void> => {
+        startedWaiting()
+        try {
+          return await attemptWithRetries()
+        } finally {
+          stoppedWaiting()
+        }
+      }
+      const attemptWithRetries = async (): Promise<void> => {
         // The version this action was composed against, so a refusal can be told apart from a
         // disagreement. See the `illegal_action` case below.
         let sentAt = versionRef.current

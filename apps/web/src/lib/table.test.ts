@@ -5,7 +5,7 @@
  * What is here is the thing that has to read well to a player who did nothing wrong.
  */
 import { describe, it, expect } from "vitest"
-import { connectionTrouble, moveName, pastedNote, rejoinTrouble, showsBroadcastError } from "./table"
+import { connectionTrouble, moveName, pastedNote, rejoinTrouble, showsBroadcastError, waitingNote } from "./table"
 
 describe("naming a move in an error banner", () => {
   it("says what the player tapped, not what the engine calls it", () => {
@@ -171,5 +171,35 @@ describe("the seat that could not be reclaimed", () => {
     for (const code of ["not_found", "illegal_action", "pod_full", "already_in_pod", "nonsense"]) {
       expect(rejoinTrouble(code, "QF7K").toLowerCase()).not.toContain("pod")
     }
+  })
+})
+
+describe("what the bar says while a move is with the server", () => {
+  /*
+    `emit` resolves on the ack or at eight seconds and used to set nothing in between, so a write
+    that took a moment was indistinguishable from a table that had stopped answering — the board
+    still, no button changed, nothing to say the move had been sent. The measured median of the
+    slow writes is 366ms and the p90 1476ms, so it is not a rare state (#299, same family as #266
+    and #267).
+
+    What is testable here is the sentence. Whether it appears at the right moment is a matter of a
+    counter and a timer, which this module's tests deliberately leave to the browser suites.
+  */
+  it("blames the opponents only when the server is actually playing some", () => {
+    expect(waitingNote([{ bot: false }, { bot: true }])).toBe("opponents deciding")
+    expect(waitingNote([{ bot: true }, { bot: true }, { bot: true }])).toBe("opponents deciding")
+  })
+
+  it("says only that the move was sent when every seat is a person", () => {
+    // Against people the server is simply slow to answer; naming opponents would be a guess, and
+    // the wait is not theirs to be blamed for.
+    expect(waitingNote([{ bot: false }, { bot: false }])).toBe("sending your move")
+    expect(waitingNote([{}, {}])).toBe("sending your move")
+  })
+
+  it("reads sensibly before there is a pod at all", () => {
+    // The bar renders from `table.pod?.seats`, which is undefined until a table exists.
+    expect(waitingNote(undefined)).toBe("sending your move")
+    expect(waitingNote([])).toBe("sending your move")
   })
 })

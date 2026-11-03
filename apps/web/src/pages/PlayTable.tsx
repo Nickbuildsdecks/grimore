@@ -52,7 +52,7 @@ import {
   type ArenaEvent, type ArenaMode, type BoardRead,
 } from "@/lib/arena"
 import {
-  pastedNote, readSavedList, useTable, writeSavedList,
+  pastedNote, readSavedList, useTable, waitingNote, writeSavedList,
   type TableAction, type UseTable,
 } from "@/lib/table"
 import { useTableSound } from "@/lib/useTableSound"
@@ -1816,6 +1816,25 @@ function Board({ table }: { table: UseTable }) {
         {table.connection !== "connected" ? (
           <span data-testid="connection" className="rounded bg-[var(--g-mana-r)]/20 px-1.5 py-0.5 text-[var(--g-mana-r)]">
             {table.connection}
+          </span>
+        ) : null}
+        {/*
+          A move of yours is with the table, and has been for long enough to be worth saying.
+
+          Before this, `emit` resolved on the ack or at eight seconds and set nothing in between —
+          so a write that took a moment looked exactly like a table that had stopped answering: the
+          board still, no button changed, nothing to say the move had been sent. The slow writes
+          measured a median of 366ms and a p90 of 1476ms, so it is not a rare state.
+
+          Muted rather than red, because `connection-trouble` beside it uses red for a fault and
+          waiting is not one. And it says *what* the time is going on: at a table the server is
+          playing seats at, almost all of it is those seats deciding (the slow-write report puts
+          72% of a write inside `botAction`), which is a different sentence from a table that has
+          gone quiet on you.
+        */}
+        {table.waiting ? (
+          <span data-testid="move-in-flight" className="text-[var(--g-text-muted)]">
+            {waitingNote(table.pod?.seats)}
           </span>
         ) : null}
         {/*
