@@ -77,7 +77,17 @@ const WATCH = () => {
       }
     }
   });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  /*
+    `document`, not `document.documentElement`.
+
+    An init script runs before the page has an `<html>`, so `documentElement` is null and
+    `observe` throws "parameter 1 is not of type 'Node'" — which is what the first run of this did,
+    silently, while reporting **0 appearances across 18 moves**. A broken instrument reporting
+    nothing looks exactly like a marker that never shows, and the only reason that reading was not
+    believed is that this script also checks for page errors. `document` is a Node from the start
+    and `subtree: true` covers everything under it.
+  */
+  observer.observe(document, { childList: true, subtree: true });
 };
 
 async function main() {
@@ -102,12 +112,41 @@ async function main() {
     await waitFor(page, 'pregame');
     await waitFor(page, 'deck-ember-rush', 20000);
     await tid(page, 'deck-ember-rush').click();
-    await press(page, 'start-game');
+    // `start-engine`, not `start-game`: the first run of this waited fifteen seconds for a
+    // mulligan prompt that was never going to come, because the button that starts the rules
+    // engine on a dealt table is the one the lobby actually offers.
+    await waitFor(page, 'start-engine');
+    await tid(page, 'start-engine').click();
     await waitFor(page, 'table');
-    await waitFor(page, 'mulligan-prompt');
+    await waitFor(page, 'phase-bar');
+    await waitFor(page, 'mulligan-prompt', 30000);
     const lives = [];
     for (let s = 0; s < 4; s++) lives.push(await readNumber(page, `life-${s}`));
     check('a four-seat pod against the computer is dealt', lives.every((l) => l === 40), JSON.stringify(lives));
+
+    /*
+      The instrument's own health, checked before any reading is taken from it.
+
+      The first run of this reported 0 appearances with the observer never attached, and the second
+      reported 0 appearances with it attached — and the two readings are indistinguishable without
+      a positive control. So one marker is planted by hand and the observer has to see it. If this
+      check fails, nothing below it means anything, and the script says so rather than reporting a
+      confident zero.
+    */
+    const control = await page.evaluate(() => {
+      const span = document.createElement('span');
+      span.dataset.testid = 'move-in-flight';
+      span.textContent = 'planted by the self-test';
+      document.body.appendChild(span);
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          const saw = (window.__inFlight ?? []).some((s) => !s.gone && /planted/.test(s.text));
+          span.remove();
+          setTimeout(() => { if (window.__inFlight !== undefined) window.__inFlight.length = 0; resolve(saw); }, 50);
+        }, 50);
+      });
+    });
+    check('the watcher sees a marker planted in front of it', control === true, `control=${control}`);
 
     let played = 0;
     for (let move = 0; move < MOVES; move += 1) {
