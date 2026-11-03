@@ -18712,6 +18712,16 @@ The rule itself; that **two players may each control one** (the half that makes 
 legal); that a non-legendary card is untouched, which keeps this from becoming a rule about names;
 and that three copies lose two in one pass rather than one a pass.
 
+### The player documentation had been promising this rule all along
+
+`claude/play-realm-setup.md`, listing what a regeneration shield does *not* beat, ends with
+*"**state-based legend and commander rules**"*. The commander half is real (`engine.ts` eliminates a
+seat on 21). The legend half was a sentence about something the engine did not do — so the fix makes
+an existing promise true rather than needing a doc change, and that is the worse kind of
+documentation error: not stale, **never true**. It is the exact failure `mechanic-coverage.mjs` was
+built to catch one level down — *"a capability the engine has, the docs describe, and no card reaches
+is a claim that cannot fail"* — and nothing watches the prose for it.
+
 ### And the question it raised, now checked rather than left open
 
 A token copy of a commander is not the commander, so it should not add to commander damage. The
