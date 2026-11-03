@@ -1143,3 +1143,39 @@ and it did. Its pod row moved seven declarations of 851 under a change that was 
 a long way, which is a negative result worth more than the win rate that could not resolve it. Pick
 a counting instrument over a win rate whenever the question can be put as a count: 851 paired
 declarations have no ±16 floor.
+
+**A floor quoted in pods does not scale the way a floor quoted in points does, and getting that
+backwards makes every extra chunk look like progress towards significance it is not making.**
+
+D281 measured `pod-duel`'s floor by running **one unchanged arm** on three disjoint 104-pod sets:
+margins of **+16, −4, −16**. Note what that is a spread of — *pods*, on a sample of 104. When a
+reading is accumulated out of several chunks, the temptation is to carry that ±16 forward as though
+it were a constant and compare it with the running pod margin. It is not a constant. The margin of
+a null arm is a random walk: its spread **grows** as √N, and it is the *percentage* that shrinks.
+
+    margin SD ≈ √N pods      N = 104  → ~10 pods  (9.8 points)
+                             N = 416  → ~20 pods  (4.9 points)
+                             N = 1040 → ~32 pods  (3.1 points)
+
+So "the floor narrows to about ±5 at 1040" is a claim about **points**, never about pods. A run
+that sits at +20 pods after 104 is a 2σ result; the same +20 pods after 572 is 0.8σ and means
+nothing. Adding chunks does not make a fixed pod margin more significant — it makes a fixed
+*percentage* margin more significant, and a margin that stays constant in pods while the sample
+grows is a margin that is **shrinking**.
+
+Two practical consequences for a chunked run:
+
+- **Put the points column in the ledger, and read that one.** The arithmetic that matters is
+  `100 × (tested − control) / pods` beside `100 × √pods / pods`, printed together so the comparison
+  cannot be made by eye against the wrong number.
+- **Keep the per-chunk margins visible, not just the total.** Six disjoint sets reading
+  −8, +20, +4, −12, +8, +8 sum to +20, and the fact that one set carries the whole of it is a thing
+  the total hides. Disagreement in sign across sets is what D258 and D281 were both retracted for.
+
+**Accumulating a long reading in chunks, when the machine will not stay up for it.** A 1040-pod arm
+is nearly three hours and the container recycles sooner than that. Running it as several short
+`SEEDS=2`/`SEEDS=3` invocations at disjoint `SEED0`s and appending each finished chunk to a ledger
+file loses at most one chunk to a restart instead of everything. The seed arithmetic is
+`seedFor(pass, t) = SEED0 + pass*13 + t` with `t` in 0..12, so `SEEDS=n` from `X` consumes
+`X .. X+13n-1` and the next chunk must start past that — overlapping ranges would double-count the
+same games and read as a larger sample than was played.
