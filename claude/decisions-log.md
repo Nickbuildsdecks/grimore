@@ -20145,3 +20145,53 @@ existed.
 **Not pushed yet.** A real assertion that fails one run in nine makes CI intermittently red, which is
 worse than the vacuous one it replaces until the defect underneath it is found. The honest order is:
 catch the failure message, fix what it names, then ship both together.
+
+## D323 — My own gate was not gating: a pipe swallowed the exit code
+
+The gate I have been running before every push all session:
+
+```bash
+node scripts/guards.js && pnpm v2:typecheck … && pnpm v2:test 2>&1 | tail -12 \
+  && echo "gate ended" && git push -u origin …
+```
+
+`pnpm v2:test 2>&1 | tail -12` exits with **tail's** status, not the test run's. So that stage
+succeeded whatever the tests did, the `&&` chain carried on, and **the push would have fired on a
+red test run.** It did not bite only because CI was doing the real gating and the pushed commits
+happened to be sound.
+
+Proved by the run that found it: `Tasks: 16 successful, 17 total` with
+`Tests 1 failed | 42 passed (43)` and `[exited with code 0]` on the same screen.
+
+The gate pattern from here is a file and an explicit check, never a pipe:
+
+```bash
+pnpm v2:test > "$S/gate.txt" 2>&1; ec=$?; tail -20 "$S/gate.txt"; [ "$ec" -eq 0 ] || exit 1
+```
+
+### And the same run covered 8 of 43 tests while reading green
+
+`apps/realtime/src/realtime.test.ts` guards its socket suite with `describe.skipIf(!REDIS_URL)`.
+My gate command never set that variable, so **35 of 43 tests skipped in every local gate run this
+session** and the output read `Test Files 1 passed (1) / Tests 8 passed | 35 skipped (43)`.
+
+CI is not affected — `.github/workflows/ci.yml:52` sets `REDIS_URL`, and `turbo.json` lists it in
+the test task's `env`, so the cache key differs and the suite genuinely re-runs. The defect was
+entirely in my invocation, and the cost was that I reported a stronger check than I had run, several
+times.
+
+Filed as #303: a test that always runs and fails when `REDIS_URL` is unset, naming the count it
+would otherwise skip. Same argument as D302 — a total without its skips beside it cannot be
+compared, and "43 passed" and "8 passed, 35 skipped" must not both print `1 passed` and exit 0.
+
+### Six in two days, and four of them mine
+
+`press` discarding its boolean (D319), `tap` across 27 call sites (#300), `createRealtime`
+overwriting three store callbacks (D322), a budget assertion of mine that passed with the budget
+raised sixteen-fold, `skipIf` hiding 35 tests, and this pipe. Every one reported success it had not
+earned, and the silence read as good news each time.
+
+The two that were caught before they cost anything were caught the same way: **deliberately break
+the check and confirm it goes red.** A veil over a button until the press had to be refused; the bot
+budget raised until the assertion had to fire. It costs seconds. Treating that step as optional is
+what produced the other four.
