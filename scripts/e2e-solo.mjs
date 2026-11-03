@@ -1178,11 +1178,32 @@ const ARTIFACT_LIST = [
             were diagnosed down to a step and no further for exactly the want of it.
           */
           const code = await text(page, 'table-code').catch(() => '?');
+          /*
+            And whether the page is still *connected*, which is the one explanation that covers
+            both stalls seen so far.
+
+            One stalled in Declare blockers pressing "Declare blockers", the other in Upkeep
+            pressing "Pass" — different steps, different buttons, and in both cases the engine and
+            the realtime server logged nothing wrong at all. A socket that dropped without the
+            client getting back explains that shape exactly and is step-independent: the view stops
+            updating, so the table goes on saying it is your move, and every press goes nowhere.
+            The server log does show seats being reaped after a grace window, which is what it
+            calls a socket that went away.
+
+            The `connection` pill renders **only when not connected**, so its absence is the
+            answer "the socket was fine" and its presence is the answer "it was not" — and those
+            two want completely different fixes, which is why guessing between them is worth
+            nothing.
+          */
+          const conn = (await has(page, 'connection')) ? await text(page, 'connection').catch(() => 'not connected') : 'connected';
+          const trouble = (await has(page, 'connection-trouble'))
+            ? await text(page, 'connection-trouble').catch(() => 'yes') : 'none';
           await shot(page, 'stalled');
           check('the table kept moving', false,
             `stuck on turn ${lastTurn} for ${movesOnThisTurn} moves in ${step}; last action `
             + `${did}; life ${JSON.stringify(lives)}; game-over ${await has(page, 'game-over')}; `
-            + `waiting on ${JSON.stringify(waiting)}; pod ${code}`);
+            + `waiting on ${JSON.stringify(waiting)}; pod ${code}; socket ${conn}; `
+            + `trouble ${trouble}`);
           break;
         }
         /*

@@ -83,6 +83,17 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
    * whole-game tests below can assert it never happened, rather than trusting a log line.
    */
   const stalls: { code: string; reason: string }[] = [];
+  /**
+   * And the same for a person's move that bought nothing.
+   *
+   * `runBots` has always compared `stateVersion` before and after a bot's action; the human path
+   * never did, so a table where pressing the only offered button changes nothing looked, from the
+   * server, exactly like a table being played. Two browser pods stalled two hundred moves apiece
+   * on that shape with not one line logged. Collected rather than merely logged for the same
+   * reason `stalls` is: a whole game is several hundred chances for it, and an empty list at the
+   * end is the claim worth making.
+   */
+  const noProgress: { code: string; reason: string }[] = [];
 
   beforeAll(async () => {
     rt = await createRealtime({
@@ -92,6 +103,7 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       store: {
         keyPrefix: `test:${Date.now().toString(36)}:${process.pid}`,
         onBotStall: (info) => stalls.push(info),
+        onNoProgress: (info) => noProgress.push(info),
       },
       rateLimit: { rate: 20, burst: 40 },
     });
@@ -879,6 +891,9 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
         an idle timeout four seconds later with nothing to go on.
       */
       expect(stalls, JSON.stringify(stalls)).toEqual([]);
+      // And not one of those several hundred moves was accepted without changing anything, which
+      // is the half of "the table kept moving" the server can see for itself.
+      expect(noProgress, JSON.stringify(noProgress)).toEqual([]);
 
       // One more action, now that there is a winner. It is refused — and refused as its own thing
       // rather than as an illegal action, which is the whole point: a client sends the pass that

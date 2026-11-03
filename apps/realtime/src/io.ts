@@ -106,6 +106,9 @@ export async function createRealtime(opts: RealtimeOptions): Promise<Realtime> {
       worth finding in a log rather than in a browser suite's idle timeout.
     */
     onBotStall: ({ code, reason }) => log.warn({ pod: code, reason }, 'server seats cannot move'),
+    // The same thing said about a person's move. A table where pressing the only button on offer
+    // buys nothing is a table that has stopped, and until now the server said nothing about it.
+    onNoProgress: ({ code, reason }) => log.warn({ pod: code, reason }, 'a player move changed nothing'),
   });
   const dispose = registerHandlers(io, store, log, { ...(opts.rateLimit ? { rateLimit: opts.rateLimit } : {}) });
 

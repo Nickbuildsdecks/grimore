@@ -150,6 +150,23 @@ export interface PodStoreOptions {
    * different conditions and was called with nothing to report them to.
    */
   onBotStall?: (info: { code: string; reason: string }) => void;
+  /**
+   * Called when a **person's** action was accepted and changed nothing.
+   *
+   * `runBots` has had this check since it was written — "a move the engine accepted but that
+   * changed nothing, which would spin" — and reports it. The human path never had it, and the
+   * asymmetry is the whole reason a stalled table is so hard to read: a player whose move buys
+   * nothing presses the same button again, and again, and the server is content each time because
+   * the engine did not refuse anything. Two browser pods stalled for two hundred moves apiece on
+   * exactly that shape, one pressing "Declare blockers" and one pressing "Pass", and the server
+   * logged nothing at all for either.
+   *
+   * In a correct engine this never fires: `stateVersion` moves whenever the state does, so an
+   * accepted action that leaves it alone is an action the engine should have refused or a state it
+   * should have advanced. That is what makes it worth asserting rather than tolerating — the same
+   * argument as D282, one layer up from the engine.
+   */
+  onNoProgress?: (info: { code: string; reason: string }) => void;
 }
 
 export const SEAT_GRACE_MS = 120_000;
@@ -308,6 +325,7 @@ export class PodStore {
   private readonly now: () => number;
 
   private readonly onBotStall: (info: { code: string; reason: string }) => void;
+  private readonly onNoProgress: (info: { code: string; reason: string }) => void;
 
   constructor(
     private readonly redis: RedisClientType,
@@ -318,6 +336,7 @@ export class PodStore {
     this.graceMs = opts.graceMs ?? SEAT_GRACE_MS;
     this.now = opts.now ?? Date.now;
     this.onBotStall = opts.onBotStall ?? ((): void => {});
+    this.onNoProgress = opts.onNoProgress ?? ((): void => {});
   }
 
   // -------------------------------------------------------------------------
@@ -761,6 +780,10 @@ export class PodStore {
           ...(s.pastedList.commander === undefined ? {} : { commander: s.pastedList.commander }),
         }).deck;
       }
+      // Read before the action so a move that bought nothing can be told from one that did; see
+      // `onNoProgress`, and `runBots`, which has made the same comparison since it was written.
+      const versionBefore = record.game!.stateVersion;
+      const whereBefore = `turn ${record.game!.turn} ${record.game!.step}`;
       try {
         record.game = engineApply(record.game!, stamped, {
           isHost, ...(Object.keys(decks).length === 0 ? {} : { decks }),
@@ -773,6 +796,12 @@ export class PodStore {
           throw new PodError(code, `${err.code}: ${err.message}`);
         }
         throw err;
+      }
+      if (record.game.stateVersion === versionBefore) {
+        this.onNoProgress({
+          code,
+          reason: `${stamped.type} by seat ${seat.seat} at ${whereBefore} changed nothing`,
+        });
       }
       runBots(record, (reason) => this.onBotStall({ code, reason }));
       if (record.game.finished) record.pod.status = 'finished';
