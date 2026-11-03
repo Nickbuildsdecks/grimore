@@ -80,7 +80,7 @@ function poolRows() {
 }
 
 /** A bulk JSON file's rows, accepting both the array form and one object per line. */
-function fileRows(path) {
+function readFile(path) {
   const text = readFileSync(path, 'utf8');
   try {
     const parsed = JSON.parse(text);
@@ -96,6 +96,42 @@ function fileRows(path) {
   }
   return rows;
 }
+
+/**
+ * Rows the importer itself would never write, dropped before anything is counted.
+ *
+ * **The denominator has to be the cards that end up in the table**, and `scryfallService.js`
+ * filters a long list on the way in: tokens, emblems, art series, memorabilia, silver and gold
+ * borders, digital-only printings, and anything legal in no format. `oracle_cards` lists all of
+ * those as their own entries, so counting them would inflate the refusal rate with rows that were
+ * never candidates — the first run of this arm reported 4 of 7 refused on a fixture where the real
+ * answer was 3 of 6, because one of the seven was a token.
+ *
+ * Kept deliberately in step with the importer's own filter rather than reimplemented loosely, and
+ * the count is printed so the two can be compared.
+ */
+const NOT_IMPORTED_LAYOUTS = new Set([
+  'token', 'double_faced_token', 'emblem', 'art_series', 'memorabilia',
+]);
+function wouldBeImported(row) {
+  if (NOT_IMPORTED_LAYOUTS.has(String(row.layout ?? '').toLowerCase())) return false;
+  if (['funny', 'token', 'memorabilia'].includes(String(row.set_type ?? '').toLowerCase())) return false;
+  const border = String(row.border_color ?? '').toLowerCase();
+  if (border === 'silver' || border === 'gold') return false;
+  if (row.digital === true) return false;
+  const legal = Object.values(row.legalities ?? {});
+  return legal.some((status) => status === 'legal' || status === 'restricted');
+}
+
+function fileRows(path) {
+  const all = readFile(path);
+  const kept = all.filter(wouldBeImported);
+  skippedBeforeCounting = all.length - kept.length;
+  return kept;
+}
+
+/** How many rows the importer's own filter would have dropped. See `wouldBeImported`. */
+let skippedBeforeCounting = 0;
 
 /**
  * A refusal reason reduced to its shape, so reasons can be counted rather than listed.
@@ -199,6 +235,10 @@ const pct = (n) => rows.length === 0 ? '0.0' : ((n / rows.length) * 100).toFixed
 
 console.log(`\nSource: ${source}`);
 console.log(`Cards read: ${rows.length}`);
+if (skippedBeforeCounting > 0) {
+  console.log(`  (${skippedBeforeCounting} row(s) the importer's own filter drops: tokens, emblems,`);
+  console.log(`   art series, silver and gold borders, digital-only, legal in no format)`);
+}
 console.log(`\nBuilt from data alone: ${built} (${pct(built)}%)`);
 for (const [kind, n] of [...byKind.entries()].sort((a, b) => b[1] - a[1])) {
   console.log(`  ${String(n).padStart(6)}  ${pct(n).padStart(5)}%  ${kind}`);

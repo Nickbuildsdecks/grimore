@@ -283,6 +283,18 @@ const INTEGER = /^\d+$/;
 const SINGLE_FACE_LAYOUTS = new Set(['normal', 'leveler', 'saga', 'class', 'host', 'augment']);
 
 /**
+ * Layouts that are not cards: tokens, emblems, art series, memorabilia.
+ *
+ * Refused with their own reason, which is the point. **They used to fall through to the multi-face
+ * check and be refused as "layout token has more than one face"** — found by running the `--file`
+ * arm of `scripts/measure/derivable.mjs` for the first time against a fixture with a token in it.
+ * A token has exactly one face. The message was simply false, and on a real `oracle_cards` file —
+ * which lists tokens as their own entries — it would have been false thousands of times, which is
+ * the kind of thing that sends the next reader looking for a multi-face bug that does not exist.
+ */
+const NOT_CARDS = new Set(['token', 'double_faced_token', 'emblem', 'art_series', 'memorabilia']);
+
+/**
  * Builds a playable card out of a data row, or says why it cannot.
  *
  * Pure: no database, no network, no registry. The caller decides what to do with a rejection — the
@@ -296,6 +308,9 @@ export function cardFromData(row: CardDataRow): Derivation {
   if (typeLineText === '') return { ok: false, why: `${name}: the row has no type line` };
 
   const layout = (row.layout ?? 'normal').trim().toLowerCase();
+  if (NOT_CARDS.has(layout)) {
+    return { ok: false, why: `${name}: a ${layout.replace(/_/g, ' ')} is not a card` };
+  }
   if (!SINGLE_FACE_LAYOUTS.has(layout)) {
     return { ok: false, why: `${name}: layout ${layout} has more than one face` };
   }

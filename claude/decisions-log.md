@@ -20886,3 +20886,39 @@ a derived ability that *runs code* is a different commitment from one that state
 deliberately, named in the code so the next reader knows it was a choice and not an oversight.
 
 Gate green: 2177 tests across 17 packages, 1403 in the engine.
+
+---
+
+## D334 — Running the instrument's unrun arm found two defects in it (#308)
+
+`derivable.mjs` shipped with two arms and only one had ever been run. The `--file` arm — the one
+that matters, since it is what turns the pool's floor into the real figure once the import has been
+run — had never been executed at all. Pointing it at the seven-card fixture took one command and
+found two things wrong with the instrument.
+
+**A token was refused for having faces it does not have.** `token`, `double_faced_token`, `emblem`,
+`art_series` and `memorabilia` fell through to the multi-face check and came back as
+*"layout token has more than one face"*. A token has exactly one. The message was simply false —
+and `oracle_cards` lists tokens as their own entries, so on a real file it would have been false
+thousands of times and sent the next reader hunting a multi-face bug that does not exist. They now
+refuse as *"a token is not a card"*, with a test that asserts both the new wording and the absence
+of the old one.
+
+**The denominator counted rows the importer would never write.** The first run reported 4 of 7
+refused where the honest answer is 3 of 6, because one of the seven was that token. `scryfallService.js`
+filters a long list on the way in — tokens, emblems, art series, memorabilia, silver and gold
+borders, digital-only printings, and anything legal in no format — so counting them inflates the
+refusal rate with rows that were never candidates. The `--file` arm now applies the same filter
+before anything is counted and **prints how many it dropped**, so the two can be compared rather
+than trusted.
+
+That comparison is now a cross-check worth having: the script keeps 6 of the fixture's 7 rows, and
+the importer's own dry run wrote exactly 6 of 7. Two independently written filters agreeing on the
+same file is a better reason to believe either of them than the fact that both looked right.
+
+The general lesson is one this session keeps paying for in a new place each time. An unrun code path
+is not "probably fine"; it is a claim nobody has tested, and in an *instrument* it is worse than
+that, because the output of a broken instrument looks exactly like a finding. Two arms, one run,
+and the unrun one was wrong in both halves.
+
+Gate green, 2178 tests.

@@ -164,6 +164,21 @@ describe('building a card from its printed data', () => {
       }
     });
 
+    it('refuses a token for being a token, not for having faces it does not have', () => {
+      /*
+        These used to fall through to the multi-face check and come back as "layout token has more
+        than one face", which is simply false — a token has one. Found by running the `--file` arm
+        of `derivable.mjs` for the first time, against a fixture with a token in it; on a real
+        `oracle_cards` file, which lists tokens as their own entries, the false message would have
+        been printed thousands of times and sent the next reader hunting a bug that is not there.
+      */
+      for (const layout of ['token', 'double_faced_token', 'emblem', 'art_series', 'memorabilia']) {
+        const refusal = why({ layout });
+        expect(refusal).toContain('is not a card');
+        expect(refusal).not.toContain('more than one face');
+      }
+    });
+
     it('refuses a mana ability that makes two mana, rather than guessing one', () => {
       /*
         The Sol Ring case, and the reason `produced_mana` is a cross-check rather than the source.
