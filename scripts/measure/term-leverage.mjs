@@ -38,6 +38,49 @@
  * calibration** — a term that does separate the slate and separates it the wrong way. That is where
  * a weight would actually be costing games, and nothing has looked there before.
  *
+ * **The field, measured** (#274, D296): 312 duels, two passes, 34,262 decisions, 1763s.
+ *
+ * | term | changed | of all | ships at |
+ * | --- | --- | --- | --- |
+ * | `creature` | 2195 | 6.4% | its own weight |
+ * | `life` | 794 | 2.3% | its own weight |
+ * | `clockCycle` | 731 | 2.1% | zero |
+ * | `clockRate` | 731 | 2.1% | zero |
+ * | `exposed` | 519 | 1.5% | zero |
+ * | `castable` | 353 | 1.0% | 1 |
+ * | `permanent` | 326 | 1.0% | its own weight |
+ * | `hand` | 304 | 0.9% | its own weight |
+ * | `clockTurns` | 219 | 0.6% | zero |
+ * | `library` | 85 | 0.2% | its own weight |
+ * | `land` | 30 | 0.1% | its own weight |
+ * | (control) | 0 | 0.0% | — |
+ *
+ * `clockCycle` and `clockRate` read **the same 731**, to the decision, which is the arm's own
+ * positive control rather than a coincidence: the divisor is `/ opponents` and a duel has one, so
+ * the two terms are the same arithmetic here. That agreement is also the table's one blind spot,
+ * and it is the blind spot over the only clock question still open — see below.
+ *
+ * **What the table does not do is name the next term, and that is the result** (#274). The question
+ * this file and `eval-calibration` were built to answer together — *which term should ship next* —
+ * has now produced a counterexample from each end:
+ *
+ * - `castable` has the **weakest calibration of any shipped term** (51/52/53/54/54/48 against life
+ *   and board at 51-70) and earned **+1.35 points** over three seed sets.
+ * - `clockRate` has the **third-highest leverage of the eleven terms here** and earned
+ *   **0.00 sigma** over 2434 decided pods (D295).
+ *
+ * So neither column predicts a win rate, and both have now been shown not to by a term that was
+ * measured anyway. Leverage says a term *can* move a decision; it says nothing about whether the
+ * decision it moves is the better one. Calibration says a term ranks the players; a search never
+ * asks it to. The two instruments are worth running — they are how `hand` was found to be inert and
+ * how `castable` was found to be the right shape — but a reading from either is a reason to spend a
+ * win rate, never a substitute for having spent one.
+ *
+ * **The one thing still open is the one thing this instrument cannot see.** `clockCycle` differs
+ * from `clockRate` only where there is more than one opponent, and this file plays duels: the 731
+ * above is the duel's divisor-of-one, not the term. A pod arm for this instrument would be the cheap
+ * screen before another 2000 pods go on the clock family, and `PLAYERS` here is two seats.
+ *
  * Reads `packages/rules-engine/dist/index.js`, so build first:
  *
  *     pnpm --filter @grimore/rules-engine build

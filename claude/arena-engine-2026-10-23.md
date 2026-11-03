@@ -8190,6 +8190,39 @@ No budget was added, deliberately: the comment in `e2e-solo.mjs` already rules t
 wait on somebody deciding the table is too tall, and that 1.3 and 2.35 must not be raised to
 accommodate a mid-game number. What changed is that the decision now has figures under it.
 
+### The two instruments built to name the next term cannot name one (#274, D296)
+
+#274 was meant to pick the next evaluation term from measurement rather than from a guess: run
+`term-leverage` over the whole field, read it beside `eval-calibration`, and take the term in the
+interesting cell. Both halves are now run on the current engine, and the answer is that the two
+columns do not license the conclusion.
+
+The field, at 312 duels and 34,262 decisions: `creature` 6.4%, `life` 2.3%, `clockCycle` and
+`clockRate` 2.1% each, `exposed` 1.5%, `castable` and `permanent` 1.0%, `hand` 0.9%, `clockTurns`
+0.6%, `library` 0.2%, `land` 0.1%, and the empty-override control at a clean 0.0%. `clockCycle` and
+`clockRate` reading the *same* 731 decisions is the arm's own positive control — the divisor is
+`/ opponents` and a duel has one.
+
+Each instrument has now produced a counterexample to itself:
+
+- `castable` has the **weakest calibration of any shipped term** — 51/52/53/54/54/48 against `life`
+  and `board` at 51-70 — and earned **+1.35 points** over three disjoint seed sets.
+- `clockRate` has the **third-highest leverage of the eleven** and earned **0.00 sigma** over 2434
+  decided pods (D295), bound ±4.1 points.
+
+So leverage says a term *can* move a decision and says nothing about whether the decision it moves
+is the better one; calibration ranks the players and a search never asks it to. Both instruments
+stay — leverage is how `hand` was caught being inert while looking mispriced, and the pair of them
+is how `castable` was identified as the right shape for the question `hand` asked backwards. What
+changes is what a reading buys: **a reason to spend a win rate, never a substitute for having spent
+one.** The standing diagnosis is unchanged — the next gain is a term that sees something new, and no
+ranking of the terms that exist can point at one that does not.
+
+One thing stays open and this instrument cannot see it: `clockCycle` differs from `clockRate` only
+where there is more than one opponent, and `term-leverage` plays duels. A pod arm would be the cheap
+screen before another two thousand pods go on the clock family. It is recorded rather than built,
+because nothing is waiting on the answer.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

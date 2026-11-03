@@ -19052,3 +19052,66 @@ future reader's attention and neither is acted on here: turns 1-4 read **51% wit
 samples exactly tied**, which may be honest — a turn-three board often genuinely is undetermined —
 and `hand` is still the one component that points the wrong way while being inert (D243), which is
 the pair that produced `castable` and may yet produce its mirror.
+
+## D296 — Neither leverage nor calibration names the next term, and each has now produced a counterexample
+
+#274 asked for the next evaluation term to be **chosen from leverage and calibration rather than
+guessed**, which was the whole point of building the two instruments. Both halves are now run on the
+current engine, and the honest answer is that the premise does not hold.
+
+**The leverage field, measured:** 312 duels, two passes over the field, 34,262 decisions, 1763s.
+
+| term | changed | of all | ships at |
+| --- | --- | --- | --- |
+| `creature` | 2195 | 6.4% | its own weight |
+| `life` | 794 | 2.3% | its own weight |
+| `clockCycle` | 731 | 2.1% | zero |
+| `clockRate` | 731 | 2.1% | zero |
+| `exposed` | 519 | 1.5% | zero |
+| `castable` | 353 | 1.0% | 1 |
+| `permanent` | 326 | 1.0% | its own weight |
+| `hand` | 304 | 0.9% | its own weight |
+| `clockTurns` | 219 | 0.6% | zero |
+| `library` | 85 | 0.2% | its own weight |
+| `land` | 30 | 0.1% | its own weight |
+| (control: no override) | 0 | 0.0% | — |
+
+The control held at exactly zero, which is what makes the rest of the column terms rather than
+plumbing. `clockCycle` and `clockRate` read the **same 731, to the decision** — the divisor is
+`/ opponents` and a duel has one — so that pair is the arm's own positive control, and also the
+table's one blind spot. More on that below.
+
+**The two counterexamples, one from each instrument.**
+
+- **`castable` has the weakest calibration of any shipped term and earned games anyway.** Over 1248
+  samples it reads 51 / 52 / 53 / 54 / 54 / 48 across the six turn bands, against `life` and `board`
+  at 51-70. It still earned **+1.35 points** over three disjoint seed sets, which is why it ships at
+  1 (D271).
+- **`clockRate` has the third-highest leverage of the eleven terms and earned nothing.** 2.1% of all
+  decisions, 13.0% of blocks — and **0.00 sigma over 2434 decided pods** (D294/D295), with a 2 sigma
+  bound of ±4.1 points.
+
+So a high leverage reading is not evidence a term would earn games, and a weak calibration is not
+evidence it would not. The reason is D243's, now visible from both ends: **leverage says a term can
+move a decision and says nothing about whether the decision it moves is the better one; calibration
+ranks the players and a search never asks it to.**
+
+**What that does and does not mean for the instruments.** Both stay, and both stay worth running:
+leverage is how `hand` was found to be inert while looking mispriced (D243), and the pair of them is
+how `castable` was identified as the right *shape* for the question `hand` was asking the wrong way
+(D271). What changes is what a reading licenses. **A reading from either is a reason to spend a win
+rate on a term, never a substitute for having spent one.** Four terms have been deleted after
+measurement (D116) and two of the three readings since have disagreed with their own instrument;
+the only thing that has ever predicted a win rate in this engine is a win rate.
+
+**So #274 closes with no term named**, which is the result rather than a failure to produce one. The
+standing diagnosis from D241 and D295 is unchanged: the next gain is a term that **sees something
+new**, and no ranking of the terms that already exist can point at one that does not.
+
+**One thing is still open, and it is the thing this table cannot see.** `clockCycle` differs from
+`clockRate` only where there is more than one opponent, and `term-leverage` plays duels — the 731
+above is a divisor of one, not the term. A pod arm for that instrument is the cheap screen to run
+before another two thousand pods go on the clock family, and it does not exist: `PLAYERS` in that
+file is two seats. Recorded rather than built, because the clock family has had its win rate spent
+and nothing is waiting on the answer.
+
