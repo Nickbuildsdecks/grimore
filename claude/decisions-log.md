@@ -21167,3 +21167,54 @@ Two things worth keeping from this:
   did its job; I only had to look. The general version: before choosing between options, check
   whether one of them has already been decided against, because a stated reason in the code outranks
   a fresh preference formed without it.
+
+## D340 — What actually bounds the wire payload, and the extrapolation that got it right by luck (#308)
+
+My own work made a question live that nothing covered. Now that a pasted decklist can be *played*
+rather than just loaded (D331-D338), a singleton Commander list is a real shape the wire has to
+carry, and the existing size test in `packages/rules-engine/src/automation.test.ts` does not reach
+it. That test measures a **starter** deck — twenty-four basics and a handful of four-ofs, so roughly
+fifty definitions for sixty cards — and then extrapolates in a comment:
+
+> a 100-card Commander library is roughly twice this one
+
+The extrapolation is on **card count**. Its own next line concedes the part that makes that
+suspect: *"dedup saves nothing on a singleton"*. A hundred different names is a hundred definitions,
+not fifty, so "roughly twice" is doing two jobs at once and only one of them is card count.
+
+So I measured the uncovered shape with a scratch probe, then turned the probe into a test beside the
+existing one rather than leaving the answer in a scratchpad.
+
+**Measured**, 99 singleton names plus a commander, drawn from all 348 pool names, in `edh` at turn 6:
+
+| what | bytes | share of `WIRE_CAP` (131,072) |
+|---|---|---|
+| seat 0's view, empty board | 6,504 | 5.0% |
+| seat 0's view, busy board (14 creatures, 7 in hand, 8 in graveyard) | 27,145 | 20.7% |
+| the full server state at that same moment | 84,961 | 64.8% |
+
+102 definitions are in `state.cardDefs`, which the test asserts (`> 99`) so it cannot quietly become
+a deck that deduped away.
+
+**The structural finding, which is the point of the entry.** `viewFor` inlines a card definition
+only onto cards the seat may actually see; a library travels as face-down counts. So **what bounds
+the payload is how many cards are visible, and the board bounds that — not how many different cards
+the deck holds.** The old comment reached a true conclusion ("a Commander deck fits") by a route
+that does not support it. Had definitions travelled as a dictionary, "roughly twice" would have been
+right about the mechanism and the test would still have passed; it passes because the mechanism is
+different from the one it names.
+
+**Why the threshold is `WIRE_CAP / 2` and not the cap.** The 84,961-byte figure is the one that
+chose it. That is the same position with every definition carried, and it is *inside* `WIRE_CAP` —
+so an assertion at the cap would pass on the exact regression this test exists to catch, something
+starting to inline a whole library. At half the cap, 84,961 fails and 27,145 passes. A bound that
+cannot fail on the failure it is written for is the session's recurring defect (D330, D334, D337);
+this one discriminates, and the number that proves it is in the comment so the next person does not
+have to re-derive it.
+
+Not pinned to 27,145 exactly: that number moves whenever a card in the pool gains text, and an
+assertion that breaks on a deck edit is noise.
+
+Verification: the full gate before the push — `node scripts/guards.js`, `pnpm v2:typecheck`,
+`pnpm v2:typecheck:tests`, `pnpm v2:test` — with `@grimore/rules-engine: 1408 tests` and
+`Tasks: 17 successful, 17 total`.

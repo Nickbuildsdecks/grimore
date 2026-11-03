@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   autoPassFor, botAction, bottomOwed, characteristicsOf, createGame, customDeck, legalActions,
   packView, pendingDeclaration, seatsToAct, stackTop, stillDeciding, unpackView, viewFor,
+  STARTER_DECKS,
 } from './index.js';
 import {
   advanceTo, apply, applyAll, arena, countOf, drain, find, ids, life, namesIn, nextTurn, passBoth,
@@ -1598,6 +1599,70 @@ describe('redaction still holds with the engine running', () => {
     // And the headroom this was for: a 100-card Commander library is roughly twice this one, and
     // the cap is WIRE_CAP. Asserted on the measurement rather than on faith.
     expect(wire * 2).toBeLessThan(WIRE_CAP);
+  });
+
+  it('keeps a pasted singleton Commander list inside the wire cap, board and all', () => {
+    /*
+      The dimension the test above cannot reach, and the one that matters now that a pasted list can
+      actually be played (D331-D338): a **singleton** deck.
+     
+      That test measures a starter deck, which is twenty-four basics and a handful of four-ofs — so
+      its definition dictionary is about fifty entries for sixty cards and dedup does most of the
+      work. It then extrapolates: "a 100-card Commander library is roughly twice this one". The
+      extrapolation is on **card count**, and its own comment concedes the awkward part — "dedup
+      saves nothing on a singleton". A hundred different names is a hundred definitions.
+     
+      So the question is whether the dictionary is what travels. It is not: `viewFor` inlines a
+      definition only onto cards the seat may actually see, and a library is face-down counts. That
+      is what this measures rather than argues — 102 definitions in state, a busy board, and the
+      view still at about a fifth of the cap. **What bounds the payload is how many cards are
+      visible, which the board bounds, not how many different cards the deck holds.**
+    */
+    const names = new Set<string>();
+    for (const deck of Object.values(STARTER_DECKS)) {
+      for (const entry of deck.cards) names.add(entry.card.name);
+      if (deck.commander) names.add(deck.commander.name);
+    }
+    const all = [...names];
+    const list = all.slice(0, 99);
+    const { deck, unknown } = customDeck({
+      id: 'custom:0', name: 'Singleton', commander: all[99]!,
+      entries: list.map((name) => ({ name, count: 1 })),
+    });
+    // Every name comes from the pool, so nothing here is cardboard and the whole 100 is real.
+    expect(unknown).toEqual([]);
+
+    const creatures = list.filter((name) => {
+      const def = Object.values(STARTER_DECKS)
+        .flatMap((d) => d.cards.map((e) => e.card)).find((c) => c.name === name);
+      return def !== undefined && def.typeLine.toLowerCase().includes('creature');
+    }).slice(0, 14);
+    const others = list.filter((name) => !creatures.includes(name));
+    const s = arena({
+      deckSpecs: { 'custom:0': deck }, decks: { 0: 'custom:0', 1: 'custom:0' },
+      format: 'edh', turn: 6,
+      battlefield: { 0: creatures.slice(0, 7), 1: creatures.slice(7, 14) },
+      hands: { 0: others.slice(0, 7) },
+      graveyard: { 0: others.slice(7, 15) },
+    });
+
+    // A hundred different cards really are in the dictionary; this is not a deck that deduped away.
+    expect(Object.keys(s.cardDefs).length).toBeGreaterThan(99);
+
+    const bytes = JSON.stringify(packView(viewFor(s, 0))).length;
+    /*
+      Measured at 27,145 of 131,072 — about a fifth. Asserted at half the cap rather than pinned to
+      the measurement, because the number moves whenever a card in the pool gains text and an
+      assertion that breaks on a deck edit is noise (the same reasoning as the ratio above).
+
+      **And half is where it catches the failure it exists for, which is why it is half.** The same
+      position with every definition carried — the full server state, measured at the same moment —
+      is 84,961 bytes. That is still inside `WIRE_CAP`, so an assertion at the cap would pass on
+      the very regression this is about: something starting to inline a whole library. At half the
+      cap, 84,961 fails and 27,145 passes. The threshold discriminates, which is the only thing
+      that makes it worth having.
+    */
+    expect(bytes).toBeLessThan(WIRE_CAP / 2);
   });
 
   it('opens a searcher’s own library to them, and to nobody else', () => {
