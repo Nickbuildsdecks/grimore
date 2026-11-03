@@ -9064,14 +9064,22 @@ cardboard. A hand-written script always wins, which is why all 348 pool cards re
 
 | | built | of | share |
 |---|---|---|---|
-| **Lands** | 17 | 28 | **60.7%** |
+| **Lands** | 22 | 28 | **78.6%** |
 | Creatures | 26 | 173 | 15.0% |
 | Instants | 0 | 69 | 0% |
 | Sorceries | 0 | 50 | 0% |
 | Artifacts | 0 | 18 | 0% |
 | Enchantments | 0 | 17 | 0% |
 | Planeswalkers | 0 | 5 | 0% |
-| **Overall** | **43** | **360** | **11.9%** |
+| **Overall** | **48** | **360** | **13.3%** |
+
+**These are the current figures, which is the point of fixing them.** This table first went in at
+17-of-28 lands and 43 of 360, and then cycling moved both — and the table sat directly above a
+paragraph saying "lands went 60.7% → 78.6%", so a reader meeting the table first got a stale number
+presented as the current one. A progress doc is a statement about *now*, so its numbers get
+corrected in place. The decision log is the opposite: it is dated, and D332's 60.7% and D333's
+11.9% stay exactly as measured, because rewriting a record's past numbers destroys the only thing a
+record is for.
 
 **The by-type row is the reading that transfers**, and the script prints it for that reason: the
 aggregate is a fact about whatever set was measured, while the rate within a type applies to any deck
