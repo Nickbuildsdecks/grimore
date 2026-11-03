@@ -149,6 +149,39 @@ async function main() {
       what gets asserted.
     */
     /*
+      ── The escape hatch inside an automated game ────────────────────────────────────────────────
+
+      "Move by hand" is the thing two people need when the engine will not let them do something it
+      does not script — a real rule it has no card for, or a mistake to tidy up. It is the only way
+      back to tabletop moves without abandoning the game, and nothing had ever pressed it.
+
+      The sheet is opened by tapping a card, so the hands are settled first: the control bar shows
+      the mulligan row until they are, and a card tapped then opens nothing.
+    */
+    for (let move = 0; move < 20 && !(await has(host, 'concede')); move += 1) {
+      if (await isMyMove(host)) await makeMove(host, 0);
+      else if (await isMyMove(guest)) await makeMove(guest, 1);
+      else await host.waitForTimeout(250);
+    }
+    const aCard = cardsIn(host, 'zone-hand-0').first();
+    if ((await aCard.count()) > 0) {
+      await aCard.click();
+      const sheet = await until(host, async () => has(host, 'play-sheet'), 10000);
+      check('tapping a card in an automated game offers what the engine will do with it', sheet);
+      if (sheet) {
+        check('and nothing is offered by hand until it is asked for',
+          (await host.locator('[data-testid^="act-"]').count()) === 0);
+        await tid(host, 'toggle-manual').click();
+        check('"Move by hand" offers the tabletop moves the engine does not script',
+          await until(host, async () => (await host.locator('[data-testid^="act-"]').count()) > 0, 10000),
+          `act-* buttons: ${await host.locator('[data-testid^="act-"]').count()}`);
+        await shot(host, 'move-by-hand');
+        await tid(host, 'play-sheet-close').click();
+        await host.waitForSelector('[data-testid="play-sheet"]', { state: 'detached', timeout: 5000 });
+      }
+    }
+
+    /*
       The opening hands first, which is the fourth wrong guess this file cost.
 
       `concede` is on the control bar, and the bar shows the mulligan row instead while a seat is

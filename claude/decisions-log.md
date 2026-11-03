@@ -20417,9 +20417,9 @@ could be checked.
 `scripts/surface-coverage.mjs` asks the question 225 passing browser checks cannot: which rendered
 controls does no check ever press? First reading: **100 controls, 10 that no check even names.**
 
-`scripts/check-table-controls.mjs` now covers five of them — the d6, handing a tabletop game to the
-rules engine, conceding, starting over, and leaving — at **17/17, stable across two runs**. The
-audit reads 6 unnamed now, down from 10.
+`scripts/check-table-controls.mjs` now covers six of them — the d6, handing a tabletop game to the
+rules engine, "Move by hand", conceding, starting over, and leaving — at **20/20, stable across
+runs**. The audit reads **5 unnamed, down from 10**.
 
 **Its own script, not a block in `e2e-table.mjs`.** Two of these controls change what the table is,
 and the first attempt put them at the end of that suite, where they aborted the run and would have
@@ -20460,8 +20460,9 @@ Six controls remain unnamed by any check, and they are not one kind of thing:
 - **`ward-decline` and `pact-decline`** are the *declining* halves of two prompts whose accepting
   halves are covered. Each needs a specific board to reach; the engine's own suite covers both
   outcomes, so what is missing is only that the button sends what it says.
-- **`toggle-manual`** ("Move by hand") is the escape hatch inside an automated game — worth a check,
-  and the next one to write.
+- **`toggle-manual`** ("Move by hand") was the escape hatch inside an automated game and is now
+  covered, with a guard that the manual moves are **absent until it is pressed** — otherwise the
+  check would pass on a sheet that offers them always.
 - **`watch-open-*` and `stop-watching`** are the watcher's lobby entry and exit. `e2e-pod` watches a
   table by code rather than from the listing, so the path exists and only this door into it does not.
 
