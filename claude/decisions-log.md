@@ -20251,3 +20251,64 @@ The two tests are **skipped, not deleted, and not because the claim is unproven*
 45/45, and between them showed no write exceeding its budget with no seat left owed, and the cap
 report firing. The rewrite is to drop the sockets and drive `applyAction` and `continueBots` against
 a `PodStore` built in the test. Both are store-level concerns; neither needs a second server.
+
+## D325 — The rewritten budget tests, and the hole the first version could not see (#298)
+
+The rewrite D324 prescribed: drop the sockets, drive `applyAction` and `continueBots` against a
+`PodStore` the test builds from its own Redis client. No HTTP server, no socket.io adapter, nothing
+`close()` fails to release. Both tests run in about 700ms.
+
+Getting them to a state worth trusting took four corrections, and all four were mine.
+
+**The budget starved its own fixture.** At `botMovesPerWrite: 1` the three server seats cannot
+settle their own opening hands inside the write `auto:keep` provokes, so the game had not begun and
+the first move came back `FORBIDDEN: you do not have priority`. The fixture now drives the
+continuation to a standstill after every setup step, exactly as the handler does after it acks.
+
+**The second test's premise was wrong.** It passed once, then asserted the cap report. But the one
+move that write spends hands priority straight back to the person, so `continueBots` returns with
+nothing owed and no report is made. It failed printing `after 0 round(s)` — proof only that I had
+guessed where the condition lived. A seat is owed real work when the **turn** has gone to the
+server's seats, so the test now plays the person's turn out until a capped chain actually hits its
+cap, and fails naming why if it never does.
+
+**An `onBotStall` assertion that could not fail.** I wrote `expect(stalled).toEqual([])` into the
+budget test. `runBots` reports "ran out with a seat still owed" only when its **guard** is spent,
+and a budget below the guard makes that unreachable — so the assertion was green whatever the budget
+did. The seventh such check this session, and the fourth of mine. Removed, with the reason left in
+the test; the stranding property is now carried by things that can fail: the `hasPriority` break,
+a `settle` that throws rather than shrugging, and a turn counter that has to move.
+
+**Half the budget was unobservable.** `onSlowWrite` fired only in `applyAction`. Both writes call
+`runBots` with the same bound, but only one said what it had spent — so a bound applied correctly
+in `applyAction` and wrongly in `continueBots` would have read as a clean table. `continueBots` now
+reports on the same terms, which is also the right thing for a player: those writes run while the
+page is already waiting.
+
+### What the tests assert, and the proof they discriminate
+
+`toBe(1)`, not `toBeLessThanOrEqual(1)`. Equality carries the bound **and** the proof it was
+reached — a write that wanted more and was cut to one. A `<=` passes on a table that never asked for
+a second move, which is the vacuous shape above.
+
+Three deliberate breaks, one per claim:
+
+```
+applyAction  passes BOT_MOVE_GUARD -> writes [0,0,3,0,0,0,14,2,0,3,38,...]  expected 38 to be 1   FAIL
+continueBots passes BOT_MOVE_GUARD -> writes [0,0,1,4,0,0,0,1,6,0,0,0,1,8]  expected 8 to be 1    FAIL
+reportBotStall swallows its report -> "expected the cap report, got []"                            FAIL
+```
+
+The second is the bug this guards and the one I nearly shipped: it fails **only** because of the
+continuation reporting added above. Break A fails the cap test too — an unbounded write never leaves
+work over.
+
+### Stability, which is what the rewrite was for
+
+D324 measured the old pair at 3 of 6 full-suite runs failing with broadcast timeouts, and 0 of 6
+with them skipped. The store-level pair: **10 consecutive clean full-suite runs (46 passed)**, and
+14 consecutive clean runs of the cap test alone.
+
+One earlier full-suite run of 6 failed on the cap test and its message was not captured. Not called
+a flake and not left alone: a 30-run hunt is recording full failure output while the rest of this
+work proceeds. Until it reports, the pair is 10-of-11 full runs, not 11-of-11.

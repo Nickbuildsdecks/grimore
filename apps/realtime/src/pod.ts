@@ -938,7 +938,32 @@ export class PodStore {
     if (!owed) return null;
     const { snapshot, result } = await this.mutate(code, (record) => {
       if (record.game === null || record.game.finished) return { record, result: 0 };
+      const whereBefore = `turn ${record.game.turn} ${record.game.step}`;
+      const startedAt = Date.now();
       const bots = runBots(record, (reason) => this.onBotStall({ code, reason }), this.botMovesPerWrite);
+      /*
+        A continuation write is reported on the same terms as the write that provoked it.
+
+        It was not, and that left half the budget unobservable: both writes call `runBots` with
+        the same bound, but only `applyAction` said what it had spent, so a bound passed correctly
+        there and wrongly here would have read as a clean table. The suite's budget test now
+        watches both, and the discrimination check that proves it — pass the guard at one of the
+        two call sites and watch a test fail — only has two sites to try because of this.
+
+        For a player it is the same warning for the same reason: these writes run while the page
+        is already waiting, and a slow one is the shape of a table about to stop answering.
+      */
+      const took = Date.now() - startedAt;
+      if (took >= this.slowWriteMs) {
+        this.onSlowWrite({
+          code,
+          reason: `continuing the server's seats at ${whereBefore} took ${took}ms`
+            + ` and ${bots.moves} server move${bots.moves === 1 ? '' : 's'}`
+            + `, ${Math.round(bots.thinkingMs)}ms of it deciding`
+            + `, worst single decision ${Math.round(bots.slowestMs)}ms (${bots.slowestWhere})`
+            + ` (the client gives up at 8000ms)`,
+        });
+      }
       if (record.game.finished) record.pod.status = 'finished';
       return { record, result: bots.moves };
     });

@@ -8666,6 +8666,40 @@ seconds and sets no state between, so the measured *median* slow write — a thi
 the p90 at a second and a half — is indistinguishable from a table that has stopped answering.
 Filed as #299, same class as #266 and #267 one layer up.
 
+### The tests, and the four corrections they took (D325)
+
+The bound shipped before anything proved it, because the first pair of tests each stood up a second
+`createRealtime` to get its own budget, and that instance's Redis clients, cluster adapter and HTTP
+server are not fully released by `close()`. D324 measured the cost: 3 of 6 full-suite runs failed
+with broadcast timeouts, 0 of 6 with those two skipped. So the pair was skipped and owed a rewrite.
+
+They are now store-level — a `PodStore` built on the test's own Redis client, no server at all —
+and they run in about 700ms. Getting there took four corrections, all of them mine:
+
+- **The budget starved its own fixture.** At one move per write the three server seats cannot settle
+  their opening hands inside the write `auto:keep` provokes, so the game had not begun and the first
+  move came back `FORBIDDEN: you do not have priority`.
+- **The cap test's premise was wrong.** The one move a write spends hands priority back to the
+  person, so nothing is owed and no report is made. It failed printing `after 0 round(s)` — proof
+  only that I had guessed where the condition lived. It now plays the turn out until a capped chain
+  really hits its cap.
+- **An assertion that could not fail.** `expect(stalled).toEqual([])` in the budget test: `runBots`
+  reports a stranded seat only when its *guard* is spent, which a budget below the guard makes
+  unreachable. The seventh such check this session, the fourth of mine.
+- **Half the budget was unobservable.** `onSlowWrite` fired only in `applyAction`, so a bound
+  applied correctly there and wrongly in `continueBots` would have read as a clean table.
+  `continueBots` now reports on the same terms — which is also the right thing for a player, since
+  those writes run while the page is already waiting.
+
+The budget assertion is `toBe(1)`, not `<=`: equality carries the bound **and** the proof it was
+reached. Proved to discriminate by three deliberate breaks — the guard passed at each of the two
+`runBots` call sites, and `reportBotStall` swallowing its report — each of which fails it. The
+continuation break fails **only** because of the reporting added above.
+
+Stability, which is the whole point: **10 consecutive clean full-suite runs**, 46 passed, against
+3-in-6 failing before. One earlier run of six failed on the cap test with its message uncaptured;
+a 30-run hunt is recording full output rather than calling it a flake.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -6,9 +6,10 @@ import type { PodErrorEvent, PodStateEvent } from '@grimore/shared';
 import { createRealtime, type Realtime } from './io.js';
 import type { AckResult } from './handlers.js';
 import { TokenBucket } from './ratelimit.js';
-import { withRolledFirstSeat } from './pod.js';
+import { createClient, type RedisClientType } from 'redis';
+import { withRolledFirstSeat, PodStore, makePlayerId, type PodSnapshot } from './pod.js';
 import { generateCode, toEngineFormat, maxSeatsFor } from './pod.js';
-import { unpackView, type PackedView } from '@grimore/rules-engine';
+import { unpackView, viewFor, type PackedView, type GameView } from '@grimore/rules-engine';
 import { POD_CODE_REGEX } from '@grimore/shared';
 
 const REDIS_URL = process.env.REDIS_URL;
@@ -69,6 +70,270 @@ function okAck(res: AckResult): Extract<AckResult, { ok: true }> {
   if (!res.ok) throw new Error(`ack failed: ${res.error.code} ${res.error.message}`);
   return res;
 }
+
+/**
+ * The per-write bot budget and its continuation, driven against the store rather than a server.
+ *
+ * These two claims live here and not in the gateway suite above because they are **store-level**:
+ * `applyAction` spends a budget of bot moves and `continueBots` carries the rest, and neither
+ * needs a socket to be true. The first version of these tests stood up a second `createRealtime`
+ * so it could have its own budget, and that instance's Redis clients, cluster adapter and HTTP
+ * server were not fully released by `close()` — which starved the five-second `pod:state` waits in
+ * whatever ran next. Measured, three arms of six runs:
+ *
+ *     with those tests, budget  25 -> 3/6 runs failed, 3 broadcast timeouts
+ *     with those tests, budget 500 -> 5/6 runs failed, 8 broadcast timeouts
+ *     without them,     budget  25 -> 0/6 runs failed, 0 broadcast timeouts
+ *
+ * The middle arm is worth keeping: bigger writes made it *worse*, which is evidence for the bound
+ * and refuted my own hypothesis that the continuation was delaying broadcasts (D324).
+ *
+ * One client for the file, flushed and closed once, so there is nothing per-test to leak.
+ */
+describe.skipIf(!REDIS_URL)('the write budget, against the store (requires REDIS_URL)', () => {
+  let redis: RedisClientType;
+
+  beforeAll(async () => {
+    redis = createClient({ url: REDIS_URL! });
+    await redis.connect();
+  });
+
+  afterAll(async () => {
+    await redis.quit();
+  });
+
+  /**
+   * Drive the continuation to a standstill, the way the socket handler does after it acks.
+   *
+   * Throws rather than returning when the seats are still moving, because a silent give-up here
+   * would leave the next assertion measuring a half-played turn.
+   */
+  async function settle(store: PodStore, code: string, from: PodSnapshot): Promise<PodSnapshot> {
+    let latest = from;
+    for (let round = 0; round < 2000; round += 1) {
+      const next = await store.continueBots(code);
+      if (next === null) return latest;
+      latest = next;
+    }
+    throw new Error('the server seats were still moving after 2000 continuation rounds');
+  }
+
+  /** What seat 0 can see, straight from the store's own state — no wire, no packing. */
+  const seen = (snap: PodSnapshot): GameView => viewFor(snap.state!, 0);
+
+  /**
+   * The only move this person ever makes: whatever the table is asking for, and a land if it is
+   * offered. It never attacks — the point of this table is the server's three seats taking whole
+   * turns while nobody interrupts them, which is the shape #298 came from.
+   */
+  function personMove(view: GameView, you: NonNullable<NonNullable<GameView['automation']>['you']>): Record<string, unknown> {
+    if (you.mustDecide !== null) {
+      return { type: 'auto:decide', cards: you.mustDecide.candidates.slice(0, you.mustDecide.min) };
+    }
+    // An owed discard with an empty hand would send `card: undefined`, so it falls through to a
+    // pass the engine will refuse out loud rather than a malformed action it refuses obscurely.
+    const hand = view.zones['0:hand'] ?? [];
+    if (you.mustDiscard > 0 && hand.length > 0) return { type: 'auto:discard', card: hand[0]! };
+    if (you.mustDeclare === 'attackers') return { type: 'auto:attack', attackers: [] };
+    if (you.mustDeclare === 'blockers') return { type: 'auto:block', blocks: [] };
+    if (you.mustDeclare === 'order') return { type: 'auto:order', orders: you.mustOrder.map((ask) => ({ ...ask })) };
+    const land = you.plays.find((p) => p.kind === 'land');
+    return land === undefined ? { type: 'auto:pass' } : { type: 'auto:playLand', card: land.card };
+  }
+
+  /** A four-bot pod, dealt and past its opening hand, which is where the budget actually binds. */
+  async function podReadyToPlay(store: PodStore): Promise<{ code: string; playerId: string; at: PodSnapshot }> {
+    const host = { playerId: makePlayerId(), name: 'Budget' };
+    const joined = await store.create({
+      format: 'commander', visibility: 'private', name: 'Budget pod',
+      bots: 3, botDecks: ['tidal-mind', 'rot-harvest', 'forge-alliance'],
+    }, host);
+    const code = joined.pod.code;
+    let at: PodSnapshot = await store.ready(code, host.playerId, true);
+    /*
+      A pod deals on ready, but the *game* still needs loading, starting and its opening hands
+      settled before a move is legal. Without this every action came back `illegal_action`, the
+      store made no writes at all, and a budget assertion passed having tested nothing.
+
+      The standstill after each step matters just as much: under a budget of one the three server
+      seats cannot settle their own mulligans inside the write that `auto:keep` provokes, so the
+      game had not begun and the first move came back FORBIDDEN "you do not have priority" — the
+      budget starving its own fixture.
+    */
+    for (const action of [
+      { type: 'deck:load', seat: 0, deckId: 'ember-rush' },
+      { type: 'game:start', firstSeat: 0 },
+      { type: 'auto:start', firstSeat: 0 },
+      { type: 'auto:keep' },
+    ]) {
+      at = await store.applyAction(code, host.playerId, action, at.stateVersion);
+      at = await settle(store, code, at);
+    }
+    return { code, playerId: host.playerId, at };
+  }
+
+  it('spends at most its budget of server moves per write, and does not strand the table', async () => {
+    /*
+      The bound measured where it binds, against the writes that happened.
+
+      **A four-bot pod on purpose.** Two earlier attempts used the solo duel and proved nothing:
+      the largest write there wants three bot moves, measured, so the budget never bound and
+      raising it sixteen-fold left the suite green. The 431-move write came from a four-seat pod
+      with the person idle while three bots took whole turns, which is this table.
+
+      The person here only ever does what the table offers and never attacks, which is exactly
+      the shape that produced #298: the server playing three seats while nobody interrupts it.
+
+      `toBe(1)` rather than `toBeLessThanOrEqual(1)` on purpose. Equality carries the bound *and*
+      the proof that the bound was reached — a write that wanted more and was cut to one. A `<=`
+      would pass on a table that never asked for a second move, which is the vacuous shape this
+      session has now found seven times.
+    */
+    const writes: number[] = [];
+    const store = new PodStore(redis, {
+      keyPrefix: `test:budget:${Date.now().toString(36)}:${process.pid}`,
+      botMovesPerWrite: 1,
+      // Every write reports — both the player's and the continuation's — which is the only way to
+      // check the budget against what happened rather than against the constant meant to bound it.
+      slowWriteMs: 0,
+      onSlowWrite: ({ reason }) => {
+        writes.push(Number(/and (\d+) server move/.exec(reason)?.[1] ?? -1));
+      },
+    });
+    try {
+      const pod = await podReadyToPlay(store);
+      let at = pod.at;
+      let view = seen(at);
+      const act = async (action: Record<string, unknown>): Promise<void> => {
+        at = await store.applyAction(pod.code, pod.playerId, action, at.stateVersion);
+        at = await settle(store, pod.code, at);
+        view = seen(at);
+      };
+
+      let stopped = 'the move cap';
+      let moves = 0;
+      for (let move = 0; move < 24 && !view.finished; move += 1) {
+        moves = move + 1;
+        const you = view.automation?.you;
+        if (you === undefined || you === null) {
+          stopped = 'the view stopped reporting this seat';
+          break;
+        }
+        if (you.mustDiscard > 0 && (view.zones['0:hand'] ?? []).length === 0) {
+          stopped = 'a discard was owed with an empty hand';
+          break;
+        }
+        /*
+          This is the stranding assertion, and it is the one that caught the budget starving its
+          own fixture. A table whose continuation chain gave up mid-turn comes back here with
+          priority nowhere — which is exactly what a player sees as a dead table.
+        */
+        if (!you.hasPriority && you.mustDeclare === null && you.mustDecide === null && you.mustDiscard === 0) {
+          stopped = `nobody held priority at ${view.automation?.step} on turn ${view.turn}`;
+          break;
+        }
+        await act(personMove(view, you));
+      }
+
+      expect(stopped, `after ${moves} of the person's moves, on turn ${view.turn}`).toBe('the move cap');
+      expect(writes.length, 'the store reported no writes at all').toBeGreaterThan(0);
+      /*
+        The instrument first, then the reading.
+
+        `-1` is what the regex above pushes when a reason does not carry a move count — a reworded
+        report, say. Without this the max assertion would read `-1 <= 1` as a pass and this test
+        would go green having parsed nothing, which is the same failure as the rest of this file's
+        history in a new coat.
+      */
+      expect(writes.includes(-1), `a write reported no move count: ${JSON.stringify(writes)}`).toBe(false);
+      expect(Math.max(...writes), JSON.stringify(writes.slice(0, 24))).toBe(1);
+      // And the table got somewhere: three bots took turns while the person did nothing.
+      expect(view.turn, 'the pod never got past its first turn').toBeGreaterThan(1);
+      /*
+        No `onBotStall` assertion here, deliberately. `runBots` reports "ran out with a seat still
+        owed" only when its *guard* is spent, and a budget below the guard makes that unreachable
+        — so `expect(stalled).toEqual([])` in this test could not have failed, whatever the budget
+        did. I wrote it, then caught it re-reading my own test. The property it was reaching for is
+        covered, and covered by something that can fail: the `hasPriority` break above, a `settle`
+        that throws rather than shrugging, and a turn counter that has to move.
+      */
+    } finally {
+      await store.flushPrefix();
+    }
+  }, 180_000);
+
+  it('reports an abandoned continuation while a seat is still owed a move', async () => {
+    /*
+      The report that bounding the write displaced.
+
+      `runBots` says "ran out with a seat still owed" only when its **guard** is spent, and the
+      shipping budget is 25 against a guard of 500 — so `stopAt >= GUARD` is `25 >= 500`, always
+      false, and that report became unreachable the moment the budget shipped. I did not notice
+      until re-reading my own diff. The condition moved rather than vanished: the table is dead
+      only if the continuation *chain* ends with a seat still owed, which only the caller driving
+      that chain knows, so `reportBotStall` lets it say so through the callback a test can watch.
+
+      The loop below mirrors `handlers.ts`' round cap with a cap of one. It is a mirror, not the
+      handler itself — the real loop sits inside `pod:action` and only a socket reaches it, which
+      is what the two tests D324 removed were trying to do before each of them leaked a server.
+      `botContinuationRounds` stays injectable so the handler's own loop can be pinned later
+      without standing up a second gateway.
+
+      **It has to go looking for the moment.** The first version passed once and asserted the
+      report: `continueBots` came straight back with nothing owed, because the one move the write
+      spent handed priority back to the person, and the test failed having proved only that its own
+      premise was wrong. A seat is owed real work when the *turn* has gone to the server's seats,
+      so this plays the person's turn out until a capped chain actually hits its cap — and fails
+      saying so if it never does.
+    */
+    const stalled: string[] = [];
+    const store = new PodStore(redis, {
+      keyPrefix: `test:cap:${Date.now().toString(36)}:${process.pid}`,
+      botMovesPerWrite: 1,
+      onBotStall: ({ reason }) => stalled.push(reason),
+    });
+    try {
+      const pod = await podReadyToPlay(store);
+      let at = pod.at;
+      const cap = 1;
+      let hitTheCap = false;
+      let why = 'the person ran out of moves to make';
+
+      for (let move = 0; move < 30 && !hitTheCap; move += 1) {
+        const view = seen(at);
+        const you = view.automation?.you;
+        if (you === undefined || you === null) { why = 'the view stopped reporting this seat'; break; }
+        if (!you.hasPriority && you.mustDeclare === null && you.mustDecide === null && you.mustDiscard === 0) {
+          why = `nobody held priority at ${view.automation?.step} on turn ${view.turn}`;
+          break;
+        }
+        at = await store.applyAction(pod.code, pod.playerId, personMove(view, you), at.stateVersion);
+        // One batch, then give up, exactly as the handler's round cap does.
+        let rounds = 0;
+        for (; rounds < cap; rounds += 1) {
+          const next = await store.continueBots(pod.code);
+          if (next === null) break;
+          at = next;
+        }
+        if (rounds === cap) {
+          hitTheCap = true;
+          store.reportBotStall(pod.code, `${cap} continuation rounds and the server's seats were still moving`);
+        }
+      }
+
+      expect(hitTheCap, `the capped chain never hit its cap: ${why}`).toBe(true);
+      expect(
+        // Matched on the stable words rather than the punctuation: an earlier version of this used
+        // a typographic apostrophe against a message emitting an ASCII one, and failed while
+        // printing the very string it was looking for.
+        stalled.some((r) => /continuation rounds/.test(r) && /still moving/.test(r)),
+        `expected the cap report, got ${JSON.stringify(stalled)}`,
+      ).toBe(true);
+    } finally {
+      await store.flushPrefix();
+    }
+  }, 180_000);
+});
 
 describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
   let rt: Realtime;
@@ -950,242 +1215,6 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
         expect(view.zones[`${seat}:command`] ?? []).toHaveLength(1);
       }
     }, 30_000);
-
-    /**
-     * The bound on server moves per write, measured where it actually binds (#298, D321).
-     *
-     * One write once played **431 bot moves in 17130ms** against a client that gives up at 8000, so
-     * `applyAction` now spends at most `botMovesPerWrite` of them and `continueBots` carries the
-     * rest in further writes. Two things have to be true for that to be a fix rather than a
-     * trade: no write may exceed the budget, and bounding it must not strand the table.
-     *
-     * **This is a four-bot pod on purpose.** Two earlier attempts at this test used the solo duel
-     * and proved nothing: the largest write there wants three bot moves, measured, so the budget
-     * never binds and raising it to 400 left the suite green. The 431-move write came from a
-     * four-seat pod with the human idle while three bots took whole turns, which is this table.
-     *
-     * Its own realtime instance, because the shared one in `beforeAll` cannot have a per-test
-     * budget — and at the shipping budget of 25 this table would mostly fit in one write again.
-     */
-    /*
-      SKIPPED, AND NOT BECAUSE THE CLAIM IS UNPROVEN.
-
-      Both of these passed — 45/45 on a clean run — and between them they showed the two things
-      #298 needs: no write exceeding its budget with no seat left owed a move, and the cap report
-      that bounding the write displaced actually firing.
-
-      What is wrong is the harness, not the assertions. Each one stands up a **second**
-      `createRealtime` so it can have its own `botMovesPerWrite`, and that second instance's Redis
-      clients, cluster adapter and HTTP server are evidently not fully released by
-      `close()` — so the five-second `pod:state` waits in tests that run afterwards start timing
-      out. Measured rather than guessed, three arms of six runs each:
-
-        these two present, budget  25 -> 3/6 runs failed, 3 broadcast timeouts
-        these two present, budget 500 -> 5/6 runs failed, 8 broadcast timeouts
-        these two skipped, budget  25 -> 0/6 runs failed, 0 broadcast timeouts
-
-      The middle arm is worth keeping in mind: bigger writes made it *worse*, which is evidence for
-      the bound rather than against it, and it refuted my own hypothesis that the continuation was
-      delaying broadcasts.
-
-      The rewrite is to drop the sockets entirely and drive `applyAction` and `continueBots`
-      against a `PodStore` built in the test. Both are store-level concerns; neither needs a
-      server. Tracked as part of #298.
-    */
-    it.skip('spends at most its budget of server moves per write, and still comes back', async () => {
-      const writes: number[] = [];
-      const stalled: string[] = [];
-      const rt2 = await createRealtime({
-        redisUrl: REDIS_URL!,
-        allowedOrigins: [],
-        log: pino({ level: 'silent' }),
-        store: {
-          keyPrefix: `test:budget:${Date.now().toString(36)}:${process.pid}`,
-          botMovesPerWrite: 1,
-          // Every write reports, which is the only way to check the budget against what happened.
-          slowWriteMs: 0,
-          onSlowWrite: ({ reason }) => {
-            writes.push(Number(/and (\d+) server moves?/.exec(reason)?.[1] ?? -1));
-          },
-          onBotStall: ({ reason }) => stalled.push(reason),
-        },
-        rateLimit: { rate: 200, burst: 400 },
-      });
-      await new Promise<void>((resolve) => rt2.httpServer.listen(0, '127.0.0.1', resolve));
-      const { port } = rt2.httpServer.address() as AddressInfo;
-      const solo = connect(`http://127.0.0.1:${port}`, {
-        transports: ['websocket'], forceNew: true, auth: { name: 'Budget' }, reconnection: false,
-      });
-      try {
-        await waitFor(solo, 'connect');
-        okAck(await emitAck(solo, 'pod:create', {
-          name: 'Budget pod', format: 'commander', visibility: 'private', bots: 3,
-          botDecks: ['tidal-mind', 'rot-harvest', 'forge-alliance'],
-        }));
-        const dealt = waitFor<PodStateEvent>(solo, 'pod:state', (s) => s.state !== null);
-        let version = okAck(await emitAck(solo, 'pod:ready', { ready: true })).stateVersion!;
-        const first = await dealt;
-        expect(first.pod.seats.filter((s) => s.bot)).toHaveLength(3);
-
-        /*
-          Keep the opening hands and then pass, which is the shape that produced the 431-move
-          write: the human does nothing while three bots take their turns.
-        */
-        const seen: PodStateEvent[] = [];
-        solo.on('pod:state', (e: PodStateEvent) => seen.push(e));
-        const act = async (action: Record<string, unknown>): Promise<void> => {
-          let ack = await emitAck(solo, 'pod:action', { action, expectedVersion: version });
-          for (let retry = 0; retry < 8 && !ack.ok && ack.error.code !== 'illegal_action'; retry += 1) {
-            await new Promise((r) => setTimeout(r, 60 * (retry + 1)));
-            ack = await emitAck(solo, 'pod:action', { action, expectedVersion: version });
-          }
-          if (ack.ok && typeof ack.stateVersion === 'number') version = ack.stateVersion;
-          if (seen.length > 0) version = Math.max(version, seen[seen.length - 1]!.stateVersion);
-        };
-        /*
-          The real opening sequence, which the first version of this test skipped: a pod deals on
-          ready, but the *game* still has to be loaded, started and have its opening hands settled
-          before a pass is legal. Without it every action came back `illegal_action`, the server
-          made no writes at all, and the run took 204ms — caught by the "reported no writes"
-          guard below rather than passing as a budget that was never tested.
-        */
-        await act({ type: 'deck:load', seat: 0, deckId: 'ember-rush' });
-        await act({ type: 'game:start', firstSeat: 0 });
-        await act({ type: 'auto:start', firstSeat: 0 });
-        await act({ type: 'auto:keep' });
-        for (let i = 0; i < 40; i += 1) await act({ type: 'auto:pass' });
-
-        const latest = seen.length > 0 ? viewOf(seen[seen.length - 1]!) : viewOf(first);
-
-        /*
-          The budget held. `writes` is every write the server made, so the maximum is a fact about
-          what happened rather than about the constant meant to bound it — which is the check the
-          first version of this test could not make.
-        */
-        expect(writes.length, 'the server reported no writes at all').toBeGreaterThan(0);
-        expect(Math.max(...writes), JSON.stringify(writes.slice(0, 20))).toBeLessThanOrEqual(1);
-
-        // And the table was not stranded by it: the game moved on, and nobody was left owed a move.
-        /*
-          Asserted through `onBotStall`, not the turn counter. The first version checked `turn > 1`
-          and failed at turn 1 after forty passes, which proves nothing about the budget: at one
-          move a write a four-seat turn cycle needs more passes than that. "Nobody was left owed a
-          move" is the property that matters, it is the engine's own answer rather than my proxy,
-          and it is a report that can arrive at all only since D322.
-        */
-        expect(stalled, JSON.stringify(stalled)).toEqual([]);
-        expect(latest.turn, 'the pod never dealt a turn at all').toBeGreaterThan(0);
-      } finally {
-        solo.disconnect();
-        await rt2.store.flushPrefix();
-        await rt2.close();
-      }
-    }, 60_000);
-
-    /**
-     * And the report that bounding the write displaced (#298).
-     *
-     * `runBots` reports "ran out with a seat still owed a move" only when its **guard** is spent,
-     * and the shipping budget is 25 against a guard of 500 — so that report became unreachable the
-     * moment the budget shipped, which I did not notice until re-reading my own diff. The condition
-     * it covered moved rather than vanished: the table is dead only if the *continuation chain*
-     * ends with a seat still owed, and only the caller driving that chain knows when it has.
-     *
-     * One round of one move makes the cap reachable, so the report is provable instead of
-     * decorative. With three bots, any answer at all exceeds it.
-     */
-    /*
-      SKIPPED, AND NOT BECAUSE THE CLAIM IS UNPROVEN.
-
-      Both of these passed — 45/45 on a clean run — and between them they showed the two things
-      #298 needs: no write exceeding its budget with no seat left owed a move, and the cap report
-      that bounding the write displaced actually firing.
-
-      What is wrong is the harness, not the assertions. Each one stands up a **second**
-      `createRealtime` so it can have its own `botMovesPerWrite`, and that second instance's Redis
-      clients, cluster adapter and HTTP server are evidently not fully released by
-      `close()` — so the five-second `pod:state` waits in tests that run afterwards start timing
-      out. Measured rather than guessed, three arms of six runs each:
-
-        these two present, budget  25 -> 3/6 runs failed, 3 broadcast timeouts
-        these two present, budget 500 -> 5/6 runs failed, 8 broadcast timeouts
-        these two skipped, budget  25 -> 0/6 runs failed, 0 broadcast timeouts
-
-      The middle arm is worth keeping in mind: bigger writes made it *worse*, which is evidence for
-      the bound rather than against it, and it refuted my own hypothesis that the continuation was
-      delaying broadcasts.
-
-      The rewrite is to drop the sockets entirely and drive `applyAction` and `continueBots`
-      against a `PodStore` built in the test. Both are store-level concerns; neither needs a
-      server. Tracked as part of #298.
-    */
-    it.skip('says so when the continuation chain stops on its cap', async () => {
-      const stalled: string[] = [];
-      const rt2 = await createRealtime({
-        redisUrl: REDIS_URL!,
-        allowedOrigins: [],
-        log: pino({ level: 'silent' }),
-        store: {
-          keyPrefix: `test:cap:${Date.now().toString(36)}:${process.pid}`,
-          botMovesPerWrite: 1,
-          onBotStall: ({ reason }) => stalled.push(reason),
-        },
-        botContinuationRounds: 1,
-        rateLimit: { rate: 200, burst: 400 },
-      });
-      await new Promise<void>((resolve) => rt2.httpServer.listen(0, '127.0.0.1', resolve));
-      const { port } = rt2.httpServer.address() as AddressInfo;
-      const solo = connect(`http://127.0.0.1:${port}`, {
-        transports: ['websocket'], forceNew: true, auth: { name: 'Cap' }, reconnection: false,
-      });
-      try {
-        await waitFor(solo, 'connect');
-        okAck(await emitAck(solo, 'pod:create', {
-          name: 'Cap pod', format: 'commander', visibility: 'private', bots: 3,
-          botDecks: ['tidal-mind', 'rot-harvest', 'forge-alliance'],
-        }));
-        const dealt = waitFor<PodStateEvent>(solo, 'pod:state', (s) => s.state !== null);
-        let version = okAck(await emitAck(solo, 'pod:ready', { ready: true })).stateVersion!;
-        await dealt;
-        // Same sequence as the budget test above: a pod deals on ready, the game still needs
-        // loading, starting and its opening hands settled before anything is legal.
-        for (const action of [
-          { type: 'deck:load', seat: 0, deckId: 'ember-rush' },
-          { type: 'game:start', firstSeat: 0 },
-          { type: 'auto:start', firstSeat: 0 },
-          { type: 'auto:keep' },
-        ]) {
-          const ack = await emitAck(solo, 'pod:action', { action, expectedVersion: version });
-          if (ack.ok && typeof ack.stateVersion === 'number') version = ack.stateVersion;
-        }
-        /*
-          Then pass, because straight after the keep there is nothing to continue: the bots settled
-          their own hands inside that write, so `continueBots` returns null on its first call and
-          the cap is never reached. Stopping at the keep reported `stalled: []` — a true result
-          about the wrong moment.
-        */
-        solo.on('pod:state', (e: PodStateEvent) => { version = Math.max(version, e.stateVersion); });
-        for (let i = 0; i < 6 && stalled.length === 0; i += 1) {
-          const ack = await emitAck(solo, 'pod:action', {
-            action: { type: 'auto:pass' }, expectedVersion: version,
-          });
-          if (ack.ok && typeof ack.stateVersion === 'number') version = Math.max(version, ack.stateVersion);
-          await new Promise((r) => setTimeout(r, 120));
-        }
-
-        expect(
-          // Matched on the stable words rather than the punctuation: the first version used a
-          // typographic apostrophe against a message that emits an ASCII one, and failed while
-          // printing the very string it was looking for.
-          stalled.some((r) => /continuation rounds/.test(r) && /still moving/.test(r)),
-          `expected the cap report, got ${JSON.stringify(stalled)}`,
-        ).toBe(true);
-      } finally {
-        solo.disconnect();
-        await rt2.store.flushPrefix();
-        await rt2.close();
-      }
-    }, 60_000);
 
     /**
      * A deal offered across the wire, and answered inside the same write.
