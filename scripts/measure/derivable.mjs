@@ -112,6 +112,30 @@ function shapeOf(why) {
     .replace(/layout \w+/, 'layout …');
 }
 
+/**
+ * The opening of an unreadable line, normalised, for the second-level breakdown.
+ *
+ * **`shapeOf` collapses every "cannot read the line" refusal into one bucket**, which is right for
+ * the top-level tally and useless for anything else — and the first version of this script stopped
+ * there, reporting "189 refusals, e.g. Mutavault" and calling that a work queue. It is not a work
+ * queue. It is one number and one anecdote.
+ *
+ * So the lines themselves are grouped by what they open with: the card's own name replaced by `~`
+ * (every trigger says its own name, and leaving it in gives one bucket per card), numbers and mana
+ * symbols flattened, and the first six words kept. "Whenever ~ attacks" lands in one bucket however
+ * many cards print it, and *that* is a thing somebody can decide whether to teach the reader.
+ */
+function lineOpening(line, name) {
+  const words = line
+    .replaceAll(name, '~')
+    .replace(/\{[^}]*\}/g, '{M}')
+    .replace(/\b\d+\b/g, 'N')
+    .replace(/[.,:;]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  return words.slice(0, 6).join(' ');
+}
+
 const rows = file === null ? poolRows() : fileRows(file);
 const source = file === null
   ? `the engine's own pool (${Object.keys(STARTER_DECKS).length} decks)`
@@ -141,6 +165,8 @@ const byKind = new Map();
 const shapes = new Map();
 const examples = new Map();
 const byType = new Map();
+/** Unreadable lines grouped by their opening — the actual work queue. See `lineOpening`. */
+const openings = new Map();
 let built = 0;
 
 for (const row of rows) {
@@ -157,6 +183,13 @@ for (const row of rows) {
     const shape = shapeOf(result.why);
     shapes.set(shape, (shapes.get(shape) ?? 0) + 1);
     if (!examples.has(shape)) examples.set(shape, result.why);
+    const quoted = /cannot read the line "([^"]*)"/.exec(result.why);
+    if (quoted !== null) {
+      const key = lineOpening(quoted[1], String(row.name ?? ''));
+      const at = openings.get(key) ?? { n: 0, example: quoted[1], card: String(row.name ?? '') };
+      at.n += 1;
+      openings.set(key, at);
+    }
     if (VERBOSE) console.log(`  no     ${result.why}`);
   }
   byType.set(type, seen);
@@ -184,6 +217,26 @@ for (const [shape, n] of ranked.slice(0, 20)) {
   console.log(`          e.g. ${examples.get(shape)}`);
 }
 if (ranked.length > 20) console.log(`  ... and ${ranked.length - 20} more shapes`);
+
+/*
+  And inside the biggest bucket, the lines themselves. This is the queue: each row is a printed
+  wording, how many cards print it, and one card that does — so the next card to teach the reader
+  is a decision about a number rather than about an anecdote.
+*/
+if (openings.size > 0) {
+  const total = [...openings.values()].reduce((n, o) => n + o.n, 0);
+  console.log(`\nThe ${total} unreadable lines, grouped by what they open with:`);
+  const byCount = [...openings.entries()].sort((a, b) => b[1].n - a[1].n);
+  for (const [key, { n, example, card }] of byCount.slice(0, 25)) {
+    console.log(`  ${String(n).padStart(5)}  ${key}`);
+    if (n > 1) console.log(`         e.g. ${card}: "${example}"`);
+  }
+  const tail = byCount.slice(25);
+  if (tail.length > 0) {
+    const once = tail.filter(([, o]) => o.n === 1).length;
+    console.log(`  ... and ${tail.length} more openings, ${once} of them printed by a single card`);
+  }
+}
 
 /*
   The caveat, printed rather than left in this file's header, because the number above will be

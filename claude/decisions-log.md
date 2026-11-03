@@ -20776,11 +20776,40 @@ coherent result rather than a consolation one.
 The refusal shapes, grouped and counted, are the work queue:
 
 - **189 (52.5%) "cannot read the line"** — one unhandled line of text. The example is Mutavault:
-  `{1}: Mutavault becomes a 2/2 creature until end of turn.` This is the bucket to mine, and the
-  grouping is what makes it mineable: a thousand individual refusals is noise, twenty common line
-  shapes is a list of things to teach the reader.
+  `{1}: Mutavault becomes a 2/2 creature until end of turn.`
 - **114 (31.7%) instants and sorceries**, which are nothing but their text and always will be.
 - **9 split and modal cards, 5 planeswalkers, 2 with a `*` in their power.**
+
+**Correction to the paragraph above, which was wrong when first committed.** It claimed the grouping
+made the unreadable bucket mineable — "twenty common line shapes is a list of things to teach the
+reader". It was not. The top-level grouping flattens every quoted line to `"…"`, so all 189 landed
+in **one** bucket with **one** example, and what the script actually printed was a number and an
+anecdote. Calling that a work queue is the same species of overclaim this session has been finding
+all day, committed by me within the hour of writing about it.
+
+Fixed by grouping the unreadable lines by what they *open with*: the card's own name replaced by `~`
+(every trigger says its own name, and leaving it in gives one bucket per card), numbers and mana
+symbols flattened, first six words kept. Now it is a queue, and the first thing it says was not
+visible before:
+
+```
+    8  When ~ enters the battlefield you        e.g. Kitchen Finks: "...you gain 2 life."
+    6  When ~ enters the battlefield exile      e.g. Banisher Priest
+    5  Cycling {M}                              e.g. Tranquil Thicket: "Cycling {2}"
+    4  Morph {M}{M}                             e.g. Ainok Survivalist: "Morph {1}{G}"
+    4  Enchant creature                         e.g. Robe of Mirrors
+    4  ~ enters the battlefield with X          e.g. Chalice of the Void
+    3  Soulbond / Convoke                       e.g. Trusted Forcemage / Siege Wurm
+    2  Echo {M}{M}                              e.g. Mogg War Marshal: "Echo {1}{R}"
+```
+
+**Cycling, morph, echo, soulbond and convoke are mechanics the engine fully implements.** They are
+refused here for one reason: `printedKeywords` recognises a keyword as a bare word, and these print
+with a cost attached, so `Cycling {2}` reads as a line with rules in it rather than as a keyword.
+That is about seventeen cards of 360 — 11.4% would become roughly 16% — and it is a well-bounded
+change of exactly the same shape as the mana ability: a mechanic that exists, parameterised by a
+number the data states. It is the next increment here, and it was invisible until the grouping was
+fixed.
 
 ### Two things worth recording as decisions rather than code
 
