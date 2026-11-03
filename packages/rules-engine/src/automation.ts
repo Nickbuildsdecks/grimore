@@ -1357,6 +1357,51 @@ interface TriggerAbout {
   readonly subjectCounters?: Readonly<Record<string, number>>;
 }
 
+/**
+ * Which objects the ability's `subject` and `blocked` are, pinned as it goes on the stack.
+ *
+ * See `StackObject.aboutSeqs`. Only what is findable now is pinned: an id with no instance behind
+ * it — a token whose death trigger is being raised after it stopped existing — gets no entry, so
+ * `aboutNow` has nothing to check and that path reads exactly as it did before.
+ */
+function aboutSeqsFor(
+  state: GameState, about: TriggerAbout,
+): { aboutSeqs?: Readonly<Record<string, number>> } {
+  const seqs: Record<string, number> = {};
+  for (const id of [about.subject, about.blocked]) {
+    if (id === undefined) continue;
+    const seq = state.instances[id]?.objectSeq;
+    if (seq !== undefined) seqs[id] = seq;
+  }
+  return Object.keys(seqs).length === 0 ? {} : { aboutSeqs: seqs };
+}
+
+/**
+ * The ids a resolving ability says "that creature" with, blanked where the object has been
+ * replaced (CR 400.7).
+ *
+ * `StackObject.subject`'s own comment used to claim this rule — "if the permanent has gone, the
+ * ability finds nothing and does nothing" — and that is true only of a permanent that went and
+ * stayed gone. One blinked in response comes back wearing the same instance id, and every reader
+ * found it. Read here rather than in each script for the reason hexproof is read in `targeting.ts`
+ * rather than in each script: a script that had to remember would eventually forget.
+ *
+ * Blanked only when the object is **there and different**. An id that finds nothing already does
+ * nothing wherever it is read, and leaving it alone keeps the one path that reads a card the
+ * engine no longer has — a token's own death trigger — exactly as it was.
+ */
+function aboutNow(
+  state: GameState, object: StackObject,
+): { subject: string | undefined; blocked: string | undefined } {
+  const same = (id: string | undefined): string | undefined => {
+    if (id === undefined) return undefined;
+    const was = object.aboutSeqs?.[id];
+    const now = state.instances[id]?.objectSeq;
+    return was === undefined || now === undefined || now === was ? id : undefined;
+  };
+  return { subject: same(object.subject), blocked: same(object.blocked) };
+}
+
 function pushAbility(
   state: GameState, source: string, controller: SeatIndex, abilityIndex: number,
   targets: readonly Target[], kind: 'activated' | 'triggered', description: string,
@@ -1389,6 +1434,7 @@ function pushAbility(
     ...(about.subjectCounters === undefined ? {} : { subjectCounters: about.subjectCounters }),
     ...(about.enteringAttack === undefined ? {} : { enteringAttack: about.enteringAttack }),
     targetSeqs: targetSeqsFor(state, targets),
+    ...aboutSeqsFor(state, about),
   };
   return {
     ...state,
@@ -3123,9 +3169,9 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     decisions: [],
     kicked: object.kicked === true,
     attacked: object.attacked,
-    blocked: object.blocked,
+    // `aboutNow`, not the raw ids: a subject blinked in response is a new object (CR 400.7).
+    ...aboutNow(state, object),
     answering: object.answering,
-    subject: object.subject,
     subjectCounters: object.subjectCounters,
     enteringAttack: object.enteringAttack,
   })) {
@@ -3190,9 +3236,10 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     const ready = first === undefined ? state : first({
       state, source: object.source,
       controller: object.controller, targets: object.targets, x: object.x ?? 0, decisions: [],
-      kicked: object.kicked === true, attacked: object.attacked, blocked: object.blocked,
+      kicked: object.kicked === true, attacked: object.attacked,
+      ...aboutNow(state, object),
       answering: object.answering,
-      subject: object.subject, actor: object.actor, subjectCounters: object.subjectCounters,
+      actor: object.actor, subjectCounters: object.subjectCounters,
       enteringAttack: object.enteringAttack,
       ...(object.division === undefined ? {} : { division: object.division }),
     });
@@ -3264,11 +3311,18 @@ function completeResolution(
     decisions: answers,
     kicked: object.kicked === true,
     attacked: object.attacked,
-    blocked: object.blocked,
+    /*
+      Which permanent it is about, for a trigger that has to say "that creature" — and which
+      creature it blocked, for the other half of the same question.
+
+      Through `aboutNow` rather than read off the object, because an id is not an identity across
+      a zone change: a creature blinked while this ability sat on the stack comes back wearing the
+      same id and is a different object (CR 400.7). Both ids go the same way because both answer
+      "which object", and the Basilisk reads the second one.
+    */
+    ...aboutNow(state, object),
     // What this ability is about, for a ward that has to counter a particular object.
     answering: object.answering,
-    // And which permanent it is about, for a trigger that has to say "that creature".
-    subject: object.subject,
     // And what that permanent had on it before the event, for one that counts counters that are
     // gone by now. See `StackObject.subjectCounters`.
     subjectCounters: object.subjectCounters,

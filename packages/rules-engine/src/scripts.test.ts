@@ -12188,6 +12188,48 @@ describe('delayed triggers: at end of combat, and at the next end step (CR 603.7
     expect(s.instances[bears]!.zone).toBe('graveyard');
     expect(s.instances[courser]!.zone).toBe('battlefield');
   });
+
+  it('and the blink lands a window earlier, while the trigger is still on the stack', () => {
+    /*
+      The same play, taken at the moment a player would actually take it.
+
+      Pinning the *delayed entry's* subject covered the blink cast after the block trigger had
+      already resolved. But the trigger is sitting on the stack where both players can see it, so
+      the obvious answer is to Cloudshift in response to **it** — and then the trigger resolves
+      after the blink and schedules its delayed ability about the creature that came back, pinned
+      to the new object, which matches itself. The creature died anyway.
+
+      So "that creature" has to be pinned on the stack object too (`StackObject.aboutSeqs`), and
+      the thing to notice is what this test asserts afterwards: **nothing is scheduled at all**.
+      The trigger resolves, finds the creature it blocked is gone, and schedules nothing — which
+      is a different board from "scheduled and then missed", and the one the rules describe.
+    */
+    let s = basiliskCombat(['Cloudshift']);
+    const basilisk = find(s, 0, 'battlefield', 'Thicket Basilisk');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = passBoth(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: basilisk, defender: 1 }],
+    }));
+    // Not drained: the block trigger is on the stack, which is the whole point of this one.
+    s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bears, attacker: basilisk }] });
+    expect(stackNames(s)).toEqual(['destroy the creature blocking it at end of combat']);
+    expect(s.delayed.length).toBe(0);
+
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, {
+      type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Plains'), abilityIndex: 0,
+    });
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Cloudshift'),
+      targets: [{ kind: 'card', id: bears }],
+    })));
+    // The trigger resolved — the stack is empty — and it scheduled nothing.
+    expect(stackNames(s)).toEqual([]);
+    expect(s.delayed.length).toBe(0);
+
+    s = drain(advanceTo(s, 'end-combat'));
+    expect(s.instances[bears]!.zone).toBe('battlefield');
+  });
 });
 
 describe('the monarch, as a rule rather than a button (CR 720)', () => {

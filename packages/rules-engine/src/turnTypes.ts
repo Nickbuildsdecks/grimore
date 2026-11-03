@@ -465,6 +465,24 @@ export interface StackObject {
    * from.
    */
   readonly copyOf?: string;
+  /**
+   * Which *objects* `subject` and `blocked` were when this went on the stack (CR 400.7).
+   *
+   * The same pinning `targetSeqs` does for targets, for the two ids that are not targets. An
+   * instance id is not an identity across a zone change — `relocate` hands a card back its own —
+   * so "that creature" has to say which object it meant or it finds the replacement. The window
+   * is real and it is the one a player uses: the Basilisk's block trigger is sitting on the
+   * stack where they can see it, and a Cloudshift in response is the obvious answer.
+   *
+   * A sibling of `targetSeqs` rather than entries in it, because the fizzle rule reads that map
+   * and these two ids are not targets: a trigger does not fizzle for having lost its subject, it
+   * resolves and finds nothing (CR 603.3d).
+   *
+   * Only ids that were findable when the ability was pushed appear here. A token's death trigger
+   * is raised after the token has stopped existing, so there is nothing to pin and nothing to
+   * check — which leaves that path exactly as it was.
+   */
+  readonly aboutSeqs?: Readonly<Record<string, number>>;
   /** What to show in the stack, written when the object was put there. */
   readonly description: string;
 }

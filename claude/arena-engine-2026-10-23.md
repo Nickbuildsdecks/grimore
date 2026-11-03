@@ -8458,6 +8458,26 @@ exile did not match. Exile-then-schedule now, with the reason written down. Unea
 its subject is itself and it cannot be blinked, because the leave-the-battlefield replacement exiles
 it instead.
 
+### The same blink, one window earlier (#286, D307)
+
+D306 pinned the delayed entry's subject and left the window in front of it. The Basilisk's block
+trigger sits on the stack where both players can see it, so the obvious moment to Cloudshift is in
+response to *that* — and the trigger then resolves after the blink, schedules its delayed ability
+about the creature that came back, and pins it to the new object. The creature died anyway.
+
+Worth its own entry rather than folding into the last one, because the failure mode is specific: a
+fix aimed at the place a bug was *found* can leave the place it is *used*. The D306 probe cast the
+blink after the trigger had resolved because that was the simplest script to write.
+
+`StackObject` now carries `aboutSeqs` for `subject` and `blocked`, the pinning `targetSeqs` has done
+for targets all along — a sibling field, because the fizzle rule reads that map and these are not
+targets. Blanked only when the object is there and different, which leaves a token's own death
+trigger (raised after the token stopped existing) exactly as it was.
+
+The test asserts the board the rules describe rather than the one that merely looks right: after the
+blink the trigger resolves and schedules **nothing**. "Scheduled and then missed" and "never
+scheduled" leave the same creature alive, and only one of them is the rule.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -19575,3 +19575,37 @@ change, and the engine has exactly one thing that *is* — `objectSeq`, which co
 was written. Every place that remembers "this object" across time has to carry it: continuous
 effects do now (D304), delayed abilities do now, and combat always did. The next one will not
 announce itself either.
+
+## D307 — The same blink one priority window earlier, and the window a player would use
+
+D306 pinned the delayed entry's subject and left the window in front of it. The Basilisk's block
+trigger sits **on the stack**, where both players can see it, so the obvious moment to Cloudshift is
+in response to *that* — and then the trigger resolves after the blink and schedules its delayed
+ability about the creature that came back, pinned to the new object, which of course matches itself.
+The creature died anyway.
+
+**The fix D306 shipped was correct and covered the later of two windows.** That is worth writing
+down as its own entry rather than folding into the last one, because the failure mode is specific:
+a fix aimed at the place the bug was *found* can leave the place the bug is *used*. The probe for
+D306 cast the blink after the trigger resolved because that was the simplest script to write, and
+the simplest script to write is not the play.
+
+`StackObject.subject` and `.blocked` now carry `aboutSeqs`, the same pinning `targetSeqs` has done
+for targets since it was written. A sibling field rather than entries in that map, because the
+fizzle rule reads `targetSeqs` and these two are not targets: a trigger does not fizzle for having
+lost its subject, it resolves and finds nothing (CR 603.3d).
+
+**Blanked only when the object is there and different.** An id with no instance behind it already
+does nothing wherever it is read, and leaving it alone keeps the one path that reads a card the
+engine no longer holds — a token's own death trigger, raised after the token stopped existing —
+exactly as it was. Nothing is pinned for such an id either, so there is no check to get wrong.
+
+**What the test asserts is the difference between two boards that look alike.** After the blink the
+trigger resolves and schedules *nothing*: `delayed` is empty. "Scheduled and then missed" and
+"never scheduled" leave the same creature alive, and only the second is what the rules describe —
+so the test asserts the empty list and the empty stack, not just the survivor.
+
+**Three places read the ids and one place pins them**, which is the only reason this was a small
+change: `resolveTop`'s condition re-ask, `beforeDecisions`, and `completeResolution` all take
+`aboutNow(state, object)` now. A script that had to remember this would eventually forget, the same
+argument that keeps hexproof in `targeting.ts` rather than in each card.
