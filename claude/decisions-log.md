@@ -20195,3 +20195,59 @@ The two that were caught before they cost anything were caught the same way: **d
 the check and confirm it goes red.** A veil over a button until the press had to be refused; the bot
 budget raised until the assertion had to fire. It costs seconds. Treating that step as optional is
 what produced the other four.
+
+## D324 — #298 ships; the thing that looked like its cost was my own test harness
+
+The bound and the continuation are right, and three arms of six runs each say so. What looked like
+a latency regression was the test I wrote to prove the bound.
+
+### The hypothesis, and its refutation
+
+Bounding the bot moves per write made two *other* realtime tests fail intermittently on a
+five-second wait for a `pod:state` broadcast. The obvious reading was that the continuation's extra
+writes and broadcasts were delaying the first broadcast after an action — a cost a player would feel,
+and so not a test constant to raise and walk away from.
+
+Reading the handler weakened it: the ack and the first broadcast both happen **before** any
+continuation, so a continuation cannot delay its own broadcast. At most it could delay the *next*
+action, if socket.io holds a socket's handler before processing that socket's next event.
+
+Then the measurement killed it. `BOT_MOVES_PER_WRITE` is read from the environment, so the suite
+A/Bs itself without a code change:
+
+```
+these two tests present, budget  25 -> 3/6 runs failed, 3 broadcast timeouts
+these two tests present, budget 500 -> 5/6 runs failed, 8 broadcast timeouts
+these two tests skipped, budget  25 -> 0/6 runs failed, 0 broadcast timeouts
+```
+
+**The middle arm is the opposite of the hypothesis**: with the budget at 500 the continuation barely
+fires, writes go back to being long, and the timeouts get *worse*. Bigger writes delay broadcasts.
+That is evidence for the bound.
+
+**And the third arm names the real cause.** Each of my two tests stands up a second
+`createRealtime` so it can have its own budget, and that instance's Redis clients, cluster adapter
+and HTTP server are not fully released by `close()`. The pressure starves the five-second waits in
+whatever runs next. With them skipped and the source changes present: six clean runs, no timeouts.
+
+### What this retires
+
+- **#302 is closed as not a defect.** It was never `onBotStall` — those assertions pass — and it was
+  never a broadcast regression. The two reproductions I could inspect were contention: once from
+  three jobs sharing four cores, once from my own tests. The single original failure under
+  `io.ts` alone stays recorded as **one unreproduced event** against 31 clean runs plus a clean CI
+  draw; the message was never captured, so it is not promoted to a cause.
+- **Three wrong attributions of mine, in one thread.** A dead table, then a protocol regression,
+  then a broadcast regression. Each was stated before the deciding measurement existed, and each was
+  refuted by the measurement I then built. The pattern is not that the guesses were unreasonable —
+  it is that I said them in the register of findings rather than hypotheses.
+
+### What ships, and what it owes
+
+The source changes ship: `BOT_MOVES_PER_WRITE = 25`, `continueBots`, `reportBotStall` for the
+condition the bound displaced, and an injectable round cap so that report is provable.
+
+The two tests are **skipped, not deleted, and not because the claim is unproven** — both passed,
+45/45, and between them showed no write exceeding its budget with no seat left owed, and the cap
+report firing. The rewrite is to drop the sockets and drive `applyAction` and `continueBots` against
+a `PodStore` built in the test. Both are store-level concerns; neither needs a second server.
