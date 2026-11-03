@@ -9248,16 +9248,38 @@ existed**, so each test builds a row out of the pool's own `CardDef` and compare
 against `scriptFor(name)`. Mind Stone and Mana Confluence stay refused, from the same pool, which is
 what keeps those comparisons honest.
 
-| | before | after |
-|---|---|---|
-| pool, built from data alone | 48 / 360 (13.3%) | **51 / 360 (14.2%)** |
-| creatures | 26 / 173 | 28 / 173 |
-| artifacts | 0 / 18 | 1 / 18 |
+### A cost beyond tapping (D343)
 
-Three cards, and **unrepresentatively few**: this pool was built to exercise sixty mechanics and
-holds one rock and two dorks, where a real Commander list runs five to fifteen. It is the first
-family where the pool proxy understates the real figure for a structural reason rather than as a
-general caveat.
+Three more cards print one clause more, and each clause is a field the engine already has: a pain
+land's `cost.life` (Mana Confluence), a Lotus Petal's `cost.sacrificeSelf`, and `Morph {2}` on a
+land (Zoetic Cavern). All three compared against their hand-written twins, descriptions included —
+the printed cost prefix is carried verbatim rather than rebuilt, which is what makes that comparison
+exact, because a rebuilt label would have had to choose between the card's name and `this artifact`
+and both are printed.
+
+At a table: two spires pay for a two-drop and the life total reads 18; a derived Petal pays for a
+Bear and is gone from the battlefield, still gone two untap steps later.
+
+Refused, each one word from an acceptance: `Sacrifice a creature` (a choice, not the card itself),
+two clauses in one cost, and a permanent whose mana abilities cost different things.
+
+| | before #309 | after #309 | after #310 |
+|---|---|---|---|
+| pool, built from data alone | 48 / 360 (13.3%) | 51 / 360 (14.2%) | **54 / 360 (15.0%)** |
+| creatures | 26 / 173 | 28 / 173 | 28 / 173 |
+| lands | 22 / 28 (78.6%) | 22 / 28 | **24 / 28 (85.7%)** |
+| artifacts | 0 / 18 | 1 / 18 | 2 / 18 |
+
+Three cards at a time, and **unrepresentatively few**: this pool was built to exercise sixty
+mechanics and holds one rock, two dorks and one pain land, where a real Commander list runs five to
+fifteen mana sources that are not lands. It is the first family where the pool proxy understates the
+real figure for a structural reason rather than as a general caveat.
+
+**The land branch is now at its honest ceiling for this pool.** The four lands still refused were
+read one at a time, and every one is a land that *does something*: Mutavault becomes a creature,
+Maze of Ith untaps an attacker and prevents its damage, City of Brass deals you a damage when it
+taps, Aether Hub arrives with an energy counter. What is left is not unparsed mana — it is four
+different effects, each needing the thing this module refuses to invent.
 
 ### The instrument that could not see the change (D342)
 

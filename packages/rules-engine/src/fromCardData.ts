@@ -209,6 +209,25 @@ function isEntersTappedLine(line: string, name: string): boolean {
 interface ManaLine {
   readonly mode: 'choice' | 'sum';
   readonly produces: readonly ManaType[];
+  /** What the ability costs, parsed from the text before the colon. */
+  readonly cost: ManaAbilityCost;
+  /**
+   * The cost **exactly as printed** — `{T}`, `{T}, Pay 1 life`, `{T}, Sacrifice Lotus Petal`.
+   *
+   * Carried rather than rebuilt so the derived ability's `description` reads as the card does. It
+   * also makes the comparison against a hand-written twin exact rather than approximate: the pool's
+   * Lotus Petal describes its ability as `{T}, Sacrifice Lotus Petal: Add {W}.`, and a reconstructed
+   * label would have had to guess between the card's name and `this artifact` — both of which are
+   * printed, on different printings of the same card.
+   */
+  readonly printed: string;
+}
+
+/** A mana ability's cost, in the fields the engine's `AbilityCost` already has for them. */
+interface ManaAbilityCost {
+  readonly tap: true;
+  readonly life?: number;
+  readonly sacrificeSelf?: true;
 }
 
 /** `one mana of any color`, in both spellings this project has in its own card pool. */
@@ -218,9 +237,50 @@ const ANY_COLOUR = /^one\s+mana\s+of\s+any\s+colou?r$/i;
 const COLOURS: readonly ManaType[] = ['W', 'U', 'B', 'R', 'G'];
 
 /**
+ * The extra clause in a mana ability's cost, in the two printed forms the engine already models.
+ *
+ * `{T}` alone is the common case and needs nothing. Beyond it:
+ *
+ *  - `Pay 1 life` — a pain land. `ManaSource.life` exists for exactly this and is carried through
+ *    to whoever taps the source, so the solver knows what to charge.
+ *  - `Sacrifice <this card>` — a Lotus Petal or a Treasure: one mana, once, and then it is gone.
+ *    `sacrificeSelf` is the engine's field and `manaSources` already queues a consumed source
+ *    behind the free ones.
+ *
+ * The self-reference is compared as text rather than against a regex built from the card's name,
+ * for the reason `isEntersTappedLine` gives: most legendary names contain a comma or an apostrophe,
+ * and an unescaped one matches the wrong thing rather than nothing. Both printed spellings are
+ * accepted, because the same card prints each on different printings.
+ */
+function parseCostClause(clause: string, name: string): ManaAbilityCost | null {
+  const life = /^Pay\s+(\d+)\s+life$/i.exec(clause);
+  if (life !== null) {
+    const amount = Number(life[1]);
+    return amount > 0 ? { tap: true, life: amount } : null;
+  }
+  const sacrifice = /^Sacrifice\s+(.+)$/i.exec(clause);
+  if (sacrifice === null) return null;
+  const what = sacrifice[1]!.trim().toLowerCase();
+  const self = what === name.toLowerCase()
+    || /^this (artifact|permanent|land|creature|enchantment|token)$/.test(what);
+  /*
+    `Sacrifice a creature` is a cost this module must not read: it is a choice of which creature,
+    made when the ability is activated, and nothing here models that. Only the card sacrificing
+    itself is accepted.
+  */
+  return self ? { tap: true, sacrificeSelf: true } : null;
+}
+
+/** Two parsed costs that the engine would treat as the same cost. */
+function sameCost(a: ManaAbilityCost, b: ManaAbilityCost): boolean {
+  return (a.life ?? 0) === (b.life ?? 0)
+    && (a.sacrificeSelf ?? false) === (b.sacrificeSelf ?? false);
+}
+
+/**
  * The mana a `{T}: Add …` line makes, or null when this module cannot read the line.
  *
- * Deliberately narrow. Four shapes are accepted and nothing else:
+ * Deliberately narrow. Four shapes of mana are accepted and nothing else:
  *
  *  - `{T}: Add {G}.` — one symbol, one mana.
  *  - `{T}: Add {W}, {U}, {B}, {R}, or {G}.` — a choice of one, however many options are listed,
@@ -244,23 +304,38 @@ const COLOURS: readonly ManaType[] = ['W', 'U', 'B', 'R', 'G'];
  *
  * ## What is still refused, and why each one is a card and not an oversight
  *
- * A line with any other cost — a life payment, a sacrifice, an energy counter, a mana cost — is
- * refused, because the cost is part of the card and this parse does not model it. That is four
- * cards in this pool alone, and each one is a different mechanic: Mana Confluence pays life, Lotus
- * Petal and a Treasure token sacrifice themselves, Mind Stone's second ability eats the rock.
+ * A cost this module cannot read is still a refusal — an energy counter, a mana payment, a
+ * sacrifice of something other than the card itself, a counter removed. The cost is part of the
+ * card, and the two clauses `parseCostClause` does read are there because the engine already has a
+ * field for each: a pain land's life and a Lotus Petal's own body. Mind Stone's second ability
+ * (`{1}, {T}, Sacrifice Mind Stone: Draw a card.`) is refused for a different reason entirely — it
+ * is not a mana ability at all, and half of that card is not the card.
+ *
+ * Only **one** extra clause is read. `{T}, Pay 1 life, Sacrifice this: …` would be two, and a cost
+ * this parse half-reads is worse than one it refuses.
  *
  * A **mixture** of a sum and a choice (`Add {G}{G} or {W}`) is refused as well. Nothing in this
  * pool prints one, the shape is rare enough in Magic that a reader meeting it here would be right
  * to be suspicious of a parse that guessed, and the merge rule it would need at the call site is
  * the kind of thing that is wrong in one direction without anybody noticing.
  */
-function parseManaLine(line: string): ManaLine | null {
-  const match = /^\{T\}:\s*Add\s+(.+?)\.?$/i.exec(line);
+function parseManaLine(line: string, name: string): ManaLine | null {
+  const match = /^(\{T\}(?:,\s*[^:]+)?):\s*Add\s+(.+?)\.?$/i.exec(line);
   if (match === null) return null;
-  const body = match[1]!.trim();
+  const printed = match[1]!.trim();
+  const body = match[2]!.trim();
+
+  const clauses = printed.split(/\s*,\s*/).slice(1).map((c) => c.trim()).filter((c) => c !== '');
+  if (clauses.length > 1) return null;
+  let cost: ManaAbilityCost = { tap: true };
+  if (clauses.length === 1) {
+    const extra = parseCostClause(clauses[0]!, name);
+    if (extra === null) return null;
+    cost = extra;
+  }
 
   // `one mana of any color` — checked first, because it contains none of the symbols below.
-  if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS };
+  if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed };
 
   /*
     A choice of one of several. The separators are tried longest-first, because the printed list is
@@ -283,10 +358,10 @@ function parseManaLine(line: string): ManaLine | null {
   */
   if (runs.length === 1) {
     const only = runs[0]!;
-    return { mode: only.length > 1 ? 'sum' : 'choice', produces: only };
+    return { mode: only.length > 1 ? 'sum' : 'choice', produces: only, cost, printed };
   }
   if (runs.some((r) => r.length !== 1)) return null;
-  return { mode: 'choice', produces: runs.map((r) => r[0]!) };
+  return { mode: 'choice', produces: runs.map((r) => r[0]!), cost, printed };
 }
 
 /** A run of mana symbols with nothing else in it: `{C}{C}`, `{G}`. Null for anything else. */
@@ -304,20 +379,22 @@ function parseSymbolRun(part: string): ManaType[] | null {
  * colours. A single ability listing both colours would be two mana off one land, and the engine
  * would start offering two-drops that cannot be cast.
  */
-function tapAbilities(produces: readonly ManaType[]): AbilityDef[] {
+function tapAbilities(produces: readonly ManaType[], line?: ManaLine): AbilityDef[] {
+  const cost = line?.cost ?? { tap: true as const };
+  const printed = line?.printed ?? '{T}';
   return produces.map((type) => ({
-    cost: { tap: true },
-    description: `{T}: Add {${type}}.`,
+    cost,
+    description: `${printed}: Add {${type}}.`,
     produces: [type],
   }));
 }
 
 /** The one ability a sum line buys: one tap, several mana, exactly as the hand-written Sol Ring. */
-function sumAbility(produces: readonly ManaType[]): AbilityDef {
+function sumAbility(line: ManaLine): AbilityDef {
   return {
-    cost: { tap: true },
-    description: `{T}: Add ${produces.map((t) => `{${t}}`).join('')}.`,
-    produces: [...produces],
+    cost: line.cost,
+    description: `${line.printed}: Add ${line.produces.map((t) => `{${t}}`).join('')}.`,
+    produces: [...line.produces],
   };
 }
 
@@ -328,6 +405,11 @@ function sumAbility(produces: readonly ManaType[]): AbilityDef {
  * a choice. The rule for mixing is the conservative one: a sum line has to be the only mana the
  * permanent makes, because merging "taps for two colourless" with "taps for green" needs a
  * judgement about what the card does that this module has no way to make.
+ *
+ * Lines whose **costs** differ are refused for the same reason. A permanent with one free tap and
+ * one that costs a life is making a choice this module would have to flatten into a single cost,
+ * and flattening it in either direction prices the card wrong: free when it is not, or painful when
+ * it need not be.
  */
 function foldManaLines(
   name: string,
@@ -340,13 +422,26 @@ function foldManaLines(
       return { why: `${name}: it adds several mana and also adds mana some other way` };
     }
     const only = sums[0]!;
-    return { abilities: [sumAbility(only.produces)], produces: [...new Set(only.produces)] };
+    return { abilities: [sumAbility(only)], produces: [...new Set(only.produces)] };
+  }
+
+  const first = parsed[0];
+  if (first !== undefined && parsed.some((p) => !sameCost(p.cost, first.cost))) {
+    return { why: `${name}: its mana abilities do not all cost the same` };
+  }
+  /*
+    An intrinsic basic land type is free, so a printed ability that costs something cannot be folded
+    in with it: a `Land — Swamp` that also taps for a life would be two different sources, and this
+    builds one. Nothing prints that; it is refused rather than left to be discovered.
+  */
+  if (first !== undefined && intrinsic.length > 0 && !sameCost(first.cost, { tap: true })) {
+    return { why: `${name}: a basic land type is free and its printed ability is not` };
   }
   const produces = [...new Set<ManaType>([
     ...intrinsic,
     ...parsed.flatMap((p) => [...p.produces]),
   ])];
-  return { abilities: tapAbilities(produces), produces };
+  return { abilities: tapAbilities(produces, first), produces };
 }
 
 /**
@@ -532,12 +627,26 @@ export function cardFromData(row: CardDataRow): Derivation {
     */
     let entersTapped = false;
     let cycling: string | null = null;
+    let landMorph: { readonly cost: { readonly mana: string }; readonly mega?: true } | undefined;
     const parsed: ManaLine[] = [];
     for (const line of lines) {
       if (isEntersTappedLine(line, name)) { entersTapped = true; continue; }
       const cycle = cyclingCost(line);
       if (cycle !== null && cycling === null) { cycling = cycle; continue; }
-      const mana = parseManaLine(line);
+      /*
+        `Morph {2}` on a land, which is a Zoetic Cavern: a land you may instead cast face down as a
+        2/2. The same reading the creature branch does, and allowed here because the mechanic is
+        fully implemented and the card supplies only a cost — the pool's hand-written twin is this
+        land's mana ability plus `morph: { cost: { mana: '{2}' } }` and nothing else.
+      */
+      const costed = keywordWithCost(line);
+      if (costed !== null && costed.field === 'morph' && landMorph === undefined) {
+        landMorph = costed.mega === true
+          ? { cost: { mana: costed.mana }, mega: true }
+          : { cost: { mana: costed.mana } };
+        continue;
+      }
+      const mana = parseManaLine(line, name);
       if (mana === null) {
         return { ok: false, why: `${name}: cannot read the line "${line}"` };
       }
@@ -571,6 +680,7 @@ export function cardFromData(row: CardDataRow): Derivation {
       script: {
         name,
         ...(entersTapped ? { entersTapped: true } : {}),
+        ...(landMorph === undefined ? {} : { morph: landMorph }),
         /*
           Mana first, cycling after, matching the hand-written cycling lands. `manaSources` only
           looks at abilities with `produces`, so the order does not change what it finds — but a
@@ -623,7 +733,7 @@ export function cardFromData(row: CardDataRow): Derivation {
         turn it arrives (CR 302.6), which is the whole difference between a dork and a land and is
         already handled.
       */
-      const dork = parseManaLine(line);
+      const dork = parseManaLine(line, name);
       if (dork !== null) { mana.push(dork); continue; }
       const costed = keywordWithCost(line);
       if (costed === null) { unread.push(line); continue; }
@@ -687,7 +797,7 @@ export function cardFromData(row: CardDataRow): Derivation {
     */
     const rock: ManaLine[] = [];
     for (const line of lines) {
-      const parsedLine = parseManaLine(line);
+      const parsedLine = parseManaLine(line, name);
       if (parsedLine === null) return { ok: false, why: `${name}: cannot read the line "${line}"` };
       rock.push(parsedLine);
     }

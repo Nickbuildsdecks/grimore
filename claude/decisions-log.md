@@ -21352,3 +21352,83 @@ read identically on a clean tree:
 import `dist` print provenance**; the rest are left, deliberately, as a known gap rather than a
 fifty-file sweep made at the end of a long session — and this is the one that had actually misled
 somebody.
+
+## D343 — A mana cost beyond tapping, and the land branch's honest ceiling (#310)
+
+D341 read mana abilities whose whole cost is `{T}`. Three cards in this pool print one clause more,
+and each clause is a field the engine already has:
+
+| printed | engine field | hand-written twin in the pool |
+|---|---|---|
+| `{T}, Pay 1 life: Add one mana of any colour.` | `cost.life` | Mana Confluence |
+| `{T}, Sacrifice Lotus Petal: Add one mana of any color.` | `cost.sacrificeSelf` | Lotus Petal |
+| `Morph {2}` on a **land** | `script.morph` | Zoetic Cavern |
+
+All three are now read, and each is compared against the hand-written script rather than against my
+expectation of it — the same verification as D341, for the same reason: somebody built those three
+from the printed card before this module existed.
+
+### The printed cost text is carried, not rebuilt
+
+`ManaLine` carries the cost prefix **exactly as printed** — `{T}`, `{T}, Pay 1 life`,
+`{T}, Sacrifice Lotus Petal` — and the derived ability's `description` is that string plus
+`: Add {W}.`
+
+That started as a convenience and turned out to be the thing that makes the twin comparison exact.
+A rebuilt label would have had to choose between the card's **name** and `this artifact`, and both
+are printed — on different printings of the same card. Carrying the text sidesteps a choice that has
+no right answer, and the tests then compare descriptions as well as costs, which is the half that
+could silently drift.
+
+### Three refusals that are one word from an acceptance
+
+- `{T}, Sacrifice a creature: Add {B}.` — refused. That is a *choice* of which creature, made when
+  the ability is activated, and nothing in this parse models a choice. One word from a Lotus Petal.
+- `{T}, Pay 1 life, Sacrifice Painful Petal: Add {W}.` — refused. Two clauses; only one is read,
+  because a cost this parse half-reads is worse than one it refuses outright.
+- A permanent whose mana abilities **cost different things** (`{T}: Add {W}.` and
+  `{T}, Pay 1 life: Add {U}.`) — refused. `foldManaLines` builds one source from several lines, so
+  it would have to flatten two costs into one, and flattening either way prices the card wrong:
+  free when it is not, or painful when it need not be. The same rule refuses a printed costed
+  ability folded in with a basic land type's free intrinsic one.
+
+Proved to discriminate by reading a pain land's life cost as free: three tests fail, including the
+one at a table.
+
+### At a table
+
+Two spires pay for a two-drop and the life total reads **18** — the engine collects the cost, so
+what the test checks is that the derivation put it there. A derived Petal pays for a Bear and is
+**gone from the battlefield**, in the graveyard, and still gone two untap steps later, which is what
+a consumed source means.
+
+### Measured, and the ceiling this reaches
+
+| | D341 | now |
+|---|---|---|
+| pool, built from data alone | 51 / 360 (14.2%) | **54 / 360 (15.0%)** |
+| lands | 22 / 28 (78.6%) | **24 / 28 (85.7%)** |
+| artifacts | 1 / 18 | 2 / 18 |
+
+The four lands still refused were checked one by one, and **every one of them is a land that does
+something**:
+
+- Mutavault — `{1}: … becomes a 2/2 creature until end of turn.`
+- Maze of Ith — untaps an attacker and prevents its damage
+- City of Brass — `Whenever City of Brass becomes tapped, it deals 1 damage to you.`
+- Aether Hub — enters with an energy counter
+
+So the land branch is at its honest ceiling for this pool: what is left is not unparsed mana, it is
+four different effects, and each needs the thing this module refuses to invent. That is a better
+stopping point than a percentage, because it says *why* the next land is not coming.
+
+### One side effect worth writing down
+
+Adding the two new cards to the test deck dropped its forests from 36 to 20, and the multi-turn
+playout test — which plays a land whenever it has one and checks that a land reached the battlefield
+by turn eight — **failed**. Nothing was wrong with the derivation; I had diluted the mana base of a
+deck another test measures through. The counts are back near where they started and the reason is in
+a comment beside them. A shared fixture is a shared assumption, and changing its shape changes tests
+that never mention it.
+
+Gate: guards, typecheck, typecheck:tests, test — 1425 rules-engine tests, 17/17 packages.

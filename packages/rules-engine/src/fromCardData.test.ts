@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import { cardFromData, type CardDataRow } from './fromCardData.js';
 import { scriptForCard, scriptFor } from './scripts.js';
 import { STARTER_DECKS } from './starterDecks.js';
-import { arena, apply, find, ids, nameOf, advanceTo, passBoth, drain, tapAllLands, nextTurn } from './testkit.js';
+import { arena, apply, find, ids, life, nameOf, advanceTo, passBoth, drain, tapAllLands, nextTurn } from './testkit.js';
 import { legalActions, manaSources, potentialMana } from './legalActions.js';
 import { characteristicsOf, printedKeywords } from './characteristics.js';
 import type { CardDef, DeckSpec } from './cards.js';
@@ -452,10 +452,61 @@ describe('a mana source that is not a land, against its hand-written twin', () =
     if (!result.ok) expect(result.why).toContain('Sacrifice Mind Stone');
   });
 
-  it('still refuses Mana Confluence, whose mana costs a life', () => {
-    const result = cardFromData(rowFor('Mana Confluence', ['W', 'U', 'B', 'R', 'G']));
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.why).toContain('Pay 1 life');
+  it('derives Mana Confluence, whose mana costs a life', () => {
+    /*
+      A pain land. `ManaSource.life` has existed since the mana solver was written and is carried
+      through to whoever taps the source, so the cost is the engine's to charge — this module only
+      has to read it. The description is compared as well as the cost, because the printed cost text
+      is carried verbatim rather than rebuilt and that is the thing that could silently drift.
+    */
+    const result = derivedAbilities('Mana Confluence', ['W', 'U', 'B', 'R', 'G']);
+    expect(result.kind).toBe('mana-source');
+    expect(result.script?.abilities).toEqual(scriptFor('Mana Confluence')?.abilities);
+    expect(result.script?.abilities?.[0]?.cost).toEqual({ tap: true, life: 1 });
+  });
+
+  it('derives Lotus Petal, which sacrifices itself for the mana', () => {
+    const result = derivedAbilities('Lotus Petal', ['W', 'U', 'B', 'R', 'G']);
+    expect(result.kind).toBe('mana-source');
+    expect(result.script?.abilities).toEqual(scriptFor('Lotus Petal')?.abilities);
+    expect(result.script?.abilities?.[0]?.cost).toEqual({ tap: true, sacrificeSelf: true });
+  });
+
+  it('derives Zoetic Cavern, a land with a morph cost on it', () => {
+    // A land you may instead cast face down as a 2/2. Both halves are compared: the mana ability
+    // and the morph cost, which is the whole of the hand-written script.
+    const result = derivedAbilities('Zoetic Cavern', ['C']);
+    expect(result.script?.abilities).toEqual(scriptFor('Zoetic Cavern')?.abilities);
+    expect(result.script?.morph).toEqual(scriptFor('Zoetic Cavern')?.morph);
+  });
+
+  it('refuses a cost that sacrifices something other than the card itself', () => {
+    /*
+      `Sacrifice a creature` is a choice of which creature, made when the ability is activated, and
+      nothing in this parse models a choice. The near-miss matters more than the clear miss: this
+      line is one word away from a Lotus Petal's.
+    */
+    expect(why({
+      name: 'Grim Altar', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [],
+      power: null, toughness: null, produced_mana: ['B'],
+      oracle_text: '{T}, Sacrifice a creature: Add {B}.',
+    })).toContain('cannot read the line');
+  });
+
+  it('refuses a cost with two extra clauses rather than reading half of it', () => {
+    expect(why({
+      name: 'Painful Petal', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [],
+      power: null, toughness: null, produced_mana: ['W'],
+      oracle_text: '{T}, Pay 1 life, Sacrifice Painful Petal: Add {W}.',
+    })).toContain('cannot read the line');
+  });
+
+  it('refuses a permanent whose mana abilities cost different things', () => {
+    expect(why({
+      name: 'Choice Of Pain', type_line: 'Land', mana_cost: '', cmc: 0, colors: [],
+      power: null, toughness: null, produced_mana: ['W', 'U'],
+      oracle_text: '{T}: Add {W}.\n{T}, Pay 1 life: Add {U}.',
+    })).toContain('do not all cost the same');
   });
 
   it('refuses a rock whose colours disagree with the data', () => {
@@ -493,13 +544,30 @@ describe('a derived card at a real table', () => {
     name: 'Derived Beast', type_line: 'Creature — Beast', mana_cost: '{3}', cmc: 3, colors: [],
     power: '3', toughness: '3', oracle_text: '',
   });
+  const PAIN = defOf({
+    name: 'Derived Spire', type_line: 'Land', mana_cost: '', cmc: 0, colors: [],
+    power: null, toughness: null, produced_mana: ['G'],
+    oracle_text: '{T}, Pay 1 life: Add {G}.',
+  });
+  const PETAL = defOf({
+    name: 'Derived Petal', type_line: 'Artifact', mana_cost: '{0}', cmc: 0, colors: [],
+    power: null, toughness: null, produced_mana: ['G'],
+    oracle_text: '{T}, Sacrifice Derived Petal: Add {G}.',
+  });
 
   const DECK: DeckSpec = {
     id: 'derived', name: 'Derived', description: 'every card built from its data',
     cards: [
-      { card: BEAR, count: 8 }, { card: HAWK, count: 8 }, { card: BEAST, count: 4 },
-      { card: DORK, count: 4 }, { card: ROCK, count: 4 },
-      { card: FOREST, count: 24 }, { card: GATE, count: 8 },
+      /*
+        The land count is kept near where it started. The playout test below reaches turn eight by
+        playing a land whenever it has one, so diluting the mana base changes what that test is
+        measuring — a first pass at this deck dropped the forests to twenty and the playout finished
+        with no land on the battlefield at all.
+      */
+      { card: BEAR, count: 4 }, { card: HAWK, count: 4 }, { card: BEAST, count: 2 },
+      { card: DORK, count: 2 }, { card: ROCK, count: 2 },
+      { card: PAIN, count: 2 }, { card: PETAL, count: 2 },
+      { card: FOREST, count: 34 }, { card: GATE, count: 8 },
     ],
   };
 
@@ -577,6 +645,40 @@ describe('a derived card at a real table', () => {
     const later = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
     expect(manaSources(later, 0).some((src) => src.key === dork)).toBe(true);
     expect(potentialMana(later, 0).G).toBe(2);
+  });
+
+  it('charges a life for the mana a derived pain land makes', () => {
+    /*
+      The cost is the engine's to collect — `ManaSource.life` is carried through to whoever taps the
+      source — so what this checks is that the derivation put it there at all. Two spires pay for a
+      two-drop, and the life total is the receipt.
+    */
+    let s = advanceTo(table({
+      hands: { 0: ['Derived Bear'] },
+      battlefield: { 0: ['Derived Spire', 'Derived Spire'] }, turn: 3,
+    }), 'precombat-main');
+    expect(life(s, 0)).toBe(20);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Derived Bear') });
+    s = drain(passBoth(s));
+    expect(nameOf(s, find(s, 0, 'battlefield', 'Derived Bear'))).toBe('Derived Bear');
+    expect(life(s, 0), 'two mana off a pain land is two life').toBe(18);
+  });
+
+  it('spends a derived Petal, which does not come back', () => {
+    let s = advanceTo(table({
+      hands: { 0: ['Derived Bear'] },
+      battlefield: { 0: ['Derived Forest', 'Derived Petal'] }, turn: 3,
+    }), 'precombat-main');
+    const petal = find(s, 0, 'battlefield', 'Derived Petal');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Derived Bear') });
+    s = drain(passBoth(s));
+
+    // Sacrificed as the cost of its own mana ability: gone from the battlefield, not merely tapped.
+    expect([...ids(s, 0, 'battlefield')]).not.toContain(petal);
+    expect([...ids(s, 0, 'graveyard')]).toContain(petal);
+    // And the next untap step finds nothing to untap, which is the point of a consumed source.
+    const later = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect([...ids(later, 0, 'battlefield')]).not.toContain(petal);
   });
 
   it('arrives tapped when its one line of text says so', () => {
