@@ -18962,3 +18962,43 @@ D281's "unmeasured", and it is not the same thing as "the term helps".
 The run is continuing past the planned sample while the machine is free, so this entry records the
 reading **at 1040** specifically. Anything further is an extension of it, and the pods actually
 played are quoted either way (D281).
+
+## D295 — D294 corrected: the clock's pod effect regressed to zero, and the planned sample would have lied
+
+D294, committed about half an hour ago, reported the clock's pod win rate at the planned 1040-pod
+sample as **+4.2 points at 1.35 sigma** and described it as "small, leans positive". **That
+description is withdrawn.** The run continued past the planned sample and the margin collapsed:
+
+| pods | 572 | 884 | 1040 | 1144 | 1248 | 1352 | 1508 | 1664 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| points | +4.8 | +4.5 | **+4.2** | +4.5 | +4.2 | +3.3 | +2.7 | **+0.7** |
+| sigma | 1.00 | 1.35 | **1.35** | 1.54 | 1.47 | 1.20 | 1.03 | **0.29** |
+
+838-826 of 1664 pods. Sigma peaked at 1.54 around 1144 and has fallen since. **That is the shape of
+a null, and it is distinguishable from a real effect by exactly this test:** a true +4 point effect
+makes sigma climb monotonically with the square root of the sample, because the margin holds while
+the floor narrows. A null makes the point margin decay as 1/sqrt(N) while sigma wanders without
+trend. The second is what happened.
+
+**The planned sample would have produced a misleading answer, and this is the finding worth
+keeping.** 1040 pods was not merely *inconclusive* — stopping there would have reported a positive
+lean that four hundred more pods erased. D294 is the artefact of that: an entry written in good
+faith, with correct arithmetic, off a sample that had not yet regressed. It is left in the log
+rather than edited, because the pair is the lesson.
+
+**And I compounded it twice before the data corrected me.** I called the margin "stable to within a
+point across the last four hundred pods" when it had been drifting down, and then observed that a
+confirmed positive would mean *turning the term on* rather than leaving it off — which was true as
+a conditional and wrong as an emphasis, since the premise was a 1.47 sigma reading. That is the
+error D258 was retracted for, made again, in the same session that wrote D281's floor into the
+README. Reading a direction off a sub-2-sigma number is apparently not a lesson one learns once.
+
+**What this settles.** `clockRate` stays at 0 — the same decision D281 made, now resting on a
+measurement rather than on an absence of one. The term is +1.5 points in a duel (D275/D276, never
+retracted) and **indistinguishable from zero in a pod across 1664 paired pods**. The pod and duel
+answers differ, which is the thing D280's mechanism predicted, though "no pod effect" is a weaker
+claim than "negative pod effect" and nothing here supports the latter.
+
+The run is continuing to about 2267 pods, the sample at which a +4.2 point effect would have read
+2 sigma, so that the null can be quoted as a **bound** rather than as an absence. That figure will
+be appended here with the pods actually played.
