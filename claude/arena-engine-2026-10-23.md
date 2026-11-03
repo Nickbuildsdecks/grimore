@@ -8696,6 +8696,22 @@ reached. Proved to discriminate by three deliberate breaks — the guard passed 
 `runBots` call sites, and `reportBotStall` swallowing its report — each of which fails it. The
 continuation break fails **only** because of the reporting added above.
 
+### The browser suites, re-run on the changed write path
+
+`pod.ts` changed on the path every player move takes, and the browser suites sit outside the gate by
+construction (#245), so they were re-run on the shipping tree:
+
+| suite | |
+| --- | --- |
+| `e2e-table.mjs` | 73/73 |
+| `e2e-arena.mjs` | 53/53, 7 named skips |
+| `e2e-pod.mjs` | 41/41, 1 named skip |
+| `e2e-solo.mjs` | 28/28, 1 named skip |
+| `SOLO_POD=1 e2e-solo.mjs` | 30/30, 1 named skip |
+
+**225 checks, 10 named skips, every suite exit 0.** Every skip is one of the documented
+shuffle-dependent rows, each naming the deterministic test that covers it instead.
+
 Stability, which is the whole point: **40 consecutive clean full-suite runs**, 46 passed each,
 against 3-in-6 failing before. One earlier run of six failed on the cap test with its message
 uncaptured, so a 30-run hunt was armed to catch it rather than calling it a flake; it caught
