@@ -9295,3 +9295,61 @@ silent, since editing a test does not change what `dist` holds. `derivable.mjs` 
 
 Five of the fifty-two scripts that import `dist` print provenance. The rest are a known gap, left
 deliberately rather than swept at the end of a long session.
+
+---
+
+## Checkpoint — the project's own master suite, run for the first time (#311)
+
+CLAUDE.md says to verify every change with `python execution/verify_master_suite_orchestrator.py`.
+**Nothing in this effort had ever run it.** Running it found two real things.
+
+### Local SQLite was the broken half (D344)
+
+| | suites passing |
+|---|---|
+| no server running | 0 of 13 |
+| `node server.js` up, before any fix | 8 of 13 |
+| after repairing the SQLite schema | 10 of 13 |
+| after the guest-auth step | **11 of 13** |
+
+`db.js` builds a different table set per dialect, and its Postgres branch carries two dozen
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements that the SQLite branch never got. Compared
+against `packages/db/migrations/` — this project's statement of what the schema is — a freshly
+created local database was missing **twenty-one columns**. On it:
+
+- `/api/decks/discover`, the home feed, answered **500** (`no such column: d.is_public`)
+- `GET /api/players/:id/profile` answered **500** (`no such column: profile_theme`)
+- `INSERT INTO decks (... is_public, format)` named columns that did not exist, so **creating a deck
+  could not work at all**
+
+Fifteen columns are now added, read-then-add via `PRAGMA table_info` rather than the swallow-the-error
+pattern already in the file. Six are deliberately left out: they are migration 0015's card columns,
+and `CARD_UPSERT_SQLITE` was deliberately left at thirteen columns when that shipped.
+
+This project has a careful record of schema divergence, and every bit of it looks the **other** way
+round — what Postgres lacks that `server.js` writes. Nobody had asked what *local* lacks, and local
+is the environment CLAUDE.md's workflow names first: *test locally first on http://localhost:3000*.
+
+Verified by endpoint: both routes 500 → **200**. Legacy unit tests 40/40. The legacy Postgres
+write-path suite, deliberately run against a scratch database rather than left to skip, **28 of 28** —
+so the Postgres branch is verified untouched. v2 gate green.
+
+### A suite that could not pass anywhere (D345)
+
+`verify_full_ui_button_and_modal_suite.py` failed at step 1 of 5 on `/api/auth/guest` → **404**. That
+endpoint does not exist in `server.js` or anywhere else in the repository; the only mention of the
+path was the test auditing it. The shared guest account it signed you into was **retired on purpose**
+(`passwordPolicy.js` blocklists its password, "retired in migration 0012").
+
+So the suite failed in every environment, forever — and since the step is first of five, it exited
+before the other four ran. The orchestrator could never report success, which is worse than no suite:
+a standing failure cannot be told from a regression.
+
+The step now asserts the endpoint is gone, which is the better check anyway. **The four steps behind
+it ran for the first time and all pass**: five section endpoints, the TCGplayer `xJoE0d` attribution
+this project's rules require, the A2UI renderer schemas, and the login form.
+
+### What still fails, and why it is left failing
+
+Two suites time out against an external AI advisor service this environment cannot reach — the same
+blocked-service class as Scryfall. Left failing rather than made to pass.

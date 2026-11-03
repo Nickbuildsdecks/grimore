@@ -21432,3 +21432,151 @@ a comment beside them. A shared fixture is a shared assumption, and changing its
 that never mention it.
 
 Gate: guards, typecheck, typecheck:tests, test — 1425 rules-engine tests, 17/17 packages.
+
+## D344 — The schema drift nobody had looked for: what local SQLite does not have (#311)
+
+CLAUDE.md says to verify every change by running `python execution/verify_master_suite_orchestrator.py`,
+the project's own 14-suite master test. **Nothing in this entire effort had ever run it.** I ran it.
+
+With no server up, 13 of 13 suites failed on `Connection refused`, which says nothing. With
+`node server.js` running against the local SQLite store, **8 of 13 passed**, and three of the five
+failures named a cause worth chasing:
+
+```
+Error in /api/decks/discover: SqliteError: no such column: d.is_public
+                              SqliteError: no such column: ds.season_id
+Profile API error: HTTP 500   (no such column: profile_theme)
+```
+
+### The direction nobody had audited
+
+This project has a thorough record of schema divergence — `claude/postgres-schema-gap-2026-09-27.md`
+and `scripts/audit-postgres-schema-gap.js` — and the existing parity test's docblock says outright:
+*"Duplicated security logic plus good intentions is how the schema divergence in this repository
+started."*
+
+Every one of those looks the **same way round**: what does **Postgres** not have that `server.js`
+writes. That is the production direction, and it is the one that got the attention.
+
+The other direction had never been looked at: **what does local SQLite not have.** `db.js` builds a
+different table set per dialect, and its Postgres branch carries a block of two dozen
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements titled "Column migrations for Postgres". The
+SQLite branch has the four `players` ones and **nothing else**.
+
+So on a freshly created local database:
+
+- `/api/decks/discover` — the home feed, which this project's own product rules call a primary
+  surface — answered **500**.
+- The metagame endpoint answered **500**.
+- `GET /api/players/:id/profile` answered **500**.
+- `INSERT INTO decks (... is_public, format)` names columns that did not exist, so **creating a deck
+  could not work at all**.
+
+And this is the direction that matters most for how the project says to work, because CLAUDE.md's
+first rule of the deployment workflow is *"Test Locally First: always implement, run, and verify
+changes on local server (http://localhost:3000)"*. **Local was the broken one.** The instruction and
+the environment it names had been pointing in different directions for as long as the drift existed.
+
+### Measured against the project's own statement of the schema
+
+One 500 at a time is whack-a-mole, so the gap was enumerated instead: every
+`ALTER TABLE x ADD COLUMN IF NOT EXISTS y` in `packages/db/migrations/` — which is this project's
+statement of what the schema **is** — compared against a freshly created local database.
+
+**Twenty-one columns missing, across four tables.** Fifteen are now added, and the six left out are
+left out on purpose:
+
+| table | columns | status |
+|---|---|---|
+| `decks` | `budget_limit`, `include_basic_lands_in_price`, `created_at`, `updated_at` | added |
+| `players` | `profile_theme`, `featured_deck_id`, `discord_handle`, `moxfield_username`, `email_verified_at`, `sessions_valid_from` | added |
+| `seasons` | `allowed_colors`, `allowed_rarities`, `banlist`, `budget_limit`, `max_rares` | added |
+| `scryfall_cards` | `power`, `toughness`, `loyalty`, `layout`, `oracle_id`, `produced_mana` | **not** added |
+
+Plus eleven more from `db.js`'s own Postgres ALTER block (`decks.is_public` and seven siblings,
+`deck_stats.total_matches` and `season_id`, `seasons.schedule_mode`).
+
+The `scryfall_cards` six are migration 0015, from #306 three hours ago, and `CARD_UPSERT_SQLITE` was
+deliberately left at thirteen columns there. Adding columns nothing writes would be the opposite of
+closing a gap, so they stay out with the reason beside them.
+
+### Read-then-add, not try-then-ignore
+
+The blocks already in that file wrap each `ALTER` in a `catch` that swallows everything, because
+SQLite has no `ADD COLUMN IF NOT EXISTS`. That cannot tell "the column is already there" from a
+typo, a missing table or a locked database — **a real error reads as a successful migration**, which
+is the same defect shape this session has found eleven times now in instruments.
+
+So the new block reads `PRAGMA table_info` first and adds only what is missing, logging each one.
+That is also how the twenty-one were counted: the log says exactly what it repaired.
+
+Two deliberate divergences, stated in the code: `TIMESTAMPTZ NOT NULL DEFAULT now()` has no SQLite
+equivalent — SQLite refuses a non-constant default on an added column — so the four timestamp
+columns are added **nullable with no default**. Safe because the code already reads them that way:
+`server.js` guards `sessions_valid_from` with `row ? new Date(...) : null`, and null reads as "no
+cutoff", which is the right answer for a row that predates the column.
+
+### What it bought, measured
+
+| | suites passing |
+|---|---|
+| no server running | 0 of 13 |
+| server up, before the fix | 8 of 13 |
+| after the schema repair | 10 of 13 |
+| after the guest-auth step (D345) | **11 of 13** |
+
+The two that still fail both time out against an external AI advisor service this environment
+cannot reach, which is the blocked-service class already recorded for Scryfall and the rest. They
+are left failing rather than made to pass.
+
+Verified by endpoint, not by inference: `/api/decks/discover` and `/api/players/1/profile` both went
+500 → **200**. Legacy unit tests 40/40. And the legacy Postgres write-path suite, which skips
+silently without `POSTGRES_TEST_URL` (the same shape as D303's Redis finding), run deliberately
+against a scratch database: **28 of 28**, so the Postgres branch is verified untouched rather than
+assumed untouched. The v2 gate is green.
+
+## D345 — A suite that could not pass in any environment, and the four audits behind it
+
+`verify_full_ui_button_and_modal_suite.py` — one of the fourteen CLAUDE.md names — failed at its
+first of five steps:
+
+```
+[1/5] Auditing 1-Click Guest Auth (/api/auth/guest)...
+[FAIL] Guest auth error: HTTP Error 404: Not Found
+```
+
+Not a 500, not a timeout: a **404**. So I went looking for the route. `/api/auth/guest` does not
+exist in `server.js`, which registers eleven other `/api/auth/*` routes. It does not exist anywhere
+in the repository. The only mention of that path in the whole codebase was **the test that audits
+it**.
+
+What did exist is the reason it is gone: `passwordPolicy.js` blocklists `guestpass123`, and the
+parity test beside it says *"The shared guest account's password, retired in migration 0012."* The
+feature was removed on purpose.
+
+So this suite has failed in every environment, forever, and because the step is the first of five it
+`sys.exit(1)`s before the other four have run. **The orchestrator CLAUDE.md names as the verification
+step could therefore never report success** — which makes it worse than no suite at all, because a
+standing failure is indistinguishable from a real regression. This is the session's recurring defect
+in its purest form: not a check that cannot fail, but its mirror, a check that cannot pass.
+
+The step now asserts the endpoint is **gone**, and says why in the file. That is not a weakened
+check — it is a better one: a shared guest login with a publicly known password quietly coming back
+is exactly the regression worth catching, and nothing was watching for it.
+
+**And the four steps behind it ran for the first time. All four pass:**
+
+- five section endpoints (`/api/cards/recommendations`, `/api/decks/public`,
+  `/api/cards/autocomplete`, `/api/leaderboards/season`, `/api/sandbox/ai-meta-decks`)
+- TCGplayer affiliate attribution — the literal `xJoE0d` from this project's own rules, across the
+  cart exports
+- the A2UI core renderer and its component schemas
+- the login form in `public/index.html`
+
+Four audits of rules this project states explicitly, that had been written, committed, listed in
+CLAUDE.md, and never once executed.
+
+The general version, which is new: **when a check has never passed, the thing to ask is not "why is
+it failing" but "has it ever passed".** A failure that predates everyone's memory of the code gets
+read as environmental, and the five minutes it takes to grep for the endpoint is the whole
+difference between that and finding four unrun audits.

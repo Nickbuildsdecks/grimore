@@ -7,6 +7,7 @@ import sys
 import os
 import json
 import urllib.request
+import urllib.error
 
 BASE_URL = "http://localhost:3000"
 
@@ -21,8 +22,21 @@ def main():
     print("  GRIMORE FULL-SURFACE UI, BUTTON & MODAL AUDIT SUITE")
     print("============================================================")
 
-    # 1. Audit 1-Click Guest Auth Endpoint
-    log_step("1/5", "Auditing 1-Click Guest Auth (/api/auth/guest)...")
+    # 1. The retired guest endpoint must stay retired.
+    #
+    # This step used to assert that POST /api/auth/guest logged somebody in. It does not exist:
+    # the only mention of that path anywhere in the repository was this file, and the shared guest
+    # account it signed you into was deliberately retired -- its password is on the blocklist in
+    # `passwordPolicy.js`, with the comment "retired in migration 0012".
+    #
+    # So the step could not pass in any environment, and because it is the first of five it exited
+    # before the other four had ever run. A suite that always fails is worse than no suite: the
+    # orchestrator CLAUDE.md names as the verification step could never report success, so nobody
+    # could tell a real regression from the standing failure.
+    #
+    # Asserting the endpoint is *gone* keeps the step honest and useful: a shared, password-known
+    # guest login quietly coming back is exactly the regression worth catching.
+    log_step("1/5", "Checking the retired guest-auth endpoint is still gone...")
     try:
         req = urllib.request.Request(
             f"{BASE_URL}/api/auth/guest",
@@ -30,14 +44,16 @@ def main():
             headers={"Content-Type": "application/json"}
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            if data.get("success") and "user" in data:
-                log_ok(f"Guest login verified: '{data['user'].get('storeNickname')}' (ID {data['user'].get('id')}).")
-            else:
-                print("[FAIL] Guest auth endpoint returned invalid response.")
-                sys.exit(1)
+            resp.read()
+        print("[FAIL] /api/auth/guest answered. The shared guest account was retired; it must not be back.")
+        sys.exit(1)
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            print(f"[FAIL] /api/auth/guest answered HTTP {e.code}; expected it to be absent (404).")
+            sys.exit(1)
+        log_ok("Guest auth is absent (404), as it has been since the shared guest account was retired.")
     except Exception as e:
-        print(f"[FAIL] Guest auth error: {e}")
+        print(f"[FAIL] Could not reach the server to check guest auth: {e}")
         sys.exit(1)
 
     # 2. Audit Page Section DOM & Client Endpoints
