@@ -20488,3 +20488,25 @@ Six controls remain unnamed by any check, and they are not one kind of thing:
   which is the honest direction for a number like this to move.
 
 Named rather than left as a number, which is the point of the instrument.
+
+### The instrument's second category was half false alarm, and fixing it found two more
+
+"Looked at but never pressed" read 23 controls, and the list was wrong about about half of them:
+the driver's usual shape is `const lit = page.locator('[data-testid^="card-"]')` on one line and
+`await tap(lit.first())` a line or two later, so a selector by itself says nothing about which it
+was. Sampled nine families by hand: **five were being tapped, four were not.** Reading six lines
+past each selector moved the counts from 64 pressed / 23 unpressed to **78 pressed / 12**, and what
+was left standing was the point:
+
+- **`life-up-*` had never been pressed.** `e2e-table` presses `life-down-0`; nothing had ever
+  pressed the other direction — the control a player uses for every lifelink hit and every "undo
+  that". Covered now, both ways, read from the other player's screen, because a life total that
+  moves only locally is the oldest bug a tracker has. **25/25.**
+- **`cmd-dmg-*` is read and never pressed**, and needs a Commander table to reach: `e2e-pod` has
+  one and reads the badge there. Left named rather than covered, because this script's table is
+  Modern on purpose.
+
+Five of the twelve that remain (`chat-messages`, `list-note`, `attach-hint`, `token-sheet`,
+`table-error`) are containers and labels that the control/passive split gets wrong — they sit
+inside something clickable, so the JSX around them looks like a button. That is the heuristic's own
+error rate, stated rather than quietly carried.

@@ -25,7 +25,7 @@
 import path from 'node:path';
 import {
   chromium, check, setShotDir, summarize, shot, waitFor, tid, has, cardsIn,
-  watchForReactWarnings, isMyMove, makeMove,
+  watchForReactWarnings, isMyMove, makeMove, readNumber,
 } from './lib/table-driver.mjs';
 
 const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
@@ -153,6 +153,26 @@ async function main() {
     await waitFor(host, 'table', 25000);
     await waitFor(guest, 'table', 25000);
     check('a tabletop game is dealt for two people', (await cardsIn(host, 'zone-hand-0').count()) > 0);
+
+    /*
+      ── Life, upwards ────────────────────────────────────────────────────────────────────────────
+
+      `e2e-table` presses `life-down-0` and nothing had ever pressed `life-up-*` — so the control
+      a player uses for every Thragtusk, every lifelink hit and every "wait, undo that" had been
+      read by checks and never clicked. Found only once the audit learned to follow a prefix
+      selector into a tap, which cut its false-alarm list from 23 to 12 and left this standing.
+
+      Both directions, and read from the other player's screen as well, because a life total that
+      only moves locally is the oldest bug in a tracker.
+    */
+    const lifeBefore = await readNumber(host, 'life-0');
+    await tid(host, 'life-up-0').click();
+    check('life goes up, and the other player sees it',
+      await until(guest, async () => (await readNumber(guest, 'life-0')) === lifeBefore + 1, 20000),
+      `host read ${lifeBefore}, guest reads ${await readNumber(guest, 'life-0')}`);
+    await tid(host, 'life-down-0').click();
+    check('and back down again',
+      await until(guest, async () => (await readNumber(guest, 'life-0')) === lifeBefore, 20000));
 
     /*
       ── The d6 ───────────────────────────────────────────────────────────────────────────────────

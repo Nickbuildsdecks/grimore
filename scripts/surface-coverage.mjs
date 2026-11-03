@@ -90,8 +90,22 @@ function exercisedIn(rel) {
   };
   for (const m of src.matchAll(/\bpress\s*\(\s*\w+\s*,\s*[`'"]([^`'"]+)/g)) add(pressed, m[1]);
   for (const m of src.matchAll(/\bpressOrWhy\s*\(\s*\w+\s*,\s*[`'"]([^`'"]+)/g)) add(pressed, m[1]);
-  // A locator built then clicked or tapped: the id is in the selector, so it counts as pressed.
-  for (const m of src.matchAll(/\[data-testid\^?=\\?["']([^"'\\\]]+)/g)) add(looked, m[1]);
+  /*
+    A locator built from a selector, and then tapped.
+
+    The driver's usual shape is `const lit = page.locator('[data-testid^="card-"]')` on one line
+    and `await tap(lit.first())` a line or two later, so a selector alone says nothing about which
+    it was. Measured on nine families from the "looked at but never pressed" list: **five were
+    being tapped and four were not**, so that list was about half false alarm until this read the
+    following lines. The window is six lines, which is where every such pair in the suites sits.
+  */
+  const lines = src.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    for (const m of (lines[i] ?? '').matchAll(/\[data-testid\^?=\\?["']([^"'\\\]]+)/g)) {
+      const after = lines.slice(i, i + 7).join('\n');
+      add(/\btap\(|\.click\(/.test(after) ? pressed : looked, m[1]);
+    }
+  }
   for (const m of src.matchAll(/\btid\s*\(\s*\w+\s*,\s*[`'"]([^`'"]+)[`'"]\s*\)\s*\.\s*click/g)) add(pressed, m[1]);
   for (const m of src.matchAll(/\btid\s*\(\s*\w+\s*,\s*[`'"]([^`'"]+)/g)) add(looked, m[1]);
   for (const fn of ['waitFor', 'has', 'text', 'textOf', 'readNumber', 'cardsIn', 'count']) {
