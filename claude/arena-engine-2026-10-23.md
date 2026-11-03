@@ -8167,6 +8167,29 @@ fails the test with "expected 1 to be +0".
 Nothing in the engine changed. Both rules were already right; what was missing was anything that
 would notice if they stopped being.
 
+### Every reading of "can you see both boards" was taken post-game (#273, D293)
+
+D266 refuted #249 with two figures at 1440x800 — a duel is 1.16 screens and its two creature rows
+sit inside 229px of the viewport — and settled the question. Both are measured **after the last
+creature has died**. The question is a mid-game one, and it went unasked because the post-game
+answer was so comfortable that nobody thought to.
+
+Measured three times on real mid-game duels at 1440x900, and a fourth from the instrument once it
+was in the tree: page height **1.33–1.60 screens**, both creature rows **331–568px of the 900px
+viewport**. They fit every time, with 332–569px to spare. So this is a confirmation of D266 rather
+than a correction — the conclusion holds where it actually matters.
+
+The near-miss is the part worth keeping. The first number I measured was the creature rows *plus
+the hand* — 1019px, does not fit — and for about a minute I read it as though it answered D266's
+question. It does not: they are different spans, and nothing has ever claimed the hand fits beside
+both boards. That substitution is exactly how #249 produced a confident false premise from a
+screenshot, so `table-fold.mjs` now prints both side by side with the second labelled "not the
+question".
+
+No budget was added, deliberately: the comment in `e2e-solo.mjs` already rules that mid-game budgets
+wait on somebody deciding the table is too tall, and that 1.3 and 2.35 must not be raised to
+accommodate a mid-game number. What changed is that the decision now has figures under it.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
