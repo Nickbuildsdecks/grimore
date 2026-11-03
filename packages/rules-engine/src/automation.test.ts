@@ -593,6 +593,70 @@ describe('state-based actions', () => {
     expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
   });
 
+  /*
+    CR 704.5q: the two kinds of counter cancel, and what that fixes is **counts rather than sizes**
+    (#269, D287).
+
+    `characteristicsOf` has always read both kinds and subtracted, so a 2/2 with three `+1/+1` and
+    two `-1/-1` measured as a 3/3 either way and nothing about power or toughness gave the gap away.
+    What was wrong is every card that counts the counters themselves: Hangarback Walker's Thopter
+    per `+1/+1`, persist asking whether a creature had a `-1/-1`, undying asking whether it had a
+    `+1/+1`, modular moving the pluses off, Walking Ballista spending one.
+
+    Reachable in this pool rather than theoretical: `-1/-1` counters arrive from **infect**
+    (CR 702.90b), so a Blight Vector creature connecting with any of those is the board the rule is
+    about.
+  */
+  it('cancels +1/+1 and -1/-1 counters in pairs (CR 704.5q)', () => {
+    let s = arena({ battlefield: { 1: ['Centaur Courser'] }, turn: 2 });
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = apply(s, { type: 'card:counter', by: 1, card: courser, key: '+1/+1', delta: 3 });
+    s = apply(s, { type: 'card:counter', by: 1, card: courser, key: '-1/-1', delta: 2 });
+    expect(s.instances[courser]!.counters['+1/+1']).toBe(1);
+    expect(s.instances[courser]!.counters['-1/-1']).toBeUndefined();
+  });
+
+  it('leaves the size alone while it does, which is why nothing noticed', () => {
+    /*
+      A 3/3 Courser with three plus and two minus is a 4/4, and it is a 4/4 whether the counters
+      cancel or sit there: `characteristicsOf` subtracts the minuses either way. So a test that read
+      only power and toughness would pass on the broken engine, and the test above — which reads the
+      counter *counts* — is the one that catches it. Both are here on purpose.
+    */
+    let s = arena({ battlefield: { 1: ['Centaur Courser'] }, turn: 2 });
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = apply(s, { type: 'card:counter', by: 1, card: courser, key: '+1/+1', delta: 3 });
+    const grown = viewFor(s, 1).cards[courser]!;
+    expect([grown.power, grown.toughness]).toEqual([6, 6]);
+    s = apply(s, { type: 'card:counter', by: 1, card: courser, key: '-1/-1', delta: 2 });
+    const after = viewFor(s, 1).cards[courser]!;
+    expect([after.power, after.toughness]).toEqual([4, 4]);
+    expect(s.instances[courser]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('cancels every pair at once rather than one a pass', () => {
+    // Five against five leaves neither kind, in the pass that sees them — not five passes later and
+    // not with one left over.
+    let s = arena({ battlefield: { 1: ['Centaur Courser'] }, turn: 2 });
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = apply(s, { type: 'card:counter', by: 1, card: courser, key: '+1/+1', delta: 5 });
+    s = apply(s, { type: 'card:counter', by: 1, card: courser, key: '-1/-1', delta: 5 });
+    expect(s.instances[courser]!.counters['+1/+1']).toBeUndefined();
+    expect(s.instances[courser]!.counters['-1/-1']).toBeUndefined();
+    expect(namesIn(s, 1, 'battlefield')).toContain('Centaur Courser');
+  });
+
+  it('leaves a creature killed by the counters dead rather than rescuing it', () => {
+    // One plus and four minus on a 2/2: cancelling leaves three minus, which is a -1/-1 and dead.
+    // The cancelling is not a save, and the arithmetic is the same before and after it — which is
+    // the point of doing it before the lethal check rather than after.
+    let s = arena({ battlefield: { 1: ['Grizzly Bears'] }, turn: 2 });
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = apply(s, { type: 'card:counter', by: 1, card: bear, key: '+1/+1', delta: 1 });
+    s = apply(s, { type: 'card:counter', by: 1, card: bear, key: '-1/-1', delta: 4 });
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+  });
+
   it('leaves a creature alive with damage below its toughness', () => {
     let s = advanceTo(arena({
       hands: { 0: ['Shock'] }, battlefield: { 0: ['Mountain'], 1: ['Centaur Courser'] },

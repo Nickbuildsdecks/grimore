@@ -1416,6 +1416,47 @@ export function stateBasedActions(state: GameState): GameState {
         const ch = characteristicsOf(next, inst);
 
         /*
+          CR 704.5q: a permanent with both `+1/+1` and `-1/-1` counters on it loses that many of
+          each, so the two kinds never sit on the same card.
+
+          **The size was never wrong, which is why this was missing.** `characteristicsOf` reads
+          both kinds and subtracts, so three plus and two minus has always *measured* as one plus —
+          a 2/2 like that is a 3/3 either way, and nothing about power or toughness gives the gap
+          away. What is wrong without this is every card that counts the counters themselves, and
+          the pool has four kinds of them:
+
+           - **Hangarback Walker** makes a Thopter per `+1/+1` counter as it dies. Three plus and two
+             minus made three Thopters where the rules give one.
+           - **Persist** asks whether the creature had a `-1/-1` counter, and **undying** whether it
+             had a `+1/+1`. A persisted Murderous Redcap that then gains a plus counter is supposed
+             to end with neither and be able to come back *again*; without annihilation it keeps both
+             and persist stays switched off for good. That is the interaction the rule is famous for.
+           - **Modular** moves `+1/+1` counters off a dying Arcbound creature, and **Walking
+             Ballista** spends one to ping — both read a count this was inflating.
+
+          **Reachable in this pool, not a theoretical gap.** `-1/-1` counters arrive here from
+          **infect** (CR 702.90b, see `dealDamage`), so any Blight Vector creature connecting with a
+          Hangarback Walker, a Ballista, an Arcbound creature or an undying body makes the board the
+          rule is about — which a four-seat pod does by the second time those two decks meet.
+
+          First in the pass, before the branches below that `continue`, so every count read by a
+          death trigger this pass raises is already the right one.
+        */
+        const plus = inst.counters['+1/+1'] ?? 0;
+        const minus = inst.counters['-1/-1'] ?? 0;
+        if (plus > 0 && minus > 0) {
+          const cancelled = Math.min(plus, minus);
+          const counters = { ...inst.counters };
+          if (plus - cancelled === 0) delete counters['+1/+1'];
+          else counters['+1/+1'] = plus - cancelled;
+          if (minus - cancelled === 0) delete counters['-1/-1'];
+          else counters['-1/-1'] = minus - cancelled;
+          next = withInstance(next, id, { counters });
+          changed = true;
+          continue;
+        }
+
+        /*
           CR 714.4: a Saga whose last chapter has gone is sacrificed.
 
           A state-based action rather than a fourth chapter, which is the rule and also the only

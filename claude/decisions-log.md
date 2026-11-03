@@ -18612,3 +18612,62 @@ at four seats because in a duel it *is* `clockRate`.
 precisely what `exposed` had in D264 and what `clockRate` had in D275, and both were then measured
 and left off. A term whose shape is right and whose win rate is unknown is still a term with an
 unknown win rate.
+
+## D287 — CR 704.5q: the two kinds of counter never sat on the same card, and nothing noticed
+
+`stateBasedActions` enforced eight of CR 704.5 and not **704.5q**: a permanent with both `+1/+1` and
+`-1/-1` counters loses that many of each. The engine let them pile up side by side.
+
+**The size was never wrong, which is exactly why it survived.** `characteristicsOf` reads both kinds
+and subtracts, so three plus and two minus has always *measured* as one plus — a 3/3 like that is a
+4/4 either way, and nothing about power or toughness gives the gap away. What was wrong is every
+card that counts the counters themselves, and this pool has four kinds:
+
+ - **Hangarback Walker** makes a Thopter per `+1/+1` counter as it dies. Three plus and two minus
+   made three Thopters where the rules give one.
+ - **Persist** asks whether the creature had a `-1/-1` counter and **undying** whether it had a
+   `+1/+1`. A persisted Murderous Redcap that then gains a plus counter is supposed to end with
+   neither and come back **again**; without the cancelling it keeps both and persist is switched off
+   for good. That is the interaction the rule is famous for.
+ - **Modular** moves the pluses off a dying Arcbound creature, and **Walking Ballista** spends one to
+   ping. Both read a count this was inflating.
+
+**Reachable in this pool rather than theoretical.** `-1/-1` counters arrive here from **infect**
+(CR 702.90b — `dealDamage` puts them on instead of marking damage), so any Blight Vector creature
+connecting with a Hangarback, a Ballista, an Arcbound creature or an undying body is the board the
+rule is about, which a four-seat pod reaches the second time those decks meet.
+
+### The fix, and where it goes
+
+First in the per-permanent pass of `stateBasedActions`, before the branches that `continue`, so
+every count a death trigger raised in that same pass reads the corrected number. Four tests: the
+cancelling itself; that **the size is unchanged** while it happens (a 3/3 with three plus and two
+minus is a 4/4 before and after — a test reading only power and toughness would pass on the broken
+engine, which is why the counts are what the first test reads); that five against five cancels in
+one pass rather than five; and that a creature the counters kill is still dead afterwards, since the
+cancelling is not a save.
+
+### Two tests had been describing illegal boards
+
+**`proliferate`'s two failed, and they were right to.** They set a `+1/+1` on a Chasm Skulker and
+then let Contagion Clasp's arrival put a `-1/-1` on it, which under 704.5q leaves the Skulker with no
+counters at all — so it drops out of the candidate list and out of the kinds to proliferate. One of
+them said in a comment that this made the Skulker *"the one permanent here carrying two kinds of
+counter, which is the half of 'one of each kind already there' that a single-counter permanent cannot
+show"*. It cannot show it because the board cannot exist. Both now give the Skulker two pluses, so
+the Clasp's minus leaves one, and "each kind" is shown across the three objects answered at once —
+a `+1/+1` and a poison. Nothing in those two decks carries two kinds legally: `lore`, `loyalty`,
+`ice` and `vanishing` all live on cards in other ones.
+
+**`mana.test.ts`'s "nets +1/+1 against -1/-1" is kept and now says why.** It writes both kinds onto
+an instance by hand, which a played game cannot reach — and the layer that computes power is a
+different thing from the one that keeps the board legal. The cancelling happens between actions and
+`characteristicsOf` is called inside them, so it still has to net them.
+
+### The shape, again
+
+Third time today. A rule the engine states in a comment, enforces for eight cases out of nine, and
+nobody checked the ninth — because the only consequence visible on screen was identical either way.
+D282's blocker bug hid behind a plausible sentence; this hid behind a correct power and toughness.
+**What a test asserts decides what a bug can hide behind**, and the one that catches this reads the
+counters rather than the creature.

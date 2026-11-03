@@ -17013,9 +17013,16 @@ describe('proliferate: the question whose answer can be a player', () => {
     let s = table();
     const elf = find(s, 0, 'battlefield', 'Glistener Elf');
     const skulker = find(s, 1, 'battlefield', 'Chasm Skulker');
-    // A counter on each side, and a poisoned opponent.
+    /*
+      A counter on each side, and a poisoned opponent.
+
+      **Two** on the Skulker rather than one, since #269: the Clasp's arrival puts a `-1/-1` on it,
+      and CR 704.5q cancels that against a `+1/+1` — so one would leave the Skulker with no counters
+      at all and out of the candidate list this test is about. Two leaves one, which is both legal
+      and the board a player would actually see.
+    */
     s = addCounters(s, elf, '+1/+1', 2);
-    s = addCounters(s, skulker, '+1/+1', 1);
+    s = addCounters(s, skulker, '+1/+1', 2);
     s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, poison: 3 } : seat)) };
 
     s = clasped(s, skulker);
@@ -17036,22 +17043,30 @@ describe('proliferate: the question whose answer can be a player', () => {
     const skulker = find(s, 1, 'battlefield', 'Chasm Skulker');
     s = addCounters(s, elf, '+1/+1', 2);
     /*
-      A +1/+1 on the Skulker before the Clasp's -1/-1 arrives, so it survives to be proliferated —
-      a 0/1 that takes a -1/-1 is a -1/0 and dies before the ability is ever activated. It also
-      makes it the one permanent here carrying **two** kinds of counter, which is the half of
-      "one of each kind already there" that a single-counter permanent cannot show.
+      Two `+1/+1` on the Skulker before the Clasp's `-1/-1` arrives, so it survives to be
+      proliferated — a 0/1 that takes a `-1/-1` is a -1/0 and dies before the ability is ever
+      activated.
+
+      **This test used to put one on and read two kinds of counter off the same permanent, and that
+      board is illegal** (#269): CR 704.5q cancels `+1/+1` against `-1/-1`, so a Skulker with one of
+      each has neither. The engine enforces that now and this is the honest version — the Skulker
+      carries the one `+1/+1` the cancelling left it, and "one more of each kind already there" is
+      shown across the three objects answered at once, where the kinds are a `+1/+1` and a poison.
+      Nothing in these two decks carries two kinds legally; `lore`, `loyalty`, `ice` and `vanishing`
+      all live on cards in other ones.
     */
-    s = addCounters(s, skulker, '+1/+1', 1);
+    s = addCounters(s, skulker, '+1/+1', 2);
     s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, poison: 3 } : seat)) };
 
     s = clasped(s, skulker);
 
     s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [elf, skulker, 'seat:1'] }), 40);
     expect(s.instances[elf]!.counters['+1/+1']).toBe(3);
-    // The Skulker took a -1/-1 from the Clasp's arrival and another from the proliferate, and one
-    // more of the +1/+1 it already had: each kind that is there grows by one, not the biggest pile.
-    expect(s.instances[skulker]!.counters['-1/-1']).toBe(2);
+    // The Clasp's -1/-1 cancelled one of the Skulker's two, leaving one, and the proliferate added
+    // one more of the kind that is actually there. The -1/-1 is gone rather than sitting at two.
+    expect(s.instances[skulker]!.counters['-1/-1']).toBeUndefined();
     expect(s.instances[skulker]!.counters['+1/+1']).toBe(2);
+    // A different kind, from the same answer: the seat's poison grows too.
     expect(s.seats[1]!.poison).toBe(4);
     // And nothing was added where there was nothing: a land is still a land.
     const land = find(s, 0, 'battlefield', 'Swamp');

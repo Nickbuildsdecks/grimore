@@ -384,6 +384,14 @@ describe('characteristicsOf', () => {
   });
 
   it('nets +1/+1 against -1/-1 counters', () => {
+    /*
+      A board the rules do not allow, on purpose and still worth pinning (#269). CR 704.5q cancels
+      the two kinds in pairs, and the engine enforces that in `stateBasedActions` — so a *played*
+      game never reaches this instance. The layer that computes power and toughness is a different
+      thing from the one that keeps the board legal, and it has to net them anyway: the cancelling
+      happens between actions, and `characteristicsOf` is called inside them. Written by hand onto
+      the instance rather than through an action for exactly that reason.
+    */
     let s = arena({ battlefield: { 1: ['Grizzly Bears'] } });
     const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
     s = {
