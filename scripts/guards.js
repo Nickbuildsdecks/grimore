@@ -499,8 +499,9 @@ checkPlayerDocNamesEveryStarterDeck();
  *
  * It caught one on the run that added it, and it was the one that costs something: Murderous
  * Redcap's `{2}{B/R}{B/R}` was written `{2}{B}{R}`. Both coloured symbols are hybrid, so the card
- * casts off four Swamps or four Mountains, and `{2}{B}{R}` tells a player they need one of each --
- * on the pool's only hybrid card, in a doc that teaches hybrid mana two sections away.
+ * casts off four Swamps or four Mountains, and `{2}{B}{R}` tells a player they need one of each, in
+ * a doc that teaches hybrid mana two sections away. (The pool has two hybrid cards; Kitchen Finks,
+ * the other one, was written correctly.)
  *
  * The shape is narrow on purpose and that is why it has no false positives: only a bolded name
  * followed by a parenthesis that *starts* with mana symbols is read as a quoted cost, so prose that

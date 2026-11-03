@@ -8510,12 +8510,13 @@ Third time round for the same thread (D282, D302, and the engine's own CR 704.5e
 asserts the board can read identically whether the rule holds or not, and the only way to know which
 kind you wrote is to break the engine on purpose.
 
-### The doc priced the pool's only hybrid card as if it needed both colours (#290, D310)
+### The doc priced a hybrid card as if it needed both colours (#290, D310)
 
 The player doc quotes a mana cost in one shape, `**Name** ({cost} …)`, eighty-three times. Eighty-two
 matched the card. Murderous Redcap's `{2}{B/R}{B/R}` was written `{2}{B}{R}` — both symbols are
 hybrid, so the card casts off four Swamps or four Mountains, and the doc told a player they needed
-one of each, two sections away from where it teaches hybrid mana.
+one of each, two sections away from where it teaches hybrid mana. The pool has two hybrid cards and
+the other one, Kitchen Finks, was written correctly — which is what a one-off error looks like.
 
 Found by asking in bulk rather than by reading: ten lines of node, 83 matches, one disagreement. The
 shape is narrow enough to have no false positives, so it became a guard —

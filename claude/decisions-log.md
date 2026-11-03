@@ -19682,15 +19682,14 @@ a one-toughness body. Both assert the range the card computed (`{ min: 0, max: 1
 hardcoding the answer: a creature added to either deck with two toughness would change that number,
 and the assertion says so rather than quietly testing something else.
 
-## D310 — The doc priced the pool's only hybrid card as if it needed both colours
+## D310 — The doc priced a hybrid card as if it needed both colours
 
 The player doc quotes a card's mana cost in one shape — `**Name** ({cost} …)` — eighty-three times.
 Eighty-two of them match the card. **Murderous Redcap's `{2}{B/R}{B/R}` was written `{2}{B}{R}`.**
 
 That is the one of the eighty-three that costs a player something. Both coloured symbols are
 hybrid, so the Redcap casts off four Swamps or four Mountains; `{2}{B}{R}` says they need one of
-each, on the pool's only hybrid card, in a document that teaches hybrid mana two sections away
-(#167). A player with four Swamps reads the doc and does not try the card.
+each, in a document that teaches hybrid mana two sections away (#167). A player with four Swamps reads the doc and does not try the card.
 
 **Found by asking the question in bulk rather than by reading.** Ten lines of node, 83 matches, one
 disagreement — which is the same method as `cr-claims.mjs` the hour before and a much better
@@ -19741,3 +19740,18 @@ reading.** That is the argument for the whole method: a human reading this doc c
 which is where the thinking is, and skims the numbers in brackets — which is exactly where a
 machine is better than a human and where being wrong costs a player a combat.
 
+
+## D312 — Correction to D310: the pool has two hybrid cards, not one
+
+D310 and the guard's docblock both called Murderous Redcap "the pool's only hybrid card". It is one
+of **two**: Verdant Guard's **Kitchen Finks** is `{1}{G/W}{G/W}`, and the doc prices it correctly.
+
+The entry is better for it rather than worse — a wrong cost on one of two hybrid cards, with the
+other one right, is what a one-off typo looks like, and "the only one" was quietly making it sound
+like a systematic misunderstanding of the symbol. Both files now say two.
+
+Worth noticing *how* it got written: I checked the thing I was fixing (83 quoted costs, every one
+compared against the card) and then wrote a sentence about the pool from memory, in the same
+paragraph. The checked claim was right and the remembered one was wrong, and nothing about the
+prose distinguished them — which is the argument for the guards in D310 and D311 pointed at my own
+writing as much as at the player doc's.
