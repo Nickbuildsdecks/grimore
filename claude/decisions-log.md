@@ -21896,6 +21896,7 @@ runs on every push. The single-position test from #308 stays as the fast regress
 discriminates, which was proved when it went in — and this script is the slow question, run when the
 wire format or the view changes.
 
-Four hundred and fifty games of reliability evidence beside it, from the same session:
-`state-invariants.mjs` over 40 duel passes — **520 games, nine invariants checked after every
-action, zero broken**.
+Reliability evidence beside it, from the same session, on both shapes: `state-invariants.mjs` over
+40 duel passes — **520 games, nine invariants checked after every action, zero broken** — and the
+pod arm over 10 passes, **130 pods, same nine invariants, also zero**. 650 games in all, every state
+self-consistent.

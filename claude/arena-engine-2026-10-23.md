@@ -9408,5 +9408,12 @@ reason they are corrections and not defects.
 
 ### Reliability, unchanged
 
-`state-invariants.mjs`, 40 passes: **520 duel games, nine invariants checked after every action,
-zero broken.** Recorded as a negative rather than added to the code.
+`state-invariants.mjs`: **520 duel games** over 40 passes and **130 pods** over 10, nine invariants
+checked after every action in all 650, **zero broken**. Recorded as a negative rather than added to
+the code.
+
+And the wire cap, which nothing had watched while a game *ran* (#313, D351):
+`scripts/measure/wire-growth.mjs` plays whole four-player pods and reports the peak per-seat view.
+Starter decks peak at **29.7%** of the 128 KiB cap; four pasted hundred-card singleton lists peak at
+**44.4%**, and the peak arrives at **turn 136** in the longest game — where no single-position test
+reaches. Sixteen games, every one to a finish, none over.
