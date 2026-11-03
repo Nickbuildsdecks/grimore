@@ -1393,6 +1393,28 @@ function pushAbility(
  *
  * The loop matters: a creature dying can remove an anthem, which can kill three more creatures, and
  * all of that has to settle before any player gets priority again.
+ *
+ * **The whole list, audited against CR 704.5 rather than grown one card at a time** (#270, D288),
+ * because two of these were missing and the audit is the only thing that found them. Where a case
+ * lives matters as much as whether it is here:
+ *
+ * | case | where |
+ * | --- | --- |
+ * | a player at 0 or less life, ten poison, or 21 commander damage | `engine.ts`, in the pass that runs *after* this one — a seat losing is not a board fix |
+ * | a player who tried to draw from an empty library (CR 704.5b) | here, off `drewFromEmpty` |
+ * | `+1/+1` and `-1/-1` counters cancelling (CR 704.5q) | here, first in the per-permanent pass (D287) |
+ * | a Saga with every chapter spent (CR 714.4) | here |
+ * | an Aura attached to nothing or to something gone (CR 704.5m) | here |
+ * | an Equipment attached to an illegal permanent (CR 301.5c) | unattached rather than binned, which is the difference between the two |
+ * | a planeswalker with no loyalty (CR 704.5i) | here |
+ * | a creature with 0 toughness or lethal damage (CR 704.5a/g) | here, with regeneration and indestructible |
+ * | the legend rule (CR 704.5j) | here, below the deaths (D288) |
+ * | a token outside the battlefield ceasing to exist | `cardActions.ts`, in `relocate`, because it is a fact about the move |
+ * | a soulbond pair that is no longer two creatures (CR 702.95b) | here, last in the pass |
+ *
+ * **Not here, and deliberately:** the world rule, which needs a world enchantment and the pool has
+ * none, and everything about Battles and Sieges, which this engine has no cards for. Both would be
+ * dead code checked every pass.
  */
 export function stateBasedActions(state: GameState): GameState {
   if (!state.automated) return state;
