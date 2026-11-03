@@ -181,6 +181,21 @@ export interface PodStoreOptions {
    * "simply a long write". So the report carries the duration **and** the number of bot moves,
    * because a write that spent nine seconds on four hundred moves and one that spent nine seconds
    * on three are different faults with different answers.
+   *
+   * The count alone turned out not to be enough. A census of ten pods found duration does not
+   * track move count at all — 215 moves in 3831ms, 111 moves in 7814ms — so the per-decision cost
+   * dominates, and the count cannot tell a write of many cheap decisions from one of a few
+   * expensive ones. Those are the two faults, and they have opposite fixes: bounding the moves per
+   * write only helps the first, and no bound helps the second. So the report also carries how much
+   * of the write was spent *deciding* and what the single worst decision cost, which separates
+   * four outcomes rather than two:
+   *
+   * - deciding ~= the whole write, worst decision small -> many cheap searches; bound the moves.
+   * - deciding ~= the whole write, worst decision large -> one search is over budget on its own,
+   *   and no move bound can help; the search itself has to get cheaper.
+   * - deciding << the whole write -> the cost is not the bots at all but applying the moves, which
+   *   is a different fix again (the engine clones a whole game state per move).
+   * - deciding ~= 0 with no bot seats -> a human action that was slow by itself.
    */
   onSlowWrite?: (info: { code: string; reason: string }) => void;
 }
@@ -822,7 +837,7 @@ export class PodStore {
           reason: `${stamped.type} by seat ${seat.seat} at ${whereBefore} changed nothing`,
         });
       }
-      const botMoves = runBots(record, (reason) => this.onBotStall({ code, reason }));
+      const bots = runBots(record, (reason) => this.onBotStall({ code, reason }));
       /*
         Half the client's patience, so a write is reported while it is still merely slow.
 
@@ -835,7 +850,9 @@ export class PodStore {
         this.onSlowWrite({
           code,
           reason: `${stamped.type} by seat ${seat.seat} at ${whereBefore} took ${took}ms`
-            + ` and ${botMoves} server move${botMoves === 1 ? '' : 's'}`
+            + ` and ${bots.moves} server move${bots.moves === 1 ? '' : 's'}`
+            + `, ${Math.round(bots.thinkingMs)}ms of it deciding`
+            + `, worst single decision ${Math.round(bots.slowestMs)}ms (${bots.slowestWhere})`
             + ` (the client gives up at 8000ms)`,
         });
       }
@@ -941,36 +958,52 @@ const DEFAULT_BOT_DECK = 'verdant-guard';
  * move, and the difference between "a bot has no move" and "a bot's move was refused" is the whole
  * diagnosis. `stall` says which; running out of the guard is one of them.
  */
-function runBots(record: PodRecord, stall?: (reason: string) => void): number {
+function runBots(record: PodRecord, stall?: (reason: string) => void): BotRun {
+  let thinkingMs = 0;
+  let slowestMs = 0;
+  let slowestWhere = 'nowhere';
+  const done = (moves: number): BotRun => ({ moves, thinkingMs, slowestMs, slowestWhere });
   const botSeats = new Set(record.seats.filter((s) => s.bot).map((s) => s.seat));
-  if (botSeats.size === 0) return 0;
+  if (botSeats.size === 0) return done(0);
   const where = (game: GameState): string => `turn ${game.turn} ${game.step}`;
   for (let guard = 0; guard < BOT_MOVE_GUARD; guard += 1) {
     const game = record.game;
-    if (game === null || game.finished) return guard;
+    if (game === null || game.finished) return done(guard);
     // Any seat the engine is waiting on, not just the first: opening hands are settled
     // simultaneously, so a bot whose human opponent is still deciding is behind them in the queue
     // and would never be reached.
     const seat = seatsToAct(game).find((s) => botSeats.has(s));
     // Not a stall: the engine is waiting on a person, which is most of a game.
-    if (seat === undefined) return guard;
+    if (seat === undefined) return done(guard);
+    /*
+      `performance.now()` rather than `Date.now()`, because most of these decisions are faster than
+      the millisecond `Date.now()` can resolve and four hundred of them rounded down to zero would
+      report a write that spent all its time thinking as one that spent none.
+    */
+    const decidingFrom = performance.now();
     const action = botAction(game, seat);
+    const thought = performance.now() - decidingFrom;
+    thinkingMs += thought;
+    if (thought > slowestMs) {
+      slowestMs = thought;
+      slowestWhere = `${action === null ? 'no move' : action.type} for seat ${seat} at ${where(game)}`;
+    }
     if (action === null) {
       stall?.(`seat ${seat} is owed a move at ${where(game)} and botAction offered none`);
-      return guard;
+      return done(guard);
     }
     try {
       const next = engineApply(game, action, { isHost: false });
       // No progress means a move the engine accepted but that changed nothing, which would spin.
       if (next.stateVersion === game.stateVersion) {
         stall?.(`${action.type} by seat ${seat} at ${where(game)} changed nothing`);
-        return guard;
+        return done(guard);
       }
       record.game = next;
     } catch (err) {
       const why = err instanceof Error ? err.message : String(err);
       stall?.(`${action.type} by seat ${seat} at ${where(game)} was refused: ${why}`);
-      return guard;
+      return done(guard);
     }
   }
   /*
@@ -982,7 +1015,26 @@ function runBots(record: PodRecord, stall?: (reason: string) => void): number {
   if (game !== null && !game.finished && seatsToAct(game).some((s) => botSeats.has(s))) {
     stall?.(`five hundred server moves in one write, still owed one at ${where(game)}`);
   }
-  return BOT_MOVE_GUARD;
+  return done(BOT_MOVE_GUARD);
+}
+
+/**
+ * What one write's worth of server moves cost. See `onSlowWrite` for why each number is here.
+ *
+ * Measured on every write rather than only slow ones: the timing is two `performance.now()` calls
+ * per bot move against a decision that costs tens of milliseconds, and a threshold that decided
+ * whether to measure would make the cheap writes — the ones that establish what normal looks
+ * like — the only writes with no numbers.
+ */
+interface BotRun {
+  /** Moves the server made for its own seats, which is what the guard bounds. */
+  moves: number;
+  /** Milliseconds inside `botAction`, summed: the bots' search, as against the rest of the write. */
+  thinkingMs: number;
+  /** The single most expensive decision. No move bound can bring a write under this. */
+  slowestMs: number;
+  /** What that decision was and where in the game it was taken. */
+  slowestWhere: string;
 }
 
 /** Gives every bot seat a deck, so a solo table needs no second person to pick one. */
