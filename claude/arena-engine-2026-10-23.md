@@ -9144,3 +9144,28 @@ about coverage; only the union across runs is evidence. That retired a prompt-co
 before it was built, and the first draft of its reasoning was wrong anyway: four prompt kinds read as
 "not rendered" because the grep covered two components and they are handled in the interaction
 reducer.
+
+---
+
+## Checkpoint — twelve of twelve on the two-person table (D337)
+
+The question behind all of this is whether two people can play a whole game without trouble, which
+is a reliability claim. So the two suites that drive two human browsers at one table ran **six times
+each, back to back**, on the HEAD whose change went into the engine's mana and activation paths:
+
+| | |
+|---|---|
+| `e2e-table` ×6 | **73/73** every time |
+| `check-table-controls` ×6 | **26/26** every time |
+| exit code | **0**, twelve of twelve |
+| `FAIL` lines in the whole log | **none** |
+
+Run with nothing else on the machine, which matters: the earlier single pass ran beside two full
+gates on four cores and the pod suite's pace fell from 253ms a move to about 1.6s, making a healthy
+long game look like a stall. Timings from a contended run are not timings.
+
+Also audited and clean: 18 checks across the suites have the literal `true` as their condition,
+which is the exact shape of the "check that cannot fail" this session keeps finding. None of them
+is one. Fourteen are inside an `if (seen.X)` guard with a paired `skip()` — the `if` is the
+assertion — and four are labels on a preceding `waitFor` that throws. The grep matched the syntax of
+a vacuous check rather than its meaning: 18 hits, 0 findings.

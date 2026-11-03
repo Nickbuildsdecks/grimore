@@ -21015,3 +21015,52 @@ not *"never executed"*. It happened to surface the right five names, and it woul
 somebody ran once without writing down, and it flagged three parameters that run constantly. Stated
 rather than quietly relied on, which is the whole of `surface-coverage.mjs`'s precision note and
 `cr-claims.mjs`'s before it.
+
+---
+
+## D337 — Twelve of twelve clean on the two-person paths, and no vacuous check in the suites
+
+### The evidence Nick's question actually wants
+
+*"Confident that me and a friend can functionally play an entire game"* is a reliability claim, and
+one clean run is not evidence for it. So the two suites that drive **two human browsers at one
+table** — `e2e-table` and `check-table-controls` — ran six times each, back to back, on the HEAD
+that changed the engine's mana paths.
+
+**12 of 12 clean. 73/73 and 26/26 every time, exit 0 every time, not one `FAIL` line in the whole
+log.** This is the same shape of evidence D247 recorded for the engine before `scriptForCard` went
+into `manaSources`, `potentialMana`, `scriptOf` and the arrival hook, which is why it was worth
+re-spending.
+
+One methodological note, since it cost an hour earlier today: the first pass of these suites ran
+while two full gates were running beside it on a four-core box, and the pod suite's pace fell from
+D250's measured 253ms a move to something like 1.6s. The repeat ran with nothing else on the
+machine. **Timings from a contended run are not timings**, which D250 said and I had to be reminded
+of by a pod that looked stalled and was not.
+
+### And an audit that found nothing, which is the useful kind to record
+
+The session's recurring find is a check that cannot fail. So: are there any in the browser suites?
+`grep "check([^,]*, *true)"` finds **18 checks whose condition is the literal `true`**, which looks
+exactly like the shape.
+
+It is not. All 18 are sound, in two different ways:
+
+- **14 sit inside an `if (seen.X)` guard with a paired `skip()` in the `else`.** The `if` is the
+  assertion — `seen.ward` is set by the driver only when a ward actually resolved — and the skip is
+  counted and named when it does not fire. That is precisely D302's design, and reading
+  `check('a ward stops a spell …', true)` out of context inverts it.
+- **4 are labels on a preceding `waitFor`**, which throws on timeout. `await waitFor(nick,
+  'deck-ember-rush')` *is* the test; the `check(…, true)` on the next line is what puts a positive
+  statement in the log for a reader.
+
+So nothing to fix, and the audit's own precision is the thing worth stating: a grep for `, true)`
+has 18 hits and 0 findings, because it matches the *syntax* of a vacuous check rather than its
+meaning. The same lesson as `surface-coverage.mjs`'s 67% first pass, arriving by grep this time.
+
+One honest observation that falls out rather than a defect: the four `waitFor`-backed ones mean a
+**setup** failure aborts the suite with a Playwright timeout instead of printing a named failed
+check and carrying on. That is defensible and is the reasoning `check-table-controls`'s own header
+gives for being a separate file — if the table never deals, the seventy checks after it are reading
+a different game, so continuing would produce seventy misleading results rather than one clear
+one. Left as it is, deliberately, and written down so the next reader does not have to re-derive it.
