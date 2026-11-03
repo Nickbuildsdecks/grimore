@@ -972,29 +972,29 @@ waiting for the pregame screen, which looks like a broken table and is not.
 PLAY_HOST=127.0.0.1 node scripts/play.mjs &   # both servers, with the variable set
 
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 73 checks
-node scripts/e2e-arena.mjs      # two browsers, rules engine           — 52-58 checks
-node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 42 checks
-node scripts/e2e-solo.mjs       # one browser, against the computer    — 24-26 checks
-SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 26 checks
-LIST=cascade node scripts/e2e-solo.mjs # a deck built to cascade, in a browser — 25-26 checks
-LIST=costs   node scripts/e2e-solo.mjs # a deck built to pay evoke, dash and bestow — 27-28 checks
-LIST=earned  node scripts/e2e-solo.mjs # a deck built for spectacle and overload — 26-27 checks
-LIST=graveyard node scripts/e2e-solo.mjs # a deck built to press a button in the graveyard — 27-29 checks
-LIST=miracle node scripts/e2e-solo.mjs # a deck whose first draw is often the card it is built around — 26 checks
-LIST=rebound node scripts/e2e-solo.mjs # a deck built to cast the same spell twice, a turn apart — 26-27 checks
-LIST=replicate node scripts/e2e-solo.mjs # a deck with the mana to pay one cost several times — 25 checks
-LIST=extort node scripts/e2e-solo.mjs  # a deck asked for mana every time it casts a spell — 25 checks
-LIST=suspend node scripts/e2e-solo.mjs # a deck that pays for a spell a turn before it casts it — 26 checks
-LIST=dredge node scripts/e2e-solo.mjs  # a deck that buys the same spell back every draw step — 27 checks
-LIST=buyback node scripts/e2e-solo.mjs # a deck that pays to keep the spell it just cast — 26 checks
-LIST=proliferate node scripts/e2e-solo.mjs # a deck that poisons the computer and then picks it out of a list — 25 checks
-LIST=echo node scripts/e2e-solo.mjs    # a deck asked for mana in its own upkeep — 26 checks
-LIST=upkeep node scripts/e2e-solo.mjs  # a deck whose upkeep question gets dearer every turn — 26-27 checks
-LIST=level node scripts/e2e-solo.mjs   # a deck with a creature that grows by being paid for — 26 checks
-LIST=vanish node scripts/e2e-solo.mjs  # a deck whose best creatures come with a countdown on them — 26 checks
-LIST=artifact node scripts/e2e-solo.mjs # a deck that pays its costs with spare artifacts — 25 checks
-LIST=blink node scripts/e2e-solo.mjs   # a deck whose end step asks which of your own creatures to blink — 26 checks
-LIST=soulbond node scripts/e2e-solo.mjs # a deck that pairs its creatures off, and the pair named on the card — 27 checks
+node scripts/e2e-arena.mjs      # two browsers, rules engine           — 50 checks, 8 named skips
+node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 40 checks, 1 named skip
+node scripts/e2e-solo.mjs       # one browser, against the computer    — 27 checks, 1 named skip
+SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 29 checks, 1 named skip
+LIST=cascade node scripts/e2e-solo.mjs # a deck built to cascade, in a browser — 28 checks, 1 named skip
+LIST=costs   node scripts/e2e-solo.mjs # a deck built to pay evoke, dash and bestow — 30 checks, 1 named skip
+LIST=earned  node scripts/e2e-solo.mjs # a deck built for spectacle and overload — 29 checks, 1 named skip
+LIST=graveyard node scripts/e2e-solo.mjs # a deck built to press a button in the graveyard — 31 checks, 1 named skip
+LIST=miracle node scripts/e2e-solo.mjs # a deck whose first draw is often the card it is built around — 29 checks, 2 named skips
+LIST=rebound node scripts/e2e-solo.mjs # a deck built to cast the same spell twice, a turn apart — 29 checks, 2 named skips
+LIST=replicate node scripts/e2e-solo.mjs # a deck with the mana to pay one cost several times — 28 checks, 1 named skip
+LIST=extort node scripts/e2e-solo.mjs  # a deck asked for mana every time it casts a spell — 28 checks, 1 named skip
+LIST=suspend node scripts/e2e-solo.mjs # a deck that pays for a spell a turn before it casts it — 29 checks, 2 named skips
+LIST=dredge node scripts/e2e-solo.mjs  # a deck that buys the same spell back every draw step — 30 checks, 1 named skip
+LIST=buyback node scripts/e2e-solo.mjs # a deck that pays to keep the spell it just cast — 30 checks
+LIST=proliferate node scripts/e2e-solo.mjs # a deck that poisons the computer and then picks it out of a list — 28 checks, 1 named skip
+LIST=echo node scripts/e2e-solo.mjs    # a deck asked for mana in its own upkeep — 29 checks, 1 named skip
+LIST=upkeep node scripts/e2e-solo.mjs  # a deck whose upkeep question gets dearer every turn — 30 checks
+LIST=level node scripts/e2e-solo.mjs   # a deck with a creature that grows by being paid for — 29 checks, 1 named skip
+LIST=vanish node scripts/e2e-solo.mjs  # a deck whose best creatures come with a countdown on them — 29 checks, 1 named skip
+LIST=artifact node scripts/e2e-solo.mjs # a deck that pays its costs with spare artifacts — 28 checks, 1 named skip
+LIST=blink node scripts/e2e-solo.mjs   # a deck whose end step asks which of your own creatures to blink — 29 checks, 1 named skip
+LIST=soulbond node scripts/e2e-solo.mjs # a deck that pairs its creatures off, and the pair named on the card — 31 checks
 ```
 
 Counts move by one or two between runs: a handful of checks only exist when the shuffle produced the

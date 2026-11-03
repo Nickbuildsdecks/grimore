@@ -8562,10 +8562,16 @@ prune a `cards` scope now prune it the same way.
 ### A long game and a stuck table read the same (#294, D314)
 
 `LIST=extort` printed `primary: Pass` for five hundred consecutive moves and the log could not say
-whether that was a control mirror grinding through turns or a table deadlocked on one priority. It
-was the first — a re-run finished in sixty moves, 28 of 28 with one named skip — but finding that
-out cost the eleven lists queued behind it. The solo suite's periodic line carries the **turn**
-now, so a run that is only slow climbs and a run that is stuck does not.
+whether that was a control mirror grinding through turns or a table deadlocked on one priority. A
+re-run finished in sixty moves, 28 of 28 with one named skip, which proves the list can finish and
+settles nothing about the first run: a re-run is a different shuffle, and the stalled game was
+already gone. That question is unanswerable, and stopping the sequence to ask it cost the eleven
+lists queued behind it.
+
+The solo suite's periodic line carries the **turn** now so it will not be unanswerable again — and
+the first stall it caught was real, within the hour: a solo pod on turn 20 at move 75 and still on
+turn 20 at move 570, which died at the harness's time limit with the game checks never reached. A
+turn that eats more than two hundred moves is now a named failure that stops the loop.
 
 ### The spectacle row is a 30% shuffle, and both fixes for it were wrong (#295, D315)
 

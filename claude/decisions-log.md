@@ -19807,12 +19807,25 @@ could not say which of two very different things that was: a control mirror grin
 after turn with nothing to cast, or a table deadlocked on one priority. Both print the same line.
 I stopped the twenty-deck sequence to find out, which cost the eleven lists queued behind it.
 
-The answer was the first one — a re-run of the same list finished in about sixty moves, 28 of 28
-checks with one named skip, so that shuffle was slow rather than stuck. **The finding is not about
-extort.** It is that the solo suite's periodic line carried the move number and nothing else, so
-the one fact that separates the two cases was the one fact it did not print. It prints the turn
-now: a run that is only slow climbs, a run that is stuck does not, and the difference is visible
-in the first screenful instead of after the move budget runs out.
+A re-run of the same list finished in about sixty moves, 28 of 28 checks with one named skip — and
+**that does not settle what the first run was doing**, which is worth being exact about. A re-run
+is a different shuffle. It proves the list can finish; the five-hundred-Pass game was already gone,
+and nothing was recorded about it that could say whether its turns were advancing. The honest
+answer to #294 is that the question is unanswerable for that run, and the fix is that it will not
+be unanswerable again.
+
+**The finding is not about extort.** It is that the solo suite's periodic line carried the move
+number and nothing else, so the one fact that separates the two cases was the one fact it did not
+print. It prints the turn now: a run that is only slow climbs, a run that is stuck does not, and
+the difference is visible in the first screenful instead of after the move budget runs out.
+
+**And the first stall it caught was real, within the hour.** A solo pod reached turn 20 by move 75
+and was still on turn 20 at move 570 — five hundred moves of the driver pressing Pass into a table
+that was not going anywhere, and that run died at the harness's own time limit with the game checks
+never reached. So the suite no longer only prints the turn: a turn that eats more than two hundred
+moves is now a named failure (`the table kept moving`) that stops the loop, because a whole pod
+game is about a hundred and eighty moves across forty-odd turn changes. How often that happens is
+being measured; what is already certain is that it happens, and that it was invisible before.
 
 That is the same lesson as #277 and the `nobody to act` invariant (D313) one level up. The engine
 learned to say "a table with nobody to act and nothing finished is a violation with a name"; the
@@ -19881,3 +19894,45 @@ trigger — so the Zombie token is the only thing on the board that says which o
 control (the same outlet eating a Tormented Soul, which does hand Kalitas its token) is half the
 test. Verified discriminating the way D282 and D309 ask for: dropping the `!leaving.replaced` filter
 from the death pass makes it fail, and restoring it makes it pass.
+
+## D317 — Three pod checks were reading evidence the engine had correctly destroyed
+
+`SOLO_POD` came back **26 of 29** on the shipping engine, and the three failures were one
+assumption rather than three bugs. D297 taught the engine CR 800.4a — a player who leaves the game
+takes their cards with them — and three checks were reading a seat's battlefield and graveyard
+**after** the game to decide whether that seat had played:
+
+- *the computer played a real game*, off seat 1's zones;
+- *all three of them played*, which reported `[0,29,22]` for three bots that had all played a full
+  pod;
+- *tapping a card over a finished game opens nothing*, which had nothing to tap at all, because the
+  human seat lost that pod and was stripped with the rest.
+
+**Checked headlessly instead of reasoned about**, which is the only reason this is a one-line
+diagnosis: three pods print `peak=[19,12,12,13]` against `after=[18,0,12,0]`. Every seat played;
+the seats eliminated before the game ended read zero; the seats eliminated *as* it ended keep their
+cards, because the game finishes before they are stripped. That asymmetry is why the symptom looked
+like a bot sitting still.
+
+So each seat's high-water mark is sampled as the game runs and the checks read that — one
+`evaluate` for four seats every fifth move, because a card that arrives is there for many moves.
+The post-game counts stay in the failure detail: when this does fail, those two numbers are the
+first thing worth seeing. The tap falls back to any **face-up** card on the table, the winner's
+board being there by definition, with the hand still excluded as the one place a card can be face
+down. 29 of 29 after, and the plain solo run unchanged at 27.
+
+This is #273's mistake again — *every "can you see both boards" reading was taken post-game* — and
+it is worth naming the general shape, because it has now cost two findings: **when the engine
+learns a rule about cards leaving the game, every harness that reads a zone at the end is suspect.**
+The engine change was right both times. The check was reading a fact that the rule had deleted.
+
+**And the second half of this entry is the stall the turn number caught.** D314 added the turn to
+the solo suite's log line so a slow game could be told from a stuck one. Within the hour a
+`SOLO_POD` run reached turn 20 by move 75 and was still on turn 20 at **move 570** — five hundred
+moves of the driver pressing Pass into a table that was not advancing — and died at the harness's
+own time limit with no game check reached. Printing the turn was not enough: a turn that eats more
+than two hundred moves is now a named failure (`the table kept moving`) that breaks the loop, so
+the remaining checks run and report the board as it actually stands. Two hundred is far outside
+anything real here, a whole pod game being about a hundred and eighty moves across forty-odd turn
+changes, and the first run with the check in place came back 29 of 29 with no stall line. Whether
+the stall is the #70 and #277 class — a table waiting on a seat that cannot move — is #297.

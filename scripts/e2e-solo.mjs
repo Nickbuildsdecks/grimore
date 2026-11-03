@@ -941,6 +941,15 @@ const ARTIFACT_LIST = [
       pressed all three or has played three games — which is what a person checking this by hand
       would do, and is the same button the rematch check below presses.
     */
+    /*
+      The high-water mark of each seat's battlefield plus graveyard, filled in by the move loop.
+
+      Four entries because a solo pod has four seats; a duel only ever fills the first two, and
+      nothing reads the empty ones. See the sampling block for why this is not a post-game read.
+    */
+    const seatPeaks = [0, 0, 0, 0];
+    /** Moves since the turn number last changed, for the stall check in the loop. */
+    let movesOnThisTurn = 0;
     const playOutGame = async () => {
       while (moves < MAX_MOVES && !(await has(page, 'game-over'))) {
         if (!(await myMove(page))) {
@@ -1117,6 +1126,29 @@ const ARTIFACT_LIST = [
         if (turn !== null && turn > lastTurn) {
           turnsSeen += turn - lastTurn;
           lastTurn = turn;
+          movesOnThisTurn = 0;
+        } else {
+          movesOnThisTurn += 1;
+        }
+        /*
+          A table that has stopped is a failure with a name, not an hour of `Pass`.
+
+          Printing the turn told a slow game from a stuck one; this acts on it. The first stall the
+          turn number caught was a solo pod that reached **turn 20 by move 75 and was still on turn
+          20 at move 570** — five hundred moves of the driver pressing Pass into a table that was
+          not going anywhere, and the run died at the harness's own time limit with the game checks
+          never reached. That is the worst way to find out, because nothing in the output says
+          "stuck": the move counter goes up either way.
+
+          Two hundred is far outside anything a real turn costs here. A whole pod game is about a
+          hundred and eighty moves across forty-odd turn changes, so a single turn that eats two
+          hundred moves is not a long turn, and stopping lets the game checks run and report on the
+          board as it actually stands.
+        */
+        if (movesOnThisTurn > 200) {
+          check('the table kept moving', false,
+            `stuck on turn ${lastTurn} for ${movesOnThisTurn} moves, last action: ${did}`);
+          break;
         }
         /*
           The turn is read before the line is printed, and printed with it, because without it the
@@ -1131,6 +1163,33 @@ const ARTIFACT_LIST = [
         */
         if (process.env.VERBOSE === '1' || moves % 15 === 0) {
           console.log(`      move ${moves} (turn ${lastTurn}): ${did}`);
+        }
+        /*
+          How much each seat ever had on the table, sampled rather than read at the end.
+
+          "Did that seat play?" used to be answered after the game, off its battlefield and
+          graveyard. That stopped being an honest question when the engine learned CR 800.4a
+          (D297): **a player who leaves the game takes their cards with them**, so a bot that
+          played a full pod and then lost reads zero afterwards. One SOLO_POD run failed three
+          checks on it at once — `[0,29,22]` for three seats that had all played, plus "this seat
+          had no card of its own to tap", because the human seat lost that pod too. A headless
+          pod shows the same thing directly: `peak=[19,12,12,13]` and `after=[18,0,12,0]`.
+
+          So the peak is kept as the game goes. A seat that ever had a permanent or a card in its
+          graveyard played, and losing cannot erase that. Same correction as #273, which found
+          every "can you see both boards" reading being taken post-game.
+
+          One `evaluate` for all four seats rather than eight `count()` round trips, and every
+          fifth move rather than every move: a card that arrives is there for many moves, so the
+          sampling rate costs nothing and the DOM work would otherwise show up in the pace.
+        */
+        if (moves % 5 === 0) {
+          const now = await page.evaluate(() => [0, 1, 2, 3].map((seat) => {
+            const zone = (name) => document
+              .querySelectorAll(`[data-testid="zone-${name}-${seat}"] [data-testid^="card-"]`).length;
+            return zone('battlefield') + zone('graveyard');
+          }));
+          for (const seat of [0, 1, 2, 3]) seatPeaks[seat] = Math.max(seatPeaks[seat], now[seat] ?? 0);
         }
         if (turnsSeen === 3) await shot(page, 'mid-game');
         if (turnsSeen >= 6 && midPhone === null) {
@@ -1705,22 +1764,25 @@ const ARTIFACT_LIST = [
       await shot(page, 'game-over');
     }
 
-    // The opponent is a real player as far as the rules are concerned: it drew, it played, it died
-    // or it killed. A board that never changed would mean a seat that never moved.
+    /*
+      The opponent is a real player as far as the rules are concerned: it drew, it played, it died
+      or it killed. A seat whose board never held anything is a seat that never moved.
+
+      Read off `seatPeaks` rather than off the board in front of us, because CR 800.4a (D297) takes
+      an eliminated seat's cards out of the game — so the end of a pod is the one moment when the
+      zones of the seats that lost say nothing at all about whether they played. The post-game
+      counts go in the detail anyway: when this does fail, the pair of numbers is the first thing
+      worth seeing.
+    */
     const theirBoard = await page.locator('[data-testid="zone-battlefield-1"] [data-testid^="card-"]').count();
     const theirGraveyard = await page.locator('[data-testid="zone-graveyard-1"] [data-testid^="card-"]').count();
-    check('the computer played a real game', theirBoard + theirGraveyard > 0,
-      `board ${theirBoard}, graveyard ${theirGraveyard}`);
+    check('the computer played a real game', seatPeaks[1] > 0,
+      `peak ${seatPeaks[1]}, and at the end board ${theirBoard}, graveyard ${theirGraveyard}`);
     if (SOLO_POD) {
       // Every seat, not just the one next to you: a pod where two of the three bots sat still
       // would pass every check above and be no kind of game.
-      const played = [];
-      for (const s of [1, 2, 3]) {
-        const board = await page.locator(`[data-testid="zone-battlefield-${s}"] [data-testid^="card-"]`).count();
-        const yard = await page.locator(`[data-testid="zone-graveyard-${s}"] [data-testid^="card-"]`).count();
-        played.push(board + yard);
-      }
-      check('all three of them played', played.every((n) => n > 0), JSON.stringify(played));
+      check('all three of them played', [1, 2, 3].every((s) => seatPeaks[s] > 0),
+        `peaks ${JSON.stringify(seatPeaks)}`);
     }
 
     // And its hand was never readable, for exactly the same reason a person's is not.
@@ -1753,28 +1815,44 @@ const ARTIFACT_LIST = [
         opened a moment before the last damage or a moment after.
       */
       /*
-        One of *this* player's own cards, and loudly if there is none.
+        One of *this* player's own cards, or a surviving seat's if this one has none.
 
-        Two earlier versions of this tap chose badly. A card in hand: the loser's hand is often
+        Three earlier versions of this tap chose badly. A card in hand: the loser's hand is often
         empty by then, so 16/16 passed with the check never running. The first card in the
         document: sometimes an opponent's face-down hand, which is not wired to open anything, so
-        the check passed by tapping something that could never have failed. Your own graveyard is
-        full by the time a game ends, and every card in it opens a sheet.
+        the check passed by tapping something that could never have failed. Then your own
+        graveyard, which is full by the time a game ends and every card in which opens a sheet —
+        **except in a pod you lost**, because CR 800.4a (D297) takes your cards out of the game
+        with you, and one SOLO_POD run failed here with "this seat had no card of its own to tap"
+        for exactly that reason.
+
+        So the fallback is a *face-up* card belonging to any seat: the winner's board is still
+        there by definition, and a battlefield or graveyard card is wired to open a sheet whoever
+        owns it. The hand stays excluded, which is the one place a card can be face down.
       */
       const mine = page.locator(
         '[data-testid="zone-graveyard-0"] [data-testid^="card-"], '
         + '[data-testid="zone-creatures-0"] [data-testid^="card-"], '
         + '[data-testid="zone-lands-0"] [data-testid^="card-"]',
       );
-      const cards = await mine.count();
+      const anyone = page.locator(
+        '[data-testid^="zone-graveyard-"] [data-testid^="card-"], '
+        + '[data-testid^="zone-creatures-"] [data-testid^="card-"], '
+        + '[data-testid^="zone-lands-"] [data-testid^="card-"], '
+        + '[data-testid^="zone-battlefield-"] [data-testid^="card-"]',
+      );
+      const ownCards = await mine.count();
+      const target = ownCards > 0 ? mine : anyone;
+      const cards = ownCards > 0 ? ownCards : await anyone.count();
+      const whose = ownCards > 0 ? "this seat's" : 'a surviving seat\u2019s';
       if (cards === 0) {
         check('tapping a card over a finished game opens nothing', false,
-          'this seat had no card of its own to tap');
+          'no face-up card anywhere on the table to tap');
       } else {
-        await tap(mine.first());
+        await tap(target.first());
         await page.waitForTimeout(150);
         check('tapping a card over a finished game opens nothing', !(await has(page, 'play-sheet')),
-          `tapped 1 of ${cards} of this seat's cards, sheet: ${await has(page, 'play-sheet')}`);
+          `tapped 1 of ${cards} ${whose} cards, sheet: ${await has(page, 'play-sheet')}`);
       }
       const turnBefore = (await readNumber(page, 'turn').catch(() => null)) ?? 0;
       // Pressed up to three times rather than once: the game-over panel re-renders as the last
