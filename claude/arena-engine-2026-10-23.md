@@ -8144,6 +8144,29 @@ structured data, and a guard that pattern-matched an English sentence would fail
 somebody rephrased it. What the paragraphs carry instead is the symbol name, the file and the
 decision numbers.
 
+### The one card that can end a game with nobody winning (#272, D292)
+
+A draw was written into this engine twice — `engine.ts` leaves `winnerSeat` null when the last two
+players die together, and `rematch` reads a null winner as "a draw, or a game nobody finished" and
+gives the first turn back to whoever had it — and tested neither time. The reason is that a draw
+cannot be built out of the actions a test reaches for: `life:adjust` takes one seat at a time, so
+the first drop to nought ends the game before the second lands, and conceding every seat fails
+because the last concede arrives at a game that is already over.
+
+It needs one effect that kills both players at once, and in this pool that is **Hurricane** — X
+damage to each creature with flying and each player. The card has sat in three decks since it was
+written, with its symmetry tested; what was never tested was the symmetry going all the way.
+
+Two tests now, off a shared board at 3 life each with X=3. `[0, 0]` is the line that makes it a
+*simultaneous* loss: had the seats died one after the other the second would still be on 3 when the
+game ended, and `finished`, both `eliminated` flags and the null winner would all read the same —
+the D290 trap, caught this time before the test was written instead of after. And the rematch half
+was proved by breaking it: `((winnerSeat ?? 0) + 1) % seats`, the obvious wrong implementation,
+fails the test with "expected 1 to be +0".
+
+Nothing in the engine changed. Both rules were already right; what was missing was anything that
+would notice if they stopped being.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

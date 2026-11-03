@@ -19,6 +19,7 @@ import {
   destroy,
   characteristicsOf, customDeck,
   hasType,
+  lastLogEntry,
   legalActions,
   manaSources,
   parseTypeLine,
@@ -2812,6 +2813,72 @@ describe('spells with {X} in the cost, chosen as the spell is cast', () => {
     expect(s.instances[courser]!.damage).toBe(0);
     // And both players took it, the caster included.
     expect([life(s, 0), life(s, 1)]).toEqual([18, 18]);
+  });
+
+  /*
+    A drawn game, which is the one way this pool ends with nobody winning.
+
+    Every other loss in the engine happens to one seat at a time: a seat is attacked to death, or
+    decks itself, or concedes. That is also why a draw cannot be built out of single-seat actions
+    — the first `life:adjust` to nought would finish the game before the second one landed — so
+    Hurricane is not a convenience here, it is the only route. It is symmetrical and hits *each
+    player*, so a board where both seats are inside X is the reachable case where the last two
+    players lose simultaneously, and CR 104.4b makes that a draw rather than a win for whoever
+    cast the spell.
+  */
+  const drawnByHurricane = (): GameState => {
+    let s = arena({
+      decks: { 0: 'rot-harvest', 1: 'tidal-mind' },
+      hands: { 0: ['Hurricane'] },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Forest'], 1: [] },
+      turn: 2, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    // Both seats inside the Hurricane: 3 life each, and X will be 3.
+    s = apply(s, { type: 'life:adjust', by: 0, seat: 0, delta: -17 });
+    s = apply(s, { type: 'life:adjust', by: 1, seat: 1, delta: -17 });
+    for (const id of ids(s, 0, 'battlefield')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    return passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Hurricane'), x: 3,
+    }));
+  };
+
+  it('and a Hurricane that kills both players is a draw, not a win for whoever cast it (CR 104.4b)', () => {
+    /*
+      Nothing asserted this before. The path exists — `alive.length <= 1` with `alive[0]` undefined
+      leaves `winnerSeat` null — so it was written and never pinned.
+
+      `[0, 0]` is the assertion that makes this *simultaneous* rather than merely fatal: if the
+      seats had died one after the other, the second would still be sitting on 3 life when the
+      game ended, and every other line here would read the same.
+    */
+    const s = drawnByHurricane();
+    expect([life(s, 0), life(s, 1)]).toEqual([0, 0]);
+    expect(s.seats[0]!.eliminated).toBe(true);
+    expect(s.seats[1]!.eliminated).toBe(true);
+    expect(s.finished).toBe(true);
+    expect(s.winnerSeat).toBeNull();
+  });
+
+  it('and "play again" after a draw gives the first turn back to whoever had it', () => {
+    /*
+      The other half of the same rule, and the reason the draw was worth reaching at all:
+      `rematch` reads a null winner as "a draw, or a game nobody finished" and hands the first
+      turn to `activeSeat` instead of to the seat after the winner. That branch had no test,
+      because until this file could produce a draw there was no way to enter it — conceding every
+      seat does not work, since the last concede arrives at a game that is already finished.
+    */
+    const drawn = drawnByHurricane();
+    expect(drawn.activeSeat).toBe(0);
+    const again = apply(drawn, { type: 'game:rematch', by: 1 });
+    // A fresh game with nobody holding a win, and the seat that led the drawn game leads again.
+    expect(again).toMatchObject({ started: true, finished: false, winnerSeat: null, turn: 1 });
+    expect(again.activeSeat).toBe(0);
+    expect(again.seats.every((seat) => seat.life === 20 && !seat.eliminated)).toBe(true);
+    // The log does not name a seat as going first, because no winner chose it.
+    expect(lastLogEntry(again)!.message).not.toContain('goes first');
   });
 });
 

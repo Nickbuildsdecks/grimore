@@ -18826,3 +18826,35 @@ that prose has to describe in a sentence, and a guard that pattern-matched the s
 the first time somebody rephrased it. What the paragraph carries instead is the symbol name
 (`reserveForAnswers`), the file, and the decision numbers — so the next person to change the default
 has a string to grep for.
+
+## D292 — A drawn game: written twice, reachable by one card, asserted nowhere
+
+The engine has always been able to end a game with nobody winning. `engine.ts` finishes when
+`alive.length <= 1`, and when the last two players die together `alive[0]` is undefined, so
+`winnerSeat` is null. `rematch` knows about it too: it reads a null winner as "a draw, or a game
+nobody finished" and hands the first turn back to `activeSeat` instead of to the seat after the
+winner. Two branches, both deliberate, neither with a test.
+
+**Why it had none is the interesting part.** A draw cannot be built out of the actions a test
+usually reaches for. `life:adjust` takes one seat at a time, so the first adjustment to nought
+finishes the game before the second one lands; conceding every seat does not work either, because
+the last concede arrives at a game that is already over and is refused. The only way into the state
+is **one effect that kills both players at once** — and in this pool that is Hurricane, which deals
+X damage to each creature with flying *and each player*. The card has been in three decks since it
+was written and its symmetry was tested; what was never tested is the symmetry going all the way.
+
+So: two tests, off a shared `drawnByHurricane()`. Both seats to 3 life, Hurricane for X=3.
+
+**`[0, 0]` is the assertion that makes it a simultaneous loss rather than merely a fatal one.** If
+the seats had died one after the other, the second would still be sitting on 3 when the game ended
+and every other line in the test would read exactly the same — `finished`, `eliminated` on both,
+`winnerSeat` null. That is the same trap as D290's graveyard count, caught this time before the test
+was written rather than after.
+
+**The rematch half was proved by breaking it.** Replacing the branch with
+`((winnerSeat ?? 0) + 1) % seats` — the obvious wrong implementation, which treats a draw as a win
+for seat zero — makes the test fail with "expected 1 to be +0". So this one discriminates, which is
+worth saying out loud two decisions after one that did not.
+
+Nothing in the engine changed. Both rules were already right; what was missing was anything that
+would notice if they stopped being.
