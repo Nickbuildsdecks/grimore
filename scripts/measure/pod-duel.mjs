@@ -64,6 +64,7 @@
 import {
   applyAction, createGame, botAction, seatsToAct, STARTER_DECKS,
 } from '../../packages/rules-engine/dist/index.js';
+import { provenanceLine } from '../lib/provenance.mjs';
 
 const ALL = Object.keys(STARTER_DECKS);
 const SEEDS = Number(process.env.SEEDS ?? 3);
@@ -132,6 +133,19 @@ const seated = (n) => {
   the same table as the other.
 */
 const seedFor = (pass, t) => SEED0 + (pass * ALL.length) + t;
+
+/*
+  What produced this run, printed before it starts (#278, D298).
+
+  Not decoration. This file's results are accumulated into a ledger of seed ranges and margins over
+  many sessions, and when `pod-unfinished.mjs` replayed three of those chunks, four pods' worth of
+  behaviour did not reproduce — with no way to say whether the engine had changed underneath or
+  `ALWAYS` had been set on those runs, because the rows recorded seeds and margins and nothing else.
+  A line the harness prints is a line the ledger cannot omit. See `scripts/lib/provenance.mjs`.
+
+  First, before the pods, so a run killed halfway still says what it was.
+*/
+process.stdout.write(`${provenanceLine({ SEED0, SEEDS, ALWAYS, MOVES, TESTED, CONTROL })}\n`);
 
 let tested = 0; let control = 0; let unfinished = 0;
 const started = Date.now();

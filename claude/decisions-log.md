@@ -19279,3 +19279,42 @@ the six questions on a departed seat directly and asserts both halves — the en
 seat, and the next action withdraws the question. **A test built from the seed that found a bug would
 have asserted nothing by the following commit; a test built from the mechanism asserts it for good.**
 
+## D300 — The instrument prints its own provenance, because the instruction to write it down got skipped
+
+D298 found four pod rows in the clock ledger that could not be replayed and could not be explained:
+the candidates were an engine difference between those runs and now, or an `ALWAYS=` setting on
+them, and **neither was checkable, because a row recorded seeds and a margin and nothing else.**
+Recording that gap in a decision entry is not a fix. This is the fix.
+
+`pod-duel` and `pod-unfinished` now print one line before the first pod:
+
+    [bb02069 clean, dist built 2026-11-03T05:55:24Z] SEED0=3300 SEEDS=3 ALWAYS= MOVES=8000 TESTED={"weights":{"clockRate":1}} CONTROL={}
+
+Four things, each there because leaving it out loses something:
+
+- **The arms, as JSON** — what the margin is *about*, and the easiest thing to lose. A margin with
+  no arm beside it is a number with no question.
+- **Every input that changes which games are played** — `SEED0`, `SEEDS`, `ALWAYS`, `MOVES`. Named
+  by the caller rather than swept out of `process.env`, so a renamed variable shows up as a changed
+  line instead of being silently dropped.
+- **The commit, and whether the tree was dirty.** A hash pins the build only when the tree is
+  clean, and `DIRTY` says outright that it does not — a more useful thing to read six weeks later
+  than a hash that quietly means less than it looks like it means.
+- **When `dist` was built.** These harnesses import the built engine, not the source, so a stale
+  `dist` is a run of code the commit does not describe. The mtime is the only thing that catches it.
+
+**The point is where the line comes from.** `pod-duel`'s docblock has carried an instruction to
+quote the floor beside any number from it since D281, and the lesson recorded there — *"a
+precondition stated as homework gets skipped; a number in the docblock does not"* — is exactly what
+happened again one level up: the ledger's header explains the denominator rule carefully and says
+nothing about arms or builds, so nobody wrote them down. **A line the instrument prints is a line
+the ledger cannot omit.** The same reasoning that moved the floor from an instruction into the
+docblock moves the provenance from a convention into stdout.
+
+Printed *first*, before the pods, so a run killed halfway still says what it was — the same reason
+the per-pass checkpoint exists (D289). And the helper lives in `scripts/lib/` rather than
+`scripts/measure/`, because the README lists that directory as the instruments and a helper sitting
+in it reads as one.
+
+**Not retrofitted.** The eighteen rows that already exist cannot be given a provenance they were
+never asked for, and D298 says so. What changes is that the next long run has one.

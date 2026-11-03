@@ -8311,6 +8311,23 @@ changed the back half of every pod, so those seeds no longer reproduce. The test
 questions on a departed seat directly instead. **A test built from the seed that found a bug would
 have asserted nothing by the following commit; a test built from the mechanism asserts it for good.**
 
+### The instrument prints its own provenance now (#278, D300)
+
+D298 found four pod rows in the clock ledger that could not be replayed and could not be explained —
+an engine difference or an `ALWAYS=` setting, with no way to tell, because a row recorded seeds and
+a margin and nothing else. Recording that in a decision entry is not a fix.
+
+`pod-duel` and `pod-unfinished` now print one line before the first pod: the arms as JSON, every
+input that changes which games are played, the commit and whether the tree was **dirty** (a hash
+pins the build only when it is clean), and when `dist` was built — these harnesses import the built
+engine rather than the source, so a stale `dist` is a run of code the commit does not describe.
+
+The point is where the line comes from. `pod-duel`'s own docblock records that *"a precondition
+stated as homework gets skipped; a number in the docblock does not"*, and that is exactly what
+happened one level up: the ledger header explains the denominator rule carefully and says nothing
+about arms or builds, so nobody wrote them down. **A line the instrument prints is a line the ledger
+cannot omit.** Printed first, so a run killed halfway still says what it was.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

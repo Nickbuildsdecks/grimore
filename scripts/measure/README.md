@@ -1180,3 +1180,29 @@ file loses at most one chunk to a restart instead of everything. The seed arithm
 `seedFor(pass, t) = SEED0 + pass*13 + t` with `t` in 0..12, so `SEEDS=n` from `X` consumes
 `X .. X+13n-1` and the next chunk must start past that — overlapping ranges would double-count the
 same games and read as a larger sample than was played.
+
+**And every chunk row has to carry what produced it, because four of them did not and could not be
+checked** (#278, D298). The clock's pod reading was accumulated into eighteen rows of seed range and
+margin. When `pod-unfinished.mjs` later replayed the three rows with undecided pods in them, one
+row's two and another's two of six **did not reproduce** — and there was no way to say whether the
+engine had changed underneath those runs or `ALWAYS=` had been set on them, because a row recorded
+seeds and a margin and nothing else. A long measurement with rows nobody can replay has the same
+shape of fault as a harness that swallows a throw: **the number survives and the thing that would
+let you audit it does not.**
+
+So `pod-duel` and `pod-unfinished` now print a provenance line of their own before the first pod,
+and a ledger row copies it:
+
+    [bb02069 clean, dist built 2026-11-03T05:55:24Z] SEED0=3300 SEEDS=3 ALWAYS= MOVES=8000 TESTED={"weights":{"clockRate":1}} CONTROL={}
+
+Four things, each there because leaving it out loses something: the **arms**, which are what the
+margin is *about*; every input that changes **which games are played** (`SEED0`, `SEEDS`, `ALWAYS`,
+`MOVES`); the **commit and whether the tree was dirty**, because a hash pins the build only when it
+is clean and `DIRTY` says outright that it does not; and **when `dist` was built**, because these
+harnesses import the built engine rather than the source, so a stale `dist` is a run of code the
+commit does not describe. See `scripts/lib/provenance.mjs`. **A line the instrument prints is a line
+the ledger cannot omit** — the instruction to write it down by hand is the one that was skipped.
+
+Any harness whose results get accumulated across sessions should take the same line. The ones that
+answer in a single run do not need it: their output and the command that produced it are in the same
+scrollback.

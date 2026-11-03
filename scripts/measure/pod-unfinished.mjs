@@ -41,6 +41,7 @@
 import {
   STARTER_DECKS, applyAction, botAction, createGame, seatsToAct,
 } from '../../packages/rules-engine/dist/index.js';
+import { provenanceLine } from '../lib/provenance.mjs';
 
 const ALL = Object.keys(STARTER_DECKS);
 const SEEDS = Number(process.env.SEEDS ?? 3);
@@ -83,6 +84,15 @@ function pod(seed, decks, opts) {
   if (s.finished) return { winner: s.winnerSeat };
   return { why: 'move cap', detail: `${MOVES} moves`, move: MOVES, turn: s.turn };
 }
+
+/*
+  The build this replay is of, printed first — which for this file is the result's precondition
+  rather than a footnote (#278).
+
+  The docblock above says a replay is only a replay of the build the figures came from. That is a
+  claim nobody can check against a run that did not say which build it was, so the run says.
+*/
+process.stdout.write(`${provenanceLine({ SEED0, SEEDS, MOVES, TESTED, CONTROL })}\n`);
 
 const causes = new Map();
 let played = 0; let decided = 0;
