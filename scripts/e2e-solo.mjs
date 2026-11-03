@@ -17,8 +17,8 @@
 import path from 'node:path';
 import {
   chromium, check, checks, skip, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
-  isMyMove, makeMove, press, readNumber, expectEventuallyTrue, watchForReactWarnings, tap,
-  textOf,
+  isMyMove, makeMove, press, pressFailures, readNumber, expectEventuallyTrue,
+  watchForReactWarnings, tap, textOf,
 } from './lib/table-driver.mjs';
 
 const BASE = process.env.TABLE_URL ?? 'http://127.0.0.1:5100/react/play';
@@ -1210,11 +1210,25 @@ const ARTIFACT_LIST = [
           const trouble = (await has(page, 'connection-trouble'))
             ? await text(page, 'connection-trouble').catch(() => 'yes') : 'none';
           await shot(page, 'stalled');
+          /*
+            And which presses never landed, grouped by button.
+
+            This is the field the first three stall dumps most needed and did not have. The driver
+            discards the result of nineteen of its twenty presses (D319), so a stalled table had
+            always been reported against `primary-move` — the one site that was looked at — while
+            the press that actually failed could have been `confirm-blockers` or whatever closes a
+            sheet. Two of the five stalls seen so far were at declare blockers, which is precisely
+            where a silent `confirm-blockers` would leave the table.
+          */
+          const presses = [...new Map(pressFailures.map((f) => [f.id, f])).keys()]
+            .map((id) => `${id} x${pressFailures.filter((f) => f.id === id).length}`);
+          const firstFailure = pressFailures[0];
           check('the table kept moving', false,
             `stuck on turn ${lastTurn} for ${movesOnThisTurn} moves in ${step}; last action `
             + `${did}; life ${JSON.stringify(lives)}; game-over ${await has(page, 'game-over')}; `
             + `waiting on ${JSON.stringify(waiting)}; pod ${code}; socket ${conn}; `
-            + `trouble ${trouble}`);
+            + `trouble ${trouble}; presses that did not land ${JSON.stringify(presses)}; `
+            + `first of them ${firstFailure === undefined ? 'none' : `${firstFailure.id} — ${firstFailure.why}`}`);
           break;
         }
         /*

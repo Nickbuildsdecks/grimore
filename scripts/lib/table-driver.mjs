@@ -78,6 +78,21 @@ let shotAnOffer = false;
  */
 export function summarize() {
   const failed = checks.filter((c) => !c.ok);
+  /*
+    Printed above the checks, because a run with failed presses has not played the game it reports
+    on: a `confirm-blockers` that did not land means nothing was declared, and every check after it
+    read a board that is a move behind what the log says. Grouped by button, since a stall is one
+    button failing two hundred times rather than two hundred buttons failing once.
+  */
+  if (pressFailures.length > 0) {
+    const byId = new Map();
+    for (const f of pressFailures) {
+      const seen = byId.get(f.id) ?? { n: 0, why: f.why };
+      byId.set(f.id, { n: seen.n + 1, why: seen.why });
+    }
+    console.log(`\n${pressFailures.length} press(es) did not land:`);
+    for (const [id, { n, why }] of byId) console.log(`  - ${id} x${n}: ${why}`);
+  }
   const skips = skipped.length === 0 ? '' : `, ${skipped.length} skipped`;
   console.log(`\n${checks.length - failed.length}/${checks.length} checks passed${skips}.`
     + ` Screenshots in ${shotDir}/`);
@@ -183,8 +198,32 @@ export async function tap(locator) {
   return false;
 }
 
+/**
+ * Every press this run that did not land, with Playwright's reason attached.
+ *
+ * `press` returns a boolean and **nineteen of its twenty call sites discard it**: `await press(page,
+ * 'confirm-blockers')` and then on with the move as though the blockers were declared. The
+ * twentieth was `primary-move`, which reported 201 presses it never sent before anyone noticed
+ * (D319) — and the audit that followed found the same shape everywhere else.
+ *
+ * Fixing twenty call sites to branch on the boolean would be the wrong fix twice over. A `false`
+ * does not always mean a fault: `press` also returns it when the button went away because the
+ * table moved past the move, which is ordinary. And the stalls were seen at **upkeep** and
+ * **declare blockers**, so the suspects are `confirm-blockers` and whatever closes a sheet, not
+ * only the one site that had been looked at.
+ *
+ * So this is observation, not control flow: a failed press is recorded with its reason and the
+ * driver carries on exactly as before. Nothing is masked, every site reports at once, and the
+ * stall dump can name the press that did not land instead of the one that noticed afterwards.
+ * The recovery — closing a sheet the driver left open — comes after the diagnosis, not before it,
+ * because a recovery added first would have hidden which overlay it was.
+ */
+export const pressFailures = [];
+
 export async function press(page, id) {
-  return (await pressOrWhy(page, id)).ok;
+  const res = await pressOrWhy(page, id);
+  if (!res.ok) pressFailures.push({ id, why: res.why });
+  return res.ok;
 }
 
 /**
