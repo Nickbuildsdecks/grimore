@@ -95,6 +95,30 @@ export async function createRealtime(opts: RealtimeOptions): Promise<Realtime> {
     ...(adapterRedis ? { adapter: createAdapter(adapterRedis) } : {}),
   });
 
+  /**
+   * Logs one of the store's three defect reports **and** passes it on to the caller's own handler.
+   *
+   * It used to only log. `...opts.store` was spread first and then `onBotStall`, `onNoProgress` and
+   * `onSlowWrite` were assigned over the top, so **a caller's version of all three was silently
+   * discarded** — and the realtime suite passes exactly those three in, collects them into arrays,
+   * and asserts at the end of the whole-game test that they are empty. Those arrays could never be
+   * anything but empty. The assertions read as the strongest claims in the suite and could not
+   * fail; its own comment called an empty list "the claim worth making".
+   *
+   * The same shape as the driver discarding `press`'s boolean (D319) and `tap`'s (#300): a report
+   * that cannot arrive is worse than no report, because the silence is read as good news.
+   *
+   * Composed rather than handed over, because both readers want it: the log is how a defect is
+   * found on a running table, and the callback is how a test refuses to pass with one.
+   */
+  const report = (
+    event: string,
+    onward?: (info: { code: string; reason: string }) => void,
+  ) => ({ code, reason }: { code: string; reason: string }): void => {
+    log.warn({ pod: code, reason }, event);
+    onward?.({ code, reason });
+  };
+
   const store = new PodStore(redis, {
     ...opts.store,
     /*
@@ -105,12 +129,12 @@ export async function createRealtime(opts: RealtimeOptions): Promise<Realtime> {
       defect every time it fires — a pod where nobody is on the clock is a dead table — so it is
       worth finding in a log rather than in a browser suite's idle timeout.
     */
-    onBotStall: ({ code, reason }) => log.warn({ pod: code, reason }, 'server seats cannot move'),
+    onBotStall: report('server seats cannot move', opts.store?.onBotStall),
     // The same thing said about a person's move. A table where pressing the only button on offer
     // buys nothing is a table that has stopped, and until now the server said nothing about it.
-    onNoProgress: ({ code, reason }) => log.warn({ pod: code, reason }, 'a player move changed nothing'),
+    onNoProgress: report('a player move changed nothing', opts.store?.onNoProgress),
     // And a write slow enough that the player's page may stop waiting for it.
-    onSlowWrite: ({ code, reason }) => log.warn({ pod: code, reason }, 'a slow write'),
+    onSlowWrite: report('a slow write', opts.store?.onSlowWrite),
   });
   const dispose = registerHandlers(io, store, log, { ...(opts.rateLimit ? { rateLimit: opts.rateLimit } : {}) });
 
