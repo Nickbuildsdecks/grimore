@@ -20317,3 +20317,50 @@ unknown, rather than attributed to anything. Note what the arithmetic does not s
 that one failure implied, 30 runs had a better-than-four-in-five chance of reproducing it, so the
 most likely reading is that whatever it was is gone — but "most likely" is not "shown", and the
 event keeps its line.
+
+## D326 — The in-flight marker does appear, and three of my own instruments said otherwise first (#299)
+
+#299 shipped a marker reading "opponents deciding" while a move is with the server. `table.test.ts`
+pins the *decision* — `waitingNote`, and the reducer's `waiting` flag — but nothing pinned the
+**moment**: whether it shows on a real page, during a real write, and stops when the answer lands.
+A marker that renders correctly and never shows is, to a player, no marker at all.
+
+**It works.** `scripts/check-in-flight.mjs`, two arms, against the shipping client:
+
+```
+ARM=slow   every socket frame held 600ms each way   36 moves, 6 appearances, 5 departures   9/9 checks
+ARM=quick  the same game, unthrottled               36 moves, 0 appearances                 6/6 checks
+```
+
+It appears, it says "opponents deciding" (the bot branch of `waitingNote`), and it goes away. The
+quick arm is half the measurement: on its own, `slow` would pass on a marker stuck permanently on
+screen.
+
+### Four wrong readings, each from my own instrument, before any of that
+
+1. **The wrong button.** It waited on `start-game`, which this lobby does not offer; the game starts
+   on `start-engine`. Fifteen seconds of timeout, no reading.
+2. **An observer that never attached.** `observe(document.documentElement)` throws in an init
+   script, because there is no `<html>` yet. It reported **0 appearances across 18 moves** — a
+   confident zero from a watcher that was never watching. Only the page-error check caught it. The
+   script now plants a marker in front of its own watcher and requires it to be seen, and says
+   plainly that nothing below that check means anything if it fails.
+3. **The arm itself was the wrong theory.** `BOT_MOVES_PER_WRITE=500` was supposed to make writes
+   long. Measured with `SLOW_WRITE_MS=0`: **18 writes, slowest 167ms, none over 400ms**, the
+   greediest wanting 9 bot moves. #298's 431-move write came from a *deep* pod game; no budget makes
+   turn three slow. So the premise, not the marker, was what produced the zero — the same shape as
+   D320, where the duel's writes wanted three moves and a sixteen-fold budget left the suite green.
+4. **A check that called a working arm broken, twice.** "The latency actually reached the table",
+   measured as the median time of a driver move: 79ms, while every frame was being held 600ms each
+   way. A click returns when the button is pressed, not when the ack lands, and many driver moves
+   are local taps that emit nothing. Only sampling the routed frames — real `pod:action` payloads
+   and their acks going through the delay — showed the arm had been working the whole time. It now
+   measures frames held, which is the thing it is actually claiming.
+
+Chrome's `Network.emulateNetworkConditions` is also recorded as **not sufficient**: at 1200ms the
+median move was 335ms and only the occasional one crossed 400ms, because it does not apply to
+frames on an already-open WebSocket. `page.routeWebSocket` with a promise chain per direction does,
+and keeps socket.io's ordering intact.
+
+The tally for this session's theme is now **eleven** instruments found reporting something they had
+not earned, of which **eight** were mine.

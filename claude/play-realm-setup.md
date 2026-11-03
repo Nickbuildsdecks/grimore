@@ -978,6 +978,9 @@ node scripts/e2e-solo.mjs       # one browser, against the computer    — 27 ch
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 29 checks, 1 named skip
 LIST=cascade node scripts/e2e-solo.mjs # a deck built to cascade, in a browser — 28 checks, 1 named skip
 LIST=costs   node scripts/e2e-solo.mjs # a deck built to pay evoke, dash and bestow — 30 checks, 1 named skip
+
+ARM=slow  node scripts/check-in-flight.mjs  # the in-flight marker, during a slow round trip — 9 checks
+ARM=quick node scripts/check-in-flight.mjs  # and the same table on a fast one — 6 checks
 LIST=earned  node scripts/e2e-solo.mjs # a deck built for spectacle and overload — 29 checks, 1 named skip
 LIST=graveyard node scripts/e2e-solo.mjs # a deck built to press a button in the graveyard — 31 checks, 1 named skip
 LIST=miracle node scripts/e2e-solo.mjs # a deck whose first draw is often the card it is built around — 29 checks, 2 named skips

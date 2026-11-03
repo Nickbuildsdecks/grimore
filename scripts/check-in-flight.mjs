@@ -15,19 +15,25 @@
  *
  * It has two arms, because one arm proves nothing:
  *
- *   ARM=slow   the play server runs with BOT_MOVES_PER_WRITE high, so one write plays whole bot
- *              turns and every move the person makes is long. The marker MUST appear.
- *   ARM=quick  the play server runs with BOT_MOVES_PER_WRITE=1, so each write does one bot move
- *              and the continuation carries the rest in further writes. Writes are short, and the
- *              marker should stay away.
+ *   ARM=slow   the browser's network is throttled so the round trip costs more than the 400ms the
+ *              client waits before saying anything. The marker MUST appear.
+ *   ARM=quick  the same game on an unthrottled connection, where the answer comes back in
+ *              milliseconds. The marker should stay away.
  *
  * The pair is the measurement. `slow` alone would pass on a marker stuck permanently on screen;
  * `quick` alone would pass on a marker that never renders at all.
  *
- * Run it yourself, one arm at a time (the budget is server-side, so the server restarts between):
- *   BOT_MOVES_PER_WRITE=500 PLAY_HOST=127.0.0.1 node scripts/play.mjs &
- *   ARM=slow node scripts/check-in-flight.mjs
- *   # then, with the server restarted at BOT_MOVES_PER_WRITE=1
+ * **Why latency rather than a long write.** The first design raised `BOT_MOVES_PER_WRITE` to 500 so
+ * that one write would play whole bot turns, and measured its own premise instead of the marker:
+ * with every write reported (`SLOW_WRITE_MS=0`), **18 writes, slowest 167ms, none over 400ms**, the
+ * biggest wanting 9 bot moves. The 431-move write of #298 came from a *deep* pod game, not from the
+ * first few turns, so no budget makes an early table slow. The marker exists for a move that is
+ * with the server for a while, and the honest way to produce one without touching the product is to
+ * make the round trip itself slow — which is also the commonest real cause, a bad connection.
+ *
+ * Run it yourself (one server, both arms, no restart needed):
+ *   PLAY_HOST=127.0.0.1 node scripts/play.mjs &
+ *   ARM=slow  node scripts/check-in-flight.mjs
  *   ARM=quick node scripts/check-in-flight.mjs
  */
 import path from 'node:path';
@@ -42,7 +48,16 @@ const HEADED = process.env.HEADED === '1';
 /** Which arm this run is: see the file docblock. Anything else is a mistake worth stopping on. */
 const ARM = process.env.ARM ?? '';
 /** How many of the person's moves to play. Enough turns for the server's seats to take some. */
-const MOVES = Number(process.env.MOVES ?? 18);
+const MOVES = Number(process.env.MOVES ?? 36);
+/**
+ * The round trip the slow arm emulates, in milliseconds.
+ *
+ * Three times the 400ms the client waits before it says anything, so the marker's window is wide
+ * enough that a missed appearance is the marker's fault rather than the measurement's.
+ */
+const LATENCY_MS = Number(process.env.LATENCY_MS ?? 1200);
+/** Frames the slow arm actually held, each way. Zero means the route never matched. */
+const routed = { up: 0, down: 0 };
 
 if (ARM !== 'slow' && ARM !== 'quick') {
   console.error(`ARM must be "slow" or "quick" (got ${JSON.stringify(ARM)}); see the docblock.`);
@@ -96,6 +111,43 @@ async function main() {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await context.addInitScript(WATCH);
   const page = await context.newPage();
+  /*
+    The slow arm's slowness, in the socket itself.
+
+    Chrome's own `Network.emulateNetworkConditions` was tried first and is **not** enough: with
+    1200ms of emulated latency the median move was 335ms and only the occasional one crossed the
+    400ms the client waits, because the emulation does not apply to frames on a WebSocket that is
+    already open. The arm looked like it was testing the marker and was mostly testing an
+    unthrottled socket — which is why this script now checks its own effect before reading anything
+    off it.
+
+    So the frames are routed instead. Every message is held for half the round trip in each
+    direction, which is what a player on a bad connection has, and the ack the client is waiting on
+    cannot arrive inside its 400ms window. Each direction keeps its own promise chain, because
+    socket.io's protocol is ordered and letting two delayed frames race would corrupt the session
+    rather than slow it.
+
+    Routed before `goto`, or the socket opens unrouted.
+  */
+  if (ARM === 'slow') {
+    const half = Math.max(1, Math.round(LATENCY_MS / 2));
+    // The arm's own effect, counted: a route that silently never matched looks exactly like a
+    // socket that was never slow.
+    const pause = () => new Promise((r) => setTimeout(r, half));
+    await page.routeWebSocket(/socket\.io/, (ws) => {
+      const server = ws.connectToServer();
+      let toServer = Promise.resolve();
+      let toClient = Promise.resolve();
+      ws.onMessage((message) => {
+        routed.up += 1;
+        toServer = toServer.then(pause).then(() => { try { server.send(message); } catch { /* closed */ } });
+      });
+      server.onMessage((message) => {
+        routed.down += 1;
+        toClient = toClient.then(pause).then(() => { try { ws.send(message); } catch { /* closed */ } });
+      });
+    });
+  }
   const pageErrors = [];
   const reactWarnings = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
@@ -149,6 +201,7 @@ async function main() {
     check('the watcher sees a marker planted in front of it', control === true, `control=${control}`);
 
     let played = 0;
+    const moveMs = [];
     for (let move = 0; move < MOVES; move += 1) {
       if (await has(page, 'game-over')) break;
       if (!(await isMyMove(page))) {
@@ -156,7 +209,15 @@ async function main() {
         await page.waitForTimeout(250);
         continue;
       }
+      /*
+        Timed, because a zero from this script means nothing without knowing whether the arm did
+        what it claims. The first arm design raised the server's write budget and never produced a
+        write over 167ms; this one emulates latency, and if that latency never reaches the socket
+        the reading is just as empty. So the arm reports its own effect.
+      */
+      const startedAt = Date.now();
       await makeMove(page, 0);
+      moveMs.push(Date.now() - startedAt);
       played += 1;
     }
     check('the person got moves in', played > 0, `played ${played}`);
@@ -165,7 +226,33 @@ async function main() {
     const appearances = seen.filter((s) => !s.gone);
     const departures = seen.filter((s) => s.gone);
     const words = [...new Set(appearances.map((a) => a.text.trim()))];
+    const sorted = [...moveMs].sort((a, b) => a - b);
+    const median = sorted.length === 0 ? 0 : sorted[Math.floor(sorted.length / 2)];
     console.log(`arm=${ARM} moves=${played} appearances=${appearances.length} departures=${departures.length}`);
+    // Driver wall-clock per move, not the round trip: a click returns before the ack. Kept as
+    // provenance for how much of the game this run actually played.
+    console.log(`  a driver move took: median ${median}ms, slowest ${sorted.at(-1) ?? 0}ms`);
+    if (ARM === 'slow') {
+      console.log(`  frames held: ${routed.up} up, ${routed.down} down`);
+    }
+    /*
+      The arm has to have done something, or the appearance count below is no evidence either way.
+
+      Measured as frames held, not as how long a move took. The move timing above is the driver's
+      wall-clock around a click, and a click returns the moment the button is pressed — the ack
+      arrives long afterwards — so a median of 79ms was read off a socket where **every frame was
+      being held for 600ms each way**. That check called a working arm broken twice before the
+      frame sample showed real `pod:action` frames and their acks going through the delay. Many of
+      the driver's moves are local taps that emit nothing at all, which is the other half of why
+      that median means nothing here.
+    */
+    if (ARM === 'slow') {
+      check(
+        'every frame really was held, both ways',
+        routed.up > 0 && routed.down > 0,
+        `${routed.up} up, ${routed.down} down — zero means the route never matched the socket`,
+      );
+    }
     if (words.length > 0) console.log(`  said: ${JSON.stringify(words)}`);
 
     if (ARM === 'slow') {
@@ -187,8 +274,10 @@ async function main() {
         `${appearances.length} in, ${departures.length} out`,
       );
     } else {
+      // "A quick answer", not "short writes": what this arm changes is the round trip, and the
+      // label said otherwise from when the arm was about the server's write budget.
       check(
-        'short writes leave the marker alone',
+        'an answer that comes straight back leaves the marker alone',
         appearances.length === 0,
         `${appearances.length} appearances across ${played} moves: ${JSON.stringify(words)}`,
       );
