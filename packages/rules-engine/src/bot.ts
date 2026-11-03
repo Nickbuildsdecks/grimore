@@ -4630,6 +4630,18 @@ function offerPact(state: GameState, seat: SeatIndex): Action | null {
 
 export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = {}): Action | null {
   if (!state.automated || state.finished) return null;
+  /*
+    And a player who has left the game makes no moves (#277, D299).
+
+    Belt to `seatsToAct`'s braces, and worth both: that function says who the engine is waiting on,
+    this one is what a caller does with the answer, and a caller is free to ask about any seat it
+    likes — `pod-duel` and `term-leverage` both drive seats they chose rather than seats they were
+    handed. The rule this guards is every rule in this file at once rather than the one that was
+    caught: `offerPact` was the fault that surfaced (a dead seat's life is 0, so every opponent
+    looks lethal and it always finds somebody to ask), but nothing below is written for a seat with
+    no cards, no life and no legal plays, and a guard per rule is a guard somebody forgets.
+  */
+  if (state.seats[seat]?.eliminated !== false) return null;
   if (state.openingHands) {
     return state.kept.includes(seat) ? null : settleOpeningHand(state, seat);
   }
@@ -5130,6 +5142,27 @@ export function playOut(state: GameState, maxActions = 6000, opts: BotOptions = 
  * exactly how a bot seat ends up never keeping its hand.
  */
 export function seatsToAct(state: GameState): SeatIndex[] {
+  /*
+    A player who has left the game is never one of them, filtered here rather than at each return
+    (#277, D299).
+
+    Every branch below reads a seat off a question — `pendingDecision.seat`, `pendingChoice.seat`
+    and four more — and none of them asked whether that seat is still in the game. A question left
+    standing on a departed seat therefore made the engine report a dead player as the one it was
+    waiting on, and a caller that drives bots would act for them: six of the ten pods that failed to
+    finish in #268 died exactly there, on `pact:offer: seat N has been eliminated` (D298).
+
+    `resolveStateBasedActions` now withdraws those questions, so in a correct engine this filter
+    never removes anything. It is here anyway, in one place, because the two faults are not
+    equivalent: a question that slips through turns into a table with nobody to act, which every
+    harness here reports and `playout.test.ts` asserts against, while an unfiltered one turns into
+    the engine refusing an action it offered — a throw that 35 harnesses swallow in silence (D282).
+    One of those is findable and the other is not.
+  */
+  return queuedToAct(state).filter((seat) => state.seats[seat]?.eliminated === false);
+}
+
+function queuedToAct(state: GameState): SeatIndex[] {
   if (!state.automated || state.finished) return [];
   // Opening hands come before anything else, including priority.
   if (state.openingHands) return stillDeciding(state);

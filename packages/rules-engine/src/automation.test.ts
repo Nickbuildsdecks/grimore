@@ -8,8 +8,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  autoPassFor, bottomOwed, createGame, customDeck, legalActions, packView, pendingDeclaration,
-  seatsToAct, stackTop, stillDeciding, unpackView, viewFor,
+  autoPassFor, botAction, bottomOwed, createGame, customDeck, legalActions, packView,
+  pendingDeclaration, seatsToAct, stackTop, stillDeciding, unpackView, viewFor,
 } from './index.js';
 import {
   advanceTo, apply, applyAll, arena, countOf, drain, find, ids, life, namesIn, nextTurn, passBoth,
@@ -1041,6 +1041,119 @@ describe('state-based actions', () => {
     expect(s.instances[goblin]!.zoneSeat).toBe(0);
     expect(ids(s, 0, 'battlefield')).toContain(goblin);
   });
+});
+
+/*
+  The engine must not wait on a player who has left the game, and nothing may drive one.
+
+  **This is the only bug in the engine that a measuring harness found before a test did** (#277,
+  D298, D299). Six of the ten pods that failed to finish in #268 died on
+  `pact:offer: seat N has been eliminated` — the engine refusing an action the bot had built out of
+  its own rules, which is the invariant `playout.test.ts` exists to assert. `pod-duel` collapsed it
+  into `(N unfinished)` and said nothing for 2444 pods.
+
+  The mechanism: `seatsToAct` reads a seat off whichever question is outstanding, and none of its six
+  branches asked whether that seat was still in the game. So a question standing on a departed seat
+  made the engine name a dead player, and a caller driving bots acted for them. `offerPact` was where
+  it surfaced rather than the cause — a dead seat's life is 0, so every opponent's open board looks
+  lethal and it always finds somebody to ask.
+
+  **The board is hand-built here, which this suite otherwise avoids, and the reason is worth stating.**
+  The real path needs a question to be outstanding on a seat at the moment it is eliminated, which in
+  a real game took 2444 pods and two specific seeds to produce — and those seeds no longer reproduce
+  it, because CR 800.4a (D297) changed the back half of every pod. A test that waited for the seeds to
+  come round again would assert nothing most of the time. So each question is put on a departed seat
+  directly, which is what the broken state *was*, and both halves of the fix are asserted on it: the
+  engine does not name the seat, and the next action withdraws the question rather than leaving the
+  table stuck on a player who has gone.
+*/
+describe('a seat that has left the game', () => {
+  const departed = (): GameState => {
+    /*
+      A creature opposite, so the pact rule the throw came out of is reachable rather than merely
+      unreached: `offerPact` asks peace of an opponent whose open board could kill this seat, and a
+      departed seat is on 0 life, so it would find one here. The assertions below do not depend on
+      the board — nothing may act for a departed seat whatever is on the table — but a board that
+      could not have produced the original fault would make this a weaker test than it looks.
+    */
+    const s = arena({
+      format: 'pod', seats: 4,
+      decks: { 1: 'verdant-guard' },
+      battlefield: { 1: ['Grizzly Bears'] },
+      turn: 3, firstSeat: 0,
+    });
+    const out = apply(s, { type: 'life:adjust', by: 2, seat: 2, delta: -40 });
+    expect(out.seats[2]!.eliminated).toBe(true);
+    expect(out.finished).toBe(false);
+    return out;
+  };
+
+  const OUTSTANDING: readonly {
+    readonly label: string;
+    readonly patch: Partial<GameState>;
+    readonly read: (s: GameState) => unknown;
+  }[] = [
+    {
+      label: 'a mid-resolution decision',
+      patch: {
+        pendingDecision: {
+          seat: 2, stackId: 'gone', prompt: 'choose', candidates: [], min: 0, max: 0,
+          resume: { plan: [], at: 0, answers: [] },
+        },
+      },
+      read: (s) => s.pendingDecision,
+    },
+    {
+      label: "a trigger's targets",
+      patch: { pendingChoice: { seat: 2, stackId: 'gone', description: 'aim it', remaining: 1 } },
+      read: (s) => s.pendingChoice,
+    },
+    {
+      label: 'a ward to pay',
+      patch: {
+        pendingPayment: { seat: 2, cost: '{2}', prompt: 'pay ward', counters: '', source: 'gone' },
+      },
+      read: (s) => s.pendingPayment,
+    },
+    {
+      label: 'a dredge to answer',
+      patch: { pendingDredge: { seat: 2, card: 'gone', mill: 2, prompt: 'dredge?' } },
+      read: (s) => s.pendingDredge,
+    },
+    {
+      label: 'a free cast on offer',
+      patch: { pendingOfferedCast: { seat: 2, card: 'gone', prompt: 'cast it?', source: 'gone' } },
+      read: (s) => s.pendingOfferedCast,
+    },
+    {
+      label: 'a discard owed',
+      patch: { pendingDiscard: { seat: 2, count: 1 } },
+      read: (s) => s.pendingDiscard,
+    },
+  ];
+
+  for (const { label, patch, read } of OUTSTANDING) {
+    it(`is not acted for, and not waited on, with ${label} outstanding (CR 800.4)`, () => {
+      const stuck: GameState = { ...departed(), ...patch, priority: null };
+      // The question still names the seat, which is the state the bug was in.
+      expect(read(stuck)).not.toBeNull();
+
+      // Nothing drives a player who has left, and the engine does not say it is waiting on one.
+      expect(seatsToAct(stuck)).not.toContain(2);
+      expect(botAction(stuck, 2)).toBeNull();
+
+      /*
+        And the question is withdrawn rather than left standing, so the table is not stuck on an
+        answer nobody can give. Any action runs the state-based pass that does it; a life total is
+        the smallest one that is not itself a play.
+      */
+      const after = apply(stuck, { type: 'life:adjust', by: 0, seat: 0, delta: -1 });
+      expect(read(after)).toBeNull();
+      expect(after.priority).not.toBeNull();
+      expect(seatsToAct(after).length).toBeGreaterThan(0);
+      expect(seatsToAct(after)).not.toContain(2);
+    });
+  }
 });
 
 describe('legalActions', () => {

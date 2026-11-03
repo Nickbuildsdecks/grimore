@@ -10,7 +10,7 @@ import { dealOpeningHands, listAt, reduceCardAction } from './cardActions.js';
 import { returnExiledBy } from './effects.js';
 import { zoneKey, type CardInstance, type ZoneId } from './cards.js';
 import { reduceAutoAction } from './autoActions.js';
-import { pendingDeclaration, stateBasedActions } from './automation.js';
+import { answerDecision, pendingDeclaration, stateBasedActions } from './automation.js';
 import { appendPact, pactLine, pactThrough, PACT_KINDS } from './pacts.js';
 import { isAutoAction } from './turnTypes.js';
 import {
@@ -437,6 +437,49 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
     drew from an empty library, and in the concede action — and this pass is the only thing that
     sees all three. `anythingLeftBehind` is what makes asking again free once a seat has gone.
   */
+  /*
+    The engine stops waiting on a player who has left the game (#277, D299).
+
+    Six questions can be outstanding when a seat is eliminated, and every one of them names the seat
+    it is waiting on. `seatsToAct` reads those fields, so a question left standing on a departed seat
+    makes the engine report a dead player as the one it is waiting on — and driving a bot for that
+    seat produces an action the engine then refuses. That is not hypothetical: six of the ten pods
+    that failed to finish in #268 died on `pact:offer: seat N has been eliminated`, because a dead
+    seat's life is 0, so every opponent's open board looks lethal to `offerPact` and it always finds
+    somebody to ask (D298).
+
+    A **decision** is resumed rather than dropped, because the rest of the plan belongs to other
+    players: "each player sacrifices a creature" must carry on round the table. `answerDecision`
+    with an empty answer is exactly what `askOrFinish` already does for a seat eliminated *between*
+    two questions — this is the same thing for a question already asked. The loop is bounded by the
+    seat count because a plan can hold several departed seats in a row.
+
+    The other five carry no continuation — they are one seat's answer and nothing else's — so
+    withdrawing them is the whole of it. Priority is not restored here: the pass below hands it back
+    whenever nothing is blocking the game, which is the invariant a withdrawn question restores.
+  */
+  for (let guard = 0; guard <= next.seats.length; guard++) {
+    const asked = next.pendingDecision;
+    if (asked === null || next.seats[asked.seat]?.eliminated !== true) break;
+    next = answerDecision(next, []).state;
+  }
+  const leftTheTable = (seat: SeatIndex): boolean => next.seats[seat]?.eliminated === true;
+  if (next.pendingChoice !== null && leftTheTable(next.pendingChoice.seat)) {
+    next = { ...next, pendingChoice: null };
+  }
+  if (next.pendingPayment !== null && leftTheTable(next.pendingPayment.seat)) {
+    next = { ...next, pendingPayment: null };
+  }
+  if (next.pendingDredge !== null && leftTheTable(next.pendingDredge.seat)) {
+    next = { ...next, pendingDredge: null };
+  }
+  if (next.pendingOfferedCast !== null && leftTheTable(next.pendingOfferedCast.seat)) {
+    next = { ...next, pendingOfferedCast: null };
+  }
+  if (next.pendingDiscard !== null && leftTheTable(next.pendingDiscard.seat)) {
+    next = { ...next, pendingDiscard: null };
+  }
+
   /*
     Only while the game is still going on, which is the other half of the rule.
 

@@ -8282,6 +8282,35 @@ rows that cannot be audited is the same class of problem as a harness that swall
 number survives and the thing that would let you check it does not. Before the next long run, a
 ledger row needs the arm JSON, the commit, and the full command.
 
+### The engine was waiting on players who had left the game (#277, D299)
+
+D298 traced six of #268's ten undecided pods to one throw — `pact:offer: seat N has been eliminated`,
+the engine refusing an action the bot built out of its own rules. The cause is more general than the
+card that surfaced it: `seatsToAct` reads a seat off whichever question is outstanding, and none of
+its six branches asked whether that seat was still in the game. A question standing on a departed
+seat made the engine report a dead player as the one it was waiting on.
+
+Three of the five pending questions then produce an action the engine refuses — `pendingChoice` to
+`auto:choose`, `pendingPayment` to `auto:pay`, `pendingOfferedCast` to `pact:offer` — and two produce
+one it **accepts**, which is the worse half: a dead player answering a dredge is silent.
+`offerPact` was where it surfaced rather than the cause; a departed seat's life is 0, so every
+opponent's open board looks lethal and the rule always finds somebody to ask.
+
+The fix is in two halves. `resolveStateBasedActions` **withdraws** a question whose seat has left —
+a decision is *resumed* rather than dropped, because the rest of its plan belongs to other players,
+and `answerDecision` with an empty answer is what `askOrFinish` already does for a seat eliminated
+between two questions. `seatsToAct` and `botAction` **guard** anyway, and both are worth keeping
+because the failure modes are not equivalent: a question that slips past the withdrawal becomes a
+table with nobody to act, which every harness reports, while an unfiltered one becomes a throw that
+35 harnesses swallow in silence. The guard converts the unfindable fault into the findable one.
+
+The lesson is where it was found. This is the first engine bug a *measuring* harness caught before a
+test did, and only because #275 built the thing that reads the silence. The counterpart: the
+regression test cannot be written from the seeds that found it — two pods out of 2444, and D297
+changed the back half of every pod, so those seeds no longer reproduce. The test puts each of the six
+questions on a departed seat directly instead. **A test built from the seed that found a bug would
+have asserted nothing by the following commit; a test built from the mechanism asserts it for good.**
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

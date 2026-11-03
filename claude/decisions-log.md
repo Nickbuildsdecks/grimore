@@ -19223,3 +19223,59 @@ were never asked for.
 engine that did not yet enforce CR 800.4a (D297); that commit changes the back half of every pod, so
 the same seeds now play different games. `pod-unfinished.mjs` says so in its docblock, and the result
 above is quoted with the build it was taken at rather than as a standing fact.
+
+## D299 — The engine was waiting on players who had left, and a harness found it before a test did
+
+D298 traced six of #268's ten undecided pods to one throw: `pact:offer: seat N has been eliminated`,
+the engine refusing an action the bot had built out of its own rules. This is the fix, and the
+mechanism is more general than the card that surfaced it.
+
+**`seatsToAct` reads a seat off whichever question is outstanding, and none of its six branches
+asked whether that seat was still in the game.** `pendingDecision`, `pendingChoice`,
+`pendingPayment`, `pendingDredge`, `pendingOfferedCast`, `pendingDiscard` — each returns
+`[state.pendingX.seat]`. So a question standing on a seat that was then eliminated made the engine
+report a dead player as the one it was waiting on, and any caller that drives bots acted for them.
+
+**Three of the five produce an action the engine refuses, and two produce one it accepts**, which is
+the worse half. Measured by probe, one pending at a time on a departed seat:
+
+| outstanding | the bot's move | the engine |
+| --- | --- | --- |
+| `pendingChoice` | `auto:choose` | refuses: "that ability is no longer on the stack" |
+| `pendingPayment` | `auto:pay` | refuses: "cannot pay {2}" |
+| `pendingOfferedCast` | `pact:offer` | refuses: "seat 2 has been eliminated" |
+| `pendingDecision` | `auto:decide` | **accepts** |
+| `pendingDredge` | `auto:dredge` | **accepts** |
+
+`offerPact` was where it surfaced rather than the cause. A departed seat's life is 0, so
+`openPower(foe) < life` is false for every opponent and the rule always finds somebody to ask peace
+of — which means **any** fall-through for a dead seat produced an offer. The two rows the engine
+accepts are the reason this is not simply "fix `offerPact`": a dead player answering a dredge is
+silent, and a silent wrong answer is what a throw at least had the decency not to be.
+
+**Both halves of the fix, and why both.**
+
+`resolveStateBasedActions` **withdraws** a question whose seat has left. A decision is *resumed*
+rather than dropped, because the rest of its plan belongs to other players — "each player sacrifices
+a creature" has to carry on round the table — and `answerDecision` with an empty answer is exactly
+what `askOrFinish` already does for a seat eliminated *between* two questions. The other five carry
+no continuation, so withdrawing them is the whole of it, and the pass that hands priority back
+whenever nothing is blocking the game turns the withdrawal into a table that moves.
+
+`seatsToAct` and `botAction` **guard** anyway: nothing names a departed seat, and nothing acts for
+one. In a correct engine neither guard ever fires. They are there because **the two failure modes
+are not equivalent.** A question that slips past the withdrawal becomes a table with nobody to act —
+which every harness in `scripts/measure/` reports and `playout.test.ts` asserts against. Unfiltered,
+the same question becomes the engine refusing an action it offered: a throw that 35 harnesses
+swallow in silence (D282). One of those is findable and the other is not, so the guard converts the
+unfindable fault into the findable one.
+
+**The lesson is about where the bug was found.** This is the first engine bug a *measuring* harness
+caught before a test did, and it only caught it because #275 built the thing that reads the silence —
+`pod-duel` had been printing `(N unfinished)` over it for 2444 pods. The counterpart is that the
+regression test cannot be written from the seeds that found it: two specific pods out of 2444, and
+D297 changed the back half of every pod, so those seeds no longer reproduce. So the test puts each of
+the six questions on a departed seat directly and asserts both halves — the engine does not name the
+seat, and the next action withdraws the question. **A test built from the seed that found a bug would
+have asserted nothing by the following commit; a test built from the mechanism asserts it for good.**
+
