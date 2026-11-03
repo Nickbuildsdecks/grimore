@@ -21852,3 +21852,50 @@ document did not drift because nobody maintained it; it drifted because **somebo
 A document whose whole purpose is to list what is broken goes stale precisely when it works, and
 nothing connects the fix back to the list. The same will happen to the table above the moment the
 cutover runs.
+
+## D351 — The wire cap holds for a whole game, and the peak arrives at turn 136 (#313)
+
+`STATE_MAX_BYTES` (128 KiB) is not advisory: `PodStateEvent` in `packages/shared` **refuses** a
+state over it, so a view past the cap is a broadcast that never goes out and a table that stops
+mid-game. Two tests measure against it — `playout.test.ts` and the singleton test from #308 — and
+**both measure one position**.
+
+A position is not a game. What accumulates over forty turns is graveyards, exile, tokens and the
+log, all of it visible to every seat and therefore all of it in the view, and nothing had ever
+watched the size while a game ran. `scripts/measure/wire-growth.mjs` now does: whole four-player
+pods, every seat sampled every tenth move, reporting the **peak** and the turn it happened on.
+
+| arm | games | turns | worst peak | share of cap |
+|---|---|---|---|---|
+| starter decks | 8 | 35-61 | 38,965 B | **29.7%** |
+| four pasted hundred-card singleton lists | 8 | 54-150 | 58,147 B | **44.4%** |
+
+Sixteen games, every one to a finish, none over the cap. **The answer is that it holds**, with 2.25x
+headroom at the worst reading.
+
+Three things in that table are worth more than the verdict:
+
+- **The singleton arm nearly doubles the starter peak** (29.7% → 44.4%), which is the shape a real
+  Commander table has and the shape #308 measured at one point in time.
+- **The peak arrives late.** Seat 3's worst view in the longest game was at **turn 136**, and the
+  other singleton peaks land at turns 101, 103 and 111. No single-position test reaches there — the
+  existing ones sample turn 6 and mid-game — so the growth they could not see is precisely the part
+  that matters.
+- **Singleton games run far longer**: 54-150 turns against the starters' 35-61. A hundred different
+  cards is a less focused deck, so it kills more slowly, which is why its views have longer to grow.
+  The two effects compound, and that compounding is the thing a single reading cannot show.
+
+### What it does not claim, and why there is no test
+
+The bots play these games, so the boards are the boards a bot builds. A player who hoards tokens or
+fills a graveyard on purpose reaches positions these do not, so the peak is a **floor on the peak**
+rather than a bound on it — which the script prints, so a reader cannot take it for a bound.
+
+Not turned into a gate test: the longest of these games is 804 moves and 150 turns, and the suite
+runs on every push. The single-position test from #308 stays as the fast regression check — it
+discriminates, which was proved when it went in — and this script is the slow question, run when the
+wire format or the view changes.
+
+Four hundred and fifty games of reliability evidence beside it, from the same session:
+`state-invariants.mjs` over 40 duel passes — **520 games, nine invariants checked after every
+action, zero broken**.

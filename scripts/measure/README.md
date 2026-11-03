@@ -94,6 +94,7 @@ it.
 | `dredge.mjs` | is a dredge ever offered, is it taken, and how short does the library get? | `SUBJECT=rot-harvest SEEDS=4 node scripts/measure/dredge.mjs` |
 | `cr-claims.mjs` | which rules does a comment claim that no test writes down? | `node scripts/measure/cr-claims.mjs` — the one file here that reads **source**, not `dist` |
 | `state-invariants.mjs` | is the state self-consistent after every action of a real game? | `SEEDS=4 node scripts/measure/state-invariants.mjs`, `SEEDS=2 POD=1 …` |
+| `wire-growth.mjs` | does a per-seat view stay inside `STATE_MAX_BYTES` for a **whole** game, not just one position? | `SEEDS=6 node scripts/measure/wire-growth.mjs`, `SEEDS=4 SINGLETON=1 …` (four pasted hundred-card lists) |
 | `derivable.mjs` | what share of a card set plays with **no hand-written script at all**, by card type, and what are the commonest reasons the rest are refused? | `node scripts/measure/derivable.mjs` (the pool, a floor), `… --file oracle-cards.json` (the real answer, once the import has been run) |
 
 **Pair your arms, or do not believe the difference.** Two canonical 288-game tables of the same
