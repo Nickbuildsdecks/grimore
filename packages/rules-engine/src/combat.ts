@@ -283,6 +283,14 @@ const dealsInStep = (ch: Characteristics, firstStrike: boolean): boolean =>
  * The planeswalker has to still be there — it can be killed, bounced or stolen between the
  * declaration and the damage step, and CR 506.4 says an attack whose planeswalker has gone deals
  * no combat damage at all rather than falling through to its controller.
+ *
+ * **Not pinned to an object the way the attacker and the blockers are** (`sameObject` below), and
+ * that is a reachability judgement rather than an oversight: a planeswalker that left and came
+ * back in this window would be a new object the attack can no longer be aimed at (CR 400.7), and
+ * nothing in this pool can produce one. Both immediate blinks — Cloudshift and Soulherder's
+ * end-step trigger — say "target **creature** you control", and Flickerwisp gives its card
+ * back at the next end step, which is after combat. Give the pool a blink that takes a permanent
+ * and returns it at once, and this line needs `attack.planeswalkerSeq` beside the other two.
  */
 function defenderTarget(state: GameState, attack: CombatAttack): Target {
   if (attack.planeswalker === undefined) return { kind: 'player', seat: attack.defender };

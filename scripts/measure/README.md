@@ -92,6 +92,7 @@ it.
 | `offers.mjs` | what does the engine offer you to cast — a cascade hit, a madness card, a **miracle** off the top — and is it taken? | `SUBJECT=arc-tempest SEEDS=12 node scripts/measure/offers.mjs` |
 | `storm.mjs` | how many spells does a turn actually hold, and what was the count on each storm spell? | `SUBJECT=arc-tempest SEEDS=4 node scripts/measure/storm.mjs` |
 | `dredge.mjs` | is a dredge ever offered, is it taken, and how short does the library get? | `SUBJECT=rot-harvest SEEDS=4 node scripts/measure/dredge.mjs` |
+| `cr-claims.mjs` | which rules does a comment claim that no test writes down? | `node scripts/measure/cr-claims.mjs` — the one file here that reads **source**, not `dist` |
 
 **Pair your arms, or do not believe the difference.** Two canonical 288-game tables of the same
 thirteen decks, differing only in which seeds they used, disagree by up to **thirty games** on one
@@ -1206,3 +1207,29 @@ the ledger cannot omit** — the instruction to write it down by hand is the one
 Any harness whose results get accumulated across sessions should take the same line. The ones that
 answer in a single run do not need it: their output and the command that produced it are in the same
 scrollback.
+
+## A claim is not a test, and this file is a reading list rather than a bug count
+
+`cr-claims.mjs` exists because of how three bugs in one morning were found: a comment claimed a
+rule the code did not have. Etched Champion's docblock listed all four clauses of protection while
+the state-based action enforced three (#284), and Thicket Basilisk's said "which is the rule rather
+than a guard" about a check that held only for a card that left and *stayed* gone (#285, #286).
+D306 wrote it as a sentence — **a comment claiming a rule is worth no more than a test asserting
+it** — and a script can go looking for the shape of that.
+
+**Its precision is low and measured rather than assumed.** The first reading printed 90 rules
+claimed with no test citing the number, and the first three rows read came out:
+
+- **CR 704.5p** — a false positive. The rule is tested, by the bestowed-creature tests added in
+  #284; they just do not write the number down.
+- **CR 104.2a** — the same. The duel-ends-on-elimination rule is what #277's gate turns on and the
+  decking test covers it.
+- **CR 720.6** — a real question, and **blocked**: `becomeMonarch` says the crown is cleared when
+  its holder leaves the game, `engine.ts` does clear it, and whether the rule says *cleared* or
+  *passed to the next player* cannot be settled from this container. `magic.wizards.com` does not
+  resolve here, the same wall the fifteen card-text mechanics are behind, and guessing a rule is
+  the same mistake as guessing a card's text (D259).
+
+So two in three rows were rules that are tested without being cited. Read the list as what it is:
+rules the engine leans on, ranked by how many places lean, each one a claim somebody could check.
+It is not a defect count and a row is not a bug.

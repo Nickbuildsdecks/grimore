@@ -8478,6 +8478,19 @@ The test asserts the board the rules describe rather than the one that merely lo
 blink the trigger resolves and schedules **nothing**. "Scheduled and then missed" and "never
 scheduled" leave the same creature alive, and only one of them is the rule.
 
+### An instrument for the rules a comment claims and no test writes down (#288, D308)
+
+Three of the morning's four bugs were found by reading a comment and testing its claim, so
+`cr-claims.mjs` collects every `CR <number>` in the engine's sources, every one in its tests, and
+prints the rules on the first list only: 90 of 245, ranked by how many places lean on them.
+
+Its precision is low and measured rather than assumed. Of the first three rows read, CR 704.5p and
+CR 104.2a were both rules that *are* tested and simply do not have their number written beside the
+assertion, and CR 720.6 is a real question this container cannot settle — whether the crown is
+cleared or passed when the monarch leaves the game needs the Comprehensive Rules, and
+`magic.wizards.com` does not resolve here any more than Scryfall does. So the file says in its own
+docblock what it is: a reading list, not a defect count.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

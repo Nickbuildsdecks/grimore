@@ -19609,3 +19609,39 @@ so the test asserts the empty list and the empty stack, not just the survivor.
 change: `resolveTop`'s condition re-ask, `beforeDecisions`, and `completeResolution` all take
 `aboutNow(state, object)` now. A script that had to remember this would eventually forget, the same
 argument that keeps hexproof in `targeting.ts` rather than in each card.
+
+## D308 — An instrument for the rules a comment claims and no test writes down, and its precision
+
+Three of the four bugs found this morning were found the same way: **a comment claimed a rule the
+code did not have.** Etched Champion's docblock listed all four clauses of protection — "cannot be
+blocked by, targeted by, dealt damage by, **enchanted by**" — while the state-based action enforced
+three (D305). Thicket Basilisk's said "no `destroy` of a creature that has left … which is the rule
+rather than a guard", true only of a card that left and *stayed* gone, and a blink made it false
+twice over (D306, D307). D306 ended with the sentence, so `cr-claims.mjs` goes looking for its
+shape: every `CR <number>` in the engine's sources, every one in its tests, and the rules on the
+first list only.
+
+**90 of 245 cited rules are claimed by a comment and written down by no test**, ranked by how many
+places claim them.
+
+**And the precision is low, which is recorded rather than glossed.** Three rows read:
+
+- **CR 704.5p** is a false positive: the rule is tested by #284's bestowed-creature tests, which do
+  not write the number down.
+- **CR 104.2a** is the same — it is what #277's gate turns on, and the decking test covers it.
+- **CR 720.6** is a real question and it is **blocked**. `becomeMonarch` says the crown is cleared
+  when its holder leaves the game and `engine.ts` does clear it; whether the rule says *cleared* or
+  *passed to the next player* cannot be settled from this container, because `magic.wizards.com`
+  does not resolve here — the same wall the fifteen card-text mechanics are behind. Guessing a rule
+  is the same mistake as guessing a card's text (D259), so it stays a question.
+
+Two in three rows were rules tested without being cited. **The honest claim for this file is that
+it is a reading list, not a defect count**, and the number that matters about it is that one — a
+reader who treats 90 as a bug count will spend a day confirming tests that already exist. What it
+is good for is the thing the three bugs had in common: it puts every claim somebody wrote down in
+one place, with its file and line, so they can be read on purpose rather than stumbled on.
+
+**And it names a second thing the proxy costs us.** The fifteen thin mechanics wait on
+`api.scryfall.com` for card text; this waits on the Comprehensive Rules for rule text. Both are one
+allowed host away, and until then "the engine says X and I cannot check X" is the honest state of a
+row rather than a reason to change the code.
