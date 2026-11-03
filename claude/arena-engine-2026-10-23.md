@@ -8358,6 +8358,29 @@ Not fixed and inherited rather than introduced: a creature that dies and comes b
 true of every "target creature gets +3/+3" in the pool from the start, and wants an object identity
 the engine does not have.
 
+### "197 checks clean" was never a number (#281, #282, D302)
+
+Two engine changes that move mid-game state — CR 800.4a and CR 611.2c — meant re-running the four
+Playwright suites, which sit outside every automated gate and are the only checks that answer whether
+two people can sit down and play a whole game through the real UI. **All four pass**: `e2e-table`
+73/73, `e2e-solo` 27/27, `e2e-pod` 41/41, `e2e-arena` 55/55, all exit 0.
+
+That totals 196, and #260's title says 197. The one is the finding. Three consecutive `e2e-arena`
+runs on the same build read **55, 53 and 55** — the suite is unchanged since well before #260 and
+nothing failed in any of them. It has a dozen checks gated on whether the game it drives actually
+produced the mechanic, so **the total is a property of the game that happened, not of the suite**,
+and #260 wrote down a denominator that does not exist.
+
+This is the third time this project has found the same mistake in different clothes: a floor quoted
+in pods read as a floor in points (D281), a ledger row with a margin and no provenance (D298), and
+now a check total read as a constant. Each time a number that moves was recorded as fixed, and the
+cost fell on a later reader.
+
+The fix cost almost nothing because the suites were already honest — the parentheticals explaining
+each skip were there, just uncounted. Each is now a `skip(why)`, and the summary prints
+`54/54 checks passed, 4 skipped` with the reasons listed. A total with its skips beside it can be
+compared; a bare total cannot.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

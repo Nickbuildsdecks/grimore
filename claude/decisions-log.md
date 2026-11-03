@@ -19378,3 +19378,48 @@ lazy way round is how a fix becomes a regression.
 **And it is the second engine change this session that moves every pod figure.** D297 changed what a
 dead player leaves behind; this changes what a sweep reaches. A pod number taken before either is not
 comparable with one taken after, and `pod-duel.mjs` now names both.
+
+## D302 — "197 checks clean" was never a number, and the suites now say so themselves
+
+Two engine changes landed in one session that both move mid-game state — CR 800.4a (D297) and
+CR 611.2c (D301) — so the four Playwright suites were re-run, because #245 established that they sit
+outside every automated gate and they are the only checks that answer the question the Play Realm
+exists for: can two people sit down and play a whole game through the real UI.
+
+**All four pass.** `e2e-table` 73/73, `e2e-solo` 27/27, `e2e-pod` 41/41, `e2e-arena` 55/55, every
+check green, all four exit 0.
+
+**That totals 196, and #260's title says 197.** The interesting part is what the one is.
+
+Three consecutive `e2e-arena` runs on the same build read **55, 53 and 55**. The suite is unchanged
+since well before #260 and nothing failed in any of them: it has a dozen checks gated on whether the
+game it drives actually produced the mechanic — a ward, a flashback, a block, an {X} spell, a
+dividing spell — and each already printed a careful parenthetical saying so. **The total is a
+property of the game that happened, not of the suite.** So 196 and 197 were never comparable, and
+#260 recorded a denominator that does not exist.
+
+**This is the third time the same mistake has been found in this project wearing different clothes.**
+D281: a floor quoted in pods read as though it were a floor in points. D298: a ledger row with a
+margin and no provenance, four of which turned out to be unreplayable. Now a check total read as a
+constant. Each time a number that moves was written down as though it were fixed, and each time the
+cost was paid by a later reader rather than the person who wrote it.
+
+**The fix is the same shape as #278's, and it was almost free, because the suites were already
+honest — they just were not counted.** Every one of those parentheticals is now a `skip(why)` that
+goes into a list, and `summarize` prints the pair:
+
+    54/54 checks passed, 4 skipped. Screenshots in e2e-shots/arena/
+
+    Not exercised this run — the game did not produce it:
+      - no ward came up in this game — scripts.test.ts asserts all three of its outcomes deterministically
+      - no X spell came up in this game — scripts.test.ts covers that path on a fixed board
+      …
+
+Eleven sites in `e2e-arena`, nine in `e2e-pod`, four in `e2e-solo`. **A total with its skips beside
+it can be compared; a bare total cannot.** And the count is now informative in the other direction
+too: 54 passed with 4 skipped says the suite attempted 58, so the run that read 53 skipped five, and
+the question "is the number down because something broke" is answered by the output instead of by an
+investigation.
+
+A skip is deliberately not a failure and does not touch the exit code. What it is for is the ten
+seconds in which somebody decides whether a dropped number matters.

@@ -34,7 +34,7 @@
  */
 import path from 'node:path';
 import {
-  chromium, check, checks, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
+  chromium, check, checks, skip, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
   readNumber, expectEventually, expectEventuallyTrue, isMyMove, makeMove as drive, notePrompts,
   noteMove, press, tap,
   watchForReactWarnings,
@@ -249,7 +249,7 @@ async function main() {
         game until it was read properly. `scripts.test.ts` asserts the wording on a fixed board.
       */
       if (reason === '') {
-        console.log('      (every card in that hand was playable — no reason to show)');
+        skip('every card in that hand was playable — no reason to show');
       } else {
         check('a card it will not let you play says why', /: .+\./.test(reason), `said: ${JSON.stringify(reason)}`);
       }
@@ -581,14 +581,14 @@ async function main() {
       if (seen.flashback) {
         check('a spell is cast out of a graveyard for its flashback cost', true);
       } else {
-        console.log('      (no flashback casting came up in this game — scripts.test.ts asserts '
-          + 'the offer, the cost and the exile deterministically)');
+        skip('no flashback casting came up in this game — scripts.test.ts asserts '
+          + 'the offer, the cost and the exile deterministically');
       }
       if (seen.scried) check('a scry shows the top of your own library and nobody else’s', true);
-      else console.log('      (nothing searched a library in this game)');
+      else skip('nothing searched a library in this game');
     } else {
-      console.log('      (no card stopped to ask a question in this game — scripts.test.ts covers '
-        + 'that path on a fixed board)');
+      skip('no card stopped to ask a question in this game — scripts.test.ts covers '
+        + 'that path on a fixed board');
     }
     /*
       A ward paid through the real UI, which is the one prompt a player answers because of
@@ -599,13 +599,13 @@ async function main() {
     if (seen.ward) {
       check('a ward stops a spell and the other player can pay it from the table', true);
     } else {
-      console.log('      (no ward came up in this game — scripts.test.ts asserts all three of its '
-        + 'outcomes deterministically)');
+      skip('no ward came up in this game — scripts.test.ts asserts all three of its '
+        + 'outcomes deterministically');
     }
     if (seen.countered) {
       check('a spell on the stack can be targeted', true);
     } else if (DECK_A === 'tidal-mind' || DECK_B === 'tidal-mind') {
-      console.log('      (no counterspell was castable in this game — nothing to aim at the stack)');
+      skip('no counterspell was castable in this game — nothing to aim at the stack');
     }
     check('the table says what just happened without the log being opened',
       seen.feedSaid.length > 0, `said: ${JSON.stringify(seen.feedSaid)}`);
@@ -624,8 +624,8 @@ async function main() {
     if (seen.blockers) {
       check('and asks the defending player to block', true);
     } else {
-      console.log('      (no block was called for in this game — the defender was never attacked '
-        + 'with a creature able to block; combat.test.ts covers that path on a fixed board)');
+      skip('no block was called for in this game — the defender was never attacked '
+        + 'with a creature able to block; combat.test.ts covers that path on a fixed board');
     }
     check('life totals move because the rules moved them', seen.lifeChanged);
     /*
@@ -640,7 +640,7 @@ async function main() {
     if (seen.swung) {
       check('an attack is drawn on the board, from the creature to who it is attacking', seen.arrows);
     } else if ((seen.swungPastCombat ?? 0) > 0) {
-      console.log(`      (${seen.swungPastCombat} non-empty attack(s) ran through the whole of `
+      skip(`${seen.swungPastCombat} non-empty attack(s) ran through the whole of `
         + 'combat inside one applied action, because the defender had no legal block — the browser '
         + 'renders the board after that, so there was no moment an arrow existed to be found. '
         + "`arena.test.ts` owns the deterministic version of the overlay's claim.)");
@@ -724,14 +724,14 @@ async function main() {
       check('an X spell asks how big it is, and is cast for what was chosen', Boolean(seen.xCast),
         seen.xCast ?? 'the prompt appeared but no cast came out of it');
     } else {
-      console.log('      (no X spell came up in this game — scripts.test.ts covers that path '
-        + 'on a fixed board)');
+      skip('no X spell came up in this game — scripts.test.ts covers that path '
+        + 'on a fixed board');
     }
     if (seen.modal) {
       check('a modal spell offers its modes as plays and one can be cast', true);
     } else {
-      console.log('      (no modal spell came up in this game — scripts.test.ts covers that path '
-        + 'on a fixed board)');
+      skip('no modal spell came up in this game — scripts.test.ts covers that path '
+        + 'on a fixed board');
     }
     /*
       A question whose answer is a word, answered through the real buttons.
@@ -745,8 +745,8 @@ async function main() {
     if (seen.chose) {
       check('a question whose answer is a word is answered from the bar', true);
     } else {
-      console.log('      (no card asked for a creature type or a colour in this game — '
-        + 'scripts.test.ts covers that path on a fixed board)');
+      skip('no card asked for a creature type or a colour in this game — '
+        + 'scripts.test.ts covers that path on a fixed board');
     }
     /*
       Damage divided as you choose, spent through the real board.
@@ -759,8 +759,8 @@ async function main() {
     if (seen.divided) {
       check('a spell whose damage is divided is spent a point at a time from the board', true);
     } else {
-      console.log('      (no dividing spell came up in this game — scripts.test.ts asserts the '
-        + 'division, its refusals and the share a bounced target takes with it)');
+      skip('no dividing spell came up in this game — scripts.test.ts asserts the '
+        + 'division, its refusals and the share a bounced target takes with it');
     }
     if (finished) {
       /*

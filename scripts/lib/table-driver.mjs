@@ -44,6 +44,27 @@ export async function setShotDir(dir) {
 export { chromium };
 
 export const checks = [];
+/**
+ * Checks this run never got to make, and why.
+ *
+ * **The suites already reported these; nothing counted them, and that made the headline number
+ * look comparable when it is not** (#282, D302). `e2e-arena` has a dozen checks gated on whether
+ * the game it drives actually produced the mechanic — a ward, a flashback, a block, a dividing
+ * spell — and each one already printed a careful parenthetical saying it had not come up. But the
+ * summary line counted only the checks that ran, so three consecutive runs of the same build read
+ * **55, 53 and 55 checks passed**, and a reader comparing those totals to the 197 a decision entry
+ * quoted would see a regression that is not there.
+ *
+ * So a skip is now a counted thing with its reason attached, and `summarize` prints the pair. **A
+ * total with its skips beside it can be compared; a bare total cannot** — the same reason
+ * `pod-duel` prints its own provenance rather than trusting a ledger to carry it (#278).
+ *
+ * A skip is deliberately *not* a failure and does not touch the exit code. What it is for is the
+ * run where the number drops and somebody has to decide in ten seconds whether that is a bug: with
+ * the skips printed, "53 passed, 5 skipped" answers the question, and "53 passed" starts an
+ * investigation.
+ */
+export const skipped = [];
 /** How many times each seat has mulliganed, for `forceMulligan`. */
 const seatMulligans = {};
 /** Whether this run has already photographed a free cast on offer. See `makeMove`. */
@@ -57,12 +78,32 @@ let shotAnOffer = false;
  */
 export function summarize() {
   const failed = checks.filter((c) => !c.ok);
-  console.log(`\n${checks.length - failed.length}/${checks.length} checks passed. Screenshots in ${shotDir}/`);
+  const skips = skipped.length === 0 ? '' : `, ${skipped.length} skipped`;
+  console.log(`\n${checks.length - failed.length}/${checks.length} checks passed${skips}.`
+    + ` Screenshots in ${shotDir}/`);
+  /*
+    The skips are listed, not just counted, because the count alone invites the same mistake one
+    level down: five skips in a run that usually has two is worth looking at, and only the reasons
+    say which five.
+  */
+  if (skipped.length > 0) {
+    console.log('\nNot exercised this run — the game did not produce it:');
+    for (const why of skipped) console.log(`  - ${why}`);
+  }
   if (failed.length > 0) {
     console.log('\nFailures:');
     for (const f of failed) console.log(`  - ${f.label}${f.detail ? `: ${f.detail}` : ''}`);
     process.exitCode = 1;
   }
+}
+
+/**
+ * A check this run could not make, with the reason that would otherwise have been a bare
+ * parenthetical. Never a failure: see `skipped`.
+ */
+export function skip(why) {
+  skipped.push(why);
+  console.log(`skip  ${why}`);
 }
 
 export function check(label, condition, detail = '') {

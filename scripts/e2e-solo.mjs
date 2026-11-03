@@ -16,7 +16,7 @@
  */
 import path from 'node:path';
 import {
-  chromium, check, checks, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
+  chromium, check, checks, skip, setShotDir, summarize, shot, waitFor, tid, cardsIn, has, text,
   isMyMove, makeMove, press, readNumber, expectEventuallyTrue, watchForReactWarnings, tap,
   textOf,
 } from './lib/table-driver.mjs';
@@ -1293,8 +1293,8 @@ const ARTIFACT_LIST = [
     if (ordered) {
       check('the attacker is asked which blocker the damage goes to first, and the engine takes it', true);
     } else {
-      console.log('      (nothing was blocked by two creatures in this game — combat.test.ts '
-        + 'covers the damage order on a fixed board)');
+      skip('nothing was blocked by two creatures in this game — combat.test.ts '
+        + 'covers the damage order on a fixed board');
     }
     /*
       A spell cast for nothing, which is the one play on the table with no cost at all.
@@ -1308,7 +1308,7 @@ const ARTIFACT_LIST = [
       check('a cascade offers its hit as a free cast, and the table answers it',
         freeCasts > 0, `free casts offered: ${freeCasts}`);
     } else if (freeCasts > 0) {
-      console.log(`      (${freeCasts} free casts were offered and answered in this game)`);
+      skip(`${freeCasts} free casts were offered and answered in this game`);
     }
     /*
       The three alternative costs, each paid at least once through the table.
@@ -1655,10 +1655,10 @@ const ARTIFACT_LIST = [
       */
       const big = faces.find((face) => /\b4\s*\/\s*4\b/.test(face));
       if (big !== undefined) check('and an eternalized one is a printed 4/4', true, big);
-      else console.log(`      (no 4/4 Zombie on the board between moves: ${faces.length} token faces seen `
-        + '— see the view round-trip test in scripts.test.ts)');
+      else skip(`no 4/4 Zombie on the board between moves: ${faces.length} token faces seen `
+        + '— see the view round-trip test in scripts.test.ts');
     } else if (Object.values(altCasts).some((n) => n > 0)) {
-      console.log(`      (alternative costs paid: ${JSON.stringify(altCasts)})`);
+      skip(`alternative costs paid: ${JSON.stringify(altCasts)}`);
     }
     check('the opponent plays its own turns without being asked to', turnsSeen >= 4, `turns ${turnsSeen}`);
     check('the game reaches a winner', await has(page, 'game-over'),

@@ -29,7 +29,8 @@
  */
 import path from 'node:path';
 import {
-  chromium, check, setShotDir, summarize, shot, waitFor, tid, cardsIn, slotsIn, has, text, textOf, tap,
+  chromium, check, skip, setShotDir, summarize, shot, waitFor, tid, cardsIn, slotsIn, has, text,
+  textOf, tap,
   press, readNumber, expectEventually, isMyMove, makeMove, notePrompts, noteMove,
   watchForReactWarnings,
 } from './lib/table-driver.mjs';
@@ -387,11 +388,11 @@ async function main() {
       check('an attack is drawn on the board, from the creature to whichever seat it is aimed at',
         seen.arrows);
     } else if ((seen.swungPastCombat ?? 0) > 0) {
-      console.log(`      (${seen.swungPastCombat} non-empty attack(s) ran through combat inside one `
-        + 'applied action, so no arrow was ever on screen to find — see the arena suite.)');
+      skip(`${seen.swungPastCombat} non-empty attack(s) ran through combat inside one `
+        + 'applied action, so no arrow was ever on screen to find — see the arena suite.');
     }
     if (seen.blockers) check('and asks a defending player to block', true);
-    else console.log('      (no block was called for in this game — combat.test.ts covers that path)');
+    else skip('no block was called for in this game — combat.test.ts covers that path');
 
     // The two claims this suite exists for.
     if (seen.commanderCast) {
@@ -409,14 +410,14 @@ async function main() {
     if (seen.commanderReturned) {
       check('a commander that died is back in its command zone (CR 903.9)', true);
     } else if (seen.commanderCast) {
-      console.log('      (no commander died in this game — cards.test.ts asserts the return deterministically)');
+      skip('no commander died in this game — cards.test.ts asserts the return deterministically');
     }
     if (seen.attackedSeats.size > 1) {
       check('attacks are sent at more than one opponent over the game', true,
         `seats ${[...seen.attackedSeats].join(',')}`);
     } else {
-      console.log(`      (attacks only ever went at ${[...seen.attackedSeats].join(',') || 'nobody'} `
-        + '— the engine asserts the spread deterministically in playout.test.ts)');
+      skip(`attacks only ever went at ${[...seen.attackedSeats].join(',') || 'nobody'} `
+        + '— the engine asserts the spread deterministically in playout.test.ts');
     }
 
     // ── The table read: what each seat can hit you with ────────────────────────────────────────
@@ -431,7 +432,7 @@ async function main() {
       check('each seat with a board says how much power it has', reads.every((t) => /^board \d+/.test(t)),
         JSON.stringify(reads));
     } else {
-      console.log('      (no seat had a creature when the board was read — arena.test.ts asserts the read)');
+      skip('no seat had a creature when the board was read — arena.test.ts asserts the read');
     }
 
     /*
@@ -445,13 +446,13 @@ async function main() {
       check('each player you can attack says what going at them is walking into',
         seen.attackReads.every((t) => /\s\d+/.test(t)), JSON.stringify(seen.attackReads.slice(0, 4)));
     } else {
-      console.log('      (no attack had more than one possible defender in this game)');
+      skip('no attack had more than one possible defender in this game');
     }
     if (seen.allAtTried) {
       check('“all at them” sends every declared attack at one player', seen.allAtWorked);
     } else {
-      console.log('      (never had two creatures and two defenders at once to send everything at '
-        + 'one player — arena.test.ts pins the reducer)');
+      skip('never had two creatures and two defenders at once to send everything at '
+        + 'one player — arena.test.ts pins the reducer');
     }
 
     /*
@@ -470,8 +471,8 @@ async function main() {
       check('the strips say what each seat has done to you, and what it has left alone',
         politics.every((line) => /(hit|spared) you \d+/.test(line)), JSON.stringify(politics));
     } else {
-      console.log('      (nobody had hit or spared anybody when the strips were read — '
-        + 'arena.test.ts and scripts.test.ts assert both tallies)');
+      skip('nobody had hit or spared anybody when the strips were read — '
+        + 'arena.test.ts and scripts.test.ts assert both tallies');
     }
 
     // ── Commander damage is the engine's count, with nothing to contradict it ───────────────────
@@ -552,8 +553,8 @@ async function main() {
       check('the other players keep playing after a seat is out', seen.playedOnAfterElimination,
         `eliminated on turn ${seen.eliminatedAt ?? '?'}, now turn ${atTurn}`);
     } else if (seen.eliminated) {
-      console.log('      (the first seat out was the one that ended the game, so no turn could '
-        + 'follow it — playout.test.ts asserts the pod plays on deterministically)');
+      skip('the first seat out was the one that ended the game, so no turn could '
+        + 'follow it — playout.test.ts asserts the pod plays on deterministically');
     }
     check('the pod reaches one survivor through the real UI', finished,
       finished ? '' : `stopped at ${await text(host.page, 'step-label')} turn ${await readNumber(host.page, 'turn')}`);
