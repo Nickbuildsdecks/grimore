@@ -1773,7 +1773,7 @@ describe('modal spells, chosen as the spell is cast', () => {
     expect(namesIn(s, 1, 'exile')).toContain('Centaur Courser');
   });
 
-  it('refuses a mode the card does not offer, and refuses no mode at all', () => {
+  it('refuses a mode the card does not offer, and refuses no mode at all (CR 601.2b)', () => {
     const s = set(1, 'verdant-guard', ['Selesnya Charm'], ['Forest', 'Plains']);
     const charm = find(s, 1, 'hand', 'Selesnya Charm');
     expect(refusal(s, { type: 'auto:cast', by: 1, card: charm })).toContain('choose a mode');
@@ -7458,7 +7458,7 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
     expect(power(s, elite)).toBe(7);
   });
 
-  it('triggers off an ability as well as a spell', () => {
+  it('triggers off an ability as well as a spell (CR 702.21b)', () => {
     // An Icy Manipulator aimed at a warded creature is the case the keyword is printed for, and it
     // is a different code path from a cast: the object on the stack is an activated ability.
     let s = advanceTo(arena({
