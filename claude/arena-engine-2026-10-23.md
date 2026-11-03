@@ -8059,6 +8059,51 @@ test that asserts the state field.** Both silences were in the same forty lines 
 found by a test — they were found by asking what a player sees when this fails, and then making it
 fail.
 
+### Two rules the engine never enforced, found by auditing a list instead of a card (#269, #270, D287, D288)
+
+`stateBasedActions` carries most of CR 704.5 and had grown one card at a time: a case went in when a
+card needed it. So the way to find what was missing was to take the list and check it, rather than
+wait for a card to complain.
+
+**CR 704.5q — `+1/+1` and `-1/-1` counters cancel in pairs — was not there.** The size was never
+wrong, which is exactly why it survived: `characteristicsOf` reads both kinds and subtracts, so a 2/2
+with three plus and two minus has always *measured* as a 4/4. What was wrong is every card that
+counts the counters — Hangarback Walker's Thopter per `+1/+1` (three where the rules give one),
+persist asking whether the creature had a `-1/-1` and undying whether it had a `+1/+1` (the famous
+interaction: a persisted Redcap that gains a plus counter should end with neither and come back
+*again*), modular, Walking Ballista. And it is reachable in this pool rather than theoretical,
+because `-1/-1` counters arrive here from **infect**.
+
+**The legend rule, CR 704.5j, was not there either.** Two Kalitas sat on one battlefield and nothing
+happened. Reachable *inside a single deck*, twice: Forge Alliance runs Blade of Selves, whose myriad
+makes token copies of the attacking creature, and its commander Balan pulls every Equipment onto
+himself — so a Balan with the Blade attacks a pod and makes two more Balans. Tidal Mind runs Clone,
+which can copy its own commander. Implemented keeping the permanent that arrived first, which is a
+stated deviation: the rule has the controller choose, and `stateBasedActions` is a pure
+`state -> state` function called inside `settle` that cannot stop and ask.
+
+Both fixes made existing tests fail, and both failures were the tests being wrong. Proliferate's two
+had built a Chasm Skulker carrying a `+1/+1` **and** a `-1/-1` — one of them saying in a comment that
+this made it *"the one permanent here carrying two kinds of counter"* — which is a board the rule
+forbids. They now show "one of each kind already there" across three objects instead.
+
+The thread with the blocker bug earlier the same day: **what a test asserts decides what a bug can
+hide behind.** D282's pooled blockers hid behind a plausible sentence in a docblock; 704.5q hid
+behind a power and toughness that were right either way. The test that catches it reads the counters
+rather than the creature, and it is in the file next to one that reads only the size and would have
+passed on the broken engine — both on purpose.
+
+### The clock, one more time (#268, D286)
+
+`clockRate` divides by the opponents the table started with, and after the blocker fix the arithmetic
+turned against that divisor. At ten life, nine unanswerable power on one seat takes you to 1 and
+kills a cycle later; three each on three seats takes you to 7, 4 and 1 and kills on the first of
+their turns in the next cycle. **Both die on the same turn** — nine a cycle is nine either way — so
+the undivided sum is the honest quantity and dividing by three reads a third of it. `clockCycle` is
+that form, at zero and tested, waiting on the same question. And a real pod win rate for the divided
+form is finally being spent on: 1040 pods an arm against a floor of about ±5, three disjoint seed
+sets.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
