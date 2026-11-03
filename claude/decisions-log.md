@@ -18712,9 +18712,11 @@ The rule itself; that **two players may each control one** (the half that makes 
 legal); that a non-legendary card is untouched, which keeps this from becoming a rule about names;
 and that three copies lose two in one pass rather than one a pass.
 
-### What this leaves open
+### And the question it raised, now checked rather than left open
 
-A token copy of a commander is not the commander, so it should not add to commander damage. Whether
-this engine agrees is a separate question from the legend rule and is not answered here — the rule
-now removes the extra Balans before they can connect, which narrows the window but does not settle
-what the engine thinks a copy of a commander is.
+A token copy of a commander is not the commander, so it should not add to commander damage. The
+first version of this entry said that was a separate question and did not answer it. It took one
+read: `dealDamage` attributes commander damage with `from?.isCommander === true`, and a token has no
+such flag — so the copies never counted towards the twenty-one, and the only thing wrong with three
+Balans attacking was that there were three of them. **The engine was already right about the half
+that would have been worse**, which is worth recording so nobody goes looking for it.
