@@ -9417,3 +9417,53 @@ And the wire cap, which nothing had watched while a game *ran* (#313, D351):
 Starter decks peak at **29.7%** of the 128 KiB cap; four pasted hundred-card singleton lists peak at
 **44.4%**, and the peak arrives at **turn 136** in the longest game — where no single-position test
 reaches. Sixteen games, every one to a finish, none over.
+
+---
+
+## Checkpoint — measuring at the bound, and the thirty-sixth swallowed throw (#314, D352-D353)
+
+### Two caps written for one purpose, disagreeing at four seats (D352)
+
+#313 measured a hundred-card deck. Measuring at the **bound** instead — the largest list a player can
+paste — did not produce a number. It produced a refusal:
+
+```
+EngineError: a table may hold at most 600 cards   (INVALID_DECK)
+```
+
+`DECKLIST_LIMITS.maxCards` is 250. `MAX_INSTANCES` is 600 for the whole table, under the heading
+"Caps on the card layer, so one action can never blow past STATE_MAX_BYTES" — the same reason the
+decklist limits give for themselves. Four seats share the 600:
+
+| cards a seat | at the table | result |
+|---|---|---|
+| 150 | 600 | dealt |
+| 151 | 604 | refused |
+| 250 (the paste maximum) | 1000 | refused |
+
+**So the paste says yes and the table says no**, with nothing between the two moments to mention it.
+Shipped as a warning rather than a limit — two players may legitimately paste 250 each, so lowering
+`maxCards` would refuse a real deck — plus a guard that reads `MAX_INSTANCES` out of the engine's
+source and fails if the derived 150 in `packages/shared` drifts from it, because that is a number
+copied by hand across a package boundary.
+
+At the engine's own four-seat bound the peak view over four whole games was **27.9%** of the cap —
+*lower* than the hundred-card arm's 44.4%. A bigger library is not a bigger view; the board is the
+whole of it, for the third time.
+
+### The thirty-sixth harness that swallows a throw, and it is mine (D353)
+
+`wire-growth.mjs` shipped with `try { … } catch { break; }` — the fault D244 found in thirty-five
+harnesses, written two days after that entry, in a script whose whole job is to report a number. At
+600 instances a swallowed throw would have read "these four games were fine" instead of "this table
+cannot make a token". Refusals are now recorded and printed.
+
+The honest run said no refusals, which turned out to be an asymmetry worth knowing:
+`MAX_INSTANCES` is checked at the deal and on the **tabletop** token action only.
+`createToken`/`addTokens` never consults it, so a card resolving a token is bounded by the card's
+text rather than by the constant. Left alone with reasons: the view is measured far from the cap, no
+card makes more than a handful of tokens, and throwing mid-resolution would leave a spell
+half-resolved that the engine cannot undo.
+
+**Writing down a defect pattern does not inoculate against it.** The `catch` was incidental to what I
+was thinking about, and the ones that get written are the ones nobody is thinking about.
