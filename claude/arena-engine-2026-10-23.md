@@ -9015,3 +9015,109 @@ The printed tally and the exit code disagreed, which means it mattered whether a
 was reading. I read the tally twice and called the file done; the background runner read the exit
 code. `summarize()` returns a verdict now, counting unlanded presses and taps against it, and both
 directions were exercised rather than assumed.
+
+---
+
+## Checkpoint — a card built from its data, and the measured answer to "how much of a deck is that?" (#308, D331-D333)
+
+Nick's goal for this work is *"an MTG Arena style engine with scripts for each card"*. 348 cards are
+scripted by hand. The other question — how much of a deck needs no script at all — now has a number
+rather than an impression.
+
+### The probe that moved the problem
+
+Before writing anything, a throwaway probe asked what the engine does **today** with a card nobody
+wrote a script for. Three readings, two of which meant the plan was wrong:
+
+| | |
+|---|---|
+| An unscripted **vanilla creature** | **Already works.** 2/2, cast, resolved, attacking next turn. |
+| An unscripted creature reading `Flying, vigilance` | **Already has both keywords.** `printedKeywords` was written for this. |
+| An unscripted **land** | **Produces no mana at all.** `manaSources` returned `[]`, potential pool all zeros, with `{T}: Add {G}.` printed on the card. |
+
+The engine reads mana abilities off the script and nowhere else. So a deck of data-derived cards was
+never failing on blank creatures — it was failing because its **lands did nothing**, and so it could
+not cast anything. One thing had to be generated, and it is the thing printed data states most
+exactly.
+
+A fourth reading settled a rejection rule: a `*`/`*` creature cast with no script went **straight to
+the graveyard** — correctly, since its size comes from a characteristic-defining ability nobody read,
+making it a 0/0 (CR 704.5f). A card that dies on arrival every time is worse than one you move by
+hand.
+
+### What it does
+
+`packages/rules-engine/src/fromCardData.ts` takes a card row and returns either a playable card or a
+refusal with a reason. The design decision that matters: **parse the printed text; `produced_mana` is
+the cross-check, not the source.** That field says *which* colours a permanent makes and nothing
+about how many — a Sol Ring produces `["C"]` and taps for **two** — so reading the field and ignoring
+the text would ship a card that is wrong in the direction that loses games. A disagreement between
+the two is a refusal, not a merge.
+
+`customDeck` then resolves a pasted name three ways instead of two: the pool, then the data, then
+cardboard. A hand-written script always wins, which is why all 348 pool cards read exactly as before
+— demonstrated by the 1364 pre-existing engine tests passing unchanged rather than argued.
+
+### How much of a deck
+
+`scripts/measure/derivable.mjs`, default arm, over the engine's own 348 cards read back as data:
+
+| | built | of | share |
+|---|---|---|---|
+| **Lands** | 17 | 28 | **60.7%** |
+| Creatures | 26 | 173 | 15.0% |
+| Instants | 0 | 69 | 0% |
+| Sorceries | 0 | 50 | 0% |
+| Artifacts | 0 | 18 | 0% |
+| Enchantments | 0 | 17 | 0% |
+| Planeswalkers | 0 | 5 | 0% |
+| **Overall** | **43** | **360** | **11.9%** |
+
+**The by-type row is the reading that transfers**, and the script prints it for that reason: the
+aggregate is a fact about whatever set was measured, while the rate within a type applies to any deck
+whose mix you know. These thirteen decks were built by hand to exercise sixty mechanics, so they are
+far heavier in paragraph-text cards than a list anybody plays — the script prints that caveat itself
+and says to read the share as a **floor**.
+
+A Commander deck is about 37 lands and 30 creatures, and a real mana base is basics and simple duals
+rather than this pool's Mutavaults and cycling lands. Roughly a third of a hundred-card list, almost
+all of it the mana base. Which is the probe's answer from the other side: the value is concentrated
+in lands, lands are the largest single block of a Commander deck, and the mana base is the part that
+must work before the rest of the deck can do anything.
+
+### Two corrections this phase made to its own work
+
+**The first grouping was not a work queue.** The refusal tally flattens every quoted line to `"…"`,
+so all 189 "cannot read the line" refusals landed in one bucket with one example — and the commit
+that shipped it claimed the grouping made the bucket mineable. It did not; it was a number and an
+anecdote. Fixed by grouping the lines by what they *open with*, which is a queue, and which named the
+next increment (morph and echo) that was invisible before.
+
+**`tallyDerivations` was deleted.** It counted a batch by kind — the obvious companion to
+`cardFromData`, written because it looked like it would be wanted. Nothing wanted it; the measure
+script needs the by-type and by-opening readings, neither of which belongs in the engine package. Its
+only caller was its own test, and a test over an export nobody calls is green and proves only that
+the speculation compiles.
+
+### Where the line is drawn, deliberately
+
+Morph, megamorph and echo now derive from their printed cost — **two cards of 360**, because six of
+the pool's morph creatures have a turned-face-up trigger as well, which is the whole reason most
+morph cards get printed.
+
+Everything past that is refused on principle rather than on effort. A morph cost is **data**: the
+engine knows what morph does, the card supplies a number, and a misparse is a refusal. "When this
+enters, you gain 2 life" is **English**, and turning English into an effect is the direction in which
+a card silently does less than it reads — no error, no failing test, and a player loses a game to the
+engine rather than to their own misreading. The project's rule for card text (*inventing the text of
+a real card is worse than leaving the mechanic out*) has a sibling: **inventing the effect of a real
+card is worse than leaving it cardboard.**
+
+### Nick's calls, untouched
+
+- **Running the Scryfall import.** One command on a machine that can reach it; the `--file` arm of
+  the measurement is what turns the floor above into the real figure.
+- **How `apps/realtime` should get card rows.** It has no database access at all — only Redis — and
+  all three `customDeck` calls sit inside a synchronous compare-and-set write where no query can
+  happen. Three options with their costs are in D332. What it must **not** be is the client sending
+  rows with the paste: that needs no new plumbing and is a cheating vector.
