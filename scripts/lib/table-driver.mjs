@@ -184,15 +184,63 @@ export async function tap(locator) {
 }
 
 export async function press(page, id) {
+  return (await pressOrWhy(page, id)).ok;
+}
+
+/**
+ * Presses a button and, when the press does not land, says what Playwright refused it for.
+ *
+ * `press` swallowed the click error, and that error is the one piece of evidence that names the
+ * cause. Playwright's call log records, in order, whether the locator resolved, whether the
+ * element was "visible, enabled and stable", and — when something covers it — the element that
+ * "intercepts pointer events", quoted from the real markup.
+ *
+ * It matters that the log is written *at the moment of the failure*. The first version of this
+ * diagnostic read the DOM afterwards instead, which is up to four seconds late — two attempts at
+ * a two-second timeout — and so would have missed any overlay that closed in the meantime and
+ * reported a perfectly clear button. The DOM read is kept at the call site, but it corroborates
+ * this; it does not stand in for it.
+ *
+ * `press` keeps its boolean because twenty-three call sites do not care why, and delegates here.
+ */
+export async function pressOrWhy(page, id) {
+  let last = '';
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       await tid(page, id).first().click({ timeout: 2000 });
-      return true;
-    } catch {
-      if (!(await has(page, id))) return false;
+      return { ok: true, why: '' };
+    } catch (err) {
+      last = err instanceof Error ? err.message : String(err);
+      if (!(await has(page, id))) {
+        return { ok: false, why: `the button went away mid-press: ${whyTheClickFailed(last)}` };
+      }
     }
   }
-  return false;
+  return { ok: false, why: whyTheClickFailed(last) };
+}
+
+/**
+ * Cuts Playwright's click error down to the lines that say why, without deciding what they mean.
+ *
+ * Not summarised to a verdict, because the two diagnoses this is meant to separate are both
+ * quotes from the log rather than inferences from it: "intercepts pointer events" names an
+ * overlay nobody closed, and a log that never reaches "element is visible, enabled and stable"
+ * means the button never settled. Summarising would be guessing which one happened, which is the
+ * question.
+ *
+ * The verdict sits at the **tail**: Playwright appends each actionability check as it retries, so
+ * the last thing it wrote is why it gave up. Any line mentioning an interception is kept wherever
+ * it appears, since the tail may belong to a later retry that got no further.
+ */
+function whyTheClickFailed(message) {
+  // Playwright dims its call log with ANSI codes, which in a log file read as literal `[2m`
+  // wrapped round the one line that matters.
+  const plain = message.replace(/\u001b\[[0-9;]*m/g, '');
+  const lines = plain.split('\n').map((line) => line.trim()).filter(Boolean);
+  if (lines.length === 0) return 'no message';
+  const intercepts = lines.filter((line) => /intercept/i.test(line));
+  const kept = [...new Set([lines[0], ...intercepts, ...lines.slice(-5)])];
+  return kept.join(' | ').slice(0, 700);
 }
 export const cardsIn = (page, zoneTestId) => page.locator(`[data-testid="${zoneTestId}"] [data-testid^="card-"]`);
 /**
@@ -803,8 +851,8 @@ export async function makeMove(
     a detached one are different faults, and the next occurrence should not need another afternoon
     to tell them apart.
   */
-  const pressed = await press(page, 'primary-move');
-  if (pressed) return `primary: ${label}`;
+  const pressed = await pressOrWhy(page, 'primary-move');
+  if (pressed.ok) return `primary: ${label}`;
   /*
     And **what is on top of it**, which is the answer the first two readings could not give.
 
@@ -818,6 +866,11 @@ export async function makeMove(
     `elementFromPoint` at the button's own centre names whatever is really there, by testid where
     it has one. If it comes back as the button itself, the click was refused for the other reason
     — an element that never stops moving — and that is a different fix again.
+
+    This read happens up to four seconds after the click was refused, so on its own it would clear
+    an overlay that has since closed. `pressOrWhy` carries Playwright's own call log from the
+    moment of the failure, and that is the primary reading; this one says whether the obstruction
+    is still there, which is the difference between an overlay nobody closes and one that flickers.
   */
   const why = await tid(page, 'primary-move').first()
     .evaluate((el) => {
@@ -842,7 +895,7 @@ export async function makeMove(
       ].join(', ');
     })
     .catch(() => 'the button is gone');
-  return `primary: ${label} — THE PRESS DID NOT LAND (${why})`;
+  return `primary: ${label} — THE PRESS DID NOT LAND. Playwright: ${pressed.why} || now: ${why}`;
 }
 
 /**
