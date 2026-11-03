@@ -120,6 +120,7 @@ function play(seed) {
   s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, { isHost: true });
   s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, { isHost: true });
 
+  const refusals = [];
   let peak = { bytes: 0, seat: 0, turn: 0, move: 0 };
   const sample = (move) => {
     for (let seat = 0; seat < 4; seat++) {
@@ -140,7 +141,18 @@ function play(seed) {
     const before = s.stateVersion;
     try {
       s = applyAction(s, action);
-    } catch {
+    } catch (err) {
+      /*
+        **Reported rather than swallowed.** The first draft of this loop was `catch { break; }`,
+        which is precisely the fault D244 found in thirty-five harnesses — an engine refusal reads
+        as a game that ended, and the run prints a clean peak either way. I wrote the thirty-sixth
+        in the same session that recorded the lesson.
+
+        It matters most on this script's own `LIMITS` arm, which deals 600 instances: the engine
+        refuses a token push past `MAX_INSTANCES`, so a swallowed throw there would turn "this table
+        cannot make a token" into "these games were fine".
+      */
+      refusals.push({ move: moves, type: action.type, message: err?.message ?? String(err) });
       break;
     }
     if (s.stateVersion === before) break;
@@ -152,7 +164,7 @@ function play(seed) {
     if (moves % 10 === 0) sample(moves);
   }
   sample(moves);
-  return { peak, turns: s.turn, moves, finished: s.finished };
+  return { peak, turns: s.turn, moves, finished: s.finished, refusals };
 }
 
 const shape = LIMITS ? 'AT THE ENGINE BOUND (150 cards a seat, 600 at the table)'
@@ -176,7 +188,12 @@ for (let i = 0; i < SEEDS; i++) {
     + ` on seat ${r.peak.seat} at turn ${r.peak.turn}`
     + ` — ${r.turns} turns, ${r.moves} moves${r.finished ? '' : ', UNFINISHED'}`,
   );
+  for (const r2 of r.refusals) {
+    console.log(`           REFUSED at move ${r2.move}: ${r2.type} — ${r2.message}`);
+  }
 }
+
+const refused = rows.flatMap((r) => r.refusals);
 
 const pct = (worst.bytes / STATE_MAX_BYTES) * 100;
 console.log(`\nworst peak: ${worst.bytes} bytes of ${STATE_MAX_BYTES} (${pct.toFixed(1)}%),`
@@ -191,6 +208,11 @@ console.log('the peak as a floor on the peak rather than a bound on it.');
   Exit non-zero when a view would have been refused. `PodStateEvent` rejects a state over the cap,
   so a peak above it is not a slow table: it is a broadcast that never goes out.
 */
+if (refused.length > 0) {
+  console.log(`\n${refused.length} of ${rows.length} game(s) ended on an engine refusal rather than a`);
+  console.log('result. A peak measured up to a refusal is a peak over a game that stopped early.');
+}
+
 if (worst.bytes > STATE_MAX_BYTES) {
   console.log(`\nFAIL: a view exceeded ${STATE_MAX_BYTES} bytes, which PodStateEvent refuses.`);
   process.exit(1);

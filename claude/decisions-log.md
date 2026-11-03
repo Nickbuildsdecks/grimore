@@ -21968,3 +21968,50 @@ seat, 600 at the table, the biggest pod that can be dealt — the peak view over
 bigger view. The board is the whole of it.
 
 Gate green, 17/17. `pastedNote` has two more tests, including the 150 boundary that deals.
+
+## D353 — I wrote the thirty-sixth harness that swallows an engine throw, in the session that recorded the lesson
+
+`wire-growth.mjs` (#313) had this in its game loop:
+
+```js
+try { s = applyAction(s, action); } catch { break; }
+```
+
+That is exactly the fault D244 found in **thirty-five** harnesses: an engine refusal reads as a game
+that ended, and the run prints a clean peak either way. I wrote the thirty-sixth, two days after
+writing the entry about the other thirty-five, in a script whose whole job is to report a number.
+
+It matters most on that script's own `LIMITS` arm, which deals **600 instances** — the engine's
+`MAX_INSTANCES` exactly. A swallowed throw there would have turned "this table cannot make a token"
+into "these four games were fine". The loop now records the move, the action type and the message,
+prints each one under its seed, and says how many games ended on a refusal rather than a result.
+
+### What the honest run then said, and the asymmetry behind it
+
+**No refusals, in four games of 67 to 93 turns at 600 instances.** So I went looking for why, because
+600 is zero headroom and these decks make tokens.
+
+`MAX_INSTANCES` is checked in exactly two places, both in `cardActions.ts`: the **deal** (`deck:load`,
+`INVALID_DECK`) and the **tabletop** token action (`card:token`, `INVALID_ACTION` — "a token made by
+hand", as its own comment says). The automated path, `createToken`/`addTokens` in `effects.ts`,
+**does not check it at all**. So a card resolving a token does not consult the cap, which is why a
+600-instance table plays on.
+
+Left alone, deliberately, and this is the reasoning rather than a shrug:
+
+- The bound that actually matters is the **view**, and it is measured far away from the cap: 27.9% at
+  600 instances over whole games (#314), 44.4% at 400 (#313).
+- No card in the pool makes more than a handful of tokens at once, so the docblock's claim — "so one
+  action can never blow past `STATE_MAX_BYTES`" — holds for the automated path for a different
+  reason than the constant: the card text bounds it.
+- Making `addTokens` throw would refuse a token **mid-resolution**, leaving a spell half-resolved.
+  That is a worse failure than a large board, and the engine has no way to undo the half it did.
+
+What is wrong is only the impression the heading gives, that the constant covers the card layer
+generally. It covers the two paths a *payload* can name a count on. The third path is bounded by the
+cards, which is a real bound and a different one.
+
+The general lesson, which is about me rather than the engine: **writing down a defect pattern does
+not inoculate against it.** D244 is one of the longest entries in this file, and I reproduced its
+subject while building an instrument to measure something else — because the `catch` was incidental
+to what I was thinking about. The ones that get written are the ones nobody is thinking about.
