@@ -5,7 +5,10 @@
  * What is here is the thing that has to read well to a player who did nothing wrong.
  */
 import { describe, it, expect } from "vitest"
-import { connectionTrouble, moveName, pastedNote, rejoinTrouble, showsBroadcastError, waitingNote } from "./table"
+import {
+  connectionTrouble, moveName, pastedNote, rejoinTrouble, showsBroadcastError, silentServerNote,
+  waitingNote,
+} from "./table"
 
 describe("naming a move in an error banner", () => {
   it("says what the player tapped, not what the engine calls it", () => {
@@ -130,6 +133,47 @@ describe("the table that is never going to connect", () => {
 
   it("keeps saying it once it has started, so a long outage does not go quiet", () => {
     expect(connectionTrouble(9, "")).toBe(connectionTrouble(3, ""))
+  })
+})
+
+describe("the server that takes the connection and says nothing", () => {
+  /*
+    The failure above is a socket that never connects, and the screen tells you. This is the one
+    where the screen does not, and it is reachable from this project's own documented address.
+
+    `server.js` mounts this SPA at `/react` when `apps/web/dist` exists, and with
+    `VITE_REALTIME_URL` unset the client connects to the page's own origin — the legacy server,
+    which runs its own Socket.IO and has zero `pod:` handlers. Driven with Playwright against
+    `http://127.0.0.1:3000/react/play`: the socket opened to `ws://127.0.0.1:3000/socket.io/`, the
+    handshake succeeded, the lobby rendered fully, reported no trouble, listed nothing — and
+    pressing Create table said `the table did not answer` about ten seconds later and nothing else.
+  */
+  it("keeps the old sentence when the socket is not connected", () => {
+    // Not-connected is a reconnect race, and `connectionTrouble` is already saying the useful thing
+    // about it. Changing this wording would be noise on a path that is already covered.
+    expect(silentServerNote("", false)).toBe("the table did not answer")
+  })
+
+  it("says the connection was taken, which is the part that explains the healthy-looking screen", () => {
+    const said = silentServerNote("", true)
+    expect(said).toContain("took the connection")
+    expect(said).toContain("did not answer")
+  })
+
+  it("names the address, including the same-origin default", () => {
+    expect(silentServerNote("", true)).toContain("this page's own address")
+    expect(silentServerNote("wss://grimore.example", true)).toContain("wss://grimore.example")
+  })
+
+  it("says the table is its own process, and does not claim this address is the wrong one", () => {
+    /*
+      The distinction the docblock argues for. A real table server that is wedged produces the same
+      timeout, so naming the cause would be a guess. What is always true — and what explains how a
+      page can be served by something that cannot play — is that the two are different processes.
+    */
+    const said = silentServerNote("", true)
+    expect(said).toContain("its own process")
+    expect(said).not.toMatch(/wrong server|legacy|port 3000/i)
   })
 })
 

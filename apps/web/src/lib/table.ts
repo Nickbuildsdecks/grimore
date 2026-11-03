@@ -120,6 +120,50 @@ export function connectionTrouble(attempts: number, url: string): string | null 
   return `Cannot reach the table at ${where}. Either it is not running, or this network is `
     + "blocking WebSockets — the table needs them and has no fallback."
 }
+
+/**
+ * What to say when the server took the connection and then said nothing back.
+ *
+ * `connectionTrouble` above covers a socket that never connects. This is the other failure, and it
+ * is worse because **the screen looks right**: the handshake succeeds, so the connecting pill goes
+ * green, the lobby renders, "Nobody has an open table right now" reads as an empty lobby rather
+ * than as a server that will never answer, and the only thing a player ever sees is one line eight
+ * seconds after they press Create table.
+ *
+ * ## Where it comes from, measured in a real browser
+ *
+ * The legacy app mounts this SPA at `/react` when `apps/web/dist` exists (see the `reactDistPath`
+ * block in `server.js`), and with `VITE_REALTIME_URL` unset the client connects to the page's own
+ * origin — which is the **legacy** server. Driven with Playwright against
+ * `http://127.0.0.1:3000/react/play`:
+ *
+ *  - the socket opens to `ws://127.0.0.1:3000/socket.io/` and the handshake **succeeds**, because
+ *    `server.js` runs its own Socket.IO instance on that path
+ *  - that instance has **zero** `pod:` handlers — `grep -c "socket.on('pod:" server.js` is 0
+ *  - the lobby renders fully, lists nothing, and reports no trouble at all
+ *  - pressing Create table produced `the table did not answer` after about ten seconds, and
+ *    nothing else
+ *
+ * So a player following this project's own documented address — CLAUDE.md says the server runs on
+ * `http://localhost:3000` — reaches a Play Realm that looks healthy and cannot work, with no hint
+ * that the table is a different process on a different port (`apps/realtime`, 4100 in development;
+ * behind one reverse proxy in the compose deployment).
+ *
+ * ## What it does and does not claim
+ *
+ * Only that the address answered the handshake and not the protocol, which is exactly what was
+ * observed and is true of every instance of this failure. It does **not** claim the address is the
+ * wrong server, because a real table server that is overloaded or wedged produces the same timeout,
+ * and naming one cause would be the guess-dressed-as-diagnosis that `connectionTrouble`'s docblock
+ * talks itself out of. The remedy, which only whoever runs the server can act on, goes to the
+ * console beside it.
+ */
+export function silentServerNote(url: string, connected: boolean): string {
+  if (!connected) return "the table did not answer"
+  const where = url === "" ? "this page's own address" : url
+  return `The server at ${where} took the connection but did not answer. The table runs as its own `
+    + "process, so an address that serves this page is not necessarily the one that plays the game."
+}
 const STORE_KEY = "grimore.table.seat"
 /** Where the last decklist a player pasted is kept. See `readSavedList`. */
 const LIST_KEY = "grimore.table.list"
@@ -629,7 +673,25 @@ export function useTable(playerName: string): UseTable {
     if (!socket) return Promise.resolve({ ok: false, error: { code: "internal", message: "not connected" } })
     return new Promise((resolve) => {
       const timer = setTimeout(
-        () => resolve({ ok: false, error: { code: "internal", message: "the table did not answer" } }),
+        () => {
+          /*
+            Connected-and-silent is a different failure from not-connected, and `silentServerNote`
+            says which one this is. The console line is for whoever is running the server, the same
+            split `connectionTrouble` makes: the player gets what is true, the operator gets the fix.
+          */
+          if (socket.connected) {
+            console.warn(
+              `[table] ${REALTIME_URL === "" ? "this page's own origin" : REALTIME_URL} accepted the `
+              + "socket but did not answer the table protocol. The table is apps/realtime (port 4100 "
+              + "in development). Set VITE_REALTIME_URL when the page is served from somewhere else, "
+              + "or put a proxy in front that forwards /socket.io to it.",
+            )
+          }
+          resolve({
+            ok: false,
+            error: { code: "internal", message: silentServerNote(REALTIME_URL, socket.connected) },
+          })
+        },
         8000,
       )
       socket.emit(event, payload, (res: AckResult) => {

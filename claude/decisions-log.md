@@ -21663,3 +21663,78 @@ resolves its SQLite path at require time from `__dirname` with no override. The 
 the `mv grimore.db aside` recipe that actually works, and says what it replaced. A documented flag
 that does not exist is a claim that cannot be true, which is the same fault as a check that cannot
 fail, committed in a comment instead of in code.
+
+## D347 — Two front doors, and the one that looks healthiest cannot play (#312)
+
+Running the legacy server for #311 put a question in front of me that nothing had asked: **if Nick
+opens the address CLAUDE.md names — `http://localhost:3000` — and finds the Play Realm, does it
+work?**
+
+`server.js` mounts the v2 SPA at `/react` whenever `apps/web/dist` exists. So the Play Realm *is*
+there. Driven with Playwright against `http://127.0.0.1:3000/react/play`:
+
+- the lobby renders **completely**: the two formats, the name field, Just us / Open table, Create
+  table
+- the socket opens to `ws://127.0.0.1:3000/socket.io/` and the **handshake succeeds**, because the
+  legacy server runs its own Socket.IO on that path
+- `grep -c "socket.on('pod:" server.js` is **0** — that instance has no table handlers at all
+- "Nobody has an open table right now" reads as an empty lobby
+- **no connection warning appears**, because nothing is wrong with the connection
+- pressing Create table produced `the table did not answer` about ten seconds later, and nothing
+  else
+
+So the single most likely address for a new player serves a Play Realm that looks completely healthy
+and cannot play, and the only thing it ever said was five words that name no cause.
+
+### Why this is the mirror of #266 and not a repeat of it
+
+#266 fixed a table that said `connecting` for ever, and `connectionTrouble`'s docblock is careful
+about what it may claim: pointed at a closed port, every `connect_error` carried the string
+`websocket error` and nothing else, so it says the two things true of every case rather than
+guessing which one it is.
+
+This failure is on the other side of a **successful** handshake, which is why none of that
+machinery fires. And it is the worse of the two, because the failure the screen shows you is nothing
+at all. A connection that fails is visible; a connection that succeeds and goes nowhere looks like
+an empty room.
+
+### What it says now, and what it refuses to say
+
+`silentServerNote(url, connected)` replaces the bare timeout string:
+
+> The server at this page's own address took the connection but did not answer. The table runs as
+> its own process, so an address that serves this page is not necessarily the one that plays the
+> game.
+
+It claims **only** that the handshake was taken and the protocol was not answered, which is exactly
+what was observed. It deliberately does **not** say "this is the wrong server", because a real table
+server that is wedged or overloaded produces the same eight-second timeout — naming that cause would
+be the guess-dressed-as-diagnosis `connectionTrouble` talks itself out of. A test pins that:
+`expect(said).not.toMatch(/wrong server|legacy|port 3000/i)`.
+
+The operator's version — `apps/realtime`, port 4100, `VITE_REALTIME_URL`, or a proxy forwarding
+`/socket.io` — goes to the console, the same split #266 made: the player gets what is true, whoever
+runs the server gets the fix.
+
+Not-connected keeps the old sentence, because `connectionTrouble` is already saying the useful thing
+about that path and changing it would be noise.
+
+### Verified in the browser that produced the bug
+
+The same probe, after rebuilding `apps/web`: the banner now carries the new sentence and the console
+carries the remedy. Four unit tests in `apps/web/src/lib/table.test.ts` (27 in the file now), and
+the browser suites on the shipping table: `e2e-table` **73/73**, `check-table-controls` **26/26**.
+
+### What is not fixed, and why that is a decision rather than a dodge
+
+The underlying split — page on 3000, table on 4100 — is a deployment choice with three plausible
+answers: give the `/react` mount a realtime address, put a proxy in front that forwards `/socket.io`
+to `apps/realtime` (**it cannot be the legacy server itself**, whose own Socket.IO already owns that
+path), or leave 3000 serving the rest of the SPA and keep the table on its own address. That is
+Nick's to pick; `claude/play-realm-setup.md` now has the section, the evidence, and the three
+options.
+
+The general lesson, which is new and is about where to look rather than what to fix: **a feature can
+be thoroughly tested through the door it was built behind and completely broken through the door
+people will actually use.** Six browser suites, 253 checks, every one of them entered at port 5100.
+Not one had ever opened the address the project's own instructions name.

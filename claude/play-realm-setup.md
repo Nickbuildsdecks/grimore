@@ -932,10 +932,47 @@ run end to end.
 | `Redis is not answering` on startup | Redis is not running. The command is in *Running it at home*. |
 | `Port 5100 is already in use` | A server from last time. `lsof -i :5100`, or use `WEB_PORT=5101`. |
 | The lobby loads but **Create table** does nothing | The browser cannot reach the table server. Usually the printed address is not reachable from that device — set `PLAY_HOST`. |
+| The lobby loads from **port 3000**, lists nothing, and after eight seconds says *"took the connection but did not answer"* | You are at the wrong front door. See *Two front doors, and only one of them plays* below. |
 | Handshake fails with **403** | An origin is being refused. Either `SOCKET_ALLOWED_ORIGINS` does not list the address you are browsing from, or clear it to allow any. |
 | `/api/auth/status` fails in the console | Expected. The table does not use `apps/api`; this is the rest of the SPA asking whether you are signed in. |
 | A reload loses the game | It should not — your seat is held for two minutes and reclaimed automatically. Past that the seat is gone. |
 | A change to the rules engine does not show up | Restart `scripts/play.mjs`, and that is all — it rebuilds the packages and the table server itself on the way up (two seconds when nothing changed). The web app hot-reloads from source; the table server runs from `dist/` and holds whatever it loaded at startup, so for three debugging sessions "the code is right and the server is old" looked exactly like a bug in the new code. It cannot now: restarting is rebuilding. |
+
+### Two front doors, and only one of them plays
+
+The legacy app serves this same SPA at `/react` whenever `apps/web/dist` exists — the
+`reactDistPath` block in `server.js`. So **`http://localhost:3000/react/play` loads the Play
+Realm**, and CLAUDE.md names port 3000 as where this project runs, which makes that the address
+somebody is most likely to try.
+
+It cannot play, and until #312 it did not say so. Driven with a real browser:
+
+- the lobby renders completely, with the formats, the name field and Create table
+- the socket opens to `ws://127.0.0.1:3000/socket.io/` and the **handshake succeeds**, because the
+  legacy server runs its own Socket.IO on that path
+- that instance has **no table handlers at all** (`grep -c "socket.on('pod:" server.js` is `0`), so
+  nothing ever answers
+- "Nobody has an open table right now" reads as an empty lobby rather than as a server that will
+  never reply, and no connection warning appears, because the connection is fine
+
+Pressing Create table now says:
+
+> The server at this page's own address took the connection but did not answer. The table runs as
+> its own process, so an address that serves this page is not necessarily the one that plays the
+> game.
+
+and the browser console carries the operator's version, naming `apps/realtime`, port 4100, and
+`VITE_REALTIME_URL`.
+
+**The address that plays is the one `scripts/play.mjs` prints** — port 5100 at home, or whatever the
+reverse proxy serves in the compose deployment, where the table and the page share an origin on
+purpose. Port 3000 serves the page and not the game.
+
+What to do about that is a deployment decision rather than a bug to fix from here: either give the
+`/react` mount a realtime address, put a proxy in front that forwards `/socket.io` to
+`apps/realtime` (it cannot be the legacy server itself — that path is already taken by its own
+Socket.IO), or leave 3000 serving the rest of the SPA and keep the table on its own address. The
+failure is at least legible now, which is what was actually missing.
 
 ### Finding a table
 
