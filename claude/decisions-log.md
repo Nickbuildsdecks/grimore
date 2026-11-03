@@ -20985,3 +20985,33 @@ different handful each time:
 unexercised in a browser; a single run's skip list is a fact about that shuffle, not about coverage,
 and only the union across runs is evidence. That is a negative result, and the right place for it is
 here rather than in a new instrument — which is the same call D247 made about thirty clean runs.
+
+---
+
+## D336 — Closed as a negative: no other measure script has an unrun arm (#308)
+
+D334 cost an hour because `derivable.mjs` shipped with two arms and only one had ever been run, and
+the unrun one was wrong in both halves. The obvious follow-up is whether any of the other fifty
+measure scripts is in the same state. Asked, and the answer is no.
+
+Fifty-one scripts, env-gated flags extracted, the parameters every run uses (`SEED`, `SEEDS`,
+`BOT`, `MOVES`, `VERBOSE`, `SUBJECT`) set aside, and five flags left with no recorded run anywhere
+in the decision log or the measure README: `PROBE_DECISIONS`, `EXPOSED`, `ALL`, `AGAINST`, `DRAWS`.
+
+**All five are parameters with defaults, not alternative arms.** `PROBE_DECISIONS=3000`,
+`AGAINST='ember-rush'` and `DRAWS=3` are defaults every run already uses; `EXPOSED=1` is the weight
+that shipped, and the flag exists so a different one needs no edit; `ALL=1` widens
+`mechanic-coverage`'s output from the thin rows to every row, which is a different view of data the
+default already computes. Not one of them is a branch nothing has executed.
+
+Which makes `derivable.mjs --file` the exception rather than an example of a pattern, and names what
+was actually special about it: **the pool arm's own output points at the other arm for the real
+answer.** An unrun parameter value is an untried setting. An unrun arm that a recorded conclusion
+defers to is a hole in the conclusion.
+
+One note on the instrument, since it is the same lesson a third time. My proxy for "has this been
+run" was "does a doc mention the flag with a value", which measures *"never set to a non-default"* —
+not *"never executed"*. It happened to surface the right five names, and it would have missed an arm
+somebody ran once without writing down, and it flagged three parameters that run constantly. Stated
+rather than quietly relied on, which is the whole of `surface-coverage.mjs`'s precision note and
+`cr-claims.mjs`'s before it.
