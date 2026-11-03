@@ -40,6 +40,7 @@
  */
 import {
   applyAction, characteristicsOf, createGame, evaluate, seatsToAct, botAction, STARTER_DECKS,
+  EMPTY_POOL, canAfford, hasType, manaSources, parseManaCost, parseTypeLine,
 } from '../../packages/rules-engine/dist/index.js';
 
 const ALL = Object.keys(STARTER_DECKS);
@@ -64,8 +65,23 @@ const BUCKETS = [-20, -10, -3, 3, 10, 20];
 
   Deliberately a re-derivation of what `seatValue` sums rather than a call into it: if the harness
   read the bot's own breakdown, a component that is mispriced *and* mis-measured would agree with
-  itself. These are the five quantities a player would name — and `board` uses power plus toughness
+  itself. These are the quantities a player would name — and `board` uses power plus toughness
   because that is the measure the bot's own blocking logic trades on.
+
+  **`castable` was added late, because the term it measures had never been calibrated** (#274).
+  `castable` shipped at a weight of 1 on a win rate (+1.35 points over three seed sets) and a
+  leverage reading (4.8% of cast decisions) — D271 — and this table, written at D241, predates it.
+  So the newest term in the evaluation was the one nobody had ever asked the question this file
+  exists to ask: *does the seat it says is ahead actually win?* Reading it next to `hand`, which it
+  was built to replace, is the whole point: `hand` is a raw count that calibrates at 38-44%
+  mid-game, pointing the wrong way, and if the replacement was the right **shape** rather than the
+  right weight then it should not.
+
+  Re-derived from the same primitives the bot uses rather than by calling its private
+  `castableInHand`, which is not exported — the discipline above. One deliberate difference: the
+  bot starts from `poolOf(state, seat)` and this starts from `EMPTY_POOL`, because a sample is
+  taken at a clean point between rounds where no mana is floating. If that ever stops being true
+  the two will disagree, and the sampling comment is the place to look.
 */
 const componentsFor = (state, seat) => {
   let board = 0;
@@ -77,16 +93,27 @@ const componentsFor = (state, seat) => {
     if (ch.isLand) lands += 1;
     else if (ch.isCreature) board += Math.max(0, ch.power) + Math.max(0, ch.toughness);
   }
+  const sources = manaSources(state, seat);
+  let castable = 0;
+  for (const id of state.zones[`${seat}:hand`] ?? []) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const def = state.cardDefs[inst.defKey];
+    if (def === undefined) continue;
+    if (hasType(parseTypeLine(def.typeLine), 'land')) continue;
+    if (canAfford(EMPTY_POOL, parseManaCost(def.manaCost), sources)) castable += 1;
+  }
   return {
     life: state.seats[seat]?.life ?? 0,
     board,
     lands,
     hand: (state.zones[`${seat}:hand`] ?? []).length,
+    castable,
     library: (state.zones[`${seat}:library`] ?? []).length,
   };
 };
 
-const KEYS = ['total', 'life', 'board', 'lands', 'hand', 'library'];
+const KEYS = ['total', 'life', 'board', 'lands', 'hand', 'castable', 'library'];
 
 /** One sample: the turn it was taken on, each margin from seat 0's view, and who won. */
 const samples = [];
@@ -137,6 +164,7 @@ function duel(seed, decks) {
       board: mine.board - theirs.board,
       lands: mine.lands - theirs.lands,
       hand: mine.hand - theirs.hand,
+      castable: mine.castable - theirs.castable,
       library: mine.library - theirs.library,
     };
     taken.push({ seat: 0, ...row });
