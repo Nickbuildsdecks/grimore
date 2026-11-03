@@ -21127,3 +21127,43 @@ Proved by break: revert `scriptOnStack` to `scriptFor` and the cycling test fail
 other 35 pass.
 
 Gate green: 2181 tests across 17 packages, 1407 in the engine.
+
+---
+
+## D339 — Correction to D332: realtime should not get a database pool, and a prior decision says why
+
+D332 listed three ways to get card rows to `apps/realtime` and called it Nick's decision. I was
+leaning towards the first — give realtime a Postgres pool — and had talked myself into thinking the
+only objection was availability, which an *optional* pool with graceful fallback to pool-only
+resolution would answer completely: no new failure mode, the Play Realm still runs without the card
+database, pasted lists just stay as they are today.
+
+Then I read `packages/shared/src/env.ts`. The reason `realtimeEnvSchema` exists is a decision
+already taken, with its reason written down:
+
+> It had been calling `parseEnv()`, the whole-platform schema, so it refused to boot without
+> `DATABASE_URL` and `SESSION_SECRET` — neither of which it ever reads. That is worse than
+> inconvenient: **a process that demands a database URL it never opens invites someone to put the
+> production one into its environment**, and it makes "the table will not start" look like a
+> database problem when there is no database involved.
+
+That is not an availability argument, which is why my optional-pool design does not answer it. It is
+about **where a production credential ends up**. Giving realtime a pool means handing the socket
+server a database credential it would use for one optional feature — exactly the thing that change
+was made to prevent, and exactly the kind of decision somebody should not quietly reverse six
+months later because it was the shortest path to a feature.
+
+So the ordering changes. **Option 2 — realtime asks `apps/api` for the rows over HTTP — is now the
+leading candidate**, because it keeps the credential in the service that already holds it and adds
+no new place for it to live. Its costs are real and smaller: a network hop on the paste path, and
+realtime needing to know the API's address.
+
+Two things worth keeping from this:
+
+- The decision is still Nick's, but it is a **different** decision than I described. Not "which
+  plumbing is tidiest" but "should the socket server hold a database credential" — and the
+  codebase's own answer to that is already no.
+- I nearly reversed a recorded decision by not reading the file that holds it. The `env.ts` docblock
+  did its job; I only had to look. The general version: before choosing between options, check
+  whether one of them has already been decided against, because a stated reason in the code outranks
+  a fresh preference formed without it.
