@@ -905,8 +905,19 @@ export class PodStore {
  */
 const BOT_MOVE_GUARD = 500;
 
-/** Where a write stops being quick and starts being worth a line. See `onSlowWrite`. */
-const SLOW_WRITE_MS = 4000;
+/**
+ * Where a write stops being quick and starts being worth a line. See `onSlowWrite`.
+ *
+ * Four seconds by default: half the client's eight, so a write is reported while it is still
+ * merely slow rather than after the player has already been told the table did not answer.
+ *
+ * Settable because the threshold is a **measurement parameter** rather than a policy. Two slow
+ * writes in sixteen pods (D318) say the tail is bad and nothing about the shape of the
+ * distribution, and the shape is what decides between raising the client's patience, bounding the
+ * moves per write, and making a pod's bots think less. `SLOW_WRITE_MS=200` turns this into a
+ * census of every write; the default keeps the log to the ones a player would notice.
+ */
+const SLOW_WRITE_MS = Number(process.env.SLOW_WRITE_MS ?? 4000);
 
 /** Names for the seats the server plays. Plain and obviously not a person. */
 const BOT_NAMES = ['Opponent', 'Opponent II', 'Opponent III'];
