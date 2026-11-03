@@ -16277,7 +16277,7 @@ describe('madness: a card discarded into exile, and a cheaper cast out of it', (
   const discarding = (s: GameState, names: readonly string[]): GameState =>
     drain(decide(drain(s, 8), names), 40);
 
-  it('goes to exile instead of the graveyard, and offers itself for its madness cost', () => {
+  it('goes to exile instead of the graveyard, and offers itself for its madness cost (CR 702.35a)', () => {
     let s = looting(['Mountain', 'Mountain'], ['Fiery Temper', 'Swamp']);
     s = discarding(s, ['Fiery Temper', 'Swamp']);
 
@@ -16736,7 +16736,7 @@ describe('bestow: the creature you may cast as an Aura, and the Aura that stands
     expect(s.effects.some((e) => e.source === card)).toBe(false);
   });
 
-  it('a bestowed spell is an Aura spell, so a counterspell for creatures misses it', () => {
+  it('a bestowed spell is an Aura spell, so a counterspell for creatures misses it (CR 702.103b)', () => {
     /*
       The public half of the flag: it is set as the spell is announced, so what is on the stack is
       an Aura spell. An Essence Scatter — "counter target creature spell" — cannot be pointed at
@@ -18605,7 +18605,7 @@ describe('ninjutsu: the creature that arrives already attacking', () => {
     expect(ninjutsuPlay(s)).toBeUndefined();
   });
 
-  it('is offered once the attack is through, and swaps the Hawk for the Ninja', () => {
+  it('is offered once the attack is through, and swaps the Hawk for the Ninja (CR 702.49a)', () => {
     let s = unblocked();
     const play = ninjutsuPlay(s);
     expect(play).toBeDefined();
