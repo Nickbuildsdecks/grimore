@@ -1380,8 +1380,20 @@ decks they pasted in).
   six columns a rules engine needs and had none — `power`, `toughness`, `loyalty` (all TEXT,
   because `*`, `1+*` and `X` are printed values), `layout`, `oracle_id` and `produced_mana` — and
   the bulk importer writes 26 columns where it used to write 13, having never once written
-  `color_identity`, `legalities`, `keywords`, `card_faces` or `edhrec_rank`. What is left is
-  **running it**, which is one command on a machine that has the file:
+  `color_identity`, `legalities`, `keywords`, `card_faces` or `edhrec_rank`.
+
+  **And the engine can now build a playable card out of such a row** (D331-D333), for the cards
+  whose rules their data already is: a basic land, a land or rock whose printed mana ability reads
+  cleanly, a vanilla creature, a creature whose whole text is keywords, and one whose text is
+  keywords plus a morph or echo cost. `customDeck` resolves a pasted name three ways now — the
+  pool, then the data, then cardboard — and a hand-written script always wins. Measured over the
+  engine's own 348 cards, that is **61% of lands and 15% of creatures**, which on a real Commander
+  list is roughly a third of it and almost all of the mana base
+  (`node scripts/measure/derivable.mjs`).
+
+  So two things are left, and the first is not enough on its own:
+
+  1. **Run the import.** One command on a machine that has the file:
 
   ```bash
   # Download Scryfall's `oracle_cards` bulk file anywhere (one row per unique card,
@@ -1395,6 +1407,16 @@ decks they pasted in).
   prints what it wrote, what it filtered out (tokens, emblems, art series, silver and gold borders,
   digital-only printings, anything legal in no format), what it could not parse and what the
   database refused, and it throws rather than reporting success if it wrote no rows.
+
+  2. **Get the rows to the table, which needs a decision.** `apps/realtime` has **no database
+     access at all** — only Redis — and all three `customDeck` calls sit inside a synchronous
+     compare-and-set write where no query can happen. So a populated `scryfall_cards` does nothing
+     for a pasted list until one of these is chosen: give realtime a Postgres pool; have it ask
+     `apps/api` for the rows over HTTP; or have `apps/api` resolve the list and park the rows in
+     Redis. The options and their costs are in D332. The fourth option — the client sending the
+     rows along with its paste — is the one that needs no new plumbing and is also a **cheating
+     vector**, since a player could hand over a row claiming a 100/100 vanilla creature, so it is
+     named here only to be ruled out.
 - **The engine knows three hundred and forty-eight cards.** Everything in the thirteen starter decks,
   commanders included, plus the extra *faces* of the nine cards printed with more than one — three
   splits, two adventures, two modal double-faced lands and two that transform. (Both counts are
