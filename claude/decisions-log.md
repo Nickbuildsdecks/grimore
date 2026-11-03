@@ -19318,3 +19318,63 @@ in it reads as one.
 
 **Not retrofitted.** The eighteen rows that already exist cannot be given a provenance they were
 never asked for, and D298 says so. What changes is that the next long run has one.
+
+## D301 — An Overrun was pumping creatures cast after it resolved (CR 611.2c)
+
+The rules audit that produced #269, #270, #272, #276 and #277 kept going, and the next CR area the
+engine had never been checked against was **611 — continuous effects**, which is cited nowhere in
+the source. The gap it found is one of the oldest cards in the pool doing the wrong thing.
+
+Overrun — "creatures you control get +3/+3 and gain trample until end of turn" — resolved with a
+single 2/2 on the board, which correctly read 5/5. A **Centaur Courser put onto the battlefield
+afterwards read 6/6**, off a printed 3/3, with trample. CR 611.2c: a continuous effect created by a
+resolved spell or ability applies only to the permanents that were on the battlefield when the
+effect was created, and does not pick up permanents that arrive later. Only an effect from a
+**static** ability (CR 611.3) is dynamic.
+
+**The cause is the shape of the fix, not a missing check.** `pumpTeam` and `pumpAll` pushed
+`scope: { kind: 'controller-creatures' }` and `{ kind: 'all-creatures' }`, and a scope in this engine
+is **re-read on every characteristics lookup** — which is exactly right for Glorious Anthem and
+exactly wrong for a spell that has already resolved. There was no branch to add; the scope was being
+asked a question it answers the same way for two cases the rules distinguish.
+
+**`duration` is the discriminator, and it is honest rather than convenient.** `'permanent'` is the
+duration `staticEffect` uses and the only one a static ability has; every other duration — end of
+turn, end of combat, until your next turn — exists *because something resolved to create it*. So a
+permanent duration keeps the dynamic scope and anything else resolves to an id list at creation,
+through `pump`, which has carried `{ kind: 'cards' }` since it was written. **Reading the scope was
+the wrong place to look for this, which is why it survived: the two cases were never distinguishable
+from the scope.**
+
+**The sweeps are where it changed games rather than numbers.** After a Toxic Deluge — "all creatures
+get −X/−X until end of turn" — a player is entitled to rebuild that turn. With a dynamic scope every
+creature they cast afterwards arrived already shrunk, and a 1/1 entering under a −2/−2 is a dead
+creature on arrival. That is a different card, not a different figure, and it has been the pool's
+behaviour since `pumpAll` was written.
+
+**The test's second half is the one that makes it a test of the rule.** An implementation that simply
+locked every scope would pass "Overrun does not reach the later creature" and quietly break Glorious
+Anthem, so the anthem case is asserted beside it: nothing on the board when the enchantment arrives,
+a creature cast afterwards, pumped anyway. Same lesson as D290 — the assertion has to be able to
+fail for the wrong fix as well as the right one.
+
+**One thing this does not fix, inherited from `pump` rather than introduced here:** a creature that
+dies and comes back is a new object (CR 400.7) and should be outside the locked set, but `relocate`
+keeps its instance id, so an id list still reaches it. That has been true of every "target creature
+gets +3/+3" in the pool from the beginning. It wants an object identity the engine does not have, and
+pretending an id is one would be the kind of silent wrongness this entry is about.
+
+**The fix broke one existing test, and which way round matters.** `scripts.test.ts`'s "carries every
+option through every builder" built its four effects from a card in the **library** — so once
+`pumpTeam` and `pumpAll` lock to the creatures actually on the battlefield, two of the four correctly
+produced nothing and the test's `effects.length === 1` failed. **The setup was wrong, not the
+assertion**: what that test is for is that every option survives each builder, and two of the
+builders now need a board to have anything to apply to. So a creature went onto the battlefield, and
+the fact the failure exposed became its own test beside it — an empty board builds no effect at all,
+rather than one waiting to catch whatever is cast next, and a static ability still builds one. A
+failing test after a rules fix is a question about which of the two is wrong, and answering it the
+lazy way round is how a fix becomes a regression.
+
+**And it is the second engine change this session that moves every pod figure.** D297 changed what a
+dead player leaves behind; this changes what a sweep reaches. A pod number taken before either is not
+comparable with one taken after, and `pod-duel.mjs` now names both.

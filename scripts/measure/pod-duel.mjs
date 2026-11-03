@@ -48,13 +48,19 @@
  * Raise `SEEDS` and the floor narrows roughly as the square root: `SEEDS=8` is four times the games
  * for half the wobble, which is the cheapest honest way to ask a pod question.
  *
- * **Every pod figure taken from this file before #276 was taken on an engine that did not enforce
- * CR 800.4a**, and that includes D294/D295's 2434 pods. A seat eliminated mid-pod used to leave its
- * whole board on the table — creatures, hand, library, graveyard — and three seats leave in every
- * pod that reaches a winner, so the change touches the back half of every game this file has ever
- * played. It does not retract anything: D295 is a null, and a null measured on a different engine is
- * still a null about that engine. But a number from before that commit and a number from after it
- * are **not the same measurement**, and a comparison that spans it is not a paired one.
+ * **Two engine changes land between D295's 2434 pods and anything measured after them, and a
+ * comparison that spans either is not a paired one.**
+ *
+ * - **#276, CR 800.4a.** A seat eliminated mid-pod used to leave its whole board on the table —
+ *   creatures, hand, library, graveyard. Three seats leave in every pod that reaches a winner, so
+ *   this touches the back half of every game this file had ever played.
+ * - **#280, CR 611.2c.** A board-wide pump or sweep used to reach creatures that arrived *after* it
+ *   resolved. An Overrun pumped the next creature cast; a −X/−X sweep killed it on arrival.
+ *
+ * Neither retracts anything. D295 is a null, and a null measured on a different engine is still a
+ * null about that engine. But a number from before one of these and a number from after it are
+ * **not the same measurement**, and the provenance line this file now prints is what lets a future
+ * reader tell which side of them a row came from (#278).
  *
  *   TESTED='{"chaseTheCrown":false}' SEEDS=3 node scripts/measure/pod-duel.mjs
  *   TESTED='{"chaseTheCrown":false}' SEEDS=3 SEED0=4100 node scripts/measure/pod-duel.mjs

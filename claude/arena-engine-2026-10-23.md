@@ -8328,6 +8328,36 @@ happened one level up: the ledger header explains the denominator rule carefully
 about arms or builds, so nobody wrote them down. **A line the instrument prints is a line the ledger
 cannot omit.** Printed first, so a run killed halfway still says what it was.
 
+### An Overrun was pumping creatures cast after it resolved (#280, D301)
+
+The rules audit kept going, and the next CR area the engine had never been checked against was
+**611 — continuous effects**, cited nowhere in the source. What it found is one of the oldest cards
+in the pool doing the wrong thing: Overrun resolved with a 2/2 out, correctly 5/5, and a Centaur
+Courser put onto the battlefield afterwards read **6/6** off a printed 3/3, with trample. A
+continuous effect from a resolved spell applies only to the permanents that were there when it was
+created (CR 611.2c); only a static ability's effect is dynamic (CR 611.3).
+
+The cause is the shape of the code rather than a missing check. `pumpTeam` and `pumpAll` pushed a
+`controller-creatures` / `all-creatures` scope, and a scope here is re-read on every characteristics
+lookup — exactly right for Glorious Anthem and exactly wrong for a spell that has already resolved.
+There was no branch to add: **the scope was being asked a question it answers the same way for two
+cases the rules distinguish**, which is why reading the scope was the wrong place to look and why it
+survived this long. `duration` is the discriminator — `permanent` is what static abilities use, and
+every other duration exists because something resolved to create it.
+
+The sweeps are where it changed games rather than numbers. After a Toxic Deluge a player is entitled
+to rebuild that turn; with a dynamic scope every creature they cast afterwards arrived already
+shrunk, and a 1/1 entering under a −2/−2 is a dead creature on arrival.
+
+The test's second half is what makes it a test of the rule: an implementation that locked every
+scope would pass the Overrun assertion and quietly break Glorious Anthem, so the anthem is asserted
+beside it — nothing on the board when it arrives, a creature cast afterwards, pumped anyway.
+
+Not fixed and inherited rather than introduced: a creature that dies and comes back is a new object
+(CR 400.7) and should be outside the locked set, but `relocate` keeps its instance id. That has been
+true of every "target creature gets +3/+3" in the pool from the start, and wants an object identity
+the engine does not have.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

@@ -436,6 +436,75 @@ describe('green and white', () => {
     expect(power(s, giant)).toBe(3);
   });
 
+  /*
+    A resolved board-wide pump is locked to the board it saw; a static ability's is not
+    (CR 611.2c against CR 611.3, #280, D301).
+
+    This was wrong until #280 and wrong invisibly: `pumpTeam` pushed a `controller-creatures` scope
+    re-read on every characteristics lookup, so a creature cast *after* the Overrun resolved was
+    still being pumped by it. The probe that found it read a printed 3/3 Centaur Courser as **6/6**.
+
+    The static control below is the half that makes this a test of the rule rather than a test of an
+    id list: Glorious Anthem has to keep reaching creatures that arrive later, because a continuous
+    effect from a static ability is dynamic. An implementation that locked everything would pass the
+    first assertion and fail the second.
+  */
+  it('Overrun does not reach a creature that arrived after it resolved (CR 611.2c)', () => {
+    let s = withMana(1, ['Overrun'], 5, ['Grizzly Bears']);
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = cast(s, 1, 'Overrun');
+    expect([power(s, bear), toughness(s, bear)]).toEqual([5, 5]);
+
+    // A creature put onto the battlefield afterwards: still a printed 3/3, and no trample.
+    const later = find(s, 1, 'library', 'Centaur Courser');
+    s = apply(s, { type: 'card:move', by: 1, card: later, toZone: 'battlefield' });
+    expect([power(s, later), toughness(s, later)]).toEqual([3, 3]);
+    expect(characteristicsOf(s, s.instances[later]!).keywords.has('trample')).toBe(false);
+    // And the one that was there still has both halves, so nothing was lost fixing this.
+    expect(characteristicsOf(s, s.instances[bear]!).keywords.has('trample')).toBe(true);
+  });
+
+  it('but a Glorious Anthem does, because a static ability is dynamic (CR 611.3)', () => {
+    let s = arena({
+      decks: { 1: 'verdant-guard' },
+      hands: { 1: ['Glorious Anthem'] },
+      battlefield: { 1: ['Plains', 'Plains', 'Plains'] },
+      turn: 3, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 1, 'battlefield')]) {
+      s = apply(s, { type: 'auto:activate', by: 1, card: id, abilityIndex: 0 });
+    }
+    s = cast(s, 1, 'Glorious Anthem');
+    // Nothing on the board when it arrived; the creature comes afterwards and is pumped anyway.
+    const later = find(s, 1, 'library', 'Grizzly Bears');
+    s = apply(s, { type: 'card:move', by: 1, card: later, toZone: 'battlefield' });
+    expect([power(s, later), toughness(s, later)]).toEqual([3, 3]);
+  });
+
+  /*
+    And the sweep, which is where the bug actually changed games rather than numbers.
+
+    "All creatures get −X/−X until end of turn" is a card a player is entitled to rebuild under:
+    the board is gone, but what they cast afterwards should arrive whole. With a dynamic scope every
+    creature they played that turn arrived already shrunk — a 1/1 entering under a −2/−2 is a dead
+    creature on arrival, which is not the card.
+
+    Driven through the helper rather than through Toxic Deluge on purpose: the card's number is
+    chosen mid-resolution and that machinery has its own tests. What is under test here is the
+    duration rule, and the helper is where the rule lives.
+  */
+  it('a resolved sweep does not shrink a creature that arrives afterwards (CR 611.2c)', () => {
+    let s = arena({ decks: { 1: 'verdant-guard' }, battlefield: { 1: ['Grizzly Bears'] }, turn: 3 });
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = pumpAll(s, bear, 1, { power: -2, toughness: -2 });
+    expect([power(s, bear), toughness(s, bear)]).toEqual([0, 0]);
+
+    const later = find(s, 1, 'library', 'Centaur Courser');
+    s = apply(s, { type: 'card:move', by: 1, card: later, toZone: 'battlefield' });
+    expect([power(s, later), toughness(s, later)]).toEqual([3, 3]);
+  });
+
   it('Sigarda flies and has hexproof', () => {
     let s = withMana(1, ['Sigarda, Host of Herons'], ['Forest', 'Forest', 'Forest', 'Forest', 'Plains']);
     s = cast(s, 1, 'Sigarda, Host of Herons');
@@ -6696,17 +6765,37 @@ describe('what a card says reaches the effect', () => {
   };
 
   it('carries every option through every builder', () => {
-    const s = arena();
-    const bear = [...ids(s, 0, 'library')][0]!;
+    /*
+      The creature has to be **on the battlefield**, which it did not before #280.
+
+      A resolved team pump is now locked to the creatures that were there when it was created
+      (CR 611.2c), so `pumpTeam` and `pumpAll` over an empty board correctly build nothing at all —
+      and this test, which used a card out of the library, was asserting that they built one. The
+      setup was wrong rather than the assertion: what is under test is that every option survives
+      each builder, and that needs a board for two of the four to have anything to apply to.
+    */
+    const s = arena({ battlefield: { 0: ['Raging Goblin'] } });
+    const goblin = find(s, 0, 'battlefield', 'Raging Goblin');
     for (const built of [
-      pump(s, [bear], bear, 0, everything),
-      pumpTeam(s, bear, 0, everything),
-      pumpAll(s, bear, 0, everything),
-      staticEffect(s, bear, 0, { kind: 'cards', ids: [bear] }, everything),
+      pump(s, [goblin], goblin, 0, everything),
+      pumpTeam(s, goblin, 0, everything),
+      pumpAll(s, goblin, 0, everything),
+      staticEffect(s, goblin, 0, { kind: 'cards', ids: [goblin] }, everything),
     ]) {
       expect(built.effects.length).toBe(1);
       expect(carried(built.effects[0]!)).toEqual(expected);
     }
+  });
+
+  it('and a resolved team pump over an empty board builds nothing (CR 611.2c)', () => {
+    // The companion fact to the setup above: with nothing to lock onto there is no effect to
+    // create, rather than an effect waiting to catch whatever is cast next.
+    const s = arena();
+    const source = [...ids(s, 0, 'library')][0]!;
+    expect(pumpTeam(s, source, 0, everything).effects).toEqual([]);
+    expect(pumpAll(s, source, 0, everything).effects).toEqual([]);
+    // A static ability still builds one, because its scope is read later rather than now.
+    expect(pumpTeam(s, source, 0, { ...everything, duration: 'permanent' }).effects.length).toBe(1);
   });
 
   it('leaves out what the card did not say, rather than saying false', () => {

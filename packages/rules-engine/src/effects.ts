@@ -1963,14 +1963,48 @@ export function preventCombatDamage(
 }
 
 /** "Creatures you control get +3/+3 and gain trample until end of turn." */
+/**
+ * **A resolved spell's board-wide effect is locked to the board it saw, and a static ability's is
+ * not** (CR 611.2c against CR 611.3, #280).
+
+ * This was wrong, and it was wrong in the way a declarative scope invites: `{ kind:
+ * 'controller-creatures' }` is re-read on every characteristics lookup, so an Overrun that resolved
+ * with one 2/2 out was still pumping the Centaur Courser cast *afterwards* — the probe read it as
+ * **6/6** off a printed 3/3. CR 611.2c says a continuous effect from a resolved spell or ability
+ * applies only to the permanents that were there when the effect was created, and does not pick up
+ * ones that arrive later. Only an effect from a **static** ability is dynamic, which is what
+ * Glorious Anthem is and what it should be.
+ *
+ * **The negative sweeps are where it mattered, rather than the Overruns.** After a Toxic Deluge —
+ * "all creatures get −X/−X" — a player is entitled to rebuild that turn. With a dynamic scope every
+ * creature they played afterwards arrived already shrunk and died on the spot, which is a different
+ * game rather than a different number.
+ *
+ * **`duration` is the discriminator, and it is the honest one here.** `'permanent'` is what
+ * `staticEffect` uses and the only duration a static ability has; every other duration — end of
+ * turn, end of combat, until your next turn — only exists because something *resolved* to create
+ * it. So a permanent duration keeps the dynamic scope and anything else is resolved to an id list
+ * now, through `pump`, which has carried `{ kind: 'cards' }` from the beginning. The two cases were
+ * never distinguishable by looking at the scope, which is why reading the scope was the wrong place
+ * to fix this.
+ *
+ * **One thing this does not fix, and inherits from `pump`:** a creature that dies and comes back is
+ * a new object (CR 400.7) and should be out of the set, but `relocate` keeps its instance id, so an
+ * id list still reaches it. That is pre-existing for every "target creature gets +3/+3" in the pool
+ * and is not made worse here; it wants the object identity the engine does not yet have.
+ */
 export function pumpTeam(
   state: GameState, source: string, controller: SeatIndex, opts: PumpOptions,
 ): GameState {
+  const duration = opts.duration ?? 'end-of-turn';
+  if (duration !== 'permanent') {
+    return pump(state, creaturesControlledBy(state, controller), source, controller, opts);
+  }
   return pushEffect(state, {
     source, controller,
     scope: { kind: 'controller-creatures' },
     ...modsFrom(opts),
-    duration: opts.duration ?? 'end-of-turn',
+    duration,
   });
 }
 
@@ -1983,11 +2017,18 @@ export function pumpTeam(
 export function pumpAll(
   state: GameState, source: string, controller: SeatIndex, opts: PumpOptions,
 ): GameState {
+  // Locked to the board it saw unless it came from a static ability — see `pumpTeam` above
+  // (CR 611.2c, #280). This is the half that mattered: the −X/−X sweeps.
+  const duration = opts.duration ?? 'end-of-turn';
+  if (duration !== 'permanent') {
+    const ids = state.seats.flatMap((seat) => creaturesControlledBy(state, seat.index));
+    return pump(state, ids, source, controller, opts);
+  }
   return pushEffect(state, {
     source, controller,
     scope: { kind: 'all-creatures' },
     ...modsFrom(opts),
-    duration: opts.duration ?? 'end-of-turn',
+    duration,
   });
 }
 
