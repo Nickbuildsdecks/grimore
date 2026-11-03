@@ -505,6 +505,55 @@ describe('green and white', () => {
     expect([power(s, later), toughness(s, later)]).toEqual([3, 3]);
   });
 
+  /*
+    A creature that leaves and comes back is a **new object**, so a pump does not follow it
+    (CR 400.7, #283, D304).
+
+    Verdant Guard runs both halves of this, which is why it was worth probing: pump a Grizzly Bears
+    with Giant Growth, blink it with Cloudshift, and it used to come back **still 5/5**. The engine
+    reuses an instance id across a zone change, so an effect locked to that id found it again on the
+    other side — and the card that exposes it is one players reach for *as a trick*, which made
+    Cloudshift strictly better than printed: keep the pump, dodge the removal, re-trigger the entry.
+  */
+  it('a pump does not survive a blink, because what comes back is a new object (CR 400.7)', () => {
+    let s = withMana(1, ['Giant Growth', 'Cloudshift'], ['Forest', 'Forest', 'Plains'],
+      ['Grizzly Bears']);
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = cast(s, 1, 'Giant Growth', [{ kind: 'card', id: bear }]);
+    expect([power(s, bear), toughness(s, bear)]).toEqual([5, 5]);
+
+    s = cast(s, 1, 'Cloudshift', [{ kind: 'card', id: bear }]);
+    // Back on the battlefield, and back to its printed size.
+    expect(s.instances[bear]!.zone).toBe('battlefield');
+    expect([power(s, bear), toughness(s, bear)]).toEqual([2, 2]);
+  });
+
+  it('but one creature leaving does not un-pump the rest of the team (CR 400.7)', () => {
+    /*
+      The other half of the rule, and the reason the fix takes an id *out of* a scope rather than
+      dropping the effect: an Overrun is one effect locked onto several creatures, and blinking one
+      of them must leave the other two at +3/+3. An implementation that dropped the whole effect
+      would pass the test above and quietly undo every other creature on the board.
+    */
+    // Five Forests pay Overrun's {2}{G}{G}{G} and the Plains pays Cloudshift's {W}; a flat count
+    // of six lands is six Forests, which cannot cast the blink.
+    let s = withMana(1, ['Overrun', 'Cloudshift'],
+      ['Forest', 'Forest', 'Forest', 'Forest', 'Forest', 'Plains'],
+      ['Grizzly Bears', 'Centaur Courser', 'Llanowar Elves']);
+    const bear = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    const elves = find(s, 1, 'battlefield', 'Llanowar Elves');
+    s = cast(s, 1, 'Overrun');
+    expect([power(s, bear), power(s, courser), power(s, elves)]).toEqual([5, 6, 4]);
+
+    s = cast(s, 1, 'Cloudshift', [{ kind: 'card', id: bear }]);
+    // The blinked one is printed again; the two that stayed keep every bit of it.
+    expect([power(s, bear), toughness(s, bear)]).toEqual([2, 2]);
+    expect(characteristicsOf(s, s.instances[bear]!).keywords.has('trample')).toBe(false);
+    expect([power(s, courser), power(s, elves)]).toEqual([6, 4]);
+    expect(characteristicsOf(s, s.instances[courser]!).keywords.has('trample')).toBe(true);
+  });
+
   it('Sigarda flies and has hexproof', () => {
     let s = withMana(1, ['Sigarda, Host of Herons'], ['Forest', 'Forest', 'Forest', 'Forest', 'Plains']);
     s = cast(s, 1, 'Sigarda, Host of Herons');

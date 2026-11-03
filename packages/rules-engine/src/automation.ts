@@ -2225,6 +2225,47 @@ function settle(state: GameState, before: GameState): GameState {
     `died` and `left` are drained — a transient list that nobody empties is a memory leak with a
     game attached. An ability still resolving reads its source from the stack object, not from here.
   */
+  /*
+    And a permanent that left the battlefield stops being in anything's locked scope, because the
+    thing that comes back is **a new object** (CR 400.7, #283, D304).
+
+    Cloudshift is the card that makes this visible, and Verdant Guard runs it alongside Giant
+    Growth: pump a Grizzly Bears to 5/5, blink it, and it used to come back **still 5/5**. A
+    continuous effect applies to the object it was locked onto, and exiling a creature ends that
+    object — so the 2/2 that returns is not the thing the Giant Growth was pumping. The engine
+    reuses the instance id across a zone change, so an effect scoped to `{ kind: 'cards', ids }`
+    found it again on the other side.
+
+    **Here rather than in `relocate`, and the ordering is the reason — but the ordering is not
+    currently observable, which is worth saying plainly rather than implying a reader that does not
+    exist.** A leave-the-battlefield trigger is entitled to the game state as it was *before* the
+    event (CR 608.2h), and that is what `vanished` is for; asking such a snapshot for a creature's
+    **power** would consult `state.effects` by id, so stripping the effect at the moment the card
+    moved would answer with the *unpumped* number. No card in this pool asks: the one script that
+    reads a `vanished` instance at all is unearth's leave-replacement, and it reads a **counter**,
+    which lives on the snapshot itself and never went through `effects`. So today either placement
+    gives the same answers. This one is placed where it cannot go wrong later — by the time this line
+    runs the triggers are on the stack and nothing needs the old state, which is already the
+    invariant the `vanished` clear below relies on, so the two belong together.
+
+    An id is taken **out of** a multi-card scope rather than the effect being dropped, because one
+    creature leaving an Overrun does not un-pump the others; the effect goes only when its last
+    subject has gone. Effects *sourced* from the departing card are a different question and have
+    their own answer in `removeEffectsFrom`, which is what an Aura leaving uses.
+  */
+  const gone = new Set(Object.keys(next.vanished));
+  if (gone.size > 0) {
+    const effects = next.effects.flatMap((effect) => {
+      if (effect.scope.kind !== 'cards') return [effect];
+      const kept = effect.scope.ids.filter((id) => !gone.has(id));
+      if (kept.length === effect.scope.ids.length) return [effect];
+      return kept.length === 0 ? [] : [{ ...effect, scope: { ...effect.scope, ids: kept } }];
+    });
+    if (effects.length !== next.effects.length
+      || effects.some((effect, i) => effect !== next.effects[i])) {
+      next = { ...next, effects };
+    }
+  }
   if (Object.keys(next.vanished).length > 0) next = { ...next, vanished: {} };
   next = stateBasedActions(settleOffer(settlePayment(next)));
   /*

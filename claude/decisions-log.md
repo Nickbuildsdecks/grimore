@@ -19451,3 +19451,45 @@ from the rules.** The spell-off-the-stack, the returned creature and the duel ca
 the Chalice and the anthem follow from the permanent being gone. That distinction is the whole point
 of writing the doc from the engine rather than from the CR: the rules say what *should* happen, and a
 player at this table needs to know what *does*.
+
+## D304 — A pump survived a blink, and D301 was wrong about what the fix needed
+
+D301 closed the CR 611.2c fix with a limitation stated and deliberately not acted on: a creature that
+dies and comes back is a new object (CR 400.7), but `relocate` keeps its instance id, so an effect
+locked to `{ kind: 'cards', ids }` finds it again — and that entry said the problem "wants an object
+identity the engine does not have". **That was the wrong diagnosis, and probing it took five
+minutes.**
+
+**It is reachable with two cards in one deck.** Verdant Guard runs Giant Growth and Cloudshift. Pump
+a Grizzly Bears to 5/5, blink it, and it came back **still 5/5**. Cloudshift is a card players reach
+for *as a trick*, so the engine was making it strictly better than printed: keep the pump, dodge the
+removal, re-trigger the entry. The same hole applied to goad, to an Overrun, and to anything else
+scoped by id.
+
+**And it did not need object identity.** What a continuous effect needs is to stop applying when the
+object it was locked onto stops existing, and the engine already knows exactly when that happens: it
+is the moment a permanent gets a `vanished` snapshot. So a departing permanent's id is taken out of
+every `cards` scope, and the effect is dropped only when its **last** subject has gone — because one
+creature leaving an Overrun must not un-pump the other two, which is the second test and the one
+that makes this a test of the rule rather than of a deletion.
+
+**Where it sits is the interesting part, and the honest version of it is smaller than the first draft
+I wrote.** The strip runs beside the `vanished` clear in `settle`, not in `relocate`, and my first
+docblock justified that by saying a leave-the-battlefield trigger reading the dying creature's
+*power* would otherwise get the unpumped number (CR 608.2h). That reasoning is right and the reader
+does not exist: the only script in the pool that reads a `vanished` instance is unearth's
+leave-replacement, and it reads a **counter**, which lives on the snapshot and never went through
+`effects`. So both placements give identical answers today. The docblock now says that — the
+placement is where it cannot go wrong later, which is a different and weaker claim than the one I
+first made, and the weaker claim is the true one.
+
+**What is actually left.** The id is still reused across a zone change, so this is a fix to the
+*consequence* rather than to the representation. Everything else that keys on an instance across a
+zone change is already cleared by `relocate` — counters, damage, `attachedTo`, `pairedWith`,
+`castAs`, `enteredTurn` — so the hole had exactly one occupant and now has none. The thing to
+remember is the shape: **a new register keyed by instance id will inherit this bug, and nothing in
+the types will say so.**
+
+**The lesson is about the first entry rather than the second.** D301 named the limitation, estimated
+it as expensive, and moved on — and the estimate was wrong by two orders of magnitude. Naming a
+known gap is worth much less than spending five minutes finding out whether the pool can reach it.

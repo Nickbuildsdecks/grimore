@@ -8381,6 +8381,34 @@ each skip were there, just uncounted. Each is now a `skip(why)`, and the summary
 `54/54 checks passed, 4 skipped` with the reasons listed. A total with its skips beside it can be
 compared; a bare total cannot.
 
+### A pump survived a blink, and the previous entry was wrong about the fix (#283, D304)
+
+D301 closed the CR 611.2c work by naming a limitation and not acting on it: a creature that leaves
+and comes back is a new object (CR 400.7), but `relocate` keeps its instance id, so an effect locked
+to that id finds it again — and that entry said the problem wanted an object identity the engine does
+not have. **Probing it took five minutes and the diagnosis was wrong.**
+
+It is reachable with two cards in one deck. Verdant Guard runs Giant Growth and Cloudshift: pump a
+Grizzly Bears to 5/5, blink it, and it came back **still 5/5**. Cloudshift is a card players reach
+for as a trick, so the engine was making it strictly better than printed — keep the pump, dodge the
+removal, re-trigger the entry — and the same hole applied to goad and to an Overrun.
+
+It needed no object identity. What a continuous effect needs is to stop applying when its subject
+stops existing, and the engine already knows when that is: the moment a permanent gets a `vanished`
+snapshot. So a departing permanent's id comes out of every `cards` scope there, and the effect drops
+only when its **last** subject has gone — one creature leaving an Overrun must not un-pump the other
+two, which is the second test and the one that makes this a test of the rule rather than of a
+deletion.
+
+The id is still reused across a zone change, so this fixes the consequence rather than the
+representation. Everything else keyed on an instance is already cleared by `relocate` — counters,
+damage, `attachedTo`, `pairedWith`, `castAs`, `enteredTurn` — so the hole had one occupant and now
+has none. The shape worth remembering: **a new register keyed by instance id will inherit this bug,
+and nothing in the types will say so.**
+
+The lesson is about the first entry. Naming a known gap and estimating it as expensive is worth much
+less than spending five minutes finding out whether the pool can reach it.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
