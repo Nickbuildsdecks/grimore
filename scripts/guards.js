@@ -510,6 +510,19 @@ checkPlayerDocNamesEveryStarterDeck();
  * Reads the card definitions out of `starterDecks.ts` **source** rather than the built engine,
  * because guards run before anything is built -- and parses commanders too, since the doc quotes
  * four of them and a commander is not in any deck's `cards`.
+ *
+ * Three classes of claim live in that one parenthesis and all three are checked, because the same
+ * bulk pass that found the Redcap found three more:
+ *
+ *  - the **cost**, as above;
+ *  - the **power and toughness** (`1/2 haste`), where the doc had Monastery Swiftspear as a 1/1
+ *    and Stormchaser Mage as a 1/2 when the cards are a 1/2 and a 1/3. Both understate the
+ *    creature, which is the direction that loses a player a combat;
+ *  - **which deck it is in** (`in Tidal Mind`), where the doc put Thorn of the Black Rose in Ashen
+ *    Rite as well, and it is only in Tidal Mind. A player goes looking in the wrong deck.
+ *
+ * A power that is not a plain number -- a `*` read off the board -- is skipped rather than
+ * compared, because the doc cannot quote a number for it either.
  */
 function checkPlayerDocQuotesEveryManaCost() {
   const decksFile = join('packages', 'rules-engine', 'src', 'starterDecks.ts');
@@ -525,18 +538,53 @@ function checkPlayerDocQuotesEveryManaCost() {
     return;
   }
 
-  // Every `const X: CardDef = { ... }`, keyed by printed name. A land has no `manaCost` at all,
-  // which reads as the empty string and can never match a quoted `{...}`.
+  /*
+    Every `const X: CardDef = { ... }`, keyed by printed name, and the identifier it was declared
+    under — which is what the deck lists point at, so the deck check below needs both directions.
+
+    A land has no `manaCost` at all, which reads as the empty string and can never match a quoted
+    `{...}`.
+  */
   const printed = new Map();
-  for (const chunk of source.split(/:\s*CardDef\s*=\s*\{/).slice(1)) {
+  const nameOfIdent = new Map();
+  for (const chunk of source.split(/(?=(?:const|let)\s+[A-Z_0-9]+:\s*CardDef\s*=\s*\{)/)) {
+    const declared = /^(?:const|let)\s+([A-Z_0-9]+):\s*CardDef\s*=\s*\{/.exec(chunk);
+    if (declared === null) continue;
     const end = chunk.indexOf('\n};');
     const body = end === -1 ? chunk : chunk.slice(0, end);
     const named = /^\s*name: (?:'((?:[^'\\]|\\.)*)'|"([^"]*)")/m.exec(body);
     if (named === null) continue;
     const name = (named[1] ?? named[2]).replace(/\\'/g, "'");
-    printed.set(name, /^\s*manaCost: '([^']*)'/m.exec(body)?.[1] ?? '');
+    nameOfIdent.set(declared[1], name);
+    printed.set(name, {
+      cost: /^\s*manaCost: '([^']*)'/m.exec(body)?.[1] ?? '',
+      power: /^\s*power: '([^']*)'/m.exec(body)?.[1] ?? null,
+      toughness: /^\s*toughness: '([^']*)'/m.exec(body)?.[1] ?? null,
+    });
   }
-  if (printed.size === 0) {
+  /*
+    And which deck each card is in, from the deck specs' own lists: `{ card: IDENT, count: n }`
+    plus the `commander: IDENT` line, which is the one a deck does not list under `cards`.
+  */
+  const decks = new Map();
+  const inDecks = new Map();
+  for (const chunk of source.split(/(?=export const [A-Z_0-9]+: DeckSpec = \{)/)) {
+    const deckName = /^export const [A-Z_0-9]+: DeckSpec = \{[\s\S]{0,400}?\n  name: '([^']+)'/.exec(chunk);
+    if (deckName === null) continue;
+    const end = chunk.indexOf('\n};');
+    const body = end === -1 ? chunk : chunk.slice(0, end);
+    decks.set(deckName[1], true);
+    const idents = [...body.matchAll(/\{ card: ([A-Z_0-9]+),/g)].map((m) => m[1]);
+    const commander = /^\s*commander: ([A-Z_0-9]+),/m.exec(body);
+    if (commander !== null) idents.push(commander[1]);
+    for (const ident of idents) {
+      const name = nameOfIdent.get(ident);
+      if (name === undefined) continue;
+      if (!inDecks.has(name)) inDecks.set(name, new Set());
+      inDecks.get(name).add(deckName[1]);
+    }
+  }
+  if (printed.size === 0 || decks.size === 0) {
     console.error(`[guards] found no CardDef in ${decksFile}, so this guard's parse is broken and`);
     console.error('[guards] a pass would mean nothing. Fix the parse rather than the doc.');
     bad++;
@@ -549,15 +597,35 @@ function checkPlayerDocQuotesEveryManaCost() {
     if (lead === null) continue;
     quoted++;
     const name = match[1];
-    const actual = printed.get(name);
-    if (actual === undefined) {
+    const card = printed.get(name);
+    if (card === undefined) {
       console.error(`[guards] ${docFile} quotes a mana cost for "${name}", which is not a card in`);
       console.error('[guards] starterDecks.ts. Fix the name, or the cost belongs to something else.');
       bad++;
       continue;
     }
-    if (actual !== lead[1]) {
-      console.error(`[guards] ${docFile} prices "${name}" at ${lead[1]} and the card costs ${actual}.`);
+    if (card.cost !== lead[1]) {
+      console.error(`[guards] ${docFile} prices "${name}" at ${lead[1]} and the card costs ${card.cost}.`);
+      bad++;
+    }
+    // "1/2 haste", "2/3 deathtouch in Tidal Mind" — a power or toughness that is not a plain
+    // number is a fact about the board, and the doc cannot quote one either, so it is skipped.
+    const pt = /(?:^|[ ,])(\d+)\/(\d+)(?:[ ,]|$)/.exec(match[2]);
+    if (pt !== null && /^\d+$/.test(card.power ?? '') && /^\d+$/.test(card.toughness ?? '')) {
+      if (pt[1] !== card.power || pt[2] !== card.toughness) {
+        console.error(`[guards] ${docFile} gives "${name}" as ${pt[1]}/${pt[2]} and the card is`);
+        console.error(`[guards] ${card.power}/${card.toughness}.`);
+        bad++;
+      }
+    }
+    // And every deck the parenthesis names has to be a deck the card is actually in. Keep the
+    // parenthesis to those: a deck named there for any other reason reads as a claim about where
+    // the card lives, because that is what every other row uses it for.
+    for (const deckName of decks.keys()) {
+      if (!match[2].includes(deckName)) continue;
+      if (inDecks.get(name)?.has(deckName) === true) continue;
+      const real = [...(inDecks.get(name) ?? [])].join(', ') || 'no starter deck';
+      console.error(`[guards] ${docFile} puts "${name}" in ${deckName}; it is in ${real}.`);
       bad++;
     }
   }

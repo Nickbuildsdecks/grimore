@@ -19713,3 +19713,31 @@ a cost): the player doc is the one artefact in this repo that a human reads and 
 every class of claim in it that *can* be checked mechanically should be, and the classes that
 cannot — "the table feels fast", "this deck wants to attack" — are the ones worth a human's reading
 time.
+
+## D311 — Three more claims in the same parenthesis, and all three understated the card
+
+D310's guard read one of the three things the player doc puts inside that parenthesis. The other two
+were worth the same bulk pass, and it found three more errors in 117 claims:
+
+- **Monastery Swiftspear** was a 1/1 in the doc and is a **1/2**.
+- **Stormchaser Mage** was a 1/2 and is a **1/3**.
+- **Thorn of the Black Rose** was "in Tidal Mind and Ashen Rite" and is only in **Tidal Mind**.
+
+All three errors point the same way, which is the part worth noticing: two understate a creature's
+body and the third sends a player to a deck that does not have the card. Reading "1/1 haste" you do
+not attack into a 1/2; reading "in Ashen Rite" you go looking and come back thinking the doc lies
+about everything else too.
+
+**The guard now checks all three classes**, and the shape of the parenthesis is what makes that
+possible: cost, then `power/toughness`, then `in <Deck>`. A power that is not a plain number is
+skipped rather than compared, because a `*` is a fact about the board and the doc cannot quote a
+number for it either. The deck check needs both directions of the identifier map — `CardDef` consts
+by name, and the `{ card: IDENT }` rows in each `DeckSpec` — so it also covers commanders, which no
+deck lists under `cards`. Parsed from source: 338 card definitions, 13 decks, 477 membership rows.
+Verified by breaking one claim of each kind on purpose.
+
+**Four doc errors in one afternoon from two bulk passes, and none of them would have been found by
+reading.** That is the argument for the whole method: a human reading this doc checks the *prose*,
+which is where the thinking is, and skims the numbers in brackets — which is exactly where a
+machine is better than a human and where being wrong costs a player a combat.
+

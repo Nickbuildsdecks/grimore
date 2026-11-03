@@ -8524,6 +8524,23 @@ source because guards run before any build, commanders included. It also fails i
 cards or the doc has no quoted costs, because a guard that silently checks nothing is worse than
 none.
 
+### Three more claims in the same parenthesis, all understating the card (#291, D311)
+
+The cost was one of three things the doc puts in that parenthesis. The same bulk pass over the other
+two found three more errors in 117 claims: Monastery Swiftspear as a 1/1 where the card is a 1/2,
+Stormchaser Mage as a 1/2 where it is a 1/3, and Thorn of the Black Rose "in Tidal Mind and Ashen
+Rite" where it is only in Tidal Mind.
+
+All three point the same way: two understate a creature's body, and the third sends a player to a
+deck that does not have the card. The guard now checks cost, power/toughness and deck membership
+from the one shape, skipping a power that is not a plain number because the doc cannot quote one
+either. Parsed from source: 338 card definitions, 13 decks, 477 membership rows; each kind of claim
+verified by breaking one on purpose.
+
+Four doc errors in an afternoon from two bulk passes, none of which a reader would have found: a
+human checks the prose and skims the brackets, which is where a machine is better and where being
+wrong costs a player a combat.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
