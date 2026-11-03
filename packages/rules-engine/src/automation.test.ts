@@ -8,8 +8,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  autoPassFor, bottomOwed, createGame, legalActions, packView, pendingDeclaration, seatsToAct,
-  stackTop, stillDeciding, unpackView, viewFor,
+  autoPassFor, bottomOwed, createGame, customDeck, legalActions, packView, pendingDeclaration,
+  seatsToAct, stackTop, stillDeciding, unpackView, viewFor,
 } from './index.js';
 import {
   advanceTo, apply, applyAll, arena, countOf, find, ids, life, namesIn, nextTurn, passBoth, refusal,
@@ -655,6 +655,84 @@ describe('state-based actions', () => {
     s = apply(s, { type: 'card:counter', by: 1, card: bear, key: '+1/+1', delta: 1 });
     s = apply(s, { type: 'card:counter', by: 1, card: bear, key: '-1/-1', delta: 4 });
     expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+  });
+
+  /*
+    The legend rule (CR 704.5j), which the engine did not enforce at all (#270, D288).
+
+    Reachable inside one deck by two routes. Forge Alliance runs **Blade of Selves**, whose myriad
+    makes token copies of the attacking creature, and its commander **Balan** pulls every Equipment
+    onto himself — so a Balan with the Blade attacks a pod and makes two more Balans, each of them
+    dealing commander damage towards the twenty-one that eliminates a player. Tidal Mind runs
+    **Clone**, which can copy its own commander.
+
+    The boards here come from `deckSpecs`, which is how a pasted list reaches the engine — the third
+    route, since deck legality is deliberately not checked anywhere.
+  */
+  const twoOf = (name: string, land: string): GameState => {
+    const list = customDeck({
+      id: 'two-legends', name: 'Two Legends',
+      entries: [{ name, count: 2 }, { name: land, count: 58 }],
+    }).deck;
+    return arena({
+      decks: { 0: 'two-legends' },
+      deckSpecs: { 'two-legends': list },
+      battlefield: { 0: [name, name] },
+      turn: 3,
+    });
+  };
+
+  it('keeps one of two legendary permanents one player controls (CR 704.5j)', () => {
+    const s = twoOf('Kalitas, Traitor of Ghet', 'Swamp');
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Kalitas, Traitor of Ghet')).toHaveLength(1);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Kalitas, Traitor of Ghet');
+  });
+
+  it('leaves two of the same legend alone when two different players control them', () => {
+    // The rule is about one player's own permanents, which is the half that makes a commander
+    // mirror legal: two seats can both have a Kalitas out.
+    const list = customDeck({
+      id: 'two-legends', name: 'Two Legends',
+      entries: [{ name: 'Kalitas, Traitor of Ghet', count: 2 }, { name: 'Swamp', count: 58 }],
+    }).deck;
+    const s = arena({
+      decks: { 0: 'two-legends', 1: 'two-legends' },
+      deckSpecs: { 'two-legends': list },
+      battlefield: { 0: ['Kalitas, Traitor of Ghet'], 1: ['Kalitas, Traitor of Ghet'] },
+      turn: 3,
+    });
+    expect(namesIn(s, 0, 'battlefield')).toContain('Kalitas, Traitor of Ghet');
+    expect(namesIn(s, 1, 'battlefield')).toContain('Kalitas, Traitor of Ghet');
+  });
+
+  it('leaves two of a non-legendary card alone, which is most of the board', () => {
+    // The guard that keeps this from being a rule about names: four Grizzly Bears is a normal deck.
+    const list = customDeck({
+      id: 'four-bears', name: 'Four Bears',
+      entries: [{ name: 'Grizzly Bears', count: 4 }, { name: 'Forest', count: 56 }],
+    }).deck;
+    const s = arena({
+      decks: { 0: 'four-bears' },
+      deckSpecs: { 'four-bears': list },
+      battlefield: { 0: ['Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears'] },
+      turn: 3,
+    });
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Grizzly Bears')).toHaveLength(3);
+  });
+
+  it('bins every extra at once rather than one a pass', () => {
+    const list = customDeck({
+      id: 'three-legends', name: 'Three Legends',
+      entries: [{ name: 'Thalia, Guardian of Thraben', count: 3 }, { name: 'Plains', count: 57 }],
+    }).deck;
+    const s = arena({
+      decks: { 0: 'three-legends' },
+      deckSpecs: { 'three-legends': list },
+      battlefield: { 0: ['Thalia, Guardian of Thraben', 'Thalia, Guardian of Thraben', 'Thalia, Guardian of Thraben'] },
+      turn: 3,
+    });
+    expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Thalia, Guardian of Thraben')).toHaveLength(1);
+    expect(namesIn(s, 0, 'graveyard').filter((n) => n === 'Thalia, Guardian of Thraben')).toHaveLength(2);
   });
 
   it('leaves a creature alive with damage below its toughness', () => {

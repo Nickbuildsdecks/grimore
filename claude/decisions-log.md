@@ -18671,3 +18671,50 @@ nobody checked the ninth — because the only consequence visible on screen was 
 D282's blocker bug hid behind a plausible sentence; this hid behind a correct power and toughness.
 **What a test asserts decides what a bug can hide behind**, and the one that catches this reads the
 counters rather than the creature.
+
+## D288 — The legend rule was not enforced at all, and this pool reaches it inside one deck
+
+`stateBasedActions` did not implement **CR 704.5j**. Two legendary permanents with the same name sat
+happily under one controller: a `deckSpecs` board with two Kalitas on one battlefield stayed at two,
+with an empty graveyard.
+
+**Found by auditing CR 704.5 against the engine after D287**, which is the method that found D287 as
+well: list the cases the code cites, and check the ones it does not against what the pool can
+produce. Eight cases plus `714.4` and `702.95b` were there; `704.5q` was missing and is now in
+(D287); this is the second.
+
+### Three routes, two of them inside a single deck
+
+ - **Forge Alliance.** It runs **Blade of Selves**, whose myriad makes token copies of the attacking
+   creature, and its commander **Balan** *pulls every Equipment onto himself*. So a Balan carrying
+   the Blade attacks a pod and makes two more Balans — a board the rules forbid, and one where each
+   of them was dealing commander damage towards the twenty-one that eliminates a player.
+ - **Tidal Mind.** It runs **Clone**, which can copy its own commander.
+ - **A pasted list.** Deck legality is deliberately not checked anywhere (see the header of
+   `cards.ts`), so two of one legend is a list a player can hand the table — and `deckSpecs`, which
+   the tests use, is the same path.
+
+### Which one survives is a deviation, and it is stated
+
+The rule says the controller **chooses**. This keeps the one earliest in that seat's battlefield
+order, which is the one that arrived first. Asking would mean `stateBasedActions` being able to stop
+and ask: it is a pure `state -> state` function called inside `settle`, and making it able to block is
+a larger change than this rule is worth today. The automatic answer is also the one a player almost
+always gives — of a real Balan and two token copies of him, the real one is the keeper.
+
+Grouped by the **characteristics'** name rather than the card's, so a Clone that copied a legend
+counts as that legend (CR 707.2 gives the copy the copied name). That is the whole of the Clone
+route, and it would have been missed by grouping on `defKey`.
+
+### Four tests
+
+The rule itself; that **two players may each control one** (the half that makes a commander mirror
+legal); that a non-legendary card is untouched, which keeps this from becoming a rule about names;
+and that three copies lose two in one pass rather than one a pass.
+
+### What this leaves open
+
+A token copy of a commander is not the commander, so it should not add to commander damage. Whether
+this engine agrees is a separate question from the legend rule and is not answered here — the rule
+now removes the extra Balans before they can connect, which narrows the window but does not settle
+what the engine thinks a copy of a commander is.

@@ -23,6 +23,7 @@
  */
 import {
   allAbilitiesLost, characteristicsOf, expireEffects, grantedTriggersOn, hasSubtype, hasType,
+  isLegendary,
   type ContinuousEffect, type GrantedTriggerRef,
 } from './characteristics.js';
 import {
@@ -1562,6 +1563,53 @@ export function stateBasedActions(state: GameState): GameState {
         // `relocate` records the death; `settle` raises it. See `AutomationState.died`.
         next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
         changed = true;
+      }
+    }
+
+    /*
+      The legend rule (CR 704.5j): one player cannot keep two legendary permanents with the same
+      name, so all but one go to their owners' graveyards.
+
+      **Reachable in this pool by two routes, both inside one deck** (#270, D288). Forge Alliance
+      runs **Blade of Selves**, whose myriad makes token copies of the attacking creature, and its
+      commander **Balan** pulls every Equipment onto himself — so a Balan carrying the Blade attacks
+      a pod and makes two more Balans, which the rules do not allow and which were each dealing
+      commander damage towards the twenty-one that eliminates a player. Tidal Mind runs **Clone**,
+      which can copy its own commander. A pasted list is the third route: deck legality is not
+      checked anywhere, by design, so two of one legend is a list a player can hand the table.
+
+      **Which one survives is a deviation, stated rather than hidden.** The rule says its controller
+      *chooses*; this keeps the one earliest in that seat's battlefield order, which is the one that
+      arrived first. Asking would mean `stateBasedActions` being able to stop and ask a question,
+      and it is a pure `state -> state` function called inside `settle` — making it able to block is
+      a bigger change than this rule is worth today. The automatic answer is also the one a player
+      almost always gives: of a real Balan and two token copies of him, the real one is the keeper.
+
+      Grouped by the **characteristics'** name rather than the card's, so a Clone that copied a
+      legend counts as that legend (CR 707.2 gives the copy the copied name) — which is the whole of
+      the Clone route.
+    */
+    for (const seatRecord of next.seats) {
+      if (seatRecord.eliminated) continue;
+      const byName = new Map<string, string[]>();
+      for (const id of listAt(next, zoneKey(seatRecord.index, 'battlefield'))) {
+        const inst = next.instances[id];
+        if (inst === undefined) continue;
+        const ch = characteristicsOf(next, inst);
+        if (!isLegendary(ch.typeLine)) continue;
+        const seen = byName.get(ch.name);
+        if (seen === undefined) byName.set(ch.name, [id]);
+        else seen.push(id);
+      }
+      for (const ids of byName.values()) {
+        if (ids.length < 2) continue;
+        // Everything after the first, which is the one that has been there longest.
+        for (const id of ids.slice(1)) {
+          const inst = next.instances[id];
+          if (inst === undefined) continue;
+          next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+          changed = true;
+        }
       }
     }
 
