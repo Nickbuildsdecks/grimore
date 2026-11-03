@@ -1168,11 +1168,21 @@ const ARTIFACT_LIST = [
           const lives = [];
           for (const s of [0, 1, 2, 3]) lives.push(await readNumber(page, `life-${s}`));
           const step = await text(page, 'step-label').catch(() => '?');
+          /*
+            And the pod's code, which is the one field that makes the *engine* state recoverable.
+
+            Everything else here is what the page can see. The realtime server keeps the whole
+            `GameState` in Redis under this code, so printing it turns "the table stopped" into a
+            record somebody can read `pendingDecision`, `priority` and `combat` out of — which is
+            the difference between knowing the table stopped and knowing why. The first two stalls
+            were diagnosed down to a step and no further for exactly the want of it.
+          */
+          const code = await text(page, 'table-code').catch(() => '?');
           await shot(page, 'stalled');
           check('the table kept moving', false,
             `stuck on turn ${lastTurn} for ${movesOnThisTurn} moves in ${step}; last action `
             + `${did}; life ${JSON.stringify(lives)}; game-over ${await has(page, 'game-over')}; `
-            + `waiting on ${JSON.stringify(waiting)}`);
+            + `waiting on ${JSON.stringify(waiting)}; pod ${code}`);
           break;
         }
         /*
