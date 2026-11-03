@@ -21738,3 +21738,29 @@ The general lesson, which is new and is about where to look rather than what to 
 be thoroughly tested through the door it was built behind and completely broken through the door
 people will actually use.** Six browser suites, 253 checks, every one of them entered at port 5100.
 Not one had ever opened the address the project's own instructions name.
+
+## D348 — Closed as a recorded negative: the deployed shape does not have #312's problem
+
+D347 found that the SPA served from the legacy server's `/react` mount cannot play, because the
+socket lands on the legacy Socket.IO instead of `apps/realtime`. The obvious next worry is whether
+the **VM** has the same hole, since the VM serves the SPA from that same legacy app. It does not,
+and all three links were read rather than assumed:
+
+- **`Caddyfile`** splits the two paths: `handle /socket.io/*` → `realtime:3000`, `handle` → `app:3000`.
+  Its own comment explains why both are `handle` blocks — so the socket path cannot be swallowed by
+  the catch-all — which is exactly the arrangement the client's "one reverse proxy, same origin"
+  default is written for.
+- **`deploy-gcp.ps1`** runs `pnpm --filter @grimore/web build` and aborts the deploy if it fails,
+  then copies `apps/web/dist` into the bundle. So `/react` is genuinely served on the VM; the claim
+  in `claude/play-realm-setup.md` that `https://grimore.gg/react/play` works does not rest on an
+  artifact that might be missing.
+- **`docker-compose.yml`** puts `realtime` behind `profiles: ["v2"]`, so it does not start with a
+  plain `docker compose up` — which the setup document already says, with the commands.
+
+So the broken door is specifically **port 3000 reached directly with no proxy in front**, which is a
+local-development shape and not the deployment. Worth writing down for two reasons: it stops D347
+reading as a deployment defect, and it shrinks the decision from "how should the app be served" to
+"do you want port 3000 to work locally too, or is `scripts/play.mjs` enough" — a much smaller
+question, and still Nick's.
+
+Nothing changed in code for this entry. The setup document's section now says it.

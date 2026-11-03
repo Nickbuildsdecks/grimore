@@ -968,11 +968,20 @@ and the browser console carries the operator's version, naming `apps/realtime`, 
 reverse proxy serves in the compose deployment, where the table and the page share an origin on
 purpose. Port 3000 serves the page and not the game.
 
-What to do about that is a deployment decision rather than a bug to fix from here: either give the
-`/react` mount a realtime address, put a proxy in front that forwards `/socket.io` to
-`apps/realtime` (it cannot be the legacy server itself — that path is already taken by its own
-Socket.IO), or leave 3000 serving the rest of the SPA and keep the table on its own address. The
-failure is at least legible now, which is what was actually missing.
+**The VM does not have this problem, and that was checked rather than assumed.** `Caddyfile`
+already splits the two: `handle /socket.io/*` goes to `realtime:3000` and everything else to
+`app:3000`, so on the VM the page and the socket share an origin on purpose — exactly the shape the
+client is written for. And `deploy-gcp.ps1` builds `apps/web` and copies `apps/web/dist` into the
+bundle, so `/react` really is served there. The one prerequisite is the one this document already
+gives above: `realtime` is behind the `v2` profile and does not start with a plain
+`docker compose up`.
+
+So the only broken door is **this one**: port 3000 reached directly, with no proxy in front. What to
+do about that is a small deployment choice rather than a bug to fix from here — run
+`scripts/play.mjs` and use the address it prints, put a local proxy in front that forwards
+`/socket.io` to `apps/realtime` the way Caddy does (it cannot be the legacy server itself, whose own
+Socket.IO already owns that path), or give the `/react` mount a realtime address. The failure is at
+least legible now, which is what was actually missing.
 
 ### Finding a table
 
