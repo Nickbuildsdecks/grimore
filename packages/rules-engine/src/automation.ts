@@ -53,7 +53,7 @@ import {
   type ManaCost, type ManaPick, type ManaPool, type ManaType,
 } from './mana.js';
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
-import { scriptFor, soleTargetSpecOf } from './scripts.js';
+import { scriptFor, soleTargetSpecOf, scriptForCard } from './scripts.js';
 import type {
   AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, CountersDecisionSpec,
   DecisionSpec, DecisionSpecOf, ModeDef, ReplacementEvent, TargetSpec, TriggerDef, TriggerEvent,
@@ -327,7 +327,14 @@ const reboundCastIndex = (script: CardScript | undefined): number =>
 const scriptOf = (state: GameState, instanceId: string): CardScript | undefined => {
   const inst = state.instances[instanceId];
   if (inst === undefined || isFaceDownPermanent(inst)) return undefined;
-  return scriptFor(state.cardDefs[inst.defKey]?.name);
+  /*
+    `scriptForCard` rather than `scriptFor`, so a permanent nobody wrote a script for still has the
+    abilities its own data states — which for a land means the mana ability that is the whole card.
+    A hand-written script always wins, so every card in the pool reads exactly as before. This is
+    the chokepoint every activation goes through, which is why it is the one that had to change:
+    without it a derived land would be *offered* in `legalActions` and then refused here.
+  */
+  return scriptForCard(state.cardDefs[inst.defKey]);
 };
 
 /**
@@ -2233,7 +2240,9 @@ function settle(state: GameState, before: GameState): GameState {
       // A face-down permanent has no abilities, so it has no replacement effect either: a morph
       // of a card that would enter tapped does not, because nothing on it says so (CR 707.2).
       const arrivalScript = isFaceDownPermanent(arrival) ? undefined
-        : scriptFor(next.cardDefs[arrival.defKey]?.name);
+        // `scriptForCard`: a derived land that says "enters tapped" has to arrive tapped, or the
+        // one line of text this module reads off a dual land would be the one it ignored.
+        : scriptForCard(next.cardDefs[arrival.defKey]);
       if (!arrival.tapped && arrivalScript?.entersTapped === true) {
         next = withInstance(next, id, { tapped: true });
       }

@@ -20643,3 +20643,96 @@ file done. The background runner read the exit code.
 are checks that did not really run, which is why they are printed above the tally rather than below
 it. Both directions were exercised directly: `true` with only a passing check, `false` once one
 fails. `check-table-controls.mjs` now exits 0 on its 26/26.
+
+---
+
+## D331 — The probe that moved the whole problem: it was never the creatures (#308)
+
+The data path from D329 is only worth building if something can use the data. So before writing any
+of this, a throwaway probe asked what the engine actually does today with a card nobody has written
+a script for. Three readings, and two of them meant the plan I had was wrong.
+
+1. **An unscripted vanilla creature already works.** A 2/2 with no script, no registry entry and no
+   change anywhere: cast, resolved, on the battlefield, attacking the next turn.
+2. **An unscripted creature whose text is `Flying, vigilance` already has both keywords.**
+   `characteristicsOf` read `flying` and `vigilance` off it. `printedKeywords` was written for
+   exactly this — its own docblock says "so an **unscripted** card still behaves" — and it works.
+3. **An unscripted land produces no mana whatsoever.** `manaSources` returned `[]` and the potential
+   pool was all zeros, with `{T}: Add {G}.` printed on the card and visible in the UI. The engine
+   reads mana abilities off the script and nowhere else.
+
+So the shortfall was never the creature side. I had been about to build a general card generator;
+what the engine actually needs is **one** thing generated, and it is the thing printed data states
+most exactly. A deck of data-derived cards was not failing because its creatures were blank. It was
+failing because its lands did nothing, so it could not cast anything at all.
+
+A fourth reading settled a rejection rule: a `*`/`*` creature cast with no script went **straight to
+the graveyard**. That is correct Magic — its size comes from a characteristic-defining ability
+nobody read, so it is a 0/0 and dies to CR 704.5f — and it is the reason `fromCardData` refuses a
+non-numeric power or toughness. A card that reliably dies on arrival is strictly worse than a card
+you move by hand.
+
+### What shipped
+
+`packages/rules-engine/src/fromCardData.ts`: a row in, either a `CardDef` (plus a script where one
+is needed) or a refusal with a reason. Five accepted shapes — basic land, readable mana source,
+vanilla creature, keyword-only creature, blank noncreature permanent — and a long list of refusals,
+each carrying text rather than a count, because a count of rejections cannot tell anyone what to
+script next and a list of reasons is exactly that input.
+
+Four decisions in it are the file:
+
+- **Parse the text; `produced_mana` is the cross-check, not the source.** That field says *which*
+  colours a permanent makes and nothing about how many. A Sol Ring produces `["C"]` and taps for
+  **two**. A derivation that read the field and ignored the text would ship a Sol Ring that taps for
+  one — wrong in the direction that loses games. So the ability comes from the printed line, matched
+  against two deliberately narrow shapes, and Scryfall's answer is then compared against the parse.
+  A disagreement in either direction is a rejection: a missing colour means an ability went
+  unparsed, an extra one means the parse invented mana.
+- **A basic land's ability comes from its subtype** (CR 305.6). A Forest's oracle text is
+  `({T}: Add {G}.)` — brackets, because it is a reminder — so reminder text is dropped and the green
+  comes from the type line, which is where the rule actually lives.
+- **One tap ability per colour**, not one ability producing several. The same shape the hand-written
+  Guildgates use and for the same reason: `manaSources` collapses several free tap-for-mana
+  abilities into one source making *one of* its colours, so a single two-colour ability would be two
+  mana off one land and the engine would start offering two-drops that cannot be paid for.
+- **A `WeakMap` keyed by the definition, not a registry keyed by name.** A name-keyed cache would be
+  global mutable state shared by every game in the process, and two games holding different data
+  under one name — one from a card sync, one from a fixture — would silently get whichever derived
+  first.
+
+### The wiring, and the one line that mattered most
+
+`scriptForCard(def)` consults `scriptFor(def.name)` **first**, so all 348 pool cards read exactly as
+they did before and derivation only ever reaches a card nobody has written. That claim is not an
+argument, it is the 1364 pre-existing engine tests still passing unchanged.
+
+Five call sites now pass the definition instead of the name: `manaSources`, `potentialMana`, the
+ability-offering loop in `legalActions`, the arrival hook that reads `entersTapped`, and —
+the important one — `scriptOf` in `automation.ts`, the chokepoint every activation goes through.
+Without that last one a derived land would have been *offered* in `legalActions` and then refused on
+activation, which is the "an option offered and then refused is worse than an option that was never
+there" failure this codebase has two decision entries about already.
+
+### Honest limits, stated in the code
+
+`scriptForCard` derives from a `CardDef`, and a `CardDef` has no `produced_mana` — so **the
+cross-check cannot run on that path.** It has the printed text and the type line and nothing else.
+A caller holding the database row should hand that row to `cardFromData` directly and keep what it
+returns; this is written into the function rather than left for someone to discover.
+
+Three breaks, run rather than reasoned about, each failing exactly the tests that depend on it:
+unwire `manaSources` → the mana test fails alone; unwire `scriptOf` → the three tests that cast or
+play fail; unwire the arrival hook → only the enters-tapped test fails.
+
+28 tests, gate green at 2166 across 17 packages (1392 in the engine, up from 1364).
+
+### What this is not
+
+It is not "the engine now knows thirty thousand cards". It is the slice of a Commander deck whose
+rules its data already is — and in particular a mana base, which is the half of a list that has to
+work before any of the rest can. Everything whose text is a paragraph of English still becomes
+cardboard, which is the right answer for it. The next question is a measured one rather than a
+guess: run `tallyDerivations` over a real `oracle_cards` file and read what share of it comes
+through, and which refusal reasons are the common ones. That needs the import from D329 to have been
+run, which is Nick's call on a machine that can reach Scryfall.

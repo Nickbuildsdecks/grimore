@@ -25,7 +25,7 @@ import {
   addMana, canAfford, maxAffordableX, parseManaCost,
   type ManaCost, type ManaPool, type ManaType,
 } from './mana.js';
-import { abilityTargetSpecs, scriptFor } from './scripts.js';
+import { abilityTargetSpecs, scriptFor, scriptForCard } from './scripts.js';
 import {
   FORETELL_COST, MORPH_COST, morphCostText,
   type AbilityDef, type CardScript, type TargetSpec,
@@ -724,7 +724,7 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
     // And a permanent whose abilities have been taken away taps for nothing: a Frogged Llanowar
     // Elves is a 1/1 with no text (CR 613.1f). See `allAbilitiesLost`.
     if (allAbilitiesLost(state, inst)) continue;
-    const script = scriptFor(state.cardDefs[inst.defKey]?.name);
+    const script = scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
     const abilities = script?.abilities ?? [];
     let usable: {
@@ -843,7 +843,7 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
     // Nothing to reach for on a permanent with no abilities left. Kept in step with `manaSources`,
     // which is the point of both: one answer to "what can this seat pay".
     if (allAbilitiesLost(state, inst)) continue;
-    const script = scriptFor(state.cardDefs[inst.defKey]?.name);
+    const script = scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
     for (const ability of script?.abilities ?? []) {
       if (ability.produces === undefined) continue;
@@ -1608,7 +1608,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       there is not something a Turn to Frog has ever been pointed at.
     */
     if (zone === 'battlefield' && allAbilitiesLost(state, inst)) continue;
-    const script = scriptFor(state.cardDefs[inst.defKey]?.name);
+    const script = scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
     const abilities: readonly AbilityDef[] = script?.abilities ?? [];
 
