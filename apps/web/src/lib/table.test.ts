@@ -88,6 +88,20 @@ describe("what the table says about a list somebody pasted", () => {
     expect(pastedNote({ ...base, unknown: ["Sol Ring"], unknownCount: 9 })).toContain("and more")
   })
 
+  it("warns when the list is too big for a four-seat table", () => {
+    /*
+      The paste accepts up to `maxCards` (250); the engine caps a whole table at `MAX_INSTANCES`
+      (600), so four lists of more than 150 cannot be dealt at all — measured in #314, where 150 a
+      seat deals and 151 is refused with `a table may hold at most 600 cards`.
+
+      Said at paste time because that is the one moment somebody is looking at the size of their own
+      list. The alternative is finding out when the host presses Start.
+    */
+    expect(pastedNote({ ...base, total: 151 })).toContain("four-seat table cannot be dealt")
+    // And nothing at the boundary, which is the size that *does* deal.
+    expect(pastedNote({ ...base, total: 150 })).not.toContain("four-seat")
+  })
+
   it("mentions the commander and the sideboard it dropped", () => {
     expect(pastedNote({ ...base, total: 99, commander: "Tatyova, Benthic Druid", sideboard: 15 })).toBe(
       "99 cards · Tatyova, Benthic Druid in the command zone · 15 in the sideboard, left out"

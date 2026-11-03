@@ -19,7 +19,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { io, type Socket } from "socket.io-client"
 import { unpackView, type GameView, type PackedView } from "@grimore/rules-engine"
-import { PodJoinInput, type Pod, type PodErrorEvent, type PodListEntry } from "@grimore/shared"
+import {
+  DECKLIST_LIMITS, PodJoinInput, type Pod, type PodErrorEvent, type PodListEntry,
+} from "@grimore/shared"
 
 /** Same-origin by default, which is how it runs behind one reverse proxy. */
 const REALTIME_URL: string = import.meta.env.VITE_REALTIME_URL ?? ""
@@ -410,6 +412,22 @@ export function pastedNote(deck: PastedDeck): string {
   const parts = [`${deck.total} ${deck.total === 1 ? "card" : "cards"}`]
   if (deck.commander !== undefined) parts.push(`${deck.commander} in the command zone`)
   if (deck.sideboard > 0) parts.push(`${deck.sideboard} in the sideboard, left out`)
+  /*
+    The paste accepts up to `maxCards` (250). A four-seat table cannot be dealt past
+    `MAX_INSTANCES` (600) in total, so four lists of more than 150 are refused outright at
+    `game:start` — measured in #314, where 150 a seat deals and 151 does not.
+
+    Said here because this is the one moment the player is looking at the size of their own list,
+    and the alternative is finding out when the host presses Start. Phrased for four seats rather
+    than for this table, because the list is pasted before the seats are settled: two people may
+    paste 250 each quite legitimately.
+  */
+  if (deck.total > DECKLIST_LIMITS.maxCardsForFourSeats) {
+    parts.push(
+      `over ${DECKLIST_LIMITS.maxCardsForFourSeats}, so a four-seat table cannot be dealt with four`
+      + " lists this size",
+    )
+  }
   if (deck.unknownCount === 0) parts.push("every one of them scripted")
   else {
     const named = deck.unknown.join(", ")

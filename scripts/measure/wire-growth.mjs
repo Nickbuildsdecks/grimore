@@ -4,7 +4,8 @@
  *
  *   pnpm --filter @grimore/rules-engine build
  *   SEEDS=6 node scripts/measure/wire-growth.mjs
- *   SEEDS=4 SINGLETON=1 node scripts/measure/wire-growth.mjs   # pasted-list shape
+ *   SEEDS=4 SINGLETON=1 node scripts/measure/wire-growth.mjs   # a pasted Commander list
+ *   SEEDS=4 LIMITS=1 node scripts/measure/wire-growth.mjs      # the biggest four-seat table there is
  *
  * ## The gap this fills
  *
@@ -40,6 +41,21 @@ const SEEDS = Number(process.env.SEEDS ?? 6);
 const SEED0 = Number(process.env.SEED0 ?? 70000);
 const MOVES = Number(process.env.MOVES ?? 8000);
 const SINGLETON = process.env.SINGLETON === '1';
+/*
+  The largest **four-seat table the engine permits**, which is not the largest list the paste
+  accepts — and finding that out is what this arm was for.
+
+  `DECKLIST_LIMITS.maxCards` is 250 and `maxDistinct` is 150, so a player may paste 250 cards. The
+  engine's `MAX_INSTANCES` is 600 for the whole table, and its docblock gives the same reason the
+  wire cap exists: "so one action can never blow past STATE_MAX_BYTES". Four seats times 250 is
+  1000, so a pod of four maximum lists is refused outright with
+  `INVALID_DECK: a table may hold at most 600 cards` — two caps written for one purpose,
+  set independently, disagreeing at four seats (see D352).
+
+  So this arm measures 150 cards a seat, which is 600 exactly: the biggest four-player table that
+  can be dealt at all.
+*/
+const LIMITS = process.env.LIMITS === '1';
 const PLAYERS = [
   { playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' },
   { playerId: 'p2', name: 'C' }, { playerId: 'p3', name: 'D' },
@@ -64,16 +80,20 @@ function poolNames() {
  * and understate exactly the thing being measured.
  */
 function singletonDecks(names) {
+  const distinct = LIMITS ? 150 : 100;
   const specs = {};
   for (let seat = 0; seat < 4; seat++) {
     const slice = [];
-    for (let i = 0; i < 100; i++) slice.push(names[(seat * 100 + i * 7) % names.length]);
-    const unique = [...new Set(slice)].slice(0, 100);
+    for (let i = 0; i < distinct * 2; i++) slice.push(names[(seat * 97 + i * 7) % names.length]);
+    const unique = [...new Set(slice)].slice(0, distinct);
+    if (unique.length < distinct) throw new Error(`the pool has too few names for ${distinct} distinct`);
+    // Singleton either way: 150 distinct names is already 150 cards, which is the four-seat bound.
+    const entries = unique.slice(0, distinct - 1).map((name) => ({ name, count: 1 }));
     const { deck } = customDeck({
       id: `custom:${seat}`,
       name: `Pasted ${seat}`,
-      commander: unique[99],
-      entries: unique.slice(0, 99).map((name) => ({ name, count: 1 })),
+      commander: unique[distinct - 1],
+      entries,
     });
     specs[`custom:${seat}`] = deck;
   }
@@ -84,8 +104,8 @@ const pool = poolNames();
 
 /** Plays one pod, returning the peak view size seen on any seat at any point. */
 function play(seed) {
-  const deckSpecs = SINGLETON ? singletonDecks(pool) : null;
-  const deckIds = SINGLETON
+  const deckSpecs = SINGLETON || LIMITS ? singletonDecks(pool) : null;
+  const deckIds = SINGLETON || LIMITS
     ? [0, 1, 2, 3].map((i) => `custom:${i}`)
     : [0, 1, 2, 3].map((i) => ALL[(seed + i) % ALL.length]);
 
@@ -135,8 +155,12 @@ function play(seed) {
   return { peak, turns: s.turn, moves, finished: s.finished };
 }
 
-console.log(`\nPeak per-seat view over a whole four-player ${SINGLETON ? 'SINGLETON' : 'starter-deck'} pod`);
-console.log(provenanceLine({ SEED0, SEEDS, MOVES, SINGLETON: SINGLETON ? '1' : '' }));
+const shape = LIMITS ? 'AT THE ENGINE BOUND (150 cards a seat, 600 at the table)'
+  : SINGLETON ? 'SINGLETON (100 distinct)' : 'starter-deck';
+console.log(`\nPeak per-seat view over a whole four-player ${shape} pod`);
+console.log(provenanceLine({
+  SEED0, SEEDS, MOVES, SINGLETON: SINGLETON ? '1' : '', LIMITS: LIMITS ? '1' : '',
+}));
 
 let worst = { bytes: 0 };
 let worstSeed = 0;

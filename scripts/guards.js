@@ -682,6 +682,50 @@ function checkPlayerDocCommandsExist() {
 }
 checkPlayerDocCommandsExist();
 
+/**
+ * The four-seat deck bound in `packages/shared` has to stay equal to the engine's table cap / 4.
+ *
+ * `DECKLIST_LIMITS.maxCardsForFourSeats` is 150 because the rules engine's `MAX_INSTANCES` is 600
+ * and four seats share it (#314, measured: 150 a seat deals, 151 is refused). Those two numbers
+ * live in different packages, and `packages/shared` cannot import the engine — the dependency runs
+ * the other way — so the arithmetic is written out by hand in a docblock.
+ *
+ * A number copied by hand across a package boundary is a number that drifts. If `MAX_INSTANCES`
+ * moves, the warning a player reads at paste time becomes wrong in whichever direction is worse:
+ * silent about a list that cannot be dealt, or crying wolf about one that can.
+ *
+ * Reads source rather than `dist`, because guards run before the build in CI.
+ */
+function checkFourSeatDeckBoundMatchesEngine() {
+  const engineFile = 'packages/rules-engine/src/internal.ts';
+  const sharedFile = 'packages/shared/src/decklist.ts';
+  let engine;
+  let shared;
+  try {
+    engine = readFileSync(engineFile, 'utf8');
+    shared = readFileSync(sharedFile, 'utf8');
+  } catch {
+    return; // not in a checkout that has both packages
+  }
+  const cap = /^export const MAX_INSTANCES = (\d+);/m.exec(engine);
+  const perSeat = /^\s*maxCardsForFourSeats: (\d+),/m.exec(shared);
+  if (!cap || !perSeat) {
+    console.error(`[guards] could not read MAX_INSTANCES from ${engineFile} or`);
+    console.error(`[guards] maxCardsForFourSeats from ${sharedFile}, so this guard checked nothing.`);
+    console.error('[guards] Either a constant was renamed or its shape changed.');
+    bad++;
+    return;
+  }
+  const expected = Math.floor(Number(cap[1]) / 4);
+  if (Number(perSeat[1]) !== expected) {
+    console.error(`[guards] MAX_INSTANCES is ${cap[1]}, so a four-seat table holds ${expected} cards`);
+    console.error(`[guards] a seat — but maxCardsForFourSeats says ${perSeat[1]}. The paste-time`);
+    console.error('[guards] warning in pastedNote is wrong until they agree (#314).');
+    bad++;
+  }
+}
+checkFourSeatDeckBoundMatchesEngine();
+
 if (bad) {
   console.error(`[guards] ${bad} violation(s)`);
   process.exit(1);

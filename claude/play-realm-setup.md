@@ -933,6 +933,7 @@ run end to end.
 | `Port 5100 is already in use` | A server from last time. `lsof -i :5100`, or use `WEB_PORT=5101`. |
 | The lobby loads but **Create table** does nothing | The browser cannot reach the table server. Usually the printed address is not reachable from that device — set `PLAY_HOST`. |
 | The lobby loads from **port 3000**, lists nothing, and after eight seconds says *"took the connection but did not answer"* | You are at the wrong front door. See *Two front doors, and only one of them plays* below. |
+| **Start** is refused with *"a table may hold at most 600 cards"* | Four seats share a 600-card table, so four pasted lists of more than **150** cards each cannot be dealt (#314). The paste accepts up to 250 because two people may play 250 each; the note under a pasted list says so when it is over 150. Trim the lists, or play with fewer seats. |
 | Handshake fails with **403** | An origin is being refused. Either `SOCKET_ALLOWED_ORIGINS` does not list the address you are browsing from, or clear it to allow any. |
 | `/api/auth/status` fails in the console | Expected. The table does not use `apps/api`; this is the rest of the SPA asking whether you are signed in. |
 | A reload loses the game | It should not — your seat is held for two minutes and reclaimed automatically. Past that the seat is gone. |

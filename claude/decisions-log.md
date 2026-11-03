@@ -21900,3 +21900,71 @@ Reliability evidence beside it, from the same session, on both shapes: `state-in
 40 duel passes — **520 games, nine invariants checked after every action, zero broken** — and the
 pod arm over 10 passes, **130 pods, same nine invariants, also zero**. 650 games in all, every state
 self-consistent.
+
+## D352 — Two caps written for one purpose, disagreeing at four seats (#314)
+
+#313 measured the view at a hundred-card singleton deck. The obvious next question is the **bound**
+rather than a typical case: what is the largest list a player can actually paste, and does the view
+hold there? `DECKLIST_LIMITS` answers the first half — `maxCards: 250`, `maxDistinct: 150` — so the
+arm was built at 250 a seat.
+
+It never ran. The engine refused the table:
+
+```
+EngineError: a table may hold at most 600 cards   (INVALID_DECK)
+```
+
+`MAX_INSTANCES = 600` in `packages/rules-engine/src/internal.ts`, under the heading **"Caps on the
+card layer, so one action can never blow past STATE_MAX_BYTES"** — which is the same reason
+`DECKLIST_LIMITS` gives for its own numbers. Two caps, written for one purpose, in two packages,
+set independently.
+
+Four seats share the 600. So:
+
+| cards a seat | at the table | result |
+|---|---|---|
+| 100 | 400 | dealt |
+| **150** | **600** | **dealt** |
+| 151 | 604 | refused |
+| 200 | 800 | refused |
+| 250 (the paste maximum) | 1000 | refused |
+
+Measured, not derived on paper — the boundary is exactly where the arithmetic says, and the failure
+is at `game:start`, after the paste was accepted.
+
+**So the paste says yes and the table says no.** A player may paste anything up to 250 cards, get an
+ack describing their deck, sit down at a four-seat pod, and have the host press Start to be told the
+table holds at most 600 cards. Nothing between those two moments mentions it. At three seats the
+threshold is 200; at two it is 300, which is above `maxCards`, so two people are never affected —
+which is why `maxCards` is not simply wrong, and why lowering it would refuse a 250-card list that
+two players could legitimately play.
+
+### What shipped
+
+A **warning**, not a limit, at the one moment somebody is looking at the size of their own list:
+
+> 200 cards · over 150, so a four-seat table cannot be dealt with four lists this size
+
+`DECKLIST_LIMITS.maxCardsForFourSeats = 150` carries the arithmetic and the reason in its docblock,
+beside the limit it disagrees with, so the next reader meets both numbers together.
+
+**And a guard, because that 150 is a number copied by hand across a package boundary.**
+`packages/shared` cannot import the engine — the dependency runs the other way — so the arithmetic
+is written out in a comment, which is exactly the shape that drifts. `scripts/guards.js` now reads
+`MAX_INSTANCES` out of the engine's source and `maxCardsForFourSeats` out of shared's and fails if
+they disagree; proved by setting it to 149 and watching the guard name both numbers.
+
+### A correction to a comment, with measurements behind it
+
+`maxDistinct`'s docblock said it is "what decides how many card definitions a game state carries".
+True of the **state**, and that is worth bounding. But it sat beside limits whose stated purpose is
+`STATE_MAX_BYTES`, which caps the **view** — and #308 and #313 both measured that the view is
+bounded by what a seat can *see*, because `viewFor` inlines a definition only onto visible cards. A
+library travels as face-down counts. The comment now says which of the two it guards.
+
+The measurement makes the same point a third time: at the engine's own four-seat bound — 150 cards a
+seat, 600 at the table, the biggest pod that can be dealt — the peak view over four whole games was
+**27.9% of the cap**, *lower* than the hundred-card singleton arm's 44.4%. A bigger library is not a
+bigger view. The board is the whole of it.
+
+Gate green, 17/17. `pastedNote` has two more tests, including the 150 boundary that deals.

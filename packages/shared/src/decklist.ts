@@ -66,7 +66,15 @@ export interface ParsedDecklist {
 export const DECKLIST_LIMITS = {
   /** Cards in the main deck. A Commander deck is 99 plus the commander; this leaves room to spare. */
   maxCards: 250,
-  /** Distinct names, which is what decides how many card definitions a game state carries. */
+  /**
+   * Distinct names, which is what decides how many card **definitions** a game state carries.
+   *
+   * It is not what decides how big the *view* is, which is the thing `STATE_MAX_BYTES` caps:
+   * `viewFor` inlines a definition only onto cards a seat can see, so a library travels as
+   * face-down counts and the payload is bounded by the **board** rather than by the deck's variety
+   * (measured in #308 and again over whole games in #313). This limit still earns its place — it
+   * bounds the server's own state — but it is not the wire's guard.
+   */
   maxDistinct: 150,
   /** Per line, because "999 Forest" is a typo at best. */
   maxPerLine: 40,
@@ -74,6 +82,23 @@ export const DECKLIST_LIMITS = {
   maxLines: 400,
   /** A card name, which is longer than any real one (the longest printed card is 59 characters). */
   maxNameLength: 80,
+  /**
+   * Cards in one list that a **four-seat table** can actually be dealt — which is not `maxCards`.
+   *
+   * The rules engine caps a whole table at `MAX_INSTANCES = 600` instances, for the same stated
+   * reason this file's limits exist: "so one action can never blow past STATE_MAX_BYTES". Four
+   * seats share that 600, so four lists of more than 150 cards cannot be dealt at all: the engine
+   * refuses `game:start` with `a table may hold at most 600 cards`.
+   *
+   * Measured rather than derived on paper (#314): 150 a seat is dealt, 151 is refused, and so is
+   * every size above it. Two caps written for one purpose, set independently, disagreeing at four
+   * seats — and `maxCards` is the generous one, so **the paste says yes and the table says no**.
+   *
+   * It is a *warning* rather than a limit, because the arithmetic depends on how many people sit
+   * down: two players may legitimately paste 250 each (500 of 600). So `maxCards` stays where it
+   * is, and `pastedNote` says what a big list means for a full pod.
+   */
+  maxCardsForFourSeats: 150,
 } as const;
 
 /** Section headers a real export writes, and what each one means for the main deck. */
