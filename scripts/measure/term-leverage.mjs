@@ -116,6 +116,14 @@ const TERMS = {
     turns — which should make its leverage lower and each changed decision mean more. A term with
     four times the leverage and no win rate is a worse bet than one with a quarter of it and a sign
     that holds, so the number to read here is *where* each one acts rather than how big it is.
+
+    **`clockRate`'s win rate is no longer open, and these rows should not suggest it is** (#268,
+    D294/D295). It is **+1.5 points in a duel** (D275/D276) and **exactly nothing in a pod**:
+    1216-1218 of 2434 decided pods, 0.00 sigma, with a 2 sigma bound of ±4.1 points. So a high
+    leverage reading for `clockRate` here is not an argument for turning it on — it is the
+    demonstration that leverage and win rate are different questions, which is the same lesson
+    `castable` teaches from the other end in `eval-calibration` (weak calibration, real win rate).
+    `clockTurns` and `clockCycle` have had no pod win rate spent on them and remain open.
   */
   clockRate: { clockRate: 1 },
   clockTurns: { clockTurns: 1 },
