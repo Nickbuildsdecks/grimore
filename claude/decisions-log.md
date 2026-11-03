@@ -20411,3 +20411,58 @@ That makes three corrections of my own reasoning in this stretch — D321 (the c
 duration), D326 (the arm, not the marker, produced the zero), and this one — against which the
 measurements that settled them all existed only because the claims were written down somewhere they
 could be checked.
+
+## D328 — The surface audit, and the five wrong guesses covering four controls cost (#305)
+
+`scripts/surface-coverage.mjs` asks the question 225 passing browser checks cannot: which rendered
+controls does no check ever press? First reading: **100 controls, 10 that no check even names.**
+
+`scripts/check-table-controls.mjs` now covers five of them — the d6, handing a tabletop game to the
+rules engine, conceding, starting over, and leaving — at **17/17, stable across two runs**. The
+audit reads 6 unnamed now, down from 10.
+
+**Its own script, not a block in `e2e-table.mjs`.** Two of these controls change what the table is,
+and the first attempt put them at the end of that suite, where they aborted the run and would have
+left its other 70-odd checks reading a different game.
+
+### What the five guesses were, because each one is a fact about the product
+
+1. **The d6 is not in the feed.** `TableFeed` is a transient overlay of notable lines that renders
+   nothing at all when there are none, so the first check waited 30s for an element absent by
+   design and reported it as the d6 not working. A roll lives in the **log**.
+2. **The engine will not start on a finished game.** `startAutomation` throws `NOT_STARTED`
+   ("deal the table first"), and the first attempt pressed `hand-to-engine` after the tabletop
+   suite had played to a winner. A control only reachable mid-game has to be checked mid-game.
+3. **"New game" only exists after a game ends.** It sits in the post-game block beside "Play
+   again"; pressing it on a live table waited 30s for a button that was not there.
+4. **A reset clears the decks, not just the board.** `game:reset` empties `cardDefs` and
+   `instances`, so `start-game` comes back **disabled** rather than absent — which is exactly what
+   the button's own comment promises ("what you want when somebody is changing decks"), and what
+   the check now asserts.
+5. **Concede arms on the first press and concedes on the second** — "Concede", then "really?",
+   because conceding is irreversible and a phone misclick would end somebody's game. A single click
+   sent nothing, and the failure said so only because the check had been taught to read the log:
+   *"no concede in the log, so the click did not land"*. That message is the difference between a
+   five-minute fix and an afternoon.
+
+Three of those five were found only because a check was written to report **what it found** rather
+than that it did not find what it wanted. That is the cheapest habit in this file.
+
+### What is left, and why
+
+Six controls remain unnamed by any check, and they are not one kind of thing:
+
+- **`confirm-targets` is unreachable** with the present pool (D327's neighbour finding, recorded at
+  the button): a fixed-target spell is sent as its last target is chosen, so the Cast button only
+  appears for an "up to N" spell, and every optional spec in the pool is also `divided`, which the
+  bar declines to draw it for. It stays for the first non-dividing "destroy up to two target
+  creatures".
+- **`ward-decline` and `pact-decline`** are the *declining* halves of two prompts whose accepting
+  halves are covered. Each needs a specific board to reach; the engine's own suite covers both
+  outcomes, so what is missing is only that the button sends what it says.
+- **`toggle-manual`** ("Move by hand") is the escape hatch inside an automated game — worth a check,
+  and the next one to write.
+- **`watch-open-*` and `stop-watching`** are the watcher's lobby entry and exit. `e2e-pod` watches a
+  table by code rather than from the listing, so the path exists and only this door into it does not.
+
+Named rather than left as a number, which is the point of the instrument.
