@@ -249,3 +249,73 @@ check-then-insert would hit the same violation. Migration `0009` replaces the ke
 unique indexes, and that is the only fix. SQLite, for contrast, already has
 `PRIMARY KEY (player_id, season_id)` and keeps both rows — the two dialects disagree about the shape
 of the league itself.
+
+---
+
+# The same audit the other way round: what local SQLite does not have (#311, D344-D346)
+
+Everything above looks one way: what **Postgres** does not have that `server.js` writes. That is the
+production direction, and it is the one that got the attention. The other direction had never been
+asked, and CLAUDE.md's workflow names it first — *"Test Locally First: always implement, run, and
+verify changes on local server (http://localhost:3000)"*.
+
+Run it yourself (no arguments; it reads the local store after `initDb()`):
+
+```bash
+node scripts/audit-sqlite-schema-gap.js
+```
+
+## Columns: twenty-two were missing, and are now closed
+
+`db.js`'s Postgres branch carries a block of two dozen `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
+statements titled "Column migrations for Postgres". The SQLite branch had four, for `players`, and
+nothing else. On a freshly created local database that meant:
+
+| route | answered | because |
+| --- | --- | --- |
+| `GET /api/decks/discover` (the home feed) | **500** | `no such column: d.is_public` |
+| the metagame endpoint | **500** | `no such column: ds.season_id` |
+| `GET /api/players/:id/profile` | **500** | `no such column: profile_theme` |
+| `INSERT INTO decks (... is_public, format)` | could not run | the columns did not exist, so **creating a deck was impossible** |
+
+Enumerated against `packages/db/migrations/` — this project's own statement of what the schema is —
+twenty-one columns were missing, plus `deck_cards.custom_tag`, which **no schema anywhere creates**
+(the `direct_messages` class: referenced by the app, defined by nothing). `db.js`'s SQLite branch now
+adds sixteen of them, read-then-add via `PRAGMA table_info` rather than the swallow-every-error
+`try/catch` already in the file.
+
+Six are deliberately left out: migration 0015's `scryfall_cards` card-rules columns, because
+`CARD_UPSERT_SQLITE` was deliberately left at thirteen columns when that migration shipped, and
+adding columns nothing writes would be the opposite of closing a gap.
+
+**`deck_cards.custom_tag` is still missing from Postgres.** It is added to SQLite only, because the
+migration list is a cutover artifact. It belongs in the table at the top of this document.
+
+## Tables: nine, and seven of them are the same seven
+
+```
+account_events  active_roster  direct_messages  email_verifications  friend_requests
+password_resets  pod_results  pods  wishlist_cards
+```
+
+Compare that against this document's own list. **`active_roster`, `pods`, `pod_results`,
+`wishlist_cards`, `friend_requests`, `direct_messages` and `password_resets` are on both.** The same
+features — league check-in, pods, results, wishlist, friend requests, DMs, password reset — are dead
+in *both* halves of the dual-mode setup.
+
+That sharpens this document's central argument rather than complicating it. It said the v2
+migrations are, right now, the fix for seven broken features in the app actually serving users. The
+other direction adds: **there is no environment in which those features work**, so nobody has ever
+been able to test them, which is why they could stay broken without anybody noticing. Creating them
+in the SQLite branch is not attempted here — the fix for seven of the nine is the migration cutover,
+and that is one decision rather than two schemas hand-translated.
+
+## One note on reading the output
+
+The column half depends on skipping the **Postgres** branch of each `db.isPostgres` ternary, the
+mirror of what the Postgres audit skips. A first draft matched `isPostgres ?` on one line, which
+misses the multi-line form the file actually uses, and it reported seven missing columns — six of
+them the Postgres spelling of a column SQLite has under another name (`foil`/`is_foil`,
+`created_at`/`added_at`, `cached_at`/`last_updated`, `id`/`scryfall_id`, `name`/`card_name`). Every
+one a false positive, and every one an argument for a change that would have reintroduced a bug this
+document records as fixed. The detector is now the exact mirror of the existing one.

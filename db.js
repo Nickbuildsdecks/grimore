@@ -1134,7 +1134,22 @@ async function initDb() {
     ['seasons', 'allowed_rarities', `TEXT NOT NULL DEFAULT '["common","uncommon","rare","mythic"]'`],
     ['seasons', 'banlist', "TEXT NOT NULL DEFAULT '[]'"],
     ['seasons', 'budget_limit', 'REAL'],
-    ['seasons', 'max_rares', 'INTEGER NOT NULL DEFAULT -1']
+    ['seasons', 'max_rares', 'INTEGER NOT NULL DEFAULT -1'],
+
+    /*
+      `deck_cards.custom_tag`, which no schema anywhere creates.
+
+      `server.js` inserts it on the deck-save path (two sites) and selects `dc.custom_tag` in the
+      deck queries, and it is in neither branch of this file nor in any v2 migration. Found by
+      `scripts/audit-sqlite-schema-gap.js`, and it is the same class as the `direct_messages` and
+      `password_resets` rows in `claude/postgres-schema-gap-2026-09-27.md`: referenced by the app,
+      defined by nothing.
+
+      Adding it here fixes the local half only. **Postgres still does not have it**, which is
+      recorded in that document rather than fixed with a migration from here, because the migration
+      list is a cutover artifact and the cutover is not mine to change.
+    */
+    ['deck_cards', 'custom_tag', 'TEXT']
   ];
   const columnsOf = async (table) => {
     try {

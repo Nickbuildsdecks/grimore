@@ -21580,3 +21580,86 @@ The general version, which is new: **when a check has never passed, the thing to
 it failing" but "has it ever passed".** A failure that predates everyone's memory of the code gets
 read as environmental, and the five minutes it takes to grep for the endpoint is the whole
 difference between that and finding four unrun audits.
+
+## D346 — The sibling audit nobody had written, and six false positives from a one-line detector
+
+D344 found the drift by chasing 500s one at a time, then enumerating against
+`packages/db/migrations/`. That closes the columns the migrations name. It does not answer the
+general question, which is the one `scripts/audit-postgres-schema-gap.js` answers in the other
+direction: **what does `server.js` write that the local store does not have.**
+
+So `scripts/audit-sqlite-schema-gap.js` now exists, as the mirror of the script that has been there
+since September. Same method — `INSERT INTO <table> (<columns>)` out of `server.js`, compared against
+the live catalog after `initDb()` — and the same reason for using INSERTs rather than every
+reference: a SELECT of a missing column fails too, but an INSERT is where the two schemas were
+written apart and it names its columns explicitly.
+
+### The detector, and why its first version was worse than nothing
+
+`server.js` writes dialect-specific SQL as a ternary:
+
+```js
+const SQL_UPSERT_COLLECTION_CARD = db.isPostgres
+  ? `INSERT INTO collection_cards (..., foil, ...)`
+  : `INSERT INTO collection_cards (..., is_foil, ...)`
+```
+
+The Postgres audit skips the SQLite branch; this one has to skip the **Postgres** branch. My first
+detector tested for `isPostgres ?` on the same line as the match — which misses the multi-line form
+above, the only form the file actually uses. It reported **seven** missing columns.
+
+**Six were false positives**, and each one was the Postgres spelling of a column SQLite has under
+another name:
+
+| reported | SQLite actually has |
+|---|---|
+| `collection_cards.foil` | `is_foil` |
+| `collection_cards.created_at` | `added_at` |
+| `card_price_cache.cached_at` | `last_updated` |
+| `scryfall_cards.id` | `scryfall_id` |
+| `scryfall_cards.name` | `card_name` |
+
+Every one of those pairs is in `claude/postgres-schema-gap-2026-09-27.md` as a divergence **already
+fixed**, so acting on that output would have argued for changes that reintroduce a closed bug. The
+existing script's own comment warns about exactly this and says why it tests a line's first
+character rather than using a proximity window: *"a proximity window is not good enough"*. I wrote a
+worse version of a detector whose correct version was ten lines above the function I was mirroring.
+
+Corrected to the exact mirror — a line whose first non-space character is `?` — the output is
+**one** column: `deck_cards.custom_tag`, which is a real gap and which **no schema anywhere
+creates**. `server.js` inserts it on the deck-save path and selects `dc.custom_tag` in the deck
+queries; it is in neither branch of `db.js` and in no migration. Added to SQLite; recorded for
+Postgres in that document rather than fixed with a migration from here, because the migration list
+is a cutover artifact and the cutover is Nick's.
+
+### Nine tables, and seven of them are the same seven
+
+```
+account_events  active_roster  direct_messages  email_verifications  friend_requests
+password_resets  pod_results  pods  wishlist_cards
+```
+
+Seven of those nine — `active_roster`, `pods`, `pod_results`, `wishlist_cards`, `friend_requests`,
+`direct_messages`, `password_resets` — are on the Postgres document's list too. League check-in,
+pods, results, wishlist, friend requests, DMs and password reset are dead in **both** halves of a
+dual-mode setup.
+
+That sharpens the existing argument rather than adding a new one. The document says the v2 migrations
+are, right now, the fix for seven broken features in the app serving users. The other direction adds
+the reason nobody noticed: **there is no environment in which those features work**, so nobody has
+ever been able to test them. Not attempted here, because the fix for seven of the nine is the
+migration cutover — one decision, rather than seven tables hand-translated into a second dialect.
+
+### Proved in both directions, and a claim of mine that was not true
+
+Against a schema built from nothing (`grimore.db` moved aside): same nine tables, and **every column
+`server.js` inserts exists**, so the repair in D344 covers a fresh database rather than only the one
+on this disk. And with one line deleted from `columnMigrations`, the audit reports
+`decks is_public` and nothing else — it discriminates.
+
+One correction to myself, caught while verifying rather than after: the docblock I wrote documented
+`DB_PATH=/tmp/fresh.db` as the way to audit a fresh schema. **There is no such variable** — `db.js`
+resolves its SQLite path at require time from `__dirname` with no override. The paragraph now gives
+the `mv grimore.db aside` recipe that actually works, and says what it replaced. A documented flag
+that does not exist is a claim that cannot be true, which is the same fault as a check that cannot
+fail, committed in a comment instead of in code.
