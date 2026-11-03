@@ -20839,3 +20839,50 @@ row agreeing with the pool would pass either way); remove the data lookup → fi
 tests fail.
 
 Gate green: 2173 tests across 17 packages, 1399 in the engine.
+
+---
+
+## D333 — Morph and echo derived, which bought two cards, and the line that stops there (#308)
+
+The queue D332 produced named this family first among the things that are fixable: `Morph {1}{G}`,
+`Megamorph {2}{W}`, `Echo {1}{R}`. All three are mechanics the engine **fully implements**, and all
+three were refused for one reason — `printedKeywords` reads a keyword as a bare word, so a keyword
+printed with a cost reads as a line with rules in it.
+
+So `fromCardData` now parses them into the script fields the engine already has: `morph: { cost: {
+mana } , mega? }` and `echo: { cost }`. A new kind, `costed-keyword-creature`, reports them.
+
+**It bought two cards of 360.** 11.4% → 11.9%. That is the measured number and it is small, for a
+reason the measurement could have told me before I wrote the code and I did not ask it: six of the
+pool's morph creatures have text *besides* the morph line, because a turned-face-up trigger is the
+whole reason most morph cards get printed. Only a body-plus-morph-line card derives, and the pool
+has two. That limit is now a test of its own rather than a surprise for the next reader.
+
+Whether it is larger on real Magic I do not know and have not claimed anywhere as a number: most
+printed morph creatures *are* a body plus a morph line, which argues it is, but this pool cannot
+check that and the `--file` arm is the thing that would.
+
+### Where the line is, and why it is a rule rather than a backlog item
+
+The next buckets are "When ~ enters the battlefield, you gain 2 life" and its twenty-odd siblings,
+and plain `Cycling {2}`. **Neither is being done, and that is a decision.**
+
+A morph cost is **data**. The engine already knows what morph does; the card supplies a number;
+nothing is inferred, so nothing can be inferred wrongly — a misparse is a refusal, and both
+directions are tested (`Morph — Pay 3 life.`, which is in this pool, is refused rather than guessed
+at; so is a card printing the keyword twice).
+
+"You gain 2 life" is **English**. Turning English into an effect is the direction in which a card
+silently does less than it reads: no error, no failing test, and a player loses a game to the engine
+rather than to their own misreading — which `measure/card-promises.mjs` exists because of. This
+project already has the rule written down for card *text* — *inventing the text of a real card is
+worse than leaving the mechanic out* (D259) — and this is its sibling: **inventing the effect of a
+real card is worse than leaving it cardboard.**
+
+Cycling sits just on the far side and is the interesting case: its effect is always "draw a card",
+so almost nothing is being inferred. What stops it is different — it needs an ability with an
+`effect` function rather than a data field, which means this module reaching into `effects.js`, and
+a derived ability that *runs code* is a different commitment from one that states a cost. Left out
+deliberately, named in the code so the next reader knows it was a choice and not an oversight.
+
+Gate green: 2177 tests across 17 packages, 1403 in the engine.

@@ -107,6 +107,11 @@ export type DerivedKind =
   | 'vanilla-creature'
   /** A creature whose text is only keywords the engine implements. */
   | 'keyword-creature'
+  /**
+   * A creature whose text is keywords, at least one of which carries a cost — morph, megamorph or
+   * echo. See `keywordWithCost`, which also says where the line is drawn and why.
+   */
+  | 'costed-keyword-creature'
   /** A noncreature permanent with no text at all. Rare, and harmless. */
   | 'blank-permanent';
 
@@ -224,6 +229,52 @@ function tapAbilities(produces: readonly ManaType[]): AbilityDef[] {
     description: `{T}: Add {${type}}.`,
     produces: [type],
   }));
+}
+
+/**
+ * A keyword line that is nothing but the keyword and a mana cost, parsed into the script field the
+ * engine already reads for it.
+ *
+ * `scripts/measure/derivable.mjs` named this family. `printedKeywords` recognises a keyword as a
+ * bare word, so `Flying` is read and `Morph {1}{G}` is not — it reads as a line with rules in it
+ * and the card is refused. But morph, megamorph and echo are **fully implemented mechanics whose
+ * only card-specific parameter is a cost**, and the cost is the one thing printed data states
+ * exactly. That makes them the same shape of derivation as the mana ability and not the same shape
+ * as anything below.
+ *
+ * ## The line this family is on, and why cycling is on the other side of it
+ *
+ * The next buckets the measurement names are "When ~ enters the battlefield, you gain 2 life" and
+ * its twenty-odd siblings, and plain `Cycling {2}`. Those are **not** done here, and the reason is
+ * worth stating because it is a rule rather than a backlog item:
+ *
+ * A morph cost is *data*. The engine already knows what morph does; the card supplies a number.
+ * Nothing is being inferred, so nothing can be inferred wrongly — a misparse is a refusal, and the
+ * tests below check both directions. "You gain 2 life" is *English*, and turning English into an
+ * effect is the direction in which a card silently does less than it reads: no error, no failing
+ * test, and a player loses a game to the engine rather than to their own misreading. This project
+ * already has that rule written down for card text ("inventing the text of a real card is worse
+ * than leaving the mechanic out") and this is its sibling: **inventing the effect of a real card is
+ * worse than leaving it cardboard.**
+ *
+ * Cycling sits just on the far side: its effect is always "draw a card", so it is nearly as safe —
+ * but it needs an ability with an `effect` function rather than a data field, which means this
+ * module reaching into `effects.js`, and a derived ability that *runs code* is a different
+ * commitment from one that states a cost. Left out deliberately, and named here so the next reader
+ * knows it was a decision.
+ */
+function keywordWithCost(line: string): { field: 'morph' | 'echo'; mana: string; mega?: true } | null {
+  const match = /^(Morph|Megamorph|Echo)\s+((?:\{[^}]*\})+)$/i.exec(line.trim());
+  if (match === null) return null;
+  const word = match[1]!.toLowerCase();
+  const mana = match[2]!;
+  /*
+    `Morph — Pay 3 life.` is in this pool and is deliberately not matched: the field takes an
+    `AbilityCost` precisely because a morph cost is not always mana, but a cost this reader cannot
+    parse is a cost it must not guess at. The regex requires mana symbols and nothing else.
+  */
+  if (word === 'echo') return { field: 'echo', mana };
+  return word === 'megamorph' ? { field: 'morph', mana, mega: true } : { field: 'morph', mana };
 }
 
 const INTEGER = /^\d+$/;
@@ -365,12 +416,41 @@ export function cardFromData(row: CardDataRow): Derivation {
       when every comma-separated part of it is a keyword it knows, so a line it skipped is a line
       with rules in it.
     */
-    const keywordLines = lines.filter((line) => printedKeywords(line).length > 0);
-    const leftover = lines.filter((line) => !keywordLines.includes(line));
-    if (leftover.length > 0) {
-      return { ok: false, why: `${name}: cannot read the line "${leftover[0]}"` };
+    let morph: { readonly cost: { readonly mana: string }; readonly mega?: true } | undefined;
+    let echo: { readonly cost: string } | undefined;
+    const unread: string[] = [];
+    for (const line of lines) {
+      if (printedKeywords(line).length > 0) continue;
+      const costed = keywordWithCost(line);
+      if (costed === null) { unread.push(line); continue; }
+      // A card printing the same costed keyword twice is a card this has not seen; refuse it
+      // rather than silently keeping the second one.
+      if (costed.field === 'echo') {
+        if (echo !== undefined) { unread.push(line); continue; }
+        echo = { cost: costed.mana };
+      } else {
+        if (morph !== undefined) { unread.push(line); continue; }
+        morph = costed.mega === true
+          ? { cost: { mana: costed.mana }, mega: true }
+          : { cost: { mana: costed.mana } };
+      }
     }
-    return { ok: true, kind: 'keyword-creature', def: withBody };
+    if (unread.length > 0) {
+      return { ok: false, why: `${name}: cannot read the line "${unread[0]}"` };
+    }
+    if (morph === undefined && echo === undefined) {
+      return { ok: true, kind: 'keyword-creature', def: withBody };
+    }
+    return {
+      ok: true,
+      kind: 'costed-keyword-creature',
+      def: withBody,
+      script: {
+        name,
+        ...(morph === undefined ? {} : { morph }),
+        ...(echo === undefined ? {} : { echo }),
+      },
+    };
   }
 
   // ── Any other permanent ────────────────────────────────────────────────────────────────────────

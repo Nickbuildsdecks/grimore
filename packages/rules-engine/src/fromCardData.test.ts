@@ -102,6 +102,37 @@ describe('building a card from its printed data', () => {
       expect(hawk.script).toBeUndefined();
     });
 
+    it('reads a keyword that carries a cost into the field the engine already has', () => {
+      /*
+        Morph, megamorph and echo are implemented mechanics whose only card-specific parameter is a
+        cost, which makes them the same shape of derivation as a mana ability: the engine knows what
+        the mechanic does, the data supplies the number, and nothing is inferred. `printedKeywords`
+        cannot see them because it reads a keyword as a bare word, so `Morph {1}{G}` had been
+        reading as a line with rules in it.
+      */
+      const morph = built({ name: 'Test Morpher', oracle_text: 'Morph {1}{G}' });
+      expect(morph.kind).toBe('costed-keyword-creature');
+      expect(morph.script?.morph).toEqual({ cost: { mana: '{1}{G}' } });
+
+      const mega = built({ name: 'Test Megamorpher', oracle_text: 'Flying\nMegamorph {2}{W}' });
+      // One flag is the whole difference between the two keywords, and the flying still reads.
+      expect(mega.script?.morph).toEqual({ cost: { mana: '{2}{W}' }, mega: true });
+
+      const echo = built({ name: 'Test Echoer', oracle_text: 'Echo {2}{G}' });
+      expect(echo.script?.echo).toEqual({ cost: '{2}{G}' });
+    });
+
+    it('strips the reminder text a printed echo line carries', () => {
+      // The pool's own wording: `Echo {1}{R} (At the beginning of your upkeep, ...)`. The bracket
+      // is a reminder and would otherwise make the line unparseable.
+      const echo = built({
+        name: 'Test Echoer',
+        oracle_text: 'Echo {1}{R} (At the beginning of your upkeep, if this came under your'
+          + ' control since your last upkeep, sacrifice it unless you pay its echo cost.)',
+      });
+      expect(echo.script?.echo).toEqual({ cost: '{1}{R}' });
+    });
+
     it('builds a blank artifact, but not a blank Aura', () => {
       expect(built({
         name: 'Test Rock', type_line: 'Artifact', oracle_text: '', mana_cost: '{2}',
@@ -204,6 +235,36 @@ describe('building a card from its printed data', () => {
         cmc: 4, colors: ['G'], power: null, toughness: null, loyalty: '3',
         oracle_text: '+1: Draw a card.',
       })).toContain("loyalty abilities are its text");
+    });
+
+    it('refuses a morph cost that is not mana, rather than guessing at it', () => {
+      /*
+        `Morph — Pay 3 life.` is in this pool. The script field takes an `AbilityCost` precisely
+        because a morph cost is not always mana — but a cost this reader cannot parse is a cost it
+        must not invent, and a turn-up priced wrong is a turn-up the player cannot plan around.
+      */
+      expect(why({ name: 'Test Cutthroat', oracle_text: 'Morph \u2014 Pay 3 life.' }))
+        .toContain('cannot read the line');
+    });
+
+    it('refuses a card printing the same costed keyword twice', () => {
+      // Not a card that exists; refused rather than silently keeping one of the two.
+      expect(why({ name: 'Test Twice', oracle_text: 'Morph {1}{G}\nMorph {2}{G}' }))
+        .toContain('cannot read the line "Morph {2}{G}"');
+    });
+
+    it('still refuses a morph creature that also has a trigger, which most of them do', () => {
+      /*
+        The measured limit of the increment above, stated as a test. Six of the pool's morph
+        creatures have text *besides* the morph line — a turned-face-up trigger is the whole reason
+        most morph cards are printed — so teaching the reader the cost bought **two** cards here,
+        not six. On cards printed as a body plus a morph line it buys more, which is a claim this
+        pool cannot check and so is not made anywhere as a number.
+      */
+      expect(why({
+        name: 'Test Ainok',
+        oracle_text: 'Morph {1}{G}\nWhen Test Ainok is turned face up, destroy target artifact.',
+      })).toContain('When Test Ainok is turned face up');
     });
 
     it('refuses a creature whose text has rules in it', () => {
