@@ -21809,3 +21809,46 @@ Corrected in place: the comment in `db.js` and the section in
 why they changed. **The commit message of `ac2aef6` carries the wrong claim and cannot be corrected**
 — it is pushed — so this entry is where the record is set straight, and the two files a reader would
 actually consult say so themselves.
+
+## D350 — Eight of the nine missing tables are the cutover; the ninth is nobody's, and one doc row was stale
+
+D346 listed nine tables `server.js` inserts into that the local SQLite store does not have, and
+noted that seven are on the Postgres document's list too. That is where I left it. Having just been
+caught by a truncated grep (D349), the right move was to finish the question rather than leave it at
+"seven of these look familiar", so each of the nine was checked against the migrations and `db.js`
+with no limit on the output:
+
+| created by | tables |
+|---|---|
+| migration `0007` | `friend_requests` |
+| migration `0008` | `wishlist_cards` |
+| migration `0009` | `active_roster`, `pods`, `pod_results` |
+| migration `0014` | `account_events`, `email_verifications`, `password_resets` |
+| **nothing, anywhere** | **`direct_messages`** |
+
+So **eight of the nine are one decision away** — the migration cutover, which is Nick's — and the
+ninth is a different kind of thing: `direct_messages` is referenced by `server.js` and defined in no
+branch of `db.js` and no migration, so direct messaging cannot work on either dialect and nothing
+pending changes that.
+
+### And a row in the document that had gone stale
+
+`claude/postgres-schema-gap-2026-09-27.md` says, in its summary table and in a section of its own,
+that **`direct_messages` and `password_resets`** are "the two nothing creates" — "not in `db.js`'s
+Postgres branch, not in `db.js`'s SQLite branch, not in any migration".
+
+That was true on 2026-09-27. It is not true now: `0014_account_security.sql` creates
+`password_resets`, and its own header names password recovery as the finding that drove the
+migration. So the document has been arguing from a two-item control that became a one-item control
+when 0014 was written, and a reader meeting the table first would conclude password reset is
+unfixable.
+
+Corrected in place, in four places — the table row, the control sentence, the section, and a later
+mention — because that document is a statement about **now**, which is the rule written down in
+D328: a progress document gets corrected, a dated decision entry does not.
+
+The general shape is worth naming because it is the opposite of the usual stale-doc problem. The
+document did not drift because nobody maintained it; it drifted because **somebody acted on it**.
+A document whose whole purpose is to list what is broken goes stale precisely when it works, and
+nothing connects the fix back to the list. The same will happen to the table above the moment the
+cutover runs.

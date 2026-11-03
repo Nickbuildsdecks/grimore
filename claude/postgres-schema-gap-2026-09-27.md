@@ -22,7 +22,7 @@ Against a database built the way production was — `0001_baseline.sql` plus wha
 | `deleted_items` | deleted-item recovery | migration `0003`, and `db.js` **SQLite branch only** |
 | `price_movers` | the Movers & Shakers ticker | migration `0011` |
 | `direct_messages` | direct messaging | **nothing** |
-| `password_resets` | password reset | **nothing** |
+| `password_resets` | password reset | migration `0014` (**written after this document; see the correction below**) |
 
 Every one of these is referenced by `server.js` with `FROM`, `INTO`, `UPDATE` or `JOIN`. On
 Postgres each raises `relation "..." does not exist`, so the feature is not degraded — it is dead.
@@ -32,8 +32,9 @@ Postgres each raises `relation "..." does not exist`, so the feature is not degr
 **Seven of the nine are already fixed by migrations that have never run.**
 
 Running the same audit against a database with all twelve migrations applied reports only two
-missing — `direct_messages` and `password_resets`, the two nothing creates. That is the control,
-and it is the whole argument:
+missing — `direct_messages` and `password_resets`, the two nothing created **when this was
+written**. Migration `0014` has since added `password_resets`, so the control now reads one. That is
+the control, and it is the whole argument:
 
 ```
 against baseline + initDb   ->  9 tables missing
@@ -125,14 +126,19 @@ still broken. It now skips lines that open the SQLite branch (they begin with `:
 ratchet in `scripts/guards.js` uses. Verified not to have become blind in the process: a bogus column
 injected into a Postgres branch is still reported.
 
-## `direct_messages` and `password_resets`
+## `direct_messages` — and `password_resets`, which has since been written
 
-No definition exists anywhere — not in `db.js`'s Postgres branch, not in `db.js`'s SQLite branch,
-not in any migration. Messaging and password reset cannot work on either dialect without one.
+**Corrected (#311).** When this section went in, neither table was defined anywhere. That is still
+true of `direct_messages`: not in `db.js`'s Postgres branch, not in its SQLite branch, not in any
+migration, so messaging cannot work on either dialect. **`password_resets` is no longer in that
+state** — migration `0014_account_security.sql` creates it, along with `account_events` and
+`email_verifications`, and its own header names password recovery as the finding that drove it. The
+paragraph below is the reasoning that was acted on rather than a standing refusal.
 
 Not written here, deliberately. Inventing a schema for a feature by reading its INSERT statements
-is guesswork, and both want a decision about shape — particularly `password_resets`, where token
-lifetime, single-use semantics and cleanup are security-relevant.
+is guesswork, and both wanted a decision about shape — particularly `password_resets`, where token
+lifetime, single-use semantics and cleanup are security-relevant. That decision was taken in 0014;
+`direct_messages` is still waiting for one.
 
 ## Why the audit is shaped the way it is
 
@@ -215,7 +221,8 @@ only column affected here is `active_roster.checked_in_at`, and a re-check-in sh
 is set explicitly rather than left to diverge.
 
 The five that remain are genuinely blocked on a schema decision: two `scryfall_cards` writes, two
-`card_price_cache` writes (both per D15), and `password_resets`, whose table is defined nowhere at all.
+`card_price_cache` writes (both per D15), and `password_resets`, whose table was defined nowhere at
+all when that was written and is now created by migration `0014`.
 
 ## The league feature is dead on both dialects, not just Postgres
 
@@ -310,9 +317,22 @@ in *both* halves of the dual-mode setup.
 That sharpens this document's central argument rather than complicating it. It said the v2
 migrations are, right now, the fix for seven broken features in the app actually serving users. The
 other direction adds: **there is no environment in which those features work**, so nobody has ever
-been able to test them, which is why they could stay broken without anybody noticing. Creating them
-in the SQLite branch is not attempted here — the fix for seven of the nine is the migration cutover,
-and that is one decision rather than two schemas hand-translated.
+been able to test them, which is why they could stay broken without anybody noticing.
+
+Checked table by table, with no `head` on the grep this time (see D349):
+
+| created by | tables |
+| --- | --- |
+| migration `0007` | `friend_requests` |
+| migration `0008` | `wishlist_cards` |
+| migration `0009` | `active_roster`, `pods`, `pod_results` |
+| migration `0014` | `account_events`, `email_verifications`, `password_resets` |
+| **nothing, anywhere** | **`direct_messages`** |
+
+So **eight of the nine are waiting on the migration cutover** — one decision, rather than eight
+tables hand-translated into a second dialect, which is why creating them in the SQLite branch is not
+attempted here. The ninth, `direct_messages`, is waiting on somebody to decide its shape, and has
+been since this document was written.
 
 ## One note on reading the output
 
