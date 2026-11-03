@@ -66,7 +66,17 @@ async function main() {
     await host.goto(BASE);
     await waitFor(host, 'lobby');
     await tid(host, 'player-name').fill('Nick');
-    await tid(host, 'format-modern').click();
+    /*
+      Commander, not Modern, and for two reasons.
+
+      It is the format this project is built around ("Casual Commander First"), so it is the table
+      two people are most likely to sit at. And `cmd-dmg-*` — the commander-damage counter — is a
+      **button** only when the format is Commander, the seat is somebody else's, and the table is
+      being tracked by hand; on your own seat it renders as a read-only span with the same testid,
+      which is part of why the audit's control/passive split found it confusing. A Modern table
+      cannot reach it at all.
+    */
+    await tid(host, 'format-commander').click();
     await tid(host, 'visibility-public').click();
     await tid(host, 'create-table').click();
     await waitFor(host, 'pregame');
@@ -173,6 +183,34 @@ async function main() {
     await tid(host, 'life-down-0').click();
     check('and back down again',
       await until(guest, async () => (await readNumber(guest, 'life-0')) === lifeBefore, 20000));
+
+    /*
+      ── Commander damage, by hand ────────────────────────────────────────────────────────────────
+
+      Twenty-one from one commander is a way to lose that only this counter records on a tabletop,
+      and nothing had ever pressed it. Pressed on the *other* seat, because that is the only seat
+      it is a button on: your own reads back what others have dealt you.
+    */
+    const cmdBefore = ((await tid(host, 'cmd-dmg-1').textContent()) ?? '').trim();
+    await tid(host, 'cmd-dmg-1').click();
+    /*
+      Two elements, and the first version of this read the wrong one.
+
+      `cmd-dmg-<seat>` on an opponent's row is what *you* record — damage your commander dealt
+      them. `cmd-taken-<seat>` on **your own** row is what you read: the worst single commander's
+      damage against you and whose it is, because "cmd 7/0/14" tells a player nothing they can act
+      on (CR 903.10 is per-commander). So the host presses the first and the guest reads the
+      second, which also renders only once there is damage to show — a good assertion, since it is
+      absent until the press lands.
+    */
+    check('commander damage can be counted by hand, and the player taking it sees whose it is',
+      await until(guest, async () => {
+        if (!(await has(guest, 'cmd-taken-1'))) return false;
+        return /cmd taken 1\b/.test(((await tid(guest, 'cmd-taken-1').textContent()) ?? ''));
+      }, 20000),
+      `host read "${cmdBefore}" before; the guest's own row now reads "${
+        (await has(guest, 'cmd-taken-1')) ? ((await tid(guest, 'cmd-taken-1').textContent()) ?? '').trim() : '(no cmd-taken row)'
+      }"`);
 
     /*
       ── The d6 ───────────────────────────────────────────────────────────────────────────────────

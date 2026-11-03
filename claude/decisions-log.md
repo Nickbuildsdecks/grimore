@@ -20502,9 +20502,18 @@ was left standing was the point:
   pressed the other direction — the control a player uses for every lifelink hit and every "undo
   that". Covered now, both ways, read from the other player's screen, because a life total that
   moves only locally is the oldest bug a tracker has. **25/25.**
-- **`cmd-dmg-*` is read and never pressed**, and needs a Commander table to reach: `e2e-pod` has
-  one and reads the badge there. Left named rather than covered, because this script's table is
-  Modern on purpose.
+- **`cmd-dmg-*` is covered now**, and the script's table is **Commander** rather than Modern to
+  reach it — which is also the format this project is built around, so it is the likelier table for
+  two people anyway. The counter is a button only when the format is Commander, the row is somebody
+  else's, and the table is tracked by hand; on your own row the same testid renders as a read-only
+  span, which is part of why the control/passive split found it confusing.
+
+  The sixth wrong guess in this file lives here: there are **two** elements, and the check read the
+  wrong one. `cmd-dmg-<seat>` on an opponent's row is what you *record*; `cmd-taken-<seat>` on your
+  own row is what you *read* — the worst single commander's damage and whose it is, because
+  "cmd 7/0/14" tells a player nothing actionable when CR 903.10 is per-commander. The host presses
+  the first, the guest reads the second, and the second renders only once there is damage to show,
+  which makes it a good assertion rather than a vacuous one. **26/26, twice.**
 
 Five of the twelve that remain (`chat-messages`, `list-note`, `attach-hint`, `token-sheet`,
 `table-error`) are containers and labels that the control/passive split gets wrong — they sit
