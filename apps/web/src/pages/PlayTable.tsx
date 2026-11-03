@@ -2359,7 +2359,18 @@ function Watching({ table }: { table: UseTable }) {
   }, [showChat, table.chat.length])
   if (!view) {
     return (
-      <div className="mx-auto flex max-w-md flex-col gap-3 p-4">
+      /*
+        The watcher's waiting screen, reachable because a table drops off the lobby list the moment
+        it is **dealt** — so the Watch button beside an open table is only ever pressed before
+        there is a board, and this is what that press lands on.
+
+        It had no testid of its own and neither did its Stop button, which is why
+        `scripts/surface-coverage.mjs` never listed either and no check could reach them: an
+        element with no testid is invisible to the audit as well as to the suites. The Stop button
+        takes the same id as the one on the dealt-table watcher header — same label, same action,
+        and the two screens are never on at once.
+      */
+      <div data-testid="watching-waiting" className="mx-auto flex max-w-md flex-col gap-3 p-4">
         <h1 className="text-lg font-semibold text-[var(--g-text-high)]">Watching</h1>
         <p className="text-sm text-[var(--g-text-muted)]">
           Waiting for the table to deal. Nothing is being hidden from you that the players can see.
@@ -2373,7 +2384,9 @@ function Watching({ table }: { table: UseTable }) {
         {table.trouble !== null ? (
           <p data-testid="connection-trouble" className="text-xs text-[var(--g-mana-r)]">{table.trouble}</p>
         ) : null}
-        <Button variant="secondary" onClick={() => void table.leaveTable()}>Stop watching</Button>
+        <Button variant="secondary" data-testid="stop-watching" onClick={() => void table.leaveTable()}>
+          Stop watching
+        </Button>
       </div>
     )
   }

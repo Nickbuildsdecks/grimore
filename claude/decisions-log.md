@@ -20417,9 +20417,9 @@ could be checked.
 `scripts/surface-coverage.mjs` asks the question 225 passing browser checks cannot: which rendered
 controls does no check ever press? First reading: **100 controls, 10 that no check even names.**
 
-`scripts/check-table-controls.mjs` now covers six of them — the d6, handing a tabletop game to the
-rules engine, "Move by hand", conceding, starting over, and leaving — at **20/20, stable across
-runs**. The audit reads **5 unnamed, down from 10**.
+`scripts/check-table-controls.mjs` now covers eight of them — the d6, handing a tabletop game to
+the rules engine, "Move by hand", conceding, starting over, leaving, and both of the watcher's
+lobby doors — at **23/23**. The audit reads **3 unnamed, down from 10**.
 
 **Its own script, not a block in `e2e-table.mjs`.** Two of these controls change what the table is,
 and the first attempt put them at the end of that suite, where they aborted the run and would have
@@ -20463,7 +20463,28 @@ Six controls remain unnamed by any check, and they are not one kind of thing:
 - **`toggle-manual`** ("Move by hand") was the escape hatch inside an automated game and is now
   covered, with a guard that the manual moves are **absent until it is pressed** — otherwise the
   check would pass on a sheet that offers them always.
-- **`watch-open-*` and `stop-watching`** are the watcher's lobby entry and exit. `e2e-pod` watches a
-  table by code rather than from the listing, so the path exists and only this door into it does not.
+- **`watch-open-*` and `stop-watching`** are covered now, and getting there turned up two facts and
+  one thing that needed fixing.
+
+  **The Watch button beside an open table only exists before the table is dealt.** `listPublic`
+  lists a pod while its status is `lobby`, and *readying deals the table*, so the listing drops it
+  one step earlier than I assumed twice over — not at "start game" but at "ready". Watching a game
+  **in progress** is the code box's job (`watch-table`, which `e2e-arena` covers). Whether a game in
+  progress should be findable from the lobby at all is a product question, left as one: listing
+  in-progress tables changes what the lobby advertises, and that is a call about the product rather
+  than a defect to fix in a test.
+
+  **What that press lands on is good behaviour, and a check looking for the wrong element read it as
+  a blank page.** The spectator gets *"Watching — Waiting for the table to deal. Nothing is being
+  hidden from you that the players can see."* My check waited for `watching-code`, which is the
+  dealt-table header, and reported "landed on: (no known screen)". Printing the page's own text in
+  the failure message is what settled it in one run.
+
+  **And that screen had no testid, nor did its Stop button** — which is why the audit never listed
+  either and no check could reach them. An element with no testid is invisible to the instrument as
+  well as to the suites, so the audit's own count was an undercount. Both have one now
+  (`watching-waiting`, and the same `stop-watching` as its twin on the dealt-table header: same
+  label, same action, never on screen together). The audit now reads 196 testids rather than 195,
+  which is the honest direction for a number like this to move.
 
 Named rather than left as a number, which is the point of the instrument.

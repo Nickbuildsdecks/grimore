@@ -79,6 +79,69 @@ async function main() {
     await tid(guest, `join-open-${code}`).click();
     await waitFor(guest, 'pregame');
 
+    /*
+      ── Watching from the listing, and stopping ──────────────────────────────────────────────────
+
+      There are two doors into watching: the code box (`watch-table`, which `e2e-arena` presses)
+      and the **Watch** button beside an open table in the lobby list (`watch-open-<code>`), which
+      nothing had ever pressed. The way out, `stop-watching`, had never been pressed either — so a
+      spectator could get in but no check had ever seen one leave.
+
+      **Before either player readies up, because that is the only time this door exists.**
+      `listPublic` lists a pod only while its status is `lobby`, and *readying deals the table* — so
+      it drops off the lobby list one step earlier than I assumed twice: not at "start game" but at
+      "ready" — the first version of this watched after the hand-over and failed with "a public table
+      in the lobby offers itself to be watched", which was true: it no longer did. Watching a game
+      *in progress* is the code box's job (`watch-table`, which `e2e-arena` covers). Whether a game
+      in progress should be findable from the lobby at all is a product question and is left as
+      one; see D328.
+
+      What a watcher may see is `e2e-arena`'s claim and is not re-made here. This is about the door.
+    */
+    const watcherCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const watcher = await watcherCtx.newPage();
+    watcher.on('pageerror', (err) => pageErrors.push(`Watcher: ${err.message}`));
+    watchForReactWarnings(watcher, 'Watcher', reactWarnings);
+    await watcher.goto(BASE);
+    await waitFor(watcher, 'lobby');
+    await tid(watcher, 'player-name').fill('Nosy');
+    const listed = await until(watcher, async () => {
+      if (await has(watcher, `watch-open-${code}`)) return true;
+      // The listing is a snapshot, so ask for a fresh one rather than waiting out the check.
+      if (await has(watcher, 'refresh-tables')) await tid(watcher, 'refresh-tables').click();
+      return false;
+    }, 25000);
+    check('a public table in the lobby offers itself to be watched', listed);
+    if (listed) {
+      await tid(watcher, `watch-open-${code}`).click();
+      /*
+        `watching-waiting`, not `watching-code`: the second is the dealt-table watcher header, and
+        this door only opens before the table is dealt, so what the press lands on is the waiting
+        screen — "Waiting for the table to deal. Nothing is being hidden from you that the players
+        can see." Which is good behaviour, and was being read as a blank page by a check looking
+        for the wrong element. Neither that screen nor its Stop button had a testid until now,
+        which is why the audit could not see them either.
+      */
+      const landed = await until(watcher, async () => has(watcher, 'watching-waiting'), 20000);
+      const where = [];
+      for (const id of ['watching-waiting', 'watching-code', 'table', 'pregame', 'lobby', 'connecting', 'table-error']) {
+        if (await has(watcher, id)) where.push(id);
+      }
+      const onScreen = ((await watcher.locator('body').textContent()) ?? '').replace(/\s+/g, ' ').trim();
+      check('and watching from the listing puts a spectator at the table', landed,
+        `landed on: ${where.join(', ') || '(no known screen)'}; the page reads: "${onScreen.slice(0, 180)}"`);
+      await shot(watcher, 'watching-from-the-listing');
+      if (await has(watcher, 'stop-watching')) {
+        await tid(watcher, 'stop-watching').click();
+        check('and "Stop watching" puts them back in the lobby',
+          await until(watcher, async () => has(watcher, 'lobby'), 20000));
+      } else {
+        check('and "Stop watching" is offered to a spectator', false,
+          `no stop-watching; the watcher is on: ${where.join(', ')}`);
+      }
+    }
+    await watcherCtx.close();
+
     await tid(host, 'ready').click();
     await tid(guest, 'ready').click();
     await waitFor(host, 'deck-ember-rush', 20000);
