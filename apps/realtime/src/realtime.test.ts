@@ -952,6 +952,168 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
     }, 30_000);
 
     /**
+     * The bound on server moves per write, measured where it actually binds (#298, D321).
+     *
+     * One write once played **431 bot moves in 17130ms** against a client that gives up at 8000, so
+     * `applyAction` now spends at most `botMovesPerWrite` of them and `continueBots` carries the
+     * rest in further writes. Two things have to be true for that to be a fix rather than a
+     * trade: no write may exceed the budget, and bounding it must not strand the table.
+     *
+     * **This is a four-bot pod on purpose.** Two earlier attempts at this test used the solo duel
+     * and proved nothing: the largest write there wants three bot moves, measured, so the budget
+     * never binds and raising it to 400 left the suite green. The 431-move write came from a
+     * four-seat pod with the human idle while three bots took whole turns, which is this table.
+     *
+     * Its own realtime instance, because the shared one in `beforeAll` cannot have a per-test
+     * budget — and at the shipping budget of 25 this table would mostly fit in one write again.
+     */
+    it('spends at most its budget of server moves per write, and still comes back', async () => {
+      const writes: number[] = [];
+      const stalled: string[] = [];
+      const rt2 = await createRealtime({
+        redisUrl: REDIS_URL!,
+        allowedOrigins: [],
+        log: pino({ level: 'silent' }),
+        store: {
+          keyPrefix: `test:budget:${Date.now().toString(36)}:${process.pid}`,
+          botMovesPerWrite: 1,
+          // Every write reports, which is the only way to check the budget against what happened.
+          slowWriteMs: 0,
+          onSlowWrite: ({ reason }) => {
+            writes.push(Number(/and (\d+) server moves?/.exec(reason)?.[1] ?? -1));
+          },
+          onBotStall: ({ reason }) => stalled.push(reason),
+        },
+        rateLimit: { rate: 200, burst: 400 },
+      });
+      await new Promise<void>((resolve) => rt2.httpServer.listen(0, '127.0.0.1', resolve));
+      const { port } = rt2.httpServer.address() as AddressInfo;
+      const solo = connect(`http://127.0.0.1:${port}`, {
+        transports: ['websocket'], forceNew: true, auth: { name: 'Budget' }, reconnection: false,
+      });
+      try {
+        await waitFor(solo, 'connect');
+        okAck(await emitAck(solo, 'pod:create', {
+          name: 'Budget pod', format: 'commander', visibility: 'private', bots: 3,
+          botDecks: ['tidal-mind', 'rot-harvest', 'forge-alliance'],
+        }));
+        const dealt = waitFor<PodStateEvent>(solo, 'pod:state', (s) => s.state !== null);
+        let version = okAck(await emitAck(solo, 'pod:ready', { ready: true })).stateVersion!;
+        const first = await dealt;
+        expect(first.pod.seats.filter((s) => s.bot)).toHaveLength(3);
+
+        /*
+          Keep the opening hands and then pass, which is the shape that produced the 431-move
+          write: the human does nothing while three bots take their turns.
+        */
+        const seen: PodStateEvent[] = [];
+        solo.on('pod:state', (e: PodStateEvent) => seen.push(e));
+        const act = async (action: Record<string, unknown>): Promise<void> => {
+          let ack = await emitAck(solo, 'pod:action', { action, expectedVersion: version });
+          for (let retry = 0; retry < 8 && !ack.ok && ack.error.code !== 'illegal_action'; retry += 1) {
+            await new Promise((r) => setTimeout(r, 60 * (retry + 1)));
+            ack = await emitAck(solo, 'pod:action', { action, expectedVersion: version });
+          }
+          if (ack.ok && typeof ack.stateVersion === 'number') version = ack.stateVersion;
+          if (seen.length > 0) version = Math.max(version, seen[seen.length - 1]!.stateVersion);
+        };
+        /*
+          The real opening sequence, which the first version of this test skipped: a pod deals on
+          ready, but the *game* still has to be loaded, started and have its opening hands settled
+          before a pass is legal. Without it every action came back `illegal_action`, the server
+          made no writes at all, and the run took 204ms — caught by the "reported no writes"
+          guard below rather than passing as a budget that was never tested.
+        */
+        await act({ type: 'deck:load', seat: 0, deckId: 'ember-rush' });
+        await act({ type: 'game:start', firstSeat: 0 });
+        await act({ type: 'auto:start', firstSeat: 0 });
+        await act({ type: 'auto:keep' });
+        for (let i = 0; i < 40; i += 1) await act({ type: 'auto:pass' });
+
+        const latest = seen.length > 0 ? viewOf(seen[seen.length - 1]!) : viewOf(first);
+
+        /*
+          The budget held. `writes` is every write the server made, so the maximum is a fact about
+          what happened rather than about the constant meant to bound it — which is the check the
+          first version of this test could not make.
+        */
+        expect(writes.length, 'the server reported no writes at all').toBeGreaterThan(0);
+        expect(Math.max(...writes), JSON.stringify(writes.slice(0, 20))).toBeLessThanOrEqual(1);
+
+        // And the table was not stranded by it: the game moved on, and nobody was left owed a move.
+        expect(latest.turn, 'the pod never advanced a turn').toBeGreaterThan(first.state === null ? 0 : 1);
+        expect(stalled, JSON.stringify(stalled)).toEqual([]);
+      } finally {
+        solo.disconnect();
+        await rt2.store.flushPrefix();
+        await rt2.close();
+      }
+    }, 60_000);
+
+    /**
+     * And the report that bounding the write displaced (#298).
+     *
+     * `runBots` reports "ran out with a seat still owed a move" only when its **guard** is spent,
+     * and the shipping budget is 25 against a guard of 500 — so that report became unreachable the
+     * moment the budget shipped, which I did not notice until re-reading my own diff. The condition
+     * it covered moved rather than vanished: the table is dead only if the *continuation chain*
+     * ends with a seat still owed, and only the caller driving that chain knows when it has.
+     *
+     * One round of one move makes the cap reachable, so the report is provable instead of
+     * decorative. With three bots, any answer at all exceeds it.
+     */
+    it('says so when the continuation chain stops on its cap', async () => {
+      const stalled: string[] = [];
+      const rt2 = await createRealtime({
+        redisUrl: REDIS_URL!,
+        allowedOrigins: [],
+        log: pino({ level: 'silent' }),
+        store: {
+          keyPrefix: `test:cap:${Date.now().toString(36)}:${process.pid}`,
+          botMovesPerWrite: 1,
+          onBotStall: ({ reason }) => stalled.push(reason),
+        },
+        botContinuationRounds: 1,
+        rateLimit: { rate: 200, burst: 400 },
+      });
+      await new Promise<void>((resolve) => rt2.httpServer.listen(0, '127.0.0.1', resolve));
+      const { port } = rt2.httpServer.address() as AddressInfo;
+      const solo = connect(`http://127.0.0.1:${port}`, {
+        transports: ['websocket'], forceNew: true, auth: { name: 'Cap' }, reconnection: false,
+      });
+      try {
+        await waitFor(solo, 'connect');
+        okAck(await emitAck(solo, 'pod:create', {
+          name: 'Cap pod', format: 'commander', visibility: 'private', bots: 3,
+          botDecks: ['tidal-mind', 'rot-harvest', 'forge-alliance'],
+        }));
+        const dealt = waitFor<PodStateEvent>(solo, 'pod:state', (s) => s.state !== null);
+        let version = okAck(await emitAck(solo, 'pod:ready', { ready: true })).stateVersion!;
+        await dealt;
+        // Same sequence as the budget test above: a pod deals on ready, the game still needs
+        // loading, starting and its opening hands settled before anything is legal.
+        for (const action of [
+          { type: 'deck:load', seat: 0, deckId: 'ember-rush' },
+          { type: 'game:start', firstSeat: 0 },
+          { type: 'auto:start', firstSeat: 0 },
+          { type: 'auto:keep' },
+        ]) {
+          const ack = await emitAck(solo, 'pod:action', { action, expectedVersion: version });
+          if (ack.ok && typeof ack.stateVersion === 'number') version = ack.stateVersion;
+        }
+
+        expect(
+          stalled.some((r) => /continuation rounds and the server’s seats were still moving/.test(r)),
+          `expected the cap report, got ${JSON.stringify(stalled)}`,
+        ).toBe(true);
+      } finally {
+        solo.disconnect();
+        await rt2.store.flushPrefix();
+        await rt2.close();
+      }
+    }, 60_000);
+
+    /**
      * A deal offered across the wire, and answered inside the same write.
      *
      * The engine's own suite proves what a pact does; what this proves is that it travels. A pact

@@ -18,6 +18,8 @@ export interface RealtimeOptions {
   log: Logger;
   store?: PodStoreOptions;
   rateLimit?: RateLimitOptions;
+  /** Passed through to the handlers; see `HandlerOptions.botContinuationRounds`. */
+  botContinuationRounds?: number;
   /** Disable the cross-node adapter (single-process tests). Defaults to enabled. */
   adapter?: boolean;
 }
@@ -136,7 +138,12 @@ export async function createRealtime(opts: RealtimeOptions): Promise<Realtime> {
     // And a write slow enough that the player's page may stop waiting for it.
     onSlowWrite: report('a slow write', opts.store?.onSlowWrite),
   });
-  const dispose = registerHandlers(io, store, log, { ...(opts.rateLimit ? { rateLimit: opts.rateLimit } : {}) });
+  const dispose = registerHandlers(io, store, log, {
+    ...(opts.rateLimit ? { rateLimit: opts.rateLimit } : {}),
+    ...(opts.botContinuationRounds === undefined
+      ? {}
+      : { botContinuationRounds: opts.botContinuationRounds }),
+  });
 
   let closed = false;
   const close = async (): Promise<void> => {

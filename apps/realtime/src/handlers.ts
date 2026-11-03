@@ -82,10 +82,21 @@ const RAW_CAPS: Record<ClientEventName, number> = {
 
 export interface HandlerOptions {
   rateLimit?: RateLimitOptions;
+  /**
+   * How many batches of server moves one action will come back for. Defaults to
+   * `BOT_CONTINUATION_ROUNDS`.
+   *
+   * Injectable so the cap is **reachable in a test**. At the shipping 25 rounds of 25 moves, an
+   * answer would need 625 bot moves to hit it, which no game here produces — so the report for
+   * reaching it would be unprovable, and an unprovable report is the thing this session keeps
+   * finding. Set it to 1 against a budget of 1 and the cap fires on any answer of two moves.
+   */
+  botContinuationRounds?: number;
 }
 
 /** Returns a dispose function that clears pending grace timers. */
 export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logger, opts: HandlerOptions = {}): () => void {
+  const continuationRounds = opts.botContinuationRounds ?? BOT_CONTINUATION_ROUNDS;
   const graceTimers = new Set<NodeJS.Timeout>();
   const rateOpts = opts.rateLimit ?? DEFAULT_RATE_LIMIT;
 
@@ -304,10 +315,26 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
         broken, and `onBotStall` reports it. The round cap is a backstop for neither of those
         happening, and the ack has already gone, so a slow tail costs the player nothing.
       */
-      for (let round = 0; round < BOT_CONTINUATION_ROUNDS; round += 1) {
+      let rounds = 0;
+      for (; rounds < continuationRounds; rounds += 1) {
         const next = await store.continueBots(code);
         if (next === null) break;
         await broadcast(code, next);
+      }
+      /*
+        The cap stopped the chain rather than the work running out, which is worth a line.
+
+        `continueBots` returning null is the normal end: the opponents are finished, or a bot could
+        not move and `runBots` has already said which. Reaching the cap instead means the server's
+        seats were *still* moving after `BOT_CONTINUATION_ROUNDS` batches, and the table has been
+        handed back mid-answer with nothing queued to pick it up again. That is the condition
+        `runBots` used to report when its guard ran out, and bounding the write moved it here.
+      */
+      if (rounds === continuationRounds) {
+        store.reportBotStall(
+          code,
+          `${continuationRounds} continuation rounds and the server's seats were still moving`,
+        );
       }
     });
 

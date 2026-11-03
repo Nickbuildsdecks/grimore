@@ -907,6 +907,27 @@ export class PodStore {
    * server and the three answers it provoked are one thing that happened"; it now holds across
    * writes rather than only within one.
    */
+  /**
+   * Lets the socket layer report a dead table through the store's own channel.
+   *
+   * Needed because bounding the moves per write moved one defect out of the store's reach. The
+   * "ran out with a seat still owed" report in `runBots` is keyed on the **guard** being spent, and
+   * in the shipping configuration the budget is 25 against a guard of 500 — so `stopAt >= GUARD` is
+   * `25 >= 500`, always false, and that report became unreachable the moment the budget shipped.
+   *
+   * It is unreachable for a good reason: running out of the budget is not a stall, because
+   * `continueBots` picks the table up. But the condition it used to cover did not go away, it moved
+   * — the table is only dead if the *continuation chain* ends with a seat still owed, and only the
+   * caller driving that chain knows when it has. So the caller needs a way to say so, through the
+   * same callback a test can assert on, rather than into a log only a human reads.
+   *
+   * Caught by re-reading my own diff before pushing it. Removing a report while adding a bound is
+   * exactly the failure this session has found five times in other people's code and my own.
+   */
+  reportBotStall(code: string, reason: string): void {
+    this.onBotStall({ code, reason });
+  }
+
   async continueBots(code: string): Promise<PodSnapshot | null> {
     const peek = await this.read(code);
     if (!peek) return null;
