@@ -18858,3 +18858,51 @@ worth saying out loud two decisions after one that did not.
 
 Nothing in the engine changed. Both rules were already right; what was missing was anything that
 would notice if they stopped being.
+
+## D293 — The laptop pair was post-game, and the mid-game answer is the same one
+
+D266 refuted #249's premise with two readings at 1440x800: a duel is **1.16 screens** and its two
+creature rows sit inside **229px of the 800px viewport**, so both boards are on the screen together
+with room to spare. The pod answered the same way at 1.41 screens and 331px for four rows. Those
+numbers have guarded the question since.
+
+**They are all taken post-game**, after the last creature has died, and the question is a mid-game
+one. The gap went unnoticed for the reason comfortable numbers always hide things: 229px of 800 is
+so far inside the viewport that nobody asked whether a board with cards on it still fits. The
+e2e-solo comment says in as many words that a mid-game board is taller — it quotes 2.88-3.21 screens
+for a mid-game pod against a 2.35 post-game budget — so the height half was known. The **creature-row
+span** half, which that same comment calls "the actual question", had no mid-game reading at all.
+
+Measured out of band, three times, on real solo duels driven to mid-game at 1440x900:
+
+| | run 1 | run 2 | run 3 |
+| --- | --- | --- | --- |
+| page height | 1.59 screens | 1.33 | 1.59 |
+| both creature rows | 568px | 331px | 568px |
+| rows *plus* the hand | 1019px | 782px | 1019px |
+
+**Both boards fit mid-game, every time**, inside a 900px viewport with 332-569px to spare. So
+D266's conclusion holds where it actually matters, and this is a confirmation rather than a
+correction. Runs 1 and 3 agree to the pixel and run 2 is a shorter game, which is the spread a
+board-dependent reading should have.
+
+Two things worth separating, because I nearly conflated them and that is how #249 went wrong in the
+first place. The span of the **creature rows** is D266's question and it fits. The span of the rows
+*plus your hand* is a different and weaker question — it fails in two of the three runs at 1019px
+of 900 — and nothing has ever claimed it fits. Reading the second number as though it answered the
+first is exactly the move that produced #249's confident false premise from a screenshot, and I made
+it for about a minute before checking what D266 had actually measured.
+
+**Nothing shipped but the readings.** No budget was added: the comment in `e2e-solo.mjs` already
+rules that mid-game budgets wait on somebody deciding the mid-game table is too tall, that two more
+budgets buy a guard against a regression in something nobody has called wrong, and that the existing
+1.3 and 2.35 must not be raised to accommodate a mid-game number. All of that still holds. What
+changes is that the decision now has figures under it instead of none.
+
+**And the screenshots the suites take cannot answer this.** `shot()` captures `fullPage: true`,
+which renders the sticky control bar at the viewport's bottom edge with the rest of the page
+stitched below it — so a full-page capture shows the bar floating in the middle of the image with
+content underneath, which is not what a player sees. That is harmless, because every geometry claim
+in these suites is measured in the DOM with `getBoundingClientRect` against `innerHeight` rather
+than read off a picture. It is worth knowing before anybody tries to settle a layout question by
+looking at `e2e-shots/`.

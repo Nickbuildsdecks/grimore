@@ -1934,6 +1934,27 @@ const ARTIFACT_LIST = [
       mode read a flat 253 ms/move over 220 moves, and a later run finished the game and printed
       both figures. So a budget here is set from readings, like the ones above, and the outlier is
       recorded as an outlier rather than as the pod's pace.
+
+      **Both of those laptop figures are post-game, and the question they answer is a mid-game
+      one.** That gap went unnoticed because the post-game answer was so comfortable — 229px of 800
+      — that nobody asked whether a board with cards on it still fits. Measured out of band at
+      1440x900, mid-game, three times on real solo duels (D293):
+
+      | | reading |
+      | --- | --- |
+      | page height | 1.59, 1.33, 1.59 screens |
+      | both creature rows | **331-568px of the 900px viewport** |
+      | creature rows *plus* the hand | 782-1019px — fits in one of the three |
+
+      So **both boards are on the screen together mid-game too**, with 332-569px to spare, and the
+      post-game claim holds where it actually matters. The height runs above the 1.3 post-game
+      budget, exactly as the paragraph above predicts, and that is not a defect.
+
+      **No budget was added for any of it**, deliberately, per the rule three paragraphs up: these
+      are readings, and the mid-game budgets stay Nick's call rather than mine. What they change is
+      that the call can now be made against numbers. The one that would be worth a budget if
+      anybody wants it is the creature-row span, because it is the actual question — and nothing
+      about it currently looks wrong.
     */
     await page.setViewportSize({ width: 1440, height: 800 });
     await page.waitForTimeout(400);
