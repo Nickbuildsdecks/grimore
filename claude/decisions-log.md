@@ -18913,3 +18913,52 @@ content underneath, which is not what a player sees. That is harmless, because e
 in these suites is measured in the DOM with `getBoundingClientRect` against `innerHeight` rather
 than read off a picture. It is worth knowing before anybody tries to settle a layout question by
 looking at `e2e-shots/`.
+
+## D294 — The clock's pod win rate at the planned sample: +4.2 points, and 1.35 sigma
+
+#268 was scoped at 1040 pods an arm, chosen against D281's floor. That sample is now spent, in nine
+disjoint chunks accumulated across three container restarts, and the answer is **542-498 of 1040
+pods — +4.2 points at 1.35 sigma**, which does not clear a 2 sigma bar.
+
+| seeds | margin | pods |
+| --- | --- | --- |
+| 3300-3325 | −8 | 104 |
+| 7700-7725 | +20 | 104 |
+| 11100-11112 | +4 | 52 |
+| 3326-3351 | −12 | 104 |
+| 7726-7751 | +8 | 104 |
+| 11113-11138 | +8 | 104 |
+| 3352-3390 | +4 | 156 |
+| 7752-7790 | −4 | 156 |
+| 11139-11177 | +24 | 156 |
+| **total** | **+44** | **1040** |
+
+Six chunks positive, three negative. The running point margin was +4.8 at 572 pods, +4.5 at 884,
++4.7 at 936, +4.0 at 988 and +4.2 at 1040 — **stable to within a point across the last four hundred
+pods**, which is what a small real effect looks like rather than a margin wandering towards zero.
+
+**The sample was sized against the floor, not against the effect, and that is the finding.** D281's
+floor says a 104-pod reading carries about ±16 pods, and 1040 was picked so the floor would narrow
+to roughly ±5 points. It does — but an effect of +4.2 points sits just *inside* ±5, so the planned
+sample could never have resolved it either way. The arithmetic, which is worth having written down
+before the next long reading is planned:
+
+| pods | null SD | what +4.2 points reads as |
+| --- | --- | --- |
+| 1040 | 3.10 pts | 1.35 sigma |
+| 1500 | 2.58 pts | 1.63 sigma |
+| 2000 | 2.24 pts | 1.88 sigma |
+| **2267** | **2.10 pts** | **2.00 sigma** |
+
+So resolving the sign at 2 sigma needs about **2267 pods an arm**, 2.2x what was planned. Plan a
+sample against the effect you expect, not against the floor of the instrument: the floor tells you
+what you can *disbelieve*, and the effect size tells you what you need to *detect*.
+
+**Nothing changes about what ships.** `clockRate` stays at 0, exactly as D281 left it, and now for
+a reason with a number under it rather than for want of one: its pod effect is small, leans
+positive, and is not resolved. That is a materially better position than D258's retracted −3.8 and
+D281's "unmeasured", and it is not the same thing as "the term helps".
+
+The run is continuing past the planned sample while the machine is free, so this entry records the
+reading **at 1040** specifically. Anything further is an extension of it, and the pods actually
+played are quoted either way (D281).
