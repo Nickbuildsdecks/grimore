@@ -93,6 +93,19 @@ export function summarize() {
     console.log(`\n${pressFailures.length} press(es) did not land:`);
     for (const [id, { n, why }] of byId) console.log(`  - ${id} x${n}: ${why}`);
   }
+  if (tapFailures.length > 0) {
+    console.log(`\n${tapFailures.length} tap(s) did not land:`);
+    for (const f of tapFailures.slice(0, 6)) console.log(`  - ${f.why}`);
+  }
+  /*
+    A stray sheet is not a flake to tolerate. One of these means a move ended with a modal over the
+    table, which is the state #297 turned out to be; the recovery keeps the run going so the rest of
+    the checks still mean something, and this line is what stops the recovery hiding the cause.
+  */
+  if (straySheets.length > 0) {
+    console.log(`\n${straySheets.length} sheet(s) outlived the move that opened them:`);
+    for (const why of straySheets.slice(0, 6)) console.log(`  - ${why}`);
+  }
   const skips = skipped.length === 0 ? '' : `, ${skipped.length} skipped`;
   console.log(`\n${checks.length - failed.length}/${checks.length} checks passed${skips}.`
     + ` Screenshots in ${shotDir}/`);
@@ -187,15 +200,38 @@ export const tid = (page, id) => page.locator(`[data-testid="${id}"]`);
  * carry on and their own idle detectors say so if the table has really stopped.
  */
 export async function tap(locator) {
+  const res = await tapOrWhy(locator);
+  if (!res.ok) tapFailures.push({ why: res.why });
+  return res.ok;
+}
+
+/** Every tap this run that did not land. The locator has no id, so only the reason is kept. */
+export const tapFailures = [];
+
+/**
+ * `tap` with Playwright's reason, for the same argument as `pressOrWhy`.
+ *
+ * `tap` is `press` with a locator instead of a testid, and it had the same defect: **27 call sites
+ * discarded its boolean.** The one that mattered is in `tryToPlayFromZone` —
+ *
+ *     await tap(pick);
+ *     return `chose a play: ${name}`;
+ *
+ * — which reports a cast it never sent, and, worse, leaves the play sheet open when the tap misses.
+ * An open sheet is `fixed inset-0 z-50`, so from then on it covers the control bar and every
+ * `primary-move` press is refused for the rest of the game. That is the whole of #297.
+ */
+export async function tapOrWhy(locator) {
+  let last = '';
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       await locator.click({ timeout: 2000 });
-      return true;
-    } catch {
-      /* The board moved: try the same locator once more, then give up quietly. */
+      return { ok: true, why: '' };
+    } catch (err) {
+      last = err instanceof Error ? err.message : String(err);
     }
   }
-  return false;
+  return { ok: false, why: whyTheClickFailed(last) };
 }
 
 /**
@@ -411,9 +447,57 @@ export async function isMyMove(page) {
  * `abilities` adds one thing to that policy — activating an ability of a permanent — and is off by
  * default because an ability spends mana a spell wanted. See `tryToPlayFromHand`.
  */
+/**
+ * The sheets this driver opens by tapping a card, and the button that closes each.
+ *
+ * Only the driver's own: the log, chat, help and token panels are opened by a player pressing for
+ * them and are never on screen in a suite, so closing them would be tidying something that is not
+ * there.
+ */
+const DRIVER_SHEETS = [
+  ['play-sheet', 'play-sheet-close'],
+  ['card-sheet', 'sheet-close'],
+];
+
+/** Sheets found open at the top of a move, which is a bug every time. See `closeStraySheet`. */
+export const straySheets = [];
+
+/**
+ * Closes a sheet left over from an earlier move, and records that it had to.
+ *
+ * **This is the fix for #297**, and the shape of that bug is worth keeping written down. A sheet
+ * is `fixed inset-0 z-50`: open, it covers the whole table including the control bar. The driver
+ * opens one by tapping a card and closes it in the same call — so a sheet still open when the next
+ * move begins means the previous move neither chose a play nor pressed Cancel, which happens when
+ * the tap missed and `tap`'s boolean was thrown away.
+ *
+ * From there the table is dead and looks like a server fault. The driver only notices on a step
+ * where it has nothing to play: `tryToPlayFromZone` finds no `playable` badge, returns null,
+ * `makeMove` falls through to `primary-move`, and Pass is refused by the sheet — two hundred times,
+ * identically. The run that caught this reported `primary: Pass` for every one of them, which is
+ * why the search went to the engine, the bots, the rate limiter and the socket first. None of them
+ * was ever involved.
+ *
+ * Recorded rather than silently repaired. A recovery that says nothing would have turned #297 from
+ * a stall into a mystery nobody could see, and the count is the check: a driver that needs this
+ * every run has a bug upstream of it, and the suite should say so rather than cope.
+ */
+export async function closeStraySheet(page) {
+  for (const [sheet, closer] of DRIVER_SHEETS) {
+    if (!(await has(page, sheet))) continue;
+    const closed = await press(page, closer);
+    straySheets.push(`${sheet} was still open at the top of a move; ${closed ? 'closed it' : 'could not close it'}`);
+    return true;
+  }
+  return false;
+}
+
 export async function makeMove(
   page, seat, { aggression = 0.6, forceMulligan = false, abilities = false } = {},
 ) {
+  // A sheet from an earlier move covers the control bar, so nothing below can be pressed until it
+  // is gone. First, because every other branch here presses something.
+  if (await closeStraySheet(page)) return 'closed a sheet left open by an earlier move';
   // Opening hands come before anything else, including priority.
   if (await has(page, 'bottom-prompt')) {
     // Tap cards in hand until as many are chosen as the prompt asks for, then keep.
@@ -1182,8 +1266,16 @@ async function tryToPlayFromZone(page, zone) {
       // — and would look identical to a table that could not offer the others.
       const pick = options.nth(Math.floor(Math.random() * choices));
       const name = await textOf(pick);
-      await tap(pick);
-      return `chose a play: ${name.replace(/\s+/g, ' ').slice(0, 70)}`;
+      const chosen = await tapOrWhy(pick);
+      const label = name.replace(/\s+/g, ' ').slice(0, 70);
+      if (!chosen.ok) {
+        tapFailures.push({ why: `choosing "${label}": ${chosen.why}` });
+        // Leave no sheet behind: `closeStraySheet` would catch it next move, but reporting it here
+        // names the play that was being chosen, which is the part that says why the tap missed.
+        await press(page, 'play-sheet-close');
+        return `could not choose a play: ${label}`;
+      }
+      return `chose a play: ${label}`;
     }
     await press(page, 'play-sheet-close');
     return null;
