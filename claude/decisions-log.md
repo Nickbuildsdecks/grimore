@@ -19115,3 +19115,60 @@ before another two thousand pods go on the clock family, and it does not exist: 
 file is two seats. Recorded rather than built, because the clock family has had its win rate spent
 and nothing is waiting on the answer.
 
+## D297 — A player who left the game kept their whole board, and in a pod that was every game
+
+The engine did not enforce CR 800.4a at all. A seat eliminated on turn nine left everything it
+owned on the table: creatures on the battlefield, cards in hand, a library, a graveyard. Three
+seats are eliminated in every pod that reaches a winner, so **every pod this engine has ever played
+finished with up to three abandoned boards still in play.**
+
+**Found by probe, not by a test, and that is the point.** Nothing in the suite asked the question.
+What found it was building a four-seat pod, killing a seat with a creature on the battlefield, and
+reading the zones back:
+
+    seat 1 eliminated: true life
+    battlefield still holds the creature: true   hand: 7 (was 7)   library: 52 (was 52)
+
+and then asking what a live player could point at: a Lightning Bolt in seat 0's hand listed the
+dead seat's creature among its legal targets. That is a play the table offers and the rules do not.
+
+**Half the rule was already holding, by accident.** A dead seat's *abilities* never fire, because
+`raise` collects its watchers through `apnapSeats`, which filters eliminated seats. Verified both
+ways: a dead player's Chalice of the Void counters nothing, and the same board with its controller
+alive counters the spell. So the visible half — a dead player's permanents still *doing* things —
+has been correct for as long as `apnapSeats` has existed, and what was left behind was the objects
+themselves. **A rule can be half-enforced by a function written for something else, and the half
+that holds is the half you would have noticed.**
+
+**What `leaveTheGame` does.** Objects the seat *owns* leave the game wherever they are; a permanent
+it controlled without owning is exiled to its owner, which is the rule's own last clause and is
+reachable only through `card:control` on a manual table. Spells and abilities it controlled come off
+the stack. Its continuous effects and delayed triggers go with it. Live cards that were attached or
+paired to a departed one stop pointing at it. Anything it was holding in exile "until this leaves
+the battlefield" is handed back first, while `exiledBy` still has something to look up — otherwise a
+live player's creature taken by a departing Journey to Nowhere would sit in exile for the rest of
+the game with the permanent that could return it deleted.
+
+**Two corrections during the work, both from tests rather than from thinking harder.**
+
+The first: `playout.test.ts` died inside a minute with *"that ability is no longer on the stack"*. A
+trigger of the departing player's was on the stack with its controller being asked for targets, and
+removing the stack object left `pendingChoice` pointing at an id that no longer existed. **The state
+that references an object is part of what has to go with it**, and only a real game found the
+reference. Each pending question is now cleared on its own referent rather than on the seat, because
+a live player can be mid-answer on their own ability — that stack object stays, so the question does.
+
+The second is a scope correction, and it came from the decking test: **the rule must not apply once
+the game is over.** CR 800.4 is a multiplayer rule; it exists because the game continues after
+somebody loses. A two-player game ends the moment one player loses (CR 104.2a), so there is no game
+left for anything to leave — and emptying the loser's zones there deletes the final board the table
+is still showing, which D252 decided stays up. The same holds for the last elimination in a pod. So
+the departure is gated on more than one seat surviving, and a player who decks out in a duel still
+has their ten milled cards in the graveyard for the test, and the player, to look at.
+
+**The cost, stated rather than discovered later: every pod figure in `scripts/measure/` predates
+this.** D294/D295's 2434 pods included. It retracts nothing — a null measured on a different engine
+is still a null about that engine — but a number from before this commit and a number from after it
+are not the same measurement, and a comparison spanning it is not a paired one. Both `pod-duel.mjs`
+and `pod-unfinished.mjs` now say so in their docblocks, because the next person to compare across it
+will not have read this entry.

@@ -8223,6 +8223,36 @@ where there is more than one opponent, and `term-leverage` plays duels. A pod ar
 screen before another two thousand pods go on the clock family. It is recorded rather than built,
 because nothing is waiting on the answer.
 
+### A player left the game and kept their board, in every pod ever played (#276, D297)
+
+The engine did not enforce CR 800.4a. A seat eliminated mid-pod left its creatures on the
+battlefield and its cards in hand, library and graveyard — and a live player's Lightning Bolt listed
+a dead seat's creature among its legal targets. Three seats leave in every pod that reaches a
+winner, so this was the back half of every pod the engine has played.
+
+Found by probe rather than by a test, which is why it lasted: nothing in the suite asked. And half
+the rule was already holding by accident — a dead seat's *abilities* never fire, because `raise`
+collects watchers through `apnapSeats`, which filters eliminated seats. A dead player's Chalice of
+the Void counters nothing, verified against a live-seat control that does. So the half anyone would
+have noticed was correct, and what was left was the objects.
+
+`leaveTheGame` now takes the owned objects wherever they are, the spells and abilities off the
+stack, the continuous effects and delayed triggers with them, unattaches and unpairs live cards that
+pointed at a departed one, and hands back anything the leaving player held in exile "until this
+leaves the battlefield" — otherwise a creature taken by a departing Journey to Nowhere sits in exile
+for the rest of the game with its jailer deleted.
+
+Two corrections came from tests rather than from thinking harder. `playout.test.ts` caught a
+`pendingChoice` left pointing at a stack object just deleted: **the state that references an object
+is part of what has to go with it**, and only a real game found the reference. And the decking test
+caught the scope — CR 800.4 is a *multiplayer* rule, a duel ends the moment somebody loses
+(CR 104.2a), and wiping the loser's zones there would delete the final board D252 decided stays up.
+So the departure only happens while more than one seat survives.
+
+Stated rather than discovered later: every pod figure in `scripts/measure/` predates this, D295's
+2434 included. It retracts nothing, but a comparison spanning the commit is not a paired one, and
+both files say so.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

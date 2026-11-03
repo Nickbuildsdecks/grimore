@@ -12,8 +12,8 @@ import {
   seatsToAct, stackTop, stillDeciding, unpackView, viewFor,
 } from './index.js';
 import {
-  advanceTo, apply, applyAll, arena, countOf, find, ids, life, namesIn, nextTurn, passBoth, refusal,
-  stackNames, tapAllLands, PLAYERS, WIRE_CAP,
+  advanceTo, apply, applyAll, arena, countOf, drain, find, ids, life, namesIn, nextTurn, passBoth,
+  refusal, stackNames, tapAllLands, PLAYERS, WIRE_CAP,
 } from './testkit.js';
 import type { GameState } from './types.js';
 
@@ -927,6 +927,119 @@ describe('state-based actions', () => {
     expect(s.priority).not.toBeNull();
     expect(s.seats[s.priority!]!.eliminated).toBe(false);
     expect(seatsToAct(s).length).toBeGreaterThan(0);
+  });
+
+  /*
+    And they take their cards with them, which the engine did not do at all (CR 800.4a).
+
+    Found by probe rather than by a failing test, which is the whole reason it survived: a seat
+    eliminated in a pod kept its board, its hand, its library and its graveyard, and a live
+    player's Lightning Bolt listed a dead seat's creature among its legal targets. Three seats
+    leave in every pod that reaches a winner, so until this went in every pod this engine played
+    finished with up to three abandoned boards still on the table.
+
+    The reason nobody noticed is that the half you would see at the table was already right: a
+    dead seat's *abilities* never fire, because `raise` collects watchers through `apnapSeats`,
+    which filters eliminated seats. So a dead player's Chalice of the Void counters nothing, and
+    what was left was the objects.
+
+    The targets are asserted as well as the zones on purpose. Empty zones are the rule; the
+    candidate list is the thing a player sees, and it reaches the same facts by a different path —
+    so a future change that empties the zones without taking the cards out of `instances` fails
+    here rather than passing quietly.
+  */
+  it("takes the leaving player's cards out of the game with them (CR 800.4a)", () => {
+    let s = arena({
+      format: 'pod', seats: 4, decks: { 1: 'verdant-guard', 2: 'verdant-guard' },
+      battlefield: { 0: ['Mountain'], 1: ['Grizzly Bears', 'Forest'], 2: ['Grizzly Bears'] },
+      hands: { 0: ['Lightning Bolt'], 1: ['Giant Growth'] },
+      graveyard: { 1: ['Fog'] },
+      turn: 3, firstSeat: 0,
+    });
+    const doomed = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const live = find(s, 2, 'battlefield', 'Grizzly Bears');
+    expect(ids(s, 1, 'library').length).toBeGreaterThan(0);
+
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'life:adjust', by: 1, seat: 1, delta: -40 });
+    expect(s.seats[1]!.eliminated).toBe(true);
+    expect(s.finished).toBe(false);
+
+    // Every zone that held one of their cards, and the cards themselves.
+    for (const zone of ['battlefield', 'hand', 'library', 'graveyard', 'exile', 'command'] as const) {
+      expect(ids(s, 1, zone)).toEqual([]);
+    }
+    expect(s.instances[doomed]).toBeUndefined();
+    // The control: a live seat's board is untouched.
+    expect(s.instances[live]).toBeDefined();
+    expect(ids(s, 2, 'battlefield')).toContain(live);
+
+    // And what a live player may point at. One red source, one Bolt, three seats left.
+    s = tapAllLands(s, 0);
+    const bolt = legalActions(s, 0).plays.find((play) => play.name === 'Lightning Bolt');
+    expect(bolt).toBeDefined();
+    const candidates = bolt!.candidates[0] ?? [];
+    expect(candidates.some((t) => t.kind === 'card' && t.id === live)).toBe(true);
+    expect(candidates.some((t) => t.kind === 'card' && t.id === doomed)).toBe(false);
+    expect(candidates.some((t) => t.kind === 'player' && t.seat === 1)).toBe(false);
+  });
+
+  it('takes a leaving player\'s spell off the stack with them (CR 800.4a)', () => {
+    let s = arena({
+      format: 'pod', seats: 4, decks: { 1: 'verdant-guard' },
+      battlefield: { 1: ['Grizzly Bears', 'Forest'] },
+      hands: { 1: ['Giant Growth'] },
+      turn: 3, firstSeat: 1,
+    });
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const pump = find(s, 1, 'hand', 'Giant Growth');
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 1);
+    s = apply(s, { type: 'auto:cast', by: 1, card: pump, targets: [{ kind: 'card', id: bears }] });
+    expect(s.stackOrder.length).toBe(1);
+
+    // Killed with their own spell still waiting to resolve. A spell whose controller has left the
+    // game is not a spell any more, and resolving it would be pumping a creature that has gone.
+    s = apply(s, { type: 'life:adjust', by: 1, seat: 1, delta: -40 });
+    expect(s.seats[1]!.eliminated).toBe(true);
+    expect(s.stackOrder).toEqual([]);
+    expect(Object.keys(s.stackObjects)).toEqual([]);
+    expect(s.instances[pump]).toBeUndefined();
+    expect(s.instances[bears]).toBeUndefined();
+  });
+
+  /*
+    And a card the leaving player was holding in exile comes back (CR 400.7e).
+
+    The link between the two halves of "exile until this leaves the battlefield" is
+    `CardInstance.exiledBy` and nothing else, so a Journey to Nowhere whose controller leaves the
+    game would strand an opponent's creature in exile for the rest of the game — with the
+    permanent that could have given it back deleted. `leaveTheGame` runs `returnExiledBy` first,
+    while there is still something to look the link up by.
+  */
+  it("gives back what a leaving player held in exile (CR 800.4e, CR 400.7e)", () => {
+    let s = arena({
+      format: 'pod', seats: 4, decks: { 1: 'verdant-guard' },
+      battlefield: { 0: ['Raging Goblin'], 1: ['Plains', 'Plains'] },
+      hands: { 1: ['Journey to Nowhere'] },
+      turn: 3, firstSeat: 1,
+    });
+    const goblin = find(s, 0, 'battlefield', 'Raging Goblin');
+    const journey = find(s, 1, 'hand', 'Journey to Nowhere');
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 1);
+    s = apply(s, { type: 'auto:cast', by: 1, card: journey });
+    s = drain(passBoth(s));
+    expect(s.instances[goblin]!.zone).toBe('exile');
+    expect(s.instances[goblin]!.exiledBy).toBe(journey);
+
+    s = apply(s, { type: 'life:adjust', by: 1, seat: 1, delta: -40 });
+    expect(s.seats[1]!.eliminated).toBe(true);
+    expect(s.instances[journey]).toBeUndefined();
+    // Back where it came from, under its own owner, rather than stranded in exile for ever.
+    expect(s.instances[goblin]!.zone).toBe('battlefield');
+    expect(s.instances[goblin]!.zoneSeat).toBe(0);
+    expect(ids(s, 0, 'battlefield')).toContain(goblin);
   });
 });
 

@@ -1,4 +1,4 @@
-import { EMPTY_COMBAT, NO_PRIORITY_STEPS } from './turnTypes.js';
+import { EMPTY_COMBAT, NO_PRIORITY_STEPS, type StackObject } from './turnTypes.js';
 import { EMPTY_POOL } from './mana.js';
 import {
   COMMANDER_DAMAGE_THRESHOLD,
@@ -6,7 +6,9 @@ import {
   POISON_THRESHOLD,
   isFormatId,
 } from './formats.js';
-import { dealOpeningHands, reduceCardAction } from './cardActions.js';
+import { dealOpeningHands, listAt, reduceCardAction } from './cardActions.js';
+import { returnExiledBy } from './effects.js';
+import { zoneKey, type CardInstance, type ZoneId } from './cards.js';
 import { reduceAutoAction } from './autoActions.js';
 import { pendingDeclaration, stateBasedActions } from './automation.js';
 import { appendPact, pactLine, pactThrough, PACT_KINDS } from './pacts.js';
@@ -205,6 +207,195 @@ function nextAliveSeat(state: GameState, from: SeatIndex): SeatIndex {
   return from;
 }
 
+/**
+ * Every zone a player's own cards can be sitting in, which is the list CR 800.4a empties.
+ *
+ * `stack` is in it because a spell is a card in a zone here too: a departing player's spell on the
+ * stack is one of the objects the rule is about, and the stack object above it is removed in the
+ * same breath below.
+ */
+const OWNED_ZONES: readonly ZoneId[] = Object.freeze([
+  'battlefield', 'hand', 'library', 'graveyard', 'exile', 'command', 'stack',
+]);
+
+/**
+ * Has this seat left anything behind? The cheap half of the check, run on the hot path.
+ *
+ * `leaveTheGame` below is a pass over every instance in the game, and an eliminated seat stays
+ * eliminated for the rest of the game — so without this, a pod's last turns would pay for that pass
+ * three times per action for ever. Everything it looks at is a length or a short array: once a seat
+ * has gone, all seven of its zones are empty and nothing on the stack, in `effects` or in `delayed`
+ * names it, so the answer is no and it costs nothing to ask again.
+ */
+function anythingLeftBehind(state: GameState, seat: SeatIndex): boolean {
+  for (const zone of OWNED_ZONES) {
+    if (listAt(state, zoneKey(seat, zone)).length > 0) return true;
+  }
+  if (state.stackOrder.some((id) => state.stackObjects[id]?.controller === seat)) return true;
+  if (state.effects.some((effect) => effect.controller === seat)) return true;
+  if (state.delayed.some((trigger) => trigger.controller === seat)) return true;
+  return false;
+}
+
+/**
+ * A player who has left the game takes everything they own with them (CR 800.4a).
+ *
+ * **The engine enforced none of this, and in a pod that is every game.** A seat eliminated on turn
+ * nine left its whole board standing: creatures on the battlefield, cards in hand, a library, a
+ * graveyard. Found by probe rather than by a test — a live seat's Lightning Bolt listed a dead
+ * seat's creature among its legal targets, which is a play the table offers and the rules do not.
+ * Three seats are eliminated in every pod that reaches a winner, so until now every pod this engine
+ * has played finished with up to three abandoned boards on the table.
+ *
+ * **What was already right, and why it looked like nothing was wrong.** A dead seat's *abilities*
+ * never fired, because `raise` collects its watchers through `apnapSeats`, which filters eliminated
+ * seats — a dead player's Chalice of the Void counters nothing, where the same board with its
+ * controller alive counters the spell. That is the half of the rule you would notice at the table,
+ * and it has been holding by accident for as long as `apnapSeats` has existed. The half nobody
+ * noticed is the objects themselves.
+ *
+ * **Owned, not controlled.** `CardInstance.owner` never changes and `zoneSeat` is the controller, so
+ * the rule's two clauses are both expressible. Cards this seat *owns* leave the game wherever they
+ * are; a permanent it *controlled without owning* is exiled to its owner instead, which is the
+ * rule's own last clause and is reachable here only through `card:control` on a manual table — the
+ * one action in this engine that puts a card on a battlefield that is not its owner's.
+ *
+ * **Leaving the game is not a zone change, so nothing triggers off it.** `relocate` is the only
+ * place that raises `leaves`, and this is surgery rather than a move. That is not an unexamined
+ * choice: `leaves` is in `raise`'s `selfOnly` set, so the only script that could ever watch a
+ * permanent leaving is that permanent's own — and it belongs to the departing player, whose
+ * watchers are skipped anyway. So in this card pool the question is not observable, and the
+ * cheapest correct answer is the one that raises nothing.
+ *
+ * **One thing does have to be handed back first.** A card exiled "until this leaves the
+ * battlefield" is linked to its exiler by `exiledBy` and nothing else (CR 400.7e), so a live
+ * player's creature held by a departing Banisher Priest would be stranded in exile for the rest of
+ * the game. `returnExiledBy` runs before the instances are deleted, while there is still something
+ * to look it up by.
+ *
+ * **Deliberately not touched:** the transient per-action lists — `died`, `entered`, `vanished`,
+ * `toGraveyard` and the rest. Every reader of those already skips an id with no instance behind it,
+ * which is the discipline the whole engine keeps, and `settle` empties them inside the same action.
+ * Filtering them here would be a second list of places to keep in step for no change in behaviour.
+ * `combat.attacks` is not touched either, because the pass immediately below `leaveTheGame`'s call
+ * site already drops an attack whose attacker has no instance — the blockers inside a surviving
+ * attack are cleaned here only because that list is the one place a departed card can hide behind a
+ * live one.
+ */
+function leaveTheGame(state: GameState, seat: SeatIndex): GameState {
+  let next = state;
+  for (const [id, inst] of Object.entries(state.instances)) {
+    if (inst.owner === seat && inst.zone === 'battlefield') next = returnExiledBy(next, id);
+  }
+
+  // Read after the hand-back above, which can put a card back on the battlefield.
+  const departing = new Set<string>();
+  const stranded: string[] = [];
+  for (const [id, inst] of Object.entries(next.instances)) {
+    if (inst.owner === seat) departing.add(id);
+    else if (inst.zoneSeat === seat) stranded.push(id);
+  }
+
+  const instances: Record<string, CardInstance> = { ...next.instances };
+  for (const id of departing) delete instances[id];
+  for (const id of stranded) {
+    const inst = instances[id];
+    if (inst === undefined) continue;
+    instances[id] = {
+      ...inst, zone: 'exile', zoneSeat: inst.owner, tapped: false,
+      attachedTo: null, pairedWith: undefined,
+    };
+  }
+  // Anything still at the table stops pointing at a card that has gone.
+  for (const [id, inst] of Object.entries(instances)) {
+    const lostHost = inst.attachedTo !== null && instances[inst.attachedTo] === undefined;
+    const lostPair = inst.pairedWith !== undefined && instances[inst.pairedWith] === undefined;
+    if (!lostHost && !lostPair) continue;
+    instances[id] = {
+      ...inst,
+      ...(lostHost ? { attachedTo: null } : {}),
+      ...(lostPair ? { pairedWith: undefined } : {}),
+    };
+  }
+
+  const moved = new Set(stranded);
+  const zones: Record<string, readonly string[]> = {};
+  for (const [key, list] of Object.entries(next.zones)) {
+    zones[key] = list.filter((id) => instances[id] !== undefined && !moved.has(id));
+  }
+  for (const id of stranded) {
+    const owner = instances[id]?.owner;
+    if (owner === undefined) continue;
+    const key = zoneKey(owner, 'exile');
+    zones[key] = [...(zones[key] ?? []), id];
+  }
+
+  const stackOrder = next.stackOrder.filter((id) => next.stackObjects[id]?.controller !== seat);
+  const stackObjects: Record<string, StackObject> = {};
+  for (const id of stackOrder) {
+    const object = next.stackObjects[id];
+    if (object !== undefined) stackObjects[id] = object;
+  }
+
+  /*
+    A question that was waiting on something that has gone is not a question any more.
+
+    This is what the first version got wrong, and `playout.test.ts` caught it inside a minute: a
+    trigger of the departing player's was on the stack with its controller being asked for targets,
+    and removing the stack object left `pendingChoice` pointing at an id that no longer existed —
+    so the next `auto:choose` threw "that ability is no longer on the stack" and the pod died. The
+    lesson is the one #269 recorded from the other side: the state that references an object is part
+    of what has to go with it, and only a real game found the reference.
+
+    Each one is cleared on **its own referent** rather than on the seat, because a live player can
+    be mid-answer on their own ability: the stack object stays (its controller is alive), so the
+    question stays too. Priority is not restored here — the pass further down
+    `resolveStateBasedActions` already hands it back when nothing is blocking the game, which is
+    exactly the invariant a cleared question restores.
+  */
+  const gone = (stackId: string): boolean => stackObjects[stackId] === undefined;
+  const cardGone = (id: string): boolean => instances[id] === undefined;
+
+  const pools = { ...next.pools };
+  delete pools[String(seat)];
+
+  return {
+    ...next,
+    instances,
+    zones,
+    stackOrder,
+    stackObjects,
+    pools,
+    effects: next.effects.filter(
+      (effect) => effect.controller !== seat && !departing.has(effect.source),
+    ),
+    delayed: next.delayed.filter(
+      (trigger) => trigger.controller !== seat && !departing.has(trigger.source),
+    ),
+    pendingChoice: next.pendingChoice !== null && gone(next.pendingChoice.stackId)
+      ? null : next.pendingChoice,
+    pendingDecision: next.pendingDecision !== null && gone(next.pendingDecision.stackId)
+      ? null : next.pendingDecision,
+    pendingPayment: next.pendingPayment !== null && cardGone(next.pendingPayment.source)
+      ? null : next.pendingPayment,
+    pendingOfferedCast: next.pendingOfferedCast !== null && cardGone(next.pendingOfferedCast.card)
+      ? null : next.pendingOfferedCast,
+    pendingDredge: next.pendingDredge !== null && cardGone(next.pendingDredge.card)
+      ? null : next.pendingDredge,
+    pendingDiscard: next.pendingDiscard?.seat === seat ? null : next.pendingDiscard,
+    drawsOwed: next.drawsOwed.filter((index) => index !== seat),
+    passed: next.passed.filter((index) => index !== seat),
+    combat: {
+      ...next.combat,
+      attacks: next.combat.attacks.map((attack) => ({
+        ...attack,
+        blockers: attack.blockers.filter((id) => instances[id] !== undefined),
+      })),
+      blockersDeclaredBy: next.combat.blockersDeclaredBy.filter((index) => index !== seat),
+    },
+  };
+}
+
 interface Elimination {
   readonly seat: SeatIndex;
   readonly reason: EliminatedReason;
@@ -237,6 +428,48 @@ function resolveStateBasedActions(state: GameState): { state: GameState; elimina
       eliminations.push({ seat: seat.index, reason });
     }
   }
+
+  /*
+    And a player who has left the game takes everything they own with them (CR 800.4a).
+
+    Asked of every eliminated seat rather than only the ones eliminated in the loop above, because
+    `eliminated` is set in three different places — here, in `stateBasedActions` for a player who
+    drew from an empty library, and in the concede action — and this pass is the only thing that
+    sees all three. `anythingLeftBehind` is what makes asking again free once a seat has gone.
+  */
+  /*
+    Only while the game is still going on, which is the other half of the rule.
+
+    CR 800.4 is a **multiplayer** rule: it exists because the game continues after somebody loses,
+    and the objects they left behind would otherwise keep affecting it. A two-player game ends the
+    moment one player loses (CR 104.2a), so there is no game left for anything to leave — and
+    emptying the loser's zones there would delete the final board the table is still showing, which
+    D252 decided stays up after the game. The same applies to the last elimination in a pod: it is
+    the one that ends the game, and the board it ends on is the board both players look at.
+
+    So this is gated on more than one seat surviving. It is also the only reading of the rule that
+    keeps `scripts.test.ts`'s decking test honest — a player who loses to an empty library in a duel
+    has ten cards in their graveyard, and the test is entitled to look at them.
+  */
+  let departed = false;
+  if (aliveSeats(next).length > 1) {
+    for (const row of next.seats) {
+      if (row.eliminated && anythingLeftBehind(next, row.index)) {
+        next = leaveTheGame(next, row.index);
+        departed = true;
+      }
+    }
+  }
+  /*
+    And the board is checked again, because taking a board away is a change to the board.
+
+    CR 704.3 runs the self-checking rules until nothing more changes, and the pass at the top of
+    this function ran before the departure above. The case it is for: a live player's Aura on a
+    creature that has just left the game is left attached to nothing, which is CR 704.5m's job and
+    nothing else's. Without this it would sit on the battlefield until the next action — or for
+    ever, if that departure was the one that ended the game.
+  */
+  if (departed && next.automated) next = stateBasedActions(next);
 
   // Eliminated seats (including concessions) cannot hold the crown or the initiative.
   if (next.monarch !== null && next.seats[next.monarch]?.eliminated) next = { ...next, monarch: null };
