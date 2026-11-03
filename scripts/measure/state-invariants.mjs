@@ -202,6 +202,31 @@ const INVARIANTS = [
     },
   },
   {
+    /*
+      The invariant #277 was: the engine must never be waiting on a player who has left.
+
+      That bug took 2444 pods to find through a harness that printed "(N unfinished)" over it, and
+      what it looked like from outside was a table that stopped. Here it is a named check on every
+      state rather than a stop reason nobody reads — and it covers all six questions at once,
+      because every one of them is a seat the engine is waiting for.
+    */
+    name: 'nothing is being waited on from a seat that has left the game',
+    check: (s) => {
+      const out = (seat) => seat !== undefined && s.seats[seat]?.eliminated !== false;
+      const bad = [];
+      const asked = [
+        ['a choice', s.pendingChoice?.seat], ['a decision', s.pendingDecision?.seat],
+        ['a payment', s.pendingPayment?.seat], ['an offered cast', s.pendingOfferedCast?.seat],
+        ['a dredge', s.pendingDredge?.seat], ['a discard', s.pendingDiscard?.seat],
+        ['priority', s.priority ?? undefined],
+      ];
+      for (const [what, seat] of asked) {
+        if (out(seat)) bad.push(`${what} is pending on seat ${seat}, which has left`);
+      }
+      return bad;
+    },
+  },
+  {
     name: 'the crown and the initiative are held by a seat still in the game',
     check: (s) => {
       const bad = [];
@@ -247,7 +272,15 @@ function play(seed, decks) {
   const found = [];
   for (let move = 0; move < MOVES && !s.finished; move++) {
     const seat = seatsToAct(s)[0];
-    if (seat === undefined) break;
+    /*
+      A table with nobody to act and nothing finished is the shape of #277, so it is a finding
+      here rather than a quiet `break` — the one thing every harness in this directory used to do
+      with it, and the reason that bug lived for 2444 pods.
+    */
+    if (seat === undefined) {
+      found.push({ move, name: 'the game is unfinished and no seat has anything to do', why: `turn ${s.turn} step ${s.step}` });
+      break;
+    }
     const action = botAction(s, seat);
     if (action === null) break;
     const before = s.stateVersion;
