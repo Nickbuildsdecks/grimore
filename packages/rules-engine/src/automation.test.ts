@@ -8,8 +8,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  autoPassFor, botAction, bottomOwed, createGame, customDeck, legalActions, packView,
-  pendingDeclaration, seatsToAct, stackTop, stillDeciding, unpackView, viewFor,
+  autoPassFor, botAction, bottomOwed, characteristicsOf, createGame, customDeck, legalActions,
+  packView, pendingDeclaration, seatsToAct, stackTop, stillDeciding, unpackView, viewFor,
 } from './index.js';
 import {
   advanceTo, apply, applyAll, arena, countOf, drain, find, ids, life, namesIn, nextTurn, passBoth,
@@ -982,6 +982,70 @@ describe('state-based actions', () => {
     expect(candidates.some((t) => t.kind === 'card' && t.id === live)).toBe(true);
     expect(candidates.some((t) => t.kind === 'card' && t.id === doomed)).toBe(false);
     expect(candidates.some((t) => t.kind === 'player' && t.seat === 1)).toBe(false);
+  });
+
+  /*
+    And a surviving player's effect gives up the cards that left with their owner (#293).
+
+    Found by `scripts/measure/state-invariants.mjs` on its first pod run, not by a failing test:
+    "an effect from c0_60 scopes c2_183, which is gone". A seat had been knocked out, its cards had
+    left the game with it (CR 800.4a), and a living seat's pump was still naming one of them.
+
+    **Nothing a player can see comes of it today** — a scope id with no instance behind it applies
+    to nothing — so this is the tidy half of D304 rather than a bug report. It is worth fixing and
+    worth a test because of the shape: an id outliving its object was the *whole* of D304, D306 and
+    D307, and the two places that prune a `cards` scope (here and `settle`) should prune it the
+    same way. Both now drop the effect when its **last** subject has gone.
+
+    One id per scope is all the pool can produce: every multi-card pump here is scoped to its
+    caster's own creatures, which leave with the same seat that controlled the effect. The
+    many-ids-one-leaves branch is the same two lines `settle` has had since D304.
+  */
+  it('takes a leaving player\'s cards out of a living player\'s effect (CR 800.4a)', () => {
+    let s = arena({
+      format: 'pod', seats: 4, decks: { 0: 'verdant-guard', 1: 'verdant-guard' },
+      battlefield: { 0: ['Forest'], 1: ['Grizzly Bears'] },
+      hands: { 0: ['Giant Growth'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const doomed = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: doomed }],
+    })));
+    const scopes = (state: GameState, id: string): boolean => state.effects
+      .some((e) => e.scope.kind === 'cards' && e.scope.ids.includes(id));
+    // It is really there first, or the assertion after the elimination is about nothing.
+    expect(scopes(s, doomed)).toBe(true);
+    expect(characteristicsOf(s, s.instances[doomed]!).power).toBe(5);
+
+    s = apply(s, { type: 'life:adjust', by: 1, seat: 1, delta: -40 });
+    expect(s.seats[1]!.eliminated).toBe(true);
+    expect(s.instances[doomed]).toBeUndefined();
+    expect(scopes(s, doomed)).toBe(false);
+  });
+
+  it('and leaves a living player\'s own pump alone, which is the other half', () => {
+    // The control. A filter wide enough to drop the effect above could drop this one too, and the
+    // board would look the same until somebody counted the power.
+    let s = arena({
+      format: 'pod', seats: 4, decks: { 0: 'verdant-guard', 1: 'verdant-guard' },
+      battlefield: { 0: ['Forest', 'Grizzly Bears'], 1: ['Forest'] },
+      hands: { 0: ['Giant Growth'] },
+      turn: 3, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    const mine = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: mine }],
+    })));
+    expect(characteristicsOf(s, s.instances[mine]!).power).toBe(5);
+
+    s = apply(s, { type: 'life:adjust', by: 1, seat: 1, delta: -40 });
+    expect(s.seats[1]!.eliminated).toBe(true);
+    expect(characteristicsOf(s, s.instances[mine]!).power).toBe(5);
   });
 
   it('takes a leaving player\'s spell off the stack with them (CR 800.4a)', () => {

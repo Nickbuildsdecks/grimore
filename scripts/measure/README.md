@@ -93,6 +93,7 @@ it.
 | `storm.mjs` | how many spells does a turn actually hold, and what was the count on each storm spell? | `SUBJECT=arc-tempest SEEDS=4 node scripts/measure/storm.mjs` |
 | `dredge.mjs` | is a dredge ever offered, is it taken, and how short does the library get? | `SUBJECT=rot-harvest SEEDS=4 node scripts/measure/dredge.mjs` |
 | `cr-claims.mjs` | which rules does a comment claim that no test writes down? | `node scripts/measure/cr-claims.mjs` — the one file here that reads **source**, not `dist` |
+| `state-invariants.mjs` | is the state self-consistent after every action of a real game? | `SEEDS=4 node scripts/measure/state-invariants.mjs`, `SEEDS=2 POD=1 …` |
 
 **Pair your arms, or do not believe the difference.** Two canonical 288-game tables of the same
 thirteen decks, differing only in which seeds they used, disagree by up to **thirty games** on one
@@ -1233,3 +1234,30 @@ claimed with no test citing the number, and the first three rows read came out:
 So two in three rows were rules that are tested without being cited. Read the list as what it is:
 rules the engine leans on, ranked by how many places lean, each one a claim somebody could check.
 It is not a defect count and a row is not a bug.
+
+## An invariant has to be a rule, and the only way to find out is to run it
+
+`state-invariants.mjs` asks the question the throw hunts do not: not whether a game *stops* wrongly,
+but whether the state the engine hands back is one its own rules could describe. The two bugs it was
+written for were both invisible to a winner — an effect still naming a card that had gone (#284),
+and an id outliving the object it named (#283, #285, #286).
+
+**Its first three runs were three of my own mistakes, and that is the useful part.** An invariant is
+a claim about every state, and a claim that merely happens to hold today fails on the next correct
+card and gets switched off:
+
+- *"every instance is in exactly one zone list"* reported **43 violations in 52 games** before it
+  was right. All of them were cards on the stack: it rebuilt the zone key as `${seat}:${zone}` and
+  the stack is one shared zone keyed `stack`. An invariant that reimplements what it is checking
+  tests the reimplementation. It imports the engine's `zoneKey` now.
+- *"no card is lost"* read **123 of 122** the first time anything made a Soldier (a token is created
+  and ceases to exist by the rules, CR 111.7), and then **183 of 244** in a pod, which is one
+  60-card deck and a commander leaving the game with an eliminated seat (CR 800.4a). It is per
+  living seat and by **owner** now, which is strictly stronger: it would catch *my* cards vanishing
+  when somebody else leaves.
+- *"a delayed trigger names a card the game still has"* was written, run and **deleted**: a pod
+  produced `delayed dl34 is about t2_245, which is gone`, and a token that has ceased to exist is
+  exactly what CR 603.7d covers — the ability fires and finds nothing.
+
+What survived found something real on its first clean pod pass (#293), which is the argument for the
+file: three rejected invariants and one engine fix, from 78 games.

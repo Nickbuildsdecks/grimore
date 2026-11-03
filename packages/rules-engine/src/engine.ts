@@ -366,9 +366,25 @@ function leaveTheGame(state: GameState, seat: SeatIndex): GameState {
     stackOrder,
     stackObjects,
     pools,
-    effects: next.effects.filter(
-      (effect) => effect.controller !== seat && !departing.has(effect.source),
-    ),
+    /*
+      An effect goes if the departing seat controlled it or it came from one of their cards — and
+      a surviving effect gives up the departing cards it was **scoped to** (#293).
+
+      The third clause was missing and a pod found it: a state-invariant run read "an effect from
+      c0_60 scopes c2_183, which is gone", which is a living seat's effect still naming a card that
+      left the game with its owner. Nothing can come of a scope id with no instance behind it
+      today, so this is tidiness rather than a bug a player could see — but it is the same shape as
+      D304's, where an id outliving its object was the whole bug, and the two places that prune a
+      `cards` scope should prune it the same way. `settle` drops an effect whose **last** subject
+      has gone (D304) and so does this.
+    */
+    effects: next.effects.flatMap((effect) => {
+      if (effect.controller === seat || departing.has(effect.source)) return [];
+      if (effect.scope.kind !== 'cards') return [effect];
+      const kept = effect.scope.ids.filter((id) => !departing.has(id));
+      if (kept.length === effect.scope.ids.length) return [effect];
+      return kept.length === 0 ? [] : [{ ...effect, scope: { ...effect.scope, ids: kept } }];
+    }),
     delayed: next.delayed.filter(
       (trigger) => trigger.controller !== seat && !departing.has(trigger.source),
     ),

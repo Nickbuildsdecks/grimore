@@ -8542,6 +8542,23 @@ Four doc errors in an afternoon from two bulk passes, none of which a reader wou
 human checks the prose and skims the brackets, which is where a machine is better and where being
 wrong costs a player a combat.
 
+### An instrument for self-consistent state, and one real leak (#293, D313)
+
+`state-invariants.mjs` asks whether the state the engine hands back after every action is one its own
+rules could describe — the question a throw hunt does not ask, and the one the two invisible bugs of
+the morning would have answered (an effect naming a card that had gone, an id outliving its object).
+
+Three of the nine invariants I wrote were wrong, and the reasons are in the file: a zone key rebuilt
+by hand instead of imported (43 violations in 52 games, all of them the shared stack), a card total
+that counted tokens and then counted a knocked-out seat's deck as a leak, and a delayed-subject check
+that CR 603.7d says is not an invariant at all. Three more were rejected before being written.
+
+What survived found something on its first clean pod pass: a living seat's pump still scoped to a
+card that had left the game with its eliminated owner. `leaveTheGame` filtered effects by controller
+and by source and not by scope. Nothing a player can see comes of it — a scope id with no instance
+applies to nothing — but it is the same shape as the three CR 400.7 fixes, and the two places that
+prune a `cards` scope now prune it the same way.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using

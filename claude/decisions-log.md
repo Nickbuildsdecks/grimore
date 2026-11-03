@@ -19755,3 +19755,47 @@ compared against the card) and then wrote a sentence about the pool from memory,
 paragraph. The checked claim was right and the remembered one was wrong, and nothing about the
 prose distinguished them — which is the argument for the guards in D310 and D311 pointed at my own
 writing as much as at the player doc's.
+
+## D313 — An instrument for self-consistent state, three rejected invariants, and one real leak
+
+The throw hunts (#244, #275) ask whether a game *stops* wrongly. `state-invariants.mjs` asks the
+quieter question: whether the state the engine hands back after every action is one its own rules
+could describe. The two bugs it was written for were both invisible to a winner — an effect still
+naming a card that had gone (D305), and an id outliving the object it named (D304, D306, D307).
+
+**Three of the nine invariants I wrote were wrong, and each was wrong in a way worth keeping a note
+of**, because an invariant that merely happens to hold today fails on the next correct card and gets
+switched off:
+
+- *"every instance is in exactly one zone list"* reported **43 violations in 52 games**, every one a
+  card on the stack: it rebuilt the zone key as `${seat}:${zone}` and the stack is a single shared
+  zone keyed `stack`. **An invariant that reimplements the thing it checks tests the
+  reimplementation.** It imports the engine's own `zoneKey` now.
+- *"no card is lost"* read **123 of 122** the first time anything made a Soldier, and then **183 of
+  244** in a pod — one 60-card deck and a commander, leaving the game with an eliminated seat
+  (CR 800.4a). It is per living seat and by **owner** now, which is stronger than the total it
+  replaced: it would catch *my* cards disappearing when somebody else leaves.
+- *"a delayed trigger names a card the game still has"* was written, run and **deleted**. A pod
+  produced `delayed dl34 is about t2_245, which is gone`, and a token that has ceased to exist is
+  exactly the case CR 603.7d covers: the ability fires and finds nothing. Three more candidates were
+  rejected before they were written, and all six reasons are in the file.
+
+**And the survivors found something on the first clean pod pass:** `an effect from c0_60 scopes
+c2_183, which is gone`. A seat had been knocked out, its cards had left the game with it, and a
+living seat's pump was still naming one of them — `leaveTheGame` filtered effects by controller and
+by source and not by **scope**.
+
+Nothing a player can see comes of it: a scope id with no instance applies to nothing. It is fixed
+anyway, and the reason is the shape rather than the symptom — an id outliving its object was the
+*whole* of D304, D306 and D307, and the two places that prune a `cards` scope should prune it the
+same way. Both now drop the effect when its last subject has gone.
+
+**One id per scope is all this pool can produce**, because every multi-card pump here is scoped to
+its caster's own creatures and those leave with the seat that controlled the effect. So the test is
+the single-id case plus a control — a living seat's own pump, untouched — and the control is the half
+that matters: a filter wide enough to drop the first effect would drop the second, and the board
+looks the same until somebody counts the power.
+
+**78 games bought three rejected invariants and one fix.** That ratio is the argument for the file:
+the invariants I got wrong were cheaper to find than the bug they were looking for, and writing them
+down is what stops the next person rediscovering them.
