@@ -45,6 +45,7 @@
 import {
   applyAction, createGame, botAction, seatsToAct, STARTER_DECKS,
 } from '../../packages/rules-engine/dist/index.js';
+import { provenanceLine } from '../lib/provenance.mjs';
 
 /*
   Every deck in the pool, read from the registry rather than written out here.
@@ -212,6 +213,17 @@ if (stable(TESTED) === stable(CONTROL)) {
   console.log(`  tested:  ${short(diff.tested)}`);
   console.log(`  control: ${short(diff.control)}`);
 }
+
+/*
+  What produced this run, printed before the first game (#278, D300).
+
+  `bot-duel`'s results are accumulated across sessions the same way `pod-duel`'s are — `castable`
+  ships at 1 on three disjoint seed sets quoted in D271 — so it carries the same line for the same
+  reason: four of `pod-duel`'s ledger rows turned out to be unreplayable because the row recorded a
+  margin and nothing about the arms, the build or the environment. A line the instrument prints is a
+  line the ledger cannot omit. See `scripts/lib/provenance.mjs`.
+*/
+process.stdout.write(`${provenanceLine({ SEED0, SEEDS, SUBJECT, TESTED, CONTROL })}\n`);
 
 const started = Date.now();
 for (let i = 0; i < SEEDS; i++) {
