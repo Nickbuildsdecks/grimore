@@ -53,7 +53,7 @@ it.
 | `monarch.mjs` | who takes the crown, how long it is held, and what it drew | `SEEDS=6 node scripts/measure/monarch.mjs` |
 | `poison.mjs` | is the poison win condition reached, or only theoretical? | `SEEDS=6 node scripts/measure/poison.mjs` |
 | `pod-duel.mjs` | is a bot setting worth anything in a **four-seat pod**? | `ALWAYS=dawn-tithe TESTED='{"chaseTheCrown":false}' SEEDS=3 node scripts/measure/pod-duel.mjs` |
-| `pod-duel.mjs` | …and the **honest** version of that question, at a floor that can resolve it: `SEEDS=20` is 1040 pods an arm, about ±5 instead of ±16, roughly an hour (#268) | `TESTED='{"weights":{"clockRate":1}}' SEEDS=20 SEED0=3300 node scripts/measure/pod-duel.mjs` |
+| `pod-duel.mjs` | …and the **honest** version of that question, at a floor that can resolve it: `SEEDS=20` is 1040 pods an arm, about ±5 instead of ±16, and **two hours fifty** — one pass of 52 pods is 503s, measured (#268, D289). It prints a quotable checkpoint per pass, so a run that is interrupted or stopped early is still worth the pods it played | `TESTED='{"weights":{"clockRate":1}}' SEEDS=20 SEED0=3300 node scripts/measure/pod-duel.mjs` |
 | `pod-slot.mjs` | is a **deck slot** worth anything in a four-seat pod, for a card that is blank in a duel? | `SUBJECT=forge-alliance CHANGE='Blade of Selves:-1' node scripts/measure/pod-slot.mjs` |
 | `pod-pace.mjs` | how fast is the engine itself, when a browser suite blames the bots for being slow? | `SEATS=4 GAMES=3 node scripts/measure/pod-pace.mjs` |
 | `pod-pace.mjs` | …and **what does a bot setting cost in milliseconds**, timed as an ablation on identical positions rather than as two races | `BOT='{"weights":{"castable":0}}' SEATS=4 GAMES=3 node scripts/measure/pod-pace.mjs` |
