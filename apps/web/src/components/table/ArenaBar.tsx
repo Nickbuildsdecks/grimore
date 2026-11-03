@@ -152,6 +152,16 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
               {/*
                 A dividing spell is cast by its last point rather than by this button, so it is not
                 drawn for one: a Cast the engine would refuse is worse than no Cast at all.
+
+                **Unreachable with the present card pool, and kept on purpose.** A spell wanting a
+                fixed number of targets is sent by `pickTarget` the moment the last one is chosen,
+                so this button only appears for an "up to N" spell — one whose spec is
+                `optional: true`. Every optional spec in the pool is also `divided`, and the line
+                above declines to draw the button for those, so nothing a player can cast today
+                reaches it. Found by `scripts/surface-coverage.mjs`, which asks which controls no
+                check presses; this is the answer it gave, and the answer is "none can". It stays
+                because the first non-dividing "destroy up to two target creatures" needs it, and a
+                button deleted for being unreachable is a bug waiting on the card that reaches it.
               */}
               {amount === undefined && mode.chosen.length >= targetsRequired(mode.play) ? (
                 <Button size="sm" data-testid="confirm-targets" onClick={() => dispatch({ kind: "confirm" })}>
