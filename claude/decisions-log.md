@@ -20519,3 +20519,127 @@ Five of the twelve that remain (`chat-messages`, `list-note`, `attach-hint`, `to
 `table-error`) are containers and labels that the control/passive split gets wrong — they sit
 inside something clickable, so the JSX around them looks like a button. That is the heuristic's own
 error rate, stated rather than quietly carried.
+
+---
+
+## D329 — The card fields a rules engine needs, and an importer that had never written half of them (#306)
+
+Nick asked how close the Play Realm is to all Commander-legal cards being scripted, and then which
+import would serve best. The measured answer to the first was **348 unique scripted cards across 13
+decks, about 1% of the roughly 30,000 cards legal in Commander** — and the blocker is not the
+scripting API, which handles 60-odd mechanics. It is that the project has no card data to script
+against.
+
+The answer to the second came out of the code rather than a comparison. `scryfallService.js`
+already fetches Scryfall's `oracle_cards` bulk file — one row per unique card, not per printing, so
+a tenth the bytes of `default_cards` and no less rules information. MTGJSON's `AtomicCards` gives
+pre-split `types`/`subtypes` and a `leadershipSkills.commander` flag, which is genuinely more
+convenient, at the price of a second schema and a second source of truth for the same facts. The
+file this project already downloads wins on that alone.
+
+What was actually wrong was narrower and worse than the choice of file.
+
+**`scryfall_cards` had 22 columns and the importer wrote 13 of them.** The nine it skipped included
+every one a rules engine would need to do anything with a card it has no script for:
+`color_identity` (the rule that decides what may go in a Commander deck), `legalities` (how the
+deck is checked at all), `keywords`, `card_faces` and `edhrec_rank` — all five present in the
+baseline schema since 0001, all five left NULL by every sync that has ever run. And six more had no
+column at all: `power`, `toughness`, `loyalty`, `layout`, `oracle_id`, `produced_mana`.
+
+So: **migration 0015** adds those six, and the importer's Postgres upsert goes from 13 parameters
+to 26, refreshing all of them on conflict.
+
+Four things in that are decisions rather than mechanics:
+
+- **`power`, `toughness` and `loyalty` are TEXT.** A creature can be printed `*`, `1+*` or `?`, and
+  a planeswalker can be printed `X`. An `integer` column does not merely store those badly — it
+  rejects the row, so the cards whose size *is* a rule are exactly the cards that would go missing.
+  This is asserted, and the assertion was proved by typing the column `integer` and watching
+  `invalid input syntax for type integer: "*"` fail two tests.
+- **`oracle_id` is indexed but not unique.** It is the card's identity across printings, which is
+  what a decklist means by a card name and what a script attaches to; the table's primary key `id`
+  is a *printing*. `oracle_cards` holds one row per oracle id, but this table has been written by
+  other paths over the years, so a unique index would make the migration fail on existing data
+  rather than on anything a sync does.
+- **`card_faces` is trimmed on the way in.** Scryfall's faces carry `image_uris`, `artist`,
+  `illustration_id`, `flavor_text` and more; each face now keeps the eight fields that are rules
+  plus one image. Storing the raw blob would make the largest column in the table the one nothing
+  queries.
+- **The SQLite statement is deliberately untouched**, and the file says why. The live SQLite table
+  is `card_name`-keyed with a different column set, this container's `grimore.db` has no
+  `scryfall_cards` table at all (checked by PRAGMA), and widening a dialect nothing here can
+  execute is precisely how the `scryfall_id` bug shipped in the first place.
+
+`SCRYFALL_BULK_FILE` points the import at a file already on disk. That is not a test convenience:
+`api.scryfall.com` is unreachable from this environment, and the loop was previously unrunnable
+without a several-hundred-megabyte download from a host an egress allowlist may refuse. Download
+`oracle_cards` anywhere, copy the JSON across, point the variable at it — the file is the same
+artifact the downloader would have produced.
+
+### What the dry run showed, and the counter it exposed
+
+Run against a scratch Postgres from a seven-card fixture built to carry the awkward shapes: 28
+columns after migrations, six rows written, `*`/`1+*` and `X` intact, the modal-DFC's trimmed faces
+intact, `produced_mana` on the land, `commander=banned` preserved, and `no_identity /
+no_legalities / no_oracle_id` all zero.
+
+And a line that read **"Wrote 7 cards"** over six rows.
+
+`insertCard` returns early for a token, an emblem, an art-series card, a silver border, a digital
+printing, or anything legal in no format — and the loop incremented `cardCount` whenever it
+returned without throwing, which a filtered card does exactly as a written one does. On the fixture
+that is one row of overstatement. On the real dump it is every token in it.
+
+The wrong number is the smaller half. **The guard meant to catch a broken import tested
+`cardCount === 0`, and with filtered cards counted as written it could not fire.** A sync that
+filtered all 30,000 rows and wrote nothing would have reported 30,000 written, 0 rejected, and
+raised nothing at all — the eleventh instrument this session that reported success it had not
+earned, and the ninth of those that was mine. The two outcomes are counted apart now, the tally
+prints both, and the second guard — wrote nothing, nothing rejected — is reachable for the first
+time. Both its arms were fired on purpose: a file of nothing but tokens, and a file of nothing
+parseable.
+
+### The test
+
+`apps/api/src/card-sync-schema.test.ts` runs the statement against a migrated scratch database — no
+download, no network — and now covers the widened half. Three things in it are worth naming:
+
+- `expect(named.length).toBeGreaterThan(10)` is gone. It passed just as well on the statement that
+  wrote 13 columns as on the one that writes 28, so it could never have said the importer was
+  leaving `legalities` empty. It is an equality now: **28 columns, 26 parameters, 26 in the row
+  builder.** The first draft asserted 26 columns and failed at 28 — `name` and `card_name` are two
+  columns fed by one `$2`, and `last_updated` is CURRENT_TIMESTAMP — so both counts are stated.
+- A **structural** check that every inserted column appears in the `DO UPDATE SET` list. Forgetting
+  half of a widening is the thing that actually goes wrong here; the old conflict clause refreshed
+  six of thirteen, so a re-sync wrote new oracle text into a row that kept its old rarity.
+- The three breaks, run rather than reasoned about: withdraw migration 0015 → seven of eight tests
+  fail; drop `power = EXCLUDED.power` → the structural check names `power` and the round-trip check
+  fails; type `power` as `integer` → the `*` row is refused by Postgres.
+
+Gate green afterwards: 2138 tests across 17 packages.
+
+**Still Nick's call, and untouched here:** running the import on the VM, and whether the Scryfall
+host is reachable from it. Nothing in this entry touches live data; the migration adds nullable
+columns and an index, and the importer only runs when something calls it.
+
+---
+
+## D330 — A check that printed 26/26 and exited 1 (#307)
+
+The background full-suite run came back with `check-table-controls.mjs` reporting **"26/26 checks
+passed"** and **`exit=1`** on the same two lines.
+
+`summarize()` in `scripts/lib/table-driver.mjs` sets `process.exitCode` on failure and returns
+nothing. Two callers — `check-table-controls.mjs` and `check-in-flight.mjs` — end with
+`process.exit(summarize() ? 0 : 1)`, so `undefined` sent both to 1 on every run, including every
+run where nothing failed.
+
+This is the same defect as a check that cannot pass, and it is the mirror of the one this session
+has found ten times over: the printed tally and the exit code disagreed, and which one you believed
+depended on whether a human was reading or a script was. I read the tally, twice, and called the
+file done. The background runner read the exit code.
+
+`summarize()` returns a verdict now, and a press or tap that never landed counts against it — those
+are checks that did not really run, which is why they are printed above the tally rather than below
+it. Both directions were exercised directly: `true` with only a passing check, `false` once one
+fails. `check-table-controls.mjs` now exits 0 on its 26/26.

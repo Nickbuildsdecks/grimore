@@ -97,18 +97,54 @@ function downloadBulkFile(url, destPath) {
  * The conflict clause also refreshed only six of the fourteen columns, so on a re-sync an oracle
  * text correction, a rarity change or a set rename could never land. It now refreshes everything
  * except the key.
+ *
+ * **And it wrote fourteen columns of a table that has twenty-eight.** Five of the missing ones
+ * already existed in the baseline and were simply never filled — `color_identity`, `legalities`,
+ * `keywords`, `card_faces`, `edhrec_rank` — and each is load-bearing somewhere:
+ *
+ *  * `color_identity` is what Commander legality is made of, and `colors` is **not** a substitute:
+ *    a card with a black mana symbol in its text box and no black in its cost has black identity.
+ *    Every colour-identity check in the product has been reading a column nobody wrote.
+ *  * `legalities` is the ban list. `apps/api`'s recommender reads it, and with the column empty
+ *    the check read "no legality recorded, allow it" — a card banned in Commander could be
+ *    recommended into a Commander deck.
+ *  * `keywords` is Scryfall's own parsed keyword list, which maps directly onto the engine's
+ *    declared mechanics and is the cheapest way to ask "how much of this pool can we already
+ *    script?".
+ *  * `card_faces` is split / adventure / modal-DFC / transform, all of which the engine supports
+ *    and none of which can be read off a single front face.
+ *  * `edhrec_rank` is the order the deck-suggestions route asks for.
+ *
+ * The other six (`power`, `toughness`, `loyalty`, `layout`, `oracle_id`, `produced_mana`) had no
+ * column at all and are added by migration 0015, which says why each one matters.
+ *
+ * SQLite is deliberately **not** widened. The live SQLite table is the card_name-keyed shape the
+ * statement below describes, this container's `grimore.db` has no `scryfall_cards` table at all to
+ * check against, and widening the one dialect I cannot verify is how the `scryfall_id` bug above
+ * happened in the first place. Postgres is where the card data is going.
  */
 const CARD_UPSERT_PG = `
   INSERT INTO scryfall_cards
     (id, name, card_name, set_code, set_name, collector_number, type_line, oracle_text,
-     mana_cost, cmc, colors, price, image_uri, rarity, last_updated)
-  VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+     mana_cost, cmc, colors, price, image_uri, rarity,
+     color_identity, legalities, keywords, card_faces, edhrec_rank, scryfall_uri, foil_price,
+     power, toughness, loyalty, layout, oracle_id, produced_mana, last_updated)
+  VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+          $14, $15, $16, $17, $18, $19, $20,
+          $21, $22, $23, $24, $25, $26, CURRENT_TIMESTAMP)
   ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name, card_name = EXCLUDED.card_name, set_code = EXCLUDED.set_code,
     set_name = EXCLUDED.set_name, collector_number = EXCLUDED.collector_number,
     type_line = EXCLUDED.type_line, oracle_text = EXCLUDED.oracle_text,
     mana_cost = EXCLUDED.mana_cost, cmc = EXCLUDED.cmc, colors = EXCLUDED.colors,
     price = EXCLUDED.price, image_uri = EXCLUDED.image_uri, rarity = EXCLUDED.rarity,
+    color_identity = EXCLUDED.color_identity, legalities = EXCLUDED.legalities,
+    keywords = EXCLUDED.keywords, card_faces = EXCLUDED.card_faces,
+    edhrec_rank = EXCLUDED.edhrec_rank, scryfall_uri = EXCLUDED.scryfall_uri,
+    foil_price = EXCLUDED.foil_price,
+    power = EXCLUDED.power, toughness = EXCLUDED.toughness, loyalty = EXCLUDED.loyalty,
+    layout = EXCLUDED.layout, oracle_id = EXCLUDED.oracle_id,
+    produced_mana = EXCLUDED.produced_mana,
     last_updated = CURRENT_TIMESTAMP`;
 
 // The live SQLite table is card_name-keyed and has no id/name/set_code/image_uri columns.
@@ -136,25 +172,45 @@ async function downloadAndImportScryfallBulk(force = false) {
   }
 
   console.log("Starting Scryfall bulk data synchronization...");
-  const tempPath = path.join(__dirname, 'scryfall-oracle-cards.json');
+  /*
+    `SCRYFALL_BULK_FILE` imports from a file already on disk instead of downloading.
+
+    Two reasons, and neither is only about tests. The import loop was unreachable without a
+    hundreds-of-megabytes download from a host that an egress allowlist may not permit at all —
+    which is how the `scryfall_id` bug lived in it for months, and why every field below this line
+    had never been exercised against a real database. A file path makes the loop runnable.
+
+    And it is the honest path for a machine that cannot reach api.scryfall.com: download
+    `oracle_cards` anywhere, copy the JSON over, point this at it. The file is the same artifact
+    the downloader would have produced, so nothing else in the loop behaves differently.
+
+    The file is **not** deleted afterwards when it was supplied this way: it is the caller's file,
+    not a temporary this function made.
+  */
+  const suppliedPath = process.env.SCRYFALL_BULK_FILE || null;
+  const tempPath = suppliedPath ?? path.join(__dirname, 'scryfall-oracle-cards.json');
 
   try {
-    // 1. Fetch metadata
-    console.log("Retrieving Scryfall bulk metadata...");
-    const metadata = await fetchJson('https://api.scryfall.com/bulk-data');
-    const oracleCardsObj = (metadata.data || []).find(d => d.type === 'oracle_cards');
+    if (suppliedPath !== null) {
+      console.log(`Importing from a supplied bulk file, no download: ${suppliedPath}`);
+    } else {
+      // 1. Fetch metadata
+      console.log("Retrieving Scryfall bulk metadata...");
+      const metadata = await fetchJson('https://api.scryfall.com/bulk-data');
+      const oracleCardsObj = (metadata.data || []).find(d => d.type === 'oracle_cards');
 
-    if (!oracleCardsObj || !oracleCardsObj.download_uri) {
-      throw new Error("Could not locate oracle_cards download_uri in Scryfall bulk data.");
+      if (!oracleCardsObj || !oracleCardsObj.download_uri) {
+        throw new Error("Could not locate oracle_cards download_uri in Scryfall bulk data.");
+      }
+
+      console.log(`Oracle cards download size: ${(oracleCardsObj.size / (1024 * 1024)).toFixed(2)} MB`);
+      console.log(`Downloading bulk file from: ${oracleCardsObj.download_uri}`);
+
+      // 2. Download and decompress
+      const startTime = Date.now();
+      await downloadBulkFile(oracleCardsObj.download_uri, tempPath);
+      console.log(`Download completed in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
     }
-
-    console.log(`Oracle cards download size: ${(oracleCardsObj.size / (1024 * 1024)).toFixed(2)} MB`);
-    console.log(`Downloading bulk file from: ${oracleCardsObj.download_uri}`);
-
-    // 2. Download and decompress
-    const startTime = Date.now();
-    await downloadBulkFile(oracleCardsObj.download_uri, tempPath);
-    console.log(`Download completed in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
 
     // 3. Read and parse bulk data using streaming readline to keep memory footprint under 30MB
     console.log("Importing card objects to database using streaming reader...");
@@ -166,6 +222,21 @@ async function downloadAndImportScryfallBulk(force = false) {
     // sync that cannot write a single row reports that instead of "Parsed 0 cards."
     let parseFailures = 0;
     let writeFailures = 0;
+    /*
+      Cards `insertCard` deliberately did not write: tokens, emblems, art series, memorabilia,
+      silver and gold borders, digital-only printings, and anything legal in no format.
+      **`cardCount` used to include every one of them**, because the loop incremented it whenever
+      `insertCard` returned without throwing and a filtered card returns exactly like a written
+      one. On the seven-card fixture that reads "Wrote 7 cards" over six rows; on the real bulk
+      file the gap is every token in the dump.
+
+      That is not only a wrong number. The guard below — the one that turns a sync that wrote
+      nothing into a thrown error — tests `cardCount === 0`, and with filtered cards counted as
+      written it could not fire: a run that filtered all 30,000 rows and wrote none would report
+      30,000 written, 0 rejected, and raise nothing. The check that is supposed to catch a broken
+      import was unable to fail. So the two outcomes are counted apart, and the tally prints both.
+    */
+    let filtered = 0;
     let firstWriteError = null;
     try {
       const readline = require('readline');
@@ -178,20 +249,20 @@ async function downloadAndImportScryfallBulk(force = false) {
       const insertCard = async (card) => {
         // Exclude tokens, emblems, art series, memorabilia, etc.
         const layout = card.layout || "";
-        if (["token", "double_faced_token", "emblem", "art_series", "memorabilia"].includes(layout)) return;
+        if (["token", "double_faced_token", "emblem", "art_series", "memorabilia"].includes(layout)) return false;
 
         const set_type = card.set_type || "";
-        if (["funny", "token", "memorabilia"].includes(set_type)) return;
+        if (["funny", "token", "memorabilia"].includes(set_type)) return false;
 
         const border_color = card.border_color || "";
-        if (border_color === "silver" || border_color === "gold") return;
+        if (border_color === "silver" || border_color === "gold") return false;
 
-        if (card.digital) return;
+        if (card.digital) return false;
 
         // Verify the card is legal in at least one format to exclude completely non-legal/playtest cards
         const leg = card.legalities || {};
         const isLegalSomewhere = Object.values(leg).some(status => status === "legal" || status === "restricted");
-        if (!isLegalSomewhere) return;
+        if (!isLegalSomewhere) return false;
 
         const name = card.name;
         const scryfallId = card.id || null;
@@ -217,9 +288,55 @@ async function downloadAndImportScryfallBulk(force = false) {
           if (usdLow && (price === null || usdLow < price)) price = usdLow;
         }
 
+        /*
+          The rules fields, which this loop has always had in hand and always thrown away.
+
+          `layout` is already computed above, for the token/art-series filter. The rest come
+          straight off the Scryfall object; the only judgement here is `card_faces`.
+
+          **Faces are trimmed on the way in.** Scryfall's faces carry `image_uris`, `artist`,
+          `illustration_id`, `flavor_text` and more, and a modal-DFC row with two full faces is
+          several kilobytes of which the engine reads maybe a tenth. So each face keeps the eight
+          fields that are rules: its name, cost, type line, oracle text, P/T, loyalty and colours,
+          plus the one image a face needs to be drawn. Storing the whole blob would make the
+          biggest column in the table the one nothing queries.
+        */
+        const color_identity = JSON.stringify(card.color_identity || []);
+        const legalities = JSON.stringify(card.legalities || {});
+        const keywords = JSON.stringify(card.keywords || []);
+        const faces = Array.isArray(card.card_faces)
+          ? card.card_faces.map((f) => ({
+            name: f.name ?? '',
+            mana_cost: f.mana_cost ?? '',
+            type_line: f.type_line ?? '',
+            oracle_text: f.oracle_text ?? '',
+            power: f.power ?? null,
+            toughness: f.toughness ?? null,
+            loyalty: f.loyalty ?? null,
+            colors: f.colors ?? [],
+            image_uri: (f.image_uris && (f.image_uris.normal || f.image_uris.large || f.image_uris.small)) || null,
+          }))
+          : null;
+        const card_faces = faces === null ? null : JSON.stringify(faces);
+        const edhrec_rank = Number.isInteger(card.edhrec_rank) ? card.edhrec_rank : null;
+        const scryfall_uri = card.scryfall_uri || null;
+        // Power, toughness and loyalty stay strings: `*`, `1+*` and `X` are all printed values.
+        const power = card.power ?? null;
+        const toughness = card.toughness ?? null;
+        const loyalty = card.loyalty ?? null;
+        const oracle_id = card.oracle_id || null;
+        const produced_mana = Array.isArray(card.produced_mana) ? JSON.stringify(card.produced_mana) : null;
+        let foil_price = null;
+        if (card.prices) {
+          const foil = parseFloat(card.prices.usd_foil);
+          if (foil) foil_price = foil;
+        }
+
         if (db.isPostgres) {
           await db.run(CARD_UPSERT_PG,
-            [scryfallId, name, set_code, set_name, collector_number, type_line, oracle_text, mana_cost, cmc, colors, price, image_uri, rarity]
+            [scryfallId, name, set_code, set_name, collector_number, type_line, oracle_text, mana_cost, cmc, colors, price, image_uri, rarity,
+             color_identity, legalities, keywords, card_faces, edhrec_rank, scryfall_uri, foil_price,
+             power, toughness, loyalty, layout || null, oracle_id, produced_mana]
           );
         } else {
           // Write exactly the columns the LIVE SQLite scryfall_cards table has
@@ -229,6 +346,7 @@ async function downloadAndImportScryfallBulk(force = false) {
             [name, scryfallId, type_line, oracle_text, mana_cost, cmc, colors, price, rarity]
           );
         }
+        return true;
       };
 
       let currentObjectLines = [];
@@ -252,8 +370,8 @@ async function downloadAndImportScryfallBulk(force = false) {
           }
           if (parsed) {
             try {
-              await insertCard(parsed);
-              cardCount++;
+              if (await insertCard(parsed)) cardCount++;
+              else filtered++;
             } catch (writeErr) {
               writeFailures++;
               if (!firstWriteError) firstWriteError = writeErr;
@@ -282,8 +400,8 @@ async function downloadAndImportScryfallBulk(force = false) {
             }
             if (parsed) {
               try {
-                await insertCard(parsed);
-                cardCount++;
+                if (await insertCard(parsed)) cardCount++;
+                else filtered++;
               } catch (writeErr) {
                 writeFailures++;
                 if (!firstWriteError) firstWriteError = writeErr;
@@ -296,7 +414,8 @@ async function downloadAndImportScryfallBulk(force = false) {
       if (!db.isPostgres) await db.run("COMMIT");
       console.log(
         `Import completed in ${((Date.now() - insertStart) / 1000).toFixed(2)}s. ` +
-        `Wrote ${cardCount} cards (${parseFailures} unparseable, ${writeFailures} rejected by the database).`
+        `Wrote ${cardCount} cards (${filtered} filtered out, ${parseFailures} unparseable, ` +
+        `${writeFailures} rejected by the database).`
       );
       // A handful of rejects is bad data in the dump. Every row rejected is a broken statement or a
       // schema mismatch, and reporting that as a successful sync is what hid the missing column.
@@ -304,6 +423,17 @@ async function downloadAndImportScryfallBulk(force = false) {
         throw new Error(
           `Scryfall import wrote no rows: all ${writeFailures} inserts were rejected by the database. ` +
           `First error: ${firstWriteError && firstWriteError.message}`
+        );
+      }
+      /*
+        And a sync that wrote nothing at all, with nothing rejected, is still a broken sync — an
+        empty file, a dump of nothing but tokens, a filter that got too wide. It used to be
+        unreachable (see `filtered`); now it is the one case the counters can actually show.
+      */
+      if (cardCount === 0 && (filtered > 0 || parseFailures > 0)) {
+        throw new Error(
+          `Scryfall import wrote no rows: ${filtered} card(s) were filtered out and ` +
+          `${parseFailures} could not be parsed, and nothing was left to write.`
         );
       }
       if (writeFailures > 0) {
@@ -321,8 +451,9 @@ async function downloadAndImportScryfallBulk(force = false) {
   } catch (err) {
     console.error("Scryfall bulk import failed:", err);
   } finally {
-    // 5. Cleanup temp file
-    if (fs.existsSync(tempPath)) {
+    // 5. Cleanup temp file — but never a file the caller supplied. Deleting somebody's own
+    // download because an import read it would be a surprising thing for a sync to do.
+    if (suppliedPath === null && fs.existsSync(tempPath)) {
       try {
         fs.unlinkSync(tempPath);
         console.log("Temporary bulk data JSON file deleted.");

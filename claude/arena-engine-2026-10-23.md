@@ -8928,3 +8928,90 @@ turned an afternoon into five minutes, and it is the cheapest habit in the file.
    which is a claim made on its own terms. What is still missing is the rest of the conversation —
    asking for help, pointing at a threat, making one, trading a target for a target — and none of
    those is priceable from the present board, which is the line `offerPact` draws.
+
+---
+
+## Checkpoint — the card data, and what was actually blocking it (#306, D329)
+
+Nick asked how close the Play Realm is to **all Commander-legal cards being scripted and playable
+by two people**. The honest measured answer:
+
+| | |
+|---|---|
+| Unique cards the engine knows and fully automates | **348** (13 starter decks, commanders and extra faces included) |
+| Cards legal in Commander | roughly **30,000** |
+| Share of them | about **1%** |
+
+The number is small and the reason is not the scripting API. That API covers sixty-odd mechanics,
+from cascade and storm to morph, sagas, suspend, levelling and the full CR 613 layer system; it is
+not where the shortfall is. The shortfall is that the project **has no card data** to point a
+script at. Every name outside the pool is dealt as cardboard — a name and nothing else, moved by
+hand — and that is a data problem wearing a scripting problem's clothes.
+
+So this checkpoint is the data path, not more cards.
+
+### What was wrong
+
+`scryfall_cards` had 22 columns. The bulk importer wrote **13**. The nine it skipped were not
+decoration:
+
+- `color_identity` — the rule that decides what may legally go in a Commander deck
+- `legalities` — how a deck is checked against the format at all
+- `keywords`, `card_faces`, `edhrec_rank`
+
+All five of those have existed in the baseline schema since migration 0001 and have been left NULL
+by **every sync that has ever run**. Six more fields had no column to go in:
+
+- `power`, `toughness`, `loyalty` — a creature's size and a planeswalker's starting loyalty
+- `layout` — which multi-face kind a card is (split, adventure, modal DFC, transform, flip)
+- `oracle_id` — the card's identity *across* printings, which is what a decklist means by a name
+- `produced_mana` — which colours a source makes, without which every land and rock needs a
+  hand-written script to be a mana source at all
+
+### What is in now
+
+Migration **0015** adds those six columns, and the importer's Postgres upsert goes from 13
+parameters to 26, refreshing every one of them on re-sync.
+
+The one choice worth repeating here: **`power`, `toughness` and `loyalty` are TEXT**, because
+`*`, `1+*`, `?` and `X` are printed values. An `integer` column does not store those badly; it
+refuses the row. The cards whose size is itself a rule are exactly the cards that would have gone
+missing, which is why the test asserts a `*`/`1+*` creature and an `X` planeswalker, and why that
+assertion was proved by typing the column `integer` and watching Postgres reject it.
+
+`SCRYFALL_BULK_FILE` lets the import run from a file already on disk, because `api.scryfall.com` is
+not reachable from here. Download `oracle_cards` anywhere, copy the JSON across, point the variable
+at it. `claude/play-realm-setup.md` has the one-line command.
+
+### The counter the dry run caught
+
+A dry run against a scratch Postgres from a seven-card fixture — built to carry the awkward shapes
+on purpose — came back correct in every column and printed **"Wrote 7 cards"** over six rows.
+
+A filtered card (token, emblem, art series, silver or gold border, digital-only, legal nowhere)
+returns from `insertCard` exactly as a written one does, and the loop counted both. On the fixture
+that is one row of overstatement; on the real dump it is every token in it.
+
+The number was the smaller problem. The guard that exists to catch a broken import tested
+`cardCount === 0` — so **a sync that filtered all 30,000 rows and wrote nothing would have reported
+30,000 written, nothing rejected, and raised no error.** The check that was supposed to catch the
+worst case could not fire in it. That is the eleventh instrument this session found reporting
+success it had not earned, and the ninth of those that I wrote. The two outcomes are counted apart
+now, both are printed, and the "wrote nothing" guard is reachable — fired deliberately from a file
+of nothing but tokens, and again from a file of nothing parseable.
+
+### Where that leaves the original question
+
+Scripted-and-automated is still 348 cards. What changed is that the thing standing between 348 and
+thirty thousand is now **one command on a machine with the file**, rather than a schema that could
+not hold the fields and an importer that would not have written them. Whether to run it on the VM,
+and whether that machine can reach Scryfall at all, stays Nick's call.
+
+### Also this checkpoint
+
+`check-table-controls.mjs` was printing **26/26 passed** and exiting **1** — `summarize()` set
+`process.exitCode` and returned nothing, and two scripts read that nothing as a verdict (D330).
+The printed tally and the exit code disagreed, which means it mattered whether a human or a script
+was reading. I read the tally twice and called the file done; the background runner read the exit
+code. `summarize()` returns a verdict now, counting unlanded presses and taps against it, and both
+directions were exercised rather than assumed.

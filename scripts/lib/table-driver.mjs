@@ -71,10 +71,18 @@ const seatMulligans = {};
 let shotAnOffer = false;
 
 /**
- * Prints the tally and sets the exit code.
+ * Prints the tally, sets the exit code, and returns whether everything passed.
  *
  * Every suite ends the same way, and the one thing that must not vary is that a failure exits
  * non-zero — a suite that printed its failures and exited 0 would be green in CI.
+ *
+ * **It used to return nothing, and two callers read that nothing as a verdict** (#307). Both
+ * `check-table-controls.mjs` and `check-in-flight.mjs` end with `process.exit(summarize() ? 0 :
+ * 1)`, so `undefined` made them exit 1 on every run, including the runs where all 26 checks
+ * passed. That is the same mistake as a check that cannot fail, pointed the other way: the printed
+ * tally said one thing and the exit code said another, and anything reading the exit code — the
+ * background full-suite runner did — saw a failure with no failing check named. The return value
+ * is now the answer the callers were already asking for.
  */
 export function summarize() {
   const failed = checks.filter((c) => !c.ok);
@@ -123,6 +131,11 @@ export function summarize() {
     for (const f of failed) console.log(`  - ${f.label}${f.detail ? `: ${f.detail}` : ''}`);
     process.exitCode = 1;
   }
+  /*
+    A press that never landed is a check that never really ran, so it counts against the verdict
+    too — the same reason it is printed above the tally rather than below it.
+  */
+  return failed.length === 0 && pressFailures.length === 0 && tapFailures.length === 0;
 }
 
 /**

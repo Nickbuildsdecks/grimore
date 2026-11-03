@@ -1373,9 +1373,28 @@ decks they pasted in).
   nothing else, which the tabletop plays by hand with **Move by hand** for whatever it says in
   prose, and which Arena mode refuses by name rather than dealing a game with a card nobody can do
   anything with. Closing that gap needs card data for arbitrary names — type lines, mana costs,
-  oracle text — which means a populated `cards` table, which means a machine that can reach
-  Scryfall. Loading a saved Grimore deck rather than pasting text is the same gap: the deck source
-  exists, the card data does not.
+  oracle text — which means a populated `scryfall_cards` table. Loading a saved Grimore deck rather
+  than pasting text is the same gap: the deck source exists, the card data does not.
+
+  **The schema and the importer for that data are now in place** (D329). Migration 0015 adds the
+  six columns a rules engine needs and had none — `power`, `toughness`, `loyalty` (all TEXT,
+  because `*`, `1+*` and `X` are printed values), `layout`, `oracle_id` and `produced_mana` — and
+  the bulk importer writes 26 columns where it used to write 13, having never once written
+  `color_identity`, `legalities`, `keywords`, `card_faces` or `edhrec_rank`. What is left is
+  **running it**, which is one command on a machine that has the file:
+
+  ```bash
+  # Download Scryfall's `oracle_cards` bulk file anywhere (one row per unique card,
+  # about a tenth the bytes of `default_cards`), copy the JSON across, then:
+  SCRYFALL_BULK_FILE=/path/to/oracle-cards.json FORCE_RESEED=1 node -e \
+    "require('./scryfallService.js').downloadAndImportScryfallBulk(true).then(()=>process.exit(0))"
+  ```
+
+  `SCRYFALL_BULK_FILE` exists because `api.scryfall.com` is not reachable from the machine this was
+  built on, and may not be from the VM either; with it set, nothing is downloaded. The import
+  prints what it wrote, what it filtered out (tokens, emblems, art series, silver and gold borders,
+  digital-only printings, anything legal in no format), what it could not parse and what the
+  database refused, and it throws rather than reporting success if it wrote no rows.
 - **The engine knows three hundred and forty-eight cards.** Everything in the thirteen starter decks,
   commanders included, plus the extra *faces* of the nine cards printed with more than one — three
   splits, two adventures, two modal double-faced lands and two that transform. (Both counts are
