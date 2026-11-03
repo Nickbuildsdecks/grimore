@@ -18899,6 +18899,13 @@ budgets buy a guard against a regression in something nobody has called wrong, a
 1.3 and 2.35 must not be raised to accommodate a mid-game number. All of that still holds. What
 changes is that the decision now has figures under it instead of none.
 
+**The instrument is in the tree** as `scripts/measure/table-fold.mjs`, because a reading nobody
+can reproduce is not a measurement. It needs `node scripts/play.mjs` running, which makes it the
+first browser-driven file in `scripts/measure/` — it belongs there rather than beside the `e2e-*`
+suites because it asserts nothing and sets no budget; it reports. Run from its repo path it gave a
+fourth reading consistent with the three above: **1.60 screens, both creature rows 568px of 900,
+rows plus the hand 992px.**
+
 **And the screenshots the suites take cannot answer this.** `shot()` captures `fullPage: true`,
 which renders the sticky control bar at the viewport's bottom edge with the rest of the page
 stitched below it — so a full-page capture shows the bar floating in the middle of the image with
