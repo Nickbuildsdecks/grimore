@@ -8717,6 +8717,60 @@ against 3-in-6 failing before. One earlier run of six failed on the cap test wit
 uncaptured, so a 30-run hunt was armed to catch it rather than calling it a flake; it caught
 nothing, and the event stays recorded as one unreproduced failure of unknown cause.
 
+## Which controls does no check press? (#305, D328)
+
+The five browser suites pass 225 checks between them, and every one walks a path a scripted game
+happens to take. None of them can answer the other question: of the controls the table *renders*,
+which has no check ever clicked? That is where an evening of play breaks first, and green says
+nothing about it.
+
+`scripts/surface-coverage.mjs` reads both sides out of the source — every `data-testid` the table UI
+renders against every one a suite or the driver presses, looks at, or merely names — and separates
+controls from passive elements by the JSX around each testid rather than by its name.
+
+| | first reading | now |
+| --- | --- | --- |
+| controls pressed by some check | 59 | **80** |
+| looked at but never pressed | 23 | **10** |
+| no check even names | 10 | **3** |
+
+`scripts/check-table-controls.mjs` covers what was reachable, at **26/26**: life up *and* down, the
+d6, commander damage by hand, both of the watcher's lobby doors, handing a tabletop game to the
+rules engine, "Move by hand", conceding, starting over, and leaving.
+
+**Two of those jumps are the instrument getting more honest, not the coverage changing.** The audit
+could not follow the driver's usual shape — build a locator from a prefix selector, tap it two lines
+later — so its "never pressed" list was about half false alarm; sampled nine families by hand (five
+tapped, four not) and taught it to read six lines on. And the watcher's waiting screen and its Stop
+button had **no testid at all**, so they were invisible to the audit as well as to the suites: the
+instrument was undercounting itself, and the total moved 195 → 196.
+
+### What it found that no suite could
+
+- **`life-up-*` had never been pressed by anything.** `e2e-table` presses life *down*; the direction
+  a player uses for every lifelink hit had only ever been read.
+- **`confirm-targets` is unreachable** with the present pool, and the button's own comment now says
+  so: a fixed-target spell is sent as its last target is chosen, so Cast appears only for an "up to
+  N" spell, and every optional spec in the pool is also `divided`, which the bar declines to draw it
+  for. It stays for the first non-dividing "destroy up to two target creatures".
+- **The lobby's Watch button only exists before a table is dealt** — `listPublic` lists a pod while
+  its status is `lobby`, and readying deals it. So a game *in progress* cannot be found from the
+  lobby; the code box is the only way in. Whether it should be findable is a product question, left
+  as one.
+
+### Six wrong guesses, and what each one is a fact about
+
+Getting those checks to work cost six corrections, every one mine, and each is a fact about the
+product worth having written down: the d6 is in the log rather than the transient feed; the engine
+refuses to start on a finished game; "New game" only exists post-game; a reset clears the decks as
+well as the board, so the deal button returns *disabled* rather than absent; concede arms on the
+first press and fires on the second; and commander damage is two elements — one you press on an
+opponent's row, one you read on your own.
+
+Three of the six were found only because the check reported **what it found** rather than that it
+did not find what it wanted. "No concede in the log, so the click did not land" is the message that
+turned an afternoon into five minutes, and it is the cheapest habit in the file.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
