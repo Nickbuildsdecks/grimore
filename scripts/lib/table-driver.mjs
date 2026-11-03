@@ -788,8 +788,31 @@ export async function makeMove(
     const played = await tryToPlayFromHand(page, seat, abilities);
     if (played !== null) return played;
   }
-  await press(page, 'primary-move');
-  return `primary: ${label}`;
+  /*
+    Whether the press *landed*, which this threw away until a stalled table cost an afternoon.
+
+    `press` returns false when the click never happened — the button disabled, the click
+    intercepted, the element detached between the read and the tap — and the result was discarded,
+    so a press that did nothing was reported as `primary: Pass` exactly like one that did. A solo
+    pod sat on turn 24's upkeep for two hundred and one of those: the engine state frozen at
+    `stateVersion` 193, no error on screen, nothing refused, no inert move reported by the server,
+    because **not one of those passes was ever sent**. The driver was describing an action it had
+    not taken, and every instrument downstream believed it.
+
+    So a failed press says so, with what the button looked like at the time: a disabled button and
+    a detached one are different faults, and the next occurrence should not need another afternoon
+    to tell them apart.
+  */
+  const pressed = await press(page, 'primary-move');
+  if (pressed) return `primary: ${label}`;
+  const why = await tid(page, 'primary-move').first()
+    .evaluate((el) => [
+      el.disabled === true ? 'disabled' : 'enabled',
+      el.offsetParent === null ? 'not laid out' : 'visible',
+      `pointer-events: ${getComputedStyle(el).pointerEvents}`,
+    ].join(', '))
+    .catch(() => 'the button is gone');
+  return `primary: ${label} — THE PRESS DID NOT LAND (${why})`;
 }
 
 /**
