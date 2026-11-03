@@ -9121,3 +9121,26 @@ card is worse than leaving it cardboard.**
   all three `customDeck` calls sit inside a synchronous compare-and-set write where no query can
   happen. Three options with their costs are in D332. What it must **not** be is the client sending
   rows with the paste: that needs no new plumbing and is a cheating vector.
+
+---
+
+## Checkpoint — the browser set on the mana-path change (#308, D335)
+
+The derivation touched `manaSources`, `potentialMana`, the ability-offering loop, the arrival hook
+and `scriptOf`, which is every path a permanent's abilities reach the table through. The full
+browser set on that HEAD: **252 checks, 7 named skips, all six suites exit 0** — `e2e-table` 73/73,
+`e2e-arena` 54/54, `e2e-pod` 41/41, `e2e-solo` 28/28, solo-pod 30/30, `check-table-controls` 26/26.
+
+The last one is the D330 fix confirmed by the thing that found the bug: the same background runner
+that printed "26/26 checks passed" beside "exit=1" now prints exit 0.
+
+The pod suite ran past 1475 moves of its 2400 cap, almost all passes — the shape of #297's stall.
+It was not one: at moves 1225 and 1325 the table was still casting Lhurgoyf and Strionic Resonator,
+and it finished 41/41. The slowness was two full gates running alongside it on four cores.
+
+**Across three full passes, every shuffle-gated check has run at least once** — a different handful
+is skipped each time. So a single run's skip list says something about that shuffle and nothing
+about coverage; only the union across runs is evidence. That retired a prompt-coverage instrument
+before it was built, and the first draft of its reasoning was wrong anyway: four prompt kinds read as
+"not rendered" because the grep covered two components and they are handled in the interaction
+reducer.

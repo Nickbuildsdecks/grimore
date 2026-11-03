@@ -20922,3 +20922,66 @@ that, because the output of a broken instrument looks exactly like a finding. Tw
 and the unrun one was wrong in both halves.
 
 Gate green, 2178 tests.
+
+---
+
+## D335 — All six browser suites on the mana-path change, and what three runs' skips say (#308)
+
+The derivation wired `scriptForCard` into `manaSources`, `potentialMana`, the ability-offering loop,
+the arrival hook and `scriptOf` — the engine's core mana and activation paths. 1404 unit tests
+passing is necessary and not sufficient for that, so the full browser set ran on the HEAD:
+
+| | |
+|---|---|
+| `e2e-table` | **73/73** |
+| `e2e-arena` | **54/54**, 4 skipped |
+| `e2e-pod` | **41/41**, 1 skipped |
+| `e2e-solo` | **28/28**, 1 skipped |
+| `SOLO_POD=1 e2e-solo` | **30/30**, 1 skipped |
+| `check-table-controls` | **26/26**, **exit 0** |
+
+252 checks, 7 named skips, every suite exit 0. The last row is the D330 fix confirmed by the thing
+that found the bug: this is the same background runner that reported "26/26 checks passed" beside
+"exit=1", and it now reports exit 0.
+
+One scare along the way, recorded because the reasoning was the useful part. The pod suite ran past
+**1475 moves** of a 2400 cap, almost all of them passes, which is the exact shape of #297 — a solo
+pod that stalled on turn 20 for 500 moves. Before treating it as a stall I read what the moves
+actually were, and at moves 1225 and 1325 Cleo cast a Lhurgoyf and a Strionic Resonator. A table
+still casting spells is playing a long game, not stuck. It finished 41/41. The slowness was mine:
+I ran two full gates (17 packages of vitest) alongside it on a four-core box, which is the same
+contention D250 warned about, and the earlier run of the same suite in this session finished
+quickly.
+
+### The skips vary by shuffle, which retires an audit I was about to build
+
+I started enumerating the ten prompt kinds the engine can raise (`mustPay`, `mustChoose`,
+`mustDecide`, `mustDredge`, `mustCastOffered`, `mustOrder`, `mustDeclare`, `mustDiscard`,
+`mustSettleHand`, `mustAttack`) to ask which a browser has ever *answered* — the prompt-axis twin of
+`surface-coverage.mjs`. Two things stopped it, both worth keeping.
+
+**First, my own first reading was wrong.** Grepping the two table components reported `mustChoose`,
+`mustDecide`, `mustOrder` and `mustAttack` as "NOT RENDERED". They are all handled — in
+`apps/web/src/lib/arena.ts`, the interaction reducer, which routes them into sheets rather than
+inline rows in the bar. A two-file grep would have reported a four-prompt gap that does not exist,
+which is `surface-coverage`'s own 67%-precision lesson arriving in a new place.
+
+**Second, the suites already report this**, and three runs of them answer the question the audit was
+for. The skips are named (D302), and across the three full passes in this session they are a
+different handful each time:
+
+| skipped | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| nothing searched a library | yes | yes | — |
+| no flashback | yes | — | — |
+| no X spell | yes | — | — |
+| no card asked for a type or colour | yes | — | — |
+| no ward | yes | — | yes |
+| no modal spell | yes | — | yes |
+| no dividing spell | yes | — | yes |
+| no card stopped to ask a question | — | — | yes |
+
+**Every gated check has run in at least one of the three.** So no prompt kind is systematically
+unexercised in a browser; a single run's skip list is a fact about that shuffle, not about coverage,
+and only the union across runs is evidence. That is a negative result, and the right place for it is
+here rather than in a new instrument — which is the same call D247 made about thirty clean runs.
