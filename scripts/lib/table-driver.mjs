@@ -805,12 +805,42 @@ export async function makeMove(
   */
   const pressed = await press(page, 'primary-move');
   if (pressed) return `primary: ${label}`;
+  /*
+    And **what is on top of it**, which is the answer the first two readings could not give.
+
+    The first run with this check said `enabled, visible, pointer-events: auto` sixteen times on a
+    stalled table — so the button was not disabled, not hidden, and not opted out of the pointer.
+    That leaves what Playwright actually refuses a click for: something else is at the point the
+    click would land. This table has eight `fixed inset-0 z-50` overlays (both log panels, chat,
+    help, tokens, the play sheet and two more), and any one of them left open covers the control
+    bar completely while the bar itself still reads as a perfectly clickable button underneath.
+
+    `elementFromPoint` at the button's own centre names whatever is really there, by testid where
+    it has one. If it comes back as the button itself, the click was refused for the other reason
+    — an element that never stops moving — and that is a different fix again.
+  */
   const why = await tid(page, 'primary-move').first()
-    .evaluate((el) => [
-      el.disabled === true ? 'disabled' : 'enabled',
-      el.offsetParent === null ? 'not laid out' : 'visible',
-      `pointer-events: ${getComputedStyle(el).pointerEvents}`,
-    ].join(', '))
+    .evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      const name = (node) => node === null ? 'nothing'
+        : `${node.getAttribute?.('data-testid') ?? node.tagName.toLowerCase()}`;
+      const overlays = Array.from(document.querySelectorAll('[data-testid]'))
+        .filter((node) => {
+          const style = getComputedStyle(node);
+          return style.position === 'fixed' && style.display !== 'none'
+            && node.getBoundingClientRect().width > window.innerWidth * 0.8;
+        })
+        .map((node) => node.getAttribute('data-testid'))
+        .slice(0, 6);
+      return [
+        el.disabled === true ? 'disabled' : 'enabled',
+        el.offsetParent === null ? 'not laid out' : 'visible',
+        `pointer-events: ${getComputedStyle(el).pointerEvents}`,
+        `at that point: ${name(top)}`,
+        `full-width fixed: ${JSON.stringify(overlays)}`,
+      ].join(', ');
+    })
     .catch(() => 'the button is gone');
   return `primary: ${label} — THE PRESS DID NOT LAND (${why})`;
 }
