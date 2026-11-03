@@ -9101,17 +9101,46 @@ the speculation compiles.
 
 ### Where the line is drawn, deliberately
 
-Morph, megamorph and echo now derive from their printed cost — **two cards of 360**, because six of
-the pool's morph creatures have a turned-face-up trigger as well, which is the whole reason most
-morph cards get printed.
+Morph, megamorph and echo derive from their printed cost — **two cards of 360**, because six of the
+pool's morph creatures have a turned-face-up trigger as well, which is the whole reason most morph
+cards get printed.
 
-Everything past that is refused on principle rather than on effort. A morph cost is **data**: the
-engine knows what morph does, the card supplies a number, and a misparse is a refusal. "When this
-enters, you gain 2 life" is **English**, and turning English into an effect is the direction in which
-a card silently does less than it reads — no error, no failing test, and a player loses a game to the
-engine rather than to their own misreading. The project's rule for card text (*inventing the text of
-a real card is worse than leaving the mechanic out*) has a sibling: **inventing the effect of a real
-card is worse than leaving it cardboard.**
+**Cycling derives too, and that one was worth five cards** (D338). It had been left out on a reason
+that did not survive re-reading: the objection was that it needs an ability carrying a *function*
+rather than a data field, but CR 702.29a *defines* cycling as "Discard this card: Draw a card", so
+the effect comes from the rules and only the cost is card-specific — exactly as with morph. Five of
+the eleven lands the pool refused were cycling lands, so **lands went 60.7% → 78.6%**, which is the
+largest single step this work has taken and in the half of a deck that has to work first.
+
+Typed cycling (`Swampcycling {2}`) is refused: it searches a library rather than drawing, which is
+a different ability with a different prompt.
+
+Everything past that is refused on principle rather than on effort. A morph or cycling cost is
+**data**: the engine knows what the mechanic does, the card supplies a number, and a misparse is a
+refusal. "When this enters, you gain 2 life" is **English**, and turning English into an effect is
+the direction in which a card silently does less than it reads — no error, no failing test, and a
+player loses a game to the engine rather than to their own misreading. The project's rule for card
+text (*inventing the text of a real card is worse than leaving the mechanic out*) has a sibling:
+**inventing the effect of a real card is worse than leaving it cardboard.**
+
+### The bug the cycling test found, which is the one worth remembering
+
+Cycling's end-to-end test paid for itself on its first run. The derived ability was **offered
+correctly**, the cost was paid, the card went to the graveyard, the ability went on the stack — and
+it **resolved doing nothing.** No error, no refusal, no draw: a card that silently did half of what
+it reads, which is the precise failure this module is designed to prevent, arriving by a route the
+design had not covered.
+
+The wiring in D331 touched five call sites and every one of them is a **battlefield** lookup. It
+missed `scriptOnStack`, which is how a resolving spell or ability finds its `effect`. Two things
+about that are general:
+
+- **An ability on the stack is the only lookup that can reach a card no longer in play.** A cycling
+  cost discards the card as the ability is activated, so by resolution the only thing left is its
+  definition. A mana ability never leaves the battlefield and could never have exposed this.
+- **Inspecting the derived script would not have found it.** Asserting that the ability's `effect`
+  is a function passes either way — the script was always right; the engine's path to it was not.
+  Only driving the ability to resolution could tell.
 
 ### Nick's calls, untouched
 
