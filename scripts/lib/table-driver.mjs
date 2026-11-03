@@ -1258,7 +1258,22 @@ async function tryToPlayFromZone(page, zone) {
       does not play.
     */
     if ((await waitFor(page, 'play-sheet', 2500).then(() => true, () => false)) === false) return null;
-    const options = page.locator('[data-testid^="play-"]:not([data-testid="play-sheet"]):not([data-testid="play-sheet-close"])');
+    /*
+      The plays on offer, and **only** those: `button[...]`, not every element whose testid starts
+      with `play-`.
+
+      The broad selector matched `play-cost-change-*` too — a `<span>` inside the play button
+      showing what the board has done to the cost — so this saw three plays where there were two
+      and could tap a label instead of a play. Measured, not assumed, and it turned out to be
+      harmless because the click bubbles to the button; it is fixed here because a selector should
+      mean what it says, and the testid is renamed at the source for the same reason (#301).
+
+      Scoped to the sheet as well, so a `play-` testid anywhere else on the table can never be
+      mistaken for one of this card's options.
+    */
+    const options = page.locator(
+      '[data-testid="play-sheet"] button[data-testid^="play-"]:not([data-testid="play-sheet-close"])',
+    );
     const choices = await options.count();
     if (choices > 0) {
       // Not always the first. A modal spell is one play per mode and a permanent can have several

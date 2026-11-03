@@ -112,6 +112,16 @@ export function PlaySheet({ card, plays, mustDiscard, reason, onPlay, onDiscard,
                   <span>{play.description}</span>
                   {play.manaCost ? <span className="ml-auto font-mono text-xs opacity-80">{play.manaCost}</span> : null}
                   {/*
+                    Deliberately **not** under the `play-` prefix. Every other testid in this sheet
+                    that starts with `play-` is an action a player can take — `play-discard`, the
+                    play options themselves, `play-sheet-close` — and the browser driver selects
+                    the plays on offer with `[data-testid^="play-"]`. A `play-cost-change-*` span
+                    inside the button made that selector see three plays where there were two
+                    (measured: it returned `play-discard`, `play-cast-0`, `play-cost-change-0`),
+                    so a driver picking at random could pick an annotation. Harmless as it happens,
+                    because the click bubbles to the enclosing button and the play fires — but a
+                    prefix that means "an action" should not also match a label (#301).
+
                     What the table has done to the cost, beside the printed one rather than
                     instead of it: a Goblin Electromancer takes {1} off and a Thalia puts {1} on,
                     and a row that quietly rewrote `{2}{R}` to `{1}{R}` would be telling the player
@@ -119,7 +129,7 @@ export function PlaySheet({ card, plays, mustDiscard, reason, onPlay, onDiscard,
                   */}
                   {play.costChange !== undefined && play.costChange !== 0 ? (
                     <span
-                      data-testid={`play-cost-change-${slug}`}
+                      data-testid={`cost-change-${slug}`}
                       title={play.costNote}
                       className="ml-1 font-mono text-[10px] text-[var(--g-text-muted)]"
                     >
