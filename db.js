@@ -1137,17 +1137,19 @@ async function initDb() {
     ['seasons', 'max_rares', 'INTEGER NOT NULL DEFAULT -1'],
 
     /*
-      `deck_cards.custom_tag`, which no schema anywhere creates.
+      `deck_cards.custom_tag`, which the Postgres branch of this file has and this one did not.
 
       `server.js` inserts it on the deck-save path (two sites) and selects `dc.custom_tag` in the
-      deck queries, and it is in neither branch of this file nor in any v2 migration. Found by
-      `scripts/audit-sqlite-schema-gap.js`, and it is the same class as the `direct_messages` and
-      `password_resets` rows in `claude/postgres-schema-gap-2026-09-27.md`: referenced by the app,
-      defined by nothing.
+      deck queries. The Postgres `CREATE TABLE deck_cards` above lists it, and so does
+      `packages/db/migrations/0001_baseline.sql` — the SQLite branch is the only place it was
+      missing, so on a fresh local database **saving a deck's cards could not work**. Found by
+      `scripts/audit-sqlite-schema-gap.js`.
 
-      Adding it here fixes the local half only. **Postgres still does not have it**, which is
-      recorded in that document rather than fixed with a migration from here, because the migration
-      list is a cutover artifact and the cutover is not mine to change.
+      (The first version of this comment said no schema anywhere created it and that Postgres still
+      did not have it. Both were false, and the reason is in D349: the grep that established it
+      ended in `head -8`, which cut off the db.js and migration hits after eight `server.js` ones.
+      This project has a standing rule to diff legacy SQL against the baseline before porting, and
+      it exists for exactly this.)
     */
     ['deck_cards', 'custom_tag', 'TEXT']
   ];

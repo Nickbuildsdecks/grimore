@@ -21764,3 +21764,48 @@ reading as a deployment defect, and it shrinks the decision from "how should the
 question, and still Nick's.
 
 Nothing changed in code for this entry. The setup document's section now says it.
+
+## D349 — Correction to D346: Postgres always had `deck_cards.custom_tag`, and a `head -8` hid it
+
+D346 reported `deck_cards.custom_tag` as a column **no schema anywhere creates** — the
+`direct_messages` class, referenced by the app and defined by nothing — and said Postgres still did
+not have it. That is wrong, twice over:
+
+- `db.js`'s **own Postgres branch** lists `custom_tag TEXT` in its `CREATE TABLE deck_cards`.
+- `packages/db/migrations/0001_baseline.sql` lists `custom_tag text` in the same table.
+
+So Postgres has had it from the beginning, and the gap was one-sided: the **SQLite** branch's
+`CREATE TABLE deck_cards` was the only place it was missing. The fix in that commit is still right
+and still needed — on a fresh local database `INSERT INTO deck_cards (..., custom_tag)` is the
+deck-save path and it could not run. What is wrong is only the claim about Postgres, and the
+conclusion drawn from it, which was that this belonged in the document's "defined by nothing" table.
+
+### How the error was made, which is the part worth keeping
+
+The command that established it was:
+
+```
+grep -n "custom_tag" server.js db.js packages/db/migrations/*.sql | head -8
+```
+
+Eight `server.js` hits came first, and **`head -8` cut off the `db.js` line and the baseline line**.
+The evidence that would have contradicted the conclusion was in the output I asked for and threw
+away before reading it.
+
+Two rules follow, and the second one already existed:
+
+1. **A `head` on a multi-file grep can silence exactly the files that would have changed the
+   answer**, because the limit falls where the file order puts it and not where the evidence is. For
+   a question of the form "does anything define X", the count matters per file — `grep -c` per file,
+   or no limit at all.
+2. This project has a standing instruction to **diff legacy SQL against `0001_baseline.sql` before
+   porting anything**. That rule, followed, catches this in one command. I applied it to the
+   twenty-one columns enumerated from the migrations and skipped it for the one column that came
+   from a different route, which is the kind of gap a rule has when it is remembered as a step in a
+   procedure rather than as a question about every claim.
+
+Corrected in place: the comment in `db.js` and the section in
+`claude/postgres-schema-gap-2026-09-27.md`, both of which now say what is true and point here for
+why they changed. **The commit message of `ac2aef6` carries the wrong claim and cannot be corrected**
+— it is pushed — so this entry is where the record is set straight, and the two files a reader would
+actually consult say so themselves.

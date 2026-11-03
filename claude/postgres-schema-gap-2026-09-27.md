@@ -279,17 +279,21 @@ nothing else. On a freshly created local database that meant:
 | `INSERT INTO decks (... is_public, format)` | could not run | the columns did not exist, so **creating a deck was impossible** |
 
 Enumerated against `packages/db/migrations/` — this project's own statement of what the schema is —
-twenty-one columns were missing, plus `deck_cards.custom_tag`, which **no schema anywhere creates**
-(the `direct_messages` class: referenced by the app, defined by nothing). `db.js`'s SQLite branch now
-adds sixteen of them, read-then-add via `PRAGMA table_info` rather than the swallow-every-error
-`try/catch` already in the file.
+twenty-one columns were missing, plus `deck_cards.custom_tag`, which **Postgres has and SQLite did
+not**: it is in `db.js`'s own Postgres `CREATE TABLE deck_cards` and in `0001_baseline.sql`, and the
+SQLite branch was the only place it was absent, so on a fresh local database saving a deck's cards
+could not work. `db.js`'s SQLite branch now adds sixteen columns in all, read-then-add via
+`PRAGMA table_info` rather than the swallow-every-error `try/catch` already in the file.
 
 Six are deliberately left out: migration 0015's `scryfall_cards` card-rules columns, because
 `CARD_UPSERT_SQLITE` was deliberately left at thirteen columns when that migration shipped, and
 adding columns nothing writes would be the opposite of closing a gap.
 
-**`deck_cards.custom_tag` is still missing from Postgres.** It is added to SQLite only, because the
-migration list is a cutover artifact. It belongs in the table at the top of this document.
+**Correction.** An earlier version of this section said `deck_cards.custom_tag` was missing from
+Postgres too and belonged in the table at the top of this document. It does not: both the Postgres
+branch of `db.js` and `0001_baseline.sql` create it, so Postgres has had it all along and the gap
+was one-sided. See D349 for how that error was made — a truncated `grep` — and why the rule about
+diffing against the baseline exists.
 
 ## Tables: nine, and seven of them are the same seven
 
