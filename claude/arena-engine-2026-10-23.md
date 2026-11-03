@@ -9206,3 +9206,70 @@ which is the exact shape of the "check that cannot fail" this session keeps find
 is one. Fourteen are inside an `if (seen.X)` guard with a paired `skip()` — the `if` is the
 assertion — and four are labels on a preceding `waitFor` that throws. The grep matched the syntax of
 a vacuous check rather than its meaning: 18 hits, 0 findings.
+
+---
+
+## Checkpoint — the resolution-path fix in six browser suites, and mana that is not a land (#309)
+
+### The full browser set on the `scriptOnStack` fix
+
+The engine change in D338 — `scriptOnStack` was still looking a card up by name, so a derived
+ability resolved doing nothing — went through every browser suite there is, on one machine with
+nothing else running:
+
+| suite | checks | skipped | exit |
+|---|---|---|---|
+| `e2e-table.mjs` | 73 | 0 | 0 |
+| `e2e-arena.mjs` | 55 | 4 | 0 |
+| `e2e-pod.mjs` | 41 | 1 | 0 |
+| `e2e-solo.mjs` | 28 | 1 | 0 |
+| `SOLO_POD=1 e2e-solo.mjs` | 30 | 1 | 0 |
+| `check-table-controls.mjs` | 26 | 0 | 0 |
+| **total** | **253** | **7** | all 0 |
+
+### Mana that is not a land, derived (D341)
+
+A Llanowar Elves prints the same line as a Hagra Broodpit, and until now the land derived and the
+dork did not: `fromCardData.ts` read mana abilities in its land branch only, and refused a nonland
+permanent with any text at all. A Sol Ring — whose whole card is `{T}: Add {C}{C}.` — was cardboard.
+
+All three branches read it now, with the distinction the engine has always drawn and the parse had
+flattened: `{T}: Add {G} or {W}.` is a **choice** and becomes one ability per colour, while
+`{T}: Add {C}{C}.` is a **sum** and becomes one ability producing two. A five-colour bird built the
+other way would make five mana off a 0/1.
+
+The refusal of the sum was my own over-reading of this module's header, corrected in D341: the
+header's argument is against deriving from `produced_mana`, which cannot say *how many*. The text
+can, and does.
+
+The verification is the part worth repeating, because it is not mine. Sol Ring, Birds of Paradise and
+Llanowar Elves are **already in the pool, hand-written from the printed card before this module
+existed**, so each test builds a row out of the pool's own `CardDef` and compares the derived script
+against `scriptFor(name)`. Mind Stone and Mana Confluence stay refused, from the same pool, which is
+what keeps those comparisons honest.
+
+| | before | after |
+|---|---|---|
+| pool, built from data alone | 48 / 360 (13.3%) | **51 / 360 (14.2%)** |
+| creatures | 26 / 173 | 28 / 173 |
+| artifacts | 0 / 18 | 1 / 18 |
+
+Three cards, and **unrepresentatively few**: this pool was built to exercise sixty mechanics and
+holds one rock and two dorks, where a real Commander list runs five to fifteen. It is the first
+family where the pool proxy understates the real figure for a structural reason rather than as a
+general caveat.
+
+### The instrument that could not see the change (D342)
+
+Run straight after that change, `derivable.mjs` printed the share from **before** it, to a tenth of
+a percent, because it imports `dist` and `dist` had not been rebuilt. An honest measurement of the
+previous build is the most misleading thing a measurement can be.
+
+`provenanceLine` already printed `dist`'s build time and its docblock claimed the mtime "is the only
+thing that catches it". It is the only thing that *could*; catching it was left to a reader, and the
+reader was me. It now compares `dist` against the engine's sources and prints `STALE(src <time>)`,
+proved in three directions — fresh build silent, a touched source stale, a touched **test** file
+silent, since editing a test does not change what `dist` holds. `derivable.mjs` prints that line now.
+
+Five of the fifty-two scripts that import `dist` print provenance. The rest are a known gap, left
+deliberately rather than swept at the end of a long session.

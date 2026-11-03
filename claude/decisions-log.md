@@ -21218,3 +21218,137 @@ assertion that breaks on a deck edit is noise.
 Verification: the full gate before the push — `node scripts/guards.js`, `pnpm v2:typecheck`,
 `pnpm v2:typecheck:tests`, `pnpm v2:test` — with `@grimore/rules-engine: 1408 tests` and
 `Tasks: 17 successful, 17 total`.
+
+## D341 — Mana that is not a land, derived, and a refusal of my own I had over-read (#309)
+
+`derivable.mjs` groups the lines the derivation cannot read by what they open with, and one bucket
+in that list was not English at all:
+
+```
+      2  {M} Add {M}
+         e.g. Llanowar Elves: "{T}: Add {G}."
+```
+
+A Llanowar Elves prints the same line as a Hagra Broodpit. The land derived; the dork did not — and
+a Sol Ring, whose entire card is `{T}: Add {C}{C}.`, did not either. Both were refused by
+`fromCardData.ts`, which read mana abilities in the land branch only and refused a nonland permanent
+with any text whatsoever.
+
+### Why this family and not the one above it in the list
+
+The bucket above it is twenty-odd cards opening `When ~ enters the battlefield, …`, and that is the
+larger number. It stays refused, because `fromCardData.ts` wrote down where its line is and the
+reason holds: an ETB effect is **English**, and turning English into an effect is how a card comes
+to silently do less than it reads. The module's own words — *"inventing the effect of a real card is
+worse than leaving it cardboard"* — and I am not crossing that in the same session it was drawn,
+without new evidence, which is the D339 lesson.
+
+A mana ability is on the other side of the same line, for the reason cycling was: nothing is
+inferred. The text states the cost, the colour and the quantity; the parse either matches the whole
+line or refuses it.
+
+### The over-reading I had to correct, which was mine
+
+The first draft refused every line adding more than one mana, and justified it by naming *"the Sol
+Ring case named in this file's header"*. Reading the header back, that is not what it says. Its
+argument is against deriving an ability from **`produced_mana`** — the field says *which* colours a
+permanent makes and nothing about how many, so `["C"]` would have produced a Sol Ring that taps for
+one. The Sol Ring is the header's example **because the field is insufficient**.
+
+`parseManaLine` does not read the field for quantity. It reads `{T}: Add {C}{C}.`, which states two.
+So the refusal was a good rule applied to a case it was not about, and the shape of that mistake is
+worth naming: **a stated reason can be cited for a conclusion it does not support, and the citation
+makes the conclusion look already-argued.** The fix was to re-read the paragraph I was citing.
+
+### What is in
+
+`ManaLine` now carries a mode, which is the distinction the engine has always drawn and this parse
+had flattened:
+
+| printed | read as | built as |
+|---|---|---|
+| `{T}: Add {G}.` | choice of one | one ability |
+| `{T}: Add {G} or {W}.` | choice | one ability per colour |
+| `{T}: Add one mana of any color.` | choice of five | five abilities |
+| `{T}: Add {C}{C}.` | **sum** | one ability, `produces: ['C','C']` |
+
+`manaSources` collapses several free tap-for-mana abilities into a single source that makes *one of*
+their colours, so a choice must be several abilities and a sum must be one — a five-colour bird
+built as one ability would make five mana off a 0/1. A **mixture** (`Add {G}{G} or {W}`) is refused,
+and so is a sum beside a second mana line, because the merge rule those would need is the kind that
+is wrong in one direction with nothing to notice.
+
+Three branches now read it — land, creature (`mana-creature`), and artifact/enchantment — and all
+three run the `produced_mana` cross-check, which only the land branch did before.
+
+### The verification that is not mine
+
+The three cards this is about are **already in the pool, hand-written from the printed card before
+this module existed**. So the tests do not assert that the derivation matches what I think a Sol Ring
+does; they build a row out of the pool's own `CardDef` — its real type line, mana cost and oracle
+text — and compare the derived script against `scriptFor(name)`:
+
+- **Sol Ring** → `mana-source`, abilities equal to the hand-written ones, one ability, `['C','C']`.
+- **Birds of Paradise** → `mana-creature`, five abilities equal to the hand-written five.
+- **Llanowar Elves** → `mana-creature`, equal to the hand-written one.
+
+And the negatives from the same pool, which are what keep those honest: **Mind Stone** stays refused
+(its second ability sacrifices it for a card — half of that card is not the card), **Mana
+Confluence** stays refused (its mana costs a life), and a Sol Ring row whose `produced_mana` says
+green is refused by the cross-check.
+
+At a table, with the assertions a parse cannot pass by accident: a derived rock puts **two**
+colourless in the pool from one permanent; a three-drop is cast off two derived rocks with **no land
+on the board at all**; and a derived dork is **not** a mana source the turn it arrives (CR 302.6) and
+is one two turns later, asserted as green going 0 → 2 so the forest cannot be what is counted.
+
+Proved to discriminate: reading a sum as a choice — the Sol-Ring-taps-for-one bug — fails four of
+them.
+
+### Measured
+
+| | before | after |
+|---|---|---|
+| pool, built from data alone | 48 / 360 (13.3%) | **51 / 360 (14.2%)** |
+| creatures | 26 / 173 | 28 / 173 |
+| artifacts | 0 / 18 | 1 / 18 |
+
+Three cards, which is a small number and an **unrepresentative** one. This pool holds one rock and
+two dorks because it was built to exercise sixty mechanics, not to play Commander; a real list runs
+five to fifteen. This is the one family so far where the pool proxy understates the real figure for
+a structural reason rather than as a general caveat, and it is the reason to prefer it over a bucket
+with twenty cards in it.
+
+Gate: guards, typecheck, typecheck:tests, test — 1418 rules-engine tests, 17/17 packages.
+
+## D342 — The measurement that could not see the change, which is the eleventh of these and the second I caught on myself
+
+Straight after the change above, `derivable.mjs` printed **48 of 360, 13.3%** — the figure from
+before it, to a tenth of a percent.
+
+Nothing was wrong with the number. The instrument imports
+`packages/rules-engine/dist/index.js`, `dist` had not been rebuilt, and it was an honest measurement
+of the previous build. **That is the most misleading thing a measurement can be**, and it is worse
+than a broken one: a broken instrument says so.
+
+`scripts/lib/provenance.mjs` already prints when `dist` was built, and its docblock says the mtime
+*"is the only thing that catches it"*. Reading that again after being caught by it: the mtime is the
+only thing that **could** catch it. Catching it was left to a reader noticing that one timestamp
+precedes another, and in the one case anybody has run this, the reader was me and I did not notice.
+
+So the comparison happens in the instrument now. `provenanceLine` walks the engine's sources,
+takes the newest mtime, and appends `STALE(src <time>)` when the build is behind it. Test files are
+excluded on purpose — editing one does not change what `dist` holds, and an instrument that cried
+stale after every test edit would be ignored inside a day.
+
+Proved in all three directions, because a staleness check that always fires and one that never fires
+read identically on a clean tree:
+
+- fresh build → `[3163669 DIRTY, dist built 2026-11-03T21:55:45Z] …`
+- `touch src/fromCardData.ts` → `… dist built 21:55:45Z STALE(src 21:56:44Z) …`
+- rebuild, then `touch src/fromCardData.test.ts` → no `STALE`
+
+`derivable.mjs` now prints that line, which it did not before. **Five of the fifty-two scripts that
+import `dist` print provenance**; the rest are left, deliberately, as a known gap rather than a
+fifty-file sweep made at the end of a long session — and this is the one that had actually misled
+somebody.

@@ -39,6 +39,7 @@ import { readFileSync } from 'node:fs';
 import {
   STARTER_DECKS, cardFromData,
 } from '../../packages/rules-engine/dist/index.js';
+import { provenanceLine } from '../lib/provenance.mjs';
 
 const VERBOSE = process.env.VERBOSE === '1';
 const fileArg = process.argv.indexOf('--file');
@@ -234,6 +235,14 @@ for (const row of rows) {
 const pct = (n) => rows.length === 0 ? '0.0' : ((n / rows.length) * 100).toFixed(1);
 
 console.log(`\nSource: ${source}`);
+/*
+  The provenance line, and this instrument has the sharpest reason of any of them to print it. It
+  reads `dist`, and the first run after the change that widened the derivation reported the share
+  from *before* it — 48 of 360, to a tenth of a percent, an honest measurement of the previous
+  build. `provenanceLine` compares `dist` against the engine's sources and says `STALE` when the
+  build is behind, which is the only reading that would have caught it.
+*/
+console.log(provenanceLine({ FILE: file ?? '', VERBOSE: VERBOSE ? '1' : '' }));
 console.log(`Cards read: ${rows.length}`);
 if (skippedBeforeCounting > 0) {
   console.log(`  (${skippedBeforeCounting} row(s) the importer's own filter drops: tokens, emblems,`);

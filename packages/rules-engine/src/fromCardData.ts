@@ -42,6 +42,22 @@
  * a rejection, not a merge.** If Scryfall says a card makes green and the text this module can read
  * does not mention green, this module does not understand the card.
  *
+ * The Sol Ring is also why the *text* may state a quantity the field cannot: `{T}: Add {C}{C}.` is
+ * read as two mana, because that is what it says. See `parseManaLine`, which corrects the first
+ * draft's over-reading of this very paragraph.
+ *
+ * ## Mana that is not a land
+ *
+ * The same parse, on the same two shapes, wherever the ability is printed. A Llanowar Elves and a
+ * Hagra Broodpit print the same line, and `manaSources` walks a permanent's abilities without
+ * caring what type it is — so a mana dork is a body plus that ability (`mana-creature`) and a mana
+ * rock is that ability on its own (`mana-source`). Both matter out of proportion to their share of
+ * this project's own card pool, which holds one rock and two dorks: a real Commander list runs five
+ * to fifteen of them, and a deck whose rocks are cardboard is a deck that cannot keep its curve.
+ *
+ * A creature is still a creature about it — it cannot be tapped the turn it arrives (CR 302.6) —
+ * and that is the engine's rule, not anything this module does.
+ *
  * ## Everything it will not do, and why that list is long on purpose
  *
  * This is a conservative classifier whose failure mode is "that card stays cardboard", which the
@@ -104,6 +120,8 @@ export type DerivedKind =
   | 'basic-land'
   /** A land or artifact whose printed mana ability this module could read in full. */
   | 'mana-source'
+  /** A creature that is a body *and* a mana source: a mana dork. */
+  | 'mana-creature'
   /** A creature with no text at all. */
   | 'vanilla-creature'
   /** A creature whose text is only keywords the engine implements. */
@@ -181,23 +199,69 @@ function isEntersTappedLine(line: string, name: string): boolean {
 }
 
 /**
+ * What a `{T}: Add …` line makes: a **choice** of one mana from a list, or a **sum** of several.
+ *
+ * The distinction is the whole reason this is a shape rather than a list of colours, and it is the
+ * difference between a Guildgate and a Sol Ring. `manaSources` collapses several free tap-for-mana
+ * abilities on one permanent into a single source that makes *one of* their colours, so a choice is
+ * built as one ability per option and a sum is built as one ability producing several.
+ */
+interface ManaLine {
+  readonly mode: 'choice' | 'sum';
+  readonly produces: readonly ManaType[];
+}
+
+/** `one mana of any color`, in both spellings this project has in its own card pool. */
+const ANY_COLOUR = /^one\s+mana\s+of\s+any\s+colou?r$/i;
+
+/** The five colours, in the printed order, for `Add one mana of any color`. */
+const COLOURS: readonly ManaType[] = ['W', 'U', 'B', 'R', 'G'];
+
+/**
  * The mana a `{T}: Add …` line makes, or null when this module cannot read the line.
  *
- * Deliberately narrow. Two shapes are accepted and nothing else:
+ * Deliberately narrow. Four shapes are accepted and nothing else:
  *
  *  - `{T}: Add {G}.` — one symbol, one mana.
  *  - `{T}: Add {W}, {U}, {B}, {R}, or {G}.` — a choice of one, however many options are listed,
  *    including the two-option `{T}: Add {G} or {W}.` a dual land prints.
+ *  - `{T}: Add {C}{C}.` — several symbols in one run, which is a **sum**: a Sol Ring makes two.
+ *  - `{T}: Add one mana of any color.` — the Birds of Paradise line, a choice of all five.
  *
- * A line adding **more than one** mana (`Add {C}{C}`, `Add {G}{G}`) is refused rather than
- * approximated, which is the Sol Ring case named in this file's header. A line with any other cost
- * — a life payment, an energy counter, a sacrifice, a mana cost — is refused because the cost is
- * part of the card and this parse does not model it.
+ * ## The Sol Ring reasoning, corrected
+ *
+ * The first draft of this function refused every line adding more than one mana, and said so by
+ * naming "the Sol Ring case named in this file's header". That was the wrong read of its own
+ * header. The header's objection is to deriving an ability from **`produced_mana`**, which says
+ * *which* colours a permanent makes and not how many — and a Sol Ring is the example *because*
+ * `["C"]` would have produced a card that taps for one when the card taps for two.
+ *
+ * That is an argument about the field, and this function does not read the field. `{T}: Add {C}{C}.`
+ * states the quantity exactly, in the text, and the engine has carried `produces: ['C', 'C']` since
+ * the mana solver was written — the hand-written Sol Ring in the pool is exactly that one line. So
+ * the sum is as exact as the single symbol, and refusing it was an over-reading of a good rule.
+ * `produced_mana` remains the cross-check, where a set comparison is all it can honestly support.
+ *
+ * ## What is still refused, and why each one is a card and not an oversight
+ *
+ * A line with any other cost — a life payment, a sacrifice, an energy counter, a mana cost — is
+ * refused, because the cost is part of the card and this parse does not model it. That is four
+ * cards in this pool alone, and each one is a different mechanic: Mana Confluence pays life, Lotus
+ * Petal and a Treasure token sacrifice themselves, Mind Stone's second ability eats the rock.
+ *
+ * A **mixture** of a sum and a choice (`Add {G}{G} or {W}`) is refused as well. Nothing in this
+ * pool prints one, the shape is rare enough in Magic that a reader meeting it here would be right
+ * to be suspicious of a parse that guessed, and the merge rule it would need at the call site is
+ * the kind of thing that is wrong in one direction without anybody noticing.
  */
-function parseManaLine(line: string): ManaType[] | null {
+function parseManaLine(line: string): ManaLine | null {
   const match = /^\{T\}:\s*Add\s+(.+?)\.?$/i.exec(line);
   if (match === null) return null;
   const body = match[1]!.trim();
+
+  // `one mana of any color` — checked first, because it contains none of the symbols below.
+  if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS };
+
   /*
     A choice of one of several. The separators are tried longest-first, because the printed list is
     an Oxford one — `{W}, {U}, {B}, {R}, or {G}` — and splitting on the bare comma before the
@@ -206,14 +270,30 @@ function parseManaLine(line: string): ManaType[] | null {
   */
   const parts = body.split(/\s*,\s*or\s+|\s*,\s*|\s+or\s+/i)
     .map((p) => p.trim()).filter((p) => p.length > 0);
-  const produces: ManaType[] = [];
-  for (const part of parts) {
-    const symbol = /^\{([WUBRGC])\}$/i.exec(part);
-    // More than one symbol in a single part means more than one mana: `Add {C}{C}`.
-    if (symbol === null) return null;
-    produces.push(MANA_SYMBOLS[symbol[1]!.toUpperCase()]!);
+  if (parts.length === 0) return null;
+
+  const read = parts.map(parseSymbolRun);
+  if (read.some((r) => r === null)) return null;
+  const runs = read as ManaType[][];
+
+  /*
+    One part holding several symbols is a sum: `Add {C}{C}`. Several parts are a choice, and every
+    one of them has to be a single symbol — a part with a run in it would be the mixture refused
+    above.
+  */
+  if (runs.length === 1) {
+    const only = runs[0]!;
+    return { mode: only.length > 1 ? 'sum' : 'choice', produces: only };
   }
-  return produces.length === 0 ? null : produces;
+  if (runs.some((r) => r.length !== 1)) return null;
+  return { mode: 'choice', produces: runs.map((r) => r[0]!) };
+}
+
+/** A run of mana symbols with nothing else in it: `{C}{C}`, `{G}`. Null for anything else. */
+function parseSymbolRun(part: string): ManaType[] | null {
+  if (!/^(?:\{[WUBRGC]\})+$/i.test(part)) return null;
+  return [...part.matchAll(/\{([WUBRGC])\}/gi)]
+    .map((m) => MANA_SYMBOLS[m[1]!.toUpperCase()]!);
 }
 
 /**
@@ -230,6 +310,66 @@ function tapAbilities(produces: readonly ManaType[]): AbilityDef[] {
     description: `{T}: Add {${type}}.`,
     produces: [type],
   }));
+}
+
+/** The one ability a sum line buys: one tap, several mana, exactly as the hand-written Sol Ring. */
+function sumAbility(produces: readonly ManaType[]): AbilityDef {
+  return {
+    cost: { tap: true },
+    description: `{T}: Add ${produces.map((t) => `{${t}}`).join('')}.`,
+    produces: [...produces],
+  };
+}
+
+/**
+ * Every mana line on one permanent, folded into the abilities it should have.
+ *
+ * `intrinsic` is the mana a basic land type grants with nothing printed (CR 305.6), which is always
+ * a choice. The rule for mixing is the conservative one: a sum line has to be the only mana the
+ * permanent makes, because merging "taps for two colourless" with "taps for green" needs a
+ * judgement about what the card does that this module has no way to make.
+ */
+function foldManaLines(
+  name: string,
+  intrinsic: readonly ManaType[],
+  parsed: readonly ManaLine[],
+): { abilities: AbilityDef[]; produces: ManaType[] } | { why: string } {
+  const sums = parsed.filter((p) => p.mode === 'sum');
+  if (sums.length > 0) {
+    if (parsed.length > 1 || intrinsic.length > 0) {
+      return { why: `${name}: it adds several mana and also adds mana some other way` };
+    }
+    const only = sums[0]!;
+    return { abilities: [sumAbility(only.produces)], produces: [...new Set(only.produces)] };
+  }
+  const produces = [...new Set<ManaType>([
+    ...intrinsic,
+    ...parsed.flatMap((p) => [...p.produces]),
+  ])];
+  return { abilities: tapAbilities(produces), produces };
+}
+
+/**
+ * `produced_mana` as the cross-check, for every branch that reads a mana ability.
+ *
+ * Scryfall says which colours the card can make; if the text this module read disagrees in either
+ * direction, this module has misread the card — a missing colour means an unparsed ability, and an
+ * extra one means a parse that invented mana. The comparison is of **sets**, which is the most the
+ * field can honestly support: it does not say how many, so it cannot confirm a sum.
+ */
+function manaMismatch(
+  name: string,
+  produces: readonly ManaType[],
+  claimedRaw: readonly string[],
+): string | null {
+  const claimed = new Set(claimedRaw.map((c) => c.toUpperCase()));
+  if (claimed.size === 0) return null;
+  const mine = new Set<string>(produces);
+  const missing = [...claimed].filter((c) => !mine.has(c));
+  const extra = [...mine].filter((c) => !claimed.has(c));
+  if (missing.length === 0 && extra.length === 0) return null;
+  return `${name}: the data says it makes [${[...claimed].sort().join('')}]`
+    + ` and its text reads as [${[...mine].sort().join('')}]`;
 }
 
 /**
@@ -392,7 +532,7 @@ export function cardFromData(row: CardDataRow): Derivation {
     */
     let entersTapped = false;
     let cycling: string | null = null;
-    const parsed: ManaType[] = [];
+    const parsed: ManaLine[] = [];
     for (const line of lines) {
       if (isEntersTappedLine(line, name)) { entersTapped = true; continue; }
       const cycle = cyclingCost(line);
@@ -401,7 +541,7 @@ export function cardFromData(row: CardDataRow): Derivation {
       if (mana === null) {
         return { ok: false, why: `${name}: cannot read the line "${line}"` };
       }
-      parsed.push(...mana);
+      parsed.push(mana);
     }
 
     /*
@@ -410,8 +550,9 @@ export function cardFromData(row: CardDataRow): Derivation {
       is where its green mana comes from. A dual *typed* land — "Land — Forest Island" — gets both.
     */
     const intrinsic = basicTypes.map((s) => BASIC_LAND_MANA[s]!);
-    const produces = [...new Set([...intrinsic, ...parsed])];
-    if (produces.length === 0) {
+    const folded = foldManaLines(name, intrinsic, parsed);
+    if ('why' in folded) return { ok: false, why: folded.why };
+    if (folded.produces.length === 0) {
       return { ok: false, why: `${name}: nothing in its data says what mana it makes` };
     }
 
@@ -420,19 +561,8 @@ export function cardFromData(row: CardDataRow): Derivation {
       text this module read disagrees in either direction, this module has misread the card — a
       missing colour means an unparsed ability, and an extra one means a parse that invented mana.
     */
-    const claimed = new Set(list(row.produced_mana).map((c) => c.toUpperCase()));
-    if (claimed.size > 0) {
-      const mine = new Set<string>(produces);
-      const missing = [...claimed].filter((c) => !mine.has(c));
-      const extra = [...mine].filter((c) => !claimed.has(c));
-      if (missing.length > 0 || extra.length > 0) {
-        return {
-          ok: false,
-          why: `${name}: the data says it makes [${[...claimed].sort().join('')}]`
-            + ` and its text reads as [${[...mine].sort().join('')}]`,
-        };
-      }
-    }
+    const mismatch = manaMismatch(name, folded.produces, list(row.produced_mana));
+    if (mismatch !== null) return { ok: false, why: mismatch };
 
     return {
       ok: true,
@@ -447,8 +577,8 @@ export function cardFromData(row: CardDataRow): Derivation {
           script a reader can compare to its hand-written twin is worth more than one they cannot.
         */
         abilities: cycling === null
-          ? tapAbilities(produces)
-          : [...tapAbilities(produces), cyclingAbility(cycling)],
+          ? folded.abilities
+          : [...folded.abilities, cyclingAbility(cycling)],
       },
     };
   }
@@ -481,9 +611,20 @@ export function cardFromData(row: CardDataRow): Derivation {
     */
     let morph: { readonly cost: { readonly mana: string }; readonly mega?: true } | undefined;
     let echo: { readonly cost: string } | undefined;
+    const mana: ManaLine[] = [];
     const unread: string[] = [];
     for (const line of lines) {
       if (printedKeywords(line).length > 0) continue;
+      /*
+        A mana dork. The ability is read exactly as a land's is — same parser, same cross-check
+        below — because a Llanowar Elves and a Hagra Broodpit print the same line, and the engine
+        makes no distinction either: `manaSources` walks the abilities on a permanent without
+        caring what type it is. The one thing it does know is that a creature cannot be tapped the
+        turn it arrives (CR 302.6), which is the whole difference between a dork and a land and is
+        already handled.
+      */
+      const dork = parseManaLine(line);
+      if (dork !== null) { mana.push(dork); continue; }
       const costed = keywordWithCost(line);
       if (costed === null) { unread.push(line); continue; }
       // A card printing the same costed keyword twice is a card this has not seen; refuse it
@@ -501,24 +642,32 @@ export function cardFromData(row: CardDataRow): Derivation {
     if (unread.length > 0) {
       return { ok: false, why: `${name}: cannot read the line "${unread[0]}"` };
     }
-    if (morph === undefined && echo === undefined) {
+    if (morph === undefined && echo === undefined && mana.length === 0) {
       return { ok: true, kind: 'keyword-creature', def: withBody };
     }
+
+    const dorkMana = mana.length === 0 ? null : foldManaLines(name, [], mana);
+    if (dorkMana !== null && 'why' in dorkMana) return { ok: false, why: dorkMana.why };
+    if (dorkMana !== null) {
+      const mismatch = manaMismatch(name, dorkMana.produces, list(row.produced_mana));
+      if (mismatch !== null) return { ok: false, why: mismatch };
+    }
+
     return {
       ok: true,
-      kind: 'costed-keyword-creature',
+      kind: dorkMana === null ? 'costed-keyword-creature' : 'mana-creature',
       def: withBody,
       script: {
         name,
         ...(morph === undefined ? {} : { morph }),
         ...(echo === undefined ? {} : { echo }),
+        ...(dorkMana === null ? {} : { abilities: dorkMana.abilities }),
       },
     };
   }
 
   // ── Any other permanent ────────────────────────────────────────────────────────────────────────
   if (hasType(typeLine, 'artifact') || hasType(typeLine, 'enchantment') || hasType(typeLine, 'battle')) {
-    if (lines.length > 0) return { ok: false, why: `${name}: cannot read the line "${lines[0]}"` };
     /*
       An Aura with no text would be an Aura that enchants nothing, which the engine models through
       `CardScript.aura` and cannot infer. A blank artifact or enchantment, meanwhile, really is a
@@ -527,7 +676,32 @@ export function cardFromData(row: CardDataRow): Derivation {
     if (typeLine.subtypes.some((s) => s.toLowerCase() === 'aura')) {
       return { ok: false, why: `${name}: an Aura has to say what it enchants` };
     }
-    return { ok: true, kind: 'blank-permanent', def: base };
+    if (lines.length === 0) return { ok: true, kind: 'blank-permanent', def: base };
+
+    /*
+      A mana rock, read with the land's parser. This branch used to refuse any text at all, which
+      meant a Sol Ring — one line, a quantity stated exactly, and a hand-written twin in this pool
+      that is that line and nothing else — was cardboard. Every other line is still a refusal, so
+      a Mind Stone (a rock whose second ability sacrifices it for a card) stays cardboard, which is
+      correct: half of that card is not the card.
+    */
+    const rock: ManaLine[] = [];
+    for (const line of lines) {
+      const parsedLine = parseManaLine(line);
+      if (parsedLine === null) return { ok: false, why: `${name}: cannot read the line "${line}"` };
+      rock.push(parsedLine);
+    }
+    const folded = foldManaLines(name, [], rock);
+    if ('why' in folded) return { ok: false, why: folded.why };
+    const mismatch = manaMismatch(name, folded.produces, list(row.produced_mana));
+    if (mismatch !== null) return { ok: false, why: mismatch };
+
+    return {
+      ok: true,
+      kind: 'mana-source',
+      def: base,
+      script: { name, abilities: folded.abilities },
+    };
   }
 
   return { ok: false, why: `${name}: ${typeLineText} is not a card shape this reads` };
