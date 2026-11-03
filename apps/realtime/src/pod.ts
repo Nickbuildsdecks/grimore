@@ -198,6 +198,21 @@ export interface PodStoreOptions {
    * - deciding ~= 0 with no bot seats -> a human action that was slow by itself.
    */
   onSlowWrite?: (info: { code: string; reason: string }) => void;
+  /**
+   * How many server moves one write may play. Defaults to `BOT_MOVES_PER_WRITE`.
+   *
+   * An option rather than only an env var so a test can set it to something small and *force* the
+   * continuation to carry the game. At the shipping budget most answers fit in one write, so a test
+   * on the default would pass whether `continueBots` worked or not.
+   */
+  botMovesPerWrite?: number;
+  /**
+   * The slow-write threshold, in milliseconds. Defaults to `SLOW_WRITE_MS`.
+   *
+   * Zero makes `onSlowWrite` a report of every write, which is how the suite checks the per-write
+   * budget against the writes that happened rather than against the constant meant to bound them.
+   */
+  slowWriteMs?: number;
 }
 
 export const SEAT_GRACE_MS = 120_000;
@@ -358,6 +373,8 @@ export class PodStore {
   private readonly onBotStall: (info: { code: string; reason: string }) => void;
   private readonly onNoProgress: (info: { code: string; reason: string }) => void;
   private readonly onSlowWrite: (info: { code: string; reason: string }) => void;
+  private readonly botMovesPerWrite: number;
+  private readonly slowWriteMs: number;
 
   constructor(
     private readonly redis: RedisClientType,
@@ -370,6 +387,8 @@ export class PodStore {
     this.onBotStall = opts.onBotStall ?? ((): void => {});
     this.onNoProgress = opts.onNoProgress ?? ((): void => {});
     this.onSlowWrite = opts.onSlowWrite ?? ((): void => {});
+    this.botMovesPerWrite = opts.botMovesPerWrite ?? BOT_MOVES_PER_WRITE;
+    this.slowWriteMs = opts.slowWriteMs ?? SLOW_WRITE_MS;
   }
 
   // -------------------------------------------------------------------------
@@ -837,7 +856,7 @@ export class PodStore {
           reason: `${stamped.type} by seat ${seat.seat} at ${whereBefore} changed nothing`,
         });
       }
-      const bots = runBots(record, (reason) => this.onBotStall({ code, reason }));
+      const bots = runBots(record, (reason) => this.onBotStall({ code, reason }), this.botMovesPerWrite);
       /*
         Half the client's patience, so a write is reported while it is still merely slow.
 
@@ -846,7 +865,7 @@ export class PodStore {
         banner the player has seen.
       */
       const took = Date.now() - startedAt;
-      if (took >= SLOW_WRITE_MS) {
+      if (took >= this.slowWriteMs) {
         this.onSlowWrite({
           code,
           reason: `${stamped.type} by seat ${seat.seat} at ${whereBefore} took ${took}ms`
@@ -861,6 +880,48 @@ export class PodStore {
       return { record, result: undefined };
     }, { undoable: true });
     return snapshot!;
+  }
+
+  /**
+   * Plays the next budget of server moves, for a table the previous write handed back mid-answer.
+   *
+   * **This is the other half of `BOT_MOVES_PER_WRITE`.** The budget stops a write before the client
+   * gives up on it; without somebody to pick the table up again, it would also stop the game — a
+   * pod where nobody is on the clock, which is the exact shape of a dead table (`onBotStall`). So
+   * the socket handler calls this until it says there is nothing left to do, broadcasting each
+   * batch, and a seventeen-second freeze becomes a board that arrives in pieces.
+   *
+   * Returns `null` when it did **no work**, which is the termination condition and deliberately not
+   * "no bot is owed a move". A bot that cannot move leaves `stillOwed` true for ever — a refused
+   * move, a `botAction` with nothing to offer — and terminating on *owed* would spin on exactly the
+   * tables that are already broken. Terminating on *progress* stops either way, and `onBotStall`
+   * still says which it was.
+   *
+   * Peeked before it is written, so a table with nothing owed costs one Redis read and no version
+   * bump. The handler calls this after every action, and most actions leave nothing to continue.
+   *
+   * **Not undoable, on purpose.** `mutate` only writes `previous` on an undoable write, so the step
+   * the human's own action saved survives every continuation on top of it — and an undo therefore
+   * takes the table back to before that action with *all* of the server's answer removed, however
+   * many writes it arrived in. That is what the undo docblock below means by "a move against the
+   * server and the three answers it provoked are one thing that happened"; it now holds across
+   * writes rather than only within one.
+   */
+  async continueBots(code: string): Promise<PodSnapshot | null> {
+    const peek = await this.read(code);
+    if (!peek) return null;
+    const game = peek.record.game;
+    if (game === null || game.finished) return null;
+    const owed = seatsToAct(game)
+      .some((seat) => peek.record.seats.find((s) => s.seat === seat)?.bot === true);
+    if (!owed) return null;
+    const { snapshot, result } = await this.mutate(code, (record) => {
+      if (record.game === null || record.game.finished) return { record, result: 0 };
+      const bots = runBots(record, (reason) => this.onBotStall({ code, reason }), this.botMovesPerWrite);
+      if (record.game.finished) record.pod.status = 'finished';
+      return { record, result: bots.moves };
+    });
+    return result === 0 ? null : snapshot;
   }
 
   /**
@@ -936,6 +997,27 @@ const BOT_MOVE_GUARD = 500;
  */
 const SLOW_WRITE_MS = Number(process.env.SLOW_WRITE_MS ?? 4000);
 
+/**
+ * How many bot moves one write will play before handing the table back.
+ *
+ * `BOT_MOVE_GUARD` is the backstop against a loop; this is the budget that keeps a write inside
+ * the time a person is willing to wait. The two are different jobs and used to be one number, and
+ * one write played 431 moves in 17130ms against a client that gives up at 8000.
+ *
+ * **Twenty-five, from the measurement rather than from taste.** A census of 22 slow writes put the
+ * worst single `botAction` at 163ms, and deciding at 72% of the write (median) — so the cost is
+ * the bots' search, it is spread over many cheap decisions, and *no* decision is near the client's
+ * limit. 8000ms over 163ms is 49 moves; half of that leaves room for a decision worse than any yet
+ * seen. At the observed 45ms a move, 25 is closer to 1.1s.
+ *
+ * This is the number the earlier reading said would not help. D320 argued that because duration
+ * does not track move count, bounding the count could not bound the duration. That was the right
+ * conditional and the wrong branch: per-decision cost dominates the *variance*, which is why
+ * duration cannot be predicted from the count, but the count still bounds the duration because the
+ * per-decision cost has a ceiling — and 163ms is that ceiling, measured.
+ */
+export const BOT_MOVES_PER_WRITE = Number(process.env.BOT_MOVES_PER_WRITE ?? 25);
+
 /** Names for the seats the server plays. Plain and obviously not a person. */
 const BOT_NAMES = ['Opponent', 'Opponent II', 'Opponent III'];
 const DEFAULT_BOT_DECK = 'verdant-guard';
@@ -958,15 +1040,27 @@ const DEFAULT_BOT_DECK = 'verdant-guard';
  * move, and the difference between "a bot has no move" and "a bot's move was refused" is the whole
  * diagnosis. `stall` says which; running out of the guard is one of them.
  */
-function runBots(record: PodRecord, stall?: (reason: string) => void): BotRun {
+function runBots(
+  record: PodRecord,
+  stall?: (reason: string) => void,
+  budget: number = BOT_MOVE_GUARD,
+): BotRun {
   let thinkingMs = 0;
   let slowestMs = 0;
   let slowestWhere = 'nowhere';
-  const done = (moves: number): BotRun => ({ moves, thinkingMs, slowestMs, slowestWhere });
+  const stillOwed = (): boolean => {
+    const game = record.game;
+    return game !== null && !game.finished
+      && seatsToAct(game).some((seat) => record.seats.find((s) => s.seat === seat)?.bot === true);
+  };
+  const done = (moves: number): BotRun => ({
+    moves, thinkingMs, slowestMs, slowestWhere, stillOwed: stillOwed(),
+  });
   const botSeats = new Set(record.seats.filter((s) => s.bot).map((s) => s.seat));
   if (botSeats.size === 0) return done(0);
   const where = (game: GameState): string => `turn ${game.turn} ${game.step}`;
-  for (let guard = 0; guard < BOT_MOVE_GUARD; guard += 1) {
+  const stopAt = Math.min(budget, BOT_MOVE_GUARD);
+  for (let guard = 0; guard < stopAt; guard += 1) {
     const game = record.game;
     if (game === null || game.finished) return done(guard);
     // Any seat the engine is waiting on, not just the first: opening hands are settled
@@ -1007,15 +1101,21 @@ function runBots(record: PodRecord, stall?: (reason: string) => void): BotRun {
     }
   }
   /*
-    The guard ran out. Only a stall if a server seat is *still* owed a move, because then nothing
-    will call this again: the next call comes from a human action, and the engine is not waiting on
-    a human. Five hundred moves that end with the person on the clock is simply a long write.
+    The budget ran out. Only a stall if the **guard** ran out with a server seat still owed a move,
+    because then nothing will call this again: the next call would come from a human action, and the
+    engine is not waiting on a human.
+
+    Running out of the per-write *budget* is not that, and reporting it as one would cry wolf on
+    every long answer: `continueBots` picks the table straight back up, in its own write, and the
+    only difference the player sees is the board arriving in pieces rather than all at once after a
+    freeze. `stillOwed` on the result is how the caller knows to come back.
   */
   const game = record.game;
-  if (game !== null && !game.finished && seatsToAct(game).some((s) => botSeats.has(s))) {
+  if (stopAt >= BOT_MOVE_GUARD && game !== null && !game.finished
+    && seatsToAct(game).some((s) => botSeats.has(s))) {
     stall?.(`five hundred server moves in one write, still owed one at ${where(game)}`);
   }
-  return done(BOT_MOVE_GUARD);
+  return done(stopAt);
 }
 
 /**
@@ -1035,6 +1135,13 @@ interface BotRun {
   slowestMs: number;
   /** What that decision was and where in the game it was taken. */
   slowestWhere: string;
+  /**
+   * Whether a server seat is *still* waiting to move, which is what makes the budget safe.
+   *
+   * A write that stops on its budget with this true has handed back a table nobody is on the clock
+   * for, and that is a dead table unless somebody picks it up. `continueBots` is who does.
+   */
+  stillOwed: boolean;
 }
 
 /** Gives every bot seat a deck, so a solo table needs no second person to pick one. */

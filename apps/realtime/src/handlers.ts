@@ -24,6 +24,15 @@ import {
 } from './pod.js';
 import { TokenBucket, type RateLimitOptions, DEFAULT_RATE_LIMIT } from './ratelimit.js';
 
+/**
+ * How many times one action will come back for another batch of server moves.
+ *
+ * A backstop, not a budget: `continueBots` stops on its own as soon as a batch does no work, so
+ * this only matters if a pod somehow keeps making progress for ever. Twenty-five rounds of
+ * `BOT_MOVES_PER_WRITE` is more moves than any whole game has needed.
+ */
+const BOT_CONTINUATION_ROUNDS = 25;
+
 export type AckResult =
   | {
       ok: true; code?: string; seat?: number; seatToken?: string; playerId?: string;
@@ -281,6 +290,25 @@ export function registerHandlers(io: RealtimeServer, store: PodStore, log: Logge
       const snap = await store.applyAction(code, playerId, input.action, input.expectedVersion);
       ack?.({ ok: true, stateVersion: snap.stateVersion });
       await broadcast(code, snap);
+      /*
+        The server's own seats may still owe moves, because the write that applied this action
+        played only `BOT_MOVES_PER_WRITE` of them before handing the table back.
+
+        That is the point: the player's move is acknowledged and their board updated while the
+        opponents are still thinking, instead of one write playing four hundred bot moves in
+        seventeen seconds against a client that gives up at eight. Each further batch is its own
+        write and its own broadcast, so the board arrives in pieces rather than after a freeze.
+
+        `continueBots` returns null as soon as a batch does no work, which covers both "the
+        opponents are finished" and "a bot cannot move" — the second is a table that was already
+        broken, and `onBotStall` reports it. The round cap is a backstop for neither of those
+        happening, and the ack has already gone, so a slow tail costs the player nothing.
+      */
+      for (let round = 0; round < BOT_CONTINUATION_ROUNDS; round += 1) {
+        const next = await store.continueBots(code);
+        if (next === null) break;
+        await broadcast(code, next);
+      }
     });
 
     /*
