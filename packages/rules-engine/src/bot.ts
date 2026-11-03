@@ -1440,6 +1440,19 @@ const EXPOSED_POWER = 0;
  * scores those identically, and no weight repairs it because the fault is the shape. The weight here
  * is not swept either, because D273 found `castable` flat across a fourfold range and concluded this
  * evaluation is insensitive to its weights — one is the number that was measured.
+ *
+ * **And the pod win rate this default was waiting on has now been spent (#268, D294/D295):
+ * 1140-1140 of 2280 decided pods. Dead even, 0.00 sigma, with a 2 sigma bound of ±4.2 points.**
+ * So the term is +1.5 points in a duel and *exactly nothing* at four seats, and this zero is a
+ * measurement rather than the absence of one. D258's −3.8 stays retracted; nothing supports a
+ * negative sign either.
+ *
+ * Two things about how that reading went, because they bear on the next one. At the **planned**
+ * 1040-pod sample it read +4.2 points and a positive lean, which 1240 further pods erased — a
+ * sample sized against the instrument's floor is not sized against the effect. And the tell was
+ * **sigma, not the margin**: a real effect holds its margin while the floor narrows, so sigma
+ * climbs with sqrt(N); this one peaked at 1.54 around 1144 pods and fell away, which identified
+ * the null six hundred pods before the margin reached zero.
  */
 const CLOCK_RATE = 0;
 /**

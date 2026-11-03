@@ -18999,6 +18999,42 @@ retracted) and **indistinguishable from zero in a pod across 1664 paired pods**.
 answers differ, which is the thing D280's mechanism predicted, though "no pod effect" is a weaker
 claim than "negative pod effect" and nothing here supports the latter.
 
-The run is continuing to about 2267 pods, the sample at which a +4.2 point effect would have read
-2 sigma, so that the null can be quoted as a **bound** rather than as an absence. That figure will
-be appended here with the pods actually played.
+The run continued to about 2267 pods, the sample at which a +4.2 point effect would have read
+2 sigma, so that the null could be quoted as a **bound** rather than as an absence.
+
+### The answer, at the pre-stated sample: 1140-1140
+
+**Dead even. 2280 decided pods, a margin of zero, 0.00 sigma.** Seventeen disjoint chunks:
+
+| pods | 572 | 1040 | 1352 | 1664 | 1818 | 1974 | 2130 | **2280** |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| points | +4.8 | +4.2 | +3.3 | +0.7 | +0.6 | −0.1 | +1.0 | **0.00** |
+| sigma | 1.00 | 1.35 | 1.20 | 0.29 | 0.23 | −0.05 | 0.48 | **0.00** |
+
+So the result is not "too small to see". It is **zero, to the pod, across 2280 paired pods**, with a
+2 sigma bound of **±4.2 points**: whatever the clock does at four seats, it is smaller than that,
+and the best estimate of it is nothing at all.
+
+**`clockRate` stays at 0, and the question opened at D258 is closed.** The term is +1.5 points in a
+duel (D275/D276) and exactly nothing in a pod. D280's mechanism — that caution pays at two seats
+and not at four — survives as the explanation for *why* the duel and pod answers differ, but the
+pod half of it is "no effect" rather than "a penalty": D258's −3.8 was retracted at D281 and
+nothing since has supported a negative sign either.
+
+**Two methodological findings, which outlast the number.**
+
+The first is the one D294 and this entry exist as a pair to show: **a sample sized against the
+instrument's floor is not sized against the effect.** 1040 pods was chosen so the floor would narrow
+to ±5 points, and it did — but it reported +4.2 and a positive lean that 1240 more pods erased
+completely. The floor tells you what you may disbelieve; only an effect-size target tells you what
+you can detect. Every long reading planned from here gets a target.
+
+The second is a test worth reusing: **watch sigma, not the margin.** A real effect holds its point
+margin while the floor narrows, so sigma climbs monotonically with the square root of the sample.
+A null decays as 1/sqrt(N) while sigma wanders. Sigma here peaked at 1.54 around 1144 pods and fell
+away, which identified the null about six hundred pods before the margin reached zero — and would
+have identified it even if the run had been stopped early, had anyone been reading that column.
+
+One further chunk (seeds 7869+) was still running when this was written and is recorded in the
+ledger afterwards; at a margin of zero over 2280 pods it cannot change the conclusion, and 2280 is
+quoted because that is the sample the target named.
