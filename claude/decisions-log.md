@@ -19423,3 +19423,31 @@ investigation.
 
 A skip is deliberately not a failure and does not touch the exit code. What it is for is the ten
 seconds in which somebody decides whether a dropped number matters.
+
+## D303 — The player doc now carries the two rules that changed under it
+
+#271 is the reason this is a task rather than an afterthought: that entry found the player
+documentation telling players the opponent *cannot* hold mana up for a counterspell, 130 decisions
+after it learned to, and the document contradicted itself in a way a reader had no way to catch.
+Two rules changed in the engine today, both visible from a chair at the table, so the doc gets them
+before it drifts again.
+
+**CR 611.2c, in the Toxic Deluge row.** A sweeper's −X/−X reaches the creatures that were on the
+battlefield when it resolved and nothing that arrives later, so a 1/1 cast into a −2/−2 board is a
+live 1/1. That is a play decision, not a technicality — it is what makes rebuilding on the same turn
+an option — and the row now says so, with the contrast that makes it memorable: a static effect like
+a Glorious Anthem *does* reach whatever turns up next.
+
+**CR 800.4a, as a new row about a seat being knocked out of a pod.** Their whole side goes with them:
+battlefield, hand, library, graveyard, and any spell of theirs still on the stack. Two consequences
+worth a player's attention — a permanent of theirs that was doing something to *you* stops (their
+Chalice stops countering your one-drops), and a creature of yours they were holding with a Journey
+to Nowhere comes back, because the thing holding it has left. Nothing hits a graveyard on the way
+out, so nothing triggers. And in a duel none of it applies, because one player losing ends the game
+and the final board stays up.
+
+**Every claim in both rows is something implemented and tested in this branch rather than inferred
+from the rules.** The spell-off-the-stack, the returned creature and the duel case each have a test;
+the Chalice and the anthem follow from the permanent being gone. That distinction is the whole point
+of writing the doc from the engine rather than from the CR: the rules say what *should* happen, and a
+player at this table needs to know what *does*.
