@@ -5163,6 +5163,205 @@ describe('a land that becomes a creature, and a creature that changes colour', (
   });
 });
 
+/*
+  CR 704.5m's third half: an Aura attached to a host it may not **enchant**.
+
+  The engine checked two of the three — attached to nothing, and attached to something that has
+  left the battlefield — and both of those are a zone change, which is why they were the two it
+  had. This is the half where **nothing moves**: the Aura stays where it is, the host stays where
+  it is, and what changes is whether the host is still the kind of thing the Aura's text allows.
+
+  Two cards make it, and both are plays somebody would actually make rather than board states
+  assembled to prove a point:
+
+    - A **Mutavault** is a land until somebody pays {1}, and then it is a 2/2 creature until end of
+      turn. An Aura cast on the 2/2 is on a land by the next upkeep.
+    - An **Etched Champion** has protection from every colour while its controller has three
+      artifacts, and protection is the one targeting rule that is *also* an attachment rule
+      (CR 702.16e) — which its own docblock has claimed since it was written ("cannot be blocked
+      by, targeted by, dealt damage by, **enchanted by**"). Playing the third artifact is how you
+      shed an Aura, and the engine did not let you.
+
+  And the test that decides the *shape* of the fix rather than its presence: **hexproof granted
+  under an Aura does not shed it.** Hexproof and shroud restrict targeting and say nothing about an
+  attachment, so a Blossoming Defense cannot peel a Pacifism off your own creature. That one fails
+  on the obvious implementation — re-ask `isLegalTarget` — which is why it is here beside the three
+  that pass either way. See `isLegalAttachment`.
+*/
+describe('an Aura whose host stops being something it may enchant (CR 704.5m)', () => {
+  /** Seat 1 in their own main phase, with the mana for a Pacifism and a board to point it at. */
+  const theirTurn = (setup: Parameters<typeof arena>[0]): GameState =>
+    advanceTo(arena({ turn: 4, firstSeat: 1, ...setup }), 'precombat-main');
+
+  /** Casts the Aura in seat 1's hand at the named permanent, and lets it resolve. */
+  const enchant = (s: GameState, name: string, host: string): GameState => {
+    const withMana = tapAllLands(s, 1);
+    return drain(passBoth(apply(withMana, {
+      type: 'auto:cast', by: 1, card: find(withMana, 1, 'hand', name), targets: [{ kind: 'card', id: host }],
+    })));
+  };
+
+  it('a Pacifism on an animated Mutavault goes to the graveyard when the animation ends', () => {
+    let s = theirTurn({
+      decks: { 0: 'ember-rush', 1: 'skyward-writ' },
+      hands: { 1: ['Pacifism'] },
+      battlefield: { 0: ['Mutavault', 'Mountain'], 1: ['Plains', 'Plains'] },
+    });
+    const vault = find(s, 0, 'battlefield', 'Mutavault');
+    /*
+      Animated on the *other* seat's turn, which is legal and is the only way this board can be
+      built out of real actions: the animation lasts until end of turn and a Pacifism is sorcery
+      speed, so an animation on seat 0's own turn is gone before seat 1 could ever cast at it.
+      Seat 1 passes, seat 0 activates in response, and the ability resolving hands priority back.
+    */
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    s = apply(s, { type: 'auto:activate', by: 0, card: vault, abilityIndex: 1 });
+    s = drain(passBoth(s));
+    expect(characteristicsOf(s, s.instances[vault]!).isCreature).toBe(true);
+
+    s = enchant(s, 'Pacifism', vault);
+    const aura = find(s, 1, 'battlefield', 'Pacifism');
+    expect(s.instances[aura]!.attachedTo).toBe(vault);
+    expect(characteristicsOf(s, s.instances[vault]!).cantAttack).toBe(true);
+
+    const later = nextTurn(s);
+    const ch = characteristicsOf(later, later.instances[vault]!);
+    // The land stays, and stops being pacified: the Aura is what leaves.
+    expect(ch.isCreature).toBe(false);
+    expect(ch.isLand).toBe(true);
+    expect(later.instances[vault]!.zone).toBe('battlefield');
+    expect(namesIn(later, 1, 'graveyard')).toContain('Pacifism');
+    expect(later.instances[aura]!.attachedTo).toBeNull();
+    /*
+      And the effect goes with it, which is the half a zone check alone would have missed.
+
+      `relocate` clears `attachedTo` and leaves `effects` untouched; that is invisible while the
+      only way an Aura leaves is its host leaving first, because an effect scoped to a card that is
+      gone applies to nothing. Here the host is still standing there, so without
+      `removeEffectsFrom` the Pacifism would sit in the graveyard and keep pacifying.
+    */
+    expect(ch.cantAttack).toBe(false);
+    expect(later.effects.some((effect) => effect.source === aura)).toBe(false);
+  });
+
+  it('a bestowed Boon Satyr stands up as a 4/2 instead, and the land is a land again', () => {
+    /*
+      The same rule read the other way, and the reason this one is worth a player knowing: bestow
+      does not go to the graveyard when its host stops being legal, it stops being an Aura and
+      becomes the creature (CR 702.103c). So the engine was not only breaking a rule, it was
+      keeping a 4/2 off its controller's board — and handing a *land* +4/+2, which is what the
+      probe actually read before the fix: `vault p/t: 4 2` on a permanent that is not a creature.
+
+      Seat 0's turn here, because a bestowed Boon Satyr has flash: it is cast in response to the
+      animation rather than needing a main phase of its own, which is the printed card and how the
+      keyword is played.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'verdant-guard' },
+      hands: { 1: ['Boon Satyr'] },
+      battlefield: {
+        0: ['Mutavault', 'Mountain'],
+        1: ['Forest', 'Forest', 'Forest', 'Forest', 'Forest'],
+      },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    const vault = find(s, 0, 'battlefield', 'Mutavault');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Mountain'), abilityIndex: 0 });
+    s = apply(s, { type: 'auto:activate', by: 0, card: vault, abilityIndex: 1 });
+    s = drain(passBoth(s));
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = tapAllLands(s, 1);
+    const satyr = find(s, 1, 'hand', 'Boon Satyr');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: satyr, bestowed: true, targets: [{ kind: 'card', id: vault }],
+    })));
+    expect(s.instances[satyr]!.bestowed).toBe(true);
+    const enchanted = characteristicsOf(s, s.instances[vault]!);
+    expect([enchanted.power, enchanted.toughness]).toEqual([6, 4]);
+
+    const later = nextTurn(s);
+    // It is a creature on its controller's battlefield, attached to nothing, and no longer an Aura.
+    expect(later.instances[satyr]!.zone).toBe('battlefield');
+    expect(later.instances[satyr]!.zoneSeat).toBe(1);
+    expect(later.instances[satyr]!.attachedTo).toBeNull();
+    expect(later.instances[satyr]!.bestowed).toBeUndefined();
+    const stood = characteristicsOf(later, later.instances[satyr]!);
+    expect(stood.isCreature).toBe(true);
+    expect([stood.power, stood.toughness]).toEqual([4, 2]);
+    // And the land has nothing on it: a 0/0 that is not a creature, rather than a 4/2 that is not.
+    const after = characteristicsOf(later, later.instances[vault]!);
+    expect(after.isCreature).toBe(false);
+    expect([after.power, after.toughness]).toEqual([0, 0]);
+  });
+
+  it('turning on metalcraft sheds the Aura, because protection is an attachment rule too', () => {
+    /*
+      Two artifacts on the board and the third in hand, which is the whole play: the Champion is a
+      legal Pacifism target at two and illegally enchanted at three. CR 702.16e is explicit that
+      protection is the exception to "targeting rules do not apply to attachments", so this is the
+      one targeting keyword `isLegalAttachment` keeps.
+    */
+    let s = theirTurn({
+      decks: { 0: 'forge-alliance', 1: 'skyward-writ' },
+      hands: { 0: ['Lotus Petal'], 1: ['Pacifism'] },
+      battlefield: { 0: ['Etched Champion', 'Bonesplitter', 'Plains'], 1: ['Plains', 'Plains'] },
+    });
+    const champion = find(s, 0, 'battlefield', 'Etched Champion');
+    expect(characteristicsOf(s, s.instances[champion]!).protectionFrom).toEqual([]);
+
+    s = enchant(s, 'Pacifism', champion);
+    const aura = find(s, 1, 'battlefield', 'Pacifism');
+    expect(s.instances[aura]!.attachedTo).toBe(champion);
+    expect(characteristicsOf(s, s.instances[champion]!).cantAttack).toBe(true);
+
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lotus Petal'),
+    })));
+    const ch = characteristicsOf(s, s.instances[champion]!);
+    // The protection is really on (the test would pass for the wrong reason if it were not).
+    expect(ch.protectionFrom).toContain('W');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Pacifism');
+    expect(ch.cantAttack).toBe(false);
+  });
+
+  it('but hexproof granted under an Aura does not shed it, which decides the shape of the rule', () => {
+    /*
+      The discriminating test, and the only one of the four that fails on the obvious fix.
+
+      Re-asking `isLegalTarget` would throw this Pacifism away, because hexproof refuses a target
+      an opponent chooses. But CR 704.5m is about what the Aura may be **attached** to, and
+      hexproof says nothing about that — so a Blossoming Defense protects your creature from the
+      next removal spell and does nothing at all about the Aura already on it. A player who tried
+      it and watched the Pacifism fall off would have learned a rule that is not a rule.
+    */
+    let s = theirTurn({
+      decks: { 0: 'verdant-guard', 1: 'skyward-writ' },
+      hands: { 0: ['Blossoming Defense'], 1: ['Pacifism'] },
+      battlefield: { 0: ['Grizzly Bears', 'Forest'], 1: ['Plains', 'Plains'] },
+    });
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = enchant(s, 'Pacifism', bears);
+    const aura = find(s, 1, 'battlefield', 'Pacifism');
+    expect(s.instances[aura]!.attachedTo).toBe(bears);
+
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    s = tapAllLands(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Blossoming Defense'),
+      targets: [{ kind: 'card', id: bears }],
+    })));
+    const ch = characteristicsOf(s, s.instances[bears]!);
+    // The hexproof is really there, and the Aura is still on it, still doing its job.
+    expect(ch.keywords.has('hexproof')).toBe(true);
+    expect(s.instances[aura]!.zone).toBe('battlefield');
+    expect(s.instances[aura]!.attachedTo).toBe(bears);
+    expect(ch.cantAttack).toBe(true);
+    expect(namesIn(s, 1, 'graveyard')).not.toContain('Pacifism');
+  });
+});
+
 describe('flashback: casting a spell out of the graveyard', () => {
   /*
     The second zone a spell is ever cast *from* in this engine. The command zone was the first, and

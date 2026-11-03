@@ -63,8 +63,8 @@ import {
   targetCount,
 } from './scriptTypes.js';
 import {
-  checkTargets, hasAnyLegalTargets, legalTargets, liveTargets, stillHasLegalTarget, stillTheObject,
-  targetSeqsFor,
+  BESTOW_TARGET, checkTargets, hasAnyLegalTargets, isLegalAttachment, legalTargets, liveTargets,
+  stillHasLegalTarget, stillTheObject, targetSeqsFor,
 } from './targeting.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, NO_PRIORITY_STEPS, STEPS, STEP_LABELS, targetKey,
@@ -1404,7 +1404,7 @@ function pushAbility(
  * | a player who tried to draw from an empty library (CR 704.5b) | here, off `drewFromEmpty` |
  * | `+1/+1` and `-1/-1` counters cancelling (CR 704.5q) | here, first in the per-permanent pass (D287) |
  * | a Saga with every chapter spent (CR 714.4) | here |
- * | an Aura attached to nothing or to something gone (CR 704.5m) | here |
+ * | an Aura attached to nothing, to something gone, or to a host it may not enchant (CR 704.5m) | here, against the Aura's own `enchant` spec — see `isLegalAttachment` |
  * | an Equipment attached to an illegal permanent (CR 301.5c) | unattached rather than binned, which is the difference between the two |
  * | a planeswalker with no loyalty (CR 704.5i) | here |
  * | a creature with 0 toughness or lethal damage (CR 704.5a/g) | here, with regeneration and indestructible |
@@ -1509,14 +1509,45 @@ export function stateBasedActions(state: GameState): GameState {
           continue;
         }
 
-        // CR 704.5m: an Aura attached to nothing, or to something gone, is put into its owner's
-        // graveyard. Both halves are needed, and the first is the one that bites: `relocate`
-        // detaches an Aura when its host leaves the battlefield, so by the time this runs the Aura
-        // is attached to *nothing* rather than to something illegal — checked for a gone host
-        // alone, a Pacifism outlives the creature it was on and sits on the battlefield forever.
+        /*
+          CR 704.5m: an Aura attached to nothing, to something gone, or to something it may not
+          legally enchant is put into its owner's graveyard.
+
+          All three halves are needed and each one was missing in turn. The first is the one that
+          bites most often: `relocate` detaches an Aura when its host leaves the battlefield, so by
+          the time this runs the Aura is attached to *nothing* rather than to something illegal —
+          checked for a gone host alone, a Pacifism outlives the creature it was on and sits on the
+          battlefield forever.
+
+          The third is **illegally attached while nothing moved at all**, which this engine could
+          produce with two cards and did (#284). Animate a Mutavault, let the other seat enchant
+          the 2/2, and at end of turn the animation wears off: the Aura is now on a land, which
+          "enchant creature" does not allow. Nothing changed zone, so neither of the other two
+          halves sees it, and the consequences ran both ways — a Pacifism answered the Mutavault
+          for the rest of the game instead of for one turn, and a bestowed Boon Satyr stayed a
+          non-creature Aura handing a *land* +4/+2 instead of standing up as the 4/2 its controller
+          is owed.
+
+          Asked of the Aura's own `enchant` restriction rather than of a hardcoded "is it still a
+          creature", because the restriction is printed on the card and the engine already has it:
+          `script.aura.target` is the spec the spell was cast with, and `BESTOW_TARGET` is the one
+          a bestowed permanent was. See `isLegalAttachment` for why that is not the same question
+          as `isLegalTarget` — hexproof gained under a Pacifism does not shed it, and protection
+          does.
+
+          An Aura with no spec to ask is left alone rather than binned. There is none in the pool;
+          the fallback is which way to fail for a card added later, and keeping a permanent that
+          may be fine beats destroying one that was.
+        */
         if (hasSubtype(ch.typeLine, 'aura')) {
           const host = inst.attachedTo === null ? undefined : next.instances[inst.attachedTo];
-          if (host === undefined || host.zone !== 'battlefield') {
+          const enchant = inst.bestowed === true
+            ? BESTOW_TARGET
+            : scriptFor(next.cardDefs[inst.defKey]?.name)?.aura?.target;
+          const illegalHost = host !== undefined && host.zone === 'battlefield'
+            && enchant !== undefined
+            && !isLegalAttachment(next, enchant, host.id, inst.zoneSeat, inst.id);
+          if (host === undefined || host.zone !== 'battlefield' || illegalHost) {
             /*
               Unless it was **bestowed**, in which case it stops being an Aura and becomes a
               creature where it stands (CR 702.103c).
@@ -1539,7 +1570,17 @@ export function stateBasedActions(state: GameState): GameState {
               changed = true;
               continue;
             }
-            next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+            /*
+              And the bonus goes with it, for the same reason the bestow branch above and the
+              Equipment branch below say so — but here it took #284 to matter.
+
+              `relocate` clears `attachedTo` on the way out and leaves `effects` alone, which is
+              invisible as long as the only way an Aura leaves is its host leaving first: an effect
+              scoped to a card that is gone applies to nothing. An Aura binned off an **illegal
+              host** is the case where the host is still standing there, so a Pacifism's "can't
+              attack" would go to the graveyard and keep pacifying.
+            */
+            next = removeEffectsFrom(relocate(next, inst, 'graveyard', inst.owner, 'bottom'), inst.id);
             changed = true;
             continue;
           }

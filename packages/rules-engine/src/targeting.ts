@@ -56,6 +56,41 @@ const GRAVEYARD_KINDS: Readonly<Record<string, string | null | undefined>> = {
 export function isLegalTarget(
   state: GameState, spec: TargetSpec, candidate: Target, controller: SeatIndex, source?: string,
 ): boolean {
+  return satisfies(state, spec, candidate, controller, source, false);
+}
+
+/**
+ * Whether an Aura may legally *stay* attached to a permanent, which is not the same question as
+ * whether a spell may legally point at it (CR 704.5m).
+ *
+ * The difference is two keywords wide and the whole reason this exists beside `isLegalTarget`.
+ *
+ *  - **Hexproof and shroud do not apply.** They are restrictions on *targeting*, and an attachment
+ *    is not a target — a creature that gains hexproof while a Pacifism is on it keeps the
+ *    Pacifism, and asking `isLegalTarget` would throw the Aura away.
+ *  - **Protection does apply**, and explicitly: CR 702.16e says an Aura illegally attached because
+ *    of protection is put into its owner's graveyard. So the one check that *is* about who may
+ *    point at what stays, because for protection the rules say it twice.
+ *
+ * What is left is the **enchant** restriction (CR 702.5b) — the spec's `kind` and its `filter` —
+ * which is what the Aura's own text says it may be attached to, and which an Aura can stop meeting
+ * without going anywhere: animate a Mutavault, enchant it, and at end of turn the land is not a
+ * creature any more. `source` is the Aura, for protection's sake.
+ */
+export function isLegalAttachment(
+  state: GameState, spec: TargetSpec, host: string, controller: SeatIndex, source?: string,
+): boolean {
+  return satisfies(state, spec, { kind: 'card', id: host }, controller, source, true);
+}
+
+/**
+ * The body both of the above share. `forAttachment` skips the two untargetable keywords and
+ * nothing else: see `isLegalAttachment` for why that is the entire difference.
+ */
+function satisfies(
+  state: GameState, spec: TargetSpec, candidate: Target, controller: SeatIndex,
+  source: string | undefined, forAttachment: boolean,
+): boolean {
   if (candidate.kind === 'player') {
     if (spec.kind !== 'player' && spec.kind !== 'any') return false;
     const seat = state.seats[candidate.seat];
@@ -131,9 +166,10 @@ export function isLegalTarget(
   const isPlaneswalker = hasType(ch.typeLine, 'planeswalker');
   if (spec.kind === 'creature' && !ch.isCreature) return false;
   if (spec.kind === 'any' && !ch.isCreature && !isPlaneswalker) return false;
-  // Hexproof stops opponents targeting it; shroud stops everyone.
-  if (ch.keywords.has('shroud')) return false;
-  if (ch.keywords.has('hexproof') && inst.zoneSeat !== controller) return false;
+  // Hexproof stops opponents targeting it; shroud stops everyone. Neither says anything about an
+  // Aura already attached, which is what `forAttachment` is for.
+  if (!forAttachment && ch.keywords.has('shroud')) return false;
+  if (!forAttachment && ch.keywords.has('hexproof') && inst.zoneSeat !== controller) return false;
   // And protection stops anything of that colour, whoever controls it (CR 702.16c) — which is the
   // difference from hexproof: a white creature with protection from black cannot be Doom Bladed by
   // its own controller either, and a black creature with protection from black cannot target it.

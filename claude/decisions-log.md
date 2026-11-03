@@ -19493,3 +19493,46 @@ the types will say so.**
 **The lesson is about the first entry rather than the second.** D301 named the limitation, estimated
 it as expensive, and moved on — and the estimate was wrong by two orders of magnitude. Naming a
 known gap is worth much less than spending five minutes finding out whether the pool can reach it.
+
+## D305 — An Aura stayed on a land that had stopped being a creature (CR 704.5m)
+
+The state-based action for Auras checked two things: attached to nothing, and attached to something
+that has left the battlefield. CR 704.5m names a third — attached to an **illegal object** — and the
+two the engine had are both zone changes, which is why they were the two it had. **The missing half
+is the one where nothing moves:** the Aura stays, the host stays, and what changes is whether the
+host is still the kind of thing the Aura's text allows.
+
+**Two cards reach it, and both are plays somebody would make.** A Mutavault is a land until somebody
+pays {1} and a 2/2 creature until end of turn, so an Aura cast on the 2/2 is on a land by the next
+upkeep. An Etched Champion has protection from every colour while its controller has three artifacts,
+and playing the third artifact is how you shed an Aura — which the card's own docblock has claimed
+since it was written ("cannot be blocked by, targeted by, dealt damage by, **enchanted by**") while
+the engine enforced three of those four.
+
+**The consequences ran both ways, which is what makes it worth a fix rather than a note.** A Pacifism
+answered a Mutavault for the rest of the game instead of for one turn — strictly better than printed,
+the same shape as D304's blink. And a bestowed Boon Satyr was *worse* than printed: it should stop
+being an Aura and stand up as the 4/2 (CR 702.103c), and instead it stayed a non-creature Aura
+handing a **land** +4/+2. The probe read `vault p/t: 4 2` on a permanent that is not a creature,
+which is the kind of state nothing else in the engine would ever have printed.
+
+**The fix asks the Aura's own text, not a hardcoded question.** `script.aura.target` is the spec the
+spell was cast with and `BESTOW_TARGET` is the one a bestowed permanent was, so the check is "is the
+host still something this may enchant" rather than "is the host still a creature" — the difference
+being that a card added later with a narrower `enchant` line gets the rule for free. The Equipment
+branch twelve lines below had been asking `characteristicsOf(host).isCreature` the whole time, and
+that asymmetry between two branches written together is what made this worth looking at at all.
+
+**The shape of the predicate is the decision, and it is two keywords wide.** An attachment is not a
+target, so `isLegalTarget` is the wrong question: hexproof and shroud restrict *targeting* and say
+nothing about an Aura already attached, while protection is explicitly also an attachment rule
+(CR 702.16e). So `isLegalAttachment` is `isLegalTarget` minus exactly those two checks, and the test
+that pins it is the one where a Blossoming Defense gives your own enchanted creature hexproof and the
+Pacifism **stays**. Verified by flipping the flag on purpose: three of the four tests pass either way
+and that one fails, which is the only reason it is in the file.
+
+**And the effect had to go with the Aura.** `relocate` clears `attachedTo` and leaves `effects`
+alone, which is invisible while the only way an Aura leaves is its host leaving first — an effect
+scoped to a card that is gone applies to nothing. Binned off a *living* illegal host, a Pacifism
+would have sat in the graveyard and gone on pacifying. That is the same latent leak the bestow and
+Equipment branches each call out in their own comments; this is the first case that could feel it.

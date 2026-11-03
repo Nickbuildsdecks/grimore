@@ -8409,6 +8409,31 @@ and nothing in the types will say so.**
 The lesson is about the first entry. Naming a known gap and estimating it as expensive is worth much
 less than spending five minutes finding out whether the pool can reach it.
 
+### An Aura stayed on a land that had stopped being a creature (#284, D305)
+
+CR 704.5m bins an Aura attached to nothing, to something gone, **or to an illegal object**. The
+engine had the first two, and both of those are a zone change — which is why they were the two it
+had. The missing half is the one where nothing moves: the Aura stays, the host stays, and what
+changes is whether the host is still the kind of thing the Aura's text allows.
+
+Two cards reach it and both are real plays. A Mutavault is a land until somebody pays {1} and a 2/2
+until end of turn, so an Aura cast on the 2/2 is on a land by the next upkeep. An Etched Champion has
+protection from every colour while its controller has three artifacts, so playing the third artifact
+is how you shed an Aura — a rule the Champion's own docblock has claimed since it was written while
+the engine enforced three of its four clauses.
+
+The consequences ran both ways. A Pacifism answered a Mutavault for the rest of the game instead of
+for one turn, which is the same shape as D304's blink: strictly better than printed. And a bestowed
+Boon Satyr was *worse* than printed — it should stop being an Aura and stand up as the 4/2
+(CR 702.103c), and instead it stayed a non-creature Aura handing a **land** +4/+2.
+
+The check asks the Aura's own `enchant` spec rather than "is it still a creature", so a card added
+later with a narrower line gets the rule for free. And the shape of the predicate is the decision:
+an attachment is not a target, so hexproof and shroud do not apply while protection does
+(CR 702.16e). `isLegalAttachment` is `isLegalTarget` minus exactly those two checks, and the test
+that pins it is the one where a Blossoming Defense gives your own enchanted creature hexproof and the
+Pacifism stays — three of the four tests pass on the naive fix and that one does not.
+
 ## Next
 
 1. More scripts. The vocabulary in `effects.ts` covers far more than the cards currently using
