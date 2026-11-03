@@ -167,6 +167,22 @@ export interface PodStoreOptions {
    * argument as D282, one layer up from the engine.
    */
   onNoProgress?: (info: { code: string; reason: string }) => void;
+  /**
+   * Called when one write took longer than a person is willing to wait for it.
+   *
+   * The client gives a move **eight seconds** to be acknowledged and then shows "the table did
+   * not answer" (`emit`, in the web app). Three browser runs hit that on a Pass, a Block and a
+   * damage Order, and the move may have been applied each time — the page simply stopped waiting.
+   * Nothing on the server said a write was slow, so the only evidence was a red banner on the
+   * player's screen blaming the table.
+   *
+   * The cause is not a mystery so much as unmeasured: `runBots` plays up to five hundred bot
+   * moves inside the same write, each one a lookahead search, and its own docblock calls that
+   * "simply a long write". So the report carries the duration **and** the number of bot moves,
+   * because a write that spent nine seconds on four hundred moves and one that spent nine seconds
+   * on three are different faults with different answers.
+   */
+  onSlowWrite?: (info: { code: string; reason: string }) => void;
 }
 
 export const SEAT_GRACE_MS = 120_000;
@@ -326,6 +342,7 @@ export class PodStore {
 
   private readonly onBotStall: (info: { code: string; reason: string }) => void;
   private readonly onNoProgress: (info: { code: string; reason: string }) => void;
+  private readonly onSlowWrite: (info: { code: string; reason: string }) => void;
 
   constructor(
     private readonly redis: RedisClientType,
@@ -337,6 +354,7 @@ export class PodStore {
     this.now = opts.now ?? Date.now;
     this.onBotStall = opts.onBotStall ?? ((): void => {});
     this.onNoProgress = opts.onNoProgress ?? ((): void => {});
+    this.onSlowWrite = opts.onSlowWrite ?? ((): void => {});
   }
 
   // -------------------------------------------------------------------------
@@ -784,6 +802,7 @@ export class PodStore {
       // `onNoProgress`, and `runBots`, which has made the same comparison since it was written.
       const versionBefore = record.game!.stateVersion;
       const whereBefore = `turn ${record.game!.turn} ${record.game!.step}`;
+      const startedAt = Date.now();
       try {
         record.game = engineApply(record.game!, stamped, {
           isHost, ...(Object.keys(decks).length === 0 ? {} : { decks }),
@@ -803,7 +822,23 @@ export class PodStore {
           reason: `${stamped.type} by seat ${seat.seat} at ${whereBefore} changed nothing`,
         });
       }
-      runBots(record, (reason) => this.onBotStall({ code, reason }));
+      const botMoves = runBots(record, (reason) => this.onBotStall({ code, reason }));
+      /*
+        Half the client's patience, so a write is reported while it is still merely slow.
+
+        Eight seconds is where the page gives up; four is where it is worth knowing, because a
+        write drifting towards the limit is the warning and a write past it is already a red
+        banner the player has seen.
+      */
+      const took = Date.now() - startedAt;
+      if (took >= SLOW_WRITE_MS) {
+        this.onSlowWrite({
+          code,
+          reason: `${stamped.type} by seat ${seat.seat} at ${whereBefore} took ${took}ms`
+            + ` and ${botMoves} server move${botMoves === 1 ? '' : 's'}`
+            + ` (the client gives up at 8000ms)`,
+        });
+      }
       if (record.game.finished) record.pod.status = 'finished';
       else if (record.pod.status === 'finished') record.pod.status = 'in_progress';
       return { record, result: undefined };
@@ -862,6 +897,17 @@ export class PodStore {
   }
 }
 
+/**
+ * How many moves the server will make for its own seats inside one write.
+ *
+ * Named rather than inlined because the slow-write report counts against it: a write that made
+ * four hundred bot moves and one that made three are both "slow" and want different answers.
+ */
+const BOT_MOVE_GUARD = 500;
+
+/** Where a write stops being quick and starts being worth a line. See `onSlowWrite`. */
+const SLOW_WRITE_MS = 4000;
+
 /** Names for the seats the server plays. Plain and obviously not a person. */
 const BOT_NAMES = ['Opponent', 'Opponent II', 'Opponent III'];
 const DEFAULT_BOT_DECK = 'verdant-guard';
@@ -884,36 +930,36 @@ const DEFAULT_BOT_DECK = 'verdant-guard';
  * move, and the difference between "a bot has no move" and "a bot's move was refused" is the whole
  * diagnosis. `stall` says which; running out of the guard is one of them.
  */
-function runBots(record: PodRecord, stall?: (reason: string) => void): void {
+function runBots(record: PodRecord, stall?: (reason: string) => void): number {
   const botSeats = new Set(record.seats.filter((s) => s.bot).map((s) => s.seat));
-  if (botSeats.size === 0) return;
+  if (botSeats.size === 0) return 0;
   const where = (game: GameState): string => `turn ${game.turn} ${game.step}`;
-  for (let guard = 0; guard < 500; guard += 1) {
+  for (let guard = 0; guard < BOT_MOVE_GUARD; guard += 1) {
     const game = record.game;
-    if (game === null || game.finished) return;
+    if (game === null || game.finished) return guard;
     // Any seat the engine is waiting on, not just the first: opening hands are settled
     // simultaneously, so a bot whose human opponent is still deciding is behind them in the queue
     // and would never be reached.
     const seat = seatsToAct(game).find((s) => botSeats.has(s));
     // Not a stall: the engine is waiting on a person, which is most of a game.
-    if (seat === undefined) return;
+    if (seat === undefined) return guard;
     const action = botAction(game, seat);
     if (action === null) {
       stall?.(`seat ${seat} is owed a move at ${where(game)} and botAction offered none`);
-      return;
+      return guard;
     }
     try {
       const next = engineApply(game, action, { isHost: false });
       // No progress means a move the engine accepted but that changed nothing, which would spin.
       if (next.stateVersion === game.stateVersion) {
         stall?.(`${action.type} by seat ${seat} at ${where(game)} changed nothing`);
-        return;
+        return guard;
       }
       record.game = next;
     } catch (err) {
       const why = err instanceof Error ? err.message : String(err);
       stall?.(`${action.type} by seat ${seat} at ${where(game)} was refused: ${why}`);
-      return;
+      return guard;
     }
   }
   /*
@@ -925,6 +971,7 @@ function runBots(record: PodRecord, stall?: (reason: string) => void): void {
   if (game !== null && !game.finished && seatsToAct(game).some((s) => botSeats.has(s))) {
     stall?.(`five hundred server moves in one write, still owed one at ${where(game)}`);
   }
+  return BOT_MOVE_GUARD;
 }
 
 /** Gives every bot seat a deck, so a solo table needs no second person to pick one. */

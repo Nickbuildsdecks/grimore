@@ -1955,8 +1955,29 @@ const ARTIFACT_LIST = [
       }
     }
 
-    const refusal = (await has(page, 'table-error')) ? await text(page, 'table-error') : '';
-    check('the engine never refused anything the table offered', refusal === '', refusal);
+    /*
+      The error banner, split into the two very different things it carries.
+
+      This was one check, and it called everything in that banner an engine refusal. Three runs
+      failed it with `Pass: the table did not answer`, `Block: the table did not answer` and
+      `Order: the table did not answer` — and that sentence is not the engine's. It is the
+      **client's own eight-second ack timeout** (`emit` in `apps/web/src/lib/table.ts`): the move
+      was sent, the server did not answer inside eight seconds, and the page gave up. The move may
+      well have been applied.
+
+      Those want opposite fixes. An engine refusal means the table offered something the rules do
+      not allow, which is a bug in what the bar put on screen. A timeout means the write took too
+      long — `runBots` runs up to five hundred bot moves inside one write, and its own docblock
+      calls that "simply a long write" — which is a bug in how long a person is asked to wait, or
+      in the waiting. Reporting both under "the engine never refused anything" is the same mistake
+      as a log line that cannot tell a slow game from a stuck one (D314).
+    */
+    const banner = (await has(page, 'table-error')) ? await text(page, 'table-error') : '';
+    const clientGaveUp = /the table did not answer|not connected/i.test(banner);
+    check('the engine never refused anything the table offered',
+      banner === '' || clientGaveUp, banner);
+    check('and the table answered every move inside the client\u2019s eight-second wait',
+      !clientGaveUp, banner);
     check('no uncaught errors in the browser', pageErrors.length === 0, pageErrors.join(' | '));
     check('no React warnings in the browser', reactWarnings.length === 0, reactWarnings.join(' | '));
 

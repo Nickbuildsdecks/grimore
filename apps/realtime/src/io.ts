@@ -109,6 +109,8 @@ export async function createRealtime(opts: RealtimeOptions): Promise<Realtime> {
     // The same thing said about a person's move. A table where pressing the only button on offer
     // buys nothing is a table that has stopped, and until now the server said nothing about it.
     onNoProgress: ({ code, reason }) => log.warn({ pod: code, reason }, 'a player move changed nothing'),
+    // And a write slow enough that the player's page may stop waiting for it.
+    onSlowWrite: ({ code, reason }) => log.warn({ pod: code, reason }, 'a slow write'),
   });
   const dispose = registerHandlers(io, store, log, { ...(opts.rateLimit ? { rateLimit: opts.rateLimit } : {}) });
 
