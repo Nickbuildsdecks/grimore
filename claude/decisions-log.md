@@ -27374,3 +27374,63 @@ compile table and both directions of the Aura bonus.
 Legal-only coverage 16,262 of 56,421 lines (28.8%), **7,284 cards with a script** (7,097 → 7,284).
 The jump is mostly layer three: the Aura requirement was blocking every Aura whose second line was
 anything but a bonus, not just this family. GATE OK, 1,964 engine tests.
+
+## D438 — The name a card calls itself by, when the card has a title
+
+Oracle text names a legendary permanent in full the first time and by its **short name** after.
+*Alesha, Who Laughs at Fate* prints "Whenever Alesha attacks, put a +1/+1 counter on it"; *Bilbo,
+Retired Burglar* prints "Whenever Bilbo deals combat damage to a player". `selfRef` matched the full
+name and the 2024 "this creature" retemplate (D426) and nothing between, so both lines were lines
+nothing could read.
+
+**924 legal cards use their own short name in their own text.** Reading it finishes 71 lines on 70
+cards, 11 of which had nothing else left unread — measured by rewriting each card's short name to
+its full name and re-compiling, before touching the compiler.
+
+### Why this was worth doing before the next trigger family
+
+The increment queued next was "whenever a creature you control deals combat damage to a player" — 33
+legal lines and 9 cards. This one is a single line in `selfRef`, and `selfRef` is read by about
+twenty readers: the entry trigger, the attack trigger, the tapped trigger, "enters tapped",
+"enters with counters", the activated-ability object, the counter readers. One change, every reader.
+It was found while measuring the combat-damage family: the probe's self-name bucket held 476 unread
+lines, which is far too many for a prologue the compiler claimed to read, and the reason was the
+name.
+
+### The comma is not always a title
+
+`shortName` takes the text before the first `", "`, and the **space is the whole guard**. Three
+printed names carry a comma that is a thousands separator: *70,000 Light-Years from Home*,
+*Borrowing 100,000 Arrows* and *Guan Yu's 1,000-Li March*. Two of those three have letters before
+the comma, so "does it contain a letter" does not tell the two kinds of comma apart — it was in the
+first version and the break run showed why it had to go: with the space guard broken, the letter
+check still refused "70", so no test moved. Two statements of one rule, and no single break could
+reach either (the same trap D433 named). The letter check is gone; no name in 33,847 with ", " in it
+has a part before the comma without a letter, so it bought nothing.
+
+### The imprecision that is documented rather than fixed
+
+Every reader in the module matches case-insensitively, and JavaScript cannot switch that off for
+part of a pattern — `(?-i:…)` is not in V8. So the alias also matches its own short name spelled as
+an ordinary lowercase word. Scanning all 33,847 cards for an alias occurrence spelled differently
+from the name found **exactly two**: *Eleven, the Mage* ("your maximum hand size is eleven") and
+*Storm, Force of Nature* ("has storm"). Neither clause is one any reader matches, so neither is
+misread today — and both are now pinned by a test whose job is to **fail the day the collision
+becomes reachable**, which is the guard available when the language will not give the precise one.
+
+### Verified
+
+Three runtime tests, every fixture a printed corpus row driven through `customDeck` (D430): Alesha
+takes the +1/+1 counter when Alesha attacks; *Alirios, Enraptured* arrives tapped off a line that is
+nothing but its short name and three words; *Ant-Man, Scott Lang* takes a counter from "{4}: Put a
++1/+1 counter on Ant-Man", which is the activated-ability path rather than a trigger. Plus a
+six-row compile table over printed rows (including `April O'Neil`, whose apostrophe is what the
+escape is for), the title/thousand pair, and the two pinned collisions.
+
+**Two breaks, two failures.**
+
+Legal-only coverage 16,331 of 56,421 lines (28.9%), **7,344 cards with a script** (7,284 → 7,344),
+3,997 with every printed line read (3,985 → 3,997). GATE OK, 1,976 engine tests.
+
+Card-data egress re-tested this pass: `api.scryfall.com`, `data.scryfall.io` and `mtgjson.com` all
+answer 000 through the proxy, so #318 still loads from the Forge-derived corpus.

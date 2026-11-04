@@ -21912,3 +21912,112 @@ describe('a death the attachment watches, as printed text', () => {
     expect(s.pendingDecision?.prompt).toMatch(/scry/i);
   });
 });
+
+/*
+  A card that calls itself by its short name, played (D438).
+
+  "Whenever Alesha attacks" is printed on a card called *Alesha, Who Laughs at Fate*, and the
+  compiler matched the full name and "this creature" and nothing between — so 924 legal cards used a
+  name for themselves that no reader knew. Every fixture here is a printed corpus row driven through
+  `customDeck`, the route an uploaded decklist takes (D430), because a compile-level assertion only
+  says the line was read: these say the card then does what it prints.
+*/
+describe('a card that names itself in short, as printed text', () => {
+  const table = (
+    row: Record<string, unknown>,
+    battlefield: readonly string[],
+    hand: readonly string[] = [],
+  ) => {
+    const name = row['name'] as string;
+    const list = customDeck({
+      id: 'short-list',
+      name,
+      entries: [
+        { name, count: 1 },
+        { name: 'Island', count: 30 },
+        { name: 'Mountain', count: 29 },
+      ],
+      data: [row as never],
+    });
+    expect(list.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'short-list', 1: 'verdant-guard' },
+      deckSpecs: { 'short-list': list.deck },
+      battlefield: { 0: battlefield },
+      hands: { 0: hand },
+      turn: 3,
+      firstSeat: 0,
+    });
+  };
+
+  it('puts the counter on Alesha when Alesha attacks', () => {
+    /*
+      "Whenever Alesha attacks, put a +1/+1 counter on it." Both halves of the line need the short
+      name: the prologue to know whose attack it is, and nothing else — "it" is the attacking
+      creature, which `itMeans` resolves to the event's subject (D433).
+
+      The third printed line is a Raid clause the compiler cannot read, and it stays unread: a
+      permanent's lines are independent, so one unread line does not cost the card the other two
+      (D362).
+    */
+    let s = table({
+      name: 'Alesha, Who Laughs at Fate', type_line: 'Legendary Creature — Human Warrior',
+      mana_cost: '{1}{B}{R}', cmc: 3, colors: ['B', 'R'], layout: 'normal',
+      power: '2', toughness: '2', loyalty: null,
+      oracle_text: 'First strike\nWhenever Alesha attacks, put a +1/+1 counter on it.\nRaid — At'
+        + ' the beginning of your end step, if you attacked this turn, return target creature card'
+        + " with mana value less than or equal to Alesha's power from your graveyard to the"
+        + ' battlefield.',
+    }, ['Alesha, Who Laughs at Fate', 'Mountain']);
+    s = advanceTo(s, 'declare-attackers');
+    const alesha = find(s, 0 as SeatIndex, 'battlefield', 'Alesha, Who Laughs at Fate');
+    expect(s.instances[alesha]!.counters['+1/+1']).toBeUndefined();
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: alesha, defender: 1 }],
+    } as Action));
+    expect(s.instances[alesha]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('brings Alirios in tapped, off a line that is nothing but the short name', () => {
+    /*
+      "Alirios enters tapped." The whole line is the name and three words, so there is no prologue
+      and no body to hide behind — if the alias is not read the card arrives untapped and the only
+      visible difference is a creature that can attack a turn early.
+    */
+    let s = table({
+      name: 'Alirios, Enraptured', type_line: 'Legendary Creature — Human', mana_cost: '{2}{U}',
+      cmc: 3, colors: ['U'], layout: 'normal', power: '2', toughness: '3', loyalty: null,
+      oracle_text: 'Alirios enters tapped.\nAlirios doesn\'t untap during your untap step if you'
+        + ' control a Reflection.\nWhen Alirios enters, create a 3/2 blue Reflection creature'
+        + ' token.',
+    }, ['Island', 'Island', 'Island'], ['Alirios, Enraptured']);
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Alirios, Enraptured'),
+    } as Action)));
+    const alirios = find(s, 0 as SeatIndex, 'battlefield', 'Alirios, Enraptured');
+    expect(s.instances[alirios]!.tapped).toBe(true);
+  });
+
+  it('puts the counter on Ant-Man, which is an activated ability aimed at the short name', () => {
+    /*
+      "{4}: Put a +1/+1 counter on Ant-Man." The cost and the colon read without the alias; the
+      object of the effect does not, so before this the ability compiled as a line nothing could
+      read rather than as an ability that aimed at the wrong thing.
+    */
+    let s = table({
+      name: 'Ant-Man, Scott Lang', type_line: 'Legendary Creature — Human Hero',
+      mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal',
+      power: '2', toughness: '2', loyalty: null,
+      oracle_text: '{4}: Put a +1/+1 counter on Ant-Man.',
+    }, ['Ant-Man, Scott Lang', 'Island', 'Island', 'Island', 'Island']);
+    s = advanceTo(s, 'precombat-main');
+    const antman = find(s, 0 as SeatIndex, 'battlefield', 'Ant-Man, Scott Lang');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: antman, abilityIndex: 0,
+    } as Action)));
+    expect(s.instances[antman]!.counters['+1/+1']).toBe(1);
+  });
+});

@@ -9550,6 +9550,9 @@ const ENTERS = 'enters(?: the battlefield)?';
  * creature enters", 82 "this enchantment enters", 54 "this artifact enters" and 29 "this land
  * enters" — about 860 cards whose own trigger the name-only pattern could not match.
  *
+ * The third form is a legendary permanent's **short name** — "Bilbo", on a card called *Bilbo,
+ * Retired Burglar* — which `shortName` below derives and documents.
+ *
  * So every reader that matches the card as a subject or an object matches this instead of the bare
  * name. A non-capturing group, so no reader's capture indices move.
  *
@@ -9557,8 +9560,42 @@ const ENTERS = 'enters(?: the battlefield)?';
  * printed text refers to whatever the previous clause was about, which is the card on some cards
  * and the target on others, so the readers that allow it say so one at a time.
  */
-const selfRef = (name: string): string => `(?:${escapeName(name)}|this (?:creature|artifact`
-  + '|enchantment|permanent|land|planeswalker|battle|Vehicle|Equipment|Aura|token|card|spell))';
+const selfRef = (name: string): string => {
+  const short = shortName(name);
+  return `(?:${escapeName(name)}${short === null ? '' : `|${escapeName(short)}`}`
+    + '|this (?:creature|artifact|enchantment|permanent|land|planeswalker|battle'
+    + '|Vehicle|Equipment|Aura|token|card|spell))';
+};
+
+/**
+ * The name a card with a title calls itself by: "Bilbo", for "Bilbo, Retired Burglar".
+ *
+ * Oracle text names a legendary permanent in full the first time and by its short name after —
+ * "Whenever Bilbo deals combat damage to a player", on a card called *Bilbo, Retired Burglar*.
+ * Neither the full name nor "this creature" matches that, so the line went unread: 924 legal cards
+ * use their short name in their own text, and reading it finishes 71 more lines on 70 cards, 11 of
+ * which had nothing else left unread (D438).
+ *
+ * The comma must be followed by a space, which is what separates a title from a thousands
+ * separator: *70,000 Light-Years from Home* would otherwise have offered "70" as a name for itself,
+ * and so would *Borrowing 100,000 Arrows* ("Borrowing 100") and *Guan Yu's 1,000-Li March*
+ * ("Guan Yu's 1") — which is why the space and not "does it contain a letter" is the test. Those
+ * three are the only names in 33,847 whose comma is not a title's, and no name with ", " in it has
+ * a part before the comma without a letter, so the second check would be a redundant statement of
+ * the first: two levers no single break could move (D433).
+ *
+ * **The alias is matched case-insensitively, like every other reader in this module, and that is a
+ * known imprecision rather than an oversight.** Two legal cards in 33,847 print their own short
+ * name as an ordinary lowercase word — *Eleven, the Mage* ("your maximum hand size is eleven") and
+ * *Storm, Force of Nature* ("has storm") — and both are pinned by a test, because the alias is
+ * harmless only as long as no reader matches the clause the collision sits in. JavaScript has no
+ * way to switch case-sensitivity off for part of a pattern (`(?-i:…)` is not in V8), so a test that
+ * fails the day it starts to matter is the guard available.
+ */
+function shortName(name: string): string | null {
+  const comma = name.indexOf(', ');
+  return comma <= 0 ? null : name.slice(0, comma);
+}
 
 
 /**

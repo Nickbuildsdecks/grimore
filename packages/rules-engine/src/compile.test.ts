@@ -7176,3 +7176,128 @@ describe('a death, read off the prologue', () => {
     expect([aura.effect.power, aura.effect.toughness]).toEqual([2, 2]);
   });
 });
+
+describe('a card that calls itself by its short name', () => {
+  /*
+    Oracle text names a legendary permanent in full once and by its short name after. The compiler
+    matched the full name and "this creature" and nothing else, so "Whenever Alesha attacks" — on a
+    card called *Alesha, Who Laughs at Fate* — was a line nothing could read (D438).
+
+    Every fixture below is a printed corpus row, copied rather than written: inventing the text of
+    a real card is worse than leaving the mechanic out (D259).
+  */
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const unreadLines = (c: ReturnType<typeof compileCard>) =>
+    (c.ok ? c.unread : []).map((u) => u.line);
+
+  it.each([
+    [
+      'Alesha, Who Laughs at Fate',
+      'Legendary Creature — Human Warrior', '{1}{B}{R}', 3, ['B', 'R'],
+      'First strike\nWhenever Alesha attacks, put a +1/+1 counter on it.',
+      'Whenever Alesha attacks, put a +1/+1 counter on it.',
+    ],
+    [
+      'Alirios, Enraptured',
+      'Legendary Creature — Human', '{2}{U}', 3, ['U'],
+      'Alirios enters tapped.',
+      'Alirios enters tapped.',
+    ],
+    [
+      'Badgey, Malicious Glitch',
+      'Legendary Artifact Creature — Illusion Horror', '{3}{B}', 4, ['B'],
+      'Whenever Badgey becomes tapped, each opponent loses 1 life and you gain 1 life.',
+      'Whenever Badgey becomes tapped, each opponent loses 1 life and you gain 1 life.',
+    ],
+    [
+      'Ant-Man, Scott Lang',
+      'Legendary Creature — Human Hero', '{1}{W}', 2, ['W'],
+      '{4}: Put a +1/+1 counter on Ant-Man.',
+      '{4}: Put a +1/+1 counter on Ant-Man.',
+    ],
+    // The apostrophe is the point of this one: the short name is escaped the same way the full
+    // name always was, so "April O'Neil" is a name and not a half-open quote in a pattern.
+    [
+      "April O'Neil, Kunoichi Trainee",
+      'Legendary Creature — Human Ninja', '{1}{W}', 2, ['W'],
+      "When April O'Neil enters, scry 2.",
+      "When April O'Neil enters, scry 2.",
+    ],
+    [
+      'Aang, A Lot to Learn',
+      'Legendary Creature — Human Avatar Ally', '{2}{G/W}', 3, ['G', 'W'],
+      'Whenever another creature you control dies, put a +1/+1 counter on Aang.',
+      'Whenever another creature you control dies, put a +1/+1 counter on Aang.',
+    ],
+  ])('%s reads the line that names it in short', (name, typeLine, cost, cmc, colors, text, line) => {
+    const read = compileCard({
+      name, type_line: typeLine, mana_cost: cost, cmc, colors: colors as string[],
+      power: '2', toughness: '2', layout: 'normal', oracle_text: text,
+    });
+    expect(read.ok).toBe(true);
+    expect(unreadLines(read)).not.toContain(line);
+  });
+
+  it('offers the short name only where a comma separates a title, not a thousand', () => {
+    /*
+      Three printed names carry a comma that is a thousands separator rather than a title:
+      *70,000 Light-Years from Home*, *Borrowing 100,000 Arrows* and *Guan Yu's 1,000-Li March*.
+      Two of the three have letters before that comma, so "is there a letter in it" does not tell
+      the two kinds of comma apart and the **space** does — which is why the probe below is named
+      after the shape those two have rather than after the first.
+
+      A pair, so that one break can move it: the same line reads on a card whose comma introduces a
+      title and stays unread on a card whose comma sits inside a number.
+    */
+    const number = compileCard({
+      name: 'Probe 1,000 Rounds', type_line: 'Artifact', mana_cost: '{2}', cmc: 2,
+      colors: [], layout: 'normal', oracle_text: 'Probe 1 enters tapped.',
+    });
+    expect(number.ok).toBe(true);
+    expect(unreadLines(number)).toEqual(['Probe 1 enters tapped.']);
+
+    const title = compileCard({
+      name: 'Probe, the Thing', type_line: 'Artifact', mana_cost: '{2}', cmc: 2,
+      colors: [], layout: 'normal', oracle_text: 'Probe enters tapped.',
+    });
+    expect(title.ok).toBe(true);
+    expect(unreadLines(title)).toEqual([]);
+    expect(field(title.ok ? title.script : undefined, 'entersTapped')).toBe(true);
+  });
+
+  it.each([
+    [
+      'Eleven, the Mage',
+      'Your maximum hand size is eleven.',
+      'Legendary Creature — Human Wizard', '{1}{U}{B}{R}', 4, ['U', 'B', 'R'],
+    ],
+    [
+      'Storm, Force of Nature',
+      'Ceaseless Tempest — Whenever Storm deals combat damage to a player, the next instant or '
+        + 'sorcery spell you cast this turn has storm.',
+      'Legendary Creature — Mutant Hero', '{1}{G}{U}{R}', 4, ['G', 'U', 'R'],
+    ],
+  ])('does not read %s\'s own name as a word', (name, first, typeLine, cost, cmc, colors) => {
+    /*
+      The two cards in 33,847 whose short name is also an ordinary word of their own text, found by
+      scanning every legal card for an alias occurrence spelled differently from the name:
+      *Eleven, the Mage* prints "your maximum hand size is eleven" and *Storm, Force of Nature*
+      "the next instant or sorcery spell you cast this turn has storm".
+
+      The alias is matched case-insensitively because every reader in the module is, and JavaScript
+      cannot switch that off for part of a pattern — so these rows exist to **fail the day the
+      collision becomes reachable**. Neither clause is one any reader matches today; a future reader
+      for "has <keyword>" or for a maximum hand size would turn one of these into a misreading of a
+      real card, and this is the test that would say so rather than a measure nobody re-ran.
+    */
+    const read = compileCard({
+      name, type_line: typeLine, mana_cost: cost, cmc, colors: colors as string[],
+      power: '3', toughness: '5', layout: 'normal', oracle_text: first,
+    });
+    expect(read.ok).toBe(true);
+    expect(unreadLines(read)).toContain(first);
+    expect(field(read.ok ? read.script : undefined, 'triggers') ?? []).toEqual([]);
+    expect(field(read.ok ? read.script : undefined, 'abilities') ?? []).toEqual([]);
+  });
+});

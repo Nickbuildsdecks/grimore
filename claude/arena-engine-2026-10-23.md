@@ -11583,3 +11583,30 @@ Three layers, each needing its own fix and each with its own break:
 Legal-only coverage 16,262 of 56,421 lines (28.8%) and **7,284 cards with a script**, up 187. Most
 of that is layer three: the Aura requirement was blocking every Aura whose second line was anything
 but a bonus, not just this family.
+
+## The name a card calls itself by (D438)
+
+A card with a title names itself in full once and in short after. *Alesha, Who Laughs at Fate*
+prints "Whenever Alesha attacks"; *Bilbo, Retired Burglar* prints "Whenever Bilbo deals combat
+damage to a player". `selfRef` knew the full name and the 2024 "this creature" retemplate (D426) and
+nothing between, so those lines were unread — on **924 legal cards** that use their short name in
+their own text.
+
+One line in `selfRef`, which about twenty readers share: the entry trigger, the attack trigger,
+"enters tapped", "enters with counters", the activated-ability object, the counter readers. It was
+found while measuring the next trigger family, when the probe's self-name bucket came back holding
+476 unread lines for a prologue the compiler claimed to read.
+
+Two things are worth remembering from it:
+
+- **The space after the comma is the guard, not the letters before it.** *Borrowing 100,000 Arrows*
+  and *Guan Yu's 1,000-Li March* both have letters in front of a thousands separator, so a "does it
+  contain a letter" check cannot tell a title from a number — and having both checks meant no single
+  break could reach either, the trap D433 named. The letter check is gone.
+- **The alias is case-insensitive and that is written down rather than fixed.** V8 has no `(?-i:…)`,
+  so "Eleven" also matches "eleven". Exactly two legal cards in 33,847 print their own short name as
+  an ordinary word (*Eleven, the Mage*, *Storm, Force of Nature*), neither in a clause any reader
+  matches, and both are pinned by a test whose job is to fail the day that changes.
+
+Legal-only coverage 16,331 of 56,421 lines (28.9%) and **7,344 cards with a script**, up 60, with
+3,997 cards having every printed line read.
