@@ -1009,6 +1009,135 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(refused.unread.map((u) => u.why)).toEqual(['no-reader']);
     });
   });
+  /*
+    ── Attachments: the first shape read from two lines at once ──────────────────────────────────
+
+    `Enchant creature` alone is an Aura that attaches and does nothing; `Enchanted creature gets
+    +2/+0` alone is a bonus with nothing to attach it to. Neither line is a unit and the pair is,
+    which makes this the compiler's first whole-card shape rather than another entry in a per-line
+    table. See `attachmentScriptFor`.
+
+    `aura` and `equipBonus` are plain data with no closures in them, so these compare by deep
+    equality against the hand-written card — the strictest comparison available, and the one that
+    catches a dropped keyword, a wrong sign, or a `friendly` flag on the wrong side.
+  */
+  describe('Auras and Equipment, against the hand-written attachments', () => {
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    it.each([
+      // `gets +2/+0`: the zero component omitted, as `sizeBonus` does for a pump.
+      ['Bonesplitter'],
+      // A bonus and two granted keywords in one line.
+      ['Loxodon Warhammer'],
+      // Keywords with no size change at all.
+      ['Basilisk Collar'],
+      // `is indestructible`, which is a keyword spelled as a sentence.
+      ['Darksteel Plate'],
+    ])('%s carries the equip bonus the hand-written Equipment carries', (card) => {
+      const written = scriptFor(card as string);
+      const compiled = compiledScript(card as string).script;
+      expect(compiled, `${card as string} compiled to no script`).toBeDefined();
+      expect(field(compiled, 'equipBonus')).toEqual(field(written, 'equipBonus'));
+    });
+
+    it.each([
+      // `has shroud`.
+      ['Robe of Mirrors'],
+      // `has flying`, on a card whose third line is an ETB trigger the per-line path reads.
+      ['Angelic Gift'],
+      // `gets +2/+0 and has trample`, plus a to-graveyard trigger on the third line.
+      ['Rancor'],
+    ])('%s builds the aura the hand-written card builds', (card) => {
+      const written = scriptFor(card as string);
+      const compiled = compiledScript(card as string).script;
+      expect(compiled, `${card as string} compiled to no script`).toBeDefined();
+      expect(field(compiled, 'aura')).toEqual(field(written, 'aura'));
+    });
+
+    it('reads Pacifism as removal, aimed at the enemy, as the hand-written card does', () => {
+      /*
+        The one case where the two facts the phrase cannot carry both matter at once. Every Aura in
+        the pool prints the same `Enchant creature`; Angelic Gift's target is `friendly` and
+        Pacifism's is not, and Pacifism also sets `removesACreature` — because an Aura that stops a
+        creature attacking or blocking **is** removal, and a bot that does not know that holds it
+        for nothing (D252, D364).
+
+        Both are read off the bonus rather than off the phrase: `can't attack or block` harms.
+      */
+      const written = scriptFor('Pacifism');
+      const compiled = compiledScript('Pacifism').script;
+      expect(field(compiled, 'aura')).toEqual(field(written, 'aura'));
+      expect(field(written, 'removesACreature')).toBe(true);
+      expect(field(compiled, 'removesACreature')).toBe(true);
+      // And the control, on the same printed phrase: a helpful Aura is aimed at your own side and
+      // is not removal.
+      expect((field(compiled, 'aura') as { target?: { friendly?: boolean } }).target?.friendly)
+        .toBeUndefined();
+      expect((field(compiledScript('Angelic Gift').script, 'aura') as
+        { target?: { friendly?: boolean } }).target?.friendly).toBe(true);
+    });
+
+    it('refuses an Aura that grants a quoted ability rather than a keyword', () => {
+      /*
+        Ophidian Eye: `Enchanted creature has "Whenever this creature deals damage to a player, draw
+        a card."` The hand-written script expresses that with `grants`, an index into a table of
+        abilities this module cannot build — and a reader that dropped the quoted text would be an
+        Aura you can cast, that attaches, and that silently grants nothing. So the pair is refused
+        and the card is reported unread, which is what gets it played by hand (D362).
+      */
+      const eye = compiledScript('Ophidian Eye');
+      expect(field(eye.script, 'aura')).toBeUndefined();
+      expect(eye.unread.map((u) => u.line)).toContain(
+        'Enchanted creature has "Whenever this creature deals damage to a player, draw a card."',
+      );
+    });
+
+    it('emits both halves or neither, never half an attachment', () => {
+      /*
+        The invariant, on the two shapes that would break it. A declaration with no static line is
+        an Aura that attaches and does nothing; a static line with no declaration is a bonus with
+        nothing to attach it to. Either one emitted alone is a card that **works and does nothing**,
+        which is worse than an unread card, because an unread card is flagged and a blank Aura is
+        not.
+      */
+      const noBonus = compileCard({
+        name: 'Blank Aura', type_line: 'Enchantment — Aura', mana_cost: '{W}', cmc: 1,
+        colors: ['W'], oracle_text: 'Enchant creature',
+      });
+      expect(noBonus.ok).toBe(true);
+      if (noBonus.ok) expect(noBonus.script).toBeUndefined();
+
+      const noDeclaration = compileCard({
+        name: 'Floating Bonus', type_line: 'Enchantment — Aura', mana_cost: '{W}', cmc: 1,
+        colors: ['W'], oracle_text: 'Enchanted creature gets +2/+2.',
+      });
+      expect(noDeclaration.ok).toBe(true);
+      if (noDeclaration.ok) expect(noDeclaration.script).toBeUndefined();
+
+      const noEquipCost = compileCard({
+        name: 'Unequippable', type_line: 'Artifact — Equipment', mana_cost: '{1}', cmc: 1,
+        colors: [], oracle_text: 'Equipped creature gets +2/+0.',
+      });
+      expect(noEquipCost.ok).toBe(true);
+      if (noEquipCost.ok) expect(noEquipCost.script).toBeUndefined();
+    });
+
+    it('refuses a keyword the engine would not read back out of what it wrote', () => {
+      /*
+        The same validation `tokenEffect` uses, for the same reason: the bonus's keywords are read
+        by `printedKeywords`, so the reader asks that function whether the text it is about to write
+        down yields the keywords the line named. An Equipment printed "has soaring" would otherwise
+        grant nothing at all.
+      */
+      const nonsense = compileCard({
+        name: 'Soaring Blade', type_line: 'Artifact — Equipment', mana_cost: '{1}', cmc: 1,
+        colors: [], oracle_text: 'Equipped creature has soaring.\nEquip {1}',
+      });
+      expect(nonsense.ok).toBe(true);
+      if (nonsense.ok) expect(nonsense.script).toBeUndefined();
+    });
+  });
   it('refuses only what is not a single-face card at all', () => {
     expect(compileCard({ name: '', type_line: 'Creature' }).ok).toBe(false);
     expect(compileCard({ name: 'No Types', type_line: '' }).ok).toBe(false);

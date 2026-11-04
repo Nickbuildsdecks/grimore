@@ -46,6 +46,7 @@ import type {
 import type { EffectFn } from './effects.js';
 import { timesCost } from './mana.js';
 import type { Color } from './mana.js';
+import type { Keyword } from './characteristics.js';
 import type { GameState, SeatIndex } from './types.js';
 import { legalTargets, retarget } from './targeting.js';
 import { targetKey, type StackObject, type Target } from './turnTypes.js';
@@ -258,8 +259,17 @@ const FIREBALL: CardScript = {
  * because that is all it is: the engine already has sorcery-speed abilities, targets and
  * continuous effects, and `equipTo` is the one new verb.
  */
-const equipment = (name: string, cost: string, bonus: PumpOptions, text: string): CardScript => ({
-  name,
+/**
+ * The equip half of an Equipment, as the fragment of a script it is.
+ *
+ * Split out of `equipment` below so the oracle-text compiler can build the same ability from
+ * printed text rather than a second implementation of it — the same reason `keywordScriptFor` is a
+ * table of calls into the builders above it, and the thing that keeps the compiled Bonesplitter and
+ * the hand-written one the same card. See `attachmentScriptFor`.
+ */
+export const equipFragment = (
+  cost: string, bonus: PumpOptions, text: string,
+): Partial<CardScript> => ({
   // Written down rather than closed over, because Balan needs to read it: a card that moves every
   // Equipment you control onto itself has to know what each of them does, and a bonus that only
   // exists inside its own effect function cannot be asked.
@@ -286,6 +296,10 @@ const equipment = (name: string, cost: string, bonus: PumpOptions, text: string)
       },
     },
   ],
+});
+
+const equipment = (name: string, cost: string, bonus: PumpOptions, text: string): CardScript => ({
+  name, ...equipFragment(cost, bonus, text),
 });
 
 const scry = (count: number): CardsDecisionSpec => ({
@@ -9150,6 +9164,174 @@ function selfEffect(clause: string, name: string): ReadEffect | null {
   }
 
   return null;
+}
+
+/**
+ * An Aura or an Equipment, read from **two lines at once**.
+ *
+ * ## Why this is the compiler's first whole-card shape
+ *
+ * Every other reader here takes one printed line and returns what that line is worth, and the lines
+ * path merges the results. An attachment cannot be read that way, and the reason is the trap D364
+ * found on Calciderm, in its sharpest form yet:
+ *
+ *  - `Enchant creature` **alone** is an Aura you can cast, that attaches, and that does nothing.
+ *  - `Enchanted creature gets +2/+0` **alone** is a bonus with nothing to attach it to.
+ *  - `Equip {1}` alone is an ability that moves a blank Equipment around the battlefield.
+ *
+ * So neither line is a unit and the pair is. A per-line reader that emitted either half would
+ * produce a card that **works and does nothing**, which is worse than an unread card: an unread card
+ * is flagged for a human to play by hand (D362) and a blank Aura is flagged nowhere.
+ *
+ * ## What it reads, and what it refuses
+ *
+ * The static line's grammar is small and completely regular across the pool's ten attachments:
+ * `gets +N/+N`, `has <keyword> and <keyword>`, `gets +N/+N and has <keyword>`, `is indestructible`,
+ * `can't attack or block`.
+ *
+ * Refused: `Enchanted creature has "Whenever this creature deals damage to a player, draw a card."`
+ * — a granted **ability**, not a keyword. Ophidian Eye's hand-written script expresses that with
+ * `grants`, which names an index into a table of abilities this module has no way to build, and a
+ * reader that dropped the quoted text would be an Aura that silently grants nothing. It is refused
+ * by the keyword validation rather than by a test for the quote mark: the sentence splits on its own
+ * commas into fragments `printedKeywords` does not recognise. Verified by deleting the quote test
+ * and watching nothing fail — so the quote test is gone.
+ *
+ * ## `friendly` and `removesACreature` are facts about the bonus, not about the phrase
+ *
+ * Every Aura in the pool prints the same `Enchant creature`, and Angelic Gift's spec is `friendly`
+ * while Pacifism's is not. The difference is whether the effect **helps**, which is readable here
+ * and nowhere else — and Pacifism also sets `removesACreature`, because an Aura that stops a
+ * creature attacking or blocking is removal, and a bot that does not know that holds it for nothing.
+ * So a harmful bonus gets the flag and drops `friendly`; a helpful one is the other way round.
+ */
+export interface AttachmentReading {
+  readonly fragment: Partial<CardScript>;
+  /** The printed lines this reading accounts for, so the caller counts them compiled. */
+  readonly claimed: readonly string[];
+}
+
+/** The keyword list in `has trample and lifelink`, validated by the reader that reads it back. */
+function grantedKeywords(phrase: string): readonly Keyword[] | null {
+  const names = phrase.trim().replace(/\.$/, '').split(/,\s*|\s+and\s+/)
+    .map((k) => k.trim().toLowerCase()).filter((k) => k !== '');
+  if (names.length === 0) return null;
+  /*
+    Checked through `printedKeywords`, for the reason `tokenEffect` gives: it is the function the
+    engine uses to turn a keyword line into keywords, so asking it is asking whether the engine will
+    actually read back what is about to be written down. A keyword it does not know would otherwise
+    be an Equipment that silently grants nothing.
+  */
+  const read = printedKeywords(names.join(', '));
+  return read.length === names.length ? read : null;
+}
+
+/** `Equipped creature gets +2/+0 and has trample.` as the bonus, and whether it harms its host. */
+function attachmentBonus(line: string): { bonus: PumpOptions; harmful: boolean } | null {
+  const matched = /^(?:equipped|enchanted) creature (.+?)\.?$/i.exec(plain(line).trim());
+  if (matched === null) return null;
+  const tail = matched[1]!.trim();
+
+  if (/^can't attack or block$/i.test(tail)) {
+    return { bonus: { cantAttack: true, cantBlock: true }, harmful: true };
+  }
+  if (/^is indestructible$/i.test(tail)) {
+    return { bonus: { keywords: ['indestructible'] }, harmful: false };
+  }
+
+  const got = /^gets ([+-]\d+)\/([+-]\d+)(?: and has (.+))?$/i.exec(tail);
+  if (got !== null) {
+    const power = Number(got[1]);
+    const toughness = Number(got[2]);
+    if (!Number.isFinite(power) || !Number.isFinite(toughness)) return null;
+    const size = sizeBonus(power, toughness);
+    if (size === null) return null;
+    if (got[3] === undefined) {
+      // A negative bonus is removal by arithmetic, which is how the one shape covers a Pacifism
+      // and a Nameless Inversion-style shrink without a second reader.
+      return { bonus: size, harmful: power < 0 || toughness < 0 };
+    }
+    const keywords = grantedKeywords(got[3]);
+    if (keywords === null) return null;
+    return { bonus: { ...size, keywords }, harmful: power < 0 || toughness < 0 };
+  }
+
+  const has = /^has (.+)$/i.exec(tail);
+  if (has !== null) {
+    /*
+      A quoted ability is refused here too, and by `grantedKeywords` rather than by a test for the
+      quote mark. This function had such a test; deleting it left all 93 tests green, because
+      Ophidian Eye's quoted sentence splits on its commas into fragments `printedKeywords` does not
+      recognise, so the validation already refuses it. An unpinned guard duplicating a pinned one is
+      a second thing to keep true, so it is gone and this comment says what does the work.
+    */
+    const keywords = grantedKeywords(has[1]!);
+    if (keywords === null) return null;
+    return { bonus: { keywords }, harmful: false };
+  }
+
+  return null;
+}
+
+/**
+ * An Aura or an Equipment, or `null` when this card is neither or its two lines do not both read.
+ *
+ * All or nothing by construction: the fragment is only returned when both the declaration and the
+ * static line were found and understood, so there is no state in which half an attachment is
+ * emitted.
+ */
+export function attachmentScriptFor(
+  def: CardDef, lines: readonly string[],
+): AttachmentReading | null {
+  const typeLine = parseTypeLine(def.typeLine);
+  const isAura = hasSubtype(typeLine, 'aura');
+  const isEquipment = hasSubtype(typeLine, 'equipment');
+  if (!isAura && !isEquipment) return null;
+
+  const subject = isAura ? /^enchanted creature/i : /^equipped creature/i;
+  const staticLine = lines.find((line) => subject.test(plain(line).trim()));
+  if (staticLine === undefined) return null;
+  const read = attachmentBonus(staticLine);
+  if (read === null) return null;
+
+  if (isAura) {
+    // `Enchant creature` exactly: an `Enchant artifact` or `Enchant player` is a different target
+    // and this reads only the one the pool prints.
+    const declared = lines.find((line) => /^enchant creature$/i.test(plain(line).trim()));
+    if (declared === undefined) return null;
+    return {
+      fragment: {
+        aura: {
+          target: {
+            kind: 'creature',
+            description: 'enchant creature',
+            ...(read.harmful ? {} : { friendly: true as const }),
+          },
+          effect: read.bonus,
+        },
+        ...(read.harmful ? { removesACreature: true as const } : {}),
+      },
+      claimed: [declared, staticLine],
+    };
+  }
+
+  const equip = lines
+    .map((line) => /^equip\s*(\{[^\n]+\})$/i.exec(plain(line).trim()))
+    .find((m) => m !== null);
+  if (equip === undefined || equip === null) return null;
+  return {
+    fragment: equipFragment(
+      equip[1]!,
+      read.bonus,
+      // The printed line as its own description, lower-cased at the front the way the
+      // hand-written Equipment spell theirs.
+      (() => {
+        const text = plain(staticLine).trim().replace(/\.$/, '');
+        return text.charAt(0).toLowerCase() + text.slice(1);
+      })(),
+    ),
+    claimed: [equip.input, staticLine],
+  };
 }
 
 /**

@@ -41,7 +41,9 @@
 import type { CardDef } from './cards.js';
 import { hasType, parseTypeLine, printedKeywords } from './characteristics.js';
 import { cardFromData, printedDef, printedRulesLines, type CardDataRow, type DerivedKind } from './fromCardData.js';
-import { isKeywordDeclaration, lineScriptFor, spellScriptFor } from './scripts.js';
+import {
+  attachmentScriptFor, isKeywordDeclaration, lineScriptFor, spellScriptFor,
+} from './scripts.js';
 import type { CardScript } from './scriptTypes.js';
 
 /** A printed line, and why nothing could turn it into rules. */
@@ -192,7 +194,24 @@ export function compileCard(row: CardDataRow): Compilation {
   const compiled: string[] = [];
   const unread: UnreadLine[] = [];
 
+  /*
+    One shape is read from two lines at once, before the per-line loop: an Aura or an Equipment.
+
+    `Enchant creature` on its own is an Aura that attaches and does nothing, and
+    `Enchanted creature gets +2/+0` on its own is a bonus with nothing to attach it to — so neither
+    line is a unit and the pair is. `attachmentScriptFor` returns both halves or neither, and names
+    the lines it accounted for so they are not offered to the per-line readers afterwards. See its
+    docblock for why emitting half would be worse than reading none of it.
+  */
+  const attachment = attachmentScriptFor(def, lines);
+  const claimed = new Set(attachment?.claimed ?? []);
+  if (attachment !== null) {
+    merge(built, attachment.fragment);
+    compiled.push(...attachment.claimed);
+  }
+
   for (const line of lines) {
+    if (claimed.has(line)) continue;
     /*
       A keyword line the engine already reads off the `CardDef` itself — `characteristicsOf` calls
       `printedKeywords(def.oracleText)`, with no script involved. So this counts as compiled and

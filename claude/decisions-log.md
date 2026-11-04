@@ -23540,3 +23540,60 @@ With that fixed it reports exactly the six columns 0015 adds, and nothing else o
 
 Verified: scryfall-service.test.js 8/8 (5 new), the fixture import demonstrated end to end, the
 audit's finding reproduced and its false positive removed; GATE OK.
+
+## D376
+
+**Attachments: the compiler's first shape read from two lines at once** (#317)
+
+Every reader before this took one printed line and returned what that line is worth, and the lines
+path merged the results. An Aura cannot be read that way, and it is D364's trap in its sharpest
+form yet:
+
+- `Enchant creature` **alone** is an Aura you can cast, that attaches, and that does nothing.
+- `Enchanted creature gets +2/+0` **alone** is a bonus with nothing to attach it to.
+- `Equip {1}` alone is an ability that moves a blank Equipment around the battlefield.
+
+Neither line is a unit; the pair is. A per-line reader emitting either half would build a card that
+**works and does nothing** — worse than an unread card, because an unread card is flagged for a
+human to play by hand (D362) and a blank Aura is flagged nowhere. So `attachmentScriptFor` takes the
+definition and all the lines, returns both halves or neither, and names the lines it accounted for;
+`compileCard` consults it before the per-line loop and skips what it claimed.
+
+**243 of 538 printed lines, up from 225 (41.8% → 45.2%); 154 of 339 cards get a script, up from
+146.** Bonesplitter, Loxodon Warhammer, Basilisk Collar, Darksteel Plate, Blade of Selves, Robe of
+Mirrors, Angelic Gift, Pacifism and Rancor.
+
+`equipFragment` is split out of the hand-written `equipment` builder so the compiled Bonesplitter
+and the hand-written one are the same ability rather than two implementations of it — the same
+reason `keywordScriptFor` is a table of calls into the builders above it.
+
+### `friendly` and `removesACreature` are facts about the bonus
+
+Every Aura in the pool prints the identical `Enchant creature`, and Angelic Gift's target is
+`friendly` while Pacifism's is not. The difference is whether the effect **helps**, which is
+readable from the bonus and nowhere else — and Pacifism also sets `removesACreature`, because an
+Aura that stops a creature attacking or blocking *is* removal and a bot that does not know that
+holds it for nothing. So a harmful bonus takes the flag and drops `friendly`; a helpful one is the
+other way round, and both sides are tested on the same printed phrase.
+
+A negative size change is harmful by arithmetic (`power < 0 || toughness < 0`), which is one rule
+rather than a second reader.
+
+### A redundant guard, found by trying to break it
+
+`attachmentBonus` had a test for a quote mark, to refuse Ophidian Eye's
+`Enchanted creature has "Whenever this creature deals damage to a player, draw a card."` — a granted
+*ability*, which the hand-written card expresses with `grants`, an index into a table this module
+cannot build.
+
+Deleting that test left all 93 tests green. The refusal was already coming from `grantedKeywords`:
+the quoted sentence splits on its own commas into fragments `printedKeywords` does not recognise, so
+the keyword validation refuses it. An unpinned guard duplicating a pinned one is a second thing to
+keep true, so it is gone and the comment says what does the work. Same family as `plain` (D371) and
+the token subtype check (D373), with the opposite verdict — and the difference is which way the
+redundancy cut: a duplicate of a *tested* refusal is dead weight, while the token check was the only
+thing standing between an unmeasurable corpus and a token named something that is not a creature
+type.
+
+Verified: compile.test.ts 93/93, with the aura's `friendly`, its `removesACreature`, the granted
+keywords and the `printedKeywords` validation each proved to fail when broken; GATE OK.

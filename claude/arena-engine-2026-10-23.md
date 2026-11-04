@@ -10047,3 +10047,29 @@ It now reads both. The first run with the second file produced a confident **fal
 (`scryfall_id`, a column only the SQLite statement names), because the existing guard skipped the
 SQLite branch of a ternary and a named constant is not one. Fixed by the declaration name, not by
 proximity.
+
+## Attachments, read two lines at a time (#317, D376)
+
+**243 of 538 printed lines, up from 225 (41.8% → 45.2%). 154 of 339 cards get a script, up from
+146.** Bonesplitter, Loxodon Warhammer, Basilisk Collar, Darksteel Plate, Blade of Selves, Robe of
+Mirrors, Angelic Gift, Pacifism, Rancor.
+
+The compiler's first whole-card shape. `Enchant creature` alone is an Aura that attaches and does
+nothing; `Enchanted creature gets +2/+0` alone is a bonus with nothing to attach it to. Neither line
+is a unit and the pair is — so `attachmentScriptFor` reads both or neither, and `compileCard`
+consults it before the per-line loop.
+
+`equipFragment` is split out of the hand-written `equipment` builder, so the compiled Bonesplitter
+and the hand-written one are the same ability.
+
+**`friendly` and `removesACreature` come off the bonus, not the phrase.** Every Aura prints the same
+`Enchant creature`; Angelic Gift's target is friendly and Pacifism's is not, and Pacifism is also
+removal. A negative size change is harmful by arithmetic.
+
+### A redundant guard, found by trying to break it
+
+The reader had a test for a quote mark, to refuse Ophidian Eye's granted ability. Deleting it left
+all 93 tests green: the keyword validation already refuses it, because the quoted sentence splits on
+its own commas into fragments `printedKeywords` does not know. Gone, with a comment saying what does
+the work. Opposite verdict to the token subtype check (D373), and the difference is which way the
+redundancy cut — a duplicate of a *tested* refusal is dead weight.
