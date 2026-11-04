@@ -25945,3 +25945,74 @@ incomplete list: Mutavault.
 Four deliberate breaks, four failing tests: `setTypes` for `addTypes`, a pump for a base, the
 `animates` hint dropped, and the land sentence made optional. compile.test.ts 351/351, 4,000 shuffled
 rows with no throw.
+
+## D417 — The compiler checked against every card the pool can check it against, mechanically
+
+Four increments in a row found a defect the same way: **somebody read a card beside its script.**
+D407 (a drain where the card said damage), D409 (a guard copied from the wrong card), D412 (a bot
+hint two cards were right to omit), D415 (two guards that could not fail). Each argued that the
+reading should be mechanical. `packages/rules-engine/src/compiled-vs-written.test.ts` is that.
+
+### What it covers that `compile.test.ts` cannot
+
+`compile.test.ts` is the better check per card and will stay: a describe block per family,
+comparing closures by resolving them. But it covers something like **sixty** of the pool's 348 cards
+and only the fields somebody thought to assert.
+
+This covers **every card with both a hand-written script and a compiled reading with nothing
+unread — 205 of them** — and compares the *whole* script: which fields exist, every scalar, every
+target spec, every trigger's event, every ability's cost. Functions become `[fn]`, so it is
+structure and data rather than behaviour; the two checks are complementary and the division is
+clean. A missing field is this one's job, a wrong effect is the other's.
+
+It matters more for #318 than for the pool. Tens of thousands of imported cards will have **no
+hand-written script to check against**, so the pool is the only ground truth the compiler will ever
+have — and spending all of it automatically is the difference between "the families somebody tested"
+and "every card we can check".
+
+### The result: 175 agree, 19 differ harmlessly, 11 are real
+
+Three normalisations, each because the two spellings are the same card: **key order** (twelve cards
+differed by nothing else), **`who: 'self'`** on an event (the documented default, which most
+hand-written cards omit and the compiler writes), and **`description`** (prose for the log on one
+side, the printed line on the other).
+
+Nineteen cards then differ only by a `keywords: ['flying']`-style declaration the compiled reading
+omits, and that is not a gap: `characteristicsOf` seeds keywords from `printedKeywords(oracleText)`
+**unconditionally**, so a compiled Shivan Dragon has flying because its text says so. Checked
+rather than assumed — a second test asserts every keyword those nineteen declare really is printed,
+so the day one declares a keyword its text does not, the difference stops being called harmless.
+
+The remaining **eleven** are in `DISAGREE` with what each difference is. Filed as **#327** with the
+triage; the headline ones:
+
+- **Magma Jet** — the compiled reading puts the damage in `onResolve` where the card puts it first,
+  so the scry is planned **before** the damage lands. Not one card: any resolution shaped "an
+  effect. a decision." has it, because `spellScriptFor` puts every clause's effect in `onResolve`
+  and the engine asks decisions first. D413 one level up.
+- **Flame Slash, Journey to Nowhere** — `removesACreature` missing, for two different reasons: the
+  hint is set for a destroy or exile aimed at a creature but not for damage aimed at one, and the
+  trigger path cannot set a card-level flag at all.
+- **Capsize** — the compiled spec has no filter where the hand-written one does.
+- **Garruk Wildspeaker** — the compiled `+1` adds `friendly` and `untapsOnly` to an ability whose
+  text is "Untap two target lands", with no "you control" in it.
+
+### The fingerprint, which a break run forced
+
+The first version compared **names only**, and that was not enough: removing the `blinks` hint from
+the blink reader left every test green, because Cloudshift was already on the list and the check only
+asked *whether* it differed. **A known-bad card was a hole the size of its whole script.**
+
+So every row now carries the differing field names and a digest of the compiled side of them, and
+the assertion is an equality over all three. It fails in four directions: a new disagreement, a card
+that stopped disagreeing, a known card differing in a new field, and a known card whose difference
+changed shape. Whoever fixes one deletes its row; whoever changes one updates the digest the failure
+prints.
+
+Five deliberate breaks, five failing tests: a row deleted, the blinks hint dropped on a known card,
+`removesACreature` dropped on an agreeing card, the normalisation widened to ignore `targets`, and a
+hand-written card made to declare a keyword its text does not print.
+
+A deliberate guard against the check hollowing out: one row asserts the pair count is **at least
+200**, because a compiler change that refused half the pool would otherwise leave every other
+assertion here green.

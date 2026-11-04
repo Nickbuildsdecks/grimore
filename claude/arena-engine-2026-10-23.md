@@ -11050,3 +11050,29 @@ the second was not being printed.
 
 **401 → 402 of 538 lines (74.5% → 74.7%)**, 256/339 with a script, **227 → 228** complete. Four
 deliberate breaks, four failing tests; 351/351; 4,000 rows at scale with no throw.
+
+## The compiler, checked against every card the pool can check it against (#317, D417)
+
+Four increments in a row found a defect by reading a card beside its script (D407, D409, D412,
+D415), and each argued the reading should be mechanical. `compiled-vs-written.test.ts` is that: it
+compares the **whole** compiled script against the hand-written one for every card that has both and
+nothing unread — **205 pairs**, where `compile.test.ts` covers about sixty by hand and only the
+fields somebody asserted. Functions become `[fn]`, so this is structure and data; behaviour stays
+`compile.test.ts`'s job.
+
+**175 agree** after normalising key order, the documented `who: 'self'` default and log descriptions.
+**19** differ only by a `keywords` declaration the engine already reads off the printed text — and a
+second test proves that reasoning falsifiable by asserting every one of those keywords really is
+printed. **11 are real**, listed in the file with what each is and filed as **#327**: Magma Jet's
+scry planned before its damage (a general assembly problem, not one card), two missing
+`removesACreature` hints for two different reasons, Capsize's missing filter, Garruk's `+1` restricted
+to lands you control.
+
+A break run forced the design: comparing **names** only, dropping the `blinks` hint left every test
+green, because Cloudshift was already on the list. Each row now carries its differing fields and a
+digest of them, so the equality fails four ways — new, fixed, newly different, or differently
+different. Five breaks, five failures, plus a row asserting the pair count stays above 200 so the
+check cannot hollow out.
+
+This is the instrument #318 needs: an imported corpus has no hand-written script to check against, so
+the pool is the only ground truth the compiler will ever have.
