@@ -9325,6 +9325,47 @@ interface ReadEffect {
 function untargetedEffect(clause: string, name: string): ReadEffect | null {
   const text = clause.trim();
 
+  /*
+    "Investigate", which is one word for a whole sentence: create a colourless Clue artifact token
+    with "{2}, Sacrifice this artifact: Draw a card" (CR 701.33a). The token is the engine's own
+    `CLUE_TOKEN` — a definition D243 wrote and tested, not a shape invented here — so the reading is
+    a call rather than a transcription, which is the only safe way to read a word that stands for
+    text the card does not print.
+  */
+  if (/^investigate$/i.test(text)) {
+    return { effect: (c) => createToken(c.state, c.controller, CLUE_TOKEN) };
+  }
+
+  /*
+    Mana out of a trigger: "Add {R}{G}" — Burning-Tree Emissary, whose whole ability this is.
+
+    The **regex is the validation**, and deliberately so: it admits only the six symbols
+    `addToPool` can take, so `{E}` is not read as mana at all and `{2}` — generic mana, which is not
+    a thing a pool can hold — refuses the clause. Running `parseManaCost` over a string this pattern
+    has already matched would be a check that cannot fail, which this file has caught itself writing
+    three times (D386, D394, D398).
+  */
+  const added = /^add ((?:\{[WUBRGC]\})+)$/i.exec(text);
+  if (added !== null) {
+    const symbols = [...added[1]!.toUpperCase().matchAll(/\{([WUBRGC])\}/g)].map((m) => m[1]!);
+    return {
+      effect: (c) => symbols.reduce(
+        (state, symbol) => addToPool(state, c.controller, symbol as Parameters<typeof addToPool>[2], 1),
+        c.state,
+      ),
+      /*
+        `makesMana` is the bot's hint for a **spell** whose whole effect is mana: without it the
+        search casts a Dark Ritual into nothing, because the mana is in the pool and the position
+        after the cast looks no better. It is `spellFlags` rather than a merge, which is what makes
+        it correct on both cards that print this clause: Dark Ritual's resolution applies it, and
+        Burning-Tree Emissary's ETB trigger drops it — which is that card's own rule, measured both
+        ways on 192 games (with the flag `cast-counts` read 46%, without it 101%, because a 2/2 for
+        two is worth casting on its own).
+      */
+      spellFlags: { makesMana: true },
+    };
+  }
+
   const gain = /^you gain ([\w]+) life$/i.exec(text);
   if (gain !== null) {
     const n = countFrom(gain[1]!);
@@ -10831,6 +10872,50 @@ const pointsAtTheStack = (spec: TargetSpec): boolean =>
  */
 function damageEffect(clause: string, name: string): ReadEffect | null {
   const self = escapeName(name);
+
+  /*
+    Damage divided as you choose, announced at cast time (#119): "Arc Lightning deals 3 damage
+    divided as you choose among one, two, or three targets".
+
+    Two numbers out of one sentence, and they are **not** the same number. `divided` is the damage
+    to share out; `count` is how many targets may be chosen, which the card spells as a list of
+    counts — "one, two, or three" is three, and Pyromatics' "one or two" is two with only one
+    damage to give. So the list's largest word is the count, and the damage is the damage.
+
+    `optional: true` because the lower numbers in that list are real choices: `count: 3, divided: 3`
+    *is* "one, two, or three targets", since a fourth target would have nothing left to assign and
+    choosing fewer leaves the rest on the ones chosen. The docblock on `TargetSpec.divided` works
+    that arithmetic through.
+
+    The effect is `dividedAmong`, which is one `dealDamage` per target with its own share rather
+    than a loop over one amount: each is a separate dealing of damage from the same source, and
+    protection, prevention and deathtouch each have to be asked about separately. Both hand-written
+    cards are written exactly this way.
+  */
+  const shared = new RegExp(
+    `^(?:${self}|it) deals (\\d+) damage divided as you choose among ([a-z, ]+?) targets$`, 'i',
+  ).exec(clause.trim().replace(/\.\s*$/, ''));
+  if (shared !== null) {
+    // Split on both separators the list uses, and on "or" wherever it sits: "one, two, or three"
+    // leaves an empty piece between the comma and the word, which the filter below drops.
+    const words = shared[2]!.split(/\s*(?:,|\bor\b)\s*/).map((word) => word.trim())
+      .filter((word) => word !== '');
+    const counts = words.map((word) => countFrom(word));
+    if (counts.length === 0 || counts.some((n) => n === null)) return null;
+    const count = Math.max(...(counts as number[]));
+    const spec = targetSpecFrom('any target', false);
+    if (spec === null || count < 2) return null;
+    return {
+      targets: [{ ...spec, count, optional: true, divided: Number(shared[1]) }],
+      effect: (c) => dividedAmong(c).reduce(
+        (state, { target, amount }) => dealDamage(state, target, amount, {
+          controller: c.controller, source: c.source,
+        }),
+        c.state,
+      ),
+    };
+  }
+
   const dealt = new RegExp(
     `^(?:${self}|it) deals (\\d+|damage equal to (?:its power|the number of [^.]+?)) damage to (.+)$`
       .replace(' damage to ', '(?: damage)? to '),
@@ -11431,6 +11516,14 @@ function composeEffects(clauses: readonly string[], name: string): ReadEffect | 
   const decisions = parts.flatMap((part) => part.decisions ?? []);
   const flags = Object.assign({}, ...parts.map((part) => part.spellFlags ?? {})) as
     Partial<CardScript>;
+  /*
+    One flag does not survive composition, and it is the field's own rule rather than a special
+    case: `makesMana` is for a spell whose **whole** effect is mana, where the search cannot see
+    what the card did. A spell that adds mana *and* draws a card has a visible effect, so the hint
+    would hold it back for a follow-up it does not need. Nothing in the pool prints that pair; the
+    deletion is here so the first card that does is read correctly rather than plausibly.
+  */
+  if (parts.length > 1) delete (flags as { makesMana?: boolean }).makesMana;
   /*
     Each part is handed the state the one before it produced, which is what a printed sequence
     means. Everything else about the context — the targets, the answering object — is unchanged.

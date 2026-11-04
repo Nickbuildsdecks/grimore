@@ -3948,6 +3948,171 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
   });
 
+  describe('a word that stands for a sentence, mana out of a trigger, and damage divided', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+      division?: readonly number[],
+    ): EffectContext => ({
+      state, controller: seat, source, targets, decisions: [], division,
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const triggerOf = (script: unknown, i = 0) =>
+      (field(script, 'triggers') as readonly TriggerDef[] | undefined)?.[i];
+    const resolve = (script: unknown) =>
+      field(script, 'onResolve') as (c: EffectContext) => GameState;
+
+    it('investigates by making the engine’s own Clue, as Thraben Inspector does', () => {
+      /*
+        "Investigate" is one word standing for text the card does not print: create a colourless
+        Clue artifact token with "{2}, Sacrifice this artifact: Draw a card" (CR 701.33a). The
+        reading is a **call** to the engine's `CLUE_TOKEN` — a definition D243 wrote and tested —
+        rather than a transcription, which is the only safe way to read a word like that: inventing
+        the token's text here would be inventing the text of a real card (D259).
+      */
+      const mine = compiledScript('Thraben Inspector');
+      expect(mine.unread).toEqual([]);
+      const base = arena({ decks: { 0: 'skyward-writ', 1: 'ember-rush' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const after = triggerOf(mine.script)!.effect(ctx);
+      expect(after).toEqual(triggerOf(scriptFor('Thraben Inspector'))!.effect(ctx));
+      const clues = ids(after, 0 as SeatIndex, 'battlefield')
+        .filter((id) => nameOf(after, id) === 'Clue');
+      expect(clues).toHaveLength(1);
+    });
+
+    it('adds the printed mana to the pool, as Burning-Tree Emissary does', () => {
+      const mine = compiledScript('Burning-Tree Emissary');
+      expect(mine.unread).toEqual([]);
+      const base = arena({ decks: { 0: 'kindle-grove', 1: 'ember-rush' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const after = triggerOf(mine.script)!.effect(ctx);
+      expect(after).toEqual(triggerOf(scriptFor('Burning-Tree Emissary'))!.effect(ctx));
+      /*
+        One red and one green, which is the card. The state comparison above would pass on a
+        reader that added the same two symbols in the other order — pools are keyed by colour —
+        but not on one that added the wrong colours or the wrong number, and this says which.
+      */
+      expect(after.pools['0']).toMatchObject({ R: 1, G: 1 });
+    });
+
+    it('carries makesMana on the spell and not on the creature’s trigger', () => {
+      /*
+        The bot hint, and the reason `spellFlags` is the right carrier for it. Without `makesMana`
+        the search casts a Dark Ritual into nothing: the mana sits in the pool and the position
+        after the cast scores no better (#63). But the same clause on **Burning-Tree Emissary** must
+        *not* carry it — that card's own comment records the measurement, 46% of copies cast with
+        the flag against 101% without, because a 2/2 for two is worth casting on its own.
+
+        `spellFlags` reach the spell path only, so one reader gets both cards right. This defect was
+        found by the per-card coverage diff: Dark Ritual started compiling as a side effect of the
+        add-mana clause and arrived without its flag — a card that works and plays badly, which is
+        the third time that shape has turned up (D364, D394).
+      */
+      expect(compiledScript('Dark Ritual').script).toHaveProperty('makesMana', true);
+      expect(scriptFor('Dark Ritual')).toHaveProperty('makesMana', true);
+      expect(field(compiledScript('Burning-Tree Emissary').script, 'makesMana')).toBeUndefined();
+      expect(field(scriptFor('Burning-Tree Emissary'), 'makesMana')).toBeUndefined();
+    });
+
+    it('drops makesMana from a spell that does something else as well', () => {
+      /*
+        The field is for a spell whose **whole** effect is mana. One that adds mana and draws a card
+        has a visible effect, so the hint would hold it back for a follow-up it does not need.
+        Nothing in the pool prints that pair, so this is the first card of its kind being read
+        correctly rather than plausibly.
+      */
+      const mixed = compileCard({
+        name: 'Ritual Draw', type_line: 'Instant', mana_cost: '{B}', cmc: 1, colors: ['B'],
+        oracle_text: 'Add {B}{B}. Draw a card.',
+      });
+      expect(mixed.ok).toBe(true);
+      if (!mixed.ok) return;
+      expect(mixed.unread).toEqual([]);
+      expect(field(mixed.script, 'makesMana')).toBeUndefined();
+    });
+
+    it('refuses mana a pool cannot hold', () => {
+      /*
+        The regex is the validation and admits only the six symbols `addToPool` takes. `{2}` is
+        generic mana, which is a thing a *cost* has and not a thing a pool holds, so the clause is
+        refused rather than read as some colour.
+      */
+      for (const text of ['Add {2}.', 'Add {E}.', 'Add one mana of any color.']) {
+        const odd = compileCard({
+          name: 'Odd Source', type_line: 'Creature — Elemental', mana_cost: '{R}{G}', cmc: 2,
+          colors: ['R', 'G'], power: '2', toughness: '2',
+          oracle_text: `When Odd Source enters the battlefield, ${text.toLowerCase()}`,
+        });
+        expect(odd.ok, text).toBe(true);
+        if (odd.ok) expect(odd.script, text).toBeUndefined();
+      }
+    });
+
+    it.each([
+      // "3 damage divided as you choose among one, two, or three targets" — three and three.
+      ['Arc Lightning', 3, 3],
+      // "1 damage divided as you choose among one or two targets" — one damage, two targets, which
+      // is the pair that proves the two numbers are read separately.
+      ['Pyromatics', 1, 2],
+    ])('%s divides %i damage among up to %i targets, as the hand-written card does', (card, divided, count) => {
+      const mine = compiledScript(card as string);
+      expect(field(mine.script, 'targets'))
+        .toEqual(field(scriptFor(card as string), 'targets'));
+      const spec = (field(mine.script, 'targets') as readonly TargetSpec[])[0]!;
+      expect(spec.divided).toBe(divided as number);
+      expect(spec.count).toBe(count as number);
+      // Every lower number in the printed list is a real choice, which is what `optional` says.
+      expect(spec.optional).toBe(true);
+    });
+
+    it('deals each target its own share, rather than the whole amount to each', () => {
+      const base = arena({
+        decks: { 0: 'arc-tempest', 1: 'verdant-guard' },
+        battlefield: { 1: ['Grizzly Bears', 'Llanowar Elves'] },
+        turn: 3,
+      });
+      const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const elf = find(base, 1 as SeatIndex, 'battlefield', 'Llanowar Elves');
+      const ctx = contextOn(
+        base, 0 as SeatIndex, 'c1',
+        [{ kind: 'card', id: bear }, { kind: 'card', id: elf }],
+        [2, 1],
+      );
+      const mine = resolve(compiledScript('Arc Lightning').script)(ctx);
+      expect(mine).toEqual(resolve(scriptFor('Arc Lightning'))(ctx));
+      /*
+        Two and one, not three and three: each target is a separate dealing of damage with its own
+        share (CR 601.2d), which is why the effect is one `dealDamage` per target rather than a
+        loop over a single amount.
+      */
+      expect(mine.instances[bear]!.damage).toBe(2);
+      expect(mine.instances[elf]!.damage).toBe(1);
+    });
+
+    it.each([
+      // Nothing in the list is a number, so there is no count to take at all.
+      ['any number of targets'],
+      /*
+        And the case that needs its own row: a readable number **beside** an unreadable word. The
+        largest-word rule would happily return two here and read a card whose list it did not
+        understand — so every word has to be a number, and a break run that drops that check
+        passes the row above and fails this one.
+      */
+      ['two or many targets'],
+    ])('refuses a divided clause printed "among %s"', (list) => {
+      // The count comes from the printed list, so a list this cannot read is a count it would
+      // have to guess — and a guessed count is a spell that may not be aimed where the card says.
+      const odd = compileCard({
+        name: 'Vague Bolt', type_line: 'Instant', mana_cost: '{2}{R}', cmc: 3, colors: ['R'],
+        oracle_text: `Vague Bolt deals 3 damage divided as you choose among ${list as string}.`,
+      });
+      expect(odd.ok).toBe(true);
+      if (odd.ok) expect(odd.script).toBeUndefined();
+    });
+  });
+
   describe('loyalty abilities, against the two planeswalkers that compile whole', () => {
     const contextOn = (
       state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],

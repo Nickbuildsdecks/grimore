@@ -25143,3 +25143,73 @@ Six deliberate breaks, six failing tests: the flag dropped, the end step read as
 own, "your end step" accepted as well, the CDA toughness bonus dropped, the power-only case read as
 both, and an unknown count defaulted instead of refused. 4,000 more rows at scale, no throw.
 compile.test.ts 291/291.
+
+## D403 — A word that stands for a sentence, mana out of a trigger, and damage divided
+
+Three readers, five cards, and a dropped bot hint the coverage diff caught.
+
+### Investigate
+
+One word standing for text the card does not print: create a colourless Clue artifact token with
+"{2}, Sacrifice this artifact: Draw a card" (CR 701.33a). The reading is a **call** to the engine's
+own `CLUE_TOKEN`, a definition D243 wrote and tested, rather than a transcription — which is the only
+safe way to read a word like that, because writing the token's text here would be inventing the text
+of a real card (D259).
+
+### Mana out of a trigger
+
+"Add {R}{G}" — Burning-Tree Emissary's whole ability — and "Add {B}{B}{B}", which is Dark Ritual.
+
+The **regex is the validation**: it admits only the six symbols `addToPool` takes, so `{E}` is not
+read as mana and `{2}` — generic mana, which a *cost* has and a pool does not hold — refuses the
+clause. An earlier draft also ran `parseManaCost` over the matched string, which could not fail; it
+was deleted, because this file has caught itself writing that three times already (D386, D394, D398).
+
+### The dropped hint, found by the diff rather than by a test
+
+Dark Ritual started compiling as a **side effect** of the add-mana clause — it was not in the
+increment's plan — and it arrived without `makesMana`, the bot hint whose absence makes the search
+cast a Ritual into nothing (#63). A card that works and plays badly, for the third time (D364, D394),
+and the per-card coverage diff is what surfaced it: five cards moved where three were expected.
+
+The fix is `spellFlags: { makesMana: true }`, and the carrier is the whole answer. `spellFlags` reach
+the spell path only, so one reader gets both cards right: Dark Ritual's resolution applies the flag,
+and Burning-Tree Emissary's ETB trigger drops it — which is that card's own rule, with its own
+measurement in its own comment (46% of copies cast with the flag against 101% without, because a 2/2
+for two is worth casting on its own).
+
+And one more rule, in `composeEffects`: `makesMana` **does not survive composition**. The field is
+for a spell whose *whole* effect is mana; one that adds mana and draws a card has a visible effect, so
+the hint would hold it back for a follow-up it does not need. Nothing in the pool prints that pair,
+so the deletion is there for the first card that does.
+
+### Damage divided as you choose (#119)
+
+"Arc Lightning deals 3 damage divided as you choose among one, two, or three targets" — **two numbers
+out of one sentence, and they are not the same number.** `divided` is the damage to share out;
+`count` is how many targets may be chosen, which the card spells as a list of counts. Pyromatics is
+what proves they are read separately: "1 damage divided as you choose among one or two targets" is
+`divided: 1, count: 2`.
+
+Every word in that list has to be a number, and that check needed its own test row. Dropping it still
+refuses "among any number of targets" — nothing there is a number, so the maximum is zero and a
+separate guard refuses it — but it quietly accepts "among **two or many** targets", reading a card
+whose list it did not understand. The row that catches it was added after a break run passed.
+
+`optional: true` because the lower numbers in the list are real choices, and the effect is
+`dividedAmong`, which is one `dealDamage` per target with its own share: each is a separate dealing
+of damage from the same source (CR 601.2d), so protection, prevention and deathtouch are each asked
+about separately. Both hand-written cards are written that way, and the test asserts two and one
+rather than three and three.
+
+### Measured
+
+**376 → 381 of 538 printed lines (69.9% → 70.8%)**, and **239 → 243 of 339 cards** — past seventy per
+cent. Thraben Inspector, Burning-Tree Emissary, Arc Lightning and Dark Ritual whole, Pyromatics too
+(its replicate was already read). The per-card diff named all five, which is how the Dark Ritual
+defect was found.
+
+Seven deliberate breaks, seven failing tests: investigate making a Treasure, only the first mana
+symbol added, the mana regex admitting generic, the divided count read off the damage, the division
+ignored so each target takes the whole amount, the `makesMana` hint dropped, and the composition
+keeping it. 9,000 more rows at scale, no throw. compile.test.ts 301/301.

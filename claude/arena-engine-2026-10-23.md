@@ -10781,3 +10781,22 @@ it: the property ("the flag belongs to the pair") is unchanged, only how it is e
 
 **372 → 376 of 538 lines (69.1% → 69.9%)**, **235 → 239 of 339 cards**. Six deliberate breaks, six
 failing tests; 291/291; 4,000 rows at scale with no throw.
+
+## Investigate, mana out of a trigger, and damage divided (#317, D403)
+
+Three readers and five cards. **Investigate** is one word for text the card does not print, so it is
+read as a call to the engine's own Clue token (D243) rather than transcribed — writing that text here
+would be inventing a real card's words. **"Add {R}{G}"** gives Burning-Tree Emissary and, as a side
+effect nobody planned, Dark Ritual. **Divided damage** gives Arc Lightning and Pyromatics, where the
+sentence holds two numbers that are not the same number: the damage to share and the list of target
+counts, which is why Pyromatics is `divided: 1, count: 2`.
+
+**The defect the diff caught:** Dark Ritual arrived without `makesMana`, the hint whose absence makes
+the bot cast a Ritual into nothing (#63) — a card that works and plays badly, for the third time
+(D364, D394). Found because five cards moved where three were expected. The fix is `spellFlags`,
+which reach the spell path only, so the same reader gives Dark Ritual the flag and Burning-Tree's ETB
+trigger none — that card's own measured rule. And `makesMana` now does not survive composition: a
+spell that adds mana *and* draws a card has a visible effect.
+
+**376 → 381 of 538 lines (69.9% → 70.8%)**, **239 → 243 of 339 cards** — past seventy per cent.
+Seven deliberate breaks, seven failing tests; 301/301; 9,000 rows at scale with no throw.
