@@ -1040,21 +1040,29 @@ export function cardBadges(view: GameView, card: VisibleCard): string[] {
   if (card.card !== undefined && manual.some((m) => m.name === card.card?.name)) {
     out.push("move by hand")
   }
-  if (card.zone !== "battlefield") return out
   /*
-    Something to do with this permanent right now, which the board never said.
+    Something to do with this card right now, in whatever zone it is sitting in.
 
-    Every other zone a play can come from badges it — hand, graveyard, exile, command — and the
-    battlefield did not, so a Contagion Clasp with four mana up, an Equipment that could move and a
-    Vehicle that could be crewed all looked exactly like a permanent sitting there doing nothing.
-    The plays were on the card's own sheet the whole time; what was missing was the thing that tells
-    a player to open it.
+    This is the badge every zone wanted, and for a while every zone computed it for itself: the
+    hand, the graveyard, the exile pile and the command zone each passed `PlayTable` a one-line
+    `badgesOf` of their own that said `["playable"]` and nothing else. That is why it lives here
+    now, above the battlefield guard below. Four hand-written copies of one rule is four places to
+    forget a fifth badge in — which is exactly what happened to "move by hand" above, whose own
+    comment claimed every zone while the only zone calling this function was the battlefield.
+
+    What it meant on the battlefield specifically: a Contagion Clasp with four mana up, an Equipment
+    that could move and a Vehicle that could be crewed all looked like permanents sitting there
+    doing nothing. The plays were on the card's own sheet the whole time; what was missing was the
+    thing that tells a player to open it.
 
     Mana abilities are left out on purpose. Every untapped land has one, so counting them would
     badge half the board every turn and say nothing — and the engine taps lands for a cost by
-    itself, so a land's own `{T}: Add {G}` is not a play anybody needs pointing out.
+    itself, so a land's own `{T}: Add {G}` is not a play anybody needs pointing out. The four
+    zone-local copies did not make that exception, because in a hand or a pile there is nothing to
+    tap; keeping it here is the stricter of the two rules and right in every zone.
   */
   if (playsForCard(view, card.id).some((play) => !play.isManaAbility)) out.push("playable")
+  if (card.zone !== "battlefield") return out
   // An Aura is drawn on its controller's side, which is often not the side its host is on, so
   // without naming the host there is nothing on screen that says what a Pacifism is doing.
   if (card.attachedTo !== null) {

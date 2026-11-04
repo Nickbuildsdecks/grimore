@@ -1627,6 +1627,48 @@ describe("cardBadges", () => {
     expect(cardBadges(onlyMana, permanent())).not.toContain("playable")
   })
 
+  it("says it of a card in hand too, which is the zone four lambdas used to answer for themselves", () => {
+    /*
+      The regression test for D363, and the half of it nothing could see.
+
+      "playable" used to be pushed *below* the battlefield-only guard, and the hand, graveyard,
+      exile pile and command zone each computed the word for themselves in a `badgesOf` of their
+      own. So `cardBadges` on a hand card returned nothing, and the UI looked right anyway — until
+      a badge was added above the guard for every zone, and four of them could not show it. Pinning
+      both halves here is what makes the one function the only place the rule lives.
+    */
+    const inHand = permanent({
+      id: "h1", zone: "hand", power: undefined, toughness: undefined, isCreature: undefined,
+    })
+    const you = automation()!.you
+    const castable = view({ automation: automation({ you: { ...you, plays: [{
+      kind: "cast", card: "h1", name: "Grizzly Bears", description: "Creature — Bear",
+      manaCost: "{1}{G}", targetSpecs: [], candidates: [], sacrificeOptions: [],
+      isManaAbility: false,
+    }] } }) })
+    expect(cardBadges(castable, inHand)).toContain("playable")
+    // And nothing the battlefield guard protects leaks into a hand card's badges.
+    expect(cardBadges(castable, inHand)).not.toContain("2/2")
+  })
+
+  it("badges a card the engine cannot play, in a hand as well as on the battlefield", () => {
+    /*
+      The other half of D363. `view.manual` is the engine's list of cards it has no script for; the
+      badge is what tells their owner to move them by hand, and the hand is where they first see
+      it. This is the assertion whose UI wiring was missing for every zone but the battlefield.
+    */
+    const manual = [{ name: "Nonsense Card", reason: "no-printed-data" as const, detail: "no type line" }]
+    const unreadable = permanent({
+      id: "u1", zone: "hand", power: undefined, toughness: undefined, isCreature: undefined,
+      card: { name: "Nonsense Card", typeLine: "", manaCost: "", cmc: 0, oracleText: "", colors: [] },
+    })
+    const v = view({ automation: automation(), manual })
+    expect(cardBadges(v, unreadable)).toContain("move by hand")
+    expect(cardBadges(v, permanent({ ...unreadable, zone: "battlefield" }))).toContain("move by hand")
+    // A card the engine does know is not badged, in either zone.
+    expect(cardBadges(v, permanent({ zone: "hand" }))).not.toContain("move by hand")
+  })
+
   it("names what a permanent is holding in exile", () => {
     // Killing a Journey to Nowhere is a decision about the creature it took, and the two cards are
     // on opposite sides of the board with nothing else connecting them.

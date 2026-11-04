@@ -2080,7 +2080,7 @@ function Board({ table }: { table: UseTable }) {
           cards={cardsIn(view, zoneAt(view, seat, "graveyard"))}
           onSelect={onSelect}
           {...aiming}
-          badgesOf={(card) => (automated && playsForCard(view, card.id).length > 0 ? ["playable"] : [])}
+          badgesOf={badgesOf}
         />
         {/*
           The badge on this row is newer than the row, and it is cascade that asked for it: a card
@@ -2095,7 +2095,7 @@ function Board({ table }: { table: UseTable }) {
           cards={cardsIn(view, zoneAt(view, seat, "exile"))}
           onSelect={onSelect}
           {...aiming}
-          badgesOf={(card) => (automated && playsForCard(view, card.id).length > 0 ? ["playable"] : [])}
+          badgesOf={badgesOf}
         />
         {/*
           The badge matters more on the command zone than anywhere: a commander is castable on most
@@ -2110,7 +2110,7 @@ function Board({ table }: { table: UseTable }) {
             cards={cardsIn(view, zoneAt(view, seat, "command"))}
             onSelect={onSelect}
             {...aiming}
-            badgesOf={(card) => (automated && playsForCard(view, card.id).length > 0 ? ["playable"] : [])}
+            badgesOf={badgesOf}
           />
         ) : null}
       </div>
@@ -2151,10 +2151,7 @@ function Board({ table }: { table: UseTable }) {
         onSelect={onSelect}
         selectedIds={chosenIds}
         highlightOf={highlightOf}
-        badgesOf={(card) =>
-          // In hand, the useful thing to say is whether it can be played at all right now.
-          automated && playsForCard(view, card.id).length > 0 ? ["playable"] : []
-        }
+        badgesOf={badgesOf}
         empty="no cards in hand"
       />
       {/*

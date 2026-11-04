@@ -9597,3 +9597,46 @@ included. A second guard fails if an instrument reaches past the wrapper into `d
 Four instruments re-run to confirm the indirection changed nothing: `derivable` 360 cards,
 `wire-growth` 25.5%/28.6% of the cap, `mechanic-coverage` 81 of 81, `card-promises` 0 gaps with its
 control still reporting 1.
+
+## Hybrid automation, and the badge that was only in one zone (#316, D362-D363)
+
+**The decision (D362).** A pasted deck holding a card the engine has no script for no longer drops
+the table out of automation. The engine deals the game, runs turns, priority and combat, and the
+cards it cannot read are marked for moving by hand. `coverage.ts` (`manualCards`, `manualNote`) is
+the report; `GameView.manual` carries it to every seat; `card:move` and `card:tap` already worked
+inside an automated game and already recorded zone-change events, so a hand-moved creature still
+raises triggers. Removing the refusal broke **one** engine test of 1425 — which is the evidence that
+the two halves were built to coexist.
+
+What it deliberately does not claim: it detects *one* of the two ways a card can fail to be
+automated. "No printed data" is certain. "Printed data, unimplemented text" is not detected at all —
+the reason code `text-not-automated` exists and nothing emits it. The oracle-text compiler (#317) is
+what will be able to answer it.
+
+**The defect that fix shipped with (D363).** "move by hand" was added to `cardBadges` above the
+battlefield-only guard, with a comment saying it would therefore show in **every** zone, and naming
+the hand as the zone that mattered most. It showed in exactly one: the battlefield. The hand, the
+graveyard, the exile pile and the command zone each passed `PlayTable` their own
+`badgesOf={(card) => ... ["playable"] ...}` and never called `cardBadges` at all.
+
+Nothing caught it, and each reason is worth keeping:
+
+| Should have caught it | Why it did not |
+| --- | --- |
+| 8 `cardBadges` unit tests | all passed — the *function* was right; four call sites chose a different one |
+| `pnpm v2:typecheck` | a `badgesOf` is `(c: VisibleCard) => readonly string[]` whatever it computes |
+| `check-hybrid.mjs` in a real browser | asserted the badge on a deck with 1 unreadable card in 60, which sits in the library ~7 runs in 8, and a library renders nothing |
+
+That last row is the new one for the family: a check whose **true failure reads as a flake**. Every
+other member reads as good news. I had written the shuffle dependence into that check's own comment
+and then relied on it anyway.
+
+Fixed by making `cardBadges` the only place the rule lives — `playable` moved above the guard, the
+four lambdas deleted — plus two regression tests proved to discriminate, and
+`checkBadgesAllComeFromCardBadges` in `scripts/guards.js`, also proved to discriminate. A test cannot
+catch this and a type cannot either; a grep can, because the defect has a shape.
+
+`check-hybrid.mjs` now runs two tables, because neither deck can carry both claims: a 59/60-readable
+deck proves the engine *keeps playing* (four real moves taken), and an all-unreadable deck proves the
+marking is *visible* (seven unreadable cards in hand, so the badge cannot be missed by construction).
+**11/11**, and in CI's `browser` job as `play:e2e:hybrid`.

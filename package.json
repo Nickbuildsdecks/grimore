@@ -22,6 +22,7 @@
     "play": "node scripts/play.mjs",
     "play:e2e": "node scripts/e2e-table.mjs",
     "play:e2e:controls": "node scripts/check-table-controls.mjs",
+    "play:e2e:hybrid": "node scripts/check-hybrid.mjs",
     "play:e2e:arena": "node scripts/e2e-arena.mjs",
     "play:e2e:pod": "node scripts/e2e-pod.mjs",
     "play:e2e:solo": "node scripts/e2e-solo.mjs",

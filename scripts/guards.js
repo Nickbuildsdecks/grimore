@@ -882,6 +882,57 @@ function checkScriptsImportTheEngineWrapper() {
 }
 checkScriptsImportTheEngineWrapper();
 
+/**
+ * Every `badgesOf` prop in the table UI goes through `cardBadges`, rather than computing badges
+ * itself.
+ *
+ * This is the guard for D363, and the bug it exists to stop is worth stating exactly, because it
+ * survived a unit test, a typecheck and a browser suite. `cardBadges` grew a "move by hand" badge
+ * for a card the engine cannot play, with a comment saying it was deliberately placed above the
+ * battlefield-only guard so it would show in **every** zone. It was not in every zone: the hand,
+ * the graveyard, the exile pile and the command zone each passed `PlayTable` a `badgesOf` of their
+ * own that returned `["playable"]` and nothing else, so the one zone the comment named as the most
+ * important — the hand, where a player discovers their card has no "Cast" — was the one zone that
+ * could not say so.
+ *
+ * Nothing caught it. `cardBadges` has eight unit tests and they all pass, because the function was
+ * right. The types matched, because a `badgesOf` is a `(c: VisibleCard) => readonly string[]` no
+ * matter what it computes. And the browser check that should have caught it was asking about a
+ * deck with one unreadable card in sixty, which is a card in the library seven times in eight, and
+ * a library renders nothing — so it failed about one run in eight and read green the rest.
+ *
+ * Hence a guard rather than another test: the defect is not in a function, it is in **which**
+ * function a call site chose, and that is a shape a grep can see and a test cannot. A new zone row
+ * that wants its own badge rule now has to add it to `cardBadges`, where every zone gets it.
+ */
+function checkBadgesAllComeFromCardBadges() {
+  const files = ['apps/web/src/pages/PlayTable.tsx'];
+  const offenders = [];
+  for (const file of files) {
+    const lines = readFileSync(file, 'utf8').split('\n');
+    lines.forEach((line, i) => {
+      const m = /badgesOf=\{(.*)$/.exec(line);
+      if (m === null) return;
+      const rest = m[1];
+      // `badgesOf={badgesOf}` passes the shared one; anything else must name `cardBadges` on the
+      // same line, which is the one-line arrow form the spectator board uses.
+      if (rest.startsWith('badgesOf}')) return;
+      if (rest.includes('cardBadges')) return;
+      offenders.push(`${file}:${i + 1}: ${line.trim()}`);
+    });
+  }
+  if (offenders.length > 0) {
+    console.error(`[guards] ${offenders.length} badgesOf prop(s) do not go through cardBadges:`);
+    for (const o of offenders) console.error(`[guards]   ${o}`);
+    console.error('[guards] Pass the shared `badgesOf`, or a one-line arrow calling `cardBadges`.');
+    console.error('[guards] A zone that computes its own badges silently drops every badge added');
+    console.error('[guards] to cardBadges afterwards — which is how "move by hand" was missing');
+    console.error('[guards] from the hand, the graveyard, exile and the command zone (D363).');
+    bad++;
+  }
+}
+checkBadgesAllComeFromCardBadges();
+
 if (bad) {
   console.error(`[guards] ${bad} violation(s)`);
   process.exit(1);

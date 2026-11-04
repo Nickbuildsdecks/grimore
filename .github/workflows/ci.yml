@@ -146,6 +146,10 @@ jobs:
           exit 1
       - run: node scripts/e2e-table.mjs
       - run: node scripts/check-table-controls.mjs
+      # Hybrid automation: the engine runs a deck holding cards it has no script for, and marks
+      # them. This is the check that has to hold as the pool grows towards every printed card, so
+      # it belongs in CI rather than in a local sweep — see scripts/check-hybrid.mjs.
+      - run: node scripts/check-hybrid.mjs
       # The screenshots are how a failure gets diagnosed without a browser to hand.
       - if: failure()
         uses: actions/upload-artifact@v4

@@ -22648,3 +22648,78 @@ the count it always wanted.
 
 Verified: engine 1429 passed (+4), gate 17/17 with services up, `e2e-table` **76/76** including the
 lobby now offering the engine on a deck it cannot fully read.
+
+## D363 — The badge that was in one zone, and the browser check that read the shuffle instead of the build
+
+D362 added "move by hand" to `cardBadges`, above the battlefield-only guard, with a comment saying
+it was placed there deliberately so the badge would show in **every** zone — and naming the hand as
+the zone that mattered most, because the hand is where a player discovers their card has no "Cast"
+on its sheet.
+
+It was in exactly one zone: the battlefield.
+
+`PlayTable` has nine `badgesOf` call sites. Four of them — the hand, the graveyard, the exile pile
+and the command zone — did not call `cardBadges` at all. Each passed a lambda of its own:
+
+```tsx
+badgesOf={(card) => (automated && playsForCard(view, card.id).length > 0 ? ["playable"] : [])}
+```
+
+Four hand-written copies of one rule, which between them could produce exactly one word. So every
+badge `cardBadges` has ever grown was invisible in those four zones, and the newest one was
+invisible in the zone its own comment called the most important.
+
+### Why nothing caught it, which is the part worth keeping
+
+- **The unit tests passed**, all eight of them, because `cardBadges` was correct. The defect was not
+  in the function; it was in *which function four call sites chose*. No test of a function can see
+  that.
+- **The typecheck passed**, because a `badgesOf` is a `(c: VisibleCard) => readonly string[]` no
+  matter what it computes. The type says the shape of the answer and nothing about the question.
+- **The browser check passed, most of the time.** `check-hybrid.mjs` asserted the badge on a deck of
+  `24 Mountain / 20 Forest / 15 Grizzly Bears / 1 Nonsense Card`, and a badge renders only on a card
+  the page is drawing. One copy in sixty is in the library about seven times in eight, and a library
+  draws nothing. So the check read **green on a broken build** seven runs in eight, and its one
+  failure looked like a flake.
+
+I had written the shuffle dependence down in that check's own comment — *"which zone the one copy is
+in on turn one is a fact about the shuffle rather than about the badge"* — and then written a check
+that depended on it anyway. A check whose result is a fact about the shuffle is the twelfth member
+of this file's family, and the first one whose failure mode is **a true failure that reads as
+noise**: the others read as good news.
+
+### The fix is one function, not five
+
+`playable` moved above the battlefield guard, and the four zone-local lambdas were deleted in favour
+of the shared `badgesOf`. The zone rows had a laxer rule than the battlefield's —
+`playsForCard(...).length > 0` against `.some((p) => !p.isManaAbility)` — because in a hand or a
+pile there is nothing to tap; keeping the stricter one is right in every zone, and the web suite's
+246 tests agree.
+
+Two regression tests, both proved to discriminate by reverting the move and watching them fail:
+`cardBadges` says "playable" for a castable card in hand, and badges an unreadable card in the hand
+as well as on the battlefield.
+
+### And a guard, because the next badge will be added by somebody who does not know this
+
+`checkBadgesAllComeFromCardBadges` in `scripts/guards.js` requires every `badgesOf=` prop in
+`PlayTable.tsx` to pass the shared `badgesOf` or name `cardBadges` on the same line. Proved to
+discriminate: reinstating one of the deleted lambdas fails it with the file and line.
+
+A test cannot catch this and a type cannot either. A grep can, because the defect has a shape.
+
+### The browser check now proves it by construction
+
+`check-hybrid.mjs` runs **two** tables, because neither deck can carry both claims:
+
+- `24 Mountain / 20 Forest / 15 Grizzly Bears / 1 Nonsense Card` — the engine starts, the log names
+  the card, and **the engine really plays the other fifty-nine sixtieths**, checked by asking it for
+  four moves and making them. A deck of nothing but unreadable cards would prove only that the
+  engine starts.
+- `30 Mystery Alpha / 30 Mystery Beta` — nothing in it is readable, so all seven cards dealt to that
+  hand are unreadable and the badge **cannot** be missed by a build that has it, or produced by one
+  that does not. This also exercises the plural half of the lobby copy, which nothing had read.
+
+Verified: web 246 passed (+2), guards OK and proved to discriminate, `check-hybrid` **11/11**,
+`e2e-table` 76/76, `check-table-controls` 26/26, `e2e-arena` 52/52 with 6 named skips. Added to CI's
+`browser` job and to `package.json` as `play:e2e:hybrid`.
