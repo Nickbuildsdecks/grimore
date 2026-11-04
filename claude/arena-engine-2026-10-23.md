@@ -10828,3 +10828,18 @@ failing tests; 306/306; 5,000 rows at scale with no throw.
 **And the live game, re-checked:** nine compiler commits is a lot of engine change to leave
 unexercised, so all four browser suites ran on a freshly built stack — **table 76/76, arena 52/52
 (6 named skips), solo 28/28 (1), pod 40/40 (1)**. Clean.
+
+## An additional cost, paid as the spell is cast (#317, D405)
+
+Bone Splinters and Village Rites, both whole. The sentence needs its own reader because of *when* it
+happens: a spell's sentences all happen on resolution and this one happens as it is **cast** (CR
+601.2h), so it cannot be answered and the creature cannot be saved in reply. Read beside the
+keywords, where the lines that are not part of the resolution come out before the clause readers see
+them.
+
+Only the sacrifice, because that is all `additionalCost` holds. "Discard a card" and "pay 3 life" are
+real printed costs the engine cannot express, and dropping one would make the spell **cheaper than
+the card** — the clearest kind of card that works and is wrong.
+
+**386 → 390 of 538 lines (71.7% → 72.5%)**, **244 → 246 of 339 cards**. Three deliberate breaks,
+three failing tests; 313/313; 4,000 rows at scale with no throw.

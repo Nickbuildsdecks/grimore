@@ -25281,3 +25281,36 @@ run on a freshly built stack: **table 76/76, arena 52/52 with 6 named skips, sol
 40/40 with 1.** Clean. The counts move by a check or two between runs because a check the game did not
 produce is skipped and named rather than failed (D302) — `play-realm-setup.md` now says so, instead of
 printing one run's numbers as though they were the suite's size.
+
+## D405 — An additional cost, which is paid as the spell is cast
+
+"As an additional cost to cast this spell, sacrifice a creature" — Bone Splinters and Village Rites,
+and both compile **whole**, because the sentences after it ("Destroy target creature", "Draw two
+cards") already read.
+
+It needs a reader of its own rather than a clause, and the reason is the difference between casting
+and resolving. A spell's sentences all happen when it resolves; this one happens as it is **cast**
+(CR 601.2h), so it cannot be responded to and the creature cannot be saved in reply. Handing it to
+`composeEffects` would either refuse the card or — worse — run the sacrifice on resolution, which is
+a different card. So `spellScriptFor` reads it beside the keywords, where the lines that are not part
+of the resolution come out before `readResolution` sees them, and `lineScriptFor` reads it too, for
+the permanent spells that print the same line.
+
+`additionalCost` holds a **sacrifice and nothing else**, so that is all this reads. "Discard a card",
+"pay 3 life" and "exile a creature card from your graveyard" are real printed costs this engine
+cannot express, and a reader that dropped one would make the spell **cheaper than the card** — the
+clearest kind of card that works and is wrong, and the one a player would notice last. They are
+refused, and the line is reported, so the card is dealt as a hybrid rather than cast for less.
+
+The engine already honours the field: a spell whose additional cost cannot be paid is **not offered**
+rather than offered and refused, so Bone Splinters with an empty board is not a legal play.
+
+### Measured
+
+**386 → 390 of 538 printed lines (71.7% → 72.5%)**, and **244 → 246 of 339 cards**: Bone Splinters
+and Village Rites, which the per-card diff names and nothing else.
+
+Three deliberate breaks, three failing tests: any additional cost accepted as a sacrifice, "another"
+read as the plain sacrifice, and the cost line left in the resolution (which fails four tests,
+because leaving it there refuses both cards). 4,000 more rows at scale, no throw. compile.test.ts
+313/313.

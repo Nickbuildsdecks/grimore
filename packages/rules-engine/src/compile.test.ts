@@ -4269,6 +4269,85 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
   });
 
+  describe('an additional cost, which is paid as the spell is cast and not as it resolves', () => {
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    it.each([
+      // "Destroy target creature" plus the sacrifice — the whole card, both halves.
+      ['Bone Splinters'],
+      // And the same cost on a card whose resolution is a draw.
+      ['Village Rites'],
+    ])('%s carries the additional cost the hand-written card declares', (card) => {
+      const mine = compiledScript(card as string);
+      expect(mine.unread).toEqual([]);
+      expect(field(mine.script, 'additionalCost'))
+        .toEqual(field(scriptFor(card as string), 'additionalCost'));
+      expect(field(mine.script, 'additionalCost')).toEqual({ sacrifice: 'creature' });
+    });
+
+    it('keeps the cost out of the resolution', () => {
+      /*
+        The property that makes this a reader of its own rather than a clause. The sacrifice happens
+        as the spell is **cast** (CR 601.2h), so it cannot be responded to and the creature cannot
+        be saved in reply. Handing the sentence to `composeEffects` would either refuse the card or
+        run the sacrifice on resolution, which is a different card.
+
+        Asserted by resolving Village Rites and watching it draw and **sacrifice nothing**: the
+        board is untouched apart from the cards owed.
+      */
+      const base = arena({
+        decks: { 0: 'rot-harvest', 1: 'ember-rush' },
+        battlefield: { 0: ['Shambling Shell'] },
+        turn: 3,
+      });
+      const shell = find(base, 0 as SeatIndex, 'battlefield', 'Shambling Shell');
+      const after = (field(compiledScript('Village Rites').script, 'onResolve') as
+        (c: EffectContext) => GameState)({
+          state: base, controller: 0 as SeatIndex, source: 'c1', targets: [], decisions: [],
+        } as unknown as EffectContext);
+      expect(after.drawsOwed.length).toBe(base.drawsOwed.length + 2);
+      expect(ids(after, 0 as SeatIndex, 'battlefield')).toContain(shell);
+    });
+
+    it('reads "another creature" as the narrower cost', () => {
+      // The field has two values and the difference is a real one: a Village Rites that could eat
+      // itself is not a card, but a creature spell with this cost may not sacrifice the creature
+      // it is paying for.
+      const another = compileCard({
+        name: 'Narrow Rites', type_line: 'Instant', mana_cost: '{B}', cmc: 1, colors: ['B'],
+        oracle_text: 'As an additional cost to cast this spell, sacrifice another creature.\nDraw two cards.',
+      });
+      expect(another.ok).toBe(true);
+      if (!another.ok) return;
+      expect(another.unread).toEqual([]);
+      expect(field(another.script, 'additionalCost')).toEqual({ sacrifice: 'another-creature' });
+    });
+
+    it.each([
+      ['discard a card'],
+      ['pay 3 life'],
+      ['exile a creature card from your graveyard'],
+    ])('refuses an additional cost of "%s", which the engine cannot express', (cost) => {
+      /*
+        `additionalCost` holds a sacrifice and nothing else. These are real printed costs, and a
+        reader that dropped one would make the spell **cheaper than the card** — the clearest kind
+        of card that works and is wrong, and the one a player would notice last.
+      */
+      const odd = compileCard({
+        name: 'Other Cost', type_line: 'Sorcery', mana_cost: '{B}', cmc: 1, colors: ['B'],
+        oracle_text: `As an additional cost to cast this spell, ${cost as string}.\nDraw two cards.`,
+      });
+      expect(odd.ok).toBe(true);
+      if (!odd.ok) return;
+      expect(field(odd.script, 'additionalCost')).toBeUndefined();
+      // And the line is reported, so the card is dealt as a hybrid rather than cast for less.
+      expect(odd.unread.map((u) => u.line)).toContain(
+        `As an additional cost to cast this spell, ${cost as string}.`,
+      );
+    });
+  });
+
   describe('loyalty abilities, against the two planeswalkers that compile whole', () => {
     const contextOn = (
       state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],

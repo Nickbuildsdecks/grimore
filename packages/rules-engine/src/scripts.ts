@@ -12004,6 +12004,34 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
 }
 
 /**
+ * "As an additional cost to cast this spell, sacrifice a creature."
+ *
+ * Not part of the resolution, which is why it needs a reader of its own rather than a clause: a
+ * spell's sentences all happen when it resolves, and this one happens as it is **cast** (CR
+ * 601.2h). Handing it to `composeEffects` would either refuse the card or, worse, run the sacrifice
+ * on resolution — where it can be responded to and the creature can be saved in reply, which is a
+ * different card.
+ *
+ * `additionalCost` is the field, and the engine already honours it: a spell whose additional cost
+ * cannot be paid is **not offered** rather than offered and refused, so Bone Splinters with an empty
+ * board is not a legal play.
+ *
+ * Only the sacrifice, because that is the only shape the field has. "Discard a card", "pay 3 life"
+ * and the rest are real printed costs this engine cannot express, and a reader that dropped them
+ * would make a spell cheaper than the card — the clearest kind of card that works and is wrong.
+ */
+function additionalCostFromLine(line: string): Partial<CardScript> | null {
+  const matched = /^As an additional cost to cast this spell, sacrifice (a|another) creature$/i
+    .exec(plain(line).trim().replace(/\.\s*$/, ''));
+  if (matched === null) return null;
+  return {
+    additionalCost: {
+      sacrifice: matched[1]!.toLowerCase() === 'another' ? 'another-creature' : 'creature',
+    },
+  };
+}
+
+/**
  * Everything the compiler can read off one printed line of a **permanent**: a keyword, a triggered
  * ability, or an activated one.
  *
@@ -12012,6 +12040,7 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
  */
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
   return keywordScriptFor(line, name)
+    ?? additionalCostFromLine(line)
     ?? staticFromLine(line)
     ?? conditionalStaticFromLine(line, name)
     ?? definesSizeFromLine(line, name)
@@ -12137,7 +12166,13 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   const declared: string[] = [];
 
   for (const line of lines) {
-    const keyword = keywordScriptFor(line, name);
+    /*
+      The additional cost is read here beside the keywords, and for the same reason: it is not part
+      of the resolution, so it must come out of `resolution` before `readResolution` sees it — a
+      sentence about casting handed to the clause readers refuses the card at best and runs the
+      sacrifice on resolution at worst.
+    */
+    const keyword = keywordScriptFor(line, name) ?? additionalCostFromLine(line);
     if (keyword === null) {
       /*
         A keyword nothing here can build is still not part of the resolution. Putting it there is
