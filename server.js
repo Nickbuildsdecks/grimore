@@ -325,84 +325,6 @@ app.get('/sandbox', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'sandbox.html'));
 });
 
-// Gemini AI Rules & Interaction Reasoning Endpoint
-const aiAdvisorQuerySchema = z.object({
-  query: z.string().min(1).max(1000),
-  boardState: z.string().optional()
-});
-
-// Tight per-client limiter for the paid Gemini endpoint so an anonymous caller can't
-// run up API spend. Defined here (before the route that uses it) to avoid a temporal
-// dead zone — the route is registered above where the other rate limiters are declared.
-const aiLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000,
-  max: 15,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, error: 'AI advisor rate limit reached. Please wait a moment.' }
-});
-
-app.post('/api/sandbox/ai-advisor', aiLimiter, premiumGate, async (req, res) => {
-  // Require a logged-in session — this endpoint drives billable Gemini calls.
-  if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
-  const parseResult = aiAdvisorQuerySchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ error: 'Invalid input parameters.', details: parseResult.error.format() });
-  }
-
-  const { query, boardState } = parseResult.data;
-
-  const hasValidApiKey = process.env.GEMINI_API_KEY && 
-                         !process.env.GEMINI_API_KEY.includes('your_') && 
-                         !process.env.GEMINI_API_KEY.includes('placeholder') &&
-                         process.env.GEMINI_API_KEY.trim().length > 15;
-
-  if (!genAI || !hasValidApiKey) {
-    return res.json({
-      answer: `Grim Rules Advisor (Heuristic Mode): Rule check for query "${query}". Priority and state-based action checks resolved. [CR 704.5 / MTR 4.1]`,
-      mode: "heuristic",
-      ruleCitation: "CR 704.5"
-    });
-  }
-
-  try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-    const prompt = `You are Grim — the official Grimore MTG Arena Rules Advisor and L3 Certified MTG Head Judge.
-STRICT PRECISION DIRECTIVE: You must provide 100% accurate, bulletproof Magic: the Gathering rulings with zero hallucinations.
-MANDATORY DUAL-SOURCE CITATIONS: You must ALWAYS cite applicable official sources:
-1. Mechanical Rules: Exact Comprehensive Rules section number (e.g., CR 603.6a, CR 613.1d, CR 704.5k).
-2. Tournament Policy / Infractions: Exact Infraction Procedure Guide (IPG) or Magic Tournament Rules (MTR) section number (e.g., IPG 2.3, IPG 3.5, MTR 4.1).
-
-Format your response cleanly for fast in-game reading:
-- Direct, authoritative ruling first.
-- Exact dual citations formatted as [CR X.Y / IPG A.B].
-- Step-by-step mechanical/policy breakdown (under 3 sentences).
-
-User Query: "${query}"
-${boardState ? `Current Board Context: ${boardState}` : ''}`;
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('AI Rules Advisor request timeout')), 1500)
-    );
-    const result = await Promise.race([model.generateContent(prompt), timeoutPromise]);
-    const responseText = result.response.text();
-
-    return res.json({
-      answer: responseText,
-      mode: "ai-active",
-      model: "gemini-flash-latest"
-    });
-
-  } catch (err) {
-    console.warn("Gemini AI API Fallback:", err.message);
-    return res.json({
-      answer: `Grim Rules Advisor (Heuristic Mode): Analysis for query "${query}". Priority and state-based action checks resolved. [CR 704.5 / MTR 4.1]`,
-      mode: "heuristic-fallback",
-      ruleCitation: "CR 704.5"
-    });
-  }
-});
-
 const { createClient } = require('redis');
 const { RedisStore } = require('connect-redis');
 
@@ -525,6 +447,106 @@ app.use(async (req, res, next) => {
       return next();
     }
     next(e);
+  }
+});
+
+/*
+  Gemini AI Rules & Interaction Reasoning Endpoint.
+
+  **Mounted here, below the session middleware, and that position is the fix for a hang.** This
+  block used to sit at line ~328 — above `app.use(session(...))`. Express only gives a route the
+  middleware registered before it, so `req.session` was `undefined`, the handler's first line
+  (`if (!req.session.player)`) threw a TypeError, and because the handler is `async` that became an
+  unhandled rejection: Express 4 does not route those to an error handler, so **the request never
+  received a response at all**. A player asking the rules advisor a question waited for their own
+  browser to give up, and two of the fourteen suites in `execution/` had been reporting it as
+  "timed out" for as long as anybody has run them (D354).
+
+  Keep it below `app.use(session(...))` and below the session-epoch middleware. That middleware's
+  own docblock says it is mounted "before every route, so no route can be reached with a stale
+  session" — which was not true of this one, and is now.
+*/
+const aiAdvisorQuerySchema = z.object({
+  query: z.string().min(1).max(1000),
+  boardState: z.string().optional()
+});
+
+/*
+  Tight per-client limiter for the paid Gemini endpoint so an anonymous caller can't run up API
+  spend.
+
+  It used to sit far above here, with a comment explaining that it was "defined here (before the
+  route that uses it) to avoid a temporal dead zone — the route is registered above where the other
+  rate limiters are declared". That workaround was treating the symptom: the route being registered
+  up there is the actual problem, and it is fixed by moving the route rather than the limiter
+  (D354). Both now live below the session middleware, where a route that requires a login belongs.
+*/
+const aiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'AI advisor rate limit reached. Please wait a moment.' }
+});
+
+app.post('/api/sandbox/ai-advisor', aiLimiter, premiumGate, async (req, res) => {
+  // Require a logged-in session — this endpoint drives billable Gemini calls.
+  if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
+  const parseResult = aiAdvisorQuerySchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid input parameters.', details: parseResult.error.format() });
+  }
+
+  const { query, boardState } = parseResult.data;
+
+  const hasValidApiKey = process.env.GEMINI_API_KEY && 
+                         !process.env.GEMINI_API_KEY.includes('your_') && 
+                         !process.env.GEMINI_API_KEY.includes('placeholder') &&
+                         process.env.GEMINI_API_KEY.trim().length > 15;
+
+  if (!genAI || !hasValidApiKey) {
+    return res.json({
+      answer: `Grim Rules Advisor (Heuristic Mode): Rule check for query "${query}". Priority and state-based action checks resolved. [CR 704.5 / MTR 4.1]`,
+      mode: "heuristic",
+      ruleCitation: "CR 704.5"
+    });
+  }
+
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
+    const prompt = `You are Grim — the official Grimore MTG Arena Rules Advisor and L3 Certified MTG Head Judge.
+STRICT PRECISION DIRECTIVE: You must provide 100% accurate, bulletproof Magic: the Gathering rulings with zero hallucinations.
+MANDATORY DUAL-SOURCE CITATIONS: You must ALWAYS cite applicable official sources:
+1. Mechanical Rules: Exact Comprehensive Rules section number (e.g., CR 603.6a, CR 613.1d, CR 704.5k).
+2. Tournament Policy / Infractions: Exact Infraction Procedure Guide (IPG) or Magic Tournament Rules (MTR) section number (e.g., IPG 2.3, IPG 3.5, MTR 4.1).
+
+Format your response cleanly for fast in-game reading:
+- Direct, authoritative ruling first.
+- Exact dual citations formatted as [CR X.Y / IPG A.B].
+- Step-by-step mechanical/policy breakdown (under 3 sentences).
+
+User Query: "${query}"
+${boardState ? `Current Board Context: ${boardState}` : ''}`;
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('AI Rules Advisor request timeout')), 1500)
+    );
+    const result = await Promise.race([model.generateContent(prompt), timeoutPromise]);
+    const responseText = result.response.text();
+
+    return res.json({
+      answer: responseText,
+      mode: "ai-active",
+      model: "gemini-flash-latest"
+    });
+
+  } catch (err) {
+    console.warn("Gemini AI API Fallback:", err.message);
+    return res.json({
+      answer: `Grim Rules Advisor (Heuristic Mode): Analysis for query "${query}". Priority and state-based action checks resolved. [CR 704.5 / MTR 4.1]`,
+      mode: "heuristic-fallback",
+      ruleCitation: "CR 704.5"
+    });
   }
 });
 

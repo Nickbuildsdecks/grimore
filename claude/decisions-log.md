@@ -22015,3 +22015,121 @@ The general lesson, which is about me rather than the engine: **writing down a d
 not inoculate against it.** D244 is one of the longest entries in this file, and I reproduced its
 subject while building an instrument to measure something else — because the `catch` was incidental
 to what I was thinking about. The ones that get written are the ones nobody is thinking about.
+
+---
+
+## D354 — The advisor never answered, and the reason was its position in the file
+
+`/api/sandbox/ai-advisor` is the Play Realm's rules advisor. Two suites in the project's own master
+orchestrator call it, and both reported the same thing:
+
+```
+[FAIL] Rules Advisor error: <urlopen error timed out>
+```
+
+Reading the handler says that cannot be right. It races Gemini against a **1500 ms** timeout and
+falls back to a heuristic answer, so the worst honest case is an answer in about a second and a half.
+Reproducing it by hand gave something worse than a timeout:
+
+```
+anonymous advisor: HTTP 000 in 8.002996s
+```
+
+`HTTP 000` is curl's way of saying **no response at all** — not a slow answer, not an error status.
+The server log carried the cause:
+
+```
+<rejected> TypeError: Cannot read properties of undefined (reading 'player')
+```
+
+And the line numbers settled it. The route was registered at **line 345**. `app.use(session({...}))`
+is at **line 467**. Express hands a route only the middleware registered *before* it, so `req.session`
+was `undefined`, the handler's first line — `if (!req.session.player)` — threw, and because the
+handler is `async`, that throw became an **unhandled rejection**. Express 4 does not route unhandled
+rejections to an error handler, so nothing ever wrote a response and the socket simply sat there until
+the client gave up.
+
+Three separate things made this hard to see, and each is worth naming:
+
+1. **The symptom named the wrong layer.** "Timed out" points at the endpoint's own work — a slow model
+   call, a missing key, a hung fetch — so that is where I read first, and the code there is sound.
+2. **A docblock asserted the opposite.** The session-epoch middleware's comment says it is mounted
+   "before every route, so no route can be reached with a stale session". It is mounted before every
+   route *below it*, which was all of them bar this one.
+3. **The handler looked defensive.** `if (!req.session.player)` reads as a login check. It is one,
+   when `req.session` exists; above the session middleware it is the crash.
+
+The fix is a move, not a rewrite: the whole block (comment, `aiAdvisorQuerySchema`, `aiLimiter`, route)
+now sits immediately before `require('./scryfallService')`, below both the session middleware and the
+epoch check. Measured after:
+
+| | before | after |
+|---|---|---|
+| anonymous | `HTTP 000` in 8.00s | `HTTP 401 {"error":"Not logged in."}` in 0.021s |
+| logged in | never reached | `HTTP 200`, heuristic answer, 0.009s |
+
+The limiter's own comment was stale too and said so for the wrong reason — it claimed the position was
+about a temporal dead zone. It is about the session. Rewritten, with the hang recorded above it so the
+next person to tidy this file knows the position is load-bearing.
+
+**One process-level note, because it nearly cost me the diagnosis.** My first re-test after the move
+still read `HTTP 000 in 8.0s`, and for a minute I believed the fix had failed. Two
+`node --max-old-space-size=768 server.js` processes were alive — pids 179 and 279 — and the one
+holding port 3000 was the pre-fix one. The lesson is narrow and practical: when a fix is a *move*
+inside a long-running server's source, the old server has the old order, and a stale listener is
+indistinguishable from a wrong fix. Also: `pkill -f "server.js"` matched my own shell wrapper and
+killed my shell. Reading `/proc/PID/cmdline` and matching on `node` is the way to find the right one.
+
+---
+
+## D355 — Two suites aimed at a login-required endpoint with no key, and one that registered instead of logging in
+
+With D354's hang gone, the advisor answers `401 {"error":"Not logged in."}` to an anonymous caller.
+Both suites that call it POST **anonymously** and then assert the answer is non-empty:
+
+```python
+with urllib.request.urlopen(req, timeout=5) as resp:
+    answer = json.loads(resp.read().decode('utf-8')).get("answer", "")
+    if len(answer) > 0: log_ok(...)
+```
+
+So independently of the hang, **these checks could never pass**. That is the mirror of the fault in
+#311's guest-auth step — a check that cannot fail — and the two faults here hid each other neatly:
+the hang made the failure look like a slow endpoint, which is a plausible thing for a suite to be
+waiting on, so nobody asked whether the request was even allowed.
+
+Fixed by giving the suites a key rather than lowering the bar. `execution/grimore_session.py`
+registers a deterministic throwaway account if it is not already there, logs in, and returns an
+opener carrying the session cookie. The two suites now assert a real `HTTP 200` answer and print the
+mode it came back in. Asserting the 401 was the other option and is worse: it would have made the
+suites certify that the advisor refuses callers, which is not what either of them is for.
+
+Three details in the helper are the point of it:
+
+- **It raises on failure.** A suite that cannot log in must say so, not carry on anonymously.
+- **The account is deterministic, not timestamped**, so repeat runs reuse one row rather than filling
+  the local `players` table with one account per run. `Username already taken.` is therefore expected
+  from the second run onward and is accepted — but *only* that message. Any other 400 raises, because
+  "the password policy refused this" must not read the same as "this account is already here".
+- **The registration step does not stand in for logging in.** `/api/auth/register` answers
+  `"You can now log in."` and sets **no session**.
+
+That last one is a defect I found while writing the helper, in `verify_account_importer.py`:
+
+```python
+try:
+    res = opener.open(login_request)
+except urllib.error.HTTPError:
+    res = opener.open(register_request)   # and then carries on, logged out
+```
+
+On any database where `TestUser999` is absent — a fresh local store, which is exactly the case #311
+was about — it registered, skipped the login, and measured `/api/decks/import-account` **as an
+anonymous caller**. Rewritten onto the helper; it now passes against a real session.
+
+**The orchestrator reports 14/14 for the first time.** It was 0/13 when #311 first ran it, 11/13 after
+the schema and guest-auth work, and 13 of 13 plus its own self-validation now. Worth stating what that
+number does and does not mean: these suites are shallow, several assert things about payloads they
+construct themselves, and one passing suite is not one working feature. What changed is that the
+number is now **earned** rather than unreachable — every suite that claims to exercise an endpoint
+reaches it.

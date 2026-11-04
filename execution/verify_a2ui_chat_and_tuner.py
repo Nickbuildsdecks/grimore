@@ -2,13 +2,17 @@
 """
 Grimore A2UI Rules Chat & Deck Tuner Integration Test Suite
 Validates A2UIRuleBanner citation rendering and A2UICard Tuner recommendation payloads.
+
+Step 3 logs in before calling the rules advisor. It used to POST anonymously, which `401 Not logged
+in.` refuses, so the check could never pass — see `execution/grimore_session.py` and D354/D355.
 """
 import sys
 import os
 import json
 import urllib.request
 
-BASE_URL = "http://localhost:3000"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from grimore_session import BASE_URL, logged_in_opener, post_json
 
 def log_ok(msg):
     print(f"[OK] {msg}")
@@ -58,23 +62,24 @@ def main():
     # 3. Validate AI Advisor Endpoint Response Format
     log_step("3/3", "Testing AI Advisor Endpoint Response Payload...")
     try:
-        payload = json.dumps({
+        opener = logged_in_opener()
+    except Exception as e:
+        print(f"[FAIL] Could not obtain a logged-in session: {e}")
+        sys.exit(1)
+    try:
+        status, data = post_json(opener, "/api/sandbox/ai-advisor", {
             "query": "Can I counter a creature spell with Counterspell?",
             "boardState": "Player battlefield: [Island]."
-        }).encode('utf-8')
-        req = urllib.request.Request(
-            f"{BASE_URL}/api/sandbox/ai-advisor",
-            data=payload,
-            headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            answer = data.get("answer", "")
-            if len(answer) > 0:
-                log_ok(f"AI Advisor returned response ({len(answer)} chars).")
-            else:
-                print("[FAIL] AI Advisor returned empty answer.")
-                sys.exit(1)
+        }, timeout=5)
+        if status != 200:
+            print(f"[FAIL] AI Advisor answered HTTP {status}: {data}")
+            sys.exit(1)
+        answer = data.get("answer", "")
+        if len(answer) > 0:
+            log_ok(f"AI Advisor returned response ({len(answer)} chars, mode={data.get('mode')}).")
+        else:
+            print("[FAIL] AI Advisor returned empty answer.")
+            sys.exit(1)
     except Exception as e:
         print(f"[FAIL] AI Advisor error: {e}")
         sys.exit(1)
