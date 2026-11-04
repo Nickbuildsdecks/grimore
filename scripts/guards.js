@@ -804,7 +804,7 @@ function checkEveryResponseContractIsParsedSomewhere() {
 checkEveryResponseContractIsParsedSomewhere();
 
 /**
- * Does any measurement script still import the engine's `dist` directly?
+ * Does any script still import the engine's `dist` directly, bypassing the staleness warning?
  *
  * The harnesses in `scripts/measure/` import the **built** engine, so a run after a source change
  * and before a rebuild measures the previous build and prints a number that is about code no longer
@@ -817,36 +817,70 @@ checkEveryResponseContractIsParsedSomewhere();
  * and a warning you have to remember to ask for is missing from the script nobody was thinking
  * carefully about.
  *
+ * The browser drivers are covered too, and for a reason I got wrong first time. I had assumed a
+ * stale `dist` simply fails them, since they assert behaviour rather than printing a number. They do
+ * fail — but **obscurely**, and worse than that: the server they drive runs from `src` (through tsx
+ * and Vite), while the driver reads `dist`, so a stale build means the driver's expectations come
+ * from an *older engine than the one playing*. `e2e-table` picks a card out of a stale deck and
+ * reports that the browser does not show it; `e2e-solo` pastes a list naming a card the live engine
+ * cannot read. Both read as a product bug. A misleading failure is cheaper than a misleading success
+ * and still worth one line of warning.
+ *
  * Docblock mentions of the path are fine and common ("reads packages/rules-engine/dist, so build
  * first"), so this looks only for an import or a dynamic `import()` of it.
  */
-function checkMeasureScriptsImportTheEngineWrapper() {
-  const dir = 'scripts/measure';
-  let files;
-  try {
-    files = readdirSync(dir).filter((f) => f.endsWith('.mjs'));
-  } catch {
-    return; // not in a checkout that has the instruments
+function checkScriptsImportTheEngineWrapper() {
+  const dirs = ['scripts', 'scripts/measure'];
+  const files = [];
+  for (const dir of dirs) {
+    let names;
+    try {
+      names = readdirSync(dir).filter((f) => f.endsWith('.mjs'));
+    } catch {
+      return; // not in a checkout that has the scripts
+    }
+    for (const name of names) files.push(`${dir}/${name}`);
   }
   if (files.length === 0) {
-    console.error(`[guards] found no .mjs instruments in ${dir}, so this guard checked nothing.`);
+    console.error(`[guards] found no .mjs under ${dirs.join(' or ')}, so this guard checked nothing.`);
     bad++;
     return;
   }
-  // An import specifier, in either spelling: `from '...dist...'` or `import('...dist...')`.
-  const direct = /(?:from|import\s*\()\s*['"][^'"]*rules-engine\/dist[^'"]*['"]/;
-  const offenders = files.filter((f) => direct.test(readFileSync(join(dir, f), 'utf8')));
+  /*
+    Matched **per line**, and that is a correction rather than a style choice.
+
+    The first version of this check was one regex over the whole file:
+
+        /(?:from|import\s*\()\s*[^;\n]{0,80}?['"][^'"]*rules-engine\/dist[^'"]*['"]/
+
+    and it reported two instruments that are perfectly fine. `[^'"]*` **matches newlines**, so from
+    a stray `"` in a docblock — `a figure from "40 and 38"` — it walked across three lines to reach
+    the path in a later sentence and called that an import. Bounding the gap with `{0,80}` did
+    nothing, because the crossing happened inside the quotes rather than before them.
+
+    I noticed only because I happened to know those two files were clean. A guard that cries wolf is
+    a guard somebody switches off, which is the same end state as one that cannot fail.
+
+    So: one line at a time, `[^'"\n]*` inside the quotes, and the path has to be preceded on that
+    same line by `from`, `import(` or `URL(` — the three ways these scripts name a module. A
+    docblock mentioning the path writes it in backticks, which no quote delimiter matches.
+  */
+  const direct = /(?:\bfrom\s+|\bimport\s*\(\s*|\bURL\(\s*)['"][^'"\n]*rules-engine\/dist[^'"\n]*['"]/;
+  const offenders = files.filter(
+    (f) => readFileSync(f, 'utf8').split('\n').some((line) => direct.test(line)),
+  );
   if (offenders.length > 0) {
-    console.error(`[guards] ${offenders.length} instrument(s) import the engine's dist directly:`);
-    for (const f of offenders) console.error(`[guards]   ${dir}/${f}`);
+    console.error(`[guards] ${offenders.length} script(s) import the engine's dist directly:`);
+    for (const f of offenders) console.error(`[guards]   ${f}`);
     console.error('[guards] Import from scripts/lib/engine.mjs instead. It re-exports the same');
     console.error('[guards] module and warns on stderr when dist is older than the engine source,');
     console.error('[guards] which is the difference between a number about this build and a number');
-    console.error('[guards] about the last one (D338, D359).');
+    console.error('[guards] about the last one (D338, D359). scripts/lib/engine.mjs itself is the');
+    console.error('[guards] one file that may, since re-exporting dist is its whole job.');
     bad++;
   }
 }
-checkMeasureScriptsImportTheEngineWrapper();
+checkScriptsImportTheEngineWrapper();
 
 if (bad) {
   console.error(`[guards] ${bad} violation(s)`);

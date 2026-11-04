@@ -22375,10 +22375,44 @@ cannot disagree about what counts as stale — including the tie case, where a b
 same millisecond as the last source write is **not** stale, because an instrument that cried wolf
 after every save would be ignored within a day.
 
-And a guard, because the import path is the whole mechanism: `checkMeasureScriptsImportTheEngineWrapper()`
-fails if any instrument imports `dist` directly. It matches an import specifier rather than the path
-anywhere, because a docblock saying "reads packages/rules-engine/dist, so build first" is correct and
-common. Proved by pointing `poison.mjs` back at `dist`: named, exit 1. Restored, `[guards] OK`.
+And a guard, because the import path is the whole mechanism: `checkScriptsImportTheEngineWrapper()`
+fails if any script under `scripts/` or `scripts/measure/` imports `dist` directly. It matches an
+import specifier rather than the path anywhere, because a docblock saying "reads
+packages/rules-engine/dist, so build first" is correct and common. Proved both import shapes: a plain
+`from '...'` in `poison.mjs` and the `new URL('...', import.meta.url)` in `e2e-table.mjs`, each named,
+each exit 1. Restored, `[guards] OK`.
+
+### Two corrections to this entry, both made after writing it
+
+**The guard over-reported, and the reason is worth more than the fix.** The first version was one
+regex over the whole file:
+
+```js
+/(?:from|import\s*\()\s*[^;\n]{0,80}?['"][^'"]*rules-engine\/dist[^'"]*['"]/
+```
+
+It named two instruments that are perfectly clean. `[^'"]*` **matches newlines**, so starting from a
+stray `"` in a docblock — `a figure from "40 and 38"` — it walked across three lines to reach the path
+in a later sentence and called that an import. Bounding the gap with `{0,80}` did nothing, because the
+crossing happened *inside* the quotes rather than before them. It is now matched one line at a time,
+with `[^'"\n]*` inside the quotes and the path required to follow `from`, `import(` or `URL(` on that
+same line.
+
+I only noticed because I happened to know those two files were clean. **A guard that cries wolf is a
+guard somebody switches off**, which arrives at the same place as one that cannot fail — and it is the
+less obvious of the two failures, because its output looks like diligence.
+
+**The two browser drivers are covered after all, and my reason for exempting them was wrong.** I wrote
+that `e2e-table.mjs` and `e2e-solo.mjs` could keep importing `dist` directly because "they assert
+behaviour rather than printing a number, so a stale build fails them loudly instead of producing a
+plausible figure". Checking rather than asserting: they *do* fail, but the claim about loudly is the
+part that does not hold, and the setup is worse than I had it. **The server they drive runs from
+`src`** — through tsx and Vite — **while the driver reads `dist`.** So a stale build means the driver's
+expectations come from an older engine than the one actually playing. `e2e-table` picks a card out of a
+stale `tidal-mind` and reports that the browser does not show it; `e2e-solo` pastes a list naming a
+card the live engine cannot read. Both read as a product bug in the thing under test. A misleading
+failure is cheaper than a misleading success and still worth one line of warning, so both now import
+through `engine.mjs` and the guard covers `scripts/` as well as `scripts/measure/`.
 
 Four instruments re-run afterwards to check the indirection changed nothing: `derivable` (360 cards),
 `wire-growth` (25.5% and 28.6% of the cap on the first two seeds), `mechanic-coverage` (81 mechanics,
@@ -22389,6 +22423,6 @@ dirty flag and the arms matter for a number headed into a ledger somebody will r
 The staleness warning is the part that applies to every one of them, which is why that is the part
 that moved into the import.
 
-The two browser drivers, `e2e-table.mjs` and `e2e-solo.mjs`, import `dist` through a dynamic
-`new URL(...)` for their own reasons and are left alone. They assert behaviour rather than printing a
-number, so a stale build fails them loudly instead of producing a plausible figure.
+(The paragraph that stood here claimed the two browser drivers were safe to leave alone. It was
+wrong on the facts and is corrected above rather than deleted, because the reasoning in it — "this
+one fails loudly, so it does not need the warning" — is the kind I will reach for again.)

@@ -199,7 +199,7 @@ async function main() {
       claim two browsers are needed to make.
     */
     const { STARTER_DECKS } = await import(
-      new URL('../packages/rules-engine/dist/index.js', import.meta.url));
+      new URL('./lib/engine.mjs', import.meta.url));
     const peekDeck = STARTER_DECKS['tidal-mind'];
     // Named rather than thrown on, because a TypeError three lines down reads like a broken suite
     // and this is a deck that was renamed.

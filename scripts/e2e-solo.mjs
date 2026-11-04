@@ -640,7 +640,7 @@ const ARTIFACT_LIST = [
       await tid(page, 'deck-ember-rush').click();
     } else {
       const { STARTER_DECKS } = await import(
-        new URL('../packages/rules-engine/dist/index.js', import.meta.url));
+        new URL('./lib/engine.mjs', import.meta.url));
       const asText = LIST === 'cascade'
         ? CASCADE_LIST
         : LIST === 'costs'
