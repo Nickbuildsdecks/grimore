@@ -26209,3 +26209,76 @@ keyword field versus a hand-written expansion.
 
 Three deliberate breaks, three failing tests: the damage hint dropped, the damage hint set on every
 spec, and Capsize's filter restored.
+
+## D421 — Two keyword fields that were labels, and the machinery that was never compiled with them
+
+Fourth batch off D417's list, and the one where the standing check found a card that *did not work*
+rather than a card that disagreed about a key.
+
+### The question the rows asked
+
+Ninja of the Deep Hours and Mardu Scout each differed from their hand-written twin on a list —
+`abilities` on the Ninja, `triggers` on the Scout — and in both cases the compiled side was the
+shorter one. The compiler read the printed `Ninjutsu {1}{U}` and `Dash {R}` lines, set the matching
+script field, and stopped. The hand-written cards set the same field **and** carried an ability.
+
+So the row was a question about the engine rather than about the compiler: is the field the
+implementation, or only a label? If the engine reads the field and does the work, the hand-written
+expansion is a duplicate and should go. If it does not, the compiled card is broken.
+
+### The answer: both were labels, and both cards were broken
+
+- **Ninjutsu.** `CardScript.ninjutsu`'s own docblock says it is "read nowhere but the card that
+  declares it … it is here so the pool can be audited for the keyword". The play comes from
+  `collectLegalActions`, which walks `script.abilities` for a cost with `returnsUnblockedAttacker` —
+  that flag is also what tells it the ability is used **from the hand** and does not spend the card.
+  A compiled Ninja had the field and no ability, so no ninjutsu play was ever offered: the keyword
+  did nothing at all.
+- **Dash.** Half of it *is* the engine's: `completeResolution` writes the `DASHED` counter and grants
+  haste itself. The return to hand is not — it is a delayed ability (CR 603.7) scheduled by finding
+  the card's one `delayed` end-step trigger, behind an `index >= 0` guard. A compiled Mardu Scout
+  got haste, attacked, and **stayed on the battlefield for ever**, silently, because that guard is
+  what keeps a missing trigger from being a crash.
+
+Both are D364's unit-of-compilation rule, which `echo` in the same reader already follows: the
+declaration and what it declares are one unit, and either half alone is a card that does less than
+it reads. The reader's own docblock claimed all eight of its alternative-cost keywords "add an
+option and change nothing about what the card does"; that was true of six.
+
+### The fix
+
+`keywordScriptFor` now emits the machinery with the declaration — `triggers: [dashReturn()]` for
+dash, `abilities: [ninjutsuAbility(mana)]` for ninjutsu. `ninjutsuAbility` is a new factory, and the
+hand-written Ninja was rewritten to call it, so the two readings share one implementation of the
+keyword rather than two that are free to drift. The reader's docblock now says which two keywords
+take machinery and why, naming both engine sites.
+
+`abilities` and `triggers` are in `compile.ts`'s `ACCUMULATING` set, so a keyword line contributing
+one of each merges with the card's other lines instead of conflicting with them.
+
+### Tested as what the card can do, not as which keys match
+
+The field matching was never in question and was never the part that mattered, so the new tests ask
+the engine's questions:
+
+- the compiled dash reading carries **exactly one** delayed end-step trigger, which is what
+  `dashReturnIndex`'s `findIndex` needs — the same invariant `scripts.test.ts` holds over the
+  hand-written pool, now asked of the compiled side;
+- running that trigger moves a Mardu Scout from the battlefield to its owner's hand, and leaves one
+  already in a graveyard where it is (CR 608.2);
+- the compiled ninjutsu ability's cost is `{ mana: '{1}{U}', returnsUnblockedAttacker: true }`, read
+  off the printed line rather than hard-coded;
+- running it puts the card onto the battlefield **tapped and attacking** the seat the cost was aimed
+  at, and does nothing at all with no attack to join.
+
+### Measured
+
+No coverage change — **402 of 538 lines (74.7%)**, 256 of 339 with a script, 228 complete: these two
+lines were always read, they just did not do anything. Disagreements **3 → 1**, and the one left is
+Journey to Nowhere's `removesACreature`, which only the spell path can currently set.
+
+Four deliberate breaks, four failures: the dash trigger dropped from the reader (3 compile rows and
+the standing check), the ninjutsu ability dropped (3 and the standing check), the factory's
+`enteringAttack` guard removed (the no-attack row only — correctly *not* the standing check, since
+both readings share the factory), and the reader hard-coding `{2}{U}` instead of the printed cost
+(the cost row and the standing check).

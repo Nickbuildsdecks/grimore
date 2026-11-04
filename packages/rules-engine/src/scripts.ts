@@ -2266,6 +2266,29 @@ const dashReturn = (): TriggerDef => ({
 });
 
 /**
+ * Ninjutsu, written out as the activated ability the keyword abbreviates (CR 702.49a).
+ *
+ * A factory rather than text on the one card that prints it, because two readings need the same
+ * ability: the hand-written Ninja of the Deep Hours below, and `keywordScriptFor`, which reads the
+ * printed `Ninjutsu {1}{U}` line off any card that declares it. The `ninjutsu` field is audit-only
+ * — nothing in the engine offers a play from it — so a reading that set the field and stopped would
+ * be a card whose keyword does nothing at all. D364's rule: the declaration and the ability it
+ * declares are one unit of compilation.
+ *
+ * `returnsUnblockedAttacker` is the half of the cost that is not mana, and it is what
+ * `collectLegalActions` reads to decide this ability is used from the **hand** and does not spend
+ * the card. The effect reads `c.enteringAttack` rather than the combat because the attacker whose
+ * place this is taking is in a hand by the time it resolves — see `StackObject.enteringAttack`.
+ */
+const ninjutsuAbility = (mana: string): AbilityDef => ({
+  cost: { mana, returnsUnblockedAttacker: true },
+  description: `Ninjutsu ${mana} (return an unblocked attacker you control to hand)`,
+  effect: (c) => (c.enteringAttack === undefined
+    ? c.state
+    : enterAttacking(c.state, c.source, c.controller, c.enteringAttack)),
+});
+
+/**
  * Mardu Scout: a 3/1 for two, or three damage for one mana and the card back.
  *
  * Evoke's mirror, in the deck that wants the other half of the trade. A Mulldrifter cast cheaply
@@ -7359,13 +7382,7 @@ const ARCBOUND_RAVAGER: CardScript = {
 const NINJA_OF_THE_DEEP_HOURS: CardScript = {
   name: 'Ninja of the Deep Hours',
   ninjutsu: { cost: '{1}{U}' },
-  abilities: [{
-    cost: { mana: '{1}{U}', returnsUnblockedAttacker: true },
-    description: 'Ninjutsu {1}{U} (return an unblocked attacker you control to hand)',
-    effect: (c) => (c.enteringAttack === undefined
-      ? c.state
-      : enterAttacking(c.state, c.source, c.controller, c.enteringAttack)),
-  }],
+  abilities: [ninjutsuAbility('{1}{U}')],
   triggers: [{
     on: { kind: 'combat-damage' },
     description: 'Whenever Ninja of the Deep Hours deals combat damage to a player, draw a card.',
@@ -9059,6 +9076,22 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     that. Their payoff is printed on another line — "If this spell was kicked, it deals 4 damage
     instead" — so the declaration alone is an option to pay more for nothing, which is not the card.
     `Overload` also takes an `onResolve` of its own, which no line here can supply.
+
+    **Dash and ninjutsu are in the list but take machinery with them**, which the first six do not,
+    and that is D364's rule rather than an exception to it. Six of these keywords are a way to cast
+    the card and nothing else: the engine reads the field and offers the cast. The other two name a
+    field the engine reads **nowhere** on its own —
+
+      - `dash`'s haste and counter are the engine's, but the return to hand is a delayed ability
+        scheduled by finding the card's one `delayed` end-step trigger, and `completeResolution`
+        guards that search with `index >= 0`. A dashed creature on a card without `dashReturn()`
+        gets haste and **never goes home**.
+      - `ninjutsu`'s field is audit-only by its own docblock's admission; the behaviour is an
+        activated ability with `AbilityCost.returnsUnblockedAttacker`, and that is the only thing
+        `collectLegalActions` can offer a ninjutsu play from.
+
+    So each reads as the declaration *and* what it declares, the way `echo` does below. The pair is
+    what the card is; either half alone is a card that does less than it reads.
   */
   const alternative =
     /^(flashback|madness|miracle|foretell|spectacle|buyback|dash|ninjutsu)\s+((?:\{[^}]*\})+)$/i
@@ -9071,8 +9104,8 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
       case 'miracle': return { miracle: { cost: mana } };
       case 'foretell': return { foretell: { cost: mana } };
       case 'spectacle': return { spectacle: { cost: mana } };
-      case 'dash': return { dash: { cost: mana } };
-      case 'ninjutsu': return { ninjutsu: { cost: mana } };
+      case 'dash': return { dash: { cost: mana }, triggers: [dashReturn()] };
+      case 'ninjutsu': return { ninjutsu: { cost: mana }, abilities: [ninjutsuAbility(mana)] };
       // The one of the eight that stores its printed line as well, as Capsize does.
       default: return { buyback: { cost: mana, description: text } };
     }

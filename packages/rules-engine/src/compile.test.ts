@@ -5811,4 +5811,114 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(mine.zones[zoneKey(0 as SeatIndex, 'hand')]).toHaveLength(3);
     });
   });
+  /*
+    The two keyword declarations that are not a cast option and nothing else.
+
+    Six of the eight alternative-cost keywords the reader groups together really are one field: the
+    engine reads `flashback` and offers the cast, and the card needs nothing else. Dash and
+    ninjutsu are not like that, and the standing compiled-vs-written check is what said so — both
+    cards disagreed with their hand-written twins on a list, and reading the engine said the list
+    was where the keyword actually lives:
+
+      - `ninjutsu`'s own docblock admits the field is "read nowhere but the card that declares it".
+        `collectLegalActions` offers a ninjutsu play by walking `script.abilities` for a cost with
+        `returnsUnblockedAttacker`, so a card with the field and no ability can never be used.
+      - `completeResolution` grants a dashed creature haste and the `DASHED` counter itself, but
+        schedules the return by finding the card's one `delayed` end-step trigger, behind an
+        `index >= 0` guard. With no such trigger the creature gets haste and never goes home —
+        silently, because the guard is the thing that makes a missing trigger not a crash.
+
+    So these tests are about what the compiled card can *do*, not about which keys match: the field
+    matching was never in question, and was never the part that mattered.
+  */
+  describe('dash and ninjutsu: the two keyword fields the engine reads nowhere on their own', () => {
+    /** A context carrying the two fields these two abilities read. */
+    const contextFor = (
+      state: GameState,
+      seat: SeatIndex,
+      source: string,
+      extra: { subject?: string; enteringAttack?: { defender: SeatIndex } } = {},
+    ): EffectContext =>
+      ({ state, controller: seat, source, ...extra } as unknown as EffectContext);
+
+    const delayedEndSteps = (script: unknown) =>
+      ((script as { triggers?: readonly TriggerDef[] } | undefined)?.triggers ?? [])
+        .filter((t) => t.delayed === true && t.on.kind === 'step' && t.on.step === 'end');
+
+    const abilities = (script: unknown) =>
+      (script as { abilities?: readonly AbilityDef[] } | undefined)?.abilities ?? [];
+
+    it('reads dash as exactly one delayed end-step trigger, which is what the engine searches for', () => {
+      /*
+        The same invariant `scripts.test.ts` holds over the hand-written pool — "every card with
+        dash carries exactly one delayed trigger" — asked of the compiled reading, because the
+        search `dashReturnIndex` does is `findIndex`: two would schedule the first and none would
+        schedule nothing.
+      */
+      expect(delayedEndSteps(compiledScript('Mardu Scout').script)).toHaveLength(1);
+      expect(delayedEndSteps(scriptFor('Mardu Scout'))).toHaveLength(1);
+    });
+
+    it('the compiled dash return puts the creature back in its owner’s hand', () => {
+      const base = arena({ decks: { 0: 'kindle-grove' }, battlefield: { 0: ['Mardu Scout'] } });
+      const id = find(base, 0 as SeatIndex, 'battlefield', 'Mardu Scout');
+      // Non-vacuity: it is on the battlefield before the ability runs, so the move is the evidence.
+      expect(base.instances[id]!.zone).toBe('battlefield');
+      const trigger = delayedEndSteps(compiledScript('Mardu Scout').script)[0]!;
+      const after = trigger.effect(contextFor(base, 0 as SeatIndex, id, { subject: id }));
+      expect(after.instances[id]!.zone).toBe('hand');
+    });
+
+    it('the compiled dash return does nothing to a creature that has already left', () => {
+      // CR 608.2: the delayed ability stops belonging to the permanent, so a Scout killed before
+      // the end step leaves it behind doing as much as it can, which is nothing.
+      const base = arena({ decks: { 0: 'kindle-grove' }, graveyard: { 0: ['Mardu Scout'] } });
+      const id = find(base, 0 as SeatIndex, 'graveyard', 'Mardu Scout');
+      const trigger = delayedEndSteps(compiledScript('Mardu Scout').script)[0]!;
+      const after = trigger.effect(contextFor(base, 0 as SeatIndex, id, { subject: id }));
+      expect(after.instances[id]!.zone).toBe('graveyard');
+    });
+
+    it('reads ninjutsu as the activated ability the play is offered from, cost and all', () => {
+      const compiled = abilities(compiledScript('Ninja of the Deep Hours').script);
+      expect(compiled).toHaveLength(1);
+      /*
+        `returnsUnblockedAttacker` is not decoration: `collectLegalActions` reads it to decide this
+        ability is used from the **hand** rather than the battlefield, and `legalActions` builds the
+        `returnOptions` list from it. Without it the ability would be offered from nowhere.
+      */
+      expect(compiled[0]!.cost).toEqual({ mana: '{1}{U}', returnsUnblockedAttacker: true });
+      // And the printed cost is carried through rather than hard-coded, which is the same cost the
+      // hand-written card hands the shared factory.
+      expect(abilities(scriptFor('Ninja of the Deep Hours'))[0]!.cost).toEqual(compiled[0]!.cost);
+    });
+
+    it('the compiled ninjutsu ability arrives tapped and attacking the seat the cost was aimed at', () => {
+      const base = arena({
+        decks: { 0: 'skyward-writ' }, hands: { 0: ['Ninja of the Deep Hours'] },
+      });
+      const id = find(base, 0 as SeatIndex, 'hand', 'Ninja of the Deep Hours');
+      const ability = abilities(compiledScript('Ninja of the Deep Hours').script)[0]!;
+      const after = ability.effect!(contextFor(base, 0 as SeatIndex, id, {
+        enteringAttack: { defender: 1 as SeatIndex },
+      }));
+      expect(after.instances[id]!.zone).toBe('battlefield');
+      expect(after.instances[id]!.tapped).toBe(true);
+      expect(after.combat.attacks.map((a) => [a.attacker, a.defender])).toEqual([[id, 1]]);
+    });
+
+    it('the compiled ninjutsu ability does nothing with no attack to join', () => {
+      /*
+        The guard the hand-written card has and the factory keeps: `enteringAttack` is written when
+        the cost is paid, and an ability that resolved without one has no attack to put the card
+        into. Asserted because an unguarded `enterAttacking` would need a defender it has not got.
+      */
+      const base = arena({
+        decks: { 0: 'skyward-writ' }, hands: { 0: ['Ninja of the Deep Hours'] },
+      });
+      const id = find(base, 0 as SeatIndex, 'hand', 'Ninja of the Deep Hours');
+      const ability = abilities(compiledScript('Ninja of the Deep Hours').script)[0]!;
+      expect(ability.effect!(contextFor(base, 0 as SeatIndex, id))).toEqual(base);
+    });
+  });
 });

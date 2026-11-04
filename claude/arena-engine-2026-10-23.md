@@ -11134,3 +11134,29 @@ proof.
 
 Disagreements **5 → 3**: Journey to Nowhere's hint needs the trigger path to reach a card-level flag,
 and ninjutsu and dash are the keyword-field-versus-expansion question.
+
+## Two keyword fields that were labels, and two cards that did nothing (#327, D421)
+
+The standing check's best find so far: two cards that did not disagree about a key so much as not
+work. Both rows asked the same question — is the keyword's script field the implementation, or a
+label? — and for both the answer was the label.
+
+**Ninjutsu.** `CardScript.ninjutsu` is audit-only by its own docblock; the play comes from an ability
+whose cost carries `returnsUnblockedAttacker`, which is also what tells `collectLegalActions` the
+ability is used from the hand and does not spend the card. A compiled Ninja of the Deep Hours could
+never be ninjutsu'd.
+
+**Dash.** The haste and the `DASHED` counter are the engine's, but the return to hand is a delayed
+ability found by searching the card's own triggers behind an `index >= 0` guard. A compiled Mardu
+Scout got haste, attacked, and stayed on the battlefield for ever — silently, because that guard is
+what stops a missing trigger being a crash.
+
+The reader now emits the machinery with the declaration (D364's rule, the same way `echo` does one
+case below), and the hand-written Ninja shares the compiled card's new `ninjutsuAbility` factory, so
+the keyword has one implementation rather than two free to drift. Tested as what the card can do:
+the dash return moves a Scout to its owner's hand and leaves a dead one alone, and the ninjutsu
+ability arrives tapped and attacking the right seat and does nothing with no attack to join.
+
+No coverage change — these lines were always read, they just did nothing. Disagreements **3 → 1**,
+and the one left is Journey to Nowhere, whose `removesACreature` needs the trigger path to reach a
+card-level flag.

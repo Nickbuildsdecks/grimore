@@ -177,17 +177,15 @@ const DISAGREE: Readonly<Record<string, { readonly why: string; readonly keys: r
   */
   'Journey to Nowhere': { why: 'missing removesACreature, which only the spell path can currently set', keys: ['removesACreature'], digest: '7895f0f1' },
   /*
-    Two spellings of ninjutsu: the compiled reading sets the `ninjutsu` field from the keyword
-    declaration, the hand-written card writes an ability with `returnsUnblockedAttacker`. Which one
-    the engine actually offers decides whether this is a gap or a duplicate.
+    **Ninja of the Deep Hours and Mardu Scout were here and are fixed (D421).** Both rows asked the
+    same question — whether the keyword's field is the implementation or only a label — and for
+    both the answer was the label. `ninjutsu`'s own docblock says it is "read nowhere but the card
+    that declares it"; the play comes from an ability with `AbilityCost.returnsUnblockedAttacker`,
+    so the compiled Ninja could never be ninjutsu'd. `dash`'s return is scheduled by finding the
+    card's one `delayed` end-step trigger behind an `index >= 0` guard, so the compiled Scout got
+    haste and stayed on the battlefield for ever. The reader now emits the machinery with the
+    declaration, and the hand-written Ninja shares the compiled card's `ninjutsuAbility` factory.
   */
-  'Ninja of the Deep Hours': { why: 'ninjutsu as a keyword field vs as a hand-written ability', keys: ['abilities'], digest: 'c45baba4' },
-  /*
-    Dash, and the same question: the hand-written card adds the delayed end-step trigger that
-    returns the creature to hand, the compiled reading sets the `dash` field and relies on the
-    engine. If the engine does not add that trigger itself, a dashed Mardu Scout stays.
-  */
-  'Mardu Scout': { why: 'hand-written delayed end-step trigger for dash; engine may add it from the field', keys: ['triggers'], digest: 'e8c83d75' },
   /*
     **Five rows were here and are settled (D419).** Four were about `friendly` on a target spec and
     one about defender:
