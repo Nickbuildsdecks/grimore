@@ -11403,6 +11403,36 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     there: hexproof and shroud make it a protection trick, infect and haste make it an attacker's
     bonus. Nothing here is a second rule, which is the point of keeping the branches adjacent.
   */
+  /*
+    A clause that points at a **player**, which is a different shape from everything around it: the
+    target is a seat, so `firstPlayerTarget` answers it and none of the card filters apply.
+
+    Two phrases, and the first is one reader rather than two on purpose. "Target player draws two
+    cards and loses 2 life" — Sign in Blood — aims **both halves at the same player**, and
+    `composeEffects` cannot express that: `targets` is one list per script and two targeting parts
+    are refused, which is the rule that keeps "target creature fights target creature" honest. So
+    the sentence is read whole.
+
+    Drawing before the loss is the printed order and the hand-written card's comment says why it
+    matters: a player taken to 0 by the life loss still drew the cards, and a player with no cards
+    left to draw has already lost either way.
+  */
+  const bled = /^target player draws ([\w]+) cards? and loses (\d+) life$/i.exec(text);
+  if (bled !== null) {
+    const cards = countFrom(bled[1]!);
+    const spec = targetSpecFrom('target player', false);
+    if (cards !== null && spec !== null) {
+      const life = Number(bled[2]);
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null ? c.state : loseLife(draw(c.state, seat, cards), seat, life);
+        },
+      };
+    }
+  }
+
   const granted = /^(target creature(?: you control)?) gains ([a-z][a-z' ]*?) until end of turn$/i
     .exec(text);
   if (granted !== null) {

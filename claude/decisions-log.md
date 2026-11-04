@@ -25314,3 +25314,41 @@ Three deliberate breaks, three failing tests: any additional cost accepted as a 
 read as the plain sacrifice, and the cost line left in the resolution (which fails four tests,
 because leaving it there refuses both cards). 4,000 more rows at scale, no throw. compile.test.ts
 313/313.
+
+## D406 — A clause that points at a player, and a duplicate reader a break run found
+
+Sign in Blood: "Target player draws two cards and loses 2 life", which compiles whole and is the
+pool's only card whose **two halves aim at the same player**.
+
+That is why it is one reader and not two. `composeEffects` refuses two targeting parts — `targets` is
+one list per script, so two would silently be handed the same object, which is the rule that keeps
+"target creature fights target creature you don't control" honest. D398's conjunction fallback would
+hit exactly that refusal here, so the sentence is read whole instead.
+
+Drawing before the loss is the printed order, and the hand-written card's comment says why it
+matters: a player taken to 0 by the life loss still drew the cards, and a player with no cards left to
+draw has already lost either way.
+
+### The duplicate, and the break run that found it
+
+This increment also added a reader for "target player gains N life" — Healing Salve's first bullet —
+and it was **dead code**. The drain-and-heal family (D390) already read that phrase, and the branch
+sat below it. Nothing failed, nothing was wrong at the table, and the measurement did not move; what
+found it was a deliberate break: turning `friendly` off in the new branch changed no test, because no
+test could reach it.
+
+So the lesson is about the method rather than the card. A break run is normally a check that a
+mechanism *works*; here it was a check that the mechanism **exists at all**, and a reader with no
+caller is exactly as invisible as a check that cannot fail (D386, D394, D398, D403). The duplicate is
+deleted, the test stays pointed at the reader that does the work, and the near miss is written into
+the test so the next person adding a phrase looks for it first.
+
+### Measured
+
+**390 → 391 of 538 printed lines (72.5% → 72.7%)**, and **246 → 247 of 339 cards**: Sign in Blood,
+the only card the per-card diff shows moving.
+
+Three deliberate breaks, three failing tests: the draw and the loss aimed at the caster instead of
+the target, the life loss dropped, and a missing target guessed as the caster (CR 800.4a — a player
+who has left the game is not a target this spell has). The fourth break is the one above, which
+failed to fail and found the duplicate. 4,000 more rows at scale, no throw. compile.test.ts 317/317.

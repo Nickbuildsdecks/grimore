@@ -4348,6 +4348,93 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
   });
 
+  describe('a clause that points at a player', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({
+      state, controller: seat, source, targets, decisions: [],
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const resolve = (script: unknown) =>
+      field(script, 'onResolve') as (c: EffectContext) => GameState;
+
+    it('draws and drains the same player, as Sign in Blood does', () => {
+      const mine = compiledScript('Sign in Blood');
+      expect(mine.unread).toEqual([]);
+      expect(field(mine.script, 'targets')).toEqual(field(scriptFor('Sign in Blood'), 'targets'));
+      const base = arena({ decks: { 0: 'blight-vector', 1: 'ember-rush' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'player', seat: 1 as SeatIndex }]);
+      const after = resolve(mine.script)(ctx);
+      expect(after).toEqual(resolve(scriptFor('Sign in Blood'))(ctx));
+      /*
+        Both halves, at the **target** and not at the caster — which is the whole point of a player
+        target: Sign in Blood aimed at an opponent is a very different card from one aimed at you,
+        and the compiled reading has to be able to do either.
+      */
+      expect(after.seats[1]!.life).toBe(base.seats[1]!.life - 2);
+      expect(after.zones[zoneKey(1 as SeatIndex, 'hand')]!.length)
+        .toBe(base.zones[zoneKey(1 as SeatIndex, 'hand')]!.length + 2);
+      expect(after.seats[0]!.life).toBe(base.seats[0]!.life);
+    });
+
+    it('is one reader and not two, because both halves aim at one player', () => {
+      /*
+        `composeEffects` refuses two targeting parts — `targets` is one list per script, so two
+        would be handed the same object silently, which is the rule that keeps "target creature
+        fights target creature you don't control" honest. Sign in Blood's two halves aim at the
+        **same** player on purpose, so the sentence is read whole rather than split by D398's
+        conjunction fallback.
+
+        Asserted as the shape: one target spec, and it is the player.
+      */
+      const targets = field(compiledScript('Sign in Blood').script, 'targets') as
+        readonly TargetSpec[];
+      expect(targets).toHaveLength(1);
+      expect(targets[0]!.kind).toBe('player');
+    });
+
+    it('reads a player who gains life, and marks it as help', () => {
+      /*
+        Healing Salve's first bullet, which the drain-and-heal family (D390) already read — this
+        increment nearly shipped a **second** reader for it, and the break run is what found that:
+        turning `friendly` off in the new branch changed nothing, because the branch was dead code.
+        One reading in one place, as everywhere else in this file; the duplicate was deleted and the
+        test stays, pointed at the reader that does the work.
+
+        `friendly` is the flag that stops the bot aiming a lifegain at the player it is trying to
+        kill (D252). The card itself is still refused whole: its second mode prevents damage, and
+        nothing reads that.
+      */
+      const salve = compileCard({
+        name: 'Plain Salve', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'],
+        oracle_text: 'Target player gains 3 life.',
+      });
+      expect(salve.ok).toBe(true);
+      if (!salve.ok) return;
+      expect(salve.unread).toEqual([]);
+      const spec = (field(salve.script, 'targets') as readonly TargetSpec[])[0]!;
+      expect(spec.kind).toBe('player');
+      expect(spec.friendly).toBe(true);
+      const base = arena({ decks: { 0: 'skyward-writ', 1: 'ember-rush' }, turn: 3 });
+      const after = resolve(salve.script)(
+        contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'player', seat: 0 as SeatIndex }]),
+      );
+      expect(after.seats[0]!.life).toBe(base.seats[0]!.life + 3);
+    });
+
+    it('does nothing when the player it pointed at has gone', () => {
+      // A target that left the game is not a target this spell has (CR 800.4a), and both readers
+      // answer that with the state they were handed rather than guessing a seat.
+      const base = arena({ decks: { 0: 'blight-vector', 1: 'ember-rush' }, turn: 3 });
+      const after = resolve(compiledScript('Sign in Blood').script)(
+        contextOn(base, 0 as SeatIndex, 'c1', []),
+      );
+      expect(after).toEqual(base);
+    });
+  });
+
   describe('loyalty abilities, against the two planeswalkers that compile whole', () => {
     const contextOn = (
       state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],

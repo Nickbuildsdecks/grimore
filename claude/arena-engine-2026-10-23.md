@@ -10843,3 +10843,19 @@ the card** — the clearest kind of card that works and is wrong.
 
 **386 → 390 of 538 lines (71.7% → 72.5%)**, **244 → 246 of 339 cards**. Three deliberate breaks,
 three failing tests; 313/313; 4,000 rows at scale with no throw.
+
+## A clause that points at a player, and a reader that was never called (#317, D406)
+
+Sign in Blood — "Target player draws two cards and loses 2 life" — compiles whole, and is read as
+**one** clause rather than two because both halves aim at the same player: `targets` is one list per
+script, so two targeting parts are refused, and D398's conjunction fallback would hit that refusal.
+Drawing comes before the loss, which is the printed order and matters at zero life.
+
+The increment also added a reader for "target player gains N life" that was **dead code** — D390
+already read it. Nothing failed and the measurement did not move; the deliberate break found it, by
+failing to fail. A break run is usually a check that a mechanism works; this one was a check that it
+exists, and a reader with no caller is as invisible as a check that cannot fail. Deleted, with the
+near miss written into the test.
+
+**390 → 391 of 538 lines (72.5% → 72.7%)**, **246 → 247 of 339 cards**. Three breaks that failed as
+intended plus the one that found the duplicate; 317/317; 4,000 rows at scale with no throw.
