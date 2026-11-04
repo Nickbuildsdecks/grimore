@@ -170,25 +170,12 @@ const DISAGREE: Readonly<Record<string, { readonly why: string; readonly keys: r
     the test asserts an equality and a stale row fails it, which is the point.
   */
   /*
-    `removesACreature` — the hint that keeps a removal spell from being cast with nothing worth
-    hitting (#322). The compiler sets it for a *destroy* or an *exile* aimed at a creature and not
-    for **damage** aimed at one, and Flame Slash is "deals 4 damage to target creature": creature-only
-    by its own spec, so the rule that covers the other two covers it.
-  */
-  'Flame Slash': { why: 'missing removesACreature on damage whose spec is creature-only', keys: ['removesACreature'], digest: '7895f0f1' },
-  /*
     The same hint, missing for a different reason: the removal is a **trigger** ("When ~ enters the
     battlefield, exile target creature"), and `removesACreature` is a card-level flag that only the
     spell path can set — `spellFlags` is spell-only by construction. A permanent whose ETB trigger
     removes a creature needs a way to say so.
   */
   'Journey to Nowhere': { why: 'missing removesACreature, which only the spell path can currently set', keys: ['removesACreature'], digest: '7895f0f1' },
-  /*
-    The other direction, and the one worth looking at soonest: the compiled spec has **no filter at
-    all** where the hand-written one does. A spec that filters nothing is a spell that can be
-    pointed somewhere the card does not allow.
-  */
-  Capsize: { why: 'compiled spec has no filter where the hand-written one does', keys: ['targets'], digest: '33c1e3e6' },
   /*
     Two spellings of ninjutsu: the compiled reading sets the `ninjutsu` field from the keyword
     declaration, the hand-written card writes an ability with `returnsUnblockedAttacker`. Which one
@@ -218,6 +205,14 @@ const DISAGREE: Readonly<Record<string, { readonly why: string; readonly keys: r
       is deleted, and the test that goes with it declares an attack and checks the refusal.
   */
 };
+  /*
+    **Two more were here and are settled (D420).** `Flame Slash` wanted the `removesACreature` hint
+    on damage whose spec is creature-only — the same rule destroy and exile already followed, simply
+    missing from damage — and adding it introduced no new disagreement, so it matches every
+    hand-written card in the pool. `Capsize` had a hand-written filter requiring the battlefield,
+    which `legalTargets` and `isLegalTarget` both require already; deleted as a guard that cannot
+    fail.
+  */
 
 describe('every compiled reading against the hand-written script for the same card', () => {
   /** Both scripts for every pool card that has both, with nothing left unread. */

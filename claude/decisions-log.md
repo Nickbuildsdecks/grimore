@@ -26161,3 +26161,51 @@ is a convenience and the gate is the check, and this is the first time since D41
 has failed on something real.
 
 compile.test.ts and the rest: engine suite **1,816/1,816** across 15 files.
+
+## D420 — A hint missing from one family, and a guard the engine already had twice
+
+Third batch off D417's list. Two rows, one in each direction, and both settled by reading what the
+engine already does rather than by adding anything.
+
+### Flame Slash: the hint was on three families and not the fourth
+
+`removesACreature` keeps a removal spell from being cast with nothing worth hitting (#322). The
+compiler set it for a **destroy** aimed at a creature and for an **exile** aimed at one, and not for
+**damage** aimed at one. Flame Slash is "deals 4 damage to target creature" — creature-only by its
+own spec, so there is nothing else it could ever be cast at, and the hand-written card has carried
+the flag all along.
+
+So the damage reader now applies the same rule the other two already follow, and **adding it
+introduced no new disagreement** — which is the useful part of having the standing check: the rule is
+not a guess about one card, it matches every hand-written card in the pool that the rule touches.
+
+Not for "any target": Lava Spike and Magma Jet can be aimed at a face, so a board with no creature
+on it is still a board they do something on, and neither hand-written card carries the flag. A rule
+that set it on every damage clause would make the bot hold a burn spell it should be pointing at a
+player — asserted as its own row, because without that arm the first one says only "the flag exists
+somewhere".
+
+### Capsize: a filter that could not refuse anything
+
+It carried `filter: zone === 'battlefield'` on a `kind: 'permanent'` spec. The engine requires that
+**twice**, in both places it can ever be asked:
+
+- `legalTargets` enumerates a permanent spec's candidates out of the battlefield zone and nowhere
+  else — graveyard kinds have their own branch above it, and the stack kinds return before it.
+- `isLegalTarget`, which validates a target somebody *submitted* rather than one the engine offered,
+  reaches `if (inst.zone !== 'battlefield') return false` before it looks at a type at all.
+
+So the filter could not refuse anything the engine would have allowed: a guard that cannot fail,
+which this file deletes rather than keeps. Proved rather than argued — a board with one creature on
+the battlefield and one card in a graveyard offers exactly the first, through `legalTargets` on the
+compiled spec.
+
+### Measured
+
+No coverage change — **402 of 538 lines (74.7%)**, 256 of 339 with a script, 228 complete.
+Disagreements **5 → 3**. What is left is Journey to Nowhere (`removesACreature` on a card whose
+removal is an ETB trigger, which only the spell path can currently set) and ninjutsu and dash as a
+keyword field versus a hand-written expansion.
+
+Three deliberate breaks, three failing tests: the damage hint dropped, the damage hint set on every
+spec, and Capsize's filter restored.

@@ -11119,3 +11119,18 @@ and deleting the keyword handling fails it and two older rows.
 
 No coverage change. Disagreements **10 → 5**: what is left is Capsize's missing filter, two
 `removesACreature` gaps, and ninjutsu and dash as a keyword field versus a hand-written expansion.
+
+## A hint missing from one family, and a guard the engine already had twice (#327, D420)
+
+**Flame Slash**: `removesACreature` was set for a destroy or an exile aimed at a creature and not for
+damage aimed at one. Added, and the standing check's value showed: the rule introduced **no new
+disagreement**, so it matches every hand-written card it touches rather than being a guess about one.
+Not for "any target" — Lava Spike and Magma Jet can be aimed at a face, asserted as its own row.
+
+**Capsize**: a hand-written filter requiring the battlefield, which `legalTargets` (enumeration) and
+`isLegalTarget` (validation of a submitted target) both require already. A guard that cannot refuse
+anything, deleted, with `legalTargets` asked on a board holding a creature in a graveyard as the
+proof.
+
+Disagreements **5 → 3**: Journey to Nowhere's hint needs the trigger path to reach a card-level flag,
+and ninjutsu and dash are the keyword-field-versus-expansion question.

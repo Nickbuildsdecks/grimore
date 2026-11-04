@@ -10,6 +10,7 @@ import type { AbilityDef, TargetSpec, TriggerDef } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
 import { arena, find, ids, nameOf } from './testkit.js';
+import { legalTargets } from './targeting.js';
 
 /**
  * Every card in the pool, by name — the compiler's ground truth.
@@ -4933,6 +4934,71 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       });
       expect(card.ok).toBe(true);
       if (card.ok) expect(card.script).toBeUndefined();
+    });
+  });
+
+  describe('two hints the standing check found missing, and one guard it found redundant', () => {
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    it('carries the removal hint on damage whose spec is creature-only', () => {
+      /*
+        D420. `removesACreature` keeps a removal spell from being cast with nothing worth hitting
+        (#322), and the compiler set it for a *destroy* or an *exile* aimed at a creature but not
+        for **damage** aimed at one. Flame Slash is "deals 4 damage to target creature" — creature-only
+        by its own spec, so there is nothing else it could ever be cast at.
+
+        Found by `compiled-vs-written.test.ts` comparing against the hand-written card, which has
+        carried the flag all along.
+      */
+      expect(field(compiledScript('Flame Slash').script, 'removesACreature')).toBe(true);
+      expect(field(scriptFor('Flame Slash'), 'removesACreature')).toBe(true);
+    });
+
+    it('does not carry it where the spell can be aimed at a player', () => {
+      /*
+        The arm without which the row above says only "the flag exists somewhere". Lava Spike and
+        Magma Jet say "any target", so a board with no creature on it is still a board they do
+        something on — and neither hand-written card carries the flag. A rule that set it on every
+        damage clause would make the bot hold a burn spell it should be pointing at a face.
+      */
+      for (const name of ['Lava Spike', 'Magma Jet']) {
+        expect(field(compiledScript(name).script, 'removesACreature'), name).toBeUndefined();
+        expect(field(scriptFor(name), 'removesACreature'), name).toBeUndefined();
+      }
+    });
+
+    it('needs no battlefield filter on a permanent spec, because the engine has two', () => {
+      /*
+        Capsize carried a hand-written filter requiring `zone === 'battlefield'`, and the compiled
+        spec has none — so the standing check flagged it. The engine already requires it **twice**,
+        in both places that can ever be asked: `legalTargets` enumerates a permanent spec's
+        candidates out of the battlefield zone and nowhere else, and `isLegalTarget` — which
+        validates a target somebody *submitted* rather than one the engine offered — refuses any
+        instance whose zone is not the battlefield before it looks at a type at all.
+
+        So the filter could not refuse anything the engine would have allowed. Deleted, and this is
+        the proof rather than the argument: a board with one creature on the battlefield and one in
+        a graveyard offers exactly the first.
+      */
+      const base = arena({
+        decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+        battlefield: { 1: ['Grizzly Bears'] },
+        graveyard: { 1: ['Giant Growth'] },
+        turn: 3,
+      });
+      const bears = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const buried = find(base, 1 as SeatIndex, 'graveyard', 'Giant Growth');
+
+      const spec = (field(compiledScript('Capsize').script, 'targets') as readonly TargetSpec[])[0]!;
+      expect(spec.filter).toBeUndefined();
+      const offered = legalTargets(base, spec, 0 as SeatIndex, 'c1')
+        .flatMap((t) => (t.kind === 'card' ? [t.id] : []));
+      expect(offered).toContain(bears);
+      expect(offered).not.toContain(buried);
+      // And the hand-written spec agrees, now that its filter is gone.
+      const written = (field(scriptFor('Capsize'), 'targets') as readonly TargetSpec[])[0]!;
+      expect(written.filter).toBeUndefined();
     });
   });
 

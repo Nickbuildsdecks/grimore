@@ -2936,14 +2936,19 @@ const ESSENCE_SCATTER: CardScript = {
 const CAPSIZE: CardScript = {
   name: 'Capsize',
   buyback: { cost: '{3}', description: 'Buyback {3}' },
-  targets: [{
-    kind: 'permanent',
-    description: 'target permanent',
-    filter: (state, candidate) => {
-      if (candidate.kind !== 'card') return false;
-      return state.instances[candidate.id]?.zone === 'battlefield';
-    },
-  }],
+  /*
+    No filter, which is a deletion (D420). It carried one requiring `zone === 'battlefield'`, and
+    `compiled-vs-written.test.ts` flagged it because the compiled spec has none.
+
+    The engine already requires it **twice**, in both places that can ever be asked. `legalTargets`
+    enumerates candidates for a non-graveyard, non-player, non-stack spec out of the battlefield
+    zone and nowhere else; and `isLegalTarget`, which validates a target somebody submitted rather
+    than one the engine offered, reaches `if (inst.zone !== 'battlefield') return false` before any
+    type check. So the filter could not refuse anything the engine would have allowed — a guard
+    that cannot fail, which this file deletes rather than keeps, and the test that goes with it asks
+    `legalTargets` for a board with a creature in a graveyard and gets only the battlefield one.
+  */
+  targets: [{ kind: 'permanent', description: 'target permanent' }],
   onResolve: (c) => {
     const id = firstCardTarget(c);
     return id === null ? c.state : bounceToHand(c.state, id);
@@ -11286,6 +11291,20 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
   */
   return {
     targets: [spec],
+    /*
+      **`removesACreature` where the spec is creature-only** (D420), which is the same rule the
+      destroy and exile families below already follow — the flag was simply missing from damage.
+
+      It is the bot's way of being told not to cast a removal spell with nothing worth hitting
+      (#322), and a Flame Slash is "deals 4 damage to target creature": creature-only by its own
+      spec, so there is nothing else it could ever be cast at. `compiled-vs-written.test.ts` found
+      the gap by comparing against the hand-written card, which has carried the flag all along.
+
+      Not for "any target": Lava Spike and Magma Jet can be aimed at a player, so a board with no
+      creature on it is still a board they do something on, and neither hand-written card carries
+      the flag.
+    */
+    ...(spec.kind === 'creature' ? { spellFlags: { removesACreature: true } } : {}),
     effect: (c) => {
       const n = amountOf(c);
       return n <= 0 ? c.state : damageFirstTarget(c, n);
