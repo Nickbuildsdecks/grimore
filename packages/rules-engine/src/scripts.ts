@@ -9377,6 +9377,36 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     the text does not promise — "each opponent loses 2 life and you gain 1 life" is a card somebody
     could print.
   */
+  /*
+    The drain whose amount is a board count: "Each opponent loses 1 life for each creature card in
+    your graveyard" — Lotleth Giant, whose whole card is that one line.
+
+    Read before the flat drain below because its prefix is the same sentence; the tail is what makes
+    it a different card, and a reader that matched the flat form first would drain one life per
+    opponent and ignore the graveyard entirely. That is a card that works and is wrong, which is
+    this file's commonest failure shape.
+  */
+  const perThing = /^each opponent loses (\d+) life for each (.+)$/i.exec(text);
+  if (perThing !== null) {
+    const each = Number(perThing[1]);
+    const counted = forEachCount(perThing[2]!, name);
+    if (counted !== null) {
+      /*
+        No zero guard, deliberately: `loseLife` refuses a non-positive amount and returns the state
+        it was handed, so an empty graveyard already drains nothing. A guard here would be a branch
+        no test could tell from its absence, which is the shape of a check that cannot fail — and
+        the hand-written Giant does not have one either, so the two read identically at zero.
+      */
+      return {
+        effect: (c) => {
+          const n = each * counted(c);
+          return opponentsOf(c.state, c.controller)
+            .reduce((state, seat) => loseLife(state, seat, n), c.state);
+        },
+      };
+    }
+  }
+
   const drained = /^each opponent loses (\d+) life(?: and you gain (\d+) life)?$/i.exec(text);
   if (drained !== null) {
     const lost = Number(drained[1]);
@@ -10306,30 +10336,72 @@ const TOKEN_COLOURS: Readonly<Record<string, Color | null>> = {
  * than a guessed one.
  */
 function boardCount(phrase: string, name: string): ((c: EffectContext) => number) | null {
-  const text = plain(phrase).trim().replace(/\.$/, '');
+  const announced = /^the number of (.+)$/i.exec(plain(phrase).trim().replace(/\.$/, ''));
+  return announced === null ? null : countOfThing(announced[1]!, name, 'plural');
+}
+
+/**
+ * The same count asked the other way round: `… for each <thing>`.
+ *
+ * Magic writes one count in two grammars — "where X is the number of creature cards in your
+ * graveyard" and "for each creature card in your graveyard" — and the difference is not only word
+ * order: the first names the thing in the **plural** and the second in the **singular**. That is why
+ * the noun's number is a parameter of the shared reader rather than something it guesses.
+ */
+function forEachCount(phrase: string, name: string): ((c: EffectContext) => number) | null {
+  return countOfThing(plain(phrase).trim().replace(/\.$/, ''), name, 'singular');
+}
+
+/**
+ * The thing a count counts, as the function that counts it.
+ *
+ * Shared by both grammars above. `number` says whether the caller's grammar names the thing in the
+ * plural or the singular, and it decides exactly one thing: how a **creature subtype** is read.
+ * Every other row accepts either spelling with an optional `s`, because "lands you control" and
+ * "land you control" are the same set.
+ *
+ * The subtype is the one place a wrong reading would be a card that resolves and does nothing, so
+ * each grammar takes only the spelling it actually prints:
+ *
+ * - plural ("the number of Goblins you control") derives the singular: `-ves` becomes `-f` (Elves,
+ *   Wolves, Dwarves), otherwise a trailing `s` is dropped, and a word that does **not** end in `s`
+ *   is refused — which keeps Fungi, Homunculi and Efreeti out, each of which would give a subtype no
+ *   creature has.
+ * - singular ("for each Goblin you control") takes the word as printed and derives nothing, which is
+ *   the only safe reading: stripping a letter would turn "Homunculus" into "Homunculu".
+ */
+function countOfThing(
+  thing: string,
+  name: string,
+  number: 'plural' | 'singular',
+): ((c: EffectContext) => number) | null {
+  const text = thing.trim();
   const self = escapeName(name);
 
-  if (/^the number of lands you control$/i.test(text)) {
+  if (/^lands? you control$/i.test(text)) {
     return (c) => landsControlled(c.state, c.controller);
   }
-  if (/^the number of artifacts you control$/i.test(text)) {
+  if (/^artifacts? you control$/i.test(text)) {
     return (c) => artifactsControlled(c.state, c.controller);
   }
-  if (/^the number of creature cards in your graveyard$/i.test(text)) {
+  if (/^creature cards? in your graveyard$/i.test(text)) {
     return (c) => creatureCardsInGraveyard(c.state, c.controller);
   }
-  if (new RegExp(`^the number of \\+1/\\+1 counters on (?:${self}|it)$`, 'i').test(text)) {
+  if (new RegExp(`^\\+1/\\+1 counters? on (?:${self}|it)$`, 'i').test(text)) {
     return (c) => {
       const snapshot = c.subjectCounters?.['+1/+1'];
       if (snapshot !== undefined) return snapshot;
       return c.state.instances[c.source]?.counters['+1/+1'] ?? 0;
     };
   }
-  const tribe = /^the number of ([A-Z][A-Za-z'-]*) you control$/.exec(text);
+  const tribe = /^([A-Z][A-Za-z'-]*) you control$/.exec(text);
   if (tribe !== null) {
-    const plural = tribe[1]!;
-    if (!plural.endsWith('s')) return null;
-    const singular = plural.endsWith('ves') ? `${plural.slice(0, -3)}f` : plural.slice(0, -1);
+    const word = tribe[1]!;
+    if (number === 'singular') {
+      return (c) => creaturesOfSubtype(c.state, c.controller, word);
+    }
+    if (!word.endsWith('s')) return null;
+    const singular = word.endsWith('ves') ? `${word.slice(0, -3)}f` : word.slice(0, -1);
     if (singular.length < 3) return null;
     return (c) => creaturesOfSubtype(c.state, c.controller, singular);
   }
@@ -10338,23 +10410,48 @@ function boardCount(phrase: string, name: string): ((c: EffectContext) => number
 
 function tokenEffect(clause: string, name: string): ReadEffect | null {
   /*
-    The `where X is …` tail is taken off **before** the token itself is read, because `with (.+)`
-    is greedy and would otherwise swallow it as a list of keywords. What is left is the same
-    sentence a fixed-count token prints.
+    The count's tail is taken off **before** the token itself is read, because `with (.+)` is greedy
+    and would otherwise swallow it as a list of keywords. What is left is the same sentence a
+    fixed-count token prints.
+
+    Two tails, which are the two grammars Magic writes one count in:
+
+    - `, where X is <the number of things>` — the count is announced and the token's own count is
+      the letter X. Chasm Skulker and Krenko print this.
+    - ` for each <thing>` — the count is a multiplier and the token's own count is "a", one per
+      thing. Izoni and Hangarback Walker print this, and the noun is **singular**, which is why
+      `forEachCount` exists beside `boardCount`.
+
+    Reading both is what `tokenEffect`'s docblock listed as missing in two separate bullets, and they
+    turn out to be one gap: the count, not the sentence.
   */
-  const tail = /^(.*?),\s*where X is (.+)$/i.exec(clause.trim().replace(/\.$/, ''));
-  const body = tail === null ? clause.trim() : tail[1]!;
-  const counted = tail === null ? null : boardCount(tail[2]!, name);
-  if (tail !== null && counted === null) return null;
+  const flat = clause.trim().replace(/\.$/, '');
+  const announced = /^(.*?),\s*where X is (.+)$/i.exec(flat);
+  const perThing = announced !== null ? null : /^(.*?) for each (.+)$/i.exec(flat);
+  const counted = announced !== null
+    ? boardCount(announced[2]!, name)
+    : perThing !== null ? forEachCount(perThing[2]!, name) : null;
+  if ((announced !== null || perThing !== null) && counted === null) return null;
+  const body = announced?.[1] ?? perThing?.[1] ?? flat;
 
   const made = /^create ([\w]+) (\d+)\/(\d+) (.+?) creature tokens?(?: with (.+))?$/i
-    .exec(body);
+    .exec(body.trim());
   if (made === null) return null;
 
-  // Either a printed number, or `X` with a board count to supply it — never both and never neither.
+  // Either a printed number, or a board count to supply it — never both and never neither.
   const fixed = counted === null ? countFrom(made[1]!) : null;
   if (counted === null && fixed === null) return null;
-  if (counted !== null && made[1]!.toUpperCase() !== 'X') return null;
+  /*
+    What the printed count has to be when a tail supplies the real one: `X` for the announced
+    grammar, and `a`/`an`/`one` for the per-thing one — "a token for each creature card" is one
+    token per card, and a sentence that said "two tokens for each" would be a different number this
+    reader is not reading.
+  */
+  if (counted !== null) {
+    const word = made[1]!.toLowerCase();
+    const expected = announced !== null ? ['x'] : ['a', 'an', 'one'];
+    if (!expected.includes(word)) return null;
+  }
 
   /*
     The middle is the colours, the subtype, and possibly the word "artifact": "white Spirit",

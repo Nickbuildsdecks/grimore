@@ -1018,10 +1018,10 @@ waiting for the pregame screen, which looks like a broken table and is not.
 ```bash
 PLAY_HOST=127.0.0.1 node scripts/play.mjs &   # both servers, with the variable set
 
-node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 73 checks
-node scripts/e2e-arena.mjs      # two browsers, rules engine           — 50 checks, 8 named skips
-node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 40 checks, 1 named skip
-node scripts/e2e-solo.mjs       # one browser, against the computer    — 27 checks, 1 named skip
+node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 76 checks
+node scripts/e2e-arena.mjs      # two browsers, rules engine           — 53 checks, 7 named skips
+node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 41 checks, 1 named skip
+node scripts/e2e-solo.mjs       # one browser, against the computer    — 28 checks, 1 named skip
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 29 checks, 1 named skip
 LIST=cascade node scripts/e2e-solo.mjs # a deck built to cascade, in a browser — 28 checks, 1 named skip
 LIST=costs   node scripts/e2e-solo.mjs # a deck built to pay evoke, dash and bestow — 30 checks, 1 named skip

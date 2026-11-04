@@ -24734,3 +24734,76 @@ which the share of lines is the honest instrument for and the share of cards is 
 
 Four deliberate breaks, four failing tests. The whole engine suite is 1696 green and a 30,000-row
 shuffled run found no throw.
+
+## D396 — The same count, written the other way round: "for each", in the singular
+
+Magic writes one count in two grammars, and until now the compiler read one of them:
+
+- `, where X is the number of <things>` — the count is announced in a tail and the sentence's own
+  number is the letter X. Krenko and Chasm Skulker print this; D392 read it.
+- ` for each <thing>` — the count is a multiplier and the sentence's own number is "a", one per
+  thing. Izoni and Lotleth Giant print this, and **the noun is singular**.
+
+`tokenEffect`'s docblock listed those as two separate missing bullets. They are one gap: the count,
+not the sentence. So `boardCount` split into `boardCount` (the announced tail) and `forEachCount`
+(the per-thing one) over a shared `countOfThing(thing, name, 'plural' | 'singular')`, and every row
+of the vocabulary now accepts either spelling — "lands you control" and "land you control" are the
+same set.
+
+### Why the grammatical number is a parameter and not a guess
+
+Exactly one row reads differently in the two grammars: a **creature subtype**.
+
+- The plural ("the number of Goblins you control") has to derive the singular the engine spells:
+  `-ves` → `-f`, otherwise drop the trailing `s`, and **refuse a word that does not end in `s`** —
+  which is what keeps Fungi, Homunculi and Efreeti out. A derived "Fungu" is a subtype no creature
+  has, so the card would resolve and count zero.
+- The singular ("for each Goblin you control") takes the word **as printed** and derives nothing.
+  Stripping a letter here would turn "Homunculus" into "Homunculu", with the same result.
+
+So each grammar takes only the spelling it actually prints, and the pair is tested together: the
+pool's one Homunculus (Aeromunculus) makes the singular reading's answer **one** where the plural
+rule's answer would be none, and `the number of Homunculi you control` is still refused outright.
+The refusal and the acceptance sit in adjacent tests so neither can quietly become the other.
+
+### The drain, read before the flat one
+
+`Each opponent loses 1 life for each creature card in your graveyard` — Lotleth Giant, whose whole
+card is that line — had to be read **before** the flat `each opponent loses N life`, because the flat
+form is its prefix. A reader in the other order would drain one life per opponent and ignore the
+graveyard: a card that works and is wrong, which is this file's commonest failure shape and the one
+hybrid automation cannot flag, because nothing is unread.
+
+No zero guard, deliberately: `loseLife` refuses a non-positive amount and returns the state it was
+handed, so an empty graveyard already drains nothing, and a guard would be a branch no test could
+tell from its absence. The hand-written Giant has no guard either, so the two read identically at
+zero — which is asserted rather than assumed.
+
+The printed amount is multiplied by the count. The pool cannot tell `each * counted` from `counted`
+because Lotleth Giant's amount is 1, so a synthetic "loses 2 life for each" is what makes the
+multiplication the thing under test.
+
+### What a per-thing token clause may not say
+
+`Create **two** 1/1 tokens for each creature card` is a real sentence with a real meaning this
+reader does not implement, so the printed count is required to be `a`/`an`/`one` (and `x` for the
+announced grammar) and anything else is refused. An unread line is dealt to a human (D362); a halved
+one is not.
+
+### Measured, and a drift in the log corrected
+
+**359 → 361 of 538 printed lines (66.7% → 67.1%)**, and **223 → 225 of 339 cards**: Lotleth Giant is
+read whole, Izoni's ETB line is read with her activated ability left for a human.
+
+The card figure needs a correction. D395 recorded "unchanged at 225 of 339"; re-measured on the
+clean commit it was **223**, so the running count in the log had drifted two ahead of the
+instrument. The figures above are from `compilable.mjs` on `ce7b254` clean and on the same tree
+dirty, and the per-card verbose output of the two was diffed: Izoni and Lotleth Giant are the only
+two cards that moved, so nothing regressed to pay for them.
+
+Eight deliberate breaks, eight failing tests — the plural rule applied to the singular grammar and
+each way round, the dropped multiplier, the drain read after the flat form, the token tail not
+stripped, the printed count widened to accept "two", and the creature-card row narrowed to the
+plural. 11,000 rows at scale (two shuffled, one repeat) found no throw. The engine suite is green,
+and all four browser suites pass on this engine: table 76/76, arena 53/53 with 7 named skips, pod
+41/41 with 1, solo 28/28 with 1.

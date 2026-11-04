@@ -1303,11 +1303,11 @@ describe('compileCard, against the cards a person wrote by hand', () => {
 
     it.each([
       /*
-        "Create X … tokens, where X is …" has **left** this list: the board count it needs is read
-        now (D392), and the row below it — the same thing spelled "for each" — is what remains, since
-        that grammar puts the count after the token instead of in a `where X is` tail.
+        Both counted grammars have now **left** this list: "Create X … tokens, where X is …" went
+        with D392's board count, and "… for each <thing>" with D396's singular one. What is left is
+        every row about the **token**, not about how many of it there are — which is the useful
+        division, because a count is arithmetic and a token's own text is a second card.
       */
-      ['Create a 1/1 black and green Insect creature token for each creature card in your graveyard.'],
       // A granted ability, not a keyword: `printedKeywords` reads nothing out of it.
       ['Create a 1/1 black Pest creature token with "When this creature dies, you gain 1 life."'],
       // No printed power and toughness, and the token carries rules text of its own.
@@ -3027,6 +3027,214 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(resolve('the number of creature cards in your graveyard', dead)).toBe(1);
     });
   });
+  describe('the same count written the other way round: "for each", in the singular', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string,
+    ): EffectContext => ({
+      state, controller: seat, source, targets: [], decisions: [],
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const triggerOf = (script: unknown, i = 0) =>
+      (field(script, 'triggers') as readonly TriggerDef[] | undefined)?.[i];
+
+    /*
+      The two cards in the pool that print this grammar, and they print it about the same zone:
+      Izoni makes a body per body, and Lotleth Giant drains a life per body. One count, two
+      sentences — which is why the reader is a count rather than two sentence readers.
+
+      Both fixtures put a **non-creature** card in the graveyard beside the creatures. That is the
+      control: the clause says "creature card", and a reader that counted the graveyard would read
+      three where the card reads two.
+    */
+    const yard = () => arena({
+      decks: { 0: 'rot-harvest', 1: 'ember-rush' },
+      graveyard: { 0: ['Shambling Shell', 'Vampire Aristocrat', 'Raise Dead'] },
+      turn: 3,
+    });
+
+    it('makes an Insect per creature card in the graveyard, as Izoni’s hand-written trigger does', () => {
+      const base = yard();
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = triggerOf(compiledScript('Izoni, Thousand-Eyed').script)!.effect(ctx);
+      const theirs = triggerOf(scriptFor('Izoni, Thousand-Eyed'))!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      const insects = ids(mine, 0 as SeatIndex, 'battlefield')
+        .filter((id) => nameOf(mine, id) === 'Insect');
+      expect(insects).toHaveLength(2);
+    });
+
+    it('makes nothing on an empty graveyard, as the hand-written trigger does', () => {
+      const base = arena({ decks: { 0: 'rot-harvest', 1: 'ember-rush' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = triggerOf(compiledScript('Izoni, Thousand-Eyed').script)!.effect(ctx);
+      const theirs = triggerOf(scriptFor('Izoni, Thousand-Eyed'))!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      expect(mine).toEqual(base);
+    });
+
+    it('drains a life per creature card from every opponent, as Lotleth Giant’s trigger does', () => {
+      const base = yard();
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = triggerOf(compiledScript('Lotleth Giant').script)!.effect(ctx);
+      const theirs = triggerOf(scriptFor('Lotleth Giant'))!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      /*
+        Two bodies, so two life — and the caster's own total is the control twice over: a reader
+        that drained "each player" would take it too, and a reader that read the whole graveyard
+        would take three.
+      */
+      const before = base.seats[1]!.life;
+      expect(mine.seats[1]!.life).toBe(before - 2);
+      expect(mine.seats[0]!.life).toBe(base.seats[0]!.life);
+    });
+
+    it('drains nothing on an empty graveyard, because loseLife refuses a non-positive amount', () => {
+      const base = arena({ decks: { 0: 'rot-harvest', 1: 'ember-rush' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = triggerOf(compiledScript('Lotleth Giant').script)!.effect(ctx);
+      const theirs = triggerOf(scriptFor('Lotleth Giant'))!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      // Not "a loss of zero": the state is the one it was handed, which is why no guard is written.
+      expect(mine).toEqual(base);
+    });
+
+    it('multiplies the printed amount by the count, which no pool card does', () => {
+      /*
+        Lotleth Giant's amount is 1, so the pool cannot tell `each * counted` from `counted`. A
+        synthetic two makes the multiplication the thing under test: two bodies at two life each is
+        four, and a reader that ignored the printed number would take two.
+      */
+      const card = compileCard({
+        name: 'Twice Over', type_line: 'Sorcery', mana_cost: '{3}{B}', cmc: 4, colors: ['B'],
+        oracle_text: 'Each opponent loses 2 life for each creature card in your graveyard.',
+      });
+      expect(card.ok).toBe(true);
+      if (!card.ok) return;
+      expect(card.unread).toEqual([]);
+      const base = yard();
+      const after = (field(card.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      expect(after.seats[1]!.life).toBe(base.seats[1]!.life - 4);
+    });
+
+    it('still reads the flat drain it sits in front of', () => {
+      /*
+        The per-thing reader is tried first and its prefix is the flat drain's whole sentence, so
+        this is the regression that order could cause: the flat form has to come out the other side
+        unchanged. Cruel Celebrant and the rest are covered by their own block; this is the
+        synthetic case with a two in it, for the same reason as above.
+      */
+      const card = compileCard({
+        name: 'Flat Drain', type_line: 'Sorcery', mana_cost: '{2}{B}', cmc: 3, colors: ['B'],
+        oracle_text: 'Each opponent loses 2 life.',
+      });
+      expect(card.ok).toBe(true);
+      if (!card.ok) return;
+      expect(card.unread).toEqual([]);
+      const base = yard();
+      const after = (field(card.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      // Two, not four: the graveyard this seat has is not part of this card.
+      expect(after.seats[1]!.life).toBe(base.seats[1]!.life - 2);
+    });
+
+    /*
+      The subtype, which is where the two grammars genuinely differ.
+
+      "the number of Elves you control" names the tribe in the plural and has to have a letter
+      taken off; "for each Elf you control" names it as the engine spells it and must not. Reading
+      one with the other's rule is a card that resolves and counts nothing — the failure this file
+      calls a card that works and is wrong.
+    */
+    it('counts a tribe named in the singular, without deriving anything', () => {
+      const card = compileCard({
+        name: 'Elf Counter', type_line: 'Sorcery', mana_cost: '{2}{G}', cmc: 3, colors: ['G'],
+        oracle_text: 'Create a 1/1 green Elf creature token for each Elf you control.',
+      });
+      expect(card.ok).toBe(true);
+      if (!card.ok) return;
+      expect(card.unread).toEqual([]);
+      const base = arena({
+        decks: { 0: 'verdant-guard' },
+        battlefield: { 0: ['Llanowar Elves', 'Llanowar Elves', 'Grizzly Bears'] },
+        turn: 3,
+      });
+      const after = (field(card.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      // Two Elves, so two tokens; the bear is the control, and three would mean "creatures".
+      expect(ids(after, 0 as SeatIndex, 'battlefield').filter((id) => nameOf(after, id) === 'Elf'))
+        .toHaveLength(2);
+    });
+
+    it('refuses a tribe the plural grammar cannot spell, and accepts it in the singular', () => {
+      /*
+        The pair that makes the split worth having. "Homunculi" is refused outright, because the
+        plural rule would have to invent "Homunculu"; the same creature type in the singular is
+        read as printed. The refusal is tested next to the acceptance so neither can quietly
+        become the other.
+      */
+      const plural = compileCard({
+        name: 'Plural Reader', type_line: 'Sorcery', mana_cost: '{2}', cmc: 2, colors: [],
+        oracle_text: 'Create X 1/1 blue Homunculus creature tokens, where X is the number of Homunculi you control.',
+      });
+      expect(plural.ok).toBe(true);
+      if (plural.ok) expect(plural.script).toBeUndefined();
+
+      const singular = compileCard({
+        name: 'Singular Reader', type_line: 'Sorcery', mana_cost: '{2}', cmc: 2, colors: [],
+        oracle_text: 'Create a 1/1 blue Homunculus creature token for each Homunculus you control.',
+      });
+      expect(singular.ok).toBe(true);
+      if (!singular.ok) return;
+      expect(singular.unread).toEqual([]);
+      /*
+        And read **correctly**, which is a stronger claim than compiled: the pool has exactly one
+        creature of this type — Aeromunculus, a Homunculus Mutant — so one token is the answer the
+        plural rule cannot reach. It would count a type called "Homunculu" and make none.
+      */
+      const base = arena({
+        decks: { 0: 'delta-bloom' },
+        battlefield: { 0: ['Aeromunculus', 'Llanowar Elves'] },
+        turn: 3,
+      });
+      const after = (field(singular.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      expect(ids(after, 0 as SeatIndex, 'battlefield')
+        .filter((id) => nameOf(after, id) === 'Homunculus')).toHaveLength(1);
+    });
+
+    it('refuses a singular tribe in the plural grammar, which is the other half of the rule', () => {
+      // "the number of Elf you control" is not English a card prints, and the plural rule's
+      // trailing-s requirement is what refuses it rather than counting a type called "El".
+      const card = compileCard({
+        name: 'Wrong Number', type_line: 'Sorcery', mana_cost: '{2}', cmc: 2, colors: [],
+        oracle_text: 'Create X 1/1 green Elf creature tokens, where X is the number of Elf you control.',
+      });
+      expect(card.ok).toBe(true);
+      if (card.ok) expect(card.script).toBeUndefined();
+    });
+
+    it('will not read a per-thing token clause whose printed count is not one', () => {
+      /*
+        "Create two tokens for each creature card" is a real sentence with a real meaning this
+        reader does not implement, so it has to be refused rather than read as one each. An
+        unread line is dealt to a human (D362); a halved one is not.
+      */
+      const card = compileCard({
+        name: 'Two Each', type_line: 'Sorcery', mana_cost: '{4}{B}', cmc: 5, colors: ['B'],
+        oracle_text: 'Create two 1/1 black Zombie creature tokens for each creature card in your graveyard.',
+      });
+      expect(card.ok).toBe(true);
+      if (card.ok) expect(card.script).toBeUndefined();
+    });
+  });
+
   describe('loyalty abilities, against the two planeswalkers that compile whole', () => {
     const contextOn = (
       state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],

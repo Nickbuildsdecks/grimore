@@ -10630,3 +10630,34 @@ compile", not any particular card.
 
 **356 → 359 of 538 lines (66.2% → 66.7%)**, cards unchanged at 225 of 339 — Garruk and Nissa were
 already partly read, and what changed is that they are now whole.
+
+## The count written the other way round, and a drift corrected (#317, D396)
+
+Magic writes one count in two grammars: `, where X is the number of Goblins you control` and
+`for each Goblin you control`. The second was listed in `tokenEffect`'s docblock as two separate
+missing bullets; it is one gap — the count, not the sentence — so the reader split into an announced
+form and a per-thing one over a shared vocabulary.
+
+The two grammars differ in exactly one place, and it matters: the **plural** names a creature
+subtype as "Goblins" and has to derive "Goblin", refusing a word that does not end in `s` (there is
+no creature type "Fungu"); the **singular** names it as the engine spells it and must derive
+nothing, or "Homunculus" becomes "Homunculu". Each grammar now takes only the spelling it prints,
+and the pool's one Homunculus is what makes that test discriminate rather than merely compile.
+
+Two cards read as a result: **Lotleth Giant** whole, and **Izoni's** ETB line with her sacrifice
+ability left for a human. The Giant's drain had to be read before the flat `each opponent loses N
+life`, whose sentence is its prefix — the other order drains one life per opponent and ignores the
+graveyard, which is a card that works and is wrong, and the one failure hybrid automation cannot
+flag because nothing is unread.
+
+**359 → 361 of 538 lines (66.7% → 67.1%)**, and **223 → 225 of 339 cards**.
+
+**A correction:** the previous checkpoint said the card count was "unchanged at 225". Re-measured on
+the clean commit it was 223 — the running figure in these notes had drifted two ahead of the
+instrument. Both numbers above come from `compilable.mjs` run on the same tree clean and dirty, and
+the per-card output of the two runs was diffed to prove Izoni and Lotleth Giant are the only cards
+that moved.
+
+Eight deliberate breaks, eight failing tests. 11,000 rows at scale found no throw. All four browser
+suites pass on this engine: **table 76/76, arena 53/53 (7 named skips), pod 41/41 (1), solo 28/28
+(1)** — which also replaces the stale solo figure the previous sweep was carrying.
