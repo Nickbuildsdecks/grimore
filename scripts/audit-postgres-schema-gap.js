@@ -101,6 +101,28 @@ function sqliteBranchOfTernary(source, index) {
   return source.slice(lineStart, index).trimStart().startsWith(':');
 }
 
+/**
+ * Is the match at `index` inside a constant whose name says it is the SQLite statement?
+ *
+ * The ternary test above is not enough once this audit reads more than `server.js`.
+ * `scryfallService.js` holds **both** dialects as named constants — `CARD_UPSERT_PG` and
+ * `CARD_UPSERT_SQLITE` — and the SQLite one is not a ternary branch, so its columns were counted as
+ * things written to Postgres. That produced a confident false finding on the first run:
+ * `scryfall_cards … scryfall_id`, a column only the SQLite statement names and only SQLite has.
+ *
+ * An audit that cries wolf is an audit somebody stops running, which lands in the same place as one
+ * that cannot fail. So the rule is the declaration: walk back to the nearest `const NAME =` and skip
+ * the match when that name says SQLITE. Named, not proximity-based, for the reason the comment
+ * inside `insertedColumns` gives about windows.
+ */
+function sqliteNamedConstant(source, index) {
+  const before = source.slice(0, index);
+  const decl = before.lastIndexOf('const ');
+  if (decl === -1) return false;
+  const name = /const\s+([A-Za-z0-9_$]+)\s*=/.exec(source.slice(decl, decl + 120));
+  return name !== null && /sqlite/i.test(name[1]);
+}
+
 function insertedColumns(file) {
   const re = /INSERT\s+(?:OR\s+(?:IGNORE|REPLACE)\s+)?INTO\s+([a-z_][a-z0-9_]*)\s*\(([^)]*)\)/gi;
   const source = readFileSync(join(ROOT, file), 'utf8');
@@ -113,6 +135,7 @@ function insertedColumns(file) {
     // audit would start arguing for changes that reintroduce the bug. Same test the ratchet in
     // scripts/guards.js uses, for the same reason: a proximity window is not good enough.
     if (sqliteBranchOfTernary(source, m.index)) continue;
+    if (sqliteNamedConstant(source, m.index)) continue;
     const table = m[1].toLowerCase();
     const cols = m[2]
       .split(',')
@@ -189,23 +212,40 @@ async function main() {
  * `collection_cards` has `foil` against `is_foil` -- and server.js writes the SQLite spelling. The
  * INSERT fails with `column "..." does not exist`, which a table-level check never sees.
  */
+/**
+ * The files whose INSERTs are checked against the real schema.
+ *
+ * `scryfallService.js` was missing from this list, and that is how the largest write in the
+ * codebase hid a column gap from the one instrument built to find column gaps. Its card upsert
+ * names 26 columns, six of which migration 0015 added and **no database here has** — so an import
+ * rejects every row it tries to write. Found by running the import against a seven-card fixture
+ * (2 keepers, both rejected: `column "power" of relation "scryfall_cards" does not exist`), which
+ * is a thing nobody had ever done because no test runs the import end to end.
+ *
+ * The lesson is the list, not the file: an audit that reads one file answers a question about one
+ * file, and its heading said "server.js" while its finding was read as "the schema is fine".
+ */
+const INSERTING_FILES = ['server.js', 'scryfallService.js'];
+
 function reportColumns(columns, present) {
   const gaps = [];
-  for (const [table, cols] of insertedColumns('server.js')) {
-    if (!present.has(table)) continue; // the table check already covers this
-    const have = columns.get(table) ?? new Set();
-    const missing = [...cols].filter((c) => !have.has(c)).sort();
-    if (missing.length) gaps.push([table, missing]);
+  for (const file of INSERTING_FILES) {
+    for (const [table, cols] of insertedColumns(file)) {
+      if (!present.has(table)) continue; // the table check already covers this
+      const have = columns.get(table) ?? new Set();
+      const missing = [...cols].filter((c) => !have.has(c)).sort();
+      if (missing.length) gaps.push([`${table} (${file})`, missing]);
+    }
   }
   if (!gaps.length) {
-    console.log('\nEvery column server.js inserts exists on the tables that are present.');
+    console.log(`\nEvery column ${INSERTING_FILES.join(' and ')} insert exists on the tables that are present.`);
     return;
   }
-  console.log('\nCOLUMNS server.js inserts that do not exist (the table is there, the shape is not):');
+  console.log('\nCOLUMNS inserted that do not exist (the table is there, the shape is not):');
   for (const [table, missing] of gaps.sort()) {
-    console.log(`  ${table.padEnd(20)} ${missing.join(', ')}`);
+    console.log(`  ${table.padEnd(38)} ${missing.join(', ')}`);
   }
-  console.log(`\n${gaps.reduce((n, [, m]) => n + m.length, 0)} column(s) missing across ${gaps.length} table(s).`);
+  console.log(`\n${gaps.reduce((n, [, m]) => n + m.length, 0)} column(s) missing across ${gaps.length} table/file pair(s).`);
 }
 
 main().catch((err) => {

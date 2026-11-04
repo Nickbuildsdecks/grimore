@@ -10006,3 +10006,44 @@ games. That arm needs the imported corpus (#318).
 So: a hundred cards each quoting an unabridged paragraph would add ~47 KiB to a 47 KiB peak. The
 quote is capped at 120 characters, holding an entry to 227 bytes measured, which brings the same
 worst case to ~23 KiB added — 70 of 128.
+
+## The corpus filter, and why no card can reach the database (#318, D375)
+
+The importer was already source-agnostic (`SCRYFALL_BULK_FILE`, D329), so what was left of #318 was
+the filter and the report.
+
+**The filter now names the formats.** It used to accept a card legal or restricted in *any* format
+Scryfall tracks — a map that also carries Alchemy, Historic, Timeless, Brawl, Oathbreaker and PreDH.
+Now: standard, pioneer, modern, legacy, vintage, pauper, commander. Every refusal returns its reason
+instead of a bare `false`, and the tally prints a line per reason, because one total cannot tell "the
+dump was all tokens" from "the legality list got too narrow". The whole filter is lifted into
+`importFilter`, a pure function with five tests — one of which pins the seven format keys as a list,
+since a misspelled key reads as `undefined` and silently empties the corpus.
+
+### Then running it found the real blocker
+
+Nobody had ever run this import end to end; no test does, because it needs a database. On a
+seven-card fixture it filtered five rows, one per reason — and **rejected both keepers**:
+
+```
+column "power" of relation "scryfall_cards" does not exist
+```
+
+`packages/db/migrations/0015_scryfall_card_rules_fields.sql` adds the six columns the importer needs
+and **has never been applied**: 0 of 18 Postgres databases here have one of them, and `grimore_dev`
+has no `schema_migrations` table at all. So the corpus cannot land, and the thing standing between
+the compiler and the real card pool is one unapplied migration — recorded as **#320**, because
+applying `packages/db`'s migrations to a legacy-created schema and the production cutover are both
+Nick's calls.
+
+D329's guard, which turns "wrote no rows" into a thrown error, is what made one run enough to find
+this.
+
+### And the instrument that should have caught it read one file
+
+`audit-postgres-schema-gap.js` checks INSERT column lists against the real schema — exactly this
+defect — and read only `server.js`, so the card upsert in `scryfallService.js` was invisible to it.
+It now reads both. The first run with the second file produced a confident **false positive**
+(`scryfall_id`, a column only the SQLite statement names), because the existing guard skipped the
+SQLite branch of a ternary and a named constant is not one. Fixed by the declaration name, not by
+proximity.

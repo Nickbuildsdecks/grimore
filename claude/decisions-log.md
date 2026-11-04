@@ -23472,3 +23472,71 @@ the figure the arithmetic rests on.
 
 Verified: compile.test.ts 82/82 and the new coverage.test.ts 10/10, with the hand-written
 short-circuit and the keyword filter each proved to fail when broken; GATE OK.
+
+## D375
+
+**The corpus filter now matches the goal, and the import cannot write a single row** (#318)
+
+Two halves: one bounded improvement, and a blocker found by running the thing for the first time.
+
+### The filter, narrowed to the formats people play
+
+`SCRYFALL_BULK_FILE` already made the importer source-agnostic (D329), so what was left of #318's
+description was the filter and the report. The filter accepted a card "legal or restricted in **any**
+format Scryfall tracks", and that map also carries Alchemy, Historic, Timeless, Brawl, Oathbreaker
+and PreDH — wider than the goal, which names *"standard, legacy, modern, pauper, commander, and
+like the actual played competitive formats"*. `digital` catches most of what that admits and not all
+of it: a paper card rebalanced for Alchemy keeps its paper printing.
+
+So: seven named formats, `restricted` counting alongside `legal`. And every refusal now returns its
+**reason** instead of a bare `false`, with the tally printing a line per reason — because one total
+cannot tell "the dump was all tokens" from "the legality list got too narrow", and those are
+opposite bugs. The whole filter is lifted out of the import loop into `importFilter`, a pure
+function of one Scryfall object, which is the only reason any of it is testable without a database
+and a 500MB file. Five tests, including one that pins the seven format keys as a list: a misspelled
+key reads as `undefined` and silently empties the corpus, which is the failure this filter is least
+able to see from inside.
+
+### Running it found the blocker
+
+Nobody had ever run this import end to end — no test does, because it needs a database. Run against
+a seven-card fixture it filters five rows, one per reason, exactly as intended:
+
+```
+Wrote 0 cards (5 filtered out, 0 unparseable, 2 rejected by the database).
+  filtered by reason: not-a-card=1, funny-set=1, not-black-bordered=1, digital-only=1,
+                      not-legal-anywhere-played=1
+```
+
+And **both keepers were rejected**: `column "power" of relation "scryfall_cards" does not exist`.
+
+`packages/db/migrations/0015_scryfall_card_rules_fields.sql` adds the six columns the importer needs
+— `power`, `toughness`, `loyalty`, `layout`, `oracle_id`, `produced_mana` — and D329 wrote it. **It
+has never been applied.** 0 of the 18 Postgres databases here carry a single one of those columns,
+and `grimore_dev` has no `schema_migrations` table at all, so `packages/db`'s migrations have never
+run against it; that table was created by legacy `db.js`'s own bootstrap.
+
+So the corpus cannot land, and the reason is one migration nobody has run. D329's guard — the one
+that turns "wrote no rows" into a thrown error — is what made a single run enough to find it.
+Recorded as #320 rather than fixed here: applying `packages/db`'s migrations to a legacy-created
+schema, and the production cutover, are both Nick's.
+
+### The instrument that should have caught it read one file
+
+`scripts/audit-postgres-schema-gap.js` checks INSERT column lists against the real schema — exactly
+this defect — and read **only `server.js`**. The card upsert lives in `scryfallService.js`, so the
+largest write in the codebase was invisible to the one tool built to find column gaps. Its heading
+said "server.js" and its clean result was read as "the schema is fine".
+
+It now reads both, and the first run with the second file produced a **confident false positive**:
+`scryfall_cards … scryfall_id`, a column only the SQLite statement names. `scryfallService.js` holds
+both dialects as named constants, and the existing guard only skipped the SQLite branch of a
+`db.isPostgres` *ternary* — a named constant is not one. Fixed by walking back to the nearest
+`const NAME =` and skipping when the name says SQLITE, named rather than proximity-based for the
+reason the file already gives about windows. An audit that cries wolf is an audit somebody stops
+running, which lands in the same place as one that cannot fail.
+
+With that fixed it reports exactly the six columns 0015 adds, and nothing else on that table.
+
+Verified: scryfall-service.test.js 8/8 (5 new), the fixture import demonstrated end to end, the
+audit's finding reproduced and its false positive removed; GATE OK.

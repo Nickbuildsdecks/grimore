@@ -17,6 +17,66 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
  * log showed on 2026-09-26 and says nothing about what actually went wrong. Both failure modes now
  * name the URL and the status.
  */
+/**
+ * The formats a card has to be legal in for this import to keep it.
+ *
+ * Scryfall's `legalities` map carries sixteen or so keys, and the filter here used to accept a card
+ * legal in **any** of them. That is wider than what this corpus is for: a rules engine for the
+ * games Nick and his friends will actually sit down and play. Alchemy, Historic, Timeless, Brawl,
+ * Oathbreaker and PreDH are all in that map, and a card that exists only in one of them has no
+ * paper table to be brought to.
+ *
+ * These seven are the named list, and `restricted` counts alongside `legal` because a restricted
+ * card is legal at one copy. Scryfall spells the keys exactly as below; a key this list misspelled
+ * would read as `undefined` and quietly narrow the whole corpus, which is why the tally now prints
+ * `not-legal-anywhere-played` as a line of its own rather than folding it into one total.
+ */
+const PLAYED_FORMATS = [
+  "standard", "pioneer", "modern", "legacy", "vintage", "pauper", "commander",
+];
+
+/**
+ * Whether this bulk-data object belongs in the corpus, or the reason it does not.
+ *
+ * Returns `true` to keep, or a short reason string to drop. A **reason** rather than a bare
+ * `false`, because one total cannot tell "the dump was all tokens" from "the legality list got too
+ * narrow", and those are opposite bugs. The filtered counter exists to make a broken import
+ * visible (see the tally below, and D329), and a single number only half does that.
+ *
+ * A pure function of one Scryfall object, lifted out of the import loop so it can be exercised
+ * without a database and a 500MB file. The filter decides what the whole corpus *is*, which makes
+ * it the part of this service most worth being able to test directly.
+ */
+function importFilter(card) {
+  // Not a card object at all: tokens, emblems, art series, memorabilia.
+  const layout = (card && card.layout) || "";
+  if (["token", "double_faced_token", "emblem", "art_series", "memorabilia"].includes(layout)) {
+    return "not-a-card";
+  }
+
+  const setType = (card && card.set_type) || "";
+  if (["funny", "token", "memorabilia"].includes(setType)) return "funny-set";
+
+  // Un-cards and the gold-bordered reprints, which are not legal objects in any real format.
+  const borderColor = (card && card.border_color) || "";
+  if (borderColor === "silver" || borderColor === "gold") return "not-black-bordered";
+
+  if (card && card.digital) return "digital-only";
+
+  /*
+    Legal or restricted in one of the formats people actually play. `digital` catches most of what
+    this adds and not all of it — a paper card rebalanced for Alchemy keeps its paper printing.
+  */
+  const leg = (card && card.legalities) || {};
+  const playable = PLAYED_FORMATS.some((format) => {
+    const status = leg[format];
+    return status === "legal" || status === "restricted";
+  });
+  if (!playable) return "not-legal-anywhere-played";
+
+  return true;
+}
+
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
     https.get(url, {
@@ -237,6 +297,13 @@ async function downloadAndImportScryfallBulk(force = false) {
       import was unable to fail. So the two outcomes are counted apart, and the tally prints both.
     */
     let filtered = 0;
+    /** How many rows each refusal reason accounted for, so the tally can name them. */
+    const filteredBy = new Map();
+    const countFiltered = (reason) => {
+      filtered++;
+      const key = typeof reason === "string" ? reason : "unknown";
+      filteredBy.set(key, (filteredBy.get(key) || 0) + 1);
+    };
     let firstWriteError = null;
     try {
       const readline = require('readline');
@@ -247,23 +314,12 @@ async function downloadAndImportScryfallBulk(force = false) {
       });
 
       const insertCard = async (card) => {
-        // Exclude tokens, emblems, art series, memorabilia, etc.
+        // Every refusal, and the reason for it, lives in `importFilter`: a pure function with its
+        // own tests. This loop only carries the verdict through to the tally.
+        const verdict = importFilter(card);
+        if (verdict !== true) return verdict;
+
         const layout = card.layout || "";
-        if (["token", "double_faced_token", "emblem", "art_series", "memorabilia"].includes(layout)) return false;
-
-        const set_type = card.set_type || "";
-        if (["funny", "token", "memorabilia"].includes(set_type)) return false;
-
-        const border_color = card.border_color || "";
-        if (border_color === "silver" || border_color === "gold") return false;
-
-        if (card.digital) return false;
-
-        // Verify the card is legal in at least one format to exclude completely non-legal/playtest cards
-        const leg = card.legalities || {};
-        const isLegalSomewhere = Object.values(leg).some(status => status === "legal" || status === "restricted");
-        if (!isLegalSomewhere) return false;
-
         const name = card.name;
         const scryfallId = card.id || null;
         const type_line = card.type_line || "";
@@ -370,8 +426,9 @@ async function downloadAndImportScryfallBulk(force = false) {
           }
           if (parsed) {
             try {
-              if (await insertCard(parsed)) cardCount++;
-              else filtered++;
+              const verdict = await insertCard(parsed);
+              if (verdict === true) cardCount++;
+              else countFiltered(verdict);
             } catch (writeErr) {
               writeFailures++;
               if (!firstWriteError) firstWriteError = writeErr;
@@ -400,8 +457,9 @@ async function downloadAndImportScryfallBulk(force = false) {
             }
             if (parsed) {
               try {
-                if (await insertCard(parsed)) cardCount++;
-                else filtered++;
+                const verdict = await insertCard(parsed);
+                if (verdict === true) cardCount++;
+                else countFiltered(verdict);
               } catch (writeErr) {
                 writeFailures++;
                 if (!firstWriteError) firstWriteError = writeErr;
@@ -417,6 +475,15 @@ async function downloadAndImportScryfallBulk(force = false) {
         `Wrote ${cardCount} cards (${filtered} filtered out, ${parseFailures} unparseable, ` +
         `${writeFailures} rejected by the database).`
       );
+      /*
+        And what was filtered, by reason, biggest first. A line nobody reads costs nothing; a line
+        that would have said `not-legal-anywhere-played=30000` the first time the format list was
+        wrong is worth the four it takes to print.
+      */
+      if (filtered > 0) {
+        const byReason = [...filteredBy.entries()].sort((a, b) => b[1] - a[1]);
+        console.log(`  filtered by reason: ${byReason.map(([why, n]) => `${why}=${n}`).join(", ")}`);
+      }
       // A handful of rejects is bad data in the dump. Every row rejected is a broken statement or a
       // schema mismatch, and reporting that as a successful sync is what hid the missing column.
       if (writeFailures > 0 && cardCount === 0) {
@@ -480,5 +547,8 @@ module.exports = {
   CARD_UPSERT_PG,
   CARD_UPSERT_SQLITE,
   // Exported so its failure paths can be exercised; they are the whole point of the function.
-  fetchJson
+  fetchJson,
+  // Exported for its own tests: the filter decides what the whole corpus is.
+  importFilter,
+  PLAYED_FORMATS
 };
