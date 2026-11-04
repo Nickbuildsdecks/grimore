@@ -24148,3 +24148,64 @@ test that proves the live one says in as many words why it uses the spell and no
 only to get at Ainok Survivalist's **target spec**, and a granted trigger carries no target spec of
 this card's — the spec belongs to whichever ability was handed over, on whichever permanent is
 holding it. So it joins `EXEMPT` with that reason, which is the path the guard's own message names.
+
+## D386
+
+**The compiler had only ever seen 348 rows; it survives 240,000, and its memory is garbage rather than retention** (#317)
+
+Every coverage figure in D331–D385 comes from one corpus: the engine's own pool, **348 rows**. #318
+will hand the same readers tens of thousands. Two failures live in that gap and neither is visible at
+348: a reader that throws on a line combination the pool does not contain, and a compiler that holds
+every compilation until the process dies. Both would be discovered at the worst possible moment —
+during the import that the whole corpus plan depends on.
+
+`scripts/measure/compile-at-scale.mjs` asks the question early. Two arms, because one arm cannot
+answer both halves:
+
+| arm | rows | what it can find | what it cannot |
+| --- | --- | --- | --- |
+| `--repeat` (default) | the pool's 348 real rows, cloned with distinct names | pace, memory | a crash on text the pool never prints |
+| `--shuffled` | printed lines resampled across the pool, the owner's name rewritten to the row's | a reader that throws on an unfamiliar neighbour | nothing about coverage — see below |
+
+### The result
+
+Six seeds of the shuffled arm at 30,000 rows and the repeat arm at 2,000/30,000/60,000 —
+**240,000 rows compiled, zero throws.** Pace is 1,300–1,900 rows/s, so the entire commander-legal
+corpus compiles in well under a minute, once rather than per game.
+
+Memory looked like the real finding and was not. The 30,000-row repeat arm grew RSS by **495 MB**,
+and CLAUDE.md starts the server with `node --max-old-space-size=768 server.js`, so a figure like that
+would mean the corpus could not be compiled in the process that serves the game. The decisive run was
+the same work under a cap tighter than the growth:
+
+```
+node --max-old-space-size=256 scripts/measure/compile-at-scale.mjs --rows 30000   # +108 MB, 1819 rows/s
+node --max-old-space-size=256 scripts/measure/compile-at-scale.mjs --rows 60000   # +116 MB, 1889 rows/s
+node --max-old-space-size=256 ... --shuffled --rows 30000 --seed 1                # +100 MB, 1309 rows/s
+```
+
+No OOM, the same pace, and the growth flat from 30,000 to 60,000 rows. So the 495 MB is garbage the
+collector had no reason to reclaim on an unconstrained heap, not retention — the compiler holds
+nothing per row. The number to carry forward is the capped one, because that is the condition the
+server actually runs under.
+
+### Zero throws is only worth the proof that a throw would show
+
+A crash hunt reporting zero and a crash hunt that cannot report anything print the same line. So the
+path was tested by planting a `throw` in the anthem reader and rebuilding: **14 throws over 3,000
+rows**, each printed with the row that caused it. The first plant was narrowed to a `+2/+2` anthem and
+reported **zero** — because the pool prints only `+1/+1` and `+1/+0`, so the reader was never reached.
+That false green is exactly the failure mode being guarded against, and it is why the plant had to be
+unconditional. `compileCard` does not swallow a reader's throw; the zero is a fact about the readers.
+
+### What this script must never be read as saying
+
+**No coverage figure from it means anything**, and it says so in its own output: the shuffled arm's
+rows are real printed lines in combinations that are not any real card, so a share measured on them is
+a share of nothing. Inventing the text of a real card is worse than leaving the mechanic out (D259),
+and that rule is untouched here: nothing the script produces is ever turned into a shipped script, and
+the only numbers it reports are pace, memory and crashes. The share stays `compilable.mjs`'s to print,
+against real cards — still **316 of 538 lines (58.7%)**, unchanged by this increment.
+
+`poolRows()` moved to `scripts/lib/pool-rows.mjs` so both harnesses convert the pool the same way;
+`compilable.mjs` reports the same 348 rows and 316 lines after the move.

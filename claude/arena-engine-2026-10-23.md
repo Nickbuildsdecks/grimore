@@ -10364,3 +10364,32 @@ Steed's and Etched Champion's conditional statics, and it is called *from inside
 other conditional effect on the board. That is a real rules gap (CR 702.105a), now stated at both
 ends rather than claimed away. So the two artifact counts genuinely differ, and the test says why it
 uses the spell rather than the Steed.
+
+## The compiler had only ever seen 348 rows (#317, D386)
+
+Every coverage figure so far comes from one corpus: the engine's own pool, 348 rows. #318 will hand
+the same readers tens of thousands, and two failures live in that gap — a reader that throws on a
+line combination the pool does not contain, and a compiler that retains every compilation until the
+process dies. Both would surface during the import the corpus plan depends on.
+
+`scripts/measure/compile-at-scale.mjs` has two arms: `--repeat` clones the pool's real rows with
+distinct names (pace and memory, real text), and `--shuffled` resamples printed lines across cards
+with the owner's name rewritten to the row's (the crash hunt, synthetic text). **240,000 rows
+compiled across nine runs and six seeds: zero throws**, at 1,300-1,900 rows/s — so the whole
+commander-legal corpus compiles in under a minute, once rather than per game.
+
+**The 495 MB was garbage, not retention.** The unconstrained 30,000-row run grew RSS by 495 MB, which
+would be fatal under `node --max-old-space-size=768 server.js`. The same work under a 256 MB cap
+survives at the same pace (+108 MB at 30,000 rows, +116 MB at 60,000, +100 MB shuffled), and the
+growth is flat between the two row counts, so nothing is held per row. The capped figure is the one
+to carry, because it is the condition the server runs under.
+
+**Zero throws is worth only the proof a throw would show.** A `throw` planted in the anthem reader
+gave 14 throws over 3,000 rows, each printed with its row. Narrowed to a `+2/+2` anthem it gave
+**zero** — the pool prints only `+1/+1` and `+1/+0`, so the reader was never reached. That is the
+false green being guarded against, which is why the plant had to be unconditional.
+
+**No coverage figure from this script means anything**, and its own output says so: its rows are real
+lines in combinations that are not any real card. D259 is untouched — nothing it produces becomes a
+shipped script. The share stays `compilable.mjs`'s to print, against real cards: still **316 of 538
+lines (58.7%)**, unchanged by this increment.

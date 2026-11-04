@@ -34,7 +34,8 @@
  *   VERBOSE=1 node scripts/measure/compilable.mjs   # every card and its unread lines
  */
 import { readFileSync } from 'node:fs';
-import { STARTER_DECKS, compileCard } from '../lib/engine.mjs';
+import { compileCard } from '../lib/engine.mjs';
+import { poolRows } from '../lib/pool-rows.mjs';
 import { provenanceLine } from '../lib/provenance.mjs';
 
 const VERBOSE = process.env.VERBOSE === '1';
@@ -42,33 +43,6 @@ const TOP = Number(process.env.TOP ?? 25);
 const fileArg = process.argv.indexOf('--file');
 const file = fileArg === -1 ? null : process.argv[fileArg + 1];
 
-/**
- * The pool read back as rows.
- *
- * A `CardDef` carries what a card prints, which is what a row carries, so this is a rename rather
- * than a conversion. The one field it cannot supply is `produced_mana`, so the land cross-check
- * inside `cardFromData` does not run on this arm — stated here rather than left to be found, since
- * it makes this arm slightly more permissive about lands than a real import would be.
- */
-function poolRows() {
-  const seen = new Map();
-  for (const deck of Object.values(STARTER_DECKS)) {
-    for (const entry of deck.cards) if (!seen.has(entry.card.name)) seen.set(entry.card.name, entry.card);
-    if (deck.commander && !seen.has(deck.commander.name)) seen.set(deck.commander.name, deck.commander);
-  }
-  return [...seen.values()].map((def) => ({
-    name: def.name,
-    type_line: def.typeLine,
-    oracle_text: def.oracleText,
-    mana_cost: def.manaCost,
-    cmc: def.cmc,
-    colors: [...def.colors],
-    power: def.power ?? null,
-    toughness: def.toughness ?? null,
-    loyalty: def.loyalty ?? null,
-    layout: def.faces === undefined ? 'normal' : def.faces.kind,
-  }));
-}
 
 /**
  * What a line opens with, for grouping.
