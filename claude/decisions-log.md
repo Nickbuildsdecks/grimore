@@ -26526,3 +26526,82 @@ Five deliberate breaks, five failures, and worth noting *which* tests caught the
 #114 and #165, which now exercise the factories because the hand-written cards call them. Evolve
 dropping its condition failed two, the reader emitting no trigger for exalted failed two, and the
 reader passing the wrong name to the evolve factory failed one.
+
+## D426 — The corpus, from a source this container can actually reach
+
+#318 — "every competitive-legal card, from Scryfall bulk data" — has been blocked since it was
+filed, and re-tested on every pass: `api.scryfall.com` and `data.scryfall.io` both answer 403 to
+CONNECT, and so do `mtgjson.com` and `api.magicthegathering.io`. Every card-data host this project
+would reach for is denied.
+
+### What is not denied
+
+Reading the proxy's own status (`$HTTPS_PROXY/__agentproxy/status`) rather than guessing: its
+`noProxy` list carries `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `index.crates.io`
+and `proxy.golang.org`, and **GitHub is allowed** — `git ls-remote` over https works through the
+session's git proxy and `raw.githubusercontent.com` answers 200. (`api.github.com` answers too, but
+is governed per-repository and refuses anything outside this session's scope.)
+
+So the corpus can come out of a public repository that keeps card data **in git**, and
+`Card-Forge/forge` does: one plain-text file per card under `forge-gui/res/cardsfolder`, 34,134 of
+them. A blobless, depth-1, sparse fetch of that one directory is 159 MB.
+
+### What is taken, and what deliberately is not
+
+`scripts/corpus/from-forge.mjs` reads the **printed card data** — name, mana cost, type line, power,
+toughness, loyalty and the `Oracle:` text — which is exactly `CardDataRow`, which is exactly what
+Scryfall's bulk file provides. So `compilable.mjs --file` and D329's importer read it unchanged.
+
+Forge's own `A:`/`T:`/`S:` ability scripts are **not** taken. They are a different engine's DSL, and
+copying their semantics would import a second implementation of the rules that nothing here could
+verify — the opposite of what the compiler is for.
+
+Two gaps stated rather than glossed:
+
+- **Fidelity.** Forge's `Oracle:` lines are a community transcription, not the canonical Oracle
+  feed, so a line can lag an errata. D259's rule applies to the source as much as to the reader, so
+  this is recorded as a **second-best source**: the moment Scryfall egress opens, the same flag
+  takes the real bulk file.
+- **Legality is not filtered.** Forge's files carry none; it lives in Scryfall's and MTGJSON's
+  `legalities`, both unreachable. `rebalanced/` and `upcoming/` are skipped by directory and the
+  silver-bordered cards are kept, which makes the coverage figure **pessimistic** rather than
+  flattering — the safe direction. The candidates for closing it are the Scryfall file itself or a
+  package from one of the registries the proxy does not govern.
+
+### The real numbers, for the first time
+
+| | pool (339) | corpus (33,847) |
+| --- | --- | --- |
+| Printed lines compiled | 413 of 538 (76.8%) | **14,472 of 60,940 (23.7%)** |
+| Cards with a compiled script | 239 of 339 (70.5%) | 5,506 of 32,948 (16.7%) |
+| Cards with every printed line read | 237 of 339 (69.9%) | 3,328 of 32,948 (10.1%) |
+| …of those, needing no script at all | 25 | 1,064 |
+| Not a single-face card at all | 9 | 899 |
+
+The pool was always described as a floor on difficulty and a ceiling on coverage — thirteen decks
+built by hand to exercise sixty mechanics. Now there is a number that is neither.
+
+**No throws.** `compilable.mjs` calls `compileCard` with no try/catch, so compiling all 33,847 rows
+and exiting 0 is the crash hunt over the whole corpus, not a sample of 4,000.
+
+### The work queue is now the real one
+
+13,614 distinct openings, 9,434 printed by a single card. The top buckets are not what the pool's
+leftovers were, and one of them is a **systematic miss the pool could never show**:
+
+      1168  At the beginning of your …
+       578  Enchant creature  [keyword]
+       476  ~ deals N damage to …
+       367  When ~ enters you may …
+       349  Whenever ~ deals combat damage …
+       347  ~ enters tapped
+       314  At the beginning of each …
+       312  Choose one
+       307  {T}: Add {M} or {M}
+       276  Whenever a creature you control …
+
+Four of those openings — 367 + 347 + 218 + 147 + 138 and more besides — are the **modern "enters"
+templating**. Wizards retemplated "enters the battlefield" to "enters" in 2024, every reader in this
+compiler was written against the old wording, and the pool's hand-written card data uses the old
+wording too. So the single biggest miss in the corpus is a spelling the pool is structurally unable
+to reveal, which is the clearest argument for having built this that I could have asked for.

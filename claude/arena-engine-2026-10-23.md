@@ -11243,3 +11243,37 @@ resolution, and the word "other" in battle cry.
 **413 of 538 lines (76.8%)**, 239 of 339 with a script, 237 complete, keyword declarations with no
 builder down to 17. Five breaks, five failures — two of them caught by the engine tests from #114
 and #165, which now exercise the factories.
+
+## The corpus: 33,847 cards, and the first honest coverage number (#318, D426)
+
+#318 was blocked on Scryfall egress and still is — every card-data host answers 403. What is *not*
+blocked is GitHub: `git ls-remote` works through the session's git proxy and
+`raw.githubusercontent.com` answers 200. So the corpus comes out of `Card-Forge/forge`, which keeps
+one plain-text file per card in git — 34,134 of them, a 159 MB sparse fetch.
+
+`scripts/corpus/from-forge.mjs` takes the **printed data** (name, cost, type line, P/T, loyalty,
+oracle text) and nothing else — explicitly not Forge's own ability scripts, which are another
+engine's DSL and would be a second implementation of the rules that nothing here could check. The
+output is the same row shape Scryfall's bulk file has, so `compilable.mjs --file` and the importer
+read it unchanged, and the real file replaces it the day egress opens.
+
+**The numbers, pool against corpus:**
+
+| | pool (339) | corpus (33,847) |
+| --- | --- | --- |
+| Printed lines compiled | 413 of 538 (76.8%) | **14,472 of 60,940 (23.7%)** |
+| Cards with a compiled script | 239 (70.5%) | 5,506 of 32,948 (16.7%) |
+| Cards with every line read | 237 (69.9%) | 3,328 of 32,948 (10.1%) |
+
+Compiling all 33,847 rows without a single throw is also the crash hunt over the whole corpus rather
+than a 4,000-row sample.
+
+**And the find that justifies the whole exercise**: the largest systematic miss is the modern
+**"enters"** templating. Wizards retemplated "enters the battlefield" to "enters" in 2024; every
+reader here was written against the old wording, and so is the pool's own card data — so thousands
+of corpus lines fail on a spelling the 339-card pool is structurally incapable of revealing.
+
+**Two gaps, stated**: Forge's oracle text is a community transcription rather than the canonical
+feed (second-best source, recorded as such), and format legality is not filtered because Forge
+carries none — so silver-bordered cards are still in, which makes the coverage figure pessimistic
+rather than flattering.

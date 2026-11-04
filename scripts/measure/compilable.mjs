@@ -25,8 +25,11 @@
  *   to exercise sixty mechanics, so it is far heavier in paragraph cards than a list somebody plays:
  *   read the share as a **floor**. It is also the only arm with a hand-written script to check the
  *   compiler against, which is what `compile.test.ts` does.
- * - **`--file <path>`.** A Scryfall `oracle_cards` bulk JSON, which answers the question for all of
- *   Magic. Needs the import from D329 run on a machine that can reach Scryfall.
+ * - **`--file <path>`.** A JSON array of rows, which answers the question for all of Magic. Two
+ *   ways to get one: a Scryfall `oracle_cards` bulk file (the canonical source, and still blocked —
+ *   every card-data host is refused by the egress proxy), or `scripts/corpus/from-forge.mjs`, which
+ *   builds the same rows out of a public GitHub repository this container *can* reach. 33,847 cards
+ *   as of D426; see that script for what it takes from Forge and what it deliberately does not.
  *
  *   node scripts/measure/compilable.mjs
  *   node scripts/measure/compilable.mjs --file /path/to/oracle-cards.json
