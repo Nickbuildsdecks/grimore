@@ -10301,6 +10301,15 @@ const TRIGGER_SHAPES: readonly {
     on: [{ kind: 'dies', who: 'another', of: 'you', what: 'creature' }],
   },
   /*
+    Kambal: "Whenever an opponent casts a noncreature spell". `by: 'opponent'` and
+    `spell: 'noncreature'` are both printed and both load-bearing — the same event without them is
+    every spell anybody casts, which is a very different card.
+  */
+  {
+    prologue: () => /^Whenever an opponent casts a noncreature spell, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'opponent', spell: 'noncreature' }],
+  },
+  /*
     Judith, and the one word that separates this row from the one above it twice over.
 
     "A nontoken creature you control" is `who: 'any'` and not `'another'`: Judith is a nontoken
@@ -10641,6 +10650,58 @@ function tokenEffect(clause: string, name: string): ReadEffect | null {
 }
 
 /**
+ * A clause about **the player the event was about** — "that player".
+ *
+ * Trigger-only, and by construction rather than by a rule somebody has to remember. "That player"
+ * is `c.actor`, the seat whose action raised the event, and a stack object that is not a triggered
+ * ability carries no actor at all: a *spell* printing this sentence would read `undefined` and
+ * silently do nothing. That is the same hazard the X spells have in reverse (D399), answered the
+ * same way — the reading lives on the path where the word means something, so the other path cannot
+ * reach it.
+ *
+ * Both clauses carry the same guard, which is the hand-written cards' own: an event with no actor,
+ * or one whose actor is the controller, does **nothing**. Fate Unraveler had `?? c.controller` there
+ * until D407 and that was worse than nothing — it would have drained the controller, the opposite of
+ * what the card says.
+ */
+function eventRelativeEffect(clause: string, name: string): ReadEffect | null {
+  const text = plain(clause).trim().replace(/\.\s*$/, '');
+  const self = escapeName(name);
+
+  // Kambal: "that player loses 2 life and you gain 2 life".
+  const drained = /^that player loses (\d+) life and you gain (\d+) life$/i.exec(text);
+  if (drained !== null) {
+    const lost = Number(drained[1]);
+    const gained = Number(drained[2]);
+    return {
+      effect: (c) => {
+        const who = c.actor;
+        if (who === undefined || who === c.controller) return c.state;
+        return gainLife(loseLife(c.state, who, lost), c.controller, gained);
+      },
+    };
+  }
+
+  // Fate Unraveler: "~ deals 1 damage to that player" — damage and not a drain, which is the whole
+  // of D407.
+  const dealt = new RegExp(`^(?:${self}|it) deals (\\d+) damage to that player$`, 'i').exec(text);
+  if (dealt !== null) {
+    const amount = Number(dealt[1]);
+    return {
+      effect: (c) => {
+        const who = c.actor;
+        if (who === undefined || who === c.controller) return c.state;
+        return dealDamage(c.state, { kind: 'player', seat: who }, amount, {
+          controller: c.controller, source: c.source,
+        });
+      },
+    };
+  }
+
+  return null;
+}
+
+/**
  * A printed triggered-ability line, as the `triggers` fragment of a `CardScript`.
  *
  * The prologue says when it fires and comes from `TRIGGER_SHAPES`; the clause says what happens and
@@ -10662,7 +10723,11 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     const matched = shape.prologue(self).exec(text);
     if (matched === null) continue;
     const clause = matched[1]!.replace(/\.\s*$/, '').trim();
-    const read = composeEffects(clausesOf(clause), name);
+    /*
+      The event-relative clauses first — "that player" is `c.actor`, which only a trigger has. See
+      `eventRelativeEffect` for why that reading cannot live in the shared clause vocabulary.
+    */
+    const read = eventRelativeEffect(clause, name) ?? composeEffects(clausesOf(clause), name);
     if (read === null) return null;
     // `spellFlags` is deliberately not spread: it is advice about casting a spell, and a triggered
     // ability is not cast. See `targetedEffect`.

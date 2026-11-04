@@ -4435,6 +4435,86 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
   });
 
+  describe('a clause about the player the event was about', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, actor?: SeatIndex,
+    ): EffectContext => ({
+      state, controller: seat, source, targets: [], decisions: [], actor,
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const triggerOf = (script: unknown, i = 0) =>
+      (field(script, 'triggers') as readonly TriggerDef[] | undefined)?.[i];
+
+    it.each([
+      // "Whenever an opponent casts a noncreature spell, that player loses 2 life and you gain 2."
+      ['Kambal, Consul of Allocation'],
+      // "Whenever an opponent draws a card, ~ deals 1 damage to that player" — damage, which is
+      // what D407 fixed in the hand-written card while this reading was being written.
+      ['Fate Unraveler'],
+    ])('%s watches and resolves exactly as the hand-written card does', (card) => {
+      const mine = compiledScript(card as string);
+      expect(mine.unread).toEqual([]);
+      const compiled = triggerOf(mine.script)!;
+      const written = triggerOf(scriptFor(card as string))!;
+      expect(JSON.stringify(compiled.on)).toEqual(JSON.stringify(written.on));
+
+      const base = arena({ decks: { 0: 'ashen-rite', 1: 'hollow-tide' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', 1 as SeatIndex);
+      expect(compiled.effect(ctx)).toEqual(written.effect(ctx));
+      // Not vacuous: the opponent really lost life, which is the whole of both cards.
+      expect(compiled.effect(ctx).seats[1]!.life).toBeLessThan(base.seats[1]!.life);
+    });
+
+    it('does nothing when the event had no actor, and never hits its own controller', () => {
+      /*
+        The guard, which is the hand-written cards' own and the reason this reader is trigger-only.
+        "That player" is `c.actor`; a stack object that is not a triggered ability carries none, so
+        a reading reachable from a spell would silently do nothing — the hazard D399's X spells have
+        in reverse.
+
+        And the controller is never the victim. Fate Unraveler had `?? c.controller` there until
+        D407, which would have drained **the caster** on an actorless event: the opposite of the
+        card, and the kind of wrongness that only shows up in a game nobody can reconstruct.
+      */
+      const base = arena({ decks: { 0: 'ashen-rite', 1: 'hollow-tide' }, turn: 3 });
+      for (const card of ['Kambal, Consul of Allocation', 'Fate Unraveler']) {
+        const trigger = triggerOf(compiledScript(card).script)!;
+        // No actor at all.
+        expect(trigger.effect(contextOn(base, 0 as SeatIndex, 'c1'))).toEqual(base);
+        // And an actor who is the controller — a seat drawing its own card, say.
+        expect(trigger.effect(contextOn(base, 0 as SeatIndex, 'c1', 0 as SeatIndex))).toEqual(base);
+      }
+    });
+
+    it('is not reachable from a spell, where "that player" means nothing', () => {
+      /*
+        The restriction, asserted as a card. A sorcery printing the same sentence is refused rather
+        than compiled into a spell that resolves and does nothing with no line left unread for a
+        human to notice (D362).
+      */
+      const spell = compileCard({
+        name: 'Vague Drain', type_line: 'Sorcery', mana_cost: '{B}', cmc: 1, colors: ['B'],
+        oracle_text: 'That player loses 2 life and you gain 2 life.',
+      });
+      expect(spell.ok).toBe(true);
+      if (spell.ok) expect(spell.script).toBeUndefined();
+    });
+
+    it('keeps both halves of the printed event', () => {
+      /*
+        `by: 'opponent'` and `spell: 'noncreature'` are both printed and both load-bearing: the same
+        event without them fires on every spell anybody casts, including the controller's own, which
+        is a very different card.
+      */
+      const on = triggerOf(compiledScript('Kambal, Consul of Allocation').script)!.on as
+        { by?: string; spell?: string };
+      expect(on.by).toBe('opponent');
+      expect(on.spell).toBe('noncreature');
+    });
+  });
+
   describe('loyalty abilities, against the two planeswalkers that compile whole', () => {
     const contextOn = (
       state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],

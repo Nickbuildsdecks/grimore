@@ -10882,3 +10882,18 @@ drained the **controller**, which is the opposite of the card.
 
 The general instrument — resolve the compiled reading and the hand-written script on one fixture for
 every card both can read, and report the disagreements — is filed rather than built.
+
+## "That player", which only a trigger has (#317, D408)
+
+Kambal and Fate Unraveler, both whole. "That player" is `c.actor`, the seat whose action raised the
+event, and only a triggered ability has one — so the reading lives inside `triggerFromLine` above
+the shared clause vocabulary, which is D399's X hazard answered in reverse. A sorcery printing the
+same sentence is refused, and a break that moves the reader into the shared vocabulary fails four
+tests.
+
+The guard is the cards' own: no actor, or an actor who is the controller, does nothing. Fate
+Unraveler's script had `?? c.controller` there until D407 — it would have drained the caster.
+
+**391 → 393 of 538 lines (72.7% → 73.0%)**, **247 → 249 of 339 cards**. Four deliberate breaks, four
+failing tests; 322/322; 4,000 rows at scale with no throw. Writing this increment is what found
+D407.

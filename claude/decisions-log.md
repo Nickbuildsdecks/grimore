@@ -25401,3 +25401,46 @@ The general instrument this wants is a measure that resolves **the compiled read
 hand-written script on the same fixture, for every card both can read, and reports the
 disagreements** — which is what compile.test.ts does by hand, card by card. Filed as #326 with the
 design; it is the instrument that would have found this one without anybody reading the card.
+
+## D408 — "That player", which only a trigger has
+
+Kambal, Consul of Allocation and Fate Unraveler: two cards whose effect is about **the player the
+event was about**, and both compile whole.
+
+- "Whenever an opponent casts a noncreature spell, that player loses 2 life and you gain 2 life"
+- "Whenever an opponent draws a card, ~ deals 1 damage to that player"
+
+### Trigger-only, by construction
+
+"That player" is `c.actor` — the seat whose action raised the event — and a stack object that is not
+a triggered ability carries no actor at all. A *spell* printing the same sentence would read
+`undefined` and silently do nothing, with no line left unread for a human to notice (D362).
+
+That is D399's X hazard in reverse, and it is answered the same way: the reading lives on the path
+where the word means something, so the other path cannot reach it. `eventRelativeEffect` sits inside
+`triggerFromLine`, above the shared `composeEffects`, and a sorcery printing the clause is refused —
+asserted as a card, and a break that moves the reader into the shared vocabulary fails four tests.
+
+### The guard, which is the cards' own
+
+An event with no actor, or one whose actor is the controller, does **nothing**. Fate Unraveler's
+script had `?? c.controller` there until D407, which would have drained **the caster** — the opposite
+of the card, and the kind of wrongness that only shows up in a game nobody can reconstruct. Both
+compiled clauses carry the guard and a test asserts both halves of it.
+
+### Both halves of the printed event
+
+`by: 'opponent'` and `spell: 'noncreature'` are printed and load-bearing: the same event without them
+fires on every spell anybody casts, the controller's own included, which is a very different card. A
+break that widens it fails two tests.
+
+### Measured
+
+**391 → 393 of 538 printed lines (72.7% → 73.0%)**, and **247 → 249 of 339 cards**: Kambal and Fate
+Unraveler, the only two the per-card diff shows moving.
+
+Four deliberate breaks, four failing tests. 4,000 more rows at scale, no throw. compile.test.ts
+322/322.
+
+This is also the increment that found D407: writing the damage clause meant reading Fate Unraveler's
+script beside its text, which is where the drain-for-damage substitution turned up.
