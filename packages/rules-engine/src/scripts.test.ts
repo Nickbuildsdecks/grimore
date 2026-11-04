@@ -21765,3 +21765,150 @@ describe('the second card drawn each turn, as printed text', () => {
     expect(s.instances[cav]!.counters['+1/+1']).toBe(after + 1);
   });
 });
+
+/*
+  The death the attachment watches, and the death that includes the watcher (D437).
+
+  Three prologue rows, measured on cards finished: "a creature you control dies" (27 legal lines,
+  10 cards), "enchanted creature dies" (52 lines, 7) and "equipped creature dies" (17 lines, 5).
+
+  D433 added `who: 'attached'` to `attacks` and `combat-damage` and deferred it on `dies` over what
+  it called a question about ordering. **It was a defect**, and a probe settled it before any of
+  this was written: a Lead Pipe on a creature killed by a Lightning Bolt fired nothing at all, with
+  `attachedTo` already `null`. `relocate` detaches everything pointing at a card as it leaves — it
+  has to, or a dead creature's bonus would sit in `effects` for ever — so by the time the death is
+  announced, nothing on the board remembers the Equipment was on it.
+
+  So the `dies` event carries what was attached (`GameState.detached`), and these are the tests that
+  hold it: every fixture a compiled card from printed corpus text through `customDeck` (D430),
+  because a shape assertion cannot tell a trigger that fires from one that cannot.
+*/
+describe('a death the attachment watches, as printed text', () => {
+  const table = (
+    row: Record<string, unknown>,
+    battlefield: readonly string[],
+    hand: readonly string[],
+  ) => {
+    const name = row['name'] as string;
+    const list = customDeck({
+      id: 'dies-list',
+      name,
+      entries: [
+        { name, count: 1 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Lightning Bolt', count: 4 },
+        { name: 'Mountain', count: 26 },
+        { name: 'Forest', count: 25 },
+      ],
+      data: [row as never],
+    });
+    expect(list.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'dies-list', 1: 'verdant-guard' },
+      deckSpecs: { 'dies-list': list.deck },
+      battlefield: { 0: battlefield },
+      hands: { 0: hand },
+      turn: 3,
+      firstSeat: 0,
+    });
+  };
+
+  const SKULLCLAMP = {
+    name: 'Original Skullclamp', type_line: 'Artifact — Equipment', mana_cost: '{1}',
+    cmc: 1, colors: [], layout: 'normal', power: null, toughness: null,
+    oracle_text: 'Equipped creature gets +1/+1.\nWhenever equipped creature dies, draw two cards.'
+      + '\nEquip {1}',
+  };
+
+  it.each([
+    /*
+      Two goblins, one wearing the Skullclamp, and the Bolt kills one of them. Two cards for the
+      equipped one and none for the other — which is what makes this about `attached` rather than
+      about "a creature died". Before the event carried the attachment, **both** rows read zero.
+    */
+    ['the equipped creature', 2, true],
+    ['a creature it is not on', 0, false],
+  ])('Original Skullclamp: killing %s draws %d', (_label, drawn, killEquipped) => {
+    let s = table(SKULLCLAMP, ['Original Skullclamp', 'Raging Goblin', 'Raging Goblin',
+      'Mountain', 'Mountain', 'Mountain'], ['Lightning Bolt']);
+    s = advanceTo(s, 'precombat-main');
+    const clamp = find(s, 0 as SeatIndex, 'battlefield', 'Original Skullclamp');
+    const goblins = [...ids(s, 0 as SeatIndex, 'battlefield')]
+      .filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Raging Goblin');
+    expect(goblins).toHaveLength(2);
+    const [worn, bare] = goblins as [string, string];
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: clamp, abilityIndex: 0,
+      targets: [{ kind: 'card', id: worn }],
+    } as Action));
+    expect(s.instances[clamp]!.attachedTo).toBe(worn);
+
+    const held = ids(s, 0 as SeatIndex, 'hand').length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: (killEquipped as boolean) ? worn : bare }],
+    } as Action)));
+    // The Bolt itself leaves the hand, so the draw is measured against one card fewer.
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held - 1 + (drawn as number));
+  });
+
+  it('reads the Aura spelling too, which is Bequeathal and the word "When"', () => {
+    /*
+      "When enchanted creature dies, you draw two cards." Printed with **When** rather than
+      "Whenever", because it happens once — and the two spellings are two rows, since a reader that
+      accepted either for both would be reading English Wizards does not print. The Aura attaches on
+      resolution rather than through an activated ability, which is the other half of why it is here
+      and not folded into the Equipment test.
+    */
+    let s = table({
+      name: 'Bequeathal', type_line: 'Enchantment — Aura', mana_cost: '{G}',
+      cmc: 1, colors: ['G'], layout: 'normal', power: null, toughness: null,
+      oracle_text: 'Enchant creature\nWhen enchanted creature dies, you draw two cards.',
+    }, ['Raging Goblin', 'Forest', 'Mountain'], ['Bequeathal', 'Lightning Bolt']);
+    s = advanceTo(s, 'precombat-main');
+    const gob = find(s, 0 as SeatIndex, 'battlefield', 'Raging Goblin');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Bequeathal'),
+      targets: [{ kind: 'card', id: gob }],
+    } as Action)));
+    const aura = find(s, 0 as SeatIndex, 'battlefield', 'Bequeathal');
+    expect(s.instances[aura]!.attachedTo).toBe(gob);
+
+    const held = ids(s, 0 as SeatIndex, 'hand').length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: gob }],
+    } as Action)));
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held - 1 + 2);
+  });
+
+  it("fires a creature's own 'a creature you control dies' for its own death", () => {
+    /*
+      Phyrexian Vivisector: "Whenever a creature you control dies, scry 1." The printed sentence
+      says "a creature you control", which **includes the Vivisector**, so `who: 'any'` and not
+      `'another'` — the one word that separates this row from the one above it in `TRIGGER_SHAPES`.
+      A creature is the only fixture that can show it: the four other compilable cards with this
+      line are enchantments and can never die as creatures.
+
+      The scry is a decision, so the observable is the engine stopping to ask — which it only does
+      if the trigger fired from the graveyard the Vivisector has just reached.
+    */
+    let s = table({
+      name: 'Phyrexian Vivisector', type_line: 'Creature — Phyrexian Human', mana_cost: '{1}{B}',
+      cmc: 2, colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Whenever a creature you control dies, scry 1.',
+    }, ['Phyrexian Vivisector', 'Mountain'], ['Lightning Bolt']);
+    s = advanceTo(s, 'precombat-main');
+    const viv = find(s, 0 as SeatIndex, 'battlefield', 'Phyrexian Vivisector');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: viv }],
+    } as Action)));
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Phyrexian Vivisector');
+    expect(s.pendingDecision).not.toBeNull();
+    expect(s.pendingDecision?.prompt).toMatch(/scry/i);
+  });
+});

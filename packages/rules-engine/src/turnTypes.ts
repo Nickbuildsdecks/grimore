@@ -638,6 +638,26 @@ export interface AutomationState {
   /** Set when a player has lost by trying to draw from an empty library (CR 704.5b). */
   readonly drewFromEmpty: readonly SeatIndex[];
   /**
+   * What was attached to each permanent as it left the battlefield, by the permanent that left.
+   *
+   * Written by `relocate`'s `detachAllFrom` and drained by `settle` into the `dies` events it
+   * raises, which is the only reason it exists: **the attachment is gone before the death is
+   * announced.** `relocate` is the one place a card changes zone and it detaches everything
+   * pointing at the card on the way out — it has to, or a dead creature's `+2/+0` would sit in
+   * `effects` for the rest of the game (see the Equipment state-based action's comment) — so by the
+   * time a "when enchanted creature dies" trigger is matched, nothing on the board remembers the
+   * Aura was on it.
+   *
+   * Transient like `died`, `left` and `entered`, and for the same reason: a list nobody empties is
+   * a leak, and this one would also start answering questions about a previous turn's deaths.
+   *
+   * The third fact in three increments that a reader needed and the state no longer held — after
+   * miracle's draw ordinal (D204, D436) and the attachment host at the moment of an attack (D433).
+   * The rule those three suggest: if a trigger has to know something about the instant its event
+   * happened, the event carries it.
+   */
+  readonly detached: Readonly<Record<string, readonly string[]>>;
+  /**
    * Permanents that have moved from the battlefield to a graveyard and whose death nobody has
    * announced yet. Drained by `settle`, which raises a `dies` event for each.
    *

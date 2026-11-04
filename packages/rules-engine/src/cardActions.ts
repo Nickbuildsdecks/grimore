@@ -398,15 +398,32 @@ function unpairAllFrom(state: GameState, id: string): GameState {
   return instances === null ? state : { ...state, instances };
 }
 
-/** Clears `attachedTo` on anything pointing at `id`, so nothing is left attached to a gone card. */
+/**
+ * Clears `attachedTo` on anything pointing at `id`, so nothing is left attached to a gone card —
+ * and **records what it cleared**, because the death has not been announced yet.
+ *
+ * A "when enchanted creature dies" trigger is matched after this has run, so the board no longer
+ * remembers the Aura was on the creature. `GameState.detached` is where the list goes and `settle`
+ * puts it on the `dies` event it raises; nothing else reads it and it is drained with the rest of
+ * the zone-change lists.
+ */
 function detachAllFrom(state: GameState, id: string): GameState {
   let instances: Record<string, CardInstance> | null = null;
+  const were: string[] = [];
   for (const [key, inst] of Object.entries(state.instances)) {
     if (inst.attachedTo !== id) continue;
     instances ??= { ...state.instances };
     instances[key] = { ...inst, attachedTo: null };
+    were.push(key);
   }
-  return instances === null ? state : { ...state, instances };
+  if (instances === null) return state;
+  return {
+    ...state,
+    instances,
+    // Appended rather than replaced: a board wipe detaches from several hosts in one pass, and a
+    // second host arriving must not take the first one's list with it.
+    detached: { ...state.detached, [id]: [...(state.detached[id] ?? []), ...were] },
+  };
 }
 
 /** Default destination seat: the battlefield and the stack are where you put them, the rest go home. */

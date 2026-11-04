@@ -1457,11 +1457,18 @@ describe('compileCard, against the cards a person wrote by hand', () => {
 
     it('emits both halves or neither, never half an attachment', () => {
       /*
-        The invariant, on the two shapes that would break it. A declaration with no static line is
-        an Aura that attaches and does nothing; a static line with no declaration is a bonus with
-        nothing to attach it to. Either one emitted alone is a card that **works and does nothing**,
-        which is worse than an unread card, because an unread card is flagged and a blank Aura is
-        not.
+        The invariant, on the two shapes that would break it. A declaration with no second line at
+        all is an Aura that attaches and does nothing; a static line with no declaration is a bonus
+        with nothing to attach it to. Either one emitted alone is a card that **works and does
+        nothing**, which is worse than an unread card, because an unread card is flagged and a blank
+        Aura is not.
+
+        D437 narrowed the first half and this row is why it stayed narrow. The bonus line became
+        *optional* so that an Aura whose other line is a trigger could be read at all — Bequeathal
+        is 1 of 29 legal Auras in that shape — and the first attempt dropped the requirement
+        entirely, which made this row fail at once: `Enchant creature` as the whole card compiled to
+        an Aura that attaches and does nothing. The rule is now "some other printed line", not "a
+        bonus line".
       */
       const noBonus = compileCard({
         name: 'Blank Aura', type_line: 'Enchantment — Aura', mana_cost: '{W}', cmc: 1,
@@ -7081,5 +7088,91 @@ describe('the draw ordinal, read off the prologue', () => {
     expect(field(read.script, 'triggers')).toHaveLength(1);
     expect(read.unread).toHaveLength(1);
     expect(read.unread[0]!.line).toContain('fifth card');
+  });
+});
+
+/*
+  The death prologues, read off printed text (D437).
+
+  Which sentence becomes which trigger, including the two spellings of the attachment's death that
+  D433 left out, and the Aura shape that had to change to read them at all.
+*/
+describe('a death, read off the prologue', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const permanent = (text: string, typeLine = 'Enchantment') => compileCard({
+    name: 'Dying Thing', type_line: typeLine, mana_cost: '{2}', cmc: 2,
+    colors: [], layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    ['Whenever a creature you control dies', { kind: 'dies', who: 'any', of: 'you', what: 'creature' }],
+    ['When equipped creature dies', { kind: 'dies', who: 'attached' }],
+    ['When enchanted creature dies', { kind: 'dies', who: 'attached' }],
+    ['Whenever equipped creature dies', { kind: 'dies', who: 'attached' }],
+    ['Whenever enchanted creature dies', { kind: 'dies', who: 'attached' }],
+    // And the two that already existed, so the new rows cannot quietly swallow them. "another"
+    // excludes the card itself; the row above that says "a creature" includes it.
+    ['Whenever another creature you control dies',
+      { kind: 'dies', who: 'another', of: 'you', what: 'creature' }],
+    ['Whenever another creature dies', { kind: 'dies', who: 'another', of: 'any', what: 'creature' }],
+  ])('%s becomes the trigger it prints', (prologue, on) => {
+    const read = permanent(`${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]!.on).toEqual(on);
+  });
+
+  it('reads an Aura whose only other line is a trigger, which Bequeathal is', () => {
+    /*
+      The Aura half of D433's bonus-less Equipment. `attachmentScriptFor` required a
+      "Enchanted creature …" line and returned nothing without one, so **Bequeathal** —
+      "Enchant creature / When enchanted creature dies, you draw two cards" — compiled as a spell
+      with no target that attached to nothing and did nothing. That is the "works and does nothing"
+      shape D364's docblock is about, and the corpus says it is the majority: of 55 legal Auras
+      printing "enchanted creature dies", **29 have no bonus line at all**.
+
+      Both halves asserted, because the aura fragment is what gives the spell its target and the
+      trigger is what it then does — a card with one and not the other is the defect, not the fix.
+    */
+    const read = compileCard({
+      name: 'Bequeathal', type_line: 'Enchantment — Aura', mana_cost: '{G}', cmc: 1,
+      colors: ['G'], layout: 'normal',
+      oracle_text: 'Enchant creature\nWhen enchanted creature dies, you draw two cards.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const aura = field(read.script, 'aura') as { target: { kind: string; friendly?: true } };
+    expect(aura.target.kind).toBe('creature');
+    /*
+      And `friendly` is **absent**: with no bonus line there is no signal either way — Bequeathal
+      wants to be on your own creature and Banewasp Affliction on theirs, and both print nothing
+      but a trigger — so the hint is omitted rather than guessed.
+    */
+    expect(aura.target.friendly).toBeUndefined();
+    expect(field(read.script, 'triggers')).toHaveLength(1);
+  });
+
+  it('keeps the bonus and the friendly hint when the Aura prints one', () => {
+    // The other side of the same change: an Aura that does print a bonus still reads it, and still
+    // tells the bot the Aura helps. Without this the row above would pass on a reader that had
+    // stopped reading bonuses altogether.
+    const read = compileCard({
+      name: 'Helpful Thing', type_line: 'Enchantment — Aura', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], layout: 'normal',
+      oracle_text: 'Enchant creature\nEnchanted creature gets +2/+2.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const aura = field(read.script, 'aura') as {
+      target: { friendly?: true }; effect: { power?: number; toughness?: number };
+    };
+    expect(aura.target.friendly).toBe(true);
+    expect([aura.effect.power, aura.effect.toughness]).toEqual([2, 2]);
   });
 });

@@ -749,6 +749,7 @@ export function endTurnCleanup(state: GameState): GameState {
     // this turn, so the next card drawn after the cleanup is the first of a new turn — which is
     // what makes it a miracle.
     cardsDrawnThisTurn: {},
+    detached: {},
   };
 }
 
@@ -1071,9 +1072,25 @@ function fireTrigger(
     no search.
   */
   const attachedHost = next.instances[holder]?.attachedTo ?? null;
+  /*
+    Was this watcher attached to what the event is about? Two sources, and the event wins when it
+    has an answer.
+
+    For an attack or a hit the attachment is still on the board, so the live reading is the right
+    one. For a **death** it is not: `relocate` detaches everything pointing at a card as it leaves,
+    which it has to (a dead creature's `+2/+0` would otherwise sit in `effects` for ever), so by
+    here the Equipment is attached to nothing rather than to something dead. The `dies` event
+    carries the list it had instead — see `GameState.detached` — and `??` is what makes the two
+    readings one rule: the event's answer when there is one, the board's when there is not.
+
+    D433 deferred `who: 'attached'` on `dies` over exactly this and guessed it was an ordering
+    question. It was a defect, and a probe is what settled it: a Lead Pipe on a creature killed by a
+    Bolt fired nothing, with `attachedTo` already null.
+  */
+  const wasAttached = (event as { attachments?: readonly string[] }).attachments?.includes(holder);
   if (!triggerMatches(
     event, trigger.on, inst.zoneSeat, actor, holder === subject,
-    attachedHost !== null && attachedHost === subject,
+    wasAttached ?? (attachedHost !== null && attachedHost === subject),
   )) return next;
   /*
     The intervening-if clause, asked the first of its two times (CR 603.4).
@@ -1298,10 +1315,29 @@ function raise(
       : (next.instances[subject] ?? next.vanished[subject])?.zoneSeat;
     return subjectSeat === seat ? [subject as string, ...mine] : mine;
   });
+  /*
+    An Aura that was on the dying creature has to be asked even though it is no longer in play.
+
+    `relocate` detaches it and then CR 704.5m puts it into its owner's graveyard, both before the
+    death is announced — so a "when enchanted creature dies" Aura is not on anybody's battlefield by
+    the time this list is built, and the trigger it exists for would never be offered the event.
+    An Equipment stays (CR 301.5c) and is found in `everyBattlefield` the ordinary way; the Aura is
+    spliced in from the event's own `attachments`, which is the only place the relationship still
+    exists.
+
+    Added with a `Set` rather than appended blindly, because an Equipment on the dying creature is
+    in both lists and a trigger offered the same event twice would fire twice.
+  */
+  const attachedWatchers = event.kind === 'dies'
+    ? (event as { attachments?: readonly string[] }).attachments ?? []
+    : [];
+  const everyBattlefieldAndAttached = attachedWatchers.length === 0
+    ? everyBattlefield
+    : [...new Set([...everyBattlefield, ...attachedWatchers])];
   const watchers = event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
     || event.kind === 'blocks' || event.kind === 'becomes-blocked'
     || event.kind === 'attacks-unblocked'
-    ? everyBattlefield
+    ? everyBattlefieldAndAttached
     : selfOnly.has(event.kind)
       ? subject === undefined ? [] : [subject]
       /*
@@ -1333,8 +1369,24 @@ function raise(
     // trigger is *about* the graveyard it is now in, so a watcher that has to be on the
     // battlefield could never fire it. Still only for the subject — a card sitting in a graveyard
     // watches nothing else that arrives there.
+    /*
+      And the fifth: an Aura that was on the dying creature, from the graveyard CR 704.5m has
+      already put it in.
+
+      `id === subject` was the whole condition and it is not enough for a death. "When enchanted
+      creature dies" is an ability of a card that is **never on the battlefield when the death is
+      announced**: the creature's `relocate` detaches the Aura, the state-based action buries it,
+      and both happen before `settle` raises anything. So it would be filtered out here even after
+      being spliced into the watcher list above, which is exactly what happened — the splice alone
+      made no difference and this line is the other half of the same fix.
+
+      An Equipment is on the battlefield throughout (CR 301.5c) and never needed either half; it is
+      included because the condition is about where the watcher *is*, and asking which card type
+      wrote the trigger would be a worse rule than asking whether the event was about its host.
+    */
     const fromGraveyard = (event.kind === 'dies' || event.kind === 'leaves'
-      || event.kind === 'to-graveyard') && id === subject;
+      || event.kind === 'to-graveyard')
+      && (id === subject || attachedWatchers.includes(id));
     /*
       And the fourth zone a trigger fires from: the stack, for a spell watching its own cast.
 
@@ -2210,10 +2262,17 @@ function settle(state: GameState, before: GameState): GameState {
       `GameState.transformed`).
     */
     const turned = next.transformed ?? [];
+    /*
+      And what came unattached on the way out, which is the one fact in this family that the board
+      no longer holds by the time it is wanted: `relocate` detaches everything pointing at a card as
+      it leaves, so a "when enchanted creature dies" trigger matched from here would find the Aura
+      attached to nothing. See `GameState.detached`.
+    */
+    const detached = next.detached;
     next = {
       ...next,
       died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [], exiled: [],
-      copied: [], transformed: [],
+      copied: [], transformed: [], detached: {},
       // Drained here with the rest, and *after* the replacement passes above have read it: a
       // discard is a fact about a move that has already happened, and madness is the one thing
       // that asks about it.
@@ -2288,7 +2347,18 @@ function settle(state: GameState, before: GameState): GameState {
         break;
       }
     }
-    for (const id of dead) next = raise(next, { kind: 'dies' }, next.instances[id]?.zoneSeat, id);
+    for (const id of dead) {
+      // The attachments travel with the event, not looked up from a board that has already let go
+      // of them. An absent list and an empty one mean the same thing to the matcher, so the field
+      // is only written when there was something on the creature.
+      const were = detached[id];
+      next = raise(
+        next,
+        { kind: 'dies', ...(were === undefined || were.length === 0 ? {} : { attachments: were }) },
+        next.instances[id]?.zoneSeat,
+        id,
+      );
+    }
     // Leaving comes after dying, so a card that does both raises the narrower event first and its
     // death trigger goes on the stack under the leave trigger — which is the order the rules put
     // them in for one event raising two abilities of the same controller.

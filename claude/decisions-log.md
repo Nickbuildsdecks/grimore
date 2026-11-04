@@ -27297,3 +27297,80 @@ and the Alandra split.
 
 Legal-only coverage 16,055 of 56,421 lines (28.5%), **7,097 cards with a script** (7,066 → 7,097),
 3,971 cards with every printed line read. GATE OK, 1,951 engine tests.
+
+## D437 — The death the attachment watches, and three places the board had already forgotten
+
+Three prologue rows, measured on cards finished: "a creature you control dies" (27 legal lines, 10
+cards), "enchanted creature dies" (52 lines, 7) and "equipped creature dies" (17 lines, 5). The
+first is one line of code. The other two are the family D433 opened and deferred "on a question
+about ordering", and that question had an answer: **a defect, in three layers.**
+
+### A probe, before anything was written
+
+A compiled Lead Pipe equipped onto a Raging Goblin, the Goblin killed by a Lightning Bolt: the
+opponent's life was unchanged and the Equipment's `attachedTo` was already `null`. `relocate` is the
+one place a card changes zone and it detaches everything pointing at the card on the way out — it
+has to, or a dead creature's `+2/+0` would sit in `effects` for the rest of the game, which is the
+Aura bug D21 found one card type along. So by the time a death is **announced**, nothing on the
+board remembers the attachment.
+
+### Layer one: the fact has to travel with the event
+
+`GameState.detached` records what `detachAllFrom` cleared, `settle` drains it into the `dies` events
+it raises, and `fireTrigger` prefers the event's answer over the live board:
+
+```ts
+const wasAttached = (event as { attachments?: readonly string[] }).attachments?.includes(holder);
+... wasAttached ?? (attachedHost !== null && attachedHost === subject)
+```
+
+`??` is what makes the two readings one rule: the event's answer when there is one, the board's when
+there is not — an attack or a hit still reads the live attachment, because for those it exists.
+
+**This is the third increment running to need a fact the state no longer holds**, after miracle's
+draw ordinal (D204, re-used by D436) and the attachment host at the moment of an attack (D433). The
+rule those three suggest is now written on the field: *if a trigger has to know something about the
+instant its event happened, the event carries it.*
+
+### Layer two: the Aura is not on the battlefield either
+
+The Equipment stays in play (CR 301.5c) and the fix above was enough for it. An Aura does not: CR
+704.5m buries it, also before the death is announced, so it was not in anybody's watcher list. Two
+more changes, and the first alone did nothing — `raise` splices the event's attachments into the
+watcher list, *and* the zone gate that let a `dies` trigger fire from the graveyard "only for the
+creature that died" now also lets through a permanent the event was about. Each half has its own
+break and the splice-only break fails nothing on its own, which is why both are in the entry.
+
+### Layer three: the Aura could not be read at all
+
+Bequeathal is "Enchant creature / When enchanted creature dies, you draw two cards". It compiled to
+a spell with **no target** that attached to nothing and did nothing, because
+`attachmentScriptFor` required a bonus line for an Aura — and that requirement is wrong for the
+majority of this family: of 55 legal Auras printing "enchanted creature dies", **29 have no bonus
+line at all.**
+
+The bonus is optional now, as it has been for an Equipment since D433. The first attempt dropped the
+requirement outright and the existing "emits both halves or neither" test failed at once, which is
+exactly what it is for: `Enchant creature` as the *whole card* is still refused. The rule is "some
+other printed line", not "a bonus line" — and a second line the compiler cannot read is fine, since
+the Aura attaches and the line is flagged, which is the hybrid reading working rather than failing.
+
+`friendly` is **omitted** when there is no bonus: Bequeathal wants to be on your own creature and
+Banewasp Affliction on theirs, and both print nothing but a trigger, so the bot gets no hint rather
+than a wrong one.
+
+### Verified
+
+Four runtime tests, every fixture a compiled card from printed corpus text through `customDeck`
+(D430): Original Skullclamp draws two when its own creature dies and nothing when a different
+creature dies; Bequeathal — the Aura, the word "When", and the buried-watcher path — draws two;
+Phyrexian Vivisector fires its own "a creature you control dies" for its own death, which is the one
+word (`any`, not `another`) separating the new row from the one above it, and the only fixture that
+can show it, since the other four compilable cards with that line are enchantments. Plus a nine-row
+compile table and both directions of the Aura bonus.
+
+**Seven breaks, seven failures.**
+
+Legal-only coverage 16,262 of 56,421 lines (28.8%), **7,284 cards with a script** (7,097 → 7,284).
+The jump is mostly layer three: the Aura requirement was blocking every Aura whose second line was
+anything but a bonus, not just this family. GATE OK, 1,964 engine tests.

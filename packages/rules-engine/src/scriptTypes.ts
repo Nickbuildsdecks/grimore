@@ -196,10 +196,29 @@ export type TriggerEvent =
     }
   | {
       readonly kind: 'dies';
-      /** As `etb`: `self` is this creature dying, `another` is any other, `any` is both. */
-      readonly who?: 'self' | 'another' | 'any';
+      /**
+       * As `etb`: `self` is this creature dying, `another` is any other, `any` is both.
+       *
+       * `attached` is the fourth, and it is the Aura's or the Equipment's own creature — "when
+       * enchanted creature dies" (52 legal corpus lines), "whenever equipped creature dies" (17).
+       * D433 added it to `attacks` and `combat-damage` and deferred it here on a question about
+       * ordering, and the answer was a defect: the dying creature is relocated *before* the event
+       * is raised, and `relocate` detaches everything pointing at it, so by the time the trigger is
+       * matched the attachment is gone. The event carries the hosts it had as it left (D437) — the
+       * third reader in three increments to need a fact the state no longer holds.
+       */
+      readonly who?: 'self' | 'another' | 'any' | 'attached';
       readonly of?: 'you' | 'opponent' | 'any';
       readonly what?: 'creature' | 'permanent';
+      /**
+       * Set by the engine when it raises the event: what was attached to the dying permanent as it
+       * left the battlefield, which is what `who: 'attached'` is answered from.
+       *
+       * It has to travel with the event because `relocate` has already detached everything pointing
+       * at the card by the time this is matched — the live board says the Aura is on nothing. See
+       * `GameState.detached`.
+       */
+      readonly attachments?: readonly string[];
       /**
        * "a **nontoken** creature you control dies", which is how nearly every death payoff is
        * printed — and the clause that stops a deck of 1/1 tokens draining the table to zero by

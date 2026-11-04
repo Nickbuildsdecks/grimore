@@ -11552,3 +11552,34 @@ on one line and "fifth" on the next, and is now the test for what the hybrid rea
 line compiled, the other flagged, same card.
 
 Legal-only coverage 16,055 of 56,421 lines (28.5%), 7,097 cards with a script.
+
+## The death the attachment watches (D437)
+
+D433 deferred `who: 'attached'` on `dies` "on a question about ordering". The question had an
+answer, and a probe got it before anything was written: a compiled Lead Pipe on a creature killed by
+a Lightning Bolt fired **nothing**, with `attachedTo` already `null`. `relocate` detaches everything
+pointing at a card as it leaves — it has to — so by the time a death is announced the board has
+forgotten the attachment.
+
+Three layers, each needing its own fix and each with its own break:
+
+1. **The fact travels with the event.** `GameState.detached` records what came unattached and the
+   `dies` event carries it; `fireTrigger` prefers the event's answer and falls back to the live
+   board, so an attack still reads the attachment that is still there. Third increment running to
+   need a fact the state no longer holds — after miracle's draw ordinal and D433's attack host — so
+   the rule is now written down: if a trigger needs to know something about the instant its event
+   happened, the event carries it.
+2. **The Aura is not on the battlefield either.** CR 704.5m buries it before the announcement, so it
+   was in nobody's watcher list. `raise` splices the event's attachments in *and* the zone gate lets
+   them fire from where they went. The splice alone changes nothing, which is why both halves are
+   recorded.
+3. **The Aura could not be read at all.** Bequeathal — "Enchant creature / When enchanted creature
+   dies, you draw two cards" — compiled to a spell with no target that attached to nothing and did
+   nothing, because an Aura needed a bonus line. Of 55 legal Auras printing that trigger, **29 have
+   no bonus line**. It is optional now, as it has been for Equipment since D433 — and the existing
+   "both halves or neither" test immediately caught the first, too-wide attempt: `Enchant creature`
+   as the whole card is still refused.
+
+Legal-only coverage 16,262 of 56,421 lines (28.8%) and **7,284 cards with a script**, up 187. Most
+of that is layer three: the Aura requirement was blocking every Aura whose second line was anything
+but a bonus, not just this family.

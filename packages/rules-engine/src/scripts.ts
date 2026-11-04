@@ -10368,12 +10368,6 @@ export function attachmentScriptFor(
 
   const subject = isAura ? /^enchanted creature/i : /^equipped creature/i;
   const staticLine = lines.find((line) => subject.test(plain(line).trim()));
-  /*
-    An Aura with no bonus line is not an Aura this reads: its `Enchant creature` attaches it and
-    the bonus is the whole of what it then does, so half of that pair is nothing. An Equipment is
-    different — see the docblock — and falls through with no bonus and no claimed static line.
-  */
-  if (staticLine === undefined && isAura) return null;
   const read = staticLine === undefined ? null : attachmentBonus(staticLine);
   if (staticLine !== undefined && read === null) return null;
 
@@ -10382,21 +10376,55 @@ export function attachmentScriptFor(
     // and this reads only the one the pool prints.
     const declared = lines.find((line) => /^enchant creature$/i.test(plain(line).trim()));
     if (declared === undefined) return null;
-    // Both are present on this path: the guard above returned for an Aura without them.
-    if (read === null || staticLine === undefined) return null;
+    /*
+      An Aura whose *whole card* is `Enchant creature` is still refused, and that is the invariant
+      the test below the bonus-optional change had to keep: a declaration on its own is an Aura you
+      can cast, that attaches, and that does nothing — a card that works and does nothing, which is
+      worse than an unread one because the unread one is flagged (D362) and this is not.
+
+      What changed is only *which* second line counts. It had to be a bonus; now any other printed
+      line will do, because a trigger is as much the rest of the card as a bonus is. A second line
+      the compiler cannot read is fine too: the Aura attaches and the line is flagged, which is the
+      hybrid reading working rather than failing.
+    */
+    if (staticLine === undefined && lines.length <= 1) return null;
+    /*
+      **The bonus line is optional for an Aura too (D437).**
+
+      It was required, on the argument that `Enchant creature` attaches the Aura and the bonus is
+      the whole of what it then does, so half of that pair is nothing. That is true of an Aura whose
+      only other line is a bonus and false of one whose other line is a *trigger* — and the corpus
+      says the second kind is the majority: of 55 legal Auras printing "enchanted creature dies",
+      **29 have no bonus line at all**. Bequeathal is "Enchant creature / When enchanted creature
+      dies, you draw two cards", and under the old guard it compiled as a spell with no target that
+      attached to nothing and did nothing, which is the "works and does nothing" shape D364's
+      docblock is about — the same shape the bonus-less Equipment had until D433, one card type
+      along.
+
+      So the Aura claims its `Enchant creature` line and emits the attach; the bonus is taken when
+      it is there and the trigger comes through the lines path and merges, exactly as it does for an
+      Equipment.
+    */
     return {
       fragment: {
         aura: {
           target: {
             kind: 'creature',
             description: 'enchant creature',
-            ...(read.harmful ? {} : { friendly: true as const }),
+            /*
+              `friendly` is claimed only when a bonus line says the Aura helps. With no bonus there
+              is no signal either way — Bequeathal wants to be on your own creature and Banewasp
+              Affliction wants to be on theirs, and both print nothing but a trigger — so the flag
+              is **omitted** rather than guessed, which is the same answer the harmful case gives
+              and leaves the bot to read the board instead of a wrong hint.
+            */
+            ...(read !== null && !read.harmful ? { friendly: true as const } : {}),
           },
-          effect: read.bonus,
+          effect: read?.bonus ?? {},
         },
-        ...(read.harmful ? { removesACreature: true as const } : {}),
+        ...(read?.harmful === true ? { removesACreature: true as const } : {}),
       },
-      claimed: [declared, staticLine],
+      claimed: staticLine === undefined ? [declared] : [declared, staticLine],
     };
   }
 
@@ -10951,6 +10979,35 @@ const TRIGGER_SHAPES: readonly {
   {
     prologue: () => /^Whenever another creature you control dies, (.+)$/i,
     on: [{ kind: 'dies', who: 'another', of: 'you', what: 'creature' }],
+  },
+  /*
+    "Whenever **a** creature you control dies" — the same trigger as Zulaport's row above, which
+    spells the card's own name out and then says "or another". 27 legal corpus lines print the
+    shorter form and **10** of them are cards this compiler can finish, measured the way D434 onward
+    measures (cards finished, not lines printed).
+
+    `who: 'any'` and not `'another'`, because "a creature you control" includes the card saying it
+    if the card is a creature — the exact distinction the row above exists to mark, one word along.
+  */
+  {
+    prologue: () => /^Whenever a creature you control dies, (.+)$/i,
+    on: [{ kind: 'dies', who: 'any', of: 'you', what: 'creature' }],
+  },
+  /*
+    The attachment's own creature dying, which completes the family D433 opened: `who: 'attached'`
+    on `dies` as well as on `attacks` and `combat-damage`. 52 legal lines print "enchanted creature
+    dies" (**7** cards finished) and 17 "equipped creature dies" (**5**).
+
+    D433 deferred these on a question about ordering, and the answer turned out to be a defect —
+    see D437 and `fireTrigger`'s `attachedHost`.
+  */
+  {
+    prologue: () => /^When (?:equipped|enchanted) creature dies, (.+)$/i,
+    on: [{ kind: 'dies', who: 'attached' }],
+  },
+  {
+    prologue: () => /^Whenever (?:equipped|enchanted) creature dies, (.+)$/i,
+    on: [{ kind: 'dies', who: 'attached' }],
   },
   /*
     Kambal: "Whenever an opponent casts a noncreature spell". `by: 'opponent'` and
