@@ -22247,3 +22247,83 @@ wanted it to:
 
 Proved to discriminate: deleting the commander spread from the helper fails this test **and** its
 older sibling, 2 failed of 47. Restored, 47 passed.
+
+---
+
+## D358 — The response contracts a client derives its types from, and which of them were enforced
+
+PR #35's own body named this as outstanding: *"the other ~20 response contracts still have no such
+test. One assertion per route group ... would make every response contract enforced rather than
+aspirational."* Measuring first changed the shape of the answer.
+
+### The claim was too broad, and the real gap is narrower and sharper
+
+I checked all 26 contracts that describe a response or an item in one, for a `.parse(` or
+`.safeParse(` anywhere in `apps/`:
+
+| | enforced where | count |
+|---|---|---|
+| per-item contracts | **in the route, as it builds the response** — `MePlayer.parse(player)`, `Collection.parse(row)`, `Deck`, `Notification`, `DirectMessage`, `Friend`, `LeaguePod`, `PlayerStanding`, `Season`, `WishlistCard`, `DeletedItem`, `Card`, `ActiveMatch`, `PlayerProfile`, `DeckSummary` | 15 |
+| envelopes | a conformance test | 2 (`RecommendationResponse`, `DeckSuggestionsResponse`) |
+| envelopes | **nowhere** | 6 |
+| contracts with no route here | — | 2 |
+
+So "nothing validates a response body against its contract" was true when it was written and is no
+longer: fifteen contracts are enforced *more* strongly than a test would, because the route itself
+raises. A drifted `Collection` shape is a 500, not a silent change.
+
+What is genuinely unenforced is the **envelope**. Every one of these is an object literal —
+`res.json({ cards, totalCards, hasMore })` — so a renamed `success`, a dropped `message` or a
+`totalCards` that becomes `total_cards` reaches the client unchallenged. And the envelope is exactly
+what a client derives its types from.
+
+Conformance tests added for the six: `CardSearchResponse`, `LoginResponse`, `RegisterResponse`,
+`AuthStatus` (both arms), `ForgotPasswordResponse`, `PlayerProfileResponse`. `apps/api` 306 → 311.
+
+`DraftView` and `SandboxCard` are the two with no route: they describe the draft endpoints D11
+deliberately did not port, so they are a contract ahead of its route rather than an enforcement gap.
+Stated rather than tested, because a test for a route that does not exist is the thing this entry is
+about.
+
+### Every one has a negative half, because otherwise the test proves nothing
+
+A conformance test that only parses a good body cannot tell a contract that *describes* the response
+from one that accepts anything: `z.object({}).parse(anything)` succeeds. So each check also drops a
+declared key and asserts the parse is refused. Without that, all six would pass against an empty
+schema — which is the same defect as every other entry in this file's family, applied to the test
+rather than the code.
+
+Then proved end to end rather than by argument: renaming `totalCards` to `total_cards` in
+`routes/cards.ts` fails the new test **and names the field** —
+`[{"code":"invalid_type","expected":"number","received":"undefined","path":["totalCards"]}]` — plus
+three older tests. Restored.
+
+### A correction I made to myself mid-test, which is the most interesting part
+
+I asserted that `AuthStatus` must **refuse** a signed-in body relabelled `loggedIn: false`, reasoning
+that the false arm has no `user`, so accepting it would let a client hold an identity it had been told
+it did not have.
+
+It does not refuse it. Zod's object parsing **strips** unknown keys rather than erroring, so the false
+arm accepts the body and silently drops the `user`.
+
+Which is the better of the two behaviours, and it is the one worth pinning: a client that parses a
+mislabelled body cannot end up holding that identity. My assertion would have been asserting something
+the contract does not promise, and would have broken the moment anyone chose `.strict()`. The test now
+asserts the strip (`expect(mislabelled).not.toHaveProperty('user')`) and keeps a negative that does
+hold — a body claiming `loggedIn: true` with no `user` is refused, because the true arm requires one.
+
+The general form, which is worth more than the specific fact: **a negative assertion is a claim about
+the contract, and it can be wrong in the direction of being too strong.** A test that fails because
+the code is safer than I assumed is still a test I wrote wrong.
+
+### The guard, so the seventh one cannot arrive unenforced
+
+`checkEveryResponseContractIsParsedSomewhere()` in `scripts/guards.js` reads every
+`export const *Response` out of `packages/shared/src/contracts` and fails if any of them is parsed
+nowhere under `apps/`. It deliberately does not claim more than it can see — a `.parse(` call is not
+proof the call is on a real response body, only a test can be that — but it stops a new response
+contract landing with nothing checking it, which is how all six of these got here.
+
+Proved by injecting `GuardProbeResponse` into `contracts/common.ts`: the guard named it and the file
+it came from, exit 1. Removed, `[guards] OK`.

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import pg from 'pg';
-import { parseEnv } from '@grimore/shared';
+import { parseEnv, CardSearchResponse } from '@grimore/shared';
 import { runMigrations } from '@grimore/db';
 import { createApp, createContext, closeContext, type AppContext } from './app.js';
 
@@ -105,6 +105,30 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('cards routes (requires DATABASE_UR
     const r = await request(app).get('/api/cards/search');
     expect(r.status).toBe(400);
     expect(r.body.error.code).toBe('VALIDATION');
+  });
+
+  /*
+    The search envelope matches its own contract.
+
+    The per-item contracts in this app are enforced where they are built — `routes/cards.ts` calls
+    `Card.parse` on every row on the way out, so a drifted card shape is a 500 rather than a silent
+    change. The **envelope** is not: `res.json({ cards, totalCards, hasMore })` is an object literal,
+    so a renamed or dropped key there reaches the client unchallenged, and `CardSearchResponse` is
+    what a client derives its types from.
+
+    The second half is the part that matters. A conformance test that only parses a good body cannot
+    tell a contract that describes the response from one that accepts anything, so this also checks
+    that dropping a declared key is refused. Without it this test would pass against an empty
+    `z.object({})`.
+  */
+  it('returns a search envelope its own contract accepts, and refuses one missing a key', async () => {
+    const r = await request(app).get('/api/cards/search?q=Lightning Bolt');
+    expect(r.status).toBe(200);
+    const parsed = CardSearchResponse.safeParse(r.body);
+    expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
+
+    const { totalCards: _dropped, ...withoutTotal } = r.body as Record<string, unknown>;
+    expect(CardSearchResponse.safeParse(withoutTotal).success).toBe(false);
   });
 
   it('matches case-insensitively (legacy LIKE was case-sensitive under Postgres)', async () => {

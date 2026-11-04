@@ -726,6 +726,83 @@ function checkFourSeatDeckBoundMatchesEngine() {
 }
 checkFourSeatDeckBoundMatchesEngine();
 
+/**
+ * Is every response contract in `packages/shared/src/contracts` actually parsed somewhere?
+ *
+ * ## The gap this closes
+ *
+ * `apps/web`'s CardSearch page derives its types from `RecommendationResponse` rather than
+ * redeclaring them — which is only an improvement **if the contract describes the real response**.
+ * Nothing validated a response body against its contract until a conformance test was added for two
+ * of them; before that, `grep '\.parse(r.body)'` across this repository returned zero hits, and
+ * every response contract was documentation that a client nonetheless trusted.
+ *
+ * The per-item contracts are in better shape than that sounds: fifteen of them (`Collection`,
+ * `Deck`, `MePlayer`, `Notification`, …) are parsed by the route **as it builds the response**, so a
+ * drifted item shape is a 500 rather than a silent change. The envelopes were not, because every one
+ * of them is an object literal in a `res.json({ ... })`.
+ *
+ * So this guard asks only the narrow question it can answer from the source: does each `*Response`
+ * contract appear in a `.parse(` or `.safeParse(` call anywhere in `apps/`? That does not prove the
+ * call is on a real response body — only a test can do that — but it does stop a **new** response
+ * contract arriving with nothing checking it, which is how the first six got here.
+ */
+function checkEveryResponseContractIsParsedSomewhere() {
+  // Relative to the repository root, as every other guard in this file is.
+  const dir = 'packages/shared/src/contracts';
+  let files;
+  try {
+    files = readdirSync(dir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'));
+  } catch {
+    return; // not in a checkout that has the contracts
+  }
+  const declared = [];
+  for (const file of files) {
+    const source = readFileSync(join(dir, file), 'utf8');
+    for (const m of source.matchAll(/^export const ([A-Za-z0-9_]*Response) = /gm)) {
+      declared.push({ name: m[1], file: `packages/shared/src/contracts/${file}` });
+    }
+  }
+  if (declared.length === 0) {
+    console.error(`[guards] found no *Response contracts in ${dir}, so this guard checked nothing.`);
+    console.error('[guards] Either they were renamed or they moved.');
+    bad++;
+    return;
+  }
+
+  // Every .ts/.tsx under apps/, read once, because each contract is looked for in all of them.
+  const sources = [];
+  const walk = (at) => {
+    for (const entry of readdirSync(at, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+      const full = join(at, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.tsx?$/.test(entry.name)) sources.push(readFileSync(full, 'utf8'));
+    }
+  };
+  try {
+    walk('apps');
+  } catch {
+    return;
+  }
+
+  const unparsed = declared.filter(({ name }) => {
+    const re = new RegExp(`\\b${name}\\.(safeParse|parse)\\(`);
+    return !sources.some((source) => re.test(source));
+  });
+  if (unparsed.length > 0) {
+    console.error(`[guards] ${unparsed.length} response contract(s) are parsed nowhere in apps/:`);
+    for (const { name, file } of unparsed) console.error(`[guards]   ${name} (${file})`);
+    console.error('[guards] A contract nothing parses is documentation, not a check: a drift between');
+    console.error('[guards] it and the route is a silent production bug rather than a failing test.');
+    console.error('[guards] Add a conformance assertion in that route group\'s test file — parse a real');
+    console.error('[guards] response body, and also check that dropping a declared key is refused, so');
+    console.error('[guards] the test can tell your contract from an empty z.object({}).');
+    bad++;
+  }
+}
+checkEveryResponseContractIsParsedSomewhere();
+
 if (bad) {
   console.error(`[guards] ${bad} violation(s)`);
   process.exit(1);

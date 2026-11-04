@@ -9,7 +9,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import pg from 'pg';
-import { parseEnv } from '@grimore/shared';
+import {
+  parseEnv, AuthStatus, ForgotPasswordResponse, LoginResponse, RegisterResponse,
+} from '@grimore/shared';
 import { runMigrations } from '@grimore/db';
 import { MemoryTransport } from '@grimore/mailer';
 import { createApp, createContext, closeContext, type AppContext } from './app.js';
@@ -412,6 +414,93 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('account recovery (requires DATABAS
       const events = rows.rows.map((x) => x.event);
       expect(events).toContain('password.reset.requested');
       expect(events).toContain('password.reset.redeemed');
+    });
+  });
+
+  /*
+    The four auth envelopes match their own contracts.
+
+    This app enforces its **per-item** contracts where they are built — `routes/auth.ts` calls
+    `MePlayer.parse(player)` on the way out, `routes/collections.ts` calls `Collection.parse`, and so
+    on, so a drifted item shape is a 500 rather than a silent change. Fifteen contracts are covered
+    that way. The **envelopes** are not: every one of these responses is an object literal, so a
+    renamed `success`, a dropped `message` or a `loggedIn` that stops being a boolean reaches the
+    client unchallenged — and the envelope is exactly what a client derives its types from.
+
+    Each check has a negative half, and that half is the point: a conformance test that only parses a
+    good body cannot tell a contract that describes the response from one that accepts anything. With
+    the negatives, each of these would fail against an empty `z.object({})`.
+  */
+  describe('the response envelopes, against their own contracts', () => {
+    it('register and login answer what RegisterResponse and LoginResponse describe', async () => {
+      seq += 1;
+      const username = `conf_user_${seq}_${Math.random().toString(36).slice(2, 7)}`;
+      const agent = client();
+      const reg = await agent.post('/api/auth/register').send({
+        username, password: PASSWORD, storeNickname: `Conf ${seq}`, email: `${username}@example.test`,
+      });
+      expect(reg.status, JSON.stringify(reg.body)).toBe(201);
+      const registered = RegisterResponse.safeParse(reg.body);
+      expect(registered.success, JSON.stringify(registered.error?.issues)).toBe(true);
+      // `success` is a literal true, so an error envelope on this path cannot pass as a success one.
+      expect(RegisterResponse.safeParse({ ...reg.body, success: false }).success).toBe(false);
+
+      const login = await agent.post('/api/auth/login').send({ username, password: PASSWORD });
+      expect(login.status, JSON.stringify(login.body)).toBe(200);
+      const loggedIn = LoginResponse.safeParse(login.body);
+      expect(loggedIn.success, JSON.stringify(loggedIn.error?.issues)).toBe(true);
+      // The user is the whole point of this response: an envelope without one is not this contract.
+      const { user: _user, ...withoutUser } = login.body as Record<string, unknown>;
+      expect(LoginResponse.safeParse(withoutUser).success).toBe(false);
+    });
+
+    it('auth status answers what AuthStatus describes, on both arms of the union', async () => {
+      const a = await account();
+
+      const signedIn = await a.agent.get('/api/auth/status');
+      expect(signedIn.body.loggedIn).toBe(true);
+      const parsedIn = AuthStatus.safeParse(signedIn.body);
+      expect(parsedIn.success, JSON.stringify(parsedIn.error?.issues)).toBe(true);
+
+      const anonymous = await client().get('/api/auth/status');
+      expect(anonymous.body.loggedIn).toBe(false);
+      const parsedOut = AuthStatus.safeParse(anonymous.body);
+      expect(parsedOut.success, JSON.stringify(parsedOut.error?.issues)).toBe(true);
+
+      /*
+        The discriminator is load-bearing, and this is where that gets checked — but not in the way
+        I first wrote it.
+
+        I asserted that a signed-in body relabelled `loggedIn: false` must be **refused**. It is not:
+        zod's object parsing strips unknown keys rather than erroring, so the false arm accepts the
+        body and silently drops the `user`. Which is the better behaviour of the two, and it is the
+        one actually worth pinning: a client that parses a mislabelled body cannot end up holding an
+        identity it was told it does not have. Asserting an error would have been asserting something
+        the contract does not promise, and would break the moment anyone chose `.strict()`.
+      */
+      const mislabelled = AuthStatus.parse({ ...signedIn.body, loggedIn: false });
+      expect(mislabelled).not.toHaveProperty('user');
+
+      // The other direction does error, because the true arm requires a user: claiming to be signed
+      // in without one is not a shape this contract has.
+      const { user: _user, ...noUser } = signedIn.body as Record<string, unknown>;
+      expect(AuthStatus.safeParse(noUser).success).toBe(false);
+    });
+
+    it('forgot-password answers what ForgotPasswordResponse describes', async () => {
+      const a = await account();
+      const r = await forgot(a.username);
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      const parsed = ForgotPasswordResponse.safeParse(r.body);
+      expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
+      /*
+        `message` is required and `devResetLink` is not, so dropping the message must fail. That
+        asymmetry matters here more than elsewhere: the message is identical whether or not the
+        account exists (FORGOT_PASSWORD_MESSAGE), and it is the thing that makes the two paths
+        indistinguishable.
+      */
+      const { message: _message, ...withoutMessage } = r.body as Record<string, unknown>;
+      expect(ForgotPasswordResponse.safeParse(withoutMessage).success).toBe(false);
     });
   });
 });
