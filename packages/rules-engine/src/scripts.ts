@@ -861,12 +861,17 @@ const GARRUK_WILDSPEAKER: CardScript = {
     {
       cost: { loyalty: 1 },
       description: '+1: Untap two target lands.',
+      /*
+        The live type line, not the printed one — the seventh site of #319's class, found the same
+        way as the sixth: by giving this line a compiler reading and needing the two specs to match.
+        A Mutavault animated into a creature is still a land and is still a legal target here
+        (CR 613), which `parseTypeLine` on the card definition could not see.
+      */
       targets: [{
         kind: 'permanent',
         description: 'target land',
         count: 2,
-        filter: (state, candidate) => candidate.kind === 'card'
-          && hasType(parseTypeLine(state.cardDefs[state.instances[candidate.id]?.defKey ?? '']?.typeLine), 'land'),
+        filter: permanentOfTypes('land'),
       }],
       effect: (c) => cardTargets(c).reduce((state, id) => tap(state, id, false), c.state),
     },
@@ -9333,6 +9338,32 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
+    A clause whose number is announced in its own tail: "You gain X life and draw X cards, where X is
+    the number of lands you control" — Nissa's ultimate, and the one place in the pool where the same
+    count is spent twice in one sentence.
+
+    The tail is read with `boardCount`, as the token clause's is (`tokenEffect` strips the same
+    `, where X is …` for its own count). Two call sites rather than one shared stripper, because the
+    bodies in front of them are different grammars and the only thing they share is five words; if a
+    third appears, that is the moment to lift it.
+
+    The order is the printed order and the hand-written card's: gain, then draw. It matters on an
+    empty library — a player who gains the life and then cannot draw has still gained the life.
+  */
+  const announced = /^(.*?),\s*where X is (.+)$/i.exec(text);
+  if (announced !== null) {
+    const counted = boardCount(announced[2]!, name);
+    if (counted !== null && /^you gain X life and draw X cards$/i.test(announced[1]!.trim())) {
+      return {
+        effect: (c) => {
+          const n = counted(c);
+          return draw(gainLife(c.state, c.controller, n), c.controller, n);
+        },
+      };
+    }
+  }
+
+  /*
     The drain, which is **one** effect and not two clauses.
 
     "Each opponent loses 1 life and you gain 1 life" is joined by "and", and `clausesOf`
@@ -10902,6 +10933,28 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     `friendly` on the spec, because untapping an opponent's land is a card thrown away and the bot's
     default aim is the enemy's board — Kiora's Follower's own comment says exactly that.
   */
+  /*
+    A **counted** untap: "Untap two target lands", which is Garruk's +1.
+
+    `TargetSpec.count` is the field for it and the engine fills the list before resolution, so the
+    effect reduces over `cardTargets` rather than taking the first. The count is read off the printed
+    word — `countFrom`, the same reader the token counts use — and the description stays the singular
+    phrase, because that is what a player is asked for each time and what the hand-written spec
+    stores.
+  */
+  const untappedMany = /^untap ([\w]+) (target .+?)s$/i.exec(text);
+  if (untappedMany !== null) {
+    const count = countFrom(untappedMany[1]!);
+    const spec = targetSpecFrom(untappedMany[2]!, true);
+    if (count !== null && count > 1 && spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [{ ...spec, count }],
+        abilityFlags: { untapsOnly: true },
+        effect: (c) => cardTargets(c).reduce((state, id) => tap(state, id, false), c.state),
+      };
+    }
+  }
+
   const untapped = /^untap (another target .+|target .+)$/i.exec(text);
   if (untapped !== null) {
     const spec = targetSpecFrom(untapped[1]!, true);
@@ -11090,6 +11143,21 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
           : { expiresAtEndOfTurn: true },
       };
     }
+  }
+
+  /*
+    Counters on the whole team, which is Nissa's `−2` — and a different card from an Overrun, as her
+    own comment says: counters stay, they stack with the next activation, and a sweeper that kills
+    everything else leaves the survivor bigger. So it is `addCounters` per creature and not a pump,
+    and it points at nothing, which is why it is here rather than among the targeted clauses.
+  */
+  if (/^put a \+1\/\+1 counter on each creature you control$/i.test(text)) {
+    return {
+      effect: (c) => creaturesControlledBy(c.state, c.controller).reduce(
+        (state, id) => addCounters(state, id, '+1/+1', 1),
+        c.state,
+      ),
+    };
   }
 
   /*

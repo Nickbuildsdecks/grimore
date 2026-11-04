@@ -90,6 +90,27 @@ describe('a filter reads the live type line', () => {
     expect(spec?.filter?.(base, { kind: 'card', id: bear }, 0 as SeatIndex, 'c1')).toBe(false);
   });
 
+  it('Garruk’s +1 can untap a permanent that has been made a land', () => {
+    /*
+      The seventh site of this class, found like the sixth: by giving the line a compiler reading and
+      needing the two specs to agree. "Untap two target lands" should take a permanent that *is* a
+      land however it got there (CR 613), and `parseTypeLine` on the card definition could not see
+      one.
+    */
+    const base = arena({
+      decks: { 0: 'verdant-guard', 1: 'verdant-guard' },
+      battlefield: { 1: ['Grizzly Bears'] },
+      turn: 3,
+    });
+    const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const state = pump(base, [bear], bear, 1 as SeatIndex, { addTypes: ['Land'] });
+    const spec = ((scriptFor('Garruk Wildspeaker')?.abilities ?? [])[0]?.targets ?? [])[0];
+    expect(spec?.description).toBe('target land');
+    expect(spec?.filter?.(state, { kind: 'card', id: bear }, 0 as SeatIndex, 'c1')).toBe(true);
+    // And refuses the same creature before anything made it one.
+    expect(spec?.filter?.(base, { kind: 'card', id: bear }, 0 as SeatIndex, 'c1')).toBe(false);
+  });
+
   it.each([
     ['Disenchant'],
     ['Naturalize'],

@@ -3116,23 +3116,30 @@ describe('compileCard, against the cards a person wrote by hand', () => {
 
     it('refuses a loyalty line whose clause has no reader, and reads its neighbours', () => {
       /*
-        Garruk Wildspeaker: three abilities, one of which untaps **two** target lands — a count on a
-        target phrase this module cannot read. The other two read, so the card is partly automated
-        and the one line that is not is reported for a human to play by hand (D362). That is the
-        hybrid the compiler exists to produce, and this is the test that it still refuses line by
-        line rather than card by card.
-
-        His −4 was in this list one increment ago and left it when the team pump learnt to carry a
-        keyword grant, which is the churn this kind of test is for: the property is "a line with no
-        reader is reported and its neighbours still compile", not any particular line.
+        A synthetic planeswalker, and it owns its text for the reason the keyword-and-a-sentence
+        fixture does: this test was written against Garruk Wildspeaker, whose `−4` it listed as
+        unread, and the next increment read that line; one increment later his `+1` compiled too and
+        every planeswalker in the pool was whole. The property being pinned is **"a loyalty line
+        with no reader is reported and its neighbours still compile"**, not any particular card, so
+        the example is a sentence this module has no reader for rather than a card that might get
+        one.
       */
-      const garruk = compiledScript('Garruk Wildspeaker');
-      expect(garruk.unread.map((u) => u.line)).toEqual(['+1: Untap two target lands.']);
-      expect(abilitiesOf(garruk.script)).toHaveLength(2);
-      expect(abilitiesOf(garruk.script).map((a) => a.description)).toEqual([
-        '−1: Create a 3/3 green Beast creature token.',
-        '−4: Creatures you control get +3/+3 and gain trample until end of turn.',
+      const walker = compileCard({
+        name: 'Made Up Walker', type_line: 'Legendary Planeswalker — Test', mana_cost: '{2}{G}',
+        cmc: 3, colors: ['G'], loyalty: '3',
+        oracle_text: '+1: Exchange control of two target creatures.\n'
+          + '\u22122: Create a 3/3 green Beast creature token.\n'
+          + '\u22127: You gain 5 life.',
+      });
+      expect(walker.ok).toBe(true);
+      if (!walker.ok) return;
+      expect(walker.unread.map((u) => u.line)).toEqual(['+1: Exchange control of two target creatures.']);
+      // The two that read are still read, in printed order.
+      expect(abilitiesOf(walker.script).map((a) => a.description)).toEqual([
+        '\u22122: Create a 3/3 green Beast creature token.',
+        '\u22127: You gain 5 life.',
       ]);
+      expect(abilitiesOf(walker.script).map((a) => a.cost?.loyalty)).toEqual([-2, -7]);
     });
   });
   describe('the grant family: two keywords, and the hint the team pump was missing', () => {
@@ -3246,6 +3253,114 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       if (!refused.ok) return;
       expect(refused.script).toBeUndefined();
       expect(refused.unread.map((u) => u.why)).toEqual(['no-reader']);
+    });
+  });
+  describe('every planeswalker in the pool, read end to end', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({ state, controller: seat, source, targets, decisions: [] } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const abilityOf = (script: unknown, i: number) =>
+      ((field(script, 'abilities') as readonly AbilityDef[] | undefined) ?? [])[i];
+
+    /*
+      The headline, and the reason it is worth a test of its own: a planeswalker is three or four
+      independent abilities, so it is the shape most likely to compile *partly* — and a card that is
+      three quarters automated is the hybrid D362 is about, not a finished reading. All five in the
+      pool now read whole.
+    */
+    it.each([
+      ['Jace, Memory Adept'],
+      ['Jace Beleren'],
+      ['Ajani, Caller of the Pride'],
+      ['Garruk Wildspeaker'],
+      ['Nissa, Voice of Zendikar'],
+    ])('%s leaves no line unread', (card) => {
+      const compiled = compiledScript(card as string);
+      expect(compiled.unread).toEqual([]);
+      const mine = (field(compiled.script, 'abilities') as readonly AbilityDef[] | undefined) ?? [];
+      const theirs = (field(scriptFor(card as string), 'abilities') as readonly AbilityDef[] | undefined) ?? [];
+      expect(mine).toHaveLength(theirs.length);
+      expect(mine.map((a) => a.description)).toEqual(theirs.map((a) => a.description));
+      expect(mine.map((a) => a.cost)).toEqual(theirs.map((a) => a.cost));
+    });
+
+    /*
+      Garruk's +1 is the pool's only **counted** target: `TargetSpec.count` is 2, the engine fills
+      the list before resolution, and the effect reduces over all of them rather than taking the
+      first. A reader that dropped the count would untap one land and be a worse card.
+    */
+    it('untaps both lands Garruk’s +1 points at, as the hand-written ability does', () => {
+      const base = arena({
+        decks: { 0: 'verdant-guard' }, battlefield: { 0: ['Forest', 'Forest'] }, turn: 3,
+      });
+      const [first, second] = [...ids(base, 0 as SeatIndex, 'battlefield')];
+      const tapped = tap(tap(base, first!), second!);
+      const ctx = contextOn(tapped, 0 as SeatIndex, 'c1', [
+        { kind: 'card', id: first! }, { kind: 'card', id: second! },
+      ]);
+      const mine = abilityOf(compiledScript('Garruk Wildspeaker').script, 0)!.effect!(ctx);
+      const theirs = abilityOf(scriptFor('Garruk Wildspeaker'), 0)!.effect!(ctx);
+      expect(mine).toEqual(theirs);
+      // Both, which is the assertion a dropped count fails.
+      expect(mine.instances[first!]!.tapped).toBe(false);
+      expect(mine.instances[second!]!.tapped).toBe(false);
+    });
+
+    it('carries the count and the untap-only flag on Garruk’s +1', () => {
+      const mine = abilityOf(compiledScript('Garruk Wildspeaker').script, 0)!;
+      const theirs = abilityOf(scriptFor('Garruk Wildspeaker'), 0)!;
+      const spec = (mine.targets as readonly TargetSpec[])[0]!;
+      const written = (theirs.targets as readonly TargetSpec[])[0]!;
+      expect(spec.count).toBe(2);
+      expect(spec.count).toBe(written.count);
+      // The description stays singular, because that is what a player is asked for each time.
+      expect(spec.description).toBe(written.description);
+      expect(spec.kind).toBe(written.kind);
+      // An ability whose whole effect is an untap can put the board back where it found it (#124).
+      expect(mine.untapsOnly).toBe(true);
+    });
+
+    /*
+      Nissa's −2 is counters and not a pump, which her own comment calls the difference between her
+      and an Overrun: they stay, they stack with the next activation, and a sweeper that kills
+      everything else leaves the survivor bigger.
+    */
+    it('puts a counter on each of Nissa’s creatures and none of the opponent’s', () => {
+      const base = arena({
+        decks: { 0: 'verdant-guard', 1: 'verdant-guard' },
+        battlefield: { 0: ['Grizzly Bears'], 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = abilityOf(compiledScript('Nissa, Voice of Zendikar').script, 1)!.effect!(ctx);
+      const theirs = abilityOf(scriptFor('Nissa, Voice of Zendikar'), 1)!.effect!(ctx);
+      expect(mine).toEqual(theirs);
+      const ours = find(base, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const hers = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      expect(mine.instances[ours]!.counters['+1/+1']).toBe(1);
+      expect(mine.instances[hers]!.counters['+1/+1']).toBeUndefined();
+      // Counters, not a continuous effect: nothing was added to `effects`.
+      expect(mine.effects).toHaveLength(0);
+    });
+
+    /*
+      Nissa's ultimate is the pool's only clause that spends the same announced count twice: "You
+      gain X life and draw X cards, where X is the number of lands you control."
+    */
+    it('spends the same count twice in Nissa’s ultimate, gain before draw', () => {
+      const base = arena({
+        decks: { 0: 'verdant-guard' }, battlefield: { 0: ['Forest', 'Forest', 'Forest'] }, turn: 3,
+      });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = abilityOf(compiledScript('Nissa, Voice of Zendikar').script, 2)!.effect!(ctx);
+      const theirs = abilityOf(scriptFor('Nissa, Voice of Zendikar'), 2)!.effect!(ctx);
+      expect(mine).toEqual(theirs);
+      // Three lands: three life and three cards, which is what makes the count discriminating.
+      expect(mine.seats[0]!.life).toBe(base.seats[0]!.life + 3);
+      expect(mine.zones[zoneKey(0 as SeatIndex, 'hand')]).toHaveLength(3);
     });
   });
 });

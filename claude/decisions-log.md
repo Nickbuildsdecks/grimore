@@ -24685,3 +24685,52 @@ shuffled run found no throw.
 Garruk's `−4` left the loyalty stage's refusal test one increment after joining it, which is the
 churn that kind of test is for: the property is "a line with no reader is reported and its neighbours
 still compile", not any particular line, and the test now says so.
+
+## D395
+
+**Every planeswalker in the pool, read end to end — and a seventh printed type line** (#317, #319)
+
+Three readings, and with them all five planeswalkers compile whole. That is worth saying as its own
+result because a planeswalker is the shape most likely to compile *partly*: three or four
+independent abilities, so a card three quarters read is the hybrid D362 describes rather than a
+finished reading.
+
+- **A counted target.** "Untap two target lands" is the pool's only `TargetSpec.count`, and the
+  engine fills the list before resolution — so the effect reduces over `cardTargets` rather than
+  taking the first, and the description stays the singular phrase, because that is what a player is
+  asked for each time and what the hand-written spec stores. Dropping the count untaps one land and
+  is a worse card.
+- **Counters on the team**, which is Nissa's `−2` and emphatically not an Overrun: her own comment
+  says why — counters stay, they stack with the next activation, and a sweeper that kills everything
+  else leaves the survivor bigger. So `addCounters` per creature, nothing added to `effects`, and
+  only the controller's creatures. The compiled reader and the hand-written effect came out as
+  byte-identical code, which is how a break attempt found its anchor matched twice.
+- **A count announced in the clause's own tail**: "You gain X life and draw X cards, where X is the
+  number of lands you control" — the one place in the pool where the same announced count is spent
+  twice in one sentence. Gain before draw, which is the printed order and matters on an empty
+  library: a player who gains the life and then cannot draw has still gained the life.
+
+### The seventh site (#319)
+
+Garruk's `+1` filter read `parseTypeLine(cardDefs[...].typeLine)`, so a Mutavault animated into a
+creature — still a land (CR 613) — was not a legal target for it. Found exactly as the sixth was: by
+giving the line a compiler reading and needing the two specs to agree. It uses the shared
+`permanentOfTypes('land')` now, with its own case in `liveTypes.test.ts` that fails when reverted.
+
+### The refusal test moved to a synthetic, and this time for good
+
+That test was written against Garruk, listing his `−4` as unread; the next increment read it, and
+this one read his `+1`, leaving no pool planeswalker with an unread line. The property it pins is
+"**a loyalty line with no reader is reported and its neighbours still compile**" — not any
+particular card — so it now owns its text: a synthetic walker whose first ability is a sentence this
+module has no reader for, with the other two still read in printed order. Same reasoning as the
+keyword-and-a-sentence fixture, which has now moved twice for the same reason.
+
+### Measured
+
+**356 → 359 of 538 printed lines (66.2% → 66.7%)**; cards with a script unchanged at **225 of 339**,
+because Garruk and Nissa were already partly read — what changed is that they are now read *whole*,
+which the share of lines is the honest instrument for and the share of cards is not.
+
+Four deliberate breaks, four failing tests. The whole engine suite is 1696 green and a 30,000-row
+shuffled run found no throw.

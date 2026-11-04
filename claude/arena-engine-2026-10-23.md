@@ -10607,3 +10607,26 @@ because `sizeBonus` refuses `+0/+0` and should.
 **353 → 356 of 538 lines (65.6% → 66.2%), 222 → 225 of 339 cards.** Overrun, Inspired Charge and
 Ajani compile whole; Garruk is one line short (`+1: Untap two target lands`). Three breaks, three
 failing tests; the engine suite 1686 green.
+
+## Every planeswalker in the pool, read end to end (#317, #319, D395)
+
+Three readings, and all five planeswalkers compile whole — worth its own line because a planeswalker
+is the shape most likely to compile *partly*: three or four independent abilities, so a card three
+quarters read is a hybrid rather than a finished reading.
+
+A **counted target** ("Untap two target lands" — the pool's only `TargetSpec.count`, where the effect
+reduces over every target rather than taking the first); **counters on the team** (Nissa's −2, which
+is not an Overrun: counters stay and stack, so it is `addCounters` per creature and only the
+controller's); and a **count announced in the clause's tail** ("You gain X life and draw X cards,
+where X is the number of lands you control" — gain before draw, which matters on an empty library).
+
+**A seventh printed type line (#319):** Garruk's +1 filter read the card definition's type line, so a
+Mutavault animated into a creature was not a legal target although it is still a land. It uses the
+shared live filter now.
+
+The loyalty refusal test moved to a synthetic walker, having been written against Garruk and outlived
+two of his lines: the property is "a line with no reader is reported and its neighbours still
+compile", not any particular card.
+
+**356 → 359 of 538 lines (66.2% → 66.7%)**, cards unchanged at 225 of 339 — Garruk and Nissa were
+already partly read, and what changed is that they are now whole.
