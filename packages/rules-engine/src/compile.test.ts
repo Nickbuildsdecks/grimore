@@ -4,6 +4,9 @@ import { STARTER_DECKS } from './starterDecks.js';
 import { scriptFor } from './scripts.js';
 import type { CardDef } from './cards.js';
 import type { CardDataRow } from './fromCardData.js';
+import type { EffectContext } from './effects.js';
+import type { GameState, SeatIndex } from './types.js';
+import { arena } from './testkit.js';
 
 /**
  * Every card in the pool, by name — the compiler's ground truth.
@@ -146,7 +149,7 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     // Mystic Remora is cumulative upkeep plus one triggered ability. The keyword compiles; the
     // sentence does not, and the card is still a card.
     const remora = compiledScript('Mystic Remora');
-    expect(remora.source).toBe('keywords');
+    expect(remora.source).toBe('lines');
     expect(fullyCompiled(remora)).toBe(false);
     expect(remora.unread.map((u) => u.line).join(' ')).toContain('noncreature spell');
     expect(remora.unread.every((u) => u.why === 'no-reader')).toBe(true);
@@ -185,6 +188,132 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     expect(bolt.unread).toEqual([
       { line: 'Do something no reader here understands at all.', why: 'no-reader' },
     ]);
+  });
+
+  /*
+    ── Triggered abilities: compared by what they DO, not by what they say ────────────────────────
+
+    The keyword tests above compare fields, which works because a keyword's fragment is data. A
+    triggered ability's is a closure, and two closures cannot be compared — so the check that
+    matters is **behavioural**: run the compiled effect and the hand-written one against the same
+    game state and assert the resulting states are identical.
+
+    That is a stronger test than comparing `description` strings, and it has to be, because the pool
+    is not consistent about descriptions: Kitchen Finks stores the clause ("you gain 2 life") and
+    Aether Hub stores the whole printed line including the "When ~ enters the battlefield" part that
+    `on` already carries. Comparing those strings would fail on a compiler that was right.
+  */
+  describe('the effects it builds do what the hand-written ones do', () => {
+    /**
+     * A context both effects are handed, so the comparison is about the effects and nothing else.
+     *
+     * The `as EffectContext` cast is the thing D362 warns about — a cast is a claim the compiler
+     * stops checking — so it is worth saying why it is sound here rather than hoping. Both sides
+     * receive **the same object**, so a field this omits is a field neither effect can read, and
+     * the comparison stays a comparison. It would be unsound if the two effects were given
+     * different contexts, or if the assertion were about the context instead of the output.
+     */
+    const contextOn = (state: GameState, seat: SeatIndex, source: string): EffectContext =>
+      ({ state, controller: seat, source } as unknown as EffectContext);
+
+    /** The one ETB trigger a card's hand-written script has whose clause this compiler reads. */
+    const etbOf = (script: unknown) =>
+      ((script as { triggers?: readonly { on?: { kind?: string }; effect?: unknown }[] }).triggers
+        ?? []).filter((t) => t.on?.kind === 'etb');
+
+    /*
+      Seat 1 holds a card, and that detail is load-bearing rather than scenery.
+
+      The first version of this test used a bare `arena()`, whose hands are empty — so Ravenous
+      Rats' "each opponent discards a card at random" discarded nothing, both effects returned the
+      state unchanged, and `toEqual` passed on two functions that had done nothing. A comparison
+      between two no-ops is not evidence. The non-vacuity assertion below is what caught it, and
+      the fixture is what fixes it: the effect has to have something to do.
+    */
+    const board = () => arena({ hands: { 1: ['Grizzly Bears'] } });
+
+    it.each([
+      ['Kitchen Finks', 'you gain 2 life'],
+      ['Elvish Visionary', 'draw a card'],
+      ['Aether Hub', 'you get {E}'],
+      ['Ravenous Rats', 'each opponent discards a card at random'],
+    ])('%s: the compiled effect leaves the same state as the written one', (card) => {
+      const written = etbOf(scriptFor(card as string));
+      expect(written.length, `${card as string} has no hand-written ETB trigger`).toBe(1);
+      const compiled = etbOf(compiledScript(card as string).script);
+      expect(compiled.length, `${card as string} compiled no ETB trigger`).toBe(1);
+
+      const base = board();
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = (compiled[0]!.effect as (c: EffectContext) => GameState)(ctx);
+      const theirs = (written[0]!.effect as (c: EffectContext) => GameState)(ctx);
+      expect(mine).toEqual(theirs);
+      // And it is not vacuous: the effect has to have changed something about the state.
+      expect(mine).not.toEqual(base);
+    });
+
+    it('defers a draw so a dredge can replace it, which is what drawLater is for', () => {
+      /*
+        `drawLater`'s docblock allows itself only for "a draw that is the last thing the card does",
+        and says a compiler cannot tell that apart from a draw something reads afterwards. This one
+        can, because it matches the clause only when the clause is the draw and nothing else — so
+        the condition holds by construction. Checked here as the observable difference between the
+        two primitives: `draw` takes the card now, `drawLater` records a draw owed.
+      */
+      const visionary = etbOf(compiledScript('Elvish Visionary').script);
+      const base = arena();
+      const after = (visionary[0]!.effect as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      /*
+        `drawsOwed` is a flat list of seat indices, one entry per card owed — not a count per seat.
+        Read as `drawsOwed[0]` it would be the *seat* that is owed the first card, which for seat 0
+        is the number 0, and `?? 0` would have hidden the mistake behind a passing-looking compare.
+      */
+      expect(after.drawsOwed.filter((seat) => seat === 0)).toHaveLength(1);
+      // Nothing left the library yet, which is the whole point of the deferral.
+      expect(Object.keys(after.instances).length).toBe(Object.keys(base.instances).length);
+    });
+
+    it('reads the trigger it built as watching its own arrival, spelled out', () => {
+      // `who` defaults to 'self' in `automation.ts`, so `{ kind: 'etb' }` means the same thing —
+      // but a generated script is read by people, so it says which one it means.
+      const finks = etbOf(compiledScript('Kitchen Finks').script);
+      expect(finks[0]!.on).toEqual({ kind: 'etb', who: 'self' });
+    });
+
+    it('leaves a clause it cannot read alone, rather than compiling half of it', () => {
+      // "exile target creature" needs a target spec, which is the next increment. Until then the
+      // line is reported unread and the card is a manual object inside an automated game (D362).
+      const banisher = compileCard({
+        name: 'Reader Test', type_line: 'Creature — Human', mana_cost: '{3}', cmc: 3,
+        power: '2', toughness: '2', colors: [],
+        oracle_text: 'When Reader Test enters the battlefield, exile target creature.',
+      });
+      expect(banisher.ok).toBe(true);
+      if (!banisher.ok) return;
+      expect(banisher.script).toBeUndefined();
+      expect(banisher.unread).toEqual([
+        { line: 'When Reader Test enters the battlefield, exile target creature.', why: 'no-reader' },
+      ]);
+    });
+
+    it('reads a count printed as a word and as a digit', () => {
+      // Magic writes a count as a word when it is a number of objects and as a digit when it is an
+      // amount, so both forms turn up in one pool: "draw two cards", "you gain 2 life".
+      const words = compileCard({
+        name: 'Word Count', type_line: 'Creature — Human', mana_cost: '{3}', cmc: 3,
+        power: '1', toughness: '1', colors: [],
+        oracle_text: 'When Word Count enters the battlefield, draw two cards.',
+      });
+      expect(words.ok && words.unread).toEqual([]);
+      const base = arena();
+      const trigger = etbOf((words as { script?: unknown }).script)[0]!;
+      const after = (trigger.effect as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      expect(after.drawsOwed.filter((seat) => seat === 0)).toHaveLength(2);
+    });
   });
 
   it('refuses only what is not a single-face card at all', () => {

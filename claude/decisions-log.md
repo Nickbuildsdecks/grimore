@@ -22893,3 +22893,94 @@ diagnostics and its status is not the gate's.
 
 Two bugs in a twenty-line script whose entire job is to report a status correctly, both found by
 asking it for its status once. That is the whole lesson: **the gate needs a gate.**
+
+## D366 — The compiler's second stage: one trigger shape, seven untargeted clauses, compared by behaviour
+
+D364 read keywords, whose fragments are **data**. This reads the first *sentence* shape, whose
+fragment is a **closure** — which changes both what can be compiled and how it can be checked.
+
+### What it reads
+
+One trigger shape, `When ~ enters the battlefield, <clause>`, because it is the largest single
+bucket in `compilable.mjs`'s work queue by a factor of two. The shape and the effect are separate
+functions on purpose: `untargetedEffect` is shared with every trigger shape added after this one —
+"When ~ dies", "Whenever ~ attacks" — and with the instants and sorceries that `cardFromData`
+refuses outright, which is the 114-card bucket and the largest prize in the queue.
+
+Seven clauses: gain life, lose life, draw, become the monarch, scry, get energy, each opponent
+discards at random.
+
+### The rule for what counts as readable here
+
+**The clause has to determine the effect completely, with nothing chosen by anybody.** So the
+untargeted half only. "It deals 4 damage to target creature" needs a target spec, and a target spec
+is its own sub-vocabulary — "target creature", "target creature an opponent controls", "another
+target nonland permanent", "any target" — with its own failure modes. Reading those *badly* would
+aim real removal at the wrong thing, which is worse than not reading them at all. Next increment.
+
+### Two questions I could not answer by guessing, both settled from the engine's own comments
+
+1. **`draw` or `drawLater`?** The pool uses both for "draw a card", which is a behavioural
+   difference, not a style one. `drawLater`'s docblock states the constraint — *"only for a draw
+   that is the last thing the card does"* — and then says *"the compiler cannot tell the two apart"*.
+   That is true of a compiler reading a sentence; it is not true of one that matches a clause **only
+   when the clause is the draw and nothing else**. A clause that is exactly "draw two cards" cannot
+   read what it drew, so the deferral is safe by construction — and it is the better primitive,
+   because only a deferred draw can be replaced by a dredge (CR 702.52a).
+2. **`{ kind: 'etb' }` or `{ kind: 'etb', who: 'self' }`?** Both appear in the pool.
+   `automation.ts` settles it: *"`self` is the default … a trigger that says nothing about `who`
+   watches only its own permanent."* They are the same trigger. The compiler writes `who: 'self'`
+   out, because a generated script is read by people.
+
+### The test had to change shape, and that is the interesting part
+
+A keyword's fragment can be compared field by field. A trigger's cannot: closures are not
+comparable. The obvious fallback — compare `description` strings — would have been **wrong**, and
+the pool shows why: Kitchen Finks stores the clause (`'you gain 2 life'`) while Aether Hub stores
+the whole printed line including the "When ~ enters the battlefield" that `on` already carries. A
+cosmetic inconsistency, so a string comparison would fail a compiler that was right.
+
+So the check is **behavioural**: hand both effects the same game state and assert the resulting
+states are identical. That is the actual claim — *does the compiler build the same rules a person
+did* — rather than a proxy for it.
+
+Two things that made it honest rather than merely green:
+
+- **A comparison between two no-ops is not evidence.** The first version used a bare `arena()`,
+  whose hands are empty, so Ravenous Rats' "each opponent discards a card at random" discarded
+  nothing, both effects returned the state unchanged, and `toEqual` passed on two functions that had
+  done nothing. The non-vacuity assertion (`expect(mine).not.toEqual(base)`) is what caught it; the
+  fixture now deals seat 1 a card so the effect has something to do. This is the same family as
+  D363's shuffle-dependent browser check, found one increment later and by a deliberate guard
+  rather than by luck.
+- **`drawsOwed` is a flat list of seat indices, one entry per card owed** — not a count per seat. I
+  asserted `drawsOwed[0] === 1`, which compares the *seat* owed the first card against a count, and
+  the `?? 0` I had written beside it would have hidden the error behind a plausible-looking compare.
+  Corrected to filter by seat and count.
+
+Proved to discriminate: changing the compiled `gainLife` by one point fails Kitchen Finks.
+
+### The `as EffectContext` cast, and why it is sound here
+
+D362's lesson is that a cast is a claim the compiler stops checking, so this one is argued rather
+than hoped. Both effects receive **the same object**, so a field the fixture omits is a field
+neither effect can read, and the comparison stays a comparison. It would be unsound if the two
+effects were given different contexts, or if the assertion were about the context rather than the
+output.
+
+### Measured
+
+| | D364 | now |
+| --- | --- | --- |
+| whole-card | 51 (15.0%) | 51 (15.0%) |
+| **cards with compiled rules** | 21 (6.2%) | **34 (10.0%)** |
+| printed-only | 267 | 254 |
+| **lines compiled** | **142 of 538 (26.4%)** | **156 of 538 (29.0%)** |
+| the ETB bucket | 36 | 22 |
+
+`source: 'keywords'` is renamed `'lines'`, since it is no longer only keywords.
+
+The remaining 22 ETB lines are almost all targeted — "exile target creature until ~ leaves the
+battlefield" (4), "it deals N damage to target creature", "return target creature to its owner's
+hand", "put a -1/-1 counter on target creature" — which is the next increment's bucket, and the one
+that also unlocks removal and bounce on instants.

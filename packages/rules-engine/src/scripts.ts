@@ -8887,3 +8887,155 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
 
   return null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The sentence table: a printed trigger line in, a TriggerDef out
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A number as a card prints it, in digits or in words.
+ *
+ * Both forms appear in one pool and sometimes in one sentence family: "you gain 2 life" is printed
+ * in digits and "draw two cards" in words, because Magic writes a count as a word when it is the
+ * number of objects and as a digit when it is an amount. So a reader that handled only one would
+ * silently drop half of each family.
+ */
+const WORD_NUMBERS: Readonly<Record<string, number>> = {
+  a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+};
+
+/** A printed count, or `null` when it is a word this does not know. */
+function countFrom(text: string): number | null {
+  const word = text.trim().toLowerCase();
+  if (/^\d+$/.test(word)) return Number(word);
+  return WORD_NUMBERS[word] ?? null;
+}
+
+/** The card's own name, as a regex fragment. A name may hold any of `.()'`, so it is escaped. */
+const escapeName = (name: string): string => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * What one **untargeted** effect clause does, as the fields a `TriggerDef` needs for it.
+ *
+ * The second stage of the compiler (#317, D366), and deliberately only the untargeted half. A
+ * clause like "it deals 4 damage to target creature" needs a target spec as well as an effect, and
+ * a target spec is its own sub-vocabulary ("target creature", "target creature an opponent
+ * controls", "another target nonland permanent", "any target") with its own failure modes. Reading
+ * those is the next increment; reading them *badly* would aim real removal at the wrong thing,
+ * which is worse than not reading them at all.
+ *
+ * So the rule for this stage is: the clause has to determine the effect **completely**, with
+ * nothing chosen by anybody. Every reader below is a clause whose text names its own numbers.
+ *
+ * ## Why `drawLater` and not `draw`
+ *
+ * `drawLater`'s own docblock states the constraint: it is "only for a draw that is the last thing
+ * the card does", because an effect that reads what it drew in the same breath has finished by the
+ * time the deferred card arrives. It adds the word "the compiler cannot tell the two apart" — and
+ * that is true of a compiler reading a *sentence*, but not of this one, which matches a clause only
+ * when the clause is the draw and **nothing else**. A clause that is exactly "draw two cards"
+ * cannot read what it drew, so the deferral is safe by construction, and it is the better of the
+ * two because only a deferred draw can be replaced by a dredge (CR 702.52a).
+ *
+ * `clause` arrives with its trailing full stop removed and trimmed.
+ */
+function untargetedEffect(clause: string): Partial<TriggerDef> | null {
+  const text = clause.trim();
+
+  const gain = /^you gain ([\w]+) life$/i.exec(text);
+  if (gain !== null) {
+    const n = countFrom(gain[1]!);
+    if (n !== null) return { effect: (c) => gainLife(c.state, c.controller, n) };
+  }
+
+  const lose = /^you lose ([\w]+) life$/i.exec(text);
+  if (lose !== null) {
+    const n = countFrom(lose[1]!);
+    if (n !== null) return { effect: (c) => loseLife(c.state, c.controller, n) };
+  }
+
+  const drawn = /^draw ([\w]+) cards?$/i.exec(text);
+  if (drawn !== null) {
+    const n = countFrom(drawn[1]!);
+    if (n !== null) return { effect: (c) => drawLater(c.state, c.controller, n) };
+  }
+
+  if (/^you become the monarch$/i.test(text)) {
+    return { effect: (c) => becomeMonarch(c.state, c.controller) };
+  }
+
+  const scried = /^scry ([\w]+)$/i.exec(text);
+  if (scried !== null) {
+    const n = countFrom(scried[1]!);
+    // The question is the whole effect, which is why the effect itself is the identity — the same
+    // shape the hand-written scrying cards use.
+    if (n !== null) return { decisions: [scry(n)], effect: (c) => c.state };
+  }
+
+  /*
+    Energy, printed as one `{E}` per point (CR 107.4f). Counted rather than parsed as a number
+    because that is how the card prints it: "you get {E}{E}{E}" is three, and there is no digit
+    anywhere in the sentence.
+  */
+  const energy = /^you get ((?:\{E\}\s*)+)$/i.exec(text);
+  if (energy !== null) {
+    const n = (energy[1]!.match(/\{E\}/g) ?? []).length;
+    if (n > 0) return { effect: (c) => addEnergy(c.state, c.controller, n) };
+  }
+
+  if (/^each opponent discards a card at random$/i.test(text)) {
+    return {
+      effect: (c) => opponentsOf(c.state, c.controller)
+        .reduce((state, seat) => discardAtRandom(state, seat, 1), c.state),
+    };
+  }
+
+  return null;
+}
+
+/**
+ * A printed triggered-ability line, as the `triggers` fragment of a `CardScript`.
+ *
+ * One trigger shape so far — "When ~ enters the battlefield, …" — because it is the largest single
+ * bucket in `compilable.mjs`'s work queue by a factor of two, and because the shape and the effect
+ * are separable: `untargetedEffect` above is shared with every shape added after this one, and with
+ * the instants and sorceries that `cardFromData` refuses outright.
+ *
+ * `who: 'self'` is written out although it is the default. `automation.ts` says so in as many
+ * words — *"`self` is the default … a trigger that says nothing about `who` watches only its own
+ * permanent"* — so `{ kind: 'etb' }` and `{ kind: 'etb', who: 'self' }` are the same trigger, and
+ * the pool contains both spellings. A generated script is read by people, so it says which one it
+ * means.
+ *
+ * The `description` is the printed clause, which is both the honest thing to store and what most of
+ * the pool's hand-written cards store. (A few store the whole line instead, including the "When ~
+ * enters the battlefield" part that `on` already says — a cosmetic inconsistency, not a behavioural
+ * one, and not worth copying.)
+ */
+function triggerFromLine(line: string, name: string): Partial<CardScript> | null {
+  const etb = new RegExp(`^When ${escapeName(name)} enters the battlefield, (.+)$`, 'i')
+    .exec(line.trim());
+  if (etb === null) return null;
+  const clause = etb[1]!.replace(/\.\s*$/, '').trim();
+  const fields = untargetedEffect(clause);
+  if (fields === null) return null;
+  return {
+    triggers: [{
+      on: { kind: 'etb', who: 'self' },
+      description: clause,
+      ...fields,
+    } as TriggerDef],
+  };
+}
+
+/**
+ * Everything the compiler can read off one printed line: a keyword, or a triggered ability.
+ *
+ * The single entry point `compile.ts` calls, so the order the two stages are tried in lives here
+ * rather than in the caller. Keywords first because they are exact matches on a short line and
+ * cannot be confused for a sentence.
+ */
+export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
+  return keywordScriptFor(line, name) ?? triggerFromLine(line, name);
+}

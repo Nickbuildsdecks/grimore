@@ -13,7 +13,7 @@
  * ## What it prints
  *
  * 1. **Cards by source** — how each card's script was arrived at: `whole-card` (`cardFromData` read
- *    all of it), `keywords` (this compiler read some lines), `printed-only` (it read none).
+ *    all of it), `lines` (this compiler read some of its lines), `printed-only` (it read none).
  * 2. **Lines compiled**, as a share of every printed rules line in the set. The headline.
  * 3. **The unread lines, grouped by what they open with, counted, with an example** — which is the
  *    work queue. A flat list of several thousand sentences is unreadable; "412 cards print a line
@@ -130,7 +130,7 @@ for (const row of rows) {
 
 const cards = rows.length - refused;
 console.log('Cards by how their script was arrived at:');
-for (const source of ['whole-card', 'keywords', 'printed-only']) {
+for (const source of ['whole-card', 'lines', 'printed-only']) {
   const n = bySource.get(source) ?? 0;
   console.log(`  ${source.padEnd(13)} ${String(n).padStart(6)}  ${(100 * n / cards).toFixed(1).padStart(5)}%`);
 }

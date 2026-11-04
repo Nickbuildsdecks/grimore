@@ -9698,3 +9698,47 @@ and fails if it reports success. That check immediately found a second bug point
 the gate's summary `grep` exiting 1 under `pipefail` made it exit 1 *after passing every step*. Two
 bugs in a twenty-line script whose only job is to report a status, both found by asking it for its
 status once.
+
+## The compiler's second stage: sentences (#317, D366)
+
+D364 read keywords, whose fragments are data. This reads the first *sentence* shape, whose fragment
+is a closure — which changes what can be compiled and how it can be checked.
+
+One trigger shape (`When ~ enters the battlefield, <clause>`, the biggest bucket by 2x) and seven
+untargeted clauses: gain life, lose life, draw, monarch, scry, energy, each-opponent-discards. The
+shape and the effect are separate functions deliberately: `untargetedEffect` is shared with every
+later trigger shape and with the 114-card instant/sorcery bucket `cardFromData` refuses outright.
+
+**The rule for this stage**: the clause must determine the effect completely, with nothing chosen by
+anybody. Targeted clauses need a target-spec vocabulary with its own failure modes, and reading them
+badly would aim real removal at the wrong thing — worse than not reading them.
+
+**Two questions settled from the engine's own comments rather than guessed:**
+
+- `draw` vs `drawLater` — the pool uses both for "draw a card", a behavioural difference.
+  `drawLater`'s docblock allows itself only for a draw that is the last thing the card does, and
+  adds that "the compiler cannot tell the two apart". True of a compiler reading a sentence; not of
+  one that matches only when the clause **is** the draw and nothing else. Safe by construction, and
+  the better primitive since only a deferred draw can be dredged (CR 702.52a).
+- `{kind:'etb'}` vs `{kind:'etb',who:'self'}` — `automation.ts` says `self` is the default, so they
+  are the same trigger. The compiler spells it out, because generated scripts are read by people.
+
+**The test had to change shape.** Closures are not comparable, and the obvious fallback — comparing
+`description` strings — would have been wrong: Kitchen Finks stores the clause, Aether Hub stores the
+whole printed line including the part `on` already carries. So the check runs both effects on one
+state and compares the results, which is the actual claim.
+
+Two things that made it honest: a bare `arena()` has empty hands, so Ravenous Rats' discard did
+nothing and `toEqual` passed on two no-ops — caught by the non-vacuity assertion, fixed by dealing
+seat 1 a card. And `drawsOwed` is a flat list of seat indices, not a count per seat, so my
+`drawsOwed[0] === 1` compared a seat to a count with a `?? 0` ready to hide it. Proved to
+discriminate: one point of life off fails Kitchen Finks.
+
+| | D364 | now |
+| --- | --- | --- |
+| cards with compiled rules | 21 (6.2%) | **34 (10.0%)** |
+| **lines compiled** | 142 of 538 (26.4%) | **156 of 538 (29.0%)** |
+| the ETB bucket | 36 | 22 |
+
+The remaining 22 ETB lines are almost all targeted, which is the next increment and the one that
+also unlocks removal and bounce on instants.

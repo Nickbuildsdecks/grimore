@@ -41,7 +41,7 @@
 import type { CardDef } from './cards.js';
 import { printedKeywords } from './characteristics.js';
 import { cardFromData, printedDef, printedRulesLines, type CardDataRow, type DerivedKind } from './fromCardData.js';
-import { keywordScriptFor } from './scripts.js';
+import { lineScriptFor } from './scripts.js';
 import type { CardScript } from './scriptTypes.js';
 
 /** A printed line, and why nothing could turn it into rules. */
@@ -73,10 +73,11 @@ export interface Compiled {
    * How the script was arrived at.
    *
    * `whole-card` — `cardFromData` read the entire card; this is its verdict, unchanged, and `kind`
-   * says which shape it recognised. `keywords` — the compiler read some lines itself.
-   * `printed-only` — it read none, and the card is printed data and nothing else.
+   * says which shape it recognised. `lines` — the compiler read some of the card's lines itself,
+   * whether keywords or triggered abilities. `printed-only` — it read none, and the card is printed
+   * data and nothing else.
    */
-  readonly source: 'whole-card' | 'keywords' | 'printed-only';
+  readonly source: 'whole-card' | 'lines' | 'printed-only';
   readonly kind?: DerivedKind;
 }
 
@@ -159,7 +160,7 @@ export function compileCard(row: CardDataRow): Compilation {
     */
     if (printedKeywords(line).length > 0) { compiled.push(line); continue; }
 
-    const fragment = keywordScriptFor(line, def.name);
+    const fragment = lineScriptFor(line, def.name);
     if (fragment === null) { unread.push({ line, why: 'no-reader' }); continue; }
     if (merge(built, fragment) === 'conflict') {
       unread.push({ line, why: 'field-conflict' });
@@ -175,6 +176,6 @@ export function compileCard(row: CardDataRow): Compilation {
     ...(anything ? { script: { name: def.name, ...built } as CardScript } : {}),
     compiled,
     unread,
-    source: anything ? 'keywords' : 'printed-only',
+    source: anything ? 'lines' : 'printed-only',
   };
 }
