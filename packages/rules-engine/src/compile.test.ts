@@ -724,6 +724,13 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         dependency hazard into a coverage hole and broke a card — "Draw two cards. You gain 2 life."
         — that was never in danger. Offering both readings costs nothing and is right in both
         positions: "Draw a card. Scry 2." really does draw before it scries.
+
+        **Which half of the script to read moved in D418**, and the reason is this very fixture. A
+        question is asked before the resolution runs, so a composition now splits at its first
+        question: the draw goes to `beforeDecisions` and the scry — whose own effect is the identity
+        — leaves no `onResolve` at all. The claim this row makes is unchanged and is now true of a
+        real player rather than only of the clause order: the card is **in hand** before the scry is
+        offered, where before the split the question was planned against a hand that had not grown.
       */
       const drawFirst = compileCard({
         name: 'Draw Then Scry', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'],
@@ -734,12 +741,14 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(drawFirst.unread).toEqual([]);
 
       const base = arena();
-      const after = (field(drawFirst.script, 'onResolve') as (c: EffectContext) => GameState)(
+      const after = (field(drawFirst.script, 'beforeDecisions') as (c: EffectContext) => GameState)(
         contextOn(base, 0 as SeatIndex, 'c1'),
       );
       // Drawn, not owed: the scry that follows has to be looking at the library the draw left.
       expect(after.zones[zoneKey(0 as SeatIndex, 'hand')]).toHaveLength(1);
       expect(after.drawsOwed.filter((seat) => seat === 0)).toHaveLength(0);
+      // And nothing is left to run afterwards, because the scry is the whole of what remains.
+      expect(field(drawFirst.script, 'onResolve')).toBeUndefined();
 
       // And the control, the same two clauses the other way round: nothing follows the draw, so it
       // is owed — which is what Thought Scour above relies on.
@@ -4919,6 +4928,142 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const card = compileCard({
         name: 'Busy Shift', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'],
         oracle_text: 'Exile target creature you control, then return that card to the battlefield under your control.\nYou gain 2 life.',
+      });
+      expect(card.ok).toBe(true);
+      if (card.ok) expect(card.script).toBeUndefined();
+    });
+  });
+
+  describe('a composition split at its first question', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({
+      state, controller: seat, source, targets, decisions: [],
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    it('puts the damage before the question, as Magma Jet does', () => {
+      /*
+        D418, and the first finding of `compiled-vs-written.test.ts` to be fixed.
+
+        The engine plans a resolution's decisions and asks them **before** the resolution runs. So a
+        composition that put every clause in `onResolve` would ask the player which cards to put on
+        the bottom of their library about a board the damage has not changed yet — and the
+        hand-written card's comment is the argument: "by the time the player is looking at the top
+        of their library the creature is already dead … what is drawn next is a different decision
+        once the board has changed."
+
+        The fix is an **assembly rule**, not a reader: the parts before the first part that asks
+        something go in `beforeDecisions`. Any resolution shaped "an effect. a question." had it.
+      */
+      const mine = compiledScript('Magma Jet');
+      expect(mine.unread).toEqual([]);
+      const base = arena({
+        decks: { 0: 'arc-tempest', 1: 'verdant-guard' },
+        battlefield: { 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const bears = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: bears }]);
+
+      const before = field(mine.script, 'beforeDecisions') as
+        ((c: EffectContext) => GameState) | undefined;
+      expect(before).toBeDefined();
+      if (before === undefined) return;
+      const damaged = before(ctx);
+      expect(damaged).toEqual(
+        (field(scriptFor('Magma Jet'), 'beforeDecisions') as (c: EffectContext) => GameState)(ctx),
+      );
+      // And right rather than merely equal: two damage really landed on the creature.
+      expect(damaged.instances[bears]!.damage).toBe(2);
+    });
+
+    it('carries no effect where the questions are the whole resolution', () => {
+      /*
+        The other half of making the two scripts identical. The scry clause's own effect is the
+        identity — the engine applies a scry answer itself — so a composition whose remaining parts
+        are all questions has nothing to run afterwards, and `onResolve` is omitted rather than set
+        to a function that cannot be told from its absence.
+
+        The hand-written Magma Jet has no `onResolve` for the same reason, which is why this is the
+        assertion rather than a style preference.
+      */
+      expect(field(compiledScript('Magma Jet').script, 'onResolve')).toBeUndefined();
+      expect(field(scriptFor('Magma Jet'), 'onResolve')).toBeUndefined();
+      // The questions are still there, so this is not a card that does nothing.
+      expect(field(compiledScript('Magma Jet').script, 'decisions'))
+        .toEqual(field(scriptFor('Magma Jet'), 'decisions'));
+    });
+
+    it('leaves a resolution whose question comes first exactly as it was', () => {
+      /*
+        The arm that keeps the split from being "always move everything": a question in the **first**
+        clause leaves nothing before it. Preordain is "Scry 2, then draw a card" — the scry is the
+        first part, so the draw stays in `onResolve` and there is no `beforeDecisions` at all.
+      */
+      const mine = compiledScript('Preordain');
+      expect(mine.unread).toEqual([]);
+      expect(field(mine.script, 'beforeDecisions')).toBeUndefined();
+      expect(field(mine.script, 'onResolve')).toBeDefined();
+    });
+
+    it('keeps the asking clause in the effect, not only the clauses after it', () => {
+      /*
+        The arm a break run demanded. Slicing from **after** the asking part instead of from it
+        passed every test, because every composed question in the pool is a scry — whose own effect
+        is the identity, so dropping it changes nothing.
+
+        A question with a real effect is a different matter: "Target player discards a card" asks
+        *and* moves the chosen cards, so a split that threw the asking part away would ask the
+        question and never act on the answer. That is a card that works and quietly does half of
+        what it says, which is the failure this project is most careful about.
+      */
+      const card = compileCard({
+        name: 'Gift and Grief', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+        oracle_text: 'You gain 2 life. Target player discards a card.',
+      });
+      expect(card.ok).toBe(true);
+      if (!card.ok) return;
+      expect(card.unread).toEqual([]);
+      // The life is before the question; the discard is the effect, and it is still there.
+      expect(field(card.script, 'beforeDecisions')).toBeDefined();
+      expect(field(card.script, 'onResolve')).toBeDefined();
+
+      const base = arena({
+        decks: { 0: 'rot-harvest', 1: 'ember-rush' },
+        hands: { 1: ['Mountain', 'Mountain'] },
+        turn: 3,
+      });
+      const victimHand = ids(base, 1 as SeatIndex, 'hand');
+      const ctx = {
+        state: base, controller: 0 as SeatIndex, source: 'c1',
+        targets: [{ kind: 'player', seat: 1 as SeatIndex }],
+        decisions: [{ ids: [victimHand[0]!] }],
+      } as unknown as EffectContext;
+      const after = (field(card.script, 'onResolve') as (c: EffectContext) => GameState)(ctx);
+      expect(ids(after, 1 as SeatIndex, 'graveyard')).toContain(victimHand[0]!);
+    });
+
+    it('refuses a composition whose part already has a pre-question half', () => {
+      /*
+        A composition cannot carry two pre-question halves, and `conjoinedEffect` composes too, so a
+        nested one is reachable — a `beforeDecisions` buried inside would be silently dropped.
+        Refusing is D364's rule: a fragment without its companion is not a reading.
+
+        The first fixture here was a loot sentence conjoined with something else, and a break run
+        showed it never reached the guard: `lootResolution` matches an exact sentence, so the
+        conjunction never produced a nested half and deleting the refusal left every test green.
+
+        This one does reach it. "You gain 2 life and scry 2" is a conjunction whose **second** half
+        asks, so the inner composition splits and carries a `beforeDecisions`; the sentence after it
+        makes that inner reading one part of an outer composition, which is exactly the case the
+        guard is for.
+      */
+      const card = compileCard({
+        name: 'Nested Ask', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'],
+        oracle_text: 'You gain 2 life and scry 2. Draw a card.',
       });
       expect(card.ok).toBe(true);
       if (card.ok) expect(card.script).toBeUndefined();

@@ -163,17 +163,12 @@ function differenceOf(
  */
 const DISAGREE: Readonly<Record<string, { readonly why: string; readonly keys: readonly string[]; readonly digest: string }>> = {
   /*
-    The compiled reading puts the damage in `onResolve` where the card puts it first, so the scry is
-    **planned before the damage lands**. The hand-written card's comment is the argument: "by the
-    time the player is looking at the top of their library the creature is already dead … what is
-    drawn next is a different decision once the board has changed."
-
-    Not a one-card fix: any resolution of the shape "an effect. a decision." has it, because
-    `spellScriptFor` puts every clause's effect in `onResolve` and the engine asks the decisions
-    first. It is D413's problem one level up from `lootResolution`, and wants the assembly to split a
-    composition at its first decision.
+    **Magma Jet was here and is fixed (D418).** Its row read "damage belongs in beforeDecisions, so
+    the scry is offered after it", and the fix was not a reader but an assembly rule: a composition
+    now splits at its first question, so the parts before it go in `beforeDecisions`. Any resolution
+    shaped "an effect. a question." had the same defect; the row is deleted rather than kept because
+    the test asserts an equality and a stale row fails it, which is the point.
   */
-  'Magma Jet': { why: 'damage belongs in beforeDecisions, so the scry is offered after it', keys: ['beforeDecisions', 'onResolve'], digest: '92b5f54c' },
   /*
     `removesACreature` — the hint that keeps a removal spell from being cast with nothing worth
     hitting (#322). The compiler sets it for a *destroy* or an *exile* aimed at a creature and not

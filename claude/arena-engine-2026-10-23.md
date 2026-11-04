@@ -11076,3 +11076,24 @@ check cannot hollow out.
 
 This is the instrument #318 needs: an imported corpus has no hand-written script to check against, so
 the pool is the only ground truth the compiler will ever have.
+
+## A composition splits at its first question (#327, D418)
+
+The first finding of the new standing check to be fixed, and never one card. The engine asks a
+resolution's questions **before** the resolution runs, and `spellScriptFor` put every clause's effect
+in `onResolve` — so any card shaped "an effect. a question." asked the player about a board its
+earlier clauses had not changed. Magma Jet is the pool's instance and the hand-written script has had
+the answer all along.
+
+So `composeEffects` now splits at the first part that asks something, and all three assemblies carry
+`beforeDecisions`. `ReadEffect.appliesNothing` closes the last field difference: the scry clause's
+effect is the identity, so a resolution that is nothing but questions omits `onResolve` rather than
+carrying a function that cannot be told from its absence.
+
+**Two of five breaks passed**, and both were tests that could not fail — slicing past the asking part
+(every composed question in the pool is a scry, which applies nothing) and the nested-half refusal
+(the fixture never reached it). Both have real fixtures now: a discard that must still move the card,
+and a conjunction whose second half asks.
+
+No coverage change — this is about what a compiled card does, not how much compiles. Disagreements
+**11 → 10**.

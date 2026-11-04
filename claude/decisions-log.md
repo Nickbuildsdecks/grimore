@@ -26016,3 +26016,74 @@ hand-written card made to declare a keyword its text does not print.
 A deliberate guard against the check hollowing out: one row asserts the pair count is **at least
 200**, because a compiler change that refused half the pool would otherwise leave every other
 assertion here green.
+
+## D418 — A composition splits at its first question
+
+The first finding of D417's standing check to be fixed, and it was never one card.
+
+### The defect
+
+The engine plans a resolution's decisions and **asks them before the resolution runs** —
+`automation.ts` runs `beforeDecisions` and then plans the questions against the state it produced.
+`spellScriptFor` put every clause's effect in `onResolve`, so a card shaped "an effect. a question."
+asked the player about a board its earlier clauses had not changed yet.
+
+Magma Jet is the pool's instance — "deals 2 damage to any target. Scry 2" — and the hand-written
+script has had the answer from the start, with the reason in its comment: "by the time the player is
+looking at the top of their library the creature is already dead … what is drawn next is a different
+decision once the board has changed."
+
+### The fix is an assembly rule, not a reader
+
+`composeEffects` now splits: the parts before the first part that asks something become
+`beforeDecisions`, the rest stay in `effect`. A question in the first clause leaves nothing before
+it and nothing changes. The earlier parts run in their `immediate` reading, because something *does*
+come after them — the question — which is `ReadEffect.immediate`'s own rule.
+
+Threaded through all three assemblies, because all three ask before they run: `spellScriptFor`
+already carried the field for `lootResolution`, and `abilityFromLine` (both branches) and
+`triggerFromLine` now carry it too.
+
+A composition whose **part** already has a pre-question half is refused: `conjoinedEffect` composes,
+so a nested one is reachable and would be silently dropped. D364's rule.
+
+### `appliesNothing`, so the two scripts are identical rather than equivalent
+
+With the split, Magma Jet still differed by one field: the compiled reading had an `onResolve` where
+the hand-written card has none. The scry clause's own effect is the identity — the engine applies a
+scry answer itself, and the reader's comment has always said so — so the composition's remaining
+effect did nothing.
+
+`ReadEffect.appliesNothing` is how an assembly is told that. `CardScript.onResolve` and
+`AbilityDef.effect` are optional, so both omit the field entirely; `TriggerDef.effect` is required,
+so a trigger whose whole content is a question keeps the identity, which is said in the docblock
+rather than left as a surprise. A function that cannot be told from its absence is deleted here, as
+everywhere else in this file.
+
+### Two breaks that passed, and the fixtures that fixed that
+
+Five deliberate breaks. Three failed immediately — no split, the first half run as final, the
+identity `onResolve` kept. **Two passed**, and both were a test that could not fail:
+
+- **Slicing from *after* the asking part** changed nothing, because every composed question in the
+  pool is a scry and a scry applies nothing. A question with a real effect is a different matter, so
+  the fixture is now "You gain 2 life. Target player discards a card." — where throwing the asking
+  part away would ask which card to discard and never move it. It fails the break and asserts the
+  card really moved.
+- **Deleting the nested refusal** changed nothing, because the fixture was a loot sentence in a
+  conjunction and `lootResolution` matches an exact sentence, so the guard was never reached. The
+  fixture is now "You gain 2 life and scry 2. Draw a card." — a conjunction whose *second* half asks,
+  so the inner composition splits and the outer one sees a part carrying a half. That reaches it.
+
+Both are the same lesson as D415's and this file keeps relearning it: a break run is the only thing
+that tells a test from a decoration.
+
+### Measured
+
+No coverage change — **402 of 538 lines (74.7%)**, 256 of 339 with a script, 228 complete — because
+this is about *what* a compiled card does rather than how much of it compiles. The number that moved
+is the disagreement count: **11 → 10**, with the Magma Jet row deleted and the reason written where
+it was.
+
+compile.test.ts 356/356 (two rows added, one re-pointed with its churn reasoning), 4,000 shuffled
+rows with no throw.

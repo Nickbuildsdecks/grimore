@@ -9341,6 +9341,21 @@ interface ReadEffect {
    * path (D399).
    */
   readonly beforeDecisions?: EffectFn;
+  /**
+   * "The question **is** the whole effect" — so there is nothing left to run afterwards.
+   *
+   * One family: a clause that is only a decision. `Scry 2` asks the player which cards to put on
+   * the bottom and the engine applies the answer itself, so the clause's own `effect` is the
+   * identity, and its reader's comment has said so from the start.
+   *
+   * `ReadEffect.effect` is required, because almost every clause has one — so this is the flag that
+   * lets an assembly know the function it was handed does nothing. `CardScript.onResolve` and
+   * `AbilityDef.effect` are both optional, so those two omit the field entirely and come out
+   * **identical to the hand-written card**, which is what `compiled-vs-written.test.ts` compares.
+   * `TriggerDef.effect` is required, so a trigger whose whole content is a question keeps the
+   * identity: said here rather than left as a surprise.
+   */
+  readonly appliesNothing?: true;
 }
 
 /**
@@ -9727,8 +9742,11 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   if (scried !== null) {
     const n = countFrom(scried[1]!);
     // The question is the whole effect, which is why the effect itself is the identity — the same
-    // shape the hand-written scrying cards use.
-    if (n !== null) return { decisions: [scry(n)], effect: (c) => c.state };
+    // shape the hand-written scrying cards use. `appliesNothing` is how an assembly knows that, so
+    // a spell or ability whose resolution is only this comes out with no effect field at all.
+    if (n !== null) {
+      return { decisions: [scry(n)], effect: (c) => c.state, appliesNothing: true };
+    }
   }
 
   /*
@@ -10861,6 +10879,8 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
         description: clause,
         ...(read.targets === undefined ? {} : { targets: read.targets }),
         ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
+        // See the split in `composeEffects` (D418): a trigger asks before it runs, as a spell does.
+        ...(read.beforeDecisions === undefined ? {} : { beforeDecisions: read.beforeDecisions }),
         effect: read.effect,
       } as TriggerDef)),
     };
@@ -11860,6 +11880,16 @@ function composeEffects(clauses: readonly string[], name: string): ReadEffect | 
   // See the docblock: two target choices cannot share one `targets` list.
   if (targeted.length > 1) return null;
 
+  /*
+    A composition cannot carry two pre-question halves, so a part that already has one refuses it.
+
+    Nothing in the pool produces that — only the shape readers set `beforeDecisions`, and they take
+    the whole resolution — but `conjoinedEffect` composes too, so a nested composition is reachable
+    and a `beforeDecisions` buried in one would be silently dropped. Refusing is D364's rule: a
+    fragment without its companion is not a reading.
+  */
+  if (parts.some((part) => part.beforeDecisions !== undefined)) return null;
+
   const decisions = parts.flatMap((part) => part.decisions ?? []);
   const flags = Object.assign({}, ...parts.map((part) => part.spellFlags ?? {})) as
     Partial<CardScript>;
@@ -11879,19 +11909,49 @@ function composeEffects(clauses: readonly string[], name: string): ReadEffect | 
     only family that offers two is the draw, and the choice is about whether anything comes after it
     that could need to see the card.
   */
-  const run = (asFinal: boolean) =>
-    (c: EffectContext): GameState => parts.reduce(
+  const run = (slice: readonly ReadEffect[], asFinal: boolean) =>
+    (c: EffectContext): GameState => slice.reduce(
       (state, part, i) => {
-        const final = asFinal && i === parts.length - 1;
+        const final = asFinal && i === slice.length - 1;
         return (final ? part.effect : part.immediate ?? part.effect)({ ...c, state });
       },
       c.state,
     );
+
+  /*
+    **The split at the first question** (D418).
+
+    The engine plans a resolution's decisions and asks them *before* the resolution runs — see
+    `beforeDecisionsFor` in `automation.ts`, which runs `beforeDecisions` and then plans against the
+    state it produced. So a composition that put every part in `effect` would ask the player a
+    question about a board the earlier parts have not changed yet.
+
+    Magma Jet is the card and `compiled-vs-written.test.ts` is what found it: "deals 2 damage to any
+    target. Scry 2", where the hand-written script puts the damage in `beforeDecisions` and its
+    comment says why — "by the time the player is looking at the top of their library the creature
+    is already dead … what is drawn next is a different decision once the board has changed".
+
+    It is not one card. **Any** resolution shaped "an effect. a question." had it, which is what
+    makes this an assembly rule rather than a reader: the parts before the first part that asks
+    something go in `beforeDecisions`, the rest in `effect`. A question in the first part leaves
+    nothing before it and nothing changes.
+
+    Those earlier parts are run with `asFinal: false`, because something does come after them — the
+    question. That is `ReadEffect.immediate`'s own rule: a draw whose card must be visible to the
+    next step is immediate, and a question is a next step.
+  */
+  const asks = parts.findIndex((part) => (part.decisions ?? []).length > 0);
+  const before = asks > 0 ? parts.slice(0, asks) : [];
+  const after = asks > 0 ? parts.slice(asks) : parts;
   return {
-    effect: run(true),
+    effect: run(after, true),
+    // Only when **every** remaining part is a question: one real effect after the split makes the
+    // composition's effect real again.
+    ...(after.every((part) => part.appliesNothing === true) ? { appliesNothing: true } : {}),
+    ...(before.length === 0 ? {} : { beforeDecisions: run(before, false) }),
     // Carried outwards, so a composition that is itself followed by something runs every part in
     // its immediate reading.
-    ...(parts.some((part) => part.immediate !== undefined) ? { immediate: run(false) } : {}),
+    ...(parts.some((part) => part.immediate !== undefined) ? { immediate: run(parts, false) } : {}),
     ...(targeted[0]?.targets === undefined ? {} : { targets: targeted[0]!.targets }),
     ...(decisions.length === 0 ? {} : { decisions }),
     ...(Object.keys(flags).length === 0 ? {} : { spellFlags: flags }),
@@ -12015,8 +12075,12 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
         description: text,
         ...(read.targets === undefined ? {} : { targets: read.targets }),
         ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
+        // See the split in `composeEffects` (D418): an ability asks its questions before it runs,
+        // exactly as a spell does, so the half that comes first has to be carried here too.
+        ...(read.beforeDecisions === undefined ? {} : { beforeDecisions: read.beforeDecisions }),
         ...(read.abilityFlags ?? {}),
-        effect: read.effect,
+        // See `ReadEffect.appliesNothing`, as the sized branch below.
+        ...(read.appliesNothing === true ? {} : { effect: read.effect }),
       } as AbilityDef],
     };
   }
@@ -12077,9 +12141,13 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       description: text,
       ...(read.targets === undefined ? {} : { targets: read.targets }),
       ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
+      // See the split in `composeEffects` (D418).
+      ...(read.beforeDecisions === undefined ? {} : { beforeDecisions: read.beforeDecisions }),
       // See `ReadEffect.abilityFlags`: fields that only an ability can hold.
       ...(read.abilityFlags ?? {}),
-      effect: read.effect,
+      // See `ReadEffect.appliesNothing`: `AbilityDef.effect` is optional, so an ability that is
+      // only a question carries none rather than an identity.
+      ...(read.appliesNothing === true ? {} : { effect: read.effect }),
     } as AbilityDef],
   };
 }
@@ -12563,7 +12631,12 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   // See `ReadEffect.beforeDecisions`: only a shape reader that sees the whole resolution sets this,
   // so there is nothing to merge and nothing a clause could have contributed.
   if (read.beforeDecisions !== undefined) built['beforeDecisions'] = read.beforeDecisions;
-  built['onResolve'] = read.effect;
+  /*
+    Omitted where the resolution is nothing but its questions — see `ReadEffect.appliesNothing`.
+    `onResolve` is optional and the engine applies a decision itself, so an identity here would be a
+    function that cannot be told from its absence, which this file deletes rather than keeps.
+  */
+  if (read.appliesNothing !== true) built['onResolve'] = read.effect;
   return {
     script: built as Partial<CardScript>,
     compiled: [...compiled, ...resolution],
