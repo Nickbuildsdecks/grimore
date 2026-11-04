@@ -11382,3 +11382,45 @@ Widened: **40 games, 80 random decks, all 40 finished with no throw and no stall
 70 moves on average. Corpus coverage **16,448 of 60,460 lines (27.2%)**, 7,126 cards with a script —
 the denominators move because 223 cards (221 creatures and 2 planeswalkers) are now refused for a
 size nothing can read, which is what the 0.3 cardboard per deck is.
+
+## The legality filter, which was never actually blocked (#318, D432)
+
+`from-forge.mjs` had recorded since D426 that format legality was unreachable — "that lives in
+Scryfall's `legalities` object and MTGJSON's, both unreachable". True of Forge's *card files*, and
+false of Forge's *repository*: its format definitions (`Sets:` allowlists, `Banned:` lists, Pauper's
+`Rarities:`) and its per-set card lists are two directories the D426 sparse checkout never fetched.
+
+`scripts/corpus/legality.mjs` reads them and emits Scryfall's own `legalities` object, so the day
+Scryfall egress opens the real feed replaces it with no change downstream. Three judgements are
+stated because each excludes cards: `Type=Funny` sets (un-cards, which the goal excludes by name),
+`Type=Online` sets (Alchemy and digital-only), and the types that are not deck cards at all
+(Scheme, Plane, Vanguard, Conspiracy and the rest — 384 cards).
+
+**Its `--check` table caught a defect in the script on the first run.** Two of 13 ground-truth rows
+read "(no such card)": schemes and planes were never entering the printings map, because I had
+required a plain integer collector number and Forge numbers 345 lines `1★`, 374 `123F`, 310 `M-1`
+and 385 `123a`. A card whose only printing carries one of those vanished and read `not_legal`
+everywhere — the most damaging direction a legality bug can point. The rarity letter identifies a
+card line now; 252 cards came back and all 13 rows agree.
+
+`LEGAL=1` on both measures restricts to the formats the goal names, **off by default** so older
+figures stay reproducible:
+
+| | every row | legal in a named format |
+| --- | --- | --- |
+| Cards | 33,847 | **31,654** |
+| Lines compiled | 16,448 of 60,460 (27.2%) | **15,869 of 56,421 (28.1%)** |
+
+Filtering raises coverage, because the cards it drops are ones the compiler read worst — so the
+27.2% was understating the engine against the decks anybody will actually upload. Legal-only random
+decks play: 10 of 10 to a finish, no throw, no stall, 0.1 cardboard per deck.
+
+And it corrects the work queue. The two biggest prologue buckets in all of Magic were "Whenever
+chaos ensues" (136) and "When you set this scheme in motion" (81) — Planechase and Archenemy, real
+reader work queued against cards nobody can put in a deck. Both gone.
+
+**Where the remaining work actually is**, measured rather than assumed: for each unread
+trigger-shaped line, keep the prologue and swap the body for a body that always reads, then
+re-compile. Of 12,338 distinct such lines, **10,196 fail on the prologue and only 2,142 on the
+body** — and both are long tails (7,060 and 1,489 distinct shapes). So the next increments are
+families of prologues.

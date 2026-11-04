@@ -40,6 +40,7 @@ import { readFileSync } from 'node:fs';
 import { compileCard } from '../lib/engine.mjs';
 import { poolRows } from '../lib/pool-rows.mjs';
 import { provenanceLine } from '../lib/provenance.mjs';
+import { isLegal, legalLine } from '../lib/legal.mjs';
 
 const VERBOSE = process.env.VERBOSE === '1';
 const TOP = Number(process.env.TOP ?? 25);
@@ -67,14 +68,20 @@ function opening(line, name) {
     .join(' ');
 }
 
-const rows = file === null ? poolRows() : (() => {
+const allRows = file === null ? poolRows() : (() => {
   const parsed = JSON.parse(readFileSync(file, 'utf8'));
   return Array.isArray(parsed) ? parsed : (parsed.data ?? []);
 })();
+/*
+  `LEGAL=1` restricts the corpus to the formats the goal names. Off by default, so every figure
+  recorded before the filter existed is still reproducible by running this the same way.
+*/
+const rows = allRows.filter(isLegal);
 
 console.log(`Source: ${file === null ? "the engine's own pool (13 decks)" : file}`);
 console.log(`  ${provenanceLine({ FILE: file ?? '', TOP: String(TOP), VERBOSE: VERBOSE ? '1' : '' })}`);
-console.log(`Cards read: ${rows.length}\n`);
+console.log(`Cards read: ${rows.length}`);
+console.log(`${legalLine(allRows.length, rows.length)}\n`);
 
 const bySource = new Map();
 const buckets = new Map();

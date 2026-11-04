@@ -45,16 +45,22 @@
  *
  * ## What this does not do yet
  *
- * **Format legality is not filtered.** #318 asks for the competitive-legal cards, and Forge's files
- * carry no legality: that lives in Scryfall's `legalities` object and MTGJSON's, both unreachable.
- * So `rebalanced/` (Alchemy-only rebalances) and `upcoming/` (unreleased) are skipped by directory,
- * and everything else is kept — including the silver-bordered cards, which are a small fraction and
- * whose presence makes the coverage figure **pessimistic** rather than flattering, which is the safe
- * direction for a number anybody might act on. Closing that gap needs a legality source; the
- * candidates are the Scryfall bulk file itself, or a package from a registry the proxy does not
- * govern (`registry.npmjs.org` and `pypi.org` are both in its `noProxy` list).
+ * **Format legality is filtered when you ask for it, and not otherwise.** This used to say legality
+ * was unavailable — "that lives in Scryfall's `legalities` object and MTGJSON's, both unreachable"
+ * — and that was true of the card files and false of the repository. Forge ships its format
+ * definitions under `forge-gui/res/formats`, with a `Sets:` allowlist and a `Banned:` list per
+ * format, and its set contents under `forge-gui/res/editions`. `scripts/corpus/legality.mjs` reads
+ * both and emits exactly Scryfall's `legalities` object; pass its output with `--legality` and
+ * every row here carries one.
  *
- *   node scripts/corpus/from-forge.mjs <cardsfolder> [out.json]
+ * Without the flag nothing is filtered, as before: `rebalanced/` (Alchemy-only) and `upcoming/`
+ * (unreleased) are skipped by directory and everything else is kept, which makes the coverage
+ * figure **pessimistic** rather than flattering — the safe direction for a number anybody might
+ * act on. The npm and PyPI registries were the other candidate source and are a dead end: every
+ * package found there is a *client* for api.scryfall.com or mtgjson.com, and both hosts are
+ * refused by the proxy, so none of them ships data.
+ *
+ *   node scripts/corpus/from-forge.mjs <cardsfolder> [out.json] [--legality legality.json]
  *
  * The output is a JSON array of rows, the shape Scryfall's bulk file has. It is **not** committed:
  * it is 30 MB of somebody else's transcription of copyrighted card text, and the repository holds
@@ -63,11 +69,20 @@
 import { readFileSync, readdirSync, writeFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-const [, , folder, out] = process.argv;
+const args = process.argv.slice(2).filter((a) => a !== '--legality');
+const legalityArg = process.argv.indexOf('--legality');
+const [folder, out] = args;
 if (folder === undefined) {
-  console.error('usage: node scripts/corpus/from-forge.mjs <cardsfolder> [out.json]');
+  console.error('usage: node scripts/corpus/from-forge.mjs <cardsfolder> [out.json] [--legality f]');
   process.exit(2);
 }
+/*
+  The legality map, or nothing. Keyed on the printed name, which is the only key both halves of
+  Forge's tree agree on — the card files and the edition lists have no shared id.
+*/
+const legalities = legalityArg === -1
+  ? null
+  : JSON.parse(readFileSync(process.argv[legalityArg + 1], 'utf8'));
 
 /** Directories under `cardsfolder` that are not paper Magic. See the docblock. */
 const SKIP_DIRS = new Set(['rebalanced', 'upcoming']);
@@ -192,6 +207,13 @@ function rowFor(text) {
     toughness: pt === null ? null : pt[2].trim(),
     loyalty: fields.has('Loyalty') ? fields.get('Loyalty').trim() : null,
     layout: mode === '' ? 'normal' : (LAYOUTS[mode] ?? mode.toLowerCase()),
+    /*
+      Scryfall's own field, in Scryfall's own vocabulary, so a consumer written against the bulk
+      file reads this without a change. A name the legality map has never heard of gets no field
+      rather than an invented one (D259): absent is a fact about this script, where
+      `{commander: 'not_legal'}` would be a claim about the card.
+    */
+    ...(legalities?.[name.trim()] === undefined ? {} : { legalities: legalities[name.trim()] }),
   };
 }
 

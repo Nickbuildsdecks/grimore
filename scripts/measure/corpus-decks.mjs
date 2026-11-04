@@ -56,6 +56,7 @@ import {
   applyAction, botAction, createGame, customDeck, scriptForCard, seatsToAct, unreadLines,
 } from '../lib/engine.mjs';
 import { provenanceLine } from '../lib/provenance.mjs';
+import { isLegal, legalLine } from '../lib/legal.mjs';
 
 const fileArg = process.argv.indexOf('--file');
 const file = fileArg === -1 ? null : process.argv[fileArg + 1];
@@ -71,10 +72,16 @@ const MAXCMC = Number(process.env.MAXCMC ?? 6);
 const MOVES = Number(process.env.MOVES ?? 6000);
 const VERBOSE = process.env.VERBOSE === '1';
 
-const rows = (() => {
+const allRows = (() => {
   const parsed = JSON.parse(readFileSync(file, 'utf8'));
   return Array.isArray(parsed) ? parsed : (parsed.data ?? []);
 })();
+/*
+  `LEGAL=1` builds the decks out of the cards the goal names — which is the question Nick actually
+  asked ("no matter what deck we upload"), since nobody uploads a deck of Archenemy schemes. Off by
+  default so the figures recorded before the filter existed stay reproducible.
+*/
+const rows = allRows.filter(isLegal);
 
 const BASICS = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
 const BASIC_OF = { W: 'Plains', U: 'Island', B: 'Swamp', R: 'Mountain', G: 'Forest' };
@@ -97,6 +104,7 @@ const basics = BASICS
 
 console.log(`Source: ${file}`);
 console.log(`  ${provenanceLine({ FILE: file, GAMES: String(GAMES), SEED0: String(SEED0) })}`);
+console.log(`${legalLine(allRows.length, rows.length)}`);
 console.log(`Castable non-land pool: ${spells.length} of ${rows.length} rows`);
 console.log(`Basics found: ${basics.map((row) => row.name).join(', ')}\n`);
 if (basics.length < 5) {

@@ -26881,3 +26881,94 @@ one asymmetry that a table-driven test pins rather than assumes.
 
 233 of the corpus's 18,603 creatures and 2 of its 327 planeswalkers land in the refusal. That is the
 0.3 cards per deck that are still cardboard.
+
+## D432 — Legality was not unavailable, it was in a different part of the same repository
+
+`from-forge.mjs` has said since D426 that format legality could not be had: "Forge's files carry no
+legality: that lives in Scryfall's `legalities` object and MTGJSON's, both unreachable." The first
+half is true and the second half was a conclusion drawn from it, and the conclusion was wrong. The
+*card files* carry no legality. The repository does:
+
+- `forge-gui/res/formats/Sanctioned/*.txt` — one file per sanctioned format, each with a `Sets:`
+  allowlist of set codes, a `Banned:` list, and for Pauper a `Rarities:` list.
+- `forge-gui/res/formats/Casual/Commander.txt` — a `Banned:` list and **no** `Sets:`, which is
+  exactly what Commander is: every paper set.
+- `forge-gui/res/editions/*.txt` — one file per set, with `Code=`, `Type=` and a `[cards]` block.
+
+The checkout D426 made was sparse (`blockdata` and `cardsfolder` only), so none of it had been
+looked at. Two directories and 12 MB later, `scripts/corpus/legality.mjs` emits Scryfall's own
+`legalities` object for 32,591 cards.
+
+**npm and PyPI were the other candidate and are a dead end**, which is worth recording so nobody
+spends the afternoon again: every MTG package on npm is a *client* for `api.scryfall.com` or
+`mtgjson.com` — `scryfall`, `scryfall-client`, `@scryfall/api-types`, `mtgjson`, `mtgjson-sdk`,
+`mtgjson-promise` — and both hosts are refused by the proxy. A client for a blocked host is not a
+data source.
+
+### Three judgements, because each one excludes cards
+
+1. **`Type=Funny` sets are legal nowhere** (25 sets) — the un-sets, which the goal excludes by name.
+2. **`Type=Online` sets are legal in no paper format** (59 sets) — Alchemy and the digital-only
+   products. `from-forge.mjs` already skipped `rebalanced/` for this reason; this catches the rest.
+3. **A card whose printed type is not a deck card is legal nowhere** — Scheme, Plane, Phenomenon,
+   Vanguard, Conspiracy, Dungeon, Emblem, Attraction, Sticker, Contraption. 384 cards.
+
+Same second-best-source caveat as the oracle text, for the same reason (D259 applies to the source
+as much as to the reader): Forge's banned lists are a community transcription and can lag an
+announcement. So the output is Scryfall's shape and Scryfall's vocabulary — `legal`, `banned`,
+`restricted`, `not_legal` — and the moment Scryfall egress opens its own object replaces this with
+no change to anything downstream.
+
+### The check, and the bug it caught
+
+`--check` asserts 13 cards whose legality is not in dispute, each a *different* way for the parse to
+be wrong: a set allowlist unread (Black Lotus is not Modern-legal), a banned list unread (Ponder is
+banned in Modern and legal in Legacy), Commander's own banned list (Mana Crypt), Pauper's rarity
+rule in both directions (Mountain legal, Thoughtseize not), Vintage's restricted list (Black Lotus),
+and the type refusal (an Archenemy scheme, a Planechase plane).
+
+**It failed 2 of 13 on the first run, and the failure was a real defect in this script.** The two
+rows read `(no such card)` — the scheme and the plane were not in the printings map at all, so the
+type check I had written them down to prove was not what excluded them. The cause: I required a
+plain integer collector number, and Forge's numbers are not plain integers. 345 `[cards]` lines use
+a star (`1★`, which is how *every* scheme and plane is numbered), 374 a foil suffix (`123F`), 310 a
+set prefix (`M-1`), 385 a half suffix (`123a`/`123b`, the halves of a split or flip card). All were
+being dropped in silence, and for a card whose only printing carries one that is not cosmetic — it
+vanishes from the map and every format reads `not_legal`, which is the most damaging direction a
+legality bug can point. The number is now unconstrained and the **rarity letter** is what identifies
+a card line; 252 cards came back and all 13 rows agree.
+
+### Measured
+
+`LEGAL=1` on the two measures restricts to the formats the goal names. The filter is **off by
+default**, so every figure recorded before it existed is still reproducible.
+
+| | every row | legal in a format the goal names |
+| --- | --- | --- |
+| Cards | 33,847 | **31,654** |
+| Lines compiled | 16,448 of 60,460 (27.2%) | **15,869 of 56,421 (28.1%)** |
+| Cards with a script | 7,126 | 6,936 |
+| Cards fully read | 3,992 | 3,915 |
+
+Filtering **raises** coverage, which is the useful part: the cards it removes are ones the compiler
+read worse than average, so the 27.2% was understating the engine against the decks anybody will
+actually upload. Random legal-only decks still play: 10 of 10 games to a finish, no throw, no stall,
+0.1 cardboard cards per deck.
+
+### What it does to the work queue
+
+The two biggest prologue buckets in the whole corpus were **"Whenever chaos ensues" (136 cards)**
+and **"When you set this scheme in motion" (81)** — Planechase and Archenemy. Both are gone. That
+was real reader work queued against cards nobody can put in a deck, and it would have been done
+before anybody noticed.
+
+### The measurement that redirected the queue
+
+Also built, as a scratch instrument rather than a committed script: for every unread line shaped
+like a trigger, keep its prologue and swap the body for "draw a card", then re-compile. If it reads
+now, the prologue is fine and the **body** is the gap; if not, the **prologue** is. Of 12,338
+distinct trigger-shaped unread lines, **10,196 fail on the prologue and 2,142 on the body**. The
+work queue groups by printed opening and the body distribution groups by what follows the comma, and
+neither answers the question a reader-writer actually has. Both halves are long tails — 7,060
+distinct prologue shapes, 1,489 body shapes — so the next increments are families of prologues, not
+single lines.
