@@ -73,6 +73,7 @@ export const ApiErrorCode = z.enum([
   "DECK_LOCKED",
   "CORRUPT_ARCHIVE",
   "WRONG_ENDPOINT",
+  "NO_COMMANDER",
 
   // League and events.
   "NO_ACTIVE_SEASON",

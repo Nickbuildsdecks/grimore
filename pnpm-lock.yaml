@@ -65,6 +65,9 @@ importers:
       '@grimore/mailer':
         specifier: workspace:*
         version: link:../../packages/mailer
+      '@grimore/recommender':
+        specifier: workspace:*
+        version: link:../../packages/recommender
       '@grimore/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -166,6 +169,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@grimore/rules-engine':
+        specifier: workspace:*
+        version: link:../../packages/rules-engine
       '@grimore/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -196,6 +202,9 @@ importers:
       react-router-dom:
         specifier: ^7.18.1
         version: 7.18.3(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      socket.io-client:
+        specifier: ^4.8.1
+        version: 4.8.3
       sonner:
         specifier: ^2.0.7
         version: 2.0.8(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -266,6 +275,15 @@ importers:
         version: 3.2.7(@types/node@22.20.2)(jiti@2.7.0)(lightningcss@1.33.0)
 
   packages/mailer:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@24.13.4)(jiti@2.7.0)(lightningcss@1.33.0)
+
+  packages/recommender:
     devDependencies:
       typescript:
         specifier: ^5.6.0

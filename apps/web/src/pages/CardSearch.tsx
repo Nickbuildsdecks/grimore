@@ -26,6 +26,10 @@ import {
 } from "lucide-react"
 import { BrewHourglass, Ladle, ManaSpark } from "@/icons"
 import { api, type CardResult, type Deck, type DeckCard } from "@/lib/api"
+import type {
+  RecommendationResponse as SharedRecommendationResponse,
+  RecommendedCard,
+} from "@grimore/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -109,43 +113,27 @@ interface ArtVoteResponse {
   userVote: -1 | 0 | 1
 }
 
-interface RecommendationCard extends CardResult {
-  score: number
-  reasons: string[]
-  roles: string[]
-  themes: string[]
-  targetDeck: { id: string; name: string } | null
-  owned: boolean
-  alreadyInDeck: boolean
-}
+/**
+ * These three shapes used to be declared here by hand, field for field, duplicating the contracts in
+ * `@grimore/shared` that the API validates its responses against — the drift D2 exists to prevent.
+ * They are derived from the contracts now.
+ *
+ * `CardResult` is intersected in deliberately: it is this app's *render* contract, what every card
+ * component here accepts, and it requires `image_uri` and `rarity` where the wire contract leaves
+ * them to its passthrough. So the page keeps its own guarantee about what it can draw, and takes the
+ * recommendation metadata — the part that can actually drift — from the contract.
+ *
+ * Intersected, not `Omit`-ed: `RecommendedCard` is a `.passthrough()` contract, so its inferred type
+ * carries a `[k: string]: unknown` index signature. `keyof` that is `string | number`, which makes
+ * `Omit<RecommendedCard, keyof CardResult>` erase every declared field back to `unknown`.
+ */
+type RecommendationCard = CardResult & RecommendedCard
 
 interface RecommendationFeedCard extends RecommendationCard {
   feedCycle: number
 }
 
-interface RecommendationProfile {
-  confidence: number
-  coldStart: boolean
-  decksLearned: number
-  topColors: { name: string; score: number }[]
-  topRoles: { name: string; score: number }[]
-  topThemes: { name: string; score: number }[]
-  typicalManaValues: { name: string; score: number }[]
-  typicalPriceBands: { name: string; score: number }[]
-  followedArtists: number
-  signalCounts: Record<string, number>
-}
-
-interface RecommendationResponse {
-  algorithmVersion: string
-  fallback: boolean
-  candidateSource: "scryfall-legal-pool" | "local-cache"
-  cursor: string
-  nextCursor: string
-  hasMore: true
-  cycle: number
-  recycled: boolean
-  profile: RecommendationProfile
+type RecommendationResponse = Omit<SharedRecommendationResponse, "cards"> & {
   cards: RecommendationCard[]
 }
 

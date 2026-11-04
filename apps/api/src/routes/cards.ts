@@ -47,11 +47,21 @@ import {
   Color,
   PrintingId,
   Rarity,
+  RecommendationQuery,
   type CardSearchQuery as CardSearchQueryType,
 } from '@grimore/shared';
+import {
+  createPreferenceProfile,
+  formatRecommendationCursor,
+  nextRecommendationCursor,
+  parseRecommendationCursor,
+  scoreRecommendations,
+  summarizeProfile,
+} from '@grimore/recommender';
 import type { AppContext } from '../app.js';
 import { ApiError, wrap } from '../lib/errors.js';
 import { requireAuth, sessionPlayerId } from '../lib/auth.js';
+import { loadCommunityCardCounts, loadLocalCandidates, loadPreferenceSignals } from '../lib/preferenceSignals.js';
 
 /** The documented price floor when neither the price cache nor the card row has a price. */
 const PRICE_FLOOR = 0.15;
@@ -328,6 +338,95 @@ export function cardsRouter(ctx: AppContext): Router {
       // better than returning an empty list the client would render as "this card has no rulings".
       // TODO(scryfall-fallback): call /cards/:id/rulings once api.scryfall.com is reachable.
       throw new ApiError(503, 'SCRYFALL_UNAVAILABLE', 'Card rulings need api.scryfall.com, which is not reachable.');
+    }),
+  );
+
+  // ── Personalised recommendations ────────────────────────────────────────────────────────────────
+
+  /**
+   * The discovery feed. Scoring is `@grimore/recommender` (pure); the signals and the candidate pool
+   * come from `lib/preferenceSignals.ts`, whose header lists the legacy bugs that made three of the
+   * five signal sources dead on Postgres.
+   *
+   * Public by design, as in legacy: an anonymous caller gets a cold-start profile and a
+   * popularity-led page rather than a 401, because the feed is the product's front door.
+   *
+   * TODO(scryfall-fallback): legacy preferred a Scryfall-built, format-legal candidate pool and used
+   * the local cache only when that call failed. api.scryfall.com is denied by the egress proxy here,
+   * so the local pool is the only source and `candidateSource` always reports `local-cache`. The
+   * response already carries the field, so adding the Scryfall page later changes no client.
+   */
+  r.get(
+    '/recommendations',
+    wrap(async (req, res) => {
+      const q = RecommendationQuery.parse(req.query);
+      // An anonymous caller has no signals; '' is what the engine treats as a cold start.
+      const playerId = req.session?.playerId ?? '';
+      const cursor = parseRecommendationCursor(q.cursor);
+
+      const data = await loadPreferenceSignals(pool, playerId);
+
+      // A deck id that is not the caller's own is a 404. Legacy returned the same, and it matters:
+      // silently ignoring it would score against the global profile and look like a working filter.
+      if (q.deckId && !data.decks.some((deck) => deck.id === q.deckId)) {
+        throw new ApiError(404, 'NOT_FOUND', 'Target deck not found.');
+      }
+
+      const profile = createPreferenceProfile({
+        playerId,
+        signals: data.signals,
+        decks: data.decks,
+        followedArtists: data.followedArtists,
+        searches: data.searches,
+      });
+
+      // The pool is deliberately much larger than the page: the selector spends it on diversity.
+      const poolSize = Math.max(q.limit * 12, 120);
+      const candidates = await loadLocalCandidates(pool, cursor.page, poolSize);
+
+      // A followed illustrator's printing of a card replaces the generic row, so the art the player
+      // actually follows is the art they are shown.
+      const followedByName = new Map(
+        data.followedPrintings.map((card) => [String(card.name ?? '').toLocaleLowerCase('en-US'), card]),
+      );
+      const enriched = candidates.map((card) => {
+        const followed = followedByName.get(String(card.name ?? '').toLocaleLowerCase('en-US'));
+        return followed ? { ...card, ...followed, artistFollowed: true } : card;
+      });
+
+      const communityCounts = await loadCommunityCardCounts(
+        pool,
+        enriched.map((card) => String(card.name ?? '').toLocaleLowerCase('en-US')),
+      );
+
+      // The seed is stable per player per day per cycle: a reload returns the same page, tomorrow
+      // returns a different one, and asking for the next cycle reshuffles deliberately.
+      const seed = `${playerId}:${new Date().toISOString().slice(0, 10)}:cycle:${cursor.cycle}`;
+      const cards = scoreRecommendations({
+        profile,
+        candidates: enriched,
+        communityCounts,
+        targetDeckId: q.deckId ?? '',
+        limit: q.limit,
+        offset: 0,
+        seed,
+      });
+
+      // Exhausted the pool at this page? The next cursor starts a new cycle, which is what keeps the
+      // feed infinite without ever claiming there is more of the current pass than there is.
+      const sourceHasMore = candidates.length >= poolSize;
+      res.json({
+        algorithmVersion: 'deck-fingerprint-v2',
+        fallback: profile.coldStart,
+        candidateSource: 'local-cache',
+        cursor: formatRecommendationCursor(cursor),
+        nextCursor: nextRecommendationCursor(cursor, sourceHasMore),
+        hasMore: true,
+        cycle: cursor.cycle,
+        recycled: cursor.cycle > 0,
+        profile: summarizeProfile(profile),
+        cards,
+      });
     }),
   );
 

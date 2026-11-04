@@ -10,6 +10,7 @@ const Discover = lazy(() => import("@/pages/Discover").then((module) => ({ defau
 const CardSearch = lazy(() => import("@/pages/CardSearch").then((module) => ({ default: module.CardSearch })))
 const Events = lazy(() => import("@/pages/Events").then((module) => ({ default: module.Events })))
 const Life = lazy(() => import("@/pages/Life").then((module) => ({ default: module.Life })))
+const PlayTable = lazy(() => import("@/pages/PlayTable"))
 const Collections = lazy(() => import("@/pages/Collections").then((module) => ({ default: module.Collections })))
 const Builder = lazy(() => import("@/pages/Builder").then((module) => ({ default: module.Builder })))
 const Profile = lazy(() => import("@/pages/Profile").then((module) => ({ default: module.Profile })))
@@ -39,6 +40,14 @@ export default function App() {
     <BrowserRouter basename="/react">
       <Suspense fallback={<RouteFallback />}>
         <Routes>
+          {/*
+            Outside the gate on purpose. The table identifies a player by the seat token the
+            realtime service issues, never by a Grimore session — so an account buys nothing here,
+            while requiring one means the person you send a code to has to register before they can
+            play a game with you. It also keeps the table's only dependency Redis, rather than
+            Postgres and the API as well, which is several fewer ways for a game night to fail.
+          */}
+          <Route path="/play" element={<PlayTable />} />
           <Route element={<Gate />}>
             <Route index element={<Navigate to="/discover" replace />} />
             <Route path="/decks" element={<Decks />} />

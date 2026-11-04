@@ -330,6 +330,83 @@ describe('game:reset', () => {
   });
 });
 
+describe('game:rematch', () => {
+  it('deals another game at the same table, with the same decks and the engine still on', () => {
+    // A finished automated duel, which is where a player presses "play again".
+    let s = applyMany(duel('modern', 7), [
+      { type: 'deck:load', by: 0, seat: 0, deckId: 'ember-rush' },
+      { type: 'deck:load', by: 1, seat: 1, deckId: 'tidal-mind' },
+      { type: 'game:start', by: 0, firstSeat: 0 },
+      { type: 'auto:start', by: 0, firstSeat: 0 },
+    ], HOST);
+    s = applyAction(s, { type: 'concede', by: 1 }, HOST);
+    expect(s.finished).toBe(true);
+    expect(s.winnerSeat).toBe(0);
+
+    // Either player may ask, and the one who lost does here.
+    const again = applyAction(s, { type: 'game:rematch', by: 1 }, {});
+    expect(again).toMatchObject({ started: true, finished: false, winnerSeat: null, turn: 1 });
+    // Same decks, dealt again: seven cards each and a full library behind them.
+    expect(again.seats.map((seat) => seat.deckId)).toEqual(['ember-rush', 'tidal-mind']);
+    for (const seat of [0, 1] as const) {
+      expect((again.zones[`${seat}:hand`] ?? []).length).toBe(7);
+      // Sixty-one cards in a format with no command zone, minus the seven in hand.
+      expect((again.zones[`${seat}:library`] ?? []).length).toBe(54);
+      expect(again.seats[seat]!.life).toBe(20);
+      expect(again.seats[seat]!.eliminated).toBe(false);
+    }
+    // The engine is still running, and the winner of the last game goes second.
+    expect(again.automated).toBe(true);
+    expect(again.activeSeat).toBe(1);
+    expect(again.openingHands).toBe(true);
+    // And the board from the last game is gone, not sitting underneath the new one.
+    expect(again.zones['0:battlefield'] ?? []).toEqual([]);
+  });
+
+  it('keeps a tabletop a tabletop', () => {
+    let s = applyMany(duel('modern', 8), [
+      { type: 'deck:load', by: 0, seat: 0, deckId: 'ember-rush' },
+      { type: 'game:start', by: 0, firstSeat: 0 },
+    ], HOST);
+    s = applyAction(s, { type: 'concede', by: 1 }, HOST);
+    const again = applyAction(s, { type: 'game:rematch', by: 0 }, HOST);
+    // The engine was never switched on, so a rematch does not switch it on: the players get the
+    // table they were playing at.
+    expect(again.automated).toBe(false);
+    expect(again.started).toBe(true);
+    expect((again.zones['0:hand'] ?? []).length).toBe(7);
+  });
+
+  it('refuses a rematch in the middle of a game', () => {
+    const s = applyMany(duel('modern', 9), [
+      { type: 'deck:load', by: 0, seat: 0, deckId: 'ember-rush' },
+      { type: 'game:start', by: 0, firstSeat: 0 },
+    ], HOST);
+    expectCode(() => applyAction(s, { type: 'game:rematch', by: 0 }, HOST), 'RULE_NOT_APPLICABLE');
+  });
+
+  it('works for a pod, and passes the turn along from the winner', () => {
+    let s = applyMany(pod(11), [
+      ...['ember-rush', 'tidal-mind', 'verdant-guard', 'ashen-rite'].map((deckId, seat) => ({
+        type: 'deck:load' as const, by: 0, seat, deckId,
+      })),
+      { type: 'game:start', by: 0, firstSeat: 0 },
+      { type: 'auto:start', by: 0, firstSeat: 0 },
+    ], HOST);
+    s = applyMany(s, [
+      { type: 'concede', by: 0 }, { type: 'concede', by: 1 }, { type: 'concede', by: 2 },
+    ], HOST);
+    expect(s.winnerSeat).toBe(3);
+    const again = applyAction(s, { type: 'game:rematch', by: 2 }, {});
+    // Four seats, four decks, forty life each, and the seat after the winner leads off.
+    expect(again.seats.map((seat) => seat.deckId))
+      .toEqual(['ember-rush', 'tidal-mind', 'verdant-guard', 'ashen-rite']);
+    expect(again.seats.every((seat) => seat.life === 40 && !seat.eliminated)).toBe(true);
+    expect(again.activeSeat).toBe(0);
+    expect((again.zones['3:command'] ?? []).length).toBe(1);
+  });
+});
+
 describe('randomness', () => {
   it('mulberry32 is deterministic for a seed', () => {
     const a = mulberry32(123);

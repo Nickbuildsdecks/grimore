@@ -22,7 +22,7 @@ CONTEXT — read these first, in this order:
   5. PRODUCT.md + DESIGN.md                 — product intent and the design system.
   6. CLAUDE.md                              — architecture, optics rules, the 14 legacy test suites.
 
-WHERE WE ARE: <N> of 126 legacy API routes ported into apps/api. See the progress doc's
+WHERE WE ARE: 103 of 126 legacy API routes ported into apps/api. See the progress doc's
 "Port status" table for the current wave and what remains.
 
 THE CENTRAL FINDING, which every wave has confirmed so far:
@@ -69,6 +69,9 @@ BLOCKED EXTERNAL SERVICES — build local-first and mark the gap, do not stub or
     /api/decks/:id/share. Build against the local scryfall_cards + card_price_cache tables and mark
     each fallback point TODO(scryfall-fallback), as apps/api/src/routes/cards.ts already does.
     To unblock, allowlist: api.scryfall.com, cards.scryfall.io, svgs.scryfall.io.
+  - json.edhrec.com is denied too. Affected route: /api/decks/:deckId/suggestions, which is ported
+    against the local card tables with the remote lists marked TODO(edhrec). To unblock, allowlist
+    json.edhrec.com.
   - Gemini (/api/sandbox/ai-advisor) needs GEMINI_API_KEY. Port the route shape; mark TODO(gemini).
 
 HARD RULES:

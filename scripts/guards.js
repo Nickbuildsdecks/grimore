@@ -39,16 +39,42 @@ for (const r of ['apps', 'packages']) {
   }
 }
 /**
- * `apps/api/Dockerfile` has to COPY every workspace member's package.json before
+ * Every app image has to COPY every workspace member's package.json before
  * `pnpm install --frozen-lockfile`, including the ones that image never builds — otherwise pnpm
  * judges the lockfile out of sync and the build fails.
  *
  * That is invisible until someone runs a Docker build, and nothing in CI does: a new package under
  * packages/ or apps/ would break the image with no signal until a deploy. This checks it statically
  * instead, so the failure lands on the PR that causes it.
+ *
+ * Checks every `apps/*\/Dockerfile` rather than only the API's: the trap is a property of building
+ * a pnpm workspace member in Docker, not of one image, and the realtime image hits it identically.
  */
-function checkApiDockerfileCopiesEveryManifest() {
-  const dockerfilePath = join('apps', 'api', 'Dockerfile');
+function checkAppDockerfilesCopyEveryManifest() {
+  let apps;
+  try {
+    apps = readdirSync('apps');
+  } catch {
+    return;
+  }
+  const dockerfiles = apps
+    .map((name) => join('apps', name, 'Dockerfile'))
+    .filter((file) => {
+      try {
+        return statSync(file).isFile();
+      } catch {
+        return false;
+      }
+    });
+  if (dockerfiles.length === 0) {
+    console.error('[guards] no app Dockerfile found under apps/*/Dockerfile');
+    bad++;
+    return;
+  }
+  for (const dockerfilePath of dockerfiles) checkOneDockerfile(dockerfilePath);
+}
+
+function checkOneDockerfile(dockerfilePath) {
   let dockerfile;
   try {
     dockerfile = readFileSync(dockerfilePath, 'utf8');
@@ -83,7 +109,7 @@ function checkApiDockerfileCopiesEveryManifest() {
     }
   }
 }
-checkApiDockerfileCopiesEveryManifest();
+checkAppDockerfilesCopyEveryManifest();
 
 /**
  * `INSERT OR IGNORE` and `INSERT OR REPLACE` are SQLite-only. On Postgres they are a syntax error
@@ -127,6 +153,794 @@ function checkNoNewSqliteOnlyInserts() {
   }
 }
 checkNoNewSqliteOnlyInserts();
+
+/**
+ * `server.js` may initialise the database exactly once.
+ *
+ * It used to do it twice: `db.initDb()` at the top of the boot chain and a second, un-awaited call
+ * near the end of the file, both starting at module load against a pool of 35 connections. Postgres
+ * DDL is **not** race-safe between sessions, so every cold boot raced its own schema creation —
+ * reproduced at **20 of 20** runs, refusing statements with `duplicate key value violates unique
+ * constraint "pg_type_typname_nsp_index"` and `relation "players" already exists`, every one of them
+ * swallowed into a `Postgres DDL statement notice` line (D187).
+ *
+ * A source-text guard rather than a test, and deliberately: the legacy Postgres suite builds its
+ * database from the v2 baseline and every migration **before** the server boots, so by the time
+ * `initDb()` runs every table already exists, no creation is attempted, and nothing races. That
+ * suite could not have caught this and re-introducing the second call does not fail it — which is
+ * exactly the situation a guard is for.
+ */
+function checkSingleInitDb() {
+  let src;
+  try {
+    src = readFileSync('server.js', 'utf8');
+  } catch {
+    return; // not in a checkout that has the legacy server
+  }
+  // Comments stripped first, because the note left at the old call site names the call it removed
+  // — and a guard that counts its own explanation is a guard that fails on the fix.
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const calls = code.split('\n').filter((line) => /db\.initDb\s*\(/.test(line));
+  if (calls.length !== 1) {
+    console.error(
+      `[guards] server.js calls db.initDb() ${calls.length} time(s), expected exactly 1. ` +
+        'Two concurrent initialisations race the schema on Postgres (D187); await the first instead.',
+    );
+    for (const line of calls) console.error(`[guards]   ${line.trim().slice(0, 100)}`);
+    bad++;
+  }
+}
+checkSingleInitDb();
+
+/**
+ * Every mechanic a player can read on a card has to be explained in the player documentation.
+ *
+ * `claude/play-realm-setup.md` carries the cheat sheet two people actually sit down with, and it
+ * had fallen two keywords behind without anything saying so: **regenerate** (five cards across
+ * three decks, with a cost most players get wrong) and **prowess** (two cards) were in the pool,
+ * player-facing, and mentioned nowhere in it. Found by auditing by hand, which is exactly the kind
+ * of check that is done once and then rots.
+ *
+ * **The list of mechanics is derived rather than written here**, which is what makes this worth
+ * having rather than a second thing to forget. A mechanic is required to be documented when a
+ * player can *read its name on a card* — so the candidates are the engine's `KEYWORDS` and the
+ * `CardScript` field names, and the filter is whether the word appears in some card's printed
+ * `oracleText`. A field like `removesACreature` is a hint for the bot and names nothing on any
+ * card, so it is skipped without anybody having to say so; a keyword printed on a card cannot be.
+ *
+ * Reads source rather than `dist`, because guards run before the build in CI.
+ */
+function checkPlayerDocCoversEveryMechanic() {
+  let keywordsSrc; let scriptTypesSrc; let decksSrc; let doc;
+  try {
+    keywordsSrc = readFileSync(join('packages', 'rules-engine', 'src', 'characteristics.ts'), 'utf8');
+    scriptTypesSrc = readFileSync(join('packages', 'rules-engine', 'src', 'scriptTypes.ts'), 'utf8');
+    decksSrc = readFileSync(join('packages', 'rules-engine', 'src', 'starterDecks.ts'), 'utf8');
+    doc = readFileSync(join('claude', 'play-realm-setup.md'), 'utf8');
+  } catch {
+    return; // not a checkout that has the engine and its docs
+  }
+
+  const keywordBlock = /export const KEYWORDS = \[([\s\S]*?)\] as const;/.exec(keywordsSrc);
+  const fieldBlock = /export interface CardScript \{([\s\S]*?)\n\}/.exec(scriptTypesSrc);
+  if (keywordBlock === null || fieldBlock === null) {
+    console.error('[guards] could not read KEYWORDS or CardScript out of the engine source, so the');
+    console.error('[guards] player-doc check would pass by seeing nothing. Fix the parse.');
+    bad++;
+    return;
+  }
+
+  const keywords = [...keywordBlock[1].matchAll(/'([a-z ' -]+)'/g)].map((m) => m[1]);
+  const fields = [...fieldBlock[1].matchAll(/^ {2}readonly ([a-zA-Z]+)\??:/gm)]
+    // `levelUp` is printed "level up", `splitSecond` "split second", and so on.
+    .map((m) => m[1].replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase());
+
+  /*
+    Only what a player can read on a card: the `oracleText` values, and nothing else in the file.
+
+    The first draft lowercased the whole source and asked whether the word appeared anywhere in it,
+    which is not the same question and said so immediately — it demanded a cheat-sheet row for
+    `decisions`, which is a `CardScript` field and is printed on no card in any game of Magic. It
+    was matching the file's own comments. Extracting the quoted `oracleText` values is the question
+    that was meant.
+  */
+  const printed = [...decksSrc.matchAll(/oracleText:\s*(?:'((?:[^'\\]|\\.)*)'|`((?:[^`\\]|\\.)*)`)/g)]
+    .map((m) => m[1] ?? m[2] ?? '')
+    .join('\n')
+    .toLowerCase();
+  // The cheat sheet is the table; prose elsewhere in the file is not where a player looks.
+  const table = doc.split('\n').filter((l) => l.startsWith('| ')).join('\n').toLowerCase();
+
+  /*
+    And the control, because this check's passing result is a zero and a broken extraction is also
+    a zero. Both halves of the filter are asserted against a mechanic that is known to be printed
+    and known to be documented: if `printed` comes back empty every mechanic is filtered out and
+    the check passes by seeing nothing, which is the one way it can be silently useless.
+  */
+  if (!printed.includes('flying') || !table.includes('flying')) {
+    console.error('[guards] the player-doc check cannot see "flying" on a card or in the cheat');
+    console.error('[guards] sheet, so its extraction is broken and a pass would mean nothing.');
+    bad++;
+    return;
+  }
+
+  const missing = [...new Set([...keywords, ...fields])]
+    .filter((m) => m.length > 3 && printed.includes(m) && !table.includes(m))
+    .sort();
+  if (missing.length > 0) {
+    console.error(`[guards] ${missing.length} mechanic(s) printed on cards and absent from the`);
+    console.error('[guards] player cheat sheet in claude/play-realm-setup.md:');
+    for (const m of missing) console.error(`[guards]   ${m}`);
+    console.error('[guards] Add a row to the "What you want to do | How" table, or if it is not');
+    console.error('[guards] player-facing, say so in the engine rather than leaving it undocumented.');
+    bad += missing.length;
+  }
+}
+checkPlayerDocCoversEveryMechanic();
+
+/**
+ * Every reader of `script.triggers` has to know that `grantedTriggers` exists.
+ *
+ * A card can carry a triggered ability two ways since D251: printed on itself, or handed to it by
+ * something else. Everything written before that reads only the first, and the failure mode is the
+ * worst kind — **it goes quiet rather than wrong**. Five readers have been caught this way already:
+ * the bot's three in #236 (a sacrifice filter that fed a creature carrying an Ophidian Eye), then
+ * `card-promises`, which called the Eye an unscripted card because its whole text is an ability it
+ * gives away, and then four instruments in D260 of which `mechanic-coverage` is the one that
+ * matters: an instrument whose entire job is "which mechanics are held up by too few cards" could
+ * not see a trigger kind that no printed card carries.
+ *
+ * None of those errored. Each reported a number that was simply smaller than the truth.
+ *
+ * So the invariant is checked statically, because no self-test can catch it: a planted control
+ * written beside a reader encodes the same blind spot its author had. What a grep *can* do is
+ * notice the pairing — the shape all five shared — and fail on the PR that adds the sixth.
+ *
+ * A file where granted triggers are genuinely out of scope goes in EXEMPT with its reason, the way
+ * `card-promises`'s KNOWN and `mechanic-coverage`'s EXPECTED_THIN carry theirs. An exemption is a
+ * claim about the file, not a way to quiet the check.
+ *
+ * **What it does not check, found by trying to make it fail.** A file passes by *mentioning*
+ * `grantedTriggers` anywhere, a comment included — the first attempt to break this guard edited the
+ * read out of `mechanic-coverage` and it still passed, because the docblock above the read still
+ * named the field. So this is a tripwire for "did the author know the second list exists", which is
+ * exactly the mistake all seven readers made, and it is not a proof that the reading is right. The
+ * proof of the reading is the instrument's own output and its control.
+ */
+const TRIGGER_READER = /script\??\.(?:triggers|grantedTriggers)|\btriggers \?\? \[\]/;
+const GRANTS_AWARE = /grantedTriggers/;
+const EXEMPT = new Map([
+  // Defines the field, so it mentions it by construction; listed for the reader rather than the
+  // check, which its own definition satisfies anyway.
+  [join('packages', 'rules-engine', 'src', 'scriptTypes.ts'), 'declares the field'],
+  /*
+    Asks whether a card's **printed** text gives it a clock ("sacrifice Ball Lightning at end of
+    turn"), by name and with no board in hand. A granted trigger is a fact about an *instance* —
+    which permanent is holding it right now — so reading `grantedTriggers` off a name would answer
+    a different question. If a card is ever printed that hands another permanent a self-sacrifice
+    clock, the fix is `grantedTriggersOn(state, instance)` and a board, not this predicate.
+  */
+  [join('scripts', 'measure', 'leaving-creatures.mjs'), 'asks about printed text, by name'],
+  /*
+    Storm is a keyword on a spell, and the predicate reads `on.self === true` — a trigger about the
+    card itself as it is cast. Nothing in this pool hands storm to anything, and a permanent cannot
+    be given a cast trigger that fires for a different card's cast, so there is no granted form of
+    the thing being looked for.
+  */
+  [join('scripts', 'measure', 'storm.mjs'), 'storm is printed on the spell being cast'],
+  /*
+    Compares the triggers the **compiler** built against the ones a person wrote for the same card
+    (#317, D364). Both sides are a `CardScript`'s own printed `triggers`, read off a definition with
+    no board and no instance in hand. `grantedTriggers` is a different field for a different thing —
+    an ability one permanent is handing another at this moment — and `keywordScriptFor` cannot emit
+    one, because no keyword line grants an ability to anything. Reading it here would compare a
+    field both sides always leave empty.
+  */
+  [join('packages', 'rules-engine', 'src', 'compile.test.ts'), 'compares printed triggers to printed triggers'],
+]);
+
+function checkEveryTriggerReaderKnowsAboutGrants() {
+  const roots = [
+    join('packages', 'rules-engine', 'src'),
+    join('scripts', 'measure'),
+    join('apps'),
+  ];
+  const readers = [];
+  const blind = [];
+  const seen = (dir) => {
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const f of entries) {
+      const file = join(dir, f);
+      if (f === 'node_modules' || f === 'dist') continue;
+      if (statSync(file).isDirectory()) {
+        seen(file);
+        continue;
+      }
+      if (!/\.(ts|tsx|mjs|js)$/.test(f)) continue;
+      const src = readFileSync(file, 'utf8');
+      if (!TRIGGER_READER.test(src)) continue;
+      readers.push(file);
+      if (!GRANTS_AWARE.test(src) && !EXEMPT.has(file)) blind.push(file);
+    }
+  };
+  for (const r of roots) seen(r);
+
+  /*
+    The control, for the same reason `checkPlayerDocCoversEveryMechanic` has one: a grep that has
+    stopped matching anything passes silently, and a passing check that cannot fail is worse than
+    no check. The engine's own watcher is the reader that must always be found.
+  */
+  const watcher = join('packages', 'rules-engine', 'src', 'automation.ts');
+  if (!readers.includes(watcher)) {
+    console.error('[guards] the granted-trigger check cannot find the engine\'s own trigger reader');
+    console.error(`[guards] (${watcher}), so its pattern is broken and a pass would mean nothing.`);
+    bad++;
+    return;
+  }
+  if (blind.length > 0) {
+    console.error(`[guards] ${blind.length} file(s) read a card's triggers without knowing that`);
+    console.error('[guards] grantedTriggers exists (D251). Each will silently under-report a card');
+    console.error('[guards] whose ability was handed to it rather than printed on it:');
+    for (const f of blind) console.error(`[guards]   ${f}`);
+    console.error('[guards] Read both lists, or add the file to EXEMPT in this guard with the');
+    console.error('[guards] reason granted triggers are out of its scope.');
+    bad += blind.length;
+  }
+}
+checkEveryTriggerReaderKnowsAboutGrants();
+
+/**
+ * The player documentation names every deck a player can pick, and counts them correctly.
+ *
+ * `claude/play-realm-setup.md` is what a person reads before sitting down at the table, and its
+ * deck section had been telling them there were **eleven** starter decks since the twelfth was
+ * added (#265). The body did describe all thirteen; the heading did not, and nothing could tell.
+ * Two decks were added, each with a write-up, and the count above them was not a thing either
+ * change touched.
+ *
+ * So the registry decides and the prose has to keep up. Two claims are checked, both of them
+ * structural rather than editorial:
+ *
+ *  - **Every registered deck is named somewhere in the doc.** A deck a player can choose from the
+ *    lobby and cannot read about is the real failure; the count is the symptom.
+ *  - **The deck section's heading says the right number, spelled out**, which is the form the doc
+ *    uses. Only the heading, not prose elsewhere: "a full table with two starter decks" is a
+ *    sentence about two of them, and a guard that failed on it would be a guard somebody turns off.
+ *
+ * Read statically out of `starterDecks.ts` rather than by importing the engine, because this runs
+ * before anything is built. The parse is narrow enough to break loudly: no registered decks found
+ * means the literal was reformatted, and that fails rather than passing an empty check — the same
+ * rule `scripts/measure/mechanic-coverage.mjs` states for reading a declaration out of source.
+ *
+ * Card counts are deliberately **not** checked here. "The engine knows N cards" needs the pool
+ * index, which needs the build, so the doc cites `node scripts/measure/mechanic-coverage.mjs` —
+ * which prints decks, cards, faces and tokens off the registry — instead of carrying a number
+ * nobody can verify while reading it.
+ */
+function checkPlayerDocNamesEveryStarterDeck() {
+  const NUMBER_WORDS = [
+    'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+    'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen',
+    'nineteen', 'twenty',
+  ];
+  const decksFile = join('packages', 'rules-engine', 'src', 'starterDecks.ts');
+  const docFile = join('claude', 'play-realm-setup.md');
+  let source;
+  let doc;
+  try {
+    source = readFileSync(decksFile, 'utf8');
+    doc = readFileSync(docFile, 'utf8');
+  } catch {
+    console.error(`[guards] cannot read ${decksFile} or ${docFile}; the deck-doc check cannot run`);
+    bad++;
+    return;
+  }
+
+  // The registry's own body: the lines between `export const STARTER_DECKS` and its closing brace.
+  const literal = source.slice(source.indexOf('export const STARTER_DECKS'));
+  const registered = [...literal.slice(0, literal.indexOf('});'))
+    .matchAll(/\[([A-Z_0-9]+)\.id\]:/g)].map((m) => m[1]);
+  if (registered.length === 0) {
+    console.error('[guards] found no decks in STARTER_DECKS, so the parse in this guard is broken');
+    console.error('[guards] and a pass would mean nothing. Fix the parse rather than the registry.');
+    bad++;
+    return;
+  }
+
+  const names = [];
+  for (const ident of registered) {
+    const at = source.indexOf(`export const ${ident}: DeckSpec = {`);
+    const name = at === -1
+      ? null
+      : /^\s*name: '([^']+)'/m.exec(source.slice(at, at + 600))?.[1] ?? null;
+    if (name === null) {
+      console.error(`[guards] cannot read a name for the registered deck ${ident}`);
+      bad++;
+      continue;
+    }
+    names.push(name);
+  }
+
+  for (const name of names) {
+    if (!doc.includes(name)) {
+      console.error(`[guards] ${docFile} never names the starter deck "${name}", which a player`);
+      console.error('[guards] can pick from the lobby. Describe it there, in the deck section.');
+      bad++;
+    }
+  }
+
+  const heading = /^### ([A-Za-z]+) starter decks$/m.exec(doc);
+  if (heading === null) {
+    console.error(`[guards] cannot find the "### <count> starter decks" heading in ${docFile},`);
+    console.error('[guards] so the deck count in it cannot be checked. Restore the heading or');
+    console.error('[guards] update this guard to match its new wording.');
+    bad++;
+    return;
+  }
+  const expected = NUMBER_WORDS[names.length];
+  if (expected === undefined) {
+    console.error(`[guards] ${names.length} starter decks is past this guard's number words;`);
+    console.error('[guards] extend NUMBER_WORDS.');
+    bad++;
+    return;
+  }
+  if (heading[1].toLowerCase() !== expected) {
+    console.error(`[guards] ${docFile} heads its deck section "${heading[1]} starter decks" and the`);
+    console.error(`[guards] registry holds ${names.length}. Say "${expected}".`);
+    bad++;
+  }
+}
+checkPlayerDocNamesEveryStarterDeck();
+
+/**
+ * Every mana cost the player doc quotes has to be the cost the card actually has.
+ *
+ * The doc names cards in one shape -- `**Name** ({cost} ...)` -- eighty-three times, and a cost
+ * written there is a cost a player plans a turn around. The drift this catches is the same shape as
+ * the one #271 found by reading: the doc had said for 130 decisions that the opponent could not hold
+ * mana for a counterspell, long after it learned to. A document that contradicts the engine is worse
+ * than one that says nothing, because a reader has no way to tell.
+ *
+ * It caught one on the run that added it, and it was the one that costs something: Murderous
+ * Redcap's `{2}{B/R}{B/R}` was written `{2}{B}{R}`. Both coloured symbols are hybrid, so the card
+ * casts off four Swamps or four Mountains, and `{2}{B}{R}` tells a player they need one of each, in
+ * a doc that teaches hybrid mana two sections away. (The pool has two hybrid cards; Kitchen Finks,
+ * the other one, was written correctly.)
+ *
+ * The shape is narrow on purpose and that is why it has no false positives: only a bolded name
+ * followed by a parenthesis that *starts* with mana symbols is read as a quoted cost, so prose that
+ * mentions a card without pricing it is left alone, and the trailing words inside the parenthesis
+ * ("1/1 in Ashen Rite", "sorcery") are ignored.
+ *
+ * Reads the card definitions out of `starterDecks.ts` **source** rather than the built engine,
+ * because guards run before anything is built -- and parses commanders too, since the doc quotes
+ * four of them and a commander is not in any deck's `cards`.
+ *
+ * Three classes of claim live in that one parenthesis and all three are checked, because the same
+ * bulk pass that found the Redcap found three more:
+ *
+ *  - the **cost**, as above;
+ *  - the **power and toughness** (`1/2 haste`), where the doc had Monastery Swiftspear as a 1/1
+ *    and Stormchaser Mage as a 1/2 when the cards are a 1/2 and a 1/3. Both understate the
+ *    creature, which is the direction that loses a player a combat;
+ *  - **which deck it is in** (`in Tidal Mind`), where the doc put Thorn of the Black Rose in Ashen
+ *    Rite as well, and it is only in Tidal Mind. A player goes looking in the wrong deck.
+ *
+ * A power that is not a plain number -- a `*` read off the board -- is skipped rather than
+ * compared, because the doc cannot quote a number for it either.
+ */
+function checkPlayerDocQuotesEveryManaCost() {
+  const decksFile = join('packages', 'rules-engine', 'src', 'starterDecks.ts');
+  const docFile = join('claude', 'play-realm-setup.md');
+  let source;
+  let doc;
+  try {
+    source = readFileSync(decksFile, 'utf8');
+    doc = readFileSync(docFile, 'utf8');
+  } catch {
+    console.error(`[guards] cannot read ${decksFile} or ${docFile}; the mana-cost check cannot run`);
+    bad++;
+    return;
+  }
+
+  /*
+    Every `const X: CardDef = { ... }`, keyed by printed name, and the identifier it was declared
+    under — which is what the deck lists point at, so the deck check below needs both directions.
+
+    A land has no `manaCost` at all, which reads as the empty string and can never match a quoted
+    `{...}`.
+  */
+  const printed = new Map();
+  const nameOfIdent = new Map();
+  for (const chunk of source.split(/(?=(?:const|let)\s+[A-Z_0-9]+:\s*CardDef\s*=\s*\{)/)) {
+    const declared = /^(?:const|let)\s+([A-Z_0-9]+):\s*CardDef\s*=\s*\{/.exec(chunk);
+    if (declared === null) continue;
+    const end = chunk.indexOf('\n};');
+    const body = end === -1 ? chunk : chunk.slice(0, end);
+    const named = /^\s*name: (?:'((?:[^'\\]|\\.)*)'|"([^"]*)")/m.exec(body);
+    if (named === null) continue;
+    const name = (named[1] ?? named[2]).replace(/\\'/g, "'");
+    nameOfIdent.set(declared[1], name);
+    printed.set(name, {
+      cost: /^\s*manaCost: '([^']*)'/m.exec(body)?.[1] ?? '',
+      power: /^\s*power: '([^']*)'/m.exec(body)?.[1] ?? null,
+      toughness: /^\s*toughness: '([^']*)'/m.exec(body)?.[1] ?? null,
+    });
+  }
+  /*
+    And which deck each card is in, from the deck specs' own lists: `{ card: IDENT, count: n }`
+    plus the `commander: IDENT` line, which is the one a deck does not list under `cards`.
+  */
+  const decks = new Map();
+  const inDecks = new Map();
+  for (const chunk of source.split(/(?=export const [A-Z_0-9]+: DeckSpec = \{)/)) {
+    const deckName = /^export const [A-Z_0-9]+: DeckSpec = \{[\s\S]{0,400}?\n  name: '([^']+)'/.exec(chunk);
+    if (deckName === null) continue;
+    const end = chunk.indexOf('\n};');
+    const body = end === -1 ? chunk : chunk.slice(0, end);
+    decks.set(deckName[1], true);
+    const idents = [...body.matchAll(/\{ card: ([A-Z_0-9]+),/g)].map((m) => m[1]);
+    const commander = /^\s*commander: ([A-Z_0-9]+),/m.exec(body);
+    if (commander !== null) idents.push(commander[1]);
+    for (const ident of idents) {
+      const name = nameOfIdent.get(ident);
+      if (name === undefined) continue;
+      if (!inDecks.has(name)) inDecks.set(name, new Set());
+      inDecks.get(name).add(deckName[1]);
+    }
+  }
+  if (printed.size === 0 || decks.size === 0) {
+    const missing = printed.size === 0 ? 'CardDef' : 'DeckSpec';
+    console.error(`[guards] found no ${missing} in ${decksFile}, so this guard's parse is broken`);
+    console.error('[guards] and a pass would mean nothing. Fix the parse rather than the doc.');
+    bad++;
+    return;
+  }
+
+  let quoted = 0;
+  for (const match of doc.matchAll(/\*\*([^*\n]{2,48})\*\* \(([^)\n]{1,80})\)/g)) {
+    const lead = /^((?:\{[^}]+\})+)/.exec(match[2]);
+    if (lead === null) continue;
+    quoted++;
+    const name = match[1];
+    const card = printed.get(name);
+    if (card === undefined) {
+      console.error(`[guards] ${docFile} quotes a mana cost for "${name}", which is not a card in`);
+      console.error('[guards] starterDecks.ts. Fix the name, or the cost belongs to something else.');
+      bad++;
+      continue;
+    }
+    if (card.cost !== lead[1]) {
+      console.error(`[guards] ${docFile} prices "${name}" at ${lead[1]} and the card costs ${card.cost}.`);
+      bad++;
+    }
+    // "1/2 haste", "2/3 deathtouch in Tidal Mind" — a power or toughness that is not a plain
+    // number is a fact about the board, and the doc cannot quote one either, so it is skipped.
+    const pt = /(?:^|[ ,])(\d+)\/(\d+)(?:[ ,]|$)/.exec(match[2]);
+    if (pt !== null && /^\d+$/.test(card.power ?? '') && /^\d+$/.test(card.toughness ?? '')) {
+      if (pt[1] !== card.power || pt[2] !== card.toughness) {
+        console.error(`[guards] ${docFile} gives "${name}" as ${pt[1]}/${pt[2]} and the card is`);
+        console.error(`[guards] ${card.power}/${card.toughness}.`);
+        bad++;
+      }
+    }
+    // And every deck the parenthesis names has to be a deck the card is actually in. Keep the
+    // parenthesis to those: a deck named there for any other reason reads as a claim about where
+    // the card lives, because that is what every other row uses it for.
+    for (const deckName of decks.keys()) {
+      if (!match[2].includes(deckName)) continue;
+      if (inDecks.get(name)?.has(deckName) === true) continue;
+      const real = [...(inDecks.get(name) ?? [])].join(', ') || 'no starter deck';
+      console.error(`[guards] ${docFile} puts "${name}" in ${deckName}; it is in ${real}.`);
+      bad++;
+    }
+  }
+  if (quoted === 0) {
+    console.error(`[guards] found no "**Name** ({cost})" in ${docFile}, so this guard checked`);
+    console.error('[guards] nothing. Either the doc stopped quoting costs or the shape changed.');
+    bad++;
+  }
+}
+checkPlayerDocQuotesEveryManaCost();
+
+/**
+ * Every script the player doc tells somebody to run has to exist.
+ *
+ * The doc's whole job is that a person can follow it, and the commands are the part they paste
+ * rather than read. A renamed harness leaves a line that fails with "Cannot find module" -- which
+ * reads, to the person following it, as the project being broken.
+ *
+ * Yield on the run that added it: **nothing**, all seven exist. It is here anyway because it is
+ * free and exact: file existence has no false positives, unlike the one check deliberately left
+ * out of the cost guard above (a keyword named in a card's parenthesis is not always a claim about
+ * *that* card -- "it does not die to trample damage" names a keyword the card does not have).
+ */
+function checkPlayerDocCommandsExist() {
+  const docFile = join('claude', 'play-realm-setup.md');
+  let doc;
+  try {
+    doc = readFileSync(docFile, 'utf8');
+  } catch {
+    console.error(`[guards] cannot read ${docFile}; the command check cannot run`);
+    bad++;
+    return;
+  }
+  const named = new Set(
+    [...doc.matchAll(/\bnode (scripts\/[A-Za-z0-9_/.-]+\.(?:mjs|js))/g)].map((m) => m[1]),
+  );
+  if (named.size === 0) {
+    console.error(`[guards] found no "node scripts/..." command in ${docFile}, so this guard`);
+    console.error('[guards] checked nothing. Either the doc stopped quoting them or the shape did.');
+    bad++;
+    return;
+  }
+  for (const script of named) {
+    try {
+      statSync(script);
+    } catch {
+      console.error(`[guards] ${docFile} says to run ${script}, which does not exist. Rename it`);
+      console.error('[guards] in the doc, or put the script back.');
+      bad++;
+    }
+  }
+}
+checkPlayerDocCommandsExist();
+
+/**
+ * The four-seat deck bound in `packages/shared` has to stay equal to the engine's table cap / 4.
+ *
+ * `DECKLIST_LIMITS.maxCardsForFourSeats` is 150 because the rules engine's `MAX_INSTANCES` is 600
+ * and four seats share it (#314, measured: 150 a seat deals, 151 is refused). Those two numbers
+ * live in different packages, and `packages/shared` cannot import the engine — the dependency runs
+ * the other way — so the arithmetic is written out by hand in a docblock.
+ *
+ * A number copied by hand across a package boundary is a number that drifts. If `MAX_INSTANCES`
+ * moves, the warning a player reads at paste time becomes wrong in whichever direction is worse:
+ * silent about a list that cannot be dealt, or crying wolf about one that can.
+ *
+ * Reads source rather than `dist`, because guards run before the build in CI.
+ */
+function checkFourSeatDeckBoundMatchesEngine() {
+  const engineFile = 'packages/rules-engine/src/internal.ts';
+  const sharedFile = 'packages/shared/src/decklist.ts';
+  let engine;
+  let shared;
+  try {
+    engine = readFileSync(engineFile, 'utf8');
+    shared = readFileSync(sharedFile, 'utf8');
+  } catch {
+    return; // not in a checkout that has both packages
+  }
+  const cap = /^export const MAX_INSTANCES = (\d+);/m.exec(engine);
+  const perSeat = /^\s*maxCardsForFourSeats: (\d+),/m.exec(shared);
+  if (!cap || !perSeat) {
+    console.error(`[guards] could not read MAX_INSTANCES from ${engineFile} or`);
+    console.error(`[guards] maxCardsForFourSeats from ${sharedFile}, so this guard checked nothing.`);
+    console.error('[guards] Either a constant was renamed or its shape changed.');
+    bad++;
+    return;
+  }
+  const expected = Math.floor(Number(cap[1]) / 4);
+  if (Number(perSeat[1]) !== expected) {
+    console.error(`[guards] MAX_INSTANCES is ${cap[1]}, so a four-seat table holds ${expected} cards`);
+    console.error(`[guards] a seat — but maxCardsForFourSeats says ${perSeat[1]}. The paste-time`);
+    console.error('[guards] warning in pastedNote is wrong until they agree (#314).');
+    bad++;
+  }
+}
+checkFourSeatDeckBoundMatchesEngine();
+
+/**
+ * Is every response contract in `packages/shared/src/contracts` actually parsed somewhere?
+ *
+ * ## The gap this closes
+ *
+ * `apps/web`'s CardSearch page derives its types from `RecommendationResponse` rather than
+ * redeclaring them — which is only an improvement **if the contract describes the real response**.
+ * Nothing validated a response body against its contract until a conformance test was added for two
+ * of them; before that, `grep '\.parse(r.body)'` across this repository returned zero hits, and
+ * every response contract was documentation that a client nonetheless trusted.
+ *
+ * The per-item contracts are in better shape than that sounds: fifteen of them (`Collection`,
+ * `Deck`, `MePlayer`, `Notification`, …) are parsed by the route **as it builds the response**, so a
+ * drifted item shape is a 500 rather than a silent change. The envelopes were not, because every one
+ * of them is an object literal in a `res.json({ ... })`.
+ *
+ * So this guard asks only the narrow question it can answer from the source: does each `*Response`
+ * contract appear in a `.parse(` or `.safeParse(` call anywhere in `apps/`? That does not prove the
+ * call is on a real response body — only a test can do that — but it does stop a **new** response
+ * contract arriving with nothing checking it, which is how the first six got here.
+ */
+function checkEveryResponseContractIsParsedSomewhere() {
+  // Relative to the repository root, as every other guard in this file is.
+  const dir = 'packages/shared/src/contracts';
+  let files;
+  try {
+    files = readdirSync(dir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'));
+  } catch {
+    return; // not in a checkout that has the contracts
+  }
+  const declared = [];
+  for (const file of files) {
+    const source = readFileSync(join(dir, file), 'utf8');
+    for (const m of source.matchAll(/^export const ([A-Za-z0-9_]*Response) = /gm)) {
+      declared.push({ name: m[1], file: `packages/shared/src/contracts/${file}` });
+    }
+  }
+  if (declared.length === 0) {
+    console.error(`[guards] found no *Response contracts in ${dir}, so this guard checked nothing.`);
+    console.error('[guards] Either they were renamed or they moved.');
+    bad++;
+    return;
+  }
+
+  // Every .ts/.tsx under apps/, read once, because each contract is looked for in all of them.
+  const sources = [];
+  const walk = (at) => {
+    for (const entry of readdirSync(at, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+      const full = join(at, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.tsx?$/.test(entry.name)) sources.push(readFileSync(full, 'utf8'));
+    }
+  };
+  try {
+    walk('apps');
+  } catch {
+    return;
+  }
+
+  const unparsed = declared.filter(({ name }) => {
+    const re = new RegExp(`\\b${name}\\.(safeParse|parse)\\(`);
+    return !sources.some((source) => re.test(source));
+  });
+  if (unparsed.length > 0) {
+    console.error(`[guards] ${unparsed.length} response contract(s) are parsed nowhere in apps/:`);
+    for (const { name, file } of unparsed) console.error(`[guards]   ${name} (${file})`);
+    console.error('[guards] A contract nothing parses is documentation, not a check: a drift between');
+    console.error('[guards] it and the route is a silent production bug rather than a failing test.');
+    console.error('[guards] Add a conformance assertion in that route group\'s test file — parse a real');
+    console.error('[guards] response body, and also check that dropping a declared key is refused, so');
+    console.error('[guards] the test can tell your contract from an empty z.object({}).');
+    bad++;
+  }
+}
+checkEveryResponseContractIsParsedSomewhere();
+
+/**
+ * Does any script still import the engine's `dist` directly, bypassing the staleness warning?
+ *
+ * The harnesses in `scripts/measure/` import the **built** engine, so a run after a source change
+ * and before a rebuild measures the previous build and prints a number that is about code no longer
+ * there. That is not hypothetical: D338's `derivable.mjs` printed the pre-change share to a tenth of
+ * a percent for exactly this reason.
+ *
+ * `scripts/lib/engine.mjs` re-exports `dist` and writes a loud stderr warning when it is stale, so
+ * importing the engine through it *is* the check. An import that reaches past it into `dist` gets
+ * no warning — which is the state 45 of these scripts were in, because `provenanceLine` was opt-in
+ * and a warning you have to remember to ask for is missing from the script nobody was thinking
+ * carefully about.
+ *
+ * The browser drivers are covered too, and for a reason I got wrong first time. I had assumed a
+ * stale `dist` simply fails them, since they assert behaviour rather than printing a number. They do
+ * fail — but **obscurely**, and worse than that: the server they drive runs from `src` (through tsx
+ * and Vite), while the driver reads `dist`, so a stale build means the driver's expectations come
+ * from an *older engine than the one playing*. `e2e-table` picks a card out of a stale deck and
+ * reports that the browser does not show it; `e2e-solo` pastes a list naming a card the live engine
+ * cannot read. Both read as a product bug. A misleading failure is cheaper than a misleading success
+ * and still worth one line of warning.
+ *
+ * Docblock mentions of the path are fine and common ("reads packages/rules-engine/dist, so build
+ * first"), so this looks only for an import or a dynamic `import()` of it.
+ */
+function checkScriptsImportTheEngineWrapper() {
+  const dirs = ['scripts', 'scripts/measure'];
+  const files = [];
+  for (const dir of dirs) {
+    let names;
+    try {
+      names = readdirSync(dir).filter((f) => f.endsWith('.mjs'));
+    } catch {
+      return; // not in a checkout that has the scripts
+    }
+    for (const name of names) files.push(`${dir}/${name}`);
+  }
+  if (files.length === 0) {
+    console.error(`[guards] found no .mjs under ${dirs.join(' or ')}, so this guard checked nothing.`);
+    bad++;
+    return;
+  }
+  /*
+    Matched **per line**, and that is a correction rather than a style choice.
+
+    The first version of this check was one regex over the whole file:
+
+        /(?:from|import\s*\()\s*[^;\n]{0,80}?['"][^'"]*rules-engine\/dist[^'"]*['"]/
+
+    and it reported two instruments that are perfectly fine. `[^'"]*` **matches newlines**, so from
+    a stray `"` in a docblock — `a figure from "40 and 38"` — it walked across three lines to reach
+    the path in a later sentence and called that an import. Bounding the gap with `{0,80}` did
+    nothing, because the crossing happened inside the quotes rather than before them.
+
+    I noticed only because I happened to know those two files were clean. A guard that cries wolf is
+    a guard somebody switches off, which is the same end state as one that cannot fail.
+
+    So: one line at a time, `[^'"\n]*` inside the quotes, and the path has to be preceded on that
+    same line by `from`, `import(` or `URL(` — the three ways these scripts name a module. A
+    docblock mentioning the path writes it in backticks, which no quote delimiter matches.
+  */
+  const direct = /(?:\bfrom\s+|\bimport\s*\(\s*|\bURL\(\s*)['"][^'"\n]*rules-engine\/dist[^'"\n]*['"]/;
+  const offenders = files.filter(
+    (f) => readFileSync(f, 'utf8').split('\n').some((line) => direct.test(line)),
+  );
+  if (offenders.length > 0) {
+    console.error(`[guards] ${offenders.length} script(s) import the engine's dist directly:`);
+    for (const f of offenders) console.error(`[guards]   ${f}`);
+    console.error('[guards] Import from scripts/lib/engine.mjs instead. It re-exports the same');
+    console.error('[guards] module and warns on stderr when dist is older than the engine source,');
+    console.error('[guards] which is the difference between a number about this build and a number');
+    console.error('[guards] about the last one (D338, D359). scripts/lib/engine.mjs itself is the');
+    console.error('[guards] one file that may, since re-exporting dist is its whole job.');
+    bad++;
+  }
+}
+checkScriptsImportTheEngineWrapper();
+
+/**
+ * Every `badgesOf` prop in the table UI goes through `cardBadges`, rather than computing badges
+ * itself.
+ *
+ * This is the guard for D363, and the bug it exists to stop is worth stating exactly, because it
+ * survived a unit test, a typecheck and a browser suite. `cardBadges` grew a "move by hand" badge
+ * for a card the engine cannot play, with a comment saying it was deliberately placed above the
+ * battlefield-only guard so it would show in **every** zone. It was not in every zone: the hand,
+ * the graveyard, the exile pile and the command zone each passed `PlayTable` a `badgesOf` of their
+ * own that returned `["playable"]` and nothing else, so the one zone the comment named as the most
+ * important — the hand, where a player discovers their card has no "Cast" — was the one zone that
+ * could not say so.
+ *
+ * Nothing caught it. `cardBadges` has eight unit tests and they all pass, because the function was
+ * right. The types matched, because a `badgesOf` is a `(c: VisibleCard) => readonly string[]` no
+ * matter what it computes. And the browser check that should have caught it was asking about a
+ * deck with one unreadable card in sixty, which is a card in the library seven times in eight, and
+ * a library renders nothing — so it failed about one run in eight and read green the rest.
+ *
+ * Hence a guard rather than another test: the defect is not in a function, it is in **which**
+ * function a call site chose, and that is a shape a grep can see and a test cannot. A new zone row
+ * that wants its own badge rule now has to add it to `cardBadges`, where every zone gets it.
+ */
+function checkBadgesAllComeFromCardBadges() {
+  const files = ['apps/web/src/pages/PlayTable.tsx'];
+  const offenders = [];
+  for (const file of files) {
+    const lines = readFileSync(file, 'utf8').split('\n');
+    lines.forEach((line, i) => {
+      const m = /badgesOf=\{(.*)$/.exec(line);
+      if (m === null) return;
+      const rest = m[1];
+      // `badgesOf={badgesOf}` passes the shared one; anything else must name `cardBadges` on the
+      // same line, which is the one-line arrow form the spectator board uses.
+      if (rest.startsWith('badgesOf}')) return;
+      if (rest.includes('cardBadges')) return;
+      offenders.push(`${file}:${i + 1}: ${line.trim()}`);
+    });
+  }
+  if (offenders.length > 0) {
+    console.error(`[guards] ${offenders.length} badgesOf prop(s) do not go through cardBadges:`);
+    for (const o of offenders) console.error(`[guards]   ${o}`);
+    console.error('[guards] Pass the shared `badgesOf`, or a one-line arrow calling `cardBadges`.');
+    console.error('[guards] A zone that computes its own badges silently drops every badge added');
+    console.error('[guards] to cardBadges afterwards — which is how "move by hand" was missing');
+    console.error('[guards] from the hand, the graveyard, exile and the command zone (D363).');
+    bad++;
+  }
+}
+checkBadgesAllComeFromCardBadges();
 
 if (bad) {
   console.error(`[guards] ${bad} violation(s)`);

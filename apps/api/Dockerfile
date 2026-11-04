@@ -30,6 +30,7 @@ COPY packages/rules-engine/package.json ./packages/rules-engine/
 COPY packages/theme/package.json ./packages/theme/
 COPY packages/auto-tagger/package.json ./packages/auto-tagger/
 COPY packages/mailer/package.json ./packages/mailer/
+COPY packages/recommender/package.json ./packages/recommender/
 COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
 COPY apps/realtime/package.json ./apps/realtime/

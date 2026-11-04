@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./account-tokens": {
+      "types": "./dist/accountTokens.d.ts",
+      "import": "./dist/accountTokens.js"
     }
   },
   "files": [

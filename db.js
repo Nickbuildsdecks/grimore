@@ -1049,6 +1049,135 @@ async function initDb() {
     try { await run(m); } catch (e) { /* column exists */ }
   }
 
+  /*
+    The columns the Postgres branch adds and this one never did.
+
+    Every `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in the Postgres statement list above is a
+    column `server.js` reads or writes. The SQLite branch had the four `players` ones immediately
+    above and **none of the rest**, so on a freshly created local database:
+
+      - `/api/decks/discover` answered 500 with `no such column: d.is_public`
+      - the metagame endpoint answered 500 with `no such column: ds.season_id`
+      - `INSERT INTO decks (... is_public, format)` -- deck creation -- could not run at all
+
+    That is the opposite direction from the gap `claude/postgres-schema-gap-2026-09-27.md` and
+    `scripts/audit-postgres-schema-gap.js` track, which is "what does Postgres not have that
+    server.js writes". Nothing had ever audited this way round, and this way round is the one that
+    breaks the workflow CLAUDE.md prescribes: *test locally first on http://localhost:3000*. Local
+    was the broken one.
+
+    Read-then-add rather than try-then-ignore. The blocks above this one wrap an `ALTER` in a
+    `catch` that swallows everything, which cannot tell "the column is already there" from a typo,
+    a missing table or a locked database -- so a real error would read as a successful migration.
+    `PRAGMA table_info` answers the question the catch was guessing at.
+  */
+  const columnMigrations = [
+    ['card_art_votes', 'artist', 'TEXT'],
+    ['seasons', 'schedule_mode', 'TEXT'],
+    ['decks', 'is_public', 'INTEGER DEFAULT 0'],
+    ['decks', 'custom_tags', 'TEXT'],
+    ['decks', 'featured_card_name', 'TEXT'],
+    ['decks', 'format', "TEXT DEFAULT 'commander'"],
+    ['decks', 'cloned_from_deck_id', 'TEXT'],
+    ['decks', 'original_creator_name', 'TEXT'],
+    ['decks', 'legality_reason', 'TEXT'],
+    ['decks', 'likes_count', 'INTEGER DEFAULT 0'],
+    ['deck_stats', 'total_matches', 'INTEGER DEFAULT 0'],
+    ['deck_stats', 'season_id', 'TEXT'],
+    ['player_stats', 'season_id', 'TEXT'],
+    ['player_stats', 'total_matches', 'INTEGER DEFAULT 0'],
+    ['scryfall_cards', 'card_name', 'TEXT'],
+
+    /*
+      And the columns the **v2 migrations** add, which the legacy SQLite branch also never got.
+
+      `packages/db/migrations/` is this project's statement of what the schema is, and comparing it
+      against a freshly created local database found twenty-one columns missing. Fifteen are below.
+      Each one is read or written by `server.js`, and each absence is a 500 on a route rather than a
+      degraded one:
+
+        - `players.profile_theme` and its three siblings (migration 0006) -- `GET
+          /api/players/:id/profile` answered `no such column: profile_theme`.
+        - `decks.budget_limit` and `decks.include_basic_lands_in_price` -- both appear in the
+          `INSERT INTO decks (...)` column lists in `server.js`, so **creating a deck could not work
+          at all** on a fresh local database.
+        - `players.sessions_valid_from` (migration 0014) -- `server.js` already catches its absence
+          and warns that a password change cannot sign other sessions out. The warning was accurate
+          on every local database there has ever been.
+        - `seasons.banlist` and the four restriction columns beside it.
+
+      The six `scryfall_cards` columns from migration 0015 are deliberately **not** here. That
+      migration is for the Postgres card store, and `CARD_UPSERT_SQLITE` was deliberately left at
+      thirteen columns when it was written (D329), so adding columns nothing writes would be the
+      opposite of closing a gap.
+
+      ## Two deliberate divergences, because SQLite's ALTER cannot express the Postgres form
+
+      `ALTER TABLE ... ADD COLUMN x TIMESTAMPTZ NOT NULL DEFAULT now()` has no SQLite equivalent:
+      SQLite refuses a non-constant default on an added column, and `NOT NULL` without a default
+      would refuse the existing rows. So the four timestamp columns are added **nullable with no
+      default**, and that is safe to do here because the code already reads them that way:
+      `server.js` guards `sessions_valid_from` with `row ? new Date(...) : null`, and a null reads as
+      "no cutoff", which is the right answer for a row that predates the column.
+    */
+    ['players', 'profile_theme', "TEXT DEFAULT 'default'"],
+    ['players', 'featured_deck_id', 'TEXT'],
+    ['players', 'discord_handle', 'TEXT'],
+    ['players', 'moxfield_username', 'TEXT'],
+    ['players', 'email_verified_at', 'DATETIME'],
+    ['players', 'sessions_valid_from', 'DATETIME'],
+    ['decks', 'budget_limit', 'REAL'],
+    ['decks', 'include_basic_lands_in_price', 'INTEGER NOT NULL DEFAULT 0'],
+    ['decks', 'created_at', 'DATETIME'],
+    ['decks', 'updated_at', 'DATETIME'],
+    ['seasons', 'allowed_colors', `TEXT NOT NULL DEFAULT '["W","U","B","R","G","C"]'`],
+    ['seasons', 'allowed_rarities', `TEXT NOT NULL DEFAULT '["common","uncommon","rare","mythic"]'`],
+    ['seasons', 'banlist', "TEXT NOT NULL DEFAULT '[]'"],
+    ['seasons', 'budget_limit', 'REAL'],
+    ['seasons', 'max_rares', 'INTEGER NOT NULL DEFAULT -1'],
+
+    /*
+      `deck_cards.custom_tag`, which the Postgres branch of this file has and this one did not.
+
+      `server.js` inserts it on the deck-save path (two sites) and selects `dc.custom_tag` in the
+      deck queries. The Postgres `CREATE TABLE deck_cards` above lists it, and so does
+      `packages/db/migrations/0001_baseline.sql` — the SQLite branch is the only place it was
+      missing, so on a fresh local database **saving a deck's cards could not work**. Found by
+      `scripts/audit-sqlite-schema-gap.js`.
+
+      (The first version of this comment said no schema anywhere created it and that Postgres still
+      did not have it. Both were false, and the reason is in D349: the grep that established it
+      ended in `head -8`, which cut off the db.js and migration hits after eight `server.js` ones.
+      This project has a standing rule to diff legacy SQL against the baseline before porting, and
+      it exists for exactly this.)
+    */
+    ['deck_cards', 'custom_tag', 'TEXT']
+  ];
+  const columnsOf = async (table) => {
+    try {
+      const rows = await query(`PRAGMA table_info(${table})`);
+      return new Set(rows.map((r) => String(r.name)));
+    } catch (e) {
+      // The table itself is missing, which is a different problem and a louder one: say so rather
+      // than reporting the column as migrated.
+      console.warn(`[initDb] cannot read columns of ${table}:`, e.message);
+      return null;
+    }
+  };
+  const seenColumns = new Map();
+  for (const [table, column, spec] of columnMigrations) {
+    if (!seenColumns.has(table)) seenColumns.set(table, await columnsOf(table));
+    const have = seenColumns.get(table);
+    if (have === null || have.has(column)) continue;
+    try {
+      await run(`ALTER TABLE ${table} ADD COLUMN ${column} ${spec}`);
+      have.add(column);
+      console.log(`[initDb] added missing SQLite column ${table}.${column}`);
+    } catch (e) {
+      console.warn(`[initDb] could not add ${table}.${column}:`, e.message);
+    }
+  }
+
   // Index creation is best-effort: a pre-existing DB may have a drifted schema (e.g. an
   // older scryfall_cards without a `name` column), and a single missing-column error must
   // NOT abort initDb — that would take the whole app down on boot. Each index is guarded.

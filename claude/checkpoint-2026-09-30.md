@@ -312,3 +312,121 @@ running concurrently produce a duplicate-key error on `pg_class_relname_nsp_inde
 DROP achieves nothing because the index comes straight back. Removed, with the reasoning recorded in the
 migration: taking it away properly means removing it from `db.js` first, which is a legacy change and not
 a migration's business.
+
+## Fifth pass: the score-report route
+
+Handed to me with "optimization is up to you", so I established the facts before choosing, and two of
+them decided it.
+
+**Fact one: `apps/api` had already solved the authorization half.** Its league slice requires a session
+and seated-or-organizer, and validates that every result names a player at the table. There was nothing
+to design — legacy just needed the same rule, and legacy is what is serving traffic. Ported verbatim,
+plus reading roles from the database rather than the login-time session snapshot so a revoked role locks
+someone out at once.
+
+**Fact two: neither app can reopen a reported pod.** `pods.completed` is only ever set to `1`, in both.
+That is what made the re-report question real rather than stylistic: `apps/api`'s blanket 409 makes a
+mis-entered score permanent for the rest of the season, and legacy's unlimited overwrite lets whoever
+lost rewrite the result. So the 409 now applies to the players who sat at the pod and not to organizers,
+in both apps. The standings are rebuilt from the pods rather than accumulated, so a correction settles
+the board — the new test in each suite moves a win between players and checks the loser's total falls.
+
+**And a hole I opened and then closed.** Reading my own diff adversarially: scoping the 409 to the
+players is only safe if a report has to cover the whole table. Otherwise one player reports *only
+themselves* as the winner, the pod completes with everyone else on zero, and the rest of the table can no
+longer correct it — I would have shipped a rule exploitable by exactly the person it constrains.
+`apps/api` had the same hole under its blanket 409, where the first reporter won permanently. Both apps
+now require a result for every seat, named once each, which is what both reporting forms already send.
+
+### Two things found while reading the handler
+
+The route scored `seasons WHERE is_active = 1` instead of the pod's own season. Correcting a pod after
+its season closed answered 404; correcting one while a different season was open paid out the *new*
+season's points and rebuilt the *new* season's leaderboard. Fixed, with a test that closes the season
+and corrects the pod.
+
+`handleSelfReport` in `public/app.js` posts `{ kills, placedFirst, placedDraw }` with no `results` array,
+which the report route could never have accepted. See the fifth correction below: I called this a live
+broken button, and it was not one.
+
+### A coverage limit worth stating plainly
+
+The pods model — `pods`, `pod_results`, `active_roster` — is created **only** by Postgres migration 0009.
+Nothing in `db.js` or `server.js` creates it for SQLite. The entire league engine has therefore never
+existed on the local dev dialect, so "test it locally first" cannot mean SQLite for this feature; the
+Postgres write-path suite is the only place this ladder can be exercised, and that is the dialect
+production runs. I did still boot legacy on SQLite to prove the server starts with the new route and that
+the session check precedes any query.
+
+### Verified before pushing, this time against a tree CI can reproduce
+
+| Suite | Result |
+| --- | --- |
+| `pnpm --filter @grimore/api test` | 264 passed, 18 files (league 36, up from 35) |
+| `npm run test:postgres` | 25 passed (was 24; one new authorization test, 11 assertions) |
+| `npm run test:unit` | 40 passed |
+| `npm run v2:typecheck` | 15/15 |
+| `npm run v2:build` | 9/9 |
+| `npm run v2:guards` | OK |
+| `npm run preflight` | OK, 0 hard failures |
+| legacy boot on SQLite | starts; 401 before any query |
+
+The first run of the Postgres suite failed, and it was my test rather than the code: registering the
+organiser mid-test seeded a zeroed `player_stats` row for the active season, so "a re-report must not add
+rows" was counting registration. The organiser is created before the season opens now. Worth noting that
+the thing that tripped my test is the season-two collision recorded above — the untargeted
+`ON CONFLICT DO NOTHING` — showing up from a third direction.
+
+## Sixth pass: the affiliate id, found while confirming what is left for Nick
+
+`TCGPLAYER_AFFILIATE_ID=xJoE0d` was on the list of things Nick had to set on the VM. Checking why turned
+it into a code fix instead: `/api/config/affiliates` in legacy defaulted to `'grimore'`, which is not a
+real affiliate id, so with the variable unset — as it is — every purchase link built from that route
+looked attributed and earned nothing. CLAUDE.md requires `xJoE0d` on all of them, every hard-coded link
+in `public/` already carries it, and `apps/api` had already made it the default during the port. Only the
+configurable path in the app actually serving traffic was wrong.
+
+Card Kingdom now returns `null` instead of `'grimore'`: there is no Card Kingdom affiliate id to fall
+back to, and a fabricated one is worse than none. Nothing reads that field, so no rendered link changes.
+
+Tested where it can be tested — `test/postgres-write-paths.test.js` is the only harness that boots
+`server.js`, and it sets no affiliate environment variables, so the assertion exercises the default
+rather than a fixture. One item off Nick's VM list: setting the variable is an override now, not a
+requirement.
+
+## Still open, and what kind of thing each is
+
+**Nick's, VM-side, unchanged:** `SMTP_URL` + `MAIL_FROM` + `APP_BASE_URL` (recovery mail fails closed
+until they are set, by design); the staging rehearsal; then `pg_dump` followed by
+`docker compose --profile v2 up -d api`, both run by hand with eyes on the output.
+
+**Closed, not open:** the dashboard's "Report Your Pod Result" form. I listed this as a product decision;
+it was not one, because the form was unreachable. See the fifth correction below. The dead code is
+removed and `renderHubPairings`' full-pod form is the single reporting path.
+
+## A fifth time I was wrong: I put a product question to Nick about code nobody could reach
+
+I told Nick the dashboard's "Report Your Pod Result" form was a live, rendered affordance that had always
+answered 500, asked him how a single player's self-report should behave, and offered three options. He
+picked one. Then I went to implement it and checked what actually rendered the form.
+
+Nothing did. `loadActiveMatch()` is never called — the only occurrence of the name in the codebase is its
+own definition. None of the five elements it writes to (`dashboard-active-match-panel`,
+`active-match-round`, `active-match-table`, `active-match-status-badge`, `active-match-details`) exists in
+any page in `public/`, so `if (!panel) return;` fired every time and the panel never rendered. The Report
+button was never on screen; no player has ever clicked it or seen its error.
+
+Two things were wrong, and the second is the one that matters. The factual claim was wrong. But I also
+built a **product question** on top of an unverified claim and spent Nick's attention on it — the exact
+thing "only ask when a decision is genuinely mine" exists to prevent. The question I should have asked was
+none, because the answer was "delete the dead code", and I could have established that with the grep I
+eventually ran. Asking is not automatically the safe option; asking about something I have not checked
+costs someone else's time and dresses a guess up as a choice.
+
+Nick's answer still decided the shape of the fix — one reporting form, the full-pod one — so the outcome
+is the deletion rather than a second copy of that form in a dashboard panel nobody asked for. The
+endpoint stays: the React SPA reads `/api/players/active-match` in `apps/web/src/pages/Events.tsx`.
+
+The check that would have caught it, and which I now run before describing any UI as live: grep the
+element ids, and grep for a caller of the function. A route having a handler proves nothing about whether
+a user can reach it.

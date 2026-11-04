@@ -4,17 +4,22 @@
  * Response and input types come from `@grimore/shared` — the same Zod contracts the API validates
  * against — so a route and its caller cannot drift apart without a typecheck failure.
  *
- * ## Two bases, because this is a strangler migration
+ * ## One base, after a second one turned out to resolve nowhere
  *
- * `apiUrl()` addresses `apps/api`; `legacyUrl()` addresses the original `server.js`. Routes that have
- * not been ported yet (Moxfield import, password reset) still have to reach the legacy
- * server, and marking those call sites explicitly is what keeps the remaining work visible. Both default
- * to the empty string, i.e. same-origin, which is how the deployed app runs behind one reverse proxy.
+ * There used to be a `legacyUrl()` alongside `apiUrl()`, for routes not yet ported out of
+ * `server.js`. With `VITE_LEGACY_API_URL` unset — and it was set nowhere: not in the deploy script,
+ * not in CI, not in any env template — it produced `/legacy-api/<path>`, **a prefix that exists only
+ * in the Vite dev proxy**. In production nothing maps it, so every call through it POSTed to a path
+ * no server answered: `Cannot POST /legacy-api/api/auth/forgot-password`. Password reset and recovery
+ * were broken in the deployed SPA and worked perfectly in development, which is how it survived.
  *
- * In development they are separate servers, so set:
- *   VITE_API_URL=http://localhost:4000     (apps/api)
- *   VITE_LEGACY_API_URL=http://localhost:3000  (server.js)
- * or rely on the Vite dev proxy, which already routes /api to apps/api and /legacy-api to server.js.
+ * Both recovery routes are ported now, so all three former call sites address `apps/api` by the same
+ * same-origin `/api/...` path the legacy server also answers — correct before the cutover and after
+ * it. The helper is gone rather than left as a trap.
+ *
+ * `apiUrl()` defaults to the empty string, i.e. same-origin, which is how the deployed app runs
+ * behind one reverse proxy. In development set `VITE_API_URL=http://localhost:4000` or rely on the
+ * Vite dev proxy, which routes /api to apps/api.
  */
 import { isApiErrorCode } from "@grimore/shared"
 import type {
@@ -50,11 +55,9 @@ import type {
 } from "@grimore/shared"
 
 const API_BASE: string = import.meta.env.VITE_API_URL ?? ""
-const LEGACY_BASE: string = import.meta.env.VITE_LEGACY_API_URL ?? ""
 
 export const apiUrl = (path: string): string => API_BASE + path
 /** Explicitly reaches the un-ported legacy server. Every call site is a remaining migration task. */
-export const legacyUrl = (path: string): string => (LEGACY_BASE ? LEGACY_BASE + path : `/legacy-api${path}`)
 
 /**
  * The v2 error envelope is `{ error: { code, message, details? } }`.
@@ -176,12 +179,10 @@ export const apiClient = {
     login: (body: LoginInput) => http.post<{ success: true; user: MePlayer }>(apiUrl("/api/auth/login"), body),
     register: (body: RegisterInput) => http.post<{ success: true; message: string }>(apiUrl("/api/auth/register"), body),
     logout: () => http.post<{ success: true }>(apiUrl("/api/auth/logout")),
-    /** Not ported to apps/api yet — still served by server.js. */
     forgotPassword: (usernameOrEmail: string) =>
-      http.post<{ message?: string }>(legacyUrl("/api/auth/forgot-password"), { usernameOrEmail }),
-    /** Not ported to apps/api yet — still served by server.js. */
+      http.post<{ message?: string }>(apiUrl("/api/auth/forgot-password"), { usernameOrEmail }),
     resetPassword: (token: string, newPassword: string) =>
-      http.post<{ success: boolean }>(legacyUrl("/api/auth/reset-password"), { token, newPassword }),
+      http.post<{ success: boolean }>(apiUrl("/api/auth/reset-password"), { token, newPassword }),
   },
 
   decks: {
@@ -191,9 +192,15 @@ export const apiClient = {
     remove: (deckId: string) => http.delete<{ success: true }>(apiUrl(`/api/decks/${encodeURIComponent(deckId)}`)),
     clone: (deckId: string) =>
       http.post<{ success: true; newDeckId: string }>(apiUrl(`/api/decks/${encodeURIComponent(deckId)}/clone`)),
-    /** Moxfield import is not ported to apps/api yet — still served by server.js. */
+    /**
+     * Same-origin, so this reaches `server.js` today — the only one of these three that `apps/api`
+     * does **not** serve. api.moxfield.com is denied by this environment's egress proxy, so it has
+     * no port yet. TODO(moxfield): it must be ported, even if only as a 503 `MOXFIELD_UNAVAILABLE`
+     * the way `/api/decks/reprice-init` already is, **before** the reverse proxy sends `/api` to
+     * `apps/api` — otherwise this becomes a bare 404. No page calls it yet.
+     */
     importMoxfield: (moxfieldUrl: string) =>
-      http.post<{ deckId: string }>(legacyUrl("/api/decks/register"), { moxfieldUrl }),
+      http.post<{ deckId: string }>(apiUrl("/api/decks/register"), { moxfieldUrl }),
   },
 }
 

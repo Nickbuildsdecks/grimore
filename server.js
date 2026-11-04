@@ -325,84 +325,6 @@ app.get('/sandbox', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'sandbox.html'));
 });
 
-// Gemini AI Rules & Interaction Reasoning Endpoint
-const aiAdvisorQuerySchema = z.object({
-  query: z.string().min(1).max(1000),
-  boardState: z.string().optional()
-});
-
-// Tight per-client limiter for the paid Gemini endpoint so an anonymous caller can't
-// run up API spend. Defined here (before the route that uses it) to avoid a temporal
-// dead zone — the route is registered above where the other rate limiters are declared.
-const aiLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000,
-  max: 15,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, error: 'AI advisor rate limit reached. Please wait a moment.' }
-});
-
-app.post('/api/sandbox/ai-advisor', aiLimiter, premiumGate, async (req, res) => {
-  // Require a logged-in session — this endpoint drives billable Gemini calls.
-  if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
-  const parseResult = aiAdvisorQuerySchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ error: 'Invalid input parameters.', details: parseResult.error.format() });
-  }
-
-  const { query, boardState } = parseResult.data;
-
-  const hasValidApiKey = process.env.GEMINI_API_KEY && 
-                         !process.env.GEMINI_API_KEY.includes('your_') && 
-                         !process.env.GEMINI_API_KEY.includes('placeholder') &&
-                         process.env.GEMINI_API_KEY.trim().length > 15;
-
-  if (!genAI || !hasValidApiKey) {
-    return res.json({
-      answer: `Grim Rules Advisor (Heuristic Mode): Rule check for query "${query}". Priority and state-based action checks resolved. [CR 704.5 / MTR 4.1]`,
-      mode: "heuristic",
-      ruleCitation: "CR 704.5"
-    });
-  }
-
-  try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-    const prompt = `You are Grim — the official Grimore MTG Arena Rules Advisor and L3 Certified MTG Head Judge.
-STRICT PRECISION DIRECTIVE: You must provide 100% accurate, bulletproof Magic: the Gathering rulings with zero hallucinations.
-MANDATORY DUAL-SOURCE CITATIONS: You must ALWAYS cite applicable official sources:
-1. Mechanical Rules: Exact Comprehensive Rules section number (e.g., CR 603.6a, CR 613.1d, CR 704.5k).
-2. Tournament Policy / Infractions: Exact Infraction Procedure Guide (IPG) or Magic Tournament Rules (MTR) section number (e.g., IPG 2.3, IPG 3.5, MTR 4.1).
-
-Format your response cleanly for fast in-game reading:
-- Direct, authoritative ruling first.
-- Exact dual citations formatted as [CR X.Y / IPG A.B].
-- Step-by-step mechanical/policy breakdown (under 3 sentences).
-
-User Query: "${query}"
-${boardState ? `Current Board Context: ${boardState}` : ''}`;
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('AI Rules Advisor request timeout')), 1500)
-    );
-    const result = await Promise.race([model.generateContent(prompt), timeoutPromise]);
-    const responseText = result.response.text();
-
-    return res.json({
-      answer: responseText,
-      mode: "ai-active",
-      model: "gemini-flash-latest"
-    });
-
-  } catch (err) {
-    console.warn("Gemini AI API Fallback:", err.message);
-    return res.json({
-      answer: `Grim Rules Advisor (Heuristic Mode): Analysis for query "${query}". Priority and state-based action checks resolved. [CR 704.5 / MTR 4.1]`,
-      mode: "heuristic-fallback",
-      ruleCitation: "CR 704.5"
-    });
-  }
-});
-
 const { createClient } = require('redis');
 const { RedisStore } = require('connect-redis');
 
@@ -525,6 +447,106 @@ app.use(async (req, res, next) => {
       return next();
     }
     next(e);
+  }
+});
+
+/*
+  Gemini AI Rules & Interaction Reasoning Endpoint.
+
+  **Mounted here, below the session middleware, and that position is the fix for a hang.** This
+  block used to sit at line ~328 — above `app.use(session(...))`. Express only gives a route the
+  middleware registered before it, so `req.session` was `undefined`, the handler's first line
+  (`if (!req.session.player)`) threw a TypeError, and because the handler is `async` that became an
+  unhandled rejection: Express 4 does not route those to an error handler, so **the request never
+  received a response at all**. A player asking the rules advisor a question waited for their own
+  browser to give up, and two of the fourteen suites in `execution/` had been reporting it as
+  "timed out" for as long as anybody has run them (D354).
+
+  Keep it below `app.use(session(...))` and below the session-epoch middleware. That middleware's
+  own docblock says it is mounted "before every route, so no route can be reached with a stale
+  session" — which was not true of this one, and is now.
+*/
+const aiAdvisorQuerySchema = z.object({
+  query: z.string().min(1).max(1000),
+  boardState: z.string().optional()
+});
+
+/*
+  Tight per-client limiter for the paid Gemini endpoint so an anonymous caller can't run up API
+  spend.
+
+  It used to sit far above here, with a comment explaining that it was "defined here (before the
+  route that uses it) to avoid a temporal dead zone — the route is registered above where the other
+  rate limiters are declared". That workaround was treating the symptom: the route being registered
+  up there is the actual problem, and it is fixed by moving the route rather than the limiter
+  (D354). Both now live below the session middleware, where a route that requires a login belongs.
+*/
+const aiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'AI advisor rate limit reached. Please wait a moment.' }
+});
+
+app.post('/api/sandbox/ai-advisor', aiLimiter, premiumGate, async (req, res) => {
+  // Require a logged-in session — this endpoint drives billable Gemini calls.
+  if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
+  const parseResult = aiAdvisorQuerySchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid input parameters.', details: parseResult.error.format() });
+  }
+
+  const { query, boardState } = parseResult.data;
+
+  const hasValidApiKey = process.env.GEMINI_API_KEY && 
+                         !process.env.GEMINI_API_KEY.includes('your_') && 
+                         !process.env.GEMINI_API_KEY.includes('placeholder') &&
+                         process.env.GEMINI_API_KEY.trim().length > 15;
+
+  if (!genAI || !hasValidApiKey) {
+    return res.json({
+      answer: `Grim Rules Advisor (Heuristic Mode): Rule check for query "${query}". Priority and state-based action checks resolved. [CR 704.5 / MTR 4.1]`,
+      mode: "heuristic",
+      ruleCitation: "CR 704.5"
+    });
+  }
+
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
+    const prompt = `You are Grim — the official Grimore MTG Arena Rules Advisor and L3 Certified MTG Head Judge.
+STRICT PRECISION DIRECTIVE: You must provide 100% accurate, bulletproof Magic: the Gathering rulings with zero hallucinations.
+MANDATORY DUAL-SOURCE CITATIONS: You must ALWAYS cite applicable official sources:
+1. Mechanical Rules: Exact Comprehensive Rules section number (e.g., CR 603.6a, CR 613.1d, CR 704.5k).
+2. Tournament Policy / Infractions: Exact Infraction Procedure Guide (IPG) or Magic Tournament Rules (MTR) section number (e.g., IPG 2.3, IPG 3.5, MTR 4.1).
+
+Format your response cleanly for fast in-game reading:
+- Direct, authoritative ruling first.
+- Exact dual citations formatted as [CR X.Y / IPG A.B].
+- Step-by-step mechanical/policy breakdown (under 3 sentences).
+
+User Query: "${query}"
+${boardState ? `Current Board Context: ${boardState}` : ''}`;
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('AI Rules Advisor request timeout')), 1500)
+    );
+    const result = await Promise.race([model.generateContent(prompt), timeoutPromise]);
+    const responseText = result.response.text();
+
+    return res.json({
+      answer: responseText,
+      mode: "ai-active",
+      model: "gemini-flash-latest"
+    });
+
+  } catch (err) {
+    console.warn("Gemini AI API Fallback:", err.message);
+    return res.json({
+      answer: `Grim Rules Advisor (Heuristic Mode): Analysis for query "${query}". Priority and state-based action checks resolved. [CR 704.5 / MTR 4.1]`,
+      mode: "heuristic-fallback",
+      ruleCitation: "CR 704.5"
+    });
   }
 });
 
@@ -4969,45 +4991,121 @@ app.get('/api/pairings/round/:roundNum', async (req, res) => {
   }
 });
 
+// Score report for one Commander pod.
+//
+// This route had NO authentication of any kind -- no session check, no pod membership check, no role
+// check. Its only comment was "Can be submitted by players or admin". Anyone who could reach the
+// server could post arbitrary results for any pod in any season, award themselves unlimited points
+// and rewrite the standings. The rule below is the one apps/api's league slice enforces: you must be
+// signed in, and either seated at that pod or running the event.
+const ORGANIZER_ROLES = ['admin', 'judge', 'scorekeeper'];
+
 app.post('/api/pairings/report/:podId', async (req, res) => {
-  // Can be submitted by players or admin
+  if (!req.session.player) return res.status(401).json({ error: "Not logged in." });
   const { podId } = req.params;
-  const { results } = req.body; // Array of { player_id, kills, placed_first, placed_draw }
-  
+  const { results } = req.body || {}; // Array of { player_id, kills, placed_first, placed_draw }
+
+  if (!Array.isArray(results) || results.length === 0) {
+    return res.status(400).json({ error: "A report must list a result for each player in the pod." });
+  }
+
   try {
-    const season = await db.get("SELECT * FROM seasons WHERE is_active = 1");
     const pod = await db.get("SELECT * FROM pods WHERE id = ?", [podId]);
-    if (!pod || !season) return res.status(404).json({ error: "Pod or active season not found." });
+    if (!pod) return res.status(404).json({ error: "Pod not found." });
+
+    // Score the pod's OWN season. This read was `WHERE is_active = 1`, so reporting a pod belonging to
+    // a closed season paid out the current season's points and rebuilt the current season's board.
+    const season = await db.get("SELECT * FROM seasons WHERE id = ?", [pod.season_id]);
+    if (!season) return res.status(404).json({ error: "The season for this pod no longer exists." });
+
+    // Roles are read from the database rather than the session snapshot, so revoking one takes effect
+    // immediately instead of lasting until that organizer next signs in.
+    const caller = await db.get("SELECT id, role, is_admin FROM players WHERE id = ?", [req.session.player.id]);
+    if (!caller) return res.status(401).json({ error: "Not logged in." });
+    const isOrganizer = Number(caller.is_admin) === 1 || ORGANIZER_ROLES.includes(caller.role || 'player');
+
+    const seatRows = await db.query("SELECT player_id FROM pod_results WHERE pod_id = ?", [podId]);
+    const seated = new Set(seatRows.map(s => String(s.player_id)));
+
+    // Either you played at this table, or you are running the event.
+    if (!seated.has(String(caller.id)) && !isOrganizer) {
+      return res.status(403).json({ error: "Only a player seated at this pod, or an organizer, may report it." });
+    }
+
+    // A report may only name players who are actually at this table, and it may not describe an
+    // impossible game -- two winners, or one player who both won and drew.
+    let winners = 0;
+    let draws = 0;
+    const scored = [];
+    for (const r of results) {
+      if (!r || !seated.has(String(r.player_id))) {
+        return res.status(400).json({ error: "A result was submitted for a player who is not in this pod." });
+      }
+      const kills = Number(r.kills);
+      if (!Number.isInteger(kills) || kills < 0 || kills > 99) {
+        return res.status(400).json({ error: "Kills must be a whole number between 0 and 99." });
+      }
+      // The browser sends 1/0; apps/api's contract sends booleans. Accept either.
+      const placedFirst = r.placed_first === 1 || r.placed_first === true;
+      const placedDraw = r.placed_draw === 1 || r.placed_draw === true;
+      if (placedFirst && placedDraw) {
+        return res.status(400).json({ error: "A player cannot both win and draw." });
+      }
+      if (placedFirst) winners++;
+      if (placedDraw) draws++;
+      scored.push({ playerId: String(r.player_id), kills, placedFirst, placedDraw });
+    }
+    if (winners > 1) return res.status(400).json({ error: "A pod can only have one winner." });
+    if (winners > 0 && draws > 0) {
+      return res.status(400).json({ error: "A pod cannot have both a winner and a draw." });
+    }
+
+    // A report must cover the whole table, exactly once each. Without this, one player could report
+    // only themselves as the winner, which completes the pod and leaves everyone else on zero -- and
+    // since a reported pod is closed to the players, the rest of the table could not correct it.
+    const named = new Set(scored.map(r => r.playerId));
+    if (named.size !== scored.length) {
+      return res.status(400).json({ error: "A report named the same player twice." });
+    }
+    if (named.size !== seated.size) {
+      return res.status(400).json({ error: "A report must give a result for every player seated at the pod." });
+    }
+
+    // Players are locked out of re-reporting, so a mis-entered score cannot be quietly rewritten by
+    // whoever lost. Organizers can still correct one: neither codebase has any other way to fix a
+    // typo, and refusing outright would leave a wrong score in the standings for the whole season.
+    if (Number(pod.completed) === 1 && !isOrganizer) {
+      return res.status(409).json({ error: "This pod has already been reported. Ask an organizer to correct the score." });
+    }
 
     // Save individual results & calculate points
-    for (let r of results) {
-      let points = 0;
-      if (r.placed_first === 1) {
-        points += season.points_win;
-      } else if (r.placed_draw === 1) {
-        points += season.points_draw;
+    for (const r of scored) {
+      let points = Number(season.points_entry);
+      if (r.placedFirst) {
+        points += Number(season.points_win);
+      } else if (r.placedDraw) {
+        points += Number(season.points_draw);
       }
-      points += season.points_entry;
-      points += (r.kills * season.points_kill);
+      points += r.kills * Number(season.points_kill);
 
       await db.run(
-        `UPDATE pod_results 
-         SET kills = ?, placed_first = ?, placed_draw = ?, points_awarded = ? 
+        `UPDATE pod_results
+         SET kills = ?, placed_first = ?, placed_draw = ?, points_awarded = ?
          WHERE pod_id = ? AND player_id = ?`,
-        [r.kills, r.placed_first, r.placed_draw, points, podId, r.player_id]
+        [r.kills, r.placedFirst ? 1 : 0, r.placedDraw ? 1 : 0, points, podId, r.playerId]
       );
     }
 
     // Mark pod as completed
     await db.run("UPDATE pods SET completed = 1 WHERE id = ?", [podId]);
 
-    // Recalculate all season leaderboards and statistics
-    await updateLeaderboardStats(season.id);
+    // Recalculate that season's leaderboards and statistics
+    await updateLeaderboardStats(pod.season_id);
 
     res.json({ success: true });
   } catch (e) {
     console.error("Report score error:", e);
-    console.error(e); res.status(500).json({ error: "Internal server error." });
+    res.status(500).json({ error: "Internal server error." });
   }
 });
 
@@ -5438,6 +5536,13 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       console.error('[recovery] APP_BASE_URL is not set; refusing to build a link from the request Host.');
       return res.status(503).json({ error: "Password recovery is not configured on this server." });
     }
+    // Checked before the account is resolved, for the same reason as the check above: failing at the
+    // send instead would answer differently for a known account than an unknown one, which is an
+    // enumeration oracle open for as long as mail is misconfigured.
+    if (!mailer.configured) {
+      console.error('[recovery] no mail transport configured (%s); set SMTP_URL.', mailer.name);
+      return res.status(503).json({ error: "Password recovery is not configured on this server." });
+    }
 
     // Counted on the identifier as supplied, before resolving it, so the throttle cannot itself
     // distinguish an account that exists from one that does not.
@@ -5576,6 +5681,10 @@ app.post('/api/auth/verify-email/request', async (req, res) => {
     const base = recoveryBaseUrl();
     if (!base) {
       console.error('[accounts] APP_BASE_URL is not set; refusing to build a verification link from the request Host.');
+      return res.status(503).json({ error: "Email verification is not configured on this server." });
+    }
+    if (!mailer.configured) {
+      console.error('[accounts] no mail transport configured (%s); set SMTP_URL.', mailer.name);
       return res.status(503).json({ error: "Email verification is not configured on this server." });
     }
     const player = await db.get(
@@ -7161,8 +7270,15 @@ app.get('/api/auth/me', (req, res) => {
 // Affiliate monetization config
 app.get('/api/config/affiliates', (req, res) => {
   res.json({
-    tcgplayerAffiliateId: process.env.TCGPLAYER_AFFILIATE_ID || 'grimore',
-    cardKingdomAffiliateId: process.env.CARDKINGDOM_AFFILIATE_ID || 'grimore'
+    // Defaulted to 'grimore', which is not a real affiliate id, so an unset TCGPLAYER_AFFILIATE_ID
+    // silently broke attribution on every purchase link -- and it is unset on the VM today. CLAUDE.md
+    // requires every purchase link to carry xJoE0d, which is also what every hard-coded link in
+    // public/ already uses, so the documented id is the default here as it is in apps/api.
+    tcgplayerAffiliateId: process.env.TCGPLAYER_AFFILIATE_ID || 'xJoE0d',
+    // No Card Kingdom affiliate id exists, so there is nothing to fall back to. 'grimore' produced a
+    // link that looked attributed and was not; null lets the client leave the link unattributed
+    // honestly, which is what apps/api returns.
+    cardKingdomAffiliateId: process.env.CARDKINGDOM_AFFILIATE_ID || null
   });
 });
 
@@ -8048,9 +8164,18 @@ server.listen(PORT, () => {
   console.log(`Grimore Server (with Socket.IO & better-sqlite3) running on http://localhost:${PORT}`);
 });
 
-db.initDb().then(() => {
-  console.log("Database initialized successfully.");
-}).catch(err => {
-  console.error("Database initialization warning:", err);
-});
+/*
+  There is exactly one `db.initDb()` in this file, and it is the one at the top of the boot chain.
+
+  A second, un-awaited call used to sit here. Both ran at module load against a pool of 35
+  connections, so every boot on Postgres raced its own schema creation against itself — and
+  `CREATE TABLE IF NOT EXISTS` is **not** race-safe between sessions. Reproduced by calling
+  `initDb()` twice concurrently against a fresh database: **20 of 20 runs** had statements refused,
+  with `duplicate key value violates unique constraint "pg_type_typname_nsp_index"`, the same on
+  `pg_class_relname_nsp_index`, and `relation "players" already exists`. Every one of them was
+  swallowed into a `Postgres DDL statement notice` line, which is why it ran for months looking
+  like container-log noise (see claude/decisions-log.md, D187).
+
+  If a second initialisation is ever needed, await the first instead of starting another.
+*/
 

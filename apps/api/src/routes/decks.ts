@@ -1,6 +1,6 @@
 /**
  * Decks slice — core deck routes ported from legacy server.js (discover / my-decks / detail / cards /
- * builder-save / like / comment / social / tags / clone / delete).
+ * builder-save / like / comment / social / tags / clone / delete / autotag / suggestions).
  *
  * Compatibility: same `decks`, `deck_cards`, `deck_likes`, `deck_comments`, `deck_stats`, `deleted_items`
  * tables and the same id shapes (`d_<ts>_<rand>`), so decks saved here show up in the legacy app and vice versa.
@@ -20,6 +20,10 @@
  *  - like keeps `decks.likes_count` in sync (legacy never wrote it) and returns `likes_count`.
  *  - clone gives the copy a fresh `moxfield_url` (`visual-<id>`); copying the source url violated the UNIQUE index.
  *  - deck_comments.id is the serial column from the Postgres schema (legacy tried to insert a text id).
+ *  - GET /:deckId/suggestions could not execute on Postgres at all (it read a column `scryfall_cards`
+ *    does not have) and its local fallback pool was sixty arbitrary rows. It is a bounded, colour-
+ *    identity- and ban-list-filtered local pool now, with the in-process cache dropped. See the
+ *    route's own header and `lib/deckSuggestions.ts`.
  *  - Error responses use the uniform `{ error: { code, message } }` envelope.
  */
 import { Router, type Request } from 'express';
@@ -33,8 +37,11 @@ import {
   DeckCard,
   DeckStats,
   DeckSummary,
+  DeckSuggestionsQuery,
   DiscoverQuery,
   Id,
+  type SuggestedCard,
+  type SuggestionCategory,
   RepriceCardInput,
   TagsInput,
   type DeckCardInput,
@@ -44,7 +51,9 @@ import { ApiError, wrap } from '../lib/errors.js';
 import { rejectProfaneList, rejectProfanity } from '../lib/moderation.js';
 import { isAdmin, requireAuth, sessionPlayerId } from '../lib/auth.js';
 import { validateDeckLegality } from '../lib/legality.js';
-import { tagDeck } from '@grimore/auto-tagger';
+import { CATEGORIES, classifyCard, tagDeck } from '@grimore/auto-tagger';
+import { candidateFitsDeck, extractCardFeatures } from '@grimore/recommender';
+import { loadOwnedCardKeys, loadSuggestionPool, loadSuggestionTarget } from '../lib/deckSuggestions.js';
 
 interface DeckRow {
   id: string;
@@ -62,6 +71,101 @@ const isBasicLand = (name: string): boolean => BASIC_LANDS.has(name.trim().toLow
 
 function newId(prefix: string): string {
   return prefix + Date.now() + '_' + Math.random().toString(36).slice(2, 11);
+}
+
+// ── Suggestion category tables ───────────────────────────────────────────────────────────────────
+// The slugs are legacy's, because `public/suggestions.js` keys its selected-category state on `tag`
+// and its (deliberately icon-free) lookup table on the same strings.
+const OWNED_SUGGESTIONS = 'Owned Suggestions';
+const SUGGESTION_TAGS: Record<string, string> = {
+  [OWNED_SUGGESTIONS]: 'owned-suggestions',
+  'Wincons / Finishers': 'wincons',
+  Tutors: 'tutors',
+  Stax: 'stax',
+  'Mass Removal': 'mass-removal',
+  'Single Target Removal': 'single-target-removal',
+  Protection: 'protection',
+  Ramp: 'ramp',
+  'Card Advantage': 'card-advantage',
+  'Card Selection': 'card-selection',
+  Recursion: 'recursion',
+  Reanimation: 'reanimation',
+  'Graveyard Fillers': 'graveyard-fillers',
+  'Sacrifice Outlets': 'sacrifice-outlets',
+  'Blink & ETB': 'blink-etb',
+  'Utility Lands': 'utility-lands',
+  Lands: 'lands',
+  Unique: 'unique',
+};
+/** Legacy's display order, which follows CLAUDE.md's main-category priority. */
+const FUNCTIONAL_ORDER: string[] = [
+  OWNED_SUGGESTIONS,
+  'Ramp',
+  'Card Advantage',
+  'Single Target Removal',
+  'Mass Removal',
+  'Protection',
+  'Tutors',
+  'Wincons / Finishers',
+  'Card Selection',
+  'Recursion',
+  'Reanimation',
+  'Stax',
+  'Graveyard Fillers',
+  'Sacrifice Outlets',
+  'Blink & ETB',
+  'Utility Lands',
+  'Lands',
+  'Unique',
+];
+/**
+ * A category the classifier can emit but this table does not list would be dropped from the response
+ * without a trace, so the omission fails at import instead — which means at boot and in every test.
+ */
+const FUNCTIONAL_CATEGORY_ORDER: [string, string][] = FUNCTIONAL_ORDER.map((header) => {
+  const tag = SUGGESTION_TAGS[header];
+  if (!tag) throw new Error(`suggestion category "${header}" has no tag`);
+  return [header, tag];
+});
+for (const category of CATEGORIES) {
+  if (!FUNCTIONAL_ORDER.includes(category)) {
+    throw new Error(`auto-tagger category "${category}" is missing from the suggestion display order`);
+  }
+}
+
+const TYPE_ORDER: [string, string][] = [
+  [OWNED_SUGGESTIONS, 'owned-suggestions'],
+  ['Creatures', 'creatures'],
+  ['Planeswalkers', 'planeswalkers'],
+  ['Instants', 'instants'],
+  ['Sorceries', 'sorceries'],
+  ['Enchantments', 'enchantments-type'],
+  ['Artifacts', 'artifacts-type'],
+  ['Lands', 'lands-type'],
+  ['Other', 'other-type'],
+];
+
+/** Which single type bucket a card files under. First match wins, as legacy's if-chain did. */
+function typeBucketFor(typeLine: string): string {
+  const t = typeLine.toLowerCase();
+  if (t.includes('creature')) return 'Creatures';
+  if (t.includes('planeswalker')) return 'Planeswalkers';
+  if (t.includes('instant')) return 'Instants';
+  if (t.includes('sorcery')) return 'Sorceries';
+  if (t.includes('enchantment')) return 'Enchantments';
+  if (t.includes('artifact')) return 'Artifacts';
+  if (t.includes('land')) return 'Lands';
+  return 'Other';
+}
+
+/** Drops empty buckets and stamps each surviving one with its slug, in the given order. */
+function orderedCategories(
+  order: [string, string][],
+  buckets: Map<string, SuggestedCard[]>,
+): SuggestionCategory[] {
+  return order
+    .map(([header, tag]) => ({ header, tag, cards: buckets.get(header) ?? [] }))
+    .filter((category) => category.cards.length > 0);
 }
 
 /** Same pick as legacy computeFeaturedCard: first commander, else most-copied / priciest non-basic. */
@@ -601,6 +705,121 @@ export function decksRouter(ctx: AppContext): Router {
         return { count: tagged.length, tagged };
       });
       res.json({ success: true, count: result.count, cards: result.tagged });
+    }),
+  );
+
+  /**
+   * Commander-led card suggestions for one deck, bucketed by function and by card type.
+   *
+   * **This route returned 500 on every request on Postgres.** Its first query read
+   * `scryfall_cards.scryfall_id`, a column that table does not have, so the handler's catch-all
+   * answered "Internal server error." — which `public/suggestions.js` renders under the hint "Make
+   * sure to tag your commander!", telling every user they had forgotten a commander they had not.
+   * `lib/deckSuggestions.ts` documents that and the four other defects in the data layer.
+   *
+   * Two deviations worth naming here:
+   *
+   *  - **No in-process cache.** Legacy memoised the result per commander slug for six hours in a
+   *    module-level Map. Two API instances hold different maps, so the same deck gets different
+   *    suggestions depending on which one answers — the same objection D23 raised against the
+   *    recommendation pool's cache. The pool query is bounded and index-ordered; it does not need one.
+   *  - **One classifier.** The functional buckets come from `@grimore/auto-tagger`, the engine the
+   *    autotag route already uses, rather than legacy's second 166-line copy of the same rules.
+   *    That engine does not implement five of legacy's secondary archetypes (Tokens & Swarm,
+   *    Equipment & Auras, Enchantments, Spellslinger, Landfall), so those headers do not appear —
+   *    recorded as a gap in the progress doc, to be closed with the autotag route's own tests rather
+   *    than by reintroducing a duplicate classifier here.
+   */
+  r.get(
+    '/:deckId/suggestions',
+    requireAuth,
+    wrap(async (req, res) => {
+      const deckId = Id.parse(req.params.deckId);
+      const query = DeckSuggestionsQuery.parse(req.query);
+      const playerId = sessionPlayerId(req);
+      // Legacy required a session but never checked the deck, so any signed-in caller could read the
+      // commander of anyone's private deck. The page is only ever reached from the owner's builder.
+      await loadOwnedDeck(pool, deckId, playerId);
+
+      const target = await loadSuggestionTarget(pool, deckId);
+      if (target.commanders.length === 0) {
+        throw new ApiError(
+          400,
+          'NO_COMMANDER',
+          'No commander defined for this deck. Please tag at least one card in your deck as a Commander first.',
+        );
+      }
+
+      const [candidates, ownedKeys] = await Promise.all([
+        loadSuggestionPool(pool, {
+          format: target.format,
+          colorIdentity: target.colorIdentity,
+          excludeKeys: target.deckCardKeys,
+          limit: query.limit,
+        }),
+        loadOwnedCardKeys(pool, playerId),
+      ]);
+
+      // The SQL window and this predicate apply the same two rules; running both means a card that
+      // slips through one (a legalities column that would not parse, say) is still caught by the
+      // other, and the predicate is the one the recommender's tests pin.
+      const scope = { format: target.format.toLowerCase(), colors: target.colorIdentity };
+      const eligible = candidates
+        .map((candidate) => ({ candidate, features: extractCardFeatures(candidate) }))
+        .filter(({ candidate, features }) => candidateFitsDeck(features, scope, candidate));
+
+      const functional = new Map<string, SuggestedCard[]>();
+      const byType = new Map<string, SuggestedCard[]>();
+      const push = (buckets: Map<string, SuggestedCard[]>, header: string, card: SuggestedCard) => {
+        const list = buckets.get(header);
+        if (list) list.push(card);
+        else buckets.set(header, [card]);
+      };
+
+      for (const { candidate, features } of eligible) {
+        const name = String(candidate.name ?? '');
+        if (!name) continue;
+        const typeLine = String(candidate.type_line ?? '') || 'Card';
+        const card: SuggestedCard = {
+          name,
+          scryfallId: (candidate.scryfallId as string | null) ?? null,
+          price: Number(candidate.price ?? 0.15),
+          type_line: typeLine,
+          owned: ownedKeys.has(name.toLowerCase()),
+          colors: features.colors,
+          rarity: String(candidate.rarity ?? 'common'),
+          image_uri: String(candidate.image_uri ?? ''),
+        };
+
+        if (card.owned) {
+          push(functional, OWNED_SUGGESTIONS, card);
+          push(byType, OWNED_SUGGESTIONS, card);
+        }
+        for (const category of classifyCard({
+          name,
+          typeLine,
+          oracleText: String(candidate.oracle_text ?? ''),
+        })) {
+          push(functional, category, card);
+        }
+        push(byType, typeBucketFor(typeLine), card);
+      }
+
+      const functionalCategories = orderedCategories(FUNCTIONAL_CATEGORY_ORDER, functional);
+      const typeCategories = orderedCategories(TYPE_ORDER, byType);
+
+      res.json({
+        success: true,
+        commanderName: target.commanders.map((c) => c.cardName).join(' // '),
+        commanderScryfallId: target.commanders[0]?.scryfallId ?? null,
+        // `categories` is the alias the client falls back to; same array, not a copy with a drift risk.
+        categories: functionalCategories,
+        functionalCategories,
+        typeCategories,
+        suggestionSource: 'local-pool' as const,
+        colorIdentity: target.colorIdentity,
+        poolSize: eligible.length,
+      });
     }),
   );
 

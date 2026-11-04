@@ -771,6 +771,11 @@ and number, and a needle list silently misses half the variants.
 
 ## `suggestions` is not portable
 
+> **Superseded — see the deck-suggestions checkpoint at the end of this file and D24.** The
+> conclusion below is wrong: EDHREC being blocked is the same situation `cards.ts` is in with
+> Scryfall, and the answer is a local-first pool plus `TODO(edhrec)`. The route is ported. It also
+> missed the bigger problem — the handler could not execute on Postgres at all.
+
 `GET /api/decks/:deckId/suggestions` reads EDHREC (`json.edhrec.com`), which is blocked here alongside
 Scryfall and Moxfield. It also has a latent bug worth fixing whenever it is ported: **`playerId` is
 never defined in the handler's scope**, so the cache-hit path throws `ReferenceError` — meaning the
@@ -1028,3 +1033,435 @@ change, but `fetchJson` parsing a non-JSON error body without a guard is its own
 
 **Tests:** unchanged at 429 — this deletes code with no test coverage and adds none, since what
 replaced it is Express's default 404.
+
+## Checkpoint — recommendations ported (`GET /api/cards/recommendations`)
+
+The personalised discovery feed: the scoring engine moved to `packages/recommender` (new package,
+pure, 15 tests), the signal loaders to `apps/api/src/lib/preferenceSignals.ts`, the route into
+`routes/cards.ts`, contracts into `packages/shared/src/contracts/recommendations.ts`. 28 new tests;
+api suite 265 -> 278, workspace 504 -> 532. Port status: **100 of 126 legacy routes.**
+
+### Three of the five signal sources could never execute
+
+Same shape as every previous wave, with an extra twist: the feature *looked* like it worked.
+`safePreferenceQuery` wrapped each signal query in a try/catch that logged a warning and returned
+`[]`, so a player with a 400-card collection and a long wishlist got the same page as an account
+created ten seconds ago — and nothing in the response said so.
+
+- **`collection_cards.added_at` does not exist.** The column is `created_at`. The collection query
+  raised on every request, so what a player owns has never once influenced a recommendation on
+  Postgres. This is the fourth slice to find this exact column (decks, collections, recovery).
+- **`wishlist_cards.added_at` does not exist either** — same fix, and the wishlist is the single
+  strongest explicit signal the engine has (weight 1.8, `explicit: true`, +14 to the score).
+- **The candidate pool's primary query was dead code.** It selected `sc.scryfall_id`, which
+  `scryfall_cards` does not have (the column is `id`), so it raised and execution fell through to the
+  fallback query underneath it on every single request. The fallback read the right columns, which is
+  why nobody noticed.
+
+### The ban list stopped being enforced the moment the local cache became the source
+
+`candidateFitsDeck` read `candidate.legalities[deck.format]`. Candidates from the Scryfall API carry
+`legalities` as an object, so that worked. `scryfall_cards.legalities` is a **TEXT** column holding
+JSON, and indexing a string by `"commander"` gives `undefined` — which the check reads as "no
+legality recorded, allow it". So with the local pool (the only pool reachable from this environment)
+a card banned in Commander could be recommended into a Commander deck. `legalitiesOf` parses both
+shapes; a test asserts a banned card is dropped when its legalities arrive as text.
+
+### A signal's weight was multiplied by how often the card had been reprinted
+
+`LEFT JOIN scryfall_cards sc ON LOWER(sc.name) = LOWER(dc.card_name)` returns one row per printing,
+and there is no unique index on the name — Cultivate alone has dozens of rows. Every signal query
+joined that way, so one deck card became dozens of identical signals and its weight scaled with its
+print run, which is not a preference. `LATERAL ... LIMIT 1` throughout, matching the decks and cards
+slices. (`card_price_cache` could not fan out: migration 0013 made `LOWER(card_name)` unique there.)
+
+### The React app was calling this route and getting a 404
+
+`apps/web/src/pages/CardSearch.tsx` fetches `/api/cards/recommendations` through `api.get`, which
+resolves against **`apps/api`** — not the legacy server. The route did not exist there, so the SPA's
+discovery feed has been erroring since that page was written. The response shape the page declares
+locally matches what the port returns field for field, including `image_uri`, which is why the port
+reconstructs the Scryfall CDN URL when `scryfall_cards.image_uri` is empty rather than returning ''
+(a test asserts every card in the feed carries a renderable URL).
+
+### Deliberate deviations
+
+- **Own package, not `packages/shared`.** The engine is 700 lines of pure domain logic with no
+  contract surface, which is what `@grimore/auto-tagger` already is. `shared` keeps the contracts.
+- **The pool is bounded and paged in SQL.** Legacy read every row of `scryfall_cards` into a
+  process-local array and cached it for 30 minutes. Two instances with different caches answer the
+  same cursor differently, which defeats the point of a stable cursor. The pool is an
+  `ORDER BY edhrec_rank` window driven by the cursor now, deduplicated to one row per card.
+- **Community counts are scored, not cached.** Legacy grouped `deck_cards` over every public deck in
+  the product and held the map in memory. The score only reads the names on the page, so the count
+  query takes those names as a parameter.
+- **Failures surface.** A broken signal query is a 500, not a silent "new player".
+- `limit` still clamps to 4..40 and an unparseable value still falls back to 16, as legacy did; a
+  `deckId` the caller does not own is still a 404 rather than a silent score against the global
+  profile.
+
+### Not done here
+
+- The Scryfall-built, format-legal candidate pool (`TODO(scryfall-fallback)`). api.scryfall.com is
+  denied by the egress proxy, so `candidateSource` always reports `local-cache`. The field is in the
+  contract already, so adding the Scryfall page later changes no client.
+- `legacyUrl()` still has 5 callers in `apps/web`; this route was never one of them (see above).
+- **`CardSearch.tsx` still declares its own `RecommendationResponse` / `RecommendationCard` /
+  `RecommendationProfile` interfaces**, which now duplicate the contracts this slice added — the drift
+  D2 exists to prevent. They are left alone deliberately: the page's card type extends `apps/web`'s
+  own `CardResult`, which requires `image_uri` and `rarity` where the contract leaves them to the
+  passthrough, so swapping them is a typing job in the page's JSX rather than an import change. It
+  belongs in the Wave 7 web cutover alongside the `legacyUrl()` removals, not in a route port.
+
+### For Nick
+
+- **The discovery feed in the React app should work for the first time** once this deploys with
+  `apps/api` serving. How good it is depends on `scryfall_cards` holding rows, and on Postgres it
+  never has: `scryfallService.js` used to write a `scryfall_id` column that table does not have, and
+  the import loop's catch swallowed the error.
+
+  **Correction, 2026-10-23:** I wrote that in the present tense and called it "still open". It is
+  not — the writer was fixed in `e4b8a2d` and that is on `main`, so the remedy is not a code change.
+  What is still true is that production's table is empty, and it fills only when the fixed code
+  actually boots on the VM: `downloadAndImportScryfallBulk()` runs at startup and skips when the
+  table already holds more than 1000 rows, so an empty table triggers a full import — unless
+  `SKIP_SCRYFALL_BULK_SYNC=1` is set in the VM's `.env`. Worth checking that variable and the boot
+  log after the next deploy rather than assuming the table filled itself.
+  The pool is only as good as that table.
+- Nothing here touches legacy `server.js`. The legacy engine and its tests are unchanged.
+
+## Checkpoint — deck suggestions ported (`GET /api/decks/:deckId/suggestions`)
+
+The commander-led suggestions page. Data layer in `apps/api/src/lib/deckSuggestions.ts`, route in
+`routes/decks.ts`, contracts in `packages/shared/src/contracts/deckSuggestions.ts`, 19 new tests
+against live Postgres. api suite 278 -> 297; workspace 532 -> 551. Port status: **101 of 126 legacy
+routes.** This was the last unported route that runs purely on local data — everything left is
+externally blocked, deliberately out of scope (D11, D13), or the static page handlers.
+
+### It answered 500 to every request, and the page blamed the user
+
+`GET /api/decks/:deckId/suggestions` opens by selecting `sc.scryfall_id` from `scryfall_cards`. That
+table's key is `id`; it has no `scryfall_id` column and never has. Postgres raises
+`column sc.scryfall_id does not exist`, the handler's catch-all turns it into
+`{error:"Internal server error."}`, and `public/suggestions.js` renders `data.error` into a panel
+whose subtitle reads *"Suggestions are based on the commander cards registered inside your deck
+builder. Make sure to tag your commander!"* So every user with a correctly tagged commander was told
+to go and tag their commander, on every deck, every time.
+
+Proven rather than inferred: the five legacy queries were run verbatim against a freshly migrated
+database. Two raise (the commander lookup and the candidate lookup — the same column in both), three
+succeed. With the first one dead, nothing downstream ever ran.
+
+Fourth feature in a row found dead on Postgres for a column-name reason, and the second to be found
+dead *while looking like it worked* — a 500 behind a reassuring message is harder to notice than a
+blank page.
+
+### The local fallback pool was not a suggestion engine
+
+When EDHREC was unreachable, legacy fell back to `SELECT card_name FROM scryfall_cards LIMIT 60`:
+sixty arbitrary rows, unordered, with no relation to the commander, its colour identity, or the
+deck's format. Porting that shape would have been porting a placeholder. The pool here is
+popularity-ordered (`edhrec_rank`), inside the commander's colour identity, legal in the deck's
+format, and deduplicated to one row per card name.
+
+### Three more defects in the same handler
+
+- **Colour identity and the ban list were never checked.** EDHREC's pages are commander-scoped, so
+  while EDHREC answered this did not show. Against any local pool it means a deck can be offered
+  cards it cannot legally run. Both are enforced in SQL *and* through `candidateFitsDeck` — the
+  predicate the recommender slice pins with tests. The ban-list test here is the JSON-**text** case
+  again: `scryfall_cards.legalities` is TEXT, which is exactly what defeated the check in the
+  recommendation engine.
+- **Cards the deck already runs were sent and then thrown away.** `public/suggestions.js` filters
+  them out in `processCards` *and* in the sidebar counts, so every such card the server sent was a
+  wasted slot out of a fixed-size list — a well-built deck could empty whole categories while the
+  server reported them full. (Its `${qtyInTarget} in Deck` badge is dead code for the same reason:
+  the filter above it has already removed every card that would show it.) The exclusion is in the
+  query now, ahead of the limit.
+- **One pool entry per printing.** Joining `scryfall_cards` by name fans out — no unique index, and
+  Cultivate alone has dozens of rows — so a heavily reprinted card could occupy the pool many times
+  over. `DISTINCT ON (LOWER(name))` keeps the cheapest printing, which is also the price the deck
+  builder would pay. A test inserts three printings and asserts one entry at the lowest price.
+
+### Deliberate deviations
+
+Recorded in full as **D24**; in short:
+
+- **No in-process cache.** Legacy memoised per commander slug for six hours in a module-level `Map`.
+  Two API instances hold different maps, so the same deck gets different suggestions depending on
+  which one answers — D23's objection to the recommendation cache, unchanged.
+- **One classifier.** The functional buckets come from `@grimore/auto-tagger`, not from legacy's
+  second 166-line copy of the same rules. `candidateFitsDeck`'s parameter was widened to the
+  structural subset it actually reads (`DeckLegalityScope`) so a route with no profile can use it.
+- **Ownership enforced.** Legacy required a session and then read any `deckId`, leaking the commander
+  of a private deck to any signed-in caller. The page's only entry point is the owner's own builder.
+- **`NO_COMMANDER` is its own error code**, so the client can tell "tag a commander" apart from a
+  genuine failure instead of pattern-matching a message.
+- The category slugs and their display order are legacy's, because `public/suggestions.js` keys its
+  selected-category state on `tag`.
+
+### A gap this creates, stated plainly
+
+The ported auto-tagger does not implement five of legacy's secondary archetypes — **Tokens & Swarm,
+Equipment & Auras, Enchantments, Spellslinger, Landfall** — so those headers no longer appear. 18
+working categories where there were previously 23 broken ones is still a gain, but it is a gap.
+Closing it belongs in `@grimore/auto-tagger` behind the autotag route's own 26 tests, because
+`tagDeck` returns every matching category and writes it to `deck_cards.custom_tag`: appending
+categories changes stored tags on already-tagged decks. See D24.
+
+### Not done here
+
+- `TODO(edhrec)`: the commander's actual EDHREC lists. json.edhrec.com is denied by the egress proxy
+  (verified: `CONNECT tunnel failed, response 403`). `suggestionSource` is in the contract already,
+  so slotting the EDHREC page in ahead of the local pool later changes no client.
+- **The legacy `public/*.js` frontend reads `data.error` as a string** in ~40 places, including this
+  page. Against legacy `server.js` that is correct; the moment `/api` is routed to `apps/api` those
+  render "[object Object]" — the same bug already fixed for `apps/web` in `lib/api.ts`. This is one
+  systemic Wave 7 change across the vanilla client, not something to patch one route at a time.
+- `public/suggestions.js` carries two emoji in UI (`⚠️` in the error panel, `💎 Owned` on the owned
+  badge), against CLAUDE.md's no-emoji rule. Legacy `public/` is untouched by every slice so far and
+  by this one; noted for the Wave 7 cutover, which replaces that page anyway.
+
+### For Nick
+
+- **The suggestions page should work for the first time** once this deploys with `apps/api` serving.
+  Like the discovery feed, how good it is depends entirely on `scryfall_cards` holding rows, and on
+  Postgres that table has never been populated. The sync code that caused it is fixed and merged
+  (see the correction in the recommendations checkpoint above); what remains is confirming the import
+  actually runs on the VM. An empty card table gives an empty suggestions page rather than an error,
+  which is the right failure, but it is still empty.
+- Nothing here touches legacy `server.js` or `public/`. The legacy route and page are unchanged.
+
+## Checkpoint — the long tail decided (`/health`, `/api/health`; D25)
+
+Small slice, mostly a decision. `apps/api` now answers legacy's two liveness paths, and the three
+other routes that were left unaccounted for are settled in **D25** rather than left ambiguous. api
+suite 297 -> 299; workspace 551 -> 553. Port status: **103 of 126 legacy routes.**
+
+### `/api/jobs/:jobId` can only ever 404
+
+`asyncJobsMap` has four references in the whole repository: its declaration, a 5-minute sweep
+interval, the sweep's iteration, and this route's `.get()`. **Nothing calls `.set()`.** So the Map is
+empty for the life of the process and the route returns `{"error":"Job not found or expired."}` for
+every input, always. A faithful port is a 404 handler; a useful one would be inventing an async-job
+system nothing asks for. Not ported, and it should be deleted from `server.js` along with the timer
+that wakes every five minutes to iterate an empty Map.
+
+Third piece of dead code found by grepping for a caller rather than reading the handler —
+`loadActiveMatch()`, `window.handleGuestLogin`, and now this. The check that finds them is cheap and
+keeps earning: before porting a route, grep for what produces the state it reads.
+
+### The MTGJSON sync is gated on a hard-coded username
+
+Both `sync-mtgjson` routes gate on
+`req.session.player.username.toLowerCase() !== 'nickbuildsdecks'`. The `players` table has an admin
+role, `apps/api` has `isAdmin()`, and D12 already moved the Google admin allow list into
+configuration — a username string in a conditional is neither of those, and on a fresh database it
+hands the sync to whoever registers that name. mtgjson.com is also denied by the proxy (verified:
+`CONNECT 403`), and the sync status lives in a `global`, which two API instances cannot share. Not
+ported; D25 records what has to change when it is.
+
+### Why the health aliases are worth two lines
+
+Legacy's handler returns exactly what `/healthz` returns, so this is an alias and not a second
+implementation. It matters because those paths are referenced outside this repo —
+`docker-compose.yml`'s healthcheck for the legacy service, and any external uptime monitor pointed at
+the domain. Both would 404 against `apps/api` as soon as a reverse proxy routes `/api` there, and a
+monitor that reads 404 as "down" pages for a healthy service.
+
+### What is actually left
+
+Nothing portable on local data. The remainder is: the Scryfall-, Moxfield- and EDHREC-blocked routes
+(`/api/cards/versions`, `/api/cards/rulings` fallbacks, `/api/decks/:id/share`,
+`/api/decks/import-account`, `/api/moxfield/import-account`, `/api/decks/:deckId/suggestions`'s remote
+lists), Gemini's `/api/sandbox/ai-advisor`, the four sandbox room routes (D11), the dev git routes
+(D13), `/api/jobs/:jobId` and the MTGJSON sync (D25), and the static page handlers. Then **Wave 7**:
+the web cutover — 5 `legacyUrl()` callers, `CardSearch.tsx`'s duplicated interfaces, and the
+~40 places in the legacy `public/*.js` client that read `data.error` as a string.
+
+## Checkpoint — Wave 7 begins: the second API base resolved nowhere (D26)
+
+`apps/web` had two API bases. The second one, `legacyUrl()`, produced `/legacy-api/<path>` whenever
+`VITE_LEGACY_API_URL` was unset — **and it is set nowhere in this repository**: not in
+`deploy-gcp.ps1`, not in CI, not in any env template. `/legacy-api` is mapped in exactly one place,
+the Vite **dev** proxy.
+
+So in production those calls POSTed to a path no server answers. `server.js` serves the SPA from
+`/react` and its only catch-all is `app.get('*')`, so a POST to
+`/legacy-api/api/auth/forgot-password` reaches Express's default handler and gets
+`Cannot POST ...` as HTML. **Password recovery and password reset have been broken in the deployed
+React SPA since `Login.tsx` was written**, and worked perfectly on every development machine. That
+asymmetry is the whole reason it lasted.
+
+Both recovery routes are ported, and both servers answer them at the same same-origin `/api/...`
+path, so the three call sites now use `apiUrl()` — correct before the cutover and after it. The
+helper, `LEGACY_BASE`, `VITE_LEGACY_API_URL` and the `/legacy-api` dev-proxy rule are removed, so
+nothing can drift back onto a dev-only prefix. A parameterised test pins all three.
+
+`apps/web` 29 -> 31 tests; workspace 553 -> 555. Recorded as **D26**.
+
+### The dependency this creates
+
+`/api/decks/register` is the one of the three `apps/api` does not serve (api.moxfield.com is denied
+by the proxy). Same-origin reaches `server.js` today, which is right. It must be ported before the
+reverse proxy sends `/api` to `apps/api` — even if only as a 503 `MOXFIELD_UNAVAILABLE`, the way
+`/api/decks/reprice-init` already is — or it becomes a bare 404. Marked `TODO(moxfield)` at the call
+site, where whoever moves the proxy will be looking.
+
+### Still open in Wave 7
+
+- `CardSearch.tsx`'s duplicated `RecommendationResponse` / `RecommendationCard` /
+  `RecommendationProfile` interfaces, which now shadow the contracts the recommendations slice added.
+- The ~40 places in the legacy `public/*.js` client that read `data.error` as a string. Correct
+  against `server.js`; "[object Object]" the moment `/api` points at `apps/api`. One systemic change.
+
+### For Nick
+
+**This one is a live bug fix, not a migration step.** If anyone has tried "forgot my password" in the
+React app at `/react` and had it fail, this is why. The vanilla page at `/` was never affected — it
+calls `/api/auth/forgot-password` directly. Recovery still needs `SMTP_URL` on the VM to actually
+send anything; without it both apps answer 503 by design, which is a different failure from this one.
+
+## Checkpoint — `CardSearch.tsx` derives its types from the contracts, and the contracts are now proven
+
+Closes the second Wave 7 item. `apps/api` 299 -> 301; workspace 555 -> 557.
+
+`CardSearch.tsx` declared `RecommendationCard`, `RecommendationProfile` and `RecommendationResponse`
+by hand, field for field, duplicating the contracts the recommendations slice had just added — the
+drift D2 exists to prevent. They are derived now:
+
+```ts
+type RecommendationCard = CardResult & RecommendedCard
+type RecommendationResponse = Omit<SharedRecommendationResponse, "cards"> & { cards: RecommendationCard[] }
+```
+
+`CardResult` stays in the intersection on purpose. It is this app's **render** contract — what every
+card component here accepts — and it requires `image_uri` and `rarity` where the wire contract leaves
+them to its passthrough. So the page keeps its own guarantee about what it can draw and takes the
+recommendation metadata, the part that can actually drift, from the contract.
+
+**Intersected rather than `Omit`-ed, and the first attempt showed why.** `RecommendedCard` is a
+`.passthrough()` contract, so its inferred type carries a `[k: string]: unknown` index signature.
+`keyof` that is `string | number`, so `Omit<RecommendedCard, keyof CardResult>` erases every declared
+field back to `unknown` — five type errors, all of the form `'card.reasons' is of type 'unknown'`.
+Worth knowing before deriving a type from any other passthrough contract in this repo.
+
+### The gap this change made load-bearing, now closed
+
+Deriving the client's types from a contract only helps if the contract describes the real response.
+**Nothing in this repository validated any response body against its contract** — grep for
+`.parse(r.body)` before this and there were zero hits. So every response contract was documentation,
+and a drift between a route and the contract its client trusts would have been a silent production
+bug rather than a failing build.
+
+Both contracts in play now have a conformance test — `RecommendationResponse.parse` on the cold and
+the personalised page, `DeckSuggestionsResponse.parse` on a full suggestions response. They are not
+vacuous: both contracts have required fields with no defaults, so an omitted `profile` or a mistyped
+`cards` fails.
+
+**Not done, and worth doing:** the other ~20 response contracts have no such test. One assertion per
+route group, in the test file that already exists for it, would make every response contract
+enforced rather than aspirational. It is mechanical but it is 20 files, so it belongs in its own
+change rather than riding along here.
+
+## Checkpoint — Play Realm: two people can play a whole game of Magic (D27)
+
+Nick asked for a Play Realm two people can actually sit down at. This is that, and it is the D11
+work the sandbox-rooms decision deferred. Setup and troubleshooting: `claude/play-realm-setup.md`.
+
+**What exists now:** a shared digital tabletop at `/react/play`. Create a table, read the code out,
+your friend joins, you each pick a deck, and you play — shuffling, opening hands, mulligans, every
+zone, tokens, counters, auras, commander damage, turns, and a log of everything. Nobody can see
+anybody's hand.
+
+### What was already there, and what was missing
+
+`packages/rules-engine` turned out to be a well-built immutable reducer — seeded RNG, state-based
+actions, elimination, logging, version bumping — and `apps/realtime` a solid transport with
+Redis-backed pods, per-seat tokens, word-based codes, a reconnect grace window, rate limiting and
+optimistic concurrency. What neither had was **cards**: no zones, no instances, no draw or shuffle
+or move. It was a life tracker, not a game. So the work was a card layer on top of good foundations
+rather than a rewrite.
+
+- `packages/rules-engine`: `cards.ts`, `cardActions.ts`, `view.ts`, `starterDecks.ts`, and
+  `internal.ts` (the assertion and RNG helpers both halves of the reducer share, extracted so they
+  do not import each other in a cycle). 39 → 78 tests.
+- `apps/realtime`: per-seat redacted emission. 14 → 20 tests.
+- `apps/web`: `pages/PlayTable.tsx`, `components/table/CardFace.tsx`, `lib/table.ts`. 29 → 31 tests.
+- `scripts/play.mjs` (one command), `scripts/e2e-table.mjs` (37 checks in two real browsers).
+
+### Five defects found by building on it, all fixed
+
+- **The SPA was broken in Vite dev, entirely.** `packages/shared`'s barrel re-exported
+  `accountTokens.ts`, which imports `node:crypto`; Vite pre-bundles a workspace dependency eagerly,
+  so any value import from the barrel pulled a Node built-in into the browser graph and every page
+  died on load with *"does not provide an export named 'createHash'"*. The production build survived
+  it only because Rollup tree-shook the module away — so it was broken in the one mode a developer
+  actually uses, and nowhere else. It is a subpath export now (`@grimore/shared/account-tokens`),
+  server-only by construction.
+- **`apps/realtime` refused to boot without `DATABASE_URL`.** It called `parseEnv()`, the
+  whole-platform schema, and demanded a database URL and a session secret it never reads. Worse than
+  inconvenient: a process that demands a production database URL it never opens invites someone to
+  give it one. It has `parseRealtimeEnv()` now — port, Redis, origins, log level.
+- **With no `SOCKET_ALLOWED_ORIGINS`, no browser could connect at all.** `allowRequest` treats an
+  empty allow list as "any origin"; the `cors` option in the same object said `origin: false`, which
+  means the opposite. The two contradicted each other, so the *default* configuration answered every
+  cross-origin handshake with an opaque 403 while the allow-list logic was saying yes. Both
+  directions are now pinned by tests.
+- **Typing your name thrashed the connection.** The socket effect depended on the display name, so
+  every keystroke in the name field tore the socket down and opened a new one — and creating a table
+  immediately after typing raced a handshake that was already being abandoned, so it silently never
+  answered. One socket for the page's lifetime; the name lives in a ref.
+- **A burst of taps lost all but the first.** Each action carries the version it was composed
+  against, so firing several at once means the server refuses the rest — which is exactly what
+  tapping −1 five times quickly does. Actions are serialised now, so a burst applies in full and in
+  order, with retries kept for the other player's concurrent moves.
+
+Two smaller ones: the host's seat was named from the handshake rather than from what they typed
+(`pod:create` carries `playerName` now), and every zone was a flex item with default
+`min-width: auto`, so seven card backs forced a 430px row and pushed the whole table sideways on a
+phone.
+
+### Deliberate deviations, recorded as D27
+
+Tabletop not rules engine; the card layer inside the existing engine rather than a new package;
+hidden information enforced server-side per socket (including hiding your own library from you);
+definitions separate from instances so a view fits inside `STATE_MAX_BYTES`; the table outside the
+login gate so a friend needs no account and the only dependency is Redis.
+
+### Redaction turned out to be load-bearing, not just a privacy fix
+
+Measured rather than guessed, at turn 41 with full boards and graveyards:
+
+| | full `GameState` | one seat's view | cap |
+| --- | --- | --- | --- |
+| 1v1 Commander | 62,097 bytes | 30,129 bytes | 65,536 |
+| 4-player pod | **89,969 bytes** | 36,431 bytes | 65,536 |
+
+So the old behaviour — broadcasting the whole game state to the room — would have outgrown
+`STATE_MAX_BYTES` partway through a two-player game and could never have carried a Commander pod at
+all, however relaxed anyone was about privacy. The four-seat test asserts both halves of that: the
+full state over the cap, every seat's view under it.
+
+### Verified, not asserted
+
+- `packages/rules-engine` 78 tests, including a complete two-player game from shuffled decks to a
+  winner and a Commander game ending on 21 commander damage with the loser still on 40 life.
+- `apps/realtime` 20 tests, including two socket clients playing a full game against live Redis,
+  with redaction checked against **every** payload either client received, not one convenient moment.
+- `scripts/e2e-table.mjs`: two real Chromium contexts, a whole game through the actual UI, 47/47 —
+  and run against the stack started the way the documentation tells Nick to start it, not a
+  hand-assembled one. Includes reloading one player mid-game, because "your phone locked and you
+  lost the game" is the failure that would matter most on the night.
+- Full workspace: 600 tests, run twice to catch the flakes (two were mine, both races where the test
+  read the *other* client's state without waiting for it; fixed rather than retried).
+
+### For Nick
+
+- `node scripts/play.mjs` and open the address it prints on both devices. Redis is the only thing
+  that has to be running first.
+- **The one thing I could not test is the `Caddyfile` change** — there is no Docker daemon here. A
+  bad Caddyfile stops Caddy starting, which takes the site down, so restart it while watching the
+  logs and revert that file if it complains. Everything else was run end to end.
+- The table needs no `apps/api` and no account, so a failing `/api/auth/status` in the console while
+  playing is expected rather than a symptom.

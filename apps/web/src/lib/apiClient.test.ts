@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
 import {
-  ApiError, apiClient, apiUrl, buyLink, cardImage, cards, collections, http, league, legacyUrl, players, social,
+  ApiError, apiClient, apiUrl, buyLink, cardImage, cards, collections, http, league, players, social,
 } from "./apiClient"
 
 /** Minimal fetch stub: records the call and replies with the given status/body. */
@@ -133,12 +133,19 @@ describe("route targeting", () => {
     expect(calls[0].url).toBe(apiUrl("/api/decks/my-decks"))
   })
 
-  it("addresses the legacy server for routes that are not ported yet", async () => {
-    const calls = stubFetch(200, { deckId: "d_1" })
-    await apiClient.decks.importMoxfield("https://www.moxfield.com/decks/abc")
-    // Moxfield import, password reset and Google sign-in still live in server.js.
-    expect(calls[0].url).toBe(legacyUrl("/api/decks/register"))
-    expect(calls[0].url).not.toBe(apiUrl("/api/decks/register"))
+  // There used to be a second base, legacyUrl(), which with VITE_LEGACY_API_URL unset (and it was
+  // set nowhere) produced "/legacy-api/<path>" — a prefix that exists only in the Vite dev proxy.
+  // Every call through it reached no server in production while working in development. These assert
+  // that no call site has drifted back onto a prefix nothing serves.
+  it.each([
+    ["password recovery", () => apiClient.auth.forgotPassword("someone"), "/api/auth/forgot-password"],
+    ["password reset", () => apiClient.auth.resetPassword("tok", "Correct-horse-9"), "/api/auth/reset-password"],
+    ["Moxfield import", () => apiClient.decks.importMoxfield("https://www.moxfield.com/decks/abc"), "/api/decks/register"],
+  ] as const)("sends %s to a same-origin /api path, not a dev-only prefix", async (_label, call, path) => {
+    const calls = stubFetch(200, { success: true, deckId: "d_1" })
+    await call()
+    expect(calls[0].url).toBe(apiUrl(path))
+    expect(calls[0].url).not.toContain("/legacy-api")
   })
 
   it("encodes ids into the path", async () => {

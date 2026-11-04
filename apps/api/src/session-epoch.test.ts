@@ -115,14 +115,20 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('session invalidation on credential
     // bypass of the check for exactly the sessions nobody can account for, so they are invalid and
     // cost one re-login.
     const agent = request.agent(app);
-    await agent
+    const registered = await agent
       .post('/api/auth/register')
       .send({ username: 'epoch_old', password: PASSWORD, storeNickname: 'Old', email: 'epoch_old@example.com' });
-    await agent.post('/api/auth/login').send({ username: 'epoch_old', password: PASSWORD });
+    const loggedIn = await agent.post('/api/auth/login').send({ username: 'epoch_old', password: PASSWORD });
     expect((await agent.get('/api/auth/status')).body.loggedIn).toBe(true);
 
+    // The login may or may not rotate the cookie, so take whichever response last set one.
+    const sessionId =
+      sessionIdFromCookies(loggedIn.headers['set-cookie']) ??
+      sessionIdFromCookies(registered.headers['set-cookie']);
+    expect(sessionId).not.toBeNull();
+
     // Strip the stamp the way a pre-deploy session would have been stored, leaving playerId intact.
-    const sid = await stripEpochFromStoredSession(ctx, 'epoch_old');
+    const sid = await stripEpochFromStoredSession(ctx, sessionId);
     expect(sid).not.toBeNull();
 
     expect((await agent.get('/api/auth/status')).body.loggedIn).toBe(false);
@@ -149,22 +155,39 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('session invalidation on credential
 });
 
 /**
- * Remove the `epoch` key from a player's stored session, leaving `playerId`, to reproduce a session
- * issued before this code existed. Reaches into the Redis session records because that is the only
- * place the shape of a stored session can be altered from outside a request.
+ * The session id from a `set-cookie` header. express-session signs the cookie as `s:<id>.<sig>`.
  */
-async function stripEpochFromStoredSession(ctx: AppContext, username: string): Promise<string | null> {
-  const q = await ctx.pool.query<{ id: string }>('SELECT id FROM players WHERE username = $1', [username]);
-  const playerId = q.rows[0]?.id;
-  if (!playerId) return null;
-  for await (const key of ctx.redis.scanIterator({ MATCH: '*sess*', COUNT: 200 })) {
-    const raw = await ctx.redis.get(key as string);
-    if (!raw) continue;
-    const parsed = JSON.parse(raw) as { playerId?: string; epoch?: number };
-    if (parsed.playerId !== playerId) continue;
-    delete parsed.epoch;
-    await ctx.redis.set(key as string, JSON.stringify(parsed));
-    return key as string;
+function sessionIdFromCookies(setCookie: string | string[] | undefined): string | null {
+  const headers = setCookie === undefined ? [] : Array.isArray(setCookie) ? setCookie : [setCookie];
+  for (const header of headers) {
+    const match = /(?:^|;\s*)grimore\.sid=([^;]+)/.exec(header);
+    if (!match) continue;
+    const value = decodeURIComponent(match[1]!);
+    const unsigned = value.startsWith('s:') ? value.slice(2) : value;
+    const id = unsigned.split('.')[0];
+    if (id) return id;
   }
   return null;
+}
+
+/**
+ * Remove the `epoch` key from a stored session, leaving `playerId`, to reproduce a session issued
+ * before this code existed. Reaches into the Redis session record because that is the only place
+ * the shape of a stored session can be altered from outside a request.
+ *
+ * Keyed directly off the session id from the cookie rather than found by scanning.
+ * It used to `SCAN` the whole keyspace for `*sess*` and match on playerId, which failed
+ * intermittently in the full workspace run and never alone: every suite shares one Redis, and SCAN
+ * makes no promise about keys added or removed while it iterates, so under concurrent churn it
+ * could simply not return the key this test had just created. A lookup by exact key cannot miss.
+ */
+async function stripEpochFromStoredSession(ctx: AppContext, sessionId: string | null): Promise<string | null> {
+  if (!sessionId) return null;
+  const key = `sess:${sessionId}`;
+  const raw = await ctx.redis.get(key);
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as { playerId?: string; epoch?: number };
+  delete parsed.epoch;
+  await ctx.redis.set(key, JSON.stringify(parsed));
+  return key;
 }

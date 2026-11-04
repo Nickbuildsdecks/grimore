@@ -18,6 +18,8 @@ export interface RealtimeOptions {
   log: Logger;
   store?: PodStoreOptions;
   rateLimit?: RateLimitOptions;
+  /** Passed through to the handlers; see `HandlerOptions.botContinuationRounds`. */
+  botContinuationRounds?: number;
   /** Disable the cross-node adapter (single-process tests). Defaults to enabled. */
   adapter?: boolean;
 }
@@ -79,7 +81,13 @@ export async function createRealtime(opts: RealtimeOptions): Promise<Realtime> {
     allowUpgrades: false,
     maxHttpBufferSize: MAX_HTTP_BUFFER_SIZE,
     connectionStateRecovery: { maxDisconnectionDuration: RECOVERY_WINDOW_MS, skipMiddlewares: true },
-    cors: { origin: allowedOrigins.length > 0 ? allowedOrigins : false },
+    // Must agree with `allowRequest` below, which treats an empty allow list as "any origin".
+    // `origin: false` means the opposite — deny every cross-origin request — so with no
+    // SOCKET_ALLOWED_ORIGINS configured the two contradicted each other and every browser on a
+    // different origin got an opaque 403 on the handshake while `allowRequest` was saying yes.
+    // That is the default configuration, so a table simply could not be joined from a browser
+    // until an allow list was set, and the error said nothing about origins.
+    cors: { origin: allowedOrigins.length > 0 ? allowedOrigins : true },
     allowRequest: (req, cb) => {
       const origin = req.headers.origin;
       const ok = originAllowed(origin, allowedOrigins);
@@ -89,8 +97,53 @@ export async function createRealtime(opts: RealtimeOptions): Promise<Realtime> {
     ...(adapterRedis ? { adapter: createAdapter(adapterRedis) } : {}),
   });
 
-  const store = new PodStore(redis, opts.store);
-  const dispose = registerHandlers(io, store, log, { ...(opts.rateLimit ? { rateLimit: opts.rateLimit } : {}) });
+  /**
+   * Logs one of the store's three defect reports **and** passes it on to the caller's own handler.
+   *
+   * It used to only log. `...opts.store` was spread first and then `onBotStall`, `onNoProgress` and
+   * `onSlowWrite` were assigned over the top, so **a caller's version of all three was silently
+   * discarded** — and the realtime suite passes exactly those three in, collects them into arrays,
+   * and asserts at the end of the whole-game test that they are empty. Those arrays could never be
+   * anything but empty. The assertions read as the strongest claims in the suite and could not
+   * fail; its own comment called an empty list "the claim worth making".
+   *
+   * The same shape as the driver discarding `press`'s boolean (D319) and `tap`'s (#300): a report
+   * that cannot arrive is worse than no report, because the silence is read as good news.
+   *
+   * Composed rather than handed over, because both readers want it: the log is how a defect is
+   * found on a running table, and the callback is how a test refuses to pass with one.
+   */
+  const report = (
+    event: string,
+    onward?: (info: { code: string; reason: string }) => void,
+  ) => ({ code, reason }: { code: string; reason: string }): void => {
+    log.warn({ pod: code, reason }, event);
+    onward?.({ code, reason });
+  };
+
+  const store = new PodStore(redis, {
+    ...opts.store,
+    /*
+      A table waiting on a seat the server plays, with the reason.
+
+      Warned rather than thrown: the human's action has already been applied and is worth keeping,
+      and a seat that cannot move stalls itself rather than failing somebody else's move. It is a
+      defect every time it fires — a pod where nobody is on the clock is a dead table — so it is
+      worth finding in a log rather than in a browser suite's idle timeout.
+    */
+    onBotStall: report('server seats cannot move', opts.store?.onBotStall),
+    // The same thing said about a person's move. A table where pressing the only button on offer
+    // buys nothing is a table that has stopped, and until now the server said nothing about it.
+    onNoProgress: report('a player move changed nothing', opts.store?.onNoProgress),
+    // And a write slow enough that the player's page may stop waiting for it.
+    onSlowWrite: report('a slow write', opts.store?.onSlowWrite),
+  });
+  const dispose = registerHandlers(io, store, log, {
+    ...(opts.rateLimit ? { rateLimit: opts.rateLimit } : {}),
+    ...(opts.botContinuationRounds === undefined
+      ? {}
+      : { botContinuationRounds: opts.botContinuationRounds }),
+  });
 
   let closed = false;
   const close = async (): Promise<void> => {

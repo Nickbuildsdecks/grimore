@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import pg from 'pg';
-import { parseEnv } from '@grimore/shared';
+import { parseEnv, PlayerProfileResponse } from '@grimore/shared';
 import { runMigrations } from '@grimore/db';
 import { createApp, createContext, closeContext, type AppContext } from './app.js';
 
@@ -96,6 +96,30 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('players routes (requires DATABASE_
     expect(r.body.stats).toHaveLength(1);
     expect(r.body.stats[0].total_wins).toBe(4);
     expect(r.body.stats[0].season_name).toBe('Season One');
+  });
+
+  /*
+    The profile envelope matches its own contract, on both the visitor and the owner reading.
+
+    Two readings rather than one because the contract's `profile` is `PlayerProfile.or(
+    OwnPlayerProfile)` — a union whose arms differ by whether the email is there. A single
+    anonymous reading would exercise one arm and leave the owner's shape, the one carrying PII,
+    unchecked. The route builds this envelope as an object literal, so nothing else validates it.
+
+    The negative half proves the contract is load-bearing rather than permissive: `stats` is a
+    required array, so an envelope without it must be refused.
+  */
+  it('serves a profile envelope its own contract accepts, as a visitor and as the owner', async () => {
+    const visitor = await request(app).get(`/api/players/${aliceId}/profile`);
+    const asVisitor = PlayerProfileResponse.safeParse(visitor.body);
+    expect(asVisitor.success, JSON.stringify(asVisitor.error?.issues)).toBe(true);
+
+    const own = await alice.get(`/api/players/${aliceId}/profile`);
+    const asOwner = PlayerProfileResponse.safeParse(own.body);
+    expect(asOwner.success, JSON.stringify(asOwner.error?.issues)).toBe(true);
+
+    const { stats: _stats, ...withoutStats } = visitor.body as Record<string, unknown>;
+    expect(PlayerProfileResponse.safeParse(withoutStats).success).toBe(false);
   });
 
   it('shows only public decks to a visitor, and all decks to the owner', async () => {
