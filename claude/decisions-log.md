@@ -23181,3 +23181,113 @@ of the two effects. The comment now says that and says the order is untested, wh
 than a claim the assertions do not support.
 
 Verified: compile.test.ts 44/44, both composition tests proved to catch broken threading.
+
+## D370
+
+**A keyword the compiler cannot build is not an unread sentence, and conflating them refused four
+cards** (#317)
+
+`spellScriptFor` partitioned a spell's lines two ways: keyword lines `keywordScriptFor` could build,
+and everything else, which became the resolution. The resolution is all-or-nothing by design — a
+spell that resolves and silently does half of what it prints is worse than one left unread, because
+an unread card is a manual object inside an automated game and says so (D362), while a half-read one
+says nothing.
+
+So `Miracle {R}` refused Thunderous Wrath, whose other line is "deals 5 damage to any target" and
+which this compiler reads perfectly well. Four pool spells were refused by a keyword line rather
+than by anything about their own effect: Thunderous Wrath, Staggershock, Rift Bolt, Skewer the
+Critics.
+
+### The distinction is about the cost of being wrong, not about tidiness
+
+Every keyword a spell can carry — miracle, flashback, overload, buyback, replicate, storm, spectacle
+— is a **cost or a modifier**: a way to cast the card, not a step of resolving it. A Thunderous Wrath
+that cannot be cast for its miracle cost is still a Thunderous Wrath. An unread *sentence* is a card
+that cannot be played automatically at all. Those are different kinds of incomplete, and anything
+built on `unread` — the hybrid badge above all — would lie in one direction or the other if they
+were counted as one thing. So `UnreadLine.why` gained `unimplemented-keyword`, `compilable.mjs`
+prints it apart (`[keyword]`, 66 of the 334 unread lines), and neither kind counts as compiled.
+
+`isKeywordDeclaration` answers "is this line part of the resolution?", which is a different question
+from `keywordScriptFor`'s "can I build this?". The test doing most of the work is the full stop: a
+printed keyword line never ends in one and every sentence of a resolution does. On its own that
+would also swallow a resolution line that happened to lack a full stop, so it is backed by a closed
+list of CR 702 keyword names — rules vocabulary, not card text, so D259 does not bite: `Flanking` is
+not a card. **Ability words are deliberately absent.** `Magecraft — Whenever you cast …` is a whole
+triggered ability with a label on the front; treating it as a declaration would throw the ability
+away, and leaving it off the list means it is rejected for the right reason.
+
+## D371
+
+**Sentence-level composition, a shared composer for triggers and spells, and five more target
+phrases** (#317)
+
+Four changes in one increment, all of them "read more of what is actually printed":
+
+1. **Sentences compose.** `readResolution` split only on `, then `, so "Target player mills two
+   cards. Draw a card." — one printed line, two clauses — went unread whole. Now `clausesOf` splits
+   on the full stop as well. Safe because nothing in a rules line abbreviates: a full stop followed
+   by whitespace is a sentence boundary and nothing else.
+2. **One composer.** `readResolution` and `triggerFromLine` were two implementations of the same
+   problem; both now call `composeEffects`, which owns the all-or-nothing rule and the
+   one-target rule. A trigger's own text can be a sequence too.
+3. **Target vocabulary**, from two phrases to twelve: `target player`, `target spell`, `target
+   permanent`, `target creature you control`, `target creature you don't control` / `an opponent
+   controls`, `target artifact`, `target enchantment`, `target land`, `target artifact or
+   enchantment`, `target creature card in your graveyard`.
+4. **The families those unlock**: counter target spell, target player mills N, return a creature
+   card from your graveyard to your hand, destroy with any permanent target, and damage to `you` or
+   `each opponent`.
+
+**204 of 538 printed lines, up from 178 (33.1% → 37.9%); 127 of 339 cards now get a script, up from
+102.** Counterspell, Cancel, Disenchant, Naturalize, Krosan Grip, Murder, Mizzium Mortars, Raise
+Dead, Gravedigger, Tome Scour, Mind Sculpt, Thought Scour and Returned Centaur are among the new
+ones.
+
+### Two defects the ground-truth tests found, which is what they are for
+
+**The description picked up sentence casing.** Every spec now stores the phrase it was read from,
+which is character-for-character what the hand-written twin stores — until the phrase starts a
+sentence. Giant Growth prints "Target creature gets +3/+3", so the spec came out `Target creature`
+against a hand-written `target creature`. The first word of a target phrase is always `target`,
+`another` or `any`, never a name, so the fix is to lower-case the front and say why. Found on the
+first run of the existing spec-equality test.
+
+**`plain` was unpinned, and the comment justifying it was wrong.** Deleting the apostrophe
+normalisation passed all 59 tests, so the claim it carried was not falsifiable — and the specific
+claim was false: I had written that Mizzium Mortars prints a typographic apostrophe, and it prints an
+ASCII one. The pool spells the same construct both ways: 21 cards with `'`, 23 with `’`, Unsummon
+"its owner's hand" against Journey to Nowhere "its owner’s control". Every card the compiler reads
+today happens to be in the ASCII half, which is exactly why it needed a test — the bulk corpus #318
+imports is the other half. Pinned now on a curly-spelled bounce spell, and verified to go red when
+`plain` is removed.
+
+### A deferred draw is a fact about position, and the first guard for it was too blunt
+
+`drawLater` owes the card instead of putting it in hand. That is the better primitive — only a
+deferred draw can be replaced by a dredge (CR 702.52a) — and its own docblock bounds it to "a draw
+that is the last thing the card does", because nothing after it can see what it drew. In a
+composition that is a fact about **position**, and a clause cannot know its own position.
+
+My first guard refused any composition whose deferred draw was not last. It caught the hazard and
+also broke "Draw two cards. You gain 2 life.", a card that was never in danger — turning a
+dependency hazard into a coverage hole. The shape that costs nothing: a clause offers **both**
+readings, and `composeEffects` picks the deferred one for the last clause and the immediate one for
+every other. "Draw a card. Scry 2." really does draw before it scries, so the immediate reading is
+not a fallback there, it is the correct one.
+
+This is also the one place the compiler and a hand-written card genuinely differ: Thought Scour's
+hand-written script calls `draw`, the compiled one `drawLater`, and the test compares the two halves
+clause by clause and states the difference rather than hiding it behind a looser assertion.
+
+### Recorded, not fixed: #319
+
+`permanentOfTypes` reads types from `characteristicsOf`, which is the live type line (CR 109.2). Five
+hand-written filters in the same file read `state.cardDefs[...].typeLine`, the printed one — and
+`destroyAnArtifactOrEnchantment`'s docblock claims it reads the live one. Two readings of one
+question now sit in one file. Consolidating them changes which permanents five shipping cards may
+point at, so it is #319 with its own measurement rather than a rider on this.
+
+Verified: compile.test.ts 60/60, with each of the four new mechanisms proved to fail when broken
+(the apostrophe normaliser, the `removesACreature` type guard, the immediate-draw pick, and
+`isKeywordDeclaration`'s list). Full gate green.

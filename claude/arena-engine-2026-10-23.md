@@ -9831,3 +9831,66 @@ refuses, not *what it must never do*.
 And a comment of mine overclaimed: the ordering test cannot show order-sensitivity, because gaining
 life and owing a draw are independent. It proves the state is **threaded** (verified by breaking the
 reduce both ways); the comment now says order is untested rather than implying otherwise.
+
+## Keywords, sentences and twelve target phrases (#317, D370-D371)
+
+**204 of 538 printed lines, up from 178 (33.1% → 37.9%). 127 of 339 cards now get a script, up from
+102.** Counterspell, Cancel, Disenchant, Naturalize, Krosan Grip, Murder, Mizzium Mortars, Raise
+Dead, Gravedigger, Tome Scour, Mind Sculpt, Thought Scour and Returned Centaur among the new ones.
+
+### A keyword nobody implemented was refusing whole cards
+
+`Miracle {R}` refused Thunderous Wrath. The spell path put every line it could not build into the
+resolution, and the resolution is all-or-nothing — so a damage clause the compiler reads perfectly
+well was thrown out by a line that is not part of resolving the spell at all. Four pool spells were
+refused that way (Thunderous Wrath, Staggershock, Rift Bolt, Skewer the Critics).
+
+`isKeywordDeclaration` answers a different question from "can I build this?": **is this line part of
+the resolution?** A keyword is a cost or a modifier — a way to cast the card — so leaving it unread
+is a *missing option* on a card that plays. An unread sentence is a card that cannot be played at
+all. Those are different kinds of incomplete, so `UnreadLine.why` gained `unimplemented-keyword` and
+the measure prints it apart: 66 of the 334 unread lines. Anything built on `unread` — the hybrid
+badge above all — would otherwise lie in one direction or the other.
+
+Backed by a closed list of CR 702 keyword names rather than a shape rule. **Ability words are
+deliberately off that list**: `Magecraft — Whenever you cast …` is a whole triggered ability with a
+label on the front.
+
+### Sentences compose, and one composer serves both paths
+
+"Target player mills two cards. Draw a card." is one printed line and two clauses; the reader split
+only on `, then `, so Thought Scour went unread whole. Both the trigger path and the spell path now
+call one `composeEffects`, which owns the all-or-nothing rule and the one-target rule — they were
+two implementations of the same problem.
+
+### The target vocabulary, from two phrases to twelve
+
+`target player`, `target spell`, `target permanent`, `target creature you control`, `target creature
+you don't control` / `an opponent controls`, `target artifact`, `target enchantment`, `target land`,
+`target artifact or enchantment`, `target creature card in your graveyard`. Each spec stores the
+phrase it was read from, which is character-for-character what the hand-written twin stores.
+
+### Three things the tests caught that I had wrong
+
+- **Sentence casing.** Giant Growth prints "Target creature gets +3/+3", so echoing the phrase gave
+  `Target creature` against a hand-written `target creature`. Found on the first run.
+- **`plain` was unpinned and its comment was false.** Deleting the apostrophe normaliser passed all
+  59 tests, and the comment claimed Mizzium Mortars prints a typographic apostrophe — it prints an
+  ASCII one. The pool spells the same construct both ways (21 cards `'`, 23 cards `’`), and every
+  card the compiler reads today is in the ASCII half. Now pinned on a curly-spelled bounce spell,
+  verified red without the normaliser. The corpus #318 imports is the other half.
+- **My first deferred-draw guard was too blunt.** `drawLater` owes the card, so nothing after it can
+  see what it drew; I refused any composition whose draw was not last, which also broke "Draw two
+  cards. You gain 2 life." — a card never in danger. The shape that costs nothing: the clause offers
+  **both** readings and the composer picks by position. "Draw a card. Scry 2." really does draw
+  first.
+
+### Recorded, not fixed
+
+Five hand-written target filters read the *printed* type line while the compiler's reads the live
+one (CR 109.2), and one of them documents the live reading it does not do. Two readings of one
+question in one file — task #319, with its own measurement, because it changes which permanents five
+shipping cards may point at.
+
+Verified: compile.test.ts 60/60, each of the four new mechanisms proved to fail when broken. Full
+gate green (all eight CI steps).

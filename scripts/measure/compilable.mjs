@@ -103,6 +103,7 @@ const bySource = new Map();
 const buckets = new Map();
 let compiledLines = 0;
 let unreadLines = 0;
+let keywordLines = 0;
 let refused = 0;
 const refusals = new Map();
 
@@ -117,8 +118,13 @@ for (const row of rows) {
   bySource.set(result.source, (bySource.get(result.source) ?? 0) + 1);
   compiledLines += result.compiled.length;
   unreadLines += result.unread.length;
+  keywordLines += result.unread.filter((u) => u.why === 'unimplemented-keyword').length;
   for (const { line, why } of result.unread) {
-    const key = `${opening(line, result.def.name)}${why === 'field-conflict' ? '  [conflict]' : ''}`;
+    // Tagged, not merged: a keyword nobody implemented is a missing option on a card that plays,
+    // and a sentence nobody read is a card that cannot. See `UnreadLine.why`.
+    const tag = why === 'field-conflict' ? '  [conflict]'
+      : why === 'unimplemented-keyword' ? '  [keyword]' : '';
+    const key = `${opening(line, result.def.name)}${tag}`;
     const bucket = buckets.get(key) ?? { count: 0, example: `${result.def.name}: "${line}"` };
     bucket.count += 1;
     buckets.set(key, bucket);
@@ -144,6 +150,8 @@ if (refused > 0) {
 const total = compiledLines + unreadLines;
 console.log(`\nLines compiled: ${compiledLines} of ${total} (${(100 * compiledLines / total).toFixed(1)}%)`);
 console.log(`Lines nothing could read: ${unreadLines}`);
+console.log(`  of those, keyword declarations with no builder: ${keywordLines}`);
+console.log('  (a missing option on a card that otherwise plays, not a card that cannot)');
 
 const ranked = [...buckets.entries()].sort((a, b) => b[1].count - a[1].count);
 const singles = ranked.filter(([, b]) => b.count === 1).length;

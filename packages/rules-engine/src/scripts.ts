@@ -8891,6 +8891,119 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   return null;
 }
 
+/**
+ * Oracle text as the readers in this section spell it.
+ *
+ * Printed card text spells an apostrophe **both ways**, and the pool proves it rather than this
+ * being a precaution: 21 of its cards carry an ASCII `'` and 23 a typographic `’`, and the same
+ * construct appears in both forms — Unsummon prints "its owner's hand", Journey to Nowhere prints
+ * "its owner’s control". Every pattern below is written with the ASCII form, because that is what a
+ * person typing a regex writes, so one normalisation at the door is the only place the two
+ * spellings have to meet.
+ *
+ * A reader that forgot would simply never match, which is the failure mode this module is least
+ * able to see: an unread line looks exactly like a line nothing was written for. Nothing the
+ * compiler reads *today* happens to need it — the cards it reads are all in the ASCII half — so it
+ * is pinned by a test on a card printed the other way, which is the corpus #318 will import.
+ */
+const plain = (text: string): string => text.replace(/[’‘]/g, "'").replace(/[“”]/g, '"');
+
+/**
+ * Every keyword ability whose *name* this module recognises, which is a longer list than the one
+ * `keywordScriptFor` can build.
+ *
+ * These are rules vocabulary (CR 702), not card text. Writing them down invents nothing: D259's
+ * rule — "inventing the text of a real card is worse than leaving the mechanic out" — is about what
+ * a card says, and `Flanking` is not a card. Nothing below is given a meaning here; the list says
+ * only "this line is a keyword declaration".
+ *
+ * **Ability words are deliberately absent.** `Magecraft`, `Battalion`, `Metalcraft` and the rest
+ * label a whole triggered or static ability printed on the same line — "Magecraft — Whenever you
+ * cast or copy an instant or sorcery spell, put two +1/+1 counters on ~". Treating one as a
+ * declaration would throw that ability away. `isKeywordDeclaration`'s full-line rule already
+ * rejects them, and leaving them out of this list means they are rejected for the right reason
+ * rather than by accident.
+ */
+const KEYWORD_ABILITY_NAMES: readonly string[] = [
+  // CR 702, in the rules' own order as far as it goes, with the landwalks spelled out.
+  'deathtouch', 'defender', 'double strike', 'enchant', 'equip', 'first strike', 'flash', 'flying',
+  'haste', 'hexproof', 'indestructible', 'intimidate', 'landwalk', 'plainswalk', 'islandwalk',
+  'swampwalk', 'mountainwalk', 'forestwalk', 'lifelink', 'protection', 'reach', 'shroud', 'trample',
+  'vigilance', 'banding', 'rampage', 'cumulative upkeep', 'flanking', 'phasing', 'buyback',
+  'shadow', 'cycling', 'echo', 'horsemanship', 'fading', 'kicker', 'multikicker', 'flashback',
+  'madness', 'fear', 'morph', 'megamorph', 'amplify', 'provoke', 'storm', 'affinity', 'entwine',
+  'modular', 'sunburst', 'bushido', 'soulshift', 'splice', 'offering', 'ninjutsu', 'epic',
+  'convoke', 'dredge', 'transmute', 'bloodthirst', 'haunt', 'replicate', 'forecast', 'graft',
+  'recover', 'ripple', 'split second', 'suspend', 'vanishing', 'absorb', 'aura swap', 'delve',
+  'fortify', 'frenzy', 'gravestorm', 'poisonous', 'transfigure', 'champion', 'changeling', 'evoke',
+  'hideaway', 'prowl', 'reinforce', 'conspire', 'persist', 'wither', 'retrace', 'devour', 'exalted',
+  'unearth', 'cascade', 'annihilator', 'level up', 'rebound', 'totem armor', 'infect', 'battle cry',
+  'living weapon', 'undying', 'miracle', 'soulbond', 'overload', 'scavenge', 'unleash', 'cipher',
+  'evolve', 'extort', 'fuse', 'bestow', 'tribute', 'dethrone', 'hidden agenda', 'outlast',
+  'prowess', 'dash', 'exploit', 'menace', 'renown', 'awaken', 'devoid', 'ingest', 'myriad',
+  'surge', 'skulk', 'emerge', 'escalate', 'melee', 'crew', 'fabricate', 'partner', 'undaunted',
+  'improvise', 'aftermath', 'embalm', 'eternalize', 'afflict', 'ascend', 'assist', 'jump-start',
+  'mentor', 'afterlife', 'riot', 'spectacle', 'amass', 'companion', 'encore', 'boast', 'foretell',
+  'demonstrate', 'daybound', 'nightbound', 'decayed', 'disturb', 'training', 'compleated', 'blitz',
+  'casualty', 'enlist', 'read ahead', 'ravenous', 'squad', 'prototype', 'living metal',
+  'for mirrodin!', 'toxic', 'backup', 'bargain', 'craft', 'disguise', 'cloak', 'plot', 'saddle',
+  'spree', 'freerunning', 'gift', 'offspring', 'impending', 'eerie', 'max speed',
+  'start your engines!', 'exhaust', 'harmonize', 'mobilize', 'warp',
+];
+
+/**
+ * Whether a printed line is a **keyword ability declaration** — `Flying`, `Miracle {R}`,
+ * `Enchant creature`, `Suspend 3—{R}` — whether or not anything here can implement it.
+ *
+ * ## A different question from `keywordScriptFor`, and that is the point
+ *
+ * `keywordScriptFor` asks *can I build this?* This asks *is this line part of the spell's
+ * resolution?*, and only the second question decides whether a spell compiles at all.
+ *
+ * Before this existed, `spellScriptFor` put every line `keywordScriptFor` could not read into the
+ * resolution, and `readResolution` is all-or-nothing by design (see its docblock). So `Miracle {R}`
+ * refused Thunderous Wrath, whose other line — "deals 5 damage to any target" — this compiler reads
+ * perfectly well. Four spells in the pool were refused by a keyword line rather than by anything
+ * about their own effect: Thunderous Wrath, Staggershock, Rift Bolt and Skewer the Critics.
+ *
+ * ## Why that is safe, which is a claim about the cost of being wrong
+ *
+ * The all-or-nothing rule exists because a spell that resolves and silently does half of what it
+ * prints is worse than one left unread: an unread card is a manual object inside an automated game
+ * and says so (D362), a half-read one says nothing. A keyword left unread is not that. Every
+ * keyword a spell can carry — miracle, flashback, overload, buyback, replicate, storm, spectacle —
+ * is a **cost or a modifier**: a way to cast the card, not a step of resolving it. A Thunderous
+ * Wrath that cannot be cast for its miracle cost is still a Thunderous Wrath. So the two kinds of
+ * unread line are different kinds of incomplete, `compile.ts` tags them apart, and neither one
+ * counts as compiled.
+ *
+ * ## Why a closed list and not a shape
+ *
+ * The one test doing most of the work is the full stop: a printed keyword line never ends in one
+ * and every sentence of a spell's resolution does. On its own that would also swallow a resolution
+ * line that happened to lack a full stop, and *that* mistake is the one this whole module exists to
+ * avoid. The list is what stops it — a line is a declaration only if every comma-separated part of
+ * it begins with a name the rules define.
+ */
+export function isKeywordDeclaration(line: string): boolean {
+  const text = plain(line).trim();
+  if (text === '') return false;
+  // `For Mirrodin!` and `Start your engines!` end in an exclamation mark, so only the full stop is
+  // disqualifying — which is the only terminator a resolution sentence uses.
+  if (text.endsWith('.')) return false;
+
+  const begins = (part: string): boolean => KEYWORD_ABILITY_NAMES.some((kw) =>
+    part === kw || part.startsWith(`${kw} `) || part.startsWith(`${kw}{`)
+    || part.startsWith(`${kw}—`) || part.startsWith(`${kw}-`));
+
+  const whole = text.toLowerCase();
+  // The whole line first, because an argument may itself hold a comma: `Partner with Pir,
+  // Imaginative Rascal` is one declaration, and splitting it would reject it.
+  if (begins(whole)) return true;
+  // Otherwise a list of keywords, which is how a creature prints several: `Flying, first strike`.
+  return whole.split(',').every((part) => begins(part.trim()));
+}
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The sentence table: a printed trigger line in, a TriggerDef out
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -8932,6 +9045,22 @@ interface ReadEffect {
   readonly decisions?: readonly DecisionSpecOf[];
   /** Bot hints a *spell* of this family carries. The trigger path drops them — see below. */
   readonly spellFlags?: Partial<CardScript>;
+  /**
+   * The same clause done **now** rather than owed, for a clause something comes after.
+   *
+   * One family needs this and the reason is `drawLater`, which owes a card instead of putting it in
+   * hand. That is the better primitive for a draw — only a deferred draw can be replaced by a
+   * dredge (CR 702.52a) — but `drawLater`'s own docblock bounds it to "a draw that is the last
+   * thing the card does", because nothing after a deferred draw can see what it drew. "Draw a card.
+   * Discard a card." would discard before the card arrived.
+   *
+   * In a composition that is a fact about **position**, not about the clause, and the clause cannot
+   * know its own position. So it offers both readings and `composeEffects` picks: the deferred one
+   * for the last clause, this one for every other. Nothing is lost either way — which is better
+   * than the first version of this guard, which refused the whole card instead and so turned a
+   * dependency hazard into a coverage hole.
+   */
+  readonly immediate?: EffectFn;
 }
 
 /**
@@ -8977,7 +9106,12 @@ function untargetedEffect(clause: string): ReadEffect | null {
   const drawn = /^draw ([\w]+) cards?$/i.exec(text);
   if (drawn !== null) {
     const n = countFrom(drawn[1]!);
-    if (n !== null) return { effect: (c) => drawLater(c.state, c.controller, n) };
+    if (n !== null) {
+      return {
+        effect: (c) => drawLater(c.state, c.controller, n),
+        immediate: (c) => draw(c.state, c.controller, n),
+      };
+    }
   }
 
   if (/^you become the monarch$/i.test(text)) {
@@ -9034,10 +9168,12 @@ function untargetedEffect(clause: string): ReadEffect | null {
  */
 function triggerFromLine(line: string, name: string): Partial<CardScript> | null {
   const etb = new RegExp(`^When ${escapeName(name)} enters the battlefield, (.+)$`, 'i')
-    .exec(line.trim());
+    .exec(plain(line).trim());
   if (etb === null) return null;
   const clause = etb[1]!.replace(/\.\s*$/, '').trim();
-  const read = readEffect(clause, name);
+  // A trigger's own text can be a sequence too — "it deals 1 damage to any target. You gain 1
+  // life." — and `composeEffects` is all-or-nothing for the same reason a spell's resolution is.
+  const read = composeEffects(clausesOf(clause), name);
   if (read === null) return null;
   // `spellFlags` is deliberately not spread: it is advice about casting a spell, and an ETB
   // trigger is not cast. See `targetedEffect`.
@@ -9053,6 +9189,29 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
 }
 
 /**
+ * A permanent target restricted to one or more card types, as a `TargetSpec.filter`.
+ *
+ * The types are read from `characteristicsOf`, which is the live type line rather than the printed
+ * one: a land that has become a creature is a legal "target creature", and an Equipment that has
+ * become a creature is a legal "target creature" too (CR 109.2 — an object's characteristics are
+ * what they are now). Several of the hand-written specs in this file read
+ * `state.cardDefs[...].typeLine` instead, which is the *printed* line and so disagrees with their
+ * own docblocks — `destroyAnArtifactOrEnchantment` says in as many words that it reads
+ * `characteristicsOf`, and does not. That divergence is recorded as task #319 rather than fixed
+ * here, because it changes which permanents five shipped cards may point at and so wants its own
+ * measurement and decision-log entry.
+ */
+const permanentOfTypes = (
+  ...types: readonly string[]
+): NonNullable<TargetSpec['filter']> => (state, candidate) => {
+  if (candidate.kind !== 'card') return false;
+  const inst = state.instances[candidate.id];
+  if (inst === undefined) return false;
+  const line = characteristicsOf(state, inst).typeLine;
+  return types.some((type) => hasType(line, type));
+};
+
+/**
  * A printed target phrase, as the spec the engine points with.
  *
  * `friendly` is not read off the phrase and cannot be: "target creature" is the same four
@@ -9061,13 +9220,126 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
  * default is "the enemy and the enemy's creatures". A pump that forgets it is not illegal; it is a
  * bot that buffs the creature it is about to kill, which is a silent degradation rather than a
  * refusal, and so exactly the kind of wrong this compiler must not be.
+ *
+ * ## The description is the printed phrase, and that is not a shortcut
+ *
+ * Every spec below stores the phrase it was read from. That happens to be character-for-character
+ * what the hand-written twin stores — `TARGET_PLAYER` says `'target player'`, `yourGraveyardCreature`
+ * says `'target creature card in your graveyard'`, Banisher Priest's spec says `'target creature an
+ * opponent controls'` — because a prompt a person reads should say what the card says. The
+ * ground-truth tests compare the two strings, so the day a hand-written description stops being the
+ * printed phrase, that is the thing that fails.
+ *
+ * ## "You don't control" and "an opponent controls" share a filter, as they already did
+ *
+ * They are the same thing in a duel and not quite in a pod, where the difference would be a
+ * creature nobody controls. `creatureYouDontControl` is what both hand-written halves of Mizzium
+ * Mortars ask, and its docblock there argues the case; this reads them the same way for the same
+ * reason rather than inventing a second answer.
  */
 function targetSpecFrom(phrase: string, friendly: boolean): TargetSpec | null {
-  const text = phrase.trim().toLowerCase();
+  const trimmed = plain(phrase).trim();
+  /*
+    Lower-cased at the front, because the same phrase arrives both ways: `Target creature gets
+    +3/+3` starts a sentence and `destroy target creature` does not, and they are one phrase. The
+    description is prompt text a player reads mid-question — "choose target creature" — so lower
+    case is the right form, and it is the form all thirty-odd hand-written descriptions use. The
+    first word of a target phrase is always `target`, `another` or `any`, never a name, so there is
+    nothing a capital could be carrying. The ground-truth test on Giant Growth found this the first
+    time it ran: echoing the printed phrase verbatim gave it `Target creature`.
+  */
+  const printed = trimmed.charAt(0).toLowerCase() + trimmed.slice(1);
   const helped = friendly ? { friendly: true as const } : {};
-  if (text === 'any target') return { kind: 'any', description: 'any target', ...helped };
-  if (text === 'target creature') return { kind: 'creature', description: 'target creature', ...helped };
-  return null;
+  const spec = (rest: Omit<TargetSpec, 'description'>): TargetSpec =>
+    ({ ...rest, description: printed, ...helped });
+
+  switch (printed.toLowerCase()) {
+    case 'any target': return spec({ kind: 'any' });
+    case 'target creature': return spec({ kind: 'creature' });
+    case 'target permanent': return spec({ kind: 'permanent' });
+    case 'target player': return spec({ kind: 'player' });
+    case 'target spell': return spec({ kind: 'spell' });
+
+    // The phrases that restrict by who controls the permanent. `friendly` is still threaded
+    // through: the filter makes it moot here, since every legal candidate is already on the side
+    // the phrase names, and dropping it would be a special case to remember rather than a rule.
+    case 'target creature you control':
+      return spec({ kind: 'creature', filter: creatureYouControl });
+    case "target creature you don't control":
+    case 'target creature an opponent controls':
+      return spec({ kind: 'creature', filter: creatureYouDontControl });
+
+    // The phrases that restrict by type. `kind: 'permanent'` plus a filter is how every
+    // hand-written one of these is written; there is no `kind: 'artifact'`.
+    case 'target artifact':
+      return spec({ kind: 'permanent', filter: permanentOfTypes('artifact') });
+    case 'target enchantment':
+      return spec({ kind: 'permanent', filter: permanentOfTypes('enchantment') });
+    case 'target land':
+      return spec({ kind: 'permanent', filter: permanentOfTypes('land') });
+    case 'target artifact or enchantment':
+      return spec({ kind: 'permanent', filter: permanentOfTypes('artifact', 'enchantment') });
+
+    // A card in a graveyard is a different object from a permanent, with its own target kinds.
+    case 'target creature card in your graveyard':
+      return spec({ kind: 'graveyard-creature', filter: yourGraveyardCreature.filter });
+
+    default: return null;
+  }
+}
+
+/** Whether a spec points at something `destroy`, `bounceToHand` and the like can be given. */
+const pointsAtAPermanent = (spec: TargetSpec): boolean =>
+  spec.kind === 'creature' || spec.kind === 'permanent';
+
+/**
+ * The damage family, which is one family because its readings differ only in **where the damage
+ * goes**.
+ *
+ * Two spellings of the subject: a spell names itself ("Lightning Bolt deals 3 damage to any
+ * target") and a trigger says "it" ("When Flametongue Kavu enters the battlefield, it deals 4
+ * damage to target creature"), because a trigger's subject is already established by the time the
+ * clause starts.
+ *
+ * The destinations are what decides whether the clause needs a target at all. "Any target" and
+ * "target creature" are chosen by whoever casts it; "each opponent" and "you" are not, and reading
+ * them through `targetSpecFrom` would have produced a spell that asks a question it does not print.
+ * Keeping all four in one function is the reason it is not `untargetedEffect` and
+ * `targetedEffect` both holding half the family and disagreeing later about the amount.
+ */
+function damageEffect(clause: string, name: string): ReadEffect | null {
+  const self = escapeName(name);
+  const dealt = new RegExp(`^(?:${self}|it) deals (\\d+) damage to (.+)$`, 'i').exec(clause.trim());
+  if (dealt === null) return null;
+  const amount = Number(dealt[1]);
+  const where = dealt[2]!.trim();
+
+  // The two destinations nobody chooses.
+  if (/^you$/i.test(where)) {
+    // No `controller` in the options, matching City of Brass: damage to your own face is not damage
+    // "dealt by" a source you are trying to credit, and the hand-written card is the ground truth.
+    return {
+      effect: (c) =>
+        dealDamage(c.state, { kind: 'player', seat: c.controller }, amount, { source: c.source }),
+    };
+  }
+  if (/^each opponent$/i.test(where)) {
+    return {
+      effect: (c) => opponentsOf(c.state, c.controller).reduce(
+        (state, seat) => dealDamage(
+          state, { kind: 'player', seat }, amount,
+          { controller: c.controller, source: c.source },
+        ),
+        c.state,
+      ),
+    };
+  }
+
+  // And the ones somebody does. `damageFirstTarget` takes a creature or a player, so every spec
+  // `targetSpecFrom` can return is one it can be handed.
+  const spec = targetSpecFrom(where, false);
+  if (spec === null) return null;
+  return { targets: [spec], effect: (c) => damageFirstTarget(c, amount) };
 }
 
 /**
@@ -9091,41 +9363,98 @@ function targetSpecFrom(phrase: string, friendly: boolean): TargetSpec | null {
  */
 function targetedEffect(clause: string, name: string): ReadEffect | null {
   const text = clause.trim();
-  const self = escapeName(name);
 
   /*
-    Damage. Two spellings of the same clause: a spell names itself ("Lightning Bolt deals 3 damage
-    to any target") and a trigger says "it" ("When Flametongue Kavu enters the battlefield, it deals
-    4 damage to target creature"), because the trigger's subject is already established.
-  */
-  const dmg = new RegExp(`^(?:${self}|it) deals (\\d+) damage to (any target|target creature)$`, 'i')
-    .exec(text);
-  if (dmg !== null) {
-    const amount = Number(dmg[1]);
-    const spec = targetSpecFrom(dmg[2]!, false);
-    if (spec !== null) {
-      return { targets: [spec], effect: (c) => damageFirstTarget(c, amount) };
-    }
-  }
+    Destroy, and the first family read with an open target phrase rather than a fixed one.
 
-  const destroyed = /^destroy (target creature)$/i.exec(text);
+    `pointsAtAPermanent` is the guard that keeps that open: `targetSpecFrom` can return a player or
+    a spell, and "destroy target player" is not a card. Without it the first printed sentence of
+    that shape would compile into something the engine cannot do.
+  */
+  const destroyed = /^destroy (target .+)$/i.exec(text);
   if (destroyed !== null) {
     const spec = targetSpecFrom(destroyed[1]!, false);
-    if (spec !== null) {
+    if (spec !== null && pointsAtAPermanent(spec)) {
       return {
         targets: [spec],
         effect: (c) => {
           const id = firstCardTarget(c);
           return id === null ? c.state : destroy(c.state, id);
         },
-        spellFlags: { removesACreature: true },
+        // Only when the target really is a creature. A Disenchant that claimed to remove one would
+        // have the bot holding it for a board it cannot answer.
+        ...(spec.kind === 'creature' ? { spellFlags: { removesACreature: true } } : {}),
       };
     }
   }
 
-  const bounced = /^return (target creature) to its owner's hand$/i.exec(text);
+  const bounced = /^return (target .+) to its owner's hand$/i.exec(text);
   if (bounced !== null) {
     const spec = targetSpecFrom(bounced[1]!, false);
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : bounceToHand(c.state, id);
+        },
+      };
+    }
+  }
+
+  /*
+    Counter target spell.
+
+    The one family whose target is an object on the stack, which is why `TargetSpec` has a `spell`
+    kind at all. Counterspell and Cancel print exactly this sentence and nothing else.
+  */
+  if (/^counter target spell$/i.test(text)) {
+    const spec = targetSpecFrom('target spell', false);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : counterSpell(c.state, id);
+        },
+      };
+    }
+  }
+
+  /*
+    Target player mills N cards.
+
+    The pool prints the count as a word every time — "mills two cards", "mills five cards",
+    "mills seven cards" — which is exactly the split `countFrom`'s docblock describes: a number of
+    objects is a word, an amount is a digit. A reader that took only digits would have read none of
+    the four.
+  */
+  const milled = /^(target player) mills ([\w]+) cards?$/i.exec(text);
+  if (milled !== null) {
+    const n = countFrom(milled[2]!);
+    const spec = targetSpecFrom(milled[1]!, false);
+    if (n !== null && spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null ? c.state : mill(c.state, seat, n);
+        },
+      };
+    }
+  }
+
+  /*
+    Return target creature card from your graveyard to your hand.
+
+    The one family so far whose target phrase is **not** a substring of its own sentence: the card
+    says "target creature card … from your graveyard", with the zone in the verb phrase, while the
+    spec that points at it is described "target creature card in your graveyard". So the phrase is
+    supplied rather than captured, and the string supplied is the one Raise Dead and Gravedigger
+    both already store — which is what the ground-truth tests compare.
+  */
+  if (/^return target creature card from your graveyard to your hand$/i.test(text)) {
+    const spec = targetSpecFrom('target creature card in your graveyard', false);
     if (spec !== null) {
       return {
         targets: [spec],
@@ -9142,12 +9471,12 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     also grants a keyword ("gets +0/+3 and gains hexproof") is two effects, and reading the first
     while dropping the second would be a card that silently does less than it prints.
   */
-  const pumped = new RegExp('^target creature gets \\+(\\d+)/\\+(\\d+) until end of turn$', 'i')
+  const pumped = /^(target creature(?: you control)?) gets \+(\d+)\/\+(\d+) until end of turn$/i
     .exec(text);
   if (pumped !== null) {
-    const power = Number(pumped[1]);
-    const toughness = Number(pumped[2]);
-    const spec = targetSpecFrom('target creature', true);
+    const power = Number(pumped[2]);
+    const toughness = Number(pumped[3]);
+    const spec = targetSpecFrom(pumped[1]!, true);
     if (spec !== null) {
       return {
         targets: [spec],
@@ -9167,8 +9496,8 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     file for why `friendly` cannot be read off the target phrase: the two clauses differ by one
     character and point in opposite directions.
   */
-  const countered = /^put a ([+-])1\/\1?1 counter on (target creature)$/i.exec(text)
-    ?? /^put a (\+1\/\+1|-1\/-1) counter on (target creature)$/i.exec(text);
+  const countered = /^put a (\+1\/\+1|-1\/-1) counter on (target creature(?: you control)?)$/i
+    .exec(text);
   if (countered !== null) {
     const kind = countered[1]!.startsWith('+') ? '+1/+1' : '-1/-1';
     const spec = targetSpecFrom(countered[2]!, kind === '+1/+1');
@@ -9186,9 +9515,102 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   return null;
 }
 
-/** Everything one printed clause can become: untargeted first, since those cannot be confused. */
+/**
+ * Everything one printed clause can become.
+ *
+ * Untargeted first, since those are exact sentences that cannot be confused for anything else.
+ * Damage before the rest of the targeted families because its own destinations include two that
+ * are not targets at all, so it has to see the clause before `targetedEffect` reads "to" as a
+ * target phrase.
+ */
 function readEffect(clause: string, name: string): ReadEffect | null {
-  return untargetedEffect(clause) ?? targetedEffect(clause, name);
+  return untargetedEffect(clause) ?? damageEffect(clause, name) ?? targetedEffect(clause, name);
+}
+
+/**
+ * One printed line, as the clauses it is a sequence of.
+ *
+ * Magic writes a sequence three ways and this reads all three: separate sentences ("Target player
+ * mills two cards. Draw a card."), a `, then ` joint ("Scry 1, then draw a card."), and — most
+ * often — one clause on a line of its own. Splitting on the full stop is what the sentence case
+ * needs, and it is safe because nothing in a rules line abbreviates: a full stop followed by
+ * whitespace is a sentence boundary and nothing else.
+ *
+ * The apostrophes are flattened here, at the one door every clause comes through — see `plain`.
+ */
+function clausesOf(line: string): readonly string[] {
+  return plain(line)
+    .split(/\.\s+/)
+    .flatMap((sentence) => sentence.split(/,\s+then\s+/i))
+    .map((clause) => clause.replace(/\.\s*$/, '').trim())
+    .filter((clause) => clause !== '');
+}
+
+/**
+ * A sequence of printed clauses, as one effect — or `null` if **any** of them cannot be read.
+ *
+ * ## All or nothing, and why that is the invariant rather than "one clause"
+ *
+ * The first version of the spell path took one line and refused anything longer. That was the right
+ * *safety* property for the wrong reason: a spell whose second sentence went unread would resolve
+ * and silently do half of what it prints, which is worse than not reading it at all. But "exactly
+ * one clause" is a stricter rule than that property needs. The property is **all or nothing**, and
+ * a spell of three clauses all of which compile satisfies it completely.
+ *
+ * The clauses run in printed order, each handed the state the one before it produced. That
+ * threading is the whole of what sequencing means, and it is why a composed reading can still be a
+ * single `EffectFn` — which is what lets this serve the trigger path and the spell path alike.
+ *
+ * ## At most one clause may point at something
+ *
+ * A `CardScript`'s `targets` is one list for the whole spell or trigger, and the engine fills it
+ * once before resolution. Two clauses each wanting their own target is an effect with two
+ * independent target choices — "Target creature you control fights target creature you don't
+ * control" — and composing them here would silently hand both the *same* target. That is a wrong
+ * card rather than an unread one, so it is refused.
+ */
+function composeEffects(clauses: readonly string[], name: string): ReadEffect | null {
+  if (clauses.length === 0) return null;
+  const parts: ReadEffect[] = [];
+  for (const clause of clauses) {
+    const read = readEffect(clause, name);
+    if (read === null) return null;
+    parts.push(read);
+  }
+  if (parts.length === 1) return parts[0]!;
+
+  const targeted = parts.filter((part) => part.targets !== undefined);
+  // See the docblock: two target choices cannot share one `targets` list.
+  if (targeted.length > 1) return null;
+
+  const decisions = parts.flatMap((part) => part.decisions ?? []);
+  const flags = Object.assign({}, ...parts.map((part) => part.spellFlags ?? {})) as
+    Partial<CardScript>;
+  /*
+    Each part is handed the state the one before it produced, which is what a printed sequence
+    means. Everything else about the context — the targets, the answering object — is unchanged.
+
+    Every part but the last runs in its `immediate` reading where it has one. See `ReadEffect`: the
+    only family that offers two is the draw, and the choice is about whether anything comes after it
+    that could need to see the card.
+  */
+  const run = (asFinal: boolean) =>
+    (c: EffectContext): GameState => parts.reduce(
+      (state, part, i) => {
+        const final = asFinal && i === parts.length - 1;
+        return (final ? part.effect : part.immediate ?? part.effect)({ ...c, state });
+      },
+      c.state,
+    );
+  return {
+    effect: run(true),
+    // Carried outwards, so a composition that is itself followed by something runs every part in
+    // its immediate reading.
+    ...(parts.some((part) => part.immediate !== undefined) ? { immediate: run(false) } : {}),
+    ...(targeted[0]?.targets === undefined ? {} : { targets: targeted[0]!.targets }),
+    ...(decisions.length === 0 ? {} : { decisions }),
+    ...(Object.keys(flags).length === 0 ? {} : { spellFlags: flags }),
+  };
 }
 
 /**
@@ -9236,9 +9658,21 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   const compiled: string[] = [];
   const resolution: string[] = [];
 
+  const declared: string[] = [];
+
   for (const line of lines) {
     const keyword = keywordScriptFor(line, name);
-    if (keyword === null) { resolution.push(line); continue; }
+    if (keyword === null) {
+      /*
+        A keyword nothing here can build is still not part of the resolution. Putting it there is
+        what refused Thunderous Wrath over `Miracle {R}` while reading its damage clause perfectly
+        well; `isKeywordDeclaration` has the argument for why skipping it is safe where skipping a
+        sentence is not.
+      */
+      if (isKeywordDeclaration(line)) { declared.push(line); continue; }
+      resolution.push(line);
+      continue;
+    }
     for (const [key, value] of Object.entries(keyword)) {
       if (key === 'triggers') {
         const existing = (built['triggers'] ?? []) as readonly unknown[];
@@ -9253,71 +9687,31 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   const read = readResolution(resolution, name);
   if (read === null) {
     const script = Object.keys(built).length === 0 ? null : built as Partial<CardScript>;
-    return { script, compiled, unread: resolution };
+    return { script, compiled, unread: [...declared, ...resolution] };
   }
 
   Object.assign(built, read.spellFlags ?? {});
   if (read.targets !== undefined) built['targets'] = read.targets;
   if (read.decisions !== undefined) built['decisions'] = read.decisions;
   built['onResolve'] = read.effect;
-  return { script: built as Partial<CardScript>, compiled: [...compiled, ...resolution], unread: [] };
+  return {
+    script: built as Partial<CardScript>,
+    compiled: [...compiled, ...resolution],
+    // The resolution is read, so the spell plays; the keywords nobody could build are the options
+    // it is missing. `compile.ts` tags them apart, and neither is counted as compiled.
+    unread: declared,
+  };
 }
 
 /**
- * A spell's whole resolution, however many sentences it is written in — or `null` if **any** part of
- * it cannot be read.
+ * A spell's whole resolution, however many clauses it is printed in — or `null` if any of them
+ * cannot be read.
  *
- * ## Composition, and the invariant it has to preserve
- *
- * The first version of the spell path took one line and refused anything longer. That was the right
- * *safety* property for the wrong reason: a spell whose second sentence went unread would resolve
- * and silently do half of what it prints, which is worse than not reading it at all. But "exactly
- * one sentence" is a stricter rule than that property needs. The property is **all or nothing**,
- * and a spell of three sentences all of which compile satisfies it completely.
- *
- * So this composes. It splits each printed line on `, then ` as well — Magic writes a sequence that
- * way, and "Scry 1, then draw a card." is two clauses this module already reads separately. Every
- * part has to compile; one that does not refuses the whole spell, unchanged.
- *
- * The parts run in printed order, each handed the state the one before it produced. That threading
- * is the whole of what sequencing means, and it is why `onResolve` can stay a single `EffectFn`.
- *
- * ## At most one part may point at something
- *
- * A `CardScript`'s `targets` is one list for the whole spell, and the engine fills it once before
- * resolution. Two parts each wanting their own target is a spell with two independent target
- * choices — "Target creature you control fights target creature you don't control" — and composing
- * them here would silently hand both parts the *same* target. That is a wrong card rather than an
- * unread one, so it is refused.
+ * Nothing but `composeEffects` over every clause of every line, which is the point: a trigger's
+ * text and a spell's resolution are the same problem, and before this they were two
+ * implementations of it that could drift apart. The all-or-nothing argument and the one-target rule
+ * live there.
  */
 function readResolution(lines: readonly string[], name: string): ReadEffect | null {
-  if (lines.length === 0) return null;
-  const parts: ReadEffect[] = [];
-  for (const line of lines) {
-    for (const piece of line.replace(/\.\s*$/, '').split(/,\s+then\s+/i)) {
-      const clause = piece.trim();
-      if (clause === '') continue;
-      const read = readEffect(clause, name);
-      if (read === null) return null;
-      parts.push(read);
-    }
-  }
-  if (parts.length === 0) return null;
-  if (parts.length === 1) return parts[0]!;
-
-  const targeted = parts.filter((part) => part.targets !== undefined);
-  // See the docblock: two target choices cannot share one `targets` list.
-  if (targeted.length > 1) return null;
-
-  const decisions = parts.flatMap((part) => part.decisions ?? []);
-  const flags = Object.assign({}, ...parts.map((part) => part.spellFlags ?? {})) as
-    Partial<CardScript>;
-  return {
-    // Each part is handed the state the one before it produced, which is what a printed sequence
-    // means. Everything else about the context — the targets, the answering object — is unchanged.
-    effect: (c) => parts.reduce((state, part) => part.effect({ ...c, state }), c.state),
-    ...(targeted[0]?.targets === undefined ? {} : { targets: targeted[0]!.targets }),
-    ...(decisions.length === 0 ? {} : { decisions }),
-    ...(Object.keys(flags).length === 0 ? {} : { spellFlags: flags }),
-  };
+  return composeEffects(lines.flatMap(clausesOf), name);
 }

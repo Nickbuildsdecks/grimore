@@ -41,7 +41,7 @@
 import type { CardDef } from './cards.js';
 import { hasType, parseTypeLine, printedKeywords } from './characteristics.js';
 import { cardFromData, printedDef, printedRulesLines, type CardDataRow, type DerivedKind } from './fromCardData.js';
-import { lineScriptFor, spellScriptFor } from './scripts.js';
+import { isKeywordDeclaration, lineScriptFor, spellScriptFor } from './scripts.js';
 import type { CardScript } from './scriptTypes.js';
 
 /** A printed line, and why nothing could turn it into rules. */
@@ -55,8 +55,15 @@ export interface UnreadLine {
    * had already set to something else. Reported rather than resolved: two printed lines disagreeing
    * about one script field means this module has misread one of them, and picking a winner would
    * hide that behind a card that half works.
+   *
+   * `unimplemented-keyword` — the line is a keyword ability declaration (`Miracle {R}`, `Equip
+   * {1}`) that `keywordScriptFor` has no builder for. Counted apart from `no-reader` because it is
+   * a different kind of incomplete: a keyword is a **cost or a modifier**, so the card still plays
+   * and what is missing is one way to cast or use it. An unread *sentence* means the card cannot be
+   * played automatically at all. Conflating the two would make any badge built on this lie in one
+   * direction or the other — see `isKeywordDeclaration`.
    */
-  readonly why: 'no-reader' | 'field-conflict';
+  readonly why: 'no-reader' | 'field-conflict' | 'unimplemented-keyword';
 }
 
 export interface Compiled {
@@ -116,6 +123,18 @@ function merge(
 }
 
 /**
+ * Why a line went unread, for the two paths that cannot already tell.
+ *
+ * Both of them have already asked the readers and been refused; the only question left is which
+ * kind of incomplete this is, and `isKeywordDeclaration` is the one thing that can say. Asking it
+ * here rather than inside each path is what keeps the spell path and the permanent path reporting
+ * the same line the same way.
+ */
+function reasonFor(line: string): 'no-reader' | 'unimplemented-keyword' {
+  return isKeywordDeclaration(line) ? 'unimplemented-keyword' : 'no-reader';
+}
+
+/**
  * Compiles one row of printed card data into as much of a `CardScript` as this engine can build.
  *
  * Refuses only what is not a single-face card at all — see `printedDef`. Everything else returns
@@ -164,7 +183,7 @@ export function compileCard(row: CardDataRow): Compilation {
         ? {}
         : { script: { name: def.name, ...spell.script } as CardScript }),
       compiled: spell.compiled,
-      unread: spell.unread.map((line) => ({ line, why: 'no-reader' as const })),
+      unread: spell.unread.map((line) => ({ line, why: reasonFor(line) })),
       source: spell.script === null ? 'printed-only' : 'lines',
     };
   }
@@ -182,7 +201,7 @@ export function compileCard(row: CardDataRow): Compilation {
     if (printedKeywords(line).length > 0) { compiled.push(line); continue; }
 
     const fragment = lineScriptFor(line, def.name);
-    if (fragment === null) { unread.push({ line, why: 'no-reader' }); continue; }
+    if (fragment === null) { unread.push({ line, why: reasonFor(line) }); continue; }
     if (merge(built, fragment) === 'conflict') {
       unread.push({ line, why: 'field-conflict' });
       continue;

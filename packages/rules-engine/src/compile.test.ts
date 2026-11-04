@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { compileCard, fullyCompiled } from './compile.js';
 import { STARTER_DECKS } from './starterDecks.js';
-import { scriptFor } from './scripts.js';
-import type { CardDef } from './cards.js';
+import { isKeywordDeclaration, scriptFor } from './scripts.js';
+import { zoneKey, type CardDef } from './cards.js';
 import type { CardDataRow } from './fromCardData.js';
 import type { EffectContext } from './effects.js';
+import type { TargetSpec } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
 import { arena, find } from './testkit.js';
@@ -467,7 +468,9 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const after = (field(twoLines.script, 'onResolve') as (c: EffectContext) => GameState)(
         contextOn(base, 0 as SeatIndex, 'c1'),
       );
-      expect(after.drawsOwed.filter((seat) => seat === 0)).toHaveLength(2);
+      // In hand rather than owed, because a clause follows the draw: see the draw-position test
+      // below for why the reading depends on what comes after it.
+      expect(after.zones[zoneKey(0 as SeatIndex, 'hand')]).toHaveLength(2);
       expect(after.seats[0]!.life).toBe(base.seats[0]!.life + 2);
     });
 
@@ -489,6 +492,300 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
   });
 
+  /*
+    ── The vocabulary this stage added ────────────────────────────────────────────────────────────
+
+    Five target phrases and the families they unlock, each checked against the card in the pool that
+    prints it. The point of comparing against a hand-written spec rather than against a literal is
+    that a literal is something this test and the compiler could both be wrong about in the same
+    way; the hand-written spec is what the engine has been playing for 130 tasks.
+  */
+  describe('the target phrases and effect families this stage added', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({ state, controller: seat, source, targets } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    /*
+      The four whose spec is identical to the hand-written one, object for object.
+
+      `Mizzium Mortars` is the strongest of them: its hand-written spec is
+      `{ ...TARGET_CREATURE, description: "target creature you don't control", filter:
+      creatureYouDontControl }`, and the compiler reaches the same filter *function* — not a copy of
+      it — so `toEqual` is comparing the real thing rather than two descriptions of it.
+    */
+    it.each([
+      ['Counterspell'],
+      ['Tome Scour'],
+      ['Raise Dead'],
+      ['Murder'],
+      ['Mizzium Mortars'],
+    ])('%s points at exactly the spec the hand-written spell points at', (card) => {
+      const written = scriptFor(card as string);
+      const compiled = compiledScript(card as string).script;
+      expect(compiled, `${card as string} compiled to no script`).toBeDefined();
+      expect(field(compiled, 'targets')).toEqual(field(written, 'targets'));
+    });
+
+    /*
+      The typed-permanent phrases, whose filter is a function the compiler builds rather than one it
+      can borrow — so the spec is compared by what a player reads and the filter by what it admits.
+
+      Both halves matter and for different reasons. Admitting the artifact is what makes the card
+      castable at all; **rejecting the creature** is what stops a Disenchant pointing at a Grizzly
+      Bears, which is a card that works and is not the card. A filter that returned `true` would
+      pass a test that only checked the first half.
+    */
+    it('builds a filter for "target artifact or enchantment" that admits one and refuses a creature', () => {
+      const written = scriptFor('Disenchant');
+      const spec = (field(compiledScript('Disenchant').script, 'targets') as
+        readonly TargetSpec[])[0]!;
+      const theirs = (field(written, 'targets') as readonly TargetSpec[])[0]!;
+      expect(spec.kind).toBe(theirs.kind);
+      expect(spec.description).toBe(theirs.description);
+
+      const board = arena({ battlefield: { 0: ['Bonesplitter'], 1: ['Grizzly Bears'] } });
+      const equipment = find(board, 0 as SeatIndex, 'battlefield', 'Bonesplitter');
+      const bear = find(board, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const admits = (id: string) =>
+        spec.filter?.(board, { kind: 'card', id }, 0 as SeatIndex) ?? false;
+      expect(admits(equipment)).toBe(true);
+      expect(admits(bear)).toBe(false);
+      // And the hand-written filter agrees on both, which is what makes this a comparison.
+      expect(theirs.filter?.(board, { kind: 'card', id: equipment }, 0 as SeatIndex)).toBe(true);
+      expect(theirs.filter?.(board, { kind: 'card', id: bear }, 0 as SeatIndex)).toBe(false);
+    });
+
+    it('reads a phrase printed with a typographic apostrophe, which 23 pool cards use', () => {
+      /*
+        `plain` normalises the apostrophe, and this is the test that makes that claim falsifiable.
+
+        The pool spells the same construct both ways — Unsummon prints "its owner's hand" with an
+        ASCII apostrophe, Journey to Nowhere prints "its owner’s control" with a typographic one,
+        21 cards to 23. Every card the compiler reads today happens to be in the ASCII half, so
+        deleting `plain` broke nothing and passed all 59 tests, which is exactly the kind of
+        unpinned claim this file exists to catch. The bulk corpus #318 imports is the typographic
+        half, so the reader has to work on text spelled that way, and here it is spelled that way.
+      */
+      const curly = compileCard({
+        name: 'Curly Unsummon', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'],
+        oracle_text: 'Return target creature to its owner\u2019s hand.',
+      });
+      expect(curly.ok).toBe(true);
+      if (!curly.ok) return;
+      expect(curly.unread).toEqual([]);
+      // The same spec the ASCII-spelled Unsummon in the pool compiles to.
+      expect(field(curly.script, 'targets')).toEqual(field(scriptFor('Unsummon'), 'targets'));
+    });
+
+    it('mills the player the hand-written Tome Scour mills, the same number of cards', () => {
+      const base = arena();
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'player', seat: 1 as SeatIndex }]);
+      const mine = (field(compiledScript('Tome Scour').script, 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+      const theirs = (field(scriptFor('Tome Scour'), 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+      expect(mine).toEqual(theirs);
+      // Not vacuous: five cards left seat 1's library, and the count is read rather than assumed.
+      expect(mine.zones[zoneKey(1 as SeatIndex, 'graveyard')]).toHaveLength(5);
+      expect(mine).not.toEqual(base);
+    });
+
+    it('returns the creature card the hand-written Raise Dead returns', () => {
+      // Seat 0's default deck has no Grizzly Bears, and `arena` pulls a named card out of that
+      // seat's library; the controller has to be the seat holding the graveyard this points into.
+      const base = arena({ decks: { 0: 'verdant-guard' }, graveyard: { 0: ['Grizzly Bears'] } });
+      const dead = find(base, 0 as SeatIndex, 'graveyard', 'Grizzly Bears');
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: dead }]);
+      const mine = (field(compiledScript('Raise Dead').script, 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+      const theirs = (field(scriptFor('Raise Dead'), 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+      expect(mine).toEqual(theirs);
+      // Not vacuous: the card is in hand afterwards and out of the graveyard.
+      expect(mine.zones[zoneKey(0 as SeatIndex, 'hand')]).toContain(dead);
+      expect(mine.zones[zoneKey(0 as SeatIndex, 'graveyard')]).not.toContain(dead);
+    });
+
+    /*
+      Counterspell's effect is compared by its spec and not by resolving it, and the reason is worth
+      stating rather than leaving as a gap: countering needs a spell on the stack, and `arena` builds
+      boards, not stacks. The hand-written effect is already exercised against a real stack by the
+      whole-game playout tests; what this stage could get wrong is the *spec* — pointing a
+      counterspell at a creature on the battlefield rather than at an object on the stack — and that
+      is what the equality above checks. Writing a resolution check that passed because
+      `counterSpell` no-ops on a card that is not on the stack would be a check that cannot fail.
+    */
+    it('reads "destroy target creature" as removal the bot will hold, and a Disenchant as not', () => {
+      /*
+        `removesACreature` is advice to the bot: do not cast this with nothing of theirs to point
+        at. It is true of Murder and false of Disenchant, and the printed sentences differ only in
+        the target phrase — so a compiler that set the flag for the whole `destroy` family would
+        have the bot holding a Disenchant for a board of creatures it cannot answer.
+      */
+      expect(field(scriptFor('Murder'), 'removesACreature')).toBe(true);
+      expect(field(compiledScript('Murder').script, 'removesACreature')).toBe(true);
+      expect(field(scriptFor('Disenchant'), 'removesACreature')).toBeUndefined();
+      expect(field(compiledScript('Disenchant').script, 'removesACreature')).toBeUndefined();
+    });
+
+    it('composes a spell printed as two sentences on one line, as Thought Scour is', () => {
+      /*
+        "Target player mills two cards. Draw a card." — one printed line, two clauses, and before
+        this stage the resolution reader split only on `, then `, so the whole line went unread.
+
+        ## The one place the compiler and the hand-written card genuinely differ
+
+        Compared clause by clause rather than by state equality, because the two **do** differ and
+        hiding that behind a looser assertion would be the worse choice. The hand-written Thought
+        Scour calls `draw`; the compiler calls `drawLater`, which owes the card instead of putting
+        it in hand. Both are legal and several hand-written cards use the deferred form; it is the
+        better of the two here, because only a deferred draw can be replaced by a dredge
+        (CR 702.52a), and `composeEffects` now refuses a deferred draw anywhere but last, which is
+        the condition `drawLater` requires.
+
+        So what is asserted is that both halves happen, in both scripts, with the same numbers —
+        and that the difference is *when the card arrives*, not what the card does.
+      */
+      const compiled = compiledScript('Thought Scour');
+      expect(compiled.unread).toEqual([]);
+      const base = arena();
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'player', seat: 1 as SeatIndex }]);
+      const mine = (field(compiled.script, 'onResolve') as (c: EffectContext) => GameState)(ctx);
+      const theirs = (field(scriptFor('Thought Scour'), 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+
+      // The mill: identical, and read rather than assumed.
+      expect(mine.zones[zoneKey(1 as SeatIndex, 'graveyard')]).toHaveLength(2);
+      expect(theirs.zones[zoneKey(1 as SeatIndex, 'graveyard')]).toHaveLength(2);
+      // The draw: one card either owed or held, one card each way, and neither state is the base.
+      expect(mine.drawsOwed.filter((seat) => seat === 0)).toHaveLength(1);
+      expect(theirs.zones[zoneKey(0 as SeatIndex, 'hand')]).toHaveLength(1);
+      expect(mine).not.toEqual(base);
+    });
+
+    it('draws now when a clause follows the draw, and owes the card when none does', () => {
+      /*
+        The one family that is read two ways, and the reason is `drawLater`: it owes the card rather
+        than putting it in hand, which is the better primitive (only a deferred draw can be replaced
+        by a dredge, CR 702.52a) and is only safe where nothing after it needs to see what was
+        drawn.
+
+        The first version of this guard refused any card whose draw was not last, which turned a
+        dependency hazard into a coverage hole and broke a card — "Draw two cards. You gain 2 life."
+        — that was never in danger. Offering both readings costs nothing and is right in both
+        positions: "Draw a card. Scry 2." really does draw before it scries.
+      */
+      const drawFirst = compileCard({
+        name: 'Draw Then Scry', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'],
+        oracle_text: 'Draw a card. Scry 2.',
+      });
+      expect(drawFirst.ok).toBe(true);
+      if (!drawFirst.ok) return;
+      expect(drawFirst.unread).toEqual([]);
+
+      const base = arena();
+      const after = (field(drawFirst.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      // Drawn, not owed: the scry that follows has to be looking at the library the draw left.
+      expect(after.zones[zoneKey(0 as SeatIndex, 'hand')]).toHaveLength(1);
+      expect(after.drawsOwed.filter((seat) => seat === 0)).toHaveLength(0);
+
+      // And the control, the same two clauses the other way round: nothing follows the draw, so it
+      // is owed — which is what Thought Scour above relies on.
+      const drawLast = compileCard({
+        name: 'Scry Then Draw', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'],
+        oracle_text: 'Scry 2. Draw a card.',
+      });
+      expect(drawLast.ok).toBe(true);
+      if (!drawLast.ok) return;
+      const owed = (field(drawLast.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      expect(owed.zones[zoneKey(0 as SeatIndex, 'hand')]).toHaveLength(0);
+      expect(owed.drawsOwed.filter((seat) => seat === 0)).toHaveLength(1);
+    });
+  });
+
+  /*
+    ── A keyword nobody implemented is not an unread sentence ─────────────────────────────────────
+  */
+  describe('keyword declarations, which are a different kind of incomplete', () => {
+    it('reads the resolution of a spell whose keyword line it cannot build, and names the keyword', () => {
+      /*
+        Thunderous Wrath is `Miracle {R}` plus "deals 5 damage to any target". Before
+        `isKeywordDeclaration`, the keyword line fell into the resolution, and the resolution is
+        all-or-nothing — so a damage clause this module reads perfectly well was refused by a line
+        that is not part of resolving the spell at all. Four pool spells were refused that way.
+      */
+      const wrath = compiledScript('Thunderous Wrath');
+      expect(wrath.script).toBeDefined();
+      expect(wrath.unread).toEqual([{ line: 'Miracle {R}', why: 'unimplemented-keyword' }]);
+      expect(wrath.compiled).toEqual(['Thunderous Wrath deals 5 damage to any target.']);
+    });
+
+    it('still refuses a spell whose unread line is a sentence, not a keyword', () => {
+      /*
+        The other side of the same coin, and the one that must not move. A keyword is a cost or a
+        modifier, so skipping it leaves a card that plays with one option missing. A sentence is a
+        step of the resolution, so skipping it leaves a card that resolves and silently does less
+        than it prints — with nothing flagged, which is worse than not reading it at all (D362).
+      */
+      const half = compileCard({
+        name: 'Keyword And A Sentence', type_line: 'Instant', mana_cost: '{R}', cmc: 1,
+        colors: ['R'],
+        oracle_text: 'Miracle {R}\nPrevent all combat damage that would be dealt this turn.',
+      });
+      expect(half.ok).toBe(true);
+      if (!half.ok) return;
+      expect(half.script).toBeUndefined();
+      expect(half.unread).toEqual([
+        { line: 'Miracle {R}', why: 'unimplemented-keyword' },
+        {
+          line: 'Prevent all combat damage that would be dealt this turn.',
+          why: 'no-reader',
+        },
+      ]);
+    });
+
+    it('does not mistake an ability word for a keyword, which would throw its ability away', () => {
+      /*
+        `Magecraft — Whenever you cast or copy an instant or sorcery spell, …` is one triggered
+        ability with a label on the front. Treating the line as a declaration would drop the whole
+        trigger and report it as a missing option, which is the wrong half of the distinction this
+        test exists to hold.
+      */
+      expect(isKeywordDeclaration('Magecraft — Whenever you cast an instant spell, draw a card'))
+        .toBe(false);
+      expect(isKeywordDeclaration('Destroy target creature.')).toBe(false);
+      expect(isKeywordDeclaration('Prevent all combat damage that would be dealt this turn.'))
+        .toBe(false);
+      // And the shapes it does recognise, including the two that end in an exclamation mark and a
+      // line that lists several keywords at once.
+      expect(isKeywordDeclaration('Miracle {R}')).toBe(true);
+      expect(isKeywordDeclaration('Equip {1}')).toBe(true);
+      expect(isKeywordDeclaration('Enchant creature')).toBe(true);
+      expect(isKeywordDeclaration('Flying, first strike')).toBe(true);
+      expect(isKeywordDeclaration('For Mirrodin!')).toBe(true);
+      // Not a keyword the rules define, so not a declaration — a one-word line is not enough.
+      expect(isKeywordDeclaration('Sacrifice')).toBe(false);
+    });
+
+    it('counts a keyword with no builder apart from a sentence with no reader', () => {
+      /*
+        Mizzium Mortars is the pool's clearest case: its printed half compiles, so the card plays,
+        and `Overload {6}{R}{R}` is the option it is missing. A badge built on `unread` alone would
+        say "move this card by hand" about a card the engine is running.
+      */
+      const mortars = compiledScript('Mizzium Mortars');
+      expect(mortars.script).toBeDefined();
+      expect(mortars.unread.map((u) => u.why)).toEqual(['unimplemented-keyword']);
+      expect(mortars.unread[0]?.line).toBe('Overload {3}{R}{R}{R}');
+    });
+  });
   it('refuses only what is not a single-face card at all', () => {
     expect(compileCard({ name: '', type_line: 'Creature' }).ok).toBe(false);
     expect(compileCard({ name: 'No Types', type_line: '' }).ok).toBe(false);
