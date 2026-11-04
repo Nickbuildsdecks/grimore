@@ -12738,6 +12738,74 @@ function blinkResolution(lines: readonly string[], name: string): ReadEffect | n
   };
 }
 
+/**
+ * **Exile a creature and pay its controller for it** — Swords to Plowshares.
+ *
+ * ## The dependency, which is a reading rather than an identity
+ *
+ * The fourth spell-shape reader and the third kind of internal dependency a composition cannot
+ * express. `lootResolution`'s was an **order** (draw before the question); `blinkResolution`'s was
+ * an **identity** ("that card" is the object the clause before moved). This one is a **reading**:
+ * "its power" is a characteristic of the creature the sentence before exiled, and no clause reader
+ * is handed the object another clause moved. So the two sentences are read together or not at all.
+ *
+ * ## What is *not* true about the order, which the break runs settled
+ *
+ * The power is taken before `exileCard`, which is the printed order and the hand-written card's
+ * own, and the comment there says "after exiling there is nothing to read". **In this engine that
+ * is not so**, and deliberately reading it afterwards passes every test: `exileCard` leaves the
+ * instance in place with its continuous effects still reaching it, because `pump` scopes to an
+ * instance id and `relocate` keeps the id across a zone change. `pumpTeam`'s docblock has that
+ * limitation written down — a creature that changes zone is a new object (CR 400.7) and should be
+ * out of the set, and "it wants the object identity the engine does not yet have".
+ *
+ * So the order here is **fidelity, not correctness**: it is the sequence the card prints, it is what
+ * the hand-written script does, and it is what will be right the day zone changes strip the effects
+ * they should. It cannot be told from its absence today, and that is said rather than defended with
+ * a test that cannot fail.
+ *
+ * No clamp on the number, for the same standard applied the other way. The hand-written card writes
+ * `Math.max(0, power)`, and `gainLife` already returns the state untouched for any amount `<= 0`
+ * (its first line), so the clamp is provably indistinguishable from its absence. A guard that cannot
+ * fail reads as care and is noise; the behaviour it stands for — a creature at negative power pays
+ * nothing — is asserted instead, and holds because of `gainLife` rather than because of the clamp.
+ *
+ * ## Whose life, and `removesACreature`
+ *
+ * "Its controller" is the seat the creature is under, which in this engine's model is
+ * `instances[id].zoneSeat` for anything on the battlefield — the same field the hand-written card
+ * reads. So aiming this at your own creature pays **you**, which is the printed card and part of
+ * why it is a fair answer to a huge attacker.
+ *
+ * `removesACreature` is carried because the flag is the bot's only way to know this spell wants a
+ * creature of somebody else's to point at: `CardScript.removesACreature`'s own job is to keep a
+ * removal spell from being cast with nothing worth hitting. Dropping it is a card that plays itself
+ * into an empty board, which is the failure #322 was about.
+ */
+function exileForLifeResolution(lines: readonly string[], name: string): ReadEffect | null {
+  if (lines.length !== 1) return null;
+  const traded = /^exile (target creature)\. its controller gains life equal to its power\.?$/i
+    .exec(plain(lines[0]!).trim());
+  if (traded === null) return null;
+  const spec = targetSpecFrom(traded[1]!, false);
+  if (spec === null) return null;
+  return {
+    spellFlags: { removesACreature: true },
+    targets: [spec],
+    effect: (c) => {
+      const id = firstCardTarget(c);
+      if (id === null) return c.state;
+      const inst = c.state.instances[id];
+      if (inst === undefined) return c.state;
+      // Read before the exile, which is the printed order; see the docblock for why that cannot
+      // be told from the other order today, and why it is written this way regardless.
+      const power = characteristicsOf(c.state, inst).power;
+      const owner = inst.zoneSeat;
+      return gainLife(exileCard(c.state, id), owner, power);
+    },
+  };
+}
+
 function readResolution(lines: readonly string[], name: string): ReadEffect | null {
   /*
     The X shapes first, because `composeEffects` would refuse them: the clause vocabulary has no
@@ -12752,5 +12820,6 @@ function readResolution(lines: readonly string[], name: string): ReadEffect | nu
   return xSpellResolution(lines, name)
     ?? lootResolution(lines, name)
     ?? blinkResolution(lines, name)
+    ?? exileForLifeResolution(lines, name)
     ?? composeEffects(lines.flatMap(clausesOf), name);
 }

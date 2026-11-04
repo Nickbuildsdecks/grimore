@@ -5,7 +5,7 @@ import { CLUE_TOKEN, isKeywordDeclaration, scriptFor } from './scripts.js';
 import { zoneKey, type CardDef } from './cards.js';
 import { characteristicsOf, printedLandwalk } from './characteristics.js';
 import type { CardDataRow } from './fromCardData.js';
-import { addCounters, tap, type EffectContext } from './effects.js';
+import { addCounters, pump, tap, type EffectContext } from './effects.js';
 import type { AbilityDef, TargetSpec, TriggerDef } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
@@ -4644,6 +4644,99 @@ describe('compileCard, against the cards a person wrote by hand', () => {
           .effect(contextOn(moved, 0 as SeatIndex, card));
         expect(after.drawsOwed.length).toBe(moved.drawsOwed.length + 1);
       }
+    });
+  });
+
+  describe('a characteristic read before the permanent leaves', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({
+      state, controller: seat, source, targets, decisions: [],
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const resolve = (script: unknown) =>
+      field(script, 'onResolve') as (c: EffectContext) => GameState;
+
+    it("exiles and pays the creature's controller, as Swords to Plowshares does", () => {
+      /*
+        The third kind of internal dependency: not an order (D413) and not an identity (D414) but a
+        **reading**. "Its power" is a characteristic of the creature the sentence before exiled, and
+        no clause reader is handed the object another clause moved — so the two sentences are read
+        together or not at all.
+
+        Deliberately **not** asserted here: that the power is read before the exile rather than
+        after. It is written that way, because that is the printed order and the hand-written card's,
+        but in this engine the two orders give the same answer — `exileCard` leaves the instance in
+        place with its continuous effects still reaching it, since `pump` scopes to an instance id
+        and `relocate` keeps the id across a zone change (the limitation `pumpTeam`'s docblock
+        records). A break that read the power afterwards passed every test in this file, so the claim
+        is made in the docblock and not pretended to be covered.
+      */
+      const mine = compiledScript('Swords to Plowshares');
+      expect(mine.unread).toEqual([]);
+      const base = arena({
+        decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+        battlefield: { 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const bears = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: bears }]);
+      const after = resolve(mine.script)(ctx);
+      expect(after).toEqual(resolve(scriptFor('Swords to Plowshares'))(ctx));
+      /*
+        And right rather than merely equal: a 2/2 leaves and its **controller** — not the caster —
+        gains exactly two. A reader that paid the caster would pass the state comparison only if the
+        hand-written card were wrong the same way, and this says which seat.
+      */
+      expect(ids(after, 1 as SeatIndex, 'exile')).toContain(bears);
+      expect(after.seats[1]!.life).toBe(base.seats[1]!.life + 2);
+      expect(after.seats[0]!.life).toBe(base.seats[0]!.life);
+    });
+
+    it('pays nothing for a creature whose power has been reduced below zero', () => {
+      /*
+        The behaviour, stated without claiming more than it proves.
+
+        The hand-written card writes `Math.max(0, power)` and the compiled reading does not, because
+        `gainLife` returns the state untouched for any amount `<= 0` on its first line — so the clamp
+        is provably indistinguishable from its absence, and a guard that cannot fail was deleted
+        rather than mirrored (a break that removed it from the compiled reader passed every test,
+        which is how that was settled).
+
+        What this row pins is the outcome: a creature at negative power pays its controller nothing,
+        and both readings agree. Driven with a real reduction rather than a fabricated instance.
+      */
+      const mine = compiledScript('Swords to Plowshares');
+      const base = arena({
+        decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+        battlefield: { 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const bears = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const shrunk = pump(pump(base, [bears], 'fx-a', 0 as SeatIndex, { power: -2, toughness: 0 }),
+        [bears], 'fx-b', 0 as SeatIndex, { power: -1, toughness: 0 });
+      expect(characteristicsOf(shrunk, shrunk.instances[bears]!).power).toBeLessThan(0);
+
+      const ctx = contextOn(shrunk, 0 as SeatIndex, 'c1', [{ kind: 'card', id: bears }]);
+      const after = resolve(mine.script)(ctx);
+      expect(after).toEqual(resolve(scriptFor('Swords to Plowshares'))(ctx));
+      expect(after.seats[1]!.life).toBe(shrunk.seats[1]!.life);
+    });
+
+    it('carries the removal hint, so the bot does not cast it into an empty board', () => {
+      // `removesACreature` is the bot's only way to know this spell wants somebody's creature to
+      // point at. Dropping it is the failure #322 was about: a card that plays itself into nothing.
+      expect(field(compiledScript('Swords to Plowshares').script, 'removesACreature')).toBe(true);
+      expect(field(scriptFor('Swords to Plowshares'), 'removesACreature')).toBe(true);
+    });
+
+    it('points at exactly the spec the hand-written card points at', () => {
+      const mine = field(compiledScript('Swords to Plowshares').script, 'targets') as
+        readonly TargetSpec[];
+      const written = field(scriptFor('Swords to Plowshares'), 'targets') as readonly TargetSpec[];
+      expect(mine).toEqual(written);
     });
   });
 

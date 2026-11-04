@@ -11011,3 +11011,22 @@ its owner and at the next end step, which is a different card twice over.
 
 **399 → 400 of 538 lines (74.2% → 74.3%)**, **254 → 255 of 339 cards**. Four deliberate breaks, four
 failing tests; 343/343; 4,000 rows at scale with no throw.
+
+## A characteristic read before the permanent leaves (#317, D415)
+
+Swords to Plowshares, whole. The fourth spell-shape reader and the third kind of dependency: not an
+order (D413) and not an identity (D414) but a **reading** — "its power" belongs to the creature the
+sentence before exiled.
+
+The increment is worth more for what the break runs found. **Two of four breaks passed every test.**
+Reading the power after the exile gives the same answer, because `pump` scopes to an instance id and
+`relocate` keeps the id across a zone change — a 2/2 pumped +3/+3 and exiled reads power 5 in exile,
+probed directly. `pumpTeam`'s docblock has recorded that limitation all along. So the printed order
+stays as **fidelity, not correctness**, said that way in the docblock instead of defended by a test
+that cannot fail, and the hole is filed as **#326**.
+
+The second: `Math.max(0, power)` cannot be told from its absence, because `gainLife` refuses any
+amount `<= 0` on its first line. Deleted, with the behaviour asserted and the reason named.
+
+**400 → 401 of 538 lines (74.5%)**, **255 → 256 of 339 cards**. Four breaks, two failing tests and
+two that could not — both diagnosed rather than patched. 347/347; 4,000 rows at scale, no throw.

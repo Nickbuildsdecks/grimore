@@ -25838,3 +25838,55 @@ only card the per-card diff shows moving.
 Four deliberate breaks, four failing tests: the return dropped, the `blinks` hint dropped, the
 controller wording widened, and a longer resolution admitted. compile.test.ts 343/343, 4,000 shuffled
 rows with no throw.
+
+## D415 — A characteristic read before the permanent leaves, and two guards that could not fail
+
+Swords to Plowshares: "Exile target creature. Its controller gains life equal to its power." Whole
+now, and the increment where the break runs earned their keep twice.
+
+### The dependency
+
+The fourth spell-shape reader and the third kind of internal dependency. `lootResolution`'s was an
+**order** (draw before the question); `blinkResolution`'s was an **identity** ("that card" is the
+object the clause before moved). This one is a **reading**: "its power" is a characteristic of the
+creature the sentence before exiled, and no clause reader is handed the object another clause moved.
+
+Whose life matters and is asserted: "its controller" is the seat the creature is under, so aiming
+this at your own creature pays **you**. `removesACreature` is carried, because the flag is the bot's
+only way to know this spell wants somebody's creature to point at (#322's failure).
+
+### Two breaks that passed, and what they settled
+
+Four deliberate breaks; **two of them passed every test**, which is the point of running them.
+
+**The order could not be told from its absence.** Reading the power *after* `exileCard` instead of
+before gave the same answer, so the test said nothing. The reason is a known, documented limitation:
+`pump` scopes an effect to an instance id and `relocate` keeps that id across a zone change, so the
+effect follows the card out of the battlefield. Probed directly — a 2/2 pumped +3/+3 then exiled
+reads power **5** in the exile zone. `pumpTeam`'s docblock has had it written down all along: a
+creature that changes zone is a new object (CR 400.7) and should be out of the set, and "it wants the
+object identity the engine does not yet have".
+
+So the printed order stays, because it is the card and the hand-written script and it is what will be
+right once zone changes strip what they should — and the docblock now says it is **fidelity, not
+correctness**, instead of defending it with a claim no test can hold. Filed as **#326** with the
+probe, because it is a real hole and this is the second mechanism it has made untestable.
+
+**The clamp could not fail either.** The hand-written card writes `Math.max(0, power)`, and
+`gainLife` returns the state untouched for any amount `<= 0` on its first line — so dropping the
+clamp from the compiled reading changed nothing. Deleted rather than mirrored, which is this file's
+standing rule: a guard that cannot fail reads as care and is noise. The behaviour it stood for — a
+creature at negative power pays nothing — is asserted, and the test says plainly that it holds
+because of `gainLife` rather than because of a clamp.
+
+Both tests were rewritten to claim only what they prove. That is the third time this series a check
+has been found asserting the implementation rather than the card, and the first time a *docblock* was
+the thing that overclaimed.
+
+### Measured
+
+**400 → 401 of 538 printed lines (74.5%)**, and **255 → 256 of 339 cards**: Swords to Plowshares, the
+only card the per-card diff shows moving.
+
+Four deliberate breaks, **two** failing tests and two that could not — both diagnosed rather than
+patched over. compile.test.ts 347/347, 4,000 shuffled rows with no throw.
