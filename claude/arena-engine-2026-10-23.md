@@ -10073,3 +10073,34 @@ all 93 tests green: the keyword validation already refuses it, because the quote
 its own commas into fragments `printedKeywords` does not know. Gone, with a comment saying what does
 the work. Opposite verdict to the token subtype check (D373), and the difference is which way the
 redundancy cut — a duplicate of a *tested* refusal is dead weight.
+
+## Who the trigger watches, and exile-until-leaves (#317, D377)
+
+**253 of 538 printed lines, up from 243 (45.2% → 47.0%). 162 of 339 cards get a script, up from
+154.** Angel of Sanctions, Banisher Priest, Banishing Light, Chasm Skulker, Conclave Tribunal,
+Impact Tremors, Impassioned Orator, Journey to Nowhere, Soul Warden.
+
+**Ten more prologues, all about `who` and `of`.** "Another creature" is `who: 'another'`; "a creature
+you control" is `who: 'any', of: 'you'`; "~ or another creature" is `who: 'any'` with nothing said
+about whose. Soul Warden's own comment makes that load-bearing — a reader that collapsed them would
+build a card that triggers off its own arrival where the print says it does not.
+
+**Exile-until-leaves is the second whole-card shape.** The exile and the return are two triggers and
+either alone is a broken card. The pool prints it two ways and the difference decides whether the
+return exists at all, so a bare `exile target creature` ETB with neither an `until ~ leaves` clause
+nor a `leaves` line is refused — that card is permanent exile, and handing the creature back would
+be a different, weaker card.
+
+Five new target phrases over one composable `permanentFilter` ("another", "nonland", "an opponent
+controls"), replacing what the pool spells as three hand-written filters over the same three tests.
+
+**The vacuity family, third appearance.** Chasm Skulker's clause acts on itself, so with a made-up
+source id both effects were no-ops and `toEqual` passed on nothing. Caught by the non-vacuity
+assertion, as in D366 and D372 — three for three found by a deliberate guard.
+
+### #320's local half is cleared
+
+Migration 0015's ALTERs are applied to `grimore_dev` and the import is **verified end to end**: the
+fixture writes its 2 keepers, filters 5 one per reason, rejects nothing, and the rules columns carry
+real values. The production cutover and whether `packages/db`'s runner should own that table stay
+Nick's.

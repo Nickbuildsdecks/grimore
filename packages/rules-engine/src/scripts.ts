@@ -9205,7 +9205,7 @@ function selfEffect(clause: string, name: string): ReadEffect | null {
  * creature attacking or blocking is removal, and a bot that does not know that holds it for nothing.
  * So a harmful bonus gets the flag and drops `friendly`; a helpful one is the other way round.
  */
-export interface AttachmentReading {
+export interface WholeCardReading {
   readonly fragment: Partial<CardScript>;
   /** The printed lines this reading accounts for, so the caller counts them compiled. */
   readonly claimed: readonly string[];
@@ -9282,7 +9282,7 @@ function attachmentBonus(line: string): { bonus: PumpOptions; harmful: boolean }
  */
 export function attachmentScriptFor(
   def: CardDef, lines: readonly string[],
-): AttachmentReading | null {
+): WholeCardReading | null {
   const typeLine = parseTypeLine(def.typeLine);
   const isAura = hasSubtype(typeLine, 'aura');
   const isEquipment = hasSubtype(typeLine, 'equipment');
@@ -9332,6 +9332,79 @@ export function attachmentScriptFor(
     ),
     claimed: [equip.input, staticLine],
   };
+}
+
+/**
+ * "Exile target X until ~ leaves the battlefield": the removal that gives the permanent back.
+ *
+ * The second whole-card shape, and a whole card for the same reason an Aura is: the exile and the
+ * return are **two triggers**, and either one without the other is a broken card. An ETB that
+ * exiles with nothing to return it is permanent exile printed as temporary; a `leaves` trigger with
+ * nothing exiled is dead text. `exileUntilItLeaves` above builds the pair, and this is the printed
+ * text that maps onto it.
+ *
+ * ## The pool prints it two ways, and the difference decides whether the return exists
+ *
+ * - **Banisher Priest**, one line: `When ~ enters the battlefield, exile target creature an
+ *   opponent controls until ~ leaves the battlefield.` The return is inside the `until` clause.
+ * - **Journey to Nowhere**, two lines: `When ~ enters the battlefield, exile target creature.` plus
+ *   `When ~ leaves the battlefield, return the exiled card to the battlefield under its owner's
+ *   control.` The return is its own sentence.
+ *
+ * So one of those two has to be present, and **a bare `exile target creature` with neither is not
+ * this card**: it is permanent exile, and emitting a return for it would hand back a creature the
+ * print says is gone for good. That is the one refusal here that is about correctness rather than
+ * coverage, and it has its own test.
+ */
+function exileUntilLeavesShapeFor(
+  def: CardDef, lines: readonly string[],
+): WholeCardReading | null {
+  const self = escapeName(def.name);
+  const exiling = new RegExp(
+    `^When ${self} enters the battlefield, exile (target .+?|another target .+?)`
+    + `(\\s+until ${self} leaves the battlefield)?\\.?$`,
+    'i',
+  );
+  let line: string | undefined;
+  let matched: RegExpExecArray | null = null;
+  for (const candidate of lines) {
+    const m = exiling.exec(plain(candidate).trim());
+    if (m !== null) { line = candidate; matched = m; break; }
+  }
+  if (line === undefined || matched === null) return null;
+
+  const spec = targetSpecFrom(matched[1]!, false);
+  if (spec === null || !pointsAtAPermanent(spec)) return null;
+
+  // The return, either inside the `until` clause or as its own printed line.
+  const returning = lines.find((other) => new RegExp(
+    `^When ${self} leaves the battlefield, return the exiled card to the battlefield`
+    + ` under its owner's control\\.?$`,
+    'i',
+  ).test(plain(other).trim()));
+  if (matched[2] === undefined && returning === undefined) return null;
+
+  const { name: _ignored, ...pair } = exileUntilItLeaves(def.name, spec);
+  return {
+    fragment: pair,
+    claimed: returning === undefined ? [line] : [line, returning],
+  };
+}
+
+/**
+ * Every shape read from more than one line, or from the type line as well as the text.
+ *
+ * Two so far — attachments and exile-until-leaves — and they are tried in order because a card is
+ * one or the other, never both: an Aura has no ETB exile and an exiling creature has no
+ * `Enchant creature`. The order is therefore arbitrary today and stated as such rather than
+ * presented as a precedence that means something.
+ *
+ * `compileCard` calls this once, before the per-line loop, and skips whatever it claimed.
+ */
+export function wholeCardShapeFor(
+  def: CardDef, lines: readonly string[],
+): WholeCardReading | null {
+  return attachmentScriptFor(def, lines) ?? exileUntilLeavesShapeFor(def, lines);
 }
 
 /**
@@ -9430,6 +9503,78 @@ const TRIGGER_SHAPES: readonly {
   {
     prologue: () => /^At the beginning of your end step, (.+)$/i,
     on: [{ kind: 'step', step: 'end', of: 'you' }],
+  },
+
+  /*
+    ── The same two events, watching somebody else's permanent ─────────────────────────────
+
+    `who` and `of` are where most of the pool's etb and dies triggers actually live, and the English
+    that distinguishes them is exact rather than approximate — which is the only reason these can be
+    read at all:
+
+      "another creature"               who: 'another'   (not itself)
+      "a creature you control"         who: 'any', of: 'you'
+      "~ or another creature"          who: 'any'       (itself included, by naming itself)
+
+    Soul Warden's own comment makes the first distinction load-bearing: *"'Another' and not 'any': a
+    Soul Warden does not gain you life for itself."* A reader that collapsed the three would be a
+    card that triggers off its own arrival when the print says it does not — wrong in a way nothing
+    refuses, and invisible except in the life total.
+
+    Every `on` below is copied from the card in the pool named beside it, as the rest of this table
+    is. `of` is **absent** where the hand-written card omits it and present where it does not: on
+    Blood Artist the printed text says nothing about whose creature died, and that is not the same
+    event as Zulaport Cutthroat's.
+  */
+  // Soul Warden, Essence Warden.
+  {
+    prologue: () => /^Whenever another creature enters the battlefield, (.+)$/i,
+    on: [{ kind: 'etb', who: 'another', of: 'any', what: 'creature' }],
+  },
+  // Impact Tremors.
+  {
+    prologue: () => /^Whenever a creature you control enters the battlefield, (.+)$/i,
+    on: [{ kind: 'etb', who: 'any', of: 'you', what: 'creature' }],
+  },
+  // Champion of the Parish's shape, and the one the pool spells with both qualifiers.
+  {
+    prologue: () => /^Whenever another creature you control enters the battlefield, (.+)$/i,
+    on: [{ kind: 'etb', who: 'another', of: 'you', what: 'creature' }],
+  },
+  // Blood Artist: it names itself, so `who` is `any` and nothing is said about whose.
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} or another creature dies, (.+)$`, 'i'),
+    on: [{ kind: 'dies', who: 'any', what: 'creature' }],
+  },
+  // Zulaport Cutthroat: the same shape restricted to its controller's side.
+  {
+    prologue: (self) =>
+      new RegExp(`^Whenever ${self} or another creature you control dies, (.+)$`, 'i'),
+    on: [{ kind: 'dies', who: 'any', of: 'you', what: 'creature' }],
+  },
+  {
+    prologue: () => /^Whenever another creature dies, (.+)$/i,
+    on: [{ kind: 'dies', who: 'another', of: 'any', what: 'creature' }],
+  },
+  {
+    prologue: () => /^Whenever another creature you control dies, (.+)$/i,
+    on: [{ kind: 'dies', who: 'another', of: 'you', what: 'creature' }],
+  },
+  // Hellrider.
+  {
+    prologue: () => /^Whenever a creature you control attacks, (.+)$/i,
+    on: [{ kind: 'attacks', who: 'any', of: 'you' }],
+  },
+  // Chasm Skulker, and Fate Unraveler for the opponent's half. `by` defaults to `you`, which
+  // `automation.ts` states outright — "a card that says nothing watches its own controller" — so the
+  // bare form is what the hand-written card spells.
+  {
+    prologue: () => /^Whenever you draw a card, (.+)$/i,
+    on: [{ kind: 'draws' }],
+  },
+  {
+    prologue: () => /^Whenever an opponent draws a card, (.+)$/i,
+    on: [{ kind: 'draws', by: 'opponent' }],
   },
 ];
 
@@ -9615,6 +9760,32 @@ const permanentOfTypes = (
 };
 
 /**
+ * The three qualifiers a printed permanent phrase can carry, as one `TargetSpec.filter`.
+ *
+ * "Another", "nonland" and "an opponent controls" compose freely in printed text — the pool prints
+ * `another target nonland permanent`, `target nonland permanent an opponent controls` and
+ * `another target nonland permanent an opponent controls`, and each has its own hand-written filter
+ * spelling the same three tests in a different subset. One composable factory is the honest shape:
+ * three independent facts about a candidate, not seven phrases each with its own function.
+ *
+ * `nonland` reads the **live** type line (CR 109.2), for the reason `permanentOfTypes` gives: an
+ * animated Mutavault is still a land and a land that became a creature is still not a legal
+ * "nonland permanent".
+ */
+const permanentFilter = (
+  opts: { readonly another?: boolean; readonly nonland?: boolean; readonly opponents?: boolean },
+): NonNullable<TargetSpec['filter']> => (state, candidate, controller, source) => {
+  if (candidate.kind !== 'card') return false;
+  // "Another" means not the permanent whose ability this is — a Banishing Light cannot exile itself.
+  if (opts.another === true && candidate.id === source) return false;
+  const inst = state.instances[candidate.id];
+  if (inst === undefined) return false;
+  if (opts.opponents === true && inst.zoneSeat === controller) return false;
+  if (opts.nonland === true && hasType(characteristicsOf(state, inst).typeLine, 'land')) return false;
+  return true;
+};
+
+/**
  * A printed target phrase, as the spec the engine points with.
  *
  * `friendly` is not read off the phrase and cannot be: "target creature" is the same four
@@ -9660,6 +9831,19 @@ function targetSpecFrom(phrase: string, friendly: boolean): TargetSpec | null {
     case 'any target': return spec({ kind: 'any' });
     case 'target creature': return spec({ kind: 'creature' });
     case 'target permanent': return spec({ kind: 'permanent' });
+    case 'another target permanent':
+      return spec({ kind: 'permanent', filter: permanentFilter({ another: true }) });
+    case 'target nonland permanent':
+      return spec({ kind: 'permanent', filter: permanentFilter({ nonland: true }) });
+    case 'another target nonland permanent':
+      return spec({ kind: 'permanent', filter: permanentFilter({ another: true, nonland: true }) });
+    case 'target nonland permanent an opponent controls':
+      return spec({ kind: 'permanent', filter: permanentFilter({ nonland: true, opponents: true }) });
+    case 'another target nonland permanent an opponent controls':
+      return spec({
+        kind: 'permanent',
+        filter: permanentFilter({ another: true, nonland: true, opponents: true }),
+      });
     case 'target player': return spec({ kind: 'player' });
     case 'target spell': return spec({ kind: 'spell' });
 

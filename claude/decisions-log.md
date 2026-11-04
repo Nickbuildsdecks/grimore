@@ -23597,3 +23597,76 @@ type.
 
 Verified: compile.test.ts 93/93, with the aura's `friendly`, its `removesACreature`, the granted
 keywords and the `printedKeywords` validation each proved to fail when broken; GATE OK.
+
+## D377
+
+**Who the trigger is watching, and the removal that gives the permanent back** (#317, and #320's
+local half cleared)
+
+**253 of 538 printed lines, up from 243 (45.2% → 47.0%); 162 of 339 cards get a script, up from
+154.** Angel of Sanctions, Banisher Priest, Banishing Light, Chasm Skulker, Conclave Tribunal,
+Impact Tremors, Impassioned Orator, Journey to Nowhere and Soul Warden.
+
+### Ten more prologues, which are all about `who` and `of`
+
+Most of the pool's etb and dies triggers watch somebody *else's* permanent, and the English that
+says which is exact rather than approximate — which is the only reason it can be read:
+
+| printed | event |
+| --- | --- |
+| "another creature" | `who: 'another'` |
+| "a creature you control" | `who: 'any', of: 'you'` |
+| "~ or another creature" | `who: 'any'`, nothing about whose |
+
+Soul Warden's own comment makes the first distinction load-bearing: *"'Another' and not 'any': a
+Soul Warden does not gain you life for itself."* A reader that collapsed the three would build a
+card that triggers off its own arrival where the print says it does not — wrong in a way nothing
+refuses and invisible except in a life total. Every `on` is copied from the card named beside it,
+and `of` is absent where the hand-written card omits it: Blood Artist says nothing about whose
+creature died and that is **not the same event** as Zulaport Cutthroat's.
+
+Also the two draw triggers, where `by` is left at its default for the reason `automation.ts` states
+outright — *"a card that says nothing watches its own controller"*.
+
+### Exile until this leaves: the second whole-card shape
+
+The exile and the return are two triggers, and either alone is a broken card: an ETB that exiles
+with nothing to return it is permanent exile printed as temporary, and a `leaves` trigger with
+nothing exiled is dead text. So it joins attachments as a shape read from more than one line, and
+`wholeCardShapeFor` is now the one entry point `compileCard` calls before the per-line loop.
+
+The pool prints it two ways and **the difference decides whether the return exists**: Banisher
+Priest has it inside an `until ~ leaves the battlefield` clause on one line; Journey to Nowhere has
+it as a second sentence. So one of the two must be present, and a bare `exile target creature` ETB
+with neither **is refused** — that card is permanent exile, and emitting the pair for it would hand
+back a creature the print says is gone for good. The one refusal here that is about correctness
+rather than coverage, and it has its own test.
+
+Five more target phrases to reach them, all `kind: 'permanent'` over one composable
+`permanentFilter`: the three qualifiers "another", "nonland" and "an opponent controls" compose
+freely in print, and the pool has three hand-written filters each spelling a different subset of the
+same three tests. One factory of three independent facts beats seven phrases with seven functions.
+
+### The vacuity family, third appearance, caught by a guard again
+
+Chasm Skulker's clause puts a counter on itself, and with a made-up source id `addCounters` is a
+no-op — so the compiled and hand-written effects both returned the state unchanged and `toEqual`
+passed on two no-ops. The `not.toEqual(base)` assertion caught it; the fixture now puts the card on
+a real battlefield and uses its own id. D366 and D372 were the first two, and all three were found
+by a deliberate non-vacuity check rather than by luck.
+
+### #320's local half, cleared
+
+Migration 0015's six `ADD COLUMN IF NOT EXISTS` statements and its index are applied to
+`grimore_dev`, and the import path is **verified end to end**: the seven-card fixture writes its 2
+keepers, filters 5 — one per reason — rejects nothing, and the rules columns carry real values
+(`power`, `toughness`, `oracle_id`, `produced_mana`). `audit-postgres-schema-gap.js` no longer
+reports a missing `scryfall_cards` column. The fixture rows were deleted afterwards.
+
+Only the ALTERs were run, not `packages/db`'s migration runner: the ALTERs are additive and
+idempotent, while 0001-0014 have never run against this legacy-created schema and may not be. The
+production cutover, and whether the runner should own this table at all, stay Nick's.
+
+Verified: compile.test.ts 105/105, with the `another`/`any` collapse, the dropped `of: 'you'`, the
+exile pair emitted without a printed return, and both halves of `permanentFilter` each proved to
+fail when broken; GATE OK.

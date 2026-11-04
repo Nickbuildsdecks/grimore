@@ -42,7 +42,7 @@ import type { CardDef } from './cards.js';
 import { hasType, parseTypeLine, printedKeywords } from './characteristics.js';
 import { cardFromData, printedDef, printedRulesLines, type CardDataRow, type DerivedKind } from './fromCardData.js';
 import {
-  attachmentScriptFor, isKeywordDeclaration, lineScriptFor, spellScriptFor,
+  isKeywordDeclaration, lineScriptFor, spellScriptFor, wholeCardShapeFor,
 } from './scripts.js';
 import type { CardScript } from './scriptTypes.js';
 
@@ -195,15 +195,18 @@ export function compileCard(row: CardDataRow): Compilation {
   const unread: UnreadLine[] = [];
 
   /*
-    One shape is read from two lines at once, before the per-line loop: an Aura or an Equipment.
+    Some shapes are read from two lines at once, before the per-line loop.
 
-    `Enchant creature` on its own is an Aura that attaches and does nothing, and
+    An Aura is the clearest case: `Enchant creature` on its own attaches and does nothing, and
     `Enchanted creature gets +2/+0` on its own is a bonus with nothing to attach it to — so neither
-    line is a unit and the pair is. `attachmentScriptFor` returns both halves or neither, and names
-    the lines it accounted for so they are not offered to the per-line readers afterwards. See its
-    docblock for why emitting half would be worse than reading none of it.
+    line is a unit and the pair is. The same holds for "exile target X until ~ leaves the
+    battlefield", whose exile and return are two triggers that are broken apart.
+
+    `wholeCardShapeFor` returns every half or none of them, and names the lines it accounted for so
+    they are not offered to the per-line readers afterwards. See its docblock for why emitting half
+    would be worse than reading none of it.
   */
-  const attachment = attachmentScriptFor(def, lines);
+  const attachment = wholeCardShapeFor(def, lines);
   const claimed = new Set(attachment?.claimed ?? []);
   if (attachment !== null) {
     merge(built, attachment.fragment);

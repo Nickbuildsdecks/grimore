@@ -1138,6 +1138,161 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       if (nonsense.ok) expect(nonsense.script).toBeUndefined();
     });
   });
+  /*
+    ── The prologues that watch somebody else's permanent ────────────────────────────────────────
+
+    `who` and `of` are where most of the pool's etb and dies triggers live, and the English that
+    distinguishes them is exact: "another creature" is not "a creature you control" is not
+    "~ or another creature". Soul Warden's own comment makes the first distinction load-bearing —
+    *"'Another' and not 'any': a Soul Warden does not gain you life for itself."*
+
+    A reader that collapsed them would build a card that triggers off its own arrival when the print
+    says it does not: wrong in a way nothing refuses, and invisible except in a life total. So the
+    expected `on` is read off the hand-written card, whole, with only the one documented default
+    normalised away.
+  */
+  describe('the prologues that watch another permanent', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string,
+    ): EffectContext => ({ state, controller: seat, source, targets: [] } as unknown as EffectContext);
+
+    const event = (on: TriggerDef['on']) => {
+      const { who, ...rest } = on as { who?: string };
+      return JSON.stringify(who === 'self' ? rest : on);
+    };
+    const watching = (script: unknown, kind: string) =>
+      ((script as { triggers?: readonly TriggerDef[] }).triggers ?? [])
+        .find((t) => t.on.kind === kind);
+
+    /** The deck each card lives in, so `arena` can pull it out of that seat's library. */
+    const DECK_OF = new Map<string, string>();
+    for (const [id, deck] of Object.entries(STARTER_DECKS)) {
+      for (const entry of deck.cards) if (!DECK_OF.has(entry.card.name)) DECK_OF.set(entry.card.name, id);
+    }
+
+    it.each([
+      // "Whenever another creature enters the battlefield" — who: 'another', not 'any'.
+      ['Soul Warden', 'etb'],
+      // "Whenever a creature you control enters the battlefield" — who: 'any', of: 'you'.
+      ['Impact Tremors', 'etb'],
+      // The same shape again on a different clause, which is what makes it a shape and not a card.
+      ['Impassioned Orator', 'etb'],
+      // "Whenever you draw a card" — `by` left at its default, as the hand-written card spells it.
+      ['Chasm Skulker', 'draws'],
+    ])('%s watches exactly what the hand-written card watches', (card, kind) => {
+      const written = watching(scriptFor(card as string), kind as string);
+      const mine = watching(compiledScript(card as string).script, kind as string);
+      expect(mine, `${card as string}: compiled no ${kind as string} trigger`).toBeDefined();
+      expect(written, `${card as string}: no hand-written ${kind as string} trigger`).toBeDefined();
+      if (mine === undefined || written === undefined) return;
+      expect(event(mine.on)).toEqual(event(written.on));
+
+      /*
+        And it does the same thing: a shape copied right onto a clause read wrong is still wrong.
+
+        The card is put on the battlefield and **its own id** used as the source, which is not
+        decoration. Chasm Skulker's clause puts a counter on itself, and with a made-up source id
+        `addCounters` is a no-op — so both effects returned the state unchanged and `toEqual` passed
+        on two no-ops. The non-vacuity assertion below caught it; this is the D366 family turning up
+        for the third time, and the third time a deliberate guard rather than luck found it.
+      */
+      const deck = DECK_OF.get(card as string);
+      expect(deck, `${card as string} is in no deck`).toBeDefined();
+      const base = arena({ decks: { 0: deck! }, battlefield: { 0: [card as string] }, turn: 3 });
+      const source = find(base, 0 as SeatIndex, 'battlefield', card as string);
+      const ctx = contextOn(base, 0 as SeatIndex, source);
+      expect(mine.effect(ctx)).toEqual(written.effect(ctx));
+      expect(mine.effect(ctx), `${card as string}: the effect changed nothing`).not.toEqual(base);
+    });
+
+    it('does not read "another" as "any", which is a card triggering off its own arrival', () => {
+      /*
+        The distinction stated as an assertion rather than left to the table above: Soul Warden's
+        `who` is `another` and Impact Tremors' is `any`. Both print "enters the battlefield" and the
+        only difference is the English in front of it.
+      */
+      const warden = watching(compiledScript('Soul Warden').script, 'etb');
+      const tremors = watching(compiledScript('Impact Tremors').script, 'etb');
+      expect((warden?.on as { who?: string }).who).toBe('another');
+      expect((tremors?.on as { who?: string }).who).toBe('any');
+      expect((tremors?.on as { of?: string }).of).toBe('you');
+    });
+  });
+
+  /*
+    ── Exile until this leaves ───────────────────────────────────────────────────────────────────
+  */
+  describe('exile-until-leaves, the removal that gives the permanent back', () => {
+    const triggerKinds = (script: unknown) =>
+      ((script as { triggers?: readonly TriggerDef[] }).triggers ?? []).map((t) => t.on.kind);
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    it.each([
+      // One printed line, the return inside its `until` clause.
+      ['Banisher Priest'],
+      ['Conclave Tribunal'],
+      // "another target nonland permanent", so the card cannot exile itself.
+      ['Banishing Light'],
+      ['Angel of Sanctions'],
+      // Two printed lines, the return as its own sentence.
+      ['Journey to Nowhere'],
+    ])('%s emits both the exile and the return', (card) => {
+      const compiled = compiledScript(card as string);
+      expect(compiled.script, `${card as string} compiled to no script`).toBeDefined();
+      // Both triggers, in that order: an exile with nothing to return it is permanent exile
+      // printed as temporary, and a `leaves` trigger with nothing exiled is dead text.
+      expect(triggerKinds(compiled.script)).toEqual(expect.arrayContaining(['etb', 'leaves']));
+      // Pointing at what the hand-written card points at, by what a player reads.
+      const mine = (field(compiled.script, 'triggers') as readonly TriggerDef[])
+        .find((t) => t.on.kind === 'etb');
+      const theirs = (field(scriptFor(card as string), 'triggers') as readonly TriggerDef[])
+        .find((t) => t.on.kind === 'etb');
+      expect(mine?.targets?.[0]?.kind).toBe(theirs?.targets?.[0]?.kind);
+      expect(mine?.targets?.[0]?.description).toBe(theirs?.targets?.[0]?.description);
+    });
+
+    it('refuses a bare exile with no return anywhere on the card', () => {
+      /*
+        The one refusal here that is about correctness rather than coverage. A printed `exile target
+        creature` ETB with neither an `until ~ leaves` clause nor a `leaves` line is **permanent
+        exile**, and emitting the pair for it would hand back a creature the print says is gone for
+        good — a card that works and is a different, weaker card.
+      */
+      const permanent = compileCard({
+        name: 'Gone For Good', type_line: 'Creature — Avatar', mana_cost: '{3}{W}', cmc: 4,
+        colors: ['W'], power: '2', toughness: '2',
+        oracle_text: 'When Gone For Good enters the battlefield, exile target creature.',
+      });
+      expect(permanent.ok).toBe(true);
+      if (!permanent.ok) return;
+      expect(permanent.script).toBeUndefined();
+      expect(permanent.unread.map((u) => u.line)).toEqual([
+        'When Gone For Good enters the battlefield, exile target creature.',
+      ]);
+    });
+
+    it('will not let a card exile itself where the print says "another"', () => {
+      /*
+        `another target nonland permanent` on Banishing Light, checked through the filter rather than
+        through the description: the phrase is the only thing that stops an Oblivion-Ring-shaped
+        card answering itself and locking its own target in exile for ever.
+      */
+      const light = compiledScript('Banishing Light');
+      const spec = ((field(light.script, 'triggers') as readonly TriggerDef[])
+        .find((t) => t.on.kind === 'etb')?.targets ?? [])[0];
+      expect(spec).toBeDefined();
+      const board = arena({ battlefield: { 0: ['Mountain'], 1: ['Grizzly Bears'] } });
+      const bear = find(board, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const land = find(board, 0 as SeatIndex, 'battlefield', 'Mountain');
+      const admits = (id: string, source: string) =>
+        spec?.filter?.(board, { kind: 'card', id }, 0 as SeatIndex, source) ?? false;
+      // Somebody else's creature: yes. Itself: no. A land: no, because it says nonland.
+      expect(admits(bear, 'some-other-id')).toBe(true);
+      expect(admits(bear, bear)).toBe(false);
+      expect(admits(land, 'some-other-id')).toBe(false);
+    });
+  });
   it('refuses only what is not a single-face card at all', () => {
     expect(compileCard({ name: '', type_line: 'Creature' }).ok).toBe(false);
     expect(compileCard({ name: 'No Types', type_line: '' }).ok).toBe(false);
