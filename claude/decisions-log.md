@@ -26282,3 +26282,53 @@ the standing check), the ninjutsu ability dropped (3 and the standing check), th
 `enteringAttack` guard removed (the no-attack row only — correctly *not* the standing check, since
 both readings share the factory), and the reader hard-coding `{2}{U}` instead of the printed cost
 (the cost row and the standing check).
+
+## D422 — The last disagreement: a card-level flag read where the whole card is in scope
+
+Fifth and final batch off D417's list. `compiled-vs-written.test.ts`'s `DISAGREE` table is now
+**empty**: every card in the pool with both a hand-written script and a compiled reading agrees.
+
+### Why the flag had nowhere to come from
+
+Journey to Nowhere's removal is a *trigger* — "When ~ enters the battlefield, exile target creature"
+— and `removesACreature` is a card-level field. The targeted-removal readers do produce the hint, as
+`spellFlags.removesACreature`, but `triggerFromLine` drops `spellFlags` deliberately and says why in
+a comment: "it is advice about casting a spell, and a triggered ability is not cast". That is right
+about the ability and wrong about the card, so the flag was unreachable on the permanent path.
+
+### Where it belongs instead
+
+`exileUntilLeavesShapeFor` — the whole-card reader that already pairs the exile with the return, and
+the only reader here that holds the `CardDef`. That matters because the flag's own docblock makes it
+a fact about the whole card: *"this card's whole effect is to remove a creature"*, and *"not for a
+card that is good without a creature to kill"*. A per-line reading could only guess at what the rest
+of the text does.
+
+The rule is two tests, and the pool prints a card that each one is the only thing excluding:
+
+| card | printed | flag | which test keeps it off |
+| --- | --- | --- | --- |
+| Journey to Nowhere | Enchantment, exiles a creature | yes | — |
+| Banisher Priest | Creature — Human Cleric, same text | no | the host is a creature |
+| Banishing Light | Enchantment, exiles a *nonland permanent* | no | the spec is not a creature |
+
+Both are exactly the distinctions the hand-written scripts already draw, and Journey's own docblock
+has stated the first one since #48: the Priest "is a 2/2 worth casting for the body alone, while
+this is two mana for an enchantment that sits there doing nothing if its entry trigger finds nothing
+to point at". So this is reading a judgement the pool already made off printed data, not inventing
+one — and adding it produced no new disagreement anywhere.
+
+### Measured
+
+No coverage change — **402 of 538 lines (74.7%)**, 256 of 339 with a script, 228 complete. The flag
+is a hint for the bot's waste rule, not a line of text, so nothing moved. Disagreements **1 → 0**.
+
+Four deliberate breaks, four failures, each naming a different card: the condition always true
+(Banisher Priest, Banishing Light and the standing check), the type-line test dropped (Banisher
+Priest), the spec-kind test dropped (Banishing Light), and the flag never set (Journey).
+
+### What the empty table is for
+
+The table being empty is the state to keep it in. A new disagreement is now a row somebody has to
+explain and settle, not a row to add — and the test asserts equality against the table rather than
+mere membership, so a stale row fails as loudly as a missing one.

@@ -170,12 +170,18 @@ const DISAGREE: Readonly<Record<string, { readonly why: string; readonly keys: r
     the test asserts an equality and a stale row fails it, which is the point.
   */
   /*
-    The same hint, missing for a different reason: the removal is a **trigger** ("When ~ enters the
-    battlefield, exile target creature"), and `removesACreature` is a card-level flag that only the
-    spell path can set — `spellFlags` is spell-only by construction. A permanent whose ETB trigger
-    removes a creature needs a way to say so.
+    **Journey to Nowhere was here and is fixed (D422).** Its row read "missing removesACreature,
+    which only the spell path can currently set". `triggerFromLine` drops `spellFlags` on purpose, so
+    the reading had to move to the one place that sees the whole card — `exileUntilLeavesShapeFor`,
+    which reads the exile and the return as a pair and holds the `CardDef`. The flag is set when the
+    exiled thing is a creature and the card exiling it has **no body of its own**, which is the same
+    distinction the hand-written pair draws: Journey carries it, Banisher Priest deliberately does
+    not, and Banishing Light's spec is a `permanent` rather than a creature.
+
+    **Nothing is left.** Every card in the pool with both a hand-written script and a compiled
+    reading now agrees, and this table is empty — which is the state it should be kept in: a new
+    disagreement is a row to explain and settle, not a row to add.
   */
-  'Journey to Nowhere': { why: 'missing removesACreature, which only the spell path can currently set', keys: ['removesACreature'], digest: '7895f0f1' },
   /*
     **Ninja of the Deep Hours and Mardu Scout were here and are fixed (D421).** Both rows asked the
     same question — whether the keyword's field is the implementation or only a label — and for

@@ -10179,6 +10179,24 @@ export function attachmentScriptFor(
  * this card**: it is permanent exile, and emitting a return for it would hand back a creature the
  * print says is gone for good. That is the one refusal here that is about correctness rather than
  * coverage, and it has its own test.
+ *
+ * ## `removesACreature`, and why the type line decides it
+ *
+ * The flag means "this card's whole effect is to remove a creature", and its own docblock says in
+ * as many words that it is **not** for "a card that is good without a creature to kill". The two
+ * printings above are exactly that distinction, and the hand-written pair already draws it:
+ * Journey to Nowhere carries the flag and Banisher Priest deliberately does not, because the Priest
+ * is a 2/2 worth casting for the body alone while the Enchantment "sits there doing nothing if its
+ * entry trigger finds nothing to point at".
+ *
+ * What separates them is readable from printed data and nowhere else in this reading: whether the
+ * host is a creature. So the flag is set when the exiled thing is a creature and the card that
+ * exiles it has no body of its own. The same two tests keep it off Banishing Light, whose spec is a
+ * `permanent` — a card that can exile an Equipment or a planeswalker is not waiting for a creature.
+ *
+ * Decided here rather than in `triggerFromLine`, which drops `spellFlags` on purpose: "advice about
+ * casting the card" is a fact about the **whole card**, and this is the one reader that has the
+ * whole card. A per-line reading could only ever guess at what the rest of the text does.
  */
 function exileUntilLeavesShapeFor(
   def: CardDef, lines: readonly string[],
@@ -10209,8 +10227,11 @@ function exileUntilLeavesShapeFor(
   if (matched[2] === undefined && returning === undefined) return null;
 
   const { name: _ignored, ...pair } = exileUntilItLeaves(def.name, spec);
+  // See the docblock: a creature exiled by a card with no body of its own. Both tests matter —
+  // Banisher Priest fails the second and Banishing Light the first.
+  const bodyless = spec.kind === 'creature' && !hasType(parseTypeLine(def.typeLine), 'creature');
   return {
-    fragment: pair,
+    fragment: { ...pair, ...(bodyless ? { removesACreature: true as const } : {}) },
     claimed: returning === undefined ? [line] : [line, returning],
   };
 }

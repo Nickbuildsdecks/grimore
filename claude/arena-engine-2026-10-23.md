@@ -11160,3 +11160,21 @@ ability arrives tapped and attacking the right seat and does nothing with no att
 No coverage change — these lines were always read, they just did nothing. Disagreements **3 → 1**,
 and the one left is Journey to Nowhere, whose `removesACreature` needs the trigger path to reach a
 card-level flag.
+
+## The standing check's table is empty (#327, D422)
+
+Journey to Nowhere, the last row. Its removal is an ETB trigger and `removesACreature` is a
+card-level field; `triggerFromLine` drops `spellFlags` on purpose, so the hint could not reach the
+card. It is read in `exileUntilLeavesShapeFor` now — the whole-card reader that pairs the exile with
+the return and holds the `CardDef` — because the flag means "this card's whole effect is to remove a
+creature", which is a fact about the card rather than about one line.
+
+Two tests, and the pool prints a card that each one alone excludes: Journey to Nowhere gets the flag,
+**Banisher Priest** does not because the host is a creature (a 2/2 worth casting for the body), and
+**Banishing Light** does not because its spec is a nonland permanent. Both distinctions were already
+drawn by the hand-written scripts, so this reads a judgement the pool had made rather than inventing
+one.
+
+No coverage change. **Disagreements 1 → 0**: every card in the pool with both readings now agrees,
+and the table is empty — which is the state to keep it in, since the test asserts equality against
+it rather than membership.

@@ -5921,4 +5921,40 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(ability.effect!(contextFor(base, 0 as SeatIndex, id))).toEqual(base);
     });
   });
+  /*
+    The last row off D417's list: `removesACreature` on a permanent whose removal is an ETB trigger.
+
+    `triggerFromLine` drops `spellFlags` on purpose — advice about casting a spell is not advice
+    about a triggered ability — so the flag had nowhere to come from on the permanent path. It is
+    read in `exileUntilLeavesShapeFor` instead, the one reader that holds the whole card, because the
+    flag's own docblock makes it a fact about the whole card: "this card's whole effect is to remove
+    a creature", and "not for a card that is good without a creature to kill".
+
+    Three cards in the pool print this shape and the pool's hand-written scripts already draw the
+    line between them, so all three are asserted: the rule is two tests, and each of the two is the
+    only thing keeping the flag off one of the other cards.
+  */
+  describe('removesACreature on a permanent whose removal is an ETB trigger', () => {
+    const flagOf = (script: unknown) =>
+      (script as { removesACreature?: boolean } | undefined)?.removesACreature;
+
+    it.each([
+      [
+        'Journey to Nowhere', true,
+        'an Enchantment that exiles a creature: nothing to do if there is no creature to point at',
+      ],
+      [
+        'Banisher Priest', undefined,
+        'the same text on a 2/2 body, which is worth casting for the body alone',
+      ],
+      [
+        'Banishing Light', undefined,
+        'exiles a nonland permanent, so an Equipment or a planeswalker is reason enough to cast it',
+      ],
+    ])('%s: %s', (card, expected, _why) => {
+      expect(flagOf(compiledScript(card as string).script)).toBe(expected);
+      // The hand-written card is the ground truth for the judgement, not just for the shape.
+      expect(flagOf(scriptFor(card as string))).toBe(expected);
+    });
+  });
 });
