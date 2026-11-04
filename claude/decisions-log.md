@@ -24284,3 +24284,70 @@ of `compile-at-scale.mjs` (D386) found no throw on the new readers.
 cards." Its first clause reads now; the second needs "its controller", which means the controller of
 the object this spell is pointed at, and nothing in the clause vocabulary can say that yet. All or
 nothing, so the card stays printed-only.
+
+## D388
+
+**Modal spells: a shape that is one sentence spread over several lines** (#317)
+
+A charm's text is a header and a bullet per mode, and **no line of it means anything alone**: a
+bullet without its header is a sentence the spell does not have, and a header without its bullets is
+a question with no answers. So `modalScriptFor` is a whole-card shape read before `readResolution`
+sees the lines — which it had to be, since the resolution reader would hand "Choose one —" to
+`readEffect` as a clause, get null, and refuse the card without ever looking at the bullets.
+
+Nothing here arranges the rules point; putting the reading in `modal` is what gets it. Modes are
+chosen as the spell is **cast** (CR 601.2b), before targets, where an opponent can see the choice and
+respond — reading a charm as a mid-resolution decision would let somebody counter it without knowing
+what it was going to do.
+
+### Whole or not at all, and the three cards that prove it
+
+Selesnya Charm exiles a creature by power, Golgari Charm regenerates a team, Healing Salve prevents
+damage: one bullet each that this module cannot read. All three are refused **entirely**, header and
+all. Shipping the readable bullets as the card's modes would be a strictly different and better
+spell, because `legalActions` offers one play per legal combination of modes — a charm missing its
+third mode is a charm whose third mode nobody can choose, with nothing at the table to say so. The
+refusal leaves every line flagged for a human to play by hand (D362), which is the whole point of
+counting unread lines.
+
+### Two headers, and the rest refused rather than guessed
+
+"Choose one —" and "Choose one or both —" are what the pool prints and the only two read. "Choose
+two", "choose the same mode more than once", entwine and escalate are each a different `min`/`max`,
+and a header read as the wrong one is a card that takes the wrong number of modes. "Choose one"
+leaves both off, which is what they default to and what Selesnya Charm stores; "one or both" is
+`min: 1, max: 2` and is refused over anything but two modes.
+
+### The one hint dropped, and the rest refused
+
+`ModeDef` holds `expiresAtEndOfTurn` and `preventsDamage` and nothing else — the same shape a person
+writing the card by hand has. Both travel from the bullet's reading onto that bullet's mode, which
+matters: merging a pump's wear-off onto the *card* would tell the bot to hold a whole charm for the
+combat when the rest of it is not a combat trick, and `ModeDef.expiresAtEndOfTurn` exists naming
+Selesnya Charm for exactly that reason.
+
+`removesACreature` is **dropped**, and the argument is structural rather than a judgement call:
+`ModalDef` offers one play per legal combination of modes, and "a combination whose targets cannot be
+filled is not offered at all", so a destroy mode is already unavailable on an empty board — which is
+the whole of what that flag buys. Any **other** flag refuses the card, because no such argument
+exists for it: `protectsACreature` is advice about *timing*, which no combination enforces, and a
+silently dropped hint is a card that plays badly with nothing to flag it.
+
+### Three filters that were four copies
+
+`isCreatureSpell` had an inline copy on Essence Scatter (D387) and a second on Soul Manipulation;
+Grim Discovery carried an inline graveyard-land spec. Both are now one shared function each, beside
+`yourGraveyardCreature` — which is what makes the ground-truth test compare the real object rather
+than a lookalike, and removes two more places where one copy could start reading the printed type
+line while the other reads the live one (D385).
+
+The graveyard return also became a two-type family, `return target (creature|land) card from your
+graveyard to your hand`, with the type lower-cased into the supplied phrase. That is what lets Grim
+Discovery compile at all.
+
+### Measured
+
+**323 → 329 of 538 printed lines (60.0% → 61.2%)**, and **205 → 207 of 339 cards**: Soul
+Manipulation and Grim Discovery, mode for mode against the hand-written cards. Three deliberate
+breaks — a loose header, skipping an unreadable bullet instead of refusing, and dropping the leftover
+flag rule — each fail tests. A further 30,000-row shuffled run found no throw.

@@ -10423,3 +10423,32 @@ would follow the hand-written card if it changed too.
 broken on purpose and each break fails a test. Psychic Strike is the near miss: its first clause reads
 now, its second needs "its controller" — the controller of the object pointed at — which the clause
 vocabulary cannot say, and all-or-nothing keeps the card printed-only.
+
+## Modal spells, chosen as the spell is cast (#317, D388)
+
+A charm is one sentence spread over several lines, and no line of it means anything alone — so it is
+read as a whole-card shape before the resolution reader sees the lines, which it had to be: that
+reader would hand "Choose one —" to `readEffect`, get null, and refuse the card without ever looking
+at the bullets.
+
+**Whole or not at all.** Selesnya Charm, Golgari Charm and Healing Salve each have one bullet with no
+reader, and each is refused entirely, header included. Shipping the readable bullets would be a
+better spell than the printed one, because the table offers a play per legal combination of modes: a
+charm missing its third mode is a charm whose third mode nobody can choose, with nothing to say so.
+
+**Two headers, the rest refused.** "Choose one" (min and max left at their defaults, as Selesnya
+Charm stores them) and "Choose one or both" (min 1, max 2, over exactly two modes). "Choose two",
+entwine and escalate are each a different number of modes taken, and a header read as the wrong one
+is a card that takes the wrong number.
+
+**One hint dropped, the rest refused.** `expiresAtEndOfTurn` and `preventsDamage` travel onto the
+mode they belong to — merging a pump's wear-off onto the card would have the bot hold a whole charm
+for a combat. `removesACreature` is dropped because a mode combination whose targets cannot be filled
+is never offered, so the flag buys nothing on a mode; any other flag refuses the card.
+
+Three shared filters replaced four inline copies (`isCreatureSpell` twice over,
+`yourGraveyardLand`), which is what makes the ground-truth comparison an identity, and the graveyard
+return became a creature-or-land family.
+
+**323 → 329 of 538 lines (60.0% → 61.2%), 205 → 207 of 339 cards.** Three deliberate breaks each
+fail tests.

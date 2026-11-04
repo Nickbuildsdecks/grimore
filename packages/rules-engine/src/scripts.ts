@@ -41,7 +41,7 @@ import {
 } from './effects.js';
 import type {
   AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, CountersDecisionSpec, DecisionSpecOf,
-  TargetDecisionSpec, TargetSpec, TriggerDef,
+  ModalDef, ModeDef, TargetDecisionSpec, TargetSpec, TriggerDef,
 } from './scriptTypes.js';
 // The compiler's shared `ReadEffect` stores an effect under one name for both the trigger path and
 // the spell path, so it needs the function type both fields have.
@@ -675,6 +675,21 @@ const TALRAND: CardScript = {
 const yourGraveyardCreature: TargetSpec = {
   kind: 'graveyard-creature',
   description: 'target creature card in your graveyard',
+  filter: (state, candidate, controller) =>
+    candidate.kind === 'card' && state.instances[candidate.id]?.zoneSeat === controller,
+};
+
+/**
+ * The same object one type over: a land card in your own graveyard.
+ *
+ * Written inline on Grim Discovery until the compiler learnt to read "return target land card from
+ * your graveyard to your hand", and shared for the reason `isCreatureSpell` is shared — one filter
+ * rather than two that can drift, and a ground-truth test that compares the real function instead of
+ * a lookalike.
+ */
+const yourGraveyardLand: TargetSpec = {
+  kind: 'graveyard-land',
+  description: 'target land card in your graveyard',
   filter: (state, candidate, controller) =>
     candidate.kind === 'card' && state.instances[candidate.id]?.zoneSeat === controller,
 };
@@ -1500,12 +1515,9 @@ const SOUL_MANIPULATION: CardScript = {
     modes: [
       {
         description: 'Counter target creature spell',
-        targets: [{
-          kind: 'spell', description: 'target creature spell',
-          filter: (state, candidate) => candidate.kind === 'card'
-            && state.instances[candidate.id] !== undefined
-            && characteristicsOf(state, state.instances[candidate.id]!).isCreature,
-        }],
+        // `isCreatureSpell`, not a third copy of it: this was the second inline one, and Essence
+        // Scatter's was the first.
+        targets: [{ ...TARGET_SPELL, description: 'target creature spell', filter: isCreatureSpell }],
         effect: (c) => {
           const id = firstCardTarget(c);
           return id === null ? c.state : counterSpell(c.state, id);
@@ -1539,11 +1551,7 @@ const GRIM_DISCOVERY: CardScript = {
       },
       {
         description: 'Return target land card from your graveyard to your hand',
-        targets: [{
-          kind: 'graveyard-land', description: 'target land card in your graveyard',
-          filter: (state, candidate, controller) =>
-            candidate.kind === 'card' && state.instances[candidate.id]?.zoneSeat === controller,
-        }],
+        targets: [yourGraveyardLand],
         effect: (c) => {
           const id = firstCardTarget(c);
           return id === null ? c.state : bounceToHand(c.state, id);
@@ -10289,6 +10297,8 @@ function targetSpecFrom(phrase: string, friendly: boolean): TargetSpec | null {
     // A card in a graveyard is a different object from a permanent, with its own target kinds.
     case 'target creature card in your graveyard':
       return spec({ kind: 'graveyard-creature', filter: yourGraveyardCreature.filter });
+    case 'target land card in your graveyard':
+      return spec({ kind: 'graveyard-land', filter: yourGraveyardLand.filter });
 
     default: return null;
   }
@@ -10521,14 +10531,23 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   /*
     Return target creature card from your graveyard to your hand.
 
-    The one family so far whose target phrase is **not** a substring of its own sentence: the card
-    says "target creature card … from your graveyard", with the zone in the verb phrase, while the
-    spec that points at it is described "target creature card in your graveyard". So the phrase is
+    The first family whose target phrase is **not** a substring of its own sentence: the card says
+    "target creature card … from your graveyard", with the zone in the verb phrase, while the spec
+    that points at it is described "target creature card in your graveyard". So the phrase is
     supplied rather than captured, and the string supplied is the one Raise Dead and Gravedigger
     both already store — which is what the ground-truth tests compare.
+
+    Two types, because Grim Discovery prints both halves of the same sentence and the only thing
+    that changes is the word: a creature card or a land card, each a different `TargetSpec.kind`
+    because a graveyard-land is a different object from a graveyard-creature. The type is captured
+    and lower-cased into the supplied phrase rather than written out twice.
   */
-  if (/^return target creature card from your graveyard to your hand$/i.test(text)) {
-    const spec = targetSpecFrom('target creature card in your graveyard', false);
+  const raised = /^return target (creature|land) card from your graveyard to your hand$/i
+    .exec(text);
+  if (raised !== null) {
+    const spec = targetSpecFrom(
+      `target ${raised[1]!.toLowerCase()} card in your graveyard`, false,
+    );
     if (spec !== null) {
       return {
         targets: [spec],
@@ -10902,6 +10921,81 @@ export interface SpellReading {
  * So: partition. Keyword lines are read as keywords, exactly as they are on a permanent. Whatever
  * is left is the resolution, and it is all-or-nothing.
  */
+/**
+ * "Choose one —", and the bullets under it.
+ *
+ * ## Why this is a whole-card shape and not a line reader
+ *
+ * A modal spell's text is **one sentence spread over several lines**: a header that says how many
+ * modes to take and a bullet per mode. No line of it means anything alone — a bullet without its
+ * header is a sentence the spell does not have, and a header without its bullets is a question with
+ * no answers. So it is read as a group, before `readResolution` sees the lines at all, and refused
+ * whole if any bullet is refused. A modal card with one unreadable mode is not a card missing an
+ * option; `legalActions` would offer the modes it did read as though they were the whole card, which
+ * is a different and better spell than the one printed.
+ *
+ * ## Modes are chosen at cast time, which is why they are not decisions
+ *
+ * `ModalDef`'s own docblock has the rules argument (CR 601.2b): the choice travels with the cast,
+ * before targets, where an opponent can see it and respond. Reading a charm as a mid-resolution
+ * decision would let somebody counter it without knowing what it was going to do. Nothing here has
+ * to arrange that — putting the reading in `modal` is what gets it.
+ *
+ * ## The two headers, and nothing else
+ *
+ * "Choose one —" and "Choose one or both —" are what the pool prints, and they are the only two
+ * read. "Choose two", "Choose one. You may choose the same mode more than once", and the entwine and
+ * escalate headers are refused rather than guessed at: each is a different `min`/`max`, and a header
+ * read as the wrong one is a card that takes the wrong number of modes. "Choose one" leaves `min`
+ * and `max` off, which is what they default to and what Selesnya Charm stores.
+ *
+ * ## What a mode may carry, and the one hint it drops
+ *
+ * `ModeDef` holds `expiresAtEndOfTurn` and `preventsDamage` and no other flag, which is the shape a
+ * person writing the card by hand has too. Both are carried through. `removesACreature` is **not**,
+ * and is dropped rather than refused, because it is already enforced structurally for a mode: as
+ * `ModalDef` says, "a combination whose targets cannot be filled is not offered at all", so a
+ * destroy mode is never offered with no creature to point at — which is the whole of what the flag
+ * buys on a spell whose targets are mandatory. Any *other* flag refuses the card, since no such
+ * argument exists for it and a silently dropped hint is a card that plays badly with nothing to
+ * flag it (D362).
+ */
+function modalScriptFor(lines: readonly string[], name: string): { modal: ModalDef } | null {
+  if (lines.length < 3) return null;
+  const header = /^choose (one|one or both)\s*[—-]?$/i.exec(plain(lines[0]!).trim());
+  if (header === null) return null;
+
+  const modes: ModeDef[] = [];
+  for (const line of lines.slice(1)) {
+    const bullet = /^[•\u2022]\s*(.+)$/.exec(plain(line).trim());
+    if (bullet === null) return null;
+    const printed = bullet[1]!.replace(/\s*\.\s*$/, '').trim();
+    const read = composeEffects(clausesOf(printed), name);
+    if (read === null) return null;
+    const flags = { ...(read.spellFlags ?? {}) } as Record<string, unknown>;
+    const expires = flags['expiresAtEndOfTurn'] === true;
+    const prevents = flags['preventsDamage'] === true;
+    delete flags['expiresAtEndOfTurn'];
+    delete flags['preventsDamage'];
+    // See the docblock: this one is structurally redundant on a mode, the rest are not.
+    delete flags['removesACreature'];
+    if (Object.keys(flags).length > 0) return null;
+    modes.push({
+      description: printed,
+      ...(read.targets === undefined ? {} : { targets: read.targets }),
+      ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
+      effect: read.effect,
+      ...(expires ? { expiresAtEndOfTurn: true } : {}),
+      ...(prevents ? { preventsDamage: true } : {}),
+    });
+  }
+  // "one or both" is two modes by definition; a header that says it over three is not a card.
+  if (header[1]!.toLowerCase() === 'one or both') {
+    return modes.length === 2 ? { modal: { min: 1, max: 2, modes } } : null;
+  }
+  return { modal: { modes } };
+}
+
 export function spellScriptFor(lines: readonly string[], name: string): SpellReading {
   const built: Record<string, unknown> = {};
   const compiled: string[] = [];
@@ -10931,6 +11025,21 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
       built[key] = value;
     }
     compiled.push(line);
+  }
+
+  /*
+    The modal shape is tried before the resolution reader, because a modal spell's lines do not
+    compose: `readResolution` would hand "Choose one —" to `readEffect` as a clause, get null, and
+    refuse the card without ever seeing that the bullets under it are three readable modes.
+  */
+  const modal = modalScriptFor(resolution, name);
+  if (modal !== null) {
+    Object.assign(built, modal);
+    return {
+      script: built as Partial<CardScript>,
+      compiled: [...compiled, ...resolution],
+      unread: declared,
+    };
   }
 
   const read = readResolution(resolution, name);

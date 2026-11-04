@@ -2201,5 +2201,194 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       ]);
     });
   });
+  describe('modal spells, chosen as the spell is cast', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({ state, controller: seat, source, targets } as unknown as EffectContext);
 
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    interface Mode {
+      readonly description: string;
+      readonly targets?: readonly TargetSpec[];
+      readonly effect: (c: EffectContext) => GameState;
+      readonly expiresAtEndOfTurn?: boolean;
+      readonly removesACreature?: boolean;
+    }
+    const modal = (script: unknown) =>
+      field(script, 'modal') as { modes: readonly Mode[]; min?: number; max?: number } | undefined;
+
+    const compiledModal = (name: string) => {
+      const compiled = compiledScript(name);
+      expect(compiled.unread, `${name} left lines unread`).toEqual([]);
+      const read = modal(compiled.script);
+      expect(read, `${name} compiled to no modal`).toBeDefined();
+      return read!;
+    };
+
+    /*
+      The two modal cards in the pool whose every bullet this module can read, compared mode by mode
+      against the hand-written card.
+
+      Compared field by field rather than with one `toEqual` on the whole `modal`, because each
+      mode's `effect` is a function and two functions that do the same thing are not equal.
+      Everything that can be compared is: how many modes, the printed description of each, and the
+      spec it points at — and the specs are identical objects, since `isCreatureSpell`,
+      `yourGraveyardCreature` and `yourGraveyardLand` are one function each now rather than a copy
+      per card.
+    */
+    it.each([
+      ['Soul Manipulation'],
+      ['Grim Discovery'],
+    ])('%s reads mode for mode like the hand-written card', (card) => {
+      const mine = compiledModal(card as string);
+      const theirs = modal(scriptFor(card as string))!;
+      expect(mine.modes).toHaveLength(theirs.modes.length);
+      expect(mine.min).toBe(theirs.min);
+      expect(mine.max).toBe(theirs.max);
+      mine.modes.forEach((mode, i) => {
+        expect(mode.description).toBe(theirs.modes[i]!.description);
+        expect(mode.targets).toEqual(theirs.modes[i]!.targets);
+      });
+    });
+
+    it('reads "Choose one or both" as min 1 max 2, which is what both cards store', () => {
+      // Pinned by name as well as by equality: `max: 1` would make it a charm, a different card.
+      expect(compiledModal('Soul Manipulation').min).toBe(1);
+      expect(compiledModal('Soul Manipulation').max).toBe(2);
+    });
+
+    /*
+      The land half of the graveyard return, which is the phrase this stage added — and the reason
+      Grim Discovery compiles at all.
+    */
+    it('returns the land card the hand-written Grim Discovery returns', () => {
+      // A land in seat 0's own graveyard; the controller has to be the seat holding it.
+      const base = arena({ graveyard: { 0: ['Mountain'] } });
+      const land = find(base, 0 as SeatIndex, 'graveyard', 'Mountain');
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: land }]);
+      const mine = compiledModal('Grim Discovery').modes[1]!.effect(ctx);
+      const theirs = modal(scriptFor('Grim Discovery'))!.modes[1]!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      // Not vacuous: the land is in hand afterwards and out of the graveyard.
+      expect(mine.zones[zoneKey(0 as SeatIndex, 'hand')]).toContain(land);
+      expect(mine.zones[zoneKey(0 as SeatIndex, 'graveyard')]).not.toContain(land);
+    });
+
+    /*
+      Whole or not at all, with the three pool cards that prove it.
+
+      Each has one bullet this module cannot read — Selesnya Charm exiles a creature by power,
+      Golgari Charm regenerates a team, Healing Salve prevents damage — and each is refused
+      **entirely**, header and all. Reading the other bullets and shipping them as the card's modes
+      would be a spell that works and is a strictly different, better spell than the one printed:
+      `legalActions` offers a play per legal combination of modes, so a charm missing its third mode
+      is a charm whose third mode nobody can choose, with nothing at the table to say so.
+    */
+    it.each([
+      ['Selesnya Charm', 4],
+      ['Golgari Charm', 4],
+      ['Healing Salve', 3],
+    ])('refuses %s whole, all %i lines, because one bullet has no reader', (card, lines) => {
+      const compiled = compiledScript(card as string);
+      expect(compiled.source).toBe('printed-only');
+      expect(compiled.script).toBeUndefined();
+      expect(compiled.unread).toHaveLength(lines as number);
+      // Including the header, which is the line that would otherwise look readable on its own.
+      expect(compiled.unread[0]!.line).toMatch(/^Choose one/);
+    });
+
+    /** A synthetic modal card, for the headers and flags the pool does not print. */
+    const synthetic = (text: string) => compileCard({
+      name: 'Made Up Charm', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'],
+      oracle_text: text,
+    });
+
+    it('reads "Choose one" with no min or max, which is what they default to', () => {
+      const one = synthetic('Choose one —\n• You gain 3 life.\n• Draw a card.');
+      expect(one.ok).toBe(true);
+      if (!one.ok) return;
+      expect(one.unread).toEqual([]);
+      const read = modal(one.script)!;
+      expect(read.modes).toHaveLength(2);
+      expect(read.min).toBeUndefined();
+      expect(read.max).toBeUndefined();
+      // And that is the shape Selesnya Charm stores for the same header.
+      expect(modal(scriptFor('Selesnya Charm'))!.min).toBeUndefined();
+    });
+
+    /*
+      The headers that are not read, refused rather than guessed at.
+
+      "Choose two" over three modes is `min: 2, max: 2`; entwine and escalate are different again.
+      Each is a different number of modes taken, and a header read as the wrong one is a card that
+      takes the wrong number — so an unrecognised header refuses the card, which leaves its lines
+      flagged for a human (D362) instead of silently halving the spell.
+    */
+    it.each([
+      ['Choose two —'],
+      ['Choose one. You may choose the same mode more than once —'],
+    ])('refuses the header %s rather than guessing how many modes it takes', (header) => {
+      const odd = synthetic(`${header as string}\n• You gain 3 life.\n• Draw a card.`);
+      expect(odd.ok).toBe(true);
+      if (!odd.ok) return;
+      expect(odd.script).toBeUndefined();
+      expect(odd.unread).toHaveLength(3);
+    });
+
+    it('puts a pump’s wear-off on the mode that wears off, not on the card', () => {
+      /*
+        `ModeDef.expiresAtEndOfTurn` exists because a charm's other modes are not pumps — its own
+        docblock says so, naming Selesnya Charm. So the flag has to travel from the bullet's reading
+        onto that bullet's mode, and a compiler that merged it onto the card would tell the bot to
+        hold the whole spell for a combat when the rest of it is not a combat trick.
+      */
+      const charm = synthetic(
+        'Choose one —\n• Target creature gets +2/+2 until end of turn.\n• You gain 3 life.',
+      );
+      expect(charm.ok).toBe(true);
+      if (!charm.ok) return;
+      expect(charm.unread).toEqual([]);
+      expect(modal(charm.script)!.modes[0]!.expiresAtEndOfTurn).toBe(true);
+      expect(modal(charm.script)!.modes[1]!.expiresAtEndOfTurn).toBeUndefined();
+      // On the mode, and not on the card.
+      expect(field(charm.script, 'expiresAtEndOfTurn')).toBeUndefined();
+    });
+
+    it('drops a destroy mode’s removal hint, which the shape cannot hold and does not need', () => {
+      /*
+        The one flag dropped rather than refused, and the argument is structural rather than a
+        judgement: `removesACreature` means "do not cast this with nothing of theirs to point at",
+        and `ModalDef` offers one play per legal combination of modes, so a combination whose
+        targets cannot be filled is never offered. The destroy mode is therefore already unavailable
+        on an empty board — the whole of what the flag buys — and `ModeDef` has no slot for it, so a
+        person writing this card by hand would drop it too.
+      */
+      const charm = synthetic('Choose one —\n• Destroy target creature.\n• You gain 3 life.');
+      expect(charm.ok).toBe(true);
+      if (!charm.ok) return;
+      expect(charm.unread).toEqual([]);
+      expect(modal(charm.script)!.modes[0]!.removesACreature).toBeUndefined();
+      expect(field(charm.script, 'removesACreature')).toBeUndefined();
+    });
+
+    it('refuses a mode whose hint the shape cannot hold and nothing else enforces', () => {
+      /*
+        The other half of the rule above. "Gets +0/+3 and gains hexproof" reads as a protection
+        trick — `protectsACreature`, hold this until something threatens one of your creatures —
+        and that is advice about *timing*, which no mode combination enforces the way a mandatory
+        target does. `ModeDef` cannot carry it, so the card is refused rather than shipped with the
+        hint quietly gone.
+      */
+      const trick = synthetic(
+        'Choose one —\n• Target creature gets +0/+3 and gains hexproof until end of turn.'
+        + '\n• You gain 3 life.',
+      );
+      expect(trick.ok).toBe(true);
+      if (!trick.ok) return;
+      expect(trick.script).toBeUndefined();
+      expect(trick.unread).toHaveLength(3);
+    });
+  });
 });
