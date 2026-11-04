@@ -3565,13 +3565,38 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     it('does not read a list of recipients as a sequence of clauses', () => {
       /*
         Hurricane's phrase, which is where a naive split is most tempting and most wrong: "each
-        creature with flying and each player" is one damage event's **recipients**, not two
-        effects. Neither half is a clause, so the composition refuses it — and the card stays
-        unread, which is the honest answer rather than half a Hurricane.
+        creature with flying and each player" is one damage event's **recipients**, not two effects.
+
+        This row used to assert that the card stayed *unread*, which was recording a gap as though
+        it were a property — the same mistake D419 found four times over. `sweepDestination` reads
+        the phrase now (D423), so what is left to guard is the thing that was always the point: the
+        "and" is not a clause boundary. Asserted on the board rather than on the shape, because a
+        composition that split it would deal the damage to *something* and a shape check would not
+        say what.
       */
       const sweep = spell('Joined Up deals 3 damage to each creature with flying and each player.');
       expect(sweep.ok).toBe(true);
-      if (sweep.ok) expect(sweep.script).toBeUndefined();
+      if (!sweep.ok) return;
+      expect(sweep.unread).toEqual([]);
+      // Nothing is chosen: a sweep is a destination, not a target (see `sweepDestination`).
+      expect(field(sweep.script, 'targets')).toBeUndefined();
+
+      const base = arena({
+        decks: { 0: 'skyward-writ', 1: 'ember-rush' },
+        battlefield: { 0: ['Serra Angel', 'Basilica Guards'] },
+        turn: 3,
+      });
+      const angel = find(base, 0 as SeatIndex, 'battlefield', 'Serra Angel');
+      const guards = find(base, 0 as SeatIndex, 'battlefield', 'Basilica Guards');
+      const after = (field(sweep.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      // The flier is dealt 3 and lives on 4 toughness; the 0/4 that cannot fly is dealt nothing.
+      expect(after.instances[angel]!.damage).toBe(3);
+      expect(after.instances[guards]!.damage ?? 0).toBe(0);
+      // "each player" is every seat, the caster's own included — which is the card.
+      expect(after.seats.map((seat) => seat.life))
+        .toEqual(base.seats.map((seat) => seat.life - 3));
     });
   });
 
@@ -5955,6 +5980,185 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(flagOf(compiledScript(card as string).script)).toBe(expected);
       // The hand-written card is the ground truth for the judgement, not just for the shape.
       expect(flagOf(scriptFor(card as string))).toBe(expected);
+    });
+  });
+  /*
+    Damage with no target, and the payoff that changes its number (D423).
+
+    Three cards came out of this at once, and they are one increment because they are one sentence
+    read in two halves. `sweepDestination` reads **where** — "each creature with flying and each
+    player" — and `kickerSpellFor` reads **how much**, which for a kicker spell is one of two
+    printed numbers chosen as the spell resolves. Neither is any use to the pool without the other:
+    Hurricane needs only the destination, Burst Lightning only the amount, and Breath of Darigaaz
+    needs both.
+
+    Every row below compares against the hand-written card where there is one, because the question
+    is never "does this compile" — it is whether the compiled card does what the printed one does.
+  */
+  describe('the sweep, and the kicker payoff that picks between two printed numbers', () => {
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    /** A resolution context, with the two facts these readings depend on. */
+    const resolving = (
+      state: GameState,
+      seat: SeatIndex,
+      extra: { x?: number; kicked?: boolean; targets?: readonly Target[] } = {},
+    ): EffectContext => ({
+      state,
+      controller: seat,
+      source: 'c1',
+      targets: extra.targets ?? [],
+      decisions: [],
+      x: extra.x ?? 0,
+      ...(extra.kicked === undefined ? {} : { kicked: extra.kicked }),
+    } as unknown as EffectContext);
+
+    const spell = (text: string) => compileCard({
+      name: 'Joined Up', type_line: 'Sorcery', mana_cost: '{2}{R}', cmc: 3, colors: ['R'],
+      oracle_text: text,
+    });
+
+    /** A flier, a grounded 0/4 and two players: the board every row here discriminates on. */
+    const board = () => arena({
+      decks: { 0: 'skyward-writ', 1: 'ember-rush' },
+      battlefield: { 0: ['Serra Angel', 'Basilica Guards'] },
+      turn: 3,
+    });
+
+    const run = (script: unknown, state: GameState, extra = {}) =>
+      (field(script, 'onResolve') as (c: EffectContext) => GameState)(
+        resolving(state, 0 as SeatIndex, extra),
+      );
+
+    it('Hurricane: the fliers and every player, read as the hand-written card deals it', () => {
+      const mine = compiledScript('Hurricane');
+      expect(mine.unread).toEqual([]);
+      const base = board();
+      const compiled = run(mine.script, base, { x: 3 });
+      const written = run(scriptFor('Hurricane'), base, { x: 3 });
+      expect(compiled).toEqual(written);
+      // Non-vacuity, and the filter: the 4/4 flier takes it, the 0/4 that cannot fly does not.
+      expect(compiled.instances[find(base, 0 as SeatIndex, 'battlefield', 'Serra Angel')]!.damage)
+        .toBe(3);
+      expect(compiled.instances[find(base, 0 as SeatIndex, 'battlefield', 'Basilica Guards')]!
+        .damage ?? 0).toBe(0);
+      expect(compiled.seats.map((seat) => seat.life))
+        .toEqual(base.seats.map((seat) => seat.life - 3));
+    });
+
+    it('Hurricane cast for nothing deals nothing, with no branch here saying so', () => {
+      /*
+        The hand-written sweeps open with `if (c.x === 0) return c.state` and `sweepDestination`
+        deliberately does not: a break run showed that copying the branch changes nothing any test
+        can see, because `dealDamage` refuses a non-positive amount itself. So the branch would be a
+        check that cannot fail, which is D415's lesson found a second time.
+
+        This row is what makes relying on that safe. It is not a test of a branch — it is the
+        equality between a reading that **does** have one and a reading that does not, so if
+        `dealDamage` ever stops refusing zero, this fails here instead of diverging quietly.
+      */
+      const base = board();
+      const compiled = run(compiledScript('Hurricane').script, base, { x: 0 });
+      expect(compiled).toEqual(run(scriptFor('Hurricane'), base, { x: 0 }));
+      expect(compiled).toEqual(base);
+    });
+
+    it('Savage Twister still reads the bare "each creature", and hits both sides', () => {
+      /*
+        The regression this refactor could have caused: `xSpellResolution` used to spell out "each
+        creature" itself, and that branch is now a call into the shared reader. Asserted against the
+        hand-written card on a board with a creature on each side.
+      */
+      const mine = compiledScript('Savage Twister');
+      expect(mine.unread).toEqual([]);
+      const base = arena({
+        decks: { 0: 'kindle-grove', 1: 'verdant-guard' },
+        battlefield: { 0: ['Mardu Scout'], 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      expect(run(mine.script, base, { x: 2 })).toEqual(run(scriptFor('Savage Twister'), base, { x: 2 }));
+      // Both sides, and no player: a Twister is not "and each player".
+      expect(run(mine.script, base, { x: 2 }).seats.map((seat) => seat.life))
+        .toEqual(base.seats.map((seat) => seat.life));
+    });
+
+    it('refuses a sweep filtered by a word the engine has no keyword for', () => {
+      /*
+        D259's rule applied to a filter: a word this engine cannot test is not a filter, and a sweep
+        that quietly ignored it would hit every creature on the board. Unread is the honest answer —
+        the card is then dealt to a human (D362).
+      */
+      const made = spell('Joined Up deals 2 damage to each creature with moxiness and each player.');
+      expect(made.ok).toBe(true);
+      if (made.ok) expect(made.script).toBeUndefined();
+    });
+
+    it('Burst Lightning: two damage, or four, from the same compiled effect', () => {
+      const mine = compiledScript('Burst Lightning');
+      expect(mine.unread).toEqual([]);
+      // The declaration is read as the hand-written card sets it, printed description and all.
+      expect(field(mine.script, 'kicker')).toEqual(field(scriptFor('Burst Lightning'), 'kicker'));
+      expect(field(mine.script, 'targets')).toEqual(field(scriptFor('Burst Lightning'), 'targets'));
+
+      const base = board();
+      const angel = find(base, 0 as SeatIndex, 'battlefield', 'Serra Angel');
+      const at = { targets: [{ kind: 'card', id: angel }] as readonly Target[] };
+      for (const [kicked, expected] of [[false, 2], [true, 4]] as const) {
+        const compiled = run(mine.script, base, { ...at, kicked });
+        const written = run(scriptFor('Burst Lightning'), base, { ...at, kicked });
+        expect(compiled).toEqual(written);
+        expect(compiled.instances[angel]!.damage).toBe(expected);
+      }
+    });
+
+    it('Breath of Darigaaz: the kicked number, through the sweep rather than a target', () => {
+      const mine = compiledScript('Breath of Darigaaz');
+      expect(mine.unread).toEqual([]);
+      expect(field(mine.script, 'kicker'))
+        .toEqual(field(scriptFor('Breath of Darigaaz'), 'kicker'));
+      // No target: the destination is a sweep, and the hand-written card has none either.
+      expect(field(mine.script, 'targets')).toBeUndefined();
+
+      const base = board();
+      const angel = find(base, 0 as SeatIndex, 'battlefield', 'Serra Angel');
+      const guards = find(base, 0 as SeatIndex, 'battlefield', 'Basilica Guards');
+      for (const [kicked, expected] of [[false, 1], [true, 4]] as const) {
+        const compiled = run(mine.script, base, { kicked });
+        expect(compiled).toEqual(run(scriptFor('Breath of Darigaaz'), base, { kicked }));
+        // "without flying" is the other arm of the same filter Hurricane reads.
+        expect(compiled.instances[guards]!.damage).toBe(expected);
+        expect(compiled.instances[angel]!.damage ?? 0).toBe(0);
+        expect(compiled.seats.map((seat) => seat.life))
+          .toEqual(base.seats.map((seat) => seat.life - expected));
+      }
+    });
+
+    it('leaves Agonizing Demise alone, whose kicked half is a different effect', () => {
+      /*
+        The refusal that keeps this reader honest. Agonizing Demise has kicker and is not this
+        shape: kicked, it throws the dead creature's power at that creature's controller, which is
+        not a bigger number for the same effect. Forcing it through a reading about numbers would be
+        a card that does the wrong thing silently; unread, it is dealt by a human.
+      */
+      const demise = compiledScript('Agonizing Demise');
+      expect(demise.script).toBeUndefined();
+      expect(demise.unread.map((entry) => entry.line)).toContain('Kicker {1}{R}');
+    });
+
+    it('a kicker with no payoff line is the spell without the option, and says so', () => {
+      /*
+        The pair is a unit, so half of it is not read as the other half: the resolution is read,
+        the declaration is **reported** as an unimplemented keyword, and no `kicker` is emitted. A
+        card offering a player four extra mana for nothing would be worse than one missing an
+        option, because the missing option is flagged (D362) and the pointless one is not.
+      */
+      const made = spell('Kicker {2}\nJoined Up deals 2 damage to any target.');
+      expect(made.ok).toBe(true);
+      if (!made.ok) return;
+      expect(field(made.script, 'onResolve')).toBeDefined();
+      expect(field(made.script, 'kicker')).toBeUndefined();
+      expect(made.unread.map((entry) => entry.line)).toEqual(['Kicker {2}']);
     });
   });
 });

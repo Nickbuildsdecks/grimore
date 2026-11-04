@@ -11230,6 +11230,80 @@ const pointsAtTheStack = (spec: TargetSpec): boolean =>
  * Keeping all four in one function is the reason it is not `untargetedEffect` and
  * `targetedEffect` both holding half the family and disagreeing later about the amount.
  */
+/**
+ * "each creature", "each creature with flying and each player": damage with no target at all.
+ *
+ * The sweep is a **destination**, not a target spec, which is why it is read here rather than by
+ * `targetSpecFrom`: nothing is chosen, nothing can be made illegal, and nothing is put on the stack
+ * for an opponent to answer by killing the creature it points at. So the amount is handed in and
+ * what comes back is the whole dealing.
+ *
+ * One function for both callers, which is the point. `xSpellResolution` already read "each
+ * creature" for Savage Twister and `damageEffect` read none of this, so the printed-number cards
+ * had no path at all — and giving each of them its own grammar would be two readings of one
+ * phrase, free to disagree about "and each player" the way the two type-line readings in #319
+ * disagreed about a filter.
+ *
+ * ## Three things taken from the hand-written cards rather than invented
+ *
+ * - **The keyword must be one the engine knows.** `isKeyword` refuses anything else, so "each
+ *   creature with shroud" on a card whose keyword this engine has never implemented is an unread
+ *   line (D362) rather than a sweep that quietly hits everything. D259's rule applied to a filter:
+ *   a word the engine cannot test is not a filter.
+ * - **"and each player" is every seat, including yours.** Hurricane and Breath of Darigaaz both
+ *   loop `state.seats` and skip only the eliminated ones, and that is the card: a Hurricane for
+ *   four with two fliers out kills its own caster as readily as anybody.
+ * - **There is no zero branch, and one would be unfalsifiable.** Both hand-written sweeps open with
+ *   `if (c.x === 0) return c.state`, and a break run established that copying it here changes
+ *   nothing any test can see: `dealDamage` itself returns the state untouched for a non-positive
+ *   amount, so a Savage Twister cast for X=0 deals nothing either way. Rather than keep a check
+ *   that cannot fail — D415's lesson, the second time — this relies on `dealDamage`'s refusal, and
+ *   a test pins the equality with the hand-written card at zero so a change there is a failure here
+ *   rather than a silent divergence.
+ *
+ * The creature list is taken **once**, before any damage is dealt, which both hand-written cards
+ * also do: a creature that dies to the first point is still dealt its share, and one that arrives
+ * mid-resolution — nothing in this pool, but a replacement effect could — is not.
+ */
+function sweepDestination(
+  where: string,
+): ((c: EffectContext, amount: number) => GameState) | null {
+  const matched = /^each creature(?: (with|without) ([a-z]+))?( and each player)?$/i
+    .exec(where.trim());
+  if (matched === null) return null;
+  let keyword: Keyword | null = null;
+  if (matched[2] !== undefined) {
+    const word = matched[2].toLowerCase();
+    if (!isKeyword(word)) return null;
+    keyword = word;
+  }
+  const negated = matched[1]?.toLowerCase() === 'without';
+  const players = matched[3] !== undefined;
+  return (c, amount) => {
+    let state = c.state;
+    const hit = battlefield(state, (cardId) => {
+      const inst = state.instances[cardId];
+      if (inst === undefined) return false;
+      const ch = characteristicsOf(state, inst);
+      if (!ch.isCreature) return false;
+      return keyword === null ? true : ch.keywords.has(keyword) !== negated;
+    });
+    for (const id of hit) {
+      state = dealDamage(state, { kind: 'card', id }, amount, {
+        controller: c.controller, source: c.source,
+      });
+    }
+    if (!players) return state;
+    for (const seat of state.seats) {
+      if (seat.eliminated) continue;
+      state = dealDamage(state, { kind: 'player', seat: seat.index }, amount, {
+        controller: c.controller, source: c.source,
+      });
+    }
+    return state;
+  };
+}
+
 function damageEffect(clause: string, name: string): ReadEffect | null {
   const self = escapeName(name);
 
@@ -11305,49 +11379,79 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
     return inst === undefined ? 0 : characteristicsOf(c.state, inst).power;
   };
 
+  const dest = damageDestination(where);
+  if (dest === null) return null;
+  return {
+    ...(dest.targets === undefined ? {} : { targets: dest.targets }),
+    ...(dest.spellFlags === undefined ? {} : { spellFlags: dest.spellFlags }),
+    effect: (c) => dest.apply(c, amountOf(c)),
+  };
+}
+
+/**
+ * Where a damage clause's damage goes, read apart from **how much** of it there is.
+ *
+ * Two readers need the same four destinations and disagree about the number: `damageEffect` reads a
+ * printed amount or one computed off the board, and `kickerSpellFor` reads *two* printed amounts and
+ * picks between them as the spell resolves. Before this they would have been two copies of the same
+ * phrase table, which is the shape #319 is a task about — two readings of one phrase that drifted.
+ *
+ * So the amount is a parameter. Everything a destination decides is here: whether a target is
+ * chosen, whether the clause is a removal spell the bot should hold for a board, and who the damage
+ * is credited to.
+ *
+ * ## The zero branches are inherited, and are belt and braces rather than load-bearing
+ *
+ * Three of the four `apply` bodies open by returning the state untouched for an amount of zero.
+ * They came across from `damageEffect` unchanged, and they are Murderous Redcap's reading: the body
+ * persist gives back is a 1/1 with a −1/−1 counter, so its power is zero and the printed card deals
+ * nothing. Worth being accurate about why they are harmless rather than why they are needed —
+ * `dealDamage` refuses a non-positive amount itself, so deleting any of them changes nothing a test
+ * can see (established by a break run, D423). They are kept because they were here, and the sweep
+ * added below deliberately has none.
+ */
+function damageDestination(where: string): {
+  readonly apply: (c: EffectContext, amount: number) => GameState;
+  readonly targets?: readonly TargetSpec[];
+  readonly spellFlags?: Partial<CardScript>;
+} | null {
+  const text = where.trim().replace(/\.\s*$/, '');
+
   // The two destinations nobody chooses.
-  if (/^you$/i.test(where)) {
+  if (/^you$/i.test(text)) {
     // No `controller` in the options, matching City of Brass: damage to your own face is not damage
     // "dealt by" a source you are trying to credit, and the hand-written card is the ground truth.
     return {
-      effect: (c) => {
-        const n = amountOf(c);
-        return n <= 0
-          ? c.state
-          : dealDamage(c.state, { kind: 'player', seat: c.controller }, n, { source: c.source });
-      },
+      apply: (c, n) => (n <= 0
+        ? c.state
+        : dealDamage(c.state, { kind: 'player', seat: c.controller }, n, { source: c.source })),
     };
   }
-  if (/^each opponent$/i.test(where)) {
+  if (/^each opponent$/i.test(text)) {
     return {
-      effect: (c) => {
-        const n = amountOf(c);
-        return n <= 0 ? c.state : opponentsOf(c.state, c.controller).reduce(
-          (state, seat) => dealDamage(
-            state, { kind: 'player', seat }, n,
-            { controller: c.controller, source: c.source },
-          ),
-          c.state,
-        );
-      },
+      apply: (c, n) => (n <= 0 ? c.state : opponentsOf(c.state, c.controller).reduce(
+        (state, seat) => dealDamage(
+          state, { kind: 'player', seat }, n,
+          { controller: c.controller, source: c.source },
+        ),
+        c.state,
+      )),
     };
   }
 
+  // The sweep, which is also nobody's choice — see `sweepDestination` for why it is not a spec.
+  const sweep = sweepDestination(text);
+  if (sweep !== null) return { apply: (c, n) => sweep(c, n) };
+
   // And the ones somebody does. `damageFirstTarget` takes a creature or a player, so every spec
   // `targetSpecFrom` can return is one it can be handed.
-  const spec = targetSpecFrom(where, false);
+  const spec = targetSpecFrom(text, false);
   if (spec === null) return null;
-  /*
-    The zero guard is Murderous Redcap's own, and it is not defensive: the body persist gives back
-    is a 1/1 with a −1/−1 counter, so its power is 0 and the printed card deals nothing. Reading it
-    as `dealDamage(…, 0)` instead would be a damage event with no damage, which is a different thing
-    from no event at all.
-  */
   return {
     targets: [spec],
     /*
       **`removesACreature` where the spec is creature-only** (D420), which is the same rule the
-      destroy and exile families below already follow — the flag was simply missing from damage.
+      destroy and exile families follow — the flag was simply missing from damage.
 
       It is the bot's way of being told not to cast a removal spell with nothing worth hitting
       (#322), and a Flame Slash is "deals 4 damage to target creature": creature-only by its own
@@ -11359,10 +11463,7 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
       the flag.
     */
     ...(spec.kind === 'creature' ? { spellFlags: { removesACreature: true } } : {}),
-    effect: (c) => {
-      const n = amountOf(c);
-      return n <= 0 ? c.state : damageFirstTarget(c, n);
-    },
+    apply: (c, n) => (n <= 0 ? c.state : damageFirstTarget(c, n)),
   };
 }
 
@@ -12695,7 +12796,84 @@ function modalScriptFor(lines: readonly string[], name: string): { modal: ModalD
   return { modal: { modes } };
 }
 
+/**
+ * Kicker, read as the declaration **and** the payoff it declares (CR 702.33).
+ *
+ * The one keyword `keywordScriptFor`'s docblock named as deliberately absent from its
+ * alternative-cost table, and it gave the reason: kicker's payoff "is printed on another line — 'If
+ * this spell was kicked, it deals 4 damage instead' — so the declaration alone is an option to pay
+ * more for nothing, which is not the card". That argument is right and it is also the specification
+ * for this reader: read the pair, or read neither. D364 again.
+ *
+ * So this is a **whole-spell** shape, the way an Aura is a whole-card shape on the permanent path.
+ * It runs before the keyword loop in `spellScriptFor`, because the loop would otherwise push
+ * `Kicker {4}` into `declared` and report it as an unimplemented keyword while the resolution line
+ * was refused separately — which is what both of the pool's kicker burn spells did.
+ *
+ * ## What it refuses, and why that is narrow on purpose
+ *
+ * Exactly two printed lines: the declaration and one resolution line of two clauses, "deals N
+ * damage to <somewhere>" then "if this spell was kicked, it deals M damage instead". Agonizing
+ * Demise also has kicker and is **not** this shape — its kicked half throws the dead creature's
+ * power at its controller, which is a different effect and not a different number — so it stays
+ * unread rather than being forced through a reading about numbers.
+ *
+ * The destination comes from `damageDestination`, so "any target" (Burst Lightning) and "each
+ * creature without flying and each player" (Breath of Darigaaz) are read by the same table the
+ * unkicked damage family uses. The only thing kicker contributes is **which of two printed numbers**
+ * the amount is, chosen as the spell resolves from `EffectContext.kicked` — which is how both
+ * hand-written scripts are written, and the reason `kicked` is a flag on the context rather than a
+ * second effect function.
+ */
+function kickerSpellFor(
+  lines: readonly string[], name: string,
+): { fragment: Partial<CardScript>; claimed: readonly string[] } | null {
+  if (lines.length !== 2) return null;
+  const declaring = /^kicker\s+((?:\{[^}]*\})+)$/i;
+  const declaration = lines.find((line) => declaring.test(plain(line).trim()));
+  const body = lines.find((line) => line !== declaration);
+  if (declaration === undefined || body === undefined) return null;
+  const cost = declaring.exec(plain(declaration).trim())![1]!;
+
+  const clauses = clausesOf(body);
+  if (clauses.length !== 2) return null;
+  const self = escapeName(name);
+  const base = new RegExp(`^(?:${self}|it) deals (\\d+) damage to (.+?)$`, 'i')
+    .exec(clauses[0]!.trim().replace(/\.\s*$/, ''));
+  const kicked = /^if this spell was kicked, it deals (\d+) damage instead$/i
+    .exec(clauses[1]!.trim().replace(/\.\s*$/, ''));
+  if (base === null || kicked === null) return null;
+
+  const dest = damageDestination(base[2]!);
+  if (dest === null) return null;
+  const unkickedAmount = Number(base[1]);
+  const kickedAmount = Number(kicked[1]);
+  return {
+    fragment: {
+      // The printed line is the description rather than one rebuilt from the cost, so the table
+      // shows a player what the card shows them.
+      kicker: { cost, description: plain(declaration).trim() },
+      ...(dest.targets === undefined ? {} : { targets: dest.targets }),
+      ...(dest.spellFlags ?? {}),
+      onResolve: (c) => dest.apply(c, c.kicked === true ? kickedAmount : unkickedAmount),
+    },
+    // Both lines, in printed order: the shape is the whole card.
+    claimed: [...lines],
+  };
+}
+
 export function spellScriptFor(lines: readonly string[], name: string): SpellReading {
+  /*
+    The kicker pair, before anything else, because the keyword loop below would split it: the
+    declaration would land in `declared` as an unimplemented keyword and the resolution line would
+    be refused on its own, which is a card reported as two separate failures rather than read. See
+    `kickerSpellFor` for why the two lines are one unit.
+  */
+  const kicker = kickerSpellFor(lines, name);
+  if (kicker !== null) {
+    return { script: kicker.fragment, compiled: kicker.claimed, unread: [] };
+  }
+
   const built: Record<string, unknown> = {};
   const compiled: string[] = [];
   const resolution: string[] = [];
@@ -12813,26 +12991,14 @@ function xSpellResolution(lines: readonly string[], name: string): ReadEffect | 
   if (dealt !== null) {
     const where = dealt[1]!.trim();
     /*
-      The sweep, which is not a target at all: "X damage to each creature" is Savage Twister, and
-      its own hand-written script is the ground truth for the zero guard — a Twister cast for zero
-      is not a damage event of zero to every creature, it is no event.
+      The sweep, which is not a target at all: "X damage to each creature" is Savage Twister and
+      "X damage to each creature with flying and each player" is Hurricane. Read through
+      `sweepDestination`, the one function `damageEffect` reads a printed-number sweep with — this
+      branch used to spell out the "each creature" case on its own, and a second spelling of the
+      phrase is a second thing to keep in step.
     */
-    if (/^each creature$/i.test(where)) {
-      return {
-        effect: (c) => {
-          if (c.x <= 0) return c.state;
-          return battlefield(c.state, (id) => {
-            const inst = c.state.instances[id];
-            return inst !== undefined && characteristicsOf(c.state, inst).isCreature;
-          }).reduce(
-            (state, id) => dealDamage(state, { kind: 'card', id }, c.x, {
-              controller: c.controller, source: c.source,
-            }),
-            c.state,
-          );
-        },
-      };
-    }
+    const sweep = sweepDestination(where.replace(/\.\s*$/, ''));
+    if (sweep !== null) return { effect: (c) => sweep(c, c.x) };
     const spec = targetSpecFrom(where, false);
     // No zero guard here, and Fireball's hand-written script has none either: `dealDamage` refuses
     // a non-positive amount, so a Fireball cast for zero deals nothing without a branch saying so.

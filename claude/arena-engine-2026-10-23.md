@@ -11178,3 +11178,28 @@ one.
 No coverage change. **Disagreements 1 → 0**: every card in the pool with both readings now agrees,
 and the table is empty — which is the state to keep it in, since the test asserts equality against
 it rather than membership.
+
+## Damage with no target, and the kicker payoff (#317, D423)
+
+First increment off the compiler's work queue now the disagreement list is closed. Three cards, two
+readers.
+
+**`sweepDestination`** reads *where*: "each creature", "each creature with flying and each player".
+A sweep is a destination rather than a target — nothing is chosen and nothing can be made illegal —
+so the amount is handed in. One function for both callers, because `xSpellResolution` already
+spelled out the bare "each creature" and `damageEffect` read none of it, and two spellings of one
+phrase is the defect #319 is a task about.
+
+**`kickerSpellFor`** reads *how much*: a whole-spell shape pairing `Kicker {M}` with "if this spell
+was kicked, it deals M damage instead", because the declaration alone is an option to pay more for
+nothing — the reason the reader's own docblock had kept kicker out until now. Agonizing Demise has
+kicker and is **not** this shape, so it stays unread rather than being forced through a reading about
+numbers.
+
+Two things worth recording beyond the cards. The sweep's zero guard, copied from the hand-written
+cards, turned out to be **unfalsifiable** — `dealDamage` refuses a non-positive amount itself — so it
+is deleted and a test pins the equality instead; that is D415's lesson a second time. And a test
+asserting Hurricane's phrase left the card *unread* was recording a gap as a property, the fifth of
+that family; it now asserts on the board that the "and" is not a clause boundary.
+
+**407 of 538 lines (75.7%)**, 259 of 339 with a script, 231 complete. Six breaks, six failures.

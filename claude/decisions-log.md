@@ -26332,3 +26332,81 @@ Priest), the spec-kind test dropped (Banishing Light), and the flag never set (J
 The table being empty is the state to keep it in. A new disagreement is now a row somebody has to
 explain and settle, not a row to add — and the test asserts equality against the table rather than
 mere membership, so a stale row fails as loudly as a missing one.
+
+## D423 — Damage with no target, and the payoff that changes its number
+
+First increment off the compiler's own work queue since the disagreement list closed. Three cards,
+one sentence read in two halves — **where** the damage goes and **how much** of it there is — and
+neither half was any use to the pool without the other.
+
+### `sweepDestination`: a sweep is a destination, not a target
+
+"Each creature with flying and each player" is one damage event's recipients. Nothing is chosen,
+nothing can be made illegal, nothing goes on the stack for an opponent to answer by killing the
+thing it points at — so it is read apart from `targetSpecFrom`, and the amount is handed in.
+
+One function, because there were about to be two. `xSpellResolution` already spelled out the bare
+"each creature" for Savage Twister, and `damageEffect` read none of this at all, so the
+printed-number cards had no path. Two spellings of one phrase is #319's defect in a new place.
+
+Three things taken from the hand-written cards rather than invented:
+
+- **The keyword must be one the engine knows.** `isKeyword` refuses anything else, so a sweep
+  filtered by a word this engine cannot test is an unread line (D362) rather than a sweep that
+  quietly hits everything. D259's rule applied to a filter.
+- **"And each player" is every seat, the caster's own included** — Hurricane and Breath of Darigaaz
+  both loop `state.seats` and skip only the eliminated.
+- **The creature list is taken once**, before any damage is dealt, as both hand-written cards do.
+
+### `kickerSpellFor`: the declaration and its payoff, or neither
+
+`keywordScriptFor`'s docblock had already named kicker as deliberately absent from its
+alternative-cost table, with the reason: the payoff is on another line, so "the declaration alone is
+an option to pay more for nothing, which is not the card". That argument is the specification, so
+this is a **whole-spell** shape — the spell path's equivalent of an Aura on the permanent path — and
+it runs before the keyword loop, which would otherwise report the declaration as an unimplemented
+keyword and refuse the resolution line separately. Both of the pool's kicker burn spells did exactly
+that.
+
+Narrow on purpose: two printed lines, and a resolution of "deals N damage to <somewhere>" then "if
+this spell was kicked, it deals M damage instead". **Agonizing Demise also has kicker and is not
+this shape** — kicked, it throws the dead creature's power at that creature's controller, which is a
+different effect rather than a bigger number — so it stays unread rather than being forced through a
+reading about numbers.
+
+### `damageDestination`, factored out
+
+Both readers need the same four destinations and disagree only about the number, so the destination
+table moved out of `damageEffect`: "you", "each opponent", a sweep, or a target spec, each returning
+an `apply(context, amount)` plus whatever the destination decides — the targets, and the
+`removesACreature` hint where the spec is creature-only (D420).
+
+### A negative result: the zero guard cannot be told from its absence
+
+The sweep was first written with the hand-written cards' `if (amount <= 0) return state`. A break run
+deleting it failed nothing, and the reason is that `dealDamage` opens with `if (amount <= 0) return
+state` itself. So the branch was a check that cannot fail — **D415's lesson, found a second time** —
+and it is deleted rather than kept. What replaced it is a test that pins the equality: the compiled
+Hurricane with no branch against the hand-written one with a branch, both at X=0. If `dealDamage`
+ever stops refusing zero, that fails here instead of diverging quietly. `damageDestination`'s three
+inherited branches are left alone and the docblock now says they are belt and braces rather than
+claiming they are load-bearing.
+
+### A test that recorded the gap as a property, for the fifth time
+
+"Does not read a list of recipients as a sequence of clauses" asserted that Hurricane's phrase left
+the card **unread**. The property worth guarding was never that — it is that the "and" is not a
+clause boundary. Re-pointed onto the board: the flier takes the damage, the grounded 0/4 takes none,
+and every seat loses the life. Same family as the four D419 found.
+
+### Measured
+
+**407 of 538 lines (75.7%)**, up from 402 — Hurricane (1 line), Burst Lightning (2) and Breath of
+Darigaaz (2). Cards with a script **256 → 259 of 339**; cards with every printed line read
+**228 → 231 of 339**. The three are exactly the cards that left the incomplete list; nothing else
+moved. 4000 shuffled rows compile with 0 throws.
+
+Six deliberate breaks, six failures: the sweep never reaching the players, the with/without filter
+ignored, an unknown keyword accepted as a filter, the kicked amount never chosen, no `kicker` field
+emitted, and `damageDestination` skipping the sweep so a printed-number sweep fell through to a
+target spec.
