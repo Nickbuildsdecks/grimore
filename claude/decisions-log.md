@@ -25506,3 +25506,147 @@ argument for #326, the measure that would find them without a person in the loop
 Ichor Wellspring, the only two the per-card diff shows moving.
 
 Three deliberate breaks, three failing tests. compile.test.ts 327/327.
+
+## D410 — The gate's four middle steps ran nothing, and pnpm exited 0 saying so
+
+Found while typechecking the test files by hand: `tsc -p tsconfig.test.json` in `packages/rules-engine`
+exits 2 on four real errors in `compile.test.ts` — and the gate, run minutes earlier on the same
+tree, had printed **GATE OK**.
+
+### What the gate was running
+
+Nothing, for four of its eight steps. The steps are strings run as `$step`, unquoted, so the shell
+does both halves of its job: word splitting, which is wanted, and **pathname expansion**, which is
+not. CI writes the filter quoted:
+
+```
+pnpm -r --filter './packages/*' --filter './apps/*' run typecheck:tests
+```
+
+and inside a `$step` string the quotes are characters rather than quoting, so the shell expanded
+`./packages/*` into the six real directories. What pnpm received was
+
+```
+pnpm -r --filter ./packages/db ./packages/rules-engine … run typecheck:tests
+```
+
+where only the first path is a filter and the rest are positional arguments — making `./packages/db`
+the script name. pnpm answered
+
+```
+None of the selected packages has a "./packages/db" script
+```
+
+and **exited 0**. Four steps did that: the packages' `build`, `typecheck`, `typecheck:tests` and
+`test`. The gate's whole middle. For several days "gate green" meant `services-up.js`, `guards.js`,
+one legacy node test and the web build.
+
+### Why nothing caught it
+
+`check-gate.sh` exists because of D365 and asks exactly one question: does the gate fail when a step
+fails? It does, and it always did. **A step that runs nothing really does succeed**, so no amount of
+exit-code checking could see this. It is D365 one level out: not a check that cannot fail, but a
+check that never ran.
+
+The gate's own log said so in plain English on every run, once per step. Nobody read it, because the
+last line said GATE OK — which is the recurring lesson of this file, and this time the evidence was
+sitting in the file the script prints the path of.
+
+### The fix, and the check that goes with it
+
+`set -f` for the loop: pathname expansion off, word splitting on, so the glob reaches pnpm to match
+itself exactly as CI does. Quoting inside the step strings cannot do it.
+
+Then the fix carries a check, because an exit code cannot express this one. After each step the gate
+reads **only the lines that step appended** and fails on either of pnpm's two ways of selecting
+nothing — `No projects matched the filters` (no package matched) and `None of the selected packages
+has a … script` (packages matched, none has the script). The real bug printed the second, and only
+because the mangled command line turned a package path into a script name; a gate watching for one
+phrasing would miss the other spelling of the same hole.
+
+`GATE_STEPS` is now split on **newlines** rather than whitespace, which is what lets `check-gate.sh`
+inject a real `pnpm -r --filter … run …` step. Split on whitespace, that step became six one-word
+steps beginning with a bare `pnpm`, and the probe tested nothing. Both probes are in
+`check-gate.sh` now and both fail the gate: `bash scripts/check-gate.sh` reads
+
+```
+ok    the gate exits non-zero on a failing step (rc=1)
+ok    and it names the step that failed
+ok    the gate fails a step that ran nothing (rc=1): pnpm -r --filter ./nothing-here/* run build
+ok    the gate fails a step that ran nothing (rc=1): pnpm -r --filter ./packages/db run no-such-script
+ok    and it passes when every step passes
+gate verified
+```
+
+### What the hidden steps were hiding
+
+One defect, and only one: four `entersWith(...).script ?? {}` call sites in `compile.test.ts`, where
+`compileCard` returns a union whose `ok: false` arm has no `script`. vitest transpiles without
+checking types, so the tests passed throughout. Fixed by narrowing once in a sibling helper,
+`entersWithScript`, and leaving `entersWith` whole for the refusal rows that assert on `ok` and
+`unread`.
+
+Everything else was already green. The repaired gate runs **2,577 tests** across every package and
+app — rules-engine 1,786, apps/api 315, apps/web 246, shared 118, realtime 47, auto-tagger 26,
+recommender 15, mailer 10, db 7, theme 7 — plus four typecheck passes, the packages' build, the
+legacy token-parity test and the web production build. That is the number the gate should have been
+reporting all along.
+
+A note for the next reader: the figures in checkpoints between D368 and this entry were measured by
+running the suites directly rather than through the gate, so they stand. What does not stand is
+"gate green" as a claim about those commits — it meant less than it said.
+
+## D411 — A token the card names instead of describing
+
+Pirate's Prize: "Draw two cards. Create a Treasure token." Both clauses now read, so the card
+compiles whole.
+
+### Look it up, do not write it out
+
+Magic names a predefined token rather than describing it, and the bracketed reminder after it is not
+rules text (CR 207.2). So a Treasure's characteristics are **nowhere in the sentence** the compiler
+sees — the only way to describe one would be to transcribe the reminder as rules, which is D259's
+rule exactly: inventing the text of a real card is worse than leaving the mechanic out.
+
+So the reading is a lookup. `TREASURE_TOKEN` and `CLUE_TOKEN` are the engine's own definitions,
+written and tested by D243, and the compiled Treasure is the same object the hand-written card
+makes. That matters beyond the name: the Treasure's sacrifice-for-mana ability is what makes the
+mana solver count it, so a token that merely looked like one would be a spell that appears to ramp
+and does not.
+
+This is `investigate`'s argument (D403) generalised from one word to a table.
+
+### The table is the validation
+
+Two names, because there are two definitions. Food, Blood, Map and Powerstone are as real as
+Treasure and this engine has never needed one, so reading them would mean inventing their text.
+They are refused, and the refusal is asserted for three of them. The table grows when a definition
+does, not when a card does.
+
+Clue is in the table with **no pool card behind it** — Thraben Inspector prints "investigate"
+instead — and that is said rather than left to be noticed. It is there because the table's rule is
+"a token the engine has a definition for", and leaving it out would be an exception with no reason.
+A synthetic card pins it against `CLUE_TOKEN`'s own text and type line, so the entry is falsifiable:
+a break that describes a Clue from memory fails it.
+
+### The count was already solved
+
+`namedTokenFrom` returns the token and the **printed count word**, unread, exactly as `tokenFrom`
+does — so "two Treasure tokens" and a `for each` tail go through `tokenEffect`'s existing count
+machinery and needed nothing new. A break that hard-codes one fails the count test.
+
+### One refusal became an acceptance
+
+"Create a Treasure token." was a row in the token refusal table, for having no printed power and
+toughness and carrying rules text of its own. Both facts are still true and are the reason
+describing it is forbidden; the reading that replaced the refusal does not describe it. The reason
+is written where the row was rather than deleted with it.
+
+### Measured
+
+**395 → 396 of 538 printed lines (73.4% → 73.6%)**, and **251 → 252 of 339 cards**: Pirate's Prize,
+the only card the per-card diff shows moving.
+
+Three deliberate breaks, three failing tests. compile.test.ts 330/330, 4,000 shuffled rows with no
+throw — and the first increment in this series verified by a gate that actually runs CI's steps
+(D410).

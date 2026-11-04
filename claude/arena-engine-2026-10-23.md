@@ -10920,3 +10920,41 @@ test that moves the card to exile before resolving and asserts the draw on both 
 
 **393 → 395 of 538 lines (73.0% → 73.4%)**, **249 → 251 of 339 cards**. Three deliberate breaks,
 three failing tests; 327/327.
+
+## The gate's four middle steps ran nothing (D410)
+
+`tsc -p tsconfig.test.json` in the engine exits 2 on four real errors in `compile.test.ts`, on a
+tree the gate had called green minutes earlier. The gate's steps are strings run as `$step`,
+unquoted, so the shell expanded CI's `./packages/*` filter before pnpm saw it: the first path became
+the only filter, the rest positional, and `./packages/db` the script name. pnpm said *None of the
+selected packages has a "./packages/db" script* and **exited 0** — for the packages' build,
+typecheck, typecheck:tests and test. Four of eight steps, for several days.
+
+`check-gate.sh` could not have caught it: it asks whether the gate fails when a step fails, and a
+step that runs nothing really does succeed. D365 one level out.
+
+Fixed with `set -f` for the loop, plus a check an exit code cannot express: each step's own appended
+lines are read and either of pnpm's two selected-nothing messages fails the gate. `GATE_STEPS` is
+newline-separated now so `check-gate.sh` can inject a real pnpm step, and it does — two of them, one
+per message. `bash scripts/check-gate.sh` prints **gate verified**.
+
+The hidden steps were hiding exactly one defect: four `entersWith(...).script ?? {}` call sites
+where the `ok: false` arm has no `script`. Everything else was green. The repaired gate runs
+**2,577 tests** across every package and app, four typecheck passes, the packages' build, the legacy
+token-parity test and the web build.
+
+## A token the card names instead of describing (#317, D411)
+
+Pirate's Prize, whole. "Create a Treasure token" names a token rather than describing one and its
+bracketed reminder is not rules text (CR 207.2), so the characteristics are nowhere in the sentence:
+the reading is a **lookup** of `TREASURE_TOKEN`, the definition D243 wrote, which is `investigate`'s
+argument generalised from one word to a table. The object matters beyond its name — the Treasure's
+sacrifice-for-mana ability is what makes the mana solver count it.
+
+Two names, because there are two definitions; Food, Blood and Powerstone are refused, because
+reading them would mean inventing their text. Clue is in the table with no pool card behind it, said
+out loud, and pinned by a synthetic card against `CLUE_TOKEN`'s own text. The count goes through
+`tokenEffect`'s existing machinery, so "two Treasure tokens" needed nothing new.
+
+**395 → 396 of 538 lines (73.4% → 73.6%)**, **251 → 252 of 339 cards**. Three deliberate breaks,
+three failing tests; 330/330; 4,000 rows at scale with no throw.

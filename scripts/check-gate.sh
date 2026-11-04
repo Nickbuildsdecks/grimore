@@ -11,6 +11,16 @@
 #
 #   bash scripts/check-gate.sh
 #
+# ## The second question, which this file could not answer before D410
+#
+# "Does the gate fail?" and "does the gate run anything?" are different questions, and for several
+# days the answer to the second was no: the shell expanded CI's `./packages/*` filter before pnpm
+# saw it, so all four `pnpm -r` steps selected nothing, said so, and **exited 0**. Every check above
+# passed throughout, because a step that does nothing really does succeed.
+#
+# So the third case below asks the second question: a step whose output contains pnpm's
+# selected-nothing line must fail the gate. `pnpm -r --filter ./nothing-here/* run build` is that
+# step, phrased as the real failure was.
 set -o pipefail
 here="$(dirname "$0")"
 bad=0
@@ -33,6 +43,24 @@ if printf '%s' "$out" | grep -q 'GATE OK'; then
   echo "FAIL  the gate printed GATE OK on a failing step"
   bad=1
 fi
+
+# D410: a step that selects no packages exits 0, so only reading its output catches it. Both of
+# pnpm's ways of saying it are asked for: the real bug printed the second.
+for nothing in \
+  "pnpm -r --filter ./nothing-here/* run build" \
+  "pnpm -r --filter ./packages/db run no-such-script"; do
+  out=$(GATE_STEPS="$nothing" GATE_LOG="$(mktemp -t gate-check-XXXXXX.log)" bash "$here/gate.sh" 2>&1)
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "FAIL  the gate exited 0 on a step that ran nothing: $nothing"
+    bad=1
+  elif ! printf '%s' "$out" | grep -q 'pnpm selected nothing'; then
+    echo "FAIL  the gate failed but did not say the step ran nothing: $nothing"
+    bad=1
+  else
+    echo "ok    the gate fails a step that ran nothing (rc=$rc): $nothing"
+  fi
+done
 
 out=$(GATE_STEPS="true" GATE_LOG="$(mktemp -t gate-check-XXXXXX.log)" bash "$here/gate.sh" 2>&1)
 rc=$?

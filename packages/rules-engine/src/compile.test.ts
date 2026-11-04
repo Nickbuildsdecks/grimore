@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compileCard, fullyCompiled } from './compile.js';
 import { STARTER_DECKS } from './starterDecks.js';
-import { isKeywordDeclaration, scriptFor } from './scripts.js';
+import { CLUE_TOKEN, isKeywordDeclaration, scriptFor } from './scripts.js';
 import { zoneKey, type CardDef } from './cards.js';
 import { characteristicsOf, printedLandwalk } from './characteristics.js';
 import type { CardDataRow } from './fromCardData.js';
@@ -1320,8 +1320,14 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       */
       // A granted ability, not a keyword: `printedKeywords` reads nothing out of it.
       ['Create a 1/1 black Pest creature token with "When this creature dies, you gain 1 life."'],
-      // No printed power and toughness, and the token carries rules text of its own.
-      ['Create a Treasure token.'],
+      /*
+        "Create a Treasure token." **left** this list, and the reason is worth keeping where the
+        refusal was. It was refused for having no printed power and toughness and carrying rules
+        text of its own — which is true of every named token and is exactly why describing one from
+        its reminder text is forbidden (D259). The reading that replaced the refusal does not
+        describe it: it looks `TREASURE_TOKEN` up, the definition D243 wrote. A named token the
+        engine has no definition for is still refused, and the test above says so.
+      */
       ["Create a token that's a copy of target creature you control."],
       // A keyword the engine cannot read back would be a token that silently lacks it.
       ['Create a 1/1 white Spirit creature token with soaring.'],
@@ -3284,6 +3290,21 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
 
     /*
+      The same compilation's **script**, for the rows that only want to read a field off it.
+
+      `compileCard` returns a union and the `ok: false` arm has no `script` at all, so the four
+      acceptance rows below used to write `entersWith(...).script ?? {}` — which vitest happily
+      transpiled and the type checker rejects. They sat in this file for days because the gate step
+      that would have said so was running nothing (D410). Narrowing once here is what the call sites
+      actually mean, and it keeps `entersWith` whole for the refusal rows, which assert on `ok` and
+      `unread`.
+    */
+    const entersWithScript = (text: string): Record<string, unknown> => {
+      const compiled = entersWith(text);
+      return compiled.ok ? (compiled.script as Record<string, unknown> | undefined) ?? {} : {};
+    };
+
+    /*
       Endless One, whose whole card is one sentence about a field the engine has had all along.
       `entersWith` is plain data with no closure in it, so this is deep equality against the
       hand-written card — the strictest comparison available.
@@ -3298,13 +3319,13 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     it('reads a printed count and a word count, not only X', () => {
       // X is the cast's X; a number or a number-word is itself. Nothing in the pool prints the
       // second form as a sentence, which is why the fixture is synthetic.
-      expect(field(entersWith('Arriving Thing enters the battlefield with three +1/+1 counters on it.').script ?? {}, 'entersWith'))
+      expect(field(entersWithScript('Arriving Thing enters the battlefield with three +1/+1 counters on it.'), 'entersWith'))
         .toEqual({ counter: '+1/+1', amount: 3 });
-      expect(field(entersWith('Arriving Thing enters the battlefield with a +1/+1 counter on it.').script ?? {}, 'entersWith'))
+      expect(field(entersWithScript('Arriving Thing enters the battlefield with a +1/+1 counter on it.'), 'entersWith'))
         .toEqual({ counter: '+1/+1', amount: 1 });
-      expect(field(entersWith('Arriving Thing enters the battlefield with four ice counters on it.').script ?? {}, 'entersWith'))
+      expect(field(entersWithScript('Arriving Thing enters the battlefield with four ice counters on it.'), 'entersWith'))
         .toEqual({ counter: 'ice', amount: 4 });
-      expect(field(entersWith('Arriving Thing enters the battlefield with X charge counters on it.').script ?? {}, 'entersWith'))
+      expect(field(entersWithScript('Arriving Thing enters the battlefield with X charge counters on it.'), 'entersWith'))
         .toEqual({ counter: 'charge', amount: 'x' });
     });
 
@@ -4610,6 +4631,108 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         const after = (field(script, 'triggers') as readonly TriggerDef[])[1]!
           .effect(contextOn(moved, 0 as SeatIndex, card));
         expect(after.drawsOwed.length).toBe(moved.drawsOwed.length + 1);
+      }
+    });
+  });
+
+  describe('a token the card names instead of describing', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string,
+    ): EffectContext => ({
+      state, controller: seat, source, targets: [], decisions: [],
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const resolve = (script: unknown) =>
+      field(script, 'onResolve') as (c: EffectContext) => GameState;
+
+    it("draws and makes the engine's own Treasure, as Pirate's Prize does", () => {
+      /*
+        "Create a Treasure token" names a token rather than describing one, and the bracketed
+        reminder after it is not rules text (CR 207.2) — so the token's characteristics are nowhere
+        in the sentence this reader sees. Writing them out from the reminder would be transcribing
+        a real card's text (D259), so the reading is a **lookup** of `TREASURE_TOKEN`, which is the
+        same argument `investigate` is read by and the same object the hand-written card makes.
+
+        That object matters beyond its name: the Treasure's sacrifice-for-mana ability is what makes
+        the mana solver count it, so a token that merely looked like one would be a spell that
+        appears to ramp and does not.
+      */
+      const mine = compiledScript("Pirate's Prize");
+      expect(mine.unread).toEqual([]);
+      const base = arena({ decks: { 0: 'tidal-mind', 1: 'ember-rush' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const after = resolve(mine.script)(ctx);
+      expect(after).toEqual(resolve(scriptFor("Pirate's Prize"))(ctx));
+      /*
+        And right rather than merely equal: two cards in hand and one Treasure on the battlefield.
+        The state comparison above would also pass if both readings drew the wrong number, and this
+        says which number it is.
+      */
+      expect(ids(after, 0 as SeatIndex, 'hand')).toHaveLength(
+        ids(base, 0 as SeatIndex, 'hand').length + 2,
+      );
+      expect(ids(after, 0 as SeatIndex, 'battlefield')
+        .filter((id) => nameOf(after, id) === 'Treasure')).toHaveLength(1);
+    });
+
+    it('reads a count on a named token, through the same machinery as a described one', () => {
+      // The count is deliberately not this reader's business: `namedTokenFrom` hands back the
+      // printed word and `tokenEffect`'s existing count logic makes sense of it, so "two" needs
+      // nothing new. A reader that ignored the word would make one.
+      const card = compileCard({
+        name: 'Doubloon Cache', type_line: 'Sorcery', mana_cost: '{2}', cmc: 2, colors: [],
+        oracle_text: 'Create two Treasure tokens.',
+      });
+      expect(card.ok).toBe(true);
+      if (!card.ok) return;
+      expect(card.unread).toEqual([]);
+      const base = arena({ decks: { 0: 'tidal-mind', 1: 'ember-rush' }, turn: 3 });
+      const after = resolve(card.script)(contextOn(base, 0 as SeatIndex, 'c1'));
+      expect(ids(after, 0 as SeatIndex, 'battlefield')
+        .filter((id) => nameOf(after, id) === 'Treasure')).toHaveLength(2);
+    });
+
+    it('reads a Clue by name, which is the other definition the engine has', () => {
+      /*
+        No card in the pool prints "Create a Clue token" — Thraben Inspector says "investigate"
+        instead — so this is the one entry in the table with no pool card behind it. It is here
+        because the table's rule is "a token the engine has a definition for", and `CLUE_TOKEN` is
+        one; leaving it out would be an exception with no reason. The assertion is still about real
+        engine data: the token made is the Clue, with the text D243 wrote.
+      */
+      const card = compileCard({
+        name: 'Paper Trail', type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: [],
+        oracle_text: 'Create a Clue token.',
+      });
+      expect(card.ok).toBe(true);
+      if (!card.ok) return;
+      expect(card.unread).toEqual([]);
+      const base = arena({ decks: { 0: 'tidal-mind', 1: 'ember-rush' }, turn: 3 });
+      const after = resolve(card.script)(contextOn(base, 0 as SeatIndex, 'c1'));
+      const clues = ids(after, 0 as SeatIndex, 'battlefield')
+        .filter((id) => nameOf(after, id) === 'Clue');
+      expect(clues).toHaveLength(1);
+      const def = after.cardDefs[after.instances[clues[0]!]!.defKey]!;
+      expect(def.oracleText).toBe(CLUE_TOKEN.oracleText);
+      expect(def.typeLine).toBe(CLUE_TOKEN.typeLine);
+    });
+
+    it('refuses a predefined token the engine has no definition for', () => {
+      /*
+        Food is as real a token as Treasure and the engine has never needed one, so the only way to
+        read it would be to invent "{2}, {T}, Sacrifice this artifact: You gain 3 life" — the text
+        of a real card, written from memory. The refusal is the point of the table being a table:
+        an unread line is flagged for a human (D362), an invented Food plays and is wrong.
+      */
+      for (const named of ['Food', 'Blood', 'Powerstone']) {
+        const card = compileCard({
+          name: `Larder ${named}`, type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: [],
+          oracle_text: `Create a ${named} token.`,
+        });
+        expect(card.ok).toBe(true);
+        if (card.ok) expect(card.script).toBeUndefined();
       }
     });
   });

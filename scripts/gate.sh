@@ -49,7 +49,33 @@
 # job verbatim, with `services-up.js` in front. It is slower than turbo, and that is the trade: a
 # gate that is fast and sometimes wrong is worth less than one that is slow and right.
 #
+# **D410 — the shell expanded CI's filter glob, and pnpm exited 0 anyway.** The fourth trap, and the
+# worst of them, because it made this gate's whole middle silent for several days. CI writes the
+# filter quoted:
+#
+#     pnpm -r --filter './packages/*' --filter './apps/*' run typecheck:tests
+#
+# and the steps here are strings run as `$step`, unquoted, so the shell did both halves of its job:
+# word splitting (wanted) and **pathname expansion** (not). `./packages/*` became the six real
+# directories, so the command pnpm actually received was
+#
+#     pnpm -r --filter ./packages/db ./packages/rules-engine … run typecheck:tests
+#
+# where only the first path is a filter and the rest are positional — making `./packages/db` the
+# script name. pnpm answered `None of the selected packages has a "./packages/db" script` and
+# **exited 0**, so all four `pnpm -r` steps — build, typecheck, typecheck:tests and test — passed by
+# doing nothing. Quoting inside the string cannot fix it: inside `$step` the quotes are characters,
+# not quoting. `set -f` can, by switching pathname expansion off for the loop and leaving word
+# splitting on, which hands pnpm the glob to match itself, exactly as CI does.
+#
+# It is the same shape as D365 one level out: not a step that cannot fail, but a step that never
+# ran. `check-gate.sh` proved the exit code was real and could not have caught this — a step that
+# does nothing really does succeed. So the fix carries its own check: the loop below fails the gate
+# on any step whose output says pnpm selected nothing, because "nothing to do" is the one answer a
+# mirror of CI must never accept quietly.
 set -o pipefail
+# See D410 above: the step strings carry CI's filter globs, and only pnpm may expand them.
+set -f
 cd "$(dirname "$0")/.." || exit 1
 
 # Overridable so CI, or a second local Postgres, can point this somewhere else.
@@ -64,9 +90,18 @@ echo "gate log: $log"
 
 # `GATE_STEPS` lets `check-gate.sh` run this script against a step that is certain to fail, which is
 # the only way to know the exit code is real. Unset in every normal run.
+#
+# **One step per line**, not one per word. It was split on whitespace until D410, which was fine
+# while every injected step was a single word (`false`, `true`) and useless the moment one needed
+# arguments: `pnpm -r --filter … run build` became six one-word steps, the first of which was
+# `pnpm` on its own. The check that proves a step can run nothing needs a real pnpm invocation, so
+# the separator is now the newline.
 if [ -n "${GATE_STEPS:-}" ]; then
-  # shellcheck disable=SC2086
+  old_ifs=$IFS
+  IFS=$'\n'
+  # shellcheck disable=SC2206
   set -- $GATE_STEPS
+  IFS=$old_ifs
 else
   # Deliberately CI's `v2` job, step for step, with `services-up.js` in front of it. See the
   # "mirrors CI" note in this file's header for why it is spelled out rather than using the
@@ -84,6 +119,7 @@ fi
 
 for step in "$@"; do
   echo "=== $step ===" >> "$log"
+  before=$(( $(wc -l < "$log") + 1 ))
   # Run, then capture. Not `if ! $step`, for the reason in this file's header.
   $step >> "$log" 2>&1
   rc=$?
@@ -91,6 +127,20 @@ for step in "$@"; do
     echo "GATE FAILED at: $step (rc=$rc)"
     tail -40 "$log"
     exit "$rc"
+  fi
+  # D410: a step that ran nothing, which pnpm reports and then exits 0 on. Read only the lines this
+  # step appended, so an earlier step's output cannot answer for this one.
+  #
+  # Two messages, because pnpm has two ways of selecting nothing and both exit 0: no package matched
+  # the filter ("No projects matched the filters"), or packages matched and none has the script
+  # ("None of the selected packages has a … script"). The real bug was the second, and it only read
+  # that way because the mangled command line turned a package path into the script name — so a
+  # gate that watched for one phrasing would have missed the other spelling of the same hole.
+  if sed -n "${before},\$p" "$log" \
+    | grep -qE 'None of the selected packages|No projects matched the filters'; then
+    echo "GATE FAILED at: $step (pnpm selected nothing — see D410)"
+    sed -n "${before},\$p" "$log"
+    exit 1
   fi
 done
 

@@ -10614,6 +10614,49 @@ function countOfThing(
   return null;
 }
 
+/**
+ * The two tokens the engine has **definitions** for, looked up by the name a card prints.
+ *
+ * Magic names a predefined token instead of describing it — "Create a Treasure token" — and the
+ * reminder text in brackets after it is not rules text (CR 207.2). So the token's actual
+ * characteristics are nowhere in the sentence, and a reader that wrote them out from the reminder
+ * would be transcribing text the card does not print as rules: D259's rule, and the same argument
+ * `investigate` is read by.
+ *
+ * The answer is the same one: look the definition up rather than build it. `TREASURE_TOKEN` and
+ * `CLUE_TOKEN` are the engine's own, written and tested by D243, so a compiled Treasure is the same
+ * object a hand-written card makes — including the sacrifice-for-mana ability that makes the mana
+ * solver count it.
+ *
+ * ## Why only two names
+ *
+ * Because there are only two definitions. Food, Blood, Map, Powerstone and the rest are real
+ * predefined tokens this engine has never needed, and the only way to read one would be to invent
+ * its text. An unread line is dealt to a human (D362); an invented Food token is a card that plays
+ * and is wrong. So the map **is** the validation, and the table grows when a definition does.
+ *
+ * The count is returned unread, as the word the card printed, exactly as `tokenFrom` returns it:
+ * both go through `tokenEffect`'s own count machinery, so "two Treasure tokens" and "a Clue token
+ * for each artifact you control" need nothing new here.
+ */
+const NAMED_TOKENS: Readonly<Record<string, CardDef>> = {
+  Treasure: TREASURE_TOKEN,
+  Clue: CLUE_TOKEN,
+};
+
+function namedTokenFrom(body: string): { token: CardDef; printed: string } | null {
+  const made = /^create (\w+) (\w+) tokens?$/i.exec(body.trim());
+  if (made === null) return null;
+  /*
+    The name is matched **case-sensitively** against the table, for `tokenFrom`'s reason: a token's
+    name is a proper noun and every card prints it capitalised, so a lowercase word reaching here is
+    not a name this reader recognises.
+  */
+  const token = NAMED_TOKENS[made[2]!];
+  if (token === undefined) return null;
+  return { token, printed: made[1]! };
+}
+
 function tokenEffect(clause: string, name: string): ReadEffect | null {
   /*
     The count's tail is taken off **before** the token itself is read, because `with (.+)` is greedy
@@ -10640,7 +10683,12 @@ function tokenEffect(clause: string, name: string): ReadEffect | null {
   if ((announced !== null || perThing !== null) && counted === null) return null;
   const body = announced?.[1] ?? perThing?.[1] ?? flat;
 
-  const made = tokenFrom(body.trim());
+  /*
+    Two shapes, one count. A described token carries its own power, toughness, colours and subtype;
+    a named one carries none of them and is looked up. Either way what comes back is a definition
+    and the printed count word, which is all the rest of this function reads.
+  */
+  const made = tokenFrom(body.trim()) ?? namedTokenFrom(body.trim());
   if (made === null) return null;
 
   // Either a printed number, or a board count to supply it — never both and never neither.
