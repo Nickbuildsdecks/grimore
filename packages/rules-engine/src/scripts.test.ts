@@ -21392,3 +21392,126 @@ describe('a trigger that watches the creature it is attached to', () => {
     expect(s.instances[host]!.counters['+1/+1']).toBeUndefined();
   });
 });
+
+/*
+  The step a card names, raised for every step rather than for two of them (D434).
+
+  `onEnterStep` raised `{ kind: 'step' }` from inside its `upkeep` and `end` cases and nowhere else,
+  so the other eleven steps raised nothing at all. That was invisible while the only cards asking
+  were an upkeep card and an end-step card — and then the compiler started reading "At the beginning
+  of combat on your turn", which 262 legal corpus lines and 19 compilable cards print. Those cards
+  reported `unread: []`, were flagged as fully automated, and did nothing whatsoever.
+
+  Every test here is a **compiled** card from printed corpus text, driven through `customDeck` —
+  the route an uploaded decklist takes (D430) — because that is how the cards this fixes reach a
+  table. A compile-level assertion on the trigger's shape could not have caught any of it: the shape
+  was already right and the event did not exist.
+*/
+describe('the step of the turn a card names, as printed text', () => {
+  /** A one-card custom deck around the named printed row, plus lands and bodies to fill it. */
+  const tableWith = (row: Record<string, unknown>, battlefield: readonly string[]) => {
+    const name = row['name'] as string;
+    const list = customDeck({
+      id: 'step-list',
+      name,
+      entries: [
+        { name, count: 1 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Mountain', count: 55 },
+      ],
+      data: [row as never],
+    });
+    expect(list.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'step-list', 1: 'verdant-guard' },
+      deckSpecs: { 'step-list': list.deck },
+      battlefield: { 0: battlefield },
+      turn: 3,
+      firstSeat: 0,
+    });
+  };
+
+  it('fires the beginning-of-combat trigger, which 19 compiled cards print and none could use', () => {
+    /*
+      Luke Cage, Hero for Hire, printed text out of the corpus: "At the beginning of combat on your
+      turn, create a Treasure token." Chosen over the eight other compilable cards in this bucket
+      because its ability takes no target, so the Treasure on the battlefield is the whole
+      observable — the others all say "target creature you control" and would make this a test about
+      how a trigger asks for its target.
+
+      Before the uniform raise, the probe that stood in for this test reached declare-attackers with
+      nothing created, nothing on the stack and nothing in the log.
+    */
+    let s = tableWith({
+      name: 'Luke Cage, Hero for Hire', type_line: 'Legendary Creature — Human Mercenary Hero',
+      mana_cost: '{2}{R}{R}', cmc: 4, colors: ['R'], layout: 'normal', power: '4', toughness: '4',
+      oracle_text: 'Trample\nAt the beginning of combat on your turn, create a Treasure token.',
+    }, ['Luke Cage, Hero for Hire']);
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).not.toContain('Treasure');
+    s = drain(advanceTo(s, 'begin-combat'));
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield').filter((n) => n === 'Treasure')).toHaveLength(1);
+  });
+
+  it("fires an of: 'any' upkeep trigger on the opponent's turn as well as your own", () => {
+    /*
+      Celestial Force: "At the beginning of each upkeep, you gain 3 life." The whole content of
+      `of: 'any'` is that *each* means each, so the reading that matters is the one taken on a turn
+      that is **not** yours — a trigger that quietly meant `of: 'you'` passes any one-turn test.
+
+      Two readings, one per turn, because the claim has two halves: it fires on yours (which the
+      old default also did) and on theirs (which it did not).
+    */
+    let s = tableWith({
+      name: 'Celestial Force', type_line: 'Creature — Elemental', mana_cost: '{5}{W}{W}{W}',
+      cmc: 8, colors: ['W'], layout: 'normal', power: '7', toughness: '7',
+      oracle_text: 'At the beginning of each upkeep, you gain 3 life.',
+    }, ['Celestial Force']);
+    // `arena` leaves the table in the active seat's upkeep with the trigger raised and unresolved.
+    const start = life(s, 0 as SeatIndex);
+    expect(s.activeSeat).toBe(0);
+    s = drain(s);
+    expect(life(s, 0 as SeatIndex)).toBe(start + 3);
+    // And now the opponent's upkeep, which is the half this test exists for.
+    s = drain(nextTurn(s));
+    expect(s.activeSeat).toBe(1);
+    expect(s.step).toBe('upkeep');
+    expect(life(s, 0 as SeatIndex)).toBe(start + 6);
+  });
+
+  it("fires an of: 'any' end-step trigger, which is Spark Elemental sacrificing itself", () => {
+    /*
+      "At the beginning of the end step, sacrifice Spark Elemental." Printed as "**the** end step"
+      rather than "each", which is the same trigger in a different hand — and this card is why the
+      spelling is not academic: an Elemental that read "your end step" would survive every turn it
+      was not cast on, which is a 3/1 trample haste for one mana that stays.
+    */
+    let s = tableWith({
+      name: 'Spark Elemental', type_line: 'Creature — Elemental', mana_cost: '{R}',
+      cmc: 1, colors: ['R'], layout: 'normal', power: '3', toughness: '1',
+      oracle_text: 'Trample, haste\nAt the beginning of the end step, sacrifice Spark Elemental.',
+    }, ['Spark Elemental']);
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toContain('Spark Elemental');
+    // `nextTurn` rather than `advanceTo`: a 3/1 with haste owes an attack declaration on the way
+    // through, and the end step is inside the turn it walks.
+    s = drain(nextTurn(s));
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).not.toContain('Spark Elemental');
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Spark Elemental');
+  });
+
+  it('fires a first-main-phase trigger, the step that had no raise and no reader', () => {
+    /*
+      Four Knocks: "At the beginning of your first main phase, draw a card." Measured across the
+      main phase alone rather than from the top of the turn, because the draw step draws a card too
+      and a test that counted both would pass with the trigger deleted.
+    */
+    let s = tableWith({
+      name: 'Four Knocks', type_line: 'Enchantment', mana_cost: '{2}{W}',
+      cmc: 3, colors: ['W'], layout: 'normal',
+      oracle_text: 'At the beginning of your first main phase, draw a card.',
+    }, ['Four Knocks']);
+    s = drain(advanceTo(s, 'draw'));
+    const held = ids(s, 0 as SeatIndex, 'hand').length;
+    s = drain(advanceTo(s, 'precombat-main'));
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held + 1);
+  });
+});

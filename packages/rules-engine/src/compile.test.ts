@@ -6445,17 +6445,25 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       ["At the beginning of each opponent's upkeep, draw a card."],
       ["At the beginning of each opponent's draw step, draw a card."],
       ['At the beginning of combat on each opponent\'s turn, draw a card.'],
-      ['At the beginning of each end step, draw a card.'],
     ])('leaves %s alone, because "your" is the half that is the rule', (text) => {
       /*
-        314 cards in the corpus open "At the beginning of each opponent's …" and this reads none of
-        them: `of: 'you'` is wrong for them and `of: 'any'` is wrong too, so they stay unread (D362)
-        rather than firing on the wrong turn.
+        `each opponent's` is still read by nothing: `of: 'you'` is wrong for it and `of: 'any'` is
+        wrong too, so it stays unread (D362) rather than firing on the wrong turn. D434 measured
+        what the missing third value would buy — 43 printed lines, **no** card whose body this
+        compiler can finish — and declined to add `of: 'opponent'` on that count; `TriggerDef`'s
+        `step` docblock carries the figure.
 
         One row per *new* prologue as well as the upkeep, which a break run is what established:
         widening only the draw-step pattern to "each opponent's" failed nothing while this described
         the upkeep alone, so the claim "of: 'you' is the card saying your" was asserted for one
         prologue and assumed for the other two.
+
+        **"At the beginning of each end step" was the fourth row here and has been removed, because
+        it is now read** (D434): `of: 'any'` is exactly right for it, 152 printed lines say it in
+        three spellings, and 17 of those cards compile whole. This row had encoded a *gap* as a
+        rule — "'your' is the half that is the rule" was true of what the compiler did, not of
+        Magic — and a test that pins a gap fails the day the gap closes, which is this one. The new
+        reading has its own table in `the step of the turn, read off the prologue`.
       */
       const read = card(text as string, 'Creature — Human Soldier');
       expect(read.ok).toBe(true);
@@ -6865,5 +6873,71 @@ describe('the trigger whose subject is the attached permanent, as printed text',
     if (!read.ok) return;
     expect(read.unread.map((entry) => entry.line))
       .toEqual(['Whenever equipped creature attacks, untangle the fourth harmonic.']);
+  });
+});
+
+/*
+  The step-family prologues, as printed text (D434).
+
+  Three rows shipped out of twelve candidate spellings, and the table below is the half the runtime
+  tests in `scripts.test.ts` cannot state: *which* trigger each printed sentence becomes. The
+  runtime tests prove the events now exist and fire on the right turns; these prove the reading maps
+  the sentence to the right step and the right `of`, and that the six spellings with no compilable
+  card stay unread rather than being approximated by a near neighbour.
+*/
+describe('the step of the turn, read off the prologue', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const permanent = (text: string) => compileCard({
+    name: 'Stepwise Thing', type_line: 'Enchantment', mana_cost: '{2}', cmc: 2,
+    colors: [], layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    // The four `any` spellings of the two steps that have compilable cards, and the one `you`
+    // spelling that had neither a raise nor a reader. Counts are legal corpus lines.
+    ['At the beginning of each end step', 'end', 'any'],
+    ['At the beginning of the end step', 'end', 'any'],
+    ["At the beginning of each player's end step", 'end', 'any'],
+    ["At the beginning of each player's upkeep", 'upkeep', 'any'],
+    ['At the beginning of each upkeep', 'upkeep', 'any'],
+    ['At the beginning of your first main phase', 'precombat-main', 'you'],
+    // And the two that already existed, which the uniform raise is what made live.
+    ['At the beginning of combat on your turn', 'begin-combat', 'you'],
+    ['At the beginning of your upkeep', 'upkeep', 'you'],
+    ['At the beginning of your end step', 'end', 'you'],
+  ])('%s becomes %s/%s', (prologue, step, of) => {
+    const read = permanent(`${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]!.on).toEqual({ kind: 'step', step, of });
+  });
+
+  it.each([
+    /*
+      The six spellings with no compilable card, left unread on purpose, and the three that are a
+      different mechanism rather than a different count. Each is asserted with a body the compiler
+      definitely reads, so the only thing that can leave the line unread is the prologue — without
+      that, a row quietly added later would make these pass while still being unread for a real
+      card, and an unread assertion that cannot fail is the trap D415 and D433 are both about.
+    */
+    ["each opponent's upkeep", '31 printed lines, 0 cards the compiler can finish'],
+    ["each opponent's end step", '7 lines, 0 cards'],
+    ['combat on each opponent’s turn', 'the apostrophe Scryfall prints is not even this one'],
+    ['each combat', '27 lines, 0 cards'],
+    ["each player's draw step", '13 lines, 0 cards'],
+    ['your second main phase', '10 lines, 0 cards'],
+    ["the upkeep of enchanted creature's controller", "an attachment's seat, not `of`"],
+    ['each of your postcombat main phases', 'a turn structure this engine does not have'],
+    ['your next upkeep', 'a delayed trigger, scheduled rather than printed'],
+  ])('leaves "At the beginning of %s" unread: %s', (prologue) => {
+    const read = permanent(`At the beginning of ${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+    expect(field(read.script, 'triggers')).toBeUndefined();
   });
 });

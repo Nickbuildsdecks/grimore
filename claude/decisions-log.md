@@ -27054,3 +27054,99 @@ still required for an Aura, which cannot exist without "Enchant …".
 
 **Nine breaks, eight of which now fail a named test.** The ninth is the holder/`inst` one above, and
 it is recorded as provably indistinguishable today rather than as coverage.
+
+## D434 — Eleven of the thirteen steps raised no event, so the cards that named them did nothing
+
+`onEnterStep` raised `{ kind: 'step' }` from inside its `upkeep` case and its `end` case. There is no
+case for `begin-combat` at all, and the `draw` case returns its deferred draw without raising
+anything. So for eleven of the thirteen steps, a trigger that watched the step could not fire —
+not because the matcher was wrong, but because no event ever existed to match.
+
+That was invisible for as long as the only cards asking were an upkeep card and an end-step card.
+Then D426 added two prologue rows, and **"At the beginning of combat on your turn" is the third
+biggest step bucket in Magic**: 262 legal corpus lines, 19 of them on cards this compiler reads
+whole. Every one of those cards compiled with `unread: []`, was reported fully automated, and did
+nothing whatsoever. Same for the 18 lines of "At the beginning of your draw step".
+
+**Confirmed by probe before anything was written**, because a claim about an event that does not
+exist is exactly the kind that looks obvious and is sometimes wrong: a compiled Luminarch Aspirant
+on the battlefield reached declare-attackers with no counter on any creature, nothing on the stack
+and nothing in the log.
+
+### One raise, for every step
+
+The fix is to raise it once in `advanceStep`, after the step's own turn-based action and before
+`fireDelayed`, and to take the two raises out of `onEnterStep`. That is the printed order either
+way — the untap, the draw, the Saga's lore counter and the monarch's card all happen as the step
+begins, and what triggers on the step goes on the stack after them.
+
+Every step, `untap` and `cleanup` included, rather than a list of the steps a card can name. A
+trigger raised in a step where nobody receives priority waits for the next step that grants it,
+which is the rule; and a list would be a second thing to keep in step with `TRIGGER_SHAPES`, which
+is the lesson D433 paid for twice in one increment.
+
+The break run shows how much that single line now carries: deleting it fails **37** tests, among
+them Phyrexian Arena and Ball Lightning — cards that have worked since #10.
+
+### Three prologue rows out of twelve candidates, and the count that decided it
+
+Twelve printed spellings of "At the beginning of …" were counted in the legal corpus. The number of
+*lines* is not what decides a row: a row for a card whose body stays unread changes nothing, because
+the line is flagged either way (D362). So every candidate was compiled across the corpus first, and
+the column that matters is the last one.
+
+| printed | lines | cards the compiler can finish | shipped |
+| --- | --- | --- | --- |
+| each end step / the end step / each player's end step | 152 | **17** | `end`, any |
+| each player's upkeep / each upkeep | 149 | **10** | `upkeep`, any |
+| your first main phase | 47 | **2** | `precombat-main`, you |
+| each opponent's upkeep | 31 | 0 | no |
+| each combat | 27 | 0 | no |
+| each player's draw step | 13 | 0 | no |
+| your second main phase | 10 | 0 | no |
+| each opponent's end step | 7 | 0 | no |
+| combat on each opponent's turn | 5 | 0 | no |
+
+**`of: 'opponent'` was written and then taken back out.** Three of those spellings need it — 43
+printed lines — and not one of them has a body this compiler can read. The field, its matcher arm
+and its three rows would have been a mechanism no card exercises, and this repository's own rule is
+that an untested mechanism added ahead of need is the one that is wrong when the corpus reaches it.
+The counts are recorded in `TriggerDef`'s `step` docblock and in `TRIGGER_SHAPES`' table so the
+question is one command to re-ask rather than a family to rediscover.
+
+Also refused, for reasons that are not about counts: "the upkeep of enchanted creature's
+controller" (21 lines) wants an *attachment's* seat, which is D433's `who: 'attached'` one level
+out rather than `of`; "each of your postcombat main phases" (8) is a turn structure this engine does
+not have; "your next upkeep" (5) is a delayed trigger scheduled by an effect, not a prologue.
+
+### A test that pinned the gap instead of the card
+
+`compile.test.ts` asserted that "At the beginning of each end step, draw a card." stays **unread**,
+under the heading *"because 'your' is the half that is the rule"*. That was true of what the
+compiler did and false of Magic, and the row failed the moment the gap closed — which is the right
+behaviour for a test and the wrong content for one. It is retired in place, with the reason and the
+new counts written where it stood. The three `each opponent's` rows beside it stay, because those
+really are still unread.
+
+### Verified
+
+Four runtime tests, each a **compiled** card from printed corpus text driven through `customDeck` —
+the route an uploaded decklist takes (D430) — because a compile-level assertion on the trigger's
+shape could not have caught any of this: the shape was already right. Luke Cage for begin-combat
+(chosen over eight others in the bucket because its ability takes no target, so the Treasure is the
+whole observable), Celestial Force for `of: 'any'` on the opponent's turn, Spark Elemental for "the
+end step", Four Knocks for the first main phase, measured across the main phase alone so the draw
+step's own card cannot carry the test.
+
+Plus an 18-row compile table for which sentence becomes which trigger, and nine rows asserting the
+refused spellings stay unread — each with a body the compiler definitely reads, so the prologue is
+the only thing that can leave the line unread.
+
+**Six breaks, six failures.** One honest gap in that: collapsing the *end* row's `of: 'any'` to
+`'you'` fails only compile-level rows, because Spark Elemental dies on its own controller's end step
+either way. The matcher arm itself is proved at runtime by the upkeep card; the end rows are proved
+by shape.
+
+Legal-only coverage 15,964 of 56,421 lines (28.3%), 7,018 cards with a script. The line count barely
+moves, and that is the point: the 280 lines this fixes were already *counted* as compiled. They just
+did not work.

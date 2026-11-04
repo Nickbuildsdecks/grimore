@@ -610,6 +610,27 @@ export type TriggerEvent =
       /** Set by the engine: whether it was a creature as it left. */
       readonly subjectIsCreature?: boolean;
     }
+  /**
+   * A step of the turn beginning, which every step now raises (D434).
+   *
+   * `of` is whose turn it has to be, and the three values are three different printed sentences
+   * rather than a convenience:
+   *
+   *  - `you` — "At the beginning of **your** upkeep", 804 legal corpus lines. The default, because
+   *    it is what a card says when it says nothing else, and because every script written before
+   *    `of` existed meant it.
+   *  - `any` — "At the beginning of **each** end step", "of **each player's** upkeep", "of **the**
+   *    end step". 341 legal lines across the steps, and already what several hand-written cards
+   *    ask for.
+   *
+   * There is deliberately **no** `opponent`, and the reason is measured rather than stylistic: 43
+   * legal corpus lines print "each opponent's upkeep" or its two siblings, and the compiler can
+   * finish the body of **none** of them, so the field, its matcher arm and its three prologue rows
+   * would all be machinery no card exercises. The counts are in `TRIGGER_SHAPES`' step-family
+   * table so the question can be re-asked in one command. In a duel it would be `any` minus your
+   * own turn; in a pod it is three turns of four, so it cannot be approximated by either of the
+   * values above when a card does arrive.
+   */
   | { readonly kind: 'step'; readonly step: Step; readonly of?: 'you' | 'any' }
   /**
    * A Saga's chapter, which fires when its lore counter *reaches* this number (CR 714.2b).

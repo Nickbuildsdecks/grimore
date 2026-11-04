@@ -442,6 +442,30 @@ function advanceStep(state: GameState): GameState {
 
     next = { ...next, step };
     next = onEnterStep(next, step);
+    /*
+      The step says so, for **every** step rather than for the two that happened to have a card
+      (D434).
+
+      `onEnterStep` used to raise this itself, from inside its `upkeep` and `end` cases, and the
+      other eleven steps raised nothing. That was invisible for as long as the only cards asking
+      were an upkeep card and an end-step card — and the compiler then started reading
+      "At the beginning of combat on your turn" (262 legal corpus lines) and "At the beginning of
+      your draw step" (18). Those cards compiled with `unread: []`, reported fully automated, and
+      did nothing whatsoever, because no `begin-combat` or `draw` step event has ever existed. A
+      probe confirmed it before this line was written: a compiled Luminarch Aspirant reached
+      declare-attackers with no counter on anything, nothing on the stack and nothing in the log.
+
+      So it is raised here, once, after the step's own turn-based action and before `fireDelayed` —
+      which is the printed order either way: the untap, the draw, the lore counter and the
+      monarch's card all happen as the step begins, and what triggers on the step goes on the stack
+      after them.
+
+      Every step, including `untap` and `cleanup`, which no prologue reads: a trigger raised in a
+      step where nobody receives priority simply waits for the next step that grants it, which is
+      the rule (CR 503.1). A list of "the steps a card can name" would be a second thing to keep in
+      step with `TRIGGER_SHAPES`, and D433 is the entry about what two statements of one fact cost.
+    */
+    next = raise(next, { kind: 'step', step }, next.activeSeat);
     // And anything that was scheduled for this step, after the step's own turn-based action: an
     // "at end of combat" ability goes on the stack in the end-of-combat step and is responded to
     // there, like any other trigger. See `fireDelayed`.
@@ -573,8 +597,7 @@ function onEnterStep(state: GameState, step: Step): GameState {
         tick and the cast are two different things, and why the cast goes through the offer family
         rather than happening here.
       */
-      next = tickSuspended(next, next.activeSeat);
-      return raise(next, { kind: 'step', step: 'upkeep' }, next.activeSeat);
+      return tickSuspended(next, next.activeSeat);
 
     /*
       A lore counter on each of the active player's Sagas (CR 714.2a).
@@ -664,7 +687,7 @@ function onEnterStep(state: GameState, step: Step): GameState {
         && next.seats[next.monarch]?.eliminated === false) {
         next = draw(next, next.monarch, 1);
       }
-      return raise(next, { kind: 'step', step: 'end' }, next.activeSeat);
+      return next;
     }
 
     case 'cleanup': {

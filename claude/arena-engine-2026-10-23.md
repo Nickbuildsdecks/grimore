@@ -11461,3 +11461,36 @@ unread line, so every regression that makes a line *stop* reading removes the ca
 comparison rather than failing it. A check that stops looking is not a check. The second lesson is
 smaller and sharper: the same increment twice wrote a fix in two redundant places, and redundancy
 means no single break can move it. One lever per claim.
+
+## The steps that raised no event (D434)
+
+Eleven of the engine's thirteen steps never raised a step event. `onEnterStep` raised one from
+inside its `upkeep` case and its `end` case; `begin-combat` had no case at all and `draw` returned
+its deferred draw without raising. For as long as the only cards asking were an upkeep card and an
+end-step card, nobody could tell.
+
+Then the compiler started reading "At the beginning of combat on your turn" — the third biggest step
+bucket in Magic, 262 legal lines, 19 cards it reads whole — and every one of them compiled with
+`unread: []`, was reported fully automated, and **did nothing at all**. A probe confirmed it before
+the fix was written: a compiled Luminarch Aspirant reached declare-attackers with no counter on any
+creature, nothing on the stack and nothing in the log.
+
+It is one raise now, in `advanceStep`, for every step. Deleting that single line fails 37 tests,
+Phyrexian Arena and Ball Lightning among them — which is the measure of how much it was carrying
+from two places before.
+
+**Three prologue rows shipped out of twelve candidate spellings, and the deciding number is not how
+often the sentence is printed.** A row for a card whose body stays unread changes nothing, so every
+candidate was compiled across the corpus and judged on cards finished rather than lines matched:
+`end`/any (152 lines, **17** cards), `upkeep`/any (149, **10**), `precombat-main`/you (47, **2**).
+The other six spellings have **zero** compilable cards and are not read. `of: 'opponent'` was
+written and then taken back out for the same reason — 43 printed lines, no card with a readable
+body, so the field would have been machinery nothing exercises. Every count is recorded in the code
+so the question is one command to re-ask.
+
+One test had to be retired: `compile.test.ts` asserted that "At the beginning of each end step" stays
+unread *"because 'your' is the half that is the rule"*. That described the compiler, not Magic, and a
+test that pins a gap fails the day the gap closes.
+
+Legal-only coverage is 15,964 of 56,421 lines (28.3%) and 7,018 cards with a script. The line count
+barely moves, which is the point: the 280 lines this fixes were already counted as compiled.

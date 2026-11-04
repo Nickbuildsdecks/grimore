@@ -10726,6 +10726,65 @@ const TRIGGER_SHAPES: readonly {
     prologue: () => /^At the beginning of combat on your turn, (.+)$/i,
     on: [{ kind: 'step', step: 'begin-combat', of: 'you' }],
   },
+  /*
+    ── The same steps, on somebody else's turn ─────────────────────────────────────────────
+
+    Twelve printed spellings were counted in the legal corpus, and **three rows shipped**, because
+    the count that decides a row is not how often the sentence is printed but how many cards the
+    compiler can finish once it reads it. A row for a card whose body stays unread changes nothing:
+    the line is flagged either way (D362). So each candidate was compiled across the corpus first
+    and the column that matters is the last one:
+
+    | printed | lines | compiled cards | trigger |
+    | --- | --- | --- | --- |
+    | each end step / the end step / each player's end step | 152 | **17** | `end`, any |
+    | each player's upkeep / each upkeep | 149 | **10** | `upkeep`, any |
+    | your first main phase | 47 | **2** | `precombat-main`, you |
+    | each opponent's upkeep | 31 | 0 | — |
+    | each combat | 27 | 0 | — |
+    | each player's draw step | 13 | 0 | — |
+    | your second main phase | 10 | 0 | — |
+    | each opponent's end step | 7 | 0 | — |
+    | combat on each opponent's turn | 5 | 0 | — |
+
+    "**the** end step" is `any` and not a third thing: an ability on a permanent that says "the end
+    step" means the end step of whichever turn it is, which is exactly what each/every says. The
+    four `any` spellings across the two steps collapse into one alternation each for that reason —
+    they are the same trigger in four hands.
+
+    **The six zero-card rows are not here, and `of: 'opponent'` is not in `TriggerDef` either.**
+    Three of those spellings would have needed it: 43 printed lines, not one of which has a body
+    this compiler can read. Writing the field, the matcher arm and the rows would have added a
+    mechanism no card exercises — and this file already has the entry on what that costs, because
+    an untested mechanism added ahead of need is the one that is wrong when the corpus reaches it.
+    The counts are recorded here so the next pass can re-ask with one command rather than
+    rediscovering the family.
+
+    Also deliberately absent, for reasons that are not about counts:
+
+     - "At the beginning of the upkeep of enchanted creature's controller" (21), "of enchanted
+       player's upkeep" (9) and the end-step version (3). These want the seat an *attachment* is
+       on, which is not `of` at all — it is `who: 'attached'` one level further out (D433) and
+       applied to a step rather than to a permanent. A reading that used `of: 'any'` for them would
+       fire the ability on every turn instead of one, which is three or four times the card.
+     - "At the beginning of each of your postcombat main phases" (8) — plural, and a card with more
+       than one postcombat main phase is a card this engine's turn structure does not have.
+     - "At the beginning of your next upkeep" (5) — a *delayed* trigger created by something else
+       (CR 603.7), not a permanent's own triggered ability, and `delayed` is set by the effect that
+       schedules it rather than read off a prologue.
+  */
+  {
+    prologue: () => /^At the beginning of (?:each|the)(?: player's)? end step, (.+)$/i,
+    on: [{ kind: 'step', step: 'end', of: 'any' }],
+  },
+  {
+    prologue: () => /^At the beginning of (?:each|the)(?: player's)? upkeep, (.+)$/i,
+    on: [{ kind: 'step', step: 'upkeep', of: 'any' }],
+  },
+  {
+    prologue: () => /^At the beginning of your first main phase, (.+)$/i,
+    on: [{ kind: 'step', step: 'precombat-main', of: 'you' }],
+  },
 
   /*
     ── The same two events, watching somebody else's permanent ─────────────────────────────
