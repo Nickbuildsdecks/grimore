@@ -125,6 +125,41 @@ const TARGET_CREATURE_HELPED: TargetSpec = {
 const TARGET_ATTACKER_HELPED: TargetSpec = {
   ...TARGET_CREATURE_HELPED, helpsInCombat: true,
 };
+/**
+ * A permanent of one of these types, read **live** (CR 613).
+ *
+ * Defined up here rather than beside `targetSpecFrom` because the cards need it too: a module-level
+ * card builds its `targets` array as this file is evaluated, so a filter it calls has to exist by
+ * then. Golgari Charm's enchantment mode was the one that moved it — see its own comment.
+ *
+ * `characteristicsOf` and not the printed type line, which is the whole of D385: a permanent that
+ * *is* an artifact because a continuous effect made it one is a legal target for a Disenchant, and
+ * five hand-written filters used to disagree.
+ */
+const permanentOfTypes = (
+  ...types: readonly string[]
+): NonNullable<TargetSpec['filter']> => (state, candidate) => {
+  if (candidate.kind !== 'card') return false;
+  const inst = state.instances[candidate.id];
+  if (inst === undefined) return false;
+  const line = characteristicsOf(state, inst).typeLine;
+  return types.some((type) => hasType(line, type));
+};
+
+/**
+ * A creature that is attacking or blocking right now — Divine Verdict's phrase, and the only filter
+ * in this file that reads the combat rather than the board.
+ *
+ * Shared with `targetSpecFrom` for the reason `isCreatureSpell` is: one function, so the compiled
+ * card and the hand-written one point at the same object instead of two readings of one sentence.
+ */
+const attackingOrBlocking: NonNullable<TargetSpec['filter']> = (state, candidate) => {
+  if (candidate.kind !== 'card') return false;
+  return state.combat.attacks.some(
+    (a) => a.attacker === candidate.id || a.blockers.includes(candidate.id),
+  );
+};
+
 const TARGET_PLAYER: TargetSpec = { kind: 'player', description: 'target player' };
 
 const creatureYouControl = (state: GameState, candidate: Target, controller: SeatIndex): boolean =>
@@ -943,11 +978,18 @@ const GOLGARI_CHARM: CardScript = {
       },
       {
         description: 'Destroy target enchantment',
+        /*
+          The live type line, not the printed one — the sixth site of #319's class, found while
+          giving this mode a compiler reading. A permanent that *is* an enchantment because
+          something made it one is a legal target for this mode, and `parseTypeLine` on the card
+          definition could not see that. `permanentOfTypes` is the shared filter the other
+          enchantment phrases already use, which is also what makes the ground-truth test an
+          identity.
+        */
         targets: [{
           kind: 'permanent',
           description: 'target enchantment',
-          filter: (state, candidate) => candidate.kind === 'card'
-            && hasType(parseTypeLine(state.cardDefs[state.instances[candidate.id]?.defKey ?? '']?.typeLine), 'enchantment'),
+          filter: permanentOfTypes('enchantment'),
         }],
         effect: (c) => {
           const id = firstCardTarget(c);
@@ -4226,12 +4268,7 @@ const DIVINE_VERDICT: CardScript = {
   targets: [{
     kind: 'creature',
     description: 'target attacking or blocking creature',
-    filter: (state, candidate) => {
-      if (candidate.kind !== 'card') return false;
-      return state.combat.attacks.some(
-        (a) => a.attacker === candidate.id || a.blockers.includes(candidate.id),
-      );
-    },
+    filter: attackingOrBlocking,
   }],
   onResolve: (c) => {
     const id = firstCardTarget(c);
@@ -9195,6 +9232,19 @@ interface ReadEffect {
   /** Bot hints a *spell* of this family carries. The trigger path drops them — see below. */
   readonly spellFlags?: Partial<CardScript>;
   /**
+   * Fields an **activated ability** of this family carries, which live on `AbilityDef` and nowhere
+   * else — so they cannot travel in `spellFlags`, whose type is `Partial<CardScript>`.
+   *
+   * One member so far and it is the reason this exists: `untapsOnly`. An ability whose whole effect
+   * is an untap can put the board back exactly where it found it, so a bot that did not know would
+   * tap and untap for ever — the pathology #124 was opened for. Dropping that flag is therefore not
+   * a missing hint but a hang, which is why the untap reader carries it rather than being refused.
+   *
+   * The spell and trigger paths ignore it, as the ability path ignores `spellFlags`: a field that
+   * belongs to one of the three homes a clause has is declared for that home.
+   */
+  readonly abilityFlags?: Partial<AbilityDef>;
+  /**
    * The same clause done **now** rather than owed, for a clause something comes after.
    *
    * One family needs this and the reason is `drawLater`, which owes a card instead of putting it in
@@ -9319,6 +9369,35 @@ function untargetedEffect(clause: string): ReadEffect | null {
         effect: (c) => drawLater(c.state, c.controller, n),
         immediate: (c) => draw(c.state, c.controller, n),
       };
+    }
+  }
+
+  /*
+    Regenerate the team: Golgari Charm's third mode, and the clause that card was called
+    unscriptable for until this engine had regeneration shields.
+  */
+  if (/^regenerate each creature you control$/i.test(text)) {
+    return {
+      effect: (c) => creaturesControlledBy(c.state, c.controller)
+        .reduce((state, id) => regenerate(state, id), c.state),
+    };
+  }
+
+  /*
+    The sweep that shrinks instead of destroying: "All creatures get -1/-1 until end of turn".
+
+    `pumpAll` and not `pumpTeam`, because "all creatures" includes the caster's own — which is what
+    makes Golgari Charm's first mode a decision rather than a free sweep, and its own comment says
+    so. The sign is read rather than assumed: the same sentence with a plus is a mass pump, and
+    `sizeBonus` handles either, refusing only `0/0`.
+  */
+  const shrunk = /^all creatures get (-|\+)(\d+)\/(-|\+)(\d+) until end of turn$/i.exec(text);
+  if (shrunk !== null) {
+    const bonus = sizeBonus(
+      Number(`${shrunk[1]}${shrunk[2]}`), Number(`${shrunk[3]}${shrunk[4]}`),
+    );
+    if (bonus !== null) {
+      return { effect: (c) => pumpAll(c.state, c.source, c.controller, bonus) };
     }
   }
 
@@ -10204,15 +10283,6 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
  * here, because it changes which permanents five shipped cards may point at and so wants its own
  * measurement and decision-log entry.
  */
-const permanentOfTypes = (
-  ...types: readonly string[]
-): NonNullable<TargetSpec['filter']> => (state, candidate) => {
-  if (candidate.kind !== 'card') return false;
-  const inst = state.instances[candidate.id];
-  if (inst === undefined) return false;
-  const line = characteristicsOf(state, inst).typeLine;
-  return types.some((type) => hasType(line, type));
-};
 
 /**
  * The three qualifiers a printed permanent phrase can carry, as one `TargetSpec.filter`.
@@ -10344,6 +10414,10 @@ function targetSpecFrom(phrase: string, friendly: boolean): TargetSpec | null {
 
     // The phrases that restrict by type. `kind: 'permanent'` plus a filter is how every
     // hand-written one of these is written; there is no `kind: 'artifact'`.
+    // The only phrase here that reads the combat rather than the board.
+    case 'target attacking or blocking creature':
+      return spec({ kind: 'creature', filter: attackingOrBlocking });
+
     case 'target artifact':
       return spec({ kind: 'permanent', filter: permanentOfTypes('artifact') });
     case 'target enchantment':
@@ -10585,6 +10659,34 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
         effect: (c) => {
           const seat = firstPlayerTarget(c);
           return seat === null ? c.state : gainLife(c.state, seat, amount);
+        },
+      };
+    }
+  }
+
+  /*
+    Untap, which is the one clause in this file whose reading changes what the **bot** may do rather
+    than only what the card does.
+
+    `untapsOnly` goes with it, and it is not a nicety: an ability whose whole effect is an untap can
+    return the board to exactly the state it was in, so without the flag the bot can tap and untap
+    for ever — the loop #124 exists for. `AbilityDef` is the only place that field lives, so it
+    travels in `abilityFlags` rather than `spellFlags`, and the spell and trigger paths drop it the
+    way they already drop a bot hint that does not apply to them.
+
+    `friendly` on the spec, because untapping an opponent's land is a card thrown away and the bot's
+    default aim is the enemy's board — Kiora's Follower's own comment says exactly that.
+  */
+  const untapped = /^untap (another target .+|target .+)$/i.exec(text);
+  if (untapped !== null) {
+    const spec = targetSpecFrom(untapped[1]!, true);
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [spec],
+        abilityFlags: { untapsOnly: true },
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : tap(c.state, id, false);
         },
       };
     }
@@ -10954,6 +11056,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       description: text,
       ...(read.targets === undefined ? {} : { targets: read.targets }),
       ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
+      // See `ReadEffect.abilityFlags`: fields that only an ability can hold.
+      ...(read.abilityFlags ?? {}),
       effect: read.effect,
     } as AbilityDef],
   };

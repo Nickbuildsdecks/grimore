@@ -24455,3 +24455,74 @@ you gain 2 life", where "that player" is the opponent who cast the spell that tr
 (`c.actor`). The subject is supplied by the *event*, not by the clause, and "that player" means
 something different under a different trigger — so reading it here would be the compiler guessing
 which event it is inside.
+
+## D391
+
+**The shrinking sweep, the combat filter, the untapper — and a sixth printed type line** (#317, #319)
+
+Four readers, three cards, and one more instance of D385's class found by giving a mode a reading.
+
+### Golgari Charm, which this file called "the card that was not scriptable"
+
+Its own comment says so: "a modal card with one unscriptable mode is an unscriptable card, and the
+mode was *regenerate each creature you control*." All three modes read now — a sweep that shrinks, a
+typed destroy, and regenerating the team — so the compiler reads the card whole.
+
+`All creatures get -1/-1 until end of turn` is **`pumpAll`, not `pumpTeam`**: "all creatures"
+includes the caster's own, which is exactly what makes that mode a decision rather than a free sweep
+and what the hand-written mode says. The sign is read off the print rather than assumed negative —
+the same sentence with a plus is a mass anthem, `sizeBonus` handles either, and it still refuses
+`+0/+0`. Hardcoding the minus fails a synthetic test and nothing else, which is why that test exists.
+
+### The one filter that reads the combat
+
+`target attacking or blocking creature` is Divine Verdict's phrase and the only filter in this module
+that reads `state.combat` rather than the board. It was inline on the card; it is `attackingOrBlocking`
+now, shared, so the compiled spec is the hand-written spec — function included — and the test is an
+identity rather than a resemblance. A second test shows it refusing the only creature on a board where
+nothing is attacking, so the phrase is narrow rather than decorative.
+
+### The untapper, and the hint whose absence is a hang
+
+`{T}: Untap another target permanent` reads, and it carries **`untapsOnly: true`**. That is not a
+nicety: an ability whose whole effect is an untap can put the board back exactly where it found it, so
+a bot that does not know can tap and untap for ever — the loop #124 was opened for. Dropping it is a
+hang, not a missing hint.
+
+`untapsOnly` lives on `AbilityDef` and nowhere else, so it cannot travel in `spellFlags`, whose type
+is `Partial<CardScript>`. `ReadEffect` gained **`abilityFlags`** for it: a field belonging to one of
+the three homes a clause has, declared for that home, and dropped by the other two exactly as
+`spellFlags` already is. `friendly` rides on the spec, because untapping an opponent's land is a card
+thrown away and the bot's default aim is the enemy's board — Kiora's Follower's own comment says that.
+
+`pointsAtAPermanent` guards the open target phrase, as it does for destroy and bounce: "untap target
+player" is refused rather than compiled into an untap pointed at a seat.
+
+### The sixth printed type line (#319)
+
+Golgari Charm's enchantment mode read `parseTypeLine(cardDefs[...].typeLine)` inline, so a permanent
+*made* an enchantment was not a legal target for it. D385 found five of these and this is the sixth,
+found the same way: by needing the compiled reading to match the hand-written one. It uses the shared
+`permanentOfTypes` now, which also moved up the file — a module-level card builds its `targets` array
+as the file is evaluated, so a filter it calls has to exist by then.
+
+`liveTypes.test.ts` gained the case: a creature made an enchantment is a legal target for that mode
+and is not one before. Reverting the filter fails it.
+
+### Measured
+
+**335 → 341 of 538 printed lines (62.3% → 63.4%)**, and **213 → 216 of 339 cards**: Golgari Charm,
+Divine Verdict and Kiora's Follower. Five deliberate breaks, five failing tests — the dropped
+`untapsOnly`, the ignored sign, regenerating the whole board, the dropped untap guard, and the
+reverted type line. A 30,000-row shuffled run found no throw.
+
+Golgari Charm also **left the modal refusal list**, where it was one of three cards proving "whole or
+not at all" (D388). Two remain, and the test now says what to do if a later stage reads those too:
+replace them with a synthetic bullet, for the reason the keyword-and-a-sentence fixture already owns
+its own text.
+
+**Icy Manipulator stays unread**, and it is the near miss: `{1}, {T}: Tap target artifact, creature,
+or land.` Its phrase is a three-type union that `targetSpecFrom` does not have, and its filter also
+refuses an already-tapped permanent and the Manipulator itself — none of which the printed phrase
+says. Reading "tap target …" without that filter would offer the ability with nothing useful to point
+at.

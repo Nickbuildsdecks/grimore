@@ -8,7 +8,7 @@ import { tap, type EffectContext } from './effects.js';
 import type { AbilityDef, TargetSpec, TriggerDef } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
-import { arena, find } from './testkit.js';
+import { arena, find, ids } from './testkit.js';
 
 /**
  * Every card in the pool, by name — the compiler's ground truth.
@@ -2321,9 +2321,15 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     */
     it.each([
       ['Selesnya Charm', 4],
-      ['Golgari Charm', 4],
       ['Healing Salve', 3],
     ])('refuses %s whole, all %i lines, because one bullet has no reader', (card, lines) => {
+      /*
+        Golgari Charm was the third row here and has left: its regenerate mode reads now, so the
+        card compiles whole and is asserted mode for mode further down instead. Two cards still
+        hold the property — Selesnya Charm exiles a creature by power, Healing Salve prevents
+        damage — and if a later stage reads those too, this test needs a synthetic bullet rather
+        than a card, for the reason the keyword-and-a-sentence fixture already owns its own text.
+      */
       const compiled = compiledScript(card as string);
       expect(compiled.source).toBe('printed-only');
       expect(compiled.script).toBeUndefined();
@@ -2597,6 +2603,193 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       );
       expect(after.seats[1]!.life).toBe(base.seats[1]!.life + 3);
       expect(after.seats[0]!.life).toBe(base.seats[0]!.life);
+    });
+  });
+  describe('the shrinking sweep, the combat filter, and the untapper', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({ state, controller: seat, source, targets } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    interface Mode {
+      readonly description: string;
+      readonly targets?: readonly TargetSpec[];
+      readonly effect: (c: EffectContext) => GameState;
+    }
+    const modesOf = (script: unknown) =>
+      (field(script, 'modal') as { modes: readonly Mode[] } | undefined)?.modes;
+
+    /*
+      Golgari Charm, which this file's own comment calls "the card that was not scriptable".
+
+      All three of its modes read now: a sweep that shrinks, a typed destroy, and regenerating the
+      team. The two untargeted ones are compared by resolving both readings on the same board; the
+      typed one is compared by what a player reads and by what its filter admits, because
+      `permanentOfTypes` builds a fresh closure per call and two closures that do the same thing are
+      not equal.
+    */
+    it('reads all three of Golgari Charm’s modes, in the printed order', () => {
+      const compiled = compiledScript('Golgari Charm');
+      expect(compiled.unread).toEqual([]);
+      const mine = modesOf(compiled.script)!;
+      const theirs = modesOf(scriptFor('Golgari Charm'))!;
+      expect(mine.map((m) => m.description)).toEqual(theirs.map((m) => m.description));
+    });
+
+    it('shrinks every creature on the table, the caster’s own included', () => {
+      /*
+        `pumpAll` and not `pumpTeam`, which is the whole of why this mode is a decision rather than
+        a free sweep — so the test puts a creature on each side and reads both.
+      */
+      const base = arena({
+        battlefield: { 0: ['Monastery Swiftspear'], 1: ['Grizzly Bears'] }, turn: 3,
+      });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = modesOf(compiledScript('Golgari Charm').script)![0]!.effect(ctx);
+      const theirs = modesOf(scriptFor('Golgari Charm'))![0]!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      // Not vacuous: an effect exists, and it is one effect over the whole board.
+      expect(mine.effects.length).toBe(1);
+      expect(mine).not.toEqual(base);
+    });
+
+    it('regenerates each creature its caster controls, and nobody else’s', () => {
+      const base = arena({
+        battlefield: { 0: ['Monastery Swiftspear'], 1: ['Grizzly Bears'] }, turn: 3,
+      });
+      const mine = modesOf(compiledScript('Golgari Charm').script)![2]!
+        .effect(contextOn(base, 0 as SeatIndex, 'c1'));
+      const theirs = modesOf(scriptFor('Golgari Charm'))![2]!
+        .effect(contextOn(base, 0 as SeatIndex, 'c1'));
+      expect(mine).toEqual(theirs);
+      // Not vacuous, and one-sided: the caster's creature has a shield and the opponent's does not.
+      const ours = find(base, 0 as SeatIndex, 'battlefield', 'Monastery Swiftspear');
+      const theirCreature = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      expect(mine.instances[ours]!.counters['regeneration']).toBe(1);
+      expect(mine.instances[theirCreature]!.counters['regeneration']).toBeUndefined();
+    });
+
+    it('reads the sign of a mass size change rather than assuming it shrinks', () => {
+      const anthem = compileCard({
+        name: 'Mass Anthem', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'],
+        oracle_text: 'All creatures get +1/+1 until end of turn.',
+      });
+      expect(anthem.ok).toBe(true);
+      if (!anthem.ok) return;
+      expect(anthem.unread).toEqual([]);
+      const base = arena({ battlefield: { 1: ['Grizzly Bears'] }, turn: 3 });
+      const after = (field(anthem.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      // The bonus is read off the printed sign, so this is a pump and not Golgari Charm's sweep.
+      expect(after.effects[0]?.power).toBe(1);
+      expect(after.effects[0]?.toughness).toBe(1);
+    });
+
+    it('refuses a mass size change of zero, which is a sentence that does nothing', () => {
+      const nothing = compileCard({
+        name: 'Mass Nothing', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'],
+        oracle_text: 'All creatures get +0/+0 until end of turn.',
+      });
+      expect(nothing.ok).toBe(true);
+      if (!nothing.ok) return;
+      expect(nothing.script).toBeUndefined();
+      expect(nothing.unread).toHaveLength(1);
+    });
+
+    /*
+      Divine Verdict's phrase, which is the only filter in this module that reads the **combat**
+      rather than the board — so the spec is identical to the hand-written one, function included,
+      because `attackingOrBlocking` is now one shared const rather than a copy per card.
+    */
+    it('points at exactly the spec the hand-written Divine Verdict points at', () => {
+      const compiled = compiledScript('Divine Verdict');
+      expect(compiled.unread).toEqual([]);
+      expect(field(compiled.script, 'targets')).toEqual(field(scriptFor('Divine Verdict'), 'targets'));
+      // And it is removal, which is the hint the destroy family adds for a creature target.
+      expect(field(compiled.script, 'removesACreature')).toBe(true);
+    });
+
+    it('refuses a creature that is not in combat, which is what makes the phrase narrow', () => {
+      const board = arena({ battlefield: { 1: ['Grizzly Bears'] }, turn: 3 });
+      const bear = find(board, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const spec = (field(compiledScript('Divine Verdict').script, 'targets') as
+        readonly TargetSpec[])[0]!;
+      // Nothing is attacking on this board, so the one creature on it is not a legal target.
+      expect(spec.filter?.(board, { kind: 'card', id: bear }, 0 as SeatIndex)).toBe(false);
+    });
+
+    /*
+      The untapper, and the field that makes it safe to read.
+
+      `untapsOnly` tells the bot this ability can put the board back exactly where it found it.
+      Without it the bot can tap and untap for ever — the loop #124 was opened for — so this is not
+      a missing hint but a hang, and it is why the clause carries `abilityFlags` rather than being
+      refused the way a mode's lost hint refuses a card (D388).
+    */
+    it('carries untapsOnly, as the hand-written Kiora’s Follower does', () => {
+      const compiled = compiledScript("Kiora's Follower");
+      expect(compiled.unread).toEqual([]);
+      const mine = (field(compiled.script, 'abilities') as readonly AbilityDef[])[0]!;
+      const theirs = (field(scriptFor("Kiora's Follower"), 'abilities') as readonly AbilityDef[])[0]!;
+      expect(mine.untapsOnly).toBe(true);
+      expect(theirs.untapsOnly).toBe(true);
+      expect(mine.cost).toEqual(theirs.cost);
+      expect(mine.description).toBe(theirs.description);
+    });
+
+    it('aims the untap at your own board, and not at the permanent doing the untapping', () => {
+      const compiled = compiledScript("Kiora's Follower");
+      const spec = ((field(compiled.script, 'abilities') as readonly AbilityDef[])[0]!
+        .targets as readonly TargetSpec[])[0]!;
+      const written = ((field(scriptFor("Kiora's Follower"), 'abilities') as readonly AbilityDef[])[0]!
+        .targets as readonly TargetSpec[])[0]!;
+      expect(spec.description).toBe(written.description);
+      // Untapping an opponent's land is a card thrown away; the bot's default aim is the enemy.
+      expect(spec.friendly).toBe(true);
+      expect(written.friendly).toBe(true);
+
+      /*
+        "Another": the source itself is refused and another permanent is not. Two Mountains rather
+        than two named cards, because `arena` pulls each name out of that seat's own library and
+        ember-rush has no Island — so the ids come from the battlefield listing instead of by name.
+      */
+      const board = arena({ battlefield: { 0: ['Mountain', 'Mountain'] }, turn: 3 });
+      const [first, second] = [...ids(board, 0 as SeatIndex, 'battlefield')];
+      const admits = (filter: TargetSpec['filter'], id: string) =>
+        filter?.(board, { kind: 'card', id }, 0 as SeatIndex, first) ?? false;
+      expect(admits(spec.filter, first!)).toBe(false);
+      expect(admits(spec.filter, second!)).toBe(true);
+      expect(admits(written.filter, first!)).toBe(false);
+      expect(admits(written.filter, second!)).toBe(true);
+    });
+
+    it('untaps the permanent it points at, as the hand-written ability does', () => {
+      const board = arena({ battlefield: { 0: ['Mountain'] }, turn: 3 });
+      const mountain = find(board, 0 as SeatIndex, 'battlefield', 'Mountain');
+      const tapped = tap(board, mountain);
+      // Not vacuous from the other end either: the land really is tapped before the ability runs.
+      expect(tapped.instances[mountain]!.tapped).toBe(true);
+      const ctx = contextOn(tapped, 0 as SeatIndex, 'c1', [{ kind: 'card', id: mountain }]);
+      const mine = (field(compiledScript("Kiora's Follower").script, 'abilities') as
+        readonly AbilityDef[])[0]!.effect!(ctx);
+      const theirs = (field(scriptFor("Kiora's Follower"), 'abilities') as
+        readonly AbilityDef[])[0]!.effect!(ctx);
+      expect(mine).toEqual(theirs);
+      expect(mine.instances[mountain]!.tapped).toBe(false);
+    });
+
+    it('refuses "untap target player", which is not a permanent', () => {
+      const odd = compileCard({
+        name: 'Odd Untapper', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [],
+        oracle_text: '{T}: Untap target player.',
+      });
+      expect(odd.ok).toBe(true);
+      if (!odd.ok) return;
+      expect(odd.script).toBeUndefined();
+      expect(odd.unread).toEqual([{ line: '{T}: Untap target player.', why: 'no-reader' }]);
     });
   });
 });

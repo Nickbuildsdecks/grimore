@@ -67,6 +67,29 @@ describe('a filter reads the live type line', () => {
       .toBe(false);
   });
 
+  it('Golgari Charm’s enchantment mode reads the live type line too', () => {
+    /*
+      The sixth site of this class, found while giving that mode a compiler reading: it read
+      `parseTypeLine(cardDefs[...].typeLine)` inline, so a permanent *made* an enchantment was not a
+      legal target for it. It uses the shared `permanentOfTypes` filter now, like every other
+      enchantment phrase — which is also what makes the compiled mode's spec comparable to the
+      hand-written one.
+    */
+    const base = arena({
+      decks: { 0: 'verdant-guard', 1: 'verdant-guard' },
+      battlefield: { 1: ['Grizzly Bears'] },
+      turn: 3,
+    });
+    const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const state = pump(base, [bear], bear, 1 as SeatIndex, { addTypes: ['Enchantment'] });
+    const mode = (scriptFor('Golgari Charm')?.modal?.modes ?? [])[1];
+    const spec = (mode?.targets ?? [])[0];
+    expect(spec?.description).toBe('target enchantment');
+    expect(spec?.filter?.(state, { kind: 'card', id: bear }, 0 as SeatIndex, 'c1')).toBe(true);
+    // And refuses the same creature before anything made it one.
+    expect(spec?.filter?.(base, { kind: 'card', id: bear }, 0 as SeatIndex, 'c1')).toBe(false);
+  });
+
   it.each([
     ['Disenchant'],
     ['Naturalize'],

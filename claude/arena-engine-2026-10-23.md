@@ -10519,3 +10519,28 @@ Cutthroat, Cruel Celebrant, Fleshbag Marauder. Four deliberate breaks, four fail
 
 Kambal stays unread on purpose: "**that player** loses 2 life" takes its subject from the event, not
 the clause, and means something different under a different trigger.
+
+## The shrinking sweep, the combat filter, and the untapper (#317, #319, D391)
+
+**Golgari Charm compiles whole** — the card this file called "the card that was not scriptable",
+because one of its three modes was "regenerate each creature you control". All three read now. The
+sweep is `pumpAll` and not `pumpTeam`: "all creatures" includes the caster's own, which is what makes
+that mode a decision. The sign is read off the print rather than assumed negative, so the same
+sentence with a plus is a mass anthem; hardcoding the minus fails a synthetic test and nothing else.
+
+`target attacking or blocking creature` is the only filter here that reads the combat rather than the
+board. It was inline on Divine Verdict and is shared now, so the compiled spec is the hand-written
+spec, function included.
+
+The untapper carries **`untapsOnly`**, and that is not a nicety: an ability whose whole effect is an
+untap can put the board back where it found it, so a bot that does not know can tap and untap for ever
+— the loop #124 was opened for. The flag lives on `AbilityDef` and nowhere else, so `ReadEffect`
+gained `abilityFlags` for it, dropped by the spell and trigger paths exactly as `spellFlags` is.
+
+**A sixth printed type line (#319):** Golgari Charm's enchantment mode read the card definition's
+type line, so a permanent *made* an enchantment was not a legal target. It uses the shared live filter
+now, with its own case in `liveTypes.test.ts`.
+
+**335 → 341 of 538 lines (62.3% → 63.4%), 213 → 216 of 339 cards.** Five deliberate breaks, five
+failing tests. Icy Manipulator is the near miss: a three-type target union plus a filter that refuses
+an already-tapped permanent, none of which its printed phrase says.
