@@ -25781,3 +25781,60 @@ Looting, the only card the per-card diff shows moving.
 Four deliberate breaks, four failing tests: `drawLater` for `draw`, the draw count reused for the
 discard, a longer resolution admitted, and `beforeDecisions` dropped from the assembly.
 compile.test.ts 339/339, 4,000 shuffled rows with no throw.
+
+## D414 — A blink: two clauses about one object
+
+Cloudshift: "Exile target creature you control, then return that card to the battlefield under your
+control." Whole now, and the third spell-shape reader, arrived at from the other side of D413's
+argument.
+
+### Why a clause cannot do it
+
+`clausesOf` splits on ", then ", so the sentence arrives as "Exile target creature you control" and
+"return that card to the battlefield under your control" — and the second clause is about **the first
+clause's object**. "That card" is neither a target nor the source; it is whatever the exile just
+moved, and a clause reader is handed a context and a target list and nothing at all about what the
+clause before it did.
+
+Reading the first half alone would be **worse than refusing both**, and this is the strongest version
+of that argument so far: the exile clause already has a reader (D404), so a compiler that took it and
+stopped would turn a blink into unconditional removal of your own creature — a card that works,
+plays, and does the opposite of what it prints. Nothing at the table would flag it.
+
+So `blinkResolution` joins `xSpellResolution` and `lootResolution` ahead of `composeEffects`, and
+refuses a loot-style longer resolution for the same reason they do.
+
+### `blinks` is the point of the spec
+
+`TargetSpec.blinks` is not a restriction and its docblock is long about why: a blink is a help *or* a
+hit depending on whose permanent it lands on, because what the permanent loses by leaving is what
+decides — a token ceases to exist (CR 111.7), and counters, Auras and marked damage all go. The bot
+cannot read any of that off a candidate list, so the flag is how it is told, and a compiled blink
+without it is a card the bot plays blind (#322's shape). Cloudshift's hand-written spec carries it;
+so does this one, and a break that drops it fails.
+
+### Only "under your control"
+
+Flickerwisp returns the permanent **under its owner's control** and at the beginning of the next end
+step — a different card twice over. Read as this shape it would be a blink of somebody else's
+creature handed straight back to you, so the phrase is matched as printed and the other wording stays
+unread (D362). A break that widens the regex to any controller fails.
+
+"Another" is admitted in the regex and dropped for the spec, deliberately: the word excludes the
+source, and a **spell** is never on the battlefield to be excluded. Keeping it in the pattern means
+the sentence is matched as printed rather than approximately.
+
+### Still hand-written
+
+The trigger form of the same pair — Soulherder's end step — needs `triggerFromLine` to gain a
+clause-pair path of its own. That is its own change, and said here rather than left for someone to
+discover the reader does not fire on it.
+
+### Measured
+
+**399 → 400 of 538 printed lines (74.2% → 74.3%)**, and **254 → 255 of 339 cards**: Cloudshift, the
+only card the per-card diff shows moving.
+
+Four deliberate breaks, four failing tests: the return dropped, the `blinks` hint dropped, the
+controller wording widened, and a longer resolution admitted. compile.test.ts 343/343, 4,000 shuffled
+rows with no throw.

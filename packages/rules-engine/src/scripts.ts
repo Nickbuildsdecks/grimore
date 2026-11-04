@@ -12678,6 +12678,66 @@ function lootResolution(lines: readonly string[], name: string): ReadEffect | nu
   };
 }
 
+/**
+ * A **blink**: exile a permanent you control and bring it straight back — Cloudshift.
+ *
+ * ## Why this is a spell-shape reader too
+ *
+ * The same reason as `lootResolution`, arrived at from the other direction. `clausesOf` splits on
+ * ", then ", so the sentence arrives as "Exile target creature you control" and "return that card
+ * to the battlefield under your control" — and the **second clause is about the first clause's
+ * object**. "That card" is not a target and not the source; it is whatever the exile just moved,
+ * and no clause reader can be handed that, because a clause is given a context and a target list
+ * and nothing about what the clause before it did.
+ *
+ * Reading the first half alone would be worse than refusing both: the exile clause already has a
+ * reader (D404), so a compiler that took it and dropped the rest would turn a blink into
+ * **unconditional removal of your own creature** — a card that works, plays, and is the opposite of
+ * what it prints. That is the strongest version of the argument for reading the whole shape or none
+ * of it.
+ *
+ * ## `blinks` is the point of the spec
+ *
+ * `TargetSpec.blinks` is not a restriction and its docblock is long about why: a blink is a help or
+ * a hit depending on whose permanent it lands on, because what the permanent loses by leaving is
+ * what decides — a token ceases to exist (CR 111.7), counters, Auras and marked damage all go. The
+ * bot cannot work that out from a candidate list, so the flag is how it is told, and a compiled
+ * blink without it is a card the bot plays blind. Cloudshift's hand-written spec carries it and so
+ * does this.
+ *
+ * ## Deliberately only "under your control"
+ *
+ * Flickerwisp returns the permanent **under its owner's control** and at the beginning of the next
+ * end step, which is a different card in two ways: a different controller and a delayed trigger.
+ * Reading it as this shape would be a blink of somebody else's creature that hands it back to you
+ * immediately. So the phrase is matched exactly and the other wording is left unread (D362).
+ *
+ * The trigger form of the same pair — Soulherder's end step — is still hand-written. Reading it
+ * needs `triggerFromLine` to gain a clause-pair path of its own, which is its own change rather
+ * than a rider on this one.
+ */
+function blinkResolution(lines: readonly string[], name: string): ReadEffect | null {
+  if (lines.length !== 1) return null;
+  const blink = /^exile (another target creature you control|target creature you control), then return (?:that card|it) to the battlefield under your control\.?$/i
+    .exec(plain(lines[0]!).trim());
+  if (blink === null) return null;
+  /*
+    "Another" is dropped for the spec, because the phrase it excludes is the source and a **spell**
+    is never on the battlefield to be excluded. It is kept in the regex so the sentence is matched
+    as printed rather than approximately, and so the word is not silently ignored on a card where
+    it would matter.
+  */
+  const spec = targetSpecFrom('target creature you control', true);
+  if (spec === null) return null;
+  return {
+    targets: [{ ...spec, blinks: true }],
+    effect: (c) => {
+      const id = firstCardTarget(c);
+      return id === null ? c.state : putOntoBattlefield(exileCard(c.state, id), id, c.controller);
+    },
+  };
+}
+
 function readResolution(lines: readonly string[], name: string): ReadEffect | null {
   /*
     The X shapes first, because `composeEffects` would refuse them: the clause vocabulary has no
@@ -12691,5 +12751,6 @@ function readResolution(lines: readonly string[], name: string): ReadEffect | nu
   */
   return xSpellResolution(lines, name)
     ?? lootResolution(lines, name)
+    ?? blinkResolution(lines, name)
     ?? composeEffects(lines.flatMap(clausesOf), name);
 }

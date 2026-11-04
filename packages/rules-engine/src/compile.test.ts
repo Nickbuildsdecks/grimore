@@ -4647,6 +4647,93 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
   });
 
+  describe('a blink, which is two clauses about one object', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({
+      state, controller: seat, source, targets, decisions: [],
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const resolve = (script: unknown) =>
+      field(script, 'onResolve') as (c: EffectContext) => GameState;
+
+    it('exiles and returns the same permanent, as Cloudshift does', () => {
+      /*
+        "Exile target creature you control, then return that card to the battlefield under your
+        control" splits on ", then " into two clauses, and the second is about the **first clause's
+        object** — "that card" is neither a target nor the source, but whatever the exile just
+        moved. No clause reader can be handed that, so the whole sentence is read at once.
+
+        Reading only the first half would be worse than refusing both: the exile clause has a reader
+        of its own, so a compiler that took it and stopped would turn a blink into unconditional
+        removal of your own creature.
+      */
+      const mine = compiledScript('Cloudshift');
+      expect(mine.unread).toEqual([]);
+      const base = arena({
+        decks: { 0: 'skyward-writ', 1: 'ember-rush' },
+        // `arena` places from the seat's own deck, and Cloudshift lives in Skyward Writ — which
+        // holds no Grizzly Bears. Healer's Hawk is its own one-drop and does the same job here.
+        battlefield: { 0: ["Healer's Hawk"] },
+        turn: 3,
+      });
+      const bears = find(base, 0 as SeatIndex, 'battlefield', "Healer's Hawk");
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: bears }]);
+      const after = resolve(mine.script)(ctx);
+      expect(after).toEqual(resolve(scriptFor('Cloudshift'))(ctx));
+      /*
+        And right rather than merely equal: the creature is back on the battlefield, which is what a
+        reader that exiled and stopped would fail — and the state comparison alone would pass if
+        both readings stopped.
+      */
+      expect(ids(after, 0 as SeatIndex, 'battlefield')).toContain(bears);
+      expect(ids(after, 0 as SeatIndex, 'exile')).not.toContain(bears);
+    });
+
+    it('carries the blink hint the bot needs, because it cuts both ways', () => {
+      /*
+        `TargetSpec.blinks` is not a restriction — pointing a blink at your own token stays legal —
+        and its docblock says at length why it has to be said out loud: what the permanent loses by
+        leaving is what decides whether a blink helps or hurts, and a token ceases to exist
+        (CR 111.7) while counters, Auras and marked damage all go with it. The bot cannot read any
+        of that off a candidate list, so a compiled blink without the flag is a card it plays blind.
+      */
+      const specs = field(compiledScript('Cloudshift').script, 'targets') as readonly TargetSpec[];
+      expect(specs).toHaveLength(1);
+      expect(specs[0]).toMatchObject({ blinks: true });
+      const written = field(scriptFor('Cloudshift'), 'targets') as readonly TargetSpec[];
+      expect(specs[0]?.blinks).toBe(written[0]?.blinks);
+    });
+
+    it("will not read a return under its owner's control", () => {
+      /*
+        Flickerwisp's wording, and a different card twice over: the permanent comes back under its
+        **owner's** control and at the beginning of the next end step. Read as this shape it would
+        be a blink of somebody else's creature handed straight back to you, so the phrase is matched
+        as printed and the other wording stays unread (D362).
+      */
+      const card = compileCard({
+        name: 'Borrowed Shift', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'],
+        oracle_text: "Exile target creature you control, then return that card to the battlefield under its owner's control.",
+      });
+      expect(card.ok).toBe(true);
+      if (card.ok) expect(card.script).toBeUndefined();
+    });
+
+    it('will not read the shape as part of a longer resolution', () => {
+      // Whole resolution or none of it, as with the loot sentence: a second line means the reader
+      // has not seen everything the spell does.
+      const card = compileCard({
+        name: 'Busy Shift', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'],
+        oracle_text: 'Exile target creature you control, then return that card to the battlefield under your control.\nYou gain 2 life.',
+      });
+      expect(card.ok).toBe(true);
+      if (card.ok) expect(card.script).toBeUndefined();
+    });
+  });
+
   describe('a draw that has to happen before the question', () => {
     const contextOn = (
       state: GameState, seat: SeatIndex, source: string, decisions: readonly unknown[] = [],

@@ -10995,3 +10995,19 @@ owed is not a card you can be asked to discard.
 
 **398 → 399 of 538 lines (74.0% → 74.2%)**, **253 → 254 of 339 cards**. Four deliberate breaks, four
 failing tests; 339/339; 4,000 rows at scale with no throw.
+
+## A blink, which is two clauses about one object (#317, D414)
+
+Cloudshift, whole. The second clause of "Exile target creature you control, then return that card to
+the battlefield under your control" is about the **first clause's object** — "that card" is neither a
+target nor the source — so no clause reader can be handed it. Reading only the first half would be
+worse than refusing both: the exile clause has a reader of its own, so a compiler that stopped there
+would turn a blink into unconditional removal of your own creature.
+
+Third spell-shape reader, ahead of `composeEffects` with the other two. The spec carries `blinks`,
+because a blink is a help or a hit depending on whose permanent it lands on and the bot cannot read
+that off a candidate list. Only "under your control": Flickerwisp's wording returns the permanent to
+its owner and at the next end step, which is a different card twice over.
+
+**399 → 400 of 538 lines (74.2% → 74.3%)**, **254 → 255 of 339 cards**. Four deliberate breaks, four
+failing tests; 343/343; 4,000 rows at scale with no throw.
