@@ -432,8 +432,28 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
     expect(s.connected).toBe(true);
   });
 
-  // The other direction, which is the one that matters for security: a configured allow list has to
-  // actually refuse everything else. Needs its own server because the allow list is fixed at start.
+  /*
+    The other direction, which is the one that matters for security: a configured allow list has to
+    actually refuse everything else. Needs its own server because the allow list is fixed at start.
+
+    ## Its timeouts, which were in the wrong order and failed CI once
+
+    Each `attempt` below carries its own fallback so a handshake that never answers cannot hang the
+    suite. Those fallbacks were **4000ms each**, two of them run in sequence, inside vitest's
+    **5000ms** default — so the test could not pass if either attempt ever took its slow path, and
+    8000ms of internal budget sat inside a 5000ms deadline.
+
+    It passed anyway for months, because both handshakes normally answer in single-digit
+    milliseconds. Then a loaded CI runner, on which the preceding test in this file took 9.5
+    seconds, starved this one and it died with `Test timed out in 5000ms` — a message that says
+    nothing about origins, allow lists or handshakes, and sent me looking for a regression in a diff
+    that does not touch this app.
+
+    So the two numbers are now in the right order: 2000ms per attempt, and an explicit 15000ms for
+    the test. A fallback that is reachable *inside* the deadline fails with
+    `expected 'timeout' to be 'refused'`, which names the problem; one that is only reachable past
+    the deadline converts a specific failure into a generic one.
+  */
   it('refuses a browser from an origin outside a configured allow list', async () => {
     const guarded = await createRealtime({
       redisUrl: REDIS_URL!,
@@ -460,7 +480,9 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
         };
         s.on('connect', () => finish('connected'));
         s.on('connect_error', () => finish('refused'));
-        setTimeout(() => finish('timeout'), 4000);
+        // Under this test's own deadline, so taking it reports 'timeout' against the assertion
+        // rather than blowing up as a vitest timeout. See the docblock above.
+        setTimeout(() => finish('timeout'), 2000);
       });
 
     try {
@@ -470,7 +492,10 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       await guarded.store.flushPrefix();
       await guarded.close();
     }
-  });
+    // 15s, comfortably past the 2 x 2000ms of internal fallback plus a cold server start on a
+    // loaded runner. Explicit rather than global: this is the one test in the file that boots a
+    // second server, so it is the one that needs the room.
+  }, 15000);
 
   it('serves /healthz', async () => {
     const res = await fetch(`${url}/healthz`);

@@ -32,6 +32,23 @@
 # that cannot fail reads as good news. Run the step, capture `$?` on the very next line, then test
 # it. `check-gate.sh` beside this file proves that it now fails.
 #
+# ## It mirrors CI's `v2` job, step for step
+#
+# **D368.** This used to run `pnpm v2:typecheck` / `v2:typecheck:tests` / `v2:test`, which are turbo
+# tasks. CI runs `pnpm -r`, and the difference is not cosmetic:
+#
+#   * **turbo caches by input hash.** A package whose inputs it considers unchanged replays a stored
+#     green without running anything — so the gate could report a package passing while CI ran it
+#     for real. That is D356's hole again, one level in: not a cached run with the services down,
+#     but a cached run of a suite that would now fail.
+#   * **CI ran three steps this did not**: the packages' `build`, the legacy token-parity test, and
+#     the web production build. A gate missing a step CI has is a gate that cannot see a failure CI
+#     will.
+#
+# A gate whose job is "would CI accept this" has to run what CI runs. So the steps below are that
+# job verbatim, with `services-up.js` in front. It is slower than turbo, and that is the trade: a
+# gate that is fast and sometimes wrong is worth less than one that is slow and right.
+#
 set -o pipefail
 cd "$(dirname "$0")/.." || exit 1
 
@@ -51,12 +68,18 @@ if [ -n "${GATE_STEPS:-}" ]; then
   # shellcheck disable=SC2086
   set -- $GATE_STEPS
 else
+  # Deliberately CI's `v2` job, step for step, with `services-up.js` in front of it. See the
+  # "mirrors CI" note in this file's header for why it is spelled out rather than using the
+  # `v2:*` scripts.
   set -- \
     "node scripts/services-up.js" \
     "node scripts/guards.js" \
-    "pnpm v2:typecheck" \
-    "pnpm v2:typecheck:tests" \
-    "pnpm v2:test"
+    "pnpm -r --filter ./packages/* run build" \
+    "pnpm -r --filter ./packages/* --filter ./apps/* run typecheck" \
+    "pnpm -r --filter ./packages/* --filter ./apps/* run typecheck:tests" \
+    "pnpm -r --filter ./packages/* --filter ./apps/* run test" \
+    "node --test test/account-tokens-parity.test.js" \
+    "pnpm --filter @grimore/web build"
 fi
 
 for step in "$@"; do

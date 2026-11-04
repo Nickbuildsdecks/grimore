@@ -23066,3 +23066,62 @@ mechanics.
 
 43 compiler tests, and the `as EffectContext` cast stays sound for the reason D366 gives — both
 effects receive the same object, so the comparison remains a comparison.
+
+## D368 — CI failed where the gate passed, and both halves of that were defects
+
+CI's `v2` job went red on `cafa599` while the gate had reported **17/17** on the same tree. Two
+separate things were wrong, and the second is the one worth keeping.
+
+### The test: 8000ms of internal budget inside a 5000ms deadline
+
+`apps/realtime`'s *"refuses a browser from an origin outside a configured allow list"* timed out.
+46 of 47 passed; the test before it took **9568ms** on that runner.
+
+The test boots a second realtime server — it has to, the allow list is fixed at start — and then
+makes two handshake attempts in sequence, each with its own `setTimeout(..., 4000)` fallback so a
+handshake that never answers cannot hang the suite. Two times four thousand is **8000ms**, inside
+vitest's **5000ms** default.
+
+So the test **could not pass if either attempt ever took its slow path**. It passed for months
+anyway, because both handshakes normally answer in single-digit milliseconds. A loaded runner
+starved it and it died with `Test timed out in 5000ms` — a message that names neither origins nor
+allow lists nor handshakes, and sent me hunting a regression in a diff that does not touch that app.
+
+Another member of this file's family, and a new shape: **a fallback that is only reachable past the
+deadline it is meant to report inside.** Its whole purpose is to turn a hang into a legible failure,
+and being set longer than the test's own timeout converted a specific failure into a generic one.
+
+Fixed by putting the two numbers in the right order: 2000ms per attempt, and an explicit 15000ms on
+the test. A reachable fallback now fails with `expected 'timeout' to be 'refused'`, which says what
+broke.
+
+Not a flake, and not this change's: the engine import measures 63-84ms, and the diff touches only
+`packages/rules-engine`. It is a latent defect that CI happened to expose.
+
+### The gate: turbo caches, and CI does not
+
+The more important half. The gate ran `pnpm v2:typecheck` / `v2:typecheck:tests` / `v2:test`, which
+are **turbo** tasks. CI runs `pnpm -r`. The difference is not cosmetic:
+
+- **turbo caches by input hash**, so a package whose inputs it thinks unchanged replays a stored
+  green without running. The gate can report a suite passing while CI runs it for real. That is
+  D356's hole one level in: not a cached run with the services down, but a cached run of a suite
+  that would now fail.
+- **CI ran three steps the gate did not**: the packages' `build`, the legacy token-parity test, and
+  the web production build. A gate missing a step CI has cannot see a failure CI will.
+
+A gate whose job is "would CI accept this" has to run what CI runs. `scripts/gate.sh` is now CI's
+`v2` job verbatim, with `services-up.js` in front — eight steps. Slower than turbo, and that is the
+trade: **a gate that is fast and sometimes wrong is worth less than one that is slow and right.**
+
+`check-gate.sh` still verifies it in both directions.
+
+### And a correction to what I reported
+
+I described `cafa599` as "locally verified by the gate, 17/17". The gate did say that, and the claim
+was weaker than I presented it — on a tree CI then rejected. The number was real and the confidence
+it implied was not. This is the third time in two days that a green reading has turned out to be
+about something other than what I thought it measured (D356, D365, now this), and all three were
+found by asking the instrument a question it had never been asked.
+
+Verified: realtime 47/47 with the fix, `check-gate.sh` verified in both directions.

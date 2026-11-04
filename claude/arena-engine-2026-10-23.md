@@ -9783,3 +9783,27 @@ both its storm trigger and its damage.
 Cards with rules have more than doubled since the keyword stage; a third of every printed line in
 the pool now becomes rules. Still a floor — the pool is thirteen decks built to exercise sixty
 mechanics. 43 compiler tests.
+
+## CI failed where the gate passed (D368)
+
+CI's `v2` went red on `cafa599` while the gate said 17/17 on the same tree. Two defects.
+
+**The test.** `apps/realtime`'s origin allow-list test makes two handshake attempts in sequence,
+each with a `setTimeout(..., 4000)` fallback, inside vitest's 5000ms default — **8000ms of internal
+budget inside a 5000ms deadline**. It could not pass if either attempt took its slow path, and
+passed for months because both normally answer in milliseconds. A loaded runner (the preceding test
+took 9.5s) starved it, and it died with `Test timed out in 5000ms` — naming neither origins nor
+handshakes, and sending me after a regression in a diff that does not touch that app. A fallback
+only reachable *past* the deadline it exists to report inside turns a specific failure into a
+generic one. Now 2000ms each with an explicit 15000ms test timeout. Engine import measures 63-84ms,
+so the compiler was not the cause.
+
+**The gate, which matters more.** It ran `pnpm v2:*` — turbo tasks. CI runs `pnpm -r`. turbo
+**caches by input hash**, so the gate could replay a stored green for a suite CI runs for real;
+and CI had three steps the gate lacked (packages build, token-parity test, web production build).
+`scripts/gate.sh` is now CI's `v2` job verbatim plus `services-up.js` — eight steps. Slower, and
+that is the trade: a gate that is fast and sometimes wrong is worth less than one that is slow and
+right.
+
+I had reported `cafa599` as "verified by the gate, 17/17" on a tree CI then rejected. The number was
+real; the confidence it implied was not.
