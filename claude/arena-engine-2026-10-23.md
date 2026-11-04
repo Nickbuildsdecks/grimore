@@ -40,7 +40,33 @@ picked per table when it is created, per player, or should a table start as card
 rules be switched on? It changes what the lobby stores and what a reconnecting player gets, so I
 would rather have your answer than guess and build the wrong one.
 
-**3. Still yours, unchanged.** Merging PR #35; `SMTP_URL` / `MAIL_FROM` / `APP_BASE_URL` on the VM;
+**3. CI stopped running, and nothing I push can restart it.** GitHub Actions created no run for any
+of the last seven commits on this branch. The newest run is **#608** at 10:12Z for `2d7299e`; the
+branch head is now `cdf3824`, the pull request shows **zero check runs** on it, and `total_count`
+equals the last run number, so the runs are not being *created* rather than failing. The workflow is
+`state: active` and triggers on a bare `pull_request:` with no path filter, so the pushes should fire
+it — they land (the PR's head sha is my latest commit) and nothing happens.
+
+What I cannot check from here is billing, and that is my best hypothesis: this repository has run 608
+CI runs with four jobs each, and a private repository's included Actions minutes are a monthly cap. A
+spending-limit stop looks exactly like this — no runs created, no error on the push. The alternative
+is a repository or account setting that disabled Actions after 10:12Z.
+
+**What it costs:** your rule is "CI green before you ask me to merge", and I cannot satisfy it for
+the last seven commits. So I have run **every one of CI's four jobs** locally on the branch head
+instead, and they are all green:
+
+| CI job | run locally | result |
+| --- | --- | --- |
+| `v2` | `scripts/gate.sh` (the job verbatim, live Postgres 16 + Redis 7) | GATE OK on each of the seven commits |
+| `legacy` → `preflight` | `npm run preflight` | exit 0 |
+| `legacy` → `test:unit` | `npm run test:unit` | 45 passed, 0 failed |
+| `legacy-postgres` | `POSTGRES_TEST_URL=… npm run test:postgres` | 28 passed, 0 failed |
+
+That is the same work on the same commands; what it is not is an independent machine. There is no
+`workflow_dispatch` on the workflow, so I cannot start a run by hand — the fix is yours.
+
+**4. Still yours, unchanged.** Merging PR #35; `SMTP_URL` / `MAIL_FROM` / `APP_BASE_URL` on the VM;
 the migration cutover (one-way, on real data, needs a backup); whether `packages/db`'s runner should
 own `scryfall_cards`; whether port 3000 should serve the Play Realm locally.
 
