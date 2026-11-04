@@ -24039,3 +24039,53 @@ allowed out of six concurrent calls; and `allowed: false` from a pool that canno
 Verified: account-recovery 30/30. Four deliberate breaks each caught — the advisory lock removed
 (the concurrent test), the insert not awaited (the audit trail), `>=` relaxed to `>` (four tests),
 and the failure path flipped to fail open (the fail-closed test).
+
+## D384
+
+**The compiler reached resolution and not the opponent: ~40 call sites asked the wrong lookup** (#322)
+
+**44 call sites converted, 2 kept.** `scripts.ts` exports `scriptFor(name)` — the **hand-written**
+registry, 348 cards. `derive.ts`
+exports `scriptForCard(def)`, which answers from the registry first and falls back to the
+oracle-text compiler. When the compiler landed, `derive.ts`'s docblock said it is "the one place
+that answers *what does this card do?* for the engine's mana, ability and trigger paths". It was not.
+Four files asked the registry directly:
+
+| file | sites | what they decide |
+| --- | --- | --- |
+| `bot.ts` | 26 | every bot rule: hold the trick, crew the Vehicle, price the pump that wears off |
+| `legalActions.ts` | 9 | whether a flashback, escape, foretell, morph, affinity or split-second play is **offered at all** |
+| `autoActions.ts` | 4 | whether a cast, a foretell, a suspend or a turn-up is accepted |
+| `automation.ts` | 5 of 7 | saga chapters, an Aura's target, a miracle's cost, a land arriving tapped |
+
+So a compiled card resolved correctly, and then: the bot could not see one of its abilities, the
+legality layer would not offer its alternative casts, and its saga never advanced. A pasted deck
+**played blind**, and nothing said so — the worst shape in this project's list, because the card
+*works*.
+
+Invisible to the whole suite by construction: every pool card has a hand-written script, so the two
+lookups return the same object for all 348 of them. That is also what makes the fix safe — the
+precedence is "hand-written wins, always", so converting every site is a provable no-op on the pool
+and adds vision only where there was none.
+
+### Two name lookups stay, and they are not the same thing
+
+`automation.ts` keeps `scriptFor(ref.card)?.grantedTriggers?.[ref.index]` twice. A granted ability is
+recorded on the continuous effect as the granting card's **name** plus an index, so there is no
+definition to ask with — and `grantedTriggers` is the one field the compiler never emits, because
+granting another permanent a triggered ability has no reader and is a refusal rather than a gap
+(see `soulbondShapeFor`, which refuses Tandem Lookout for exactly that). The registry is the
+complete answer there, not a partial one.
+
+### A source-level test, which is unusual here and is the right shape for this one
+
+The defect was not a wrong answer from a function; it was call sites asking the wrong function, in
+files whose tests pass either way. **No behavioural assertion on a pool card can tell the two
+lookups apart.** So `derive.test.ts` pins the thing that was wrong: `bot.ts`, `legalActions.ts` and
+`autoActions.ts` contain no `scriptFor(` call, and `automation.ts` contains exactly two, both on the
+`grantedTriggers` line. Plus one behavioural check that the lookup itself works — a compiled-only
+instant whose `protectsACreature` the registry cannot see and the compiler can.
+
+Its first version matched the raw source and failed on all three files, because each one *names*
+`scriptFor` in a docblock explaining which lookup it uses. Comments are stripped now, and the test
+says why.

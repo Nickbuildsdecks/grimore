@@ -10273,3 +10273,36 @@ far enough apart to count each other, which is why the sequential version only f
 is kept as a stress check with that written into it. The proof is three deterministic tests on the
 gate itself: three allowed then one refused in sequence, exactly three of six concurrent calls
 allowed, and `allowed: false` from a pool that cannot connect.
+
+## The compiler reached resolution and not the opponent (#322, D384)
+
+`scriptFor(name)` is the hand-written registry — 348 cards, `undefined` for everything else.
+`scriptForCard(def)` is the registry first and the oracle-text compiler after. `derive.ts` said it
+was "the one place that answers *what does this card do?*". It was not: **44 call sites across four
+files asked the registry directly, and were converted**; two more stay, with a reason.
+
+| file | sites | what they decide |
+| --- | --- | --- |
+| `bot.ts` | 26 | every bot rule — hold the trick, crew the Vehicle, price the pump that wears off |
+| `legalActions.ts` | 9 | whether a flashback, escape, foretell, morph or affinity play is offered at all |
+| `autoActions.ts` | 4 | whether a cast, foretell, suspend or turn-up is accepted |
+| `automation.ts` | 5 of 7 | saga chapters, an Aura's target, a miracle's cost, a land arriving tapped |
+
+So a compiled card resolved correctly and was then played blind: no abilities the bot could see, no
+alternative casts offered, no saga advancing. Nothing said so, which is the worst shape here —
+the card *works*.
+
+Invisible to the suite by construction, because every pool card has a hand-written script and the
+two lookups return the same object for all 348. That is also what makes the conversion safe: the
+precedence is "hand-written wins, always", so it is a provable no-op on the pool.
+
+Two name lookups stay, in `automation.ts`: a granted ability is recorded as the granting card's
+*name* plus an index, so there is no definition to ask with — and `grantedTriggers` is the one field
+the compiler never emits.
+
+**A source-level test, because no behavioural one can tell the lookups apart on a pool card.**
+`derive.test.ts` asserts the three converted files contain no `scriptFor(` call and that
+`automation.ts` has exactly two, both on the `grantedTriggers` line, plus one behavioural check that
+a compiled-only instant's `protectsACreature` is visible through the right lookup and not the wrong
+one. Its first version matched the raw source and failed on all three files, because each one names
+`scriptFor` in a docblock; comments are stripped now and the test says why.

@@ -25,7 +25,7 @@ import {
   addMana, canAfford, maxAffordableX, parseManaCost,
   type ManaCost, type ManaPool, type ManaType,
 } from './mana.js';
-import { abilityTargetSpecs, scriptFor } from './scripts.js';
+import { abilityTargetSpecs } from './scripts.js';
 import { scriptForCard } from './derive.js';
 import {
   FORETELL_COST, MORPH_COST, morphCostText,
@@ -664,7 +664,7 @@ export function graveyardFodder(
   const useful: string[] = [];
   for (const id of listAt(state, zoneKey(seat, 'graveyard'))) {
     if (id === exclude) continue;
-    const script = scriptFor(state.cardDefs[state.instances[id]?.defKey ?? '']?.name);
+    const script = scriptForCard(state.cardDefs[state.instances[id]?.defKey ?? '']);
     if (script?.flashback !== undefined || script?.escape !== undefined) useful.push(id);
     else spare.push(id);
   }
@@ -898,7 +898,7 @@ function splitSecondHeld(state: GameState): boolean {
   return state.stackOrder.some((stackId) => {
     const object = state.stackObjects[stackId];
     if (object === undefined || object.kind !== 'spell') return false;
-    return scriptFor(state.cardDefs[object.cardKey]?.name)?.splitSecond === true;
+    return scriptForCard(state.cardDefs[object.cardKey])?.splitSecond === true;
   });
 }
 
@@ -947,7 +947,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     ...listAt(state, zoneKey(seat, 'command'))
       .map((id) => ({ id, fromCommand: true, flashback: false, escape: false, foretold: false, fromAdventure: false, offered: false })),
     ...listAt(state, zoneKey(seat, 'graveyard'))
-      .filter((id) => scriptFor(state.cardDefs[state.instances[id]?.defKey ?? '']?.name)?.flashback !== undefined)
+      .filter((id) => scriptForCard(state.cardDefs[state.instances[id]?.defKey ?? ''])?.flashback !== undefined)
       .map((id) => ({ id, fromCommand: false, flashback: true, escape: false, foretold: false, fromAdventure: false, offered: false })),
     /*
       And the second narrow list over the graveyard: a card with escape (CR 702.139).
@@ -959,7 +959,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       offered twice, which is what the rules say happens.
     */
     ...listAt(state, zoneKey(seat, 'graveyard'))
-      .filter((id) => scriptFor(state.cardDefs[state.instances[id]?.defKey ?? '']?.name)?.escape !== undefined)
+      .filter((id) => scriptForCard(state.cardDefs[state.instances[id]?.defKey ?? ''])?.escape !== undefined)
       .map((id) => ({
         id, fromCommand: false, flashback: false, escape: true, foretold: false,
         fromAdventure: false, offered: false,
@@ -968,7 +968,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       .filter((id) => {
         const inst = state.instances[id];
         if (inst?.foretoldTurn === undefined || inst.foretoldTurn === state.turn) return false;
-        return scriptFor(state.cardDefs[inst.defKey]?.name)?.foretell !== undefined;
+        return scriptForCard(state.cardDefs[inst.defKey])?.foretell !== undefined;
       })
       .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: true, fromAdventure: false, offered: false })),
     /*
@@ -1035,7 +1035,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const faceDef = half === undefined ? undefined : state.cardDefs[inst.defKey]?.faces?.cards[half];
     const def = faceDef ?? state.cardDefs[inst.defKey];
     const ch = characteristicsOf(state, faceDef === undefined ? inst : { ...inst, castAs: defKeyFor(faceDef) });
-    const script = scriptFor(def?.name);
+    const script = scriptForCard(def);
 
     /*
       Morph: the same card offered a second time, as a {3} face-down 2/2 (CR 702.37a).
@@ -1740,7 +1740,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
     const inst = state.instances[id];
     if (inst === undefined || !inst.faceDown) continue;
     const def = state.cardDefs[inst.defKey];
-    const morph = scriptFor(def?.name)?.morph;
+    const morph = scriptForCard(def)?.morph;
     if (morph === undefined) continue;
     const mana = morph.cost.mana ?? '';
     const cost = parseManaCost(mana);
@@ -1809,7 +1809,7 @@ export function costChangeFor(
     for (const id of listAt(state, zoneKey(other.index, 'battlefield'))) {
       const inst = state.instances[id];
       if (inst === undefined || isFaceDownPermanent(inst)) continue;
-      const script = scriptFor(state.cardDefs[inst.defKey]?.name);
+      const script = scriptForCard(state.cardDefs[inst.defKey]);
       for (const mod of script?.costModifiers ?? []) {
         const mine = other.index === seat;
         if (mod.whose === 'controller' && !mine) continue;
@@ -1835,7 +1835,7 @@ export function costChangeFor(
     offered at {1} with three artifacts out is offered at {4} the moment they are gone. Generic
     only, like every other reduction here, and floored with them below.
   */
-  const own = scriptFor(def.name)?.affinity;
+  const own = scriptForCard(def)?.affinity;
   if (own !== undefined) {
     const n = listAt(state, zoneKey(seat, 'battlefield')).filter((id) => {
       const inst = state.instances[id];

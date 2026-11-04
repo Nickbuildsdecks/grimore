@@ -1263,7 +1263,7 @@ function raise(
     */
     const script = isFaceDownPermanent(inst) || allAbilitiesLost(next, inst)
       ? undefined
-      : scriptFor(next.cardDefs[inst.defKey]?.name);
+      : scriptForCard(next.cardDefs[inst.defKey]);
     /*
       Its printed triggers, and then the ones somebody else is handing it.
 
@@ -1283,6 +1283,14 @@ function raise(
       rather than thrown on, because a decklist can name a card the engine only half knows.
     */
     for (const ref of grantedTriggersOn(next, inst)) {
+      /*
+        `scriptFor` by **name** and deliberately not `scriptForCard`: a granted ability is recorded
+        on the continuous effect as the granting card's *name* plus an index into its
+        `grantedTriggers`, and there is no definition in hand to look up. It is also the one field
+        the oracle-text compiler never emits — granting another permanent a triggered ability has no
+        reader and, per `soulbondShapeFor`, is a refusal rather than a gap — so the hand-written
+        registry is the complete answer here rather than a partial one.
+      */
       const granted = scriptFor(ref.card)?.grantedTriggers?.[ref.index];
       if (granted === undefined) continue;
       next = fireTrigger(next, granted, id, inst, ref.index, event, actor, subject, fromStack, ref);
@@ -1582,7 +1590,7 @@ export function stateBasedActions(state: GameState): GameState {
           Saga sits there while chapter III waits to resolve, which is what makes "return a creature
           from a graveyard" able to see the board the chapter is about.
         */
-        const chapters = sagaChapters(scriptFor(next.cardDefs[inst.defKey]?.name));
+        const chapters = sagaChapters(scriptForCard(next.cardDefs[inst.defKey]));
         if (chapters > 0 && (inst.counters['lore'] ?? 0) >= chapters
           && !next.stackOrder.some((objectId) => next.stackObjects[objectId]?.source === id)) {
           next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
@@ -1624,7 +1632,7 @@ export function stateBasedActions(state: GameState): GameState {
           const host = inst.attachedTo === null ? undefined : next.instances[inst.attachedTo];
           const enchant = inst.bestowed === true
             ? BESTOW_TARGET
-            : scriptFor(next.cardDefs[inst.defKey]?.name)?.aura?.target;
+            : scriptForCard(next.cardDefs[inst.defKey])?.aura?.target;
           const illegalHost = host !== undefined && host.zone === 'battlefield'
             && enchant !== undefined
             && !isLegalAttachment(next, enchant, host.id, inst.zoneSeat, inst.id);
@@ -2176,7 +2184,7 @@ function settle(state: GameState, before: GameState): GameState {
         if (nth !== 1) continue;
         const inst = next.instances[card];
         if (inst === undefined || inst.zone !== 'hand') continue;
-        const cost = scriptFor(next.cardDefs[inst.defKey]?.name)?.miracle?.cost;
+        const cost = scriptForCard(next.cardDefs[inst.defKey])?.miracle?.cost;
         if (cost === undefined) continue;
         next = miracleOffer(next, card, cost);
         break;
@@ -2294,7 +2302,7 @@ function settle(state: GameState, before: GameState): GameState {
         back from skipping chapter I — a returning Saga is a new object with no counters, and this
         reads the board rather than remembering.
       */
-      if (sagaChapters(scriptFor(next.cardDefs[arrival.defKey]?.name)) > 0
+      if (sagaChapters(scriptForCard(next.cardDefs[arrival.defKey])) > 0
         && (next.instances[id]?.counters['lore'] ?? 0) === 0) {
         next = addLore(next, id, 1);
       }

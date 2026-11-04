@@ -33,8 +33,30 @@ import {
 import { MYRIAD, SEAT_CHOICE, UNEARTHED, creaturesControlledBy, poolOf } from './effects.js';
 import { applyAction } from './engine.js';
 import { canAfford, costValue, parseManaCost, type ManaCost } from './mana.js';
-import { scriptFor } from './scripts.js';
-import { isNumberDecision } from './scriptTypes.js';
+/*
+  `scriptForCard` and not `scriptFor`, at every one of the ~26 places this file asks what a card
+  does.
+
+  The hand-written registry answers for the 348 cards somebody wrote a script for and `undefined`
+  for everything else — so before this, every bot rule here read a **compiled** card as a card with
+  no abilities, no triggers and no hints: it would not hold a trick, would not crew a Vehicle, would
+  not see that a pump wears off. The engine's resolution and legality paths had already moved to
+  `scriptForCard` when the compiler landed; the bot had not, so a pasted deck resolved correctly and
+  was played blind. See `derive.ts` for the precedence — for a card with a hand-written script this
+  is exactly `scriptFor(def.name)`, which is why nothing in the pool or the existing suite moves.
+*/
+import { scriptForCard } from './derive.js';
+
+/**
+ * The script of the card an action names, through the instance it names it by.
+ *
+ * Almost every rule in this file had the same four lines in front of it — instance, def key, def,
+ * name — and then asked the registry by name. This asks `scriptForCard` by definition instead,
+ * which is the only form that can see a compiled card.
+ */
+const playedScript = (state: GameState, id: string | undefined): CardScript | undefined =>
+  scriptForCard(state.cardDefs[state.instances[id ?? '']?.defKey ?? '']);
+import { isNumberDecision, type CardScript } from './scriptTypes.js';
 import { targetKey, type Target } from './turnTypes.js';
 import type { Action, ActionContext, GameState, SeatIndex } from './types.js';
 
@@ -263,7 +285,7 @@ function madnessToPitch(
 ): string | null {
   for (const id of candidates) {
     const name = state.cardDefs[state.instances[id]?.defKey ?? '']?.name;
-    const madness = scriptFor(name)?.madness;
+    const madness = playedScript(state, id)?.madness;
     if (madness === undefined) continue;
     const cost = parseManaCost(madness.cost);
     if (cost.unsupported !== undefined) continue;
@@ -384,7 +406,7 @@ function hasOwnText(state: GameState, id: string): boolean {
     this a card or is it a body", and a borrowed ability makes it a card as surely as a printed one.
   */
   if (grantedTriggersOn(state, inst).length > 0) return true;
-  const script = scriptFor(state.cardDefs[inst.defKey]?.name);
+  const script = scriptForCard(state.cardDefs[inst.defKey]);
   if (script === undefined) return false;
   return (script.triggers?.length ?? 0) > 0 || (script.abilities?.length ?? 0) > 0
     || (script.statics?.length ?? 0) > 0;
@@ -468,7 +490,7 @@ function spentArtifact(state: GameState, ids: readonly string[]): string | null 
     if (inst === undefined) continue;
     if (characteristicsOf(state, inst).isCreature) continue;
     if (inst.attachedTo !== null) continue;
-    if (!paysForLeaving(state.cardDefs[inst.defKey]?.name)) continue;
+    if (!paysForLeaving(state.cardDefs[inst.defKey])) continue;
     const cmc = state.cardDefs[inst.defKey]?.cmc ?? 0;
     if (best === null || cmc < best.cmc) best = { id, cmc };
   }
@@ -483,8 +505,8 @@ function spentArtifact(state: GameState, ids: readonly string[]): string | null 
  * is not a reason to sacrifice a Planar Void, and leaving the default implicit would have said it
  * was.
  */
-function paysForLeaving(name: string | undefined): boolean {
-  return (scriptFor(name)?.triggers ?? []).some((t) =>
+function paysForLeaving(def: CardDef | undefined): boolean {
+  return (scriptForCard(def)?.triggers ?? []).some((t) =>
     t.on.kind === 'to-graveyard' && (t.on.who === 'self' || t.on.who === 'any'));
 }
 
@@ -567,7 +589,7 @@ function neverAttacks(state: GameState, id: string): boolean {
 
 /** Whether blinking this permanent runs an arrival trigger of its own again. */
 function arrivesAgain(state: GameState, inst: CardInstance): boolean {
-  return (scriptFor(state.cardDefs[inst.defKey]?.name)?.triggers ?? []).some(
+  return (scriptForCard(state.cardDefs[inst.defKey])?.triggers ?? []).some(
     (trigger) => trigger.on.kind === 'etb' && trigger.delayed !== true
       && (trigger.on.who ?? 'self') !== 'another',
   );
@@ -799,7 +821,7 @@ function leavesBeforeNextTurn(state: GameState, id: string): boolean {
   if (inst === undefined) return false;
   if ((inst.counters[UNEARTHED] ?? 0) > 0 || (inst.counters[MYRIAD] ?? 0) > 0) return true;
   const name = state.cardDefs[inst.defKey]?.name;
-  return name !== undefined && scriptFor(name)?.leavesAtEndOfTurn === true;
+  return name !== undefined && scriptForCard(state.cardDefs[inst.defKey])?.leavesAtEndOfTurn === true;
 }
 
 function chooseAttackers(
@@ -2392,7 +2414,7 @@ function candidateActions(
               and the opposite rule: see `xToMatch`.
             */
             ...(play.xMax === undefined ? {} : {
-              x: scriptFor(state.cardDefs[state.instances[play.card]?.defKey ?? '']?.name)
+              x: playedScript(state, play.card)
                 ?.xIsANumberToMatch === true
                 ? xToMatch(state, seat, play.xMax)
                 : play.xMax,
@@ -2943,7 +2965,7 @@ function dredgeIsWorthIt(
   const cost = parseManaCost(def.manaCost ?? '');
   if (cost.unsupported !== undefined) return false;
   if (!canAfford(poolOf(state, seat), cost, manaSources(state, seat))) return false;
-  const specs = scriptFor(name)?.targets ?? [];
+  const specs = scriptForCard(def)?.targets ?? [];
   return specs.length === 0 || hasAnyLegalTargets(state, specs, seat);
 }
 
@@ -3590,7 +3612,7 @@ function preventionCanMatter(state: GameState, seat: SeatIndex, action: Action):
 function castsANinja(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return scriptFor(name)?.ninjutsu !== undefined;
+  return playedScript(state, action.card)?.ninjutsu !== undefined;
 }
 
 /**
@@ -3617,12 +3639,12 @@ function aSwapIsComing(state: GameState, seat: SeatIndex): boolean {
 function castsAPrevention(state: GameState, action: Action): boolean {
   if (action.type === 'auto:activate') {
     const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-    const ability = scriptFor(name)?.abilities?.[action.abilityIndex ?? 0];
+    const ability = playedScript(state, action.card)?.abilities?.[action.abilityIndex ?? 0];
     return ability?.preventsDamage === true;
   }
   if (action.type !== 'auto:cast') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  const script = name === undefined ? undefined : scriptFor(name);
+  const script = name === undefined ? undefined : playedScript(state, action.card);
   if (script === undefined) return false;
   if (script.preventsDamage === true) return true;
   return modesOf(script, action.modes).some((mode) => mode.preventsDamage === true);
@@ -3634,7 +3656,7 @@ function castsAPrevention(state: GameState, action: Action): boolean {
 function animatesSomething(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return scriptFor(name)?.abilities?.[action.abilityIndex ?? 0]?.animates === true;
+  return playedScript(state, action.card)?.abilities?.[action.abilityIndex ?? 0]?.animates === true;
 }
 
 /**
@@ -3700,13 +3722,13 @@ function animationCouldMatter(state: GameState, seat: SeatIndex, action: Action)
 function feedsAnArtifact(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate' || action.sacrifice === undefined) return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return scriptFor(name)?.abilities?.[action.abilityIndex ?? 0]?.cost.sacrifice === 'artifact';
+  return playedScript(state, action.card)?.abilities?.[action.abilityIndex ?? 0]?.cost.sacrifice === 'artifact';
 }
 
 function pointlessToHandBack(state: GameState, play: LegalPlay): boolean {
   if (play.kind !== 'activate') return false;
   const name = state.cardDefs[state.instances[play.card]?.defKey ?? '']?.name;
-  const ability = scriptFor(name)?.abilities?.[play.abilityIndex ?? 0];
+  const ability = playedScript(state, play.card)?.abilities?.[play.abilityIndex ?? 0];
   return ability?.untapsOnly === true || ability?.produces !== undefined;
 }
 
@@ -3725,7 +3747,7 @@ function pointlessToHandBack(state: GameState, play: LegalPlay): boolean {
 function activationBuysNothing(state: GameState, seat: SeatIndex, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  const ability = scriptFor(name)?.abilities?.[action.abilityIndex ?? 0];
+  const ability = playedScript(state, action.card)?.abilities?.[action.abilityIndex ?? 0];
   return ability?.buysNothingIf !== undefined && ability.buysNothingIf(state, action.card, seat);
 }
 
@@ -3754,7 +3776,7 @@ function equipMovesSideways(state: GameState, seat: SeatIndex, action: Action): 
   const inst = state.instances[action.card];
   if (inst === undefined) return false;
   const name = state.cardDefs[inst.defKey]?.name;
-  if (scriptFor(name)?.equipBonus === undefined) return false;
+  if (scriptForCard(state.cardDefs[inst.defKey])?.equipBonus === undefined) return false;
   const hostId = inst.attachedTo;
   if (hostId === null || hostId === undefined) return false;
   const host = state.instances[hostId];
@@ -3774,7 +3796,7 @@ function equipMovesSideways(state: GameState, seat: SeatIndex, action: Action): 
 function untapsSomething(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return scriptFor(name)?.abilities?.[action.abilityIndex ?? 0]?.untapsOnly === true;
+  return playedScript(state, action.card)?.abilities?.[action.abilityIndex ?? 0]?.untapsOnly === true;
 }
 
 /**
@@ -3875,7 +3897,7 @@ function untapBoughtSomething(
 function chosenNumberIsNothing(state: GameState, seat: SeatIndex, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  const script = name === undefined ? undefined : scriptFor(name);
+  const script = name === undefined ? undefined : playedScript(state, action.card);
   if (script?.decisions === undefined) return false;
   /*
     A card that changes the board **before** its own question is not this rule's business either,
@@ -4135,7 +4157,7 @@ function spendsAnAnswersMana(
 function crewsAVehicle(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return scriptFor(name)?.abilities?.[action.abilityIndex ?? 0]?.cost.crew !== undefined;
+  return playedScript(state, action.card)?.abilities?.[action.abilityIndex ?? 0]?.cost.crew !== undefined;
 }
 
 /**
@@ -4163,7 +4185,7 @@ function crewBuysMoreThanItCosts(state: GameState, seat: SeatIndex, action: Acti
   const inst = state.instances[action.card];
   if (inst === undefined) return false;
   const name = state.cardDefs[inst.defKey]?.name;
-  const need = scriptFor(name)?.abilities?.[action.abilityIndex ?? 0]?.cost.crew;
+  const need = scriptForCard(state.cardDefs[inst.defKey])?.abilities?.[action.abilityIndex ?? 0]?.cost.crew;
   if (need === undefined) return false;
   const plan = crewPlan(state, seat, need, action.card);
   if (plan === null) return false;
@@ -4181,7 +4203,7 @@ function crewBuysMoreThanItCosts(state: GameState, seat: SeatIndex, action: Acti
 function castsACopy(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return name !== undefined && scriptFor(name)?.copiesACreature === true;
+  return name !== undefined && playedScript(state, action.card)?.copiesACreature === true;
 }
 
 /**
@@ -4206,7 +4228,7 @@ function somethingToCopy(state: GameState): boolean {
 function castsRemoval(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return name !== undefined && scriptFor(name)?.removesACreature === true;
+  return name !== undefined && playedScript(state, action.card)?.removesACreature === true;
 }
 
 /**
@@ -4350,7 +4372,7 @@ function sweepTakesMoreThanItGives(state: GameState, seat: SeatIndex): boolean {
 function castsAProtection(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return name !== undefined && scriptFor(name)?.protectsACreature === true;
+  return name !== undefined && playedScript(state, action.card)?.protectsACreature === true;
 }
 
 /**
@@ -4396,7 +4418,7 @@ function creatureOfYoursIsThreatened(state: GameState, seat: SeatIndex): boolean
 function castsAnExpiringPump(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  const script = name === undefined ? undefined : scriptFor(name);
+  const script = name === undefined ? undefined : playedScript(state, action.card);
   if (script === undefined) return false;
   if (script.expiresAtEndOfTurn === true) return true;
   return modesOf(script, action.modes).some((mode) => mode.expiresAtEndOfTurn === true);
@@ -4440,7 +4462,7 @@ function expiringPumpCanMatter(state: GameState, seat: SeatIndex, action: Action
 function castsAGoad(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return name !== undefined && scriptFor(name)?.goadsOpponents === true;
+  return name !== undefined && playedScript(state, action.card)?.goadsOpponents === true;
 }
 
 /** Whether goading could send anything anywhere but back at this seat. */
@@ -4452,7 +4474,7 @@ function goadHasSomewhereToSend(state: GameState, seat: SeatIndex): boolean {
 function castsARitual(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:cast') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return name !== undefined && scriptFor(name)?.makesMana === true;
+  return name !== undefined && playedScript(state, action.card)?.makesMana === true;
 }
 
 /** One play, identified well enough to tell "this is new" from "this was already on offer". */
@@ -4810,7 +4832,7 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       const card = state.cardDefs[state.instances[p.card]!.defKey];
       return p.half === undefined ? card : card?.faces?.cards[p.half];
     };
-    const ready = lands.find((p) => scriptFor(landDef(p)?.name)?.entersTapped !== true);
+    const ready = lands.find((p) => scriptForCard(landDef(p))?.entersTapped !== true);
     const chosen = ready ?? lands[0]!;
     return {
       type: 'auto:playLand', by: seat, card: chosen.card,

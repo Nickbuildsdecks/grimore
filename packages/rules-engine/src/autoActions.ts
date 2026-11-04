@@ -32,7 +32,16 @@ import {
 } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
-import { abilityTargetSpecs, scriptFor } from './scripts.js';
+import { abilityTargetSpecs } from './scripts.js';
+/*
+  `scriptForCard` and not `scriptFor`: a card nobody wrote a script for still has whatever the
+  oracle-text compiler could read off its printed text, and these four readers decide whether a cast,
+  a foretell, a suspend or a turn-up is **offered at all**. Reading the hand-written registry alone
+  made every one of them answer "this card has no such option" for every compiled card — which for a
+  pasted deck is the option silently not existing. See `derive.ts` for the precedence: for a card
+  with a hand-written script this is exactly `scriptFor(def.name)`, so nothing in the pool changes.
+*/
+import { scriptForCard } from './derive.js';
 import { FORETELL_COST, MORPH_COST, type CardScript, type TargetSpec } from './scriptTypes.js';
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
@@ -116,7 +125,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     few dozen lines down, and the engine must not be able to see a half-cast card in between.
   */
   const casting: CardInstance = faceKey === undefined ? inst : { ...inst, castAs: faceKey };
-  const script = scriptFor(def?.name);
+  const script = scriptForCard(def);
   const flashback = action.flashback === true;
   const escape = action.escape === true;
   /*
@@ -948,7 +957,7 @@ function foretell(state: GameState, action: AutoForetellAction): Outcome {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
   }
   const def = state.cardDefs[inst.defKey];
-  const script = scriptFor(def?.name);
+  const script = scriptForCard(def);
   if (script?.foretell === undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no foretell`);
   }
@@ -993,7 +1002,7 @@ function suspend(state: GameState, action: AutoSuspendAction): Outcome {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
   }
   const def = state.cardDefs[inst.defKey];
-  const script = scriptFor(def?.name);
+  const script = scriptForCard(def);
   if (script?.suspend === undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${def?.name ?? 'that card'} has no suspend`);
   }
@@ -1041,7 +1050,7 @@ function turnUp(state: GameState, action: AutoTurnUpAction): Outcome {
   // `scriptFor` by name rather than `scriptOf` by id, which would be undefined: the whole point of
   // `scriptOf` is that a face-down permanent has no abilities, and this is the one place that has
   // to read the card underneath anyway.
-  const script = scriptFor(def?.name);
+  const script = scriptForCard(def);
   if (script?.morph === undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that permanent has no morph cost to pay');
   }
