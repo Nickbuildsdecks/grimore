@@ -7258,14 +7258,19 @@ const ICHOR_WELLSPRING: CardScript = {
       on: { kind: 'to-graveyard', who: 'self' },
       description: 'draw a card',
       /*
-        Guarded on the card actually being in a graveyard, the way Rancor's is. `to-graveyard` is
-        raised for the move, and a card that was moved on again before this resolved — exiled from
-        the graveyard by a Planar Void, say — is no longer the object the trigger was about. Rancor
-        checks for the same reason and the comment there is the longer version.
+        **No guard**, which is a correction (D409). This read
+        `instances[c.source]?.zone === 'graveyard' ? draw : nothing`, copied from Rancor — and the
+        two cards are not the same shape. Rancor **returns itself** from the graveyard, so a card
+        that was moved on before the trigger resolved is a card there is nothing to return; the
+        guard is the rule there.
+
+        "Draw a card" asks nothing about the source. A triggered ability on the stack exists
+        independently of the permanent that made it (CR 603.2, CR 608.2), so an Ichor Wellspring
+        exiled from the graveyard before this resolved still draws — and the guarded version
+        silently did less than the card says, which is the one failure shape this engine cannot
+        afford.
       */
-      effect: (c) => (c.state.instances[c.source]?.zone === 'graveyard'
-        ? drawLater(c.state, c.controller, 1)
-        : c.state),
+      effect: (c) => drawLater(c.state, c.controller, 1),
     },
   ],
 };
@@ -10185,6 +10190,22 @@ const TRIGGER_SHAPES: readonly {
     prologue: (self) => new RegExp(`^When ${self} enters the battlefield or dies, (.+)$`, 'i'),
     on: [{ kind: 'etb', who: 'self' }, { kind: 'dies' }],
   },
+  /*
+    The same shape spelled the long way, which is what a **noncreature** permanent has to print:
+    "dies" is defined for creatures only (CR 700.4), so Ichor Wellspring — an artifact — says
+    "or is put into a graveyard from the battlefield" instead. `to-graveyard` is the event the
+    engine raises for it, and the hand-written card uses exactly that pair.
+
+    One effect for both events, which is the row's shape and now also correct for this card: the
+    guard that used to sit on its graveyard half was wrong (D409).
+  */
+  {
+    prologue: (self) => new RegExp(
+      `^When ${self} enters the battlefield or is put into a graveyard from the battlefield, (.+)$`,
+      'i',
+    ),
+    on: [{ kind: 'etb', who: 'self' }, { kind: 'to-graveyard', who: 'self' }],
+  },
   {
     prologue: (self) => new RegExp(`^When ${self} enters the battlefield, (.+)$`, 'i'),
     on: [{ kind: 'etb', who: 'self' }],
@@ -10332,7 +10353,11 @@ const TRIGGER_SHAPES: readonly {
       new RegExp(`^Whenever ${self} and at least two other creatures attack, (.+)$`, 'i'),
     on: [{ kind: 'attacks', withAtLeast: 3 }],
   },
-  // Hellrider.
+  /*
+    Hellrider: "Whenever a creature you control attacks". `who: 'any'` includes Hellrider's own
+    attack, because it is a creature you control and the card means it — the hand-written script's
+    own comment says so.
+  */
   {
     prologue: () => /^Whenever a creature you control attacks, (.+)$/i,
     on: [{ kind: 'attacks', who: 'any', of: 'you' }],
@@ -10694,6 +10719,34 @@ function eventRelativeEffect(clause: string, name: string): ReadEffect | null {
         return dealDamage(c.state, { kind: 'player', seat: who }, amount, {
           controller: c.controller, source: c.source,
         });
+      },
+    };
+  }
+
+  /*
+    Hellrider: "~ deals 1 damage to the player or planeswalker it's attacking".
+
+    `c.attacked` is what *that* attack was declared against, and it travels on the stack object
+    rather than being looked up when the trigger resolves — by then the attacker may be dead and
+    combat may no longer say what it was aimed at. In a pod three creatures can attack three
+    different players and this card has to hit each of them once, which is why the whole attack
+    travels and not just the seat.
+
+    A planeswalker that was attacked takes the damage **instead of** its controller, which is the
+    printed card and the reason the clause names both.
+  */
+  const rider = new RegExp(
+    `^(?:${self}|it) deals (\\d+) damage to the player or planeswalker it['\u2019]s attacking$`, 'i',
+  ).exec(text);
+  if (rider !== null) {
+    const amount = Number(rider[1]);
+    return {
+      effect: (c) => {
+        if (c.attacked === undefined) return c.state;
+        const hit: Target = c.attacked.planeswalker === undefined
+          ? { kind: 'player', seat: c.attacked.defender }
+          : { kind: 'card', id: c.attacked.planeswalker };
+        return dealDamage(c.state, hit, amount, { controller: c.controller, source: c.source });
       },
     };
   }

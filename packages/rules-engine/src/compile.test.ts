@@ -4515,6 +4515,105 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
   });
 
+  describe('the attack the trigger was about, and a graveyard half spelled the long way', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string,
+      attacked?: { defender: SeatIndex; planeswalker?: string },
+    ): EffectContext => ({
+      state, controller: seat, source, targets: [], decisions: [], attacked,
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const triggerOf = (script: unknown, i = 0) =>
+      (field(script, 'triggers') as readonly TriggerDef[] | undefined)?.[i];
+
+    it('hits what that attack was declared against, as Hellrider does', () => {
+      const mine = compiledScript('Hellrider');
+      expect(mine.unread).toEqual([]);
+      const base = arena({ decks: { 0: 'ember-rush', 1: 'verdant-guard' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', { defender: 1 as SeatIndex });
+      expect(triggerOf(mine.script)!.effect(ctx))
+        .toEqual(triggerOf(scriptFor('Hellrider'))!.effect(ctx));
+      expect(triggerOf(mine.script)!.effect(ctx).seats[1]!.life)
+        .toBe(base.seats[1]!.life - 1);
+    });
+
+    it('hits the planeswalker instead of its controller, where one was attacked', () => {
+      /*
+        The half of the clause that names both: a planeswalker that was attacked takes the damage
+        **instead of** its controller. `c.attacked` carries which, because by the time the trigger
+        resolves the attacker may be dead and combat may no longer say what it was aimed at.
+      */
+      const base = arena({
+        decks: { 0: 'ember-rush', 1: 'verdant-guard' },
+        battlefield: { 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', {
+        defender: 1 as SeatIndex, planeswalker: bear,
+      });
+      const after = triggerOf(compiledScript('Hellrider').script)!.effect(ctx);
+      expect(after).toEqual(triggerOf(scriptFor('Hellrider'))!.effect(ctx));
+      // The damage went to the permanent and the seat's life is untouched.
+      expect(after.instances[bear]!.damage).toBe(1);
+      expect(after.seats[1]!.life).toBe(base.seats[1]!.life);
+    });
+
+    it('does nothing when the stack object carries no attack', () => {
+      // Trigger-only for the same reason as "that player" (D408): a spell has no attack, so the
+      // reading stays where the words mean something and answers an absent one with the state.
+      const base = arena({ decks: { 0: 'ember-rush', 1: 'verdant-guard' }, turn: 3 });
+      expect(triggerOf(compiledScript('Hellrider').script)!
+        .effect(contextOn(base, 0 as SeatIndex, 'c1'))).toEqual(base);
+    });
+
+    it('reads a noncreature permanent’s graveyard half, which cannot say "dies"', () => {
+      /*
+        "Dies" is defined for **creatures** (CR 700.4), so Ichor Wellspring — an artifact — prints
+        "or is put into a graveyard from the battlefield" for the same shape. Both events, one
+        effect, exactly as the hand-written card pairs them.
+      */
+      const mine = compiledScript('Ichor Wellspring');
+      expect(mine.unread).toEqual([]);
+      const kinds = (field(mine.script, 'triggers') as readonly TriggerDef[]).map((t) => t.on.kind);
+      expect(kinds).toEqual(['etb', 'to-graveyard']);
+      const written = (field(scriptFor('Ichor Wellspring'), 'triggers') as readonly TriggerDef[]);
+      expect(kinds).toEqual(written.map((t) => t.on.kind));
+    });
+
+    it('draws from the graveyard half even when the card has moved on', () => {
+      /*
+        D409's correction, and the reason the compiled reading can use one effect for both events.
+
+        The hand-written script guarded this half on the card still being in a graveyard, copied
+        from Rancor — and the two cards are not the same shape. Rancor **returns itself**, so a card
+        that moved on is a card there is nothing to return. "Draw a card" asks nothing about the
+        source, and a triggered ability on the stack exists independently of the permanent that made
+        it (CR 603.2, CR 608.2), so the draw happens either way.
+
+        The test puts the card somewhere else entirely before resolving, which is what the guarded
+        version answered with nothing.
+      */
+      const base = arena({
+        decks: { 0: 'forge-alliance', 1: 'ember-rush' },
+        graveyard: { 0: ['Ichor Wellspring'] },
+        turn: 3,
+      });
+      const card = find(base, 0 as SeatIndex, 'graveyard', 'Ichor Wellspring');
+      const moved = {
+        ...base,
+        instances: { ...base.instances, [card]: { ...base.instances[card]!, zone: 'exile' } },
+      } as GameState;
+      for (const script of [compiledScript('Ichor Wellspring').script, scriptFor('Ichor Wellspring')]) {
+        const after = (field(script, 'triggers') as readonly TriggerDef[])[1]!
+          .effect(contextOn(moved, 0 as SeatIndex, card));
+        expect(after.drawsOwed.length).toBe(moved.drawsOwed.length + 1);
+      }
+    });
+  });
+
   describe('loyalty abilities, against the two planeswalkers that compile whole', () => {
     const contextOn = (
       state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],

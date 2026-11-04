@@ -10897,3 +10897,26 @@ Unraveler's script had `?? c.controller` there until D407 — it would have drai
 **391 → 393 of 538 lines (72.7% → 73.0%)**, **247 → 249 of 339 cards**. Four deliberate breaks, four
 failing tests; 322/322; 4,000 rows at scale with no throw. Writing this increment is what found
 D407.
+
+## The attack a trigger was about, and a guard copied from the wrong card (#317, D409)
+
+Hellrider and Ichor Wellspring, both whole.
+
+Hellrider's clause names "the player or planeswalker it's attacking", and `c.attacked` carries what
+*that* attack was declared against — it travels on the stack object because by resolution the
+attacker may be dead and combat may no longer say what it was aimed at. A planeswalker that was
+attacked takes the damage instead of its controller; a break that always takes the defender fails
+the planeswalker test. Trigger-only for D408's reason: a spell has no attack.
+
+Ichor Wellspring needed the long spelling of "or dies" — `dies` is a creature word (CR 700.4), so an
+artifact prints "or is put into a graveyard from the battlefield". One prologue row, both events, one
+effect.
+
+Writing that row found the second hand-written defect in two increments: the graveyard half was
+guarded on the card still being in a graveyard, copied from Rancor. Rancor **returns itself**, so
+the guard is its rule; "draw a card" asks nothing about the source, and a triggered ability on the
+stack exists independently of the permanent that made it (CR 603.2, CR 608.2). Corrected, with a
+test that moves the card to exile before resolving and asserts the draw on both readings.
+
+**393 → 395 of 538 lines (73.0% → 73.4%)**, **249 → 251 of 339 cards**. Three deliberate breaks,
+three failing tests; 327/327.

@@ -25444,3 +25444,65 @@ Four deliberate breaks, four failing tests. 4,000 more rows at scale, no throw. 
 
 This is also the increment that found D407: writing the damage clause meant reading Fate Unraveler's
 script beside its text, which is where the drain-for-damage substitution turned up.
+
+## D409 — The attack a trigger was about, and a guard copied from the wrong card
+
+Hellrider and Ichor Wellspring, the two cards this increment moves, and they are about the two
+different ways a trigger refers to something outside its own text.
+
+- "Whenever a creature you control attacks, ~ deals 1 damage to the player or planeswalker it's attacking"
+- "When ~ enters the battlefield or is put into a graveyard from the battlefield, draw a card"
+
+### The attack travels on the stack object
+
+`c.attacked` is what *that* attack was declared against, and it has to travel with the ability
+rather than be looked up on resolution: by then the attacker may be dead and combat may no longer
+say what it was aimed at. In a pod three creatures can attack three different players and this card
+has to hit each of them once, which is why the whole attack travels and not just a seat.
+
+A planeswalker that was attacked takes the damage **instead of** its controller — that is why the
+clause names both — so the reader hits `{ kind: 'card', id: c.attacked.planeswalker }` when one was
+attacked and `{ kind: 'player', seat: c.attacked.defender }` otherwise. A break that always takes
+the defender fails the planeswalker test.
+
+### Trigger-only, for D408's reason
+
+Like "that player", "it's attacking" is a word that only means something on a trigger: a spell
+carries no attack, so a sorcery printing the clause would read `undefined` and quietly do nothing,
+with no unread line for a human to see (D362). The reading therefore lives in
+`eventRelativeEffect`, inside `triggerFromLine`, and an absent attack answers with the state
+unchanged — asserted directly.
+
+### "Dies" is a word artifacts cannot use
+
+`dies` is defined for creatures (CR 700.4), so Ichor Wellspring — an artifact — prints "or is put
+into a graveyard from the battlefield" for the shape Lotleth Giant spells "or dies". One prologue
+row for the long spelling, one effect for both events, the pair the hand-written card already uses.
+A break that drops the row fails two tests.
+
+### A guard copied from the wrong card
+
+Writing that row meant reading Ichor Wellspring's script beside its printed text, and the graveyard
+half was guarded on the card still being in a graveyard — copied from Rancor, whose comment the
+guard's own comment cited.
+
+The two cards are not the same shape. **Rancor returns itself**, so a Rancor that was moved on
+before its trigger resolved is a card there is nothing to return; the guard is the rule there.
+"Draw a card" asks nothing about the source. A triggered ability on the stack exists independently
+of the permanent that made it (CR 603.2, CR 608.2), so an Ichor Wellspring exiled from the
+graveyard before the trigger resolved still draws — and the guarded version silently did less than
+the card says, which is the failure shape this engine can least afford.
+
+Corrected, with the test that resolves the trigger after moving the card to exile and asserts the
+draw on **both** the compiled reading and the hand-written script. Restoring the guard fails it.
+
+This is the second defect in two increments found the same way — by reading a hand-written script
+beside its printed text while writing the reader for it (D407 was the first) — which is the
+argument for #326, the measure that would find them without a person in the loop.
+
+### Measured
+
+**393 → 395 of 538 printed lines (73.0% → 73.4%)**, and **249 → 251 of 339 cards**: Hellrider and
+Ichor Wellspring, the only two the per-card diff shows moving.
+
+Three deliberate breaks, three failing tests. compile.test.ts 327/327.
