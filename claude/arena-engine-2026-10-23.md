@@ -10744,3 +10744,20 @@ the coverage move is attributable to the reading rather than the shuffle.
 
 **367 → 368 of 538 lines (68.2% → 68.4%)**, **230 → 231 of 339 cards**. Three deliberate breaks,
 three failing tests; 273/273; 4,000 rows at scale with no throw.
+
+## Statics that come and go, and the ability word in front (#317, D401)
+
+`while` has two kinds and this reads the English of both: "as long as you control three or more
+artifacts" (metalcraft, printed on a size for Chrome Steed and on protection for Etched Champion),
+and "as long as ~ is monstrous" — which this engine models as a +1/+1 counter on the creature
+itself (D182), the hand-written Fleecemane Lion's own reading rather than one invented here.
+
+"Metalcraft —" and "Battalion —" are flavour with no rules meaning (CR 207.2c), so the word is
+dropped before the line is read. A **named list**, not a general "capitalised word then a dash": the
+general form would eat a saga's chapter markers too, and a line mis-split is read wrongly rather
+than refused. With the word off the front **Firemane Avenger** compiles whole, and its body — "deals
+3 damage to any target and you gain 3 life" — is read by D398's conjunction reader inside a trigger.
+Two increments meeting on one card.
+
+**368 → 372 of 538 lines (68.4% → 69.1%)**, **231 → 235 of 339 cards**. Seven deliberate breaks,
+seven failing tests; 282/282; 4,000 rows at scale with no throw.

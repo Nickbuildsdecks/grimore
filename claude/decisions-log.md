@@ -25033,3 +25033,58 @@ Wastes, the only card the per-card diff shows moving.
 Three deliberate breaks, three failing tests: the X count read as one, the zero guard dropped, and
 the printed-`X` requirement dropped (which would hand the cast's X to a token clause that printed a
 number). 4,000 more rows at scale, no throw. compile.test.ts 273/273.
+
+## D401 — Statics that come and go, and the ability word in front of them
+
+Four cards, and the thing they have in common is a word that means nothing.
+
+### The conditional static
+
+`PumpOptions.while` has exactly two kinds, and this reads the English of both:
+
+- **"as long as you control three or more artifacts"** → `controller-artifacts`, which is
+  metalcraft. The pool prints it on a size (Chrome Steed, "gets +2/+2") and on a grant (Etched
+  Champion, "has protection from all colors").
+- **"as long as ~ is monstrous"** → `source-has-counter`, because being monstrous *is* a +1/+1
+  counter on the creature itself in this engine (D182). That is the modelling the hand-written
+  Fleecemane Lion uses, not a reading invented here — which matters, because compiling a condition
+  to an approximation nobody had chosen would be exactly the kind of quiet wrongness D259 is about.
+
+"Protection from all colors" is the five-colour list and not a special case: protection is already a
+list (D83), so all five is what the card says and every rule protection has applies with nothing
+new. The hand-written Etched Champion stores the same five.
+
+Refused, each for a stated reason: **any threshold but three** (every metalcraft card printed says
+"three or more", so a different number is a different card and reading it as metalcraft would turn a
+static on at the wrong time); **a keyword `isKeyword` cannot read** (a creature that looks protected
+and is not); and **a conditional protection from one colour**, which is coverage rather than
+correctness — `protectionFrom` is a list so it is expressible, but no card in the pool prints it, and
+a reader with no card behind it is a reader nothing has ever run (D57).
+
+### The ability word
+
+"Metalcraft —" and "Battalion —" are **flavour with no rules meaning** (CR 207.2c): the word names a
+pattern for players and the sentence after the dash is the whole ability. So `withoutAbilityWord`
+drops it, and both `staticFromLine` and `triggerFromLine` call it before reading what is left.
+
+It is a **named list** — `metalcraft`, `battalion` — and not a general "capitalised word then a
+dash". The general form would also eat a saga's chapter markers and anything else printed with an em
+dash, and a line mis-split is a line read *wrongly* rather than refused. The list grows with the
+cards that need it, and a test pins the decision: the same sentence behind an unknown ability word is
+refused, while the bare sentence and the known word read identically.
+
+With the word off the front, **Firemane Avenger** compiles whole: `{ kind: 'attacks', withAtLeast: 3 }`
+is "this and at least two other creatures", which the hand-written card spells the same way, and its
+body — "deals 3 damage to any target **and** you gain 3 life" — is read by D398's conjunction reader
+inside a trigger. Two increments meeting on one card, which is the first time that has happened.
+
+### Measured
+
+**368 → 372 of 538 printed lines (68.4% → 69.1%)**, and **231 → 235 of 339 cards**. Chrome Steed,
+Etched Champion and Firemane Avenger whole; Fleecemane Lion a hybrid, its monstrosity ability still
+unread. The per-card diff shows those four and nothing else.
+
+Seven deliberate breaks, seven failing tests: the threshold read as two, the condition dropped from
+the size static, protection read as one colour, monstrous read as a board count, the ability-word
+list opened up, battalion counting two attackers, and the ability word left on the trigger. 4,000
+more rows at scale, no throw. compile.test.ts 282/282.

@@ -3669,6 +3669,150 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
   });
 
+  describe('statics that are only on while something is true, and the ability word in front', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({
+      state, controller: seat, source, targets, decisions: [],
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const triggerOf = (script: unknown, i = 0) =>
+      (field(script, 'triggers') as readonly TriggerDef[] | undefined)?.[i];
+
+    /*
+      A static is plain data with no closure in it, so these compare by **deep equality** against
+      the hand-written card — the strictest comparison available, and the one that catches a wrong
+      condition kind, a wrong threshold, or a bonus on the wrong field.
+    */
+    it.each([
+      // Metalcraft on a size: "gets +2/+2 as long as you control three or more artifacts".
+      ['Chrome Steed'],
+      // And on a grant: "has protection from all colors as long as …", which is the five-colour
+      // list rather than a special case (D83).
+      ['Etched Champion'],
+      // The other condition kind: "as long as ~ is monstrous", which this engine models as a
+      // +1/+1 counter on the creature itself (D182).
+      ['Fleecemane Lion'],
+    ])('%s carries exactly the conditional static the hand-written card declares', (card) => {
+      const mine = compiledScript(card as string);
+      expect(field(mine.script, 'statics'))
+        .toEqual(field(scriptFor(card as string), 'statics'));
+      // Not vacuous: there really is one, and it really is conditional.
+      const statics = field(mine.script, 'statics') as readonly { effect: { while?: unknown } }[];
+      expect(statics).toHaveLength(1);
+      expect(statics[0]!.effect.while).toBeDefined();
+    });
+
+    it('reads the metalcraft threshold as three, and refuses any other number', () => {
+      /*
+        The threshold is the card. Every metalcraft card printed says "three or more", so the
+        reader takes that phrase and nothing else — a sentence with a different number is a
+        different card, and reading it as metalcraft would be a static that turns on at the wrong
+        time, with nothing flagged.
+      */
+      const wrong = compileCard({
+        name: 'Nearly Metalcraft', type_line: 'Creature — Construct', mana_cost: '{3}', cmc: 3,
+        colors: [], power: '2', toughness: '2',
+        oracle_text: 'Nearly Metalcraft gets +2/+2 as long as you control two or more artifacts.',
+      });
+      expect(wrong.ok).toBe(true);
+      if (wrong.ok) expect(wrong.script).toBeUndefined();
+    });
+
+    it('refuses a conditional grant whose keyword the engine would ignore', () => {
+      // The grant family's argument, in a static: a creature that looks protected and is not is
+      // worse than an unread line, which is dealt to a human instead (D362).
+      const odd = compileCard({
+        name: 'Odd Lion', type_line: 'Creature — Cat', mana_cost: '{1}{G}', cmc: 2, colors: ['G'],
+        power: '3', toughness: '3',
+        oracle_text: 'As long as Odd Lion is monstrous, it has hexproof and soaring.',
+      });
+      expect(odd.ok).toBe(true);
+      if (odd.ok) expect(odd.script).toBeUndefined();
+    });
+
+    it('refuses a conditional protection that is not from every colour', () => {
+      /*
+        Coverage rather than correctness, and said so: `protectionFrom` is a list, so one colour is
+        expressible — but no card in the pool prints a conditional single-colour protection, and a
+        reader with no card behind it is a reader nothing has ever run (D57). The phrase this
+        accepts is the one Etched Champion prints.
+      */
+      const narrow = compileCard({
+        name: 'Narrow Champion', type_line: 'Creature — Soldier', mana_cost: '{2}', cmc: 2,
+        colors: [], power: '1', toughness: '1',
+        oracle_text: 'Narrow Champion has protection from red as long as you control three or more artifacts.',
+      });
+      expect(narrow.ok).toBe(true);
+      if (narrow.ok) expect(narrow.script).toBeUndefined();
+    });
+
+    /*
+      ── The ability word ──────────────────────────────────────────────────────────────────────
+    */
+    it('fires on the battalion attack the hand-written Firemane Avenger fires on', () => {
+      const mine = compiledScript('Firemane Avenger');
+      expect(mine.unread).toEqual([]);
+      const compiled = triggerOf(mine.script);
+      const written = triggerOf(scriptFor('Firemane Avenger'));
+      expect(compiled).toBeDefined();
+      if (compiled === undefined || written === undefined) return;
+      expect(JSON.stringify(compiled.on)).toEqual(JSON.stringify(written.on));
+      // Three, which is "this and at least two others" — not two, and not every attack.
+      expect((compiled.on as { withAtLeast?: number }).withAtLeast).toBe(3);
+    });
+
+    it('deals the damage and gains the life, in the printed order', () => {
+      const base = arena({
+        decks: { 0: 'forge-alliance', 1: 'verdant-guard' },
+        battlefield: { 0: ['Firemane Avenger'], 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const avenger = find(base, 0 as SeatIndex, 'battlefield', 'Firemane Avenger');
+      const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const ctx = contextOn(base, 0 as SeatIndex, avenger, [{ kind: 'card', id: bear }]);
+      const mine = triggerOf(compiledScript('Firemane Avenger').script)!.effect(ctx);
+      const theirs = triggerOf(scriptFor('Firemane Avenger'))!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      /*
+        Both halves, which is the conjunction reader (D398) doing the work inside a trigger: the
+        damage and the life are one printed sentence joined by "and".
+      */
+      expect(mine.instances[bear]!.damage).toBe(3);
+      expect(mine.seats[0]!.life).toBe(base.seats[0]!.life + 3);
+    });
+
+    it('strips only the ability words it knows, and refuses the rest', () => {
+      /*
+        The named list, asserted as a decision. A general "capitalised word then a dash" would also
+        eat a saga's chapter markers and anything else printed with an em dash, and a line
+        mis-split is a line read wrongly rather than refused — so an ability word nothing has
+        needed yet is left in place, and the card stays a hybrid until somebody adds it.
+      */
+      const unknown = compileCard({
+        name: 'Starry Steed', type_line: 'Creature — Construct', mana_cost: '{3}', cmc: 3,
+        colors: [], power: '2', toughness: '2',
+        oracle_text: 'Constellation — Starry Steed gets +2/+2 as long as you control three or more artifacts.',
+      });
+      expect(unknown.ok).toBe(true);
+      if (unknown.ok) expect(unknown.script).toBeUndefined();
+
+      // And the same sentence with a known ability word, or none at all, reads identically.
+      const read = (text: string) => compileCard({
+        name: 'Plain Steed', type_line: 'Creature — Construct', mana_cost: '{3}', cmc: 3,
+        colors: [], power: '2', toughness: '2', oracle_text: text,
+      });
+      const bare = read('Plain Steed gets +2/+2 as long as you control three or more artifacts.');
+      const worded = read('Metalcraft — Plain Steed gets +2/+2 as long as you control three or more artifacts.');
+      expect(bare.ok && worded.ok).toBe(true);
+      if (!bare.ok || !worded.ok) return;
+      expect(field(worded.script, 'statics')).toEqual(field(bare.script, 'statics'));
+      expect(field(bare.script, 'statics')).toBeDefined();
+    });
+  });
+
   describe('loyalty abilities, against the two planeswalkers that compile whole', () => {
     const contextOn = (
       state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],

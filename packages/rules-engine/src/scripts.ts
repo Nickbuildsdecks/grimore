@@ -10254,6 +10254,16 @@ const TRIGGER_SHAPES: readonly {
     prologue: () => /^Whenever a nontoken creature you control dies, (.+)$/i,
     on: [{ kind: 'dies', who: 'any', of: 'you', what: 'creature', nontoken: true }],
   },
+  /*
+    Battalion, which is a count of the attack rather than a different event: `withAtLeast: 3` is
+    "this and at least two others", and the hand-written Firemane Avenger spells it exactly that
+    way. The ability word in front of it is stripped before this is tried.
+  */
+  {
+    prologue: (self) =>
+      new RegExp(`^Whenever ${self} and at least two other creatures attack, (.+)$`, 'i'),
+    on: [{ kind: 'attacks', withAtLeast: 3 }],
+  },
   // Hellrider.
   {
     prologue: () => /^Whenever a creature you control attacks, (.+)$/i,
@@ -10585,7 +10595,9 @@ function tokenEffect(clause: string, name: string): ReadEffect | null {
  * behaviour rather than by this string.
  */
 function triggerFromLine(line: string, name: string): Partial<CardScript> | null {
-  const text = plain(line).trim();
+  // The ability word comes off first: "Battalion — Whenever ~ and at least two other creatures
+  // attack, …" is a trigger whose prologue begins after the dash (CR 207.2c).
+  const text = withoutAbilityWord(plain(line).trim());
   const self = escapeName(name);
   for (const shape of TRIGGER_SHAPES) {
     const matched = shape.prologue(self).exec(text);
@@ -11580,6 +11592,102 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
 }
 
 /**
+ * An ability word, taken off the front of a line.
+ *
+ * "Metalcraft — ~ gets +2/+2 as long as …" and "Battalion — Whenever ~ and at least two other
+ * creatures attack, …". An ability word is **flavour with no rules meaning** (CR 207.2c): it names
+ * a pattern for players, and the sentence after the dash is the whole of the ability. So the right
+ * thing to do with one is drop it, which is what both `staticFromLine` and `triggerFromLine` do
+ * before reading what is left.
+ *
+ * A **named list** rather than a general "capitalised word then a dash", for the usual reason: the
+ * general form would also eat a saga's chapter markers and anything else that happens to be printed
+ * with an em dash, and a line this module mis-split is a line it then reads wrongly rather than
+ * refuses. The list grows with the cards that need it; these two are the ones the pool prints in
+ * front of something readable.
+ */
+const ABILITY_WORDS: readonly string[] = ['metalcraft', 'battalion'];
+
+function withoutAbilityWord(line: string): string {
+  const split = /^([A-Za-z]+)\s*[——-]\s*(.+)$/.exec(line.trim());
+  if (split === null) return line;
+  return ABILITY_WORDS.includes(split[1]!.toLowerCase()) ? split[2]!.trim() : line;
+}
+
+/**
+ * A static that is only on while something is true — the shape `while` exists for.
+ *
+ * Three cards, and all three are a condition the engine already has data for. There are exactly two
+ * kinds (see `PumpOptions.while`) and this reads the English of both:
+ *
+ * - **"as long as you control three or more artifacts"** → `controller-artifacts`, which is
+ *   metalcraft. Printed on a size bonus (Chrome Steed) and on protection (Etched Champion).
+ * - **"as long as ~ is monstrous"** → `source-has-counter`, because this engine *is* a +1/+1
+ *   counter on the creature itself when it is monstrous (D182), which is the modelling the
+ *   hand-written Fleecemane Lion uses and not a reading invented here.
+ *
+ * ## "protection from all colors" is the list with everything in it
+ *
+ * Not a special case: protection is already a list of colours (D83), so all five is what the card
+ * says and every rule protection has applies without anything new. The hand-written Etched Champion
+ * stores exactly `['W', 'U', 'B', 'R', 'G']`.
+ *
+ * ## What is refused
+ *
+ * Any other number of artifacts, any other condition, and any keyword `isKeyword` cannot read — a
+ * static granting a word the engine ignores is a creature that looks protected and is not, which is
+ * the same argument the grant family makes for a pump.
+ */
+function conditionalStaticFromLine(line: string, name: string): Partial<CardScript> | null {
+  const text = withoutAbilityWord(plain(line).trim().replace(/\.\s*$/, ''));
+  const self = escapeName(name);
+
+  /*
+    The condition comes off the end first, because the effect in front of it is the same sentence a
+    plain static prints. Both forms put it last, and `as long as` is unambiguous: nothing else in a
+    printed line opens with those four words.
+  */
+  const metalcraft = new RegExp(
+    `^(?:${self}|it) (gets \\+(\\d+)\\/\\+(\\d+)|has protection from all colors)` +
+    ' as long as you control three or more artifacts$',
+    'i',
+  ).exec(text);
+  if (metalcraft !== null) {
+    const condition = { kind: 'controller-artifacts', atLeast: 3 } as const;
+    if (metalcraft[2] !== undefined && metalcraft[3] !== undefined) {
+      const bonus = sizeBonus(Number(metalcraft[2]), Number(metalcraft[3]));
+      if (bonus === null) return null;
+      return { statics: [{ scope: 'self', effect: { ...bonus, while: condition } }] };
+    }
+    return {
+      statics: [{
+        scope: 'self',
+        effect: { protectionFrom: ['W', 'U', 'B', 'R', 'G'], while: condition },
+      }],
+    };
+  }
+
+  const monstrous = new RegExp(
+    `^as long as (?:${self}|it) is monstrous, (?:${self}|it) has (.+)$`, 'i',
+  ).exec(text);
+  if (monstrous !== null) {
+    const keywords = grantedKeywordList(monstrous[1]!);
+    if (keywords === null) return null;
+    return {
+      statics: [{
+        scope: 'self',
+        effect: {
+          keywords,
+          while: { kind: 'source-has-counter', counter: '+1/+1', atLeast: 1 },
+        },
+      }],
+    };
+  }
+
+  return null;
+}
+
+/**
  * A printed **static** ability: a continuous effect a permanent applies for as long as it is there.
  *
  * One shape, and it is the commonest static in Magic: `Creatures you control get +1/+1`. The word
@@ -11668,6 +11776,7 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
   return keywordScriptFor(line, name)
     ?? staticFromLine(line)
+    ?? conditionalStaticFromLine(line, name)
     ?? entersWithFromLine(line, name)
     ?? triggerFromLine(line, name)
     ?? abilityFromLine(line, name);
