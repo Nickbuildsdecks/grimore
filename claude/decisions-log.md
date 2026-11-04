@@ -27501,3 +27501,68 @@ covering the new row, both `attached` spellings, the self-naming row and the ref
 `subjectSeat`, and the event's `about.subject`.
 
 Legal-only coverage 16,340 of 56,421 lines (29.0%), **7,352 cards with a script** (7,344 → 7,352). GATE OK, 1,983 engine tests.
+
+## D440 — "Your second spell each turn", and the count storm cannot be
+
+47 legal corpus lines print "whenever you cast your **second** spell each turn", 17 of them on cards
+this compiler can finish — the largest prologue family left after D436's draw ordinal. It is the
+cast half of exactly that mechanic, and it needed a count the engine did not have.
+
+### `spellsCastThisTurn` is the table's total, and storm needs it to stay that
+
+Storm counts every spell cast this turn by anybody (CR 702.40a); "your second spell each turn" counts
+only yours. One number cannot be both, and at a four-seat table the two differ for most of a turn —
+so `GameState.spellsCastThisTurnBy` is a second, per-seat tally beside the first rather than a change
+to it.
+
+The ordinal travels on the `spell-cast` event, for the third time in this run of increments and the
+same reason D436 wrote on the draw ordinal and D437 on a dying creature's attachments: a trigger that
+has to know something about the instant its event happened needs the event to carry it. A Clarion
+Spirit whose trigger resolves after a third spell has been cast would read three and do nothing.
+
+### One function for two cast sites
+
+`spellsCastThisTurn + 1` was written out twice — the ordinary cast and the face-down morph — and
+adding a second count to both would have been two more statements of one rule, the trap D433 named.
+`countCast` is one function returning both tallies, called from both places, so one break can move
+it. A morph is a cast (CR 702.37a) and counts like any other spell.
+
+### What shipped and what did not, on the measure
+
+- **"second"**: 47 lines, **17** cards. Shipped.
+- **"first"**: 3 lines, **1** card (*Rodeo Pyromancers*, "add {R}{R}"). Shipped.
+- **"third"**: 2 lines, **0** cards. Declined — a prologue row for it would read onto two cards whose
+  bodies are still unread, which changes nothing (D362) while adding a branch no test can
+  discriminate (D425). `TriggerDef.onNth` takes any number the day one of those bodies reads.
+
+### Two ability words, and a finding about the rest of them
+
+Most of this family prints an ability word in front: "Flurry — Whenever you cast your second spell
+each turn, …". `ABILITY_WORDS` is a named list of three, and neither `flurry` nor `eukrasia` was on
+it, so 14 of the 47 lines were unread for a reason that had nothing to do with the trigger. Both are
+on the list now — they are the ability words for *this* mechanic, which is why they arrive here.
+
+Measuring that turned up a bigger one: **2,129 legal unread lines carry a word and an em dash, and
+56 of them read once the word comes off** — `exhaust` (44 lines, 15 cards), `alliance` (24, 10),
+`boast` (18, 8), `solved` (15, 2), `imprint` (28, 2) and a long tail of one-card flavour names like
+"Diana — Equip {2}". That is the next increment, and it is not a list: a general "word then em dash"
+rule would also eat a Saga's chapter markers, since "I", "II" and "III" are letters before an em dash
+too. Recorded in `ABILITY_WORDS`' own docblock so whoever opens that list finds the number.
+
+### Verified
+
+Three runtime tests, all on printed Clarion Spirit through `customDeck`: a Spirit on the second spell
+and none on the first; the count starting again next turn, asserted as **two** Spirits rather than
+"still one", because a missing cleanup looks exactly like a trigger that never fires; and the per-seat
+lever — seat 1 casts, then seat 0 casts its own first spell, which is the *table's* second, and
+nothing happens. Plus a six-row compile table including both ability-word spellings, the plain cast
+row that the ordinal rows must not swallow, and the declined third.
+
+**Eight breaks, eight failures.**
+
+Legal-only coverage 16,363 of 56,421 lines (29.0%), **7,374 cards with a script** (7,352 → 7,374),
+4,013 with every printed line read (3,997 → 4,013). GATE OK, 1,992 engine tests.
+
+The gate caught one thing the engine suite could not: a conditional spread in the new fixture made
+`battlefield[1]` optional, which `tsc -p tsconfig.test.json` refuses and vitest does not typecheck
+at all (D246's reason for having that step at all, earning itself again).

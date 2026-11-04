@@ -11637,3 +11637,28 @@ Hireling two Treasures per attacker. It waits for a batched event, with a test t
 adds the prologue without one.
 
 Legal-only coverage 16,340 of 56,421 lines (29.0%) and **7,352 cards with a script**.
+
+## The count storm cannot be (D440)
+
+"Whenever you cast your second spell each turn" is 47 legal lines and 17 compilable cards — the
+largest prologue family left — and it needed a number the engine did not have. `spellsCastThisTurn`
+is the **table's** running total, which is what storm counts (CR 702.40a); this line counts only
+yours. So `spellsCastThisTurnBy` sits beside it, per seat, and the ordinal travels on the
+`spell-cast` event — the third increment running to need a fact at the instant its event happened
+rather than at resolution.
+
+`countCast` is one function returning both tallies, called from the two places a spell is cast from
+(the ordinary cast and the face-down morph), because the old code wrote `+ 1` out twice and a second
+statement of one rule is a place no single break reaches.
+
+Shipped on the measure: "second" (47 lines, 17 cards) and "first" (3, 1). **Declined:** "third" — 2
+lines, 0 cards finished, so the row would change nothing.
+
+Along the way: 14 of those 47 lines were unread because `ABILITY_WORDS` did not list `flurry` or
+`eukrasia`. Both are on it now, and measuring the rest found **2,129 legal unread lines carrying a
+word and an em dash, 56 of which read once the word comes off** — exhaust, alliance, boast, solved,
+imprint, and a tail of one-card flavour names. That is the next increment, and it is not just a
+longer list: "I", "II" and "III" are also letters before an em dash, so a general rule would eat a
+Saga's chapters.
+
+Legal-only coverage 16,363 of 56,421 lines (29.0%) and **7,374 cards with a script**.

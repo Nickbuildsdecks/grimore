@@ -473,6 +473,21 @@ export type TriggerEvent =
       readonly kind: 'spell-cast';
       readonly by?: 'you' | 'opponent' | 'any';
       /**
+       * "Your **second** spell each turn" — the ordinal this cast has to be for the trigger to
+       * fire, counted per caster rather than for the table. 47 legal lines print the second and 3
+       * the first (D440).
+       *
+       * The same pair as the draw family's `onNth`: this field is what the script asks for and
+       * `nth` below is what the engine puts on the event. Two names for the two directions, so a
+       * script cannot accidentally read the engine's answer as its own question.
+       */
+      readonly onNth?: number;
+      /**
+       * Which of its caster's spells this was, this turn — 1 for the first. Set by the engine when
+       * the event is raised, never by a script.
+       */
+      readonly nth?: number;
+      /**
        * "When you cast **this** spell" — the card's own cast, watched from the stack (CR 603.2d).
        *
        * The one trigger in this engine that does not fire from the battlefield. Every other

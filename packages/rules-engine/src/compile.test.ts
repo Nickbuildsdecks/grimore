@@ -7362,3 +7362,53 @@ describe('combat damage dealt to a player, read off the prologue', () => {
     ]);
   });
 });
+
+describe('the cast ordinal, read off the prologue', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const creature = (text: string) => compileCard({
+    name: 'Counting Thing', type_line: 'Creature — Spirit', mana_cost: '{1}{W}', cmc: 2,
+    colors: ['W'], power: '2', toughness: '2', layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    ['Whenever you cast your second spell each turn', { kind: 'spell-cast', by: 'you', onNth: 2 }],
+    ['Whenever you cast your first spell each turn', { kind: 'spell-cast', by: 'you', onNth: 1 }],
+    // The ability word in front is flavour with no rules meaning (CR 207.2c) and
+    // `withoutAbilityWord` takes it off, so these are the same row — which is what keeps the
+    // fourteen corpus lines printing "Flurry — " from needing fourteen readers.
+    ['Flurry — Whenever you cast your second spell each turn',
+      { kind: 'spell-cast', by: 'you', onNth: 2 }],
+    ['Eukrasia — Whenever you cast your second spell each turn',
+      { kind: 'spell-cast', by: 'you', onNth: 2 }],
+    // And the plain cast row, so the ordinal rows cannot quietly swallow it.
+    ['Whenever you cast a spell', { kind: 'spell-cast', by: 'you', spell: 'any' }],
+  ])('%s becomes the trigger it prints', (prologue, on) => {
+    const read = creature(`${prologue}, you gain 2 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]!.on).toEqual(on);
+  });
+
+  it('leaves the third spell unread, which is 2 lines and 0 finished cards', () => {
+    /*
+      Measured before the rows were written, the way D434 onward measures: of the legal lines naming
+      a cast ordinal, 47 say second (17 cards finished), 3 say first (1), and 2 say third (**0**).
+      A row for the third would read a prologue onto two cards whose bodies are still unread, which
+      changes nothing at all (D362) while adding a branch no test can discriminate (D425).
+
+      `TriggerDef.onNth` already takes any number, so the field is general and the reader is not.
+      This row fails if someone adds the row anyway, at which point the measure should be re-run
+      rather than the test deleted.
+    */
+    const read = creature('Whenever you cast your third spell each turn, you gain 2 life.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([
+      'Whenever you cast your third spell each turn, you gain 2 life.',
+    ]);
+  });
+});

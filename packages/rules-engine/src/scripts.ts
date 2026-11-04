@@ -10863,6 +10863,32 @@ const TRIGGER_SHAPES: readonly {
     prologue: () => /^Whenever a player draws their second card each turn, (.+)$/i,
     on: [{ kind: 'draws', by: 'any', onNth: 2 }],
   },
+  /*
+    The cast half of the same ordinal: "Whenever you cast your **second** spell each turn" (D440).
+
+    47 legal lines and **17** cards finished, measured the way D434 onward measures — which makes it
+    the largest prologue family left. Most of those lines print an ability word in front
+    ("Flurry — ", "Eukrasia — "), which `withoutAbilityWord` has taken off before this table is
+    reached, so they are one row and not fourteen.
+
+    The count is **per caster**, which is why `GameState.spellsCastThisTurnBy` had to exist:
+    `spellsCastThisTurn` is the table's running total and storm needs it to stay that (CR 702.40a),
+    while this line counts only your own. At a four-seat table the two are different for most of a
+    turn, and a reading taken from the total would fire a Clarion Spirit off an opponent's spell.
+
+    **"first" ships and "third" does not**, on the same measure: 3 legal lines print the first (1
+    card finished) and 2 print the third (**0** cards finished), so a third row would read a
+    prologue onto cards whose bodies are still unread and change nothing (D362). `onNth` takes any
+    number the day one of those two bodies becomes readable.
+  */
+  {
+    prologue: () => /^Whenever you cast your second spell each turn, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'you', onNth: 2 }],
+  },
+  {
+    prologue: () => /^Whenever you cast your first spell each turn, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'you', onNth: 1 }],
+  },
   // Phyrexian Arena. `of: 'you'` is the card, not a default — see this file's step-trigger note.
   {
     prologue: () => /^At the beginning of your upkeep, (.+)$/i,
@@ -13026,12 +13052,22 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
  * before reading what is left.
  *
  * A **named list** rather than a general "capitalised word then a dash", for the usual reason: the
- * general form would also eat a saga's chapter markers and anything else that happens to be printed
- * with an em dash, and a line this module mis-split is a line it then reads wrongly rather than
- * refuses. The list grows with the cards that need it; these two are the ones the pool prints in
- * front of something readable.
+ * general form would also eat a saga's chapter markers — "I", "II" and "III" are letters before an
+ * em dash too — and a line this module mis-splits is a line it then reads wrongly rather than
+ * refuses. The list grows with the cards that need it.
+ *
+ * `flurry` and `eukrasia` are the ability words printed in front of "whenever you cast your second
+ * spell each turn", which is why they arrive with D440 rather than on their own: 13 legal lines
+ * print "Flurry — " (6 whose remainder this compiler reads) and 1 prints "Eukrasia — ".
+ *
+ * **There are 2,129 legal unread lines carrying some word and an em dash, and 56 of them read once
+ * the word comes off** — `exhaust` (44 lines, 15), `alliance` (24, 10), `boast` (18, 8) and a long
+ * tail of one-card flavour names like "Diana — Equip {2}". That is its own increment: the list is
+ * the easy half and telling a flavour name from a Saga chapter is the part that needs care.
  */
-const ABILITY_WORDS: readonly string[] = ['metalcraft', 'battalion', 'landfall'];
+const ABILITY_WORDS: readonly string[] = [
+  'metalcraft', 'battalion', 'landfall', 'flurry', 'eukrasia',
+];
 
 function withoutAbilityWord(line: string): string {
   const split = /^([A-Za-z]+)\s*[——-]\s*(.+)$/.exec(line.trim());

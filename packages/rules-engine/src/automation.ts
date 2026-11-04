@@ -742,6 +742,8 @@ export function endTurnCleanup(state: GameState): GameState {
   return {
     ...next, effects: expireEffects(next, 'end-of-turn'), pendingDiscard: null,
     spellsCastThisTurn: 0,
+    // And the per-seat half of the same tally, which is what "your second spell each turn" counts.
+    spellsCastThisTurnBy: {},
     // And the turn's life loss, cleared here for the same reason: life lost in somebody's end step
     // was lost *this* turn, so a spectacle cost is payable until the turn is actually over.
     lifeLostThisTurn: {},
@@ -780,6 +782,13 @@ function triggerMatches(
       */
       const how = want.how ?? 'cast';
       if (how !== 'any' && (e.how ?? 'cast') !== how) return false;
+      /*
+        "Your **second** spell each turn", answered from the event's own ordinal — the same shape
+        the draw family above takes, and for the same reason: by the time the trigger resolves the
+        tally has moved on. Counted per caster, so at a four-seat table it is your second spell and
+        not the table's. See `GameState.spellsCastThisTurnBy`.
+      */
+      if (want.onNth !== undefined && e.nth !== want.onNth) return false;
       const by = want.by ?? 'you';
       if (by === 'you' && actorSeat !== sourceSeat) return false;
       if (by === 'opponent' && actorSeat === sourceSeat) return false;

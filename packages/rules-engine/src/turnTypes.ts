@@ -989,6 +989,24 @@ export interface AutomationState {
    */
   readonly spellsCastThisTurn: number;
   /**
+   * How many spells **each seat** has cast this turn, keyed by seat index as a string.
+   *
+   * Beside `spellsCastThisTurn` rather than replacing it, because the two answer different
+   * questions and storm needs the one above: storm counts every spell cast this turn by anybody
+   * (CR 702.40a), while "whenever you cast your **second** spell each turn" counts only yours. A
+   * single number cannot be both, and at a four-seat table the difference is most of the turn.
+   *
+   * The ordinal travels on the `spell-cast` event rather than being read when the trigger resolves,
+   * for the reason D436 wrote on the draw ordinal and D437 wrote on a dying creature's
+   * attachments: a trigger that has to know something about the instant its event happened needs
+   * the event to carry it, because by the time it resolves the tally has moved on — a Clarion
+   * Spirit whose trigger resolves after a third spell was cast would read three and do nothing.
+   *
+   * Reset in the cleanup step beside `spellsCastThisTurn`, and for the same reason its docblock
+   * gives: a spell cast in somebody's end step was cast *this* turn.
+   */
+  readonly spellsCastThisTurnBy: Readonly<Record<string, number>>;
+  /**
    * How much life each seat has **lost this turn**, keyed by seat index as a string.
    *
    * The second thing this engine remembers about a turn rather than about a permanent or a seat,

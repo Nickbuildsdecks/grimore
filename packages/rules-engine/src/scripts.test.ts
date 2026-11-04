@@ -22096,3 +22096,116 @@ describe('a creature you control connecting, as printed text', () => {
     expect(s.instances[bears]!.counters['+1/+1']).toBeUndefined();
   });
 });
+
+/*
+  "Whenever you cast your second spell each turn", played (D440).
+
+  The ordinal is **per caster**, which is the whole of the engine work: `spellsCastThisTurn` is the
+  table's running total and storm needs it to stay that (CR 702.40a), so a second, per-seat tally had
+  to exist. Both fixtures are Clarion Spirit, printed, driven through `customDeck`.
+*/
+describe('the second spell you cast each turn, as printed text', () => {
+  const CLARION = {
+    name: 'Clarion Spirit', type_line: 'Creature — Spirit', mana_cost: '{1}{W}', cmc: 2,
+    colors: ['W'], layout: 'normal', power: '2', toughness: '2', loyalty: null,
+    oracle_text: 'Whenever you cast your second spell each turn, create a 1/1 white Spirit creature'
+      + ' token with flying.',
+  };
+
+  const table = (firstSeat: 0 | 1, theirs: readonly string[] = []) => {
+    const list = customDeck({
+      id: 'clarion-list',
+      name: 'Clarion Spirit',
+      entries: [
+        { name: 'Clarion Spirit', count: 1 },
+        { name: 'Lightning Bolt', count: 4 },
+        { name: 'Mountain', count: 55 },
+      ],
+      data: [CLARION as never],
+    });
+    expect(list.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'clarion-list', 1: 'verdant-guard' },
+      deckSpecs: { 'clarion-list': list.deck },
+      battlefield: {
+        0: ['Clarion Spirit', 'Mountain', 'Mountain'],
+        1: theirs.length === 0 ? [] : ['Forest'],
+      },
+      hands: {
+        0: ['Lightning Bolt', 'Lightning Bolt', 'Lightning Bolt', 'Lightning Bolt'],
+        1: [...theirs],
+      },
+      turn: 3,
+      firstSeat,
+    });
+  };
+
+  const spirits = (s: GameState) =>
+    namesIn(s, 0 as SeatIndex, 'battlefield').filter((n) => n === 'Spirit').length;
+
+  const bolt = (s: GameState) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Lightning Bolt'),
+    targets: [{ kind: 'player', seat: 1 }],
+  } as Action)));
+
+  it('makes a Spirit on the second spell and not on the first', () => {
+    let s = advanceTo(table(0), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = bolt(s);
+    expect(spirits(s)).toBe(0);
+    s = bolt(s);
+    expect(spirits(s)).toBe(1);
+  });
+
+  it('starts counting again next turn', () => {
+    /*
+      "Each turn" is the other half of the sentence, and the lever for the cleanup step: the
+      per-seat tally is cleared with the rest of what "this turn" means, so the first spell of the
+      next turn is the first and not the third. Without the reset, one Spirit a turn becomes a
+      Spirit for every spell after the first of the game.
+    */
+    let s = advanceTo(table(0), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = bolt(bolt(s));
+    expect(spirits(s)).toBe(1);
+
+    /*
+      Round the table and back: seat 1's turn, then seat 0's again. Two more spells, and the
+      assertion is that they are **this turn's** first and second — so the second makes a Spirit.
+      Without the reset they would be the third and fourth spells of the game, neither of them a
+      second, and the count would stay at one: "still one Spirit" is what a missing reset looks
+      like, which is why this row counts two rather than checking the first spell makes none.
+    */
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = bolt(s);
+    expect(spirits(s)).toBe(1);
+    s = bolt(s);
+    expect(spirits(s)).toBe(2);
+  });
+
+  it('counts your spells, not the table\'s', () => {
+    /*
+      The lever for the per-seat tally. Seat 1 casts first, then seat 0 casts **its own first**
+      spell of the turn — which is the table's second. Read off `spellsCastThisTurn` that is a
+      Spirit; read off the caster's own count it is nothing, which is what the card says.
+
+      Seat 1 is the active player so that its spell is the one cast first, and seat 0 answers at
+      instant speed with the Bolt, which is a cast like any other.
+    */
+    let s = advanceTo(table(1, ['Llanowar Elves']), 'precombat-main');
+    s = tapAllLands(s, 1 as SeatIndex);
+    const elves = find(s, 1 as SeatIndex, 'hand', 'Llanowar Elves');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card: elves } as Action)));
+    expect(s.spellsCastThisTurn).toBe(1);
+
+    // Priority goes back to the active player once the Elves resolve, so seat 1 passes it across
+    // before seat 0 can do anything at all — including tapping its own lands.
+    s = apply(s, { type: 'auto:pass', by: 1 } as Action);
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = bolt(s);
+    expect(s.spellsCastThisTurn).toBe(2);
+    expect(spirits(s)).toBe(0);
+  });
+});

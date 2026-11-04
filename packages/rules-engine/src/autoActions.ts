@@ -65,6 +65,32 @@ const requireAutomated = (state: GameState): void => {
 
 const handOf = (state: GameState, seat: SeatIndex): readonly string[] => listAt(state, zoneKey(seat, 'hand'));
 
+/**
+ * The turn's cast tallies, both of them, for a spell that has just gone on the stack.
+ *
+ * One function for the two counts, and for the two places a spell is cast from — the ordinary cast
+ * and the face-down morph — because a seat whose spells are counted in one of those places and not
+ * the other is a Clarion Spirit that misses a turn depending on how the second spell was cast. It
+ * also means one break can move it: before this, `spellsCastThisTurn + 1` was written out twice,
+ * and a second statement of the same rule is a place no single break can reach (D433).
+ *
+ * Called **after** the stack object has taken its `castNumber` snapshot, so a storm spell never
+ * counts itself, and the per-seat count it returns is this spell's own ordinal — 1 for the first
+ * spell a seat casts in a turn, which is what `spell-cast`'s `nth` carries.
+ */
+function countCast(
+  state: GameState, seat: SeatIndex,
+): Pick<GameState, 'spellsCastThisTurn' | 'spellsCastThisTurnBy'> {
+  const key = String(seat);
+  return {
+    spellsCastThisTurn: state.spellsCastThisTurn + 1,
+    spellsCastThisTurnBy: {
+      ...state.spellsCastThisTurnBy,
+      [key]: (state.spellsCastThisTurnBy[key] ?? 0) + 1,
+    },
+  };
+}
+
 /** The script's targets for a spell, which for an Aura is what it enchants. */
 const spellTargets = (script: CardScript | undefined): readonly TargetSpec[] =>
   script?.targets ?? (script?.aura ? [script.aura.target] : []);
@@ -818,10 +844,11 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     ...next,
     stackObjects: { ...next.stackObjects, [object.id]: object },
     stackOrder: [...next.stackOrder, object.id],
-    // And the turn's tally, which is the thing storm counts. Incremented as the spell goes on the
-    // stack — a spell is cast once it is there with its costs paid (CR 601.2i) — and *after* the
-    // object has taken its snapshot, so a storm spell never counts itself.
-    spellsCastThisTurn: next.spellsCastThisTurn + 1,
+    // And the turn's tallies, which are the thing storm counts and the thing "your second spell
+    // each turn" counts. Incremented as the spell goes on the stack — a spell is cast once it is
+    // there with its costs paid (CR 601.2i) — and *after* the object has taken its snapshot, so a
+    // storm spell never counts itself. See `countCast`.
+    ...countCast(next, action.by),
   };
   // Prowess and friends trigger on the cast, which is why this is here and not in `resolveTop`.
   // A bestowed creature spell is an **Aura** spell (CR 702.103b), so a prowess creature sees a
@@ -830,6 +857,10 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   next = raise(next, {
     kind: 'spell-cast',
     spell: spellKind,
+    // Which of this caster's spells it is, this turn, for "whenever you cast your second spell each
+    // turn" — on the event rather than read at resolution, because by then the tally has moved on
+    // (D436's rule, third time). See `GameState.spellsCastThisTurnBy`.
+    nth: next.spellsCastThisTurnBy[String(action.by)] ?? 1,
     types: characteristics.typeLine.types.map((t) => t.toLowerCase()),
     // Which spell, as well as what kind of spell: a Chalice of the Void has to read its mana value
     // and then counter that object. See the `spell-cast` event's `object`.
@@ -919,7 +950,7 @@ function castFaceDown(
     ...next,
     stackObjects: { ...next.stackObjects, [object.id]: object },
     stackOrder: [...next.stackOrder, object.id],
-    spellsCastThisTurn: next.spellsCastThisTurn + 1,
+    ...countCast(next, action.by),
   };
   // A creature spell was cast, which is all a prowess or a "whenever an opponent casts a creature
   // spell" may know about it — the types come from the face-down profile, not from the card.
@@ -928,6 +959,8 @@ function castFaceDown(
     spell: 'creature',
     types: anonymous.typeLine.types.map((t) => t.toLowerCase()),
     object: object.id,
+    // A morph is a cast, so it is one of this caster's spells this turn like any other.
+    nth: next.spellsCastThisTurnBy[String(action.by)] ?? 1,
   }, action.by);
   next = resetPriority(settle(next, state), action.by);
   return {
