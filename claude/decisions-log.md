@@ -23806,3 +23806,69 @@ identically and compare unequal, which is exactly what `sizeBonus` exists to pre
 Verified: compile.test.ts 124/124; all six new or changed mechanisms — the grant inside
 `pumpAndGrant`, the `isKeyword` gate, the protection hint, `helpsInCombat`, the grant-only self
 clause and `protectFromRemoval`'s `sizeBonus` — each proved to fail when deliberately broken.
+
+## D380
+
+**The keyword declarations that already had a builder** (#317)
+
+**302 of 538 printed lines, up from 270 (50.2% → 56.1%); 190 of 339 cards get a script, up from
+175. Keyword declarations with no builder: 57 → 27.** The largest single-stage move so far, and the
+cheapest, because almost nothing was built — the engine already had a field for every one of these.
+
+### Eighteen rows, one shape
+
+`Flashback {2}{U}` is `flashback: { cost: '{2}{U}' }`, and that is the whole of it. So are madness,
+miracle, foretell, spectacle, buyback, dash and ninjutsu, each with one card in the pool whose
+hand-written script sets exactly that field — which is what the table in `compile.test.ts` names.
+Beside them: `Delve`, `Affinity for artifacts`, `Dredge 3`, `Suspend 1—{R}` (two cards, see below),
+`Escape—{2}{R}{R}, Exile three other cards from your graveyard`, `Rebound`, `Crew N`, and morph,
+megamorph and echo.
+
+What the eight alternative costs have in common is more than the shape: every one is a **way to cast
+the card**, so reading one adds an option and changes nothing about what the card does. That is what
+makes them safe on a card whose resolution is still unread.
+
+### Morph and echo: one parse, two call sites
+
+`keywordScriptFor`'s docblock listed morph and echo as deliberately absent *because* `fromCardData`
+already read them, and "two readers of one line is two places for them to disagree". That was the
+right objection to a second reader and not an argument for leaving the line unread: `keywordWithCost`
+is now exported and imported here. No cycle — `fromCardData` imports nothing this file does.
+
+### What is still refused, and the line that decides it
+
+**Kicker and overload** are the two alternative costs *not* read, and the reason is the distinction
+above: their payoff is printed on another line ("If this spell was kicked, it deals 4 damage
+instead"), so the declaration alone is an option to pay more for nothing. Overload's field also
+takes an `onResolve` no line can supply. **Evoke** is half a keyword — the other half is the
+enters-and-sacrifice trigger the pool writes out per card, and the declaration alone is a creature
+you get cheap and *keep*, which is a strictly better card than the one printed. **Embalm,
+eternalize and bestow** each need characteristics the line does not carry. **Unearth** has no single
+field to emit. Every one of those is now named in the docblock with its reason.
+
+### Three mechanisms the tests could not see, found by breaking them
+
+- **Echo's trigger.** `echo: { cost }` without `echoTrigger` is a price the game never asks for, and
+  the table only looks at the declared field, so dropping the trigger left all 142 tests green.
+- **Rebound's trigger.** The same, on the keyword whose second half *is* the card.
+- **Suspend's count.** Rift Bolt is `Suspend 1`, so a reader that ignored the printed number and
+  always wrote 1 passed its row. Search for Tomorrow (`Suspend 2`) is now a second row.
+
+The first two are fixed by a test asserting the direction the table cannot: a trigger the
+hand-written card has must be among the compiled ones. The table's own trigger test runs the other
+way, so that an *invented* trigger fails — both directions are needed and only one was there.
+
+Crew gets its own test rather than a table row, because an `AbilityDef` holds a closure and two
+closures are never deep-equal. Compared instead: the cost, the printed description, `animates`
+(the bot rule that travels with crew), and the board the effect leaves.
+
+### Two tests had to be repointed, which is the good kind of churn
+
+Thunderous Wrath's `Miracle {R}` was the example in "reads the resolution of a spell whose keyword
+line it cannot build" — and it now compiles whole. The property still matters, so the example is a
+keyword the compiler **deliberately** refuses: `Kicker {4}`. The same swap in the fixture of "still
+refuses a spell whose unread line is a sentence, not a keyword".
+
+Verified: compile.test.ts 145/145; the alternative-cost group, echo's trigger, rebound's trigger,
+suspend's count, escape's exile count and crew's `animates` each proved to fail when deliberately
+broken. Scryfall egress re-tested: still refused (000 for both hosts).

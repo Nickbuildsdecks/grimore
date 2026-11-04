@@ -10167,3 +10167,32 @@ neither set, because nothing hand-written pairs it with either hint.
 `protectFromRemoval` passes both numbers unconditionally, where `sizeBonus` omits a zero component —
 two continuous effects that behave identically and compare unequal. Fixed in the hand-written
 builder, so one rule has one source.
+
+## The keyword declarations that already had a builder (#317, D380)
+
+**302 of 538 printed lines, up from 270 (50.2% → 56.1%). 190 of 339 cards get a script, up from
+175. Keyword declarations with no builder: 57 → 27.** The largest single-stage move so far, and the
+cheapest — almost nothing was built, because the engine already had a field for each of these.
+
+**Eighteen rows, one shape.** `Flashback {2}{U}` is `flashback: { cost: '{2}{U}' }` and that is all
+of it; so are madness, miracle, foretell, spectacle, buyback, dash and ninjutsu, each with a card in
+the pool whose hand-written script sets exactly that field. Beside them delve, affinity, dredge,
+suspend, escape, rebound, crew, and morph/megamorph/echo. What the eight alternative costs share is
+that each is a **way to cast the card**: reading one adds an option and changes nothing the card
+does, which is what makes them safe on a card whose resolution is still unread.
+
+**Morph and echo now go through `fromCardData`'s own reader.** They were listed as deliberately
+absent because that module already read them and two readers of one line is two places to disagree.
+`keywordWithCost` is exported and imported instead: one parse, two call sites.
+
+**Still refused, each with its reason in the docblock.** Kicker and overload (payoff on another
+line, so the declaration alone is paying more for nothing), evoke (the declaration without its
+sacrifice trigger is a creature you get cheap and keep — strictly better than printed), embalm,
+eternalize and bestow (characteristics the line does not carry), unearth (no single field).
+
+**Three mechanisms no test could see, found by breaking them.** Dropping `echoTrigger` and
+`reboundCast` left all 142 tests green, because the table only compares the declared field — both
+keywords are a declaration *plus* a trigger. And Rift Bolt is `Suspend 1`, so a reader that always
+wrote 1 passed its row; Search for Tomorrow is now a second row. The triggers are pinned by a test
+asserting the direction the table cannot: a trigger the hand-written card has must be among the
+compiled ones.

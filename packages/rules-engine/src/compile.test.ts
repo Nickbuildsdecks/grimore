@@ -69,6 +69,39 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     { card: 'Arcbound Worker', keyword: 'Modular', fields: ['modular', 'entersWith'] },
     { card: 'Calciderm', keyword: 'Vanishing', fields: ['vanishing', 'entersWith'] },
     { card: 'Blastoderm', keyword: 'Fading', fields: ['fading', 'entersWith'] },
+    /*
+      The alternative ways to cast a card: one printed cost, one script field, and one card in the
+      pool whose hand-written script sets exactly that field for it. Grouped in the reader for the
+      same reason they are grouped here — the shape is identical and the only thing that varies is
+      which field the cost lands in.
+    */
+    { card: 'Think Twice', keyword: 'Flashback', fields: ['flashback'] },
+    { card: 'Fiery Temper', keyword: 'Madness', fields: ['madness'] },
+    { card: 'Thunderous Wrath', keyword: 'Miracle', fields: ['miracle'] },
+    { card: 'Saw It Coming', keyword: 'Foretell', fields: ['foretell'] },
+    { card: 'Skewer the Critics', keyword: 'Spectacle', fields: ['spectacle'] },
+    { card: 'Capsize', keyword: 'Buyback', fields: ['buyback'] },
+    { card: 'Mardu Scout', keyword: 'Dash', fields: ['dash'] },
+    { card: 'Ninja of the Deep Hours', keyword: 'Ninjutsu', fields: ['ninjutsu'] },
+    // The ones whose argument is a number, a word, or nothing at all.
+    { card: 'Gurmag Angler', keyword: 'Delve', fields: ['delve'] },
+    { card: 'Frogmite', keyword: 'Affinity for artifacts', fields: ['affinity'] },
+    { card: 'Shambling Shell', keyword: 'Dredge', fields: ['dredge'] },
+    /*
+      Both suspend cards, because one is not enough: Rift Bolt is `Suspend 1` and a reader that
+      ignored the printed number and always wrote 1 passed its row. Search for Tomorrow is
+      `Suspend 2`.
+    */
+    { card: 'Rift Bolt', keyword: 'Suspend', fields: ['suspend'] },
+    { card: 'Search for Tomorrow', keyword: 'Suspend', fields: ['suspend'] },
+    { card: 'Woe Strider', keyword: 'Escape', fields: ['escape'] },
+    { card: 'Distortion Strike', keyword: 'Rebound', fields: ['rebound'] },
+    // Morph and echo, read through the same `keywordWithCost` the whole-card path uses.
+    { card: 'Ainok Survivalist', keyword: 'Morph', fields: ['morph'] },
+    { card: 'Hidden Dragonslayer', keyword: 'Megamorph', fields: ['morph'] },
+    { card: 'Mogg War Marshal', keyword: 'Echo', fields: ['echo'] },
+    // Crew is an ability rather than a declaration, so it has its own test below: an `AbilityDef`
+    // holds a closure, and two closures are never deep-equal however identical their behaviour.
   ];
 
   for (const { card, keyword, fields } of KEYWORDS) {
@@ -713,18 +746,88 @@ describe('compileCard, against the cards a person wrote by hand', () => {
   /*
     ── A keyword nobody implemented is not an unread sentence ─────────────────────────────────────
   */
+  it.each([
+    ['Mogg War Marshal', 'Echo {1}{R} — pay it or sacrifice this permanent'],
+    ['Distortion Strike', 'cast it from exile without paying its mana cost'],
+  ])('%s gets the trigger its keyword is half of', (card, description) => {
+    /*
+      Found by breaking the readers: dropping `echoTrigger` from the echo row and `reboundCast`
+      from the rebound row left every test green. Both keywords are a declaration **plus** a
+      trigger — an echo cost the game never asks for, a rebound that never offers the second cast —
+      and the declaration on its own compared equal to the hand-written field, which is the only
+      thing the table above looks at.
+
+      Asserted in the direction the table cannot: a trigger the hand-written card has must be among
+      the compiled ones. The table's own trigger test runs the other way, so that a compiler which
+      *invents* a trigger fails, and both directions are needed.
+    */
+    const shape = (s: unknown) =>
+      ((s as { triggers?: readonly { description?: string }[] }).triggers ?? [])
+        .map((t) => t.description ?? '');
+    expect(shape(scriptFor(card as string)), `${card as string}: not the hand-written description`)
+      .toContain(description as string);
+    expect(shape(compiledScript(card as string).script), `${card as string}: trigger not compiled`)
+      .toContain(description as string);
+  });
+
+  it('reads Crew off the Vehicle the pool crews, closures and all', () => {
+    /*
+      The one keyword row that is an **ability** rather than a declaration, so it cannot be deep
+      compared: an `AbilityDef` holds a closure. What is compared instead is everything that is not
+      one — the cost, the printed description and `animates` — plus the board the effect leaves,
+      which is where a different builder or a different argument would show up.
+
+      `animates: true` is in the comparison deliberately. It is the bot rule that travels with crew
+      (do not press this unless there is an attack or a block to make), and a Vehicle that animates
+      itself at a random moment has spent its crew for nothing. Same family as D364's hints.
+    */
+    const written = ((scriptFor('Sky Skiff') as unknown as
+      { abilities?: readonly AbilityDef[] }).abilities ?? [])[0];
+    const compiled = ((compiledScript('Sky Skiff').script as unknown as
+      { abilities?: readonly AbilityDef[] }).abilities ?? [])[0];
+    expect(written, 'no hand-written crew ability').toBeDefined();
+    expect(compiled, 'compiled no crew ability').toBeDefined();
+    if (written === undefined || compiled === undefined) return;
+    expect(compiled.cost).toEqual(written.cost);
+    expect(compiled.description).toBe(written.description);
+    expect(compiled.animates).toBe(written.animates);
+
+    const base = arena({
+      decks: { 0: 'forge-alliance' }, battlefield: { 0: ['Sky Skiff'] }, turn: 3,
+    });
+    const source = find(base, 0 as SeatIndex, 'battlefield', 'Sky Skiff');
+    const ctx = { state: base, controller: 0 as SeatIndex, source, targets: [] } as
+      unknown as EffectContext;
+    expect(compiled.effect?.(ctx)).toEqual(written.effect?.(ctx));
+    expect(compiled.effect?.(ctx), 'crewing changed nothing').not.toEqual(base);
+  });
+
   describe('keyword declarations, which are a different kind of incomplete', () => {
     it('reads the resolution of a spell whose keyword line it cannot build, and names the keyword', () => {
       /*
-        Thunderous Wrath is `Miracle {R}` plus "deals 5 damage to any target". Before
-        `isKeywordDeclaration`, the keyword line fell into the resolution, and the resolution is
-        all-or-nothing — so a damage clause this module reads perfectly well was refused by a line
-        that is not part of resolving the spell at all. Four pool spells were refused that way.
+        Before `isKeywordDeclaration`, a keyword line fell into the resolution, and the resolution
+        is all-or-nothing — so a damage clause this module reads perfectly well was refused by a
+        line that is not part of resolving the spell at all. Four pool spells were refused that way.
+
+        The example used to be Thunderous Wrath's `Miracle {R}`, which is now read, so it is a
+        keyword the compiler **deliberately** refuses instead: `Kicker {4}`, whose payoff is printed
+        on another line. Both halves of the property still hold — the resolution is read, and the
+        keyword is reported as the option the card is missing rather than as a broken resolution.
       */
+      const kicked = compileCard({
+        name: 'Nonesuch', type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'],
+        oracle_text: 'Kicker {4}\nNonesuch deals 2 damage to any target.',
+      });
+      expect(kicked.ok).toBe(true);
+      if (!kicked.ok) return;
+      expect(kicked.script).toBeDefined();
+      expect(kicked.unread).toEqual([{ line: 'Kicker {4}', why: 'unimplemented-keyword' }]);
+      expect(kicked.compiled).toEqual(['Nonesuch deals 2 damage to any target.']);
+
+      // And Thunderous Wrath, which was this test's example, now compiles whole.
       const wrath = compiledScript('Thunderous Wrath');
-      expect(wrath.script).toBeDefined();
-      expect(wrath.unread).toEqual([{ line: 'Miracle {R}', why: 'unimplemented-keyword' }]);
-      expect(wrath.compiled).toEqual(['Thunderous Wrath deals 5 damage to any target.']);
+      expect(wrath.unread).toEqual([]);
+      expect(fullyCompiled(wrath)).toBe(true);
     });
 
     it('still refuses a spell whose unread line is a sentence, not a keyword', () => {
@@ -737,13 +840,13 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const half = compileCard({
         name: 'Keyword And A Sentence', type_line: 'Instant', mana_cost: '{R}', cmc: 1,
         colors: ['R'],
-        oracle_text: 'Miracle {R}\nPrevent all combat damage that would be dealt this turn.',
+        oracle_text: 'Kicker {4}\nPrevent all combat damage that would be dealt this turn.',
       });
       expect(half.ok).toBe(true);
       if (!half.ok) return;
       expect(half.script).toBeUndefined();
       expect(half.unread).toEqual([
-        { line: 'Miracle {R}', why: 'unimplemented-keyword' },
+        { line: 'Kicker {4}', why: 'unimplemented-keyword' },
         {
           line: 'Prevent all combat damage that would be dealt this turn.',
           why: 'no-reader',

@@ -509,7 +509,9 @@ function manaMismatch(
  * (D332). The line that still holds is the one below it: "When this enters, you gain 2 life" is
  * English, and no keyword defines it.
  */
-function keywordWithCost(line: string): { field: 'morph' | 'echo'; mana: string; mega?: true } | null {
+export function keywordWithCost(
+  line: string,
+): { field: 'morph' | 'echo'; mana: string; mega?: true } | null {
   const match = /^(Morph|Megamorph|Echo)\s+((?:\{[^}]*\})+)$/i.exec(line.trim());
   if (match === null) return null;
   const word = match[1]!.toLowerCase();

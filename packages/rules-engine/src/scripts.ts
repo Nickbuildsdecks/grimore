@@ -46,6 +46,16 @@ import type {
 // The compiler's shared `ReadEffect` stores an effect under one name for both the trigger path and
 // the spell path, so it needs the function type both fields have.
 import type { EffectFn } from './effects.js';
+/*
+  One reader of `Morph {2}`, `Megamorph {4}{G}` and `Echo {1}{R}`, shared with the whole-card path
+  rather than written twice. `keywordScriptFor`'s docblock used to list those three as deliberately
+  absent *because* `fromCardData` already read them and two readers of one line is two places for
+  them to disagree. Importing the reader is the third option: one parse, two call sites.
+
+  No cycle: `fromCardData.ts` imports `cards`, `characteristics`, `effects`, `mana` and the script
+  types, and none of them is this file.
+*/
+import { keywordWithCost } from './fromCardData.js';
 import { parseManaCost, timesCost } from './mana.js';
 import type { Color, ManaType } from './mana.js';
 import type { Keyword } from './characteristics.js';
@@ -8791,8 +8801,23 @@ export { cardTargets, destroy };
  * - **Level up.** `levelUpAbility(cost)` is readable from the line, but a leveler's `levelBands`
  *   are three blocks of printed text below it, and a level-up ability with no bands to reach is an
  *   ability that costs mana and does nothing.
- * - **Morph and echo.** Already read, by `keywordWithCost` in `fromCardData.ts`. Two readers of one
- *   line is two places for them to disagree.
+ * - **Kicker and overload.** Their payoff is printed on *another* line — "If this spell was kicked,
+ *   it deals 4 damage instead" — so the declaration alone is an option to pay more for nothing.
+ *   Every other alternative cost here changes only *how* the card is cast; these two change what it
+ *   does, and overload's field takes an `onResolve` no line can supply.
+ * - **Evoke.** `CardScript.evoke` is only half of it. The other half is "when this permanent
+ *   enters, if its evoke cost was paid, sacrifice it", which the pool writes out as an ordinary
+ *   triggered ability per card. The declaration on its own is a creature you get cheap and keep,
+ *   which is a strictly better card than the one printed.
+ * - **Embalm, eternalize and bestow.** Each needs characteristics the keyword line does not carry:
+ *   the token's type and colour, its base power and toughness, the Aura's bonus. Reading the
+ *   reminder text for them would be inventing a card out of a parenthesis.
+ * - **Unearth.** Written out as an ability plus `unearthExile()` per card rather than as a field,
+ *   so there is no one fragment to emit.
+ *
+ * Morph and echo *were* in this list, because `keywordWithCost` in `fromCardData.ts` already read
+ * them and two readers of one line is two places for them to disagree. They are read here now
+ * through that same function, imported: one parse, two call sites.
  *
  * `line` arrives with reminder text already stripped — see `printedRulesLines`.
  */
@@ -8817,6 +8842,111 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     if (which === 'ward') return { triggers: [ward(name, mana)] };
     if (which === 'replicate') return { replicate: { cost: mana }, triggers: [replicate()] };
     return { cumulativeUpkeep: { cost: mana }, triggers: [cumulativeUpkeepTrigger(mana)] };
+  }
+
+  // ── The alternative ways to cast a card, which are a cost and nothing else ────────────────────
+  /*
+    Each of these is one printed cost and one script field, and the hand-written twin of each sets
+    exactly that field: `flashback: { cost }` on Think Twice, `madness: { cost }` on Fiery Temper,
+    and so on down the list. They are grouped because the shape is identical, and the table in
+    `compile.test.ts` names the card that proves each row.
+
+    What they have in common is more than the shape: every one is a **way to cast the card**, so
+    reading one adds an option and changes nothing about what the card does. That is what makes
+    them safe to read off a card whose resolution is still unread — a Thunderous Wrath with its
+    miracle cost and its damage clause both read is a whole card, and the same card with the clause
+    unread is flagged for a human to play by hand either way (D362).
+
+    `Kicker` and `Overload` are deliberately **not** in this list, and the difference is exactly
+    that. Their payoff is printed on another line — "If this spell was kicked, it deals 4 damage
+    instead" — so the declaration alone is an option to pay more for nothing, which is not the card.
+    `Overload` also takes an `onResolve` of its own, which no line here can supply.
+  */
+  const alternative =
+    /^(flashback|madness|miracle|foretell|spectacle|buyback|dash|ninjutsu)\s+((?:\{[^}]*\})+)$/i
+      .exec(text);
+  if (alternative !== null) {
+    const mana = alternative[2]!;
+    switch (alternative[1]!.toLowerCase()) {
+      case 'flashback': return { flashback: { cost: mana } };
+      case 'madness': return { madness: { cost: mana } };
+      case 'miracle': return { miracle: { cost: mana } };
+      case 'foretell': return { foretell: { cost: mana } };
+      case 'spectacle': return { spectacle: { cost: mana } };
+      case 'dash': return { dash: { cost: mana } };
+      case 'ninjutsu': return { ninjutsu: { cost: mana } };
+      // The one of the eight that stores its printed line as well, as Capsize does.
+      default: return { buyback: { cost: mana, description: text } };
+    }
+  }
+
+  // ── Morph, megamorph and echo, through the reader the whole-card path uses ─────────────────────
+  const costed = keywordWithCost(text);
+  if (costed !== null) {
+    if (costed.field === 'echo') {
+      /*
+        The declaration **and** the trigger, which is D364's rule again: `echo` on its own is a
+        price the game never asks for, and `echoTrigger` on its own has no cost to charge. Mogg War
+        Marshal sets both.
+      */
+      return { echo: { cost: costed.mana }, triggers: [echoTrigger(costed.mana)] };
+    }
+    return {
+      morph: {
+        cost: { mana: costed.mana },
+        ...(costed.mega === true ? { mega: true as const } : {}),
+      },
+    };
+  }
+
+  // ── The declarations whose argument is a number, or no argument at all ────────────────────────
+  if (word === 'delve') return { delve: true };
+  if (word === 'affinity for artifacts') return { affinity: 'artifacts' };
+  /*
+    Rebound is the word alone **plus** the trigger that casts the card again, because the keyword is
+    two halves: `rebound` is the replacement that exiles it on resolution and `reboundCast` is the
+    upkeep trigger that offers the second cast. Staggershock and Distortion Strike both set both.
+  */
+  if (word === 'rebound') return { rebound: true, triggers: [reboundCast()] };
+
+  const dredged = /^dredge\s+(\d+)$/i.exec(text);
+  if (dredged !== null) return { dredge: { mill: Number(dredged[1]) } };
+
+  /*
+    Crew, which is an **ability** rather than a declaration: the Vehicle becomes a creature when
+    somebody taps creatures with enough total power to drive it. `animates: true` is the bot rule
+    that travels with it — do not press this unless there is an attack or a block to make — and
+    Sky Skiff, Renegade Freighter and Consulate Dreadnought all write the same four fields.
+  */
+  const crewed = /^crew\s+(\d+)$/i.exec(text);
+  if (crewed !== null) {
+    return {
+      abilities: [{
+        cost: { crew: Number(crewed[1]) },
+        description: text,
+        animates: true,
+        effect: (c) => pump(c.state, [c.source], c.source, c.controller, { addTypes: ['Creature'] }),
+      }],
+    };
+  }
+
+  // `Suspend 1—{R}`, whose number is the time counters it waits out.
+  const suspended = /^suspend\s+(\d+)\s*[—-]\s*((?:\{[^}]*\})+)$/i.exec(text);
+  if (suspended !== null) {
+    return { suspend: { cost: suspended[2]!, counters: Number(suspended[1]) } };
+  }
+
+  /*
+    `Escape—{2}{R}{R}, Exile three other cards from your graveyard.` Its count is printed as a
+    **word**, which `countFrom` already reads for every other clause in this module, so a card
+    printing a digit or a word is one reader either way.
+  */
+  const escaped =
+    /^escape\s*[—-]\s*((?:\{[^}]*\})+),\s*exile\s+([\w]+)\s+other cards? from your graveyard\.?$/i
+      .exec(text);
+  if (escaped !== null) {
+    const exile = countFrom(escaped[2]!);
+    if (exile !== null) return { escape: { cost: escaped[1]!, exile } };
   }
 
   /*
