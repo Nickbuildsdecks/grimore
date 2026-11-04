@@ -11030,3 +11030,23 @@ amount `<= 0` on its first line. Deleted, with the behaviour asserted and the re
 
 **400 → 401 of 538 lines (74.5%)**, **255 → 256 of 339 cards**. Four breaks, two failing tests and
 two that could not — both diagnosed rather than patched. 347/347; 4,000 rows at scale, no throw.
+
+## A land that turns itself into a creature (#317, D416)
+
+Mutavault's animation, and the first **ability**-shape reader beside the four spell-shape ones. Its
+two printed sentences are one reading, and the second decides what the first does: `addTypes` adds a
+type where `setTypes` would replace the line, and "it's still a land" is the printed reason to add
+(CR 613.1c) — guess wrong and the land cannot be tapped for mana for the rest of the turn. The clause
+without that sentence is refused rather than read as either. `setPower` and not a pump, so an anthem
+lands on top of a 2/2 base (layer 7b), and `animates` is carried because the bot otherwise animates
+for nothing and loses the mana.
+
+**A second figure from here on.** This increment moves no card on the number every checkpoint has
+quoted — Mutavault already had a script from its mana ability — but it now has nothing left unread.
+Both are real: **cards with a script** is 256 of 339 (it plays, maybe with a line flagged for a
+human), **cards with every line read** is 228 of 339 (nothing left for a human at all). The second
+ran 220 → 228 across this stretch while the first ran 249 → 256. Neither earlier figure was wrong;
+the second was not being printed.
+
+**401 → 402 of 538 lines (74.5% → 74.7%)**, 256/339 with a script, **227 → 228** complete. Four
+deliberate breaks, four failing tests; 351/351; 4,000 rows at scale with no throw.

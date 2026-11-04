@@ -4647,6 +4647,104 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
   });
 
+  describe('a land that turns itself into a creature', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string,
+    ): EffectContext => ({
+      state, controller: seat, source, targets: [], decisions: [],
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const abilitiesOf = (script: unknown) =>
+      (field(script, 'abilities') as readonly AbilityDef[] | undefined) ?? [];
+
+    /** Mutavault's animation is its second ability; the first is the mana one. */
+    const animation = (script: unknown) => abilitiesOf(script)[1];
+
+    it('adds the creature type and keeps the land, as Mutavault does', () => {
+      /*
+        The two printed sentences are one reading, and the second decides what the first does:
+        `addTypes` adds a type where `setTypes` would replace the line, and "it's still a land" is
+        the printed reason to add (CR 613.1c). Guessing wrong makes a Mutavault that cannot be
+        tapped for mana for the rest of the turn.
+      */
+      const mine = compiledScript('Mutavault');
+      expect(mine.unread).toEqual([]);
+      expect(abilitiesOf(mine.script)).toHaveLength(2);
+
+      const base = arena({
+        decks: { 0: 'ember-rush', 1: 'verdant-guard' },
+        battlefield: { 0: ['Mutavault'] },
+        turn: 3,
+      });
+      const vault = find(base, 0 as SeatIndex, 'battlefield', 'Mutavault');
+      const ctx = contextOn(base, 0 as SeatIndex, vault);
+      const after = animation(mine.script)!.effect!(ctx);
+      expect(after).toEqual(animation(scriptFor('Mutavault'))!.effect!(ctx));
+      /*
+        And right rather than merely equal: a 2/2 that is **both** a creature and a land. The state
+        comparison would pass on two readings that both replaced the type line, and this says which.
+      */
+      const ch = characteristicsOf(after, after.instances[vault]!);
+      expect(ch.isCreature).toBe(true);
+      expect(ch.power).toBe(2);
+      expect(ch.toughness).toBe(2);
+      expect(ch.isLand).toBe(true);
+    });
+
+    it('is a base 2/2, so an anthem lands on top of it', () => {
+      /*
+        Layer 7b, which is the difference between `setPower: 2` and a `+2/+2` pump: a base of two
+        with an anthem on top is a 3/3, where a pump of two on a 0/0 land that an anthem also hits
+        would be a 1/1 and a very different card. The engine has had the layer since #94; this is
+        the assertion that the compiled reading uses it.
+      */
+      const base = arena({
+        decks: { 0: 'ember-rush', 1: 'verdant-guard' },
+        battlefield: { 0: ['Mutavault'] },
+        turn: 3,
+      });
+      const vault = find(base, 0 as SeatIndex, 'battlefield', 'Mutavault');
+      const animated = animation(compiledScript('Mutavault').script)!
+        .effect!(contextOn(base, 0 as SeatIndex, vault));
+      const anthemed = pump(animated, [vault], 'fx-anthem', 0 as SeatIndex,
+        { power: 1, toughness: 1 });
+      const ch = characteristicsOf(anthemed, anthemed.instances[vault]!);
+      expect(ch.power).toBe(3);
+      expect(ch.toughness).toBe(3);
+    });
+
+    it('carries the animation hint, so the bot does not animate for nothing', () => {
+      /*
+        `AbilityDef.animates` is how the bot knows not to press this unless there is an attack or a
+        block to make with it — and pressing it costs the land as a mana source for the turn, so an
+        animation without the flag is a card that plays itself badly twice over (#322).
+      */
+      expect(animation(compiledScript('Mutavault').script)?.animates).toBe(true);
+      expect(animation(scriptFor('Mutavault'))?.animates).toBe(true);
+    });
+
+    it("refuses the animation without the sentence that says it is still a land", () => {
+      /*
+        The second sentence is what decides between adding a type and replacing the line, so a clause
+        that does not print it leaves the reader guessing — and guessing is what D259 rules out. A
+        permanent that is not a land becoming a creature is a different family anyway (a Vehicle's
+        crew), so nothing is lost by refusing this and flagging the line for a human (D362).
+      */
+      const card = compileCard({
+        name: 'Quiet Vault', type_line: 'Land', mana_cost: '', cmc: 0, colors: [],
+        oracle_text: '{T}: Add {C}.\n{1}: Quiet Vault becomes a 2/2 creature until end of turn.',
+      });
+      expect(card.ok).toBe(true);
+      if (!card.ok) return;
+      // The mana ability still reads; the animation is the unread line.
+      expect(card.unread.map((u) => u.line)).toEqual([
+        '{1}: Quiet Vault becomes a 2/2 creature until end of turn.',
+      ]);
+    });
+  });
+
   describe('a characteristic read before the permanent leaves', () => {
     const contextOn = (
       state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],

@@ -11933,6 +11933,53 @@ function composeEffects(clauses: readonly string[], name: string): ReadEffect | 
  * checks for it first and emits `produces`, exactly as `basicLand` does. A version that built an
  * `effect` adding to the pool would be an ability the mana system cannot see.
  */
+/**
+ * **A land that turns itself into a creature** — Mutavault's second ability.
+ *
+ * ## Why the two sentences are read together
+ *
+ * "Mutavault becomes a 2/2 creature until end of turn. It's still a land." `clausesOf` splits that
+ * into two, and the second one is not an effect at all — it is the sentence that **decides what the
+ * first one does**. `addTypes: ['Creature']` adds a type where `setTypes` would replace the line,
+ * and "it's still a land" is the printed reason to add (CR 613.1c). A reader of the first sentence
+ * alone has to guess between them, and guessing wrong makes a Mutavault that cannot be tapped for
+ * mana for the rest of the turn.
+ *
+ * So the pair is one reading, for `pumpAndGrant`'s reason one level up: two sentences, one call.
+ * An ability-shape reader rather than a clause one, consulted ahead of `composeEffects` exactly as
+ * the spell-shape readers are — and a clause that says "becomes a 2/2 creature" **without** the
+ * second sentence is refused rather than read as either (D259). Nothing in the pool prints it, and a
+ * permanent that is not a land becoming a creature is a different family anyway (a Vehicle's crew).
+ *
+ * ## `setPower`, not a pump
+ *
+ * Layer 7b: a 2/2 **base**, so an anthem lands on top of it rather than under it. That is what the
+ * hand-written card does and the engine has had the layer all along.
+ *
+ * ## `animates` is the hint, and it is load-bearing
+ *
+ * `AbilityDef.animates` is how the bot knows not to press this unless there is an attack or a block
+ * to make with it. Without it the land animates itself at random for no gain and, worse, stops being
+ * a mana source the auto-tapper will spend. A compiled animation without the flag is #322's failure
+ * again: a card that plays and plays badly.
+ */
+function animateSelf(clause: string, name: string): ReadEffect | null {
+  const self = escapeName(name);
+  const becomes = new RegExp(
+    `^(?:${self}|it) becomes a (\\d+)/(\\d+) creature until end of turn\\.\\s*it['’]s still a land$`,
+    'i',
+  ).exec(plain(clause).trim().replace(/\.\s*$/, ''));
+  if (becomes === null) return null;
+  const power = Number(becomes[1]);
+  const toughness = Number(becomes[2]);
+  return {
+    abilityFlags: { animates: true },
+    effect: (c) => pump(c.state, [c.source], c.source, c.controller, {
+      addTypes: ['Creature'], setPower: power, setToughness: toughness,
+    }),
+  };
+}
+
 function abilityFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim();
   /*
@@ -12015,7 +12062,13 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     return { abilities: [{ cost, description: text, produces }] };
   }
 
-  const read = composeEffects(clausesOf(clause), name);
+  /*
+    The animation shape before the clause vocabulary, for the reason in `animateSelf`'s docblock: its
+    two sentences are one reading, and the second decides what the first does. Only here and not in
+    the loyalty branch above — a planeswalker animating itself is a sentence no card in the pool
+    prints, and a reader with nothing to check against is a reader written ahead of need.
+  */
+  const read = animateSelf(clause, name) ?? composeEffects(clausesOf(clause), name);
   if (read === null) return null;
   return {
     abilities: [{

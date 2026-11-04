@@ -25890,3 +25890,58 @@ only card the per-card diff shows moving.
 
 Four deliberate breaks, **two** failing tests and two that could not — both diagnosed rather than
 patched over. compile.test.ts 347/347, 4,000 shuffled rows with no throw.
+
+## D416 — A land that turns itself into a creature, and a second figure worth printing
+
+Mutavault's animation: `{1}: Mutavault becomes a 2/2 creature until end of turn. It's still a land.`
+The first **ability**-shape reader, beside the four spell-shape ones.
+
+### The second sentence decides what the first one does
+
+`clausesOf` splits that into two, and the second is not an effect at all. `addTypes: ['Creature']`
+adds a type where `setTypes` would replace the line, and "it's still a land" is the printed reason to
+add (CR 613.1c). A reader of the first sentence alone has to guess between them, and guessing wrong
+makes a Mutavault that **cannot be tapped for mana for the rest of the turn** — a card that works,
+plays, and is worse than the print.
+
+So the pair is one reading, and `animateSelf` is consulted ahead of `composeEffects` in
+`abilityFromLine` exactly as the spell-shape readers are ahead of it in `readResolution`. The clause
+**without** the second sentence is refused rather than read as either (D259): nothing in the pool
+prints it, and a non-land becoming a creature is a different family anyway (a Vehicle's crew). A
+break that makes the sentence optional fails that row.
+
+`setPower`/`setToughness` and not a pump, which is layer 7b: a 2/2 **base**, so an anthem lands on
+top of it. A break that pumps instead fails, because the anthem test reads 3/3 where the pump gives
+1/1 on a 0/0 land.
+
+`animates` is carried and is load-bearing twice: it is how the bot knows not to press this without an
+attack or a block to make, and pressing it spends the land as a mana source for the turn. A compiled
+animation without the flag is #322's failure again.
+
+### A second figure, and why it is new rather than a correction
+
+This increment moves **no card** on the figure every entry since D366 has quoted — Mutavault already
+had a script, because its mana ability compiled long ago. What moved is that it now has **nothing
+left unread**.
+
+Both numbers are real and they measure different things:
+
+- **cards with a script** (`whole-card` + `lines` in the measure's source split) — the card plays,
+  possibly with a line flagged for a human (D362). **256 of 339.**
+- **cards with every printed line read** — nothing is left for a human at all. **228 of 339**, up
+  from 227.
+
+Every figure quoted so far has been the first, and none of them was wrong; the second was simply not
+being printed. Across the eight increments measured this stretch it ran 220 → 228 while the first ran
+249 → 256. Both are quoted from here on, because "it plays" and "it plays completely" are the two
+questions a person about to use this would ask, and one number cannot answer both.
+
+### Measured
+
+**401 → 402 of 538 printed lines (74.5% → 74.7%)**; cards with a script unchanged at **256 of 339**;
+cards with every line read **227 → 228 of 339**. The per-card diff shows exactly one card leaving the
+incomplete list: Mutavault.
+
+Four deliberate breaks, four failing tests: `setTypes` for `addTypes`, a pump for a base, the
+`animates` hint dropped, and the land sentence made optional. compile.test.ts 351/351, 4,000 shuffled
+rows with no throw.
