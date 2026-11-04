@@ -10243,3 +10243,33 @@ read elsewhere — the duration is the whole difference.
 controller test compose, so `permanentFilter` gained a live-read `types` option. The first draft of
 the test put an artifact on each side of the table, which proves the side and says nothing about the
 types; dropping `types` left it green. A creature on the opponent's side was the missing row.
+
+## The reset throttle was advisory, and CI found it (#321, D383)
+
+CI failed once on a commit that touched none of this: six password reset emails out of a limit of
+five. The test was right and the route was wrong.
+
+**Two writes for one fact.** `/forgot-password` counted `account_events` and then recorded the
+request with `auditAccountEvent`, which is deliberately not awaited — a good rule for a *record* and
+a wrong one for a **counter**, because the next request reads the table to decide whether to act. A
+write still in flight is a request that was never counted.
+
+**The lock, because awaiting is half of it.** A burst of six can all read four and all proceed. The
+count and the insert are now one transaction holding `pg_advisory_xact_lock` on the identifier,
+released by the commit, keyed on the identifier as supplied — counting before resolving is what
+stops the throttle from revealing that an account exists.
+
+**Fails closed**, which is the opposite of the audit rule and right for the opposite reason: a
+throttle that throws and reads as "under the limit" is one an attacker removes by making the
+database unhappy. The rejection path is byte-identical to the success path.
+
+**The audit trail quietly got worse and a test caught it.** The gate runs before the lookup, so its
+row has no `player_id`; the first version dropped the one the old code attached, and the test that
+reads the trail by player id failed. `attachPlayerToEvent` puts it back, awaited.
+
+**What the tests prove, stated rather than implied.** The burst test through the route does *not*
+discriminate — run against the old code it passed here, because six concurrent requests serialised
+far enough apart to count each other, which is why the sequential version only failed in CI once. It
+is kept as a stress check with that written into it. The proof is three deterministic tests on the
+gate itself: three allowed then one refused in sequence, exactly three of six concurrent calls
+allowed, and `allowed: false` from a pool that cannot connect.

@@ -15,6 +15,7 @@ import {
 import { runMigrations } from '@grimore/db';
 import { MemoryTransport } from '@grimore/mailer';
 import { createApp, createContext, closeContext, type AppContext } from './app.js';
+import { countAndRecordEvent } from './lib/accountEvents.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const REDIS_URL = process.env.REDIS_URL;
@@ -206,6 +207,93 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)('account recovery (requires DATABAS
       }
       // Five sent, the sixth suppressed — and the sixth response is indistinguishable from the others.
       expect(mail.sent).toHaveLength(5);
+    });
+
+    it('holds the ceiling against a burst as well as a sequence', async () => {
+      /*
+        The same ceiling, six requests in flight at once, which is the shape an unauthenticated caller
+        actually sends.
+
+        Honest about what this proves: it is a **stress** check, not the proof. Run against the old
+        read-then-write route it passed on this machine, because six concurrent requests happened to
+        serialise far enough apart to count each other — which is exactly why the sequential version of
+        it only failed in CI, once. The deterministic checks are on `countAndRecordEvent` itself,
+        below; this one is here because the route is what a caller touches and "at most five" is the
+        property, whatever the timing does.
+      */
+      const a = await account();
+      const responses = await Promise.all(
+        Array.from({ length: 6 }, (_, i) => forgot(a.username, `10.92.0.${i + 1}`)),
+      );
+      for (const r of responses) expect(r.status).toBe(200);
+      expect(mail.sent.length).toBeLessThanOrEqual(5);
+    });
+  });
+
+  /*
+    The throttle gate on its own, which is where the bound can actually be proved.
+
+    The route's own tests go through HTTP and so through two rate limiters, a mail transport and a
+    password hash, and the thing under test — "the count and the write are one fact" — is visible in
+    none of them except as a timing-dependent email count. CI found the defect that way, once, and the
+    burst test above could not reproduce it on demand. These call the gate directly.
+  */
+  describe('the per-account throttle gate', () => {
+    const req = {
+      ip: '10.99.0.1',
+      socket: { remoteAddress: '10.99.0.1' },
+      get: () => 'vitest',
+    } as unknown as Parameters<typeof countAndRecordEvent>[2];
+
+    const gate = (identifier: string) => countAndRecordEvent(
+      ctx.pool,
+      ctx.log,
+      req,
+      { event: 'password.reset.requested', identifier, windowMs: 60_000, limit: 3 },
+    );
+
+    it('counts the request it is deciding about, so the next one sees it', async () => {
+      /*
+        The whole defect in one assertion. Before this, the count came from a read and the row came
+        from a write that was deliberately **not** awaited — so request N+1 could be answered before
+        request N existed in the table. Three allowed then one refused, with nothing between the calls
+        but the await, is what makes the limit a limit.
+      */
+      const who = `gate_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const verdicts: boolean[] = [];
+      for (let i = 0; i < 4; i += 1) verdicts.push((await gate(who)).allowed);
+      expect(verdicts).toEqual([true, true, true, false]);
+    });
+
+    it('allows exactly the ceiling when every call is in flight at once', async () => {
+      /*
+        The lock, and the reason it is not enough to await the write. Six concurrent calls on one
+        identifier all read the same count unless something serialises them: `pg_advisory_xact_lock`
+        does, keyed on the identifier, released by the commit. Exactly three allowed, every run.
+      */
+      const who = `burst_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const results = await Promise.all(Array.from({ length: 6 }, () => gate(who)));
+      expect(results.filter((r) => r.allowed)).toHaveLength(3);
+    });
+
+    it('fails closed when the database will not answer', async () => {
+      /*
+        The opposite rule to `auditAccountEvent`'s, for the opposite reason. An audit write that throws
+        must not turn a login into a 500; a throttle that throws and reads as "under the limit" is a
+        throttle an attacker removes by making the database unhappy. So the verdict on failure is the
+        same one the ceiling gives, and the caller cannot tell the two apart.
+      */
+      const broken = {
+        connect: () => Promise.reject(new Error('no connection for you')),
+        query: () => Promise.reject(new Error('no connection for you')),
+      } as unknown as typeof ctx.pool;
+      const verdict = await countAndRecordEvent(
+        broken,
+        ctx.log,
+        req,
+        { event: 'password.reset.requested', identifier: 'whoever', windowMs: 60_000, limit: 3 },
+      );
+      expect(verdict.allowed).toBe(false);
     });
   });
 

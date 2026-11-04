@@ -32,7 +32,7 @@ import type { AppContext } from '../app.js';
 import { ApiError, wrap } from '../lib/errors.js';
 import { requireAuth, sessionPlayerId } from '../lib/auth.js';
 import { invalidateSessions, stampSessionEpoch } from '../lib/sessionEpoch.js';
-import { auditAccountEvent, recentEventCount } from '../lib/accountEvents.js';
+import { attachPlayerToEvent, auditAccountEvent, countAndRecordEvent } from '../lib/accountEvents.js';
 import type { Transport } from '@grimore/mailer';
 
 /** Per-account ceiling, on top of the per-IP limiter. See F8. */
@@ -114,10 +114,26 @@ export function accountRecoveryRouter(ctx: AppContext, mailer: Transport): Route
       const input = ForgotPasswordInput.parse(req.body);
       const identifier = input.usernameOrEmail;
 
-      // Counted per identifier as supplied, before resolving it, so the throttle cannot itself be used
-      // to tell an existing account from a missing one.
-      const recent = await recentEventCount(pool, 'password.reset.requested', identifier, RESET_WINDOW_MS);
-      if (recent >= RESET_REQUESTS_PER_ACCOUNT) {
+      /*
+        Counted per identifier as supplied, before resolving it, so the throttle cannot itself be used
+        to tell an existing account from a missing one.
+
+        Counted **and recorded** in one locked transaction: the count and the write are the same fact,
+        and splitting them made the ceiling advisory — see `countAndRecordEvent`, which CI found by
+        getting six emails out of a limit of five.
+      */
+      const gate = await countAndRecordEvent(
+        pool,
+        log,
+        req,
+        {
+          event: 'password.reset.requested',
+          identifier,
+          windowMs: RESET_WINDOW_MS,
+          limit: RESET_REQUESTS_PER_ACCOUNT,
+        },
+      );
+      if (!gate.allowed) {
         // Same message and status as success. A distinct "too many requests" here would confirm the
         // account exists to anyone who asked six times.
         auditAccountEvent(pool, log, req, 'password.reset.rejected', { identifier });
@@ -133,10 +149,15 @@ export function accountRecoveryRouter(ctx: AppContext, mailer: Transport): Route
       );
       const player = q.rows[0];
 
-      auditAccountEvent(pool, log, req, 'password.reset.requested', {
-        playerId: player?.id ?? null,
-        identifier,
-      });
+      /*
+        The `requested` event is already written, by the gate above, because the count that bounds the
+        next request and the row that makes it true cannot be two separate writes. The gate runs
+        *before* this lookup by design — resolving first would be the leak the whole route is shaped to
+        avoid — so the row it wrote has no `player_id` on it yet, and this is where one is attached.
+      */
+      if (player !== undefined && gate.eventId !== undefined) {
+        await attachPlayerToEvent(pool, log, gate.eventId, player.id);
+      }
 
       if (!player?.email) {
         // No account, or an account with no address to send to. Do the same work the real path does so

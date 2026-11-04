@@ -23980,3 +23980,62 @@ side is the row that was missing.
 
 Verified: compile.test.ts 158/158; the soulbond triggers, the soulbond refusal, `pumpTeam`, the
 phrase's controller test and its type test each proved to fail when deliberately broken.
+
+## D383
+
+**The per-account reset throttle was advisory, because its counter was not awaited** (#321)
+
+CI failed once, on a commit that touched none of this: `account-recovery.test.ts` fires six password
+reset requests at one account and expects five emails, and it got **six**. The test was right and
+the route was wrong.
+
+### Two writes for one fact
+
+`/forgot-password` read `account_events` with `recentEventCount` and then recorded the request with
+`auditAccountEvent` — which is **deliberately** not awaited, and its docblock gives a good reason:
+"the audit write must not add latency to an auth response". That argument is sound for a *record*.
+It is not sound for a **counter**: the next request reads the table to decide whether to act, so a
+write still in flight is a request that was never counted. A limit of five that a fast caller takes
+to six is not a limit, and the caller here is unauthenticated while the cost is somebody else's
+inbox.
+
+So the count and the insert are now one transaction, `countAndRecordEvent`. `recentEventCount` stays
+for reads that are not gates, with a docblock saying which is which.
+
+### The lock, because awaiting is only half of it
+
+Awaiting the write fixes a *sequence*. It does not fix a **burst**: six requests in flight can all
+read four and all proceed, which is the ordinary read-then-write race and exactly what an attacker
+sends. The transaction therefore takes `pg_advisory_xact_lock(hashtext(lower(identifier)))` —
+released on commit or rollback, so a crashed request cannot wedge an account out of its own
+recovery. The lock is keyed on the identifier **as supplied**, like the count, because counting
+before resolving is what stops the throttle from telling a caller that an account exists.
+
+### Fails closed, which is the opposite of the audit rule and right for the opposite reason
+
+An audit write that throws must not turn a login into a 500. A *throttle* that throws and reads as
+"under the limit" is a throttle an attacker removes by making the database unhappy. So the gate
+answers `allowed: false` on any failure, and the route's rejection path is byte-identical to its
+success path, so the two are indistinguishable from outside.
+
+### The audit trail quietly got worse, and a test caught it
+
+The gate runs **before** the account lookup, by design. So the row it writes has the identifier and
+no `player_id` — and the first version of this simply dropped the player id that the old code
+attached. `records a reset being requested and redeemed` reads the trail by `player_id` and failed,
+which is the audit trail degrading in exchange for the throttle improving. `attachPlayerToEvent`
+puts it back, awaited rather than fired and forgotten, because the row it corrects is read back a
+moment later.
+
+### What the tests can and cannot prove, stated rather than implied
+
+The burst test **through the route** was written first and does not discriminate: run against the
+old read-then-write route it *passed* on this machine, because six concurrent HTTP requests
+serialised far enough apart to count each other. That is the same reason the sequential version only
+failed in CI, once. It is kept as a stress check with that written in it, and the proof is three
+deterministic tests on the gate itself: three allowed then one refused in sequence; exactly three
+allowed out of six concurrent calls; and `allowed: false` from a pool that cannot connect.
+
+Verified: account-recovery 30/30. Four deliberate breaks each caught — the advisory lock removed
+(the concurrent test), the insert not awaited (the audit trail), `>=` relaxed to `>` (four tests),
+and the failure path flipped to fail open (the fail-closed test).
