@@ -10661,3 +10661,29 @@ that moved.
 Eight deliberate breaks, eight failing tests. 11,000 rows at scale found no throw. All four browser
 suites pass on this engine: **table 76/76, arena 53/53 (7 named skips), pod 41/41 (1), solo 28/28
 (1)** — which also replaces the stale solo figure the previous sweep was carrying.
+
+## The counters a permanent arrives with, and a nontoken death (#317, D397)
+
+Two readers for fields the engine already had. `entersWith` was built by three keywords (modular,
+vanishing, fading) but never by the printed sentence, so **Endless One** — whose whole card is
+"enters the battlefield with X +1/+1 counters on it" — read as nothing at all. And
+`Whenever a nontoken creature you control dies` had no prologue, which was **Judith's** other line;
+with it she compiles whole.
+
+The counter kinds are an allow-list (`+1/+1`, `charge`, `ice`). `time` and `fade` are refused
+because their behaviour lives in the trigger vanishing and fading put on the card, not in the
+counters: a sentence read on its own would lay a countdown on a permanent with nothing to count it
+down, which is a creature that should leave the battlefield and never does.
+
+Judith's sentence turns on two words a copied shape gets wrong in opposite directions — she
+triggers on **her own** death (`who: 'any'`, not `another`) and not on a token's — so both are
+asserted as fields, not only compared.
+
+**A fixture defect found on the way, left on purpose (#325):** Chalice of the Void, Walking Ballista
+and Hangarback Walker each keep their whole card on one `oracleText` line, ". " where the printed
+card has newlines, so every ability on all three goes unread. That is the pool's transcription, not
+the compiler — the real text has newlines and the corpus will not have the problem — and fixing it
+would move the coverage share, which would conflate "reads more" with "fixtures corrected".
+
+**361 → 363 of 538 lines (67.1% → 67.5%)**, **225 → 226 of 339 cards**, per-card diff showing only
+those two moved. Six deliberate breaks, six failing tests; 257/257 in compile.test.ts; gate green.

@@ -24807,3 +24807,72 @@ stripped, the printed count widened to accept "two", and the creature-card row n
 plural. 11,000 rows at scale (two shuffled, one repeat) found no throw. The engine suite is green,
 and all four browser suites pass on this engine: table 76/76, arena 53/53 with 7 named skips, pod
 41/41 with 1, solo 28/28 with 1.
+
+## D397 — Counters a permanent arrives with, and the one word that narrows a death trigger
+
+Two readers, both for fields the engine has had all along.
+
+### The arrival sentence
+
+`entersWith` existed and three keywords already built it — modular, vanishing and fading each declare
+a count — but the **printed sentence** went unread. So Endless One, whose whole card is
+"Endless One enters the battlefield with X +1/+1 counters on it", was a `printed-only` card for a
+field that was already there and already tested.
+
+It is its own reader in `lineScriptFor`'s chain rather than a clause: a permanent entering with
+counters is a replacement effect applied as it arrives (CR 614.1c), never resolved and never on the
+stack. The count is `X` (which `entersWith` spells `'x'`, resolving to zero for a permanent that
+arrived any other way), a number, or a number-word.
+
+**The counter kinds are an allow-list — `+1/+1`, `charge`, `ice` — and that is the one refusal here
+about correctness rather than coverage.** A kind is a key in a plain record, so an unknown one would
+be stored and read by nothing; for those three that is the printed card, because +1/+1 counters are
+read by `characteristicsOf` and the charge and ice counters are read by another line of the same
+card, which is read or unread on its own merits. `time` and `fade` are refused: their behaviour does
+not live in the counters at all but in the trigger vanishing and fading put on the card, so a
+sentence read on its own would lay a countdown on a permanent with nothing counting it down — a
+creature that should leave the battlefield and never does, which is strictly better than the print.
+D364's rule again: the unit of compilation is both halves or neither.
+
+### The nontoken death
+
+`Whenever a nontoken creature you control dies` — Judith, the Scourge Diva — and the sentence turns
+on two words that a copied shape gets wrong in opposite directions:
+
+- `who: 'any'`, **not** `'another'`: Judith is a nontoken creature you control, so she triggers on
+  her own death. Her hand-written script says so in as many words.
+- `nontoken: true`: without it every token her own deck makes would ping something on the way out.
+
+Both are asserted as fields as well as compared against the hand-written trigger, because a pair
+differing by one string is where a passing deep-equality hides two rows coming from one branch —
+the same reasoning as D381's two static scopes.
+
+Judith now compiles **whole**: her anthem was already read (D381) and this was her other line, which
+is why the test asserts the merged script carries both rather than trusting the unread count.
+
+### A fixture defect found on the way, and deliberately left (#325)
+
+Chalice of the Void, Walking Ballista and Hangarback Walker each keep their **whole card on one
+`oracleText` line**, abilities separated by ". " where the printed card uses newlines. So all three
+arrive as a single line and every ability goes unread — including two sentences this increment can
+now read. The real Scryfall text for all three uses newlines, so this is a transcription defect in
+the pool's fixtures rather than a compiler gap, and the corpus will not have it.
+
+Not fixed in this pass on purpose: inserting newlines changes what `printedRulesLines` and
+`printedKeywords` see for cards that also have hand-written scripts, so it needs its own
+verification run; and it would move the coverage share, which would conflate "the compiler reads
+more" with "the fixtures were corrected". Two numbers worth keeping separable. Filed as #325 with
+the rejected alternative written down — splitting a permanent's line on sentence boundaries — since
+a sentence is not an ability ("When ~ dies, create a token. Then draw a card." is one) and the
+corpus never needs it.
+
+### Measured
+
+**361 → 363 of 538 printed lines (67.1% → 67.5%)**, and **225 → 226 of 339 cards**: Endless One and
+Judith both whole. The per-card output was diffed against the previous run, and those two are the
+only cards that moved.
+
+Six deliberate breaks, six failing tests: the reader out of the chain, the allow-list widened to
+admit fade and time, every count read as X, word numbers not read, the nontoken death read as
+`another`, and the `nontoken` flag dropped. 4,000 more rows at scale, no throw. compile.test.ts
+257/257, gate green.

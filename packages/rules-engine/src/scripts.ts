@@ -10241,6 +10241,19 @@ const TRIGGER_SHAPES: readonly {
     prologue: () => /^Whenever another creature you control dies, (.+)$/i,
     on: [{ kind: 'dies', who: 'another', of: 'you', what: 'creature' }],
   },
+  /*
+    Judith, and the one word that separates this row from the one above it twice over.
+
+    "A nontoken creature you control" is `who: 'any'` and not `'another'`: Judith is a nontoken
+    creature you control, so she triggers on her own death, which her hand-written script says in
+    as many words. And `nontoken: true` is the rest of the sentence — without it the tokens her own
+    deck makes would each ping something on the way out, which is a card that works and is more
+    generous than the print.
+  */
+  {
+    prologue: () => /^Whenever a nontoken creature you control dies, (.+)$/i,
+    on: [{ kind: 'dies', who: 'any', of: 'you', what: 'creature', nontoken: true }],
+  },
   // Hellrider.
   {
     prologue: () => /^Whenever a creature you control attacks, (.+)$/i,
@@ -11546,6 +11559,55 @@ function staticFromLine(line: string): Partial<CardScript> | null {
 }
 
 /**
+ * "~ enters the battlefield with N counters on it" (CR 614.1c), as a printed sentence.
+ *
+ * `entersWith` already existed and three keywords already built it — modular, vanishing and fading
+ * each declare a count — but the **sentence** went unread, which is how Endless One, whose whole
+ * card is that one line, was a `printed-only` card for a field the engine has had all along.
+ *
+ * Not a trigger and not a static: a permanent entering with counters is a replacement effect
+ * applied as it arrives, so the fragment is the declaration and nothing else. That is why this is
+ * its own reader in `lineScriptFor`'s chain rather than a clause.
+ *
+ * ## The count
+ *
+ * `X` is the cast's X, which `entersWith` spells `'x'` and the engine resolves to zero for a
+ * permanent that arrived any other way (reanimated, copied, made as a token) — the rule, not a
+ * shortcut, and written down where `entersWith` is declared.
+ *
+ * ## Why the counter kinds are an allow-list
+ *
+ * A counter kind is a key in a plain record, so an unknown one would be *stored* and read by
+ * nothing. For `+1/+1`, `charge` and `ice` that is exactly the printed card: `characteristicsOf`
+ * reads +1/+1 counters itself, and the charge and ice counters are read by another line of the same
+ * card, which is read or unread on its own merits (Chalice of the Void and Thing in the Ice are both
+ * hybrids for that reason).
+ *
+ * `time` and `fade` are refused. Their behaviour does not live in the counters at all — it lives in
+ * the trigger that vanishing and fading put on the card — so a sentence that laid them on without
+ * that keyword would be a countdown nothing counts down: a permanent that should have left the
+ * battlefield and stays. Every pool card that has them declares the keyword, and the keyword reader
+ * builds both halves together (D364).
+ */
+const SENTENCE_COUNTERS: readonly string[] = ['+1/+1', 'charge', 'ice'];
+
+function entersWithFromLine(line: string, name: string): Partial<CardScript> | null {
+  const matched = new RegExp(
+    `^${escapeName(name)} enters the battlefield with (X|[\\w+/]+) ([\\w+/]+) counters? on it$`,
+    'i',
+  ).exec(plain(line).trim().replace(/\.\s*$/, ''));
+  if (matched === null) return null;
+
+  const kind = matched[2]!.toLowerCase();
+  if (!SENTENCE_COUNTERS.includes(kind)) return null;
+
+  const printed = matched[1]!;
+  const amount = printed.toLowerCase() === 'x' ? 'x' as const : countFrom(printed);
+  if (amount === null) return null;
+  return { entersWith: { counter: kind, amount } };
+}
+
+/**
  * Everything the compiler can read off one printed line of a **permanent**: a keyword, a triggered
  * ability, or an activated one.
  *
@@ -11555,6 +11617,7 @@ function staticFromLine(line: string): Partial<CardScript> | null {
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
   return keywordScriptFor(line, name)
     ?? staticFromLine(line)
+    ?? entersWithFromLine(line, name)
     ?? triggerFromLine(line, name)
     ?? abilityFromLine(line, name);
 }

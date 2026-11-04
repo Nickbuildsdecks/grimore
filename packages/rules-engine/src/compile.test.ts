@@ -3235,6 +3235,117 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
   });
 
+  describe('counters a permanent arrives with, and the word that narrows a death trigger', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({
+      state, controller: seat, source, targets, decisions: [],
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const triggerOf = (script: unknown, i = 0) =>
+      (field(script, 'triggers') as readonly TriggerDef[] | undefined)?.[i];
+
+    const entersWith = (text: string) => compileCard({
+      name: 'Arriving Thing', type_line: 'Creature — Avatar', mana_cost: '{X}', cmc: 0,
+      colors: [], power: '0', toughness: '0', oracle_text: text,
+    });
+
+    /*
+      Endless One, whose whole card is one sentence about a field the engine has had all along.
+      `entersWith` is plain data with no closure in it, so this is deep equality against the
+      hand-written card — the strictest comparison available.
+    */
+    it('reads Endless One’s arrival exactly as the hand-written card declares it', () => {
+      const mine = compiledScript('Endless One');
+      expect(mine.unread).toEqual([]);
+      expect(field(mine.script, 'entersWith')).toEqual(field(scriptFor('Endless One'), 'entersWith'));
+      expect(field(mine.script, 'entersWith')).toEqual({ counter: '+1/+1', amount: 'x' });
+    });
+
+    it('reads a printed count and a word count, not only X', () => {
+      // X is the cast's X; a number or a number-word is itself. Nothing in the pool prints the
+      // second form as a sentence, which is why the fixture is synthetic.
+      expect(field(entersWith('Arriving Thing enters the battlefield with three +1/+1 counters on it.').script ?? {}, 'entersWith'))
+        .toEqual({ counter: '+1/+1', amount: 3 });
+      expect(field(entersWith('Arriving Thing enters the battlefield with a +1/+1 counter on it.').script ?? {}, 'entersWith'))
+        .toEqual({ counter: '+1/+1', amount: 1 });
+      expect(field(entersWith('Arriving Thing enters the battlefield with four ice counters on it.').script ?? {}, 'entersWith'))
+        .toEqual({ counter: 'ice', amount: 4 });
+      expect(field(entersWith('Arriving Thing enters the battlefield with X charge counters on it.').script ?? {}, 'entersWith'))
+        .toEqual({ counter: 'charge', amount: 'x' });
+    });
+
+    it.each([
+      ['three time counters'],
+      ['three fade counters'],
+    ])('refuses %s, whose countdown lives in a keyword and not in the counters', (counters) => {
+      /*
+        The one refusal here that is about correctness rather than coverage. Vanishing and fading
+        put both halves on the card — the counters and the upkeep trigger that removes one — and
+        the keyword reader builds them together (D364). A sentence read on its own would lay the
+        counters on a permanent with nothing counting them down, so it would never leave the
+        battlefield: a card that works and is better than the print.
+      */
+      const odd = entersWith(`Arriving Thing enters the battlefield with ${counters as string} on it.`);
+      expect(odd.ok).toBe(true);
+      if (!odd.ok) return;
+      expect(odd.script).toBeUndefined();
+      expect(odd.unread.map((u) => u.why)).toEqual(['no-reader']);
+    });
+
+    /*
+      Judith, and the one word in front of "creature you control" that this row is about.
+    */
+    it('watches a nontoken death the way Judith’s hand-written trigger watches it', () => {
+      const mine = compiledScript('Judith, the Scourge Diva');
+      expect(mine.unread).toEqual([]);
+      const compiled = triggerOf(mine.script);
+      const written = triggerOf(scriptFor('Judith, the Scourge Diva'));
+      expect(compiled).toBeDefined();
+      expect(written).toBeDefined();
+      if (compiled === undefined || written === undefined) return;
+      expect(JSON.stringify(compiled.on)).toEqual(JSON.stringify(written.on));
+      /*
+        Spelled out as well as compared, because the two words this sentence turns on are exactly
+        the two a copied shape would get wrong: she triggers on **her own** death (`who: 'any'`,
+        not `'another'`), and not on a token's (`nontoken`).
+      */
+      expect((compiled.on as { who?: string }).who).toBe('any');
+      expect((compiled.on as { nontoken?: boolean }).nontoken).toBe(true);
+      expect((compiled.on as { of?: string }).of).toBe('you');
+    });
+
+    it('deals the damage Judith’s hand-written trigger deals, at the target it is given', () => {
+      const base = arena({
+        decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+        battlefield: { 0: ['Judith, the Scourge Diva'], 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const judith = find(base, 0 as SeatIndex, 'battlefield', 'Judith, the Scourge Diva');
+      const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const ctx = contextOn(base, 0 as SeatIndex, judith, [{ kind: 'card', id: bear }]);
+      const mine = triggerOf(compiledScript('Judith, the Scourge Diva').script)!.effect(ctx);
+      const theirs = triggerOf(scriptFor('Judith, the Scourge Diva'))!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      // Not vacuous: one damage actually landed on the bear.
+      expect(mine.instances[bear]!.damage).toBe(1);
+    });
+
+    it('keeps the anthem beside the trigger, which is the line this card nearly lost', () => {
+      /*
+        Judith's other line is the static that D381 read, and her two lines are read by two
+        different readers in `lineScriptFor`'s chain. A card is only whole when both are merged, so
+        the anthem is asserted here rather than left to the `unread` check above — "+1/+0 to her
+        **other** creatures", which is the scope that makes her a 2/2 and not a 3/2.
+      */
+      const statics = field(compiledScript('Judith, the Scourge Diva').script, 'statics');
+      expect(statics).toEqual(field(scriptFor('Judith, the Scourge Diva'), 'statics'));
+      expect((statics as readonly { scope: string }[])[0]!.scope).toBe('other-controller-creatures');
+    });
+  });
+
   describe('loyalty abilities, against the two planeswalkers that compile whole', () => {
     const contextOn = (
       state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
