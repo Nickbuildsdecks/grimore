@@ -11227,3 +11227,19 @@ measure's `whole-card + lines` categories added together, which over-counts by e
 on those paths. Measured directly it is **236 of 339**, and `compilable.mjs` now prints that figure
 itself. The line and completeness series were measured all along: **410 of 538 lines (76.2%)**, and
 **234 of 339** cards with every printed line read — 25 of them with no script at all.
+
+## Exalted, evolve and battle cry: a keyword whose whole instruction is its own word (#317, D425)
+
+The first keywords the compiler builds a **trigger** from rather than a field. Each is one printed
+word with nothing else on the card for it, no number implied and no second line to miss — so the
+declaration is the ability, which is what D364 asks before a keyword is safe to read.
+
+Safe because each trigger is written once, in a factory the hand-written card calls too (echo's
+arrangement, and `ninjutsuAbility`'s): one implementation per keyword, and the standing check
+compares the two readings for free. The three details that are rules rather than effects all come
+off the hand-written cards — `alone: true` on exalted, the intervening-if on evolve asked again on
+resolution, and the word "other" in battle cry.
+
+**413 of 538 lines (76.8%)**, 239 of 339 with a script, 237 complete, keyword declarations with no
+builder down to 17. Five breaks, five failures — two of them caught by the engine tests from #114
+and #165, which now exercise the factories.

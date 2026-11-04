@@ -26490,3 +26490,39 @@ Five deliberate breaks, five failures: protection parts never classified (12 row
 protection not seeded into `characteristicsOf` (8), a non-colour accepted as a protection, the
 whole-line rule dropped so a sentence classifies, and the compiler back to asking `printedKeywords`
 alone.
+
+## D425 — Three ability words whose whole instruction is their own reminder text
+
+Third increment off the work queue, and the first keywords here that build a **trigger** out of a
+bare word rather than setting a field.
+
+Exalted (CR 702.90a), evolve (CR 702.100a) and battle cry (CR 702.91a) are each one printed word
+with nothing else on the card for them, no number implied and no second line to miss. So the
+declaration *is* the ability, which is exactly what D364 asks of a keyword before it is safe to
+read: the unit of compilation is the whole thing, and here the whole thing is the word.
+
+What makes building a trigger from a word safe is `echo`'s arrangement, and `ninjutsuAbility`'s
+(D421): the trigger is written **once**, in a factory the hand-written card calls too. So there is
+one implementation of each keyword rather than two spellings free to drift, and the standing check
+compares them for free.
+
+Three details that are the rule rather than the effect, each taken off the hand-written card:
+
+- **`alone: true`** on exalted. It watches *any* creature its controller attacks with, not itself —
+  a Guardians of Akrasa that stays home still pumps the attacker — and only when that creature
+  attacks alone.
+- **The intervening-if** on evolve, asked again on resolution through `evolvesInto`, so a creature
+  killed in response evolves nothing (CR 702.100a).
+- **The word "other"** in battle cry. A Goblin Wardriver attacking alone pumps nothing.
+
+### Measured
+
+**413 of 538 lines (76.8%)**, up from 410. Cards with a compiled script **236 → 239 of 339**; cards
+with every printed line read **234 → 237**. Keyword declarations with no builder **20 → 17**. The
+three cards are exactly the ones that left the incomplete list.
+
+Five deliberate breaks, five failures, and worth noting *which* tests caught them: exalted losing
+`alone: true` and battle cry pumping itself failed one row each — the existing engine tests from
+#114 and #165, which now exercise the factories because the hand-written cards call them. Evolve
+dropping its condition failed two, the reader emitting no trigger for exalted failed two, and the
+reader passing the wrong name to the evolve factory failed one.

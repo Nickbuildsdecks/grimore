@@ -65,6 +65,15 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     { card: 'Bloodbraid Elf', keyword: 'Cascade', fields: [] },
     { card: 'Grapeshot', keyword: 'Storm', fields: [] },
     { card: 'Basilica Screecher', keyword: 'Extort', fields: [] },
+    /*
+      The three ability words whose whole instruction is their own reminder text (D425). No field at
+      all: each builds a trigger, and the trigger-shape test below is what compares them — these
+      rows are here for the half the table does assert, which is that the printed line is reported
+      as compiled rather than quietly dropped.
+    */
+    { card: 'Guardians of Akrasa', keyword: 'Exalted', fields: [] },
+    { card: 'Cloudfin Raptor', keyword: 'Evolve', fields: [] },
+    { card: 'Goblin Wardriver', keyword: 'Battle cry', fields: [] },
     { card: 'Sudden Shock', keyword: 'Split second', fields: ['splitSecond'] },
     { card: 'Pyromatics', keyword: 'Replicate', fields: ['replicate'] },
     { card: 'Mystic Remora', keyword: 'Cumulative upkeep', fields: ['cumulativeUpkeep'] },
@@ -157,7 +166,12 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       ((s as { triggers?: readonly { on?: unknown; description?: string }[] }).triggers ?? [])
         .map((t) => `${JSON.stringify(t.on)} ${t.description ?? ''}`);
 
-    for (const card of ['Young Wolf', 'Bloodbraid Elf', 'Grapeshot', 'Arcbound Worker', 'Calciderm', 'Blastoderm']) {
+    for (const card of [
+      'Young Wolf', 'Bloodbraid Elf', 'Grapeshot', 'Arcbound Worker', 'Calciderm', 'Blastoderm',
+      // D425's three, where the trigger is the whole keyword: `alone: true` on exalted, the
+      // intervening-if on evolve and the bare `attacks` on battle cry all show up in `on`.
+      'Guardians of Akrasa', 'Cloudfin Raptor', 'Goblin Wardriver',
+    ]) {
       const written = shape(scriptFor(card));
       const compiled = shape(compiledScript(card).script);
       // The hand-written card may have triggers from *other* lines too; every compiled trigger has

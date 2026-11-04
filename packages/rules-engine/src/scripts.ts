@@ -2041,18 +2041,32 @@ const TOPAN_FREEBLADE: CardScript = {
  * trigger resolves. A creature that has already been removed from combat is not pumped, and that is
  * the printed card rather than a simplification.
  */
+/**
+ * Battle cry, written out as the triggered ability the keyword abbreviates (CR 702.91a).
+ *
+ * "Whenever this creature attacks, each other attacking creature gets +1/+0 until end of turn."
+ * The word **other** is the whole of what has to be got right: a Goblin Wardriver attacking alone
+ * pumps nothing, and one attacking beside two others pumps exactly those two. `on: { kind:
+ * 'attacks' }` with no `who` is this creature attacking, which is the default `automation.ts`
+ * applies and which the printed card means.
+ *
+ * A factory for the reason `exaltedTrigger` is one: the declaration is the ability, so the compiled
+ * reading and the hand-written card must be the same ability rather than two spellings of it.
+ */
+const battleCryTrigger = (): TriggerDef => ({
+  on: { kind: 'attacks' },
+  description: 'each other attacking creature gets +1/+0 until end of turn',
+  effect: (c) => {
+    const others = c.state.combat.attacks
+      .map((attack) => attack.attacker)
+      .filter((id) => id !== c.source);
+    return pump(c.state, others, c.source, c.controller, { power: 1 });
+  },
+});
+
 const GOBLIN_WARDRIVER: CardScript = {
   name: 'Goblin Wardriver',
-  triggers: [{
-    on: { kind: 'attacks' },
-    description: 'each other attacking creature gets +1/+0 until end of turn',
-    effect: (c) => {
-      const others = c.state.combat.attacks
-        .map((attack) => attack.attacker)
-        .filter((id) => id !== c.source);
-      return pump(c.state, others, c.source, c.controller, { power: 1 });
-    },
-  }],
+  triggers: [battleCryTrigger()],
 };
 
 /**
@@ -5129,15 +5143,31 @@ const IMPERIOUS_PERFECT: CardScript = {
  * trigger that only pays when one creature attacks: the Guardians hold the ground this deck keeps
  * losing on, and the Serra Angel that swings into an empty sky swings as a 5/5.
  */
+/**
+ * Exalted, written out as the triggered ability the keyword abbreviates (CR 702.90a).
+ *
+ * "Whenever a creature you control attacks alone, that creature gets +1/+1 until end of turn" —
+ * the whole of it, with nothing printed anywhere else on the card. So this is a keyword whose
+ * declaration *is* its ability, which is what makes it safe for `keywordScriptFor` to build: there
+ * is no second line to miss and no number to invent (D259).
+ *
+ * `alone: true` is the half that is the rule rather than the effect, and `attacks` with
+ * `who: 'any', of: 'you'` is the other: exalted watches **any** creature its controller attacks
+ * with, not itself, which is why a Guardians of Akrasa that stays home still pumps the attacker.
+ * A factory rather than text on the one card, so the hand-written card and the compiled reading
+ * share one implementation — `ninjutsuAbility`'s arrangement (D421).
+ */
+const exaltedTrigger = (): TriggerDef => ({
+  on: { kind: 'attacks', who: 'any', of: 'you', alone: true },
+  description: 'Exalted: the attacking creature gets +1/+1 until end of turn.',
+  effect: (c) => (c.subject === undefined
+    ? c.state
+    : pump(c.state, [c.subject], c.source, c.controller, { power: 1, toughness: 1 })),
+});
+
 const GUARDIANS_OF_AKRASA: CardScript = {
   name: 'Guardians of Akrasa',
-  triggers: [{
-    on: { kind: 'attacks', who: 'any', of: 'you', alone: true },
-    description: 'Exalted: the attacking creature gets +1/+1 until end of turn.',
-    effect: (c) => (c.subject === undefined
-      ? c.state
-      : pump(c.state, [c.subject], c.source, c.controller, { power: 1, toughness: 1 })),
-  }],
+  triggers: [exaltedTrigger()],
 };
 
 /**
@@ -5175,14 +5205,27 @@ function evolvesInto(state: GameState, source: string, subject: string | undefin
  * the condition keeps it from triggering at all once it is the biggest thing on the board. Both are
  * the printed card, and both are checks the engine makes rather than text this script carries.
  */
+/**
+ * Evolve, written out as the triggered ability the keyword abbreviates (CR 702.100a).
+ *
+ * "Whenever a creature enters the battlefield under your control, if that creature has greater
+ * power or toughness than this creature, put a +1/+1 counter on this creature." The `condition` is
+ * the printed intervening-if and it is not decoration: it is asked again on resolution, which is
+ * what `evolvesInto` above is for and why a creature killed in response evolves nothing.
+ *
+ * `who: 'another'` is the word "a creature" meaning any but itself, and `of: 'you'` is "under your
+ * control". A factory for the reason `exaltedTrigger` is one.
+ */
+const evolveTrigger = (name: string): TriggerDef => ({
+  on: { kind: 'etb', who: 'another', of: 'you', what: 'creature' },
+  description: `Evolve: put a +1/+1 counter on ${name}.`,
+  condition: (c) => evolvesInto(c.state, c.source, c.subject),
+  effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
+});
+
 const CLOUDFIN_RAPTOR: CardScript = {
   name: 'Cloudfin Raptor',
-  triggers: [{
-    on: { kind: 'etb', who: 'another', of: 'you', what: 'creature' },
-    description: 'Evolve: put a +1/+1 counter on Cloudfin Raptor.',
-    condition: (c) => evolvesInto(c.state, c.source, c.subject),
-    effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
-  }],
+  triggers: [evolveTrigger('Cloudfin Raptor')],
 };
 
 // ── Changing what a spell is pointed at ─────────────────────────────────────────────────────────
@@ -9164,6 +9207,21 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   }
 
   // ── The declarations whose argument is a number, or no argument at all ────────────────────────
+  /*
+    Three ability words whose **whole instruction is their own reminder text** (D425): exalted
+    (CR 702.90a), evolve (CR 702.100a) and battle cry (CR 702.91a). Nothing else is printed on the
+    card for them, no number is implied, and each has one card in the pool whose hand-written
+    script is now the same factory — so the declaration is the ability and reading it is reading the
+    card, which is what D364 asks of a keyword.
+
+    They are the first keywords here that build a *trigger* out of a bare word rather than a field.
+    What makes that safe is the same thing that made `echo` safe: the trigger is written once, in a
+    factory the hand-written card calls too, so the two readings cannot drift.
+  */
+  if (word === 'exalted') return { triggers: [exaltedTrigger()] };
+  if (word === 'evolve') return { triggers: [evolveTrigger(name)] };
+  if (word === 'battle cry') return { triggers: [battleCryTrigger()] };
+
   if (word === 'delve') return { delve: true };
   if (word === 'affinity for artifacts') return { affinity: 'artifacts' };
   /*
