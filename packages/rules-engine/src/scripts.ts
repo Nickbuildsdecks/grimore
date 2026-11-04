@@ -10532,6 +10532,24 @@ const TRIGGER_SHAPES: readonly {
     prologue: () => /^At the beginning of your end step, (.+)$/i,
     on: [{ kind: 'step', step: 'end', of: 'you' }],
   },
+  /*
+    The other two steps a card routinely names, and the two biggest step buckets in the corpus after
+    the upkeep: 1,168 cards open "At the beginning of your …" and 258 "At the beginning of combat on
+    your turn" (D426). Both are the same `step` trigger as the two above with a different step, and
+    the engine has had both steps since #10 — `draw` and `begin-combat` are in `STEPS`.
+
+    "On your turn" rather than "your" is how printed text says it for the combat steps, and the two
+    spellings are not interchangeable English: a card that said "at the beginning of your combat"
+    would be a card Wizards has not printed, so only the one that is printed is read.
+  */
+  {
+    prologue: () => /^At the beginning of your draw step, (.+)$/i,
+    on: [{ kind: 'step', step: 'draw', of: 'you' }],
+  },
+  {
+    prologue: () => /^At the beginning of combat on your turn, (.+)$/i,
+    on: [{ kind: 'step', step: 'begin-combat', of: 'you' }],
+  },
 
   /*
     ── The same two events, watching somebody else's permanent ─────────────────────────────
@@ -12796,6 +12814,30 @@ function additionalCostFromLine(line: string): Partial<CardScript> | null {
 }
 
 /**
+ * "~ enters tapped", on a line of its own.
+ *
+ * `cardFromData` already reads this phrase, and that is exactly why it was missing here: it reads it
+ * only as part of a **whole** card it can account for, so a land printing nothing else was read and
+ * a land printing one more line the whole-card path could not take was reported as two unread lines
+ * — the tapped clause among them. The corpus counts 347 cards printing it and 760 printing "enters
+ * with", which is how a one-line reader came to be the fourth-biggest bucket in all of Magic.
+ *
+ * `entersTapped` is a field rather than a replacement effect for the reason the field's own docblock
+ * gives: arriving tapped is a property of the permanent's own arrival, so the engine applies it as
+ * the card is put onto the battlefield and nothing goes on the stack.
+ *
+ * Both spellings of the subject, through `selfRef`: the corpus prints "Joined Up enters tapped" and
+ * "This land enters tapped" about equally, and `fromCardData`'s own check compares the rest of the
+ * string after the name, so it reads the first and not the second.
+ */
+function entersTappedFromLine(line: string, name: string): Partial<CardScript> | null {
+  const text = plain(line).trim().replace(/\.\s*$/, '');
+  return new RegExp(`^${selfRef(name)} ${ENTERS} tapped$`, 'i').test(text)
+    ? { entersTapped: true }
+    : null;
+}
+
+/**
  * Everything the compiler can read off one printed line of a **permanent**: a keyword, a triggered
  * ability, or an activated one.
  *
@@ -12805,6 +12847,8 @@ function additionalCostFromLine(line: string): Partial<CardScript> | null {
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
   return keywordScriptFor(line, name)
     ?? additionalCostFromLine(line)
+    // Before the statics: "enters tapped" is a fact about arriving, not a continuous effect.
+    ?? entersTappedFromLine(line, name)
     ?? staticFromLine(line)
     ?? conditionalStaticFromLine(line, name)
     ?? definesSizeFromLine(line, name)

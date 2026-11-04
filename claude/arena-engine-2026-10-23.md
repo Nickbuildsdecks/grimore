@@ -11300,3 +11300,22 @@ ability must not be read as the spell's own trigger, and of the 111 instants and
 it, five compile at all and all five are a bare keyword declaration. And one break — adding "that
 creature" to the list — failed nothing, so that part of the claim is recorded in D427 as untested
 rather than left looking covered.
+
+## Enters tapped, and two more steps (#317, D428)
+
+**+438 corpus lines**, and the clearest demonstration of what the pool was hiding. `cardFromData`
+has read "enters tapped" since D331 — but only as part of a *whole* card it can account for, so a
+land printing one extra line it could not take reported the tapped clause as unread and lost the
+other line with it. 347 cards print it; it was the corpus's fourth-biggest bucket for want of a
+one-line reader. The conditional arrival ("unless you control two or more other lands") is refused
+and asserted.
+
+Two prologues join the upkeep and end step: "At the beginning of your draw step" (part of a
+1,168-card bucket) and "At the beginning of combat on your turn" (258). Same trigger shape, steps
+the engine has had since #10.
+
+Corpus **16,196 of 60,940 lines (26.6%)**, 6,860 cards with a script, 3,874 fully read; pool
+unchanged. Six breaks: three failed outright, one was invalid (deleting a row broke collection, so
+vitest reported "no tests" — not a passing break), and one **failed nothing and was right to** —
+widening the draw-step prologue to another seat, because the negative row only described the upkeep.
+The test now tables all three prologues, and both widening breaks fail.

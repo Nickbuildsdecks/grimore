@@ -26671,3 +26671,64 @@ argument — printed text says "this" for the object an ability is on and "that"
 else — and **nothing in the pool or in a fixture discriminates it today**. Written down as an
 untested claim rather than left looking covered, which is D415's and D423's lesson a third time: a
 check that cannot fail is worse than no check, because it reads as one.
+
+## D428 — A one-line reader that was the fourth-biggest bucket in Magic, and two steps
+
+Second increment off the corpus queue: **+438 lines**, and the clearest demonstration yet of what
+the pool was hiding.
+
+### "~ enters tapped"
+
+`cardFromData` has read this phrase since D331. The reason it was still the corpus's fourth-largest
+bucket, 347 cards, is that the whole-card path reads it **only as part of a whole card it can
+account for** — so a land printing nothing else was read, and a land printing one more line that
+path could not take reported the tapped clause as unread *and lost the other line with it*, because
+the whole-card path is all-or-nothing and the per-line path had no reader for the clause at all.
+
+`entersTappedFromLine` is that reader, placed ahead of the statics because arriving tapped is a fact
+about the arrival rather than a continuous effect. Both spellings of the subject through `selfRef`:
+the corpus prints "Joined Up enters tapped" and "This land enters tapped" in similar numbers, and
+`fromCardData`'s own check compares the rest of the string after the name, so it reads the first and
+not the second.
+
+The conditional arrival — "enters tapped **unless** you control two or more other lands" — is
+refused by the anchor, and asserted: reading it as the plain field would be a land that always
+arrives tapped, strictly worse than the printed card.
+
+### The two steps a card names after the upkeep
+
+"At the beginning of your **draw step**" and "At the beginning of **combat on your turn**" are the
+same `step` trigger the upkeep and end-step prologues already build, with a different step — and the
+engine has had both steps since #10. 1,168 corpus cards open "At the beginning of your …" and 258
+"At the beginning of combat on your turn".
+
+"On your turn" rather than "your" is how printed text says it for a combat step, so only the printed
+spelling is read.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| Corpus lines compiled | 15,758 of 60,940 (25.9%) | **16,196 of 60,940 (26.6%)** |
+| Corpus cards with a script | 6,630 (20.1%) | **6,860 (20.8%)** |
+| Corpus cards with every line read | 3,833 (11.6%) | **3,874 (11.8%)** |
+| Pool | 413 of 538 (76.8%) | unchanged |
+
+### A test gap the breaks found, and a break that was not one
+
+Six deliberate breaks. Three failed straight away: no enters-tapped reader (4 rows), an unanchored
+pattern letting the conditional arrival through (1), and the combat prologue aimed at `end-combat`
+instead of `begin-combat` (1).
+
+Two needed fixing rather than recording:
+
+- **Deleting the draw-step prologue row broke the file**, so vitest collected nothing and reported
+  "no tests" — which is not a passing break, it is no break. Redone as an unmatchable pattern:
+  2 rows fail.
+- **Widening the draw-step prologue to "each opponent's" failed nothing.** The negative row
+  described the *upkeep* alone, so "`of: 'you'` is the card saying your" was asserted for one
+  prologue and assumed for the two new ones. The row is now a table over all three, plus the end
+  step, and both widening breaks fail.
+
+That second one is the useful kind of break: it did not find a bug in the reader, it found a claim
+in the tests that was not being made.

@@ -6342,4 +6342,93 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       if (saga.ok) expect(saga.unread.map((entry) => entry.line)).toHaveLength(1);
     });
   });
+  /*
+    The second batch off the corpus queue (D428): a one-line reader and two step prologues, chosen
+    because they are the biggest buckets after the templating and each is unambiguous.
+
+    "~ enters tapped" is the case that shows what the corpus is for. `cardFromData` has always read
+    the phrase — but only as part of a **whole** card it can account for, so a land printing nothing
+    else was read and a land printing one more line it could not take reported the tapped clause as
+    unread. 347 cards print it.
+  */
+  describe('enters tapped, and the two steps a card names after the upkeep', () => {
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const card = (text: string, type_line = 'Land') => compileCard({
+      name: 'Joined Up', type_line, mana_cost: '', cmc: 0, colors: [], oracle_text: text,
+      power: null, toughness: null, loyalty: null, layout: 'normal',
+    });
+
+    it.each([
+      ['Joined Up enters tapped.'],
+      ['Joined Up enters the battlefield tapped.'],
+      ['This land enters tapped.'],
+    ])('reads "%s" as entersTapped', (text) => {
+      const read = card(text as string);
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread).toEqual([]);
+      expect(field(read.script, 'entersTapped')).toBe(true);
+    });
+
+    it('reads it beside a line the whole-card path cannot take, which is the case that was missing', () => {
+      /*
+        The pair `cardFromData` could never reach: a tapped land with a step trigger on it. Before
+        this reader the tapped clause was reported unread *and* the card lost the trigger with it,
+        because the whole-card path is all-or-nothing and the per-line path had no reader for the
+        clause.
+      */
+      const read = card('Joined Up enters tapped.\nAt the beginning of your draw step, draw a card.');
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread).toEqual([]);
+      expect(field(read.script, 'entersTapped')).toBe(true);
+      expect(field(read.script, 'triggers')).toHaveLength(1);
+    });
+
+    it('refuses a conditional arrival, which is a different card', () => {
+      // "enters tapped unless you control two or more lands" is a replacement with a condition on
+      // it, and `entersTapped` is unconditional — reading it as the plain field would be a land
+      // that always arrives tapped, which is strictly worse than the printed card.
+      const read = card('Joined Up enters tapped unless you control two or more other lands.');
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(field(read.script, 'entersTapped')).toBeUndefined();
+      expect(read.unread).toHaveLength(1);
+    });
+
+    it.each([
+      ['At the beginning of your draw step, draw a card.', 'draw'],
+      ['At the beginning of combat on your turn, draw a card.', 'begin-combat'],
+    ])('reads "%s" as a step trigger on %s', (text, step) => {
+      const read = card(text as string, 'Creature — Human Soldier');
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread).toEqual([]);
+      const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+      // `of: 'you'` is the card saying "your", not a default — the same note the upkeep row carries.
+      expect(triggers[0]!.on).toEqual({ kind: 'step', step, of: 'you' });
+    });
+
+    it.each([
+      ["At the beginning of each opponent's upkeep, draw a card."],
+      ["At the beginning of each opponent's draw step, draw a card."],
+      ['At the beginning of combat on each opponent\'s turn, draw a card.'],
+      ['At the beginning of each end step, draw a card.'],
+    ])('leaves %s alone, because "your" is the half that is the rule', (text) => {
+      /*
+        314 cards in the corpus open "At the beginning of each opponent's …" and this reads none of
+        them: `of: 'you'` is wrong for them and `of: 'any'` is wrong too, so they stay unread (D362)
+        rather than firing on the wrong turn.
+
+        One row per *new* prologue as well as the upkeep, which a break run is what established:
+        widening only the draw-step pattern to "each opponent's" failed nothing while this described
+        the upkeep alone, so the claim "of: 'you' is the card saying your" was asserted for one
+        prologue and assumed for the other two.
+      */
+      const read = card(text as string, 'Creature — Human Soldier');
+      expect(read.ok).toBe(true);
+      if (read.ok) expect(read.unread).toHaveLength(1);
+    });
+  });
 });
