@@ -8503,8 +8503,26 @@ const FATE_UNRAVELER: CardScript = {
   triggers: [
     {
       on: { kind: 'draws', by: 'opponent' },
-      description: 'that player loses 1 life',
-      effect: (c) => loseLife(c.state, c.actor ?? c.controller, 1),
+      description: 'deals 1 damage to that player',
+      /*
+        **Damage**, not life loss, which is what the card prints — and the two are different at the
+        table: a prevention shield stops damage and does nothing to a loss of life (CR 120.3, CR
+        615), damage can be redirected, and "whenever a source deals damage" sees one and not the
+        other. This script said `loseLife` until D407 and nothing caught it, because the only test
+        on the card read the life total, which both readings move by the same amount.
+
+        The guard replaces an `?? c.controller` fallback that was worse than nothing: an event with
+        no actor would have drained **the controller**, which is the opposite of what the card says.
+        `by: 'opponent'` means that cannot happen today; a card whose wrong case is its own
+        controller is one bad event away from a very confusing game.
+      */
+      effect: (c) => {
+        const who = c.actor;
+        if (who === undefined || who === c.controller) return c.state;
+        return dealDamage(c.state, { kind: 'player', seat: who }, 1, {
+          controller: c.controller, source: c.source,
+        });
+      },
     },
   ],
 };

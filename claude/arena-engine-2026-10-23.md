@@ -10859,3 +10859,26 @@ near miss written into the test.
 
 **390 → 391 of 538 lines (72.5% → 72.7%)**, **246 → 247 of 339 cards**. Three breaks that failed as
 intended plus the one that found the duplicate; 317/317; 4,000 rows at scale with no throw.
+
+
+## Fate Unraveler drained where its text says damage (#317, D407)
+
+The card prints "Fate Unraveler deals 1 damage to that player" and the script called `loseLife`.
+Damage and life loss differ exactly where a player would notice and could not explain it: a
+prevention shield absorbs damage and does nothing to a loss of life (CR 120.3, CR 615), damage can
+be redirected, and "whenever a source deals damage" sees one and not the other.
+
+**Nothing caught it** because the one test on the card read the life total, which both readings move
+by the same amount — a check that cannot fail, by measuring the one quantity the two implementations
+agree on. `card-promises.mjs` could not see it either: it reads the text for *structure* and asks
+whether the script carries each promise, so "a trigger whose effect does the wrong thing" is outside
+what it looks at.
+
+Found the way the other five engine defects were found — by writing a second reading of the same
+sentence and requiring the two to agree. Fixed to `dealDamage`, with a prevention shield as the
+discriminating test (one point of shielding, two cards drawn: the printed card costs one life, the
+drained version two). The `?? c.controller` fallback went too: an event with no actor would have
+drained the **controller**, which is the opposite of the card.
+
+The general instrument — resolve the compiled reading and the hand-written script on one fixture for
+every card both can read, and report the disagreements — is filed rather than built.

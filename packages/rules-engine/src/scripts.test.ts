@@ -25,6 +25,7 @@ import {
   parseTypeLine,
   packView, parseManaCost, pendingDeclaration, printedKeywords, proliferate,
   proliferateCandidates, protectedFrom,
+  preventDamage,
   pump, pumpAll, pumpTeam, gainControl, scriptFor,
   scriptedCardNames,
   staticEffect, timesCost, transformPermanent, unpackView, viewFor,
@@ -13329,6 +13330,34 @@ describe('whenever you draw a card (CR 121.2)', () => {
     // because the default on this event is `you`.
     expect(life(s, 1)).toBe(them - 2);
     expect(life(s, 0)).toBe(me);
+  });
+
+  it('deals that damage rather than draining it, which a shield can tell apart', () => {
+    /*
+      The card prints "**deals** 1 damage to that player" and the script drained instead, which no
+      test could see: the only check on this card read the life total, and damage and life loss move
+      it by the same amount (D407).
+
+      A prevention shield is what tells them apart. It absorbs the first point of **damage** and does
+      nothing at all to a loss of life (CR 120.3, CR 615), so with one point of shielding up and two
+      cards drawn, the printed card costs one life and the drained version would cost two.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'hollow-tide' },
+      hands: { 1: ['Divination'] },
+      battlefield: {
+        0: ['Swamp', 'Fate Unraveler'],
+        1: ['Island', 'Island', 'Island'],
+      },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    const shieldSource = find(s, 1, 'battlefield', 'Island');
+    s = preventDamage(s, shieldSource, 1 as SeatIndex, { kind: 'player', seat: 1 as SeatIndex }, 1);
+    const them = life(s, 1);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Divination'),
+    })));
+    expect(life(s, 1)).toBe(them - 1);
   });
 });
 

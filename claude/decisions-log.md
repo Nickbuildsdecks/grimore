@@ -25352,3 +25352,52 @@ Three deliberate breaks, three failing tests: the draw and the loss aimed at the
 the target, the life loss dropped, and a missing target guessed as the caster (CR 800.4a — a player
 who has left the game is not a target this spell has). The fourth break is the one above, which
 failed to fail and found the duplicate. 4,000 more rows at scale, no throw. compile.test.ts 317/317.
+
+## D407 — Fate Unraveler drained where its text says it deals damage
+
+The card prints "Whenever an opponent draws a card, **Fate Unraveler deals 1 damage to that
+player**." The script called `loseLife`.
+
+Damage and life loss are not the same thing at a table, and the differences are the kind a player
+notices and cannot explain:
+
+- a **prevention shield** absorbs damage and does nothing at all to a loss of life (CR 120.3, CR 615);
+- damage can be **redirected** (CR 615.9), and a loss of life cannot;
+- "whenever a source deals damage" sees one and not the other, and infect replaces damage rather
+  than life loss.
+
+### Why nothing caught it
+
+The one test on the card read the **life total**, and both readings move it by the same amount. That
+is the shape this project keeps finding: a check that cannot fail, here by measuring the one quantity
+the two implementations agree on. `card-promises.mjs` (#215) could not see it either — it reads the
+text for *structure* (keywords, a trigger, an ability, protection, landwalk) and asks whether the
+script carries each, so "a trigger whose effect does the wrong thing" is invisible to it by design.
+
+It was found by reading the card beside its printed text while looking for a compiler reading of
+"that player" — which is the same mechanism as every other defect the compiler has turned up (#319,
+#322, #323, D394, D403): writing a second reading of the same sentence and requiring the two to
+agree.
+
+### The fix, and a fallback that was worse than nothing
+
+`dealDamage` to the actor as a player, with the controller and source, so prevention and redirection
+apply. The guard also changed: the old effect was `loseLife(c.state, c.actor ?? c.controller, 1)`,
+and that `?? c.controller` would have drained **the controller** on an event with no actor — the
+opposite of what the card says. `by: 'opponent'` means that cannot happen today; a card whose wrong
+case is its own controller is one bad event away from a very confusing game, so it now does nothing
+instead.
+
+### Verified
+
+A **prevention shield** is the discriminating test: one point of shielding up, two cards drawn, and
+the printed card costs one life where the drained version costs two. It fails when the effect is put
+back to `loseLife`, which is the whole point of writing it that way. The engine's own suite is
+883/883.
+
+### Still open, and filed rather than built
+
+The general instrument this wants is a measure that resolves **the compiled reading and the
+hand-written script on the same fixture, for every card both can read, and reports the
+disagreements** — which is what compile.test.ts does by hand, card by card. Filed as #326 with the
+design; it is the instrument that would have found this one without anybody reading the card.
