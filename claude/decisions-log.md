@@ -22496,8 +22496,28 @@ forms: the failure step `cat /tmp/play.log` **failed on its own**, printing
 mattered. A diagnostic that reports its own absence as a failure adds noise to the one moment somebody
 is reading carefully. It is `cat /tmp/play.log || true` now.
 
-The readiness loop is still untested, because the job never reached it. Said plainly rather than left
-to look covered.
+The readiness loop was still untested at that point, because the job never reached it.
+
+### The second run is green, and here is what it actually cost
+
+| step | |
+|---|---|
+| install playwright + Chromium | 23s |
+| build packages | 6s |
+| **start the Play Realm (the readiness loop)** | **9s** |
+| `e2e-table.mjs` | 14s |
+| `check-table-controls.mjs` | 5s |
+| whole job, queue to finish | **83s** |
+
+So the readiness loop works, and 99 browser checks across two real Chromium contexts cost **83
+seconds** — against the `v2` job's 185s, which is the longest in this workflow. My estimate of the
+shape was right (the Chromium download is the single biggest step) and wrong about the scale: 23s of
+83, not most of a ten-minute job. The suites run faster in CI than on this hardware — 14s against 29s
+for `e2e-table`.
+
+That is cheap enough that the reasoning for holding `e2e-arena`, `e2e-pod` and `e2e-solo` back is now
+only about flake risk and not about cost. Left as it is for a few pushes anyway, because "it is cheap"
+was the argument that got the first version of this job wrong.
 
 ---
 
