@@ -279,6 +279,23 @@ const KRENKO_MOB_BOSS: CardDef = {
   colors: ['R'],
 };
 
+/**
+ * Armory of Iroas: the pool's ground truth for a trigger whose subject is the equipped creature.
+ *
+ * Printed cost and text taken from the corpus rather than from memory — D259's rule applies to a
+ * hand-written card as much as to a reader, and the equip cost is the part that would be
+ * confidently wrong if guessed. The reminder text in the printed `Equip {2} (...)` is dropped
+ * because `rulesLines` strips reminder text on every card here; what is kept is the rule.
+ */
+const ARMORY_OF_IROAS: CardDef = {
+  name: 'Armory of Iroas',
+  typeLine: 'Artifact — Equipment',
+  manaCost: '{2}',
+  cmc: 2,
+  oracleText: 'Whenever equipped creature attacks, put a +1/+1 counter on it.\nEquip {2}',
+  colors: [],
+};
+
 const BONESPLITTER: CardDef = {
   name: 'Bonesplitter',
   typeLine: 'Artifact — Equipment',
@@ -3596,7 +3613,21 @@ export const EMBER_RUSH: DeckSpec = {
     { card: SHIVAN_DRAGON, count: 1 },
     { card: LIGHTNING_BOLT, count: 4 },
     { card: SHOCK, count: 2 },
-    { card: BONESPLITTER, count: 2 },
+    { card: BONESPLITTER, count: 1 },
+    /*
+      Armory of Iroas in the second Bonesplitter's slot (D433).
+
+      Here rather than in Forge Alliance for a reason worth recording: the equipment deck is where
+      a new equipment belongs by theme, and putting it there broke 17 tests — the Balan check, the
+      metalcraft checks and the Aura checks all pull `Bonesplitter` **by name** out of
+      forge-alliance, and `arena` cannot place a card the named deck does not hold. Ember Rush ran
+      two Bonesplitters and no test needs both, so this slot costs no fixture anything.
+
+      It is in a deck at all because `who: 'attached'` is a new engine concept, and a concept
+      nothing exercises in a real game is the one that is wrong when the corpus reaches it (D425).
+      The deck trades one {1} +2/+0 for a {2} that grows its creature every time it attacks.
+    */
+    { card: ARMORY_OF_IROAS, count: 1 },
     { card: LAVA_SPIKE, count: 1 },
     // Burn at instant speed between the Bolt and the Flame Slash, a two-drop that is a 4/2 on the
     // swing, and five damage from nowhere when the board has stalled.

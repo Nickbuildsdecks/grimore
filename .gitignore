@@ -17,6 +17,9 @@ apps/web/dist/
 # Temporary files & backups
 .tmp/
 scratch/
+# A break run copies the file it is about to damage beside itself; 50961c2 committed 17k lines of
+# those copies before this line existed.
+*.bak
 grimore-gcp-export.zip
 gcp-export/
 

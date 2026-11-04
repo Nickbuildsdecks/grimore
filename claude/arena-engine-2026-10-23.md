@@ -11424,3 +11424,40 @@ trigger-shaped line, keep the prologue and swap the body for a body that always 
 re-compile. Of 12,338 distinct such lines, **10,196 fail on the prologue and only 2,142 on the
 body** — and both are long tails (7,060 and 1,489 distinct shapes). So the next increments are
 families of prologues.
+
+## The trigger whose subject is the creature it is attached to (D433)
+
+"Whenever equipped creature attacks, put a +1/+1 counter on it" is a shape the compiler could not
+express: every trigger it emitted was about the card printing it, and an Equipment is never the
+creature the event happened to. One field — `who: 'attached'` on `attacks` and on `combat-damage` —
+and it is resolved in `fireTrigger`, where the attachment is known, rather than in `triggerMatches`,
+which only sees the event. Armory of Iroas is the hand-written card; the compiler reads its printed
+text to the same script.
+
+**Three defects came out of the break run, and two of them were shipping.**
+
+A compiled Armory of Iroas reported `unread: []` — fully automated — and put its counter on the
+**sword** instead of the creature. `selfEffect` accepted `(?:<name>|it)` in four clauses and
+resolved both alternatives to the source. A line that goes unread gets a badge and a human plays it
+by hand; a line read *wrongly* is flagged nowhere, which makes this the worst shape a reading can
+take. "it" now means `c.subject ?? c.source` and a clause that names the card still means the card.
+411 legal cards print one of those four bodies, 54 print one under a prologue about somebody else,
+and the compiler reads the line on **8** of them today — every one of which was aiming at the wrong
+permanent.
+
+The `combat-damage` arm **could never be reached at all**: `raise` kept that event in its self-only
+watcher set, so it was offered to the creature that dealt the damage and never to the Equipment
+printing the trigger. 45 corpus cards print that prologue and all 45 would have compiled clean and
+done nothing. Its runtime test is a *compiled* card — Prying Blade's printed row through
+`customDeck`, the route an uploaded decklist takes — because that is the path those 45 cards reach a
+table by.
+
+And a comment claimed a distinction between the holder and the defining card that does not exist at
+either call site; it now says so, and says why its break cannot be made to bite.
+
+**What the break run is actually for.** Of nine breaks, the first six passes failed nothing. Not six
+missing tests — one structural hole: the standing compiled-vs-written check skips any card with an
+unread line, so every regression that makes a line *stop* reading removes the card from the
+comparison rather than failing it. A check that stops looking is not a check. The second lesson is
+smaller and sharper: the same increment twice wrote a fix in two redundant places, and redundancy
+means no single break can move it. One lever per claim.

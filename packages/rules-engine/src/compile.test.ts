@@ -3095,7 +3095,12 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const lands = arena({ decks: { 0: 'verdant-guard' }, battlefield: { 0: ['Forest', 'Forest', 'Forest'] }, turn: 3 });
       expect(resolve('the number of lands you control', lands)).toBe(3);
 
-      const artifacts = arena({ decks: { 0: 'ember-rush' }, battlefield: { 0: ['Bonesplitter', 'Bonesplitter'] }, turn: 3 });
+      /*
+        Two artifacts, and they are two *different* artifacts because Ember Rush runs one
+        Bonesplitter now rather than two — the second copy's slot went to Armory of Iroas (D433).
+        The claim is unchanged: this counts artifacts you control, and both of these are artifacts.
+      */
+      const artifacts = arena({ decks: { 0: 'ember-rush' }, battlefield: { 0: ['Bonesplitter', 'Armory of Iroas'] }, turn: 3 });
       expect(resolve('the number of artifacts you control', artifacts)).toBe(2);
 
       const dead = arena({ decks: { 0: 'rot-harvest' }, graveyard: { 0: ['Shambling Shell'] }, turn: 3 });
@@ -6637,5 +6642,228 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         expect(field(read.script, 'statics')).toHaveLength(1);
       }
     });
+  });
+});
+
+/*
+  The attachment-subject trigger, read off printed text (D433).
+
+  These exist because of a break run that failed nothing. `compiled-vs-written.test.ts` skips any
+  card with an unread line — by design, and its docblock says so — so every regression that makes a
+  line *stop* reading takes the card out of the comparison instead of failing it. Breaking the
+  prologue, breaking the equip reader and deleting the body reader all did exactly that, and all
+  three passed. A standing check that stops looking is not a check, so the claims are asserted
+  directly here.
+*/
+describe('the trigger whose subject is the attached permanent, as printed text', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const equipment = (text: string) => compileCard({
+    name: 'Armory of Iroas', type_line: 'Artifact — Equipment', mana_cost: '{2}', cmc: 2,
+    colors: [], layout: 'normal', oracle_text: text,
+  });
+
+  it('reads Armory of Iroas whole, and exactly as the hand-written card does', () => {
+    const read = equipment('Whenever equipped creature attacks, put a +1/+1 counter on it.\nEquip {2}');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    // Nothing unread is the half the standing check cannot assert: it skips rather than fails.
+    expect(read.unread).toEqual([]);
+    const written = scriptFor('Armory of Iroas');
+    const mine = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(mine[0]!.on).toEqual((field(written, 'triggers') as readonly TriggerDef[])[0]!.on);
+    expect(mine[0]!.on).toEqual({ kind: 'attacks', who: 'attached' });
+    // And the equip ability, which a bonus-less Equipment used to lose entirely.
+    expect(field(read.script, 'abilities')).toHaveLength(1);
+  });
+
+  it('keeps the equip ability on an Equipment that prints no bonus line', () => {
+    /*
+      The defect Armory of Iroas exposed, pinned on its own. `attachmentScriptFor` required a line
+      starting "Equipped creature …" and returned nothing without one, so the whole equip ability
+      went missing. Asserted with text that has *no* trigger either, so the only thing left to read
+      is the equip — a card that reads nothing at all would otherwise look the same as this one.
+    */
+    const read = equipment('Equip {2}');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    expect(field(read.script, 'abilities')).toHaveLength(1);
+  });
+
+  it('reads the combat-damage prologue the same way, for both printed words', () => {
+    // 45 corpus cards, and the arm a break run showed nothing was testing.
+    for (const word of ['equipped', 'enchanted']) {
+      const read = equipment(
+        `Whenever ${word} creature deals combat damage to a player, put a +1/+1 counter on it.`
+        + '\nEquip {2}',
+      );
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread).toEqual([]);
+      const mine = field(read.script, 'triggers') as readonly TriggerDef[];
+      expect(mine[0]!.on).toEqual({ kind: 'combat-damage', who: 'attached' });
+    }
+  });
+
+  it('puts the compiled counter on the creature, not on the Equipment', () => {
+    /*
+      The assertion a break run showed was missing, and the reason it matters more than the others.
+
+      Deleting the "put a +1/+1 counter on it" reader did **not** make the line unread: a reader
+      downstream matched it and put the counter on `source`, which for an Equipment is the
+      Equipment. The compiled card then reported `unread: []` — fully automated — and grew the
+      sword instead of the creature holding it. Nothing caught that, because every other assertion
+      here is about the *shape* of the script and this is about where the effect lands.
+
+      So this runs the compiled effect against two permanents and reads which one got the counter.
+      A card that is silently wrong is worse than a card that refuses the line, and it is the one
+      failure D362's flag cannot warn anybody about.
+    */
+    const read = equipment('Whenever equipped creature attacks, put a +1/+1 counter on it.\nEquip {2}');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const trigger = (field(read.script, 'triggers') as readonly TriggerDef[])[0]!;
+    const inst = (id: string) => ({
+      id, defKey: 'k', zone: 'battlefield', zoneSeat: 0, counters: {}, damage: 0,
+      tapped: false, attachedTo: null, enteredTurn: 1,
+    });
+    const before = {
+      instances: { gear: inst('gear'), body: inst('body') },
+      cardDefs: { k: { name: 'x', typeLine: 'Creature', manaCost: '', cmc: 0, oracleText: '', colors: [] } },
+      effects: [], seats: [{ life: 20 }], log: [], stateVersion: 1,
+    } as unknown as GameState;
+    const after = trigger.effect!({
+      state: before, controller: 0 as SeatIndex, source: 'gear', subject: 'body',
+      targets: [], decisions: [],
+    } as unknown as EffectContext);
+    expect(after.instances['body']!.counters['+1/+1']).toBe(1);
+    expect(after.instances['gear']!.counters['+1/+1']).toBeUndefined();
+  });
+
+  it.each([
+    /*
+      The other three bodies that say "it", each on a real printed card, each from the corpus.
+
+      The counter arm was the one Armory of Iroas found, but `selfEffect` accepted a bare "it" in
+      four clauses and resolved all four to the source. So the same defect sat under three more
+      bodies, and these are the cards that print them: a count rather than "a" (Bone Sabres, four
+      counters), a keyword grant (Reaper's Talisman), and a size bonus (Fervent Charge, which is an
+      Enchantment watching the team rather than an Equipment — the subject is somebody else either
+      way). Printed text, not invented text: D259 applies to a test's fixtures as much as to a
+      card's definition, so each of these was read out of the corpus.
+
+      `counters` for the counter arm, and for the two continuous effects the pair that matters —
+      `scope.ids` is **who the effect applies to** and `source` is **where it came from**. Those are
+      different objects here and that is the whole point: the pump belongs to the Equipment and
+      lands on the creature.
+    */
+    [
+      'Bone Sabres', '{2}{G}', 'Artifact — Equipment',
+      'Whenever equipped creature attacks, put four +1/+1 counters on it.\nEquip {3}',
+      { counters: 4 },
+    ],
+    [
+      "Reaper's Talisman", '{B}', 'Artifact — Equipment',
+      'Whenever equipped creature attacks, it gains deathtouch until end of turn.\nEquip {2}',
+      { keywords: ['deathtouch'] },
+    ],
+    [
+      'Fervent Charge', '{1}{R}{W}{B}', 'Enchantment',
+      'Whenever a creature you control attacks, it gets +2/+2 until end of turn.',
+      { power: 2, toughness: 2 },
+    ],
+  ])('%s puts its "it" on the subject, not on the card', (name, cost, typeLine, text, want) => {
+    const read = compileCard({
+      name, type_line: typeLine, mana_cost: cost, cmc: 0,
+      colors: [], layout: 'normal', oracle_text: text,
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const trigger = (field(read.script, 'triggers') as readonly TriggerDef[])[0]!;
+    const inst = (id: string) => ({
+      id, defKey: 'k', zone: 'battlefield', zoneSeat: 0, counters: {}, damage: 0,
+      tapped: false, attachedTo: null, enteredTurn: 1,
+    });
+    const before = {
+      instances: { gear: inst('gear'), body: inst('body') },
+      cardDefs: { k: { name: 'x', typeLine: 'Creature', manaCost: '', cmc: 0, oracleText: '', colors: [] } },
+      effects: [], seats: [{ life: 20 }], log: [], stateVersion: 1,
+    } as unknown as GameState;
+    const after = trigger.effect!({
+      state: before, controller: 0 as SeatIndex, source: 'gear', subject: 'body',
+      targets: [], decisions: [],
+    } as unknown as EffectContext);
+
+    if ('counters' in want) {
+      expect(after.instances['body']!.counters['+1/+1']).toBe(want.counters);
+      expect(after.instances['gear']!.counters['+1/+1']).toBeUndefined();
+      expect(after.effects).toEqual([]);
+      return;
+    }
+    expect(after.effects).toHaveLength(1);
+    const pumped = after.effects[0] as unknown as {
+      scope: { ids: readonly string[] }; source: string;
+      keywords?: readonly string[]; power?: number; toughness?: number;
+    };
+    expect(pumped.scope.ids).toEqual(['body']);
+    expect(pumped.source).toBe('gear');
+    if ('keywords' in want) expect(pumped.keywords).toEqual(want.keywords);
+    else {
+      expect(pumped.power).toBe(want.power);
+      expect(pumped.toughness).toBe(want.toughness);
+    }
+  });
+
+  it('reads "that creature" too, which is Good-Fortune Unicorn and 15 other corpus cards', () => {
+    /*
+      The other spelling of the same object, and the one clause in `targetedEffect` that is still
+      reached for it. "it" is `selfEffect`'s now (`itMeans`); "that creature" is nobody else's, so
+      this is what holds that clause down — without it, deleting the clause fails nothing and the
+      line quietly stops reading.
+
+      Good-Fortune Unicorn prints it alone on a one-line card, which is why it is the fixture: there
+      is nothing else on the card for the reading to come from. Printed text, out of the corpus.
+    */
+    const read = compileCard({
+      name: 'Good-Fortune Unicorn', type_line: 'Creature — Unicorn', mana_cost: '{1}{G}{W}',
+      cmc: 3, colors: ['G', 'W'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Whenever another creature you control enters, put a +1/+1 counter on that creature.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const trigger = (field(read.script, 'triggers') as readonly TriggerDef[])[0]!;
+    const inst = (id: string) => ({
+      id, defKey: 'k', zone: 'battlefield', zoneSeat: 0, counters: {}, damage: 0,
+      tapped: false, attachedTo: null, enteredTurn: 1,
+    });
+    const before = {
+      instances: { horn: inst('horn'), body: inst('body') },
+      cardDefs: { k: { name: 'x', typeLine: 'Creature', manaCost: '', cmc: 0, oracleText: '', colors: [] } },
+      effects: [], seats: [{ life: 20 }], log: [], stateVersion: 1,
+    } as unknown as GameState;
+    const after = trigger.effect!({
+      state: before, controller: 0 as SeatIndex, source: 'horn', subject: 'body',
+      targets: [], decisions: [],
+    } as unknown as EffectContext);
+    expect(after.instances['body']!.counters['+1/+1']).toBe(1);
+    expect(after.instances['horn']!.counters['+1/+1']).toBeUndefined();
+  });
+
+  it('leaves the line alone when the body is not one it reads', () => {
+    /*
+      The prologue reading on its own is not enough, and this is what says so: the same prologue
+      with a body nothing reads must leave the **whole line** unread rather than emitting a trigger
+      that fires and does nothing. A reader that kept the prologue and dropped the body would be a
+      card that looks automated and is not.
+    */
+    const read = equipment(
+      'Whenever equipped creature attacks, untangle the fourth harmonic.\nEquip {2}',
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((entry) => entry.line))
+      .toEqual(['Whenever equipped creature attacks, untangle the fourth harmonic.']);
   });
 });

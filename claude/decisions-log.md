@@ -26972,3 +26972,85 @@ work queue groups by printed opening and the body distribution groups by what fo
 neither answers the question a reader-writer actually has. Both halves are long tails — 7,060
 distinct prologue shapes, 1,489 body shapes — so the next increments are families of prologues, not
 single lines.
+
+## D433 — A trigger whose subject is the permanent it is attached to, and three ways that reading was wrong
+
+"Whenever equipped creature attacks, put a +1/+1 counter on it." The compiler had no way to say
+that: every trigger it emitted was about the card printing it, and an Equipment is never the
+creature the event happened to. 45 corpus cards print the combat-damage version of the prologue and
+69 more print the `dies` version, so this is a family rather than a card.
+
+The shape is one field — `who: 'attached'` on `attacks` and on `combat-damage` — resolved at the
+call site in `fireTrigger`, where `attachedTo` is known, rather than inside `triggerMatches`, which
+only sees the event. Armory of Iroas is the hand-written card that pins it (`{2}`, "Whenever
+equipped creature attacks, put a +1/+1 counter on it. / Equip {2}", in Ember Rush), and the compiler
+reads its printed text to the same script.
+
+### The break run is the whole story of this entry
+
+Six deliberate breaks, each meant to fail a named test. **Five failed nothing.** The cause was not
+five missing tests but one structural hole: `compiled-vs-written.test.ts` skips any card with an
+unread line, by design — so every break that makes a line *stop* reading removes the card from the
+comparison instead of failing it. A standing check that stops looking is not a check. Four direct
+assertions in `compile.test.ts` closed that half. What the remaining breaks then found is worse.
+
+**1. The counter was going on the Equipment.** Deleting the body reader meant to own "put a +1/+1
+counter on it" changed nothing: `selfEffect` runs three readers earlier, its clause accepts
+`(?:<name>|it)`, and it resolved both to `c.source`. So the compiled Armory of Iroas reported
+`unread: []` — fully automated — and grew the sword instead of the creature holding it. That is the
+worst shape a reading can take: an unread line gets D362's badge and a human plays it by hand; a
+line read *wrongly* is flagged nowhere.
+
+The fix is to tell the two alternatives apart instead of merging them. `itMeans(named, c)`: a clause
+that names the card means `c.source` however the trigger was raised; a clause that says "it" means
+`c.subject ?? c.source` — the permanent the event was about, falling back to the card where there is
+no event, which is every activated ability and every spell by construction. The fallback is what
+makes it not a behaviour change for the rest of the pool: a self-subject trigger has
+`subject === source`. All four of that reader's bare-"it" clauses were wrong the same way, so all
+four are fixed, and the downstream clause is narrowed to "that creature" — the one spelling nobody
+else claims — so that if the upstream clause is ever removed the line goes *unread* rather than
+falling through to a second reading.
+
+Measured: 411 legal cards print one of those bodies; **54 print it under a prologue about somebody
+else**, and the compiler reads the line on **8** of them today — Armory of Iroas, Bone Sabres,
+Enduring Courage, Fervent Charge, Gleam of Battle, In the Web of War, Reaper's Talisman, Sword of
+Hours. Every one was putting its counter or its pump on the wrong permanent. Each of the four arms
+is now pinned by a real printed card.
+
+**2. The combat-damage arm could never be reached.** Setting `triggerMatches`' `combat-damage` case
+back to `isSubject` failed nothing either, and the reason was not a missing test: `raise` kept
+`combat-damage` in its *self-only* watcher set, so the event was offered to the creature that dealt
+the damage and never to the Equipment printing the trigger. The field existed, the matcher had an
+arm, and nothing on earth could get an event to it. 45 corpus cards would have compiled with
+`unread: []` and done nothing.
+
+Taking the name out of that set is the fix. It is safe because the matcher's default does the
+narrowing instead — `who` defaults to `'self'`, which requires `isSubject`, so Thieving Magpie still
+draws only for its own damage. And it had to be the **only** change: the watcher condition names the
+board-watching events explicitly *and* falls through to the same list for anything unnamed, so
+naming `combat-damage` in both places made two independent statements of one thing and no single
+break could move it. That is recorded in the comment, because it is the second time in one increment
+that redundancy hid a dead branch.
+
+The test for it is a **compiled** card, not a hand-written one: Prying Blade's printed row through
+`customDeck`, which is the route a player's own decklist takes (D430). Two goblins attack and one is
+wearing the Blade; one Treasure token, not two.
+
+**3. A comment asserting a distinction that does not exist.** `fireTrigger` read the attachment off
+`next.instances[holder]` and said it did so because "a granted trigger belongs to the permanent it
+was given to, so an Equipment handing a creature its ability would otherwise ask the Equipment's own
+attachment". Both call sites pass the holder's *own* instance, the granted one included, so `inst`
+names the same permanent and the claim was false. The lookup is kept — it re-reads from `next`
+rather than from the snapshot the loop captured, which is right by construction rather than by an
+argument about what the loop does not do — and the comment now says that, and says the break cannot
+be made to bite.
+
+### Also fixed on the way
+
+A bonus-less Equipment lost its equip ability entirely: `attachmentScriptFor` required a line
+beginning "Equipped creature …" and returned nothing without one, so the Armory — which prints no
+static bonus — compiled with no equip at all. The static line is optional for an Equipment now and
+still required for an Aura, which cannot exist without "Enchant …".
+
+**Nine breaks, eight of which now fail a named test.** The ninth is the holder/`inst` one above, and
+it is recorded as provably indistinguishable today rather than as coverage.

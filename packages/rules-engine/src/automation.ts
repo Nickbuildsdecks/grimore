@@ -733,7 +733,7 @@ export function endTurnCleanup(state: GameState): GameState {
 
 function triggerMatches(
   event: TriggerEvent, want: TriggerEvent, sourceSeat: SeatIndex, actorSeat: SeatIndex | undefined,
-  isSubject = true,
+  isSubject = true, isAttachedSubject = false,
 ): boolean {
   if (event.kind !== want.kind) return false;
   switch (want.kind) {
@@ -844,6 +844,13 @@ function triggerMatches(
       const who = want.who ?? 'self';
       if (who === 'self' && !isSubject) return false;
       if (who === 'another' && isSubject) return false;
+      /*
+        `attached` is an Aura's or an Equipment's own creature, and it is a guard rather than an
+        early `return true` on purpose: everything below — `what`, `nontoken`, `alone`,
+        `withAtLeast`, `of` — still has to be asked. "Whenever equipped creature attacks alone" is
+        a printed line, and a branch that returned early here would read it as the bare attack.
+      */
+      if (who === 'attached' && !isAttachedSubject) return false;
       const e = event as {
         subjectSeat?: SeatIndex; subjectIsCreature?: boolean; subjectIsToken?: boolean;
         subjectIsLand?: boolean; alone?: boolean; declared?: number;
@@ -903,8 +910,15 @@ function triggerMatches(
     case 'transformed':
       return true;
     // Its own permanent only, which `raise` has already narrowed the watcher list to.
+    /*
+      "Whenever this creature deals combat damage to a player" — or, on an Equipment, whenever the
+      creature it is attached to does.
+
+      `self` stays the default, so every script older than `attached` means exactly what it meant.
+      There is no `another` because nothing printed asks for one; see the event's own declaration.
+    */
     case 'combat-damage':
-      return isSubject;
+      return (want.who ?? 'self') === 'attached' ? isAttachedSubject : isSubject;
     default:
       return false;
   }
@@ -1003,7 +1017,27 @@ function fireTrigger(
     watcher *is* rather than about what the event was.
   */
   if (fromStack && !(trigger.on.kind === 'spell-cast' && trigger.on.self === true)) return next;
-  if (!triggerMatches(event, trigger.on, inst.zoneSeat, actor, holder === subject)) return next;
+  /*
+    The attachment, resolved here rather than in `triggerMatches` for the same reason `self` is:
+    it is a fact about where the watcher *is*, not about what the event was.
+
+    Read through `next.instances[holder]` rather than off the captured `inst`, and the difference
+    is **not** the one a first reading suggests: both call sites below pass the holder's own
+    instance, including the granted-ability one (CR 113.6 moves the ability, not the lookup), so
+    `inst.attachedTo` names the same permanent. What the lookup buys is freshness — `inst` was
+    captured before this permanent's earlier triggers were offered the event, and `next` is current.
+    Nothing in that loop resolves anything, so no card can tell the two apart today; a break run
+    confirmed it, failing no test when switched to `inst`. It stays as the reading that is right by
+    construction rather than by an argument about what the loop does not do.
+
+    `attachedTo` lives on the Aura or Equipment and points at its host, so this is one lookup and
+    no search.
+  */
+  const attachedHost = next.instances[holder]?.attachedTo ?? null;
+  if (!triggerMatches(
+    event, trigger.on, inst.zoneSeat, actor, holder === subject,
+    attachedHost !== null && attachedHost === subject,
+  )) return next;
   /*
     The intervening-if clause, asked the first of its two times (CR 603.4).
 
@@ -1178,17 +1212,41 @@ function raise(
       };
     }
   }
-  // Which permanents could have a trigger for this event.
-  //
-  // `becomes-tapped` and `leaves` are about one object and only that object's own script can care.
-  // `etb`, `dies` and `attacks` usually are too — but "~ or another creature dies" is one of the
-  // commonest black cards there is, and "whenever a creature you control attacks" is the same shape
-  // one step along, so those three offer the event to every permanent on the battlefield and
-  // `triggerMatches` decides from each trigger's own `who` whether it wants it. The subject is
-  // always included: it may be the watcher, and for a death it is in a graveyard by now rather
-  // than on the battlefield.
+  /*
+    Which permanents could have a trigger for this event.
+
+    `becomes-tapped` and `leaves` are about one object and only that object's own script can care.
+    `etb`, `dies` and `attacks` usually are too — but "~ or another creature dies" is one of the
+    commonest black cards there is, and "whenever a creature you control attacks" is the same shape
+    one step along, so those offer the event to every permanent on the battlefield and
+    `triggerMatches` decides from each trigger's own `who` whether it wants it. The subject is
+    always included: it may be the watcher, and for a death it is in a graveyard by now rather
+    than on the battlefield.
+
+    **`combat-damage` was in the self-only list and that was a defect (D433).** An Equipment is not
+    the creature that deals the damage, so "whenever equipped creature deals combat damage to a
+    player" was offered to the creature and never to the Equipment printing it: the trigger existed,
+    `triggerMatches` had an arm for it, and nothing could ever reach that arm. The compiler reads
+    that prologue on 45 corpus cards, so 45 cards would have compiled with `unread: []` — reported
+    fully automated — and done nothing at all, which is the exact failure D362's badge cannot warn
+    anybody about. A break run is what surfaced it: setting the matcher's arm back to `isSubject`
+    failed no test, because no test could get an event to it.
+
+    Widening it is safe for everything already here because the matcher's default does the
+    narrowing instead: `who` defaults to `'self'` and that arm requires `isSubject`, so a Thieving
+    Magpie still draws only for its own damage. The cost is the same per-event walk `etb` and
+    `attacks` already pay.
+
+    **Taking the name out of this set is the whole fix, and it has to be the only one.** The
+    condition below names the board-watching events explicitly *and* falls through to
+    `everyBattlefield` for anything it does not name, so that list is redundant for every kind in
+    it — which means naming `combat-damage` there as well would have made two independent
+    statements of the same thing, and no single break could fail a test. It was written that way
+    first and the break run is what caught it: re-adding the name here passed, and so did removing
+    it from the condition. One lever, so one break can move it.
+  */
   const selfOnly = new Set([
-    'becomes-tapped', 'leaves', 'combat-damage', 'targeted', 'turned-face-up', 'transformed',
+    'becomes-tapped', 'leaves', 'targeted', 'turned-face-up', 'transformed',
     'chapter',
   ]);
   const everyBattlefield = apnapSeats(next).flatMap((seat) => {

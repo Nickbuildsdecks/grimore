@@ -21232,3 +21232,163 @@ describe('protection printed on a card, read with no script at all', () => {
     expect(printedKeywords('Flying, islandwalk')).toEqual(['flying']);
   });
 });
+
+/*
+  The trigger whose subject is the creature this permanent is attached to (D433).
+
+  `who: 'attached'` is the fourth value on a board-watching trigger, and Armory of Iroas is its
+  ground truth: an Equipment does not attack, so `self` cannot say this, and it is one particular
+  creature rather than any other, so `another` cannot either. 47 corpus cards print this prologue
+  of an Equipment and 18 of an Aura; before the value existed every one was an unread line.
+*/
+describe('a trigger that watches the creature it is attached to', () => {
+  /** The Armory equipped onto a creature, with the equip ability actually activated. */
+  const equipped = (): { state: GameState; armory: string; host: string } => {
+    /*
+      Two lands tapped and the main phase reached, because equip is sorcery-speed (CR 702.6b) and
+      costs {2}. Same setup the Bonesplitter tests use, spelled out here because that helper is
+      scoped to its own block.
+    */
+    let s = arena({
+      // Ember Rush, which is where the Armory's slot is — see its entry in `starterDecks.ts` for
+      // why it is not in the equipment deck. Mountains because that is what this deck plays, and
+      // the equip cost is generic.
+      decks: { 0: 'ember-rush', 1: 'verdant-guard' },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Armory of Iroas', 'Raging Goblin'] },
+      turn: 3,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0 as SeatIndex, 'battlefield')]) {
+      if (s.cardDefs[s.instances[id]!.defKey]!.name !== 'Mountain') continue;
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const armory = find(s, 0 as SeatIndex, 'battlefield', 'Armory of Iroas');
+    const host = find(s, 0 as SeatIndex, 'battlefield', 'Raging Goblin');
+    // `auto:activate` with the equip ability's index, which is how every other equip test here
+    // moves an Equipment onto a creature.
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: armory, abilityIndex: 0,
+      targets: [{ kind: 'card', id: host }],
+    } as Action));
+    expect(s.instances[armory]!.attachedTo).toBe(host);
+    return { state: s, armory, host };
+  };
+
+  it('puts the counter on the equipped creature when it attacks', () => {
+    /*
+      Read off the board rather than off the script, because the script being shaped right is not
+      the claim — the claim is that the engine resolves `attached` to this creature and the counter
+      lands on it. A 1/1 Raging Goblin becomes a 2/2.
+    */
+    const { state, host } = equipped();
+    let s = advanceTo(state, 'declare-attackers');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: host, defender: 1 }] } as Action));
+    expect(s.instances[host]!.counters['+1/+1']).toBe(1);
+    const live = characteristicsOf(s, s.instances[host]!);
+    expect([live.power, live.toughness]).toEqual([2, 2]);
+  });
+
+  it('does not fire for a creature the Equipment is not on', () => {
+    /*
+      The half that makes the first test about `attached` rather than about "any attack". A second
+      creature attacks alongside the equipped one; only the equipped one gets a counter. Without
+      this, `who: 'attached'` reading as `any` would pass the test above.
+    */
+    const { state, host } = equipped();
+    let s = state;
+    // A second body, pulled from the same deck as the first.
+    const other = find(s, 0 as SeatIndex, 'library', 'Monastery Swiftspear');
+    s = { ...s, instances: { ...s.instances, [other]: { ...s.instances[other]!, zone: 'battlefield', enteredTurn: 1 } } };
+    s = advanceTo(s, 'declare-attackers');
+    s = drain(apply(s, {
+      type: 'auto:attack',
+      by: 0,
+      attackers: [{ attacker: host, defender: 1 }, { attacker: other, defender: 1 }],
+    } as Action));
+    expect(s.instances[host]!.counters['+1/+1']).toBe(1);
+    expect(s.instances[other]!.counters['+1/+1']).toBeUndefined();
+  });
+
+  it('fires the combat-damage arm for the equipped creature, on a compiled card', () => {
+    /*
+      The other `who: 'attached'` event, and the arm a break run showed nothing was testing: setting
+      `combat-damage` back to `isSubject` failed no test at all, because the only runtime coverage
+      here was the `attacks` arm above and the compiler tests check the script's *shape* rather than
+      what the engine does with it.
+
+      No hand-written card prints this prologue, so rather than add one to a starter deck this goes
+      through the route a player's own list takes: `customDeck` with the printed row, which asks
+      `compileCard` (D430) and hands back the compiled card. That is better coverage than a
+      hand-written fixture would be — the 45 corpus cards printing this prologue reach the table
+      exactly this way.
+
+      **Prying Blade**, printed text out of the corpus, chosen because the compiler reads all three
+      of its lines whole (`unread` is empty) and its trigger leaves something visible on the
+      battlefield: a Treasure token, which is countable in a way a draw inside a decision is not.
+
+      Two goblins attack and only one is wearing the Blade. One Treasure, not two: that is the
+      assertion that makes this about `attached` rather than about "a creature I control connected".
+    */
+    const list = customDeck({
+      id: 'blade-list',
+      name: 'Prying Blade',
+      entries: [
+        { name: 'Prying Blade', count: 1 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Mountain', count: 55 },
+      ],
+      data: [{
+        name: 'Prying Blade', type_line: 'Artifact — Equipment', mana_cost: '{1}', cmc: 1,
+        colors: [], layout: 'normal', power: null, toughness: null, loyalty: null,
+        oracle_text: 'Equipped creature gets +1/+0.\nWhenever equipped creature deals combat damage'
+          + ' to a player, create a Treasure token.\nEquip {2}',
+      }],
+    }).deck;
+    let s = arena({
+      decks: { 0: 'blade-list', 1: 'verdant-guard' },
+      deckSpecs: { 'blade-list': list },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Prying Blade', 'Raging Goblin', 'Raging Goblin'] },
+      turn: 3,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const id of [...ids(s, 0 as SeatIndex, 'battlefield')]) {
+      if (s.cardDefs[s.instances[id]!.defKey]!.name !== 'Mountain') continue;
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 });
+    }
+    const blade = find(s, 0 as SeatIndex, 'battlefield', 'Prying Blade');
+    const goblins = [...ids(s, 0 as SeatIndex, 'battlefield')]
+      .filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Raging Goblin');
+    expect(goblins).toHaveLength(2);
+    const [worn, bare] = goblins as [string, string];
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: blade, abilityIndex: 0,
+      targets: [{ kind: 'card', id: worn }],
+    } as Action));
+    expect(s.instances[blade]!.attachedTo).toBe(worn);
+
+    s = advanceTo(s, 'declare-attackers');
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: worn, defender: 1 }, { attacker: bare, defender: 1 }],
+    } as Action));
+    // Seat 1's board is empty, so nothing can block and the engine declares the empty block
+    // itself: both attackers connect and both combat-damage events are raised.
+    s = drain(advanceTo(s, 'end-combat'));
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield').filter((n) => n === 'Treasure')).toHaveLength(1);
+  });
+
+  it('stops firing once the Equipment has been taken off', () => {
+    /*
+      `attachedTo` is read live, every time the event is raised, rather than captured when the
+      ability was written. An Equipment whose host has gone is attached to nothing, and a trigger
+      that still fired would be reading a relation that no longer exists (CR 400.7).
+    */
+    const { state, armory, host } = equipped();
+    let s = { ...state, instances: { ...state.instances, [armory]: { ...state.instances[armory]!, attachedTo: null } } };
+    s = advanceTo(s, 'declare-attackers');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: host, defender: 1 }] } as Action));
+    expect(s.instances[host]!.counters['+1/+1']).toBeUndefined();
+  });
+});

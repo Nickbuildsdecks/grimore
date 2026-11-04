@@ -364,6 +364,39 @@ const equipment = (name: string, cost: string, bonus: PumpOptions, text: string)
   name, ...equipFragment(cost, bonus, text),
 });
 
+/**
+ * Armory of Iroas: `{2}`, "Whenever equipped creature attacks, put a +1/+1 counter on it." /
+ * "Equip {2}".
+ *
+ * The pool's first card whose trigger watches **the creature it is attached to**, which is the
+ * whole reason it is here (D433). An Equipment does not attack and this is not about any other
+ * creature, so neither `who: 'self'` nor `who: 'another'` can say it; `who: 'attached'` is the
+ * fourth value, and this card is its ground truth. 47 corpus cards print this prologue of an
+ * Equipment and 18 of an Aura, and before the value existed every one of them was an unread line.
+ *
+ * Chosen off the corpus rather than from memory, and its cost and text are the printed ones: D259
+ * applies to a hand-written card as much as to a reader, and a card whose equip cost I guessed
+ * would be a card that is confidently wrong. Two printed lines and the engine does both.
+ *
+ * `{}` as the bonus because the card has none — the equip ability moves it and grants nothing,
+ * which `equipFragment` already allows and nothing in the pool had yet asked for.
+ */
+const ARMORY_OF_IROAS: CardScript = {
+  name: 'Armory of Iroas',
+  ...equipFragment('{2}', {}, 'attach it to a creature you control'),
+  triggers: [{
+    on: { kind: 'attacks', who: 'attached' },
+    description: 'Put a +1/+1 counter on equipped creature',
+    /*
+      `c.subject` and not `c.source`: the source is the Equipment, and the counter goes on the
+      creature. The `attacks` event carries its subject, so this needs no search for what the
+      Equipment is on — and reading `attachedTo` here instead would be a second answer to a
+      question the event has already answered.
+    */
+    effect: (c) => (c.subject === undefined ? c.state : addCounters(c.state, c.subject, '+1/+1', 1)),
+  }],
+};
+
 const scry = (count: number): CardsDecisionSpec => ({
   who: 'controller',
   from: 'library-top',
@@ -8971,7 +9004,7 @@ const ALL: readonly CardScript[] = [
   MAGMA_JET, PREORDAIN, OMENSPEAKER,
   DRUDGE_SKELETONS, GOLGARI_CHARM, ENDLESS_ONE,
   LEONIN_SKYHUNTER, RAISE_THE_ALARM, ANGELIC_GIFT, INSPIRED_CHARGE, BALAN,
-  JACE_BELEREN, GARRUK_WILDSPEAKER,
+  JACE_BELEREN, GARRUK_WILDSPEAKER, ARMORY_OF_IROAS,
   guildgate('Boros Guildgate', 'R', 'W'),
   guildgate('Izzet Guildgate', 'U', 'R'),
   equipment('Bonesplitter', '{1}', { power: 2 }, 'equipped creature gets +2/+0'),
@@ -10106,6 +10139,42 @@ function grantedKeywordList(granted: string): Keyword[] | null {
  * function sees only the clause. A reader here would produce a card that works and plays badly,
  * which is worse than an unread line (D362).
  */
+/**
+ * Which permanent a clause inside `selfEffect` is about: the card, or whatever the line's subject
+ * is.
+ *
+ * Four of that reader's clauses accept either the card's own name or a bare "it" — `it gets +1/+1
+ * until end of turn`, `it gains flying until end of turn`, `regenerate it`, `put a +1/+1 counter on
+ * it`. For almost every card the two are the same object, because almost every trigger that prints
+ * one of those bodies is about the card printing it, and so the reader resolved all four to
+ * `c.source` and nothing noticed.
+ *
+ * Armory of Iroas is where that stops being true. "Whenever equipped creature attacks, put a +1/+1
+ * counter on it" — "it" is the creature, and `c.source` is the Equipment. The reading that resolved
+ * "it" to the source compiled the card with `unread: []`, reported it fully automated, and grew the
+ * sword instead of the creature holding it. That is the worst shape a reading can take: an unread
+ * line is flagged for a human to play by hand (D362), and a line that is read wrongly is flagged
+ * nowhere. A break run is what surfaced it — deleting the clause in `targetedEffect` that was
+ * supposed to own this body changed nothing, because this reader runs first and had already claimed
+ * it.
+ *
+ * So the two alternatives are now told apart rather than merged, by capturing the named one:
+ *
+ *  - the clause **named** the card (`Armory of Iroas gets`, `this creature gains`) → `c.source`,
+ *    which is what the name means however the trigger was raised;
+ *  - the clause said **"it"** → `c.subject ?? c.source`, the permanent the event was about, falling
+ *    back to the card when there is no event — an activated ability or a spell, where `subject` is
+ *    undefined by construction (see `EffectContext.subject`) and "it" can only be the card.
+ *
+ * The fallback is what keeps this from being a behaviour change for the rest of the pool: a
+ * self-subject trigger has `subject === source`, so every card that read correctly before still
+ * reads the same way, and the cards that change are exactly the ones whose subject is somebody
+ * else.
+ */
+function itMeans(named: string | undefined, c: EffectContext): string {
+  return named === undefined ? c.subject ?? c.source : c.source;
+}
+
 function selfEffect(clause: string, name: string): ReadEffect | null {
   const text = clause.trim();
   const self = selfRef(name);
@@ -10115,13 +10184,16 @@ function selfEffect(clause: string, name: string): ReadEffect | null {
   }
 
   const grown = new RegExp(
-    `^(?:${self}|it) gets \\+(\\d+)/\\+(\\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,
+    `^(?:(${self})|it) gets \\+(\\d+)/\\+(\\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,
     'i',
   ).exec(text);
   if (grown !== null) {
-    const bonus = pumpAndGrant(Number(grown[1]), Number(grown[2]), grown[3]);
+    const bonus = pumpAndGrant(Number(grown[2]), Number(grown[3]), grown[4]);
     if (bonus !== null) {
-      return { effect: (c) => pump(c.state, [c.source], c.source, c.controller, bonus) };
+      const named = grown[1];
+      return {
+        effect: (c) => pump(c.state, [itMeans(named, c)], c.source, c.controller, bonus),
+      };
     }
   }
 
@@ -10131,26 +10203,34 @@ function selfEffect(clause: string, name: string): ReadEffect | null {
     granted until end of turn is a continuous effect like a pump, not a different mechanism.
   */
   const gained = new RegExp(
-    `^(?:${self}|it) gains ([a-z][a-z' ]*?) until end of turn$`, 'i',
+    `^(?:(${self})|it) gains ([a-z][a-z' ]*?) until end of turn$`, 'i',
   ).exec(text);
   if (gained !== null) {
-    const word = gained[1]!.trim().toLowerCase();
+    const word = gained[2]!.trim().toLowerCase();
     if (isKeyword(word)) {
+      const named = gained[1];
       return {
-        effect: (c) => pump(c.state, [c.source], c.source, c.controller, { keywords: [word] }),
+        effect: (c) => pump(
+          c.state, [itMeans(named, c)], c.source, c.controller, { keywords: [word] },
+        ),
       };
     }
   }
 
-  if (new RegExp(`^regenerate (?:${self}|it)$`, 'i').test(text)) {
-    return { effect: (c) => regenerate(c.state, c.source) };
+  const regenerated = new RegExp(`^regenerate (?:(${self})|it)$`, 'i').exec(text);
+  if (regenerated !== null) {
+    const named = regenerated[1];
+    return { effect: (c) => regenerate(c.state, itMeans(named, c)) };
   }
 
-  const counted = new RegExp(`^put ([\\w]+) \\+1/\\+1 counters? on (?:${self}|it)$`, 'i').exec(text);
+  const counted = new RegExp(
+    `^put ([\\w]+) \\+1/\\+1 counters? on (?:(${self})|it)$`, 'i',
+  ).exec(text);
   if (counted !== null) {
     const n = countFrom(counted[1]!);
     if (n !== null) {
-      return { effect: (c) => addCounters(c.state, c.source, '+1/+1', n) };
+      const named = counted[2];
+      return { effect: (c) => addCounters(c.state, itMeans(named, c), '+1/+1', n) };
     }
   }
 
@@ -10265,11 +10345,18 @@ function attachmentBonus(line: string): { bonus: PumpOptions; harmful: boolean }
 }
 
 /**
- * An Aura or an Equipment, or `null` when this card is neither or its two lines do not both read.
+ * An Aura or an Equipment, or `null` when this card is neither or its lines do not read.
  *
- * All or nothing by construction: the fragment is only returned when both the declaration and the
- * static line were found and understood, so there is no state in which half an attachment is
- * emitted.
+ * All or nothing per *mechanism*: an Aura is emitted only when both its `Enchant creature` and its
+ * bonus line read, so there is no state in which half an Aura is emitted.
+ *
+ * An **Equipment's bonus is optional**, which this used to get wrong. It required a line starting
+ * "Equipped creature …" and returned `null` without one, and every Equipment in the pool had such
+ * a line, so the requirement was invisible. Armory of Iroas is the first that does not — its text
+ * is a trigger and an equip cost — and it was losing its whole equip ability to a bonus it does
+ * not print. The equip ability stands on its own: it moves the Equipment onto a creature and that
+ * is a complete, playable mechanic, which `equipFragment` has always allowed with an empty bonus
+ * and nothing had yet asked for.
  */
 export function attachmentScriptFor(
   def: CardDef, lines: readonly string[],
@@ -10281,15 +10368,22 @@ export function attachmentScriptFor(
 
   const subject = isAura ? /^enchanted creature/i : /^equipped creature/i;
   const staticLine = lines.find((line) => subject.test(plain(line).trim()));
-  if (staticLine === undefined) return null;
-  const read = attachmentBonus(staticLine);
-  if (read === null) return null;
+  /*
+    An Aura with no bonus line is not an Aura this reads: its `Enchant creature` attaches it and
+    the bonus is the whole of what it then does, so half of that pair is nothing. An Equipment is
+    different — see the docblock — and falls through with no bonus and no claimed static line.
+  */
+  if (staticLine === undefined && isAura) return null;
+  const read = staticLine === undefined ? null : attachmentBonus(staticLine);
+  if (staticLine !== undefined && read === null) return null;
 
   if (isAura) {
     // `Enchant creature` exactly: an `Enchant artifact` or `Enchant player` is a different target
     // and this reads only the one the pool prints.
     const declared = lines.find((line) => /^enchant creature$/i.test(plain(line).trim()));
     if (declared === undefined) return null;
+    // Both are present on this path: the guard above returned for an Aura without them.
+    if (read === null || staticLine === undefined) return null;
     return {
       fragment: {
         aura: {
@@ -10313,15 +10407,25 @@ export function attachmentScriptFor(
   return {
     fragment: equipFragment(
       equip[1]!,
-      read.bonus,
-      // The printed line as its own description, lower-cased at the front the way the
-      // hand-written Equipment spell theirs.
-      (() => {
-        const text = plain(staticLine).trim().replace(/\.$/, '');
-        return text.charAt(0).toLowerCase() + text.slice(1);
-      })(),
+      // No bonus line means no bonus, which is a real Equipment and not a failure to read one.
+      read?.bonus ?? {},
+      /*
+        The printed bonus line as the ability's description, lower-cased at the front the way the
+        hand-written Equipment spell theirs — and, with no bonus line, what the equip ability
+        actually does instead. Not the bonus phrase with the bonus missing, which would describe a
+        card that does not exist.
+      */
+      staticLine === undefined
+        ? 'attach it to a creature you control'
+        : (() => {
+          const text = plain(staticLine).trim().replace(/\.$/, '');
+          return text.charAt(0).toLowerCase() + text.slice(1);
+        })(),
     ),
-    claimed: [equip.input, staticLine],
+    // Only the lines this actually accounted for: with no bonus line there is nothing to claim
+    // but the equip itself, and claiming one that does not exist would hide a line from the
+    // per-line readers.
+    claimed: staticLine === undefined ? [equip.input] : [equip.input, staticLine],
   };
 }
 
@@ -10493,6 +10597,25 @@ const TRIGGER_SHAPES: readonly {
   readonly prologue: (self: string) => RegExp;
   readonly on: readonly TriggerDef['on'][];
 }[] = [
+  /*
+    An Aura's or an Equipment's own creature, which is what `who: 'attached'` is for (D433).
+
+    `equipped` and `enchanted` in one row because the only difference between them is which kind of
+    permanent is printing the line, and the engine's attachment relation does not distinguish: an
+    Aura and an Equipment both point at their host through `attachedTo`. 47 corpus cards print the
+    attack line of an Equipment and 18 of an Aura; 45 print the combat-damage line.
+
+    Armory of Iroas is the ground truth for the pair — the hand-written card and this reading build
+    the same script, which is what `compiled-vs-written.test.ts` checks on every run.
+  */
+  {
+    prologue: () => /^Whenever (?:equipped|enchanted) creature attacks, (.+)$/i,
+    on: [{ kind: 'attacks', who: 'attached' }],
+  },
+  {
+    prologue: () => /^Whenever (?:equipped|enchanted) creature deals combat damage to a player, (.+)$/i,
+    on: [{ kind: 'combat-damage', who: 'attached' }],
+  },
   // Kitchen Finks, Gravedigger, and thirty others.
   {
     prologue: (self) => new RegExp(`^When ${self} ${ENTERS} or dies, (.+)$`, 'i'),
@@ -12158,6 +12281,35 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
         (state, id) => addCounters(state, id, '+1/+1', 1),
         c.state,
       ),
+    };
+  }
+
+  /*
+    "put a +1/+1 counter on it" — the counter that goes on **whatever the trigger was about**, which
+    is a different clause from the two around it: it points at no target and reads no board, it
+    reads the event's own subject. Armory of Iroas prints it after "Whenever equipped creature
+    attacks", and 43 corpus cards print it after a prologue of some kind.
+
+    `c.subject === undefined` is a real branch rather than a formality: this clause is only
+    meaningful under a trigger that carries a subject, and a spell or an ability that reached it
+    with none must do nothing rather than guess at a creature. `-1/-1` is deliberately **not**
+    accepted here — "put a -1/-1 counter on it" is a different card and would want the harmful
+    flag the clause below sets, and a reader that treated the two alike is the mistake that
+    comment is about.
+
+    **The bare "it" is not read here, and a break run is why.** Deleting this clause did not make
+    Armory of Iroas's line unread: `selfEffect` runs three readers earlier and its `put a +1/+1
+    counter on (?:<name>|it)` clause had already claimed the body — and resolved it to `c.source`,
+    which for an Equipment is the Equipment. So the card reported `unread: []`, fully automated,
+    and grew the sword instead of the creature holding it. The fix belonged where the shadowing
+    was, so "it" is now `itMeans` upstream and what is left here is "that creature", which no
+    other reader claims. Narrowing the pattern is deliberate: if that upstream clause is ever
+    removed, the line goes **unread** and gets D362's badge, rather than falling through to a
+    second reading that might be wrong in a different way.
+  */
+  if (/^put a \+1\/\+1 counter on that creature$/i.test(text)) {
+    return {
+      effect: (c) => (c.subject === undefined ? c.state : addCounters(c.state, c.subject, '+1/+1', 1)),
     };
   }
 

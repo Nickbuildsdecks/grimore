@@ -230,8 +230,25 @@ export type TriggerEvent =
        * Whose attack it watches, exactly as `etb` and `dies`: `self` — the default, and what every
        * script written before this meant — is this permanent attacking, `another` is any other
        * creature, `any` is both.
+       *
+       * `attached` is the fourth, and it is the one an Aura or an Equipment needs: "Whenever
+       * **equipped** creature attacks" watches neither this permanent (an Equipment does not
+       * attack) nor any other creature (it is one particular creature) but *the permanent this one
+       * is attached to*. 47 corpus cards print it of an Equipment and 18 of an Aura, and before
+       * this value there was no way to say it, so every one of them was read as an unread line.
+       *
+       * Resolved at the call site in `fireTrigger` rather than inside `triggerMatches`, for the
+       * reason that function's `self` clause gives: it is a fact about where the watcher is, not
+       * about what the event was.
+       *
+       * It reads the **holder** rather than the defining card, which is what CR 113.6 says about a
+       * granted ability — but that choice is **reasoning and not a tested property**, and a break
+       * run is what established the difference: swapping `holder` for the defining card failed no
+       * test at all. Nothing in the pool grants an attachment trigger, so for every card that
+       * exists today the two are the same object. Said plainly here rather than left as a claim
+       * the tests appear to support.
        */
-      readonly who?: 'self' | 'another' | 'any';
+      readonly who?: 'self' | 'another' | 'any' | 'attached';
       readonly of?: 'you' | 'opponent' | 'any';
       /** Set by the engine: the seat that controls the attacking creature. */
       readonly subjectSeat?: SeatIndex;
@@ -405,7 +422,21 @@ export type TriggerEvent =
    * is the only opponent; in a pod it is the one who was actually attacked, which is the whole
    * reason it travels rather than being worked out.
    */
-  | { readonly kind: 'combat-damage'; readonly defender?: SeatIndex }
+  | {
+      readonly kind: 'combat-damage';
+      readonly defender?: SeatIndex;
+      /**
+       * `self` — the default, and what every script written before this meant — is this creature
+       * dealing the damage. `attached` is the Equipment's reading of the same line: "Whenever
+       * equipped creature deals combat damage to a player" is about the creature it is attached
+       * to, which is 45 corpus cards. See the `attacks` event's `who` for why the two values are
+       * resolved where they are.
+       *
+       * There is no `another` and no `any`: nothing printed watches an arbitrary creature's combat
+       * damage, and a value no card asks for is a branch no test can be written against (D425).
+       */
+      readonly who?: 'self' | 'attached';
+    }
   | {
       readonly kind: 'spell-cast';
       readonly by?: 'you' | 'opponent' | 'any';
