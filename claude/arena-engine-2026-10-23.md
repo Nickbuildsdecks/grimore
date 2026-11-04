@@ -9547,3 +9547,53 @@ spread fails that test and its older sibling; restored, 47 pass.
 Two observations that could not say what I wanted: the engine's refusal names only the **first**
 unreadable card, so it cannot carry a count; and `libraryCount` after `game:start` is 52 rather than
 59, because the deal draws an opening hand. Both now read after the load and before the start.
+
+## Checkpoint — two contracts and a build, each enforced by the thing you cannot skip (D358-D359)
+
+Both of these are the same move: take a check somebody has to remember to run, and put it where the
+work already has to pass through.
+
+### The response envelopes (D358)
+
+PR #35's body named ~20 response contracts with no conformance test. Measuring narrowed it: of 26
+contracts describing a response or an item in one, **15 are enforced more strongly than a test
+would be** — the route calls `MePlayer.parse`, `Collection.parse`, `Deck.parse` as it builds the
+response, so a drifted item shape is a 500. Two envelopes already had tests. Six had nothing:
+`CardSearchResponse`, `LoginResponse`, `RegisterResponse`, `AuthStatus`, `ForgotPasswordResponse`,
+`PlayerProfileResponse`. Every one of those is an object literal in a `res.json({ ... })`, so a
+renamed `success` or a `totalCards` that becomes `total_cards` reaches the client unchallenged — and
+the envelope is what a client derives its types from.
+
+Each new check drops a declared key and asserts refusal, because a test that only parses a good body
+cannot tell a contract that describes the response from `z.object({})`. Proved end to end by renaming
+`totalCards` in the route: the test fails and names the field.
+
+**A correction worth keeping.** I asserted `AuthStatus` must *refuse* a signed-in body relabelled
+`loggedIn: false`. It does not — zod strips unknown keys rather than erroring, so the false arm
+accepts it and drops the `user`. That is the better behaviour and the one worth pinning, so the test
+asserts the strip instead. A negative assertion is a claim about the contract, and it can be wrong by
+being too strong.
+
+`DraftView` and `SandboxCard` have no route here: they describe the draft endpoints D11 did not port.
+A contract ahead of its route, stated rather than tested.
+
+A guard reads every `export const *Response` out of the contracts and fails if one is parsed nowhere
+under `apps/`. Proved by injecting `GuardProbeResponse`. `apps/api` 306 → 311.
+
+### The stale engine (D359)
+
+`provenanceLine` prints `STALE(src <time>)` when `dist` is older than the engine source — which is
+what D338 needed. But it is opt-in, and **45 of the 52 scripts that import `dist` never called it**,
+including the one that burned me, until I added the line by hand. Retrofitting 45 calls is 45 chances
+to forget and does nothing about the 46th script.
+
+So `scripts/lib/engine.mjs` re-exports `dist` and warns on stderr, at import, when it is behind. All
+49 instruments import from it: **importing the engine is the check.** It does not throw (a harness
+mid-sweep that dies on import loses the sweep), writes to stderr so a piped run keeps its measurement
+clean, and does not rebuild (a script that silently rebuilds what it measures is worse than a stale
+number). `distStaleness` is extracted so the printed line and the warning cannot disagree, tie case
+included. A second guard fails if an instrument reaches past the wrapper into `dist`.
+
+Four instruments re-run to confirm the indirection changed nothing: `derivable` 360 cards,
+`wire-growth` 25.5%/28.6% of the cap, `mechanic-coverage` 81 of 81, `card-promises` 0 gaps with its
+control still reporting 1.
