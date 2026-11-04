@@ -1,0 +1,180 @@
+/**
+ * The oracle-text compiler: how much of a card's printed text can this engine turn into rules, and
+ * **which lines could not** (#317).
+ *
+ * ## The question this answers, and why `cardFromData` could not
+ *
+ * `fromCardData.ts` asks whether a card's text is *nothing but* its data — a vanilla creature, a
+ * readable mana source, a creature whose whole text is keywords. That is an all-or-nothing
+ * question, and it has to be: it returns a `CardDef` plus a complete `CardScript` or it returns a
+ * refusal. Measured on the engine's own pool, it says yes to 15% of cards.
+ *
+ * The other 85% are not a wall. A Murderous Redcap is persist plus one sentence; a Basilica
+ * Screecher is flying plus extort; a Mystic Remora is cumulative upkeep plus one triggered ability.
+ * For every one of those, *some* of the text is already machinery this engine has. The question
+ * worth asking at the scale of every card ever printed is therefore not "all or nothing" but "how
+ * much, and what is left" — and the answer is only useful if the leftovers are **named**, because
+ * a ranked list of the sentences nothing can read is the work queue for everything after this.
+ *
+ * Hybrid automation (D362) is what makes a partial answer worth having. A card the engine only
+ * partly reads is dealt into an automated game and flagged; before that change it would have
+ * dropped the whole table out of automation, and "60% of this card" would have been worth nothing.
+ *
+ * ## Where it sits, and why it is its own module
+ *
+ * `scripts.ts` imports `fromCardData.ts`. The compiler needs both — the printed data from one and
+ * the parameterised builders from the other — so it cannot live in either without making that
+ * dependency a cycle. It sits above both, and `customDeck.ts` is above it again.
+ *
+ * ## What it does not claim
+ *
+ * A line this reports as **compiled** is one it turned into rules the engine runs. A line it
+ * reports as **uncompiled** is one nothing here could read; the card is still dealt, still has its
+ * printed data, and still plays — see `coverage.ts` — but that line does not happen. The honest
+ * reading of a card with any uncompiled line is "this card is partly automated", and nothing in
+ * this module says otherwise.
+ *
+ * The compiler never invents text. Every rule it emits comes from a builder in `scripts.ts` that a
+ * hand-written card in the pool already uses, with arguments read off the printed line. Inventing
+ * the text of a real card is worse than leaving the mechanic out (D259).
+ */
+import type { CardDef } from './cards.js';
+import { printedKeywords } from './characteristics.js';
+import { cardFromData, printedDef, printedRulesLines, type CardDataRow, type DerivedKind } from './fromCardData.js';
+import { keywordScriptFor } from './scripts.js';
+import type { CardScript } from './scriptTypes.js';
+
+/** A printed line, and why nothing could turn it into rules. */
+export interface UnreadLine {
+  readonly line: string;
+  /**
+   * `no-reader` — nothing in the compiler recognises this line's shape at all. The common case, and
+   * the one whose grouped counts are the work queue.
+   *
+   * `field-conflict` — a reader recognised it, but applying it would overwrite a field another line
+   * had already set to something else. Reported rather than resolved: two printed lines disagreeing
+   * about one script field means this module has misread one of them, and picking a winner would
+   * hide that behind a card that half works.
+   */
+  readonly why: 'no-reader' | 'field-conflict';
+}
+
+export interface Compiled {
+  readonly ok: true;
+  /** The printed data, always — the compiler's output is additive to it. */
+  readonly def: CardDef;
+  /** The rules it built, or undefined when it built none. */
+  readonly script?: CardScript;
+  /** The printed lines it turned into rules, as printed. */
+  readonly compiled: readonly string[];
+  /** The printed lines it could not, as printed, each with a reason. */
+  readonly unread: readonly UnreadLine[];
+  /**
+   * How the script was arrived at.
+   *
+   * `whole-card` — `cardFromData` read the entire card; this is its verdict, unchanged, and `kind`
+   * says which shape it recognised. `keywords` — the compiler read some lines itself.
+   * `printed-only` — it read none, and the card is printed data and nothing else.
+   */
+  readonly source: 'whole-card' | 'keywords' | 'printed-only';
+  readonly kind?: DerivedKind;
+}
+
+export type Compilation = Compiled | { readonly ok: false; readonly why: string };
+
+/** Whether every printed line became rules — which is not the same as "this card works". */
+export function fullyCompiled(result: Compilation): boolean {
+  return result.ok && result.unread.length === 0;
+}
+
+/**
+ * Merges one keyword's fragment into the script being built.
+ *
+ * Triggers accumulate; every other field is set once. A second line setting an already-set field to
+ * a different value is refused and reported, for the reason `UnreadLine.why` gives.
+ */
+function merge(
+  into: Record<string, unknown>,
+  fragment: Partial<CardScript>,
+): 'merged' | 'conflict' {
+  const entries = Object.entries(fragment);
+  // Checked before anything is written, so a refused fragment leaves no half of itself behind.
+  for (const [key, value] of entries) {
+    if (key === 'triggers') continue;
+    if (key in into && JSON.stringify(into[key]) !== JSON.stringify(value)) return 'conflict';
+  }
+  for (const [key, value] of entries) {
+    if (key === 'triggers') {
+      const existing = (into['triggers'] ?? []) as readonly unknown[];
+      into['triggers'] = [...existing, ...(value as readonly unknown[])];
+      continue;
+    }
+    into[key] = value;
+  }
+  return 'merged';
+}
+
+/**
+ * Compiles one row of printed card data into as much of a `CardScript` as this engine can build.
+ *
+ * Refuses only what is not a single-face card at all — see `printedDef`. Everything else returns
+ * `ok: true` with a `def`, whatever share of its text became rules, and the rest named.
+ */
+export function compileCard(row: CardDataRow): Compilation {
+  const printed = printedDef(row);
+  if ('why' in printed) return { ok: false, why: printed.why };
+  const def = printed.def;
+  const lines = printedRulesLines(row.oracle_text);
+
+  /*
+    `cardFromData` first, and its answer taken whole when it has one.
+
+    Not a shortcut: when it succeeds it has read *every* line of the card, including the mana
+    abilities and enters-tapped clauses this module has no reader for, and its script is the one the
+    pool's hand-written twins were compared against in D331-D335. Re-deriving those cards here
+    would be a second implementation of the same reading, free to disagree with the first.
+  */
+  const whole = cardFromData(row);
+  if (whole.ok) {
+    return {
+      ok: true,
+      def: whole.def,
+      ...(whole.script === undefined ? {} : { script: whole.script }),
+      compiled: lines,
+      unread: [],
+      source: 'whole-card',
+      kind: whole.kind,
+    };
+  }
+
+  const built: Record<string, unknown> = {};
+  const compiled: string[] = [];
+  const unread: UnreadLine[] = [];
+
+  for (const line of lines) {
+    /*
+      A keyword line the engine already reads off the `CardDef` itself — `characteristicsOf` calls
+      `printedKeywords(def.oracleText)`, with no script involved. So this counts as compiled and
+      emits nothing: restating it in the script would be a second source for one fact.
+    */
+    if (printedKeywords(line).length > 0) { compiled.push(line); continue; }
+
+    const fragment = keywordScriptFor(line, def.name);
+    if (fragment === null) { unread.push({ line, why: 'no-reader' }); continue; }
+    if (merge(built, fragment) === 'conflict') {
+      unread.push({ line, why: 'field-conflict' });
+      continue;
+    }
+    compiled.push(line);
+  }
+
+  const anything = Object.keys(built).length > 0;
+  return {
+    ok: true,
+    def,
+    ...(anything ? { script: { name: def.name, ...built } as CardScript } : {}),
+    compiled,
+    unread,
+    source: anything ? 'keywords' : 'printed-only',
+  };
+}

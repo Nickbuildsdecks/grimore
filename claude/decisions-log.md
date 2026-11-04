@@ -22723,3 +22723,173 @@ A test cannot catch this and a type cannot either. A grep can, because the defec
 Verified: web 246 passed (+2), guards OK and proved to discriminate, `check-hybrid` **11/11**,
 `e2e-table` 76/76, `check-table-controls` 26/26, `e2e-arena` 52/52 with 6 named skips. Added to CI's
 `browser` job and to `package.json` as `play:e2e:hybrid`.
+
+## D364 — The oracle-text compiler: lines, not cards, and a vocabulary copied from the hand-written scripts
+
+The goal Nick set is every competitively-legal card playable with Arena-style automation. `fromCardData.ts`
+answers a narrower question — *is this card's text nothing but its data?* — and on the engine's own
+pool the answer is yes for **15%**. The other 85% looked like a wall.
+
+It is not a wall, and the reason is worth stating as the thesis of this whole piece of work: a
+Murderous Redcap is persist plus one sentence; a Basilica Screecher is flying plus extort; a Mystic
+Remora is cumulative upkeep plus one triggered ability. For almost every card, *some* of the text is
+machinery this engine already has. So the unit of measurement is the **printed line**, not the card,
+and the question is "how much, and what is left".
+
+Hybrid automation (D362) is what makes a partial answer worth having at all. Before it, a card the
+engine only partly read dropped the whole table out of automation, so 60% of a card was worth
+nothing. Now it is dealt, flagged, and the rest of the game runs.
+
+### What shipped
+
+- **`printedDef` and `printedRulesLines`**, split out of `cardFromData`. The four refusals kept at
+  the top are the ones meaning *this row is not a single-face card at all*, where there is no
+  `CardDef` to hand back. Everything past them is the narrow question and stays with it.
+- **`compile.ts`**, a new module above both `fromCardData.ts` and `scripts.ts` — it needs printed
+  data from one and builders from the other, and `scripts.ts` already imports `fromCardData.ts`, so
+  living in either would have made that a cycle. `compileCard(row)` returns the def, whatever script
+  it could build, the lines it compiled, and **the lines it could not, each with a reason**.
+- **`keywordScriptFor`** in `scripts.ts`: the first stage, ten keywords.
+- **`scripts/measure/compilable.mjs`**, the instrument, with the unread lines grouped and counted.
+
+### Why the compiler can exist at all
+
+The hand-written scripts were already factored into parameterised builders, so **for a keyword the
+printed line is the argument**. `Modular 1` is `modularTrigger(1)`. `Ward {1}` is `ward(name, '{1}')`.
+`Undying` takes no argument. Nothing is invented: every rule emitted comes from a builder a card in
+the pool already uses, with arguments read off the line (D259).
+
+### The unit of compilation is a partial `CardScript`, and three keywords prove it
+
+My first instinct was keyword → trigger. That is wrong, and reading Calciderm is what showed it.
+`vanishingTrigger(4)` takes a time counter off and sacrifices the permanent when the last one goes —
+but the counters come from `entersWith`, and the declaration lives in `vanishing`. Emit the trigger
+alone and you get **a Calciderm that never dies**: a creature whose clock is conditioned on a counter
+it never had. That is strictly worse than a card left to be moved by hand. Modular and fading have
+the same three-part shape.
+
+So a fragment carries *every* field the hand-written twin sets, and `compile.test.ts` asserts the
+counters explicitly as numbers rather than "is defined".
+
+### Three keywords deliberately left out, each because the line does not determine the rule
+
+- **Soulbond.** Its line is the word alone; the pair's bonus is on the *next* line. A
+  `soulbond: { effect: { power: 1, toughness: 1 } }` guessed from the keyword is a number this module
+  made up.
+- **Level up.** `levelUpAbility(cost)` is readable, but a leveler's `levelBands` are three blocks of
+  printed text below it, and a level-up ability with no bands to reach costs mana and does nothing.
+- **Morph and echo.** Already read by `keywordWithCost`. Two readers of one line is two places for
+  them to disagree.
+
+### The test that makes it trustworthy
+
+Not "does the compiler produce a plausible script" — **does it produce the one a person wrote by
+reading the same card?** Ten keywords, ten pool cards, deep equality on the fields that keyword owns,
+plus triggers compared by their `on` and `description` (the two fields that come from the builder
+rather than the card, since closures cannot be compared). A compiler calling a different builder, or
+the same one with a different argument, fails.
+
+Two further cases worth keeping: a keyword line the engine reads straight off the `CardDef`
+(`characteristicsOf` calls `printedKeywords(def.oracleText)` with no script involved) counts as
+compiled and emits **nothing**, because restating it would be a second source for one fact; and two
+lines fighting over one script field are reported as `field-conflict` rather than letting the last
+one win, because a half-applied fragment is a creature with the wrong number of counters and the log
+never explains it. No real card prints both vanishing and fading, which is exactly why the merge has
+to be safe for a card nobody has thought about yet.
+
+### Measured, on the pool
+
+| | |
+| --- | --- |
+| whole-card (`cardFromData` read all of it) | 51 — 15.0% |
+| **keywords (this compiler read some lines)** | **21 — 6.2%** |
+| printed-only (it read none) | 267 — 78.8% |
+| not a single-face card | 9 |
+| **Lines compiled** | **142 of 538 — 26.4%** |
+
+21 cards gained partial automation that previously had none. The headline is the line-level 26.4%,
+because that is the number that moves.
+
+One correction found by a failing test of my own: I expected the pool's Mountain to derive as
+`basic-land` and it reads `mana-source`. The difference is the **row**, not the card — Scryfall sends
+a basic land with empty `oracle_text` and its mana comes from the type (CR 305.6), while the pool's
+Mountain spells `{T}: Add {R}.` out. The test now asserts what it is and says why.
+
+### The work queue, which is the output that matters most
+
+245 distinct openings, 185 printed by a single card. The ten biggest:
+
+```
+  36  When ~ enters the battlefield        19  ~ deals N damage to
+   7  Draw a card                           6  Whenever you cast an instant
+   5  Equip {M}                              5  Enchant creature
+   4  When ~ is turned face                  4  As long as ~ is
+   4  ~ enters the battlefield with          4  Whenever ~ deals combat damage
+```
+
+This is the pool, which is thirteen decks built to exercise sixty mechanics and so far heavier in
+paragraph cards than a list somebody plays — a **floor**. The real distribution needs the Scryfall
+bulk file, and `api.scryfall.com` is still refused by this environment's egress proxy, so #318 lands
+source-agnostic.
+
+Next stage is the top bucket: `When ~ enters the battlefield, <effect>`, which is one trigger shape
+and a growing vocabulary of effects.
+
+## D365 — The gate printed GATE FAILED and exited zero, and it had done so for weeks
+
+The pre-push gate is the five checks between a red tree and `git push`: services up, guards,
+typecheck, typecheck:tests, test. It was a shell script in a session-local temp directory, written
+earlier in this session to close two holes of exactly this kind — D323's pager exit code and D356's
+cached green.
+
+Running it on the compiler work, it printed, in full:
+
+```
+GATE FAILED at: node scripts/guards.js (rc=0)
+[guards] 1 violation(s)
+```
+
+and exited **0**.
+
+```bash
+if ! $step >> "$log" 2>&1; then
+  rc=$?                       # 0, always
+  echo "GATE FAILED at: $step (rc=$rc)"
+  exit "$rc"                  # exits 0
+fi
+```
+
+`!` inverts the status; the `if` therefore *succeeds*; and `$?` read inside the branch is the status
+of that successful test, not of the failed command. The `(rc=0)` was printed right there in the
+message every time and I had never read it, because the words before it said what I expected.
+
+This is the thirteenth member of this file's family and the second whose failure is not silent:
+**a check that reports failure and returns success.** It is worse than a check that cannot fail,
+because it looks like the thing working. Any `gate.sh && git push` would have pushed a red tree
+while printing the reason not to.
+
+### What changed
+
+- **The gate is in the repository**, as `scripts/gate.sh` with `pnpm v2:gate`. That move matters as
+  much as the fix: the one script standing between a red tree and a push lived in a temp folder
+  where nobody could review it, nothing could test it, and the next session would not have it.
+- **Run, then capture, then test** — `$step; rc=$?; if [ "$rc" -ne 0 ]`. Never `$?` inside `if !`.
+- **`scripts/check-gate.sh`** (`pnpm v2:gate:check`) runs the gate against a step that cannot pass
+  and fails if it reports success, in its words or in its status. The gate's own exit code had never
+  been asked for by anything; now something asks.
+
+### And the check immediately found a second one, pointing the other way
+
+`check-gate.sh` failed on its *passing* case. The gate's last line is a summary:
+
+```bash
+grep -E "Tests  |Test Files|Tasks:" "$log" | tail -20
+```
+
+With `set -o pipefail` and a log holding no matching line, `grep` exits 1 — so the gate exited **1
+after passing every step**. A gate that cries wolf is a gate somebody stops running, which ends in
+the same place as one that cannot fail. Now `|| true` and an explicit `exit 0`: the summary is
+diagnostics and its status is not the gate's.
+
+Two bugs in a twenty-line script whose entire job is to report a status correctly, both found by
+asking it for its status once. That is the whole lesson: **the gate needs a gate.**

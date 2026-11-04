@@ -573,37 +573,68 @@ const NOT_CARDS = new Set(['token', 'double_faced_token', 'emblem', 'art_series'
  * Pure: no database, no network, no registry. The caller decides what to do with a rejection — the
  * table's answer is to keep that card as cardboard, which is what it does today for every name.
  */
-export function cardFromData(row: CardDataRow): Derivation {
+/**
+ * The printed data as a `CardDef`, with no judgement at all about whether the engine can play it.
+ *
+ * Split out of `cardFromData` for the oracle-text compiler (#317), and the split is the point.
+ * `cardFromData` answers one question — *is this card's text nothing but its data?* — and returns
+ * `ok: false` the moment the answer is no, which it is for every instant, every planeswalker and
+ * every creature with a paragraph. The compiler asks a different question: *how much of this card's
+ * text can be turned into rules, and which lines could not?* It needs the printed data for a card
+ * whose text it only partly reads, which is most cards, so the two questions cannot share one
+ * all-or-nothing return.
+ *
+ * The four refusals kept here are the ones that mean **this row is not a single-face card at all**,
+ * where there is no `CardDef` to hand back rather than a `CardDef` with unread text. Everything
+ * past this point in `cardFromData` is the narrower question and belongs to it.
+ */
+export function printedDef(row: CardDataRow): { readonly def: CardDef } | { readonly why: string } {
   const name = (row.name ?? '').trim();
-  if (name === '') return { ok: false, why: 'the row has no name' };
+  if (name === '') return { why: 'the row has no name' };
 
   const typeLineText = (row.type_line ?? '').trim();
-  if (typeLineText === '') return { ok: false, why: `${name}: the row has no type line` };
+  if (typeLineText === '') return { why: `${name}: the row has no type line` };
 
   const layout = (row.layout ?? 'normal').trim().toLowerCase();
   if (NOT_CARDS.has(layout)) {
-    return { ok: false, why: `${name}: a ${layout.replace(/_/g, ' ')} is not a card` };
+    return { why: `${name}: a ${layout.replace(/_/g, ' ')} is not a card` };
   }
   if (!SINGLE_FACE_LAYOUTS.has(layout)) {
-    return { ok: false, why: `${name}: layout ${layout} has more than one face` };
+    return { why: `${name}: layout ${layout} has more than one face` };
   }
 
-  const typeLine = parseTypeLine(typeLineText);
-  const lines = rulesLines(row.oracle_text);
   const colors = list(row.colors).map((c) => c.toUpperCase());
   const cmcRaw = row.cmc;
   const cmc = typeof cmcRaw === 'number' ? cmcRaw : Number(cmcRaw ?? 0);
 
-  const base = {
-    name,
-    typeLine: typeLineText,
-    manaCost: (row.mana_cost ?? '').trim(),
-    cmc: Number.isFinite(cmc) ? cmc : 0,
-    oracleText: (row.oracle_text ?? '').trim(),
-    colors,
-    ...(row.image_uri ? { imageUri: row.image_uri } : {}),
-    ...(row.id ? { scryfallId: row.id } : {}),
+  return {
+    def: {
+      name,
+      typeLine: typeLineText,
+      manaCost: (row.mana_cost ?? '').trim(),
+      cmc: Number.isFinite(cmc) ? cmc : 0,
+      oracleText: (row.oracle_text ?? '').trim(),
+      colors,
+      ...(row.image_uri ? { imageUri: row.image_uri } : {}),
+      ...(row.id ? { scryfallId: row.id } : {}),
+    },
   };
+}
+
+/** The rules lines of a card's text, reminder text stripped. Shared with the compiler (#317). */
+export function printedRulesLines(oracleText: string | null | undefined): readonly string[] {
+  return rulesLines(oracleText);
+}
+
+export function cardFromData(row: CardDataRow): Derivation {
+  const printed = printedDef(row);
+  if ('why' in printed) return { ok: false, why: printed.why };
+  const base = printed.def;
+  const name = base.name;
+  const typeLineText = base.typeLine;
+
+  const typeLine = parseTypeLine(typeLineText);
+  const lines = rulesLines(row.oracle_text);
 
   // ── Planeswalkers and the cards whose text is their rules ──────────────────────────────────────
   if (hasType(typeLine, 'planeswalker')) {

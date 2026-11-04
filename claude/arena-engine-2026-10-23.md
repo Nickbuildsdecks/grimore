@@ -9640,3 +9640,61 @@ catch this and a type cannot either; a grep can, because the defect has a shape.
 deck proves the engine *keeps playing* (four real moves taken), and an all-unreadable deck proves the
 marking is *visible* (seven unreadable cards in hand, so the badge cannot be missed by construction).
 **11/11**, and in CI's `browser` job as `play:e2e:hybrid`.
+
+## The oracle-text compiler, first stage (#317, D364)
+
+**The thesis.** `fromCardData.ts` asks *is this card's text nothing but its data?* — all or nothing,
+and 15% of the pool. The 85% is not a wall: a Murderous Redcap is persist plus one sentence, a
+Basilica Screecher is flying plus extort, a Mystic Remora is cumulative upkeep plus one ability. For
+almost every card *some* of the text is machinery this engine already has. So the unit is the
+**printed line**, not the card. Hybrid automation (D362) is what makes that worth having — before
+it, 60% of a card was worth nothing, because one unread line dropped the whole table.
+
+**What shipped.** `printedDef`/`printedRulesLines` split out of `cardFromData`; `compile.ts` above
+both it and `scripts.ts` (which imports it, so the compiler cannot live in either); `keywordScriptFor`
+with ten keywords; `scripts/measure/compilable.mjs`.
+
+**The compiler can exist because the hand-written scripts were already factored into parameterised
+builders.** For a keyword the printed line *is* the argument: `Modular 1` → `modularTrigger(1)`,
+`Ward {1}` → `ward(name, '{1}')`, `Undying` → no argument. Nothing invented (D259).
+
+**The unit is a partial `CardScript`, not a trigger** — and reading Calciderm is what showed it.
+`vanishingTrigger(4)` is conditioned on a time counter, and the counters come from `entersWith`, and
+the declaration lives in `vanishing`. Emit the trigger alone and you get a Calciderm that **never
+dies**. Modular and fading are the same three-part shape.
+
+**Three keywords left out**, each because the line does not determine the rule: soulbond (the bonus
+is on the next line), level up (its `levelBands` are three blocks of text below it), morph and echo
+(already read by `keywordWithCost` — two readers of one line is two places to disagree).
+
+**The test is ground truth, not plausibility**: compile ten pool cards' own printed text and compare
+against the scripts a person wrote reading the same cards. Triggers compared by `on` + `description`,
+the two fields that come from the builder rather than the card. 20 tests.
+
+| | |
+| --- | --- |
+| whole-card | 51 — 15.0% |
+| **keywords (new)** | **21 — 6.2%** |
+| printed-only | 267 — 78.8% |
+| **Lines compiled** | **142 of 538 — 26.4%** |
+
+Work queue: 245 distinct openings, 185 from one card each. Biggest: `When ~ enters the battlefield`
+(36), `~ deals N damage to` (19), `Draw a card` (7), `Whenever you cast an instant` (6). That is the
+pool — thirteen decks built to exercise sixty mechanics — so a **floor**. Scryfall egress is still
+refused, so #318 lands source-agnostic.
+
+## The gate needed a gate (D365)
+
+The five-step pre-push gate lived in a session temp directory and, on this run, printed
+`GATE FAILED at: node scripts/guards.js (rc=0)` and **exited 0**. `$?` read inside the then-branch
+of `if ! cmd` is the status of the successful test, not of the failed command. The `(rc=0)` had been
+printed in that message every time; I had never read it because the words before it said what I
+expected. Thirteenth member of the family, and the worst shape yet: **a check that reports failure
+and returns success.**
+
+Now `scripts/gate.sh` in the repository (`pnpm v2:gate`) — run, capture, then test — plus
+`scripts/check-gate.sh` (`pnpm v2:gate:check`), which runs the gate against a step that cannot pass
+and fails if it reports success. That check immediately found a second bug pointing the other way:
+the gate's summary `grep` exiting 1 under `pipefail` made it exit 1 *after passing every step*. Two
+bugs in a twenty-line script whose only job is to report a status, both found by asking it for its
+status once.

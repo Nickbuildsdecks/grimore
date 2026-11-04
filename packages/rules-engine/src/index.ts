@@ -20,3 +20,4 @@ export * from './legalActions.js';
 export * from './bot.js';
 export * from './pacts.js';
 export * from './view.js';
+export * from './compile.js';

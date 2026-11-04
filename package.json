@@ -19,6 +19,8 @@
     "v2:test": "turbo run test --filter=./packages/* --filter=./apps/*",
     "v2:guards": "node scripts/guards.js",
     "v2:services": "node scripts/services-up.js",
+    "v2:gate": "bash scripts/gate.sh",
+    "v2:gate:check": "bash scripts/check-gate.sh",
     "play": "node scripts/play.mjs",
     "play:e2e": "node scripts/e2e-table.mjs",
     "play:e2e:controls": "node scripts/check-table-controls.mjs",

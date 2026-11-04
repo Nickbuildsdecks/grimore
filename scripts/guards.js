@@ -328,6 +328,15 @@ const EXEMPT = new Map([
     the thing being looked for.
   */
   [join('scripts', 'measure', 'storm.mjs'), 'storm is printed on the spell being cast'],
+  /*
+    Compares the triggers the **compiler** built against the ones a person wrote for the same card
+    (#317, D364). Both sides are a `CardScript`'s own printed `triggers`, read off a definition with
+    no board and no instance in hand. `grantedTriggers` is a different field for a different thing —
+    an ability one permanent is handing another at this moment — and `keywordScriptFor` cannot emit
+    one, because no keyword line grants an ability to anything. Reading it here would compare a
+    field both sides always leave empty.
+  */
+  [join('packages', 'rules-engine', 'src', 'compile.test.ts'), 'compares printed triggers to printed triggers'],
 ]);
 
 function checkEveryTriggerReaderKnowsAboutGrants() {

@@ -8791,3 +8791,99 @@ export function scriptForCard(def: CardDef | undefined): CardScript | undefined 
 export const scriptedCardNames = (): string[] => [...CARD_SCRIPTS.values()].map((s) => s.name).sort();
 
 export { cardTargets, destroy };
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The keyword table: a printed line in, a piece of a CardScript out
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What one printed keyword line is worth, as the fragment of a `CardScript` the hand-written cards
+ * in this file set for it — or `null` when nothing here can read the line.
+ *
+ * This is the first stage of the oracle-text compiler (#317) and the reason it can exist at all:
+ * the hand-written scripts above have already been factored into parameterised builders, so for a
+ * keyword the printed line *is* the argument. `Modular 1` is `modularTrigger(1)`; `Ward {1}` is
+ * `ward(name, '{1}')`; `Undying` takes no argument at all. Nothing is invented — every entry below
+ * is the shape of a card in this file, and `scripts.test.ts` compiles each of those cards' own
+ * printed text and compares the result against the hand-written script, which is what stops this
+ * table drifting away from the cards it is copied from.
+ *
+ * ## Why a fragment of a script and not a trigger
+ *
+ * Because a trigger alone is wrong, and three keywords here prove it. `vanishingTrigger(4)` takes a
+ * time counter off and sacrifices the permanent when the last one goes — but the counters come from
+ * `entersWith`, and the keyword declaration lives in `vanishing`. Emit the trigger on its own and
+ * you get a creature with no counters whose trigger is conditioned on having one: a Calciderm that
+ * **never dies**, which is a strictly worse card than one left to be moved by hand. Modular and
+ * fading have the same three-part shape. So the unit of compilation is a partial `CardScript`, and
+ * every field the hand-written twin sets for that keyword has to be in it.
+ *
+ * ## What is deliberately absent, and why each one would be a lie
+ *
+ * - **Soulbond.** Its line is the word alone; the bonus the pair gets is on the *next* line. A
+ *   `soulbond: { effect: { power: 1, toughness: 1 } }` guessed from the keyword would be a number
+ *   this module made up — see D259. It belongs to the stage that reads sentences.
+ * - **Level up.** `levelUpAbility(cost)` is readable from the line, but a leveler's `levelBands`
+ *   are three blocks of printed text below it, and a level-up ability with no bands to reach is an
+ *   ability that costs mana and does nothing.
+ * - **Morph and echo.** Already read, by `keywordWithCost` in `fromCardData.ts`. Two readers of one
+ *   line is two places for them to disagree.
+ *
+ * `line` arrives with reminder text already stripped — see `printedRulesLines`.
+ */
+export function keywordScriptFor(line: string, name: string): Partial<CardScript> | null {
+  const text = line.trim();
+  const word = text.toLowerCase();
+
+  // ── The keywords whose line is the whole instruction ──────────────────────────────────────────
+  if (word === 'cascade') return { triggers: [cascade()] };
+  if (word === 'storm') return { triggers: [storm()] };
+  if (word === 'extort') return { triggers: [extort()] };
+  if (word === 'undying') return { triggers: comesBackWithACounter('undying') };
+  if (word === 'persist') return { triggers: comesBackWithACounter('persist') };
+  if (word === 'split second') return { splitSecond: true };
+  if (word === 'convoke') return { convoke: true };
+
+  // ── The keywords that carry a mana cost ───────────────────────────────────────────────────────
+  const cost = /^(ward|replicate|cumulative upkeep)\s*[—-]?\s*(\{[^\n]+\})$/i.exec(text);
+  if (cost !== null) {
+    const which = cost[1]!.toLowerCase();
+    const mana = cost[2]!.trim();
+    if (which === 'ward') return { triggers: [ward(name, mana)] };
+    if (which === 'replicate') return { replicate: { cost: mana }, triggers: [replicate()] };
+    return { cumulativeUpkeep: { cost: mana }, triggers: [cumulativeUpkeepTrigger(mana)] };
+  }
+
+  /*
+    ── The three that count, and arrive with counters on them ──────────────────────────────────────
+
+    All three set a declaration, an `entersWith` and a trigger, and all three are useless without
+    all three. See this function's docblock for the Calciderm that never dies.
+  */
+  const counted = /^(modular|vanishing|fading)\s+(\d+)$/i.exec(text);
+  if (counted !== null) {
+    const count = Number(counted[2]);
+    switch (counted[1]!.toLowerCase()) {
+      case 'modular':
+        return {
+          modular: { count },
+          entersWith: { counter: '+1/+1', amount: count },
+          triggers: [modularTrigger(count)],
+        };
+      case 'vanishing':
+        return {
+          vanishing: { count },
+          entersWith: { counter: TIME, amount: count },
+          triggers: [vanishingTrigger(count)],
+        };
+      default:
+        return {
+          fading: { count },
+          entersWith: { counter: FADE, amount: count },
+          triggers: [fadingTrigger(count)],
+        };
+    }
+  }
+
+  return null;
+}
