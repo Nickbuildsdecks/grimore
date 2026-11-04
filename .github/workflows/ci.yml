@@ -75,3 +75,73 @@ jobs:
       # somewhere.
       - run: node --test test/account-tokens-parity.test.js
       - run: pnpm --filter @grimore/web build
+
+  # Two real browsers playing a game through the actual UI, which no other job does. #245 found these
+  # suites were outside every gate and D302 made them count their own skips, but they still ran only
+  # when somebody remembered to run them -- and the one thing they check is the one thing the Play
+  # Realm is for. Measured before adding them rather than assumed: e2e-table is 29s and
+  # check-table-controls 11s on this hardware, so the run is cheap and the Chromium download is most
+  # of the job's wall clock.
+  #
+  # Only the two fast suites. e2e-arena and e2e-pod drive more browsers for longer and e2e-solo has
+  # twenty LIST=* arms; those stay manual until this job has proved stable, because a browser job
+  # that flakes gets ignored and then deleted.
+  browser:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      REDIS_URL: redis://127.0.0.1:6379
+      # play.mjs binds to the address it prints, and the drivers connect to 127.0.0.1.
+      PLAY_HOST: 127.0.0.1
+      # The drivers resolve playwright from wherever it lives (they take no dependency on it, since
+      # it ships a browser); this is where the install step below puts it. A wrong value here is
+      # harmless rather than fatal: loadPlaywright try/catches each candidate and falls through to a
+      # bare `playwright` specifier.
+      PLAYWRIGHT_PATH: /tmp/pw/node_modules/playwright/index.js
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # Pinned, and deliberately not added to package.json: playwright is a test tool that ships a
+      # ~130MB browser, and making it a workspace dependency puts that download in front of every
+      # `pnpm install` anybody runs.
+      #
+      # Installed **outside the repository** on purpose. `npm i` inside a pnpm workspace root writes
+      # into a node_modules that pnpm owns and lays out differently, which is a good way to break the
+      # install that the rest of this job depends on.
+      - name: Install playwright and Chromium
+        run: |
+          mkdir -p /tmp/pw
+          cd /tmp/pw
+          npm i --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      # The drivers import the engine's dist (through scripts/lib/engine.mjs, which warns if it is
+      # stale), so it has to exist before they run.
+      - run: pnpm -r --filter './packages/*' run build
+      - name: Start the Play Realm
+        run: |
+          node scripts/play.mjs > /tmp/play.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:5100/react/play > /dev/null; then echo "up after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          echo "the Play Realm did not come up; its log follows"
+          cat /tmp/play.log
+          exit 1
+      - run: node scripts/e2e-table.mjs
+      - run: node scripts/check-table-controls.mjs
+      # The screenshots are how a failure gets diagnosed without a browser to hand.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-shots
+          path: e2e-shots/
+          if-no-files-found: ignore
+      - if: failure()
+        run: cat /tmp/play.log

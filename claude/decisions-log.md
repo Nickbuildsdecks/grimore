@@ -22426,3 +22426,54 @@ that moved into the import.
 (The paragraph that stood here claimed the two browser drivers were safe to leave alone. It was
 wrong on the facts and is corrected above rather than deleted, because the reasoning in it — "this
 one fails loudly, so it does not need the warning" — is the kind I will reach for again.)
+
+---
+
+## D360 — The browser suites are in CI, because they turned out to cost 40 seconds rather than ten minutes
+
+#245 found the four browser suites were outside every gate. D302 made them count their own skips. But
+they still ran **only when somebody remembered to run them**, and what they check is the one thing the
+Play Realm is for: two real browsers playing a game through the actual UI. Neither `pnpm v2:test` nor
+CI touches that path.
+
+I had been carrying an assumption that putting them in CI was a Nick-sized decision about CI cost — a
+browser download on every push, ten minutes of wall clock. So I measured instead of continuing to
+assume:
+
+| | |
+|---|---|
+| `e2e-table.mjs` (73 checks, two browsers, whole game) | **29s** |
+| `check-table-controls.mjs` (26 checks, every control pressed) | **11s** |
+
+Forty seconds. The Chromium download is most of the job, not the tests. That is not a decision, it is
+an obvious yes, and I had been about to write it up as a question.
+
+The new `browser` job: Redis as a service, pnpm install, playwright pinned at 1.56.1 installed **into
+`/tmp/pw` rather than the repository** (an `npm i` in a pnpm workspace root writes into a
+`node_modules` pnpm owns and lays out differently, which is a good way to break the install the rest
+of the job depends on), `pnpm -r --filter './packages/*' run build` so `dist` exists, then
+`scripts/play.mjs` in the background behind a readiness loop that polls
+`curl -sf http://127.0.0.1:5100/react/play` for up to 60s and **prints the Play Realm's log and fails**
+if it never answers. On failure it uploads `e2e-shots/`, because a browser failure is diagnosed from
+the screenshots and there is no browser to hand in CI.
+
+Playwright stays out of `package.json` deliberately, which is the drivers' existing stance: it is a
+test tool that ships a ~130MB browser, and making it a workspace dependency puts that download in
+front of every `pnpm install` anybody runs. `PLAYWRIGHT_PATH` points at the `/tmp/pw` install, and a
+wrong value there is harmless rather than fatal — `loadPlaywright` try/catches each candidate and
+falls through to a bare `playwright` specifier.
+
+**Only the two fast suites.** `e2e-arena` and `e2e-pod` drive more browsers for longer, and `e2e-solo`
+has twenty `LIST=*` arms. Those stay manual until this job has proved stable over a few pushes,
+because a browser job that flakes gets ignored and then deleted, and I would rather have two suites
+that are trusted than five that are muted.
+
+Also added: `pnpm play`, `pnpm play:e2e`, `play:e2e:controls`, `play:e2e:arena`, `play:e2e:pod`,
+`play:e2e:solo`. Before this the only way to run any of them was to know the script's filename — they
+were not in `package.json` at all, which is a smaller version of the same problem as not being in CI.
+
+**What I cannot verify from here:** this job has never run. GitHub Actions is not reproducible in this
+container, so the first push is the first test of it, and the parts most likely to be wrong are the
+Chromium install and the readiness loop. Both fail loudly — a failed install stops the job, and the
+readiness loop prints `play.log` and exits 1 — so a broken job will say what broke rather than passing
+vacuously, which is the property that matters for a check nobody has run yet.
