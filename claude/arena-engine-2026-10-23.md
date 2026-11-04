@@ -10761,3 +10761,23 @@ Two increments meeting on one card.
 
 **368 → 372 of 538 lines (68.4% → 69.1%)**, **231 → 235 of 339 cards**. Seven deliberate breaks,
 seven failing tests; 282/282; 4,000 rows at scale with no throw.
+
+## A size that is a count, and the creature that sacrifices itself (#317, D402)
+
+Lhurgoyf and Enigma Drake: a creature whose size **is** a count (CR 604.3). `definesSize` names its
+two counts (D57), so the reader takes the two phrases the pool prints and refuses the rest — "the
+number of cards in your hand" is a real card and not a count the engine has, and compiling it as one
+of the two it does have is a creature of the wrong size every turn. The test reads the live creature,
+not only the data: a Lhurgoyf with two creature cards in a graveyard is a 2/3.
+
+Ball Lightning and Hellspark Elemental: "At the beginning of the end step, sacrifice ~", read as a
+**whole-line shape** because of the flag. `leavesAtEndOfTurn` is how the bot knows the creature is
+dying anyway; without it the evaluation holds a 6/1 back to protect it. The trigger alone is correct
+rules and a badly played card — D364's rule in its sharpest form — and "sacrifice ~" behind another
+prologue means something else, so the pair is read and anything else refused.
+
+A refusal test from an earlier increment became an acceptance and was rewritten with the churn in
+it: the property ("the flag belongs to the pair") is unchanged, only how it is expressed.
+
+**372 → 376 of 538 lines (69.1% → 69.9%)**, **235 → 239 of 339 cards**. Six deliberate breaks, six
+failing tests; 291/291; 4,000 rows at scale with no throw.

@@ -11615,6 +11615,91 @@ function withoutAbilityWord(line: string): string {
 }
 
 /**
+ * A creature whose size **is** a count: a characteristic-defining ability (CR 604.3).
+ *
+ * Two cards and two counts, which is all `definesSize` has: Lhurgoyf's power is the creature cards
+ * in *all* graveyards and its toughness is that number plus one; Enigma Drake's power is the
+ * instants and sorceries in *your* graveyard and its toughness is printed. The counts are named in
+ * `definesSize` rather than written as a vocabulary, for D57's reason — a count with no card behind
+ * it is a count nothing has ever run — so this reads exactly the two phrases the pool prints and
+ * refuses every other.
+ *
+ * ## The two shapes are one sentence with an optional tail
+ *
+ * "and its toughness is equal to that number plus N" is what makes it a Lhurgoyf. Present, and the
+ * count defines **both** (`applies` left off, which is the field's default) with `toughnessPlus`;
+ * absent, and it defines the **power** only, which is the Drake printed with a star for power and a
+ * number for toughness. Those are precisely the two hand-written scripts.
+ *
+ * The apostrophe is matched both ways: a card's printed text uses the typographic `’` and plain
+ * ASCII `'` turns up in hand-entered rows.
+ */
+const CDA_COUNTS: Readonly<Record<string, 'creature-cards-in-graveyards' | 'instant-and-sorcery-cards-in-your-graveyard'>> = {
+  'creature cards in all graveyards': 'creature-cards-in-graveyards',
+  'instant and sorcery cards in your graveyard': 'instant-and-sorcery-cards-in-your-graveyard',
+};
+
+function definesSizeFromLine(line: string, name: string): Partial<CardScript> | null {
+  const self = escapeName(name);
+  const matched = new RegExp(
+    `^${self}['’]s power is equal to the number of (.+?)` +
+    `(?: and its toughness is equal to that number plus (\\d+))?$`,
+    'i',
+  ).exec(plain(line).trim().replace(/\.\s*$/, ''));
+  if (matched === null) return null;
+
+  const count = CDA_COUNTS[matched[1]!.trim().toLowerCase()];
+  if (count === undefined) return null;
+
+  const plus = matched[2];
+  return {
+    statics: [{
+      scope: 'self',
+      effect: {
+        definesSize: plus === undefined
+          // Power only, and the printed toughness left alone.
+          ? { count, applies: 'power' as const }
+          // Both, which is `applies`' default, with the toughness one higher.
+          : { count, toughnessPlus: Number(plus) },
+      },
+    }],
+  };
+}
+
+/**
+ * "At the beginning of the end step, sacrifice ~" — and the flag that goes with it.
+ *
+ * A **whole-line** shape rather than a prologue plus a clause, which is the D364 rule in its
+ * sharpest form. The trigger alone is a correct rules implementation and a badly played card: the
+ * bot reads `leavesAtEndOfTurn` to know the creature is dying anyway, and without it the evaluation
+ * holds a Ball Lightning back to protect a 6/1 that will be in the graveyard either way. Both
+ * hand-written cards say so in a comment above the flag.
+ *
+ * It cannot be a clause reader for the same reason. "Sacrifice ~" on its own does not mean the
+ * permanent leaves at *end of turn* — behind a different prologue it means something else entirely
+ * — so the flag belongs to the pair, and a generic clause would let some other prologue emit the
+ * trigger without it. That is exactly the card that works and is wrong.
+ *
+ * `of: 'any'` and not `of: 'you'`: "the end step" is every player's, which is what makes a Ball
+ * Lightning cast on somebody else's turn die on that turn.
+ */
+function sacrificeAtEndOfTurnFromLine(line: string, name: string): Partial<CardScript> | null {
+  const self = escapeName(name);
+  const matched = new RegExp(
+    `^At the beginning of the end step, sacrifice (?:${self}|it)$`, 'i',
+  ).exec(plain(line).trim().replace(/\.\s*$/, ''));
+  if (matched === null) return null;
+  return {
+    leavesAtEndOfTurn: true,
+    triggers: [{
+      on: { kind: 'step', step: 'end', of: 'any' },
+      description: `sacrifice ${name}`,
+      effect: sacrificeSelf,
+    }],
+  };
+}
+
+/**
  * A static that is only on while something is true — the shape `while` exists for.
  *
  * Three cards, and all three are a condition the engine already has data for. There are exactly two
@@ -11777,7 +11862,13 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
   return keywordScriptFor(line, name)
     ?? staticFromLine(line)
     ?? conditionalStaticFromLine(line, name)
+    ?? definesSizeFromLine(line, name)
     ?? entersWithFromLine(line, name)
+    /*
+      Before `triggerFromLine`, because it is a **more specific** reading of a line that reader
+      would also match: see its docblock for why the trigger and the flag are one unit.
+    */
+    ?? sacrificeAtEndOfTurnFromLine(line, name)
     ?? triggerFromLine(line, name)
     ?? abilityFromLine(line, name);
 }

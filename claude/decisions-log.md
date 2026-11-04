@@ -25088,3 +25088,58 @@ Seven deliberate breaks, seven failing tests: the threshold read as two, the con
 the size static, protection read as one colour, monstrous read as a board count, the ability-word
 list opened up, battalion counting two attackers, and the ability word left on the trigger. 4,000
 more rows at scale, no throw. compile.test.ts 282/282.
+
+## D402 — A size that is a count, and the creature that sacrifices itself
+
+Two readers, four cards, and one of them is the sharpest case of D364's rule the file has.
+
+### The characteristic-defining ability (CR 604.3)
+
+`definesSize` has exactly two counts and the pool prints exactly two cards: Lhurgoyf's power is the
+creature cards in *all* graveyards with its toughness one higher, and Enigma Drake's power is the
+instants and sorceries in *your* graveyard with its toughness printed. The counts are **named** in
+`definesSize` rather than written as a vocabulary (D57), so the reader takes the two phrases the pool
+prints and refuses the rest: "the number of cards in your hand" is a real Magic card and not a count
+the engine can take, and compiling it as one of the two it does have would be a creature of the wrong
+size every turn with nothing flagged.
+
+The two shapes are one sentence with an optional tail. "and its toughness is equal to that number
+plus N" present → the count defines **both** (`applies` left at its default) with `toughnessPlus`;
+absent → the **power** only. Those are precisely the two hand-written scripts, and the test reads the
+live creature as well as comparing the data: a Lhurgoyf with two creature cards in a graveyard is a
+2/3, which a reader with the wrong count or no count could not produce.
+
+### The end-step sacrifice, which is one line and two halves
+
+"At the beginning of the end step, sacrifice ~" — Ball Lightning and Hellspark Elemental — is read
+as a **whole-line shape**, not a prologue plus a clause, and the reason is the flag:
+`leavesAtEndOfTurn`. Both hand-written cards carry it with the same comment — *the trigger below is
+what happens, and the flag is how the bot knows it is coming; without it the evaluation holds the
+creature back to protect it.* The trigger alone is a correct rules implementation and a badly played
+card, which is the failure hybrid automation cannot flag because nothing is unread.
+
+It cannot be a clause reader either, and that is the other half of the argument: "sacrifice ~" behind
+a different prologue does not mean the permanent leaves at *end of turn*. So the pair is read
+together and "Whenever ~ attacks, sacrifice ~" is refused — a sibling test keeps that true.
+
+`of: 'any'` and not `of: 'you'`: "the end step" is every player's, which is what kills a Ball
+Lightning cast on somebody else's turn.
+
+### A refusal test that became an acceptance
+
+`compile.test.ts` already had a test named *does not read "sacrifice ~", because the flag belongs to
+the shape and not the clause* — written by the increment that deliberately left this unread. The
+property it pinned has not changed; what changed is how it is expressed, from "the line is left
+unread" to "the line is read and emits both halves". So it was rewritten rather than deleted, with
+the churn and the reasoning in it, which is the fourth test in this file to move for that reason.
+
+### Measured
+
+**372 → 376 of 538 printed lines (69.1% → 69.9%)**, and **235 → 239 of 339 cards**. Lhurgoyf, Enigma
+Drake and Ball Lightning whole; Hellspark Elemental a hybrid with its unearth still unread. The
+per-card diff shows those four and nothing else.
+
+Six deliberate breaks, six failing tests: the flag dropped, the end step read as the controller's
+own, "your end step" accepted as well, the CDA toughness bonus dropped, the power-only case read as
+both, and an unknown count defaulted instead of refused. 4,000 more rows at scale, no throw.
+compile.test.ts 291/291.

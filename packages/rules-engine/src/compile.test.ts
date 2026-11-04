@@ -1219,22 +1219,24 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       }
     });
 
-    it('does not read "sacrifice ~", because the flag belongs to the shape and not the clause', () => {
+    it('reads "sacrifice ~" only with the end step in front of it, flag and all', () => {
       /*
-        Ball Lightning is "At the beginning of the end step, sacrifice Ball Lightning", and it also
-        sets `leavesAtEndOfTurn: true` — its own comment: "the trigger below is what happens, and
-        the flag is how the bot knows it is coming. Without it the evaluation holds the creature
-        back to protect it."
+        This test was written as a **refusal** and has become an acceptance, which is worth the
+        churn note. Ball Lightning is "At the beginning of the end step, sacrifice Ball Lightning",
+        and it also sets `leavesAtEndOfTurn: true` — its own comment: "the trigger below is what
+        happens, and the flag is how the bot knows it is coming. Without it the evaluation holds
+        the creature back to protect it."
 
-        So the flag belongs to the **pair** of prologue and clause: a sacrifice at end of turn means
-        the creature is leaving, a sacrifice on some other trigger does not. `selfEffect` sees only
-        the clause, so reading it there would build a card that works and plays badly, which is
-        worse than an unread line (D362). This is the test that keeps that omission deliberate
-        rather than forgotten.
+        The property it has always pinned is that **the flag belongs to the pair**, not to the
+        clause: a sacrifice at end of turn means the creature is leaving, a sacrifice on some other
+        trigger does not. While nothing read the pair, that property was expressed by leaving the
+        line unread. D402 reads the pair as one line's shape and emits both halves, so the same
+        property is now expressed by what is emitted — and the sibling refusal, "Whenever ~
+        attacks, sacrifice ~", is what keeps the clause from being read on its own.
       */
       const ball = compiledScript('Ball Lightning');
-      expect(ball.unread.map((u) => u.line))
-        .toContain('At the beginning of the end step, sacrifice Ball Lightning.');
+      expect(ball.unread).toEqual([]);
+      expect(ball.script).toHaveProperty('leavesAtEndOfTurn', true);
       expect(scriptFor('Ball Lightning')).toHaveProperty('leavesAtEndOfTurn', true);
     });
   });
@@ -3810,6 +3812,139 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       if (!bare.ok || !worded.ok) return;
       expect(field(worded.script, 'statics')).toEqual(field(bare.script, 'statics'));
       expect(field(bare.script, 'statics')).toBeDefined();
+    });
+  });
+
+  describe('a size that is a count, and the creature that sacrifices itself at end of turn', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string,
+    ): EffectContext => ({
+      state, controller: seat, source, targets: [], decisions: [],
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const triggerOf = (script: unknown, i = 0) =>
+      (field(script, 'triggers') as readonly TriggerDef[] | undefined)?.[i];
+
+    it.each([
+      // "power is equal to the number of creature cards in all graveyards and its toughness is
+      // equal to that number plus 1" — both, with the toughness one higher.
+      ['Lhurgoyf'],
+      // "power is equal to the number of instant and sorcery cards in your graveyard" — power
+      // only, the printed toughness left alone.
+      ['Enigma Drake'],
+    ])('%s defines its size exactly as the hand-written card does', (card) => {
+      const mine = compiledScript(card as string);
+      expect(mine.unread).toEqual([]);
+      expect(field(mine.script, 'statics'))
+        .toEqual(field(scriptFor(card as string), 'statics'));
+    });
+
+    it('reads the size off the board, and not as a printed number', () => {
+      /*
+        The static is plain data, so the equality above cannot tell a count that is wired up from
+        one that is merely shaped right. This asks the engine what the creature is: a Lhurgoyf with
+        two creature cards in a graveyard is a 2/3, and a reader that emitted the wrong count — or
+        no count at all — would read its printed size instead.
+      */
+      const base = arena({
+        decks: { 0: 'rot-harvest', 1: 'ember-rush' },
+        battlefield: { 0: ['Lhurgoyf'] },
+        graveyard: { 0: ['Shambling Shell', 'Vampire Aristocrat', 'Raise Dead'] },
+        turn: 3,
+      });
+      const goyf = find(base, 0 as SeatIndex, 'battlefield', 'Lhurgoyf');
+      const live = characteristicsOf(base, base.instances[goyf]!);
+      // Two creature cards; the sorcery is the control.
+      expect(live.power).toBe(2);
+      expect(live.toughness).toBe(3);
+    });
+
+    it('refuses a count this engine has no data for', () => {
+      /*
+        `definesSize` names its counts (D57): "cards in your hand" is a real Magic card and not a
+        count the engine can take, so the line is refused rather than read as one of the two it
+        does have. A card compiled with the wrong count is a creature of the wrong size, every
+        turn, with nothing flagged.
+      */
+      const odd = compileCard({
+        name: 'Hand Goyf', type_line: 'Creature — Lhurgoyf', mana_cost: '{2}{G}', cmc: 3,
+        colors: ['G'], power: '*', toughness: '*',
+        oracle_text: 'Hand Goyf’s power is equal to the number of cards in your hand.',
+      });
+      expect(odd.ok).toBe(true);
+      if (odd.ok) expect(odd.script).toBeUndefined();
+    });
+
+    /*
+      ── The creature that goes away ───────────────────────────────────────────────────────────
+    */
+    it.each([
+      ['Ball Lightning'],
+      ['Hellspark Elemental'],
+    ])('%s both sacrifices itself and tells the bot it is going to', (card) => {
+      const mine = compiledScript(card as string);
+      const written = scriptFor(card as string);
+      /*
+        **Both halves**, which is the whole reason this is one line's reading and not a prologue
+        plus a clause. The trigger alone is a correct rules implementation and a badly played card:
+        the evaluation holds a 6/1 back to protect a creature that is dying anyway. D364's rule, in
+        its sharpest form.
+      */
+      expect(field(mine.script, 'leavesAtEndOfTurn')).toBe(true);
+      expect(field(mine.script, 'leavesAtEndOfTurn')).toEqual(field(written, 'leavesAtEndOfTurn'));
+
+      const compiled = triggerOf(mine.script);
+      expect(compiled).toBeDefined();
+      if (compiled === undefined) return;
+      // The end step of **any** turn, which is what kills a Ball Lightning cast on somebody else's.
+      expect(JSON.stringify(compiled.on)).toEqual(JSON.stringify({ kind: 'step', step: 'end', of: 'any' }));
+    });
+
+    it('sacrifices the creature, as the hand-written trigger does', () => {
+      const base = arena({
+        decks: { 0: 'ember-rush', 1: 'verdant-guard' },
+        battlefield: { 0: ['Ball Lightning'] },
+        turn: 3,
+      });
+      const bolt = find(base, 0 as SeatIndex, 'battlefield', 'Ball Lightning');
+      const ctx = contextOn(base, 0 as SeatIndex, bolt);
+      const mine = triggerOf(compiledScript('Ball Lightning').script)!.effect(ctx);
+      const theirs = triggerOf(scriptFor('Ball Lightning'))!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      // It really left the battlefield, and really went to its owner's graveyard.
+      expect(ids(mine, 0 as SeatIndex, 'battlefield')).not.toContain(bolt);
+      expect(ids(mine, 0 as SeatIndex, 'graveyard')).toContain(bolt);
+    });
+
+    it('does not read the same sacrifice behind a different prologue', () => {
+      /*
+        The restriction the flag forces. "Sacrifice ~" is not a clause this module reads on its
+        own, because behind another prologue it does not mean the permanent leaves at *end of
+        turn* — and emitting the trigger there with the flag would be a lie about the card, while
+        emitting it without the flag would be the badly played card above. So the pair is read and
+        anything else is refused.
+      */
+      const other = compileCard({
+        name: 'Doomed Hound', type_line: 'Creature — Dog', mana_cost: '{R}', cmc: 1, colors: ['R'],
+        power: '3', toughness: '1',
+        oracle_text: 'Whenever Doomed Hound attacks, sacrifice Doomed Hound.',
+      });
+      expect(other.ok).toBe(true);
+      if (other.ok) expect(other.script).toBeUndefined();
+    });
+
+    it('does not read "your end step" as "the end step"', () => {
+      // `of: 'you'` and `of: 'any'` are different cards: a creature that dies only on your own
+      // turn survives being cast on somebody else's, which is not what Ball Lightning does.
+      const mine = compileCard({
+        name: 'Polite Lightning', type_line: 'Creature — Elemental', mana_cost: '{R}', cmc: 1,
+        colors: ['R'], power: '6', toughness: '1',
+        oracle_text: 'At the beginning of your end step, sacrifice Polite Lightning.',
+      });
+      expect(mine.ok).toBe(true);
+      if (mine.ok) expect(mine.script).toBeUndefined();
     });
   });
 
