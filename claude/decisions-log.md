@@ -24636,3 +24636,52 @@ are the same shape, each one line short.
 
 Three deliberate breaks, three failing tests. The whole engine suite is 1678 green and a 30,000-row
 shuffled run found no throw.
+
+## D394
+
+**The grant family widened — and the hint the team pump had been dropping** (#317)
+
+Three readings, four cards, and one defect found by needing the compiled card to match the written
+one.
+
+### The defect: a compiled Inspired Charge was never held for the combat
+
+`expiresAtEndOfTurn` means "hold this for the combat", and both hand-written cards of this shape set
+it — Inspired Charge and Overrun. The compiled team pump **did not**, so a compiled Inspired Charge
+was a card that works and gets cast in a main phase with nothing to attack with. That is D364's trap
+in the one clause family whose *targeted* twin already carried the flag, and no rules test could see
+it: nothing in the engine reads it, the bot does.
+
+### Two keywords, as one continuous effect
+
+`grantedKeywordList` reads "gains trample" and "gains flying and double strike" alike, one or two
+words joined by "and", each gated by `isKeyword` — the engine's keyword list is what
+`characteristicsOf` consults, so a word outside it compiles to a creature that gains nothing and a
+spell that looks like it worked. "Soaring" (made up), "protection from red" (a real ability this
+engine stores in another field) and a list of three are each refused and reported unread.
+
+Both halves travel in one `PumpOptions`, which is how Ajani's ultimate is written by hand and why it
+matters: two continuous effects would expire independently.
+
+### A grant with no size is its own sentence
+
+"Target creature gains flying and double strike until end of turn" gets its own branch rather than
+an optional size on the pump, because `sizeBonus` refuses `+0/+0` and should go on refusing it — a
+clause that pumped by nothing would be a continuous effect doing nothing. The two bot hints are
+decided by exactly the rule the sized branch uses (hexproof/shroud make it a protection trick,
+infect/haste make it an attacker's bonus), and the branches sit adjacent so that stays one rule
+rather than two.
+
+### Measured
+
+**353 → 356 of 538 printed lines (65.6% → 66.2%)**, and **222 → 225 of 339 cards**: Overrun,
+Inspired Charge and Ajani, Caller of the Pride now compile whole — Ajani being the third planeswalker
+read end to end. Garruk Wildspeaker is one line short: `+1: Untap two target lands`, a count on a
+target phrase this module cannot read.
+
+Three deliberate breaks, three failing tests. The whole engine suite is 1686 green and a 30,000-row
+shuffled run found no throw.
+
+Garruk's `−4` left the loyalty stage's refusal test one increment after joining it, which is the
+churn that kind of test is for: the property is "a line with no reader is reported and its neighbours
+still compile", not any particular line, and the test now says so.

@@ -3116,19 +3116,136 @@ describe('compileCard, against the cards a person wrote by hand', () => {
 
     it('refuses a loyalty line whose clause has no reader, and reads its neighbours', () => {
       /*
-        Garruk Wildspeaker: three abilities, one of which untaps two target lands — a count on a
-        target phrase this module cannot read — and one a team pump with a keyword grant. The middle
-        one reads, so the card is partly automated and the two lines that are not are reported for a
-        human to play by hand (D362). That is the hybrid the compiler exists to produce, and this is
-        the test that it still refuses line by line rather than card by card.
+        Garruk Wildspeaker: three abilities, one of which untaps **two** target lands — a count on a
+        target phrase this module cannot read. The other two read, so the card is partly automated
+        and the one line that is not is reported for a human to play by hand (D362). That is the
+        hybrid the compiler exists to produce, and this is the test that it still refuses line by
+        line rather than card by card.
+
+        His −4 was in this list one increment ago and left it when the team pump learnt to carry a
+        keyword grant, which is the churn this kind of test is for: the property is "a line with no
+        reader is reported and its neighbours still compile", not any particular line.
       */
       const garruk = compiledScript('Garruk Wildspeaker');
-      expect(garruk.unread.map((u) => u.line)).toEqual([
-        '+1: Untap two target lands.',
+      expect(garruk.unread.map((u) => u.line)).toEqual(['+1: Untap two target lands.']);
+      expect(abilitiesOf(garruk.script)).toHaveLength(2);
+      expect(abilitiesOf(garruk.script).map((a) => a.description)).toEqual([
+        '−1: Create a 3/3 green Beast creature token.',
         '−4: Creatures you control get +3/+3 and gain trample until end of turn.',
       ]);
-      expect(abilitiesOf(garruk.script)).toHaveLength(1);
-      expect(abilitiesOf(garruk.script)[0]?.description).toBe('−1: Create a 3/3 green Beast creature token.');
+    });
+  });
+  describe('the grant family: two keywords, and the hint the team pump was missing', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({ state, controller: seat, source, targets, decisions: [] } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    /*
+      The defect this stage fixed, and it is D364's trap in the one family whose targeted twin
+      already avoided it.
+
+      `expiresAtEndOfTurn` is "hold this for the combat". Both hand-written cards of this shape set
+      it — Inspired Charge and Overrun — and the compiled reading did not, so a compiled Inspired
+      Charge was a card that *works* and gets cast in a main phase with nothing to attack with.
+      Nothing in the engine reads the flag; the bot does, which is why no rules test could see it.
+    */
+    it.each([
+      ['Inspired Charge'],
+      ['Overrun'],
+    ])('%s is held for the combat, as the hand-written card is', (card) => {
+      const compiled = compiledScript(card as string);
+      expect(compiled.unread).toEqual([]);
+      expect(field(scriptFor(card as string), 'expiresAtEndOfTurn')).toBe(true);
+      expect(field(compiled.script, 'expiresAtEndOfTurn')).toBe(true);
+    });
+
+    it('pumps the team and grants the keyword in one effect, as Overrun does', () => {
+      const base = arena({
+        decks: { 0: 'verdant-guard', 1: 'verdant-guard' },
+        battlefield: { 0: ['Grizzly Bears'], 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = (field(compiledScript('Overrun').script, 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+      const theirs = (field(scriptFor('Overrun'), 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+      expect(mine).toEqual(theirs);
+      /*
+        One continuous effect carrying both halves, not two. Two would expire independently, and the
+        count is what says which this is.
+      */
+      expect(mine.effects).toHaveLength(1);
+      expect(mine.effects[0]?.power).toBe(3);
+      expect(mine.effects[0]?.keywords).toEqual(['trample']);
+      // And the team, not the table: the opponent's bear is untouched by this effect's scope.
+      const ours = find(base, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      expect(characteristicsOf(mine, mine.instances[ours]!).power).toBe(5);
+      const theirCreature = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      expect(characteristicsOf(mine, mine.instances[theirCreature]!).power).toBe(2);
+    });
+
+    /*
+      Ajani's ultimate: a grant with **no size change at all**, and two keywords.
+
+      Its own branch rather than an optional size on the pump, because `sizeBonus` refuses `+0/+0`
+      and should go on refusing it — a clause that pumped by nothing is a continuous effect doing
+      nothing. A grant with no size is a different sentence, not a pump of zero.
+    */
+    it('grants both keywords in one effect, as Ajani’s hand-written ultimate does', () => {
+      const base = arena({
+        decks: { 0: 'forge-alliance', 1: 'verdant-guard' },
+        battlefield: { 0: ['Serra Angel'] },
+        turn: 3,
+      });
+      const angel = find(base, 0 as SeatIndex, 'battlefield', 'Serra Angel');
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: angel }]);
+      const mine = (field(compiledScript('Ajani, Caller of the Pride').script, 'abilities') as
+        readonly AbilityDef[])[1]!.effect!(ctx);
+      const theirs = (field(scriptFor('Ajani, Caller of the Pride'), 'abilities') as
+        readonly AbilityDef[])[1]!.effect!(ctx);
+      expect(mine).toEqual(theirs);
+      expect(mine.effects).toHaveLength(1);
+      expect(mine.effects[0]?.keywords).toEqual(['flying', 'double strike']);
+      // No size change, which is what makes this its own reading.
+      expect(mine.effects[0]?.power).toBeUndefined();
+      expect(characteristicsOf(mine, mine.instances[angel]!).keywords.has('double strike')).toBe(true);
+    });
+
+    it('points Ajani’s ultimate at exactly the spec the hand-written ability points at', () => {
+      const mine = (field(compiledScript('Ajani, Caller of the Pride').script, 'abilities') as
+        readonly AbilityDef[])[1]!;
+      const theirs = (field(scriptFor('Ajani, Caller of the Pride'), 'abilities') as
+        readonly AbilityDef[])[1]!;
+      expect(mine.targets).toEqual(theirs.targets);
+      // Friendly: flying and double strike help what they point at, and the bot's default is the
+      // enemy's board.
+      expect((mine.targets as readonly TargetSpec[])[0]?.friendly).toBe(true);
+    });
+
+    it.each([
+      ['Target creature gains flying and soaring until end of turn.'],
+      ['Target creature gains protection from red until end of turn.'],
+      ['Target creature gains flying, trample and haste until end of turn.'],
+    ])('refuses %s, whose words this engine would ignore', (text) => {
+      /*
+        `isKeyword` is the gate: the engine's keyword list is what `characteristicsOf` consults, so a
+        word outside it would compile to a creature that gains nothing and a spell that looks like it
+        worked. "Soaring" is made up, "protection from red" is a real ability this engine stores
+        elsewhere, and the third is three keywords — refused because the list takes one or two and
+        nothing in the pool prints more. Each is reported unread, to be played by hand (D362).
+      */
+      const refused = compileCard({
+        name: 'Grant Maker', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'],
+        oracle_text: text as string,
+      });
+      expect(refused.ok).toBe(true);
+      if (!refused.ok) return;
+      expect(refused.script).toBeUndefined();
+      expect(refused.unread.map((u) => u.why)).toEqual(['no-reader']);
     });
   });
 });

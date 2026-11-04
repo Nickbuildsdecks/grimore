@@ -9547,11 +9547,27 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     "Creatures you control get +1/+1" with no duration is a *static* and is read elsewhere
     (`staticFromLine`); this one ends at end of turn, which is what makes it an effect.
   */
-  const team = /^creatures you control get \+(\d+)\/\+(\d+) until end of turn$/i.exec(text);
+  /*
+    The team pump, and the hint it was missing.
+
+    `expiresAtEndOfTurn` is "hold this for the combat", and both hand-written cards of this shape set
+    it — Inspired Charge and Overrun. The compiled reading did not, so a compiled Inspired Charge was
+    a card that *works* and gets cast in a main phase with nothing to attack with: exactly D364's
+    trap, in the one clause family whose targeted twin already carried the flag.
+
+    The grant rides with the size in one `PumpOptions`, as it does on the targeted pump and for the
+    same reason: Overrun's trample and its +3/+3 are one continuous effect, and two would expire
+    independently.
+  */
+  const team = /^creatures you control get \+(\d+)\/\+(\d+)(?: and gain ([a-z][a-z' ]*?))? until end of turn$/i
+    .exec(text);
   if (team !== null) {
-    const bonus = sizeBonus(Number(team[1]), Number(team[2]));
+    const bonus = pumpAndGrant(Number(team[1]), Number(team[2]), team[3]);
     if (bonus !== null) {
-      return { effect: (c) => pumpTeam(c.state, c.source, c.controller, bonus) };
+      return {
+        effect: (c) => pumpTeam(c.state, c.source, c.controller, bonus),
+        spellFlags: { expiresAtEndOfTurn: true },
+      };
     }
   }
 
@@ -9634,9 +9650,29 @@ function pumpAndGrant(
   const bonus = sizeBonus(power, toughness);
   if (bonus === null) return null;
   if (granted === undefined) return bonus;
-  const word = granted.trim().toLowerCase();
-  if (!isKeyword(word)) return null;
-  return { ...bonus, keywords: [word] };
+  const words = grantedKeywordList(granted);
+  return words === null ? null : { ...bonus, keywords: words };
+}
+
+/**
+ * The keywords a clause grants, as the list `PumpOptions.keywords` takes — or `null` if any of them
+ * is a word this engine would ignore.
+ *
+ * One or two, joined by "and": "gains trample", "gains flying and double strike". Ajani's ultimate
+ * is the second shape and `pump(…, { keywords: ['flying', 'double strike'] })` is how it is written
+ * by hand, which is also why the list is one `PumpOptions` and not two calls — two continuous
+ * effects would expire independently.
+ *
+ * `isKeyword` is the gate and the whole reason this is safe: the engine's keyword list is what
+ * `characteristicsOf` consults, so an unrecognised word would compile to a creature that gains
+ * nothing and a spell that looks like it worked. "Protection from red" is the shape that catches —
+ * refused here, reported unread, played by hand (D362).
+ */
+function grantedKeywordList(granted: string): Keyword[] | null {
+  const words = granted.trim().toLowerCase().split(/\s+and\s+/).map((word) => word.trim());
+  if (words.length === 0 || words.length > 2) return null;
+  if (!words.every((word) => word !== '' && isKeyword(word))) return null;
+  return words as Keyword[];
 }
 
 /**
@@ -11012,6 +11048,42 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
           return id === null
             ? c.state
             : pump(c.state, [id], c.source, c.controller, bonus);
+        },
+        spellFlags: protective
+          ? { protectsACreature: true }
+          : { expiresAtEndOfTurn: true },
+      };
+    }
+  }
+
+  /*
+    The same clause with **no size change at all**: "Target creature gains flying and double strike
+    until end of turn", which is Ajani's ultimate.
+
+    Its own branch rather than an optional size on the one above, because `sizeBonus` refuses
+    `+0/+0` and should go on refusing it — a clause that pumped by nothing would be a continuous
+    effect doing nothing, and that refusal is what keeps a misread sentence from compiling. A grant
+    with no size is a different sentence, not a pump of zero.
+
+    The two hints are decided by exactly the rule the sized branch uses, for the reasons written
+    there: hexproof and shroud make it a protection trick, infect and haste make it an attacker's
+    bonus. Nothing here is a second rule, which is the point of keeping the branches adjacent.
+  */
+  const granted = /^(target creature(?: you control)?) gains ([a-z][a-z' ]*?) until end of turn$/i
+    .exec(text);
+  if (granted !== null) {
+    const words = grantedKeywordList(granted[2]!);
+    const spec = targetSpecFrom(granted[1]!, true);
+    if (words !== null && spec !== null) {
+      const protective = words.some((word) => word === 'hexproof' || word === 'shroud');
+      const forTheAttack = words.some((word) => word === 'infect' || word === 'haste');
+      return {
+        targets: [forTheAttack ? { ...spec, helpsInCombat: true } : spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null
+            ? c.state
+            : pump(c.state, [id], c.source, c.controller, { keywords: words });
         },
         spellFlags: protective
           ? { protectsACreature: true }

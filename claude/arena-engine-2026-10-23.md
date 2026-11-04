@@ -10589,3 +10589,21 @@ compiled.
 Beleren compile whole — the first planeswalkers read end to end. Garruk is the hybrid test: one
 ability automated, two lines reported for a human. Three breaks, three failing tests; the engine
 suite 1678 green.
+
+## The grant family, and a hint the team pump was dropping (#317, D394)
+
+**The defect:** `expiresAtEndOfTurn` means "hold this for the combat", and both hand-written cards of
+that shape set it — Inspired Charge and Overrun — while the compiled team pump did not. So a compiled
+Inspired Charge was a card that works and gets cast in a main phase with nothing to attack with:
+D364's trap in the one family whose targeted twin already carried the flag, invisible to every rules
+test because the bot reads it and the engine does not.
+
+`grantedKeywordList` now reads one or two keywords joined by "and", each gated by `isKeyword` — so
+"soaring", "protection from red" and a list of three are refused and reported for a human. Both
+halves travel in one `PumpOptions`, as Ajani's ultimate is written by hand: two effects would expire
+independently. And a grant with **no** size change is its own sentence rather than a pump of zero,
+because `sizeBonus` refuses `+0/+0` and should.
+
+**353 → 356 of 538 lines (65.6% → 66.2%), 222 → 225 of 339 cards.** Overrun, Inspired Charge and
+Ajani compile whole; Garruk is one line short (`+1: Untap two target lands`). Three breaks, three
+failing tests; the engine suite 1686 green.
