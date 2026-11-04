@@ -9807,3 +9807,27 @@ right.
 
 I had reported `cafa599` as "verified by the gate, 17/17" on a tree CI then rejected. The number was
 real; the confidence it implied was not.
+
+## Composition (#317, D369)
+
+The spell path took one resolution clause and refused anything longer — the right safety property
+(all of a spell or none of it) reached by a stricter rule than it needs. `readResolution` now
+composes: resolution lines together, each split on `, then `, **every** part must compile, state
+threaded through them in printed order.
+
+First increment that adds **no vocabulary** and still moves coverage, which is the point:
+composition multiplies every reader already present and every one added later. **178 of 538 lines
+(33.1%)**, 51 cards, on readers that already existed.
+
+One refusal worth keeping: two parts cannot share one `targets` list, so a spell whose halves each
+want their own target is refused rather than silently handed the same target twice.
+
+**Two of my own tests failed, and both were pinning the restriction rather than the invariant** —
+one used `Scry 1, then draw a card.` as an "unreadable" example, which it no longer is. The
+invariant now uses "Draw two cards, then discard two cards.", real pool text whose second clause has
+no reader. The tell for this mistake: the failing assertion was about *how much* the compiler
+refuses, not *what it must never do*.
+
+And a comment of mine overclaimed: the ordering test cannot show order-sensitivity, because gaining
+life and owing a draw are independent. It proves the state is **threaded** (verified by breaking the
+reduce both ways); the comment now says order is untested rather than implying otherwise.

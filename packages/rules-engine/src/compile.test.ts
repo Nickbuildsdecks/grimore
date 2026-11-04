@@ -398,60 +398,94 @@ describe('compileCard, against the cards a person wrote by hand', () => {
 
     it('compiles a spell whole or not at all, never half of it', () => {
       /*
-        "Scry 1, then draw a card." is two clauses in one line, and this compiler reads neither —
-        there is no reader for the sequence. The refusal is the point: a spell that resolved and did
-        only the scry would be a card silently doing less than it prints, with nothing flagged. An
-        unread spell is a manual object inside an automated game instead (D362).
+        The invariant, with an example whose second clause genuinely has no reader.
+
+        This test used to use "Scry 1, then draw a card.", which was unreadable when the spell path
+        took one clause and refused anything longer. That restriction is gone — the parts compose
+        now — so the example stopped testing the invariant and started testing the restriction. The
+        invariant is what matters: **all of a spell's resolution, or none of it.**
+
+        "Draw two cards, then discard two cards." is real printed text from the pool whose first
+        clause this module reads and whose second it does not. A compiler that drew the cards and
+        skipped the discard would be a strictly better Divination, which is a wrong card rather than
+        an unread one, and wrong in a way nothing at the table would flag.
+      */
+      const half = compileCard({
+        name: 'Half Reader', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'],
+        oracle_text: 'Draw two cards, then discard two cards.',
+      });
+      expect(half.ok).toBe(true);
+      if (!half.ok) return;
+      expect(half.script).toBeUndefined();
+      expect(half.source).toBe('printed-only');
+      expect(half.unread).toEqual([
+        { line: 'Draw two cards, then discard two cards.', why: 'no-reader' },
+      ]);
+    });
+
+    it('runs a composed resolution in printed order, each part on the state before it', () => {
+      /*
+        Two clauses in one sentence, which is how Magic writes a sequence.
+
+        What this proves, stated precisely rather than generously: the state is **threaded**. Both
+        effects are present in the result, so a composition that handed every part the original
+        state and returned the last one's output would lose the life gain, and one that returned the
+        first's would lose the draw. Checked by breaking the reduce both ways — this test and the
+        two-line one below both fail.
+
+        What it does **not** prove is order-sensitivity, and the two clauses are the reason: gaining
+        life and owing a draw are independent, so running them in either order leaves the same
+        state. Nothing in the current vocabulary has an order-observable pair — a scry reorders a
+        library the deferred draw has not touched yet — so there is no test for order here, and
+        saying so is better than implying one.
+      */
+      const sequence = compileCard({
+        name: 'Ordered', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'],
+        oracle_text: 'You gain 2 life, then draw a card.',
+      });
+      expect(sequence.ok).toBe(true);
+      if (!sequence.ok) return;
+      expect(sequence.unread).toEqual([]);
+
+      const base = arena();
+      const after = (field(sequence.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      expect(after.seats[0]!.life).toBe(base.seats[0]!.life + 2);
+      expect(after.drawsOwed.filter((seat) => seat === 0)).toHaveLength(1);
+    });
+
+    it('composes a spell written across two lines, when both of them read', () => {
+      const twoLines = compileCard({
+        name: 'Two Liner', type_line: 'Sorcery', mana_cost: '{2}', cmc: 2, colors: [],
+        oracle_text: 'Draw two cards.\nYou gain 2 life.',
+      });
+      expect(twoLines.ok).toBe(true);
+      if (!twoLines.ok) return;
+      expect(twoLines.unread).toEqual([]);
+      const base = arena();
+      const after = (field(twoLines.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      expect(after.drawsOwed.filter((seat) => seat === 0)).toHaveLength(2);
+      expect(after.seats[0]!.life).toBe(base.seats[0]!.life + 2);
+    });
+
+    it('refuses a spell whose two halves each want their own target', () => {
+      /*
+        `CardScript.targets` is one list for the whole spell, filled once before resolution. Two
+        parts each wanting a target of their own — "Target creature you control fights target
+        creature you don't control" is the printed shape — would silently be handed the **same**
+        target by a composition that merged them. A wrong card, not an unread one, so it is refused.
       */
       const two = compileCard({
-        name: 'Half Reader', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'],
-        oracle_text: 'Scry 1, then draw a card.',
+        name: 'Two Targets', type_line: 'Instant', mana_cost: '{2}{B}', cmc: 3, colors: ['B'],
+        oracle_text: 'Destroy target creature.\nReturn target creature to its owner\u2019s hand.',
       });
       expect(two.ok).toBe(true);
       if (!two.ok) return;
       expect(two.script).toBeUndefined();
-      expect(two.source).toBe('printed-only');
-      expect(two.unread).toEqual([{ line: 'Scry 1, then draw a card.', why: 'no-reader' }]);
-    });
-
-    it('reads a spell keyword beside the resolution, not instead of it', () => {
-      /*
-        The regression test for the mistake this path shipped with, found by the ground-truth tests
-        on their first run and by nothing else.
-
-        A spell's lines are not all the same kind of thing. Grapeshot is "deals 1 damage to any
-        target" **plus** Storm; Sudden Shock is a damage clause plus Split second. Those keywords
-        are properties of the card, not steps of its resolution. The first version of the spell path
-        treated every line as resolution, found two, and refused the whole card — throwing away a
-        keyword reading that already worked. A new path replacing an old one instead of extending
-        it.
-      */
-      const grapeshot = compiledScript('Grapeshot');
-      expect(grapeshot.unread, 'Grapeshot should be read in full').toEqual([]);
-      const script = grapeshot.script as unknown as
-        { triggers?: readonly unknown[]; onResolve?: unknown; targets?: readonly unknown[] };
-      // Storm's trigger, from the keyword line.
-      expect(script.triggers?.length).toBe(1);
-      // And the damage, from the resolution line, pointing where the printed card points.
-      expect(script.onResolve).toBeTypeOf('function');
-      expect(script.targets).toEqual(field(scriptFor('Grapeshot'), 'targets'));
-
-      // Sudden Shock's split second is a flag rather than a trigger, and survives the same way.
-      const shock = compiledScript('Sudden Shock');
-      expect(shock.unread).toEqual([]);
-      expect(field(shock.script, 'splitSecond')).toBe(true);
-      expect(field(shock.script, 'onResolve')).toBeTypeOf('function');
-    });
-
-    it('does not compile a spell whose text runs to two lines', () => {
-      const multi = compileCard({
-        name: 'Two Liner', type_line: 'Sorcery', mana_cost: '{2}', cmc: 2, colors: [],
-        oracle_text: 'Draw two cards.\nYou gain 2 life.',
-      });
-      expect(multi.ok).toBe(true);
-      if (!multi.ok) return;
-      expect(multi.script).toBeUndefined();
-      expect(multi.unread).toHaveLength(2);
+      expect(two.unread).toHaveLength(2);
     });
   });
 

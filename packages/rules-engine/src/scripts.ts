@@ -9250,10 +9250,7 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     compiled.push(line);
   }
 
-  const clause = resolution.length === 1
-    ? resolution[0]!.replace(/\.\s*$/, '').trim()
-    : null;
-  const read = clause === null ? null : readEffect(clause, name);
+  const read = readResolution(resolution, name);
   if (read === null) {
     const script = Object.keys(built).length === 0 ? null : built as Partial<CardScript>;
     return { script, compiled, unread: resolution };
@@ -9264,4 +9261,63 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   if (read.decisions !== undefined) built['decisions'] = read.decisions;
   built['onResolve'] = read.effect;
   return { script: built as Partial<CardScript>, compiled: [...compiled, ...resolution], unread: [] };
+}
+
+/**
+ * A spell's whole resolution, however many sentences it is written in — or `null` if **any** part of
+ * it cannot be read.
+ *
+ * ## Composition, and the invariant it has to preserve
+ *
+ * The first version of the spell path took one line and refused anything longer. That was the right
+ * *safety* property for the wrong reason: a spell whose second sentence went unread would resolve
+ * and silently do half of what it prints, which is worse than not reading it at all. But "exactly
+ * one sentence" is a stricter rule than that property needs. The property is **all or nothing**,
+ * and a spell of three sentences all of which compile satisfies it completely.
+ *
+ * So this composes. It splits each printed line on `, then ` as well — Magic writes a sequence that
+ * way, and "Scry 1, then draw a card." is two clauses this module already reads separately. Every
+ * part has to compile; one that does not refuses the whole spell, unchanged.
+ *
+ * The parts run in printed order, each handed the state the one before it produced. That threading
+ * is the whole of what sequencing means, and it is why `onResolve` can stay a single `EffectFn`.
+ *
+ * ## At most one part may point at something
+ *
+ * A `CardScript`'s `targets` is one list for the whole spell, and the engine fills it once before
+ * resolution. Two parts each wanting their own target is a spell with two independent target
+ * choices — "Target creature you control fights target creature you don't control" — and composing
+ * them here would silently hand both parts the *same* target. That is a wrong card rather than an
+ * unread one, so it is refused.
+ */
+function readResolution(lines: readonly string[], name: string): ReadEffect | null {
+  if (lines.length === 0) return null;
+  const parts: ReadEffect[] = [];
+  for (const line of lines) {
+    for (const piece of line.replace(/\.\s*$/, '').split(/,\s+then\s+/i)) {
+      const clause = piece.trim();
+      if (clause === '') continue;
+      const read = readEffect(clause, name);
+      if (read === null) return null;
+      parts.push(read);
+    }
+  }
+  if (parts.length === 0) return null;
+  if (parts.length === 1) return parts[0]!;
+
+  const targeted = parts.filter((part) => part.targets !== undefined);
+  // See the docblock: two target choices cannot share one `targets` list.
+  if (targeted.length > 1) return null;
+
+  const decisions = parts.flatMap((part) => part.decisions ?? []);
+  const flags = Object.assign({}, ...parts.map((part) => part.spellFlags ?? {})) as
+    Partial<CardScript>;
+  return {
+    // Each part is handed the state the one before it produced, which is what a printed sequence
+    // means. Everything else about the context — the targets, the answering object — is unchanged.
+    effect: (c) => parts.reduce((state, part) => part.effect({ ...c, state }), c.state),
+    ...(targeted[0]?.targets === undefined ? {} : { targets: targeted[0]!.targets }),
+    ...(decisions.length === 0 ? {} : { decisions }),
+    ...(Object.keys(flags).length === 0 ? {} : { spellFlags: flags }),
+  };
 }

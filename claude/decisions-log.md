@@ -23125,3 +23125,59 @@ about something other than what I thought it measured (D356, D365, now this), an
 found by asking the instrument a question it had never been asked.
 
 Verified: realtime 47/47 with the fix, `check-gate.sh` verified in both directions.
+
+## D369 — Composition, which is worth more than vocabulary, and a test that was pinning a restriction
+
+The spell path took one resolution clause and refused anything longer. That was the right **safety**
+property — all of a spell's resolution or none of it, because a spell whose second sentence went
+unread would resolve and silently do half of what it prints — reached by a rule stricter than the
+property needs. "Exactly one clause" is not "all or nothing". A spell of three clauses all of which
+compile satisfies the property completely.
+
+So `readResolution` composes. It takes a spell's resolution lines together, splits each on `, then `
+(which is how Magic writes a sequence), requires **every** part to compile, and threads the state
+through them in printed order. One part that cannot be read refuses the whole spell, unchanged.
+
+This is the first increment that adds **no vocabulary at all** and still moves coverage, which is
+the point worth recording: composition multiplies every reader already present, and will multiply
+every reader added after it. 178 of 538 lines (33.1%), up from 173, and 51 cards from 48 — on
+readers that already existed.
+
+### One refusal that matters: two parts cannot share one target
+
+`CardScript.targets` is a single list for the whole spell, filled once before resolution. Two parts
+each wanting their own target — "Target creature you control fights target creature you don't
+control" is the printed shape — would silently be handed the **same** target by a merging
+composition. A wrong card rather than an unread one, so it is refused with its own test.
+
+### My own tests were pinning the restriction, not the invariant
+
+Two tests failed on this change, and both were mine:
+
+- *"compiles a spell whole or not at all, never half of it"* used `Scry 1, then draw a card.`, which
+  was unreadable only because of the one-clause rule. Once the parts compose it reads fine, so the
+  test had stopped testing the invariant and started testing the restriction.
+- *"does not compile a spell whose text runs to two lines"* asserted the restriction outright.
+
+The invariant still needs a test, so the first now uses **"Draw two cards, then discard two cards."**
+— real printed text from the pool whose first clause this module reads and whose second it does not.
+A compiler that drew and skipped the discard would be a strictly better Divination: wrong in a way
+nothing at the table would flag.
+
+A test that pins an implementation choice rather than the property it protects goes red on the
+improvement, and the temptation is to read that as a regression. The tell is that the failing
+assertion was about *how much* the compiler refuses rather than *what it must never do*.
+
+### And a comment of mine that overclaimed
+
+The new ordering test said it checked that each part runs on the state the one before it produced,
+"so a scry happens before the draw". It does not check that. Gaining life and owing a draw are
+independent, so either order leaves the same state, and nothing in the current vocabulary has an
+order-observable pair.
+
+What it does prove — verified by breaking the reduce in both directions and watching it fail — is
+that the state is **threaded**: a composition handing every part the original state would lose one
+of the two effects. The comment now says that and says the order is untested, which is worth more
+than a claim the assertions do not support.
+
+Verified: compile.test.ts 44/44, both composition tests proved to catch broken threading.
