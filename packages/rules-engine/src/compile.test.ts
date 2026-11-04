@@ -4,8 +4,8 @@ import { STARTER_DECKS } from './starterDecks.js';
 import { isKeywordDeclaration, scriptFor } from './scripts.js';
 import { zoneKey, type CardDef } from './cards.js';
 import type { CardDataRow } from './fromCardData.js';
-import type { EffectContext } from './effects.js';
-import type { TargetSpec } from './scriptTypes.js';
+import { tap, type EffectContext } from './effects.js';
+import type { TargetSpec, TriggerDef } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
 import { arena, find } from './testkit.js';
@@ -784,6 +784,143 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(mortars.script).toBeDefined();
       expect(mortars.unread.map((u) => u.why)).toEqual(['unimplemented-keyword']);
       expect(mortars.unread[0]?.line).toBe('Overload {3}{R}{R}{R}');
+    });
+  });
+  /*
+    ── The trigger shapes ────────────────────────────────────────────────────────────────────────
+
+    Until this stage one prologue existed, "When ~ enters the battlefield", so every effect the
+    compiler could read was reachable from exactly one place on a card. The table of shapes
+    multiplies the effect vocabulary the way composition did (D369): no new effect, much more
+    coverage.
+
+    Each row below is a card in the pool that prints that prologue, and the check is the same one
+    the rest of this file makes: the compiled trigger has to watch what the hand-written one watches
+    and do what it does. Nothing here asserts a literal `on` object — the expected value is read off
+    the hand-written card, so a shape copied wrongly fails even if both this test and the compiler
+    agree about what the wrong answer looks like.
+  */
+  describe('trigger shapes, each against the card in the pool that prints it', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({ state, controller: seat, source, targets } as unknown as EffectContext);
+
+    /** The deck each card lives in, so `arena` can pull it out of that seat's library. */
+    const DECK_OF = new Map<string, string>();
+    for (const [id, deck] of Object.entries(STARTER_DECKS)) {
+      for (const entry of deck.cards) if (!DECK_OF.has(entry.card.name)) DECK_OF.set(entry.card.name, id);
+    }
+
+    const watching = (script: unknown, kind: string) =>
+      ((script as { triggers?: readonly TriggerDef[] }).triggers ?? [])
+        .find((t) => t.on.kind === kind);
+
+    /*
+      `who: 'self'` dropped from both sides before comparing.
+
+      `automation.ts` states it: "`self` is the default, which is why every script written before
+      this one still means what it meant." So `{ kind: 'dies' }` and `{ kind: 'dies', who: 'self' }`
+      are the same event, and the pool spells it both ways — 30 of its etb triggers bare, 7
+      explicit. Normalising the one documented default is what lets this compare the whole `on`
+      object rather than only its `kind`, which is the comparison that would have missed a compiler
+      emitting `by: 'opponent'` where the card says `by: 'you'`.
+    */
+    const event = (on: TriggerDef['on']) => {
+      const { who, ...rest } = on as { who?: string };
+      return JSON.stringify(who === 'self' ? rest : on);
+    };
+
+    const ROWS: readonly {
+      card: string;
+      kind: string;
+      /** Set up the board so the effect is observable — see Thermo-Alchemist. */
+      prepare?: (state: GameState, source: string) => GameState;
+    }[] = [
+      { card: 'Goblin Arsonist', kind: 'dies' },
+      { card: 'Borderland Marauder', kind: 'attacks' },
+      { card: 'Thieving Magpie', kind: 'combat-damage' },
+      { card: 'City of Brass', kind: 'becomes-tapped' },
+      { card: 'Guttersnipe', kind: 'spell-cast' },
+      { card: 'Firebrand Archer', kind: 'spell-cast' },
+      { card: "Ajani's Pridemate", kind: 'life-gained' },
+      // Untapping an untapped permanent changes nothing, so both effects would return the state
+      // unchanged and `toEqual` would pass on two no-ops. Tapped first, which is also the only
+      // board on which the printed card does anything.
+      { card: 'Thermo-Alchemist', kind: 'spell-cast', prepare: (state, source) => tap(state, source, true) },
+    ];
+
+    it.each(ROWS.map((row) => [row.card, row] as const))(
+      '%s fires on what the hand-written card fires on, and does the same thing',
+      (_name, row) => {
+        const written = watching(scriptFor(row.card), row.kind);
+        const mine = watching(compiledScript(row.card).script, row.kind);
+        expect(mine, `${row.card}: compiled no trigger watching ${row.kind}`).toBeDefined();
+        expect(written, `${row.card}: the hand-written card has no ${row.kind} trigger`).toBeDefined();
+        if (mine === undefined || written === undefined) return;
+        expect(event(mine.on)).toEqual(event(written.on));
+
+        const deck = DECK_OF.get(row.card);
+        expect(deck, `${row.card} is in no deck`).toBeDefined();
+        let base = arena({
+          decks: { 0: deck! }, battlefield: { 0: [row.card], 1: ['Grizzly Bears'] }, turn: 3,
+        });
+        const source = find(base, 0 as SeatIndex, 'battlefield', row.card);
+        if (row.prepare !== undefined) base = row.prepare(base, source);
+
+        // A trigger that points at something is handed a player, which every spec in these rows
+        // admits; one that points at nothing is handed an empty list, as the engine would.
+        const targets: readonly Target[] = mine.targets === undefined
+          ? []
+          : [{ kind: 'player', seat: 1 as SeatIndex }];
+        const ctx = contextOn(base, 0 as SeatIndex, source, targets);
+        expect(mine.effect(ctx)).toEqual(written.effect(ctx));
+        // Not vacuous: the printed trigger has to change the board on this fixture.
+        expect(mine.effect(ctx), `${row.card}: the effect changed nothing`).not.toEqual(base);
+      },
+    );
+
+    it('reads one line that prints two events as two triggers', () => {
+      /*
+        "When ~ enters the battlefield or dies" is two triggered abilities sharing one effect
+        (CR 603.1), so it is two `TriggerDef`s and not one event that means both. Checked on a
+        synthetic card because the pool's only instance of the shape — Mogg War Marshal — makes a
+        token, and token creation has no reader yet, so the card refuses for a different reason.
+      */
+      const both = compileCard({
+        name: 'Comes And Goes', type_line: 'Creature — Spirit', mana_cost: '{2}', cmc: 2,
+        colors: [], power: '1', toughness: '1',
+        oracle_text: 'When Comes And Goes enters the battlefield or dies, you gain 2 life.',
+      });
+      expect(both.ok).toBe(true);
+      if (!both.ok) return;
+      expect(both.unread).toEqual([]);
+      const triggers = (both.script as { triggers?: readonly TriggerDef[] } | undefined)?.triggers;
+      expect(triggers?.map((t) => t.on.kind)).toEqual(['etb', 'dies']);
+      // And both carry the effect, rather than one of them being an empty shell.
+      const base = arena();
+      for (const trigger of triggers ?? []) {
+        const after = trigger.effect(contextOn(base, 0 as SeatIndex, 'c1'));
+        expect(after.seats[0]!.life).toBe(base.seats[0]!.life + 2);
+      }
+    });
+
+    it('does not read "sacrifice ~", because the flag belongs to the shape and not the clause', () => {
+      /*
+        Ball Lightning is "At the beginning of the end step, sacrifice Ball Lightning", and it also
+        sets `leavesAtEndOfTurn: true` — its own comment: "the trigger below is what happens, and
+        the flag is how the bot knows it is coming. Without it the evaluation holds the creature
+        back to protect it."
+
+        So the flag belongs to the **pair** of prologue and clause: a sacrifice at end of turn means
+        the creature is leaving, a sacrifice on some other trigger does not. `selfEffect` sees only
+        the clause, so reading it there would build a card that works and plays badly, which is
+        worse than an unread line (D362). This is the test that keeps that omission deliberate
+        rather than forgotten.
+      */
+      const ball = compiledScript('Ball Lightning');
+      expect(ball.unread.map((u) => u.line))
+        .toContain('At the beginning of the end step, sacrifice Ball Lightning.');
+      expect(scriptFor('Ball Lightning')).toHaveProperty('leavesAtEndOfTurn', true);
     });
   });
   it('refuses only what is not a single-face card at all', () => {

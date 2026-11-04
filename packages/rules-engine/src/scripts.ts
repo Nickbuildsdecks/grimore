@@ -9148,44 +9148,202 @@ function untargetedEffect(clause: string): ReadEffect | null {
 }
 
 /**
+ * A printed `+N/+N` as `PumpOptions`, with a zero component left out.
+ *
+ * Left out rather than passed as `0` because the hand-written cards leave it out — Borderland
+ * Marauder's `+2/+0` is `{ power: 2 }` — and the difference is not cosmetic: the bonus is stored on
+ * the game state as a continuous effect, so `{ power: 2 }` and `{ power: 2, toughness: 0 }` produce
+ * two states that behave identically and compare unequal. The ground-truth test found it on the
+ * first run, by deep-equality on the resulting board.
+ *
+ * `null` for a `+0/+0`, which no card prints and which would be a pump that does nothing.
+ */
+function sizeBonus(power: number, toughness: number): PumpOptions | null {
+  if (power === 0 && toughness === 0) return null;
+  return { ...(power === 0 ? {} : { power }), ...(toughness === 0 ? {} : { toughness }) };
+}
+
+/**
+ * What one printed clause does to **the permanent itself**, rather than to anything chosen.
+ *
+ * The third family of clause, after the untargeted ones and the targeted ones, and the one every
+ * trigger shape needs most: a creature that grows when it attacks, an engine that untaps when you
+ * cast a spell, a creature that takes a counter when you gain life. All three say "~" or "it" where
+ * a spell would say "target creature", so they need no target spec and ask nobody anything.
+ *
+ * ## Deliberately absent: `sacrifice ~`
+ *
+ * "At the beginning of the end step, sacrifice Ball Lightning" is the pool's shape, and reading the
+ * clause alone would be D364's trap for a third time. Ball Lightning also sets
+ * **`leavesAtEndOfTurn: true`**, and its own comment says why: "the trigger below is what happens,
+ * and the flag is how the bot knows it is coming. Without it the evaluation holds the creature back
+ * to protect it." So the flag belongs to the **pair** of shape and clause — a sacrifice at end of
+ * turn means the creature is leaving, a sacrifice on some other trigger does not — and this
+ * function sees only the clause. A reader here would produce a card that works and plays badly,
+ * which is worse than an unread line (D362).
+ */
+function selfEffect(clause: string, name: string): ReadEffect | null {
+  const text = clause.trim();
+  const self = escapeName(name);
+
+  if (new RegExp(`^untap ${self}$`, 'i').test(text)) {
+    return { effect: (c) => tap(c.state, c.source, false) };
+  }
+
+  const grown = new RegExp(`^(?:${self}|it) gets \\+(\\d+)/\\+(\\d+) until end of turn$`, 'i')
+    .exec(text);
+  if (grown !== null) {
+    const bonus = sizeBonus(Number(grown[1]), Number(grown[2]));
+    if (bonus !== null) {
+      return { effect: (c) => pump(c.state, [c.source], c.source, c.controller, bonus) };
+    }
+  }
+
+  const counted = new RegExp(`^put ([\\w]+) \\+1/\\+1 counters? on (?:${self}|it)$`, 'i').exec(text);
+  if (counted !== null) {
+    const n = countFrom(counted[1]!);
+    if (n !== null) {
+      return { effect: (c) => addCounters(c.state, c.source, '+1/+1', n) };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * The printed trigger prologues this compiler knows, and the events each one names.
+ *
+ * ## Why a table, and why it is the increment that pays
+ *
+ * Until now one shape existed — "When ~ enters the battlefield" — so every effect the compiler
+ * could read was reachable from exactly one place on a card. D369 made the same observation about
+ * composition: a change that adds no vocabulary at all still moves coverage, because it multiplies
+ * every reader already present. Shapes multiply the same way, in the other direction. The effect
+ * vocabulary is now three families deep, and this is what lets a card reach it from a death, an
+ * attack, a cast, an upkeep or a life gain.
+ *
+ * ## The events are copied from the hand-written cards, not inferred
+ *
+ * Every `on` below is the one a card in the pool already uses for that printed prologue, named in
+ * the comment beside it. Several fields the engine documents as defaults are therefore **absent** —
+ * `who: 'self'` on `dies` and `attacks`, for instance — because that is how the card that proves
+ * the shape spells it. `of: 'you'` on a step trigger is present for the same reason and is not a
+ * default: its own docblock in this file says `of: 'you'` "is the difference between a card that
+ * helps its controller and one that helps everybody".
+ *
+ * ## Two events from one line
+ *
+ * `on` is a list because Magic prints one: "When Mogg War Marshal enters the battlefield or dies"
+ * is two triggered abilities sharing one effect (CR 603.1), so the reading is two `TriggerDef`s
+ * with the same clause. The order of the table matters only in that the "or dies" prologue must be
+ * tried before the plain one — which the regexes already enforce, since the plain one requires a
+ * comma straight after "battlefield".
+ */
+const TRIGGER_SHAPES: readonly {
+  readonly prologue: (self: string) => RegExp;
+  readonly on: readonly TriggerDef['on'][];
+}[] = [
+  // Kitchen Finks, Gravedigger, and thirty others.
+  {
+    prologue: (self) => new RegExp(`^When ${self} enters the battlefield or dies, (.+)$`, 'i'),
+    on: [{ kind: 'etb', who: 'self' }, { kind: 'dies' }],
+  },
+  {
+    prologue: (self) => new RegExp(`^When ${self} enters the battlefield, (.+)$`, 'i'),
+    on: [{ kind: 'etb', who: 'self' }],
+  },
+  // Doomed Traveler, Goblin Arsonist: `{ kind: 'dies' }`, with `who` left at its default.
+  {
+    prologue: (self) => new RegExp(`^When ${self} dies, (.+)$`, 'i'),
+    on: [{ kind: 'dies' }],
+  },
+  // Journey to Nowhere, Banishing Light.
+  {
+    prologue: (self) => new RegExp(`^When ${self} leaves the battlefield, (.+)$`, 'i'),
+    on: [{ kind: 'leaves' }],
+  },
+  // Ainok Survivalist, Ruthless Ripper: the morph trigger.
+  {
+    prologue: (self) => new RegExp(`^When ${self} is turned face up, (.+)$`, 'i'),
+    on: [{ kind: 'turned-face-up' }],
+  },
+  // Borderland Marauder.
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} attacks, (.+)$`, 'i'),
+    on: [{ kind: 'attacks' }],
+  },
+  // Thieving Magpie.
+  {
+    prologue: (self) =>
+      new RegExp(`^Whenever ${self} deals combat damage to a player, (.+)$`, 'i'),
+    on: [{ kind: 'combat-damage' }],
+  },
+  // City of Brass.
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} becomes tapped, (.+)$`, 'i'),
+    on: [{ kind: 'becomes-tapped' }],
+  },
+  // Thermo-Alchemist, Guttersnipe. `by: 'you'` is printed: "Whenever **you** cast".
+  {
+    prologue: () => /^Whenever you cast an instant or sorcery spell, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' }],
+  },
+  // Firebrand Archer.
+  {
+    prologue: () => /^Whenever you cast a noncreature spell, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'you', spell: 'noncreature' }],
+  },
+  // Ajani's Pridemate.
+  {
+    prologue: () => /^Whenever you gain life, (.+)$/i,
+    on: [{ kind: 'life-gained', by: 'you' }],
+  },
+  // Phyrexian Arena. `of: 'you'` is the card, not a default — see this file's step-trigger note.
+  {
+    prologue: () => /^At the beginning of your upkeep, (.+)$/i,
+    on: [{ kind: 'step', step: 'upkeep', of: 'you' }],
+  },
+  {
+    prologue: () => /^At the beginning of your end step, (.+)$/i,
+    on: [{ kind: 'step', step: 'end', of: 'you' }],
+  },
+];
+
+/**
  * A printed triggered-ability line, as the `triggers` fragment of a `CardScript`.
  *
- * One trigger shape so far — "When ~ enters the battlefield, …" — because it is the largest single
- * bucket in `compilable.mjs`'s work queue by a factor of two, and because the shape and the effect
- * are separable: `untargetedEffect` above is shared with every shape added after this one, and with
- * the instants and sorceries that `cardFromData` refuses outright.
- *
- * `who: 'self'` is written out although it is the default. `automation.ts` says so in as many
- * words — *"`self` is the default … a trigger that says nothing about `who` watches only its own
- * permanent"* — so `{ kind: 'etb' }` and `{ kind: 'etb', who: 'self' }` are the same trigger, and
- * the pool contains both spellings. A generated script is read by people, so it says which one it
- * means.
+ * The prologue says when it fires and comes from `TRIGGER_SHAPES`; the clause says what happens and
+ * goes through the same `composeEffects` a spell's resolution does, so a trigger written as two
+ * sentences composes and a trigger with one unreadable sentence is refused whole.
  *
  * The `description` is the printed clause, which is both the honest thing to store and what most of
- * the pool's hand-written cards store. (A few store the whole line instead, including the "When ~
- * enters the battlefield" part that `on` already says — a cosmetic inconsistency, not a behavioural
- * one, and not worth copying.)
+ * the pool's hand-written cards store. The pool is not consistent about it — a few store the whole
+ * line including the part `on` already says, and Ajani's Pridemate paraphrases "on Ajani's
+ * Pridemate" as "on it" — which is why the ground-truth tests compare triggers by `on` and by
+ * behaviour rather than by this string.
  */
 function triggerFromLine(line: string, name: string): Partial<CardScript> | null {
-  const etb = new RegExp(`^When ${escapeName(name)} enters the battlefield, (.+)$`, 'i')
-    .exec(plain(line).trim());
-  if (etb === null) return null;
-  const clause = etb[1]!.replace(/\.\s*$/, '').trim();
-  // A trigger's own text can be a sequence too — "it deals 1 damage to any target. You gain 1
-  // life." — and `composeEffects` is all-or-nothing for the same reason a spell's resolution is.
-  const read = composeEffects(clausesOf(clause), name);
-  if (read === null) return null;
-  // `spellFlags` is deliberately not spread: it is advice about casting a spell, and an ETB
-  // trigger is not cast. See `targetedEffect`.
-  return {
-    triggers: [{
-      on: { kind: 'etb', who: 'self' },
-      description: clause,
-      ...(read.targets === undefined ? {} : { targets: read.targets }),
-      ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
-      effect: read.effect,
-    } as TriggerDef],
-  };
+  const text = plain(line).trim();
+  const self = escapeName(name);
+  for (const shape of TRIGGER_SHAPES) {
+    const matched = shape.prologue(self).exec(text);
+    if (matched === null) continue;
+    const clause = matched[1]!.replace(/\.\s*$/, '').trim();
+    const read = composeEffects(clausesOf(clause), name);
+    if (read === null) return null;
+    // `spellFlags` is deliberately not spread: it is advice about casting a spell, and a triggered
+    // ability is not cast. See `targetedEffect`.
+    return {
+      triggers: shape.on.map((on) => ({
+        on,
+        description: clause,
+        ...(read.targets === undefined ? {} : { targets: read.targets }),
+        ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
+        effect: read.effect,
+      } as TriggerDef)),
+    };
+  }
+  return null;
 }
 
 /**
@@ -9474,17 +9632,16 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   const pumped = /^(target creature(?: you control)?) gets \+(\d+)\/\+(\d+) until end of turn$/i
     .exec(text);
   if (pumped !== null) {
-    const power = Number(pumped[2]);
-    const toughness = Number(pumped[3]);
+    const bonus = sizeBonus(Number(pumped[2]), Number(pumped[3]));
     const spec = targetSpecFrom(pumped[1]!, true);
-    if (spec !== null) {
+    if (spec !== null && bonus !== null) {
       return {
         targets: [spec],
         effect: (c) => {
           const id = firstCardTarget(c);
           return id === null
             ? c.state
-            : pump(c.state, [id], c.source, c.controller, { power, toughness });
+            : pump(c.state, [id], c.source, c.controller, bonus);
         },
         spellFlags: { expiresAtEndOfTurn: true },
       };
@@ -9524,7 +9681,10 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
  * target phrase.
  */
 function readEffect(clause: string, name: string): ReadEffect | null {
-  return untargetedEffect(clause) ?? damageEffect(clause, name) ?? targetedEffect(clause, name);
+  return untargetedEffect(clause)
+    ?? damageEffect(clause, name)
+    ?? selfEffect(clause, name)
+    ?? targetedEffect(clause, name);
 }
 
 /**

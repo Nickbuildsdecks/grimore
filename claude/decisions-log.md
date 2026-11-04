@@ -23291,3 +23291,73 @@ point at, so it is #319 with its own measurement rather than a rider on this.
 Verified: compile.test.ts 60/60, with each of the four new mechanisms proved to fail when broken
 (the apostrophe normaliser, the `removesACreature` type guard, the immediate-draw pick, and
 `isKeywordDeclaration`'s list). Full gate green.
+
+## D372
+
+**Trigger shapes: one prologue became thirteen, and the effect vocabulary was already there**
+(#317)
+
+Until this stage the compiler knew exactly one printed prologue — "When ~ enters the battlefield" —
+so every effect it could read was reachable from exactly one place on a card. D369 made this
+observation about composition: a change that adds **no new vocabulary at all** still moves coverage,
+because it multiplies every reader already present. Shapes multiply it from the other side.
+
+Thirteen prologues: the two etb forms including "or dies", dies, leaves the battlefield, turned face
+up, attacks, deals combat damage to a player, becomes tapped, "whenever you cast an instant or
+sorcery spell", "whenever you cast a noncreature spell", "whenever you gain life", and the two step
+triggers. Plus a third clause family — `selfEffect`, for a clause that acts on the permanent itself:
+untap ~, ~ gets +N/+N until end of turn, put N +1/+1 counters on ~. Those three are what the new
+prologues mostly point at, and none of them needs a target spec or asks anybody anything.
+
+**217 of 538 printed lines, up from 204 (37.9% → 40.3%); 139 of 339 cards get a script, up from
+127.** Ajani's Pridemate, Bloodthirsty Aerialist, Borderland Marauder, City of Brass, Firebrand
+Archer, Gelectrode, Goblin Arsonist, Guttersnipe, Longtusk Cub, Ninja of the Deep Hours,
+Thermo-Alchemist and Thieving Magpie are the new ones.
+
+### Every event is copied off the card that prints the prologue
+
+Not inferred, and not written as a literal in the test either: the expected `on` is read from the
+hand-written script at test time, so a shape copied wrongly fails even if the compiler and the test
+agree about what the wrong answer looks like. That is what caught the one real difference —
+`who: 'self'`, which `automation.ts` documents as the default and which the pool spells both ways (30
+of its etb triggers bare, 7 explicit). The comparison drops that one documented default from both
+sides and then compares the **whole** `on` object, which is the version that would catch a compiler
+emitting `by: 'opponent'` where the card says `by: 'you'`.
+
+### "Or dies" is two abilities, not one event
+
+"When Mogg War Marshal enters the battlefield or dies" is two triggered abilities sharing one effect
+(CR 603.1), so a shape carries a *list* of events and emits one `TriggerDef` per event. Checked on a
+synthetic card, because the pool's only instance of the shape makes a token and token creation has
+no reader yet.
+
+### Two defects, both found by deep equality on the resulting board
+
+- **A zero pump component is not the same state.** Borderland Marauder's hand-written `+2/+0` is
+  `{ power: 2 }`; the compiler passed `{ power: 2, toughness: 0 }`. The two pumps behave identically
+  and the two *boards* compare unequal, because the bonus is stored on the state as a continuous
+  effect. `sizeBonus` now omits a zero component, and refuses a `+0/+0` outright.
+- **Untapping an untapped permanent is a no-op**, so Thermo-Alchemist's comparison was two no-ops
+  and `toEqual` passed on nothing — the D366 vacuity family again, two increments later. The fixture
+  taps it first, which is also the only board on which the printed card does anything.
+
+### Deliberately not read: `sacrifice ~`
+
+"At the beginning of the end step, sacrifice Ball Lightning" is the pool's shape, and Ball Lightning
+also sets **`leavesAtEndOfTurn: true`** — its own comment: "the trigger below is what happens, and
+the flag is how the bot knows it is coming. Without it the evaluation holds the creature back to
+protect it." The flag therefore belongs to the **pair** of prologue and clause: a sacrifice at end of
+turn means the creature is leaving, a sacrifice on some other trigger does not. `selfEffect` sees
+only the clause, so a reader there would build a card that works and plays badly — worse than an
+unread line (D362). D364's lesson for the third time, and it now has a test that keeps the omission
+deliberate rather than forgotten.
+
+### A reading error of mine, about my own gate
+
+I ran the gate as `bash scripts/gate.sh 2>&1 | tail -6` and read "exit code 0" plus a page of
+`services-up.js` text as a pass. It was a failure: Postgres and Redis had died in a worker restart,
+`services-up.js` refused exactly as designed, and the gate printed `GATE FAILED at: node
+scripts/services-up.js (rc=1)` followed by a 40-line log tail — so `tail -6` cut the verdict off,
+and the pipe replaced the gate's status with `tail`'s. The instrument was right and the way I read
+it was wrong, which is the same shape as D356, D365 and D368 with the defect moved out of the script
+and into the invocation. The gate is now run with its output redirected and `$?` captured.

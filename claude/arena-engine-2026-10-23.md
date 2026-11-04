@@ -9894,3 +9894,49 @@ shipping cards may point at.
 
 Verified: compile.test.ts 60/60, each of the four new mechanisms proved to fail when broken. Full
 gate green (all eight CI steps).
+
+## Trigger shapes (#317, D372)
+
+**217 of 538 printed lines, up from 204 (37.9% → 40.3%). 139 of 339 cards get a script, up from
+127.** Ajani's Pridemate, Bloodthirsty Aerialist, Borderland Marauder, City of Brass, Firebrand
+Archer, Gelectrode, Goblin Arsonist, Guttersnipe, Longtusk Cub, Ninja of the Deep Hours,
+Thermo-Alchemist and Thieving Magpie.
+
+One printed prologue became thirteen. Until now every effect the compiler could read was reachable
+from exactly one place on a card — "When ~ enters the battlefield" — so this is the same kind of
+increment as composition (D369): almost no new vocabulary, much more coverage, because shapes
+multiply every reader already present.
+
+Thirteen prologues (both etb forms including "or dies", dies, leaves, turned face up, attacks,
+combat damage to a player, becomes tapped, the two cast triggers, gain life, and the two step
+triggers) and one new clause family — a clause that acts on the permanent itself: untap ~, ~ gets
++N/+N until end of turn, put N +1/+1 counters on ~.
+
+Every event is copied off the card that prints the prologue, and the test reads the expected `on`
+off the hand-written script rather than from a literal — so a shape copied wrongly fails even if the
+compiler and the test agree about the wrong answer.
+
+**"Or dies" is two abilities sharing one effect** (CR 603.1), so a shape carries a list of events.
+
+### Two defects, both caught by deep equality on the board
+
+- Borderland Marauder's `+2/+0` is `{ power: 2 }` by hand and the compiler passed
+  `{ power: 2, toughness: 0 }`. Same pump, different *state*, because the bonus is stored as a
+  continuous effect.
+- Untapping an untapped permanent is a no-op, so Thermo-Alchemist's comparison was two no-ops
+  passing `toEqual` — the D366 vacuity family again. The fixture taps it first.
+
+### Not read on purpose: `sacrifice ~`
+
+Ball Lightning sets `leavesAtEndOfTurn` beside its end-step sacrifice, and without it the bot holds
+the creature back to protect something it is about to lose anyway. The flag belongs to the *pair* of
+prologue and clause, and a clause reader cannot see the prologue — so the clause stays unread, with
+a test that keeps the omission deliberate.
+
+### And a reading error of mine
+
+I ran the gate as `bash scripts/gate.sh 2>&1 | tail -6` and called it green. It had failed:
+Postgres and Redis died in a worker restart, `services-up.js` refused as designed, and `tail -6` cut
+off `GATE FAILED` while the pipe replaced the gate's exit status with `tail`'s. Same shape as D356,
+D365 and D368, with the defect moved out of the script and into how I invoked it. Re-run with the
+output redirected and `$?` captured: **GATE OK, exit 0.**
