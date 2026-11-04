@@ -6228,4 +6228,118 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       if (made.ok) expect(made.unread.map((entry) => entry.line)).toHaveLength(1);
     });
   });
+  /*
+    The templating the pool could not reveal (D427).
+
+    Wizards shortened "enters the battlefield" to "enters" in 2024 and made "this creature" the way
+    a card refers back to itself. Every reader here was written against the long form, and so is the
+    engine's own card data — thirteen decks written by hand from memory — so the compiler read the
+    pool at 76.8% while reading all of Magic at 23.7%, and the single largest cause was a spelling
+    the pool is structurally unable to print. The corpus counts it: 5,898 cards say "enters,", 47
+    still say "enters the battlefield", and about 860 say "this creature enters" or the same of an
+    artifact, enchantment, land or permanent.
+
+    These rows are fixtures rather than pool cards for exactly that reason: there is no pool card
+    with the modern wording to compare against. What they assert is the property — **the two
+    spellings are one phrase** — by compiling both and comparing, so neither reading can drift.
+  */
+  describe('the modern "enters" templating, and a card referring to itself by type', () => {
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    /** A permanent whose text is whatever is being read. */
+    const permanent = (text: string) => compileCard({
+      name: 'Joined Up', type_line: 'Creature — Human Soldier', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], power: '2', toughness: '2', oracle_text: text,
+    });
+
+    /** A trigger's shape: when it fires and what it says, which is all that comes from a builder. */
+    const shape = (script: unknown) =>
+      ((field(script, 'triggers') as readonly TriggerDef[] | undefined) ?? [])
+        .map((trigger) => `${JSON.stringify(trigger.on)} ${trigger.description ?? ''}`);
+
+    it.each([
+      ['When Joined Up enters, draw a card.', 'When Joined Up enters the battlefield, draw a card.'],
+      [
+        'When this creature enters, draw a card.',
+        'When Joined Up enters the battlefield, draw a card.',
+      ],
+      [
+        'When Joined Up enters or dies, draw a card.',
+        'When Joined Up enters the battlefield or dies, draw a card.',
+      ],
+      [
+        'Whenever another creature enters, draw a card.',
+        'Whenever another creature enters the battlefield, draw a card.',
+      ],
+      [
+        'Whenever a creature you control enters, draw a card.',
+        'Whenever a creature you control enters the battlefield, draw a card.',
+      ],
+    ])('reads "%s" as the same trigger as the long form', (modern, old) => {
+      const read = permanent(modern as string);
+      const long = permanent(old as string);
+      expect(read.ok && long.ok).toBe(true);
+      if (!read.ok || !long.ok) return;
+      expect(read.unread, `the modern spelling went unread: ${modern}`).toEqual([]);
+      expect(long.unread).toEqual([]);
+      // Non-vacuity first: both read a trigger at all, so this is not two empty lists agreeing.
+      expect(shape(read.script).length).toBeGreaterThan(0);
+      expect(shape(read.script)).toEqual(shape(long.script));
+    });
+
+    it('reads the counters a permanent enters with under either spelling, and by type', () => {
+      for (const text of [
+        'Joined Up enters with two +1/+1 counters on it.',
+        'Joined Up enters the battlefield with two +1/+1 counters on it.',
+        'This creature enters with two +1/+1 counters on it.',
+      ]) {
+        const read = permanent(text);
+        expect(read.ok).toBe(true);
+        if (!read.ok) return;
+        expect(field(read.script, 'entersWith'), `not read: ${text}`)
+          .toEqual({ counter: '+1/+1', amount: 2 });
+      }
+    });
+
+    it('does not read a "this creature" inside a quoted granted ability as the card\'s own', () => {
+      /*
+        The over-match the alias could have caused, and the reason it does not. On a *spell*, "this
+        creature" means the creature the quoted ability was granted to — Abnormal Endurance grants
+        `"When this creature dies, return it to the battlefield tapped under its owner's control."`
+        — and reading that as the spell's own trigger would be a card that does something subtly
+        wrong, which D362 calls worse than an unread line.
+
+        Two things keep it out. A spell's lines are its resolution, so the prologue readers are never
+        asked about them; and the clause readers refuse quoted text, so nothing reads the inside of
+        the quotes either. Measured over the corpus rather than argued: of the 111 instants and
+        sorceries whose text says "this creature", "this artifact", "this enchantment", "this land"
+        or "this permanent", **five** compile to a script, and all five are a bare keyword
+        declaration — `flashback`, `split second`, `escape` — with no trigger and no resolution.
+
+        **What this row does and does not prove.** A break run adding "that creature" to the
+        self-reference list left it passing, and that is correct rather than a hole in the row: on a
+        spell no word list can matter, because the prologue readers are never consulted. So this
+        guards the **path split**, not the list. The list's exclusion of "that" is a templating
+        argument — printed Oracle text says "this" for the object an ability is on and "that" or
+        "it" for something else — and nothing in the pool or in these fixtures can discriminate it,
+        which is recorded in D427 as an untested claim rather than dressed up as a passing test.
+      */
+      const granted = compileCard({
+        name: 'Joined Up', type_line: 'Instant', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+        oracle_text: 'Until end of turn, target creature gets +2/+0 and gains "When this creature'
+          + ' dies, return it to the battlefield tapped under its owner\'s control."',
+      });
+      expect(granted.ok).toBe(true);
+      if (granted.ok) expect(granted.script).toBeUndefined();
+    });
+
+    it('refuses a type the self-reference list does not name, rather than any "this X"', () => {
+      // The list is a list: "this Saga" is not one of the words printed text uses for the object an
+      // ability is on, so the line is unread (D362) rather than guessed at.
+      const saga = permanent('When this Saga enters, draw a card.');
+      expect(saga.ok).toBe(true);
+      if (saga.ok) expect(saga.unread.map((entry) => entry.line)).toHaveLength(1);
+    });
+  });
 });

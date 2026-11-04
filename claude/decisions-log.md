@@ -26605,3 +26605,69 @@ templating**. Wizards retemplated "enters the battlefield" to "enters" in 2024, 
 compiler was written against the old wording, and the pool's hand-written card data uses the old
 wording too. So the single biggest miss in the corpus is a spelling the pool is structurally unable
 to reveal, which is the clearest argument for having built this that I could have asked for.
+
+## D427 — The templating the pool was structurally unable to reveal
+
+The first increment off the **corpus** work queue, and the largest single change the compiler has
+had: one aliasing change, **+1,286 printed lines**.
+
+### What was wrong
+
+Wizards shortened "enters the battlefield" to "enters" in 2024, and made "this creature" the way a
+card refers back to itself. Every reader in `scripts.ts` was written against the long form and
+against the card's own name — and so is the engine's own card data, because the thirteen decks were
+written by hand from memory.
+
+So the pool could never show it. D426's corpus counts the gap: of 33,847 cards, **5,898** print
+"enters," and **47** still print "enters the battlefield"; about **860** say "this creature enters"
+or the same of an artifact, enchantment, land or permanent.
+
+### The change
+
+Two constants, used everywhere the old spelling was written out:
+
+- `ENTERS = 'enters(?: the battlefield)?'` — eight regex sites, including the three
+  "another creature enters" prologues and `entersWith`.
+- `selfRef(name)` — the card's name **or** "this creature / artifact / enchantment / permanent /
+  land / planeswalker / battle / Vehicle / Equipment / Aura / token / card / spell", replacing
+  `escapeName(name)` at all thirteen reader sites. A non-capturing group, so no capture index moves.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| Corpus lines compiled | 14,472 of 60,940 (23.7%) | **15,758 of 60,940 (25.9%)** |
+| Corpus cards with a script | 5,506 (16.7%) | **6,630 (20.1%)** |
+| Corpus cards with every line read | 3,328 (10.1%) | **3,833 (11.6%)** |
+| Pool lines compiled | 413 of 538 (76.8%) | 413 of 538 (76.8%) |
+
+The pool is unchanged, which is the point: a wider pattern still matches the old wording, and the
+standing compiled-vs-written check agrees with all 236 hand-written cards exactly as before.
+
+### The over-match, probed rather than assumed
+
+"This creature" on a card that is not a permanent cannot mean the source — so if printed text ever
+used it to mean something else, the alias would read a spell's quoted granted ability as the spell's
+own trigger, which is the one outcome D362 calls worse than an unread line.
+
+It does, inside quotes: Abnormal Endurance grants `"When this creature dies, return it to the
+battlefield tapped under its owner's control."` So the risk was measured over the corpus: of the
+**111** instants and sorceries whose text says "this creature" or the same of another permanent
+type, **five** compile to a script at all, and all five are a bare keyword declaration —
+`flashback`, `split second`, `escape` — with no trigger and no resolution. A spell's lines are its
+resolution, so the prologue readers are never asked about them, and the clause readers refuse quoted
+text.
+
+### An untested claim, recorded as one
+
+Four deliberate breaks: dropping the `enters` alias (6 rows), dropping the self-reference (2),
+keeping only the short form (42 — which is the pool's own data, all of it in the long form), and
+**adding "that creature" to the self-reference list, which failed nothing.**
+
+That last one is not a hole in the test; it is the test being about something else. On a spell no
+word list can matter, because the prologue readers are never consulted, so the quoted-ability row
+guards the **path split** and not the list. The list's exclusion of "that" rests on a templating
+argument — printed text says "this" for the object an ability is on and "that" or "it" for something
+else — and **nothing in the pool or in a fixture discriminates it today**. Written down as an
+untested claim rather than left looking covered, which is D415's and D423's lesson a third time: a
+check that cannot fail is worse than no check, because it reads as one.

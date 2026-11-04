@@ -11277,3 +11277,26 @@ of corpus lines fail on a spelling the 339-card pool is structurally incapable o
 feed (second-best source, recorded as such), and format legality is not filtered because Forge
 carries none — so silver-bordered cards are still in, which makes the coverage figure pessimistic
 rather than flattering.
+
+## "Enters", not "enters the battlefield" (#317, D427)
+
+The first increment off the corpus queue, and the biggest single change the compiler has had: one
+aliasing change, **+1,286 printed lines**.
+
+Wizards shortened the phrase in 2024 and made "this creature" how a card refers back to itself.
+Every reader here was written against the long form and the card's own name — and so is the pool's
+own data, hand-written from memory — so this was invisible until D426 built a real corpus. Two
+constants now cover both spellings everywhere: `ENTERS` and `selfRef(name)`.
+
+| | before | after |
+| --- | --- | --- |
+| Corpus lines | 14,472 of 60,940 (23.7%) | **15,758 (25.9%)** |
+| Corpus cards with a script | 5,506 (16.7%) | **6,630 (20.1%)** |
+| Corpus cards fully read | 3,328 (10.1%) | **3,833 (11.6%)** |
+| Pool | 413 of 538 (76.8%) | unchanged |
+
+The over-match was probed rather than assumed: "this creature" inside a spell's *quoted* granted
+ability must not be read as the spell's own trigger, and of the 111 instants and sorceries that say
+it, five compile at all and all five are a bare keyword declaration. And one break — adding "that
+creature" to the list — failed nothing, so that part of the claim is recorded in D427 as untested
+rather than left looking covered.

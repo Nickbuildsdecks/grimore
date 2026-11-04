@@ -9453,6 +9453,41 @@ function countFrom(text: string): number | null {
 const escapeName = (name: string): string => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
+ * "enters", and the "enters the battlefield" it was retemplated from.
+ *
+ * Wizards shortened the phrase in 2024, and the corpus says how completely: of 33,847 cards,
+ * **5,898** print "enters," and **47** still print "enters the battlefield" (D426). Every reader in
+ * this module was written against the long form, because the engine's own thirteen decks were
+ * written by hand from memory and use it — so the single largest miss in all of Magic was a
+ * spelling the pool is structurally unable to reveal.
+ *
+ * Both are accepted everywhere, from one constant, because they are one phrase: a card reprinted
+ * with the new wording is not a different card, and two readers for two spellings is two places to
+ * forget one.
+ */
+const ENTERS = 'enters(?: the battlefield)?';
+
+/**
+ * A card referring to **itself**, in every spelling Oracle text uses for it.
+ *
+ * Printed text names the card in the first position — "When Ichor Wellspring enters, draw a card" —
+ * and then refers back to it by type: "this creature", "this artifact", "this land". The 2024
+ * retemplate made the second form much more common, and the corpus counts 682 cards saying "this
+ * creature enters", 82 "this enchantment enters", 54 "this artifact enters" and 29 "this land
+ * enters" — about 860 cards whose own trigger the name-only pattern could not match.
+ *
+ * So every reader that matches the card as a subject or an object matches this instead of the bare
+ * name. A non-capturing group, so no reader's capture indices move.
+ *
+ * It does **not** include "it", which several readers accept separately and deliberately: "it" in
+ * printed text refers to whatever the previous clause was about, which is the card on some cards
+ * and the target on others, so the readers that allow it say so one at a time.
+ */
+const selfRef = (name: string): string => `(?:${escapeName(name)}|this (?:creature|artifact`
+  + '|enchantment|permanent|land|planeswalker|battle|Vehicle|Equipment|Aura|token|card|spell))';
+
+
+/**
  * What one printed clause became: the effect, whatever it has to point at or ask, and the
  * script-level flags that belong to a spell built from it.
  *
@@ -10032,7 +10067,7 @@ function grantedKeywordList(granted: string): Keyword[] | null {
  */
 function selfEffect(clause: string, name: string): ReadEffect | null {
   const text = clause.trim();
-  const self = escapeName(name);
+  const self = selfRef(name);
 
   if (new RegExp(`^untap ${self}$`, 'i').test(text)) {
     return { effect: (c) => tap(c.state, c.source, false) };
@@ -10292,9 +10327,9 @@ export function attachmentScriptFor(
 function exileUntilLeavesShapeFor(
   def: CardDef, lines: readonly string[],
 ): WholeCardReading | null {
-  const self = escapeName(def.name);
+  const self = selfRef(def.name);
   const exiling = new RegExp(
-    `^When ${self} enters the battlefield, exile (target .+?|another target .+?)`
+    `^When ${self} ${ENTERS}, exile (target .+?|another target .+?)`
     + `(\\s+until ${self} leaves the battlefield)?\\.?$`,
     'i',
   );
@@ -10359,7 +10394,7 @@ function exileUntilLeavesShapeFor(
 function soulbondShapeFor(def: CardDef, lines: readonly string[]): WholeCardReading | null {
   const keyword = lines.find((line) => plain(line).trim().toLowerCase() === 'soulbond');
   if (keyword === undefined) return null;
-  const self = escapeName(def.name);
+  const self = selfRef(def.name);
   for (const line of lines) {
     const paired = new RegExp(
       `^As long as ${self} is paired with another creature, each of those creatures gets \\+(\\d+)/\\+(\\d+)\\.?$`,
@@ -10419,7 +10454,7 @@ const TRIGGER_SHAPES: readonly {
 }[] = [
   // Kitchen Finks, Gravedigger, and thirty others.
   {
-    prologue: (self) => new RegExp(`^When ${self} enters the battlefield or dies, (.+)$`, 'i'),
+    prologue: (self) => new RegExp(`^When ${self} ${ENTERS} or dies, (.+)$`, 'i'),
     on: [{ kind: 'etb', who: 'self' }, { kind: 'dies' }],
   },
   /*
@@ -10433,13 +10468,13 @@ const TRIGGER_SHAPES: readonly {
   */
   {
     prologue: (self) => new RegExp(
-      `^When ${self} enters the battlefield or is put into a graveyard from the battlefield, (.+)$`,
+      `^When ${self} ${ENTERS} or is put into a graveyard from the battlefield, (.+)$`,
       'i',
     ),
     on: [{ kind: 'etb', who: 'self' }, { kind: 'to-graveyard', who: 'self' }],
   },
   {
-    prologue: (self) => new RegExp(`^When ${self} enters the battlefield, (.+)$`, 'i'),
+    prologue: (self) => new RegExp(`^When ${self} ${ENTERS}, (.+)$`, 'i'),
     on: [{ kind: 'etb', who: 'self' }],
   },
   // Doomed Traveler, Goblin Arsonist: `{ kind: 'dies' }`, with `who` left at its default.
@@ -10521,17 +10556,17 @@ const TRIGGER_SHAPES: readonly {
   */
   // Soul Warden, Essence Warden.
   {
-    prologue: () => /^Whenever another creature enters the battlefield, (.+)$/i,
+    prologue: () => new RegExp(`^Whenever another creature ${ENTERS}, (.+)$`, 'i'),
     on: [{ kind: 'etb', who: 'another', of: 'any', what: 'creature' }],
   },
   // Impact Tremors.
   {
-    prologue: () => /^Whenever a creature you control enters the battlefield, (.+)$/i,
+    prologue: () => new RegExp(`^Whenever a creature you control ${ENTERS}, (.+)$`, 'i'),
     on: [{ kind: 'etb', who: 'any', of: 'you', what: 'creature' }],
   },
   // Champion of the Parish's shape, and the one the pool spells with both qualifiers.
   {
-    prologue: () => /^Whenever another creature you control enters the battlefield, (.+)$/i,
+    prologue: () => new RegExp(`^Whenever another creature you control ${ENTERS}, (.+)$`, 'i'),
     on: [{ kind: 'etb', who: 'another', of: 'you', what: 'creature' }],
   },
   // Blood Artist: it names itself, so `who` is `any` and nothing is said about whose.
@@ -10814,7 +10849,7 @@ function countOfThing(
   number: 'plural' | 'singular',
 ): ((c: EffectContext) => number) | null {
   const text = thing.trim();
-  const self = escapeName(name);
+  const self = selfRef(name);
 
   if (/^lands? you control$/i.test(text)) {
     return (c) => landsControlled(c.state, c.controller);
@@ -10971,7 +11006,7 @@ function tokenEffect(clause: string, name: string): ReadEffect | null {
  */
 function eventRelativeEffect(clause: string, name: string): ReadEffect | null {
   const text = plain(clause).trim().replace(/\.\s*$/, '');
-  const self = escapeName(name);
+  const self = selfRef(name);
 
   // Kambal: "that player loses 2 life and you gain 2 life".
   const drained = /^that player loses (\d+) life and you gain (\d+) life$/i.exec(text);
@@ -11051,7 +11086,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
   // The ability word comes off first: "Battalion — Whenever ~ and at least two other creatures
   // attack, …" is a trigger whose prologue begins after the dash (CR 207.2c).
   const text = withoutAbilityWord(plain(line).trim());
-  const self = escapeName(name);
+  const self = selfRef(name);
   for (const shape of TRIGGER_SHAPES) {
     const matched = shape.prologue(self).exec(text);
     if (matched === null) continue;
@@ -11396,7 +11431,7 @@ function sweepDestination(
 }
 
 function damageEffect(clause: string, name: string): ReadEffect | null {
-  const self = escapeName(name);
+  const self = selfRef(name);
 
   /*
     Damage divided as you choose, announced at cast time (#119): "Arc Lightning deals 3 damage
@@ -12330,7 +12365,7 @@ function composeEffects(clauses: readonly string[], name: string): ReadEffect | 
  * again: a card that plays and plays badly.
  */
 function animateSelf(clause: string, name: string): ReadEffect | null {
-  const self = escapeName(name);
+  const self = selfRef(name);
   const becomes = new RegExp(
     `^(?:${self}|it) becomes a (\\d+)/(\\d+) creature until end of turn\\.\\s*it['’]s still a land$`,
     'i',
@@ -12521,7 +12556,7 @@ const CDA_COUNTS: Readonly<Record<string, 'creature-cards-in-graveyards' | 'inst
 };
 
 function definesSizeFromLine(line: string, name: string): Partial<CardScript> | null {
-  const self = escapeName(name);
+  const self = selfRef(name);
   const matched = new RegExp(
     `^${self}['’]s power is equal to the number of (.+?)` +
     `(?: and its toughness is equal to that number plus (\\d+))?$`,
@@ -12565,7 +12600,7 @@ function definesSizeFromLine(line: string, name: string): Partial<CardScript> | 
  * Lightning cast on somebody else's turn die on that turn.
  */
 function sacrificeAtEndOfTurnFromLine(line: string, name: string): Partial<CardScript> | null {
-  const self = escapeName(name);
+  const self = selfRef(name);
   const matched = new RegExp(
     `^At the beginning of the end step, sacrifice (?:${self}|it)$`, 'i',
   ).exec(plain(line).trim().replace(/\.\s*$/, ''));
@@ -12606,7 +12641,7 @@ function sacrificeAtEndOfTurnFromLine(line: string, name: string): Partial<CardS
  */
 function conditionalStaticFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = withoutAbilityWord(plain(line).trim().replace(/\.\s*$/, ''));
-  const self = escapeName(name);
+  const self = selfRef(name);
 
   /*
     The condition comes off the end first, because the effect in front of it is the same sentence a
@@ -12718,7 +12753,7 @@ const SENTENCE_COUNTERS: readonly string[] = ['+1/+1', 'charge', 'ice'];
 
 function entersWithFromLine(line: string, name: string): Partial<CardScript> | null {
   const matched = new RegExp(
-    `^${escapeName(name)} enters the battlefield with (X|[\\w+/]+) ([\\w+/]+) counters? on it$`,
+    `^${selfRef(name)} ${ENTERS} with (X|[\\w+/]+) ([\\w+/]+) counters? on it$`,
     'i',
   ).exec(plain(line).trim().replace(/\.\s*$/, ''));
   if (matched === null) return null;
@@ -12928,7 +12963,7 @@ function kickerSpellFor(
 
   const clauses = clausesOf(body);
   if (clauses.length !== 2) return null;
-  const self = escapeName(name);
+  const self = selfRef(name);
   const base = new RegExp(`^(?:${self}|it) deals (\\d+) damage to (.+?)$`, 'i')
     .exec(clauses[0]!.trim().replace(/\.\s*$/, ''));
   const kicked = /^if this spell was kicked, it deals (\d+) damage instead$/i
@@ -13076,7 +13111,7 @@ function xSpellResolution(lines: readonly string[], name: string): ReadEffect | 
   const clauses = clausesOf(lines[0]!);
   if (clauses.length !== 1) return null;
   const text = clauses[0]!.trim();
-  const self = escapeName(name);
+  const self = selfRef(name);
 
   const dealt = new RegExp(`^(?:${self}|it) deals X damage to (.+)$`, 'i').exec(text);
   if (dealt !== null) {
