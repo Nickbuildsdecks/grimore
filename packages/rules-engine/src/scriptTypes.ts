@@ -432,9 +432,10 @@ export type TriggerEvent =
    * half the engine records. Damage to a creature or a planeswalker raises nothing, which is said
    * out loud here because the shorter name would promise more than it does.
    *
-   * Its own permanent only — like `becomes-tapped` and unlike a death, which the whole battlefield
-   * may watch. Nothing is printed that watches somebody *else's* creature connect, and a trigger
-   * nothing fires is worse than no trigger at all.
+   * Watched by the whole battlefield, like a death and unlike `becomes-tapped`. It was its own
+   * permanent only until D433 found that an Equipment could never see its own printed line, and
+   * `who: 'any'` is the other half of the same widening: "whenever **a creature you control** deals
+   * combat damage to a player" is 33 legal lines and 9 compilable cards (D439).
    *
    * The seat that was hit reaches the ability through `EffectContext.attacked`, the same channel an
    * attack trigger uses: `c.attacked.defender` is "the player this event was about". In a duel that
@@ -445,16 +446,28 @@ export type TriggerEvent =
       readonly kind: 'combat-damage';
       readonly defender?: SeatIndex;
       /**
+       * Which seat controlled the creature that dealt it. Set by the engine when the event is
+       * raised, never by a script — it is what `of` is answered from.
+       */
+      readonly subjectSeat?: SeatIndex;
+      /**
        * `self` — the default, and what every script written before this meant — is this creature
        * dealing the damage. `attached` is the Equipment's reading of the same line: "Whenever
        * equipped creature deals combat damage to a player" is about the creature it is attached
-       * to, which is 45 corpus cards. See the `attacks` event's `who` for why the two values are
-       * resolved where they are.
+       * to, which is 45 corpus cards. `any` is somebody's creature — narrowed by `of` to yours,
+       * which is the only form printed.
        *
-       * There is no `another` and no `any`: nothing printed watches an arbitrary creature's combat
-       * damage, and a value no card asks for is a branch no test can be written against (D425).
+       * `another` exists because this event is resolved in the same branch of `triggerMatches` as
+       * `etb`, `dies` and the three combat events, where `who` has to mean one thing on all of
+       * them (D439). No card in the corpus asks for it.
        */
-      readonly who?: 'self' | 'attached';
+      readonly who?: 'self' | 'attached' | 'another' | 'any';
+      /**
+       * Whose creature dealt it — "a creature **you control**", which is how every printed line in
+       * this family narrows `who: 'any'`. Defaults to `any` in the matcher, so nothing written
+       * before this changes meaning.
+       */
+      readonly of?: 'you' | 'opponent' | 'any';
     }
   | {
       readonly kind: 'spell-cast';

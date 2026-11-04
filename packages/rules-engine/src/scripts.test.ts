@@ -22021,3 +22021,78 @@ describe('a card that names itself in short, as printed text', () => {
     expect(s.instances[antman]!.counters['+1/+1']).toBe(1);
   });
 });
+
+/*
+  "Whenever a creature you control deals combat damage to a player", played (D439).
+
+  `combat-damage` had its own arm in `triggerMatches` with two values of `who` and no `of` at all,
+  so the commonest form of the line in print — somebody *else's* creature connecting, narrowed to
+  your side — could not be written. It is resolved in the same branch as `etb`, `dies` and the three
+  combat events now, which is what makes `who: 'any'` and `of: 'you'` mean on it what they mean
+  everywhere else.
+
+  Both fixtures are **Sphere Grid**, a printed enchantment: it can never be the creature that deals
+  the damage, so a trigger that fires at all is `who: 'any'` working, and a counter that lands on the
+  right permanent is the event's subject reaching "that creature".
+*/
+describe('a creature you control connecting, as printed text', () => {
+  const SPHERE_GRID = {
+    name: 'Sphere Grid', type_line: 'Enchantment', mana_cost: '{1}{G}', cmc: 2,
+    colors: ['G'], layout: 'normal', power: null, toughness: null, loyalty: null,
+    oracle_text: 'Whenever a creature you control deals combat damage to a player, put a +1/+1'
+      + ' counter on that creature.\nUnlock Ability — Creatures you control with +1/+1 counters on'
+      + ' them have reach and trample.',
+  };
+
+  const table = (battlefield: Readonly<Record<number, readonly string[]>>, firstSeat: 0 | 1) => {
+    const list = customDeck({
+      id: 'sphere-list',
+      name: 'Sphere Grid',
+      entries: [
+        { name: 'Sphere Grid', count: 1 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Forest', count: 55 },
+      ],
+      data: [SPHERE_GRID as never],
+    });
+    expect(list.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'sphere-list', 1: 'verdant-guard' },
+      deckSpecs: { 'sphere-list': list.deck },
+      battlefield: battlefield as never,
+      turn: 3,
+      firstSeat,
+    });
+  };
+
+  it('puts the counter on the creature that connected, not on the enchantment', () => {
+    let s = table({ 0: ['Sphere Grid', 'Raging Goblin'] }, 0);
+    s = advanceTo(s, 'declare-attackers');
+    const goblin = find(s, 0 as SeatIndex, 'battlefield', 'Raging Goblin');
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: goblin, defender: 1 }],
+    } as Action));
+    // Seat 1's board is empty, so nothing can block and the engine declares the empty block
+    // itself: the goblin connects and the combat-damage event is raised for it.
+    s = drain(advanceTo(s, 'end-combat'));
+    expect(s.instances[goblin]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('does not fire for an opponent\'s creature, which is what `of: \'you\'` is for', () => {
+    /*
+      The same board from the other side: seat 1 swings into seat 0, who holds the Sphere Grid.
+      Combat damage is dealt to a player and the event is raised — so without `of: 'you'` the
+      enchantment would put a counter on the attacking creature of the player hitting its
+      controller, which is the opposite of what it says.
+    */
+    let s = table({ 0: ['Sphere Grid'], 1: ['Grizzly Bears'] }, 1);
+    s = advanceTo(s, 'declare-attackers');
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 1, attackers: [{ attacker: bears, defender: 0 }],
+    } as Action));
+    s = drain(advanceTo(s, 'end-combat'));
+    expect(s.seats[0]!.life).toBe(18);
+    expect(s.instances[bears]!.counters['+1/+1']).toBeUndefined();
+  });
+});

@@ -11610,3 +11610,30 @@ Two things are worth remembering from it:
 
 Legal-only coverage 16,331 of 56,421 lines (28.9%) and **7,344 cards with a script**, up 60, with
 3,997 cards having every printed line read.
+
+## The event that had its own rules (D439)
+
+`combat-damage` was the only board event with a private arm in `triggerMatches` — two values of
+`who`, no `of` — so "whenever a creature you control deals combat damage to a player" could not be
+written at all, though "whenever a creature you control dies" has been writable since D437. It is 33
+legal lines and 9 compilable cards.
+
+It is folded into the branch the other six board events share, and the fold is safe because the
+defaults do the narrowing: `who` defaults to `'self'`, which still requires the watcher to be the
+subject.
+
+The fold alone did nothing, and the **runtime** test is what said so — the compile table was green on
+the trigger's shape before either of these:
+
+- the event now carries `subjectSeat`, which is what `of: 'you'` is answered from;
+- and the watcher's `about.subject`, which is what "put a +1/+1 counter on **that creature**" means.
+  While the event was its own permanent's business the subject *was* the watcher, so no card had a
+  "that creature" to mean; `who: 'any'` is what creates the distinction.
+
+**The plural is refused on purpose.** "Whenever one or more creatures you control deal combat damage
+to a player" is 26 lines and 8 cards — more than the row that shipped — and it fires once however
+many creatures connected, where this engine raises one event per creature. Reading it would pay Grim
+Hireling two Treasures per attacker. It waits for a batched event, with a test that fails if someone
+adds the prologue without one.
+
+Legal-only coverage 16,340 of 56,421 lines (29.0%) and **7,352 cards with a script**.

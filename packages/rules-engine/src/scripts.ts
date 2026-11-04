@@ -11031,6 +11031,28 @@ const TRIGGER_SHAPES: readonly {
     on: [{ kind: 'dies', who: 'any', of: 'you', what: 'creature' }],
   },
   /*
+    "Whenever **a creature you control** deals combat damage to a player" — the same sentence as the
+    row above with a different verb, and until D439 it could not be written: `combat-damage` had its
+    own arm in `triggerMatches` with two values of `who` and no `of` at all. 33 legal lines print
+    it and **9** are cards this compiler can finish.
+
+    No `what: 'creature'` and no "to a player" filter, because the event is already both: only a
+    creature deals combat damage, and `dealtCombatDamage` records a hit **only** when a player's
+    life total actually moved (see `hit` in `combat.ts`). So the printed phrase and the event agree
+    without a clause to make them.
+
+    The plural form — "whenever **one or more** creatures you control deal combat damage to a
+    player", 26 legal lines and 8 cards — is deliberately **not** here. It is a batched trigger that
+    fires once however many creatures connected, and this engine raises one event per creature, so
+    the row would fire it once per attacker: Grim Hireling would make two Treasures per creature
+    instead of two per combat. A reading that is wrong is worse than a line left unread (D362), so
+    it waits for a batched event.
+  */
+  {
+    prologue: () => /^Whenever a creature you control deals combat damage to a player, (.+)$/i,
+    on: [{ kind: 'combat-damage', who: 'any', of: 'you' }],
+  },
+  /*
     The attachment's own creature dying, which completes the family D433 opened: `who: 'attached'`
     on `dies` as well as on `attacks` and `combat-damage`. 52 legal lines print "enchanted creature
     dies" (**7** cards finished) and 17 "equipped creature dies" (**5**).

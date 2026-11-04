@@ -7301,3 +7301,64 @@ describe('a card that calls itself by its short name', () => {
     expect(field(read.ok ? read.script : undefined, 'abilities') ?? []).toEqual([]);
   });
 });
+
+describe('combat damage dealt to a player, read off the prologue', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const permanent = (text: string, typeLine = 'Enchantment') => compileCard({
+    name: 'Hitting Thing', type_line: typeLine, mana_cost: '{2}', cmc: 2,
+    colors: [], layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    ['Whenever a creature you control deals combat damage to a player',
+      { kind: 'combat-damage', who: 'any', of: 'you' }],
+    // And the two that already existed, so the new row cannot quietly swallow them. The `self`
+    // spelling names the card, which `selfRef` reads; `attached` is D433's Equipment reading.
+    ['Whenever equipped creature deals combat damage to a player',
+      { kind: 'combat-damage', who: 'attached' }],
+    ['Whenever enchanted creature deals combat damage to a player',
+      { kind: 'combat-damage', who: 'attached' }],
+  ])('%s becomes the trigger it prints', (prologue, on) => {
+    const read = permanent(`${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]!.on).toEqual(on);
+  });
+
+  it('reads the card naming itself, which is the row this one must not swallow', () => {
+    const read = compileCard({
+      name: 'Hitting Thing', type_line: 'Creature — Bird', mana_cost: '{2}{U}', cmc: 3,
+      colors: ['U'], power: '1', toughness: '3', layout: 'normal',
+      oracle_text: 'Whenever Hitting Thing deals combat damage to a player, draw a card.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers[0]!.on).toEqual({ kind: 'combat-damage' });
+  });
+
+  it('refuses the batched plural, which this engine would fire once per attacker', () => {
+    /*
+      "Whenever **one or more** creatures you control deal combat damage to a player" is 26 legal
+      lines and 8 compilable cards, and it is left unread on purpose. It fires **once** however many
+      creatures connected; this engine raises one `combat-damage` event per creature, so the row
+      would pay Grim Hireling two Treasures per attacker instead of two per combat.
+
+      A reading that is wrong is worse than a line left unread (D362), so it waits for a batched
+      event. This row's job is to fail if someone adds the prologue without the event — at which
+      point the plural would be read, and read wrongly.
+    */
+    const read = permanent('Whenever one or more creatures you control deal combat damage to a'
+      + ' player, you gain 1 life.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([
+      'Whenever one or more creatures you control deal combat damage to a player, you gain 1 life.',
+    ]);
+  });
+});

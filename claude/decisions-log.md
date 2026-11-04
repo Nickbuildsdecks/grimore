@@ -27434,3 +27434,70 @@ Legal-only coverage 16,331 of 56,421 lines (28.9%), **7,344 cards with a script*
 
 Card-data egress re-tested this pass: `api.scryfall.com`, `data.scryfall.io` and `mtgjson.com` all
 answer 000 through the proxy, so #318 still loads from the Forge-derived corpus.
+
+## D439 — "A creature you control deals combat damage to a player", and the event that had its own rules
+
+`combat-damage` was the one board event with its own arm in `triggerMatches`:
+
+```ts
+case 'combat-damage':
+  return (want.who ?? 'self') === 'attached' ? isAttachedSubject : isSubject;
+```
+
+Two values of `who`, no `of` at all, and no way to express the commonest printed form of the line —
+"whenever **a creature you control** deals combat damage to a player", which is 33 legal corpus
+lines and **9** cards this compiler can finish. That sentence is "whenever a creature you control
+dies" with a different verb, and the `dies` version has been writable since D437.
+
+### One branch, not two vocabularies
+
+`etb`, `dies`, `attacks`, `blocks`, `becomes-blocked` and `attacks-unblocked` already share a branch,
+with a comment saying why: `who` and `of` have to mean the same thing on all of them, and a second
+copy of the filter is a second place for them to drift. `combat-damage` is the sixth member and was
+outside it, which is exactly the drift that comment predicts. It is folded in and its arm deleted.
+
+Behaviour-preserving for everything already there, and not by inspection: `who` defaults to `'self'`
+and that arm requires `isSubject`, `of` defaults to `'any'` and returns before the seat is read — so
+a Thieving Magpie and an Equipment's "equipped creature deals combat damage" both read what they
+read before, which the existing runtime tests for both still assert.
+
+### Two facts the event did not carry
+
+Folding it in was not enough, and the runtime test is what said so — the compile table was already
+green on the trigger's shape:
+
+1. **`subjectSeat`.** `of: 'you'` is answered from it, and the enrichment block that attaches it
+   covered `to-graveyard`, `etb` and `dies`. `combat-damage` joins the `to-graveyard` line rather
+   than the `etb`/`dies` block, because the creature that connected is still on the battlefield, so
+   the live instance is the right read and the `vanished`-first block is not.
+2. **`about.subject`.** "Put a +1/+1 counter on **that creature**" needs the creature the event was
+   about, and the list of events that carry a subject did not include this one. It never had to:
+   while the event was its own permanent's business the subject *was* the watcher, so no card had a
+   "that creature" to mean. `who: 'any'` is what creates the distinction.
+
+That is the shape named at D437 showing up again from the other side — not a fact the state has
+forgotten this time, but a fact the event never bothered to carry because nothing could ask.
+
+### The plural is refused, deliberately
+
+"Whenever **one or more** creatures you control deal combat damage to a player" is 26 legal lines and
+**8** cards — more lines than the row that shipped — and it is left unread. It is a batched trigger
+that fires once however many creatures connected, and this engine raises one `combat-damage` event
+per creature, so the row would pay Grim Hireling two Treasures *per attacker* instead of two per
+combat. A reading that is wrong is worse than a line left unread (D362), so it waits for a batched
+event. A test asserts it stays unread, so adding the prologue without the event fails rather than
+ships.
+
+### Verified
+
+Two runtime tests, both on **Sphere Grid** — a printed enchantment, which can never be the creature
+that deals the damage, so a trigger that fires at all is `who: 'any'` working and a counter that
+lands on the attacker is the event's subject reaching "that creature". The pair is the `of: 'you'`
+lever: the same board from the other side, an opponent's Grizzly Bears connecting with the Sphere
+Grid on the receiving player's side, puts no counter on anything. Plus a five-row compile table
+covering the new row, both `attached` spellings, the self-naming row and the refused plural.
+
+**Five breaks, five failures** — the prologue row, `who: 'any'`, `of: 'you'`, the event's
+`subjectSeat`, and the event's `about.subject`.
+
+Legal-only coverage 16,340 of 56,421 lines (29.0%), **7,352 cards with a script** (7,344 → 7,352). GATE OK, 1,983 engine tests.

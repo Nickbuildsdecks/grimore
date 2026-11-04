@@ -868,15 +868,25 @@ function triggerMatches(
       if (e.step !== want.step) return false;
       return (want.of ?? 'you') === 'any' || actorSeat === sourceSeat;
     }
-    // The events that are about one permanent and may still be watched by another. One branch
-    // rather than five, because `who` and `of` have to mean the same thing on all of them — a
-    // second copy of this filter is a second place for them to drift apart.
+    /*
+      The events that are about one permanent and may still be watched by another. One branch
+      rather than six, because `who` and `of` have to mean the same thing on all of them — a
+      second copy of this filter is a second place for them to drift apart.
+
+      `combat-damage` had its own arm, two values of `who` and no `of` at all, and that is exactly
+      the drift this branch exists to prevent: "whenever a creature you control deals combat damage
+      to a player" is the same sentence as "whenever a creature you control dies" with a different
+      verb, and it could not be written (D439). Folding it in is behaviour-preserving for everything
+      already here, because `who` defaults to `'self'` and that still requires `isSubject`, and `of`
+      defaults to `'any'`, which returns before the seat is ever read.
+    */
     case 'etb':
     case 'dies':
     case 'attacks':
     case 'blocks':
     case 'becomes-blocked':
-    case 'attacks-unblocked': {
+    case 'attacks-unblocked':
+    case 'combat-damage': {
       // `self` is the default, which is why every script written before this one still means what
       // it meant: a trigger that says nothing about `who` watches only its own permanent.
       const who = want.who ?? 'self';
@@ -947,16 +957,6 @@ function triggerMatches(
     // And a transform, for exactly the same reason.
     case 'transformed':
       return true;
-    // Its own permanent only, which `raise` has already narrowed the watcher list to.
-    /*
-      "Whenever this creature deals combat damage to a player" — or, on an Equipment, whenever the
-      creature it is attached to does.
-
-      `self` stays the default, so every script older than `attached` means exactly what it meant.
-      There is no `another` because nothing printed asks for one; see the event's own declaration.
-    */
-    case 'combat-damage':
-      return (want.who ?? 'self') === 'attached' ? isAttachedSubject : isSubject;
     default:
       return false;
   }
@@ -1162,7 +1162,11 @@ function fireTrigger(
     ...(subject === undefined
       || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
         || event.kind === 'blocks' || event.kind === 'becomes-blocked'
-        || event.kind === 'attacks-unblocked' || event.kind === 'to-graveyard')
+        || event.kind === 'attacks-unblocked' || event.kind === 'to-graveyard'
+        // And the creature that dealt the damage, for "put a +1/+1 counter on **that creature**".
+        // Added with `who: 'any'` (D439): while the event was its own permanent's business the
+        // subject was always the watcher, so a card had no "that creature" to mean.
+        || event.kind === 'combat-damage')
       ? {}
       : { subject }),
     // The attacker a block was against, for "that creature". Its own field rather than the
@@ -1229,13 +1233,16 @@ function raise(
     event = { ...event, subject };
   }
   /*
-    Whose graveyard the card arrived in, for the event that has no other way to say it.
+    Whose card it was, for the two events whose subject is somewhere the block below cannot read.
 
-    Narrower than the block below on purpose: a card in a graveyard has no `vanished` snapshot to
-    read and nothing in the pool asks whether it was a creature, so the one fact the event carries
-    is the seat — which is what the next card to want "put into *your* graveyard" will need.
+    Narrower than that block on purpose: a card in a graveyard has no `vanished` snapshot to read
+    and nothing in the pool asks whether it was a creature, so the one fact these events carry is
+    the seat — which is what "put into *your* graveyard" needs, and what "a creature **you control**
+    deals combat damage to a player" needs (D439). The combat case reads the live instance because
+    the creature that connected is still on the battlefield, which is also why it cannot share the
+    `vanished`-first block below.
   */
-  if (subject !== undefined && event.kind === 'to-graveyard') {
+  if (subject !== undefined && (event.kind === 'to-graveyard' || event.kind === 'combat-damage')) {
     const inst = next.instances[subject];
     if (inst !== undefined) event = { ...event, subjectSeat: inst.zoneSeat };
   }
