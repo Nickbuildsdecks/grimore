@@ -10978,3 +10978,20 @@ hand-written card now calls it — one rule, one source.
 
 **396 → 398 of 538 lines (73.6% → 74.0%)**, **252 → 253 of 339 cards**. Four deliberate breaks, four
 failing tests; 334/334; engine suite 1,790/1,790; 4,000 rows at scale with no throw.
+
+## A draw that has to happen before the question (#317, D413)
+
+Faithless Looting, whole. "Draw two cards, then discard two cards" composes **correctly and
+wrongly**: `clausesOf` splits on ", then ", the two effects run in printed order, and the discard is
+a *question* — planned before the resolution runs, so the player would choose out of the hand they
+held before drawing. A new failure mode for this module: every refusal so far was a clause nothing
+could read, and this is one everything could read and nobody should.
+
+So `lootResolution` is a spell-shape reader like `xSpellResolution`, consulted *before*
+`composeEffects` rather than after it, and `ReadEffect` gained `beforeDecisions` — which
+`composeEffects` deliberately does not propagate, because a clause cannot know whether a question
+follows it. `draw` and not `drawLater` here, for the same reason the reader exists: a card that is
+owed is not a card you can be asked to discard.
+
+**398 → 399 of 538 lines (74.0% → 74.2%)**, **253 → 254 of 339 cards**. Four deliberate breaks, four
+failing tests; 339/339; 4,000 rows at scale with no throw.

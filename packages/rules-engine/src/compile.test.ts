@@ -448,22 +448,27 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         now — so the example stopped testing the invariant and started testing the restriction. The
         invariant is what matters: **all of a spell's resolution, or none of it.**
 
-        "Draw two cards, then discard two cards." is real printed text from the pool whose first
-        clause this module reads and whose second it does not. A compiler that drew the cards and
-        skipped the discard would be a strictly better Divination, which is a wrong card rather than
-        an unread one, and wrong in a way nothing at the table would flag.
+        The example has been changed once more, and for the same reason as last time: it was
+        "Draw two cards, then discard two cards." — Faithless Looting — and D413 reads that card
+        whole now, so the row stopped testing the invariant and started asserting a gap that had
+        closed. The invariant is what matters and it has not moved: **all of a spell's resolution,
+        or none of it.**
+
+        "Draw two cards, then put a card from your hand on top of your library." is the same shape
+        with a second clause this module genuinely cannot read. A compiler that drew the cards and
+        skipped the rest would be a strictly better Divination — a wrong card rather than an unread
+        one, and wrong in a way nothing at the table would flag.
       */
+      const text = 'Draw two cards, then put a card from your hand on top of your library.';
       const half = compileCard({
         name: 'Half Reader', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'],
-        oracle_text: 'Draw two cards, then discard two cards.',
+        oracle_text: text,
       });
       expect(half.ok).toBe(true);
       if (!half.ok) return;
       expect(half.script).toBeUndefined();
       expect(half.source).toBe('printed-only');
-      expect(half.unread).toEqual([
-        { line: 'Draw two cards, then discard two cards.', why: 'no-reader' },
-      ]);
+      expect(half.unread).toEqual([{ line: text, why: 'no-reader' }]);
     });
 
     it('runs a composed resolution in printed order, each part on the state before it', () => {
@@ -4639,6 +4644,119 @@ describe('compileCard, against the cards a person wrote by hand', () => {
           .effect(contextOn(moved, 0 as SeatIndex, card));
         expect(after.drawsOwed.length).toBe(moved.drawsOwed.length + 1);
       }
+    });
+  });
+
+  describe('a draw that has to happen before the question', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, decisions: readonly unknown[] = [],
+    ): EffectContext => ({
+      state, controller: seat, source, targets: [], decisions,
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const before = (script: unknown) =>
+      field(script, 'beforeDecisions') as ((c: EffectContext) => GameState) | undefined;
+    const resolve = (script: unknown) =>
+      field(script, 'onResolve') as (c: EffectContext) => GameState;
+
+    it('asks the same question the hand-written Faithless Looting asks', () => {
+      /*
+        The decision spec is plain data, so this is deep equality against the card: who is asked,
+        which zone, how many, and the prompt — which echoes the printed count and its noun rather
+        than being built from the number, so "a card" stays singular.
+      */
+      const mine = compiledScript('Faithless Looting');
+      expect(mine.unread).toEqual([]);
+      expect(field(mine.script, 'decisions'))
+        .toEqual(field(scriptFor('Faithless Looting'), 'decisions'));
+      expect(field(mine.script, 'decisions')).toEqual([{
+        who: 'controller', from: 'hand', prompt: 'Discard two cards', min: 2, max: 2,
+      }]);
+    });
+
+    it('draws before the question is planned, so the drawn cards can be discarded', () => {
+      /*
+        The whole point of the shape reader, and the thing a composition gets wrong.
+
+        `clausesOf` splits the sentence on ", then ", so composed it is "Draw two cards" followed by
+        "discard two cards" — the right order for two *effects*, and the wrong card: a question is
+        planned before the resolution runs, so the player would be choosing out of the hand they
+        held **before** drawing. The hand-written card puts the draw in `beforeDecisions` and its
+        docblock says why: "the cards it offers to discard are the ones it has not seen yet".
+
+        So the assertion is about where the draw lives, and the board it leaves.
+      */
+      const mine = compiledScript('Faithless Looting');
+      const base = arena({ decks: { 0: 'arc-tempest', 1: 'ember-rush' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+
+      const step = before(mine.script);
+      expect(step).toBeDefined();
+      if (step === undefined) return;
+      const drawn = step(ctx);
+      expect(drawn).toEqual(before(scriptFor('Faithless Looting'))!(ctx));
+      /*
+        Two cards **in hand**, not owed. `drawLater` is the better primitive everywhere else in this
+        module, and here it would be the bug: a card that is owed is not a card you can be asked to
+        discard.
+      */
+      expect(ids(drawn, 0 as SeatIndex, 'hand')).toHaveLength(
+        ids(base, 0 as SeatIndex, 'hand').length + 2,
+      );
+      expect(drawn.drawsOwed).toEqual(base.drawsOwed);
+    });
+
+    it('puts the chosen cards in the graveyard, as the hand-written card does', () => {
+      const mine = compiledScript('Faithless Looting');
+      // A hand to discard from: `arena` deals none unless asked, and two named cards make the
+      // assertion about *which* cards moved rather than how many.
+      const base = arena({
+        decks: { 0: 'arc-tempest', 1: 'ember-rush' },
+        hands: { 0: ['Lightning Bolt', 'Mountain'] },
+        turn: 3,
+      });
+      const hand = ids(base, 0 as SeatIndex, 'hand');
+      expect(hand.length).toBeGreaterThanOrEqual(2);
+      const chosen = [{ ids: [hand[0]!, hand[1]!] }];
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', chosen);
+      const after = resolve(mine.script)(ctx);
+      expect(after).toEqual(resolve(scriptFor('Faithless Looting'))(ctx));
+      // Not vacuous: both named cards really moved.
+      expect(ids(after, 0 as SeatIndex, 'graveyard')).toEqual(
+        expect.arrayContaining([hand[0]!, hand[1]!]),
+      );
+    });
+
+    it('reads two counts that need not match', () => {
+      // Thrill of Possibility's shape. Nothing requires the numbers to be equal, so nothing
+      // assumes it — a reader that used the draw count twice would ask for two discards here.
+      const card = compileCard({
+        name: 'Rummage', type_line: 'Instant', mana_cost: '{1}{R}', cmc: 2, colors: ['R'],
+        oracle_text: 'Draw two cards, then discard a card.',
+      });
+      expect(card.ok).toBe(true);
+      if (!card.ok) return;
+      expect(card.unread).toEqual([]);
+      expect(field(card.script, 'decisions')).toEqual([{
+        who: 'controller', from: 'hand', prompt: 'Discard a card', min: 1, max: 1,
+      }]);
+    });
+
+    it('will not read the shape as part of a longer resolution', () => {
+      /*
+        `beforeDecisions` runs before **every** question the spell asks, so a loot sentence sharing
+        a resolution with anything else is a draw that could be moved in front of a question it has
+        nothing to do with. The reader takes the whole resolution or none of it, and a second
+        sentence refuses the card rather than reading half of it (D362).
+      */
+      const card = compileCard({
+        name: 'Greedy Rummage', type_line: 'Sorcery', mana_cost: '{R}', cmc: 1, colors: ['R'],
+        oracle_text: 'Draw two cards, then discard two cards.\nTarget player discards a card.',
+      });
+      expect(card.ok).toBe(true);
+      if (card.ok) expect(card.script).toBeUndefined();
     });
   });
 

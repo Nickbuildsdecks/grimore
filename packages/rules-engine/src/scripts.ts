@@ -9325,6 +9325,22 @@ interface ReadEffect {
    * dependency hazard into a coverage hole.
    */
   readonly immediate?: EffectFn;
+  /**
+   * What the card does **before anybody is asked anything** — `CardScript.beforeDecisions`.
+   *
+   * One family needs it and Faithless Looting is the family: "Draw two cards, then discard two
+   * cards". The cards it offers to discard have to include the two it just drew, so the draw
+   * cannot be part of the resolution that runs *after* the question — it has to happen before the
+   * question is planned.
+   *
+   * Only a **spell-shape** reader sets this, never a clause, and `composeEffects` deliberately
+   * does not propagate it. That is not an omission: a clause cannot know whether a question comes
+   * after it, so a `beforeDecisions` surviving a composition would be a draw moved in front of
+   * somebody else's question by accident. Keeping it to the readers that see the whole resolution
+   * makes that impossible by construction, which is the same argument that keeps X on the spell
+   * path (D399).
+   */
+  readonly beforeDecisions?: EffectFn;
 }
 
 /**
@@ -12491,6 +12507,9 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
   Object.assign(built, read.spellFlags ?? {});
   if (read.targets !== undefined) built['targets'] = read.targets;
   if (read.decisions !== undefined) built['decisions'] = read.decisions;
+  // See `ReadEffect.beforeDecisions`: only a shape reader that sees the whole resolution sets this,
+  // so there is nothing to merge and nothing a clause could have contributed.
+  if (read.beforeDecisions !== undefined) built['beforeDecisions'] = read.beforeDecisions;
   built['onResolve'] = read.effect;
   return {
     script: built as Partial<CardScript>,
@@ -12607,11 +12626,70 @@ function xSpellResolution(lines: readonly string[], name: string): ReadEffect | 
  * implementations of it that could drift apart. The all-or-nothing argument and the one-target rule
  * live there.
  */
+/**
+ * A spell that **draws and then makes you discard**: Faithless Looting's whole card.
+ *
+ * ## Why this is a spell-shape reader rather than two clauses
+ *
+ * `clausesOf` splits on ", then ", so the sentence arrives as "Draw two cards" and "discard two
+ * cards" — two clauses that compose in the right order and still produce the **wrong card**. The
+ * discard is a *question*, and a question is planned before the resolution runs: composed, the
+ * player would be asked which two cards to discard out of the hand they held before drawing.
+ *
+ * The hand-written card says so in one line — `beforeDecisions: (c) => draw(c.state, c.controller,
+ * 2)` — and its docblock is explicit: "the cards it offers to discard are the ones it has not seen
+ * yet". So the thing being read here is not an effect but an **order**: the draw before the
+ * question, the discard after it. A clause cannot know whether a question comes after it, which is
+ * exactly why this reader sees the whole resolution instead.
+ *
+ * ## `draw`, not `drawLater`
+ *
+ * The one place in this module where the immediate primitive is the right one. `drawLater` owes a
+ * card instead of putting it in hand, and a card that is owed is not a card you can be asked to
+ * discard — the question would be planned against a hand that has not grown yet, which is the very
+ * bug this reader exists to avoid. `drawLater`'s own docblock bounds it to "a draw that is the last
+ * thing the card does", and this draw is the first.
+ *
+ * ## The two counts are read separately
+ *
+ * "Draw two cards, then discard two cards" is Faithless Looting; "Draw two cards, then discard a
+ * card" is Thrill of Possibility. Nothing requires them to match, so nothing here assumes it, and
+ * the prompt echoes the printed count and its noun rather than being built from the number — which
+ * keeps "Discard a card" singular and matches the prompt the hand-written card stores.
+ */
+function lootResolution(lines: readonly string[], name: string): ReadEffect | null {
+  if (lines.length !== 1) return null;
+  const loot = /^draw ([\w]+) cards?, then discard ([\w]+) (cards?)\.?$/i
+    .exec(plain(lines[0]!).trim());
+  if (loot === null) return null;
+  const drawn = countFrom(loot[1]!);
+  const pitched = countFrom(loot[2]!);
+  if (drawn === null || pitched === null || drawn < 1 || pitched < 1) return null;
+  return {
+    beforeDecisions: (c) => draw(c.state, c.controller, drawn),
+    decisions: [{
+      who: 'controller',
+      from: 'hand',
+      prompt: `Discard ${loot[2]!} ${loot[3]!}`,
+      min: pitched,
+      max: pitched,
+    }],
+    effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
+  };
+}
+
 function readResolution(lines: readonly string[], name: string): ReadEffect | null {
   /*
     The X shapes first, because `composeEffects` would refuse them: the clause vocabulary has no
     reading for a bare `X` on purpose, and `xSpellResolution`'s docblock is why that stays true
     outside the spell path.
+
+    `lootResolution` next, and before `composeEffects` rather than after it: the loot sentence
+    composes perfectly well and composes **wrongly**, asking which cards to discard out of the hand
+    held before the draw. A fallback consulted only on failure could never correct that, so the
+    shape reader has to win.
   */
-  return xSpellResolution(lines, name) ?? composeEffects(lines.flatMap(clausesOf), name);
+  return xSpellResolution(lines, name)
+    ?? lootResolution(lines, name)
+    ?? composeEffects(lines.flatMap(clausesOf), name);
 }

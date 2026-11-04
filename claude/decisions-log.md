@@ -25715,3 +25715,69 @@ its draw were both unread while the card as a whole was refused.
 Four deliberate breaks, four failing tests: the colour group dropped, `colorless` let through, the
 hold-for-combat hint restored, and the attacker hint dropped. compile.test.ts 334/334, engine suite
 1,790/1,790, 4,000 shuffled rows with no throw.
+
+## D413 — A draw that has to happen before the question
+
+Faithless Looting: "Draw two cards, then discard two cards." The first card in this series whose
+reading is about **order** rather than effect, and the first to need a field of `CardScript` the
+compiler had never written.
+
+### The composition is right and the card is wrong
+
+`clausesOf` splits on ", then ", so the sentence arrives as two clauses — "Draw two cards" and
+"discard two cards" — which `composeEffects` runs in printed order. That is the correct order for
+two *effects* and it produces the wrong card, because the discard is a **question**: questions are
+planned before the resolution runs, so the player would be choosing which two cards to pitch out of
+the hand they held **before** drawing.
+
+The hand-written card says it in one line, `beforeDecisions: (c) => draw(c.state, c.controller, 2)`,
+and its docblock is explicit: "the cards it offers to discard are the ones it has not seen yet".
+
+So `lootResolution` is a **spell-shape** reader, like `xSpellResolution`, and sits *before*
+`composeEffects` in `readResolution` rather than after it. A fallback consulted only on failure
+could never correct this, because the composition does not fail — it succeeds and is wrong. That is
+a new failure mode for this module and worth naming: every refusal so far has been a clause nothing
+could read, and this is a clause everything could read and nobody should.
+
+### `draw`, not `drawLater`
+
+The one place in the compiler where the immediate primitive is right. A card that is *owed* is not a
+card you can be asked to discard, so a deferred draw here reproduces the exact bug the reader exists
+to avoid. `drawLater`'s own docblock bounds it to "a draw that is the last thing the card does", and
+this draw is the first. A break that swaps them fails the test.
+
+### `beforeDecisions` is spell-shape only, by construction
+
+`ReadEffect` gained the field and `spellScriptFor` writes it, but **`composeEffects` deliberately
+does not propagate it**. A clause cannot know whether a question comes after it, so a
+`beforeDecisions` surviving a composition would be an effect moved in front of somebody else's
+question by accident. Keeping it to readers that see the whole resolution makes that impossible
+rather than forbidden — the same argument that keeps X on the spell path (D399) and "that player" on
+the trigger path (D408).
+
+For the same reason the reader refuses a loot sentence sharing a resolution with anything else:
+`beforeDecisions` runs before *every* question the spell asks, so the whole resolution or none of it.
+
+### The two counts are read separately
+
+"Draw two cards, then discard a card" is Thrill of Possibility. Nothing requires the numbers to
+match, so nothing assumes it, and the prompt echoes the printed count and its noun rather than being
+built from the number — which keeps "Discard a card" singular and matches the hand-written prompt. A
+break that reuses the draw count fails a synthetic row.
+
+### One test had to move
+
+"Compiles a spell whole or not at all, never half of it" used Faithless Looting's text as its example
+of a half-readable spell, and that gap has closed. Its example is now "Draw two cards, then put a
+card from your hand on top of your library" — the same shape with a second clause nothing here can
+read. The invariant is unchanged and the churn reasoning is in the test, which is the second time
+this particular row has been repointed for the same happy reason.
+
+### Measured
+
+**398 → 399 of 538 printed lines (74.0% → 74.2%)**, and **253 → 254 of 339 cards**: Faithless
+Looting, the only card the per-card diff shows moving.
+
+Four deliberate breaks, four failing tests: `drawLater` for `draw`, the draw count reused for the
+discard, a longer resolution admitted, and `beforeDecisions` dropped from the assembly.
+compile.test.ts 339/339, 4,000 shuffled rows with no throw.
