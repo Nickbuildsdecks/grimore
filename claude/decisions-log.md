@@ -27233,3 +27233,67 @@ battlefield.
 
 Legal-only coverage 16,016 of 56,421 lines (28.4%), **7,066 cards with a script** (7,018 → 7,066),
 3,953 cards with every printed line read. GATE OK, 1,942 engine tests.
+
+## D436 — The second card drawn each turn, and why the ordinal has to travel with the event
+
+After the cast rows, the biggest remaining prologue family by cards finished — measured the way
+D434 and D435 were, by swapping a readable body onto every unread line and re-compiling:
+
+| candidate | lines | cards |
+| --- | --- | --- |
+| **you draw your second card each turn** | **54** | **24** |
+| a creature you control dies | 27 | 10 |
+| you cast your second spell each turn | 32 | 10 |
+| a creature you control deals combat damage to a player | 33 | 9 |
+| you attack | 87 | 8 |
+| enchanted creature dies | 52 | 7 |
+| equipped creature dies | 17 | 5 |
+| an artifact you control enters | 26 | 5 |
+| one or more creatures you control attack | 5 | 0 |
+| this creature enters | 337 | 0 |
+
+Twice the next candidate, and the one with the smallest engine change: `cardsDrawnThisTurn` is
+already per-seat, and every entry in `GameState.drew` already carries `nth`, the card's place in
+its seat's turn. Miracle put it there (D204).
+
+**"this creature enters" is 337 lines and 0 cards**, which is the clearest number in the table for
+why lines printed is the wrong measure. That family's prologue reads already; what is unread is 337
+different bodies.
+
+### The one thing that could go wrong
+
+The ordinal is carried **on the event** and not looked up from `cardsDrawnThisTurn`, and that is the
+whole of the engine work. The running total has already counted *both* cards of a `draw(2)` by the
+time either trigger is matched — so a reading taken from the total puts two counters on an Atlantean
+Cavalry that drew a Divination, every time, on a card whose entire text is about counting. Miracle
+hit this first and its comment in `settle` says so in as many words; this is the second reader to
+need the same distinction, so the ordinal is now a field on the event rather than a local in one
+loop.
+
+`onNth` is the question and `nth` is the engine's answer, which is the same split
+`withAtLeast`/`declared` keeps for battalion and `spell`/`types` for a cast.
+
+### Only "second" is read, and the field is general anyway
+
+Of the 65 legal corpus lines naming an ordinal, **63 say "second"** — 54 "you", 6 "an opponent", 3
+"a player" — and the remaining two are one "first" and one "fifth". Three rows shipped, one per
+subject. A word-to-number map for five ordinals to gain two lines would be a parser nothing
+exercises; `onNth` takes any number the day a card arrives, so the *field* is general and the
+*reader* is narrow, which is the right way round.
+
+Alandra, Sky Dreamer prints both: "second" on one line and "fifth" on the next. She is the clearest
+case in the corpus for what the hybrid reading is for, and she is now a test — the second-card line
+compiles and the fifth-card line is handed to a human with D363's badge, on the same card.
+
+### Verified
+
+Two runtime tests on a compiled Atlantean Cavalry through `customDeck` (D430): no counter from the
+draw step's card, exactly **one** counter from a Divination's two, and the count starting again next
+turn with the first card taking nothing and a second card taking one. Plus a seven-row compile table
+and the Alandra split.
+
+**Five breaks, five failures**, including the one this entry exists for: rewriting the filter to read
+`drawnThisTurn(state, seat)` instead of the event's own ordinal fails both runtime tests.
+
+Legal-only coverage 16,055 of 56,421 lines (28.5%), **7,097 cards with a script** (7,066 → 7,097),
+3,971 cards with every printed line read. GATE OK, 1,951 engine tests.

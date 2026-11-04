@@ -21666,3 +21666,102 @@ describe('the cast trigger, as printed text', () => {
     expect(namesIn(s, 0 as SeatIndex, 'battlefield').filter((n) => n === 'Insect')).toHaveLength(2);
   });
 });
+
+/*
+  "Whenever you draw your second card each turn" (D436).
+
+  The largest single prologue family left after the cast rows — 54 legal lines and 24 cards for the
+  "you" spelling, twice the next candidate. The engine work is one field: the card's ordinal within
+  the seat's turn, carried on the event.
+
+  It is carried rather than looked up, and that is the only thing here that could go wrong in a way
+  a shape assertion would miss. `cardsDrawnThisTurn` has already counted *both* cards of a
+  `draw(2)` by the time either trigger is matched, so a reading taken from the running total fires
+  twice on a Divination — one counter too many, every time, on a card that is about counting. So the
+  test that matters is the Divination one, and it is a compiled card from printed corpus text
+  through `customDeck` (D430).
+*/
+describe('the second card drawn each turn, as printed text', () => {
+  /** Atlantean Cavalry, printed text out of the corpus: one line, read whole, counter on itself. */
+  const cavalry = () => {
+    const list = customDeck({
+      id: 'draw-list',
+      name: 'Atlantean Cavalry',
+      entries: [
+        { name: 'Atlantean Cavalry', count: 1 },
+        { name: 'Divination', count: 4 },
+        { name: 'Island', count: 55 },
+      ],
+      data: [{
+        name: 'Atlantean Cavalry', type_line: 'Creature — Merfolk Soldier', mana_cost: '{2}{U}',
+        cmc: 3, colors: ['U'], layout: 'normal', power: '3', toughness: '2',
+        oracle_text: 'Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter'
+          + ' on this creature.',
+      } as never],
+    });
+    expect(list.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'draw-list', 1: 'verdant-guard' },
+      deckSpecs: { 'draw-list': list.deck },
+      battlefield: { 0: ['Atlantean Cavalry', 'Island', 'Island', 'Island'] },
+      hands: { 0: ['Divination'] },
+      turn: 3,
+      firstSeat: 0,
+    });
+  };
+
+  it('takes no counter from the first card of the turn, and one from the second', () => {
+    let s = cavalry();
+    const cav = find(s, 0 as SeatIndex, 'battlefield', 'Atlantean Cavalry');
+    // The draw step's card is this seat's first of the turn, so the trigger must not fire.
+    s = drain(advanceTo(s, 'draw'));
+    expect(s.instances[cav]!.counters['+1/+1']).toBeUndefined();
+
+    /*
+      And now two cards at once. Exactly **one** counter: the second card of the turn fires it and
+      the third does not, which is the whole content of an ordinal. A reading taken from
+      `cardsDrawnThisTurn` would put two counters here, because by the time the first of these two
+      events is matched the total already says 3.
+    */
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Divination'),
+    } as Action)));
+    expect(s.instances[cav]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('starts counting again next turn, which is what "each turn" means', () => {
+    /*
+      The reset. Without it the ordinal would be a running total for the game and the card would
+      fire once ever — and `cardsDrawnThisTurn` is cleared in the cleanup step, so this reads the
+      board after a full turn has gone by rather than asserting the field directly.
+    */
+    let s = cavalry();
+    const cav = find(s, 0 as SeatIndex, 'battlefield', 'Atlantean Cavalry');
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Divination'),
+    } as Action)));
+    const after = s.instances[cav]!.counters['+1/+1'] ?? 0;
+    expect(after).toBeGreaterThanOrEqual(1);
+    // Round the table and back, then through this seat's own draw step: that card is the **first**
+    // of a new turn, so the counter must not move. If the ordinal were a running total for the
+    // game it would be the fourth card drawn and nothing would ever fire again.
+    s = drain(nextTurn(s));
+    s = drain(nextTurn(s));
+    expect(s.activeSeat).toBe(0);
+    s = drain(advanceTo(s, 'precombat-main'));
+    expect(s.instances[cav]!.counters['+1/+1']).toBe(after);
+
+    // And a second card on this new turn fires it again, which is the other half of "each turn".
+    // The Divination is taken out of the library by hand rather than drawn, because drawing it
+    // would itself be one of the cards being counted.
+    const spell = find(s, 0 as SeatIndex, 'library', 'Divination');
+    s = { ...s, instances: { ...s.instances, [spell]: { ...s.instances[spell]!, zone: 'hand' } } };
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: spell } as Action)));
+    expect(s.instances[cav]!.counters['+1/+1']).toBe(after + 1);
+  });
+});

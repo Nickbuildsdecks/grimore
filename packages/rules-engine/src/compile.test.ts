@@ -7005,3 +7005,81 @@ describe('the cast trigger, read off the prologue', () => {
     expect(field(read.script, 'triggers')).toBeUndefined();
   });
 });
+
+/*
+  The draw-ordinal prologue, as printed text (D436).
+
+  Which sentence becomes which trigger, and where the reader stops. The runtime tests in
+  `scripts.test.ts` prove the ordinal behaves — fires on the second card, once for a `draw(2)`,
+  and resets each turn — and this proves the mapping and the two spellings left alone.
+*/
+describe('the draw ordinal, read off the prologue', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const permanent = (text: string) => compileCard({
+    name: 'Drawing Thing', type_line: 'Enchantment', mana_cost: '{2}', cmc: 2,
+    colors: [], layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    ['Whenever you draw your second card each turn', { kind: 'draws', by: 'you', onNth: 2 }],
+    ["Whenever an opponent draws their second card each turn",
+      { kind: 'draws', by: 'opponent', onNth: 2 }],
+    ["Whenever a player draws their second card each turn", { kind: 'draws', by: 'any', onNth: 2 }],
+    /*
+      And the plain one that already existed, so widening the family cannot capture it. It emits no
+      `by` at all and leans on the default, where the three rows above state it — the asymmetry is
+      real and left alone: `by: 'you'` *is* the default, so the two are the same trigger, and
+      rewriting the older row to match would change a shape the standing compiled-vs-written check
+      compares for no gain.
+    */
+    ['Whenever you draw a card', { kind: 'draws' }],
+  ])('%s becomes the trigger it prints', (prologue, on) => {
+    const read = permanent(`${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]!.on).toEqual(on);
+  });
+
+  it.each([
+    /*
+      The two ordinals left unread, and the reason is a count rather than a mechanism: `onNth` takes
+      any number, so the field is already general and only the *reader* is narrow. Of the 65 legal
+      corpus lines that name an ordinal, 63 say "second"; these two spellings are one line each, so
+      a word-to-number map for five ordinals would be a parser nothing exercises.
+    */
+    ['first', 'one legal line prints it'],
+    ['fifth', 'one legal line prints it, on Alandra'],
+  ])('leaves "your %s card each turn" unread: %s', (word) => {
+    const read = permanent(`Whenever you draw your ${word} card each turn, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+    expect(field(read.script, 'triggers')).toBeUndefined();
+  });
+
+  it('reads one of Alandra’s two lines and flags the other, which is D362 on a real card', () => {
+    /*
+      Alandra, Sky Dreamer prints both ordinals: "second" on one line and "fifth" on the next. She
+      is the clearest case in the corpus for what the hybrid reading is *for* — the second-card line
+      compiles and the fifth-card line is handed to a human with the badge D363 added, on the same
+      card, at the same time. Printed text, out of the corpus.
+    */
+    const read = compileCard({
+      name: 'Alandra, Sky Dreamer', type_line: 'Legendary Creature — Merfolk Wizard',
+      mana_cost: '{2}{U}{U}', cmc: 4, colors: ['U'], layout: 'normal', power: '2', toughness: '4',
+      oracle_text: 'Whenever you draw your second card each turn, create a 2/2 blue Drake creature'
+        + ' token with flying.\nWhenever you draw your fifth card each turn, Alandra, Sky Dreamer'
+        + ' and Drakes you control get +X/+X until end of turn, where X is the number of cards in'
+        + ' your hand.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(field(read.script, 'triggers')).toHaveLength(1);
+    expect(read.unread).toHaveLength(1);
+    expect(read.unread[0]!.line).toContain('fifth card');
+  });
+});

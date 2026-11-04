@@ -810,6 +810,13 @@ function triggerMatches(
       is drawn" at a four-seat table.
     */
     case 'draws': {
+      const e = event as Extract<TriggerEvent, { kind: 'draws' }>;
+      /*
+        "Your **second** card each turn", answered from the event's own ordinal. Asked before `by`
+        because it is the cheaper question and because it is the one that is new; the order makes no
+        difference to the answer.
+      */
+      if (want.onNth !== undefined && e.nth !== want.onNth) return false;
       const by = want.by ?? 'you';
       if (by === 'you') return actorSeat === sourceSeat;
       if (by === 'opponent') return actorSeat !== sourceSeat;
@@ -2252,7 +2259,10 @@ function settle(state: GameState, before: GameState): GameState {
       One ability per card, which is what makes `drew` a list of entries rather than a count: three
       cards drawn is three triggers on the stack, each able to be answered on its own.
     */
-    for (const { seat } of drawn) next = raise(next, { kind: 'draws' }, seat);
+    // The ordinal travels with the event, because the running total cannot tell the first card of a
+    // `draw(2)` from the second by the time either trigger is matched. See the `draws` event's
+    // `onNth`, and miracle's note below, which found the same thing first.
+    for (const { seat, nth } of drawn) next = raise(next, { kind: 'draws', nth }, seat);
     /*
       And miracle, which is not a trigger at all — it is an offer, on the card that was drawn.
 

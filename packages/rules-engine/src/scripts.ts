@@ -10767,6 +10767,37 @@ const TRIGGER_SHAPES: readonly {
     prologue: () => /^Whenever you gain life, (.+)$/i,
     on: [{ kind: 'life-gained', by: 'you' }],
   },
+  /*
+    "Whenever you draw your **second** card each turn" (D436).
+
+    The largest single prologue family left after the cast rows, measured the way D434 and D435
+    were — on cards whose body this compiler already reads, not on lines printed: 54 legal lines
+    and **24** cards for the "you" spelling, which is more than any other candidate by a factor of
+    two.
+
+    The ordinal is carried on the event rather than read off `cardsDrawnThisTurn`, and that is the
+    whole of the engine work: the running total has already counted both cards of a `draw(2)` by
+    the time either trigger is matched, so a reading taken from the total would fire twice on a
+    Divination. Miracle (D204) found this first and its comment in `settle` says so.
+
+    **Only "second" is read.** Of the 65 legal lines that name an ordinal, 63 say second — 54 "you",
+    6 "an opponent", 3 "a player" — and the remaining two are a single "first" and a single "fifth".
+    Supporting a word-to-number map for five ordinals to gain two lines would be a parser nothing
+    exercises, and `TriggerDef.onNth` takes any number the day a card arrives: the field is general
+    and the reader is not, which is the right way round.
+  */
+  {
+    prologue: () => /^Whenever you draw your second card each turn, (.+)$/i,
+    on: [{ kind: 'draws', by: 'you', onNth: 2 }],
+  },
+  {
+    prologue: () => /^Whenever an opponent draws their second card each turn, (.+)$/i,
+    on: [{ kind: 'draws', by: 'opponent', onNth: 2 }],
+  },
+  {
+    prologue: () => /^Whenever a player draws their second card each turn, (.+)$/i,
+    on: [{ kind: 'draws', by: 'any', onNth: 2 }],
+  },
   // Phyrexian Arena. `of: 'you'` is the card, not a default — see this file's step-trigger note.
   {
     prologue: () => /^At the beginning of your upkeep, (.+)$/i,

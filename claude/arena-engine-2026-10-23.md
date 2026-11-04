@@ -11528,3 +11528,27 @@ could contradict it. Named for next time: when a docblock argues two things must
 fixtures need the case where they overlap, or the argument is decoration.
 
 Legal-only coverage 16,016 of 56,421 lines (28.4%), 7,066 cards with a script.
+
+## The second card drawn each turn (D436)
+
+The biggest remaining prologue family by cards finished — 54 legal lines, **24 cards**, twice the
+next candidate — and the smallest engine change, because every entry in `GameState.drew` already
+carries the card's place in its seat's turn. Miracle put it there.
+
+The number worth keeping from that measurement is the one at the bottom of the table: **"When this
+creature enters" is 337 lines and 0 cards.** Its prologue already reads; what is unread is 337
+different bodies. Lines printed has stopped predicting anything, and cards finished is the measure
+every increment now uses.
+
+The ordinal travels **on the event** rather than being looked up, and that is the whole of the work:
+`cardsDrawnThisTurn` has counted both cards of a `draw(2)` by the time either trigger is matched, so
+a reading taken from the running total puts two counters on an Atlantean Cavalry that drew a
+Divination — on a card whose entire text is about counting. The break run confirms it: swapping the
+filter back to the total fails both runtime tests.
+
+Only "second" is read — 63 of the 65 legal lines that name an ordinal say it — while `onNth` takes
+any number, so the field is general and the reader is narrow. Alandra, Sky Dreamer prints "second"
+on one line and "fifth" on the next, and is now the test for what the hybrid reading is for: one
+line compiled, the other flagged, same card.
+
+Legal-only coverage 16,055 of 56,421 lines (28.5%), 7,097 cards with a script.

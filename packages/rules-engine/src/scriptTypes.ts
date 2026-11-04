@@ -542,7 +542,27 @@ export type TriggerEvent =
    * reason the event is recorded where a draw happens instead of being noticed afterwards. See
    * `GameState.drew`.
    */
-  | { readonly kind: 'draws'; readonly by?: 'you' | 'opponent' | 'any' }
+  /**
+   * A card drawn, one event per card (CR 121.1).
+   *
+   * `onNth` is "whenever you draw your **second** card each turn" — the seat's own ordinal since
+   * the turn began, and the only printed ordinal worth reading: 63 of the 65 legal corpus lines
+   * that name one say "second" (54 of them "you", 6 "an opponent", 3 "a player"), with a single
+   * "first" and a single "fifth" left unread and counted in `TRIGGER_SHAPES` (D436).
+   *
+   * It is the **question**, and `nth` below is the engine's answer, which is the same split
+   * `withAtLeast`/`declared` already keeps for battalion. Asked of the event's own ordinal rather
+   * than of `cardsDrawnThisTurn`: a `draw(2)` on an untouched turn raises two events and the
+   * running total has already reached 2 by the time either is matched, so a reading taken from the
+   * total would fire both times. Miracle learned this first (D204) and its comment says so.
+   */
+  | {
+      readonly kind: 'draws';
+      readonly by?: 'you' | 'opponent' | 'any';
+      readonly onNth?: number;
+      /** Set by the engine when it raises the event: this card's place in the seat's own turn. */
+      readonly nth?: number;
+    }
   /**
    * "Whenever another card is put into a graveyard from anywhere" (CR 400.7).
    *
