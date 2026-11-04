@@ -1497,6 +1497,81 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       expect(view.zones['0:command']?.length).toBe(1);
     }, 20_000);
 
+    /*
+      The summary, the ack and the dealt deck all read the same list.
+
+      Three places in `pod.ts` turn a stored pasted list into a deck: the summary every seat sees,
+      the ack the player who pasted it gets, and the deck dealt into the game. They used to be
+      three separate `customDeck({ ... })` literals and are now one helper, `deckFromPastedList`.
+
+      This is the check that they still agree, and it is written against the three *observable*
+      readings rather than against the helper, because a test of the helper would pass just as
+      happily if one call site stopped using it. Two distinct unreadable names, so a count that
+      came from somewhere else — the number of copies, the number of entries, one name instead of
+      two — reads differently from the right one.
+    */
+    it('reads the same list into the summary, the ack and the dealt deck', async () => {
+      const { a } = await seatedPair();
+      const text = [
+        'Commander',
+        '1 Tatyova, Benthic Druid',
+        '',
+        'Deck',
+        '30 Forest',
+        '20 Island',
+        '5 Nonsense Card',
+        '4 Also Not A Card',
+      ].join('\n');
+
+      // (1) The ack, which is the reading the player who pasted it is given.
+      const ack = okAck(await emitAck(a, 'pod:deck', { text }));
+      expect(ack.deck).toMatchObject({ total: 59, unknownCount: 2 });
+      expect(ack.deck!.unknown!.slice().sort()).toEqual(['Also Not A Card', 'Nonsense Card']);
+
+      // (2) The summary, which is the reading every other seat is given.
+      const seen = await waitFor<PodStateEvent>(a, 'pod:state', (st) => st.pod.seats[0]?.list !== undefined);
+      expect(seen.pod.seats[0]!.list).toMatchObject({ total: 59, unknown: 2 });
+
+      /*
+        (3) The dealt deck, read three ways, because a library's contents are withheld from
+        everybody including its owner:
+
+        - the engine's refusal to automate a table holding cards it cannot play, which **names the
+          first one it finds** — not all of them, so this observation cannot carry the count;
+        - `libraryCount`, which is 59 only if the deal read the same entries the other two did;
+        - the command zone, which holds a card only if the deal spread the commander.
+
+        Between them a path 3 that read a different list shows up: drop the commander and the
+        command zone is empty and the library is 60, read different entries and the count moves.
+      */
+      const loaded = okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'deck:load', seat: 0, deckId: 'custom:0' },
+        expectedVersion: ack.stateVersion!,
+      }));
+      /*
+        Read after the load and **before** `game:start`, because starting draws seat zero an
+        opening hand: the library reads 52 there, and 52 is a number this test would have to
+        restate every time the opening hand size changed. 59 is the list.
+      */
+      const after = await waitFor<PodStateEvent>(a, 'pod:state', (st) => st.stateVersion >= loaded.stateVersion!);
+      const view = unpackView(after.state as unknown as PackedView);
+      expect(view.seats.find((st) => st.index === 0)?.libraryCount).toBe(59);
+      expect(view.zones['0:command']?.length).toBe(1);
+
+      const second = okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'deck:load', seat: 1, deckId: 'ember-rush' },
+        expectedVersion: loaded.stateVersion!,
+      }));
+      const started = okAck(await emitAck(a, 'pod:action', {
+        action: { type: 'game:start' }, expectedVersion: second.stateVersion!,
+      }));
+      const refused = await emitAck(a, 'pod:action', {
+        action: { type: 'auto:start' }, expectedVersion: started.stateVersion!,
+      });
+      expect(refused.ok).toBe(false);
+      if (!refused.ok) expect(refused.error.message).toContain('Nonsense Card');
+    }, 20_000);
+
     it('refuses a paste that is not a deck, and keeps the seat as it was', async () => {
       const { a } = await seatedPair();
       expect(await emitAck(a, 'pod:deck', { text: '   ' }))

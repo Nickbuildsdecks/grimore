@@ -265,15 +265,42 @@ const publicSeat = (s: SeatRecord): PodSeat => ({
   ...(s.pastedList === undefined ? {} : { list: listSummary(s.pastedList) }),
 });
 
-/** A pasted list as everybody at the table may see it: a name, a size and a cannot-read count. */
-function listSummary(list: NonNullable<SeatRecord['pastedList']>): NonNullable<PodSeat['list']> {
-  // The id is never read here: only `unknown` is, which is what the table is allowed to know.
-  const { unknown } = customDeck({
-    id: 'summary',
-    name: list.name ?? 'A pasted list',
+/**
+ * The one place a stored pasted list becomes a deck.
+ *
+ * Three call sites need this, and they are three readings of the same list by three different
+ * audiences: the summary every seat at the table sees (`listSummary`), the ack the player who
+ * pasted it gets back (`setDeck`), and the deck actually dealt into the game (`applyAction`). They
+ * were three separate `customDeck({ ... })` literals, each spreading `commander` conditionally in
+ * its own copy of the same ternary.
+ *
+ * Collapsed because of what a drift between them would look like. If one copy dropped the
+ * commander spread, the table would be told the list has N unreadable cards while the deck dealt
+ * from it had a different number, or the commander would quietly not be dealt — and every one of
+ * those readings would still be internally consistent, so nothing would look wrong. The
+ * three-way agreement test in `realtime.test.ts` ("the summary, the ack and the dealt deck all
+ * read the same list") is what says they still agree.
+ *
+ * `fallbackName` differs by caller on purpose: the player who pasted an unnamed list is told about
+ * "Your list", and everybody else sees "A pasted list". The name is display only — it is not read
+ * by the deal and does not reach `unknown` — so the three readings agreeing does not require it to
+ * be the same word.
+ */
+function deckFromPastedList(
+  list: NonNullable<SeatRecord['pastedList']>, id: string, fallbackName: string,
+): ReturnType<typeof customDeck> {
+  return customDeck({
+    id,
+    name: list.name ?? fallbackName,
     entries: list.entries,
     ...(list.commander === undefined ? {} : { commander: list.commander }),
   });
+}
+
+/** A pasted list as everybody at the table may see it: a name, a size and a cannot-read count. */
+function listSummary(list: NonNullable<SeatRecord['pastedList']>): NonNullable<PodSeat['list']> {
+  // The id is never read here: only `unknown` is, which is what the table is allowed to know.
+  const { unknown } = deckFromPastedList(list, 'summary', 'A pasted list');
   return {
     ...(list.name === undefined ? {} : { name: list.name }),
     total: list.entries.reduce((n, e) => n + e.count, 0),
@@ -762,12 +789,15 @@ export class PodStore {
         entries: parsed.entries.map((e) => ({ name: e.name, count: e.count })),
         ...(parsed.commander === undefined ? {} : { commander: parsed.commander }),
       };
-      const { unknown } = customDeck({
-        id: customDeckIdFor(seat.seat),
-        name: name ?? 'Your list',
-        entries: parsed.entries,
-        ...(parsed.commander === undefined ? {} : { commander: parsed.commander }),
-      });
+      /*
+        Read off `seat.pastedList`, which was just written above, rather than off `parsed`. The two
+        hold the same cards today — the one is built from the other — so this is not a bug fix; it
+        makes the ack provably a reading of **the list that will be dealt** rather than of the
+        parse it came from. If those two ever diverge, the player is told about the deck they get.
+      */
+      const { unknown } = deckFromPastedList(
+        seat.pastedList, customDeckIdFor(seat.seat), 'Your list',
+      );
       return {
         record,
         result: {
@@ -825,12 +855,8 @@ export class PodStore {
       for (const s of record.seats) {
         if (s.pastedList === undefined) continue;
         if (!everySeatsList && s.seat !== mySeat) continue;
-        decks[customDeckIdFor(s.seat)] = customDeck({
-          id: customDeckIdFor(s.seat),
-          name: s.pastedList.name ?? 'A pasted list',
-          entries: s.pastedList.entries,
-          ...(s.pastedList.commander === undefined ? {} : { commander: s.pastedList.commander }),
-        }).deck;
+        decks[customDeckIdFor(s.seat)] =
+          deckFromPastedList(s.pastedList, customDeckIdFor(s.seat), 'A pasted list').deck;
       }
       // Read before the action so a move that bought nothing can be told from one that did; see
       // `onNoProgress`, and `runBots`, which has made the same comparison since it was written.

@@ -22133,3 +22133,117 @@ number does and does not mean: these suites are shallow, several assert things a
 construct themselves, and one passing suite is not one working feature. What changed is that the
 number is now **earned** rather than unreachable — every suite that claims to exercise an endpoint
 reaches it.
+
+---
+
+## D356 — The pre-push gate read green with Redis and Postgres both stopped
+
+Immediately after pushing D354/D355 I ran the realtime suite for an unrelated change and got
+
+```
+Error: connect ECONNREFUSED 127.0.0.1:6379
+```
+
+Redis was not running. Nor was Postgres. And the gate I had run **ten minutes earlier, before that
+push**, had printed:
+
+```
+@grimore/rules-engine:test:  Tests  1425 passed (1425)
+@grimore/api:test:           Tests   306 passed (306)
+@grimore/realtime:test:      Tests    46 passed (46)
+Cached:    17 cached, 17 total
+  Time:    462ms >>> FULL TURBO
+```
+
+Every one of those lines was a turbo cache replay. Both `pnpm v2:typecheck` and `pnpm v2:test`
+reported `17 cached, 17 total`. Nothing ran. The 46 realtime tests that need Redis "passed" against
+a Redis that was not there.
+
+**Turbo is not wrong.** Its cache key is the task's declared inputs — sources, dependencies, env
+vars — and a running Redis is none of them. Nothing in the repository had changed since the cached
+run, so the cached result was the correct answer to the question turbo was asked. The problem is
+the question *I* was asking, which was "do the suites pass against live services", and a cache
+replay cannot answer that either way. In this instance the cache was also honest about the change:
+the commit touched `server.js`, three Python suites and this file, none of which are inputs to any
+turbo task, so there was genuinely nothing to re-run. The gate was green **because my change could
+not affect it**, which is a true statement that looks exactly like a verification.
+
+This is the sixth form of the pattern this file keeps recording, and worth listing them together
+because the family is the point:
+
+| form | where |
+|---|---|
+| a check that cannot fail | #311's guest-auth step asserted a login against a route that is 404 |
+| a check that cannot pass | D355's two advisor calls POSTed anonymously to a login-required route |
+| a swallowed throw | D244, thirty-five harnesses, and D353 — mine, two days later |
+| a documented flag that does not exist | D352's `DB_PATH=`, in a docblock I wrote |
+| a skipped suite that reads green | D303, 35 realtime tests silently skipped without `REDIS_URL` |
+| **a cached pass** | **this one: a check that did not run, wearing the output of one that did** |
+
+`scripts/services-up.js` is the answer, and it asks the one thing the cache cannot know: it opens a
+socket to each service and speaks enough of each protocol to be sure the right thing is listening —
+an inline `PING` answered `+PONG` for Redis, an eight-byte SSLRequest answered `S` or `N` for
+Postgres. No credentials, because "is Postgres listening" and "do these credentials work" are
+different questions with different failure messages. Available as `pnpm v2:services`, and it belongs
+**before** `pnpm v2:test` in the local gate, which is now five steps:
+
+```
+pnpm v2:services && node scripts/guards.js && pnpm v2:typecheck && pnpm v2:typecheck:tests && pnpm v2:test
+```
+
+Proved both ways, because a service check that cannot fail would be the joke writing itself: exit 0
+with both up, and with Redis stopped, exit 1 naming the port, the reason (`ECONNREFUSED`) and what
+it costs ("the 46 realtime tests, which read and write pod state through it").
+
+It is deliberately not needed in CI, which starts both services as containers with health checks and
+runs the suites through `pnpm -r` rather than turbo, so there is no cache to restore. This is a
+local-gate instrument for a local-gate failure.
+
+**What I am not doing is disabling the cache.** A cached pass after the services are known up is
+fine — the cached result was produced by a run that did reach them. The defect was reading a replay
+as evidence about the current environment, and the fix is to establish the environment first.
+
+---
+
+## D357 — Three readings of a pasted list, collapsed into one, with a three-way agreement test
+
+`apps/realtime/src/pod.ts` turned a stored pasted list into a deck in three places, as three
+separate `customDeck({ ... })` literals, each carrying its own copy of the same conditional
+commander spread:
+
+- `listSummary` — the shape every seat at the table is shown (a name, a size, a cannot-read count);
+- `setDeck` — the ack the player who pasted it gets, which names the cards the engine cannot read;
+- `applyAction` — the deck actually dealt into the game.
+
+Collapsed into `deckFromPastedList(list, id, fallbackName)`. The reason is what a drift between them
+would look like: if one copy lost the commander spread, the table would be told the list holds N
+unreadable cards while the deck dealt from it held a different number, or the commander would simply
+not be dealt — and **each of the three readings would still be internally consistent**, so nothing
+would look wrong from any single vantage point. `fallbackName` stays a parameter because the
+difference there is deliberate: the player who pasted an unnamed list is told about "Your list",
+everybody else sees "A pasted list", and the name is display only.
+
+One small change rides along: `setDeck` now reads `seat.pastedList`, which it wrote a few lines
+above, rather than the `parsed` result it built that from. The two hold the same cards today, so this
+is not a bug fix — it makes the ack provably a reading of *the list that will be dealt*.
+
+The test is `realtime.test.ts`'s "reads the same list into the summary, the ack and the dealt deck",
+and it is written against the three **observable** readings rather than against the helper, because a
+test of the helper would pass just as happily if one call site stopped using it. Two distinct
+unreadable names, so a count sourced from the wrong thing — copies instead of names, one name instead
+of two — reads differently from the right one.
+
+Two things about writing it are worth keeping, both cases of an observation that could not say what I
+wanted it to:
+
+1. **The engine's refusal names only the first unreadable card.** I asserted it named both and it
+   does not: `RULE_NOT_APPLICABLE: the engine does not know Nonsense Card`. So that observation
+   cannot carry the count, and the dealt deck is instead pinned by `libraryCount` and the command
+   zone. Written down in the test, because the next person will reach for the same assertion.
+2. **A refused action emits no state**, so waiting for one after the `auto:start` refusal waits for
+   an event that never comes — and `libraryCount` after `game:start` is 52, not 59, because the deal
+   draws an opening hand. Both readings now happen after the load and before the start, where the
+   number is the list rather than the list minus a hand size this test would have to restate.
+
+Proved to discriminate: deleting the commander spread from the helper fails this test **and** its
+older sibling, 2 failed of 47. Restored, 47 passed.

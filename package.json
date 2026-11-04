@@ -18,6 +18,7 @@
     "v2:typecheck:tests": "pnpm -r --filter './packages/*' --filter './apps/*' run typecheck:tests",
     "v2:test": "turbo run test --filter=./packages/* --filter=./apps/*",
     "v2:guards": "node scripts/guards.js",
+    "v2:services": "node scripts/services-up.js",
     "v2:migrate": "pnpm --filter @grimore/db migrate",
     "test:parity": "node --test --test-reporter=spec test/account-tokens-parity.test.js"
   },

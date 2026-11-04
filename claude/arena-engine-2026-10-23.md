@@ -9467,3 +9467,83 @@ half-resolved that the engine cannot undo.
 
 **Writing down a defect pattern does not inoculate against it.** The `catch` was incidental to what I
 was thinking about, and the ones that get written are the ones nobody is thinking about.
+
+## Checkpoint — the advisor that never answered, and a gate that could not fail (#315, D354-D357)
+
+### The rules advisor was never reached (D354)
+
+Two of the fourteen suites in `execution/` reported the rules advisor as "timed out". It is not slow:
+the handler races Gemini against a 1500 ms timeout with a heuristic fallback. Reproducing it gave
+`HTTP 000 in 8.00s` — **no response at all** — and the server log said
+`<rejected> TypeError: Cannot read properties of undefined (reading 'player')`.
+
+The route was registered at line 345. `app.use(session({...}))` is at 467. Express hands a route only
+the middleware registered before it, so `req.session` was `undefined`, the handler's first line threw,
+and because the handler is `async` that became an unhandled rejection — which Express 4 does not route
+to an error handler, so nothing wrote a response.
+
+Moved the whole block below the session and epoch middleware:
+
+| | before | after |
+|---|---|---|
+| anonymous | `HTTP 000` in 8.00s | `401 Not logged in.` in 0.021s |
+| logged in | never reached | `200`, heuristic answer, 0.009s |
+
+Three things hid it: the symptom named the wrong layer ("timed out" points at the endpoint's work),
+the epoch middleware's docblock claims it is mounted "before every route" (true of every route below
+it), and `if (!req.session.player)` reads as a login check rather than as the crash.
+
+### Both suites were aimed at a door they had no key to (D355)
+
+With the hang gone the advisor answers `401` to an anonymous caller — and both suites POST
+anonymously, then assert the answer is non-empty. Independently of the hang, **they could never
+pass**. New `execution/grimore_session.py` registers a deterministic throwaway account if absent,
+logs in, and returns an opener with the cookie; it **raises** on failure, so a suite cannot proceed
+anonymously believing it is authenticated. `verify_account_importer.py` had exactly that bug — it
+registered on a login failure and carried on, and `/api/auth/register` sets no session.
+
+**The master orchestrator reports 14/14 for the first time** (0/13 when #311 first ran it, 11/13 after
+the schema work). These suites are shallow and one passing suite is not one working feature; what
+changed is that the number is earned rather than unreachable.
+
+### The gate read green with Redis and Postgres both stopped (D356)
+
+Ten minutes after that push, a realtime run failed with `ECONNREFUSED 127.0.0.1:6379`. Redis was not
+running, nor was Postgres — and the gate before the push had printed 1425 + 306 + 46 tests passing,
+`17 cached, 17 total`, `462ms >>> FULL TURBO`. Every line was a cache replay.
+
+Turbo is not wrong: a running service is not one of its cache inputs, and my commit touched no turbo
+input, so there was genuinely nothing to re-run. The gate was green **because the change could not
+affect it**, which is a true statement that looks exactly like a verification.
+
+The sixth form of this file's recurring pattern, and the family is the point:
+
+| form | where |
+|---|---|
+| a check that cannot fail | #311's guest-auth step |
+| a check that cannot pass | D355's anonymous advisor calls |
+| a swallowed throw | D244 (35 harnesses), D353 (mine, two days later) |
+| a documented flag that does not exist | D352's `DB_PATH=` |
+| a skipped suite that reads green | D303, 35 realtime tests without `REDIS_URL` |
+| **a cached pass** | **a check that did not run, wearing the output of one that did** |
+
+`scripts/services-up.js` (`pnpm v2:services`) asks the one thing the cache cannot know: an inline
+RESP `PING` answered `+PONG`, an eight-byte SSLRequest answered `S` or `N`. No credentials — "is
+Postgres listening" and "do these credentials work" are different questions. Proved both ways: exit 0
+with both up, exit 1 with Redis stopped, naming the port, `ECONNREFUSED`, and what it costs. The local
+gate is now five steps, services first. CI is unaffected: it starts both as containers with health
+checks and runs through `pnpm -r`, so there is no cache to restore.
+
+### Three readings of a pasted list, collapsed (D357)
+
+`pod.ts` turned a stored pasted list into a deck in three places — the table's summary, the paster's
+ack, the dealt deck — as three `customDeck({ ... })` literals with three copies of the same
+conditional commander spread. If one lost it, the table would be told one count while the deal used
+another, and **each reading would still be internally consistent**. Collapsed into
+`deckFromPastedList`, with a test written against the three observable readings rather than the
+helper, because a helper test passes just as happily if a call site stops calling it. Deleting the
+spread fails that test and its older sibling; restored, 47 pass.
+
+Two observations that could not say what I wanted: the engine's refusal names only the **first**
+unreadable card, so it cannot carry a count; and `libraryCount` after `game:start` is 52 rather than
+59, because the deal draws an opening hand. Both now read after the load and before the start.
