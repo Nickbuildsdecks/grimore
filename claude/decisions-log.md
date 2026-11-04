@@ -22984,3 +22984,85 @@ The remaining 22 ETB lines are almost all targeted — "exile target creature un
 battlefield" (4), "it deals N damage to target creature", "return target creature to its owner's
 hand", "put a -1/-1 counter on target creature" — which is the next increment's bucket, and the one
 that also unlocks removal and bounce on instants.
+
+## D367 — Targets, spells, and a new path that replaced the old one instead of extending it
+
+Two things at once, because they share a prerequisite. Targeted clauses need a **target spec**, and
+instants and sorceries need a **resolution path** — and both want the same effect vocabulary D366
+built, which is the architecture claim that file made and this one tests.
+
+### Target specs, and the flag that cannot be read off the phrase
+
+`targetSpecFrom(phrase, friendly)` reads `any target` and `target creature`, which between them are
+47 of the ~95 target phrases printed in the pool. The long tail is 28 further phrasings, 1-2 cards
+each.
+
+`friendly` is the interesting parameter, because **it is not in the phrase**. "Target creature" is
+the same two words on a Doom Blade and on a Giant Growth. It is a fact about the *effect*, so the
+caller supplies it — and D252 added the flag in the first place because the bot's default is "the
+enemy and the enemy's creatures". A pump that forgets it is not illegal: it is a bot that buffs the
+creature it was about to kill. Wrong in a way nothing refuses, which is the kind of wrong this
+compiler most has to avoid.
+
+The clearest case is a counter on a creature: `+1/+1` helps, `-1/-1` harms, and the two clauses
+differ by one character.
+
+### The bot hints, which is D364's lesson in a second place
+
+`Doom Blade` sets **`removesACreature: true`** beside its effect and `Giant Growth` sets
+**`expiresAtEndOfTurn: true`**: do not cast this with nothing of theirs to point at; hold this for
+the combat. Emit the effect alone and you get a card that **works** and **plays badly** — worse than
+an unread line, because an unread line is flagged for a human to play by hand (D362) and a badly
+played one is flagged nowhere.
+
+So the unit of compilation is a partial `CardScript`, exactly as the keyword stage found with
+Calciderm's counters. They are returned as `spellFlags` and applied only on the spell path, because
+"removes a creature" is advice about *casting* and an ETB trigger is not cast.
+
+### Six families read: damage, destroy, bounce, pump, +1/+1, -1/-1
+
+Each paired with its spec and its friendliness. Deliberately not read: a clause that also grants a
+keyword ("gets +0/+3 and gains hexproof"), because that is two effects and reading the first while
+dropping the second is a card silently doing less than it prints.
+
+### A spell is compiled whole, and its lines are not all the same kind of thing
+
+A permanent's text is a list of independent abilities, so it is read line by line. A spell's
+resolution is not: every sentence happens in one go, so a spell whose second sentence went unread
+would resolve and do half of what it prints with nothing flagged. All-or-nothing.
+
+**And the first version of that got it wrong.** It treated *every* line of a spell as resolution.
+Grapeshot is "deals 1 damage to any target" plus **Storm**; Sudden Shock is a damage clause plus
+**Split second**; Pyromatics is damage plus **Replicate {1}{R}**. Those keywords are properties of
+the card, not steps of its resolution — so the spell path found two lines, refused the card, and
+**threw away a keyword reading that already worked**. A new path *replacing* an old one instead of
+extending it, and a straight regression on three cards.
+
+The ground-truth tests caught it on the first run, named all three cards, and nothing else would
+have: the types were fine, the coverage number went *up*, and the three cards had simply stopped
+being read. That is the whole argument for comparing against hand-written scripts rather than
+asserting a shape.
+
+Fixed by partitioning: keyword lines are read as keywords exactly as on a permanent, and whatever is
+left is the resolution. Pinned by its own regression test, which checks Grapeshot keeps **both** its
+storm trigger and its damage, and that Sudden Shock keeps `splitSecond` beside its `onResolve`.
+
+`Divination` is the proof the shared vocabulary works rather than the hope: its hand-written script
+is `onResolve: drawLater(state, you, 2)` and nothing else, which is exactly what `untargetedEffect`
+already built for "Draw two cards."
+
+### Measured
+
+| | D364 | D366 | now |
+| --- | --- | --- | --- |
+| whole-card | 51 (15.0%) | 51 | 51 (15.0%) |
+| **cards with compiled rules** | 21 (6.2%) | 34 (10.0%) | **48 (14.2%)** |
+| printed-only | 267 | 254 | 240 |
+| **lines compiled** | 142 (26.4%) | 156 (29.0%) | **173 of 538 (32.2%)** |
+
+Cards with rules have more than doubled since the keyword stage, and a third of every printed line
+in the pool now becomes rules. Still a floor: the pool is thirteen decks built to exercise sixty
+mechanics.
+
+43 compiler tests, and the `as EffectContext` cast stays sound for the reason D366 gives — both
+effects receive the same object, so the comparison remains a comparison.

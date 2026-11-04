@@ -39,9 +39,12 @@ import {
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
-  AbilityDef, CardScript, CardsDecisionSpec, CountersDecisionSpec, TargetDecisionSpec,
-  TargetSpec, TriggerDef,
+  AbilityDef, CardScript, CardsDecisionSpec, CountersDecisionSpec, DecisionSpecOf,
+  TargetDecisionSpec, TargetSpec, TriggerDef,
 } from './scriptTypes.js';
+// The compiler's shared `ReadEffect` stores an effect under one name for both the trigger path and
+// the spell path, so it needs the function type both fields have.
+import type { EffectFn } from './effects.js';
 import { timesCost } from './mana.js';
 import type { Color } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -8916,6 +8919,22 @@ function countFrom(text: string): number | null {
 const escapeName = (name: string): string => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
+ * What one printed clause became: the effect, whatever it has to point at or ask, and the
+ * script-level flags that belong to a spell built from it.
+ *
+ * One shape for both the trigger path and the spell path, because the two differ only in the field
+ * the effect is stored under — a trigger calls it `effect`, a spell `onResolve` — and a second
+ * vocabulary for the second path would be a second place for the readings to drift apart.
+ */
+interface ReadEffect {
+  readonly effect: EffectFn;
+  readonly targets?: readonly TargetSpec[];
+  readonly decisions?: readonly DecisionSpecOf[];
+  /** Bot hints a *spell* of this family carries. The trigger path drops them — see below. */
+  readonly spellFlags?: Partial<CardScript>;
+}
+
+/**
  * What one **untargeted** effect clause does, as the fields a `TriggerDef` needs for it.
  *
  * The second stage of the compiler (#317, D366), and deliberately only the untargeted half. A
@@ -8940,7 +8959,7 @@ const escapeName = (name: string): string => name.replace(/[.*+?^${}()|[\]\\]/g,
  *
  * `clause` arrives with its trailing full stop removed and trimmed.
  */
-function untargetedEffect(clause: string): Partial<TriggerDef> | null {
+function untargetedEffect(clause: string): ReadEffect | null {
   const text = clause.trim();
 
   const gain = /^you gain ([\w]+) life$/i.exec(text);
@@ -9018,24 +9037,231 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     .exec(line.trim());
   if (etb === null) return null;
   const clause = etb[1]!.replace(/\.\s*$/, '').trim();
-  const fields = untargetedEffect(clause);
-  if (fields === null) return null;
+  const read = readEffect(clause, name);
+  if (read === null) return null;
+  // `spellFlags` is deliberately not spread: it is advice about casting a spell, and an ETB
+  // trigger is not cast. See `targetedEffect`.
   return {
     triggers: [{
       on: { kind: 'etb', who: 'self' },
       description: clause,
-      ...fields,
+      ...(read.targets === undefined ? {} : { targets: read.targets }),
+      ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
+      effect: read.effect,
     } as TriggerDef],
   };
 }
 
 /**
- * Everything the compiler can read off one printed line: a keyword, or a triggered ability.
+ * A printed target phrase, as the spec the engine points with.
  *
- * The single entry point `compile.ts` calls, so the order the two stages are tried in lives here
- * rather than in the caller. Keywords first because they are exact matches on a short line and
- * cannot be confused for a sentence.
+ * `friendly` is not read off the phrase and cannot be: "target creature" is the same four
+ * characters on a Doom Blade and on a Giant Growth. It is a fact about the **effect**, so the
+ * caller supplies it — see `TargetSpec.friendly`, and D252, which added the flag because the bot's
+ * default is "the enemy and the enemy's creatures". A pump that forgets it is not illegal; it is a
+ * bot that buffs the creature it is about to kill, which is a silent degradation rather than a
+ * refusal, and so exactly the kind of wrong this compiler must not be.
+ */
+function targetSpecFrom(phrase: string, friendly: boolean): TargetSpec | null {
+  const text = phrase.trim().toLowerCase();
+  const helped = friendly ? { friendly: true as const } : {};
+  if (text === 'any target') return { kind: 'any', description: 'any target', ...helped };
+  if (text === 'target creature') return { kind: 'creature', description: 'target creature', ...helped };
+  return null;
+}
+
+/**
+ * A clause that points at something: its target spec, its effect, and the script-level flags the
+ * hand-written cards set for that family.
+ *
+ * ## The flags are the same trap `keywordScriptFor` found, in a second place
+ *
+ * D364 learnt that a keyword's unit of compilation is a partial `CardScript` and not a trigger,
+ * because `vanishingTrigger(4)` without `entersWith` is a creature that never dies. The targeted
+ * families say it again: `Doom Blade` sets **`removesACreature: true`** beside its effect, and
+ * `Giant Growth` sets **`expiresAtEndOfTurn: true`**. Both are hints the bot reads — do not cast
+ * this with nothing of theirs to point at; hold this for the combat. A compiler that emitted the
+ * effect alone would produce a card that *works* and *plays badly*, which is worse than an unread
+ * line, because a line left unread is flagged for a human to play by hand (D362) and a badly
+ * played one is not flagged at all.
+ *
+ * They are returned as `spellFlags` rather than merged, because they belong to a **spell**:
+ * "removes a creature" is advice about casting, and an ETB trigger is not cast. The trigger path
+ * drops them; the spell path applies them.
+ */
+function targetedEffect(clause: string, name: string): ReadEffect | null {
+  const text = clause.trim();
+  const self = escapeName(name);
+
+  /*
+    Damage. Two spellings of the same clause: a spell names itself ("Lightning Bolt deals 3 damage
+    to any target") and a trigger says "it" ("When Flametongue Kavu enters the battlefield, it deals
+    4 damage to target creature"), because the trigger's subject is already established.
+  */
+  const dmg = new RegExp(`^(?:${self}|it) deals (\\d+) damage to (any target|target creature)$`, 'i')
+    .exec(text);
+  if (dmg !== null) {
+    const amount = Number(dmg[1]);
+    const spec = targetSpecFrom(dmg[2]!, false);
+    if (spec !== null) {
+      return { targets: [spec], effect: (c) => damageFirstTarget(c, amount) };
+    }
+  }
+
+  const destroyed = /^destroy (target creature)$/i.exec(text);
+  if (destroyed !== null) {
+    const spec = targetSpecFrom(destroyed[1]!, false);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : destroy(c.state, id);
+        },
+        spellFlags: { removesACreature: true },
+      };
+    }
+  }
+
+  const bounced = /^return (target creature) to its owner's hand$/i.exec(text);
+  if (bounced !== null) {
+    const spec = targetSpecFrom(bounced[1]!, false);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : bounceToHand(c.state, id);
+        },
+      };
+    }
+  }
+
+  /*
+    A pump, and the one family here that **helps** what it points at. `+N/+N` only: a clause that
+    also grants a keyword ("gets +0/+3 and gains hexproof") is two effects, and reading the first
+    while dropping the second would be a card that silently does less than it prints.
+  */
+  const pumped = new RegExp('^target creature gets \\+(\\d+)/\\+(\\d+) until end of turn$', 'i')
+    .exec(text);
+  if (pumped !== null) {
+    const power = Number(pumped[1]);
+    const toughness = Number(pumped[2]);
+    const spec = targetSpecFrom('target creature', true);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null
+            ? c.state
+            : pump(c.state, [id], c.source, c.controller, { power, toughness });
+        },
+        spellFlags: { expiresAtEndOfTurn: true },
+      };
+    }
+  }
+
+  /*
+    A counter put on a creature. `+1/+1` helps and `-1/-1` harms, which is the clearest case in this
+    file for why `friendly` cannot be read off the target phrase: the two clauses differ by one
+    character and point in opposite directions.
+  */
+  const countered = /^put a ([+-])1\/\1?1 counter on (target creature)$/i.exec(text)
+    ?? /^put a (\+1\/\+1|-1\/-1) counter on (target creature)$/i.exec(text);
+  if (countered !== null) {
+    const kind = countered[1]!.startsWith('+') ? '+1/+1' : '-1/-1';
+    const spec = targetSpecFrom(countered[2]!, kind === '+1/+1');
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : addCounters(c.state, id, kind, 1);
+        },
+      };
+    }
+  }
+
+  return null;
+}
+
+/** Everything one printed clause can become: untargeted first, since those cannot be confused. */
+function readEffect(clause: string, name: string): ReadEffect | null {
+  return untargetedEffect(clause) ?? targetedEffect(clause, name);
+}
+
+/**
+ * Everything the compiler can read off one printed line of a **permanent**: a keyword, or a
+ * triggered ability.
+ *
+ * Keywords first because they are exact matches on a short line and cannot be confused for a
+ * sentence.
  */
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
   return keywordScriptFor(line, name) ?? triggerFromLine(line, name);
+}
+
+/** What the compiler made of an instant or sorcery: the script, and which lines it accounts for. */
+export interface SpellReading {
+  readonly script: Partial<CardScript> | null;
+  readonly compiled: readonly string[];
+  readonly unread: readonly string[];
+}
+
+/**
+ * An instant or sorcery, read as a whole.
+ *
+ * ## A spell's lines are not all the same kind of thing
+ *
+ * A permanent's text is a list of independent abilities, so `lineScriptFor` reads it one line at a
+ * time. A spell's **resolution** is not: every sentence of it happens in one go, so a spell whose
+ * second sentence went unread would resolve and silently do half of what it prints, with nothing
+ * flagged for anybody to notice. That is the one outcome worse than not reading it at all, because
+ * an unread spell is a manual object inside an automated game (D362) and a half-read one is not.
+ *
+ * But a spell's lines are **not** all resolution. Grapeshot is "deals 1 damage to any target" plus
+ * *Storm*; Sudden Shock is "deals 2 damage to any target" plus *Split second*; Pyromatics is a
+ * damage clause plus *Replicate {1}{R}*. Those keywords are properties of the card, not steps of
+ * its resolution — and the first version of this function ignored that, treating every line of a
+ * spell as resolution and refusing all three cards outright. It threw away a keyword reading that
+ * had worked, which is a new path **replacing** an old one instead of extending it. The
+ * ground-truth tests caught it on the first run; nothing else would have.
+ *
+ * So: partition. Keyword lines are read as keywords, exactly as they are on a permanent. Whatever
+ * is left is the resolution, and it is all-or-nothing.
+ */
+export function spellScriptFor(lines: readonly string[], name: string): SpellReading {
+  const built: Record<string, unknown> = {};
+  const compiled: string[] = [];
+  const resolution: string[] = [];
+
+  for (const line of lines) {
+    const keyword = keywordScriptFor(line, name);
+    if (keyword === null) { resolution.push(line); continue; }
+    for (const [key, value] of Object.entries(keyword)) {
+      if (key === 'triggers') {
+        const existing = (built['triggers'] ?? []) as readonly unknown[];
+        built['triggers'] = [...existing, ...(value as readonly unknown[])];
+        continue;
+      }
+      built[key] = value;
+    }
+    compiled.push(line);
+  }
+
+  const clause = resolution.length === 1
+    ? resolution[0]!.replace(/\.\s*$/, '').trim()
+    : null;
+  const read = clause === null ? null : readEffect(clause, name);
+  if (read === null) {
+    const script = Object.keys(built).length === 0 ? null : built as Partial<CardScript>;
+    return { script, compiled, unread: resolution };
+  }
+
+  Object.assign(built, read.spellFlags ?? {});
+  if (read.targets !== undefined) built['targets'] = read.targets;
+  if (read.decisions !== undefined) built['decisions'] = read.decisions;
+  built['onResolve'] = read.effect;
+  return { script: built as Partial<CardScript>, compiled: [...compiled, ...resolution], unread: [] };
 }

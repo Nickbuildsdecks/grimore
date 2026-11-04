@@ -6,7 +6,8 @@ import type { CardDef } from './cards.js';
 import type { CardDataRow } from './fromCardData.js';
 import type { EffectContext } from './effects.js';
 import type { GameState, SeatIndex } from './types.js';
-import { arena } from './testkit.js';
+import type { Target } from './turnTypes.js';
+import { arena, find } from './testkit.js';
 
 /**
  * Every card in the pool, by name — the compiler's ground truth.
@@ -313,6 +314,144 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         contextOn(base, 0 as SeatIndex, 'c1'),
       );
       expect(after.drawsOwed.filter((seat) => seat === 0)).toHaveLength(2);
+    });
+  });
+
+  /*
+    ── Spells, and the targets they point with ───────────────────────────────────────────────────
+
+    An instant or sorcery has no trigger: its text is one resolution, stored as `onResolve` plus
+    whatever it has to point at. So the comparison against a hand-written spell has three parts, and
+    the third is the one that would be easiest to leave out.
+  */
+  describe('spells: the resolution, the target spec, and the bot hints', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({ state, controller: seat, source, targets } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    it.each([
+      ['Lightning Bolt'],
+      ['Doom Blade'],
+      ['Giant Growth'],
+      ['Unsummon'],
+      ['Divination'],
+    ])('%s points at what the hand-written spell points at', (card) => {
+      const written = scriptFor(card as string);
+      const compiled = compiledScript(card as string).script;
+      expect(compiled, `${card as string} compiled to no script`).toBeDefined();
+      expect(field(compiled, 'targets')).toEqual(field(written, 'targets'));
+    });
+
+    /*
+      The bot hints, which are the same trap D364 found on Calciderm, in a second place.
+
+      `Doom Blade` sets `removesACreature: true` and `Giant Growth` sets `expiresAtEndOfTurn: true`
+      beside their effects: do not cast this with nothing of theirs to point at, and hold this for
+      the combat. A compiler that emitted only the effect would build a card that **works** and
+      **plays badly** — and that is worse than an unread line, because an unread line is flagged for
+      a human to play by hand (D362) and a badly played one is flagged nowhere.
+    */
+    it.each([
+      ['Doom Blade', 'removesACreature'],
+      ['Giant Growth', 'expiresAtEndOfTurn'],
+    ])('%s carries its %s hint, as the hand-written card does', (card, flag) => {
+      const written = scriptFor(card as string);
+      expect(field(written, flag as string), `${card as string} does not set ${flag as string}`).toBe(true);
+      expect(field(compiledScript(card as string).script, flag as string)).toBe(true);
+    });
+
+    /*
+      `friendly` cannot be read off the target phrase — "target creature" is the same four words on
+      a Doom Blade and a Giant Growth — so it is a fact about the effect. D252 added the flag
+      because the bot's default is "the enemy and the enemy's creatures", which means a pump that
+      forgets it buffs the creature it is about to kill. Wrong in a way nothing refuses.
+    */
+    it('marks a pump friendly and removal hostile, which the phrase alone cannot say', () => {
+      const growth = field(compiledScript('Giant Growth').script, 'targets') as
+        readonly { friendly?: boolean }[];
+      const blade = field(compiledScript('Doom Blade').script, 'targets') as
+        readonly { friendly?: boolean }[];
+      expect(growth[0]?.friendly).toBe(true);
+      expect(blade[0]?.friendly).toBeUndefined();
+    });
+
+    it.each([
+      ['Lightning Bolt'],
+      ['Doom Blade'],
+      ['Giant Growth'],
+      ['Unsummon'],
+    ])('%s resolves to the same state as the hand-written spell', (card) => {
+      const base = arena({ battlefield: { 1: ['Grizzly Bears'] }, turn: 3 });
+      const victim = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: victim }]);
+      const mine = (field(compiledScript(card as string).script, 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+      const theirs = (field(scriptFor(card as string), 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+      expect(mine).toEqual(theirs);
+      // Not vacuous: pointing a removal spell at a creature has to change the board.
+      expect(mine).not.toEqual(base);
+    });
+
+    it('compiles a spell whole or not at all, never half of it', () => {
+      /*
+        "Scry 1, then draw a card." is two clauses in one line, and this compiler reads neither —
+        there is no reader for the sequence. The refusal is the point: a spell that resolved and did
+        only the scry would be a card silently doing less than it prints, with nothing flagged. An
+        unread spell is a manual object inside an automated game instead (D362).
+      */
+      const two = compileCard({
+        name: 'Half Reader', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'],
+        oracle_text: 'Scry 1, then draw a card.',
+      });
+      expect(two.ok).toBe(true);
+      if (!two.ok) return;
+      expect(two.script).toBeUndefined();
+      expect(two.source).toBe('printed-only');
+      expect(two.unread).toEqual([{ line: 'Scry 1, then draw a card.', why: 'no-reader' }]);
+    });
+
+    it('reads a spell keyword beside the resolution, not instead of it', () => {
+      /*
+        The regression test for the mistake this path shipped with, found by the ground-truth tests
+        on their first run and by nothing else.
+
+        A spell's lines are not all the same kind of thing. Grapeshot is "deals 1 damage to any
+        target" **plus** Storm; Sudden Shock is a damage clause plus Split second. Those keywords
+        are properties of the card, not steps of its resolution. The first version of the spell path
+        treated every line as resolution, found two, and refused the whole card — throwing away a
+        keyword reading that already worked. A new path replacing an old one instead of extending
+        it.
+      */
+      const grapeshot = compiledScript('Grapeshot');
+      expect(grapeshot.unread, 'Grapeshot should be read in full').toEqual([]);
+      const script = grapeshot.script as unknown as
+        { triggers?: readonly unknown[]; onResolve?: unknown; targets?: readonly unknown[] };
+      // Storm's trigger, from the keyword line.
+      expect(script.triggers?.length).toBe(1);
+      // And the damage, from the resolution line, pointing where the printed card points.
+      expect(script.onResolve).toBeTypeOf('function');
+      expect(script.targets).toEqual(field(scriptFor('Grapeshot'), 'targets'));
+
+      // Sudden Shock's split second is a flag rather than a trigger, and survives the same way.
+      const shock = compiledScript('Sudden Shock');
+      expect(shock.unread).toEqual([]);
+      expect(field(shock.script, 'splitSecond')).toBe(true);
+      expect(field(shock.script, 'onResolve')).toBeTypeOf('function');
+    });
+
+    it('does not compile a spell whose text runs to two lines', () => {
+      const multi = compileCard({
+        name: 'Two Liner', type_line: 'Sorcery', mana_cost: '{2}', cmc: 2, colors: [],
+        oracle_text: 'Draw two cards.\nYou gain 2 life.',
+      });
+      expect(multi.ok).toBe(true);
+      if (!multi.ok) return;
+      expect(multi.script).toBeUndefined();
+      expect(multi.unread).toHaveLength(2);
     });
   });
 

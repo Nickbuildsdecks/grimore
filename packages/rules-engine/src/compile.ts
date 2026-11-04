@@ -39,9 +39,9 @@
  * the text of a real card is worse than leaving the mechanic out (D259).
  */
 import type { CardDef } from './cards.js';
-import { printedKeywords } from './characteristics.js';
+import { hasType, parseTypeLine, printedKeywords } from './characteristics.js';
 import { cardFromData, printedDef, printedRulesLines, type CardDataRow, type DerivedKind } from './fromCardData.js';
-import { lineScriptFor } from './scripts.js';
+import { lineScriptFor, spellScriptFor } from './scripts.js';
 import type { CardScript } from './scriptTypes.js';
 
 /** A printed line, and why nothing could turn it into rules. */
@@ -145,6 +145,27 @@ export function compileCard(row: CardDataRow): Compilation {
       unread: [],
       source: 'whole-card',
       kind: whole.kind,
+    };
+  }
+
+  /*
+    A spell is the one card type whose text is not a list of independent abilities: every line of it
+    belongs to one resolution, so it is compiled whole or not at all. See `spellScriptFor` — a
+    spell whose second sentence went unread would resolve and silently do half of what it prints,
+    with nothing flagged for anybody to notice.
+  */
+  const typeLine = parseTypeLine(def.typeLine);
+  if (hasType(typeLine, 'instant') || hasType(typeLine, 'sorcery')) {
+    const spell = spellScriptFor(lines, def.name);
+    return {
+      ok: true,
+      def,
+      ...(spell.script === null
+        ? {}
+        : { script: { name: def.name, ...spell.script } as CardScript }),
+      compiled: spell.compiled,
+      unread: spell.unread.map((line) => ({ line, why: 'no-reader' as const })),
+      source: spell.script === null ? 'printed-only' : 'lines',
     };
   }
 

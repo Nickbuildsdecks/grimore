@@ -9742,3 +9742,44 @@ discriminate: one point of life off fails Kitchen Finks.
 
 The remaining 22 ETB lines are almost all targeted, which is the next increment and the one that
 also unlocks removal and bounce on instants.
+
+## Targets and spells (#317, D367)
+
+Two things at once, because they share a prerequisite: targeted clauses need a **target spec**, and
+instants and sorceries need a **resolution path**, and both want the effect vocabulary D366 built.
+That shared vocabulary was the architecture claim D366 made; this is the increment that tests it.
+
+**Target specs.** `any target` and `target creature` are 47 of the ~95 target phrases in the pool;
+the tail is 28 phrasings at 1-2 cards each. The interesting parameter is `friendly`, because **it is
+not in the phrase** — "target creature" is identical on a Doom Blade and a Giant Growth. It is a
+fact about the effect, so the caller supplies it. D252 added the flag because the bot's default is
+"aim at the enemy": a pump that forgets it buffs the creature it was about to kill. Wrong in a way
+nothing refuses. The clearest case is a counter on a creature, where `+1/+1` and `-1/-1` differ by
+one character and point in opposite directions.
+
+**The bot hints are D364's lesson again.** `Doom Blade` sets `removesACreature: true` and
+`Giant Growth` sets `expiresAtEndOfTurn: true`. Emit the effect alone and you get a card that works
+and plays badly — worse than an unread line, since an unread line is flagged for a human (D362) and
+a badly played one is flagged nowhere. Returned as `spellFlags`, applied only on the spell path,
+because "removes a creature" is advice about casting and an ETB trigger is not cast.
+
+**A spell is compiled whole** — its resolution is one go, so a half-read spell would silently do
+half of what it prints. **And the first version got that wrong**: it treated *every* line of a spell
+as resolution, so Grapeshot (damage + Storm), Sudden Shock (damage + Split second) and Pyromatics
+(damage + Replicate) each presented two lines, were refused outright, and **lost a keyword reading
+that already worked**. A new path replacing an old one rather than extending it.
+
+The ground-truth tests caught it on the first run and named all three cards. Nothing else would
+have: the types were fine and the coverage number went *up*. That is the argument for comparing
+against hand-written scripts instead of asserting a shape. Fixed by partitioning — keywords read as
+keywords, the remainder as resolution — and pinned by a regression test that checks Grapeshot keeps
+both its storm trigger and its damage.
+
+| | D364 | D366 | now |
+| --- | --- | --- | --- |
+| cards with compiled rules | 21 (6.2%) | 34 (10.0%) | **48 (14.2%)** |
+| **lines compiled** | 142 (26.4%) | 156 (29.0%) | **173 of 538 (32.2%)** |
+
+Cards with rules have more than doubled since the keyword stage; a third of every printed line in
+the pool now becomes rules. Still a floor — the pool is thirteen decks built to exercise sixty
+mechanics. 43 compiler tests.
