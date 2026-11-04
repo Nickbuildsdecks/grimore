@@ -11295,6 +11295,39 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
 }
 
 /**
+ * One clause joined by `and`, read as the sequence it is — and read **last**.
+ *
+ * `clausesOf` splits a line on the full stop and on `, then `, deliberately not on "and" (D387),
+ * because "and" is most often *inside* one clause rather than between two: "target creature gets
+ * +2/+2 **and** gains trample" is a single `pump` with a keyword in it, and "you gain X life **and**
+ * draw X cards" is one announced count spent twice. Splitting those would produce two continuous
+ * effects that expire independently, and two counts where the card prints one.
+ *
+ * So this is a **fallback**, tried only after all four readers have failed on the whole clause.
+ * That ordering is the entire safety argument: any conjunction a single reader understands keeps its
+ * single reading, and this sees only the ones nothing else could read at all.
+ *
+ * What is left over is the genuine sequence — "you draw a card and you lose 1 life" (Phyrexian
+ * Arena) — and `composeEffects` already has exactly the right invariants for it:
+ *
+ * - **All or nothing.** A half nobody can read refuses the whole clause, so a card never resolves
+ *   and does one of the two things it prints.
+ * - **At most one half may point at something.** `targets` is one list per script, so "destroy
+ *   target creature and target enchantment" is refused rather than silently aimed twice at the
+ *   same permanent.
+ *
+ * Every occurrence is split, not just the first, which is also what makes this terminate: each part
+ * has no " and " left in it, so the part's own `readEffect` reaches this function, finds nothing to
+ * split, and stops.
+ */
+function conjoinedEffect(clause: string, name: string): ReadEffect | null {
+  const parts = clause.trim().split(/\s+and\s+/i).map((part) => part.trim())
+    .filter((part) => part !== '');
+  if (parts.length < 2) return null;
+  return composeEffects(parts, name);
+}
+
+/**
  * Everything one printed clause can become.
  *
  * Untargeted first, since those are exact sentences that cannot be confused for anything else.
@@ -11306,7 +11339,10 @@ function readEffect(clause: string, name: string): ReadEffect | null {
   return untargetedEffect(clause, name)
     ?? damageEffect(clause, name)
     ?? selfEffect(clause, name)
-    ?? targetedEffect(clause, name);
+    ?? targetedEffect(clause, name)
+    // Last, and the docblock on `conjoinedEffect` is about why: a conjunction any reader above
+    // understands as one clause must keep that reading.
+    ?? conjoinedEffect(clause, name);
 }
 
 /**

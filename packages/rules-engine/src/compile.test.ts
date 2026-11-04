@@ -3346,6 +3346,159 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
   });
 
+  describe('a clause joined by "and", which is read only after everything else has failed', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({
+      state, controller: seat, source, targets, decisions: [],
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const triggerOf = (script: unknown, i = 0) =>
+      (field(script, 'triggers') as readonly TriggerDef[] | undefined)?.[i];
+
+    const spell = (text: string) => compileCard({
+      name: 'Joined Up', type_line: 'Instant', mana_cost: '{1}{G}', cmc: 2, colors: ['G'],
+      oracle_text: text,
+    });
+
+    it('draws and loses, as Phyrexian Arena’s hand-written upkeep trigger does', () => {
+      const mine = compiledScript('Phyrexian Arena');
+      expect(mine.unread).toEqual([]);
+      const base = arena({ decks: { 0: 'ashen-rite', 1: 'ember-rush' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const compiled = triggerOf(mine.script)!.effect(ctx);
+      const written = triggerOf(scriptFor('Phyrexian Arena'))!.effect(ctx);
+      expect(compiled).toEqual(written);
+      /*
+        Both halves happened, which is the whole point of the composition: a reader that took the
+        first clause and dropped the rest would pass a comparison against nothing.
+      */
+      expect(compiled.zones[zoneKey(0 as SeatIndex, 'hand')]!.length)
+        .toBe(base.zones[zoneKey(0 as SeatIndex, 'hand')]!.length + 1);
+      expect(compiled.seats[0]!.life).toBe(base.seats[0]!.life - 1);
+    });
+
+    it('reads a conjunction an earlier reader understands as one clause, not two', () => {
+      /*
+        "gets +2/+2 **and** gains trample" is one `pump` with a keyword in it, read by the grant
+        family. Note what this test does **not** prove: moving the fallback to the front of the
+        chain leaves it passing, because `conjoinedEffect` returns null on this clause either way —
+        its second half, "gains trample until end of turn" with no target in it, is a clause nothing
+        can read. A break run established that, and the test below is the one that guards the order.
+      */
+      const charm = spell('Target creature gets +2/+2 and gains trample until end of turn.');
+      expect(charm.ok).toBe(true);
+      if (!charm.ok) return;
+      expect(charm.unread).toEqual([]);
+      expect(field(charm.script, 'targets')).toHaveLength(1);
+      // One continuous effect with both halves in it, so both expire together (CR 611.2).
+      expect(field(charm.script, 'expiresAtEndOfTurn')).toBe(true);
+    });
+
+    it('still reads the announced count that is spent twice in one sentence', () => {
+      /*
+        The other conjunction that is not a sequence: Nissa's ultimate prints one X and spends it on
+        both halves. Split into two clauses, each would want its own count and the `where X is`
+        tail would belong to only one of them.
+      */
+      const counted = spell(
+        'You gain X life and draw X cards, where X is the number of lands you control.',
+      );
+      expect(counted.ok).toBe(true);
+      if (!counted.ok) return;
+      expect(counted.unread).toEqual([]);
+      const base = arena({
+        decks: { 0: 'verdant-guard' }, battlefield: { 0: ['Forest', 'Forest'] }, turn: 3,
+      });
+      const after = (field(counted.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      // Two lands: two life and two cards, from one count.
+      expect(after.seats[0]!.life).toBe(base.seats[0]!.life + 2);
+      expect(after.zones[zoneKey(0 as SeatIndex, 'hand')]!.length)
+        .toBe(base.zones[zoneKey(0 as SeatIndex, 'hand')]!.length + 2);
+    });
+
+    it('agrees with the hand-written card on every conjunction the pool prints twice over', () => {
+      /*
+        ## What this replaced, and why the obvious test is a tautology
+
+        The order of `readEffect`'s chain protects an invariant: a conjunction some earlier reader
+        understands as **one** clause must keep that reading, rather than being split into two. The
+        obvious guard is a sweep asking, for every printed clause with an "and" in it, whether both
+        readings can read it — and that sweep cannot be written from outside the compiler, because
+        `compileCard` does not say *which* reader read a clause. Once the fallback exists, "reads
+        whole" includes the fallback, so every split-readable clause is also whole-readable and the
+        sweep reduces to "the fallback exists". Three versions of it were written before that was
+        clear; a break run that moved the fallback to the front of the chain left every one of them
+        green.
+
+        ## What is observable, and is therefore what is checked
+
+        The sweep's one useful output was its list: the pool prints exactly four conjunctions that
+        both readings can reach, and two of them are hand-written cards —
+
+        - Zulaport Cutthroat and Cruel Celebrant: "each opponent loses 1 life and you gain 1 life"
+        - Phyrexian Arena: "you draw a card and you lose 1 life"
+        - Tatyova, Benthic Druid: "draw a card and you gain 1 life" (behind a prologue nothing reads
+          yet, so the card is still a hybrid)
+
+        For the ones with a script to compare against, the two readings **agree** — which is why no
+        test can tell them apart, and is the real reason the ordering is safe on this pool rather
+        than merely argued. That agreement is what this asserts, against the hand-written card.
+
+        The hazard the ordering guards is therefore a *future* single reader that disagrees with the
+        split on the same sentence. Nothing in this suite would catch that, and saying so here is
+        better than a test that looks like it would.
+      */
+      const base = arena({
+        decks: { 0: 'rot-harvest', 1: 'ember-rush' },
+        battlefield: { 0: ['Zulaport Cutthroat'] },
+        turn: 3,
+      });
+      const source = find(base, 0 as SeatIndex, 'battlefield', 'Zulaport Cutthroat');
+      const ctx = contextOn(base, 0 as SeatIndex, source);
+      const mine = triggerOf(compiledScript('Zulaport Cutthroat').script)!.effect(ctx);
+      const theirs = triggerOf(scriptFor('Zulaport Cutthroat'))!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      // Both halves, and in the printed direction: their life down, mine up.
+      expect(mine.seats[1]!.life).toBe(base.seats[1]!.life - 1);
+      expect(mine.seats[0]!.life).toBe(base.seats[0]!.life + 1);
+    });
+
+    it('refuses a conjunction whose halves each want their own target', () => {
+      /*
+        `targets` is one list per script, so two targeting halves would be handed the same object.
+        `composeEffects` already refuses that and this is the conjunction reaching it.
+      */
+      const two = spell('Destroy target creature and destroy target enchantment.');
+      expect(two.ok).toBe(true);
+      if (two.ok) expect(two.script).toBeUndefined();
+    });
+
+    it('refuses a conjunction with one half nothing can read', () => {
+      // All or nothing: a card that drew the card and silently skipped the rest would be worse
+      // than an unread line, which is dealt to a human instead (D362).
+      const half = spell('You draw a card and the table applauds politely.');
+      expect(half.ok).toBe(true);
+      if (half.ok) expect(half.script).toBeUndefined();
+    });
+
+    it('does not read a list of recipients as a sequence of clauses', () => {
+      /*
+        Hurricane's phrase, which is where a naive split is most tempting and most wrong: "each
+        creature with flying and each player" is one damage event's **recipients**, not two
+        effects. Neither half is a clause, so the composition refuses it — and the card stays
+        unread, which is the honest answer rather than half a Hurricane.
+      */
+      const sweep = spell('Joined Up deals 3 damage to each creature with flying and each player.');
+      expect(sweep.ok).toBe(true);
+      if (sweep.ok) expect(sweep.script).toBeUndefined();
+    });
+  });
+
   describe('loyalty abilities, against the two planeswalkers that compile whole', () => {
     const contextOn = (
       state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],

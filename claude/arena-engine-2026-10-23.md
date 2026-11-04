@@ -10687,3 +10687,26 @@ would move the coverage share, which would conflate "reads more" with "fixtures 
 
 **361 → 363 of 538 lines (67.1% → 67.5%)**, **225 → 226 of 339 cards**, per-card diff showing only
 those two moved. Six deliberate breaks, six failing tests; 257/257 in compile.test.ts; gate green.
+
+## A clause joined by "and", and a guard that could not be written (#317, D398)
+
+"and" is usually *inside* one clause, not between two — "gets +2/+2 **and** gains trample" is one
+pump — so the conjunction is read as a **fallback**, last in the chain, seeing only clauses every
+other reader has refused. What is left is the genuine sequence: Phyrexian Arena's "you draw a card
+and you lose 1 life", which is its whole card.
+
+The interesting part is the test that does not exist. The ordering protects "a conjunction one
+reader understands keeps that reading", and **that cannot be checked from outside the compiler**:
+`compileCard` does not say which reader read a clause, so once the fallback exists "reads whole"
+includes the fallback and the sweep reduces to "the fallback exists". Three versions were written
+and each was proved unable to fail by planting a reader — one used a stand-in card name (so no
+clause naming its own source could read at all), one kept the trigger's prologue (so it asked
+whether an instant could be read from a trigger's sentence), and the third was correct and
+tautological. The right answer was to delete it and write down why.
+
+What is left is what can be observed: the pool prints four conjunctions both readings can reach, and
+on the ones with a hand-written script the two readings **agree** — which is the real reason the
+order is safe here, and is asserted against the hand-written card.
+
+**363 → 364 of 538 lines (67.5% → 67.7%)**, **226 → 227 of 339 cards**, with exactly one line
+changed in the verbose diff. Five deliberate breaks, five failing tests; 264/264.

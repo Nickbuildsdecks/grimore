@@ -24876,3 +24876,66 @@ Six deliberate breaks, six failing tests: the reader out of the chain, the allow
 admit fade and time, every count read as X, word numbers not read, the nontoken death read as
 `another`, and the `nontoken` flag dropped. 4,000 more rows at scale, no throw. compile.test.ts
 257/257, gate green.
+
+## D398 — A clause joined by "and", and an invariant that cannot be observed from outside
+
+`clausesOf` splits a printed line on the full stop and on `, then `, deliberately **not** on "and"
+(D387), because "and" is most often *inside* one clause rather than between two: "target creature
+gets +2/+2 **and** gains trample" is a single `pump` with a keyword in it, and "you gain X life
+**and** draw X cards" is one announced count spent twice. Splitting those would make two continuous
+effects that expire independently, and two counts where the card prints one.
+
+So the conjunction is read as a **fallback**: `conjoinedEffect` sits last in `readEffect`'s chain and
+sees only clauses all four readers have already refused. What is left over is the genuine sequence —
+"you draw a card and you lose 1 life", Phyrexian Arena, whose whole card is that line — and
+`composeEffects` already has the right invariants for it: all or nothing, and at most one half may
+point at something.
+
+### The guard that could not be written, which is the finding
+
+The ordering protects an invariant worth stating: *a conjunction an earlier reader understands as one
+clause keeps that reading*. The obvious guard is a sweep over every printed clause with an "and" in
+it, asking whether both readings can read it. **That sweep cannot be written from outside the
+compiler**, because `compileCard` does not say which reader read a clause: once the fallback exists,
+"reads whole" includes the fallback, so every split-readable clause is also whole-readable and the
+sweep reduces to "the fallback exists".
+
+Three versions of it were written before that was clear, each one wrong in its own way and each one
+found by planting a reader and watching the sweep stay green:
+
+1. The first compiled every clause under a **stand-in card name**, so any clause naming its own
+   source ("Judith, the Scourge Diva deals 1 damage to any target") could not be read at all. A
+   sweep that found nothing, and would have gone on finding nothing for ever.
+2. The second kept the **trigger's prologue**, so it was asking whether an instant could be read
+   from "At the beginning of your upkeep, you draw a card and you lose 1 life" — always no, for a
+   reason with nothing to do with the conjunction.
+3. The third was correct about both and still tautological, for the reason above.
+
+That is the third time in this file a check has turned out unable to fail (D386's planted throw,
+D394's dropped hint), and the first time the right answer was to **delete it and say so** rather
+than to fix it.
+
+### What is observable, and so what is tested
+
+The sweep's one useful output was its list. The pool prints exactly **four** conjunctions both
+readings can reach: Zulaport Cutthroat and Cruel Celebrant ("each opponent loses 1 life and you gain
+1 life"), Phyrexian Arena, and Tatyova ("draw a card and you gain 1 life", behind a prologue nothing
+reads yet). For the ones with a hand-written script to compare against, **the two readings agree** —
+which is the real reason the ordering is safe on this pool rather than merely argued, and the reason
+no test can tell them apart. That agreement is asserted against the hand-written card.
+
+The hazard the ordering guards is therefore a *future* single reader that disagrees with the split on
+the same sentence. Nothing in the suite would catch that, and the test says so in as many words,
+which is better than a test that looks like it would.
+
+### Measured
+
+**363 → 364 of 538 printed lines (67.5% → 67.7%)**, and **226 → 227 of 339 cards**: Phyrexian Arena,
+whose one line this reads. The full verbose output was diffed against the previous run and exactly
+one line changed — which is the structural claim as well as the measurement, since the fallback can
+only fire where every other reader returned null.
+
+Five deliberate breaks, five failing tests (compose only the first half, allow two targeting halves,
+the drain reader dropping its gain half, the fallback removed, and the planted single reader that
+proved the discarded sweep could not fail). 4,000 more rows at scale, no throw. compile.test.ts
+264/264.
