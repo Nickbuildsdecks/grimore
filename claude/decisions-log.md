@@ -24939,3 +24939,61 @@ Five deliberate breaks, five failing tests (compose only the first half, allow t
 the drain reader dropping its gain half, the fallback removed, and the planted single reader that
 proved the discarded sweep could not fail). 4,000 more rows at scale, no throw. compile.test.ts
 264/264.
+
+## D399 — The X a spell was cast for, as a spell shape rather than a clause
+
+Three cards whose whole resolution is a sentence spending X: **Fireball** ("deals X damage to any
+target"), **Savage Twister** ("deals X damage to each creature") and **Mind Spring** ("Draw X
+cards"). All three have hand-written scripts, so all three are ground truth rather than guesses.
+
+### Why this is not a row in the clause vocabulary
+
+X is chosen as the spell is cast and paid for then (CR 601.2b), so by the time the effect runs `c.x`
+is a settled number — **on a spell**. On anything else it is zero: a triggered or activated ability's
+stack object carries no X, and `automation.ts` fills the context with `object.x ?? 0`.
+
+So a clause reader that understood bare `X` would quietly produce a card that **works and does
+nothing** the first time the same sentence appeared in a trigger. That is the failure this module is
+most careful about, because nothing is left unread for a human to notice (D362). Keeping the reading
+in `readResolution`, above `composeEffects`, makes it impossible by construction rather than by a
+rule somebody has to remember — the same argument that keeps `spellFlags` on the spell path.
+
+It is tested the only way that counts: a synthetic creature printing "When ~ enters the battlefield,
+draw X cards" is **refused**, and planting the same reading in the clause vocabulary turns that test
+red.
+
+### One clause, deliberately
+
+Every X card in the pool whose resolution is readable is a single sentence, and the multi-clause case
+is refused rather than half read. Exsanguinate is why: "Each opponent loses X life. **You gain life
+equal to the life lost this way**" — the second sentence does not spend X at all, it reads the life
+actually lost, which at a pod is X times the number of opponents. A reader that took the first
+sentence and stopped would be a drain with its lifegain silently dropped.
+
+Named as still unread so the next pass has somewhere to start: `Create X … tokens` (Secure the
+Wastes), which belongs with `tokenEffect`'s count rather than here, and that second drain sentence.
+
+### Three small readings taken from the hand-written cards rather than invented
+
+- **No zero guard on the targeted burn.** `dealDamage` refuses a non-positive amount, so a Fireball
+  cast for zero deals nothing without a branch saying so — and the hand-written Fireball has no
+  guard either. The sweep *does* guard, because its own hand-written script does: a Twister cast for
+  zero is no event rather than a damage event of zero to every creature.
+- **The sweep is every creature, the caster's own included**, which is the card and the reason it is
+  not a target.
+- **`drawLater`, not `draw`**, which is Mind Spring's hand-written reading: cards the controller is
+  *owed* arrive as moves they make, so a player drawing their last cards can act between them.
+
+### Measured
+
+**364 → 367 of 538 printed lines (67.7% → 68.2%)**, and **227 → 230 of 339 cards**: the three cards
+above, confirmed by the per-card diff as the only ones that moved.
+
+Five deliberate breaks, five failing tests: X read as one, the sweep narrowed to the caster's
+creatures, the X draw taken instead of owed, the one-clause rule dropped, and the planted clause
+reader that proved the spell-path restriction is tested. 5,000 more rows at scale, no throw.
+compile.test.ts 270/270.
+
+The live game is untouched by all of this: a hand-written script wins over a compiled one, so every
+card in the pool still plays exactly as it did. What changes is what the compiler can do with a card
+nobody has written a script for, which is the corpus.

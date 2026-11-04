@@ -11828,6 +11828,88 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
 }
 
 /**
+ * A spell whose resolution spends the **X it was cast for**.
+ *
+ * ## Why this is a spell-shape reader and not a row in the clause vocabulary
+ *
+ * X is chosen as the spell is cast and paid for then (CR 601.2b), so by the time the effect runs
+ * `c.x` is a settled number. On anything that is **not** a spell cast for X, `c.x` is zero: the
+ * stack object for a triggered or activated ability carries no X, and `automation.ts` fills the
+ * context with `object.x ?? 0`.
+ *
+ * So a clause reader that understood bare `X` would quietly produce a **card that works and does
+ * nothing** the moment the same sentence appeared in a trigger — the failure this module is most
+ * careful about, because nothing is left unread for a human to notice (D362). Keeping the reading
+ * on the spell path makes that impossible by construction rather than by a rule somebody has to
+ * remember, which is the same argument that put `spellFlags` on the spell path only.
+ *
+ * ## One clause, deliberately
+ *
+ * Every X card in the pool whose resolution is readable is a single sentence. A second sentence
+ * that *also* spends X is a real shape — Exsanguinate's "You gain life equal to the life lost this
+ * way" — and reading it needs the life actually lost rather than X, so it is a different reader and
+ * not a loop over this one. Refusing the multi-clause case keeps the two apart instead of half
+ * reading the second card.
+ *
+ * Still unread, and named so the next pass has somewhere to start: `Create X … tokens` (Secure the
+ * Wastes), which belongs with `tokenEffect`'s count rather than here, and the drain whose second
+ * sentence reads the life lost.
+ */
+function xSpellResolution(lines: readonly string[], name: string): ReadEffect | null {
+  if (lines.length !== 1) return null;
+  const clauses = clausesOf(lines[0]!);
+  if (clauses.length !== 1) return null;
+  const text = clauses[0]!.trim();
+  const self = escapeName(name);
+
+  const dealt = new RegExp(`^(?:${self}|it) deals X damage to (.+)$`, 'i').exec(text);
+  if (dealt !== null) {
+    const where = dealt[1]!.trim();
+    /*
+      The sweep, which is not a target at all: "X damage to each creature" is Savage Twister, and
+      its own hand-written script is the ground truth for the zero guard — a Twister cast for zero
+      is not a damage event of zero to every creature, it is no event.
+    */
+    if (/^each creature$/i.test(where)) {
+      return {
+        effect: (c) => {
+          if (c.x <= 0) return c.state;
+          return battlefield(c.state, (id) => {
+            const inst = c.state.instances[id];
+            return inst !== undefined && characteristicsOf(c.state, inst).isCreature;
+          }).reduce(
+            (state, id) => dealDamage(state, { kind: 'card', id }, c.x, {
+              controller: c.controller, source: c.source,
+            }),
+            c.state,
+          );
+        },
+      };
+    }
+    const spec = targetSpecFrom(where, false);
+    // No zero guard here, and Fireball's hand-written script has none either: `dealDamage` refuses
+    // a non-positive amount, so a Fireball cast for zero deals nothing without a branch saying so.
+    if (spec !== null) return { targets: [spec], effect: (c) => damageFirstTarget(c, c.x) };
+  }
+
+  if (/^(?:you )?draw X cards?$/i.test(text)) {
+    /*
+      `drawLater` and not `draw`, which is Mind Spring's hand-written reading: a draw the controller
+      is **owed** is taken as a move they make, so a player drawing their last cards can be asked
+      what to do between them. The `immediate` form is offered for the same reason the other draw
+      reader offers it — a composition that puts something after the draw needs the cards in hand
+      first — even though nothing in the pool follows an X draw with anything.
+    */
+    return {
+      effect: (c) => drawLater(c.state, c.controller, c.x),
+      immediate: (c) => draw(c.state, c.controller, c.x),
+    };
+  }
+
+  return null;
+}
+
+/**
  * A spell's whole resolution, however many clauses it is printed in — or `null` if any of them
  * cannot be read.
  *
@@ -11837,5 +11919,10 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
  * live there.
  */
 function readResolution(lines: readonly string[], name: string): ReadEffect | null {
-  return composeEffects(lines.flatMap(clausesOf), name);
+  /*
+    The X shapes first, because `composeEffects` would refuse them: the clause vocabulary has no
+    reading for a bare `X` on purpose, and `xSpellResolution`'s docblock is why that stays true
+    outside the spell path.
+  */
+  return xSpellResolution(lines, name) ?? composeEffects(lines.flatMap(clausesOf), name);
 }

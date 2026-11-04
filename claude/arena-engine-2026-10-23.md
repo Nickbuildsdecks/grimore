@@ -10710,3 +10710,22 @@ order is safe here, and is asserted against the hand-written card.
 
 **363 → 364 of 538 lines (67.5% → 67.7%)**, **226 → 227 of 339 cards**, with exactly one line
 changed in the verbose diff. Five deliberate breaks, five failing tests; 264/264.
+
+## The X a spell was cast for (#317, D399)
+
+Fireball, Savage Twister and Mind Spring — three cards whose whole resolution spends the X they were
+cast for, all three with hand-written scripts to check against.
+
+It is a **spell shape**, not a clause reader, and that is the whole safety argument: X is settled as
+the spell is cast (CR 601.2b), but a triggered ability's stack object carries no X, so a clause
+reader that understood bare X would give some future creature a trigger that draws nothing, for
+ever, with nothing unread for a human to notice. A synthetic creature printing "draw X cards" is
+refused, and planting the reading in the clause vocabulary turns that test red.
+
+The multi-clause case is refused too, because Exsanguinate's second sentence does not spend X — it
+reads the life actually lost, which at a pod is X times the opponents.
+
+**364 → 367 of 538 lines (67.7% → 68.2%)**, **227 → 230 of 339 cards**. Five deliberate breaks, five
+failing tests; 270/270; 5,000 rows at scale with no throw. The live game is unchanged — a
+hand-written script still wins over a compiled one — so this is entirely about what the corpus will
+get.

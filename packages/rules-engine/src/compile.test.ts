@@ -3499,6 +3499,128 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
   });
 
+  describe('the X a spell was cast for, which is a shape and not a clause', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+      x = 0,
+    ): EffectContext => ({
+      state, controller: seat, source, targets, decisions: [], x,
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const resolve = (script: unknown) =>
+      field(script, 'onResolve') as (c: EffectContext) => GameState;
+
+    it('deals the X it was cast for, at the target, as Fireball’s hand-written script does', () => {
+      const mine = compiledScript('Fireball');
+      expect(mine.unread).toEqual([]);
+      const base = arena({
+        decks: { 0: 'ember-rush', 1: 'verdant-guard' },
+        battlefield: { 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: bear }], 3);
+      expect(resolve(mine.script)(ctx)).toEqual(resolve(scriptFor('Fireball'))(ctx));
+      // Three, not one and not the creature's toughness: the number the spell was cast for.
+      expect(resolve(mine.script)(ctx).instances[bear]!.damage).toBe(3);
+      // And it points where the card points.
+      expect(field(mine.script, 'targets')).toEqual(field(scriptFor('Fireball'), 'targets'));
+    });
+
+    it('deals nothing when X is zero, as the hand-written Fireball does', () => {
+      const base = arena({
+        decks: { 0: 'ember-rush', 1: 'verdant-guard' },
+        battlefield: { 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: bear }], 0);
+      const mine = resolve(compiledScript('Fireball').script)(ctx);
+      expect(mine).toEqual(resolve(scriptFor('Fireball'))(ctx));
+      // `dealDamage` refuses a non-positive amount, which is why neither card has a zero guard.
+      expect(mine).toEqual(base);
+    });
+
+    it('sweeps every creature for X, as Savage Twister’s hand-written script does', () => {
+      const mine = compiledScript('Savage Twister');
+      expect(mine.unread).toEqual([]);
+      const base = arena({
+        decks: { 0: 'kindle-grove', 1: 'verdant-guard' },
+        battlefield: { 0: ['Centaur Courser'], 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [], 2);
+      const after = resolve(mine.script)(ctx);
+      expect(after).toEqual(resolve(scriptFor('Savage Twister'))(ctx));
+      /*
+        Both creatures, the caster's own included — which is the card, and the reason this is a
+        sweep rather than a target. A reader that used the targeted branch would have hit one.
+      */
+      const mine1 = find(base, 0 as SeatIndex, 'battlefield', 'Centaur Courser');
+      const theirs = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      expect(after.instances[mine1]!.damage).toBe(2);
+      expect(after.instances[theirs]!.damage).toBe(2);
+      // No target choice at all, so nothing is asked for.
+      expect(field(mine.script, 'targets')).toBeUndefined();
+    });
+
+    it('owes the controller X cards, as Mind Spring’s hand-written script does', () => {
+      const mine = compiledScript('Mind Spring');
+      expect(mine.unread).toEqual([]);
+      const base = arena({ decks: { 0: 'delta-bloom', 1: 'ember-rush' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [], 4);
+      const after = resolve(mine.script)(ctx);
+      expect(after).toEqual(resolve(scriptFor('Mind Spring'))(ctx));
+      /*
+        Owed rather than taken: `drawLater` is the hand-written reading, so the cards arrive as
+        moves the controller makes. A reader that called `draw` would pass a hand-size check and
+        fail this one.
+      */
+      expect(after.drawsOwed.length).toBe(base.drawsOwed.length + 4);
+      expect(after.zones[zoneKey(0 as SeatIndex, 'hand')]!.length)
+        .toBe(base.zones[zoneKey(0 as SeatIndex, 'hand')]!.length);
+    });
+
+    it('will not read the same sentence on a permanent, where there is no X to spend', () => {
+      /*
+        The safety property, and the reason the X reading lives on the spell path rather than in the
+        clause vocabulary. A triggered ability's stack object carries no X — `automation.ts` fills
+        the context with `object.x ?? 0` — so a clause reader that understood bare X would give this
+        creature a trigger that draws **nothing**, for ever, with nothing left unread for a human to
+        notice (D362).
+
+        So the line is refused and the card is dealt as a hybrid instead, which is the honest
+        outcome.
+      */
+      const permanent = compileCard({
+        name: 'Hopeful Drake', type_line: 'Creature — Drake', mana_cost: '{X}{U}', cmc: 1,
+        colors: ['U'], power: '2', toughness: '2',
+        oracle_text: 'When Hopeful Drake enters the battlefield, draw X cards.',
+      });
+      expect(permanent.ok).toBe(true);
+      if (!permanent.ok) return;
+      expect(permanent.script).toBeUndefined();
+      expect(permanent.unread.map((u) => u.why)).toEqual(['no-reader']);
+    });
+
+    it('refuses a second sentence that also spends X', () => {
+      /*
+        Exsanguinate's shape: "Each opponent loses X life. You gain life equal to the life lost this
+        way." The second sentence is not an X clause at all — it reads the life actually lost, which
+        at a pod is X times the number of opponents — so reading the first and stopping would be a
+        drain with the lifegain silently dropped. One clause only, until that second reader exists.
+      */
+      const two = compileCard({
+        name: 'Twin Spend', type_line: 'Sorcery', mana_cost: '{X}{B}', cmc: 1, colors: ['B'],
+        oracle_text: 'Twin Spend deals X damage to any target. You gain X life.',
+      });
+      expect(two.ok).toBe(true);
+      if (two.ok) expect(two.script).toBeUndefined();
+    });
+  });
+
   describe('loyalty abilities, against the two planeswalkers that compile whole', () => {
     const contextOn = (
       state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
