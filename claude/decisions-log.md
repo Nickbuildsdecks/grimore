@@ -24997,3 +24997,39 @@ compile.test.ts 270/270.
 The live game is untouched by all of this: a hand-written script wins over a compiled one, so every
 card in the pool still plays exactly as it did. What changes is what the compiler can do with a card
 nobody has written a script for, which is the corpus.
+
+## D400 — X tokens, and one parser for the token a clause names
+
+Secure the Wastes: "Create X 1/1 white Warrior creature tokens", an instant, which is the X card
+D399 named as still unread and said belonged with `tokenEffect`'s count rather than with the burn.
+
+It belongs with **both**, which is why this is a refactor and not a fourth regex. The token's
+*definition* — "1/1 white Warrior creature token", or "1/1 colorless Thopter artifact creature token
+with flying" — is the same parse wherever the count comes from, and that parse is not small: colour
+words taken from the front, the optional "artifact", a capitalised subtype, and the keyword
+read-back that asks `printedKeywords` whether the engine can read back the text about to be written
+down. A second copy of it would be a second place for the same sentence to be read differently.
+
+So `tokenFrom(body)` returns `{ token, printed }` — the definition, and **the count word unread** —
+and the two callers make sense of the word:
+
+- `tokenEffect` accepts a number or a number-word; `X` with a `where X is` tail is a board count
+  (D392), and `a … for each` is the per-thing count (D396).
+- `xSpellResolution` accepts `X` alone, which is the cast's X, and only on the spell path for the
+  reason D399 sets out: a trigger's stack object carries no X.
+
+The refactor was made first and verified to change nothing — 270 tests green before the new reading
+was added — so the coverage move is attributable to the reading and not to the shuffle.
+
+The zero guard is Secure the Wastes' own hand-written one, and the equality test against that script
+compares the **whole token definition**, so a compiled Warrior of the wrong colour or size fails
+there rather than in a count.
+
+### Measured
+
+**367 → 368 of 538 printed lines (68.2% → 68.4%)**, and **230 → 231 of 339 cards**: Secure the
+Wastes, the only card the per-card diff shows moving.
+
+Three deliberate breaks, three failing tests: the X count read as one, the zero guard dropped, and
+the printed-`X` requirement dropped (which would hand the cast's X to a token clause that printed a
+number). 4,000 more rows at scale, no throw. compile.test.ts 273/273.

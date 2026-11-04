@@ -10729,3 +10729,18 @@ reads the life actually lost, which at a pod is X times the opponents.
 failing tests; 270/270; 5,000 rows at scale with no throw. The live game is unchanged — a
 hand-written script still wins over a compiled one — so this is entirely about what the corpus will
 get.
+
+## X tokens, and one parser for the token (#317, D400)
+
+Secure the Wastes — "Create X 1/1 white Warrior creature tokens" — which D399 named as still
+unread. The count belongs to the X spell and the **token definition** belongs to `tokenEffect`, and
+that definition is not a small parse: colour words, the optional "artifact", a capitalised subtype,
+and the keyword read-back that asks whether the engine can read back the text about to be written
+down. So it is parsed once, by `tokenFrom`, which hands back the count word **unread** for each
+caller to make sense of.
+
+The refactor landed first and changed nothing (270 tests green before the new reading was added), so
+the coverage move is attributable to the reading rather than the shuffle.
+
+**367 → 368 of 538 lines (68.2% → 68.4%)**, **230 → 231 of 339 cards**. Three deliberate breaks,
+three failing tests; 273/273; 4,000 rows at scale with no throw.

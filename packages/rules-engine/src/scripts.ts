@@ -10366,6 +10366,96 @@ function forEachCount(phrase: string, name: string): ((c: EffectContext) => numb
 }
 
 /**
+ * The token a `create …` clause names, and the count it printed — kept apart on purpose.
+ *
+ * `tokenEffect` reads the count from the sentence or from a tail; `xSpellResolution` reads it off
+ * the spell's X. Both need the same **token definition**, and a second parser for it would be a
+ * second place for "1/1 colorless Thopter artifact creature token with flying" to be read
+ * differently. So the definition is parsed once here and the count is returned unread, as the word
+ * the card printed, for the caller to make sense of.
+ */
+function tokenFrom(body: string): { token: CardDef; printed: string } | null {
+  const made = /^create ([\w]+) (\d+)\/(\d+) (.+?) creature tokens?(?: with (.+))?$/i
+    .exec(body.trim());
+  if (made === null) return null;
+  /*
+    The middle is the colours, the subtype, and possibly the word "artifact": "white Spirit",
+    "black and green Insect", "colorless Thopter artifact". Taken a word at a time from the front
+    while the words are colours, which is what makes "and" unambiguous — it only ever joins two
+    colour words in this phrase.
+  */
+  const words = made[4]!.trim().split(/\s+/);
+  const colors: Color[] = [];
+  let i = 0;
+  for (; i < words.length; i += 1) {
+    const word = words[i]!.toLowerCase();
+    if (word === 'and' && colors.length > 0) continue;
+    if (!(word in TOKEN_COLOURS)) break;
+    const colour = TOKEN_COLOURS[word];
+    if (colour !== undefined && colour !== null) colors.push(colour);
+  }
+  if (i === 0) return null;
+
+  const rest = words.slice(i);
+  const isArtifact = rest[rest.length - 1]?.toLowerCase() === 'artifact';
+  const subtypeWords = isArtifact ? rest.slice(0, -1) : rest;
+  /*
+    A subtype is printed capitalised: "Spirit", "Elf Warrior".
+
+    **Nothing in the pool exercises this**, and that is said rather than implied: deleting the check
+    leaves all 82 ground-truth tests green, because the regex around it already requires a count, a
+    power and toughness, a colour word, and "creature token" with nothing after it. So it is not
+    load-bearing here and no test pins it — which by this session's own standard would normally mean
+    deleting it.
+
+    It stays, deliberately, because of which way it errs. This slot becomes the token's **name**, the
+    pool is 348 cards against the tens of thousands #318 will import, and a lowercase word reaching
+    it would produce a token named something that is not a creature type. Over-strictness costs
+    coverage on a card nobody can name; over-permissiveness costs a wrong token on a card nobody has
+    looked at yet. Revisit it when the bulk corpus can be measured, not before.
+  */
+  if (subtypeWords.length === 0 || !subtypeWords.every((word) => /^[A-Z][a-z'-]*$/.test(word))) {
+    return null;
+  }
+  const subtype = subtypeWords.join(' ');
+
+  const named = made[5] === undefined
+    ? []
+    : made[5].trim().replace(/\.$/, '').split(/,\s*|\s+and\s+/).map((k) => k.trim())
+      .filter((k) => k !== '');
+  const oracleText = named.length === 0
+    ? ''
+    : (() => {
+      const line = named.join(', ');
+      return line.charAt(0).toUpperCase() + line.slice(1);
+    })();
+  /*
+    The validation this function's docblock argues for: the engine has to be able to read back every
+    keyword the clause named, out of the text about to be written down.
+
+    `printedLandwalk` counts beside `printedKeywords` because landwalk is not a keyword in this
+    engine — it is its own characteristic (CR 702.14), so `KEYWORDS` has no `islandwalk` and a token
+    "with islandwalk" was refused here even though the rules can express it. That refusal was right
+    until #324: printed landwalk did nothing at all, so writing it down would have been a token whose
+    text lied. Now that it is read, the token can have it, and this is the line that lets it.
+  */
+  const readBack = printedKeywords(oracleText).length + printedLandwalk(oracleText).length;
+  if (readBack !== named.length) return null;
+
+  const token: CardDef = {
+    name: subtype,
+    typeLine: `Token ${isArtifact ? 'Artifact ' : ''}Creature — ${subtype}`,
+    manaCost: '',
+    cmc: 0,
+    power: made[2]!,
+    toughness: made[3]!,
+    oracleText,
+    colors,
+  };
+  return { token, printed: made[1]! };
+}
+
+/**
  * The thing a count counts, as the function that counts it.
  *
  * Shared by both grammars above. `number` says whether the caller's grammar names the thing in the
@@ -10447,12 +10537,11 @@ function tokenEffect(clause: string, name: string): ReadEffect | null {
   if ((announced !== null || perThing !== null) && counted === null) return null;
   const body = announced?.[1] ?? perThing?.[1] ?? flat;
 
-  const made = /^create ([\w]+) (\d+)\/(\d+) (.+?) creature tokens?(?: with (.+))?$/i
-    .exec(body.trim());
+  const made = tokenFrom(body.trim());
   if (made === null) return null;
 
   // Either a printed number, or a board count to supply it — never both and never neither.
-  const fixed = counted === null ? countFrom(made[1]!) : null;
+  const fixed = counted === null ? countFrom(made.printed) : null;
   if (counted === null && fixed === null) return null;
   /*
     What the printed count has to be when a tail supplies the real one: `X` for the announced
@@ -10461,85 +10550,11 @@ function tokenEffect(clause: string, name: string): ReadEffect | null {
     reader is not reading.
   */
   if (counted !== null) {
-    const word = made[1]!.toLowerCase();
+    const word = made.printed.toLowerCase();
     const expected = announced !== null ? ['x'] : ['a', 'an', 'one'];
     if (!expected.includes(word)) return null;
   }
 
-  /*
-    The middle is the colours, the subtype, and possibly the word "artifact": "white Spirit",
-    "black and green Insect", "colorless Thopter artifact". Taken a word at a time from the front
-    while the words are colours, which is what makes "and" unambiguous — it only ever joins two
-    colour words in this phrase.
-  */
-  const words = made[4]!.trim().split(/\s+/);
-  const colors: Color[] = [];
-  let i = 0;
-  for (; i < words.length; i += 1) {
-    const word = words[i]!.toLowerCase();
-    if (word === 'and' && colors.length > 0) continue;
-    if (!(word in TOKEN_COLOURS)) break;
-    const colour = TOKEN_COLOURS[word];
-    if (colour !== undefined && colour !== null) colors.push(colour);
-  }
-  if (i === 0) return null;
-
-  const rest = words.slice(i);
-  const isArtifact = rest[rest.length - 1]?.toLowerCase() === 'artifact';
-  const subtypeWords = isArtifact ? rest.slice(0, -1) : rest;
-  /*
-    A subtype is printed capitalised: "Spirit", "Elf Warrior".
-
-    **Nothing in the pool exercises this**, and that is said rather than implied: deleting the check
-    leaves all 82 ground-truth tests green, because the regex around it already requires a count, a
-    power and toughness, a colour word, and "creature token" with nothing after it. So it is not
-    load-bearing here and no test pins it — which by this session's own standard would normally mean
-    deleting it.
-
-    It stays, deliberately, because of which way it errs. This slot becomes the token's **name**, the
-    pool is 348 cards against the tens of thousands #318 will import, and a lowercase word reaching
-    it would produce a token named something that is not a creature type. Over-strictness costs
-    coverage on a card nobody can name; over-permissiveness costs a wrong token on a card nobody has
-    looked at yet. Revisit it when the bulk corpus can be measured, not before.
-  */
-  if (subtypeWords.length === 0 || !subtypeWords.every((word) => /^[A-Z][a-z'-]*$/.test(word))) {
-    return null;
-  }
-  const subtype = subtypeWords.join(' ');
-
-  const named = made[5] === undefined
-    ? []
-    : made[5].trim().replace(/\.$/, '').split(/,\s*|\s+and\s+/).map((k) => k.trim())
-      .filter((k) => k !== '');
-  const oracleText = named.length === 0
-    ? ''
-    : (() => {
-      const line = named.join(', ');
-      return line.charAt(0).toUpperCase() + line.slice(1);
-    })();
-  /*
-    The validation this function's docblock argues for: the engine has to be able to read back every
-    keyword the clause named, out of the text about to be written down.
-
-    `printedLandwalk` counts beside `printedKeywords` because landwalk is not a keyword in this
-    engine — it is its own characteristic (CR 702.14), so `KEYWORDS` has no `islandwalk` and a token
-    "with islandwalk" was refused here even though the rules can express it. That refusal was right
-    until #324: printed landwalk did nothing at all, so writing it down would have been a token whose
-    text lied. Now that it is read, the token can have it, and this is the line that lets it.
-  */
-  const readBack = printedKeywords(oracleText).length + printedLandwalk(oracleText).length;
-  if (readBack !== named.length) return null;
-
-  const token: CardDef = {
-    name: subtype,
-    typeLine: `Token ${isArtifact ? 'Artifact ' : ''}Creature — ${subtype}`,
-    manaCost: '',
-    cmc: 0,
-    power: made[2]!,
-    toughness: made[3]!,
-    oracleText,
-    colors,
-  };
   /*
     The zero guard is the hand-written cards' own: Krenko and Chasm Skulker both return the state
     untouched when the count is nothing, rather than asking `createToken` for no tokens. Keeping it
@@ -10549,11 +10564,11 @@ function tokenEffect(clause: string, name: string): ReadEffect | null {
     return {
       effect: (c) => {
         const n = counted(c);
-        return n === 0 ? c.state : createToken(c.state, c.controller, token, n);
+        return n === 0 ? c.state : createToken(c.state, c.controller, made.token, n);
       },
     };
   }
-  return { effect: (c) => createToken(c.state, c.controller, token, fixed!) };
+  return { effect: (c) => createToken(c.state, c.controller, made.token, fixed!) };
 }
 
 /**
@@ -11851,9 +11866,9 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
  * not a loop over this one. Refusing the multi-clause case keeps the two apart instead of half
  * reading the second card.
  *
- * Still unread, and named so the next pass has somewhere to start: `Create X … tokens` (Secure the
- * Wastes), which belongs with `tokenEffect`'s count rather than here, and the drain whose second
- * sentence reads the life lost.
+ * Still unread, and named so the next pass has somewhere to start: the drain whose second sentence
+ * reads the life actually lost rather than X (Exsanguinate), and `Each opponent loses X life` on
+ * its own, which has no card in the pool to check against.
  */
 function xSpellResolution(lines: readonly string[], name: string): ReadEffect | null {
   if (lines.length !== 1) return null;
@@ -11890,6 +11905,21 @@ function xSpellResolution(lines: readonly string[], name: string): ReadEffect | 
     // No zero guard here, and Fireball's hand-written script has none either: `dealDamage` refuses
     // a non-positive amount, so a Fireball cast for zero deals nothing without a branch saying so.
     if (spec !== null) return { targets: [spec], effect: (c) => damageFirstTarget(c, c.x) };
+  }
+
+  /*
+    The tokens, whose count is the X and whose definition comes from the shared `tokenFrom` — the
+    same parser `tokenEffect` uses, so "1/1 white Warrior creature token" is read one way only.
+    Secure the Wastes is the card, and the zero guard is its hand-written script's own: nothing is
+    asked of `createToken` for a spell cast for nothing.
+  */
+  const tokens = tokenFrom(text);
+  if (tokens !== null && tokens.printed.toLowerCase() === 'x') {
+    return {
+      effect: (c) => (c.x === 0
+        ? c.state
+        : createToken(c.state, c.controller, tokens.token, c.x)),
+    };
   }
 
   if (/^(?:you )?draw X cards?$/i.test(text)) {

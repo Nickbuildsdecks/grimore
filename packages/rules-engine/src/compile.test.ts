@@ -3583,6 +3583,54 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         .toBe(base.zones[zoneKey(0 as SeatIndex, 'hand')]!.length);
     });
 
+    it('makes X tokens, as Secure the Wastes’ hand-written script does', () => {
+      const mine = compiledScript('Secure the Wastes');
+      expect(mine.unread).toEqual([]);
+      const base = arena({ decks: { 0: 'forge-alliance', 1: 'ember-rush' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [], 3);
+      const after = resolve(mine.script)(ctx);
+      expect(after).toEqual(resolve(scriptFor('Secure the Wastes'))(ctx));
+      /*
+        Three Warriors, and `toEqual` against the hand-written card is the strong part: it compares
+        the token's whole definition, so a compiled Warrior of the wrong colour or the wrong size
+        would fail here rather than in a count.
+      */
+      expect(ids(after, 0 as SeatIndex, 'battlefield').filter((id) => nameOf(after, id) === 'Warrior'))
+        .toHaveLength(3);
+    });
+
+    it('makes nothing for X of zero, as the hand-written script does', () => {
+      const base = arena({ decks: { 0: 'forge-alliance', 1: 'ember-rush' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [], 0);
+      const after = resolve(compiledScript('Secure the Wastes').script)(ctx);
+      expect(after).toEqual(resolve(scriptFor('Secure the Wastes'))(ctx));
+      expect(after).toEqual(base);
+    });
+
+    it('still refuses X tokens where the count is a tail rather than the cast', () => {
+      /*
+        The count is shared with `tokenEffect` and the printed word decides which reading applies:
+        `X` with no tail is the cast's X, `X` with a `where X is` tail is a board count (D392), and
+        `a … for each` is the per-thing count (D396). A sentence with **both** — an X tail on an X
+        spell — is not something a card prints, and the tail wins, which keeps the board count's
+        reading rather than silently substituting the cast's.
+      */
+      const tailed = compileCard({
+        name: 'Doubled Count', type_line: 'Sorcery', mana_cost: '{X}{G}', cmc: 1, colors: ['G'],
+        oracle_text: 'Create X 1/1 green Elf creature tokens, where X is the number of lands you control.',
+      });
+      expect(tailed.ok).toBe(true);
+      if (!tailed.ok) return;
+      expect(tailed.unread).toEqual([]);
+      const base = arena({
+        decks: { 0: 'verdant-guard' }, battlefield: { 0: ['Forest', 'Forest'] }, turn: 3,
+      });
+      // Two lands, and X deliberately set to 5: the board count is what the card reads.
+      const after = resolve(tailed.script)(contextOn(base, 0 as SeatIndex, 'c1', [], 5));
+      expect(ids(after, 0 as SeatIndex, 'battlefield').filter((id) => nameOf(after, id) === 'Elf'))
+        .toHaveLength(2);
+    });
+
     it('will not read the same sentence on a permanent, where there is no X to spend', () => {
       /*
         The safety property, and the reason the X reading lives on the spell path rather than in the
