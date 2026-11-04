@@ -21,3 +21,4 @@ export * from './bot.js';
 export * from './pacts.js';
 export * from './view.js';
 export * from './compile.js';
+export * from './derive.js';

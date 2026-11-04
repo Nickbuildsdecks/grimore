@@ -25,7 +25,8 @@ import {
   addMana, canAfford, maxAffordableX, parseManaCost,
   type ManaCost, type ManaPool, type ManaType,
 } from './mana.js';
-import { abilityTargetSpecs, scriptFor, scriptForCard } from './scripts.js';
+import { abilityTargetSpecs, scriptFor } from './scripts.js';
+import { scriptForCard } from './derive.js';
 import {
   FORETELL_COST, MORPH_COST, morphCostText,
   type AbilityDef, type CardScript, type TargetSpec,

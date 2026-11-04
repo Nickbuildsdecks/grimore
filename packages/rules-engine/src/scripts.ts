@@ -19,7 +19,6 @@
  */
 import { characteristicsOf, hasSubtype, hasType, parseTypeLine, printedKeywords } from './characteristics.js';
 import { zoneKey, type CardDef } from './cards.js';
-import { cardFromData } from './fromCardData.js';
 import { listAt } from './cardActions.js';
 import {
   addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
@@ -8729,67 +8728,6 @@ export const CARD_SCRIPTS: ReadonlyMap<string, CardScript> = new Map(
 /** The script for a card, or undefined when it is not automated. */
 export const scriptFor = (name: string | undefined): CardScript | undefined =>
   name === undefined ? undefined : CARD_SCRIPTS.get(name.trim().toLowerCase());
-
-/**
- * Scripts derived from a card's own data, cached by the definition that produced them.
- *
- * A `WeakMap` keyed by the `CardDef` object rather than a registry keyed by name, which is the one
- * decision in here worth stating. A name-keyed cache would be global mutable state shared between
- * every game in the process, and two games holding different data under the same name — one from a
- * card sync, one from a fixture — would silently get whichever derived first. Keying on the object
- * means a derivation belongs to the definition it was read from and nothing else, and it is
- * collected with that definition.
- */
-const DERIVED = new WeakMap<CardDef, CardScript | null>();
-
-/**
- * The script a card plays by: the hand-written one, or one derived from its printed data.
- *
- * **The hand-written script always wins**, which is what makes this safe to put in the engine's
- * mana and ability paths: all 348 cards in the pool have one, so for every card the engine plays
- * today this is exactly `scriptFor(def.name)` and nothing is derived at all. Derivation only ever
- * reaches a card nobody has written a script for — which until now meant cardboard, a card with no
- * type line that could do nothing whatsoever.
- *
- * What it buys is the half of a pasted list that needs no code: a Forest that actually taps for
- * green. `fromCardData.ts` has the whole argument for which cards qualify and why the list of
- * refusals is long; the short version is that a mana ability is the one thing the engine cannot
- * read off a card and the one thing printed data states exactly.
- */
-export function scriptForCard(def: CardDef | undefined): CardScript | undefined {
-  if (def === undefined) return undefined;
-  const written = scriptFor(def.name);
-  if (written !== undefined) return written;
-  const cached = DERIVED.get(def);
-  if (cached !== undefined) return cached ?? undefined;
-  /*
-    Derived from the definition, which carries only what a card prints — so the row handed to
-    `cardFromData` is the definition read back as data. A definition with no type line is cardboard
-    and is refused by the first check in there, which is what keeps cardboard cardboard.
-
-    **One check cannot run on this path, and it is worth being plain about:** a `CardDef` has no
-    `produced_mana`, so the cross-check against Scryfall's own answer — the one that refuses a land
-    whose text and data disagree — is not available here. This path has the printed text and the
-    type line and nothing else. A caller that holds the database row should hand *that* to
-    `cardFromData` directly and keep the derivation it returns, which is how the cross-check earns
-    its keep; what remains here is the text parse, which is deliberately narrow for that reason.
-  */
-  const result = cardFromData({
-    name: def.name,
-    type_line: def.typeLine,
-    oracle_text: def.oracleText,
-    mana_cost: def.manaCost,
-    cmc: def.cmc,
-    colors: def.colors,
-    power: def.power ?? null,
-    toughness: def.toughness ?? null,
-    loyalty: def.loyalty ?? null,
-    layout: def.faces === undefined ? 'normal' : def.faces.kind,
-  });
-  const script = result.ok ? result.script ?? null : null;
-  DERIVED.set(def, script);
-  return script ?? undefined;
-}
 
 export const scriptedCardNames = (): string[] => [...CARD_SCRIPTS.values()].map((s) => s.name).sort();
 

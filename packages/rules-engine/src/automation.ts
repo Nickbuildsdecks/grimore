@@ -53,7 +53,8 @@ import {
   type ManaCost, type ManaPick, type ManaPool, type ManaType,
 } from './mana.js';
 import { actionSeed, mulberry32, replaceSeat, seatName, shuffled } from './internal.js';
-import { scriptFor, soleTargetSpecOf, scriptForCard } from './scripts.js';
+import { scriptFor, soleTargetSpecOf } from './scripts.js';
+import { scriptForCard } from './derive.js';
 import type {
   AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ConditionFn, CountersDecisionSpec,
   DecisionSpec, DecisionSpecOf, ModeDef, ReplacementEvent, TargetSpec, TriggerDef, TriggerEvent,

@@ -9969,3 +9969,40 @@ green — the surrounding regex already carries the weight. It stays because the
 wrong are not symmetric: the slot becomes the token's *name*, and over-permissiveness on a corpus
 nobody has looked at yet is worse than losing a card nobody can name. The comment now says that
 instead of implying the check does work it cannot be shown to do.
+
+## The compiler reaches a table (#317, D374)
+
+Seven increments of compiler and none of it had reached a game. `scriptForCard` — the one function
+the engine asks "what does this card do?" — still called `cardFromData` and nothing else, so 146
+cards' worth of derived rules existed and no table used them.
+
+New module `derive.ts`, above both `scripts.ts` and `compile.ts` (the compiler imports the scripts,
+so the answer could not grow a third branch where it was). Precedence: hand-written script, then
+`cardFromData`'s whole-card answer, then the compiler. **The hand-written script still wins**, so
+all thirteen built-in decks are untouched.
+
+### The half that makes turning it on honest
+
+A compiled script is often partial, and a card that does three of its four printed things with
+nobody told which one is missing is exactly the trade D362 refuses. So `coverage.ts`'s
+`'text-not-automated'` — reserved since that file was written, *"nothing emits this yet… the
+compiler is what will"* — now emits, quoting the line that does nothing.
+
+Three rules keep the report true:
+
+- a card with a hand-written script reports nothing (the script is the authority; otherwise a
+  Kitchen Finks would read as partly manual). Pinned by a test over all thirteen decks.
+- an unimplemented keyword is not reported — the card plays, and what is missing is one way to cast
+  it (D370).
+- `manualNote` says "cannot fully play", because the list now holds two different things.
+
+### A bound by arithmetic, because the instrument cannot see it
+
+`wire-growth.mjs` run on this build: worst peak **47202 bytes, 36.0% of the 128 KiB cap** across
+three singleton pods of 63-82 turns. But it **cannot measure the new payload** — every deck it can
+build is a pool deck, every pool card has a hand-written script, so `manual` is empty in all three
+games. That arm needs the imported corpus (#318).
+
+So: a hundred cards each quoting an unabridged paragraph would add ~47 KiB to a 47 KiB peak. The
+quote is capped at 120 characters, holding an entry to 227 bytes measured, which brings the same
+worst case to ~23 KiB added — 70 of 128.

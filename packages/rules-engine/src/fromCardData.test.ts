@@ -9,7 +9,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { cardFromData, type CardDataRow } from './fromCardData.js';
-import { scriptForCard, scriptFor } from './scripts.js';
+import { scriptFor } from './scripts.js';
+import { scriptForCard } from './derive.js';
 import { STARTER_DECKS } from './starterDecks.js';
 import { arena, apply, find, ids, life, nameOf, advanceTo, passBoth, drain, tapAllLands, nextTurn } from './testkit.js';
 import { legalActions, manaSources, potentialMana } from './legalActions.js';

@@ -23409,3 +23409,66 @@ to do: the slot becomes the token's **name**, the pool is 348 cards against the 
 #318 will import, and the two ways of being wrong are not symmetric. Over-strictness costs coverage
 on a card nobody can name; over-permissiveness costs a token named something that is not a creature
 type, on a card nobody has looked at. Revisit when the bulk corpus can be measured.
+
+## D374
+
+**The compiler is now in the engine's live path, and the half that makes that honest** (#317)
+
+Seven increments of compiler and none of it reached a table: `scriptForCard` — the one function the
+engine's mana, ability and trigger paths ask "what does this card do?" — still called
+`cardFromData` and nothing else. 146 cards' worth of derived rules existed and no game used them.
+That is the difference between infrastructure and a playable beta, so this wires it in.
+
+### Where it had to live, and why
+
+`compile.ts` imports `scripts.ts`, so the answer could not grow a third branch where it was without
+a cycle. New module `derive.ts`, above both: hand-written script, then `cardFromData`'s whole-card
+answer, then the compiler's line-by-line reading. **The hand-written script still wins**, which is
+why all 348 pool cards and all thirteen built-in decks are untouched by this.
+
+### The half that makes it honest
+
+A compiled script is often **partial** — a permanent's text is a list of independent abilities, so
+the compiler reads what it can and leaves the rest. That is right for a permanent and it is also a
+new way to be quietly wrong: a card that does three of its four printed things with nobody told
+which one is missing. Turning the compiler on alone would trade a card the player *knows* to play
+by hand for a card that looks automated and is not, which is the trade D362 exists to refuse.
+
+So `coverage.ts`'s `'text-not-automated'` reason — reserved since the file was written, with
+*"nothing emits this yet… the compiler is what will"* — now emits. `unreadLines(def)` gives the
+printed lines nothing is running, and a card with one is reported with the line quoted.
+
+Three rules make that report true rather than noisy:
+
+- **A card with a hand-written script reports nothing**, because the script is the authority and
+  asking the compiler what *it* could read off the same text would report a Kitchen Finks as partly
+  manual. The test that pins this loads all thirteen decks and expects an empty list; deleting the
+  short-circuit turns it red.
+- **An unimplemented keyword is not reported.** The card plays; what is missing is one way to cast
+  or use it (D370). Telling a player to hand-play an Equipment the engine is running would be
+  wrong, and a player who catches the warning lying once stops reading it.
+- **`manualNote` now says "cannot fully play"**, because the list holds two different things. "Cannot
+  play" was true of a card with no printed data and is a lie about one the engine casts and attacks
+  with.
+
+### A bound set by arithmetic, because the instrument cannot see this
+
+The list travels inside the per-seat view, which has a hard 128 KiB cap that `PodStateEvent`
+enforces by **failing validation** — an over-sized state is not broadcast at all.
+
+`wire-growth.mjs` measures the peak view across whole games, and run now on this build its worst
+four-player singleton pod is **47202 bytes, 36.0% of the cap** (3 seeds, 63-82 turns, none
+unfinished). **That measurement cannot see the new payload**, and the reason is worth stating
+rather than assuming past: every deck the instrument can build comes from the pool, every pool card
+has a hand-written script, so `manual` is empty in every game it plays. The arm that would exercise
+it needs the imported corpus (#318).
+
+So the bound is arithmetic. A hundred distinct cards in one seat's deck, all reported, each quoting
+an unabridged paragraph, is roughly 47 KiB added to a 47 KiB peak — 94 of 128, on a figure the
+instrument itself calls a floor rather than a bound. Capping the quote at 120 characters holds an
+entry to **227 bytes measured** (107 of fixed prose plus the quote), so the same worst case adds
+about 23 KiB for 70 of 128. The test asserts 227 rather than a round number near it, because 227 is
+the figure the arithmetic rests on.
+
+Verified: compile.test.ts 82/82 and the new coverage.test.ts 10/10, with the hand-written
+short-circuit and the keyword filter each proved to fail when broken; GATE OK.
