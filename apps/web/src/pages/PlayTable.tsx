@@ -741,18 +741,14 @@ function PreGame({ table }: { table: UseTable }) {
               */}
               <Button
                 data-testid="start-engine"
-                disabled={!everyoneHasADeck || unreadable > 0}
+                disabled={!everyoneHasADeck}
                 onClick={() => {
                   // One after the other: `auto:start` needs a dealt table to take over.
                   void table.send({ type: "game:start" })
                   void table.send({ type: "auto:start" })
                 }}
               >
-                {!everyoneHasADeck
-                  ? "Waiting for decks"
-                  : unreadable > 0
-                    ? "The engine cannot read every card"
-                    : "Play with the rules engine"}
+                {!everyoneHasADeck ? "Waiting for decks" : "Play with the rules engine"}
               </Button>
               <Button
                 variant="secondary"
@@ -767,12 +763,21 @@ function PreGame({ table }: { table: UseTable }) {
                 enforces nothing and lets you move any card anywhere, the way cardboard does.
                 Either way the table rolls for who goes first.
               </p>
+              {/*
+                A warning, not a block, since the engine started running partially-readable decks.
+
+                This used to disable the button above and read "The engine cannot read every card",
+                which meant one unreadable card in a hundred cost the other ninety-nine their turn
+                structure, priority and combat. The engine now deals the game and flags those cards
+                for moving by hand — see `coverage.ts` in the rules engine. So the honest thing to
+                say here is what the engine will and will not do, and then let the host decide.
+              */}
               {unreadable > 0 ? (
                 <p data-testid="unreadable-note" className="px-1 text-[10px] leading-snug text-[var(--g-text-muted)]">
-                  {unreadable} {unreadable === 1 ? "card" : "cards"} in a pasted list{" "}
-                  {unreadable === 1 ? "is" : "are"} not in the engine's pool, so it has no idea what{" "}
-                  {unreadable === 1 ? "it does" : "they do"}. The tabletop plays them: you read them
-                  off the card, as you would at a kitchen table.
+                  The engine does not know {unreadable} {unreadable === 1 ? "card" : "cards"} in a
+                  pasted list. It will still run the game — turns, priority, combat and every other
+                  card — and {unreadable === 1 ? "that card" : "those cards"} will be marked for you
+                  to move by hand, the way you would at a kitchen table.
                 </p>
               ) : null}
             </section>

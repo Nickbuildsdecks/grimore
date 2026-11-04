@@ -1017,6 +1017,29 @@ export function eliminatedLabel(reason: string | null): string {
 /** Short badges for a permanent: its current body, marked damage, and why it cannot fight. */
 export function cardBadges(view: GameView, card: VisibleCard): string[] {
   const out: string[] = []
+  /*
+    A card the engine is not playing, badged in **every** zone, which is why this sits above the
+    battlefield-only guard below.
+
+    The zone that matters most is the hand: that is where a player discovers their card has no
+    "Cast" on its sheet, and without this badge the only available reading is that the table is
+    broken. The engine deals these cards and leaves them to be moved by hand — see `coverage.ts`
+    in the rules engine, and `view.manual`, which carries the list.
+
+    By name, because `view.manual` is by name: four copies of one unreadable card are four badged
+    cards, which is right — each of them is a card in somebody's hand to deal with.
+  */
+  /*
+    `?? []` because this view arrived over a socket. During a deploy a client can be talking to a
+    server that predates the field, and a missing `manual` would throw here and take the whole table
+    render down — a blank screen in place of a game, for the sake of one badge. Absent reads as
+    "nothing to flag", which is the safe direction to be wrong in: the badge is missing rather than
+    the board.
+  */
+  const manual = view.manual ?? []
+  if (card.card !== undefined && manual.some((m) => m.name === card.card?.name)) {
+    out.push("move by hand")
+  }
   if (card.zone !== "battlefield") return out
   /*
     Something to do with this permanent right now, which the board never said.

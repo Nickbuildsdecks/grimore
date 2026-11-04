@@ -10,6 +10,7 @@
  * game stops changing. Nothing else in here has to remember that something might have died.
  */
 import { defKeyFor, zoneKey, type CardInstance } from './cards.js';
+import { manualCards, manualNote } from './coverage.js';
 import { listAt, relocate, requireInstance, withInstance } from './cardActions.js';
 import { characteristicsOf, hasType } from './characteristics.js';
 import {
@@ -2505,24 +2506,31 @@ function startAutomation(
   if (state.automated) throw new EngineError('ALREADY_STARTED', 'the rules engine is already running');
   if (!state.started) throw new EngineError('NOT_STARTED', 'deal the table first');
   /*
-    A card the engine cannot read is a card an automated game cannot deal.
+    A card the engine cannot read is **reported**, not refused.
 
-    A pasted decklist becomes real cards wherever the pool has the name and **cardboard** wherever
-    it does not — a name and nothing else, which is exactly what a kitchen table is (see
-    `customDeck`). The tabletop plays that perfectly; the engine cannot, because a card with no
-    type line is not a land, not a creature and not a spell, and a game dealt with one in the deck
-    has a card in it that neither side can do anything with.
+    This used to throw: `the engine does not know X: a pasted list plays on the tabletop, not with
+    the rules engine`, so one unreadable card dropped the whole table out of automation. That was
+    right while the pool was 348 cards somebody had scripted by hand — a deck either was in the pool
+    or was not, and half a game is worse than a clear no.
 
-    So it is refused here, by name, rather than at the point the deck is loaded: loading it is
-    exactly what the tabletop wants. This is the enforcement, and the lobby's "tabletop only" badge
-    is a report of it — asserted where it is enforced, which is the rule D132 set for the privacy
-    default and the same one applies to a refusal.
+    It is wrong for the pool this is becoming. A hundred-card Commander deck drawn from every card
+    ever printed will contain one or two the engine cannot play for a long time yet, and refusing
+    automation for those one or two costs the other ninety-eight their turn structure, priority,
+    combat, triggers and state-based actions — which is the whole product.
+
+    The engine was already built for the other way round. `card:move`, `card:tap` and the rest of
+    the tabletop actions work while `automated` is true, and they do more than work: they record the
+    zone changes, so a creature somebody moves to the graveyard by hand still raises the death event
+    other cards trigger on. The two halves were designed to coexist; this `throw` was the only thing
+    between them.
+
+    So the game is dealt, and `manualCards` says which cards the player has to move themselves. It
+    is said **in the log, at the moment automation starts**, because that is when somebody is
+    looking — and reported rather than promised: see `coverage.ts` for what that report can and
+    cannot currently know.
   */
-  const blank = Object.values(state.cardDefs).find((def) => def.typeLine.trim().length === 0);
-  if (blank !== undefined) {
-    throw new EngineError('RULE_NOT_APPLICABLE',
-      `the engine does not know ${blank.name}: a pasted list plays on the tabletop, not with the rules engine`);
-  }
+  const manual = manualCards(state);
+  const note = manualNote(manual);
   const first = action.firstSeat ?? state.activeSeat;
   assertSeatIndex(state, first, 'firstSeat');
   /*
@@ -2565,8 +2573,22 @@ function startAutomation(
   };
   return {
     state: next,
-    message: 'the rules engine takes over; keep or mulligan your opening hands',
-    data: { openingHands: true, deciding: stillDeciding(next) },
+    /*
+      The manual note goes on the **same** message rather than into a second log entry, because the
+      two belong together: "the engine takes over" and "except for these cards" are one fact about
+      the game somebody is starting, and a player who scrolls past the second line has been told
+      something untrue by the first.
+    */
+    message: note === null
+      ? 'the rules engine takes over; keep or mulligan your opening hands'
+      : `the rules engine takes over; keep or mulligan your opening hands. ${note}`,
+    data: {
+      openingHands: true,
+      deciding: stillDeciding(next),
+      // Named, not just counted: a player needs to know *which* cards, and the view carries the
+      // same list for the badges on the cards themselves.
+      ...(manual.length === 0 ? {} : { manual: manual.map((m) => m.name) }),
+    },
   };
 }
 

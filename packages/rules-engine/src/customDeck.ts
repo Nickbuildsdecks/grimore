@@ -173,12 +173,17 @@ export function customDeck(input: CustomDeckInput): CustomDeckResult {
 }
 
 /**
- * Whether every card in a deck is one the engine can actually play.
+ * Whether **every** card in a deck is one the engine can play.
  *
- * The question the Arena table has to ask before it deals: a card with no type line is not a land,
- * not a creature and not a spell, so an automated game containing one is a game with a card nobody
- * — engine or player — can do anything with. The tabletop has no such problem, which is why this is
- * a check at the point the engine is started rather than at the point the deck is loaded.
+ * A report now, not a gate. It used to be the question the Arena table asked before it dealt, and
+ * `auto:start` refused any deck that failed it. That refusal is gone: the engine runs on a deck
+ * with cards it cannot read, and those cards are moved by hand inside the automated game — see
+ * `coverage.ts` for why, and `manualCards` for what tells the player which ones.
+ *
+ * Still worth having, and still true: "is this deck fully automated" is a different and useful
+ * question from "which cards are not", and it is the one a lobby wants when it decides whether to
+ * say anything at all. Kept as a predicate over a `DeckSpec` rather than over a game, because that
+ * is the only form available before a table is dealt.
  */
 export function deckIsAutomatable(deck: DeckSpec): boolean {
   if (deck.commander !== undefined && deck.commander.typeLine.trim().length === 0) return false;

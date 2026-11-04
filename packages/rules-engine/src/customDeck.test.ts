@@ -11,7 +11,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
-  applyAction, createGame, customDeck, deckIsAutomatable, poolCardNamed, STARTER_DECKS,
+  applyAction, createGame, customDeck, deckIsAutomatable, legalActions, poolCardNamed,
+  STARTER_DECKS, viewFor,
 } from './index.js';
 import { PLAYERS } from './testkit.js';
 import type { Action, ActionContext, GameState } from './types.js';
@@ -156,21 +157,89 @@ describe('dealing a pasted list at a table', () => {
     expect(s.seats[0]!.deckId).toBe('custom:0');
   });
 
-  it('runs the engine on it when every card is one the engine knows', () => {
+  it('runs the engine on it when every card is one the engine knows, and says nothing', () => {
     const s = deal([{ name: 'Lightning Bolt', count: 4 }, { name: 'Mountain', count: 56 }]);
     expect(refusalOf(s, { type: 'auto:start', by: 0 })).toBeNull();
+    /*
+      The negative half of the hybrid contract below, and it is what stops the badge crying wolf.
+      A `manual` list that is non-empty on an ordinary game would put a "move this by hand" flag on
+      every card in the product, which is worse than the refusal it replaced: a warning that is
+      always on is a warning nobody reads.
+    */
+    const started = applyAction(s, { type: 'auto:start', by: 0 }, { isHost: true });
+    expect(viewFor(started, 0).manual).toEqual([]);
+    expect(started.log[started.log.length - 1]?.message).not.toContain('by hand');
   });
 
-  it('refuses Arena mode when one card is cardboard, and names it', () => {
-    // The tabletop is the honest answer here, so the refusal has to say which card and why rather
-    // than failing somewhere in the first upkeep.
-    const s = deal([{ name: 'Black Lotus', count: 1 }, { name: 'Mountain', count: 59 }]);
-    const why = refusalOf(s, { type: 'auto:start', by: 0 });
-    expect(why).toContain('Black Lotus');
-    // And the tabletop still plays it, which is the point of refusing rather than dropping the card.
-    expect(refusalOf(s, { type: 'zone:draw', by: 0, seat: 0, count: 1 })).toBeNull();
+  /*
+    Hybrid automation: a card the engine cannot read no longer costs the table its engine.
+
+    This used to be a refusal test — `auto:start` threw and named the card, and the deck played on
+    the tabletop instead. That was right for a 348-card hand-scripted pool and wrong for a pool
+    drawn from every card ever printed, where one unreadable card in a hundred would cost the other
+    ninety-nine their turn structure, priority and combat. See `coverage.ts`.
+
+    So these four checks are the contract the old refusal is replaced by, and the fourth is the one
+    that makes the other three worth anything: it is not enough that the engine *starts*, it has to
+    actually be playing the rest of the deck.
+  */
+  describe('a deck with a card the engine cannot read', () => {
+    const withCardboard = () =>
+      deal([{ name: 'Black Lotus', count: 1 }, { name: 'Mountain', count: 59 }]);
+
+    it('starts the rules engine anyway', () => {
+      expect(refusalOf(withCardboard(), { type: 'auto:start', by: 0 })).toBeNull();
+    });
+
+    it('names the card in the log, on the same line that says the engine took over', () => {
+      // The same line, not a second entry: "the engine takes over" and "except for this card" are
+      // one fact, and a player who scrolls past the second has been misled by the first.
+      const started = applyAction(withCardboard(), { type: 'auto:start', by: 0 }, { isHost: true });
+      const last = started.log[started.log.length - 1];
+      expect(last?.message).toContain('rules engine takes over');
+      expect(last?.message).toContain('Black Lotus');
+      expect(last?.message).toContain('by hand');
+    });
+
+    it('carries the card and the reason in every seat\u2019s view', () => {
+      const started = applyAction(withCardboard(), { type: 'auto:start', by: 0 }, { isHost: true });
+      for (const seat of [0, 1] as const) {
+        const manual = viewFor(started, seat).manual;
+        expect(manual.map((m) => m.name)).toEqual(['Black Lotus']);
+        expect(manual[0]?.reason).toBe('no-printed-data');
+      }
+      // And not on a tabletop table, where "not automated" is every card and a badge is noise.
+      expect(viewFor(withCardboard(), 0).manual).toEqual([]);
+    });
+
+    it('and the engine really is running the rest: the Mountains are playable lands', () => {
+      /*
+        The check that stops the three above from being a green light on a broken game. A table that
+        starts automation and then cannot play a land is not hybrid mode, it is a worse tabletop —
+        and every assertion above would pass on one.
+      */
+      let s = applyAction(withCardboard(), { type: 'auto:start', by: 0 }, { isHost: true });
+      s = applyAction(s, { type: 'auto:keep', by: 0 }, { isHost: true });
+      s = applyAction(s, { type: 'auto:keep', by: 1 }, { isHost: true });
+      /*
+        Through `legalActions` rather than by reaching for an instance id, and that is the stronger
+        half of this check: it asserts the engine is **offering** the land drop, not merely that it
+        would accept one if told. A table that offers no plays is the failure this is looking for.
+      */
+      const land = legalActions(s, 0).plays.find((play) => play.kind === 'land');
+      expect(land, 'the engine offered seat 0 no land to play after keeping its opening hand')
+        .toBeDefined();
+      const after = applyAction(s, { type: 'auto:playLand', by: 0, card: land!.card }, { isHost: true });
+      expect(after.instances[land!.card]?.zone).toBe('battlefield');
+    });
+
+    it('still lets that card be moved by hand, which is what makes it playable at all', () => {
+      const started = applyAction(withCardboard(), { type: 'auto:start', by: 0 }, { isHost: true });
+      expect(refusalOf(started, { type: 'zone:draw', by: 0, seat: 0, count: 1 })).toBeNull();
+    });
   });
 });
+
 
 /**
  * The lists the browser suites paste, checked here because nothing else checks them at all.

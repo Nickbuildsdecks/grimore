@@ -305,10 +305,25 @@ async function main() {
         const badge = (await tid(nick, 'lobby-list-1').textContent()) ?? '';
         return badge.includes('60 cards') && badge.includes('1 the engine cannot read');
       });
-    await expectEventually(nick, 'and the engine is refused while that card is in the deck', async () =>
-      !(await tid(nick, 'start-engine').isEnabled())
-      && ((await tid(nick, 'unreadable-note').textContent()) ?? '').includes('not in the engine'));
-    check('the tabletop is still offered, because it plays cardboard',
+    /*
+      Hybrid automation, on screen: the engine is **offered** on a deck it cannot fully read.
+
+      This check used to assert the opposite — that `start-engine` was disabled and the note read
+      "not in the engine" — because one unreadable card dropped the whole table to tabletop mode.
+      That cost the other ninety-nine cards in a Commander deck their turn structure, priority and
+      combat, which is the product. The engine now deals the game and flags what it cannot play.
+
+      Both halves are asserted because the button being enabled is only half the promise: a host
+      who presses it needs to have been told what they are getting.
+    */
+    await expectEventually(nick, 'the engine is offered on a deck it cannot fully read', async () =>
+      (await tid(nick, 'start-engine').isEnabled())
+      && ((await tid(nick, 'unreadable-note').textContent()) ?? '').includes('move by hand'));
+    await expectEventually(nick, 'and the note says the engine will still run the rest', async () => {
+      const note = (await tid(nick, 'unreadable-note').textContent()) ?? '';
+      return note.includes('still run the game') && note.includes('every other card');
+    });
+    check('the tabletop is still offered too, because some people want it',
       await tid(nick, 'start-game').isEnabled());
     await shot(friend, 'friend-pasted-a-list');
 

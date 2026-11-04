@@ -1229,14 +1229,22 @@ describe("declaring blockers", () => {
 
 // ── Reading the view ─────────────────────────────────────────────────────────────────────────────
 
-/** The smallest `GameView` these helpers need. */
+/**
+ * The smallest `GameView` these helpers need.
+ *
+ * **No `as GameView` cast**, and that is the point of this comment. There was one, and it hid a
+ * missing field: `manual` was added to `GameView` and every one of the eight `cardBadges` tests
+ * below broke at *runtime* on `view.manual.some(...)`, because the cast told the compiler to stop
+ * checking that this object is a complete view. Without the cast, a field added to `GameView`
+ * fails here at compile time, which is where a fixture should fail.
+ */
 function view(over: Partial<GameView> = {}): GameView {
   return {
     id: "g", format: "modern", turn: 3, activeSeat: 0, monarch: null, initiative: null,
     started: true, finished: false, winnerSeat: null, stateVersion: 1, log: [], seat: 0,
-    automation: null, seats: [], cards: {}, zones: {}, pacts: [],
+    automation: null, seats: [], cards: {}, zones: {}, pacts: [], manual: [],
     ...over,
-  } as GameView
+  }
 }
 
 const automation = (over: Record<string, unknown> = {}): GameView["automation"] =>

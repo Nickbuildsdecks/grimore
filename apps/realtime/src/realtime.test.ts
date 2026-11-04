@@ -1536,8 +1536,10 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
         (3) The dealt deck, read three ways, because a library's contents are withheld from
         everybody including its owner:
 
-        - the engine's refusal to automate a table holding cards it cannot play, which **names the
-          first one it finds** — not all of them, so this observation cannot carry the count;
+        - `view.manual`, which names **every** card the engine cannot play in the dealt game. This
+          used to be the engine's refusal to automate the table, which named only the first card it
+          found and so could not carry the count — hybrid automation replaced the refusal with a
+          list, which is what this reading wanted in the first place (see `coverage.ts`);
         - `libraryCount`, which is 59 only if the deal read the same entries the other two did;
         - the command zone, which holds a card only if the deal spread the commander.
 
@@ -1565,11 +1567,21 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       const started = okAck(await emitAck(a, 'pod:action', {
         action: { type: 'game:start' }, expectedVersion: second.stateVersion!,
       }));
-      const refused = await emitAck(a, 'pod:action', {
+      /*
+        And the dealt deck's unreadable cards, read off `view.manual`.
+
+        This used to read them out of the engine's **refusal** to automate the table, which named
+        only the first one it found — a limit this comment used to record. Hybrid automation removed
+        the refusal and replaced it with something strictly better for this check: a list of every
+        card the engine cannot play, which is what the third reading needed all along.
+      */
+      const auto = okAck(await emitAck(a, 'pod:action', {
         action: { type: 'auto:start' }, expectedVersion: started.stateVersion!,
-      });
-      expect(refused.ok).toBe(false);
-      if (!refused.ok) expect(refused.error.message).toContain('Nonsense Card');
+      }));
+      const dealt = await waitFor<PodStateEvent>(a, 'pod:state',
+        (st) => st.stateVersion >= auto.stateVersion!);
+      const manual = unpackView(dealt.state as unknown as PackedView).manual.map((m) => m.name);
+      expect(manual.slice().sort()).toEqual(['Also Not A Card', 'Nonsense Card']);
     }, 20_000);
 
     it('refuses a paste that is not a deck, and keeps the seat as it was', async () => {
@@ -1580,7 +1592,7 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       expect(ack.deck).toMatchObject({ total: 4, unknownCount: 0 });
     }, 20_000);
 
-    it('will not start the rules engine on a list the engine cannot read', async () => {
+    it('starts the rules engine on a list it cannot fully read, and names the card', async () => {
       const { a } = await seatedPair();
       const pasted = okAck(await emitAck(a, 'pod:deck', { text: '40 Forest\n20 Nonsense Card' }));
       const loaded = okAck(await emitAck(a, 'pod:action', {
@@ -1595,11 +1607,26 @@ describe.skipIf(!REDIS_URL)('realtime gateway (requires REDIS_URL)', () => {
       const started = okAck(await emitAck(a, 'pod:action', {
         action: { type: 'game:start' }, expectedVersion: second.stateVersion!,
       }));
-      const refused = await emitAck(a, 'pod:action', {
+      /*
+        Started, not refused — and that is a change. This used to assert
+        `{ ok: false, error: { code: 'illegal_action' } }`, because `auto:start` threw on any card
+        the engine could not read and the table dropped to tabletop mode. Hybrid automation replaced
+        that: the engine runs, and the cards it cannot play are flagged for moving by hand. See
+        `coverage.ts` in the rules engine for why.
+
+        What the test still has to establish is the part that makes hybrid honest — that the player
+        is **told** — so it reads the name out of the view the server broadcasts rather than out of
+        an error message.
+      */
+      const auto = okAck(await emitAck(a, 'pod:action', {
         action: { type: 'auto:start' }, expectedVersion: started.stateVersion!,
-      });
-      expect(refused).toMatchObject({ ok: false, error: { code: 'illegal_action' } });
-      if (!refused.ok) expect(refused.error.message).toContain('Nonsense Card');
+      }));
+      const state = await waitFor<PodStateEvent>(a, 'pod:state',
+        (st) => st.stateVersion >= auto.stateVersion!);
+      const view = unpackView(state.state as unknown as PackedView);
+      expect(view.manual.map((m) => m.name)).toEqual(['Nonsense Card']);
+      expect(view.manual[0]?.reason).toBe('no-printed-data');
+      expect(view.automation, 'the engine should be running, which is the whole point').not.toBeNull();
     }, 20_000);
 
     it('will not let the host read a guest’s list by loading it onto their own seat', async () => {

@@ -26,6 +26,7 @@
  * travelling. Together with a trimmed log that leaves a view far inside `STATE_MAX_BYTES`.
  */
 import { zoneKey, type CardDef, type CardInstance, type ZoneId } from './cards.js';
+import { manualCards, type ManualCard } from './coverage.js';
 import type { FormatId } from './formats.js';
 import {
   characteristicsOf, combatDamagePrevented, grantedTriggersOn, type Keyword,
@@ -290,6 +291,23 @@ export interface GameView {
    * missing key means "you may know the size but not the order" — `libraryCount` carries the size.
    */
   readonly zones: Readonly<Record<string, readonly string[]>>;
+  /**
+   * The cards at this table the engine is **not** playing, by name.
+   *
+   * Present on an automated table and empty on a tabletop one, where the answer is "all of them"
+   * and saying so would be noise. A player holding one of these has to move it by hand; the UI
+   * badges the card and the log says so once when automation starts.
+   *
+   * Not redacted, and that is deliberate rather than an oversight. It is a fact about the engine's
+   * coverage, not about anybody's hand: the names come from `cardDefs`, which already travels to
+   * every seat for the cards they can see, and knowing that somebody's deck contains a card the
+   * engine cannot play tells you nothing about where that card is. The alternative — redacting it
+   * per seat — would mean a player could not be told why their own card does nothing.
+   *
+   * Names rather than instances, and sorted, because four copies of one unplayable card is one
+   * thing to know. See `coverage.ts`, including what this cannot yet detect.
+   */
+  readonly manual: readonly ManualCard[];
 }
 
 // ── The wire form ────────────────────────────────────────────────────────────────────────────────
@@ -712,5 +730,12 @@ export function viewFor(state: GameState, viewer: SeatIndex | null): GameView {
     seats,
     cards,
     zones,
+    /*
+      Only while the engine is running. On a tabletop table nothing is automated, so "which cards
+      are not automated" has no useful answer — it is every card, by design, and a badge on all of
+      them is noise. The lobby's own "the engine cannot read N of these" note is the pre-game
+      warning and is computed from the pasted list rather than from here.
+    */
+    manual: state.automated ? manualCards(state) : [],
   };
 }

@@ -22556,3 +22556,95 @@ Two things the writing of it taught me, both from the check failing on its autho
    asserts the saved-list box refills *the last list pasted*, naming two of its cards. Inserting a
    paste after that one would have broken a passing check for a reason that has nothing to do with it,
    so the new pastes go in before it.
+
+---
+
+## D362 — Hybrid automation: the engine plays the deck it can, and you move the rest by hand
+
+Nick's goal for this project is now explicit: script **every** competitively-legal Magic card —
+roughly 27,000 of them — so that any deck he or a friend uploads plays like Arena, with the rules
+enforced. Tabletop stays available for people who want it; the automated table is the draw.
+
+That goal makes one existing decision wrong, and it is the first thing to change because everything
+else is gated behind it.
+
+### What was wrong
+
+`auto:start` refused any deck containing a card the engine could not read:
+
+```
+the engine does not know Black Lotus: a pasted list plays on the tabletop, not with the rules engine
+```
+
+Correct for a 348-card hand-scripted pool, where a deck either is in the pool or is not. Wrong for a
+pool drawn from every card ever printed, where a hundred-card Commander deck will contain one or two
+unreadable cards for a long time yet — and refusing automation for those one or two costs the other
+ninety-eight their turn structure, priority, combat, triggers and state-based actions. Asked
+directly, Nick chose hybrid: automate what can be automated, and let the rest be moved by hand.
+
+### The change was one `throw`, and that is the interesting part
+
+The engine was already built for this and I did not expect it to be. `card:move`, `card:tap` and the
+other tabletop actions work while `automated` is true, and they do more than work — they record the
+zone changes, so a creature somebody moves to the graveyard by hand still raises the death event that
+other cards trigger on. The two halves were designed to coexist; `startAutomation`'s `throw` was the
+only thing between them.
+
+Evidence: removing the refusal broke **one test of 1425** — the test that asserted the refusal. If
+the architecture had been fighting this, it would have broken dozens.
+
+### What shipped
+
+- `coverage.ts`: `manualCards(state)` — the cards the engine is not playing, by name, deduplicated
+  and sorted — and `manualNote` for the log line.
+- `startAutomation` reports instead of refusing, and the note goes on the **same** log message as
+  "the rules engine takes over", because "the engine takes over" and "except for these cards" are one
+  fact and a player who scrolls past the second has been misled by the first.
+- `GameView.manual`, present only while automated (on a tabletop table the answer is "every card",
+  and a badge on all of them is noise). Unredacted on purpose: it is a fact about the engine's
+  coverage, not about anybody's hand, and redacting it per seat would mean a player could not be told
+  why their own card does nothing.
+- `cardBadges` badges them **in every zone**, above the battlefield-only guard, because the zone that
+  matters is the hand — that is where somebody discovers their card has no "Cast" on its sheet.
+- The lobby's engine button is no longer disabled; the note says what the engine will and will not do
+  and lets the host decide.
+
+### Two things this is careful not to claim
+
+**It detects one of the two ways a card can fail to be automated.** "No printed data" is certain —
+`customDeck` fell through to cardboard and the type line is empty. "Printed data, unimplemented text"
+is not detected at all: a card with a real type line is dealt, cast and attacks with, and its oracle
+text silently does not happen. The reason code `text-not-automated` exists in the type and nothing
+emits it, which is stated in the module rather than glossed. The oracle-text compiler (#317) is what
+will be able to answer it, and when it can, nothing else has to change shape.
+
+So a game this reports as fully automated may still contain a card whose text is not running. Saying
+"every card is automated" would be a claim the code cannot support, and the UI wording follows from
+that: it names what it found and promises nothing about the rest.
+
+**`deckIsAutomatable` survives as a report rather than a gate**, with its docblock corrected to say
+so. "Is this deck fully automated" is still a real question; it is just no longer a veto.
+
+### Three things found while testing it, each by a check failing on its author
+
+1. **A `GameView` fixture in `apps/web` had an `as GameView` cast**, so adding a required field to
+   `GameView` did not fail the typecheck — it failed eight `cardBadges` tests at *runtime*, on
+   `view.manual.some(...)`. The cast is removed, so the next field added fails where a fixture should
+   fail. **A cast is a claim the compiler stops checking**, which is this file's recurring subject
+   wearing a type system.
+2. **My own engine test passed `seat` to `auto:keep`**, which has no such field. It ran fine — the
+   extra key was ignored — and `pnpm v2:typecheck:tests` caught it, which is the step that exists
+   because nothing used to run it (D263).
+3. **`cardBadges` now guards `view.manual ?? []`**, because that view arrives over a socket and a
+   client talking to a server that predates the field would have thrown and taken the whole table
+   render down — a blank screen instead of a game, for one badge.
+
+### And one test got better rather than worse
+
+`realtime.test.ts`'s three-way agreement check (D357) read the dealt deck's unreadable cards out of
+the engine's **refusal**, which named only the first one it found — a limit I had recorded in its
+comment. The refusal is gone and `view.manual` names all of them, so the third reading now carries
+the count it always wanted.
+
+Verified: engine 1429 passed (+4), gate 17/17 with services up, `e2e-table` **76/76** including the
+lobby now offering the engine on a deck it cannot fully read.
