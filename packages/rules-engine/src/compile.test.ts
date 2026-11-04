@@ -6161,4 +6161,57 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(made.unread.map((entry) => entry.line)).toEqual(['Kicker {2}']);
     });
   });
+  /*
+    The printed ability lines the compiler was reporting as unread on cards that already worked.
+
+    `compile.ts` counts a line **compiled and emits nothing** when the engine reads it off the
+    `CardDef` itself, because restating it in a script would be a second source for one fact. That
+    check used to ask `printedKeywords` alone, so three lines in the pool were reported as unread
+    on cards the engine was playing correctly or could have been: River Boa's `Islandwalk`, which
+    `printedLandwalk` has read since #324; Paladin en-Vec's protection, which nothing read; and
+    Phyrexian Crusader's mixed list, which nothing read either half of.
+
+    D424 gave the three readers one classifier and the compiler one predicate — `isPrintedAbilityLine`
+    — and the two protection cards then needed no script at all.
+  */
+  describe('printed ability lines the engine reads off the card definition', () => {
+    it.each([
+      ['River Boa', 'Islandwalk', 'landwalk, read since #324 and miscounted ever since'],
+      ['Paladin en-Vec', 'Protection from black and from red', 'the and-from printing'],
+      [
+        'Phyrexian Crusader',
+        'First strike, protection from red, protection from white, infect',
+        'a mixed list no single reader would take',
+      ],
+    ])('%s counts "%s" as compiled rather than unread', (card, line) => {
+      const mine = compiledScript(card as string);
+      expect(mine.unread).toEqual([]);
+      expect(mine.compiled).toContain(line as string);
+    });
+
+    it('emits nothing for such a line, so the script is not a second source for it', () => {
+      /*
+        The other half of the rule, and the reason the two protection cards now have no
+        hand-written script: everything they print is read off the card. A compiled script that
+        restated the line would disagree with `characteristicsOf` the moment one of them changed.
+      */
+      expect(compiledScript('Paladin en-Vec').script).toBeUndefined();
+      expect(compiledScript('Phyrexian Crusader').script).toBeUndefined();
+      expect(scriptFor('Paladin en-Vec')).toBeUndefined();
+      expect(scriptFor('Phyrexian Crusader')).toBeUndefined();
+      // River Boa still has a script, because its regeneration is an activated ability and nothing
+      // reads one of those off printed text — only the islandwalk line came off.
+      expect(compiledScript('River Boa').script).toBeDefined();
+    });
+
+    it('still refuses a sentence that mentions an ability rather than printing one', () => {
+      const made = compileCard({
+        name: 'Joined Up', type_line: 'Creature — Human Soldier', mana_cost: '{W}', cmc: 1,
+        colors: ['W'], power: '1', toughness: '1',
+        oracle_text: 'Target creature gains protection from red until end of turn.',
+      });
+      expect(made.ok).toBe(true);
+      if (made.ok) expect(made.unread.map((entry) => entry.line)).toHaveLength(1);
+    });
+  });
 });

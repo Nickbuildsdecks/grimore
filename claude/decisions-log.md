@@ -26410,3 +26410,83 @@ Six deliberate breaks, six failures: the sweep never reaching the players, the w
 ignored, an unknown keyword accepted as a filter, the kicked amount never chosen, no `kicker` field
 emitted, and `damageDestination` skipping the sweep so a printed-number sweep fell through to a
 target spec.
+
+## D424 — Printed protection, one classifier for three readers, and a figure that was wrong
+
+Second increment off the work queue, and it ends with a correction to a number this log has been
+quoting for four entries.
+
+### The hole: an unscripted card had no protection at all
+
+`Characteristics.protectionFrom` was set **only** by a continuous effect. So a card with no script
+had no protection however plainly its text printed it — exactly the hole `printedLandwalk` closed
+for landwalk in #324, and it matters for the same reason: the corpus #318 imports is unscripted by
+definition, and protection is common in it.
+
+`printedProtection` reads it. Colour words spelled out, both printings of two colours ("black and
+from red" is Paladin en-Vec's, "black and red" the other), and **anything that is not a colour
+refused** — *protection from everything*, *from all colors*, *from creatures*. The field is a list
+of colours, and a card promising more than that is a card for a human to play (D362), not a card
+given protection from nothing and reported as read.
+
+### One classifier, because there were three whole-line rules
+
+`printedKeywords`, `printedLandwalk` and `printedProtection` each wanted a different slice of the
+same classification, and the first two each had their own copy of the whole-line rule. That is how
+**Phyrexian Crusader's line ended up read by none of them**: "First strike, protection from red,
+protection from white, infect" is four printed abilities in one list, so `printedKeywords` refused
+the whole line because two parts were not keywords and `printedLandwalk` refused it because none
+were landwalks. An unscripted creature printing exactly that had no first strike, no infect and no
+protection.
+
+`printedPart` classifies one comma-part; the three readers take their own kind out of the result.
+The rule widens in the faithful direction — every part must be an ability the engine can model,
+mixed freely — and keeps the half that mattered: a part it cannot model refuses the whole line, so
+"target creature gains protection from red" is a sentence, not a list.
+
+### Two cards now have no script at all, and a third lost a static
+
+`compile.ts` counts a printed ability line compiled and emits nothing, because restating it in a
+script would be a second source for one fact. That check asked `printedKeywords` alone, so three
+lines were reported unread on cards the engine was already playing: River Boa's `Islandwalk`,
+Paladin en-Vec's protection, Phyrexian Crusader's mixed list. It asks `isPrintedAbilityLine` now.
+
+With the lines read, the statics restating them are the Basilica Guards case again (D419):
+
+- **River Boa** lost its islandwalk static — found by the standing check, which failed the moment
+  the compiler counted the line as read, because the compiled card had no static and the
+  hand-written one did. #324 had left it in place "because the reading was added the same day"; that
+  reason has expired. The Squid token's identical static went with it, and the test that pinned the
+  token's islandwalk now pins the printed reading, which is what a token from printed data relies on.
+- **Paladin en-Vec** and **Phyrexian Crusader** have **no scripts at all**. Everything they print is
+  read off the card definition. The protection suite from #83 — damage, equipping, blocking and
+  targeting, all four of CR 702.16 — therefore exercises the printed reading now, at no cost to what
+  it asserts.
+
+The deck-coverage test's `keywordsOnly` helper was the other place that re-derived this question
+from `printedKeywords`, and it reported both cards as missing a script. It asks the compiler's own
+predicate now: one question, one answer.
+
+### Correction: "cards with a script" has been over-counted since D417
+
+This log has quoted 251 → 256 → 259 "cards with a script", worked out as the measure's `whole-card +
+lines` source categories. **That is not what those categories mean.** A card on the whole-card path
+reports that source even when `cardFromData` decides it needs no script at all, so the sum
+over-counts by every vanilla creature on it.
+
+The real figure, measured rather than inferred, is **236 of 339**. `compilable.mjs` now counts and
+prints it directly, along with cards whose every printed line is read and how many of those need no
+script — so the number quoted comes from the instrument instead of from arithmetic on something
+else. The *line* and *complete* series were measured directly all along and stand: 402 → 407 → 410
+lines, 228 → 231 → 234 complete.
+
+### Measured
+
+**410 of 538 lines (76.2%)**, up from 407 — River Boa, Paladin en-Vec, Phyrexian Crusader. Cards
+with every printed line read **231 → 234 of 339**, and **25** of those 234 need no script at all.
+Cards with a compiled script: 236 of 339.
+
+Five deliberate breaks, five failures: protection parts never classified (12 rows), the printed
+protection not seeded into `characteristicsOf` (8), a non-colour accepted as a protection, the
+whole-line rule dropped so a sentence classifies, and the compiler back to asking `printedKeywords`
+alone.

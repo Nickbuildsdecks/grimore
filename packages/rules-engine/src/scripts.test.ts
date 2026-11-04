@@ -23,7 +23,8 @@ import {
   legalActions,
   manaSources,
   parseTypeLine,
-  packView, parseManaCost, pendingDeclaration, printedKeywords, proliferate,
+  packView, parseManaCost, pendingDeclaration, isPrintedAbilityLine, printedKeywords,
+  printedLandwalk, printedProtection, proliferate,
   proliferateCandidates, protectedFrom,
   preventDamage,
   pump, pumpAll, pumpTeam, gainControl, scriptFor,
@@ -7257,24 +7258,28 @@ describe('what a card says reaches the effect', () => {
 });
 
 /**
- * Whether a card's whole printed text is keywords the engine grants without a script.
+ * Whether a card's whole printed text is abilities the engine grants without a script.
  *
  * Empty text has always counted, which is what "vanilla" meant. This generalises it to the other
- * card that needs nothing run: Insectile Aberration's entire back face is "Flying", and
- * `printedKeywords` reads a keyword-only line straight off the oracle text, so writing a script for
- * it would be writing a script that does what the engine already does.
+ * card that needs nothing run: Insectile Aberration's entire back face is "Flying", and the engine
+ * reads a printed ability line straight off the oracle text, so writing a script for it would be
+ * writing a script that does what the engine already does.
  *
- * Every comma- and newline-separated piece has to be a keyword `printedKeywords` returned, so a
- * card reading "Flying, whenever this attacks, draw a card" is still a card that needs a script.
+ * It asks `isPrintedAbilityLine` of every line, which is **the same question `compile.ts` asks** to
+ * decide a line is compiled and emits nothing. It used to re-derive the answer from
+ * `printedKeywords` alone, and D424 is where that cost something: once printed protection was read,
+ * Paladin en-Vec and Phyrexian Crusader needed no script at all — and this helper, knowing only
+ * about keywords, reported both as cards missing one. Two spellings of one question, which is the
+ * defect the classifier behind that predicate exists to stop.
+ *
+ * A line it refuses still means the card needs a script, so "Flying\nWhenever this attacks, draw a
+ * card" is not vanilla.
  */
 const keywordsOnly = (card: { readonly oracleText?: string }): boolean => {
   const text = (card.oracleText ?? '').trim();
   if (text === '') return true;
-  // `Set<string>` rather than the inferred `Set<Keyword>`: the parts being tested are arbitrary
-  // lines off a card, and asking a keyword-typed set about one is what the compiler objected to.
-  const granted = new Set<string>(printedKeywords(text));
-  return text.split(/[\n,]+/).map((part) => part.trim().toLowerCase()).filter(Boolean)
-    .every((part) => granted.has(part));
+  return text.split('\n').map((line) => line.trim()).filter(Boolean)
+    .every((line) => isPrintedAbilityLine(line));
 };
 
 describe('deck coverage', () => {
@@ -13289,8 +13294,12 @@ describe('whenever you draw a card (CR 121.2)', () => {
     expect(s.instances[skulker]!.zone).toBe('graveyard');
     const squids = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Squid');
     expect(squids.length).toBe(counters);
-    // Islandwalk is a static scoped to the token itself, found by its name like the Pest's
-    // trigger — so a 1/1 token cannot be blocked by a player with an Island.
+    /*
+      Islandwalk comes off the token's own printed `Islandwalk` line, through `printedLandwalk`
+      (#324) — so a 1/1 token cannot be blocked by a player with an Island. It used to come from a
+      static in the Squid's script restating that line; D424 deleted it as a second source for one
+      fact, so this row is now what pins the printed reading on a token.
+    */
     expect(characteristicsOf(s, s.instances[squids[0]!]!).landwalk).toEqual(['Island']);
   });
 
@@ -21141,3 +21150,85 @@ describe('a granted triggered ability: the first ability on a permanent that did
 
 });
 
+/*
+  Printed protection, and the two pool cards that now have no script at all (D424).
+
+  `printedProtection` is `printedLandwalk`'s sibling and was added for the same reason: before it,
+  `Characteristics.protectionFrom` was set **only** by a continuous effect, so a card with no script
+  had no protection however plainly its own text printed it — and the corpus #318 imports is
+  unscripted by definition.
+
+  Both of the pool's protection cards carried a static restating their own printed line. Those are
+  deleted, so Paladin en-Vec and Phyrexian Crusader have no scripts at all and everything they do
+  comes off the card definition. Which means the protection suite above — damage, equipping,
+  blocking and targeting, all four of CR 702.16 — is now exercising the printed reading. These rows
+  are what say so out loud.
+*/
+describe('protection printed on a card, read with no script at all', () => {
+  const chOf = (s: GameState, id: string) => characteristicsOf(s, s.instances[id]!);
+
+  it('Paladin en-Vec has protection from black and from red, and no script', () => {
+    expect(scriptFor('Paladin en-Vec')).toBeUndefined();
+    const s = arena({ decks: { 0: 'skyward-writ', 1: 'ember-rush' }, battlefield: { 0: ['Paladin en-Vec'] } });
+    const pal = find(s, 0, 'battlefield', 'Paladin en-Vec');
+    expect([...chOf(s, pal).protectionFrom].sort()).toEqual(['B', 'R']);
+    // Its first strike is the other half of the same printed line, through `printedKeywords`.
+    expect(chOf(s, pal).keywords.has('first strike')).toBe(true);
+  });
+
+  it('Phyrexian Crusader reads a mixed list: two keywords and two protections, no script', () => {
+    /*
+      The card the shared classifier was needed for. "First strike, protection from red, protection
+      from white, infect" is four printed abilities in one comma list: `printedKeywords` used to
+      refuse the whole line because two parts were not keywords, so this creature had no first
+      strike, no infect **and** no protection without the static that used to be written for it.
+    */
+    expect(scriptFor('Phyrexian Crusader')).toBeUndefined();
+    const s = arena({ decks: { 0: 'blight-vector', 1: 'ember-rush' }, battlefield: { 0: ['Phyrexian Crusader'] } });
+    const crusader = find(s, 0, 'battlefield', 'Phyrexian Crusader');
+    const ch = chOf(s, crusader);
+    expect([...ch.protectionFrom].sort()).toEqual(['R', 'W']);
+    expect([ch.keywords.has('first strike'), ch.keywords.has('infect')]).toEqual([true, true]);
+  });
+
+  it('River Boa keeps its islandwalk off its own line, with the static deleted', () => {
+    // The standing compiled-vs-written check is what found this one: the compiled card had no
+    // static and the hand-written one did, which is a second source for one fact (D419, D424).
+    const written = scriptFor('River Boa');
+    expect(written?.statics).toBeUndefined();
+    const s = arena({ decks: { 0: 'verdant-guard', 1: 'ember-rush' }, battlefield: { 0: ['River Boa'] } });
+    expect(chOf(s, find(s, 0, 'battlefield', 'River Boa')).landwalk).toEqual(['Island']);
+  });
+
+  it('refuses a protection this engine cannot model, rather than approximating it', () => {
+    /*
+      D259's rule: `protectionFrom` is a list of colours, so "protection from everything" and
+      "protection from all colors" promise more than the field can hold. Refused line and all —
+      a card printing one is a card for a human to play (D362), not a card given protection from
+      nothing and reported as read.
+    */
+    expect(printedProtection('Protection from everything')).toEqual([]);
+    expect(printedProtection('Protection from all colors')).toEqual([]);
+    expect(printedProtection('Protection from creatures')).toEqual([]);
+    // Nor is a sentence a printed ability line, which is the half of the whole-line rule that
+    // matters: the creature printing this grants protection to something else.
+    expect(printedProtection('Target creature gains protection from red until end of turn.'))
+      .toEqual([]);
+    expect(isPrintedAbilityLine('Target creature gains protection from red until end of turn.'))
+      .toBe(false);
+  });
+
+  it('reads both printings of two colours, and the keywords beside them', () => {
+    // "black and from red" is Paladin en-Vec's printing and "and red" is the other spelling; the
+    // pool prints the first, and neither is a third rule.
+    expect(printedProtection('Protection from black and from red')).toEqual(['B', 'R']);
+    expect(printedProtection('Protection from black and red')).toEqual(['B', 'R']);
+    expect(printedProtection('First strike, protection from red, protection from white, infect'))
+      .toEqual(['R', 'W']);
+    expect(printedKeywords('First strike, protection from red, protection from white, infect'))
+      .toEqual(['first strike', 'infect']);
+    // And a mixed list with a landwalk in it, which the one classifier also now allows.
+    expect(printedLandwalk('Flying, islandwalk')).toEqual(['Island']);
+    expect(printedKeywords('Flying, islandwalk')).toEqual(['flying']);
+  });
+});

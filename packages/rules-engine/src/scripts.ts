@@ -4682,10 +4682,22 @@ const JUGGERNAUT: CardScript = {
  * cannot be damaged, enchanted or equipped, blocked, or targeted by anything of those colours. The
  * engine applies all four, each in the one place that already answers that question.
  */
-const PALADIN_EN_VEC: CardScript = {
-  name: 'Paladin en-Vec',
-  statics: [{ scope: 'self', effect: { protectionFrom: ['B', 'R'] } }],
-};
+/**
+ * Paladin en-Vec: a card with **no script at all**, and that is the result rather than an omission.
+ *
+ * Everything it prints is read off the card definition now. "First strike" has always come from
+ * `printedKeywords`; "Protection from black and from red" comes from `printedProtection` (D424),
+ * which was added for the card that arrives from printed data and has no script to fall back on.
+ * The static that used to be here restated the second line, which is a second source for one fact
+ * — the call D419 made on Basilica Guards' printed `defender` and D424 made on River Boa's
+ * islandwalk.
+ *
+ * Worth keeping the name in the registry's list? There is nothing to keep: a script with no fields
+ * is not a script, so this one is gone and `scriptFor('Paladin en-Vec')` returns nothing. What
+ * proves the card still works is the protection suite below — four rules, damage, equipping,
+ * blocking and targeting (CR 702.16) — which now exercises the printed reading rather than a
+ * hand-written static, at no cost to what it asserts.
+ */
 
 const FOG_BANK: CardScript = {
   name: 'Fog Bank',
@@ -6012,9 +6024,22 @@ const TORMENTED_SOUL: CardScript = {
   statics: [{ scope: 'self', effect: { cantBlock: true, cantBeBlocked: true } }],
 };
 
+/**
+ * River Boa: islandwalk off its own printed line, and a regeneration that is not.
+ *
+ * It used to carry `statics: [{ scope: 'self', effect: { landwalk: ['Island'] } }]`, restating the
+ * `Islandwalk` its own text prints. `printedLandwalk` reads that line (#324), so the static was a
+ * second source for one fact — and the standing compiled-vs-written check said so the moment the
+ * compiler started counting the line as read (D424): the compiled card had no static and the
+ * hand-written one did.
+ *
+ * Deleted rather than kept, which is the Basilica Guards precedent (D419) — that card restated its
+ * own printed `defender` the same way. #324 left this one in place because the reading had been
+ * added the same day; it has since shipped with a test and a compiled twin, so the reason has
+ * expired. The regeneration stays, because nothing reads an activated ability off printed text.
+ */
 const RIVER_BOA: CardScript = {
   name: 'River Boa',
-  statics: [{ scope: 'self', effect: { landwalk: ['Island'] } }],
   abilities: [{
     cost: { mana: '{G}' },
     description: '{G}: Regenerate River Boa.',
@@ -7958,11 +7983,17 @@ const CYSTBEARER: CardScript = { name: 'Cystbearer', keywords: ['infect'] };
  * first-strike blocker, so the deck's one three-drop simply cannot be answered by five of the
  * eleven decks.
  */
-const PHYREXIAN_CRUSADER: CardScript = {
-  name: 'Phyrexian Crusader',
-  keywords: ['first strike', 'infect'],
-  statics: [{ scope: 'self', effect: { protectionFrom: ['R', 'W'] } }],
-};
+/*
+  Phyrexian Crusader is the pool's other card with no script at all, for the same reason as Paladin
+  en-Vec above: its one printed line, "First strike, protection from red, protection from white,
+  infect", is a mixed list that `printedPart` now reads whole — two keywords and two protections.
+  The `keywords` field and the protection static that used to be here restated it.
+
+  It is the card that made the classifier necessary. `printedKeywords` refused the line because two
+  parts were not keywords and `printedLandwalk` refused it because none were landwalks, so an
+  unscripted creature printing exactly this had neither its first strike, its infect, nor its
+  protection.
+*/
 
 /**
  * Tainted Strike: one mana that turns anybody's creature into a clock on a different axis.
@@ -8516,14 +8547,17 @@ const THRAGTUSK: CardScript = {
   way River Boa declares it — a static scoped to the card itself, which `canBlock` reads off the
   attacker. The token finds this script the same way the Pest does, by its name.
 
-  `printedLandwalk` now reads it off the text as well, for the unscripted cards that have no script
-  to find. That makes this static **redundant and not wrong**, and it stays: the test that pins this
-  token's islandwalk pins it through the script, and swapping a shipping card onto a reading added
-  the same day buys nothing. See `printedLandwalk` for what it is actually for.
+  `printedLandwalk` reads it off the token's own `Islandwalk` line instead (#324), so the static
+  that used to be here was a second source for one fact and is **deleted** (D424) — the same call
+  D419 made on Basilica Guards' printed `defender`, and the same one River Boa's docblock records.
+  The test that pins this token's islandwalk now pins it through the printed reading, which is the
+  thing a token arriving from printed data will actually rely on.
+
+  The script is kept, empty of statics, because `SQUID_TOKEN`'s own docblock points here for where
+  its islandwalk is explained.
 */
 const SQUID: CardScript = {
   name: 'Squid',
-  statics: [{ scope: 'self', effect: { landwalk: ['Island'] } }],
 };
 
 /*
@@ -8892,7 +8926,6 @@ const ALL: readonly CardScript[] = [
   BURST_LIGHTNING, BREATH_OF_DARIGAAZ, AGONIZING_DEMISE, BONE_SPLINTERS, VILLAGE_RITES, JUDITH,
   BANISHER_PRIEST, JOURNEY_TO_NOWHERE, BANISHING_LIGHT,
   NATURALIZE, DISENCHANT, BLOSSOMING_DEFENSE, DIVE_DOWN, JUGGERNAUT, DISRUPT_DECORUM, KALITAS,
-  PALADIN_EN_VEC,
   SOL_RING, MIND_STONE, BIRDS_OF_PARADISE, TREASURE, CLUE,
   THRABEN_INSPECTOR, PIRATES_PRIZE, LOTUS_PETAL,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
@@ -8944,7 +8977,7 @@ const ALL: readonly CardScript[] = [
   YOUNG_WOLF, BUTCHER_GHOUL, MURDEROUS_REDCAP,
   FLEECEMANE_LION, AEROMUNCULUS,
   DREGSCAPE_ZOMBIE, HELLSPARK_ELEMENTAL,
-  GLISTENER_ELF, PLAGUE_STINGER, ICHORCLAW_MYR, BLIGHT_MAMBA, CYSTBEARER, PHYREXIAN_CRUSADER,
+  GLISTENER_ELF, PLAGUE_STINGER, ICHORCLAW_MYR, BLIGHT_MAMBA, CYSTBEARER,
   TAINTED_STRIKE, SKITHIRYX,
   guildgate('Simic Guildgate', 'G', 'U'),
   FIRE, ICE, WAX, WANE, VENTURE_DEEPER, SHIELDS_MIGHT,

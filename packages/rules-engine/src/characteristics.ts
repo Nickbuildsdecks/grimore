@@ -123,22 +123,118 @@ export const isLegendary = (line: TypeLine): boolean =>
  * start of a line and as a whole word, so "Flying" counts and "creatures with flying can't block"
  * does not.
  */
-export function printedKeywords(oracleText: string | null | undefined): Keyword[] {
-  const found = new Set<Keyword>();
+/** The five basic land types, in the order the rules list them, for printed landwalk. */
+const LAND_TYPES = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'] as const;
+
+/** The colour each printed colour word names, for "protection from red". */
+const COLOUR_WORDS: Readonly<Record<string, Color>> = Object.freeze({
+  white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G',
+});
+
+/** One comma-part of a printed ability line, once it is known to be something the engine has. */
+type PrintedPart =
+  | { readonly kind: 'keyword'; readonly keyword: Keyword }
+  | { readonly kind: 'landwalk'; readonly type: string }
+  | { readonly kind: 'protection'; readonly colours: readonly Color[] };
+
+/**
+ * One part of a printed ability line, or `null` if this engine has nothing for it.
+ *
+ * The three readers below each want a different slice of the same classification, and before this
+ * they each had their own copy of the whole-line rule — which is how Phyrexian Crusader's line
+ * ended up read by none of them. "First strike, protection from red, protection from white, infect"
+ * is four printed abilities in one list: `printedKeywords` refused the whole line because two parts
+ * were not keywords, and `printedLandwalk` refused it because none were landwalks. So the card's
+ * printed first strike and infect were unreachable for want of a script, and so was its protection.
+ *
+ * One classifier fixes all three at once, and widens the rule in the direction that is more
+ * faithful rather than less: a printed ability line is a comma-separated list in which **every**
+ * part is an ability this engine can model, mixed freely. A part it cannot model still refuses the
+ * whole line, which is the half of the old rule that mattered — "target creature gains islandwalk"
+ * is a sentence, not a list, and must not hand anything to the creature printing it.
+ *
+ * Protection's colour words are spelled out in full ("protection from black and from red" is
+ * Paladin en-Vec's printing, "protection from red" Phyrexian Crusader's), and anything that is not
+ * a colour — *protection from everything*, *from all colors*, *from creatures* — is refused rather
+ * than approximated: `Characteristics.protectionFrom` is a list of colours, and a card promising
+ * more than that is a card this engine should leave to a human (D362).
+ */
+function printedPart(part: string): PrintedPart | null {
+  const text = part.trim().toLowerCase();
+  if (KEYWORD_SET.has(text)) return { kind: 'keyword', keyword: text as Keyword };
+  const walk = LAND_TYPES.find((type) => `${type.toLowerCase()}walk` === text);
+  if (walk !== undefined) return { kind: 'landwalk', type: walk };
+  const protection = /^protection from (.+)$/.exec(text);
+  if (protection !== null) {
+    // "black and from red" and "black and red" are both printed; neither is a third rule.
+    const words = protection[1]!.split(/\s+and\s+(?:from\s+)?/).map((word) => word.trim());
+    const colours = words.map((word) => COLOUR_WORDS[word]);
+    if (words.length > 0 && colours.every((colour) => colour !== undefined)) {
+      return { kind: 'protection', colours: colours as Color[] };
+    }
+  }
+  return null;
+}
+
+/**
+ * Every printed ability line of a card, classified — lines with anything unreadable in them left
+ * out entirely.
+ *
+ * Reminder text in brackets describes an ability rather than granting one, so it comes off first.
+ */
+function printedParts(oracleText: string | null | undefined): PrintedPart[] {
+  const found: PrintedPart[] = [];
   for (const rawLine of (oracleText ?? '').split('\n')) {
-    // Reminder text in brackets describes a keyword rather than granting one.
     const line = rawLine.replace(/\([^)]*\)/g, '').trim();
     if (!line) continue;
-    // A keyword line is a comma-separated list of keywords and nothing else.
-    const parts = line.split(/,\s*/).map((p) => p.trim().toLowerCase()).filter(Boolean);
-    if (parts.length === 0 || !parts.every((p) => KEYWORD_SET.has(p))) continue;
-    for (const p of parts) found.add(p as Keyword);
+    const parts = line.split(/,\s*/).map((part) => part.trim()).filter(Boolean)
+      .map((part) => printedPart(part));
+    if (parts.length === 0 || !parts.every((part) => part !== null)) continue;
+    for (const part of parts) found.push(part!);
+  }
+  return found;
+}
+
+/**
+ * Whether this one line is a printed ability line the engine reads off the card definition itself.
+ *
+ * For `compile.ts`, which counts such a line **compiled and emits nothing**: restating it in a
+ * script would be a second source for one fact. Before the classifier above, that check asked
+ * `printedKeywords` alone, so River Boa's `Islandwalk` and Paladin en-Vec's protection were
+ * reported as unread lines on cards the engine was already playing correctly.
+ */
+export function isPrintedAbilityLine(line: string): boolean {
+  return printedParts(line).length > 0;
+}
+
+export function printedKeywords(oracleText: string | null | undefined): Keyword[] {
+  const found = new Set<Keyword>();
+  for (const part of printedParts(oracleText)) {
+    if (part.kind === 'keyword') found.add(part.keyword);
   }
   return [...found];
 }
 
-/** The five basic land types, in the order the rules list them, for printed landwalk. */
-const LAND_TYPES = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'] as const;
+/**
+ * Protection printed on a card, read from its oracle text (CR 702.16).
+ *
+ * `printedLandwalk`'s sibling, added for the same reason and closing the same kind of hole: before
+ * this, `protectionFrom` was set **only** by a continuous effect, so a card with no script had no
+ * protection however plainly its text printed it. Paladin en-Vec and Phyrexian Crusader each carry
+ * a `statics` entry for exactly that, and both work — what has nothing to fall back on is the card
+ * that arrives from printed data, and the corpus #318 imports is unscripted by definition.
+ *
+ * As with landwalk, the two scripted cards are now redundant rather than wrong and they stay:
+ * deleting a shipping card's static to rely on a reading added the same day buys nothing.
+ */
+export function printedProtection(oracleText: string | null | undefined): Color[] {
+  const found: Color[] = [];
+  for (const part of printedParts(oracleText)) {
+    if (part.kind !== 'protection') continue;
+    for (const colour of part.colours) if (!found.includes(colour)) found.push(colour);
+  }
+  return found;
+}
 
 /**
  * Landwalk printed on a card, read from its oracle text (CR 702.14).
@@ -163,15 +259,8 @@ const LAND_TYPES = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'] as const;
  */
 export function printedLandwalk(oracleText: string | null | undefined): string[] {
   const found = new Set<string>();
-  for (const rawLine of (oracleText ?? '').split('\n')) {
-    const line = rawLine.replace(/\([^)]*\)/g, '').trim();
-    if (!line) continue;
-    const parts = line.split(/,\s*/).map((p) => p.trim().toLowerCase()).filter(Boolean);
-    if (parts.length === 0) continue;
-    const types = parts.map((part) => LAND_TYPES
-      .find((type) => `${type.toLowerCase()}walk` === part));
-    if (!types.every((type) => type !== undefined)) continue;
-    for (const type of types) found.add(type!);
+  for (const part of printedParts(oracleText)) {
+    if (part.kind === 'landwalk') found.add(part.type);
   }
   return [...found];
 }
@@ -947,7 +1036,14 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     allocating nothing is simpler than allocating something, not because a number says so.
   */
   let goadedBy: SeatIndex[] | null = null;
-  let protectionFrom: Color[] | null = null;
+  /*
+    Printed protection, seeded exactly as printed landwalk is above and for the same reason: it is a
+    *base* characteristic, so it starts here and is cleared by "loses all abilities" in the loop
+    below rather than being layered on top of it (CR 613.1f). See `printedProtection` for the hole
+    this closes — an unscripted card had none at all.
+  */
+  const printedProt = printedProtection(def?.oracleText);
+  let protectionFrom: Color[] | null = printedProt.length === 0 ? null : [...printedProt];
   let setColors: readonly Color[] | null = null;
 
   for (const effect of state.effects ?? []) {

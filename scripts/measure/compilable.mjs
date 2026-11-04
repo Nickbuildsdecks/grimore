@@ -79,6 +79,20 @@ let compiledLines = 0;
 let unreadLines = 0;
 let keywordLines = 0;
 let refused = 0;
+/*
+  Counted here rather than worked out afterwards from the source breakdown, which is what it used to
+  be and which was **wrong** (D424): a card on the `whole-card` path reports that source even when
+  `cardFromData` decides it needs no script at all, so "whole-card + lines" over-counts scripts by
+  every vanilla creature in the set. The figure quoted in the decision log drifted by 23 before
+  anybody checked it against the thing it was describing.
+
+  `complete` is the other figure worth having and is not the same one: a card with every printed line
+  read is fully automated, and 25 of them get there with no script, because everything they print is
+  read off the card definition by `printedKeywords`, `printedLandwalk` and `printedProtection`.
+*/
+let withScript = 0;
+let complete = 0;
+let completeWithNoScript = 0;
 const refusals = new Map();
 
 for (const row of rows) {
@@ -90,6 +104,11 @@ for (const row of rows) {
     continue;
   }
   bySource.set(result.source, (bySource.get(result.source) ?? 0) + 1);
+  if (result.script !== undefined) withScript += 1;
+  if (result.unread.length === 0) {
+    complete += 1;
+    if (result.script === undefined) completeWithNoScript += 1;
+  }
   compiledLines += result.compiled.length;
   unreadLines += result.unread.length;
   keywordLines += result.unread.filter((u) => u.why === 'unimplemented-keyword').length;
@@ -109,6 +128,11 @@ for (const row of rows) {
 }
 
 const cards = rows.length - refused;
+const pct = (n) => `${(100 * n / cards).toFixed(1)}%`;
+console.log(`Cards with a compiled script: ${withScript} of ${cards} (${pct(withScript)})`);
+console.log(`Cards with every printed line read: ${complete} of ${cards} (${pct(complete)})`);
+console.log(`  of those, needing no script at all: ${completeWithNoScript}`);
+console.log('  (everything they print is read off the card definition)\n');
 console.log('Cards by how their script was arrived at:');
 for (const source of ['whole-card', 'lines', 'printed-only']) {
   const n = bySource.get(source) ?? 0;

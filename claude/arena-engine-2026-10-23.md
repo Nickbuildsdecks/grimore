@@ -11203,3 +11203,27 @@ asserting Hurricane's phrase left the card *unread* was recording a gap as a pro
 that family; it now asserts on the board that the "and" is not a clause boundary.
 
 **407 of 538 lines (75.7%)**, 259 of 339 with a script, 231 complete. Six breaks, six failures.
+
+## Printed protection, and two cards that need no script at all (#317, D424)
+
+Before this, protection was set **only** by a continuous effect — so a card with no script had none
+however plainly its text printed it. That is the hole `printedLandwalk` closed for landwalk in #324,
+and it matters for the same reason: the corpus #318 imports is unscripted by definition.
+
+The interesting part was why three readers all missed Phyrexian Crusader. "First strike, protection
+from red, protection from white, infect" is four printed abilities in one comma list, and
+`printedKeywords` and `printedLandwalk` each had their own copy of the whole-line rule, so each
+refused the whole line. One classifier now does the parts and the three readers take their own kind
+out of it — the rule widened in the faithful direction (parts may mix freely) while keeping the half
+that mattered (a part the engine cannot model refuses the line, so a sentence is not a list).
+
+With those lines read, three statics restating them went: River Boa's islandwalk (the standing check
+failed the moment the compiler counted the line, exactly as it should), the Squid token's, and the
+two protection cards' — so **Paladin en-Vec and Phyrexian Crusader now have no scripts at all**, and
+#83's four-rule protection suite exercises the printed reading.
+
+**A correction**: the "cards with a script" figure quoted here since D417 (251 → 256 → 259) was the
+measure's `whole-card + lines` categories added together, which over-counts by every vanilla creature
+on those paths. Measured directly it is **236 of 339**, and `compilable.mjs` now prints that figure
+itself. The line and completeness series were measured all along: **410 of 538 lines (76.2%)**, and
+**234 of 339** cards with every printed line read — 25 of them with no script at all.

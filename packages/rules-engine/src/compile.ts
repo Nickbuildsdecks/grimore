@@ -39,7 +39,7 @@
  * the text of a real card is worse than leaving the mechanic out (D259).
  */
 import type { CardDef } from './cards.js';
-import { hasType, parseTypeLine, printedKeywords } from './characteristics.js';
+import { hasType, isPrintedAbilityLine, parseTypeLine } from './characteristics.js';
 import { cardFromData, printedDef, printedRulesLines, type CardDataRow, type DerivedKind } from './fromCardData.js';
 import {
   isKeywordDeclaration, lineScriptFor, spellScriptFor, wholeCardShapeFor,
@@ -233,11 +233,17 @@ export function compileCard(row: CardDataRow): Compilation {
   for (const line of lines) {
     if (claimed.has(line)) continue;
     /*
-      A keyword line the engine already reads off the `CardDef` itself — `characteristicsOf` calls
-      `printedKeywords(def.oracleText)`, with no script involved. So this counts as compiled and
-      emits nothing: restating it in the script would be a second source for one fact.
+      A printed ability line the engine already reads off the `CardDef` itself — `characteristicsOf`
+      asks `printedKeywords`, `printedLandwalk` and `printedProtection` of the oracle text, with no
+      script involved. So this counts as compiled and emits nothing: restating it in the script
+      would be a second source for one fact.
+
+      `isPrintedAbilityLine` rather than `printedKeywords` alone (D424): a line can be a mixed list
+      — Phyrexian Crusader prints "First strike, protection from red, protection from white, infect"
+      — and asking only about keywords reported River Boa's `Islandwalk` and Paladin en-Vec's
+      protection as unread lines on cards the engine was already playing correctly.
     */
-    if (printedKeywords(line).length > 0) { compiled.push(line); continue; }
+    if (isPrintedAbilityLine(line)) { compiled.push(line); continue; }
 
     const fragment = lineScriptFor(line, def.name);
     if (fragment === null) { unread.push({ line, why: reasonFor(line) }); continue; }
