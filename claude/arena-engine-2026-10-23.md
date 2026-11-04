@@ -9940,3 +9940,32 @@ Postgres and Redis died in a worker restart, `services-up.js` refused as designe
 off `GATE FAILED` while the pipe replaced the gate's exit status with `tail`'s. Same shape as D356,
 D365 and D368, with the defect moved out of the script and into how I invoked it. Re-run with the
 output redirected and `$?` captured: **GATE OK, exit 0.**
+
+## Tokens (#317, D373)
+
+**225 of 538 printed lines, up from 217 (40.3% → 41.8%). 146 of 339 cards get a script, up from
+139.** Doomed Traveler, Doomed Dissenter, Mogg War Marshal, Raise the Alarm, Talrand, Woe Strider,
+Young Pyromancer.
+
+A token is the one thing in this compiler with nothing to look up: its power, toughness, colour,
+subtype and keywords *are* the clause that makes it. The pool's twenty hand-written token constants
+are that clause transcribed, so the comparison is the strictest in the file — resolve both effects
+and compare whole game states, which covers the created instance and the `CardDef` registered for
+it.
+
+**The keywords are validated by the reader that has to read them back.** A token's keywords live in
+its `oracleText` and the engine gets them from `printedKeywords` with no script involved, so instead
+of keeping a list of keywords the compiler believes in, it writes the text and asks
+`printedKeywords` whether that text yields exactly the keywords the clause named. "With flying"
+that the engine could not read back would be a 1/1 that silently cannot fly.
+
+Five refusals, each with a test: `create X … tokens`, `… token for each …`, `with "When this
+creature dies, …"`, `Create a Treasure token`, and `a token that's a copy of target creature`.
+
+### One guard kept on purpose with nothing pinning it
+
+The reader requires each subtype word to be capitalised, and deleting that check leaves all 82 tests
+green — the surrounding regex already carries the weight. It stays because the two ways of being
+wrong are not symmetric: the slot becomes the token's *name*, and over-permissiveness on a corpus
+nobody has looked at yet is worse than losing a card nobody can name. The comment now says that
+instead of implying the check does work it cannot be shown to do.

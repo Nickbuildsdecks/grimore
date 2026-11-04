@@ -923,6 +923,92 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(scriptFor('Ball Lightning')).toHaveProperty('leavesAtEndOfTurn', true);
     });
   });
+  /*
+    ── Tokens: the one family whose characteristics are the sentence ─────────────────────────────
+
+    A token has no printed card to look up, so "a 1/1 white Spirit creature token with flying" *is*
+    its definition, and the pool's twenty hand-written token constants are that sentence
+    transcribed. The comparison is therefore the strictest one in this file: resolve both effects
+    and compare whole game states, which covers the created instance and the `CardDef` registered
+    for it — name, type line, power, toughness, colours and oracle text alike.
+  */
+  describe('tokens, compared against the hand-written token definitions', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string,
+    ): EffectContext => ({ state, controller: seat, source, targets: [] } as unknown as EffectContext);
+
+    const watching = (script: unknown, kind: string) =>
+      ((script as { triggers?: readonly TriggerDef[] }).triggers ?? [])
+        .find((t) => t.on.kind === kind);
+
+    it.each([
+      // Spirit, 1/1 white with flying — the token whose keyword has to survive the round trip.
+      ['Doomed Traveler', 'dies'],
+      // Zombie, 2/2 black and no keywords: the control for the keyword case.
+      ['Doomed Dissenter', 'dies'],
+      // Goblin, 1/1 red, from a line that prints *two* events.
+      ['Mogg War Marshal', 'etb'],
+      // Drake, 2/2 blue with flying, off a cast trigger rather than a zone change.
+      ['Talrand, Sky Summoner', 'spell-cast'],
+      // Elemental, 1/1 red, the same shape on a different colour and subtype.
+      ['Young Pyromancer', 'spell-cast'],
+    ])('%s creates the token the hand-written card creates', (card, kind) => {
+      const written = watching(scriptFor(card as string), kind as string);
+      const mine = watching(compiledScript(card as string).script, kind as string);
+      expect(mine, `${card as string}: compiled no ${kind as string} trigger`).toBeDefined();
+      expect(written, `${card as string}: no hand-written ${kind as string} trigger`).toBeDefined();
+      if (mine === undefined || written === undefined) return;
+
+      const base = arena();
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const ours = mine.effect(ctx);
+      const theirs = written.effect(ctx);
+      // Whole-state equality: the token's def is registered on the state, so this compares every
+      // characteristic of it, not just the fact that something arrived.
+      expect(ours).toEqual(theirs);
+      // Not vacuous: a creature really is on the battlefield afterwards.
+      expect(ours.zones[zoneKey(0 as SeatIndex, 'battlefield')]?.length ?? 0).toBeGreaterThan(0);
+    });
+
+    it('creates as many as the line says, by the word the card prints', () => {
+      /*
+        "Create two 1/1 white Soldier creature tokens" — the count is a word, as `countFrom`'s
+        docblock explains it always is for a number of objects. Raise the Alarm is the pool's
+        instance; the assertion is the number, because a reader that dropped the count and made one
+        would pass every other check in this file.
+      */
+      const alarm = compiledScript('Raise the Alarm');
+      expect(alarm.unread).toEqual([]);
+      const base = arena();
+      const after = ((alarm.script as { onResolve?: (c: EffectContext) => GameState } | undefined)
+        ?.onResolve)?.({ state: base, controller: 0 as SeatIndex, source: 'c1', targets: [] } as unknown as EffectContext);
+      expect(after).toBeDefined();
+      expect(after?.zones[zoneKey(0 as SeatIndex, 'battlefield')]).toHaveLength(2);
+    });
+
+    it.each([
+      // A count read off the board, not the X chosen at cast time.
+      ['Create X 1/1 red Goblin creature tokens, where X is the number of Goblins you control.'],
+      // The same thing in another spelling.
+      ['Create a 1/1 black and green Insect creature token for each creature card in your graveyard.'],
+      // A granted ability, not a keyword: `printedKeywords` reads nothing out of it.
+      ['Create a 1/1 black Pest creature token with "When this creature dies, you gain 1 life."'],
+      // No printed power and toughness, and the token carries rules text of its own.
+      ['Create a Treasure token.'],
+      ["Create a token that's a copy of target creature you control."],
+      // A keyword the engine cannot read back would be a token that silently lacks it.
+      ['Create a 1/1 white Spirit creature token with soaring.'],
+    ])('refuses %s', (text) => {
+      const refused = compileCard({
+        name: 'Token Maker', type_line: 'Sorcery', mana_cost: '{2}', cmc: 2, colors: [],
+        oracle_text: text as string,
+      });
+      expect(refused.ok).toBe(true);
+      if (!refused.ok) return;
+      expect(refused.script, `read a token out of: ${text as string}`).toBeUndefined();
+      expect(refused.unread.map((u) => u.why)).toEqual(['no-reader']);
+    });
+  });
   it('refuses only what is not a single-face card at all', () => {
     expect(compileCard({ name: '', type_line: 'Creature' }).ok).toBe(false);
     expect(compileCard({ name: 'No Types', type_line: '' }).ok).toBe(false);

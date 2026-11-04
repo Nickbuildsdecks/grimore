@@ -23361,3 +23361,51 @@ scripts/services-up.js (rc=1)` followed by a 40-line log tail — so `tail -6` c
 and the pipe replaced the gate's status with `tail`'s. The instrument was right and the way I read
 it was wrong, which is the same shape as D356, D365 and D368 with the defect moved out of the script
 and into the invocation. The gate is now run with its output redirected and `$?` captured.
+
+## D373
+
+**Tokens: the one family whose characteristics are the sentence itself** (#317)
+
+A token has no printed card to look up. Its power, toughness, colour, subtype and keywords *are* the
+clause that makes it, so unlike every other family in this compiler there is nothing to look up and
+nothing to guess. `SPIRIT_TOKEN` is `{ name: 'Spirit', typeLine: 'Token Creature — Spirit', power:
+'1', toughness: '1', oracleText: 'Flying', colors: ['W'] }`, which is "a 1/1 white Spirit creature
+token with flying" transcribed. D259 — never invent the text of a real card — is satisfied by
+construction here in a way it is not anywhere else in the module.
+
+**225 of 538 printed lines, up from 217 (40.3% → 41.8%); 146 of 339 cards get a script, up from
+139.** Doomed Traveler, Doomed Dissenter, Mogg War Marshal, Raise the Alarm, Talrand, Woe Strider
+and Young Pyromancer.
+
+### The keywords are validated by the reader that has to read them back
+
+A token's keywords live in its `oracleText`, and the engine gets them from
+`printedKeywords(def.oracleText)` with no script involved. So rather than keeping a list of keywords
+this function believes in, it writes the oracle text and then asks `printedKeywords` whether that
+text yields **exactly** the keywords the clause named. A token printed "with flying" whose keyword
+the engine could not read back would be a 1/1 that silently cannot fly; this refuses the clause
+instead. The check is pinned: deleting it turns the "with soaring" refusal green.
+
+### Five refusals, each with a stated reason and a test
+
+`create X ... tokens` (the pool's two instances count the board, not the X chosen at cast time),
+`... token for each ...` (the same thing in another spelling), `with "When this creature dies, …"`
+(a granted ability, not a keyword), `Create a Treasure token` and `a token that's a copy of target
+creature` (no printed power and toughness, and both carry rules text of their own).
+
+The comparison is the strictest in the file: resolve both effects and compare **whole game states**,
+which covers the created instance and the `CardDef` registered for it. Dropping the keyword, the
+count or the colour each turns tests red; the colour alone turns five red.
+
+### An unpinned guard, kept on purpose and now labelled as such
+
+The reader requires each subtype word to be capitalised. **Deleting it leaves all 82 tests green** —
+the surrounding regex already requires a count, a power and toughness, a colour word, and "creature
+token" with nothing after it, so the check is not load-bearing on this pool and no test pins it. By
+the standard the rest of this session has applied (`plain`, D371), that normally means deleting it.
+
+It stays, and the comment now says why rather than implying the check does work it cannot be shown
+to do: the slot becomes the token's **name**, the pool is 348 cards against the tens of thousands
+#318 will import, and the two ways of being wrong are not symmetric. Over-strictness costs coverage
+on a card nobody can name; over-permissiveness costs a token named something that is not a creature
+type, on a card nobody has looked at. Revisit when the bulk corpus can be measured.

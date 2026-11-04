@@ -17,7 +17,7 @@
  * spell *targets*, and targets are chosen before any of this runs. A card like that should be left
  * unscripted and resolved by hand rather than approximated.
  */
-import { characteristicsOf, hasSubtype, hasType, parseTypeLine } from './characteristics.js';
+import { characteristicsOf, hasSubtype, hasType, parseTypeLine, printedKeywords } from './characteristics.js';
 import { zoneKey, type CardDef } from './cards.js';
 import { cardFromData } from './fromCardData.js';
 import { listAt } from './cardActions.js';
@@ -9137,6 +9137,10 @@ function untargetedEffect(clause: string): ReadEffect | null {
     if (n > 0) return { effect: (c) => addEnergy(c.state, c.controller, n) };
   }
 
+  // A token: the one family whose characteristics are entirely in the sentence. See `tokenEffect`.
+  const token = tokenEffect(text);
+  if (token !== null) return token;
+
   if (/^each opponent discards a card at random$/i.test(text)) {
     return {
       effect: (c) => opponentsOf(c.state, c.controller)
@@ -9308,6 +9312,127 @@ const TRIGGER_SHAPES: readonly {
     on: [{ kind: 'step', step: 'end', of: 'you' }],
   },
 ];
+
+/**
+ * The colour words a token's printed description uses, as the letters a `CardDef` stores.
+ *
+ * `colorless` is in the table with no letter, because it is a thing the card says rather than
+ * something it omits: "a 1/1 colorless Thopter artifact creature token" is explicit, and a reader
+ * that treated the word as unrecognised would refuse the card.
+ */
+const TOKEN_COLOURS: Readonly<Record<string, Color | null>> = {
+  white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G', colorless: null,
+};
+
+/**
+ * "Create a 1/1 white Spirit creature token with flying", as the token and the count.
+ *
+ * ## Why this family is readable at all, and exactly
+ *
+ * A token has no printed card to look up: its characteristics *are* the sentence that makes it. So
+ * unlike every other family here, there is nothing to invent and nothing to guess — the clause
+ * states the power, the toughness, the colour, the subtype and the keywords, and the pool's twenty
+ * token definitions are character-for-character what that sentence says. `SPIRIT_TOKEN` is
+ * `{ name: 'Spirit', typeLine: 'Token Creature — Spirit', power: '1', toughness: '1',
+ * oracleText: 'Flying', colors: ['W'] }`, which is "a 1/1 white Spirit creature token with flying"
+ * transcribed. D259's rule — never invent the text of a real card — is satisfied by construction
+ * here in a way it is not anywhere else in this module.
+ *
+ * ## The keywords are validated by the reader that will have to read them back
+ *
+ * A token's keywords live in its `oracleText`, and the engine gets them from
+ * `printedKeywords(def.oracleText)` with no script involved. So rather than keeping a list of
+ * keywords this function believes in, it writes the oracle text and then **asks `printedKeywords`
+ * whether that text yields exactly the keywords the clause named**. A token printed "with flying"
+ * whose keyword the engine could not read back would be a 1/1 that silently cannot fly, which is
+ * the quiet kind of wrong this module exists to avoid; here it refuses the clause instead.
+ *
+ * ## What it refuses, each for a stated reason
+ *
+ * - **`create X ... tokens`** — `countFrom` has no reading for `X`, and the pool's two instances
+ *   are "where X is the number of Goblins you control" and "the number of +1/+1 counters on Chasm
+ *   Skulker": a count read off the board, not the X chosen at cast time.
+ * - **`... token for each ...`** — the same thing in another spelling, refused by the `$` anchor.
+ * - **`with "When this creature dies, you gain 1 life"`** — a granted *ability*, not a keyword.
+ *   `printedKeywords` returns nothing for that text, so the validation above refuses it.
+ * - **`Create a Treasure token`** and **`a token that's a copy of target creature`** — no printed
+ *   power and toughness, and in both cases the token carries rules text of its own.
+ */
+function tokenEffect(clause: string): ReadEffect | null {
+  const made = /^create ([\w]+) (\d+)\/(\d+) (.+?) creature tokens?(?: with (.+))?$/i
+    .exec(clause.trim());
+  if (made === null) return null;
+
+  const count = countFrom(made[1]!);
+  if (count === null) return null;
+
+  /*
+    The middle is the colours, the subtype, and possibly the word "artifact": "white Spirit",
+    "black and green Insect", "colorless Thopter artifact". Taken a word at a time from the front
+    while the words are colours, which is what makes "and" unambiguous — it only ever joins two
+    colour words in this phrase.
+  */
+  const words = made[4]!.trim().split(/\s+/);
+  const colors: Color[] = [];
+  let i = 0;
+  for (; i < words.length; i += 1) {
+    const word = words[i]!.toLowerCase();
+    if (word === 'and' && colors.length > 0) continue;
+    if (!(word in TOKEN_COLOURS)) break;
+    const colour = TOKEN_COLOURS[word];
+    if (colour !== undefined && colour !== null) colors.push(colour);
+  }
+  if (i === 0) return null;
+
+  const rest = words.slice(i);
+  const isArtifact = rest[rest.length - 1]?.toLowerCase() === 'artifact';
+  const subtypeWords = isArtifact ? rest.slice(0, -1) : rest;
+  /*
+    A subtype is printed capitalised: "Spirit", "Elf Warrior".
+
+    **Nothing in the pool exercises this**, and that is said rather than implied: deleting the check
+    leaves all 82 ground-truth tests green, because the regex around it already requires a count, a
+    power and toughness, a colour word, and "creature token" with nothing after it. So it is not
+    load-bearing here and no test pins it — which by this session's own standard would normally mean
+    deleting it.
+
+    It stays, deliberately, because of which way it errs. This slot becomes the token's **name**, the
+    pool is 348 cards against the tens of thousands #318 will import, and a lowercase word reaching
+    it would produce a token named something that is not a creature type. Over-strictness costs
+    coverage on a card nobody can name; over-permissiveness costs a wrong token on a card nobody has
+    looked at yet. Revisit it when the bulk corpus can be measured, not before.
+  */
+  if (subtypeWords.length === 0 || !subtypeWords.every((word) => /^[A-Z][a-z'-]*$/.test(word))) {
+    return null;
+  }
+  const subtype = subtypeWords.join(' ');
+
+  const named = made[5] === undefined
+    ? []
+    : made[5].trim().replace(/\.$/, '').split(/,\s*|\s+and\s+/).map((k) => k.trim())
+      .filter((k) => k !== '');
+  const oracleText = named.length === 0
+    ? ''
+    : (() => {
+      const line = named.join(', ');
+      return line.charAt(0).toUpperCase() + line.slice(1);
+    })();
+  // The validation this function's docblock argues for: the engine has to be able to read back
+  // every keyword the clause named, out of the text about to be written down.
+  if (printedKeywords(oracleText).length !== named.length) return null;
+
+  const token: CardDef = {
+    name: subtype,
+    typeLine: `Token ${isArtifact ? 'Artifact ' : ''}Creature — ${subtype}`,
+    manaCost: '',
+    cmc: 0,
+    power: made[2]!,
+    toughness: made[3]!,
+    oracleText,
+    colors,
+  };
+  return { effect: (c) => createToken(c.state, c.controller, token, count) };
+}
 
 /**
  * A printed triggered-ability line, as the `triggers` fragment of a `CardScript`.
