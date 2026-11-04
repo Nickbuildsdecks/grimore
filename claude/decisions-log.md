@@ -22498,3 +22498,41 @@ is reading carefully. It is `cat /tmp/play.log || true` now.
 
 The readiness loop is still untested, because the job never reached it. Said plainly rather than left
 to look covered.
+
+---
+
+## D361 — All five browser suites, and the one thing #314 shipped that no browser had ever shown
+
+Ran every browser suite on this tree, which is the check that actually answers "can two people play a
+whole game":
+
+| | |
+|---|---|
+| `e2e-table` (two browsers, whole game, phone widths) | 73/73, then **75/75** with the two added below |
+| `check-table-controls` (every control pressed) | 26/26 |
+| `e2e-arena` | 52/52, 6 named skips |
+| `e2e-pod` (four browsers) | 41/41, 1 named skip |
+| `e2e-solo` | 28/28, 1 named skip |
+
+Then `surface-coverage.mjs` named `list-note` under "controls looked at but never pressed". That one is
+a false alarm in the obvious reading — it is a `<p>`, so "never pressed" is correct and uninteresting,
+and `e2e-table` and `e2e-solo` both *read* it. But the useful question behind it is whether anything
+reads it **in the state that matters**, and there the answer was no: #314's over-150 warning had unit
+coverage in `table.test.ts` and no browser coverage at all, because every paste in the suite is 60
+cards — comfortably under the boundary.
+
+So the warning that exists to stop a player pasting a list a four-seat table cannot be dealt had never
+been shown on a screen. Added, as a **pair**: 150 cards, asserting the note says `150 cards` and does
+**not** say `over 150`; then 151, asserting it does. One assertion on a large list could not tell a
+warning about the boundary from a warning about any big deck.
+
+Two things the writing of it taught me, both from the check failing on its author:
+
+1. **`151 Forest` is refused before the warning can be reached.** `DECKLIST_LIMITS.maxPerLine` is 40,
+   "because '999 Forest' is a typo at best", so a single line of 151 never gets as far as a size
+   warning. The list is four lines now. I had reasoned about `maxCards` (250) and `maxDistinct` (150)
+   and simply not read the limit that applied.
+2. **The paste order matters to a later check.** `e2e-table` reloads the browser further down and
+   asserts the saved-list box refills *the last list pasted*, naming two of its cards. Inserting a
+   paste after that one would have broken a passing check for a reason that has nothing to do with it,
+   so the new pastes go in before it.

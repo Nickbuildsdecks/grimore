@@ -312,6 +312,43 @@ async function main() {
       await tid(nick, 'start-game').isEnabled());
     await shot(friend, 'friend-pasted-a-list');
 
+    /*
+      The over-150 warning, on screen.
+
+      #314 found two caps set independently for one purpose: a player may paste 250 cards, but four
+      seats share the engine's 600-instance `MAX_INSTANCES`, so four lists over 150 are refused at
+      `game:start` with nothing in between mentioning it. The warning in `pastedNote` exists so the
+      player reads it at the one moment they are looking at the size of their own list.
+
+      It had unit coverage and no browser coverage, which the surface audit is what surfaced: the
+      note is a `<p>` rather than a button, so "never pressed" is the right answer for it and the
+      question the audit actually raises is whether anything *reads* it in the state that matters.
+      The other two pastes here are 60 cards, which is under the boundary, so neither could.
+
+      A **pair** rather than one assertion, 150 and then 151, because a check that only pastes a
+      large list cannot tell a warning about the boundary from a warning about any big deck. 150
+      deals and 151 does not, so these are the last list that is fine and the first that is not.
+
+      Four lines rather than `151 Forest`, because `DECKLIST_LIMITS.maxPerLine` is 40 — "because
+      '999 Forest' is a typo at best" — so a single line of 151 is refused by the parser before the
+      size warning can be reached. The first version of this check did exactly that and failed,
+      which is the test doing its job on the person who wrote it.
+    */
+    await pasteList('40 Forest\n40 Grizzly Bears\n40 Llanowar Elves\n30 Giant Growth');
+    await expectEventually(friend, 'a list of exactly 150 is not warned about, because 150 deals',
+      async () => {
+        const note = (await tid(friend, 'list-note').textContent()) ?? '';
+        return note.includes('150 cards') && !note.includes('over 150');
+      });
+
+    await pasteList('40 Forest\n40 Grizzly Bears\n40 Llanowar Elves\n31 Giant Growth');
+    await expectEventually(friend, 'and one card more says so, while it is being pasted',
+      async () => {
+        const note = (await tid(friend, 'list-note').textContent()) ?? '';
+        return note.includes('151 cards') && note.includes('over 150')
+          && note.includes('four-seat table cannot be dealt');
+      });
+
     await pasteList(pooledList);
     await expectEventually(friend, 'a list the engine knows end to end says so', async () => {
       const note = (await tid(friend, 'list-note').textContent()) ?? '';
