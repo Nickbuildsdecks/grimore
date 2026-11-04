@@ -9252,6 +9252,65 @@ function untargetedEffect(clause: string): ReadEffect | null {
     if (n !== null) return { effect: (c) => loseLife(c.state, c.controller, n) };
   }
 
+  /*
+    The drain, which is **one** effect and not two clauses.
+
+    "Each opponent loses 1 life and you gain 1 life" is joined by "and", and `clausesOf`
+    deliberately does not split on that word — "gets +2/+2 and gains trample" is one effect too, and
+    a splitter that broke on "and" would cut that in half. So the drain is read whole, in the order
+    the card prints: the life is lost first and gained second, which is what all three hand-written
+    drains do (Zulaport Cutthroat, Cruel Celebrant, Blood Artist).
+
+    The two numbers are read separately rather than assumed equal. Every drain in this pool prints
+    the same number twice, and reading one of them twice would be the compiler asserting a symmetry
+    the text does not promise — "each opponent loses 2 life and you gain 1 life" is a card somebody
+    could print.
+  */
+  const drained = /^each opponent loses (\d+) life(?: and you gain (\d+) life)?$/i.exec(text);
+  if (drained !== null) {
+    const lost = Number(drained[1]);
+    const gained = drained[2] === undefined ? 0 : Number(drained[2]);
+    return {
+      effect: (c) => {
+        const after = opponentsOf(c.state, c.controller)
+          .reduce((state, seat) => loseLife(state, seat, lost), c.state);
+        return gained === 0 ? after : gainLife(after, c.controller, gained);
+      },
+    };
+  }
+
+  /*
+    The edict: everybody gives up a creature, and each of them chooses which.
+
+    A question rather than an effect, like the discard — and `who: 'each-player'` expands into one
+    question each, asked in turn order starting from the active player (CR 101.4), which is
+    sometimes the whole card: the second player to sacrifice has seen what the first gave up.
+    `CardsDecisionSpec.who` says so, and that ordering is the reason this cannot be written as a
+    reduce over seats inside the effect.
+
+    "Each player" includes you and "each opponent" does not, which is the difference between a
+    Fleshbag Marauder and an Eldest Reborn — one line of this reader and a completely different
+    card, so the two spellings are captured rather than conflated.
+  */
+  const edict = /^each (player|opponent) sacrifices a creature$/i.exec(text);
+  if (edict !== null) {
+    const who = edict[1]!.toLowerCase() === 'player' ? 'each-player' as const : 'each-opponent' as const;
+    return {
+      decisions: [{
+        who,
+        from: 'battlefield',
+        prompt: 'Sacrifice a creature',
+        min: 1,
+        max: 1,
+        filter: (state: GameState, id: string) => {
+          const inst = state.instances[id];
+          return inst !== undefined && characteristicsOf(state, inst).isCreature;
+        },
+      }],
+      effect: (c) => c.decisions.reduce((state, answer) => moveToGraveyard(state, answer.ids), c.state),
+    };
+  }
+
   const drawn = /^draw ([\w]+) cards?$/i.exec(text);
   if (drawn !== null) {
     const n = countFrom(drawn[1]!);
@@ -10491,6 +10550,46 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     objects is a word, an amount is a digit. A reader that took only digits would have read none of
     the four.
   */
+  /*
+    The pointed half of the life family: a player named by a target rather than by "each opponent".
+
+    `target player loses N life and you gain N life` is Blood Artist's clause, read whole for the
+    reason the untargeted drain is — "and" joins one effect here — and in the printed order, lose
+    then gain. `target player gains N life` is Healing Salve's first mode, and its sign is the
+    reason `friendly` exists: aimed with the bot's default at "the enemy and the enemy's creatures",
+    a Healing Salve heals the opponent.
+  */
+  const pointedDrain = /^(target player) loses (\d+) life and you gain (\d+) life$/i.exec(text);
+  if (pointedDrain !== null) {
+    const lost = Number(pointedDrain[2]);
+    const gained = Number(pointedDrain[3]);
+    const spec = targetSpecFrom(pointedDrain[1]!, false);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null ? c.state : gainLife(loseLife(c.state, seat, lost), c.controller, gained);
+        },
+      };
+    }
+  }
+
+  const healed = /^(target player) gains (\d+) life$/i.exec(text);
+  if (healed !== null) {
+    const amount = Number(healed[2]);
+    const spec = targetSpecFrom(healed[1]!, true);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null ? c.state : gainLife(c.state, seat, amount);
+        },
+      };
+    }
+  }
+
   const milled = /^(target player) mills ([\w]+) cards?$/i.exec(text);
   if (milled !== null) {
     const n = countFrom(milled[2]!);

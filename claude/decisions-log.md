@@ -24393,3 +24393,65 @@ reason that has nothing to do with targeting.
 identity against the hand-written one, and a second test keeps "any target" and "target player or
 planeswalker" distinct — which is the whole difference between a Lightning Bolt and a Lava Spike. A
 30,000-row shuffled run found no throw.
+
+## D390
+
+**The drain and the edict: one effect joined by "and", and a question asked of everybody** (#317)
+
+Two clause families, four pool cards, and both turn on a distinction the text makes in one word.
+
+### The drain is one effect, not two clauses
+
+"Each opponent loses 1 life and you gain 1 life" is joined by **and**, and `clausesOf` deliberately
+does not split on that word — "gets +2/+2 and gains trample" is one effect too, and a splitter that
+broke on "and" would cut that in half. So the drain is read whole and in printed order: lost first,
+gained second, which is what all three hand-written drains do (Zulaport Cutthroat, Cruel Celebrant,
+Blood Artist, plus Healing Salve's heal for the pointed form).
+
+**The two numbers are read separately rather than assumed equal.** Every drain in this pool prints
+the same number twice, so reading one of them twice would have passed every ground-truth test while
+asserting a symmetry the text does not promise. A synthetic "loses 3 life and you gain 1 life" pins
+it, and collapsing the two fails that test and nothing else — which is exactly why it had to be
+written.
+
+The tail is optional: "each opponent loses 2 life" with no gain is the same clause without its
+second half, with its own test that nothing is gained.
+
+The pointed form carries `friendly` on the heal and not on the drain, which is the clearest case in
+this family for why the flag cannot be read off the target phrase: "target player" is the same two
+words on both, and the bot's default is the enemy — so a heal without the flag is a Healing Salve
+cast on the opponent.
+
+### The edict is a question, and its `who` is the card
+
+"Each player sacrifices a creature" is `decisions`, not an effect: `who: 'each-player'` expands into
+one question each, asked in turn order from the active player (CR 101.4), which is sometimes the
+whole card — the second player to sacrifice has seen what the first gave up. That ordering is why it
+cannot be a reduce over seats inside the effect.
+
+**"Each player" includes you and "each opponent" does not**, which is one word of the reader and a
+completely different card — Fleshbag Marauder against an Eldest Reborn chapter. The two spellings are
+captured rather than conflated, and forcing them both to `each-player` fails a test.
+
+The filter is what decides *what* may be given up; without it a player answers an edict with a land.
+It is compared against the hand-written filter on the same board, so both answers come from the same
+objects, and deleting it fails.
+
+### Measured, and one fixture moved
+
+**331 → 335 of 538 printed lines (61.5% → 62.3%)**, and **209 → 213 of 339 cards**: Blood Artist,
+Zulaport Cutthroat, Cruel Celebrant and Fleshbag Marauder. Four deliberate breaks, four failing
+tests. A 30,000-row shuffled run found no throw.
+
+The keyword-and-a-sentence test used "Each player sacrifices a creature." as its example of an
+unreadable sentence, which this stage made readable — the second time that fixture has had to move
+(it was a Fog before). Its comment now says so, and names the reason it owns its own text rather
+than borrowing a card's: a sentence nothing reads *today* is a moving target, and the property being
+tested is about the two kinds of unread line, not about any particular one. It is now "Exchange
+control of two target creatures."
+
+**Kambal stays unread, and the reason is worth keeping:** it prints "**that player** loses 2 life and
+you gain 2 life", where "that player" is the opponent who cast the spell that triggered it
+(`c.actor`). The subject is supplied by the *event*, not by the clause, and "that player" means
+something different under a different trigger — so reading it here would be the compiler guessing
+which event it is inside.

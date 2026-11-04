@@ -10470,3 +10470,26 @@ targeting line fails the other.
 The compiler gained the phrase too: **329 → 331 of 538 lines (61.2% → 61.5%), 207 → 209 cards**, with
 the compiled spec compared for identity against the hand-written one and a second test keeping "any
 target" distinct from it.
+
+## The drain and the edict (#317, D390)
+
+"Each opponent loses 1 life and you gain 1 life" is one effect joined by **and**, not two clauses —
+`clausesOf` does not split on that word, because "gets +2/+2 and gains trample" is one effect too. So
+it is read whole and in printed order, lost then gained, which is what all three hand-written drains
+do. The two numbers are read separately rather than assumed equal: every pool drain prints the same
+number twice, so reading one twice would pass every ground-truth test while asserting a symmetry the
+text does not promise, and a synthetic asymmetric drain pins it. The tail is optional, and the
+pointed form carries `friendly` on the heal and not on the drain — "target player" is the same two
+words on both, and the bot's default is the enemy.
+
+"Each player sacrifices a creature" is a **question**: `who: 'each-player'` expands into one per
+seat, asked in turn order from the active player (CR 101.4), which is sometimes the card itself — the
+second player to sacrifice has seen what the first gave up. "Each player" includes you and "each
+opponent" does not, one word of the reader and a different card. The filter decides what may be given
+up; without it a player answers an edict with a land.
+
+**331 → 335 of 538 lines (61.5% → 62.3%), 209 → 213 of 339 cards**: Blood Artist, Zulaport
+Cutthroat, Cruel Celebrant, Fleshbag Marauder. Four deliberate breaks, four failing tests.
+
+Kambal stays unread on purpose: "**that player** loses 2 life" takes its subject from the event, not
+the clause, and means something different under a different trigger.

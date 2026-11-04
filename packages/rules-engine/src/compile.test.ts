@@ -1049,19 +1049,19 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         name: 'Keyword And A Sentence', type_line: 'Instant', mana_cost: '{R}', cmc: 1,
         colors: ['R'],
         /*
-          The sentence was a Fog until the Fog clause became readable, which is the right kind of
-          churn and the reason this fixture names its own text rather than borrowing a card's: a
-          sentence nothing reads today is a moving target, and the property is about the two kinds
-          of unread line rather than about any particular one.
+          The sentence was a Fog until the Fog clause became readable, then an edict until that one
+          did — which is the right kind of churn and the reason this fixture names its own text
+          rather than borrowing a card's: a sentence nothing reads today is a moving target, and the
+          property is about the two kinds of unread line rather than about any particular one.
         */
-        oracle_text: 'Kicker {4}\nEach player sacrifices a creature.',
+        oracle_text: 'Kicker {4}\nExchange control of two target creatures.',
       });
       expect(half.ok).toBe(true);
       if (!half.ok) return;
       expect(half.script).toBeUndefined();
       expect(half.unread).toEqual([
         { line: 'Kicker {4}', why: 'unimplemented-keyword' },
-        { line: 'Each player sacrifices a creature.', why: 'no-reader' },
+        { line: 'Exchange control of two target creatures.', why: 'no-reader' },
       ]);
     });
 
@@ -2422,6 +2422,181 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       if (!trick.ok) return;
       expect(trick.script).toBeUndefined();
       expect(trick.unread).toHaveLength(3);
+    });
+  });
+  describe('the drain and the edict, against the cards that print them', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string,
+      targets: readonly Target[] = [], decisions: readonly { readonly ids: readonly string[] }[] = [],
+    ): EffectContext => ({ state, controller: seat, source, targets, decisions } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const triggerOf = (script: unknown) =>
+      (field(script, 'triggers') as readonly TriggerDef[] | undefined)?.[0];
+
+    /*
+      "Each opponent loses 1 life and you gain 1 life" — one effect joined by "and", not two
+      clauses, which is why `clausesOf` does not split on the word: "gets +2/+2 and gains trample"
+      is one effect too, and a splitter that broke on "and" would cut that in half.
+
+      Compared by resolving both readings on the same board, because the drain's whole content is
+      arithmetic on life totals: two seats' totals and the caster's, which is what the assertions
+      below read.
+    */
+    it.each([
+      ['Zulaport Cutthroat'],
+      ['Cruel Celebrant'],
+    ])('%s drains the table exactly as the hand-written trigger does', (card) => {
+      const base = arena();
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = triggerOf(compiledScript(card as string).script)!.effect(ctx);
+      const theirs = triggerOf(scriptFor(card as string))!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      // Not vacuous, and pointed the right way: the opponent lost the life and the caster gained it.
+      expect(mine.seats[1]!.life).toBe(base.seats[1]!.life - 1);
+      expect(mine.seats[0]!.life).toBe(base.seats[0]!.life + 1);
+    });
+
+    it('drains the player Blood Artist points at, and nobody else', () => {
+      const base = arena();
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'player', seat: 1 as SeatIndex }]);
+      const mine = triggerOf(compiledScript('Blood Artist').script)!.effect(ctx);
+      const theirs = triggerOf(scriptFor('Blood Artist'))!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      expect(field(compiledScript('Blood Artist').script, 'triggers')).toBeDefined();
+      expect(triggerOf(compiledScript('Blood Artist').script)!.targets)
+        .toEqual(triggerOf(scriptFor('Blood Artist'))!.targets);
+      expect(mine.seats[1]!.life).toBe(base.seats[1]!.life - 1);
+      expect(mine.seats[0]!.life).toBe(base.seats[0]!.life + 1);
+    });
+
+    /*
+      The two numbers are read separately rather than assumed equal. Every drain in this pool prints
+      the same number twice, so reading one of them twice would pass every ground-truth test above
+      while asserting a symmetry the text does not promise.
+    */
+    it('reads the two halves of an asymmetric drain as the two numbers printed', () => {
+      const greedy = compileCard({
+        name: 'Greedy Drain', type_line: 'Sorcery', mana_cost: '{2}{B}', cmc: 3, colors: ['B'],
+        oracle_text: 'Each opponent loses 3 life and you gain 1 life.',
+      });
+      expect(greedy.ok).toBe(true);
+      if (!greedy.ok) return;
+      expect(greedy.unread).toEqual([]);
+      const base = arena();
+      const after = (field(greedy.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      expect(after.seats[1]!.life).toBe(base.seats[1]!.life - 3);
+      expect(after.seats[0]!.life).toBe(base.seats[0]!.life + 1);
+    });
+
+    it('reads a drain with no gain at all, which is the same clause without its tail', () => {
+      const bleed = compileCard({
+        name: 'Plain Bleed', type_line: 'Sorcery', mana_cost: '{B}', cmc: 1, colors: ['B'],
+        oracle_text: 'Each opponent loses 2 life.',
+      });
+      expect(bleed.ok).toBe(true);
+      if (!bleed.ok) return;
+      expect(bleed.unread).toEqual([]);
+      const base = arena();
+      const after = (field(bleed.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      expect(after.seats[1]!.life).toBe(base.seats[1]!.life - 2);
+      // And no life gained, which is the half the card does not print.
+      expect(after.seats[0]!.life).toBe(base.seats[0]!.life);
+    });
+
+    /*
+      The edict, which is a question and not an effect — and whose `who` is the card.
+
+      "Each player" includes the caster and "each opponent" does not: one word of the reader, and a
+      completely different card. Fleshbag Marauder prints the first; the test for the second is
+      synthetic, because the pool's only "each opponent sacrifices" is a Saga chapter whose other
+      two chapters this module cannot read.
+    */
+    it('asks every player, as the hand-written Fleshbag Marauder does', () => {
+      const mine = triggerOf(compiledScript('Fleshbag Marauder').script)!;
+      const theirs = triggerOf(scriptFor('Fleshbag Marauder'))!;
+      const asked = (mine.decisions as readonly { who: string; from: string; min: number }[])[0];
+      const written = (theirs.decisions as readonly { who: string; from: string; min: number }[])[0];
+      expect(asked?.who).toBe(written?.who);
+      expect(asked?.who).toBe('each-player');
+      expect(asked?.from).toBe('battlefield');
+      expect(asked?.min).toBe(1);
+    });
+
+    it('asks only the opponents when the card says "each opponent"', () => {
+      const edict = compileCard({
+        name: 'One Sided Edict', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+        oracle_text: 'Each opponent sacrifices a creature.',
+      });
+      expect(edict.ok).toBe(true);
+      if (!edict.ok) return;
+      expect(edict.unread).toEqual([]);
+      expect((field(edict.script, 'decisions') as readonly { who: string }[])[0]?.who)
+        .toBe('each-opponent');
+    });
+
+    it('only offers a creature to sacrifice, which is what the filter is for', () => {
+      /*
+        The filter decides what may be given up, and a missing one would let a player sacrifice a
+        land to an edict — which is not the card. Compared against the hand-written filter on the
+        same board so both answers come from the same objects.
+      */
+      const board = arena({ battlefield: { 1: ['Grizzly Bears', 'Forest'] }, turn: 3 });
+      const bear = find(board, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const forest = find(board, 1 as SeatIndex, 'battlefield', 'Forest');
+      const spec = (triggerOf(compiledScript('Fleshbag Marauder').script)!
+        .decisions as readonly { filter?: (s: GameState, id: string) => boolean }[])[0]!;
+      const written = (triggerOf(scriptFor('Fleshbag Marauder'))!
+        .decisions as readonly { filter?: (s: GameState, id: string) => boolean }[])[0]!;
+      expect(spec.filter?.(board, bear)).toBe(true);
+      expect(spec.filter?.(board, forest)).toBe(false);
+      expect(written.filter?.(board, bear)).toBe(true);
+      expect(written.filter?.(board, forest)).toBe(false);
+    });
+
+    it('puts the sacrificed creatures in the graveyard, as the hand-written card does', () => {
+      const board = arena({ battlefield: { 1: ['Grizzly Bears'] }, turn: 3 });
+      const bear = find(board, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const ctx = contextOn(board, 0 as SeatIndex, 'c1', [], [{ ids: [bear] }]);
+      const mine = triggerOf(compiledScript('Fleshbag Marauder').script)!.effect(ctx);
+      const theirs = triggerOf(scriptFor('Fleshbag Marauder'))!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      expect(mine.zones[zoneKey(1 as SeatIndex, 'graveyard')]).toContain(bear);
+    });
+
+    /*
+      "Target player gains 3 life" — Healing Salve's first mode, and the clause whose sign is the
+      reason `friendly` exists. The bot's default is "the enemy and the enemy's creatures", so a
+      heal without the flag is a Healing Salve cast on the opponent.
+    */
+    it('marks a heal friendly, which a drain pointed at the same kind of target is not', () => {
+      const heal = compileCard({
+        name: 'Plain Heal', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'],
+        oracle_text: 'Target player gains 3 life.',
+      });
+      const drain = compileCard({
+        name: 'Plain Drain', type_line: 'Instant', mana_cost: '{B}', cmc: 1, colors: ['B'],
+        oracle_text: 'Target player loses 2 life and you gain 2 life.',
+      });
+      expect(heal.ok && drain.ok).toBe(true);
+      if (!heal.ok || !drain.ok) return;
+      expect(heal.unread).toEqual([]);
+      expect(drain.unread).toEqual([]);
+      expect((field(heal.script, 'targets') as readonly TargetSpec[])[0]?.friendly).toBe(true);
+      expect((field(drain.script, 'targets') as readonly TargetSpec[])[0]?.friendly).toBeUndefined();
+
+      // And it heals the player it points at, not the caster.
+      const base = arena();
+      const after = (field(heal.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'player', seat: 1 as SeatIndex }]),
+      );
+      expect(after.seats[1]!.life).toBe(base.seats[1]!.life + 3);
+      expect(after.seats[0]!.life).toBe(base.seats[0]!.life);
     });
   });
 });
