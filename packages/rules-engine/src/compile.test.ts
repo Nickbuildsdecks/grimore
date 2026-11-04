@@ -770,6 +770,102 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       .toContain(description as string);
   });
 
+  describe('statics, a Fog and a library search, against the hand-written ones', () => {
+    const field = (script: unknown, key: string): unknown =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    it.each([
+      // `Creatures you control get +1/+1.` — the whole card.
+      ['Glorious Anthem'],
+      // `Other creatures you control get +1/+0.` — the word "other" is the scope, and Judith is a
+      // 2/2: collapse the two scopes and she becomes a 3/2.
+      ['Judith, the Scourge Diva'],
+    ])('%s builds the static the hand-written card builds', (card) => {
+      expect(field(compiledScript(card as string).script, 'statics'))
+        .toEqual(field(scriptFor(card as string), 'statics'));
+    });
+
+    it('reads the two scopes apart, which is what the word "other" is for', () => {
+      /*
+        Asserted directly as well as through the equality above, because the two scopes differ by
+        one word in the print and by one string in the script — the kind of pair where a passing
+        deep-equality can hide a reader that got both rows from the same branch.
+      */
+      const scopes = (card: string) =>
+        (field(compiledScript(card).script, 'statics') as readonly { scope: string }[])
+          .map((entry) => entry.scope);
+      expect(scopes('Glorious Anthem')).toEqual(['controller-creatures']);
+      expect(scopes('Judith, the Scourge Diva')).toEqual(['other-controller-creatures']);
+    });
+
+    it('accumulates two printed statics instead of calling them a conflict', () => {
+      /*
+        No card in the pool prints two, which is exactly why this is a fixture: `statics` was added
+        to the accumulating set *before* a card needed it, and an untested mechanism is the one that
+        is wrong when the corpus finally reaches it. Two anthems is a legal, ordinary card, and the
+        wrong answer here is `field-conflict` on the second line — which is what `merge` reported
+        for `abilities` until a pain land found it (D378).
+      */
+      const twice = compileCard({
+        name: 'Nonesuch', type_line: 'Enchantment', mana_cost: '{3}{W}', cmc: 4, colors: ['W'],
+        oracle_text: 'Creatures you control get +1/+1.\nOther creatures you control get +0/+1.',
+      });
+      expect(twice.ok).toBe(true);
+      if (!twice.ok) return;
+      expect(twice.unread).toEqual([]);
+      expect(field(twice.script, 'statics')).toEqual([
+        { scope: 'controller-creatures', effect: { power: 1, toughness: 1 } },
+        { scope: 'other-controller-creatures', effect: { toughness: 1 } },
+      ]);
+    });
+
+    it.each([['Fog'], ['Holy Day']])('%s prevents the combat and says so to the bot', (card) => {
+      /*
+        Two fields, and the second is not decoration: nothing in the engine reads `preventsDamage`,
+        the bot does. A Fog without it works perfectly and gets cast into an empty board, which is
+        the same trap as `protectsACreature` (D379) and `removesACreature` before it.
+      */
+      expect(field(compiledScript(card as string).script, 'preventsDamage')).toBe(true);
+      const base = arena({ battlefield: { 1: ['Grizzly Bears'] }, turn: 3 });
+      const ctx = { state: base, controller: 0 as SeatIndex, source: 'c1', targets: [] } as
+        unknown as EffectContext;
+      const mine = (field(compiledScript(card as string).script, 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+      expect(mine).toEqual((field(scriptFor(card as string), 'onResolve') as
+        (c: EffectContext) => GameState)(ctx));
+      expect(mine, 'preventing nothing').not.toEqual(base);
+    });
+
+    it.each([
+      // Tutor to hand, with no filter at all.
+      ['Diabolic Tutor', 'Search your library for a card'],
+      // And onto the battlefield tapped, with the basic-land filter.
+      ['Rampant Growth', 'Search your library for a basic land card'],
+    ])('%s asks the search the hand-written card asks', (card, prompt) => {
+      /*
+        Compared field by field rather than deep: Rampant Growth's decision carries a `filter`
+        closure. The fields here are the whole of the question a player is shown — who is asked,
+        which zone, what it says, and how many cards may be taken — and `min: 0` is the one that
+        matters most, because a search you may decline is a different card from one you may not.
+
+        The printed "then shuffle" is deliberately absent from both: `searchYourLibrary` shuffles
+        when the search ends, and `clausesOf` hands the bare word to a reader that does nothing.
+      */
+      const only = (script: unknown) =>
+        (field(script, 'decisions') as readonly Record<string, unknown>[] | undefined)?.[0];
+      const mine = only(compiledScript(card as string).script);
+      const written = only(scriptFor(card as string));
+      expect(mine, `${card as string}: compiled no decision`).toBeDefined();
+      expect(written, `${card as string}: no hand-written decision`).toBeDefined();
+      for (const key of ['who', 'from', 'prompt', 'min', 'max']) {
+        expect(mine?.[key], `${card as string}: ${key}`).toEqual(written?.[key]);
+      }
+      expect(mine?.['prompt']).toBe(prompt as string);
+      // The filter travels with the question, and only one of the two cards has one.
+      expect(typeof mine?.['filter']).toBe(typeof written?.['filter']);
+    });
+  });
+
   it('reads Crew off the Vehicle the pool crews, closures and all', () => {
     /*
       The one keyword row that is an **ability** rather than a declaration, so it cannot be deep
@@ -840,17 +936,20 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const half = compileCard({
         name: 'Keyword And A Sentence', type_line: 'Instant', mana_cost: '{R}', cmc: 1,
         colors: ['R'],
-        oracle_text: 'Kicker {4}\nPrevent all combat damage that would be dealt this turn.',
+        /*
+          The sentence was a Fog until the Fog clause became readable, which is the right kind of
+          churn and the reason this fixture names its own text rather than borrowing a card's: a
+          sentence nothing reads today is a moving target, and the property is about the two kinds
+          of unread line rather than about any particular one.
+        */
+        oracle_text: 'Kicker {4}\nEach player sacrifices a creature.',
       });
       expect(half.ok).toBe(true);
       if (!half.ok) return;
       expect(half.script).toBeUndefined();
       expect(half.unread).toEqual([
         { line: 'Kicker {4}', why: 'unimplemented-keyword' },
-        {
-          line: 'Prevent all combat damage that would be dealt this turn.',
-          why: 'no-reader',
-        },
+        { line: 'Each player sacrifices a creature.', why: 'no-reader' },
       ]);
     });
 

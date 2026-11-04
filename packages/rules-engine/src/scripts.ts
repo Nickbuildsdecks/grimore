@@ -9206,6 +9206,63 @@ function untargetedEffect(clause: string): ReadEffect | null {
     }
   }
 
+  /*
+    A Fog. `preventCombatDamage` is the primitive and `preventsDamage` is the bot hint that goes
+    with it — nothing in the engine reads the flag, the bot does, so a Fog without it is a card
+    that works and is cast into an empty board. Fog and Holy Day are the same two fields.
+  */
+  if (/^prevent all combat damage that would be dealt this turn$/i.test(text)) {
+    return {
+      effect: (c) => preventCombatDamage(c.state, c.source, c.controller),
+      spellFlags: { preventsDamage: true },
+    };
+  }
+
+  /*
+    The two library searches the pool writes, which are one `searchYourLibrary` decision and one
+    thing done with what it found. The printed "then shuffle" is not read as a step: shuffling is
+    what `searchYourLibrary` does when the search ends, so a reader that emitted a shuffle of its
+    own would shuffle twice.
+
+    Narrow on purpose. "Search your library for a card" is Diabolic Tutor and takes no filter at
+    all; "a basic land card ... onto the battlefield tapped" is Rampant Growth and takes
+    `isBasicLand`. A tutor for some *other* kind of card needs a filter this module cannot build
+    from the phrase, and a search that puts the card anywhere else is a different card — both are
+    refused rather than approximated.
+  */
+  if (/^search your library for a card and put that card into your hand$/i.test(text)) {
+    return {
+      decisions: [searchYourLibrary('Search your library for a card')],
+      effect: (c) => moveToHand(c.state, chosenCards(c)),
+    };
+  }
+  if (/^search your library for a basic land card, put it onto the battlefield tapped$/i
+    .test(text)) {
+    return {
+      decisions: [searchYourLibrary('Search your library for a basic land card', isBasicLand)],
+      effect: (c) => {
+        const found = chosenCard(c);
+        return found === null
+          ? c.state
+          : putOntoBattlefield(c.state, found, c.controller, { tapped: true });
+      },
+    };
+  }
+
+  /*
+    The `shuffle` that `clausesOf` leaves behind, and the reason both searches above stop before it.
+
+    A search prints ", then shuffle", and ", then " is exactly where `clausesOf` cuts — so the line
+    arrives here as two clauses and the second is the bare word. It reads as the identity because
+    `searchYourLibrary` already shuffles when the search ends: a reader that shuffled again would
+    shuffle twice, and the one thing a library must not be is shuffled an unknown number of times
+    when a test is comparing two boards.
+
+    The bare word and nothing else. "Shuffle your library" names an object and is a step of its own
+    on the cards that print it; this clause only ever appears as the tail of a search.
+  */
+  if (/^shuffle$/i.test(text)) return { effect: (c) => c.state };
+
   if (/^you become the monarch$/i.test(text)) {
     return { effect: (c) => becomeMonarch(c.state, c.controller) };
   }
@@ -10537,6 +10594,36 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
 }
 
 /**
+ * A printed **static** ability: a continuous effect a permanent applies for as long as it is there.
+ *
+ * One shape, and it is the commonest static in Magic: `Creatures you control get +1/+1`. The word
+ * "other" is the whole of the difference between the two scopes the engine has —
+ * `controller-creatures` includes the permanent itself and `other-controller-creatures` does not —
+ * and it is load-bearing rather than cosmetic: Judith is a 2/2 and prints "Other creatures you
+ * control get +1/+0", so a reader that collapsed the two would make her a 3/2.
+ *
+ * Not an effect, which is why this is its own reader rather than a clause: a static is never
+ * resolved and never put on the stack. `characteristicsOf` consults it every time it computes a
+ * creature's size, so the fragment is a `statics` entry and nothing else.
+ *
+ * `sizeBonus` for the bonus itself, so `+1/+0` is `{ power: 1 }` and not `{ power: 1, toughness:
+ * 0 }` — the same rule everywhere a bonus is read, and the one Judith's hand-written script uses.
+ */
+function staticFromLine(line: string): Partial<CardScript> | null {
+  const anthem = /^(other )?creatures you control get \+(\d+)\/\+(\d+)$/i
+    .exec(plain(line).trim().replace(/\.\s*$/, ''));
+  if (anthem === null) return null;
+  const effect = sizeBonus(Number(anthem[2]), Number(anthem[3]));
+  if (effect === null) return null;
+  return {
+    statics: [{
+      scope: anthem[1] === undefined ? 'controller-creatures' : 'other-controller-creatures',
+      effect,
+    }],
+  };
+}
+
+/**
  * Everything the compiler can read off one printed line of a **permanent**: a keyword, a triggered
  * ability, or an activated one.
  *
@@ -10545,6 +10632,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
  */
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
   return keywordScriptFor(line, name)
+    ?? staticFromLine(line)
     ?? triggerFromLine(line, name)
     ?? abilityFromLine(line, name);
 }

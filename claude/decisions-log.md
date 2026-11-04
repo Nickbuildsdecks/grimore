@@ -23872,3 +23872,63 @@ refuses a spell whose unread line is a sentence, not a keyword".
 Verified: compile.test.ts 145/145; the alternative-cost group, echo's trigger, rebound's trigger,
 suspend's count, escape's exile count and crew's `animates` each proved to fail when deliberately
 broken. Scryfall egress re-tested: still refused (000 for both hosts).
+
+## D381
+
+**A static, a Fog and a library search** (#317)
+
+**309 of 538 printed lines, up from 302 (56.1% → 57.4%); 196 of 339 cards get a script, up from
+190.** Glorious Anthem, Judith's static, Fog, Holy Day, Diabolic Tutor, Rampant Growth.
+
+### A static is not an effect, so it is its own reader
+
+`Creatures you control get +1/+1` is the commonest static in Magic and the first thing the compiler
+reads that is never resolved and never on the stack: `characteristicsOf` consults it every time it
+computes a creature's size. So `staticFromLine` sits in `lineScriptFor`'s chain beside
+`keywordScriptFor` rather than among the clause readers, and the fragment is a `statics` entry.
+
+The word **other** is the whole of the difference between the engine's two scopes, and it is
+load-bearing rather than cosmetic: Judith is a 2/2 and prints "Other creatures you control get
++1/+0", so a reader that collapsed them would make her a 3/2. Pinned twice — once by equality
+against her hand-written script, once by asserting the two scope strings directly, because a pair
+that differs by one string is exactly where a passing deep-equality can hide both rows coming from
+one branch.
+
+`statics` also joins `abilities` and `triggers` in `merge`'s accumulating set. Nothing in the pool
+prints two, which is why it has a **fixture** test: an untested mechanism added ahead of need is the
+one that is wrong when the corpus reaches it, and `field-conflict` on a second anthem is precisely
+what `merge` reported for `abilities` until a pain land found it (D378).
+
+### The Fog's second field is the one that matters
+
+`preventCombatDamage` is the primitive and `preventsDamage` is the bot hint. Nothing in the engine
+reads the flag — the bot does — so a Fog without it works perfectly and gets cast into an empty
+board. Third time this shape has come up (`removesACreature`, `protectsACreature`), and the first
+where the flag is the *only* thing the compiled card would have been missing.
+
+### `clausesOf` cuts the search in half, which is why the readers stop before "then shuffle"
+
+Both searches were written to match the whole printed sentence and both stayed unread. The reason is
+`clausesOf`: it splits on `", then "`, and a search prints ", then shuffle". So the line arrives as
+two clauses and the readers match the first. The second is the bare word, read as the identity,
+because `searchYourLibrary` already shuffles when the search ends — a reader that shuffled again
+would shuffle twice, and a library shuffled an unknown number of times is the one thing that makes
+two boards incomparable. The bare word only, since "shuffle your library" names an object and is a
+step of its own on the cards that print it.
+
+Both searches are deliberately narrow: no filter at all for Diabolic Tutor, `isBasicLand` for
+Rampant Growth, and anything else refused. A tutor for some other kind of card needs a filter no
+phrase here can build, and a search that puts the card anywhere else is a different card. `min: 0`
+is compared in the test for the same reason it exists: a search you may decline is a different card
+from one you may not.
+
+### A test fixture had to be repointed again
+
+"Still refuses a spell whose unread line is a sentence, not a keyword" used a Fog as its unreadable
+sentence, and the Fog is now readable. Its text is now `Each player sacrifices a creature.` — and
+the fixture says in a comment why it names its own text rather than borrowing a card's: a sentence
+nothing reads today is a moving target, and the property is about the two *kinds* of unread line.
+
+Verified: compile.test.ts 153/153; the two static scopes, the accumulating `statics`, the Fog's bot
+hint, the tutor's `min: 0` and Rampant Growth's basic-land filter each proved to fail when
+deliberately broken.

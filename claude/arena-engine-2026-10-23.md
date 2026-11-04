@@ -10196,3 +10196,27 @@ keywords are a declaration *plus* a trigger. And Rift Bolt is `Suspend 1`, so a 
 wrote 1 passed its row; Search for Tomorrow is now a second row. The triggers are pinned by a test
 asserting the direction the table cannot: a trigger the hand-written card has must be among the
 compiled ones.
+
+## A static, a Fog and a library search (#317, D381)
+
+**309 of 538 printed lines, up from 302 (56.1% → 57.4%). 196 of 339 cards get a script, up from
+190.** Glorious Anthem, Judith's static, Fog, Holy Day, Diabolic Tutor, Rampant Growth.
+
+**A static is never resolved, so it is its own reader.** `Creatures you control get +1/+1` is the
+commonest static in Magic and the first thing the compiler reads that never goes on the stack —
+`characteristicsOf` consults it whenever it computes a creature's size. The word **other** is the
+whole difference between the engine's two scopes, and Judith is a 2/2 printing "Other creatures you
+control get +1/+0": collapse them and she becomes a 3/2. `statics` also joins the accumulating set
+in `merge`, with a fixture test, because nothing in the pool prints two and an untested mechanism
+added ahead of need is the one that breaks when the corpus arrives.
+
+**The Fog's second field is the one that matters.** `preventCombatDamage` is the primitive;
+`preventsDamage` is the bot hint, and nothing in the engine reads it. A Fog without it works
+perfectly and gets cast into an empty board.
+
+**`clausesOf` cuts a search in half.** Both search readers were written against the whole printed
+sentence and both stayed unread: ", then " is where clauses are split, and a search prints ", then
+shuffle". The readers now match the first clause and the bare `shuffle` reads as the identity,
+because `searchYourLibrary` already shuffles — doing it twice would make two boards incomparable.
+Both searches are deliberately narrow (no filter for the tutor, `isBasicLand` for Rampant Growth),
+and `min: 0` is asserted, because a search you may decline is a different card from one you may not.

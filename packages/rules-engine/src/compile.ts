@@ -109,8 +109,10 @@ export function fullyCompiled(result: Compilation): boolean {
  *
  * `abilities` was missing from this set until a two-ability land was compiled for the first time:
  * the second line read correctly and was then reported as a `field-conflict` against the first.
+ * `statics` is here for the same reason before a card needs it — a permanent with two printed
+ * continuous abilities is ordinary, and nothing about the list says they must arrive together.
  */
-const ACCUMULATING = new Set(['triggers', 'abilities']);
+const ACCUMULATING = new Set(['triggers', 'abilities', 'statics']);
 
 /**
  * Merges one line's fragment into the script being built.
