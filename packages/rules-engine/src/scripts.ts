@@ -2758,6 +2758,28 @@ const THOUGHT_SCOUR: CardScript = {
  * board that is killing you. The ability is the one already written for the cycling lands —
  * `discardSelf`, which carries its own "from the hand" restriction.
  */
+/**
+ * Cycling, written out as the activated ability the keyword abbreviates (CR 702.29a).
+ *
+ * "Cycling {2}" means "{2}, Discard this card: Draw a card" — the whole of it, printed nowhere else
+ * on the card. So the declaration *is* the ability, which is what makes it safe for
+ * `keywordScriptFor` to build (D364), and it is the third-largest keyword bucket in the corpus at
+ * 192 cards (D426).
+ *
+ * `discardSelf` is the half that is not mana, and it is what tells `collectLegalActions` the ability
+ * is used **from the hand** and spends the card. `drawLater` rather than `draw` for the reason that
+ * primitive exists: a draw the controller is owed is taken as a move they make, so a player drawing
+ * their last card can be asked what to do before it resolves.
+ *
+ * A factory so the hand-written card and the compiled reading are one ability rather than two
+ * spellings of it — `ninjutsuAbility`'s arrangement (D421).
+ */
+const cyclingAbility = (mana: string): AbilityDef => ({
+  cost: { mana, discardSelf: true },
+  description: `${mana}, Discard this card: Draw a card.`,
+  effect: (c) => drawLater(c.state, c.controller, 1),
+});
+
 const COMPELLING_ARGUMENT: CardScript = {
   name: 'Compelling Argument',
   targets: [TARGET_PLAYER],
@@ -2765,11 +2787,7 @@ const COMPELLING_ARGUMENT: CardScript = {
     const seat = firstPlayerTarget(c);
     return seat === null ? c.state : mill(c.state, seat, 3);
   },
-  abilities: [{
-    cost: { mana: '{U}', discardSelf: true },
-    description: '{U}, Discard this card: Draw a card.',
-    effect: (c) => drawLater(c.state, c.controller, 1),
-  }],
+  abilities: [cyclingAbility('{U}')],
 };
 
 /** A 2/4 body that mills four on the way in: the blocker this deck needs, attached to its plan. */
@@ -6202,9 +6220,20 @@ const TATYOVA: CardScript = {
   name: 'Tatyova, Benthic Druid',
   triggers: [
     {
-      // "Whenever a land you control enters" — `another`, because she is not a land and her own
-      // arrival is not one; `of: 'you'`, because an opponent's land is not yours.
-      on: { kind: 'etb', who: 'another', of: 'you', what: 'land' },
+      /*
+        "Whenever a land you control enters" — `who: 'any'` with `of: 'you'`, which is the same
+        reading the table gives "a creature you control", and the same one `keywordScriptFor`'s
+        landfall prologue builds.
+
+        It used to say `who: 'another'`, arguing that "she is not a land and her own arrival is not
+        one". True of her and not of the phrase: the standing compiled-vs-written check flagged the
+        difference the moment the compiler learnt to read the line (D429), and the general reading is
+        the right one to keep — the corpus prints exactly one **land** with this trigger on it
+        (Chocobo Camp), and for that card `another` would miss its own arrival, which the printed
+        text includes. For Tatyova the two are behaviourally identical, so this is a change of
+        wording rather than of what she does.
+      */
+      on: { kind: 'etb', who: 'any', of: 'you', what: 'land' },
       description: 'draw a card and you gain 1 life',
       effect: (c) => draw(gainLife(c.state, c.controller, 1), c.controller, 1),
     },
@@ -9126,6 +9155,18 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   if (word === 'convoke') return { convoke: true };
 
   // ── The keywords that carry a mana cost ───────────────────────────────────────────────────────
+  /*
+    Cycling, which is a declaration **and** the ability it declares — `cyclingAbility`'s docblock has
+    the argument, and it is D364's rule: "Cycling {2}" with no ability is a card that cannot be
+    cycled, and an ability with no declaration has no cost to charge.
+
+    Only plain cycling. "Landcycling {1}{G}", "Basic landcycling" and the typed cyclings search a
+    library for a card of a kind this reader would have to invent a filter for, so they are left to
+    be reported (D362) rather than read as a draw, which is a different card.
+  */
+  const cycling = /^cycling\s+((?:\{[^}]*\})+)$/i.exec(text);
+  if (cycling !== null) return { abilities: [cyclingAbility(cycling[1]!)] };
+
   const cost = /^(ward|replicate|cumulative upkeep)\s*[—-]?\s*(\{[^\n]+\})$/i.exec(text);
   if (cost !== null) {
     const which = cost[1]!.toLowerCase();
@@ -10542,6 +10583,18 @@ const TRIGGER_SHAPES: readonly {
     spellings are not interchangeable English: a card that said "at the beginning of your combat"
     would be a card Wizards has not printed, so only the one that is printed is read.
   */
+  /*
+    Landfall (CR 702.112), which is the ability word `withoutAbilityWord` strips before this table is
+    consulted — so "Landfall — Whenever a land you control enters, …" and the same sentence printed
+    without the word are one row, which is what an ability word is.
+
+    `what: 'land'` has been in `TriggerDef` since #163 with its own docblock saying it is "the
+    landfall templating" and that "until a card asked, nothing could hear it". 184 corpus cards ask.
+  */
+  {
+    prologue: () => new RegExp(`^Whenever a land you control ${ENTERS}, (.+)$`, 'i'),
+    on: [{ kind: 'etb', who: 'any', of: 'you', what: 'land' }],
+  },
   {
     prologue: () => /^At the beginning of your draw step, (.+)$/i,
     on: [{ kind: 'step', step: 'draw', of: 'you' }],
@@ -12540,7 +12593,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
  * refuses. The list grows with the cards that need it; these two are the ones the pool prints in
  * front of something readable.
  */
-const ABILITY_WORDS: readonly string[] = ['metalcraft', 'battalion'];
+const ABILITY_WORDS: readonly string[] = ['metalcraft', 'battalion', 'landfall'];
 
 function withoutAbilityWord(line: string): string {
   const split = /^([A-Za-z]+)\s*[——-]\s*(.+)$/.exec(line.trim());

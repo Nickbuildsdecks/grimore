@@ -11319,3 +11319,24 @@ unchanged. Six breaks: three failed outright, one was invalid (deleting a row br
 vitest reported "no tests" — not a passing break), and one **failed nothing and was right to** —
 widening the draw-step prologue to another seat, because the negative row only described the upkeep.
 The test now tables all three prologues, and both widening breaks fail.
+
+## Cycling, and landfall (#317, D429)
+
+**+347 corpus lines.** Both are the D421 shape — a keyword whose declaration is what it does, built
+through a factory the hand-written card calls too.
+
+Cycling (192 cards): "{2}, Discard this card: Draw a card" is the whole of it. Only *plain* cycling —
+the typed cyclings search a library for a named kind of card, which needs a filter this reader would
+have to invent, so they stay reported (D259, D362).
+
+Landfall (184 cards): `TriggerDef.what = 'land'` has been there since #163 saying "until a card
+asked, nothing could hear it". This is the card asking, and `landfall` joins the ability words so the
+prefixed and bare spellings are one row.
+
+**The standing check corrected a fourth hand-written card.** Tatyova's landfall trigger said
+`who: 'another'` because "she is not a land"; true of her, not of the phrase. The corpus prints one
+land with this trigger (Chocobo Camp), for which `another` misses its own arrival — so the general
+reading wins.
+
+Corpus **16,543 of 60,940 (27.1%)**, 7,145 cards with a script; pool **415 of 538 (77.1%)**, 239
+complete — Compelling Argument and Tatyova left the incomplete list. Seven breaks, seven failures.

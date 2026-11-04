@@ -26732,3 +26732,61 @@ Two needed fixing rather than recording:
 
 That second one is the useful kind of break: it did not find a bug in the reader, it found a claim
 in the tests that was not being made.
+
+## D429 — Cycling, and the landfall trigger the engine had a field for and no card
+
+Third increment off the corpus queue: **+347 lines**, and two cards out of the pool's incomplete list
+as well.
+
+### Cycling (192 corpus cards)
+
+"Cycling {2}" means "{2}, Discard this card: Draw a card" and nothing else is printed on the card for
+it, so the declaration *is* the ability — D364's condition for reading a keyword, and the same shape
+as ninjutsu (D421) and the three ability words (D425). `cyclingAbility(mana)` is the factory, and
+Compelling Argument's hand-written script now calls it, so the two readings are one ability.
+
+`discardSelf` is the half of the cost that is not mana, and it is what tells `collectLegalActions`
+the ability is used **from the hand** and spends the card.
+
+**Only plain cycling.** Landcycling, basic landcycling and the typed cyclings put a card of a named
+kind into your hand out of your *library*, which needs a filter this reader would have to invent
+(D259) — so they are reported rather than read as a draw, which is a different card. Asserted as its
+own row, and a break widening the pattern to `\w*cycling` fails it.
+
+### Landfall (184 corpus cards)
+
+`TriggerDef`'s `what: 'land'` has existed since #163, with a docblock calling it "the landfall
+templating" and noting that "until a card asked, nothing could hear it". This is the card asking.
+
+`landfall` joins `ABILITY_WORDS`, so `withoutAbilityWord` strips it before the prologue table is
+consulted and "Landfall — Whenever a land you control enters, …" and the same sentence without the
+word are one row — which is what an ability word is.
+
+### The standing check corrected a hand-written card again
+
+**Tatyova, Benthic Druid** disagreed on `triggers` the moment the compiler could read her line. Her
+script said `who: 'another'`, arguing "she is not a land and her own arrival is not one" — true of
+her and not of the phrase. "A land you control" includes a land that is itself, and the corpus
+prints exactly one such card: **Chocobo Camp**, a land with this trigger, for which `another` would
+miss its own arrival. So the general reading wins and her script now says `who: 'any', of: 'you'`,
+which for her is a change of wording rather than of behaviour.
+
+That is the fourth hand-written card the check has corrected (after Garruk, Basilica Guards and
+River Boa), and the second where the compiler's general rule was simply better than the one card's.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| Corpus lines compiled | 16,196 of 60,940 (26.6%) | **16,543 of 60,940 (27.1%)** |
+| Corpus cards with a script | 6,860 (20.8%) | **7,145 (21.7%)** |
+| Corpus keyword declarations with no builder | 3,903 | **3,636** |
+| Pool lines compiled | 413 of 538 (76.8%) | **415 of 538 (77.1%)** |
+| Pool cards with every line read | 237 | **239** |
+
+The two pool cards that left the incomplete list are exactly Compelling Argument (its `Cycling {U}`)
+and Tatyova.
+
+Seven deliberate breaks, seven failures: no cycling reader, cycling without `discardSelf`, the
+pattern widened to the typed cyclings, the landfall prologue made unmatchable, landfall watching any
+seat's land, landfall watching creatures instead, and `landfall` removed from the ability words.

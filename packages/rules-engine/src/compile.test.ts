@@ -6431,4 +6431,93 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       if (read.ok) expect(read.unread).toHaveLength(1);
     });
   });
+  /*
+    Third batch off the corpus queue (D429): cycling, and landfall.
+
+    Both are the D421 shape — a keyword whose declaration *is* what it does, built through a factory
+    the hand-written card calls too, so the two readings cannot drift. Cycling is 192 corpus cards
+    and landfall 184.
+  */
+  describe('cycling, and the landfall trigger the engine had a field for and no card', () => {
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const card = (text: string, type_line = 'Creature — Human Soldier') => compileCard({
+      name: 'Joined Up', type_line, mana_cost: '{1}', cmc: 1, colors: [], oracle_text: text,
+      power: '1', toughness: '1', loyalty: null, layout: 'normal',
+    });
+
+    it('reads Cycling {2} as the ability its reminder text spells out', () => {
+      const read = card('Cycling {2}', 'Sorcery');
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread).toEqual([]);
+      const abilities = field(read.script, 'abilities') as readonly AbilityDef[];
+      expect(abilities).toHaveLength(1);
+      // `discardSelf` is what tells `collectLegalActions` this is used from the hand and spends the
+      // card — the half of the cost that is not mana.
+      expect(abilities[0]!.cost).toEqual({ mana: '{2}', discardSelf: true });
+    });
+
+    it('builds Compelling Argument\'s cycling as its hand-written script does', () => {
+      const mine = (field(compiledScript('Compelling Argument').script, 'abilities') as readonly AbilityDef[]);
+      const written = (field(scriptFor('Compelling Argument'), 'abilities') as readonly AbilityDef[]);
+      expect(mine[0]!.cost).toEqual(written[0]!.cost);
+      expect(mine[0]!.cost).toEqual({ mana: '{U}', discardSelf: true });
+    });
+
+    it.each([['Landcycling {1}{G}'], ['Basic landcycling {2}'], ['Swampcycling {2}']])(
+      'leaves %s unread, because it searches a library rather than drawing',
+      (text) => {
+        /*
+          The typed cyclings put a card of a named kind into your hand out of your **library**, which
+          needs a filter this reader would have to invent (D259). Reading one as a draw would be a
+          card that does something else entirely, so it is reported instead (D362).
+        */
+        const read = card(text as string, 'Sorcery');
+        expect(read.ok).toBe(true);
+        if (read.ok) expect(read.unread.map((entry) => entry.line)).toEqual([text]);
+      },
+    );
+
+    it.each([
+      ['Landfall — Whenever a land you control enters, draw a card.'],
+      ['Whenever a land you control enters, draw a card.'],
+    ])('reads "%s" as a land-entry trigger', (text) => {
+      /*
+        `what: 'land'` has been in `TriggerDef` since #163, with its own docblock calling it "the
+        landfall templating" and noting that "until a card asked, nothing could hear it". This is the
+        card asking. The ability word is stripped before the prologue table is consulted, which is
+        what an ability word *is* — so both spellings are one row.
+      */
+      const read = card(text as string);
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread).toEqual([]);
+      const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+      expect(triggers[0]!.on).toEqual({ kind: 'etb', who: 'any', of: 'you', what: 'land' });
+    });
+
+    it('agrees with Tatyova, whose hand-written trigger this reading corrected', () => {
+      /*
+        Tatyova's script said `who: 'another'`, arguing "she is not a land and her own arrival is not
+        one" — true of her and not of the phrase. The standing check flagged it the moment the
+        compiler could read the line, and the general reading won: the corpus prints exactly one
+        **land** with this trigger (Chocobo Camp), and for that card `another` would miss its own
+        arrival, which the printed text includes.
+      */
+      const mine = (field(compiledScript('Tatyova, Benthic Druid').script, 'triggers') as readonly TriggerDef[]);
+      const written = (field(scriptFor('Tatyova, Benthic Druid'), 'triggers') as readonly TriggerDef[]);
+      expect(mine[0]!.on).toEqual(written[0]!.on);
+      expect(mine[0]!.on).toEqual({ kind: 'etb', who: 'any', of: 'you', what: 'land' });
+    });
+
+    it('leaves an opponent\'s land alone, which the step and entry triggers cannot express together', () => {
+      // "a land an opponent controls" is `of: 'opponent'`, which the etb trigger does have — but the
+      // phrase is not this phrase, and reading it as `of: 'you'` would fire on the wrong turn. Left
+      // for its own row rather than folded into this one.
+      const read = card('Whenever a land an opponent controls enters, draw a card.');
+      expect(read.ok).toBe(true);
+      if (read.ok) expect(read.unread).toHaveLength(1);
+    });
+  });
 });
