@@ -30,7 +30,9 @@ Either of these unblocks it, and the first is cheaper:
   measurement already takes `--file`, and the importer from D329 already filters to the played
   formats and rejects tokens, funny sets, silver borders and digital-only cards.
 
-Until then I can keep adding readers, but I am ranking them against the wrong distribution.
+Until then I can keep adding readers, but I am ranking them against the wrong distribution. As of
+this checkpoint the compiler reads **381 of 538 printed lines (70.8%)** and gives **243 of 339 cards**
+a script, with every reader checked against the hand-written card that prints it.
 
 **2. A product question I should not answer alone.** You asked for both modes — the tabletop one and
 the Arena-like one. The engine has hybrid automation (a card the compiler only partly reads is
@@ -40,10 +42,10 @@ picked per table when it is created, per player, or should a table start as card
 rules be switched on? It changes what the lobby stores and what a reconnecting player gets, so I
 would rather have your answer than guess and build the wrong one.
 
-**3. CI stopped running, and nothing I push can restart it.** GitHub Actions created no run for any
-of the last seven commits on this branch. The newest run is **#608** at 10:12Z for `2d7299e`; the
-branch head is now `cdf3824`, the pull request shows **zero check runs** on it, and `total_count`
-equals the last run number, so the runs are not being *created* rather than failing. The workflow is
+**3. CI stopped running, and nothing I push can restart it.** GitHub Actions has created no run for
+any commit on this branch since **#608** at 10:12Z (`2d7299e`). The branch head is now `e635935`,
+**fifteen commits later**, and the pull request shows **zero check runs** on it. `total_count` equals
+the last run number, so runs are not being *created* rather than failing. The workflow is
 `state: active` and triggers on a bare `pull_request:` with no path filter, so the pushes should fire
 it — they land (the PR's head sha is my latest commit) and nothing happens.
 
@@ -53,18 +55,20 @@ spending-limit stop looks exactly like this — no runs created, no error on the
 is a repository or account setting that disabled Actions after 10:12Z.
 
 **What it costs:** your rule is "CI green before you ask me to merge", and I cannot satisfy it for
-the last seven commits. So I have run **every one of CI's four jobs** locally on the branch head
-instead, and they are all green:
+those commits. So I have run **every one of CI's four jobs** locally instead, on every commit:
 
 | CI job | run locally | result |
 | --- | --- | --- |
-| `v2` | `scripts/gate.sh` (the job verbatim, live Postgres 16 + Redis 7) | GATE OK on each of the seven commits |
+| `v2` | `scripts/gate.sh` (the job verbatim, live Postgres 16 + Redis 7) | GATE OK on each commit |
 | `legacy` → `preflight` | `npm run preflight` | exit 0 |
 | `legacy` → `test:unit` | `npm run test:unit` | 45 passed, 0 failed |
 | `legacy-postgres` | `POSTGRES_TEST_URL=… npm run test:postgres` | 28 passed, 0 failed |
 
-That is the same work on the same commands; what it is not is an independent machine. There is no
-`workflow_dispatch` on the workflow, so I cannot start a run by hand — the fix is yours.
+Beyond the gate, the four browser suites pass on this engine (table 76/76, arena 53/53 with 7 named
+skips, pod 41/41 with 1, solo 28/28 with 1), the engine's own suite is green, and the compiler's
+ground-truth file is at 301 tests. That is the same work on the same commands; what it is not is an
+independent machine. There is no `workflow_dispatch` on the workflow, so I cannot start a run by
+hand — the fix is yours, and it is the one thing holding the merge.
 
 **4. Still yours, unchanged.** Merging PR #35; `SMTP_URL` / `MAIL_FROM` / `APP_BASE_URL` on the VM;
 the migration cutover (one-way, on real data, needs a backup); whether `packages/db`'s runner should
@@ -10800,3 +10804,27 @@ spell that adds mana *and* draws a card has a visible effect.
 
 **376 → 381 of 538 lines (69.9% → 70.8%)**, **239 → 243 of 339 cards** — past seventy per cent.
 Seven deliberate breaks, seven failing tests; 301/301; 9,000 rows at scale with no throw.
+
+## A target chosen by power, and the exile that is not a destruction (#317, D404)
+
+Selesnya Charm's "power 5 or greater" and Hidden Dragonslayer's "power 4 or greater" — mostly an
+increment about **when** a filter asks. `powerAtLeast` reads `characteristicsOf`, not the printed
+line, so a 2/2 pumped past five is a legal target and a 6/6 shrunk below it is not, which is #319 in
+a new place. The threshold is read off the card, and pinning that needed a creature at exactly four:
+two is below both numbers and six above both, so the obvious board cannot tell the two cards apart —
+a break run proved it by fixing the threshold at four and passing.
+
+Exile reads as exile and not as destroy, which matters because it is not a destruction (CR 701.19a).
+**Selesnya Charm compiles whole**, all three modes.
+
+Three refusal tests from earlier increments became acceptances, each keeping its property: the
+unreadable-clause example moved to Rest in Peace's sweep; D377's bare exile now asserts "one etb
+trigger and no leaves trigger" instead of "unread"; and the modal refusal moved to a synthetic charm,
+exactly as that test had written down it should.
+
+**381 → 386 of 538 lines (70.8% → 71.7%)**, **243 → 244 of 339 cards**. Five deliberate breaks, five
+failing tests; 306/306; 5,000 rows at scale with no throw.
+
+**And the live game, re-checked:** nine compiler commits is a lot of engine change to leave
+unexercised, so all four browser suites ran on a freshly built stack — **table 76/76, arena 52/52
+(6 named skips), solo 28/28 (1), pod 40/40 (1)**. Clean.

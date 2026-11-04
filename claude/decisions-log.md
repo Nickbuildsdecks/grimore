@@ -25213,3 +25213,71 @@ Seven deliberate breaks, seven failing tests: investigate making a Treasure, onl
 symbol added, the mana regex admitting generic, the divided count read off the damage, the division
 ignored so each target takes the whole amount, the `makesMana` hint dropped, and the composition
 keeping it. 9,000 more rows at scale, no throw. compile.test.ts 301/301.
+
+## D404 — A target chosen by power, read live, and the exile that is not a destruction
+
+Two cards, and the increment is mostly about **when** a filter asks its question.
+
+### The threshold, and the number read off the card
+
+Selesnya Charm's second mode exiles a creature with power **5** or greater; Hidden Dragonslayer's
+turned-face-up trigger destroys one an opponent controls with power **4** or greater. A reader that
+fixed either number would make one of the two point at creatures its own print excludes, so the
+number is read from the phrase — and that needed a test the first draft did not have. Two is below
+both thresholds and six is above both, so the obvious board cannot tell four from five; a break run
+that pinned the threshold at four passed. The row that catches it is a creature at **exactly four**,
+refused by the charm's five.
+
+### Live power, which is #319 in a new place
+
+`permanentFilter` gained `powerAtLeast`, and it asks `characteristicsOf` rather than the printed
+line. Both hand-written filters say why in a comment: *a 2/2 pumped past five is a legal target and a
+6/6 shrunk below it is not, which is the whole reason characteristics are computed on demand.* The
+test grows a Grizzly Bears with +1/+1 counters and watches the same creature change from an illegal
+target to a legal one.
+
+"An opponent controls" is the other half of the Dragonslayer's phrase and is load-bearing on its own:
+a morph turned face up that could kill its own team is a different card. It reuses `opponents: true`,
+and a break that drops it fails.
+
+### The exile
+
+`exile (target …)` reads as `exileCard`, which is destroy's sibling and differs where it matters: it
+is **not** a destruction, so indestructible and regeneration do not answer it (CR 701.19a). It
+carries `removesACreature` exactly when the target is a creature, which is the rule the destroy
+reader already follows — an exile aimed at any permanent would have the bot holding it for a board it
+cannot answer.
+
+**Selesnya Charm now compiles whole**, all three modes: the pump with trample, this exile, and the
+Knight token.
+
+### Three refusal tests that became acceptances
+
+All three were written by earlier increments against examples this one reads, and all three keep
+their property while changing how it is expressed:
+
+1. *"leaves a clause it cannot read alone"* used `exile target creature` as its unreadable example;
+   it now uses Rest in Peace's graveyard sweep, which has no reader and no near miss.
+2. *"refuses a bare exile with no return"* — D377's one correctness refusal. The property is **no
+   invented return**, and it was expressed by leaving the line unread. Now the sentence is read as
+   what it says, so the test asserts the emitted triggers instead: one `etb`, and no `leaves`.
+3. *"refuses Selesnya Charm whole, because one bullet has no reader"* — the test had already written
+   down what to do when this happened ("this test needs a synthetic bullet rather than a card"), so
+   Healing Salve is the last real card holding the property and a synthetic charm now owns it.
+
+### Measured
+
+**381 → 386 of 538 printed lines (70.8% → 71.7%)**, and **243 → 244 of 339 cards**. Hidden
+Dragonslayer and Selesnya Charm, which the per-card diff names and nothing else.
+
+Five deliberate breaks, five failing tests: the power read off the printed line, the threshold fixed
+at four, the opponent half of the Dragonslayer's filter dropped, exile reading as destroy, and the
+removal hint on every exile. 5,000 more rows at scale, no throw. compile.test.ts 306/306.
+
+### The live game, re-checked end to end
+
+Nine compiler commits is a lot of engine change to leave unexercised, so the four browser suites were
+run on a freshly built stack: **table 76/76, arena 52/52 with 6 named skips, solo 28/28 with 1, pod
+40/40 with 1.** Clean. The counts move by a check or two between runs because a check the game did not
+produce is skipped and named rather than failed (D302) — `play-realm-setup.md` now says so, instead of
+printing one run's numbers as though they were the suite's size.

@@ -10695,6 +10695,15 @@ const permanentFilter = (
     readonly opponents?: boolean;
     /** One of these types, read **live** rather than off the printed line — see `permanentOfTypes`. */
     readonly types?: readonly string[];
+    /**
+     * "with power N or greater", and the power is the **current** one.
+     *
+     * Both hand-written filters that print this phrase say so in a comment: a 2/2 pumped past five
+     * is a legal target for Selesnya Charm and a 6/6 shrunk below it is not, which is the whole
+     * reason characteristics are computed on demand rather than stored. Reading the printed power
+     * instead would be the #319 defect in a new place.
+     */
+    readonly powerAtLeast?: number;
   },
 ): NonNullable<TargetSpec['filter']> => (state, candidate, controller, source) => {
   if (candidate.kind !== 'card') return false;
@@ -10706,6 +10715,8 @@ const permanentFilter = (
   const live = characteristicsOf(state, inst).typeLine;
   if (opts.nonland === true && hasType(live, 'land')) return false;
   if (opts.types !== undefined && !opts.types.some((type) => hasType(live, type))) return false;
+  if (opts.powerAtLeast !== undefined
+    && characteristicsOf(state, inst).power < opts.powerAtLeast) return false;
   return true;
 };
 
@@ -10754,6 +10765,28 @@ function targetSpecFrom(phrase: string, friendly: boolean): TargetSpec | null {
   switch (printed.toLowerCase()) {
     case 'any target': return spec({ kind: 'any' });
     case 'target creature': return spec({ kind: 'creature' });
+    /*
+      "with power N or greater", the phrase Selesnya Charm's second mode and Hidden Dragonslayer's
+      turned-face-up trigger both print. The number is read rather than fixed, because the two cards
+      print different ones — five and four — and a reader that took either as the rule would make
+      one of them point at creatures the print excludes.
+    */
+    case 'target creature with power 4 or greater':
+    case 'target creature with power 5 or greater':
+    case 'target creature with power 6 or greater':
+      return spec({
+        kind: 'creature',
+        filter: permanentFilter({ powerAtLeast: Number(/(\d+)/.exec(printed)![1]) }),
+      });
+    case 'target creature an opponent controls with power 4 or greater':
+    case 'target creature an opponent controls with power 5 or greater':
+    case 'target creature an opponent controls with power 6 or greater':
+      return spec({
+        kind: 'creature',
+        filter: permanentFilter({
+          opponents: true, powerAtLeast: Number(/(\d+)/.exec(printed)![1]),
+        }),
+      });
     case 'target permanent': return spec({ kind: 'permanent' });
     case 'another target permanent':
       return spec({ kind: 'permanent', filter: permanentFilter({ another: true }) });
@@ -11033,6 +11066,32 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
         },
         // Only when the target really is a creature. A Disenchant that claimed to remove one would
         // have the bot holding it for a board it cannot answer.
+        ...(spec.kind === 'creature' ? { spellFlags: { removesACreature: true } } : {}),
+      };
+    }
+  }
+
+  /*
+    Exile, which is destroy's sibling and differs in exactly one way that matters to a card: it is
+    not a destruction, so indestructible and regeneration do not answer it (CR 701.19a).
+
+    D377 refuses a bare `exile target creature` **ETB** as an exile-until-leaves *shape*, and that
+    refusal stands for what it was about: emitting a return the print does not promise. Reading the
+    sentence as what it says — exile, no return — is the faithful reading, and it is what Selesnya
+    Charm's second mode and Hidden Dragonslayer's trigger print.
+  */
+  const exiled = /^exile (target .+|another target .+)$/i.exec(text);
+  if (exiled !== null) {
+    const spec = targetSpecFrom(exiled[1]!, false);
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : exileCard(c.state, id);
+        },
+        // As on the destroy above, and for the same reason: only when the target really is a
+        // creature is this a card the bot should hold for a board it can answer.
         ...(spec.kind === 'creature' ? { spellFlags: { removesACreature: true } } : {}),
       };
     }

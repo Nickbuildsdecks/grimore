@@ -1018,8 +1018,12 @@ waiting for the pregame screen, which looks like a broken table and is not.
 ```bash
 PLAY_HOST=127.0.0.1 node scripts/play.mjs &   # both servers, with the variable set
 
+# The counts below are what a clean run reports. The engine suites vary by a check or two between
+# runs, because a check the game did not produce is **skipped and named** rather than failed (D302):
+# arena has read 52/52 with 6 skips and 53/53 with 7 on the same commit. A number that moved is not
+# a regression; a check that **failed** is.
 node scripts/e2e-table.mjs      # two browsers, tabletop mode          — 76 checks
-node scripts/e2e-arena.mjs      # two browsers, rules engine           — 53 checks, 7 named skips
+node scripts/e2e-arena.mjs      # two browsers, rules engine           — 52-53 checks, 6-7 named skips
 node scripts/e2e-pod.mjs        # four browsers, a Commander pod       — 41 checks, 1 named skip
 node scripts/e2e-solo.mjs       # one browser, against the computer    — 28 checks, 1 named skip
 SOLO_POD=1 node scripts/e2e-solo.mjs   # one browser, a pod against three — 29 checks, 1 named skip

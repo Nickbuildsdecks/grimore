@@ -319,18 +319,26 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
 
     it('leaves a clause it cannot read alone, rather than compiling half of it', () => {
-      // "exile target creature" needs a target spec, which is the next increment. Until then the
-      // line is reported unread and the card is a manual object inside an automated game (D362).
+      /*
+        The example has moved once already: it was "exile target creature", and D404 reads that, so
+        the row is now Rest in Peace's sweep — a clause with no reader and no near miss. The
+        property is the one that has not changed: a line this module cannot read is **reported**,
+        and the card is a manual object inside an automated game (D362), rather than compiling the
+        half of it that does read.
+      */
       const banisher = compileCard({
         name: 'Reader Test', type_line: 'Creature — Human', mana_cost: '{3}', cmc: 3,
         power: '2', toughness: '2', colors: [],
-        oracle_text: 'When Reader Test enters the battlefield, exile target creature.',
+        oracle_text: 'When Reader Test enters the battlefield, exile all cards from all graveyards.',
       });
       expect(banisher.ok).toBe(true);
       if (!banisher.ok) return;
       expect(banisher.script).toBeUndefined();
       expect(banisher.unread).toEqual([
-        { line: 'When Reader Test enters the battlefield, exile target creature.', why: 'no-reader' },
+        {
+          line: 'When Reader Test enters the battlefield, exile all cards from all graveyards.',
+          why: 'no-reader',
+        },
       ]);
     });
 
@@ -1571,12 +1579,17 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(mine?.targets?.[0]?.description).toBe(theirs?.targets?.[0]?.description);
     });
 
-    it('refuses a bare exile with no return anywhere on the card', () => {
+    it('reads a bare exile as permanent exile, and emits no return for it', () => {
       /*
-        The one refusal here that is about correctness rather than coverage. A printed `exile target
-        creature` ETB with neither an `until ~ leaves` clause nor a `leaves` line is **permanent
-        exile**, and emitting the pair for it would hand back a creature the print says is gone for
-        good — a card that works and is a different, weaker card.
+        The one rule here that is about correctness rather than coverage, and the second test in
+        this file to turn from a refusal into an acceptance without its property changing.
+
+        A printed `exile target creature` ETB with neither an `until ~ leaves` clause nor a `leaves`
+        line is **permanent exile**. Emitting the pair for it would hand back a creature the print
+        says is gone for good — a card that works and is a different, weaker card. While no clause
+        reader could read `exile target creature` at all, that was expressed by leaving the line
+        unread; D404 reads the sentence as what it says, so it is now expressed by what comes out:
+        one trigger, on `etb`, and **no `leaves` trigger at all**.
       */
       const permanent = compileCard({
         name: 'Gone For Good', type_line: 'Creature — Avatar', mana_cost: '{3}{W}', cmc: 4,
@@ -1585,10 +1598,8 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       });
       expect(permanent.ok).toBe(true);
       if (!permanent.ok) return;
-      expect(permanent.script).toBeUndefined();
-      expect(permanent.unread.map((u) => u.line)).toEqual([
-        'When Gone For Good enters the battlefield, exile target creature.',
-      ]);
+      expect(permanent.unread).toEqual([]);
+      expect(triggerKinds(permanent.script)).toEqual(['etb']);
     });
 
     it('will not let a card exile itself where the print says "another"', () => {
@@ -2324,23 +2335,41 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       `legalActions` offers a play per legal combination of modes, so a charm missing its third mode
       is a charm whose third mode nobody can choose, with nothing at the table to say so.
     */
-    it.each([
-      ['Selesnya Charm', 4],
-      ['Healing Salve', 3],
-    ])('refuses %s whole, all %i lines, because one bullet has no reader', (card, lines) => {
+    it('refuses Healing Salve whole, all 3 lines, because one bullet has no reader', () => {
       /*
-        Golgari Charm was the third row here and has left: its regenerate mode reads now, so the
-        card compiles whole and is asserted mode for mode further down instead. Two cards still
-        hold the property — Selesnya Charm exiles a creature by power, Healing Salve prevents
-        damage — and if a later stage reads those too, this test needs a synthetic bullet rather
-        than a card, for the reason the keyword-and-a-sentence fixture already owns its own text.
+        This row has emptied twice, exactly as its own note said it would. Golgari Charm left when
+        its regenerate mode was read; **Selesnya Charm** left with D404's exile-by-power, and it is
+        asserted mode for mode further down instead. Healing Salve is the last pool card holding
+        the property — its second bullet prevents damage, which nothing reads — and the synthetic
+        row below it is what will hold the property when that one goes too.
       */
-      const compiled = compiledScript(card as string);
+      const compiled = compiledScript('Healing Salve');
       expect(compiled.source).toBe('printed-only');
       expect(compiled.script).toBeUndefined();
-      expect(compiled.unread).toHaveLength(lines as number);
+      expect(compiled.unread).toHaveLength(3);
       // Including the header, which is the line that would otherwise look readable on its own.
       expect(compiled.unread[0]!.line).toMatch(/^Choose one/);
+    });
+
+    it('refuses a synthetic charm whose third bullet has no reader, header and all', () => {
+      /*
+        The property, owned by text of its own rather than by a card somebody may teach the
+        compiler to read: two readable modes and one that is not, refused **entirely**. Reading the
+        two and shipping them as the card's modes would be a spell that works and is a strictly
+        different, better spell — `legalActions` offers a play per legal combination of modes, so a
+        charm missing its third mode is a charm whose third mode nobody can choose, with nothing at
+        the table to say so.
+      */
+      const charm = compileCard({
+        name: 'Made Up Charm', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'],
+        oracle_text: 'Choose one —\n• You gain 3 life.\n• Draw a card.\n'
+          + '• The table applauds politely.',
+      });
+      expect(charm.ok).toBe(true);
+      if (!charm.ok) return;
+      expect(charm.script).toBeUndefined();
+      expect(charm.unread).toHaveLength(4);
+      expect(charm.unread[0]!.line).toMatch(/^Choose one/);
     });
 
     /** A synthetic modal card, for the headers and flags the pool does not print. */
@@ -4110,6 +4139,133 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       });
       expect(odd.ok).toBe(true);
       if (odd.ok) expect(odd.script).toBeUndefined();
+    });
+  });
+
+  describe('a target chosen by power, read live, and the exile that is not a destruction', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({
+      state, controller: seat, source, targets, decisions: [],
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const triggerOf = (script: unknown, i = 0) =>
+      (field(script, 'triggers') as readonly TriggerDef[] | undefined)?.[i];
+
+    it('reads the power threshold off the card, which prints two different numbers', () => {
+      /*
+        Selesnya Charm exiles a creature with power **5** or greater and Hidden Dragonslayer
+        destroys one with power **4** or greater. A reader that fixed either number would make one
+        of the two point at creatures its print excludes, so the number is read.
+      */
+      const charm = compiledScript('Selesnya Charm');
+      expect(charm.unread).toEqual([]);
+      const slayer = compiledScript('Hidden Dragonslayer');
+      const slayerSpec = (triggerOf(slayer.script)!.targets ?? [])[0]!;
+      expect(slayerSpec.description).toBe('target creature an opponent controls with power 4 or greater');
+    });
+
+    it('asks about the creature’s current power, not its printed one', () => {
+      /*
+        The #319 lesson in a filter that is about a number instead of a type. Both hand-written
+        filters say it in a comment: "a 2/2 pumped past five is a legal target and a 6/6 shrunk
+        below it is not, which is the whole reason characteristics are computed on demand".
+
+        So this builds both boards. A Grizzly Bears with four +1/+1 counters is a 6/6 and a legal
+        target for the charm's five; a Lhurgoyf-sized creature shrunk below four is not a legal
+        target for the Dragonslayer's.
+      */
+      const base = arena({
+        decks: { 0: 'forge-alliance', 1: 'verdant-guard' },
+        battlefield: { 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const spec = (field(compiledScript('Selesnya Charm').script, 'modal') as {
+        modes: readonly { targets?: readonly TargetSpec[] }[];
+      }).modes[1]!.targets![0]!;
+      const filter = spec.filter!;
+
+      // A 2/2 is not a legal target for "power 5 or greater".
+      expect(filter(base, { kind: 'card', id: bear }, 0 as SeatIndex, 'c1')).toBe(false);
+      // The same creature with four +1/+1 counters on it is a 6/6, and is.
+      const grown = addCounters(base, bear, '+1/+1', 4);
+      expect(filter(grown, { kind: 'card', id: bear }, 0 as SeatIndex, 'c1')).toBe(true);
+      // And the counters really are what moved it, read live rather than off the printed line.
+      expect(characteristicsOf(grown, grown.instances[bear]!).power).toBe(6);
+      /*
+        And the number is **five**, which needs its own board: a 4/4 is refused. Without this the
+        test passes on a reader that fixed the threshold at the Dragonslayer's four, which a break
+        run proved — 2 is below either number and 6 is above both, so neither of the boards above
+        can tell the two cards apart.
+      */
+      const four = addCounters(base, bear, '+1/+1', 2);
+      expect(characteristicsOf(four, four.instances[bear]!).power).toBe(4);
+      expect(filter(four, { kind: 'card', id: bear }, 0 as SeatIndex, 'c1')).toBe(false);
+    });
+
+    it('will not let the Dragonslayer point at the controller’s own creature', () => {
+      // "an opponent controls" is half of that phrase and it is load-bearing: a morph turned face
+      // up that could kill its own team is a different card.
+      const base = arena({
+        decks: { 0: 'skyward-writ', 1: 'verdant-guard' },
+        battlefield: { 0: ['Serra Angel'], 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const mine = find(base, 0 as SeatIndex, 'battlefield', 'Serra Angel');
+      const spec = (triggerOf(compiledScript('Hidden Dragonslayer').script)!.targets ?? [])[0]!;
+      const filter = spec.filter!;
+      // A 4/4 of the controller's own is refused although its power qualifies.
+      expect(characteristicsOf(base, base.instances[mine]!).power).toBeGreaterThanOrEqual(4);
+      expect(filter(base, { kind: 'card', id: mine }, 0 as SeatIndex, 'c1')).toBe(false);
+    });
+
+    it('exiles rather than destroys, and the state matches the hand-written mode', () => {
+      /*
+        Exile is destroy's sibling and differs where it matters: it is not a destruction, so
+        indestructible and regeneration do not answer it (CR 701.19a). The comparison is against
+        Selesnya Charm's own second mode.
+      */
+      const base = arena({
+        decks: { 0: 'forge-alliance', 1: 'verdant-guard' },
+        battlefield: { 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: bear }]);
+      const modes = (script: unknown) => (field(script, 'modal') as {
+        modes: readonly { effect: (c: EffectContext) => GameState }[];
+      }).modes;
+      const mine = modes(compiledScript('Selesnya Charm').script)[1]!.effect(ctx);
+      const theirs = modes(scriptFor('Selesnya Charm'))[1]!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      // Exiled, not in a graveyard: the difference between this mode and a Doom Blade.
+      expect(ids(mine, 1 as SeatIndex, 'graveyard')).not.toContain(bear);
+      expect(ids(mine, 1 as SeatIndex, 'battlefield')).not.toContain(bear);
+    });
+
+    it('tells the bot the exile removes a creature, and only when it does', () => {
+      /*
+        The same hint the destroy reader carries, for the same reason: a spell that removes a
+        creature should not be cast with nothing of theirs to point at. And only when the target
+        really is a creature — an exile aimed at a permanent of any kind would have the bot holding
+        it for a board it cannot answer.
+      */
+      const creature = compileCard({
+        name: 'Exile One', type_line: 'Instant', mana_cost: '{1}{W}', cmc: 2, colors: ['W'],
+        oracle_text: 'Exile target creature.',
+      });
+      expect(creature.ok).toBe(true);
+      if (creature.ok) expect(creature.script).toHaveProperty('removesACreature', true);
+
+      const permanent = compileCard({
+        name: 'Exile Any', type_line: 'Instant', mana_cost: '{1}{W}', cmc: 2, colors: ['W'],
+        oracle_text: 'Exile target nonland permanent.',
+      });
+      expect(permanent.ok).toBe(true);
+      if (permanent.ok) expect(field(permanent.script, 'removesACreature')).toBeUndefined();
     });
   });
 
