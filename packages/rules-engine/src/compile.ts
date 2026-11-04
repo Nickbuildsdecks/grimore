@@ -98,10 +98,25 @@ export function fullyCompiled(result: Compilation): boolean {
 }
 
 /**
- * Merges one keyword's fragment into the script being built.
+ * The script fields that are **lists of printed abilities**, where two lines each contributing one
+ * is the card rather than a disagreement.
  *
- * Triggers accumulate; every other field is set once. A second line setting an already-set field to
- * a different value is refused and reported, for the reason `UnreadLine.why` gives.
+ * A permanent's triggered and activated abilities are each printed one per line, and a card with
+ * two of either is ordinary — a pain land prints `{T}: Add {C}.` and `{T}, Pay 1 life: Add {B}.`,
+ * and both are real. So these accumulate. Every other field is a single fact about the card (its
+ * size, its keywords, what it enchants), and two lines setting one of those to different values
+ * means a line was misread.
+ *
+ * `abilities` was missing from this set until a two-ability land was compiled for the first time:
+ * the second line read correctly and was then reported as a `field-conflict` against the first.
+ */
+const ACCUMULATING = new Set(['triggers', 'abilities']);
+
+/**
+ * Merges one line's fragment into the script being built.
+ *
+ * Abilities accumulate; every other field is set once. A second line setting an already-set field
+ * to a different value is refused and reported, for the reason `UnreadLine.why` gives.
  */
 function merge(
   into: Record<string, unknown>,
@@ -110,13 +125,13 @@ function merge(
   const entries = Object.entries(fragment);
   // Checked before anything is written, so a refused fragment leaves no half of itself behind.
   for (const [key, value] of entries) {
-    if (key === 'triggers') continue;
+    if (ACCUMULATING.has(key)) continue;
     if (key in into && JSON.stringify(into[key]) !== JSON.stringify(value)) return 'conflict';
   }
   for (const [key, value] of entries) {
-    if (key === 'triggers') {
-      const existing = (into['triggers'] ?? []) as readonly unknown[];
-      into['triggers'] = [...existing, ...(value as readonly unknown[])];
+    if (ACCUMULATING.has(key)) {
+      const existing = (into[key] ?? []) as readonly unknown[];
+      into[key] = [...existing, ...(value as readonly unknown[])];
       continue;
     }
     into[key] = value;

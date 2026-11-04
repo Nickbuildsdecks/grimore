@@ -10104,3 +10104,39 @@ Migration 0015's ALTERs are applied to `grimore_dev` and the import is **verifie
 fixture writes its 2 keepers, filters 5 one per reason, rejects nothing, and the rules columns carry
 real values. The production cutover and whether `packages/db`'s runner should own that table stay
 Nick's.
+
+## Activated abilities, the third home for a clause (#317, D378)
+
+**265 of 538 printed lines (49.3%). 171 of 339 cards get a script. Unchanged from D377 — and that
+zero is the point of this section.** Stage ten's first half picked up nine cards: Blight Mamba,
+Drudge Skeletons, Imperious Perfect, Mind Stone, Mutavault, Phoenix of Ash, River Boa, Shivan
+Dragon, Skithiryx, the Blight Dragon. Its second half picked up none and fixed two defects.
+
+**A clause now has three homes:** a trigger's resolution, a spell's, and a printed cost. Nearly no
+new vocabulary was needed — every effect the compiler could already read became reachable from an
+activated ability, and `Regenerate ~` was the one new reader. Mana abilities are answered separately,
+with `produces` and **no** effect at all, because that is what makes a mana ability one (CR 605).
+
+**The cost is parsed by classifying its components, not by one pattern.** `{1}, {T}`, `{T}, {1}`,
+`{T}, Pay 1 life` and `{1}, {T}, Pay 2 life` are all printed; a single regex over all of them is
+where a component gets quietly dropped. Each comma-separated component must classify as something
+`AbilityCost` can say, and one that does not refuses the whole line — because an ability that is
+free where the print says it sacrifices a creature is a different card, and it would never be
+flagged, since it works. `parseManaCost` validates the symbols, which is what stops `{E}` reading as
+generic mana and `{X}` as nothing.
+
+**Expressible is not the same as read.** The refusal test first asserted `{T}, Pay 1 life: Add {C}.`
+was refused, and failed: `cardFromData` already read it, correctly, with `AbilityCost.life`. So the
+life component is now read here too — which is what unlocks a **pain land**, a card the whole-card
+reader structurally cannot do, because it folds a permanent's mana lines into one cost and would
+rather refuse a land with one free tap and one costing a life than flatten the two.
+
+**`abilities` did not accumulate.** Compiling that pain land found it: the second line read
+correctly and was then reported as a `field-conflict`, because only `triggers` accumulated. A
+permanent with two activated abilities is ordinary, so `abilities` joins it. Nothing in the pool has
+two readable ability lines, which is why the measurement could not have found this.
+
+**One of the five new mechanisms had no test that could see it.** Breaking each on purpose, four
+went red and the mana-ability `produces` branch did not: truncated to its first symbol — a permanent
+that taps for two reading as one — all 115 tests stayed green, because every sum in the pool is on a
+card read whole. A direct assertion was added, and re-breaking it now fails.

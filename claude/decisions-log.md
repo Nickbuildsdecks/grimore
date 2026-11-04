@@ -23670,3 +23670,72 @@ production cutover, and whether the runner should own this table at all, stay Ni
 Verified: compile.test.ts 105/105, with the `another`/`any` collapse, the dropped `of: 'you'`, the
 exile pair emitted without a printed return, and both halves of `permanentFilter` each proved to
 fail when broken; GATE OK.
+
+## D378
+
+**Activated abilities, and the field-conflict that was a correct reading** (#317)
+
+**265 of 538 printed lines (49.3%); 171 of 339 cards get a script. Both unchanged from D377, and
+that zero is the finding.** Blight Mamba, Drudge Skeletons, Imperious Perfect, Mind Stone, Mutavault,
+Phoenix of Ash, River Boa, Shivan Dragon and Skithiryx, the Blight Dragon were the nine cards stage
+ten's first half picked up; the second half, below, picked up none and fixed two defects.
+
+### The third place a clause can live
+
+A clause has had two homes: a trigger's resolution and a spell's. `abilityFromLine` is the third,
+and it is the same multiplying change the trigger table was — almost no new vocabulary, because
+every effect the module can already read becomes reachable from a printed cost. `Regenerate ~` was
+the one new reader needed, and `lineScriptFor` now asks keyword, then trigger, then ability.
+
+### A cost component dropped is a different card
+
+`{B}{G}, Sacrifice another creature:` is a cost this reader cannot say, and an ability that is free
+when the print says it eats a creature is not a cheaper card — it is a different one, and nothing at
+the table would flag it, because the ability works. So the cost is parsed by **classifying every
+comma-separated component**, and one that does not classify refuses the whole line. Classifying
+beats one regex over the whole cost: the printed orders multiply (`{1}, {T}`, `{T}, {1}`,
+`{T}, Pay 1 life`) and a pattern covering them is exactly where a component gets quietly dropped.
+
+`parseManaCost` is the validator for the symbols, because it *records* an unrecognised symbol rather
+than ignoring one: without it `{E}, {T}:` reads energy as a generic mana and `{X}{R}` reads X as
+nothing. Both are the dropped component wearing a symbol instead of a sentence, and both now refuse.
+
+### Expressible is not the same as read
+
+The first draft of the refusal test asserted that `{T}, Pay 1 life: Add {C}.` was refused. It failed:
+`cardFromData` was already reading that line, correctly, with `AbilityCost.life` — the field exists
+precisely so a player on one life is never offered a Mana Confluence's mana, which is the printed
+difference between it and a City of Brass. The docblock claiming a life cost could not be said was
+wrong about the engine it is part of.
+
+So the component is now **read** here too, and that is what unlocks a **pain land** — which
+`cardFromData` structurally cannot read: `foldManaLines` folds a permanent's mana lines into *one*
+cost and would rather refuse a land with one free tap and one costing a life than flatten the two.
+A line reader has no such problem, because two printed lines are two abilities.
+
+### `abilities` did not accumulate, so a correct second reading was reported as a conflict
+
+Compiling that pain land is what found it. The first line read, the second line read, and `merge`
+then reported the second as a `field-conflict` — because only `triggers` accumulated and every other
+field was set once. A permanent with two activated abilities is ordinary, so `abilities` joins it;
+every remaining field is one fact about the card, where two lines disagreeing still means a line was
+misread. Nothing in the pool has two readable ability lines, which is why the bug survived to be
+found by a hand-written fixture rather than by the measurement.
+
+### The row that proved the test block could not see the Sol Ring case
+
+Five mechanisms were broken on purpose to check the tests discriminate. Four went red. Truncating
+the mana-ability's `produces` to its first symbol — a permanent that taps for two reading as one —
+left all 115 green: every sum in the pool is on a card `cardFromData` reads whole, so no ground-truth
+row reached this reader. A direct assertion was added for it, and re-breaking the branch now fails.
+
+### Why the headline did not move
+
+The pool has no mixed-cost pain land and no permanent with two readable ability lines, so this half
+of the stage compiles exactly the same 265 lines. What it changes is a corpus the pool cannot show:
+every pain land, and every permanent whose second activated ability was being discarded as a
+conflict. That number waits on #318.
+
+Verified: compile.test.ts 116/116; all five new mechanisms — the symbol validation, the life
+component, the accumulating `abilities`, the regenerate reader and the mana sum — each proved to
+fail when deliberately broken.

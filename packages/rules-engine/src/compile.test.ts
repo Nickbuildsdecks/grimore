@@ -5,7 +5,7 @@ import { isKeywordDeclaration, scriptFor } from './scripts.js';
 import { zoneKey, type CardDef } from './cards.js';
 import type { CardDataRow } from './fromCardData.js';
 import { tap, type EffectContext } from './effects.js';
-import type { TargetSpec, TriggerDef } from './scriptTypes.js';
+import type { AbilityDef, TargetSpec, TriggerDef } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
 import { arena, find } from './testkit.js';
@@ -1291,6 +1291,214 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(admits(bear, 'some-other-id')).toBe(true);
       expect(admits(bear, bear)).toBe(false);
       expect(admits(land, 'some-other-id')).toBe(false);
+    });
+  });
+  /*
+    ── Activated abilities: the third place a clause can live ────────────────────────────────────
+
+    A clause has had two homes — a trigger's resolution and a spell's. This is the third, and it is
+    the same multiplying change the trigger table was (D372): almost no new vocabulary, much more
+    coverage, because every effect this module can already read becomes reachable from an ability.
+  */
+  describe('activated abilities, against the hand-written ones', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string,
+    ): EffectContext => ({ state, controller: seat, source, targets: [] } as unknown as EffectContext);
+
+    const DECK_OF = new Map<string, string>();
+    for (const [id, deck] of Object.entries(STARTER_DECKS)) {
+      for (const entry of deck.cards) if (!DECK_OF.has(entry.card.name)) DECK_OF.set(entry.card.name, id);
+    }
+
+    /** The ability with this printed description, from either script. */
+    const abilityNamed = (script: unknown, description: string) =>
+      ((script as { abilities?: readonly AbilityDef[] }).abilities ?? [])
+        .find((a) => a.description === description);
+
+    it.each([
+      // A mana ability: `produces` and **no effect at all**, which is what makes it a mana ability.
+      ['Mutavault', '{T}: Add {C}.'],
+      ['Mind Stone', '{T}: Add {C}.'],
+    ])('%s builds the mana ability the hand-written card builds', (card, description) => {
+      const written = abilityNamed(scriptFor(card as string), description as string);
+      const mine = abilityNamed(compiledScript(card as string).script, description as string);
+      expect(written, `${card as string}: no hand-written "${description as string}"`).toBeDefined();
+      expect(mine, `${card as string}: compiled no "${description as string}"`).toBeDefined();
+      if (written === undefined || mine === undefined) return;
+      expect(mine.cost).toEqual(written.cost);
+      expect(mine.produces).toEqual(written.produces);
+      /*
+        And no effect, which is not a detail. The engine reads `produces` and resolves a mana
+        ability without ever calling a function (CR 605); an ability that added to the pool through
+        an `effect` would be one the mana system cannot see, so it would never pay for anything.
+      */
+      expect(mine.effect).toBeUndefined();
+      expect(written.effect).toBeUndefined();
+    });
+
+    it.each([
+      // `{B}: Regenerate ~` — a mana cost with no tap.
+      ['Drudge Skeletons', '{B}: Regenerate Drudge Skeletons.'],
+      ['River Boa', '{G}: Regenerate River Boa.'],
+      // `{R}: ~ gets +1/+0 until end of turn.` — the self-pump clause, reached from an ability.
+      ['Shivan Dragon', '{R}: Shivan Dragon gets +1/+0 until end of turn.'],
+    ])('%s pays the printed cost and does what the hand-written ability does', (card, description) => {
+      const written = abilityNamed(scriptFor(card as string), description as string);
+      const mine = abilityNamed(compiledScript(card as string).script, description as string);
+      expect(written, `${card as string}: no hand-written "${description as string}"`).toBeDefined();
+      expect(mine, `${card as string}: compiled no "${description as string}"`).toBeDefined();
+      if (written === undefined || mine === undefined) return;
+      expect(mine.cost).toEqual(written.cost);
+
+      // On a real board with the card's own id as the source: both of these clauses act on
+      // themselves, so a made-up id would make both effects no-ops and compare equal on nothing.
+      const deck = DECK_OF.get(card as string);
+      expect(deck, `${card as string} is in no deck`).toBeDefined();
+      const base = arena({ decks: { 0: deck! }, battlefield: { 0: [card as string] }, turn: 3 });
+      const source = find(base, 0 as SeatIndex, 'battlefield', card as string);
+      const ctx = contextOn(base, 0 as SeatIndex, source);
+      expect(mine.effect).toBeDefined();
+      expect(mine.effect?.(ctx)).toEqual(written.effect?.(ctx));
+      expect(mine.effect?.(ctx), `${card as string}: the ability changed nothing`).not.toEqual(base);
+    });
+
+    it('refuses a cost it would have to drop a component of', () => {
+      /*
+        The clearest case in this module of a reading that would be worse than no reading. An
+        ability that is free when the print says it eats a creature is not a cheaper card, it is a
+        different one — and nothing at the table would flag it, because the ability works.
+
+        So a cost component this reader cannot express refuses the whole line rather than being
+        skipped. `Sacrifice another creature`, a counter removal and a discard are all in the pool
+        and all refused here.
+
+        A life payment is deliberately **not** in this list: `AbilityCost.life` exists and the
+        engine honours it, so that component is said rather than dropped. The test below pins that
+        from the other side. An earlier draft of this test asserted a life cost was refused and
+        failed against `cardFromData`, which was already reading one correctly — which is how the
+        distinction between "cannot be expressed" and "this reader does not read it" was found.
+      */
+      for (const text of [
+        '{B}{G}, Sacrifice another creature: You gain 1 life.',
+        'Remove a +1/+1 counter from Nonesuch: Draw a card.',
+        '{1}, Discard a card: Draw a card.',
+      ]) {
+        const refused = compileCard({
+          name: 'Nonesuch', type_line: 'Creature — Horror', mana_cost: '{2}{B}', cmc: 3,
+          colors: ['B'], power: '2', toughness: '2', oracle_text: text,
+        });
+        expect(refused.ok).toBe(true);
+        if (!refused.ok) return;
+        expect(refused.script, `read an ability out of: ${text}`).toBeUndefined();
+      }
+    });
+
+    it('reads a pain land, whose two abilities cost different things', () => {
+      /*
+        The card this stage unlocked, and the reason the life component is read at all.
+
+        `cardFromData` refuses this land outright — `foldManaLines` builds **one** cost for every
+        mana line a permanent has, and documents that it would rather refuse a card whose lines
+        disagree than flatten "free" and "costs a life" into either one. A line reader does not have
+        to choose: two printed lines are two abilities. So what is asserted here is the pair of
+        costs, in printed order, and that neither line went unread.
+      */
+      const land = compileCard({
+        name: 'Ache Land', type_line: 'Land', mana_cost: '', cmc: 0, colors: [],
+        oracle_text: '{T}: Add {C}.\n{T}, Pay 1 life: Add {B}.',
+      });
+      expect(land.ok).toBe(true);
+      if (!land.ok) return;
+      expect(land.unread).toEqual([]);
+      expect((land.script as { abilities?: readonly AbilityDef[] } | undefined)?.abilities
+        ?.map((ability) => ability.cost))
+        .toEqual([{ tap: true }, { tap: true, life: 1 }]);
+    });
+
+    it('reads a run of symbols as a sum, not as one mana', () => {
+      /*
+        `Add {C}{C}` is two mana and one ability — the Sol Ring reading `parseManaLine` corrected
+        for the whole-card reader, re-pinned here because this reader is a second implementation of
+        it and a sum truncated to its first symbol is a permanent that taps for one.
+
+        Not a ground-truth row against a hand-written card: every sum in the pool is on a card
+        `cardFromData` reads whole, so none of them reaches this reader. The card below has a second
+        line nothing can read, which is what makes the whole-card path refuse it and hand the mana
+        line here. Deliberately asserted anyway, because the gap was found by breaking the branch
+        and watching every test stay green.
+      */
+      const rock = compileCard({
+        name: 'Nonesuch', type_line: 'Artifact Creature — Construct', mana_cost: '{4}', cmc: 4,
+        colors: [], power: '1', toughness: '3',
+        oracle_text: '{T}: Add {C}{C}.\nNonesuch assembles itself from the parts of other things.',
+      });
+      expect(rock.ok).toBe(true);
+      if (!rock.ok) return;
+      const ability = ((rock.script as { abilities?: readonly AbilityDef[] } | undefined)
+        ?.abilities ?? [])[0];
+      expect(ability?.produces).toEqual(['C', 'C']);
+      expect(ability?.effect, 'a mana ability resolves without an effect (CR 605)').toBeUndefined();
+    });
+
+    it('refuses a cost whose symbols are not mana', () => {
+      /*
+        `{E}` is energy and `{X}` is announced, and neither is mana this reader can put in
+        `AbilityCost.mana`. Both would otherwise pass the "a run of symbols" shape and be read as
+        generic — `{E}` silently as one mana, `{X}` as nothing at all — which is the dropped cost
+        component again, wearing a symbol instead of a sentence. `parseManaCost` is what catches
+        them: it records an unrecognised symbol rather than ignoring it.
+      */
+      const refusedCost = (text: string) => {
+        const card = compileCard({
+          name: 'Nonesuch', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [],
+          oracle_text: text,
+        });
+        return card.ok ? card.script : 'refused-outright';
+      };
+      expect(refusedCost('{E}, {T}: Draw a card.')).toBeUndefined();
+      expect(refusedCost('{X}{R}, {T}: Draw a card.')).toBeUndefined();
+      // The same shape with a real mana cost is read, so the refusals above are about the symbols.
+      expect(refusedCost('{2}{R}, {T}: Draw a card.')).toBeDefined();
+    });
+
+    it('reads a tap and a mana cost together, in either printed order', () => {
+      /*
+        Both orders are printed, so both are read — and the cost that comes out is the same object
+        either way, which is the property worth asserting rather than the two regex branches.
+      */
+      const costOf = (text: string) => {
+        const card = compileCard({
+          name: 'Tapper', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [],
+          oracle_text: text,
+        });
+        if (!card.ok) return undefined;
+        return ((card.script as { abilities?: readonly AbilityDef[] } | undefined)?.abilities
+          ?? [])[0]?.cost;
+      };
+      const expected = { mana: '{1}', tap: true };
+      expect(costOf('{1}, {T}: You gain 2 life.')).toEqual(expected);
+      expect(costOf('{T}, {1}: You gain 2 life.')).toEqual(expected);
+    });
+
+    it('does not read "Add {R} or {G}", which is a choice and not one ability', () => {
+      /*
+        A dual land's two colours are **two abilities** in every hand-written script here, because a
+        choice of colour is a choice of which ability to activate. `Add {R}{G}` is two symbols and
+        one ability; `Add {R} or {G}` is not, and reading it as `produces: ['R', 'G']` would be a
+        land that makes two mana.
+      */
+      const dual = compileCard({
+        name: 'Either Land', type_line: 'Land', mana_cost: '', cmc: 0, colors: [],
+        oracle_text: '{T}: Add {R} or {G}.',
+      });
+      expect(dual.ok).toBe(true);
+      if (!dual.ok) return;
+      const abilities = (dual.script as { abilities?: readonly AbilityDef[] } | undefined)?.abilities;
+      // Either refused outright, or — if `cardFromData`'s land path claimed it — never as one
+      // ability producing both.
+      for (const ability of abilities ?? []) {
+        expect(ability.produces?.length ?? 0).toBeLessThan(2);
+      }
     });
   });
   it('refuses only what is not a single-face card at all', () => {

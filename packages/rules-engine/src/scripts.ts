@@ -38,14 +38,14 @@ import {
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
-  AbilityDef, CardScript, CardsDecisionSpec, CountersDecisionSpec, DecisionSpecOf,
+  AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, CountersDecisionSpec, DecisionSpecOf,
   TargetDecisionSpec, TargetSpec, TriggerDef,
 } from './scriptTypes.js';
 // The compiler's shared `ReadEffect` stores an effect under one name for both the trigger path and
 // the spell path, so it needs the function type both fields have.
 import type { EffectFn } from './effects.js';
-import { timesCost } from './mana.js';
-import type { Color } from './mana.js';
+import { parseManaCost, timesCost } from './mana.js';
+import type { Color, ManaType } from './mana.js';
 import type { Keyword } from './characteristics.js';
 import type { GameState, SeatIndex } from './types.js';
 import { legalTargets, retarget } from './targeting.js';
@@ -9155,6 +9155,10 @@ function selfEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
+  if (new RegExp(`^regenerate (?:${self}|it)$`, 'i').test(text)) {
+    return { effect: (c) => regenerate(c.state, c.source) };
+  }
+
   const counted = new RegExp(`^put ([\\w]+) \\+1/\\+1 counters? on (?:${self}|it)$`, 'i').exec(text);
   if (counted !== null) {
     const n = countFrom(counted[1]!);
@@ -10203,14 +10207,121 @@ function composeEffects(clauses: readonly string[], name: string): ReadEffect | 
 }
 
 /**
- * Everything the compiler can read off one printed line of a **permanent**: a keyword, or a
- * triggered ability.
+ * A printed activated ability, as the `abilities` fragment of a script.
+ *
+ * ## The third place a clause can live
+ *
+ * A clause has had two homes: a trigger's resolution and a spell's. This is the third, and it is
+ * the same multiplying change the trigger table was (D372) — almost no new vocabulary, much more
+ * coverage, because every effect this module can already read becomes reachable from an ability.
+ *
+ * ## The cost, which is the part that is actually printed
+ *
+ * `{T}`, a mana cost, or both in either order: `{T}: Add {C}.`, `{B}: Regenerate ~.`,
+ * `{1}{G}, {T}: …`. Those two map straight onto `AbilityCost`'s `mana` and `tap`.
+ *
+ * `Pay N life` is the third, and it is read because `AbilityCost.life` exists and the engine
+ * honours it: an ability whose life cost a player cannot pay is never offered, which is the printed
+ * difference between a Mana Confluence and a City of Brass. Reading it here is also what finally
+ * compiles a **pain land**, which `cardFromData` structurally cannot: `foldManaLines` folds a
+ * permanent's mana lines into *one* cost, so it refuses a land with one free tap and one that costs
+ * a life rather than flatten the two. A line reader has no such problem — the two lines are two
+ * abilities with two costs, which is what the card prints.
+ *
+ * Deliberately **not** read: every other cost component. `{B}{G}, Sacrifice another creature:` is a
+ * cost this reader would have to drop to compile the line, and an ability that is free when the
+ * print says it eats a creature is not a cheaper card, it is a different one — the clearest case in
+ * this module of a reading that would be worse than no reading. Same for a cost paid by removing a
+ * counter or by discarding. They are refused by the cost parse rather than skipped.
+ *
+ * ## Mana abilities are a separate answer, because they are not an effect
+ *
+ * `{T}: Add {R}.` has no `effect` at all: the engine reads `produces` and resolves it without ever
+ * calling a function (that is what makes a mana ability a mana ability, CR 605). So the reader
+ * checks for it first and emits `produces`, exactly as `basicLand` does. A version that built an
+ * `effect` adding to the pool would be an ability the mana system cannot see.
+ */
+function abilityFromLine(line: string, name: string): Partial<CardScript> | null {
+  const text = plain(line).trim();
+  /*
+    The cost, then a colon, then the clause. Every comma-separated component of the cost has to
+    classify as something `AbilityCost` can say, and one that does not refuses the line — see the
+    docblock for why a dropped cost component is worse than no reading.
+
+    Classifying the components beats one regex over the whole cost: the printed orders multiply
+    (`{1}, {T}`, `{T}, {1}`, `{T}, Pay 1 life`, `{1}, {T}, Pay 2 life`) and a pattern covering them
+    is where a component gets quietly dropped. Here an unclassifiable component is the refusal.
+  */
+  const split = /^([^:]+):\s*(.+)$/.exec(text);
+  if (split === null) return null;
+  const clause = split[2]!.replace(/\.\s*$/, '').trim();
+
+  let taps = 0;
+  let life = 0;
+  const mana: string[] = [];
+  for (const component of split[1]!.split(/,\s*/).map((part) => part.trim())) {
+    if (component === '') return null;
+    if (/^\{T\}$/i.test(component)) { taps += 1; continue; }
+    const paid = /^Pay\s+(\d+)\s+life$/i.exec(component);
+    if (paid !== null) { life += Number(paid[1]); continue; }
+    if (!/^(?:\{[^}]+\})+$/.test(component)) return null;
+    /*
+      `parseManaCost` records an unrecognised symbol rather than ignoring it, which is what makes it
+      the validator here: `{E}` or `{T}` inside a run would otherwise be read as generic mana. `{X}`
+      is refused too — announcing X on an activated ability is machinery this reader does not reach,
+      and nothing in the pool hand-writes an X ability cost to compare against.
+    */
+    const parsed = parseManaCost(component);
+    if (parsed.unsupported !== undefined || parsed.x) return null;
+    mana.push(component);
+  }
+  // More than one tap is not a cost; a cost that is nothing at all is not a line this reads.
+  if (taps > 1 || (taps === 0 && mana.length === 0 && life === 0)) return null;
+  const cost: AbilityCost = {
+    ...(mana.length === 0 ? {} : { mana: mana.join('') }),
+    ...(taps === 1 ? { tap: true } : {}),
+    ...(life === 0 ? {} : { life }),
+  };
+
+  /*
+    A mana ability, which is `produces` and no effect at all. `Add {R}{G}` is two symbols and one
+    ability; `Add {R} or {G}` is a *choice*, which `AbilityDef` expresses with one ability per
+    colour on the hand-written dual lands, so it is left to `cardFromData`'s land path rather than
+    guessed at here.
+  */
+  const adding = /^add ((?:\{[WUBRGC]\}\s*)+)$/i.exec(clause);
+  if (adding !== null) {
+    const produces = (adding[1]!.match(/\{([WUBRGC])\}/g) ?? [])
+      .map((sym) => sym.slice(1, -1).toUpperCase() as ManaType);
+    if (produces.length === 0) return null;
+    return { abilities: [{ cost, description: text, produces }] };
+  }
+
+  const read = composeEffects(clausesOf(clause), name);
+  if (read === null) return null;
+  return {
+    abilities: [{
+      cost,
+      // The printed line, which is what every hand-written ability stores.
+      description: text,
+      ...(read.targets === undefined ? {} : { targets: read.targets }),
+      ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
+      effect: read.effect,
+    } as AbilityDef],
+  };
+}
+
+/**
+ * Everything the compiler can read off one printed line of a **permanent**: a keyword, a triggered
+ * ability, or an activated one.
  *
  * Keywords first because they are exact matches on a short line and cannot be confused for a
  * sentence.
  */
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
-  return keywordScriptFor(line, name) ?? triggerFromLine(line, name);
+  return keywordScriptFor(line, name)
+    ?? triggerFromLine(line, name)
+    ?? abilityFromLine(line, name);
 }
 
 /** What the compiler made of an instant or sorcery: the script, and which lines it accounts for. */
