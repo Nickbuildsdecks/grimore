@@ -17,7 +17,9 @@
  * spell *targets*, and targets are chosen before any of this runs. A card like that should be left
  * unscripted and resolved by hand rather than approximated.
  */
-import { characteristicsOf, hasSubtype, hasType, parseTypeLine, printedKeywords } from './characteristics.js';
+import {
+  characteristicsOf, hasSubtype, hasType, isKeyword, parseTypeLine, printedKeywords,
+} from './characteristics.js';
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
@@ -3185,9 +3187,17 @@ const protectFromRemoval = (name: string, power: number, toughness: number): Car
   }],
   onResolve: (c) => {
     const id = firstCardTarget(c);
-    return id === null
+    /*
+      `sizeBonus` rather than `{ power, toughness }` written out, because Dive Down's power bonus is
+      **zero** and a stored `power: 0` is a continuous effect that behaves identically to one
+      without the field and compares unequal to it. One source for that rule, shared with the
+      compiler, which is where the disagreement showed up: the two readings of this very card
+      resolved to boards that differed by nothing but `power: 0`.
+    */
+    const bonus = sizeBonus(power, toughness);
+    return id === null || bonus === null
       ? c.state
-      : pump(c.state, [id], c.source, c.controller, { power, toughness, keywords: ['hexproof'] });
+      : pump(c.state, [id], c.source, c.controller, { ...bonus, keywords: ['hexproof'] });
   },
 });
 
@@ -9120,6 +9130,37 @@ function sizeBonus(power: number, toughness: number): PumpOptions | null {
 }
 
 /**
+ * `gets +N/+N and gains <keyword> until end of turn`, as one `PumpOptions`.
+ *
+ * Both halves travel in one object because that is what `pump` takes and what the two hand-written
+ * twins of this clause store — Selesnya Charm's first mode and Renegade Freighter's attack trigger
+ * both pass `{ power, toughness, keywords }` in a single call. Splitting it into a pump and a
+ * separate grant would be two continuous effects where the print is one, and the two would expire
+ * independently.
+ *
+ * `isKeyword` is the gate, and it is the whole reason this is safe to read: the engine's keyword
+ * list is what `characteristicsOf` consults, so a word that is not in it is a word the rules would
+ * ignore. `gains protection from red` would compile to a creature that gains nothing and a spell
+ * that looks like it worked — so an unrecognised word refuses the clause instead, and the line is
+ * reported unread for a human to play by hand (D362).
+ *
+ * `null` when there is no bonus at all, carrying `sizeBonus`'s refusal of `+0/+0`, and when the
+ * granted word is not a keyword this engine has.
+ */
+function pumpAndGrant(
+  power: number,
+  toughness: number,
+  granted: string | undefined,
+): PumpOptions | null {
+  const bonus = sizeBonus(power, toughness);
+  if (bonus === null) return null;
+  if (granted === undefined) return bonus;
+  const word = granted.trim().toLowerCase();
+  if (!isKeyword(word)) return null;
+  return { ...bonus, keywords: [word] };
+}
+
+/**
  * What one printed clause does to **the permanent itself**, rather than to anything chosen.
  *
  * The third family of clause, after the untargeted ones and the targeted ones, and the one every
@@ -9146,12 +9187,31 @@ function selfEffect(clause: string, name: string): ReadEffect | null {
     return { effect: (c) => tap(c.state, c.source, false) };
   }
 
-  const grown = new RegExp(`^(?:${self}|it) gets \\+(\\d+)/\\+(\\d+) until end of turn$`, 'i')
-    .exec(text);
+  const grown = new RegExp(
+    `^(?:${self}|it) gets \\+(\\d+)/\\+(\\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,
+    'i',
+  ).exec(text);
   if (grown !== null) {
-    const bonus = sizeBonus(Number(grown[1]), Number(grown[2]));
+    const bonus = pumpAndGrant(Number(grown[1]), Number(grown[2]), grown[3]);
     if (bonus !== null) {
       return { effect: (c) => pump(c.state, [c.source], c.source, c.controller, bonus) };
+    }
+  }
+
+  /*
+    A grant with no size change: `{B}: Skithiryx gains haste until end of turn.` The same `pump`
+    call with only `keywords` in it, which is how the hand-written Skithiryx writes it — a keyword
+    granted until end of turn is a continuous effect like a pump, not a different mechanism.
+  */
+  const gained = new RegExp(
+    `^(?:${self}|it) gains ([a-z][a-z' ]*?) until end of turn$`, 'i',
+  ).exec(text);
+  if (gained !== null) {
+    const word = gained[1]!.trim().toLowerCase();
+    if (isKeyword(word)) {
+      return {
+        effect: (c) => pump(c.state, [c.source], c.source, c.controller, { keywords: [word] }),
+      };
     }
   }
 
@@ -10058,25 +10118,60 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
-    A pump, and the one family here that **helps** what it points at. `+N/+N` only: a clause that
-    also grants a keyword ("gets +0/+3 and gains hexproof") is two effects, and reading the first
-    while dropping the second would be a card that silently does less than it prints.
+    A pump, and the one family here that **helps** what it points at.
+
+    The keyword grant is read with it rather than after it: "gets +0/+3 and gains hexproof" is one
+    printed effect, and `pumpAndGrant` is where the two halves become the one `PumpOptions` that
+    `pump` takes. Reading the size and dropping the grant was the earlier behaviour, and it would
+    have been a card that silently does less than it prints — a Blossoming Defense that pumps and
+    leaves the creature targetable is the opposite of why anybody casts it.
   */
-  const pumped = /^(target creature(?: you control)?) gets \+(\d+)\/\+(\d+) until end of turn$/i
+  const pumped = /^(target creature(?: you control)?) gets \+(\d+)\/\+(\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$/i
     .exec(text);
   if (pumped !== null) {
-    const bonus = sizeBonus(Number(pumped[2]), Number(pumped[3]));
+    const bonus = pumpAndGrant(Number(pumped[2]), Number(pumped[3]), pumped[4]);
     const spec = targetSpecFrom(pumped[1]!, true);
     if (spec !== null && bonus !== null) {
+      /*
+        Which bot hint the spell carries depends on **what the grant is for**, and the pool draws
+        that line itself. `protectFromRemoval` — Blossoming Defense and Dive Down — sets
+        `protectsACreature` and deliberately *not* `expiresAtEndOfTurn`: the two say different
+        things to the bot, "hold this until something threatens one of your creatures" against
+        "hold this for the combat", and the measurement behind the first (64 cast, 60 of them with
+        nothing on the stack and no combat) is the reason it exists. A hexproof trick told to wait
+        for combat is still a card thrown away.
+
+        So hexproof and shroud — the two keywords `targeting.ts` refuses a spell for — make this a
+        protection trick, and everything else is the pump hint. `indestructible` is deliberately
+        not in the set: nothing hand-written pairs it with this flag, and guessing which hint it
+        wants is exactly the invention D259 rules out.
+      */
+      const protective = (bonus.keywords ?? [])
+        .some((word) => word === 'hexproof' || word === 'shroud');
+      /*
+        And which creature to aim at, which is a second thing the granted keyword decides.
+
+        `helpsInCombat`'s own docblock draws this line and names the cards: it is "only for a bonus
+        whose *whole* value is in the attack", and a Giant Growth deliberately does not carry it
+        because pumping a blocker to win a fight is half of what that card is for. Of the four
+        hand-written specs that do carry it, the two that are keyword grants are Tainted Strike
+        (infect) and Crimson Wisps (haste) — a creature that cannot attack gains nothing from
+        either. So those two words set it and no others; trample and hexproof are as useful on a
+        blocker.
+      */
+      const forTheAttack = (bonus.keywords ?? [])
+        .some((word) => word === 'infect' || word === 'haste');
       return {
-        targets: [spec],
+        targets: [forTheAttack ? { ...spec, helpsInCombat: true } : spec],
         effect: (c) => {
           const id = firstCardTarget(c);
           return id === null
             ? c.state
             : pump(c.state, [id], c.source, c.controller, bonus);
         },
-        spellFlags: { expiresAtEndOfTurn: true },
+        spellFlags: protective
+          ? { protectsACreature: true }
+          : { expiresAtEndOfTurn: true },
       };
     }
   }

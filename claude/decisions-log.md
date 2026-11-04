@@ -23739,3 +23739,70 @@ conflict. That number waits on #318.
 Verified: compile.test.ts 116/116; all five new mechanisms — the symbol validation, the life
 component, the accumulating `abilities`, the regenerate reader and the mana sum — each proved to
 fail when deliberately broken.
+
+## D379
+
+**A keyword granted with a pump, which is one printed effect** (#317)
+
+**270 of 538 printed lines, up from 265 (49.3% → 50.2%); 175 of 339 cards get a script, up from
+171.** Blossoming Defense, Dive Down, Tainted Strike, Renegade Freighter's attack trigger, and
+Skithiryx's haste ability.
+
+### The refusal that was right and the end state that was not
+
+The pump reader took the size and refused any clause that also granted a keyword, with a comment
+saying reading half of it "would be a card that silently does less than it prints". That refusal was
+correct — and it was never the destination. `pump` takes the size and the keywords in **one**
+`PumpOptions`, and the pool writes them that way: Selesnya Charm's first mode and Renegade
+Freighter's attack trigger are both a single call. So reading both halves is not two effects stapled
+together, it is the one call the hand-written cards make — which matters, because two separate
+continuous effects would expire independently.
+
+`isKeyword` is the gate and the reason this is safe at all: the engine's keyword list is what
+`characteristicsOf` consults, so a word outside it is a word the rules ignore. `gains protection
+from red` would compile to a creature that gains nothing and a spell that looks like it worked, so
+an unrecognised word refuses the clause and the line is reported for a human to play by hand (D362).
+
+### The granted keyword decides *two* bot hints, and the pool draws both lines itself
+
+This is D364's lesson a fifth time, and the first time the hint is not a constant.
+
+`protectFromRemoval` — Blossoming Defense and Dive Down — sets **`protectsACreature`** and
+deliberately *not* `expiresAtEndOfTurn`. The two say different things: "hold this until something
+threatens one of your creatures" against "hold this for the combat", and the measurement behind the
+first (64 cast across 160 games, **60 of them with nothing on the stack and no combat**) is the
+whole reason it exists. A hexproof trick told to wait for combat is still a card thrown away. So
+hexproof and shroud make the compiled spell a protection trick and everything else keeps the pump
+hint.
+
+`helpsInCombat` is the second, on the **target** rather than the spell, and its own docblock draws
+the line and names the cards: it is "only for a bonus whose whole value is in the attack", and a
+Giant Growth deliberately does not carry it because pumping a blocker to win a fight is half of what
+that card is for. Of the four hand-written specs that carry it, the two that are keyword grants are
+Tainted Strike (infect) and Crimson Wisps (haste) — a creature that can never attack gains nothing
+from either. So those two words set it and no others. With it, the compiled Tainted Strike's target
+spec is **whole-spec equal** to the hand-written one.
+
+`indestructible` is deliberately in neither set: nothing hand-written pairs it with either hint, and
+guessing which one it wants is the invention D259 rules out.
+
+### A grant with no size change is its own shape
+
+`{B}: Skithiryx, the Blight Dragon gains haste until end of turn.` is the same `pump` call with only
+`keywords` in it. Read as its own clause rather than as a `+0/+0` pump, which `sizeBonus` refuses and
+should go on refusing — a card printing `+0/+0` would be a pump that does nothing, and this is not a
+pump at all. Its test matches the ability by **cost**, not description, because the print says
+"Skithiryx, the Blight Dragon gains haste" where the hand-written description says "Skithiryx": the
+compiler echoes the printed line, as every reader here does.
+
+### Dive Down stored a zero, and the two readings of one card disagreed by nothing else
+
+The ground-truth check on Dive Down failed on a single field: `power: 0`. `protectFromRemoval` is a
+parameterised builder passing both numbers unconditionally, so Dive Down's `+0/+3` stored a zero
+power bonus, where `sizeBonus` omits a zero component — two continuous effects that behave
+identically and compare unequal, which is exactly what `sizeBonus` exists to prevent. Fixed in the
+**hand-written** builder, which now calls `sizeBonus`, so there is one source for that rule.
+
+Verified: compile.test.ts 124/124; all six new or changed mechanisms — the grant inside
+`pumpAndGrant`, the `isKeyword` gate, the protection hint, `helpsInCombat`, the grant-only self
+clause and `protectFromRemoval`'s `sizeBonus` — each proved to fail when deliberately broken.

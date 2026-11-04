@@ -1529,4 +1529,192 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     expect(script.entersWith).toEqual({ counter: 'time', amount: 4 });
     expect(script.fading).toBeUndefined();
   });
+
+  /*
+    A keyword granted alongside a pump, which is one printed effect and has to stay one.
+
+    The earlier pump reader took the size and refused any clause that also granted a keyword, with
+    a comment saying reading half of it "would be a card that silently does less than it prints".
+    That was the right refusal and the wrong end state: `pump` takes the size and the keywords in
+    one `PumpOptions`, and the pool writes them that way — so reading both is the same single call
+    the hand-written cards make.
+  */
+  describe('a keyword granted with a pump, against the hand-written ones', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext =>
+      ({ state, controller: seat, source, targets } as unknown as EffectContext);
+
+    /** One field off either script, without naming a shape the compiler may not fill. */
+    const field = (script: unknown, key: string): unknown =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    const resolveOf = (script: unknown) =>
+      field(script, 'onResolve') as ((c: EffectContext) => GameState) | undefined;
+
+    it.each([
+      // `protectFromRemoval`: +2/+2 and +0/+3, both granting hexproof.
+      ['Blossoming Defense'],
+      ['Dive Down'],
+      // The grant that is not protection: +1/+0 and infect.
+      ['Tainted Strike'],
+    ])('%s resolves to the same board as the hand-written spell', (card) => {
+      /*
+        The target is one of **your own** creatures for all three, which is what makes this check
+        worth running on a real board: a pump plus a grant lands two continuous effects, and the
+        board afterwards is the only place to see both.
+      */
+      const base = arena({
+        decks: { 0: 'blight-vector' }, battlefield: { 0: ['Glistener Elf'] }, turn: 3,
+      });
+      const mine = find(base, 0 as SeatIndex, 'battlefield', 'Glistener Elf');
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: mine }]);
+      const compiled = resolveOf(compiledScript(card as string).script);
+      const written = resolveOf(scriptFor(card as string));
+      expect(compiled, `${card as string} compiled no resolution`).toBeDefined();
+      expect(written, `${card as string} has no hand-written resolution`).toBeDefined();
+      if (compiled === undefined || written === undefined) return;
+      expect(compiled(ctx)).toEqual(written(ctx));
+      // Not vacuous: a pump and a grant on a real creature has to change the board.
+      expect(compiled(ctx)).not.toEqual(base);
+    });
+
+    it('carries the protection hint on a hexproof trick, not the pump hint', () => {
+      /*
+        The two hints say different things to the bot, and the pool draws the line itself:
+        `protectFromRemoval` sets `protectsACreature` and deliberately not `expiresAtEndOfTurn`.
+        "Hold this until something threatens a creature of yours" is not "hold this for the
+        combat", and the measurement behind the first — 64 cast, 60 with nothing on the stack and
+        no combat — is why it exists. So the compiled card has to agree with the hand-written one,
+        or it is a card that works and plays badly, which is worse than an unread line (D362).
+      */
+      for (const card of ['Blossoming Defense', 'Dive Down']) {
+        const compiled = compiledScript(card).script;
+        expect(field(compiled, 'protectsACreature'), `${card}: no protection hint`).toBe(true);
+        expect(field(scriptFor(card), 'protectsACreature')).toBe(true);
+        expect(field(compiled, 'expiresAtEndOfTurn'), `${card}: told to wait for combat`)
+          .toBeUndefined();
+        expect(field(scriptFor(card), 'expiresAtEndOfTurn')).toBeUndefined();
+      }
+      // And the grant that is not protection keeps the pump hint, which is what it is for.
+      expect(field(compiledScript('Tainted Strike').script, 'expiresAtEndOfTurn')).toBe(true);
+      expect(field(compiledScript('Tainted Strike').script, 'protectsACreature')).toBeUndefined();
+    });
+
+    it("reads Renegade Freighter's attack trigger, which pumps and grants in one call", () => {
+      /*
+        The self form of the same clause, and the one place in the pool where it is hand-written on
+        a trigger rather than a spell: "Whenever Renegade Freighter attacks, it gets +1/+1 and gains
+        trample until end of turn." Its own id is the source, because the clause acts on itself and
+        a made-up one would make both effects no-ops (D366, D372, D377).
+      */
+      const written = ((scriptFor('Renegade Freighter') as unknown as
+        { triggers?: readonly TriggerDef[] }).triggers ?? [])[0];
+      const compiled = ((compiledScript('Renegade Freighter').script as unknown as
+        { triggers?: readonly TriggerDef[] }).triggers ?? [])[0];
+      expect(written, 'no hand-written attack trigger').toBeDefined();
+      expect(compiled, 'compiled no attack trigger').toBeDefined();
+      if (written === undefined || compiled === undefined) return;
+      expect(compiled.on).toEqual(written.on);
+
+      const base = arena({
+        decks: { 0: 'forge-alliance' }, battlefield: { 0: ['Renegade Freighter'] }, turn: 3,
+      });
+      const source = find(base, 0 as SeatIndex, 'battlefield', 'Renegade Freighter');
+      const ctx = contextOn(base, 0 as SeatIndex, source);
+      expect(compiled.effect(ctx)).toEqual(written.effect(ctx));
+      expect(compiled.effect(ctx), 'the trigger changed nothing').not.toEqual(base);
+    });
+
+    it("reads a grant with no size change, as Skithiryx's haste ability is written", () => {
+      /*
+        `{B}: Skithiryx gains haste until end of turn.` — the same `pump` call with only `keywords`
+        in it. Worth reading as its own shape rather than as a pump of `+0/+0`, which `sizeBonus`
+        refuses and should go on refusing: a card printing `+0/+0` would be a pump that does
+        nothing, and this one is not a pump at all.
+      */
+      /*
+        Matched by **cost**, not by description, and that is the card's doing: the print says
+        "Skithiryx, the Blight Dragon gains haste" and the hand-written description says
+        "Skithiryx". The compiler echoes the printed line, as every reader here does, so the two
+        descriptions differ by design and the cost is what identifies the ability.
+      */
+      const abilityOf = (script: unknown) =>
+        ((script as { abilities?: readonly AbilityDef[] }).abilities ?? [])
+          .find((a) => a.cost.mana === '{B}');
+      const written = abilityOf(scriptFor('Skithiryx, the Blight Dragon'));
+      const compiled = abilityOf(compiledScript('Skithiryx, the Blight Dragon').script);
+      expect(written, 'no hand-written haste ability').toBeDefined();
+      expect(compiled, 'compiled no haste ability').toBeDefined();
+      if (written === undefined || compiled === undefined) return;
+      expect(compiled.description).toBe('{B}: Skithiryx, the Blight Dragon gains haste until end of turn.');
+
+      /*
+        The source is another creature on the board rather than the Dragon itself, because
+        Skithiryx is a **commander** and does not start in a library for `arena` to place. The
+        clause reads `c.source` and nothing else about the Dragon, so any permanent on the
+        battlefield exercises it — and the non-vacuity check below is what proves it did.
+      */
+      const base = arena({
+        decks: { 0: 'blight-vector' }, battlefield: { 0: ['Glistener Elf'] }, turn: 3,
+      });
+      const source = find(base, 0 as SeatIndex, 'battlefield', 'Glistener Elf');
+      const ctx = contextOn(base, 0 as SeatIndex, source);
+      expect(compiled.effect?.(ctx)).toEqual(written.effect?.(ctx));
+      expect(compiled.effect?.(ctx), 'the ability changed nothing').not.toEqual(base);
+    });
+
+    it('refuses a word the engine has no keyword for', () => {
+      /*
+        `isKeyword` is the gate, and this is why it has to be: the engine's keyword list is what
+        `characteristicsOf` consults, so a grant of something not in it would compile to a creature
+        that gains nothing — and a spell that looks like it worked. Protection from a colour is the
+        real card this guards against; the engine models it, but not as a keyword a pump can grant.
+      */
+      for (const text of [
+        'Target creature gets +2/+2 and gains protection from red until end of turn.',
+        'Target creature gets +2/+2 and gains flanking until end of turn.',
+      ]) {
+        const spell = compileCard({
+          name: 'Nonesuch', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'],
+          oracle_text: text,
+        });
+        expect(spell.ok).toBe(true);
+        if (!spell.ok) return;
+        expect(spell.script, `read a grant out of: ${text}`).toBeUndefined();
+        expect(spell.unread).toEqual([{ line: text.replace(/\n$/, ''), why: 'no-reader' }]);
+      }
+    });
+
+    it('aims an infect grant at a creature that can attack, as the pool does', () => {
+      /*
+        Tainted Strike's hand-written spec is `TARGET_ATTACKER_HELPED`, and `helpsInCombat` is why:
+        infect changes what *damage* does, so a creature that can never attack gains nothing from
+        it. The compiled spec has to carry it or the bot will happily put infect on a Wall — the
+        mistake D252 made with Ophidian Eye, in the same shape.
+
+        Asserted as whole-spec equality, which is the strongest form available here and is only
+        possible because the printed phrase ("target creature") and the hint are now both read.
+      */
+      const specOf = (script: unknown) =>
+        (field(script, 'targets') as readonly TargetSpec[] | undefined)?.[0];
+      const mine = specOf(compiledScript('Tainted Strike').script);
+      expect(mine).toEqual(specOf(scriptFor('Tainted Strike')));
+      expect(mine?.helpsInCombat, 'infect aimed at anything that can be targeted').toBe(true);
+
+      /*
+        And not on the hexproof pair, which is the other half of `helpsInCombat`'s own rule: a
+        bonus is only "for the attack" when its whole value is, and hexproof is as useful on a
+        blocker. The one remaining difference from the hand-written spec is `friendly`, which the
+        compiler sets on every helpful phrase and `protectFromRemoval` leaves off — moot either
+        way, because its filter already restricts the candidates to your own creatures (see
+        `targetSpecFrom`). Recorded here rather than asserted equal, since the difference is real
+        and changes no legal target.
+      */
+      const defence = specOf(compiledScript('Blossoming Defense').script);
+      expect(defence?.helpsInCombat).toBeUndefined();
+      expect(defence?.friendly).toBe(true);
+      expect(specOf(scriptFor('Blossoming Defense'))?.friendly).toBeUndefined();
+    });
+  });
 });

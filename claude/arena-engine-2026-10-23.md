@@ -10140,3 +10140,30 @@ two readable ability lines, which is why the measurement could not have found th
 went red and the mana-ability `produces` branch did not: truncated to its first symbol — a permanent
 that taps for two reading as one — all 115 tests stayed green, because every sum in the pool is on a
 card read whole. A direct assertion was added, and re-breaking it now fails.
+
+## A keyword granted with a pump (#317, D379)
+
+**270 of 538 printed lines, up from 265 (49.3% → 50.2%). 175 of 339 cards get a script, up from
+171.** Blossoming Defense, Dive Down, Tainted Strike, Renegade Freighter's attack trigger, and
+Skithiryx's haste ability.
+
+**One printed effect, so one `pump` call.** The pump reader used to take the size and refuse any
+clause that also granted a keyword. The refusal was right; stopping there was not — `pump` takes
+both in one `PumpOptions` and the pool writes them that way, so reading both is the same single call
+the hand-written cards make. Two separate continuous effects would expire independently.
+
+**`isKeyword` is what makes it safe.** The engine's keyword list is what `characteristicsOf`
+consults, so `gains protection from red` would compile to a creature that gains nothing and a spell
+that looks like it worked. An unrecognised word refuses the clause instead.
+
+**The granted keyword decides two bot hints, and the pool draws both lines itself.** Hexproof and
+shroud make the spell a protection trick (`protectsACreature`, and deliberately not
+`expiresAtEndOfTurn` — "hold until something threatens a creature" is not "hold for the combat").
+Infect and haste make the *target* an attacker (`helpsInCombat`, whose own docblock says it is only
+for a bonus whose whole value is in the attack and names those exact cards). Indestructible is in
+neither set, because nothing hand-written pairs it with either hint.
+
+**Dive Down stored a zero.** The ground-truth check failed on one field, `power: 0`:
+`protectFromRemoval` passes both numbers unconditionally, where `sizeBonus` omits a zero component —
+two continuous effects that behave identically and compare unequal. Fixed in the hand-written
+builder, so one rule has one source.
