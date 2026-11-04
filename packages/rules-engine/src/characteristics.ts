@@ -575,6 +575,19 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
     turns on that anything could announce. The counter is put on by an ability, and from then on the
     static applies because the counter is there — nothing stores the fact of being monstrous.
   */
+  /*
+    One correction to that, about the artifact count below: it reads the **printed** type line, not
+    the live one, and that is deliberate rather than an oversight — this function is called from
+    inside `characteristicsOf`, so asking for a permanent's live type line here would re-enter the
+    whole computation for every other conditional effect on the board, and two conditional effects
+    that read each other's types would not terminate.
+    
+    The cost is a real rules gap, stated rather than hidden: a permanent that a continuous effect has
+    *made* an artifact does not turn metalcraft on, where the rules say it should (CR 702.105a).
+    Nothing in this pool can make one, so nothing observes it. `artifactsControlled` in `scripts.ts`
+    — Galvanic Blast's count — runs while a spell resolves rather than inside this computation, so
+    it reads live and is not subject to this.
+  */
   if (cond.kind === 'source-has-counter') {
     const source = state.instances[effect.source];
     return source !== undefined && (source.counters[cond.counter] ?? 0) >= cond.atLeast;

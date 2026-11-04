@@ -337,6 +337,14 @@ const EXEMPT = new Map([
     field both sides always leave empty.
   */
   [join('packages', 'rules-engine', 'src', 'compile.test.ts'), 'compares printed triggers to printed triggers'],
+  /*
+    Asks what a **target filter** reads: the live type line or the printed one (#319). It reaches a
+    trigger only to get at Ainok Survivalist's target spec, and a granted trigger carries no target
+    spec of this card's — the spec belongs to whichever ability was handed over, on whichever
+    permanent is holding it. Reading `grantedTriggers` here would be looking for this card's filter
+    in another card's ability.
+  */
+  [join('packages', 'rules-engine', 'src', 'liveTypes.test.ts'), 'reaches a trigger only for its target spec'],
 ]);
 
 function checkEveryTriggerReaderKnowsAboutGrants() {

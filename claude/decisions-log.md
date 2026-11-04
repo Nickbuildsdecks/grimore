@@ -24089,3 +24089,62 @@ instant whose `protectsACreature` the registry cannot see and the compiler can.
 Its first version matched the raw source and failed on all three files, because each one *names*
 `scriptFor` in a docblock explaining which lookup it uses. Comments are stripped now, and the test
 says why.
+
+## D385
+
+**Five filters read the printed type line, and one docblock claimed otherwise** (#319)
+
+A target filter must read what a permanent **is**, not what it was printed as (CR 613). Five
+hand-written ones read `cardDefs[...].typeLine`:
+
+| | |
+| --- | --- |
+| `destroyAnArtifactOrEnchantment` | Disenchant, Naturalize, Krosan Grip |
+| Ainok Survivalist's turn-up | `target artifact or enchantment an opponent controls` |
+| Wane | `target enchantment` |
+| Awoken Horror's bounce | the `Horror` subtype |
+| `artifactsControlled` | Galvanic Blast's metalcraft count |
+
+`destroyAnArtifactOrEnchantment`'s docblock **said** it read the live line: "the type line is read
+from `characteristicsOf` rather than from the printed line, so a creature that is *also* an artifact
+is a legal target". The code did not. The claim happened to describe the behaviour for every artifact
+creature in the pool, because all of them are *printed* as artifacts — which is why it lasted.
+
+The difference shows the moment a continuous effect adds a type, which this engine has done since
+Vehicles were crewed with `addTypes: ['Creature']`: a Disenchant could not touch a permanent that
+*is* an artifact. Four of the five are now live and each has a test that fails when reverted —
+a creature made an artifact, the same creature made an enchantment, and Galvanic Blast's third
+artifact turning 1 damage into 4.
+
+### What is not covered, and why, rather than left to be assumed
+
+**Awoken Horror's `Horror` subtype ships without a discriminating test.** `PumpOptions.addTypes`
+appends to `types`, not `subtypes` — probed, not assumed: `addTypes: ['Horror']` gives
+`{types: ['Creature','Horror'], subtypes: ['Bear']}`, and `hasSubtype` reads `subtypes`. So nothing
+in this engine can make a creature a Horror, and there is no board on which the two readings differ.
+It is converted anyway because the fix is a **consistency** one inside a single expression: the line
+above it already asks `characteristicsOf` for the live `isCreature`, and one expression reading the
+live line for half its question and the print for the other half is how this class of bug starts.
+
+### A sixth site, found while testing, and deliberately left printed
+
+`conditionMet` in `characteristics.ts` — the metalcraft count that turns Chrome Steed's and Etched
+Champion's conditional statics on — also reads the printed line, and its comment says "read live
+like the artifact count below", which was wrong twice over.
+
+It stays printed, because it is called **from inside `characteristicsOf`**: asking for a live type
+line there would re-enter the whole computation for every other conditional effect on the board, and
+two conditional effects reading each other's types would not terminate. That is a real rules gap —
+a permanent *made* an artifact does not turn metalcraft on where CR 702.105a says it should — and it
+is now written at both ends instead of being claimed away. Nothing in this pool can produce one.
+
+So the two artifact counts genuinely differ: Galvanic Blast's is live, metalcraft's is printed. The
+test that proves the live one says in as many words why it uses the spell and not the Steed.
+
+### The guard caught the new test, which is the guard working
+
+`scripts/guards.js` refused the gate: `liveTypes.test.ts` reads a card's `triggers` without reading
+`grantedTriggers` (D251), and every such file either reads both or says why not. It reaches a trigger
+only to get at Ainok Survivalist's **target spec**, and a granted trigger carries no target spec of
+this card's — the spec belongs to whichever ability was handed over, on whichever permanent is
+holding it. So it joins `EXEMPT` with that reason, which is the path the guard's own message names.

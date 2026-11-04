@@ -11,6 +11,39 @@ any of this."* That turned out to be true — no tabletop action changed, and th
 
 ---
 
+## What I need from you, as of 2026-11-04
+
+One item blocks the goal and nothing else does. The rest of this file is work that did not need you.
+
+**1. Card data — the critical path.** Every card in the sanctioned formats has to come from
+somewhere, and `api.scryfall.com` and `data.scryfall.io` are both still refused by this
+environment's egress proxy (`403` to `CONNECT`, re-checked each pass). The local stores are empty
+too: `grimore.db`'s `scryfall_cards` has 0 rows and so does the dev Postgres. So the compiler is
+being built and measured against the engine's own **348-card pool**, which is thirteen decks chosen
+to exercise sixty mechanics and is therefore much heavier in paragraph cards than a real list — the
+measurement says so itself and reports its share as a floor.
+
+Either of these unblocks it, and the first is cheaper:
+
+- add those two hosts to the allowlist, or
+- download a Scryfall `oracle-cards` bulk file yourself and drop it anywhere in the repo; the
+  measurement already takes `--file`, and the importer from D329 already filters to the played
+  formats and rejects tokens, funny sets, silver borders and digital-only cards.
+
+Until then I can keep adding readers, but I am ranking them against the wrong distribution.
+
+**2. A product question I should not answer alone.** You asked for both modes — the tabletop one and
+the Arena-like one. The engine has hybrid automation (a card the compiler only partly reads is
+dealt and flagged), and the tabletop table exists. What does **not** exist is a choice at the
+lobby: "play this table with the rules enforced" against "play it as cardboard". Should the mode be
+picked per table when it is created, per player, or should a table start as cardboard and let the
+rules be switched on? It changes what the lobby stores and what a reconnecting player gets, so I
+would rather have your answer than guess and build the wrong one.
+
+**3. Still yours, unchanged.** Merging PR #35; `SMTP_URL` / `MAIL_FROM` / `APP_BASE_URL` on the VM;
+the migration cutover (one-way, on real data, needs a backup); whether `packages/db`'s runner should
+own `scryfall_cards`; whether port 3000 should serve the Play Realm locally.
+
 ## What a player can now do
 
 Start a table and choose **Play with the rules engine** instead of **Play as a tabletop**. From
@@ -10306,3 +10339,28 @@ the compiler never emits.
 a compiled-only instant's `protectsACreature` is visible through the right lookup and not the wrong
 one. Its first version matched the raw source and failed on all three files, because each one names
 `scriptFor` in a docblock; comments are stripped now and the test says why.
+
+## Five filters read the printed type line (#319, D385)
+
+A target filter must read what a permanent **is** (CR 613). Five hand-written ones read the printed
+line: Disenchant/Naturalize/Krosan Grip, Ainok Survivalist's turn-up, Wane, Awoken Horror's bounce,
+and Galvanic Blast's metalcraft count. `destroyAnArtifactOrEnchantment`'s docblock *claimed* the live
+reading the code did not do — true of every artifact creature in the pool, because all of them are
+printed as artifacts, which is why it lasted.
+
+Four of the five are live now, each with a test that fails when reverted: a creature made an
+artifact, the same creature made an enchantment, and Galvanic Blast's third artifact turning 1
+damage into 4.
+
+**Awoken Horror's `Horror` subtype ships with no discriminating test, and the reason is written
+down.** `addTypes` appends to `types`, not `subtypes` — probed, not assumed — so nothing in this
+engine can make a creature a Horror and no board distinguishes the two readings. It is converted
+because the fix is a consistency one inside one expression: the line above already asks for the live
+`isCreature`.
+
+**A sixth site stays printed, deliberately.** `conditionMet` is the metalcraft count behind Chrome
+Steed's and Etched Champion's conditional statics, and it is called *from inside*
+`characteristicsOf` — asking for a live type line there would re-enter the computation for every
+other conditional effect on the board. That is a real rules gap (CR 702.105a), now stated at both
+ends rather than claimed away. So the two artifact counts genuinely differ, and the test says why it
+uses the spell rather than the Steed.

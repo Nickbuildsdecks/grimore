@@ -1416,7 +1416,13 @@ const AWOKEN_HORROR: CardScript = {
         if (inst === undefined) return false;
         const ch = characteristicsOf(c.state, inst);
         if (!ch.isCreature) return false;
-        return !hasSubtype(parseTypeLine(c.state.cardDefs[inst.defKey]?.typeLine), 'Horror');
+        /*
+          The **live** subtype, as the line above already reads the live `isCreature`. One expression
+          asking `characteristicsOf` for one half of its question and the printed line for the other
+          is the shape that made this wrong: a creature that has been *made* a Horror is one the
+          Thing does not bounce, and the print cannot know that.
+        */
+        return !hasSubtype(characteristicsOf(c.state, inst).typeLine, 'Horror');
       }).reduce((state, id) => bounceToHand(state, id), c.state),
     },
   ],
@@ -3137,9 +3143,16 @@ const BANISHER_PRIEST: CardScript = exileUntilItLeaves('Banisher Priest', {
  * Icy Manipulator, a Night of Souls' Betrayal that shrinks everybody's creatures — and until now a
  * Pacifism on your commander was permanent, for the rest of the game.
  *
- * `kind: 'permanent'` with a filter, which the targeting layer has expressed since Banishing Light:
- * the type line is read from `characteristicsOf` rather than from the printed line, so a creature
- * that is *also* an artifact is a legal target and an animated land is not.
+ * `kind: 'permanent'` with a filter, which the targeting layer has expressed since Banishing Light,
+ * and the type line is read from `characteristicsOf` rather than from the printed line — so a
+ * creature that is *also* an artifact is a legal target, and a **bestowed** creature, which is an
+ * Aura enchantment while it is attached (CR 702.103b), is one too.
+ *
+ * This docblock said that before the code did it. The filter read `cardDefs[...].typeLine`, the
+ * printed line, which agrees for every artifact creature in the pool and disagrees on exactly the
+ * card the engine went to the trouble of modelling: a Boon Satyr cast for its bestow cost is printed
+ * `Creature — Satyr` and is live an `Enchantment Creature — Aura Satyr`, so a Disenchant could not
+ * touch it. Four other filters read it the same way; see #319.
  *
  * The interaction worth knowing as a player: destroying a Journey to Nowhere gives the creature
  * back. That is not special-cased anywhere — the Journey's own `leaves` trigger returns what it
@@ -3154,7 +3167,7 @@ const destroyAnArtifactOrEnchantment = (name: string): CardScript => ({
       if (candidate.kind !== 'card') return false;
       const inst = state.instances[candidate.id];
       if (inst === undefined) return false;
-      const types = parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+      const types = characteristicsOf(state, inst).typeLine;
       return hasType(types, 'artifact') || hasType(types, 'enchantment');
     },
   }],
@@ -3332,7 +3345,7 @@ const AINOK_SURVIVALIST: CardScript = {
         if (candidate.kind !== 'card') return false;
         const inst = state.instances[candidate.id];
         if (inst === undefined || inst.zoneSeat === chooser) return false;
-        const types = parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+        const types = characteristicsOf(state, inst).typeLine;
         return hasType(types, 'artifact') || hasType(types, 'enchantment');
       },
     }],
@@ -7913,7 +7926,7 @@ const WANE: CardScript = {
       if (candidate.kind !== 'card') return false;
       const inst = state.instances[candidate.id];
       if (inst === undefined) return false;
-      return hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'enchantment');
+      return hasType(characteristicsOf(state, inst).typeLine, 'enchantment');
     },
   }],
   onResolve: (c) => {
@@ -7996,13 +8009,30 @@ const VASTWOOD_FORTIFICATION: CardScript = {
   to live in the effect when the thing it controls persists.
 */
 
-/** How many artifacts a seat controls, off the printed type line (see `conditionMet`). */
+/**
+ * How many artifacts a seat controls — **live**, not printed. Galvanic Blast's count.
+ *
+ * Metalcraft asks what you control *now* (CR 702.105a), so a permanent a continuous effect has made
+ * an artifact counts. Safe to read live here because this runs while a **spell resolves**: nothing
+ * is asking what any permanent's characteristics are in order to answer it.
+ *
+ * `conditionMet` in `characteristics.ts` is the *other* metalcraft count — the one that turns Chrome
+ * Steed's and Etched Champion's conditional statics on — and it reads the **printed** line
+ * deliberately, because it is called from inside `characteristicsOf` and asking the live line there
+ * would be `characteristicsOf` recursing through every other conditional effect on the board. That
+ * is a real difference in behaviour between the two counts, written down rather than papered over:
+ * a permanent made an artifact adds to Galvanic Blast's count and not to metalcraft's. Nothing in
+ * this pool can produce one, so neither reading is observable today.
+ *
+ * This docblock replaces "off the printed type line (see `conditionMet`)", which was true about the
+ * reading and pointed at a function that does not decide it.
+ */
 const artifactsControlled = (state: GameState, seat: SeatIndex): number => {
   let count = 0;
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
-    if (hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'artifact')) count += 1;
+    if (hasType(characteristicsOf(state, inst).typeLine, 'artifact')) count += 1;
   }
   return count;
 };
