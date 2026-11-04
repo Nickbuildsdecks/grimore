@@ -3,12 +3,13 @@ import { compileCard, fullyCompiled } from './compile.js';
 import { STARTER_DECKS } from './starterDecks.js';
 import { isKeywordDeclaration, scriptFor } from './scripts.js';
 import { zoneKey, type CardDef } from './cards.js';
+import { characteristicsOf, printedLandwalk } from './characteristics.js';
 import type { CardDataRow } from './fromCardData.js';
-import { tap, type EffectContext } from './effects.js';
+import { addCounters, tap, type EffectContext } from './effects.js';
 import type { AbilityDef, TargetSpec, TriggerDef } from './scriptTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
-import { arena, find, ids } from './testkit.js';
+import { arena, find, ids, nameOf } from './testkit.js';
 
 /**
  * Every card in the pool, by name — the compiler's ground truth.
@@ -1301,9 +1302,11 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
 
     it.each([
-      // A count read off the board, not the X chosen at cast time.
-      ['Create X 1/1 red Goblin creature tokens, where X is the number of Goblins you control.'],
-      // The same thing in another spelling.
+      /*
+        "Create X … tokens, where X is …" has **left** this list: the board count it needs is read
+        now (D392), and the row below it — the same thing spelled "for each" — is what remains, since
+        that grammar puts the count after the token instead of in a `where X is` tail.
+      */
       ['Create a 1/1 black and green Insect creature token for each creature card in your graveyard.'],
       // A granted ability, not a keyword: `printedKeywords` reads nothing out of it.
       ['Create a 1/1 black Pest creature token with "When this creature dies, you gain 1 life."'],
@@ -2790,6 +2793,238 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       if (!odd.ok) return;
       expect(odd.script).toBeUndefined();
       expect(odd.unread).toEqual([{ line: '{T}: Untap target player.', why: 'no-reader' }]);
+    });
+  });
+  describe('counts read off the board, and the grammars that want them', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+      subjectCounters?: Readonly<Record<string, number>>,
+    ): EffectContext => ({
+      state, controller: seat, source, targets, decisions: [], subjectCounters,
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const triggerOf = (script: unknown, i = 0) =>
+      (field(script, 'triggers') as readonly TriggerDef[] | undefined)?.[i];
+
+    /*
+      Krenko, whose printed count is a tribe: "where X is the number of Goblins you control".
+
+      `creaturesOfSubtype` is the function his hand-written ability already used — it was
+      `goblinCount` until this needed it — so the two count the same creatures rather than being two
+      readings of one sentence.
+    */
+    it('makes as many Goblins as Krenko’s hand-written ability makes', () => {
+      const base = arena({
+        decks: { 0: 'ember-rush' },
+        battlefield: { 0: ['Goblin Arsonist', 'Raging Goblin', 'Monastery Swiftspear'] },
+        turn: 3,
+      });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = (field(compiledScript('Krenko, Mob Boss').script, 'abilities') as
+        readonly AbilityDef[])[0]!.effect!(ctx);
+      const theirs = (field(scriptFor('Krenko, Mob Boss'), 'abilities') as
+        readonly AbilityDef[])[0]!.effect!(ctx);
+      expect(mine).toEqual(theirs);
+      /*
+        Two Goblins on the board, so two tokens — and the Swiftspear is the control: a reader that
+        counted creatures rather than Goblins would make three, and a reader that counted the tokens
+        it had just made would not terminate.
+      */
+      const made = ids(mine, 0 as SeatIndex, 'battlefield')
+        .filter((id) => nameOf(mine, id) === 'Goblin');
+      expect(made).toHaveLength(2);
+    });
+
+    it('makes nothing at all when the count is nothing, as the hand-written ability does', () => {
+      const base = arena({ decks: { 0: 'ember-rush' }, battlefield: { 0: ['Mountain'] }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = (field(compiledScript('Krenko, Mob Boss').script, 'abilities') as
+        readonly AbilityDef[])[0]!.effect!(ctx);
+      const theirs = (field(scriptFor('Krenko, Mob Boss'), 'abilities') as
+        readonly AbilityDef[])[0]!.effect!(ctx);
+      expect(mine).toEqual(theirs);
+      // The zero guard: the state is untouched rather than asked for no tokens.
+      expect(mine).toEqual(base);
+    });
+
+    /*
+      Chasm Skulker, and the reason the snapshot is read before the live instance.
+
+      Its Squids are counted off the counters it had as it **died**, and by the time a death trigger
+      resolves the card is in a graveyard with none at all (CR 608.2h). So `subjectCounters` wins
+      where there is one.
+    */
+    it('counts the counters Chasm Skulker had when it died, not the ones it has now', () => {
+      const base = arena({ decks: { 0: 'hollow-tide' }, turn: 3 });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [], { '+1/+1': 3 });
+      const mine = triggerOf(compiledScript('Chasm Skulker').script, 1)!.effect(ctx);
+      const theirs = (field(scriptFor('Chasm Skulker'), 'triggers') as
+        readonly TriggerDef[])[1]!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      const squids = ids(mine, 0 as SeatIndex, 'battlefield')
+        .filter((id) => nameOf(mine, id) === 'Squid');
+      expect(squids).toHaveLength(3);
+      // The live instance has no counters on this board, so a reader that ignored the snapshot
+      // would make none — which is what makes three the discriminating number.
+      expect(mine.instances[squids[0]!]).toBeDefined();
+    });
+
+    it('falls back to the counters the permanent has when there is no snapshot', () => {
+      /*
+        The other half of the order, which no pool card exercises: a count asked for while the
+        permanent is still on the battlefield. `subjectCounters` is set only by an event about a card
+        that left, so everywhere else the live instance is the only answer there is.
+      */
+      const base = arena({ decks: { 0: 'hollow-tide' }, battlefield: { 0: ['Chasm Skulker'] }, turn: 3 });
+      const skulker = find(base, 0 as SeatIndex, 'battlefield', 'Chasm Skulker');
+      const grown = addCounters(base, skulker, '+1/+1', 2);
+      const after = triggerOf(compiledScript('Chasm Skulker').script, 1)!
+        .effect(contextOn(grown, 0 as SeatIndex, skulker));
+      const squids = ids(after, 0 as SeatIndex, 'battlefield')
+        .filter((id) => nameOf(after, id) === 'Squid');
+      expect(squids).toHaveLength(2);
+    });
+
+    it('gives the Squid token the islandwalk its line prints', () => {
+      /*
+        The token clause names a keyword this engine does not keep as a keyword at all: landwalk is a
+        land type plus a rule (CR 702.14). `printedLandwalk` reads it off the text now, which is both
+        what lets the clause past the token reader's read-back check and what makes the text true for
+        a card with no script — the corpus case. The hand-written token gets it from its own script,
+        and that test is in scripts.test.ts.
+      */
+      const base = arena({ decks: { 0: 'hollow-tide' }, turn: 3 });
+      const after = triggerOf(compiledScript('Chasm Skulker').script, 1)!
+        .effect(contextOn(base, 0 as SeatIndex, 'c1', [], { '+1/+1': 1 }));
+      const squid = ids(after, 0 as SeatIndex, 'battlefield')
+        .filter((id) => nameOf(after, id) === 'Squid')[0]!;
+      expect(characteristicsOf(after, after.instances[squid]!).landwalk).toEqual(['Island']);
+    });
+
+    it('reads landwalk off a printed line, and not out of a sentence about it', () => {
+      expect(printedLandwalk('Islandwalk')).toEqual(['Island']);
+      expect(printedLandwalk('Swampwalk, forestwalk')).toEqual(['Swamp', 'Forest']);
+      // A sentence that mentions one grants nothing, which is `printedKeywords`' own rule.
+      expect(printedLandwalk('Target creature gains islandwalk until end of turn.')).toEqual([]);
+      expect(printedLandwalk('Flying')).toEqual([]);
+    });
+
+    /*
+      Murderous Redcap: damage equal to its power, read as the trigger resolves.
+
+      The body persist gives back is a 1/1 with a −1/−1 counter, so its power is 0 and the printed
+      card deals nothing — which is why the amount cannot be cached and why the zero guard is the
+      card rather than defensive programming.
+    */
+    it('deals damage equal to its power, as the hand-written trigger does', () => {
+      const base = arena({
+        decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+        battlefield: { 0: ['Murderous Redcap'], 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const redcap = find(base, 0 as SeatIndex, 'battlefield', 'Murderous Redcap');
+      const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const ctx = contextOn(base, 0 as SeatIndex, redcap, [{ kind: 'card', id: bear }]);
+      const mine = triggerOf(compiledScript('Murderous Redcap').script)!.effect(ctx);
+      const theirs = triggerOf(scriptFor('Murderous Redcap'))!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      /*
+        Not vacuous, and read off the card rather than written as a literal: this pool's Redcap is a
+        **1/1**, which is why its own comment says the body persist returns deals nothing — a 1/1
+        with a −1/−1 counter is a 0/0. So the damage is its live power, and the assertion that it is
+        above zero is what stops this passing on a reader that always dealt none.
+      */
+      const power = characteristicsOf(base, base.instances[redcap]!).power;
+      expect(power).toBeGreaterThan(0);
+      expect(mine.instances[bear]!.damage).toBe(power);
+    });
+
+    it('deals nothing when its power is zero, which persist makes the common case', () => {
+      const base = arena({
+        decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+        battlefield: { 0: ['Murderous Redcap'], 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const redcap = find(base, 0 as SeatIndex, 'battlefield', 'Murderous Redcap');
+      const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      // One −1/−1 counter on a 1/1: power 0, exactly the body persist returns (CR 702.78a).
+      const shrunk = addCounters(base, redcap, '-1/-1', 1);
+      const ctx = contextOn(shrunk, 0 as SeatIndex, redcap, [{ kind: 'card', id: bear }]);
+      const mine = triggerOf(compiledScript('Murderous Redcap').script)!.effect(ctx);
+      const theirs = triggerOf(scriptFor('Murderous Redcap'))!.effect(ctx);
+      expect(mine).toEqual(theirs);
+      // No damage event at all, which is a different thing from a damage event of zero.
+      expect(mine.instances[bear]!.damage).toBe(0);
+      expect(mine).toEqual(shrunk);
+    });
+
+    /*
+      The plural, which is the one place this vocabulary could be wrong rather than incomplete.
+
+      "Elves" has to become "Elf" and "Fungi" has to be refused: a subtype no creature has would
+      count zero, and a card that resolves and does nothing is worse than an unread line, because an
+      unread line is flagged for a human to play by hand (D362).
+    */
+    it('derives the singular of a -ves plural, and counts the creatures it names', () => {
+      const elves = compileCard({
+        name: 'Elf Maker', type_line: 'Sorcery', mana_cost: '{2}{G}', cmc: 3, colors: ['G'],
+        oracle_text: 'Create X 1/1 green Elf creature tokens, where X is the number of Elves you control.',
+      });
+      expect(elves.ok).toBe(true);
+      if (!elves.ok) return;
+      expect(elves.unread).toEqual([]);
+      const base = arena({
+        decks: { 0: 'verdant-guard' }, battlefield: { 0: ['Llanowar Elves', 'Grizzly Bears'] }, turn: 3,
+      });
+      const after = (field(elves.script, 'onResolve') as (c: EffectContext) => GameState)(
+        contextOn(base, 0 as SeatIndex, 'c1'),
+      );
+      // One Elf on the board, so one token — and the bear is the control.
+      expect(ids(after, 0 as SeatIndex, 'battlefield').filter((id) => nameOf(after, id) === 'Elf'))
+        .toHaveLength(1);
+    });
+
+    it.each([
+      ['the number of Fungi you control'],
+      ['the number of Homunculi you control'],
+    ])('refuses %s, whose singular this cannot derive', (phrase) => {
+      const odd = compileCard({
+        name: 'Odd Maker', type_line: 'Sorcery', mana_cost: '{2}', cmc: 2, colors: [],
+        oracle_text: `Create X 1/1 green Elf creature tokens, where X is ${phrase as string}.`,
+      });
+      expect(odd.ok).toBe(true);
+      if (!odd.ok) return;
+      expect(odd.script).toBeUndefined();
+      expect(odd.unread.map((u) => u.why)).toEqual(['no-reader']);
+    });
+
+    it('reads the other three counts the pool spells, each off the right zone', () => {
+      const made = (phrase: string) => compileCard({
+        name: 'Count Reader', type_line: 'Sorcery', mana_cost: '{2}', cmc: 2, colors: [],
+        oracle_text: `Create X 1/1 green Elf creature tokens, where X is ${phrase}.`,
+      });
+      const resolve = (phrase: string, state: GameState) => {
+        const card = made(phrase);
+        expect(card.ok).toBe(true);
+        if (!card.ok) throw new Error(`${phrase} did not compile`);
+        expect(card.unread).toEqual([]);
+        const after = (field(card.script, 'onResolve') as (c: EffectContext) => GameState)(
+          contextOn(state, 0 as SeatIndex, 'c1'),
+        );
+        return ids(after, 0 as SeatIndex, 'battlefield').filter((id) => nameOf(after, id) === 'Elf').length;
+      };
+
+      // Three lands, one of which is also a creature the moment it is animated — still a land.
+      const lands = arena({ decks: { 0: 'verdant-guard' }, battlefield: { 0: ['Forest', 'Forest', 'Forest'] }, turn: 3 });
+      expect(resolve('the number of lands you control', lands)).toBe(3);
+
+      const artifacts = arena({ decks: { 0: 'ember-rush' }, battlefield: { 0: ['Bonesplitter', 'Bonesplitter'] }, turn: 3 });
+      expect(resolve('the number of artifacts you control', artifacts)).toBe(2);
+
+      const dead = arena({ decks: { 0: 'rot-harvest' }, graveyard: { 0: ['Shambling Shell'] }, turn: 3 });
+      expect(resolve('the number of creature cards in your graveyard', dead)).toBe(1);
     });
   });
 });

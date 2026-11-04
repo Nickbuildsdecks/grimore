@@ -19,6 +19,7 @@
  */
 import {
   characteristicsOf, hasSubtype, hasType, isKeyword, parseTypeLine, printedKeywords,
+  printedLandwalk,
 } from './characteristics.js';
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
@@ -464,7 +465,7 @@ const KRENKO: CardScript = {
       cost: { tap: true },
       description: '{T}: Create X 1/1 red Goblin creature tokens, where X is the number of Goblins you control.',
       effect: (c) => {
-        const goblins = goblinCount(c.state, c.controller);
+        const goblins = creaturesOfSubtype(c.state, c.controller, 'goblin');
         return goblins === 0 ? c.state : createToken(c.state, c.controller, GOBLIN_TOKEN, goblins);
       },
     },
@@ -2844,13 +2845,30 @@ function creatureCardsInGraveyard(state: GameState, seat: SeatIndex): number {
   return n;
 }
 
-function goblinCount(state: GameState, seat: SeatIndex): number {
+/**
+ * Creatures of one subtype that a seat controls, read **live** (CR 613).
+ *
+ * This was `goblinCount` until the compiler needed the same count for Krenko's printed phrase: one
+ * function, so the compiled ability and the hand-written one count the same creatures rather than
+ * being two readings of "the number of Goblins you control".
+ */
+function creaturesOfSubtype(state: GameState, seat: SeatIndex, subtype: string): number {
   let n = 0;
   for (const id of state.zones[`${seat}:battlefield`] ?? []) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
     const ch = characteristicsOf(state, inst);
-    if (ch.isCreature && hasSubtype(ch.typeLine, 'goblin')) n += 1;
+    if (ch.isCreature && hasSubtype(ch.typeLine, subtype.toLowerCase())) n += 1;
+  }
+  return n;
+}
+
+/** Lands a seat controls, live — an animated land is still a land. */
+function landsControlled(state: GameState, seat: SeatIndex): number {
+  let n = 0;
+  for (const id of state.zones[`${seat}:battlefield`] ?? []) {
+    const inst = state.instances[id];
+    if (inst !== undefined && characteristicsOf(state, inst).isLand) n += 1;
   }
   return n;
 }
@@ -8411,12 +8429,17 @@ const THRAGTUSK: CardScript = {
   is deliberately not offered — nothing is printed in this pool that wants it.
 */
 /*
-  Islandwalk on a token, which needs a script rather than a line of oracle text.
+  Islandwalk on a token, declared as a script rather than left to its oracle text.
 
-  Flying on the Thopter token is read straight off `oracleText` by `printedKeywords`, and landwalk
-  cannot be: it is a land *type* plus a rule, so it is declared the way River Boa declares it — a
-  static scoped to the card itself, which `canBlock` reads off the attacker. The token finds this
-  script the same way the Pest does, by its name.
+  Flying on the Thopter token is read straight off `oracleText` by `printedKeywords`; landwalk could
+  not be, because it is a land *type* plus a rule rather than a keyword string, so it is declared the
+  way River Boa declares it — a static scoped to the card itself, which `canBlock` reads off the
+  attacker. The token finds this script the same way the Pest does, by its name.
+
+  `printedLandwalk` now reads it off the text as well, for the unscripted cards that have no script
+  to find. That makes this static **redundant and not wrong**, and it stays: the test that pins this
+  token's islandwalk pins it through the script, and swapping a shipping card onto a reading added
+  the same day buys nothing. See `printedLandwalk` for what it is actually for.
 */
 const SQUID: CardScript = {
   name: 'Squid',
@@ -9287,7 +9310,7 @@ interface ReadEffect {
  *
  * `clause` arrives with its trailing full stop removed and trimmed.
  */
-function untargetedEffect(clause: string): ReadEffect | null {
+function untargetedEffect(clause: string, name: string): ReadEffect | null {
   const text = clause.trim();
 
   const gain = /^you gain ([\w]+) life$/i.exec(text);
@@ -9529,7 +9552,7 @@ function untargetedEffect(clause: string): ReadEffect | null {
   }
 
   // A token: the one family whose characteristics are entirely in the sentence. See `tokenEffect`.
-  const token = tokenEffect(text);
+  const token = tokenEffect(text, name);
   if (token !== null) return token;
 
   if (/^each opponent discards a card at random$/i.test(text)) {
@@ -10157,13 +10180,87 @@ const TOKEN_COLOURS: Readonly<Record<string, Color | null>> = {
  * - **`Create a Treasure token`** and **`a token that's a copy of target creature`** — no printed
  *   power and toughness, and in both cases the token carries rules text of its own.
  */
-function tokenEffect(clause: string): ReadEffect | null {
+/**
+ * A **count read off the board**, as the function an effect needs to ask for it.
+ *
+ * The sub-vocabulary `tokenEffect`'s docblock named as missing: "a count read off the board, not the
+ * X chosen at cast time". Several printed grammars want the same number — `create X … tokens, where
+ * X is <count>`, `deals damage equal to <count>`, `you gain life equal to <count>` — so the count is
+ * read once, here, and the grammars share it. That is the same multiplying shape the trigger table
+ * and `composeEffects` were: no new effect vocabulary, more cards.
+ *
+ * Every reading is a function the hand-written cards already use, which keeps the ground truth
+ * exact — `creaturesOfSubtype` was Krenko's `goblinCount` until this needed it.
+ *
+ * ## The counters, and why the snapshot comes first
+ *
+ * `the number of +1/+1 counters on ~` is read from `subjectCounters` before the live instance, and
+ * that order is the card: Chasm Skulker and Hangarback Walker both count the counters they had as
+ * they **died**, and by the time a death trigger resolves the card is in a graveyard with none at
+ * all (CR 608.2h). So the snapshot wins where there is one, and the live count answers everywhere
+ * else — which is the reading both hand-written cards use and the only one that is right in both
+ * places.
+ *
+ * ## The plural, which is where this could be wrong rather than incomplete
+ *
+ * A subtype count arrives plural — "the number of Goblins you control" — and the singular has to be
+ * derived. Two rules: `-ves` becomes `-f` (Elves, Wolves, Dwarves) and otherwise a trailing `s` is
+ * dropped. A word that does **not** end in `s` is refused outright, which is what keeps the
+ * irregular plurals out: Fungi, Homunculi and Efreeti would each give a subtype no creature has, and
+ * a count of zero is a card that resolves and does nothing — worse than an unread line, because an
+ * unread line is flagged for a human (D362). Refusing them is the D259 answer: no reading rather
+ * than a guessed one.
+ */
+function boardCount(phrase: string, name: string): ((c: EffectContext) => number) | null {
+  const text = plain(phrase).trim().replace(/\.$/, '');
+  const self = escapeName(name);
+
+  if (/^the number of lands you control$/i.test(text)) {
+    return (c) => landsControlled(c.state, c.controller);
+  }
+  if (/^the number of artifacts you control$/i.test(text)) {
+    return (c) => artifactsControlled(c.state, c.controller);
+  }
+  if (/^the number of creature cards in your graveyard$/i.test(text)) {
+    return (c) => creatureCardsInGraveyard(c.state, c.controller);
+  }
+  if (new RegExp(`^the number of \\+1/\\+1 counters on (?:${self}|it)$`, 'i').test(text)) {
+    return (c) => {
+      const snapshot = c.subjectCounters?.['+1/+1'];
+      if (snapshot !== undefined) return snapshot;
+      return c.state.instances[c.source]?.counters['+1/+1'] ?? 0;
+    };
+  }
+  const tribe = /^the number of ([A-Z][A-Za-z'-]*) you control$/.exec(text);
+  if (tribe !== null) {
+    const plural = tribe[1]!;
+    if (!plural.endsWith('s')) return null;
+    const singular = plural.endsWith('ves') ? `${plural.slice(0, -3)}f` : plural.slice(0, -1);
+    if (singular.length < 3) return null;
+    return (c) => creaturesOfSubtype(c.state, c.controller, singular);
+  }
+  return null;
+}
+
+function tokenEffect(clause: string, name: string): ReadEffect | null {
+  /*
+    The `where X is …` tail is taken off **before** the token itself is read, because `with (.+)`
+    is greedy and would otherwise swallow it as a list of keywords. What is left is the same
+    sentence a fixed-count token prints.
+  */
+  const tail = /^(.*?),\s*where X is (.+)$/i.exec(clause.trim().replace(/\.$/, ''));
+  const body = tail === null ? clause.trim() : tail[1]!;
+  const counted = tail === null ? null : boardCount(tail[2]!, name);
+  if (tail !== null && counted === null) return null;
+
   const made = /^create ([\w]+) (\d+)\/(\d+) (.+?) creature tokens?(?: with (.+))?$/i
-    .exec(clause.trim());
+    .exec(body);
   if (made === null) return null;
 
-  const count = countFrom(made[1]!);
-  if (count === null) return null;
+  // Either a printed number, or `X` with a board count to supply it — never both and never neither.
+  const fixed = counted === null ? countFrom(made[1]!) : null;
+  if (counted === null && fixed === null) return null;
+  if (counted !== null && made[1]!.toUpperCase() !== 'X') return null;
 
   /*
     The middle is the colours, the subtype, and possibly the word "artifact": "white Spirit",
@@ -10216,9 +10313,18 @@ function tokenEffect(clause: string): ReadEffect | null {
       const line = named.join(', ');
       return line.charAt(0).toUpperCase() + line.slice(1);
     })();
-  // The validation this function's docblock argues for: the engine has to be able to read back
-  // every keyword the clause named, out of the text about to be written down.
-  if (printedKeywords(oracleText).length !== named.length) return null;
+  /*
+    The validation this function's docblock argues for: the engine has to be able to read back every
+    keyword the clause named, out of the text about to be written down.
+
+    `printedLandwalk` counts beside `printedKeywords` because landwalk is not a keyword in this
+    engine — it is its own characteristic (CR 702.14), so `KEYWORDS` has no `islandwalk` and a token
+    "with islandwalk" was refused here even though the rules can express it. That refusal was right
+    until #324: printed landwalk did nothing at all, so writing it down would have been a token whose
+    text lied. Now that it is read, the token can have it, and this is the line that lets it.
+  */
+  const readBack = printedKeywords(oracleText).length + printedLandwalk(oracleText).length;
+  if (readBack !== named.length) return null;
 
   const token: CardDef = {
     name: subtype,
@@ -10230,7 +10336,20 @@ function tokenEffect(clause: string): ReadEffect | null {
     oracleText,
     colors,
   };
-  return { effect: (c) => createToken(c.state, c.controller, token, count) };
+  /*
+    The zero guard is the hand-written cards' own: Krenko and Chasm Skulker both return the state
+    untouched when the count is nothing, rather than asking `createToken` for no tokens. Keeping it
+    is what makes the compiled reading state-for-state equal to theirs.
+  */
+  if (counted !== null) {
+    return {
+      effect: (c) => {
+        const n = counted(c);
+        return n === 0 ? c.state : createToken(c.state, c.controller, token, n);
+      },
+    };
+  }
+  return { effect: (c) => createToken(c.state, c.controller, token, fixed!) };
 }
 
 /**
@@ -10481,29 +10600,60 @@ const pointsAtTheStack = (spec: TargetSpec): boolean =>
  */
 function damageEffect(clause: string, name: string): ReadEffect | null {
   const self = escapeName(name);
-  const dealt = new RegExp(`^(?:${self}|it) deals (\\d+) damage to (.+)$`, 'i').exec(clause.trim());
+  const dealt = new RegExp(
+    `^(?:${self}|it) deals (\\d+|damage equal to (?:its power|the number of [^.]+?)) damage to (.+)$`
+      .replace(' damage to ', '(?: damage)? to '),
+    'i',
+  ).exec(clause.trim());
   if (dealt === null) return null;
-  const amount = Number(dealt[1]);
   const where = dealt[2]!.trim();
+  /*
+    The amount, which is either printed or read off the board.
+
+    "deals damage equal to its power" is Murderous Redcap's clause and the power is read **as the
+    trigger resolves** — for the body persist brings back that is zero, so a 1/1 with a −1/−1
+    counter deals nothing and the state-based actions bury it again. That is the printed card, and
+    the hand-written script says so in as many words; a reader that cached the power at any other
+    moment would be a different card.
+  */
+  const printed = /^\d+$/.test(dealt[1]!) ? Number(dealt[1]) : null;
+  const byPower = /^damage equal to its power$/i.test(dealt[1]!);
+  const counted = byPower
+    ? null
+    : boardCount(dealt[1]!.replace(/^damage equal to /i, ''), name);
+  if (printed === null && !byPower && counted === null) return null;
+  const amountOf = (c: EffectContext): number => {
+    if (printed !== null) return printed;
+    if (counted !== null) return counted(c);
+    const inst = c.state.instances[c.source];
+    return inst === undefined ? 0 : characteristicsOf(c.state, inst).power;
+  };
 
   // The two destinations nobody chooses.
   if (/^you$/i.test(where)) {
     // No `controller` in the options, matching City of Brass: damage to your own face is not damage
     // "dealt by" a source you are trying to credit, and the hand-written card is the ground truth.
     return {
-      effect: (c) =>
-        dealDamage(c.state, { kind: 'player', seat: c.controller }, amount, { source: c.source }),
+      effect: (c) => {
+        const n = amountOf(c);
+        return n <= 0
+          ? c.state
+          : dealDamage(c.state, { kind: 'player', seat: c.controller }, n, { source: c.source });
+      },
     };
   }
   if (/^each opponent$/i.test(where)) {
     return {
-      effect: (c) => opponentsOf(c.state, c.controller).reduce(
-        (state, seat) => dealDamage(
-          state, { kind: 'player', seat }, amount,
-          { controller: c.controller, source: c.source },
-        ),
-        c.state,
-      ),
+      effect: (c) => {
+        const n = amountOf(c);
+        return n <= 0 ? c.state : opponentsOf(c.state, c.controller).reduce(
+          (state, seat) => dealDamage(
+            state, { kind: 'player', seat }, n,
+            { controller: c.controller, source: c.source },
+          ),
+          c.state,
+        );
+      },
     };
   }
 
@@ -10511,7 +10661,19 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
   // `targetSpecFrom` can return is one it can be handed.
   const spec = targetSpecFrom(where, false);
   if (spec === null) return null;
-  return { targets: [spec], effect: (c) => damageFirstTarget(c, amount) };
+  /*
+    The zero guard is Murderous Redcap's own, and it is not defensive: the body persist gives back
+    is a 1/1 with a −1/−1 counter, so its power is 0 and the printed card deals nothing. Reading it
+    as `dealDamage(…, 0)` instead would be a damage event with no damage, which is a different thing
+    from no event at all.
+  */
+  return {
+    targets: [spec],
+    effect: (c) => {
+      const n = amountOf(c);
+      return n <= 0 ? c.state : damageFirstTarget(c, n);
+    },
+  };
 }
 
 /**
@@ -10864,7 +11026,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
  * target phrase.
  */
 function readEffect(clause: string, name: string): ReadEffect | null {
-  return untargetedEffect(clause)
+  return untargetedEffect(clause, name)
     ?? damageEffect(clause, name)
     ?? selfEffect(clause, name)
     ?? targetedEffect(clause, name);

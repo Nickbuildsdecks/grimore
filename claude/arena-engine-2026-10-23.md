@@ -10544,3 +10544,30 @@ now, with its own case in `liveTypes.test.ts`.
 **335 → 341 of 538 lines (62.3% → 63.4%), 213 → 216 of 339 cards.** Five deliberate breaks, five
 failing tests. Icy Manipulator is the near miss: a three-type target union plus a filter that refuses
 an already-tapped permanent, none of which its printed phrase says.
+
+## Counts read off the board (#317, D392)
+
+`tokenEffect`'s docblock named this gap itself: "a count read off the board, not the X chosen at cast
+time". `boardCount` reads it once — lands, artifacts, creature cards in your graveyard, +1/+1
+counters on this, creatures of a subtype — and two grammars share it: `create X … tokens, where X is
+…` and `deals damage equal to … | its power`. Every reading is a function a hand-written card already
+used, so the ground truth is exact: `creaturesOfSubtype` was Krenko's `goblinCount`.
+
+The counters read the **snapshot** before the live instance, because a card counts the counters it
+had as it died (CR 608.2h). The zero guard is the cards' own: no tokens rather than a request for
+none, and no damage event rather than one of zero — this pool's Murderous Redcap is a 1/1, so the
+body persist returns deals nothing.
+
+The plural is where this could be wrong rather than incomplete: `-ves → -f`, otherwise drop the `s`,
+and refuse anything that does not end in one — which keeps Fungi and Homunculi out, since a subtype
+no creature has counts zero and a card that resolves and does nothing is worse than an unread line.
+
+**A correction.** I probed the Squid token with a hand-made state, read `landwalk: []`, and wrote it
+up as a shipping defect. It is not: the token has a script found by its name that grants islandwalk,
+and a test pins it — my probe built a board that cannot occur. The real gap one level down is that
+printed landwalk was never read at all, which matters for a card with no script to declare one: the
+corpus. `printedLandwalk` reads it now, the two scripted cards are redundant rather than wrong, and
+the Squid clause compiles with the islandwalk it prints.
+
+**341 → 344 of 538 lines (63.4% → 63.9%), 216 → 217 of 339 cards.** Four breaks, four failing tests;
+the whole engine suite 1671 green.

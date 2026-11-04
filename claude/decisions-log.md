@@ -24526,3 +24526,70 @@ or land.` Its phrase is a three-type union that `targetSpecFrom` does not have, 
 refuses an already-tapped permanent and the Manipulator itself — none of which the printed phrase
 says. Reading "tap target …" without that filter would offer the ability with nothing useful to point
 at.
+
+## D392
+
+**Counts read off the board, and a correction: the landwalk "defect" was my probe** (#317, #324)
+
+`tokenEffect`'s docblock named the gap: "`create X … tokens` — `countFrom` has no reading for `X`,
+and the pool's two instances are a count read off the board, not the X chosen at cast time". Several
+printed grammars want that same number, so `boardCount` reads it once and the grammars share it —
+the same multiplying shape the trigger table and `composeEffects` were, with no new effect
+vocabulary.
+
+Five readings, each a function a hand-written card already used: lands you control, artifacts you
+control, creature cards in your graveyard, +1/+1 counters on this, and creatures of a subtype.
+`creaturesOfSubtype` was Krenko's `goblinCount` until this needed it, which is what keeps the ground
+truth exact rather than approximate.
+
+Wired into two grammars: `create X … tokens, where X is <count>` (the tail is stripped **before** the
+token is read, because `with (.+)` is greedy and would swallow it) and `deals damage equal to <count
+| its power>`.
+
+**The counters read the snapshot first.** Chasm Skulker and Hangarback Walker count the counters they
+had as they *died*, and by the time a death trigger resolves the card is in a graveyard with none
+(CR 608.2h) — so `subjectCounters` wins where there is one and the live instance answers everywhere
+else. Ignoring the snapshot fails two tests.
+
+**The zero guard is the cards' own.** Krenko and Chasm Skulker both return the state untouched rather
+than asking for no tokens, and Murderous Redcap deals nothing at power 0 — which for the body persist
+returns is the normal case, since this pool's Redcap is a **1/1** and a −1/−1 counter makes it a 0/0.
+A damage event of zero is a different thing from no event, so the guard is the card rather than
+defensive programming.
+
+**The plural is the one place this could be wrong rather than incomplete.** "Goblins" has to become
+"Goblin" and "Elves" "Elf": `-ves → -f`, otherwise drop a trailing `s`, and **refuse anything that
+does not end in `s`**. That gate is what keeps Fungi, Homunculi and Efreeti out — each would give a
+subtype no creature has, and a count of zero is a card that resolves and does nothing, which is worse
+than an unread line because an unread line is flagged for a human (D362). Both halves are tested.
+
+### The correction: I reported a defect that was not one
+
+I probed the Squid token with a hand-made state and read `landwalk: []`, and wrote it up as a
+shipping defect: Chasm Skulker's Squids blockable by anyone with an Island. **That was wrong.** The
+token has a `CardScript` found by its name carrying `statics: [{ scope: 'self', effect: { landwalk:
+['Island'] } }]`, `scripts.test.ts:13264` pins it, and the comment above that script explains the
+mechanism. My probe built a state with no scripts installed, so it was measuring a board that cannot
+occur.
+
+What the probe did find, once read correctly, is a real gap one level down: `KEYWORDS` has no
+`islandwalk`, so `printedKeywords` can never return one, and before this `landwalk` was set **only**
+by a continuous effect. A card with a script can declare one; a card that arrives from printed data
+cannot, and the corpus #318 imports is unscripted by definition. So `printedLandwalk` now reads it
+off the text with `printedKeywords`' own whole-line rule, the two scripted cards are redundant rather
+than wrong and stay as they are, and the token reader's read-back check counts landwalk beside
+keywords — which is what lets Chasm Skulker's Squid clause compile with the islandwalk it prints.
+
+The lesson is the one this log keeps relearning from the other side: a probe that bypasses the path
+under test measures something that cannot happen. A hand-made state with no scripts is exactly that.
+
+### Measured
+
+**341 → 344 of 538 printed lines (63.4% → 63.9%)**, and **216 → 217 of 339 cards**: Krenko, Chasm
+Skulker and Murderous Redcap now read whole. Four deliberate breaks, four failing tests — the ignored
+snapshot, a tribe count that counted every creature, the accepted irregular plural, and unread
+printed landwalk. The whole engine suite is 1671 green, and a 30,000-row shuffled run found no throw.
+
+One stale refusal row left `tokenEffect`'s list: "Create X … where X is …" is read now, and the "for
+each" spelling of the same count remains, since that grammar puts the count after the token rather
+than in a `where X is` tail.

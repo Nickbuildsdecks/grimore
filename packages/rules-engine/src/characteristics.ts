@@ -137,6 +137,45 @@ export function printedKeywords(oracleText: string | null | undefined): Keyword[
   return [...found];
 }
 
+/** The five basic land types, in the order the rules list them, for printed landwalk. */
+const LAND_TYPES = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'] as const;
+
+/**
+ * Landwalk printed on a card, read from its oracle text (CR 702.14).
+ *
+ * The sibling of `printedKeywords`, and separate for the reason `Characteristics.landwalk` is its
+ * own field rather than a keyword: there is one landwalk rule and a dozen land types, so the
+ * engine stores the *types* and not a dozen keyword strings.
+ *
+ * It exists for the **unscripted** card. `KEYWORDS` has no `islandwalk`, so `printedKeywords` could
+ * never return one, and before this `landwalk` was set only by a continuous effect — which is why
+ * River Boa and the Squid token each carry a `statics` entry for the islandwalk their own text
+ * already prints. Both of them work, and a test pins the Squid's; what has no script to fall back on
+ * is a card that arrives from printed data, and the corpus #318 imports is unscripted by definition.
+ *
+ * So the two scripted cards are now redundant rather than wrong, and they stay: deleting a shipping
+ * card's static to rely on a reading added the same day buys nothing. What this closes is the hole
+ * underneath them.
+ *
+ * Read with the same whole-line rule as `printedKeywords`: a landwalk line is a comma-separated
+ * list of landwalks and nothing else, so "Islandwalk" counts and "target creature gains islandwalk"
+ * does not.
+ */
+export function printedLandwalk(oracleText: string | null | undefined): string[] {
+  const found = new Set<string>();
+  for (const rawLine of (oracleText ?? '').split('\n')) {
+    const line = rawLine.replace(/\([^)]*\)/g, '').trim();
+    if (!line) continue;
+    const parts = line.split(/,\s*/).map((p) => p.trim().toLowerCase()).filter(Boolean);
+    if (parts.length === 0) continue;
+    const types = parts.map((part) => LAND_TYPES
+      .find((type) => `${type.toLowerCase()}walk` === part));
+    if (!types.every((type) => type !== undefined)) continue;
+    for (const type of types) found.add(type!);
+  }
+  return [...found];
+}
+
 /** Colours a card is, from its mana cost's colour requirements plus any colour indicator. */
 export function printedColors(def: CardDef | undefined): Color[] {
   const declared = (def?.colors ?? []).map((c) => String(c).toUpperCase());
@@ -889,7 +928,13 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let mustAttack = false;
   let cantBeBlockedByWalls = false;
   let cantBeBlocked = false;
-  let landwalk: string[] | null = null;
+  /*
+    Printed landwalk, which is a *base* characteristic exactly as a printed keyword is — so it is
+    read here rather than left to the effects loop, and "loses all abilities" clears it below just
+    as it clears the printed keywords (CR 613.1f). See `printedLandwalk` for why it was missing.
+  */
+  const printedWalk = printedLandwalk(def?.oracleText);
+  let landwalk: string[] | null = printedWalk.length === 0 ? null : [...printedWalk];
   /*
     Allocated only if something actually sets them, because this is the hottest function in the
     engine: the search calls it for every candidate of every target of every play it plays out. Two
