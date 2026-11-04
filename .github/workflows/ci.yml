@@ -87,7 +87,17 @@ jobs:
   # twenty LIST=* arms; those stay manual until this job has proved stable, because a browser job
   # that flakes gets ignored and then deleted.
   browser:
-    runs-on: ubuntu-latest
+    # Pinned, unlike every other job here, and the first run of this job is why. `ubuntu-latest` is
+    # now Ubuntu 26.04, and Playwright 1.56.1 refuses it outright:
+    #
+    #   BEWARE: your OS is not officially supported by Playwright; installing dependencies for
+    #   ubuntu26.04-x64 as a fallback.
+    #   Cannot install dependencies for ubuntu26.04-x64 with Playwright 1.56.1!
+    #   Error: ERROR: Playwright does not support chromium on ubuntu26.04-x64
+    #
+    # So the runner and the Playwright version are a matched pair, and both are pinned rather than
+    # one of them floating. When this is bumped, bump them together and watch the install step.
+    runs-on: ubuntu-24.04
     services:
       redis:
         image: redis:7
@@ -143,5 +153,8 @@ jobs:
           name: browser-shots
           path: e2e-shots/
           if-no-files-found: ignore
+      # `|| true`, because this step is diagnostics. Without it a missing log file is a *second*
+      # failure on top of the real one, which is how the first run of this job reported
+      # `cat: /tmp/play.log: No such file or directory` underneath the error that actually mattered.
       - if: failure()
-        run: cat /tmp/play.log
+        run: cat /tmp/play.log || true

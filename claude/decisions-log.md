@@ -22472,8 +22472,29 @@ Also added: `pnpm play`, `pnpm play:e2e`, `play:e2e:controls`, `play:e2e:arena`,
 `play:e2e:solo`. Before this the only way to run any of them was to know the script's filename — they
 were not in `package.json` at all, which is a smaller version of the same problem as not being in CI.
 
-**What I cannot verify from here:** this job has never run. GitHub Actions is not reproducible in this
-container, so the first push is the first test of it, and the parts most likely to be wrong are the
-Chromium install and the readiness loop. Both fail loudly — a failed install stops the job, and the
-readiness loop prints `play.log` and exits 1 — so a broken job will say what broke rather than passing
-vacuously, which is the property that matters for a check nobody has run yet.
+**What I could not verify from here:** GitHub Actions is not reproducible in this container, so the
+first push was the first test of the job. I wrote that the parts most likely to be wrong were the
+Chromium install and the readiness loop, and that both fail loudly rather than passing vacuously.
+
+### The first run failed, at exactly the predicted place, and said why
+
+```
+BEWARE: your OS is not officially supported by Playwright; installing dependencies for
+ubuntu26.04-x64 as a fallback.
+Cannot install dependencies for ubuntu26.04-x64 with Playwright 1.56.1!
+Error: ERROR: Playwright does not support chromium on ubuntu26.04-x64
+```
+
+`ubuntu-latest` is now **Ubuntu 26.04**, and Playwright 1.56.1 refuses it outright. The runner is now
+pinned to `ubuntu-24.04` — the only job here that pins one — because the runner and the Playwright
+version are a **matched pair**, and having one of them float while the other is pinned is what broke
+it. Bumping either means bumping both and watching the install step.
+
+A second, smaller fault in the same run, and it is one I have written about twice today in other
+forms: the failure step `cat /tmp/play.log` **failed on its own**, printing
+`cat: /tmp/play.log: No such file or directory` and exiting 1 *underneath* the error that actually
+mattered. A diagnostic that reports its own absence as a failure adds noise to the one moment somebody
+is reading carefully. It is `cat /tmp/play.log || true` now.
+
+The readiness loop is still untested, because the job never reached it. Said plainly rather than left
+to look covered.
