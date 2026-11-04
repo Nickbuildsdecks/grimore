@@ -83,6 +83,34 @@ function newestSource(dir) {
   return newest;
 }
 
+export const DIST = 'packages/rules-engine/dist/index.js';
+export const SRC = 'packages/rules-engine/src';
+
+/**
+ * When `dist` was built, and whether a source file is newer than it.
+ *
+ * Exported because two callers need the same answer and must not each decide what counts as stale:
+ * `provenanceLine` prints it in its header, and `scripts/lib/engine.mjs` warns on stderr the moment
+ * a harness imports the engine at all. One definition, so the line and the warning cannot disagree.
+ *
+ * Returns `null` when there is no `dist` to stat, which is a different thing from a fresh one and is
+ * left for the caller to word.
+ */
+export function distStaleness(distPath = DIST, srcDir = SRC) {
+  let dist;
+  try {
+    dist = statSync(distPath).mtimeMs;
+  } catch {
+    return null;
+  }
+  const source = newestSource(srcDir);
+  /*
+    A tie is not stale: a build finishing in the same millisecond as the last source write is the
+    normal case on a fast machine, and calling that stale would be the instrument crying wolf.
+  */
+  return { builtAt: dist, newestSourceAt: source, stale: source > dist };
+}
+
 /**
  * `vars` is the environment this run actually read, as `{ SEEDS: 3, ALWAYS: '' }` — the caller's own
  * constants rather than a sweep of `process.env`, so a renamed variable shows up as a changed line
@@ -95,18 +123,14 @@ export function provenanceLine(
 ) {
   const commit = git(['rev-parse', '--short', 'HEAD']);
   const dirty = git(['status', '--porcelain']) === '' ? 'clean' : 'DIRTY';
-  let built = 'no dist';
-  try {
-    const dist = statSync(distPath).mtimeMs;
-    built = `${new Date(dist).toISOString().slice(0, 19)}Z`;
-    const source = newestSource(srcDir);
-    /*
-      Said outright rather than left as two timestamps to compare. A tie is not stale: a build
-      finishing in the same millisecond as the last source write is the normal case on a fast
-      machine, and calling that stale would be the instrument crying wolf.
-    */
-    if (source > dist) built += ` STALE(src ${new Date(source).toISOString().slice(0, 19)}Z)`;
-  } catch { /* left as 'no dist', which is itself the answer */ }
+  // Said outright rather than left as two timestamps for a reader to compare, which is the part
+  // that failed in practice. `distStaleness` decides; this only words it.
+  const age = distStaleness(distPath, srcDir);
+  let built = 'no dist'; // itself the answer, and a different one from a stale build
+  if (age !== null) {
+    built = `${new Date(age.builtAt).toISOString().slice(0, 19)}Z`;
+    if (age.stale) built += ` STALE(src ${new Date(age.newestSourceAt).toISOString().slice(0, 19)}Z)`;
+  }
   const named = Object.entries(vars)
     .map(([key, value]) => `${key}=${typeof value === 'string' ? value : JSON.stringify(value)}`)
     .join(' ');

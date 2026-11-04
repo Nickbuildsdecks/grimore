@@ -27,7 +27,7 @@
 import {
   applyAction, botAction, characteristicsOf, createGame, legalActions, scriptFor, seatsToAct,
   STARTER_DECKS,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 const SUBJECT = process.env.SUBJECT ?? 'forge-alliance';
 const SEED0 = Number(process.env.SEED0 ?? 3300);

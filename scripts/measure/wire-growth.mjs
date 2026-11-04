@@ -31,7 +31,7 @@
  */
 import {
   STARTER_DECKS, applyAction, botAction, createGame, customDeck, packView, seatsToAct, viewFor,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 import { provenanceLine } from '../lib/provenance.mjs';
 
 /** Restated from `packages/shared/src/realtime/events.ts`, which is where it is enforced. */

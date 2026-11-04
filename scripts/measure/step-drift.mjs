@@ -9,7 +9,7 @@
  * by what kind of action it was. The numbers that mattered were `auto:cast` at 51% same-step and
  * `auto:attack` at 50% *a whole turn on*.
  */
-import { applyAction, createGame, botAction, seatsToAct, STEPS, STARTER_DECKS } from '../../packages/rules-engine/dist/index.js';
+import { applyAction, createGame, botAction, seatsToAct, STEPS, STARTER_DECKS } from '../lib/engine.mjs';
 
 /*
   Every deck in the pool, read from the registry rather than written out here.

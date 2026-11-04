@@ -68,7 +68,7 @@
  */
 import {
   applyAction, createGame, botAction, seatsToAct, characteristicsOf, STARTER_DECKS,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 const ALL = Object.keys(STARTER_DECKS);
 /** One deck's plays, or every deck's. Empty means every deck's. */

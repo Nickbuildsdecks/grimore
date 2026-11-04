@@ -37,7 +37,7 @@
 import {
   applyAction, canAfford, characteristicsOf, createGame, botAction, manaSources, parseManaCost,
   poolOf, scriptFor, seatsToAct, STARTER_DECKS,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 const SUBJECT = process.env.SUBJECT ?? 'kindle-grove';
 const ALL = Object.keys(STARTER_DECKS);

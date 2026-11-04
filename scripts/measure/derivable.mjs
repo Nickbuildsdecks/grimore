@@ -38,7 +38,7 @@
 import { readFileSync } from 'node:fs';
 import {
   STARTER_DECKS, cardFromData,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 import { provenanceLine } from '../lib/provenance.mjs';
 
 const VERBOSE = process.env.VERBOSE === '1';

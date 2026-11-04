@@ -24,7 +24,7 @@
  */
 import {
   KEYWORDS, STARTER_DECKS, printedKeywords, scriptFor,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 const VERBOSE = process.env.VERBOSE === '1';
 

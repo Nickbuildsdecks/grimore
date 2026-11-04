@@ -27,7 +27,7 @@
  */
 import {
   applyAction, botAction, createGame, seatsToAct, STARTER_DECKS,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 const SUBJECT = process.env.SUBJECT ?? 'rot-harvest';
 const ALL = Object.keys(STARTER_DECKS);

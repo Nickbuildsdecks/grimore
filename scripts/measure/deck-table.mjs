@@ -4,7 +4,7 @@
  * One number per deck: how many of its games it wins against the rest of the pool. Both
  * orientations of every pairing on the same seeds, so who goes first cancels out.
  */
-import { applyAction, createGame, botAction, seatsToAct, STARTER_DECKS } from '../../packages/rules-engine/dist/index.js';
+import { applyAction, createGame, botAction, seatsToAct, STARTER_DECKS } from '../lib/engine.mjs';
 import { canonicalDecks } from './decks.mjs';
 
 /*

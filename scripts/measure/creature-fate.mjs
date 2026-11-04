@@ -30,7 +30,7 @@
  */
 import {
   applyAction, createGame, botAction, seatsToAct, characteristicsOf, STEPS, STARTER_DECKS,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 const SUBJECT = process.env.SUBJECT ?? 'blight-vector';
 const ALL = Object.keys(STARTER_DECKS);

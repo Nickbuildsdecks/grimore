@@ -37,7 +37,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   KEYWORDS, STARTER_DECKS, TOKEN_DEFS, printedKeywords, scriptFor,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 const ALL = process.env.ALL === '1';
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'packages', 'rules-engine', 'src');

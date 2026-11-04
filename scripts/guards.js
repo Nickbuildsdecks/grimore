@@ -803,6 +803,51 @@ function checkEveryResponseContractIsParsedSomewhere() {
 }
 checkEveryResponseContractIsParsedSomewhere();
 
+/**
+ * Does any measurement script still import the engine's `dist` directly?
+ *
+ * The harnesses in `scripts/measure/` import the **built** engine, so a run after a source change
+ * and before a rebuild measures the previous build and prints a number that is about code no longer
+ * there. That is not hypothetical: D338's `derivable.mjs` printed the pre-change share to a tenth of
+ * a percent for exactly this reason.
+ *
+ * `scripts/lib/engine.mjs` re-exports `dist` and writes a loud stderr warning when it is stale, so
+ * importing the engine through it *is* the check. An import that reaches past it into `dist` gets
+ * no warning — which is the state 45 of these scripts were in, because `provenanceLine` was opt-in
+ * and a warning you have to remember to ask for is missing from the script nobody was thinking
+ * carefully about.
+ *
+ * Docblock mentions of the path are fine and common ("reads packages/rules-engine/dist, so build
+ * first"), so this looks only for an import or a dynamic `import()` of it.
+ */
+function checkMeasureScriptsImportTheEngineWrapper() {
+  const dir = 'scripts/measure';
+  let files;
+  try {
+    files = readdirSync(dir).filter((f) => f.endsWith('.mjs'));
+  } catch {
+    return; // not in a checkout that has the instruments
+  }
+  if (files.length === 0) {
+    console.error(`[guards] found no .mjs instruments in ${dir}, so this guard checked nothing.`);
+    bad++;
+    return;
+  }
+  // An import specifier, in either spelling: `from '...dist...'` or `import('...dist...')`.
+  const direct = /(?:from|import\s*\()\s*['"][^'"]*rules-engine\/dist[^'"]*['"]/;
+  const offenders = files.filter((f) => direct.test(readFileSync(join(dir, f), 'utf8')));
+  if (offenders.length > 0) {
+    console.error(`[guards] ${offenders.length} instrument(s) import the engine's dist directly:`);
+    for (const f of offenders) console.error(`[guards]   ${dir}/${f}`);
+    console.error('[guards] Import from scripts/lib/engine.mjs instead. It re-exports the same');
+    console.error('[guards] module and warns on stderr when dist is older than the engine source,');
+    console.error('[guards] which is the difference between a number about this build and a number');
+    console.error('[guards] about the last one (D338, D359).');
+    bad++;
+  }
+}
+checkMeasureScriptsImportTheEngineWrapper();
+
 if (bad) {
   console.error(`[guards] ${bad} violation(s)`);
   process.exit(1);

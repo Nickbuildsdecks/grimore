@@ -36,7 +36,7 @@
  */
 import {
   applyAction, createGame, botAction, seatsToAct, STARTER_DECKS, CARD_SCRIPTS,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 const SUBJECT = process.env.SUBJECT ?? 'skyward-writ';
 const ALL = Object.keys(STARTER_DECKS);

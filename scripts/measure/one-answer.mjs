@@ -54,7 +54,7 @@
  */
 import {
   applyAction, createGame, botAction, seatsToAct, legalActions, listAt, zoneKey, STARTER_DECKS,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 const ALL = Object.keys(STARTER_DECKS);
 const SEATS = Number(process.env.SEATS ?? 2);

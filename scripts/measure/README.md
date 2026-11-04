@@ -11,6 +11,28 @@ engine or deck change:
 pnpm --filter @grimore/rules-engine build
 ```
 
+They reach it through `scripts/lib/engine.mjs` rather than importing `dist` directly, and that is not
+a style preference. A run after a source change but before a rebuild measures the **previous** build
+and prints a number that is not wrong, merely about code that is no longer there — which is the most
+misleading thing a measurement can be, and it happened: `derivable.mjs` printed the pre-change share
+to a tenth of a percent (D338). `engine.mjs` compares `dist`'s mtime against the newest non-test
+engine source on import and writes a loud warning to **stderr** when `dist` is behind:
+
+```
+  !! STALE ENGINE: packages/rules-engine/dist/index.js was built 2026-11-03T22:34:22Z,
+     but packages/rules-engine/src has a change from 2026-11-04T00:47:23Z.
+     Whatever this run prints is an honest measurement of the PREVIOUS build.
+```
+
+It does not throw and does not refuse to load, because a harness mid-sweep that dies on import loses
+the sweep; stderr rather than stdout so a run piped to a file keeps its measurement clean. A guard in
+`scripts/guards.js` fails if an instrument here imports `dist` directly and skips the warning.
+
+Some of these also print a `provenanceLine` — the commit, whether the tree was dirty, when `dist` was
+built, and the environment variables that run read. That is for a number headed into a ledger
+somebody will re-run later (D300), so it is per-script rather than universal; the staleness warning
+above is the part that applies to all of them, which is why it moved into the import.
+
 Every one of them is deterministic: the same seeds play the same games, which is what makes two
 arms comparable at all. They take no database and no server — just the engine.
 

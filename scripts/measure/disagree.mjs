@@ -9,7 +9,7 @@
  *
  * Asked of the same positions: play the game with the control, and at every decision ask both.
  */
-import { applyAction, createGame, botAction, seatsToAct, STARTER_DECKS } from '../../packages/rules-engine/dist/index.js';
+import { applyAction, createGame, botAction, seatsToAct, STARTER_DECKS } from '../lib/engine.mjs';
 
 /*
   Every deck in the pool, read from the registry rather than written out here.

@@ -22327,3 +22327,68 @@ contract landing with nothing checking it, which is how all six of these got her
 
 Proved by injecting `GuardProbeResponse` into `contracts/common.ts`: the guard named it and the file
 it came from, exit 1. Removed, `[guards] OK`.
+
+---
+
+## D359 — A warning you have to remember to ask for is missing from the script nobody was thinking about
+
+`provenanceLine` was written for D338: `derivable.mjs` printed the pre-change derivation share, to a
+tenth of a percent, because `dist` had not been rebuilt after a source change. The number was not
+wrong — it was an honest measurement of the previous build, which is the most misleading thing a
+measurement can be.
+
+The fix was a line the instrument prints, including `STALE(src <time>)`. Good, and **opt-in**. Counted:
+52 scripts import the engine's `dist`, and **45 of them never call it.** So 45 instruments could print
+a number about the wrong build with nothing in their output saying so — and the one that actually
+burned me was in that 45 until I added the line to it by hand.
+
+Retrofitting forty-five calls is the obvious move and the wrong one: it is forty-five chances to
+forget, and the forty-sixth script somebody writes next month starts the problem again.
+
+So the check moved into the thing every one of them must already do. `scripts/lib/engine.mjs`
+re-exports `dist` and, on import, compares `dist/index.js`'s mtime against the newest non-test engine
+source. Stale, or no `dist` at all, and it writes to stderr:
+
+```
+  !! STALE ENGINE: packages/rules-engine/dist/index.js was built 2026-11-03T22:34:22Z,
+     but packages/rules-engine/src has a change from 2026-11-04T00:47:23Z.
+     Whatever this run prints is an honest measurement of the PREVIOUS build.
+     Rebuild and run it again:  pnpm --filter @grimore/rules-engine build
+```
+
+All 49 instruments in `scripts/measure/` now import from it. **Importing the engine is the check**,
+because none of them can do anything without the engine.
+
+Three deliberate choices in it:
+
+- **It does not throw.** A harness mid-sweep that dies on import loses the sweep, and the honest
+  reading of a stale build is "this number is about an older engine", not "this run is invalid" — the
+  same judgement D353 made about refusing a token mid-resolution rather than leaving a spell half
+  resolved.
+- **stderr, not stdout**, so a run piped into a file keeps its measurement clean while the warning
+  still reaches the terminal.
+- **It does not rebuild.** A measurement script that silently rebuilds what it is measuring is worse
+  than a stale number, because then nobody knows which build produced which row.
+
+`distStaleness` was extracted out of `provenance.mjs` so the printed line and the stderr warning
+cannot disagree about what counts as stale — including the tie case, where a build finishing in the
+same millisecond as the last source write is **not** stale, because an instrument that cried wolf
+after every save would be ignored within a day.
+
+And a guard, because the import path is the whole mechanism: `checkMeasureScriptsImportTheEngineWrapper()`
+fails if any instrument imports `dist` directly. It matches an import specifier rather than the path
+anywhere, because a docblock saying "reads packages/rules-engine/dist, so build first" is correct and
+common. Proved by pointing `poison.mjs` back at `dist`: named, exit 1. Restored, `[guards] OK`.
+
+Four instruments re-run afterwards to check the indirection changed nothing: `derivable` (360 cards),
+`wire-growth` (25.5% and 28.6% of the cap on the first two seeds), `mechanic-coverage` (81 mechanics,
+81 counted), `card-promises` (0 gaps, with its own control reporting 1 for a planted card).
+
+`provenanceLine` stays per-script rather than universal, and the README now says why: the commit, the
+dirty flag and the arms matter for a number headed into a ledger somebody will re-run later (D300).
+The staleness warning is the part that applies to every one of them, which is why that is the part
+that moved into the import.
+
+The two browser drivers, `e2e-table.mjs` and `e2e-solo.mjs`, import `dist` through a dynamic
+`new URL(...)` for their own reasons and are left alone. They assert behaviour rather than printing a
+number, so a stale build fails them loudly instead of producing a plausible figure.

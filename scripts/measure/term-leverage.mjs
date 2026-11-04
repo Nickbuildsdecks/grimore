@@ -88,7 +88,7 @@
  */
 import {
   applyAction, botAction, createGame, evaluate, seatsToAct, STARTER_DECKS,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 const ALL = Object.keys(STARTER_DECKS);
 const SEEDS = Number(process.env.SEEDS ?? 1);

@@ -44,7 +44,7 @@
  */
 import {
   applyAction, createGame, botAction, seatsToAct, STARTER_DECKS,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 import { provenanceLine } from '../lib/provenance.mjs';
 
 /*

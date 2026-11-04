@@ -40,7 +40,7 @@
  */
 import {
   STARTER_DECKS, applyAction, botAction, createGame, seatsToAct,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 import { provenanceLine } from '../lib/provenance.mjs';
 
 const ALL = Object.keys(STARTER_DECKS);

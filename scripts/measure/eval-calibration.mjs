@@ -41,7 +41,7 @@
 import {
   applyAction, characteristicsOf, createGame, evaluate, seatsToAct, botAction, STARTER_DECKS,
   EMPTY_POOL, canAfford, hasType, manaSources, parseManaCost, parseTypeLine,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 const ALL = Object.keys(STARTER_DECKS);
 const SEEDS = Number(process.env.SEEDS ?? 6);

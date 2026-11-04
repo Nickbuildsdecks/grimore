@@ -23,7 +23,7 @@
  */
 import {
   applyAction, createGame, botAction, scriptFor, seatsToAct, STARTER_DECKS,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 const SUBJECT = process.env.SUBJECT ?? 'arc-tempest';
 const ALL = Object.keys(STARTER_DECKS);

@@ -44,7 +44,7 @@
 import {
   applyAction, botAction, createGame, legalAttackers, legalBlockers, scriptFor, seatsToAct,
   DASHED, FADE, MYRIAD, TIME, UNEARTHED, STARTER_DECKS,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 /*
   Every deck in the pool, read from the registry rather than written out here — the reason every

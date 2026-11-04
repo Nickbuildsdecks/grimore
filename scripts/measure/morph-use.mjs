@@ -19,7 +19,7 @@
  */
 import {
   applyAction, createGame, botAction, morphCostText, scriptFor, seatsToAct, STARTER_DECKS,
-} from '../../packages/rules-engine/dist/index.js';
+} from '../lib/engine.mjs';
 
 /*
   Every deck in the pool, read from the registry rather than written out here.
