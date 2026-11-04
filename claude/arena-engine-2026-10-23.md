@@ -10958,3 +10958,23 @@ out loud, and pinned by a synthetic card against `CLUE_TOKEN`'s own text. The co
 
 **395 → 396 of 538 lines (73.4% → 73.6%)**, **251 → 252 of 339 cards**. Three deliberate breaks,
 three failing tests; 330/330; 4,000 rows at scale with no throw.
+
+## A colour change in the same pump, and a hint two cards were right to omit (#317, D412)
+
+Crimson Wisps, whole. "Gains haste until end of turn **and becomes red**" is one printed effect, so
+the colour rides in the same `PumpOptions` as the keyword — layer 5 *replaces* the printed colours
+(CR 105.3), so a colour change outliving its keyword would leave a creature coloured by a spell that
+has finished. `colorless` and `purple` are both refused, for different reasons, and both asserted.
+
+Reading it found a defect two increments old: the grant readers gave a **haste or infect** grant
+`expiresAtEndOfTurn`, where both hand-written twins carry no spell flag. The flag tells the bot an
+instant may wait for blockers, and a haste grant waited out is a card that never did its job. The
+hint this family needs is `helpsInCombat` on the target spec instead. Three cases now, at both call
+sites — and a test had asserted the wrong value, written from the reader rather than the card.
+
+The other direction too: the compiled reading deferred the draw where the hand-written card took it
+immediately. `drawLater` is right for a last-clause draw by its own docblock (CR 702.52a), so the
+hand-written card now calls it — one rule, one source.
+
+**396 → 398 of 538 lines (73.6% → 74.0%)**, **252 → 253 of 339 cards**. Four deliberate breaks, four
+failing tests; 334/334; engine suite 1,790/1,790; 4,000 rows at scale with no throw.

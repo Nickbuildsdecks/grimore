@@ -1932,9 +1932,16 @@ describe('compileCard, against the cards a person wrote by hand', () => {
           .toBeUndefined();
         expect(field(scriptFor(card), 'expiresAtEndOfTurn')).toBeUndefined();
       }
-      // And the grant that is not protection keeps the pump hint, which is what it is for.
-      expect(field(compiledScript('Tainted Strike').script, 'expiresAtEndOfTurn')).toBe(true);
+      /*
+        Tainted Strike was here asserting `expiresAtEndOfTurn: true`, and that was wrong — the
+        assertion encoded the reader rather than the card, because it never compared against the
+        hand-written script, which carries **no** spell flag. Corrected in D412, and the row that
+        replaced it is "does not tell the bot to hold a bonus whose value is in the attack", which
+        asserts both readings agree. Kept here is the half this block is about: a grant that is not
+        protection does not claim to be one.
+      */
       expect(field(compiledScript('Tainted Strike').script, 'protectsACreature')).toBeUndefined();
+      expect(field(scriptFor('Tainted Strike'), 'protectsACreature')).toBeUndefined();
     });
 
     it("reads Renegade Freighter's attack trigger, which pumps and grants in one call", () => {
@@ -4632,6 +4639,112 @@ describe('compileCard, against the cards a person wrote by hand', () => {
           .effect(contextOn(moved, 0 as SeatIndex, card));
         expect(after.drawsOwed.length).toBe(moved.drawsOwed.length + 1);
       }
+    });
+  });
+
+  describe('a keyword grant that also changes colour, and the hint it must not carry', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({
+      state, controller: seat, source, targets, decisions: [],
+    } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const resolve = (script: unknown) =>
+      field(script, 'onResolve') as (c: EffectContext) => GameState;
+
+    it('grants the keyword and sets the colour in one pump, as Crimson Wisps does', () => {
+      /*
+        "Target creature gains haste until end of turn and becomes red" is **one** printed effect,
+        and `pump` takes both halves in one `PumpOptions` — which is how the hand-written card
+        writes it. Two continuous effects would expire independently, and this pair especially:
+        layer 5 *replaces* the printed colours (CR 105.3), so a colour change outliving its keyword
+        would leave a creature whose colours came from a spell that has finished.
+      */
+      const mine = compiledScript('Crimson Wisps');
+      expect(mine.unread).toEqual([]);
+      const base = arena({
+        decks: { 0: 'arc-tempest', 1: 'verdant-guard' },
+        battlefield: { 1: ['Grizzly Bears'] },
+        turn: 3,
+      });
+      const bears = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      expect(characteristicsOf(base, base.instances[bears]!).colors).toEqual(['G']);
+
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: bears }]);
+      const after = resolve(mine.script)(ctx);
+      expect(after).toEqual(resolve(scriptFor('Crimson Wisps'))(ctx));
+      /*
+        And right rather than merely equal. Red, not red *and* green — the state comparison above
+        would pass on two readings that both added the colour instead of replacing it.
+      */
+      const ch = characteristicsOf(after, after.instances[bears]!);
+      expect(ch.colors).toEqual(['R']);
+      expect(ch.keywords.has('haste')).toBe(true);
+    });
+
+    it('refuses a colour word the engine has no colour for', () => {
+      /*
+        `TOKEN_COLOURS` is the word list, shared with the token reader so a colour word is spelled
+        in one place. "Colorless" is in it as `null`, and that is a different claim from a colour:
+        `setColors: []` says "has no colours", which is not the absence of the effect. Nothing in
+        the pool prints it, so it is left unread rather than guessed (D259). "Purple" is not a
+        colour in Magic at all.
+      */
+      for (const colour of ['colorless', 'purple']) {
+        const card = compileCard({
+          name: 'Tinted Haste', type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'],
+          oracle_text: `Target creature gains haste until end of turn and becomes ${colour}.`,
+        });
+        expect(card.ok).toBe(true);
+        if (card.ok) expect(card.script).toBeUndefined();
+      }
+    });
+
+    it('does not tell the bot to hold a bonus whose value is in the attack', () => {
+      /*
+        D412's correction, and the one the hand-written cards had right all along.
+
+        `expiresAtEndOfTurn` means "hold this for the combat", and its own docblock says what that
+        does to an instant: it may wait for blockers. A haste grant waited out is a card that never
+        did its job — the creature it was cast to let attack has not attacked — and an infect grant
+        is the same. The hint this family needs is on the **target spec** instead
+        (`helpsInCombat`: aim it at something that can attack), and the two together would say hold
+        it *and* aim it at an attacker.
+
+        Both hand-written twins carry no spell flag. The compiled reading carried
+        `expiresAtEndOfTurn` on both until this test, because the increment that wrote the reader
+        compared the target spec against theirs and never the flags.
+      */
+      for (const name of ['Crimson Wisps', 'Tainted Strike']) {
+        const mine = compiledScript(name);
+        expect(mine.unread, name).toEqual([]);
+        expect(field(mine.script, 'expiresAtEndOfTurn'), name).toBeUndefined();
+        expect(field(mine.script, 'expiresAtEndOfTurn'), name)
+          .toEqual(field(scriptFor(name), 'expiresAtEndOfTurn'));
+        // The hint that replaces it, on the spec rather than the card.
+        const specs = field(mine.script, 'targets') as readonly TargetSpec[];
+        expect(specs[0], name).toMatchObject({ helpsInCombat: true });
+      }
+    });
+
+    it('still holds a pump whose value is not in the attack', () => {
+      /*
+        The other arm, without which the test above says only "no flag anywhere". A Giant Growth is
+        as good on a blocker as on an attacker, so it keeps `expiresAtEndOfTurn` and carries no
+        `helpsInCombat` — which is `helpsInCombat`'s own docblock, naming this card.
+      */
+      for (const name of ['Giant Growth', 'Titanic Growth']) {
+        const mine = compiledScript(name);
+        expect(field(mine.script, 'expiresAtEndOfTurn'), name).toBe(true);
+        expect(field(mine.script, 'expiresAtEndOfTurn'), name)
+          .toEqual(field(scriptFor(name), 'expiresAtEndOfTurn'));
+        const specs = field(mine.script, 'targets') as readonly TargetSpec[];
+        expect(specs[0]?.helpsInCombat, name).toBeUndefined();
+      }
+      // And a protection trick keeps its own, which is the third case.
+      expect(field(compiledScript('Dive Down').script, 'protectsACreature')).toBe(true);
     });
   });
 

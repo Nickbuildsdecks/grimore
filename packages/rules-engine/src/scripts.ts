@@ -4508,13 +4508,20 @@ const CRIMSON_WISPS: CardScript = {
   targets: [TARGET_ATTACKER_HELPED],
   onResolve: (c) => {
     const id = firstCardTarget(c);
-    if (id === null) return draw(c.state, c.controller, 1);
-    // Haste first so the draw happens whatever the target did, then the card: "draw a card" is not
-    // conditional on the creature still being there.
-    const hasted = pump(c.state, [id], c.source, c.controller, {
+    /*
+      Haste first so the draw happens whatever the target did, then the card: "draw a card" is not
+      conditional on the creature still being there.
+
+      `drawLater` rather than `draw`, which is a correction (D412). `drawLater`'s own docblock says
+      it is the better primitive — only a deferred draw can be replaced by a dredge (CR 702.52a) —
+      and bounds itself to "a draw that is the last thing the card does". This draw is exactly that,
+      and the compiled reading of the same two sentences picks the deferred form by position. One
+      rule with one source beats two readings of one card that differ by a field.
+    */
+    const hasted = id === null ? c.state : pump(c.state, [id], c.source, c.controller, {
       keywords: ['haste'], setColors: ['R'],
     });
-    return draw(hasted, c.controller, 1);
+    return drawLater(hasted, c.controller, 1);
   },
 };
 
@@ -11567,9 +11574,16 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
             ? c.state
             : pump(c.state, [id], c.source, c.controller, bonus);
         },
-        spellFlags: protective
-          ? { protectsACreature: true }
-          : { expiresAtEndOfTurn: true },
+        /*
+          Three cases, and the middle one is D412's correction, for the reason written out beside
+          the grant-only branch: a bonus whose whole value is in the attack carries **no** spell
+          flag, because `expiresAtEndOfTurn` tells the bot an instant may wait for blockers and a
+          creature that was going to attack with infect cannot. Tainted Strike is the card, and it
+          carries no flag by hand.
+        */
+        ...(protective
+          ? { spellFlags: { protectsACreature: true } }
+          : forTheAttack ? {} : { spellFlags: { expiresAtEndOfTurn: true } }),
       };
     }
   }
@@ -11585,7 +11599,8 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
 
     The two hints are decided by exactly the rule the sized branch uses, for the reasons written
     there: hexproof and shroud make it a protection trick, infect and haste make it an attacker's
-    bonus. Nothing here is a second rule, which is the point of keeping the branches adjacent.
+    bonus and carry no spell flag at all (D412). Nothing here is a second rule, which is the point
+    of keeping the branches adjacent.
   */
   /*
     A clause that points at a **player**, which is a different shape from everything around it: the
@@ -11617,25 +11632,68 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
-  const granted = /^(target creature(?: you control)?) gains ([a-z][a-z' ]*?) until end of turn$/i
-    .exec(text);
+  /*
+    A granted keyword, and optionally a colour it becomes with it: "target creature gains haste
+    until end of turn **and becomes red**", which is Crimson Wisps.
+
+    The colour rides in the same `PumpOptions` as the keyword, for `pumpAndGrant`'s reason one
+    sentence over: `pump` takes both and the hand-written card passes
+    `{ keywords: ['haste'], setColors: ['R'] }` in a single call. Two continuous effects where the
+    print is one would expire independently — and this pair especially, because layer 5 *replaces*
+    the printed colours (CR 105.3) rather than adding to them, so a colour change that outlived its
+    keyword would leave a creature whose colours came from a spell that has finished.
+
+    `TOKEN_COLOURS` is the word list, shared with the token reader so there is one place a colour
+    word is spelled. `colorless` maps to `null` there and is refused here: "becomes colorless" is a
+    real sentence and `setColors: []` is a different claim from `setColors: null`, which is the
+    absence of the effect. Nothing in the pool prints it, so it is left unread rather than guessed.
+  */
+  const granted =
+    /^(target creature(?: you control)?) gains ([a-z][a-z' ]*?) until end of turn(?: and becomes ([a-z]+))?$/i
+      .exec(text);
   if (granted !== null) {
     const words = grantedKeywordList(granted[2]!);
     const spec = targetSpecFrom(granted[1]!, true);
-    if (words !== null && spec !== null) {
+    const becomes = granted[3] === undefined
+      ? undefined
+      : TOKEN_COLOURS[granted[3].toLowerCase()] ?? null;
+    const colourOk = granted[3] === undefined || (becomes !== undefined && becomes !== null);
+    if (words !== null && spec !== null && colourOk) {
       const protective = words.some((word) => word === 'hexproof' || word === 'shroud');
       const forTheAttack = words.some((word) => word === 'infect' || word === 'haste');
+      const options: PumpOptions = becomes === undefined || becomes === null
+        ? { keywords: words }
+        : { keywords: words, setColors: [becomes] };
       return {
         targets: [forTheAttack ? { ...spec, helpsInCombat: true } : spec],
         effect: (c) => {
           const id = firstCardTarget(c);
           return id === null
             ? c.state
-            : pump(c.state, [id], c.source, c.controller, { keywords: words });
+            : pump(c.state, [id], c.source, c.controller, options);
         },
-        spellFlags: protective
-          ? { protectsACreature: true }
-          : { expiresAtEndOfTurn: true },
+        /*
+          Three cases, not two, and the middle one is a correction (D412).
+
+          This read `protective ? protectsACreature : expiresAtEndOfTurn`, so a haste or infect
+          grant carried `expiresAtEndOfTurn` — and both hand-written twins, Crimson Wisps and
+          Tainted Strike, deliberately carry **no** spell flag. Comparing the compiled script to
+          theirs field by field is what showed it; the increment that wrote this reader proved the
+          *target spec* equal and never looked at the flags.
+
+          The flag is wrong here rather than merely extra. Its own docblock says what it does to an
+          instant: "an instant can wait for blockers". A haste grant held until blockers is a card
+          that never did its job, because the creature it was cast to let attack has not attacked;
+          an infect grant waited out is the same. The hint this family needs is already on the
+          target spec — `helpsInCombat`, "aim it at something that can attack" — and the two
+          together would say hold it and aim it at an attacker, which is a contradiction.
+
+          So the grants that are about the attack carry no flag, and the ones that are about
+          surviving or about size keep theirs.
+        */
+        ...(protective
+          ? { spellFlags: { protectsACreature: true } }
+          : forTheAttack ? {} : { spellFlags: { expiresAtEndOfTurn: true } }),
       };
     }
   }

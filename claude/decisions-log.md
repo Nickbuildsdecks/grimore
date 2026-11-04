@@ -25650,3 +25650,68 @@ the only card the per-card diff shows moving.
 Three deliberate breaks, three failing tests. compile.test.ts 330/330, 4,000 shuffled rows with no
 throw — and the first increment in this series verified by a gate that actually runs CI's steps
 (D410).
+
+## D412 — A colour change in the same pump, and a bot hint two cards were right to omit
+
+Crimson Wisps: "Target creature gains haste until end of turn and becomes red. / Draw a card." Both
+lines now read, so the card compiles whole — and reading it found a defect in the reader written two
+increments ago, plus a difference between the compiled and hand-written scripts that was the
+hand-written one's to fix.
+
+### One printed effect, one `PumpOptions`
+
+The colour rides in the same object as the keyword, which is `pumpAndGrant`'s rule applied once
+more: `pump` takes both and the hand-written card passes
+`{ keywords: ['haste'], setColors: ['R'] }` in a single call. Two continuous effects where the print
+is one would expire independently — and this pair especially, because layer 5 **replaces** the
+printed colours (CR 105.3) rather than adding to them, so a colour change that outlived its keyword
+would leave a creature whose colours came from a spell that has finished.
+
+The word list is `TOKEN_COLOURS`, shared with the token reader so a colour word is spelled in one
+place. `colorless` is in it as `null` and is **refused** here: `setColors: []` says "has no colours",
+which is a different claim from the absence of the effect, and nothing in the pool prints it. Red,
+not purple; a word that is not a colour refuses the clause. Both refusals are asserted.
+
+### The hint neither hand-written twin carries
+
+The grant readers set `protectsACreature` for hexproof and shroud and `expiresAtEndOfTurn` for
+everything else — so a **haste or infect** grant carried "hold this for the combat". Both
+hand-written twins, Crimson Wisps and Tainted Strike, carry no spell flag at all.
+
+The flag is wrong there rather than merely extra. Its own docblock says what it does to an instant:
+"an instant can wait for blockers". A haste grant waited out is a card that never did its job,
+because the creature it was cast to let attack has not attacked; an infect grant is the same. The
+hint this family needs is on the **target spec** — `helpsInCombat`, aim it at something that can
+attack — and the two together would say hold it *and* aim it at an attacker.
+
+So the split is three ways now: protection keeps `protectsACreature`, a bonus whose whole value is
+in the attack carries nothing, and a size bonus keeps `expiresAtEndOfTurn`. Both call sites changed,
+the grant-only branch and the sized one.
+
+A test asserted the wrong value. "Carries the protection hint on a hexproof trick" ended with
+`expect(Tainted Strike's expiresAtEndOfTurn).toBe(true)` — written from the reader rather than from
+the card, because that row never compared against the hand-written script. That is the third time in
+this series a check has encoded the implementation it was meant to judge, and the fix is the same
+one every time: compare against the card.
+
+### And one correction the other way
+
+The compiled reading and the hand-written Crimson Wisps differed by one field after resolving:
+`drawsOwed: [0]` against a card already in hand. `composeEffects` picks `drawLater` for a clause
+that is last and `draw` for one that is not, and this draw is last.
+
+`drawLater` is right, and its own docblock says why: only a deferred draw can be replaced by a dredge
+(CR 702.52a), and it is "for a draw that is the last thing the card does". So the hand-written card
+now calls it too — one rule with one source, the same resolution the Dive Down `sizeBonus` case took
+(D-series). The card's own test drains owed draws before counting the hand, so it passes unchanged,
+and so do the other 1,789.
+
+### Measured
+
+**396 → 398 of 538 printed lines (73.6% → 74.0%)**, and **252 → 253 of 339 cards**: Crimson Wisps,
+the only card the per-card diff shows moving. Two lines for one card, because its colour clause and
+its draw were both unread while the card as a whole was refused.
+
+Four deliberate breaks, four failing tests: the colour group dropped, `colorless` let through, the
+hold-for-combat hint restored, and the attacker hint dropped. compile.test.ts 334/334, engine suite
+1,790/1,790, 4,000 shuffled rows with no throw.
