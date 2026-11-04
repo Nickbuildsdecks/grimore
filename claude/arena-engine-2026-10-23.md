@@ -10393,3 +10393,33 @@ false green being guarded against, which is why the plant had to be unconditiona
 lines in combinations that are not any real card. D259 is untouched — nothing it produces becomes a
 shipped script. The share stays `compilable.mjs`'s to print, against real cards: still **316 of 538
 lines (58.7%)**, unchanged by this increment.
+
+## The answers: a counter family, a sweeper, and a discard (#317, D387)
+
+Four openings in the work queue were one shape — "counter target *something*" — and the compiler read
+only the bare `counter target spell`. The reader now takes an open target phrase guarded by
+`pointsAtTheStack`, the counterpart of `pointsAtAPermanent` on the destroy family: without it
+"counter target creature" would compile and hand a battlefield permanent's id to `counterSpell`. Two
+synthetic sentences prove the refusal.
+
+Every filter is the function the hand-written card already uses, so the ground-truth test is an
+identity and not a resemblance. `isCreatureSpell` came out of Essence Scatter for that — a second
+copy would be two filters free to drift, which is the class of bug D385 found five of. On Squelch it
+is the card: `kind: 'ability'` without `isActivatedAbility` also answers triggered abilities, which
+is a better card than the one printed.
+
+`Destroy all creatures` joins the untargeted sentences and carries **no** `removesACreature`, which
+is a decision. That flag is advice about a spell that needs a target; a wrath needs none, and whether
+to cast one is the position — right when behind, catastrophic when ahead — which the bot's search
+sees by playing it out. Day of Judgment sets no flag either, and a test pins both with Murder as the
+control.
+
+"Target player discards two cards" is the first clause read as a **question**: `targets` plus
+`decisions`, `who: 'target-player'`. `discardAtRandom` was the shortcut and would have built Ravenous
+Rats under Mind Rot's name. The chooser is pinned by name as well as by equality, since equality alone
+would follow the hand-written card if it changed too.
+
+**316 → 323 of 538 lines (58.7% → 60.0%), 199 → 205 of 339 cards.** Each of the four mechanisms was
+broken on purpose and each break fails a test. Psychic Strike is the near miss: its first clause reads
+now, its second needs "its controller" — the controller of the object pointed at — which the clause
+vocabulary cannot say, and all-or-nothing keeps the card printed-only.

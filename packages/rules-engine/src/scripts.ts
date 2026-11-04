@@ -516,6 +516,22 @@ const isNoncreatureSpell = (state: GameState, candidate: Target): boolean => {
   return !characteristicsOf(state, inst).isCreature;
 };
 
+/**
+ * The other half of the pair, named rather than inline because the compiler needs the same
+ * function.
+ *
+ * It was written inline on Essence Scatter until the compiler learnt to read "counter target
+ * creature spell", and a second copy would have been two filters that could drift apart — one of
+ * them reading the live type line and the other the printed one is exactly the class of bug D385
+ * found five of. So the card and the compiler now point at one function, which also makes the
+ * ground-truth test on the target spec an identity rather than a resemblance.
+ */
+const isCreatureSpell = (state: GameState, candidate: Target): boolean => {
+  if (candidate.kind !== 'card') return false;
+  const inst = state.instances[candidate.id];
+  return inst !== undefined && characteristicsOf(state, inst).isCreature;
+};
+
 const COUNTERSPELL: CardScript = {
   name: 'Counterspell',
   targets: [TARGET_SPELL],
@@ -2802,15 +2818,7 @@ const DAY_OF_JUDGMENT: CardScript = {
 /** Essence Scatter: a Counterspell that only answers creatures, and costs one less for it. */
 const ESSENCE_SCATTER: CardScript = {
   name: 'Essence Scatter',
-  targets: [{
-    kind: 'spell',
-    description: 'target creature spell',
-    filter: (state, candidate) => {
-      if (candidate.kind !== 'card') return false;
-      const inst = state.instances[candidate.id];
-      return inst !== undefined && characteristicsOf(state, inst).isCreature;
-    },
-  }],
+  targets: [{ ...TARGET_SPELL, description: 'target creature spell', filter: isCreatureSpell }],
   onResolve: (c) => {
     const id = firstCardTarget(c);
     return id === null ? c.state : counterSpell(c.state, id);
@@ -9237,6 +9245,36 @@ function untargetedEffect(clause: string): ReadEffect | null {
   }
 
   /*
+    Destroy all creatures: the sweeper, and the first clause here that answers a board rather than a
+    permanent.
+
+    No target, which is why it belongs with the untargeted sentences rather than beside "destroy
+    target creature" — and no `removesACreature` hint either, deliberately. That flag means "do not
+    cast this with nothing of theirs to point at", advice about a spell that needs a target; a wrath
+    needs none, and Day of Judgment, the pool's ground truth, sets no flag at all. The reason it
+    needs none is worth stating: casting a wrath is right when you are behind and catastrophic when
+    you are ahead, which is not a fact a flag can carry — it is the position, and the bot's search
+    sees it by playing the wrath out.
+
+    The board is read once, before anything dies, and `characteristicsOf` decides what a creature is
+    so a crewed Vehicle is swept with the rest (CR 613).
+  */
+  if (/^destroy all creatures$/i.test(text)) {
+    return {
+      effect: (c) => {
+        let state = c.state;
+        for (const id of battlefield(state, (cardId) => {
+          const inst = state.instances[cardId];
+          return inst !== undefined && characteristicsOf(state, inst).isCreature;
+        })) {
+          state = destroy(state, id);
+        }
+        return state;
+      },
+    };
+  }
+
+  /*
     A Fog. `preventCombatDamage` is the primitive and `preventsDamage` is the bot hint that goes
     with it — nothing in the engine reads the flag, the bot does, so a Fog without it is a card
     that works and is cast into an empty board. Fog and Holy Day are the same two fields.
@@ -10194,6 +10232,28 @@ function targetSpecFrom(phrase: string, friendly: boolean): TargetSpec | null {
     case 'target player': return spec({ kind: 'player' });
     case 'target spell': return spec({ kind: 'spell' });
 
+    /*
+      The objects on the stack, which are three kinds and not one.
+
+      `spell` is a card, `ability` is not, and `spell-or-ability` exists because a card that takes
+      either should say so rather than hope whatever it is handed has an `id` — `TargetSpec.kind`'s
+      own docblock calls these three "the printed difference between a Cancel, a Stifle and a
+      Disallow". Each filter here is the function the hand-written card already uses, so the spec a
+      compiled Negate carries is the spec the written one carries, not a lookalike.
+
+      The activated-ability case is the only spec in this switch whose kind is `ability`, and it
+      needs the filter: `kind: 'ability'` alone would let a Squelch be pointed at a triggered
+      ability, which is a strictly better card than the one printed.
+    */
+    case 'target creature spell':
+      return spec({ kind: 'spell', filter: isCreatureSpell });
+    case 'target noncreature spell':
+      return spec({ kind: 'spell', filter: isNoncreatureSpell });
+    case 'target activated ability':
+      return spec({ kind: 'ability', filter: isActivatedAbility });
+    case 'target spell or ability':
+      return spec({ kind: 'spell-or-ability' });
+
     // The phrases that restrict by who controls the permanent. `friendly` is still threaded
     // through: the filter makes it moot here, since every legal candidate is already on the side
     // the phrase names, and dropping it would be a special case to remember rather than a rule.
@@ -10237,6 +10297,17 @@ function targetSpecFrom(phrase: string, friendly: boolean): TargetSpec | null {
 /** Whether a spec points at something `destroy`, `bounceToHand` and the like can be given. */
 const pointsAtAPermanent = (spec: TargetSpec): boolean =>
   spec.kind === 'creature' || spec.kind === 'permanent';
+
+/**
+ * Whether a spec points at an object on the **stack**, which is what `counterSpell` can be given.
+ *
+ * The same job `pointsAtAPermanent` does for destroy and bounce, and needed for the same reason:
+ * `targetSpecFrom` can return a creature or a player, and "counter target creature" is not a card.
+ * Without the guard the first printed sentence of that shape would compile into a spell that points
+ * at a permanent and hands its id to a function that expects a stack object.
+ */
+const pointsAtTheStack = (spec: TargetSpec): boolean =>
+  spec.kind === 'spell' || spec.kind === 'ability' || spec.kind === 'spell-or-ability';
 
 /**
  * The damage family, which is one family because its readings differ only in **where the damage
@@ -10349,19 +10420,42 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
-    Counter target spell.
+    The counter family, whose target is an object on the stack — which is why `TargetSpec` has a
+    `spell` kind at all.
 
-    The one family whose target is an object on the stack, which is why `TargetSpec` has a `spell`
-    kind at all. Counterspell and Cancel print exactly this sentence and nothing else.
+    Read with an open target phrase rather than four fixed sentences, because the only thing that
+    changes between a Cancel, an Essence Scatter, a Negate, a Squelch and a Disallow is what may be
+    pointed at. `pointsAtTheStack` is what keeps the phrase open safely.
+
+    **Disallow's phrase is supplied, not captured**, and it is the second place in this function
+    that happens (the first is the graveyard return). The card prints "counter target spell,
+    activated ability, or triggered ability" — three objects named in a list — and the spec that
+    points at all three is described "target spell or ability", which is the description the
+    hand-written card stores and the ground-truth test compares. Reading the printed list as a
+    phrase would mean teaching `targetSpecFrom` a fourth spelling of a spec it already has.
+
+    One effect for all of them, and it is Disallow's rather than Counterspell's: `counterSpell`
+    buries a spell's card and simply removes an ability, which is the difference the rules draw and
+    the only one there is, so the reading that handles both kinds of object is the one that
+    generalises. For a spell target it does exactly what `firstCardTarget` did.
   */
-  if (/^counter target spell$/i.test(text)) {
-    const spec = targetSpecFrom('target spell', false);
-    if (spec !== null) {
+  const countering = /^counter (target .+)$/i.exec(text);
+  if (countering !== null) {
+    const phrase = countering[1]!.trim();
+    const spec = targetSpecFrom(
+      phrase.toLowerCase() === 'target spell, activated ability, or triggered ability'
+        ? 'target spell or ability'
+        : phrase,
+      false,
+    );
+    if (spec !== null && pointsAtTheStack(spec)) {
       return {
         targets: [spec],
         effect: (c) => {
-          const id = firstCardTarget(c);
-          return id === null ? c.state : counterSpell(c.state, id);
+          const object = c.targets[0];
+          return object === undefined || object.kind === 'player'
+            ? c.state
+            : counterSpell(c.state, object.id);
         },
       };
     }
@@ -10386,6 +10480,40 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
           const seat = firstPlayerTarget(c);
           return seat === null ? c.state : mill(c.state, seat, n);
         },
+      };
+    }
+  }
+
+  /*
+    Target player discards N cards — the mill's mirror, and the first clause this module reads whose
+    reading is a **question** rather than an effect.
+
+    The discarding player chooses, which is the whole card: `CardsDecisionSpec.who`'s own docblock
+    names Mind Rot for exactly this and says getting it wrong "would make Mind Rot a very different
+    card". So it is `who: 'target-player'` and emphatically not `discardAtRandom` — a compiler that
+    reached for the random primitive because it was simpler would have built Ravenous Rats and
+    called it Mind Rot, which is a card that works and is wrong.
+
+    `min` and `max` are both N and the engine clamps to the hand, so a player holding one card
+    discards one and a player holding none is never asked. The prompt echoes the printed count and
+    its noun — "Discard two cards", "Discard a card" — rather than being built from the number,
+    which keeps the singular right and matches the prompt the hand-written card stores.
+  */
+  const discarded = /^(target player) discards ([\w]+) (cards?)$/i.exec(text);
+  if (discarded !== null) {
+    const n = countFrom(discarded[2]!);
+    const spec = targetSpecFrom(discarded[1]!, false);
+    if (n !== null && spec !== null) {
+      return {
+        targets: [spec],
+        decisions: [{
+          who: 'target-player',
+          from: 'hand',
+          prompt: `Discard ${discarded[2]!} ${discarded[3]!}`,
+          min: n,
+          max: n,
+        }],
+        effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
       };
     }
   }

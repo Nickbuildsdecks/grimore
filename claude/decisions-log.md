@@ -24209,3 +24209,78 @@ against real cards — still **316 of 538 lines (58.7%)**, unchanged by this inc
 
 `poolRows()` moved to `scripts/lib/pool-rows.mjs` so both harnesses convert the pool the same way;
 `compilable.mjs` reports the same 348 rows and 316 lines after the move.
+
+## D387
+
+**The answers: a counter family, a sweeper, and a discard somebody else chooses** (#317)
+
+Four openings in the work queue were the same shape — "counter target *something*" — and the
+compiler read exactly one of them, the bare `counter target spell` that Counterspell and Cancel
+print. The others went unread not because the engine could not do them but because the reader was an
+exact sentence match rather than a family:
+
+| printed | spec it needed |
+| --- | --- |
+| Counter target creature spell | `spell` + the creature filter |
+| Counter target noncreature spell | `spell` + `isNoncreatureSpell` |
+| Counter target activated ability | `ability` + `isActivatedAbility` |
+| Counter target spell, activated ability, or triggered ability | `spell-or-ability` |
+
+So the reader now takes an open target phrase, `counter (target .+)`, guarded by `pointsAtTheStack`
+— the exact counterpart of `pointsAtAPermanent` on the destroy family, and needed for the same
+reason: the regex will happily capture "target creature", `targetSpecFrom` will happily return a spec
+for it, and the id of a permanent on the battlefield would then be handed to `counterSpell`. Two
+synthetic sentences prove the refusal, and deleting the guard fails them.
+
+**Every filter is the function the hand-written card already uses**, which is what makes the
+ground-truth test an identity rather than a resemblance. `isCreatureSpell` was written inline on
+Essence Scatter and is now named beside its opposite, because a second copy would be two filters free
+to drift — one reading the live type line and the other the printed one is precisely the class of bug
+D385 found five of. It matters most on Squelch: `kind: 'ability'` *without* the filter is a Squelch
+that also answers triggered abilities, a strictly better card than the one printed, and only an
+identical filter rules that out. Dropping the filter fails the test.
+
+**Disallow's phrase is supplied, not captured** — the second place in the function where that
+happens. The card prints three objects in a list; the spec that points at all three is described
+"target spell or ability", which is what the hand-written card stores and what a player reads. Echoing
+the printed list would mean teaching `targetSpecFrom` a fourth spelling of a spec it already has.
+
+One effect serves all five readings, and it is Disallow's rather than Counterspell's: `counterSpell`
+buries a spell's card and simply removes an ability, which is the difference the rules draw and the
+only one there is, so the reading that handles both kinds of object is the one that generalises. For
+a spell target it does exactly what `firstCardTarget` did.
+
+### The sweeper, and the hint it deliberately does not carry
+
+`Destroy all creatures` joins the untargeted sentences, not the destroy family: it points at nothing.
+It also carries **no** `removesACreature`, and that is a decision rather than an omission. The flag
+means "do not cast this with nothing of theirs to point at" — advice about a spell that needs a
+target. A wrath needs none, and whether casting one is right is the *position*: right when behind,
+catastrophic when ahead, which no flag can say and the bot's search sees by playing it out. Day of
+Judgment, the ground truth, sets no flag either. A test pins both, with Murder as the control.
+
+### The discard, which is the first clause read as a question rather than an effect
+
+"Target player discards two cards" is `targets` **and** `decisions`, with `who: 'target-player'`. The
+tempting shortcut was `discardAtRandom`, which exists and is simpler — and would have built Ravenous
+Rats and called it Mind Rot. `CardsDecisionSpec.who` names this card in its own docblock for exactly
+that reason. The chooser is pinned by name as well as by equality with the hand-written card, because
+an equality alone would follow the hand-written card if it ever changed too; switching it to
+`controller` fails two tests.
+
+The prompt echoes the printed count and its noun — "Discard two cards", "Discard a card" — rather
+than being built from the number, which would say "Discard 1 cards". The pool pins the plural and a
+synthetic row pins the singular.
+
+### Measured
+
+**316 → 323 of 538 printed lines (58.7% → 60.0%)**, and **199 → 205 of 339 cards** get a script:
+Essence Scatter, Negate, Squelch (both its sentences, so the card compiles whole), Disallow, Day of
+Judgment and Mind Rot. Each of the four new mechanisms was deliberately broken and each break fails a
+test — the guard, the ability filter, the chooser, and the sweep. Two further 30,000-row shuffled runs
+of `compile-at-scale.mjs` (D386) found no throw on the new readers.
+
+**Psychic Strike is the near miss worth recording:** "Counter target spell. Its controller mills two
+cards." Its first clause reads now; the second needs "its controller", which means the controller of
+the object this spell is pointed at, and nothing in the clause vocabulary can say that yet. All or
+nothing, so the card stays printed-only.

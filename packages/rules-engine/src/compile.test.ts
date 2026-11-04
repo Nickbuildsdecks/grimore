@@ -2031,4 +2031,175 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(specOf(scriptFor('Blossoming Defense'))?.friendly).toBeUndefined();
     });
   });
+  describe('the answers: countering, the sweeper, and a discard somebody else chooses', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string,
+      targets: readonly Target[] = [], decisions: readonly { readonly ids: readonly string[] }[] = [],
+    ): EffectContext => ({ state, controller: seat, source, targets, decisions } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    /*
+      The counter family, compared spec for spec against the four cards that print it.
+
+      Every filter here is the function the hand-written card already uses — `isCreatureSpell` was
+      lifted out of Essence Scatter for exactly this — so `toEqual` is comparing the real thing and
+      not two descriptions of it. That matters most on Squelch: `kind: 'ability'` without
+      `isActivatedAbility` is a Squelch that can also answer a triggered ability, which is a
+      strictly better card than the one printed, and only an identical filter rules it out.
+
+      Disallow is the one whose phrase is supplied rather than captured: the card prints "counter
+      target spell, activated ability, or triggered ability" and the spec is described "target spell
+      or ability". If the compiler ever starts echoing the printed list into the description, this
+      equality is what notices.
+    */
+    it.each([
+      ['Essence Scatter'],
+      ['Negate'],
+      ['Squelch'],
+      ['Disallow'],
+    ])('%s points at exactly the spec the hand-written card points at', (card) => {
+      const written = scriptFor(card as string);
+      const compiled = compiledScript(card as string).script;
+      expect(compiled, `${card as string} compiled to no script`).toBeDefined();
+      expect(field(compiled, 'targets')).toEqual(field(written, 'targets'));
+    });
+
+    /*
+      The guard, which is the part of an open target phrase that can go wrong.
+
+      `counter (target .+)` will happily capture "target creature", and `targetSpecFrom` will
+      happily return a spec for it — a permanent on the battlefield, whose id would then be handed
+      to `counterSpell`. `pointsAtTheStack` is what refuses it, and this is the sentence that proves
+      the refusal rather than assuming it: real printed English, read by the regex, rejected by the
+      guard. Deleting the guard makes this test fail.
+    */
+    it.each([
+      ['Counter target creature.'],
+      ['Counter target player.'],
+    ])('refuses %s, which is a sentence no card prints and the stack cannot take', (text) => {
+      const odd = compileCard({
+        name: 'Not A Counterspell', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'],
+        oracle_text: text as string,
+      });
+      expect(odd.ok).toBe(true);
+      if (!odd.ok) return;
+      expect(odd.script).toBeUndefined();
+      expect(odd.unread).toEqual([{ line: text as string, why: 'no-reader' }]);
+    });
+
+    /*
+      Squelch, whose line the counter family reads and whose second sentence was already readable —
+      so the card compiles whole, which is the point of reading a family rather than a sentence.
+    */
+    it('reads both of Squelch’s sentences, so the card compiles whole', () => {
+      const compiled = compiledScript('Squelch');
+      expect(compiled.unread).toEqual([]);
+      expect(compiled.compiled).toEqual([
+        'Counter target activated ability.',
+        'Draw a card.',
+      ]);
+    });
+
+    /*
+      The sweeper, compared by resolving it on a board with creatures on both sides.
+
+      This one *can* be resolved, unlike a counterspell: a wrath needs a battlefield, which is
+      exactly what `arena` builds. See the counter family above for why its effect is compared by
+      spec instead — `counterSpell` no-ops on a card that is not on the stack, so a resolution check
+      for it would be a check that cannot fail.
+    */
+    it('sweeps the board the hand-written Day of Judgment sweeps', () => {
+      const base = arena({
+        battlefield: { 0: ['Monastery Swiftspear'], 1: ['Grizzly Bears'] }, turn: 3,
+      });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = (field(compiledScript('Day of Judgment').script, 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+      const theirs = (field(scriptFor('Day of Judgment'), 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+      expect(mine).toEqual(theirs);
+      // Not vacuous, and not one-sided: a creature of each seat's died, including the caster's own.
+      expect(mine.zones[zoneKey(0 as SeatIndex, 'graveyard')]).toHaveLength(1);
+      expect(mine.zones[zoneKey(1 as SeatIndex, 'graveyard')]).toHaveLength(1);
+      expect(mine).not.toEqual(base);
+    });
+
+    /*
+      And the hint it deliberately does not carry.
+
+      `removesACreature` means "do not cast this with nothing of theirs to point at", which is
+      advice about a spell that needs a target. A wrath needs none, and whether casting it is right
+      is the position rather than a property of the card — so Day of Judgment sets no flag and
+      neither does the compiled reading. A compiler that set it for everything with "destroy" in the
+      sentence would have the bot treating a wrath as spot removal.
+    */
+    it('gives the sweeper no removal hint, which the hand-written card does not either', () => {
+      expect(field(scriptFor('Day of Judgment'), 'removesACreature')).toBeUndefined();
+      expect(field(compiledScript('Day of Judgment').script, 'removesACreature')).toBeUndefined();
+      // The control: the same verb with a target phrase does carry it.
+      expect(field(compiledScript('Murder').script, 'removesACreature')).toBe(true);
+    });
+
+    /*
+      The discard, which is the first clause this module reads whose reading is a **question**.
+
+      Two things are asserted and the second is the card: the spec list matches Mind Rot's, and the
+      chooser is the *target player*. `who: 'controller'` would compile, resolve, and ask the caster
+      to discard their own cards — a card that works and is a different card — so the chooser is
+      pinned by name as well as by equality, because an equality alone would follow the hand-written
+      card if that ever changed too.
+    */
+    it('asks the discarding player, as the hand-written Mind Rot does', () => {
+      const written = scriptFor('Mind Rot');
+      const compiled = compiledScript('Mind Rot').script;
+      expect(field(compiled, 'decisions')).toEqual(field(written, 'decisions'));
+      expect(field(compiled, 'targets')).toEqual(field(written, 'targets'));
+      const asked = (field(compiled, 'decisions') as readonly { who: string; min: number }[])[0];
+      expect(asked?.who).toBe('target-player');
+      expect(asked?.min).toBe(2);
+    });
+
+    it('puts the cards the discarding player chose into the graveyard, as the written card does', () => {
+      // Seat 1's own cards, chosen by seat 1, discarded into seat 1's graveyard.
+      const base = arena({ hands: { 1: ['Grizzly Bears', 'Giant Growth'] } });
+      const chosen = [
+        find(base, 1 as SeatIndex, 'hand', 'Grizzly Bears'),
+        find(base, 1 as SeatIndex, 'hand', 'Giant Growth'),
+      ];
+      const ctx = contextOn(
+        base, 0 as SeatIndex, 'c1', [{ kind: 'player', seat: 1 as SeatIndex }], [{ ids: chosen }],
+      );
+      const mine = (field(compiledScript('Mind Rot').script, 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+      const theirs = (field(scriptFor('Mind Rot'), 'onResolve') as
+        (c: EffectContext) => GameState)(ctx);
+      expect(mine).toEqual(theirs);
+      // Not vacuous: both named cards left the hand for the graveyard.
+      expect(mine.zones[zoneKey(1 as SeatIndex, 'graveyard')]).toEqual(chosen);
+      expect(mine.zones[zoneKey(1 as SeatIndex, 'hand')]).toEqual([]);
+    });
+
+    /*
+      The prompt is the printed words, not a number turned back into words.
+
+      "Discard a card" and "Discard two cards" are both printed, and a prompt built from the count
+      would say "Discard 1 cards". Mind Rot pins the plural; the synthetic row pins the singular,
+      which nothing in the pool prints.
+    */
+    it('writes the prompt from the printed count and its noun, singular included', () => {
+      const one = compileCard({
+        name: 'One Card Rot', type_line: 'Sorcery', mana_cost: '{B}', cmc: 1, colors: ['B'],
+        oracle_text: 'Target player discards a card.',
+      });
+      expect(one.ok).toBe(true);
+      if (!one.ok) return;
+      expect(one.unread).toEqual([]);
+      expect(field(one.script, 'decisions')).toEqual([
+        { who: 'target-player', from: 'hand', prompt: 'Discard a card', min: 1, max: 1 },
+      ]);
+    });
+  });
+
 });
