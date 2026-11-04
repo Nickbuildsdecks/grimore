@@ -2060,18 +2060,20 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(mine?.helpsInCombat, 'infect aimed at anything that can be targeted').toBe(true);
 
       /*
-        And not on the hexproof pair, which is the other half of `helpsInCombat`'s own rule: a
-        bonus is only "for the attack" when its whole value is, and hexproof is as useful on a
-        blocker. The one remaining difference from the hand-written spec is `friendly`, which the
-        compiler sets on every helpful phrase and `protectFromRemoval` leaves off — moot either
-        way, because its filter already restricts the candidates to your own creatures (see
-        `targetSpecFrom`). Recorded here rather than asserted equal, since the difference is real
-        and changes no legal target.
+        And not on the hexproof pair, which is the other half of `helpsInCombat`'s own rule: a bonus
+        is only "for the attack" when its whole value is, and hexproof is as useful on a blocker.
+
+        **The `friendly` half of this row changed in D419.** It used to record a difference — the
+        compiler set the flag on every helpful phrase and `protectFromRemoval` left it off — and
+        said the difference was moot because the filter already restricts the candidates. That was
+        right, and carrying it meant `compiled-vs-written.test.ts` had three cards on its list
+        for ever over a field neither reading uses. So the hand-written cards carry it too now, and
+        this asserts the agreement rather than noting the gap.
       */
       const defence = specOf(compiledScript('Blossoming Defense').script);
       expect(defence?.helpsInCombat).toBeUndefined();
       expect(defence?.friendly).toBe(true);
-      expect(specOf(scriptFor('Blossoming Defense'))?.friendly).toBeUndefined();
+      expect(specOf(scriptFor('Blossoming Defense'))?.friendly).toBe(true);
     });
   });
   describe('the answers: countering, the sweeper, and a discard somebody else chooses', () => {
@@ -5673,7 +5675,7 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(mine.instances[second!]!.tapped).toBe(false);
     });
 
-    it('carries the count and the untap-only flag on Garruk’s +1', () => {
+    it('carries the count on Garruk’s +1, and not the untap-only flag', () => {
       const mine = abilityOf(compiledScript('Garruk Wildspeaker').script, 0)!;
       const theirs = abilityOf(scriptFor('Garruk Wildspeaker'), 0)!;
       const spec = (mine.targets as readonly TargetSpec[])[0]!;
@@ -5683,8 +5685,24 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       // The description stays singular, because that is what a player is asked for each time.
       expect(spec.description).toBe(written.description);
       expect(spec.kind).toBe(written.kind);
-      // An ability whose whole effect is an untap can put the board back where it found it (#124).
-      expect(mine.untapsOnly).toBe(true);
+      /*
+        **This row asserted `untapsOnly: true` and that was wrong (D419).** The flag's own docblock
+        forbids it here by name — "Garruk's +1 untaps two lands *and* puts a loyalty counter on him
+        — both have a payoff the question below would miss" — because the flag exists to stop the
+        bot tapping and untapping for ever when the board ends where it started, and a `+N` loyalty
+        cost gains a counter. The assertion was written from the untap reader rather than from the
+        card, which is the fourth time in this series a check has encoded the implementation it was
+        meant to judge, and `compiled-vs-written.test.ts` is what caught it.
+      */
+      expect(mine.untapsOnly).toBeUndefined();
+      expect(mine.untapsOnly).toBe(theirs.untapsOnly);
+      /*
+        And `friendly`, which the hand-written ability was missing: the card says "target lands"
+        with no "you control", so the filter admits an opponent's and untapping one is a card thrown
+        away. The flag is the bot's ordering hint, and both readings carry it now.
+      */
+      expect(spec.friendly).toBe(true);
+      expect(spec.friendly).toBe(written.friendly);
     });
 
     /*

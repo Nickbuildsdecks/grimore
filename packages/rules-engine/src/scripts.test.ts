@@ -21102,5 +21102,42 @@ describe('a granted triggered ability: the first ability on a permanent that did
       for (const index of handed) expect(script.grantedTriggers![index]).toBeDefined();
     }
   });
+  it('Basilica Guards cannot attack, from its printed defender and no static (D419)', () => {
+    /*
+      The assertion that goes with deleting a line.
+
+      This card carried `statics: [{ scope: 'self', effect: { cantAttack: true } }]` — a hand-written
+      spelling of defender — and `compiled-vs-written.test.ts` flagged it because the compiled
+      reading has no static. `defender` is a printed keyword, `KEYWORDS` has it, and
+      `characteristicsOf` sets `cantAttack` from it unconditionally, so the static restated the
+      card's own text.
+
+      Deleted rather than mirrored into the compiler, and proved here rather than argued: the
+      declaration is refused, and `cantAttack` really is set, with nothing but the printed word
+      behind it.
+    */
+    const s0 = arena({
+      decks: { 0: 'skyward-writ', 1: 'ember-rush' },
+      battlefield: { 0: ['Basilica Guards', 'Serra Angel'] },
+      turn: 3, firstSeat: 0,
+    });
+    const guards = find(s0, 0, 'battlefield', 'Basilica Guards');
+    expect(characteristicsOf(s0, s0.instances[guards]!).cantAttack).toBe(true);
+    /*
+      Asked of `canAttack` rather than of a declaration, for the reason the animation test above
+      gives: getting a two-player board to `declare-attackers` with a particular pair of permanents
+      on it is a fixture fight, and the rule is what this row is about.
+    */
+    expect(canAttack(s0, guards, 0)).not.toBeNull();
+    /*
+      Not vacuous, and the control is the point: a Serra Angel on the same board, placed the same
+      way and under the same summoning-sickness conditions, **may** attack. So the refusal above is
+      the Guards' own printed word and not something about the fixture.
+    */
+    const angel = find(s0, 0, 'battlefield', 'Serra Angel');
+    expect(characteristicsOf(s0, s0.instances[angel]!).cantAttack).toBe(false);
+    expect(canAttack(s0, angel, 0)).toBeNull();
+  });
+
 });
 

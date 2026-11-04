@@ -26087,3 +26087,77 @@ it was.
 
 compile.test.ts 356/356 (two rows added, one re-pointed with its churn reasoning), 4,000 shuffled
 rows with no throw.
+
+## D419 — Five disagreements, four about one flag and one about a word the card prints
+
+The second batch off D417's list, and the pattern is worth naming: of five rows, **two were real
+defects, one in each direction**, and three were a field written on one side and not the other.
+
+### Garruk Wildspeaker, wrong in both readings
+
+`+1: Untap two target lands.`
+
+- **The compiled ability carried `untapsOnly`, which the field's own docblock forbids by name.**
+  `AbilityDef.untapsOnly` says: "Garruk's +1 untaps two lands *and* puts a loyalty counter on him —
+  both have a payoff the question below would miss." The flag exists for one thing, stopping the bot
+  tapping and untapping for ever because the board ended where it started, and a `+N` loyalty cost
+  **gains** a counter, so the board did not end where it started. The loyalty branch of
+  `abilityFromLine` drops it now.
+- **The hand-written spec lacked `friendly`, and here that is not cosmetic.** The card says "target
+  lands" with no "you control", so the filter admits an opponent's — and untapping an opponent's
+  land is a card thrown away. `friendly` is the bot's **ordering** hint (`friendlyRank` instead of
+  `rank`), so without it the default aim is the enemy's board, which is the wrong half of this
+  ability. The compiled reading had it right.
+
+Two readings of one card, each missing what the other had. Neither would have been found by reading
+one of them.
+
+### Three about `friendly` beside a filter
+
+Cloudshift, Blossoming Defense and Dive Down: the compiled spec carried `friendly: true` next to a
+filter that already restricts to your own side, so the flag changes nothing —
+`targetSpecFrom`'s own comment says it is moot where the phrase names a side. Written on the
+hand-written cards too rather than carried on the list for ever: one rule with one source, and a
+field neither reading uses is not worth a permanent exception.
+
+### Basilica Guards: a static that restated the card's own text
+
+It carried `statics: [{ scope: 'self', effect: { cantAttack: true } }]` — a hand-written spelling of
+defender. `defender` is a printed keyword, `KEYWORDS` has it, and `characteristicsOf` sets
+`cantAttack` from it unconditionally (`if (hasType(typeLine, 'creature') &&
+keywords.has('defender')) cantAttack = true`). So the static said again what the text says, and the
+compiled reading — which has no static — refuses the attack just as firmly.
+
+Deleted rather than mirrored into the compiler, and **proved rather than argued**: a new row asks
+`canAttack` of the Guards and of a Serra Angel on the same board, placed the same way. The Guards
+are refused, the Angel is not. Deleting the keyword handling in `characteristics.ts` fails that row
+and two older ones (Wall of Blossoms, Wall of Air), which is the check that the keyword is really
+what does the work.
+
+### Measured
+
+No coverage change — **402 of 538 lines (74.7%)**, 256 of 339 with a script, 228 complete. The
+number that moved is the disagreement count: **10 → 5**. What is left is Capsize's missing filter,
+two `removesACreature` gaps, and the two keyword-versus-expansion questions (ninjutsu, dash).
+
+Four deliberate breaks, four failing tests: `untapsOnly` restored, Garruk's `friendly` dropped, the
+Guards' static restored, and the defender keyword handling deleted.
+
+### And the gate caught what the per-file runs did not
+
+Two rows in `compile.test.ts` failed in the full run while every file I had re-run was green, because
+I had re-run `compiled-vs-written.test.ts` and `scripts.test.ts` and **not the file the change was
+about**. Both were stale assertions, and both were the same shape as the ones this series keeps
+finding:
+
+- `carries the count and the untap-only flag on Garruk's +1` asserted `untapsOnly: true` — written
+  from the untap reader rather than from the card, which is the **fourth** time a check has encoded
+  the implementation it was meant to judge.
+- `aims an infect grant at a creature that can attack` recorded the `friendly` difference as a known
+  gap, which is now closed.
+
+Both re-pointed with the churn reasoning in them. The lesson is not about those rows: a per-file run
+is a convenience and the gate is the check, and this is the first time since D410 repaired it that it
+has failed on something real.
+
+compile.test.ts and the rest: engine suite **1,816/1,816** across 15 files.

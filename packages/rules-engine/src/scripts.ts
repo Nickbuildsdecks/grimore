@@ -871,6 +871,15 @@ const GARRUK_WILDSPEAKER: CardScript = {
         kind: 'permanent',
         description: 'target land',
         count: 2,
+        /*
+          `friendly`, which here is **not** redundant and is a correction (D419). The card says
+          "target lands" with no "you control", so the filter admits an opponent's — and untapping
+          an opponent's land is a card thrown away. The flag is the bot's ordering hint, so without
+          it the default aim is the enemy's board, which is the wrong half of this ability.
+
+          Found by `compiled-vs-written.test.ts`: the compiled reading carried it and this did not.
+        */
+        friendly: true,
         filter: permanentOfTypes('land'),
       }],
       effect: (c) => cardTargets(c).reduce((state, id) => tap(state, id, false), c.state),
@@ -3301,6 +3310,17 @@ const protectFromRemoval = (name: string, power: number, toughness: number): Car
   targets: [{
     kind: 'creature',
     description: 'target creature you control',
+    /*
+      `friendly` beside the filter, which is belt-and-braces and said so deliberately (D419).
+
+      The filter already restricts every candidate to your own side, so the flag changes nothing
+      here — it is the **ordering** hint, and `targetSpecFrom`'s own comment says it is moot where
+      the phrase names a side. It is written anyway because `targetSpecFrom` threads it through for
+      exactly this phrase, and a spec that differs from the compiled one by a field neither reading
+      uses is a difference `compiled-vs-written.test.ts` has to carry for ever. One rule, one
+      source.
+    */
+    friendly: true,
     filter: creatureYouControl,
   }],
   onResolve: (c) => {
@@ -4014,8 +4034,16 @@ const CLOUDSHIFT: CardScript = {
   targets: [{
     kind: 'creature',
     description: 'target creature you control',
-    // Its own side only, so `friendly` would be redundant — but *which* of your creatures matters
-    // for the same reason it does on Soulherder: a token blinked does not come back.
+    /*
+      `friendly` beside the filter: redundant as a restriction and written anyway (D419), for the
+      reason in `protectFromRemoval` — `targetSpecFrom` threads it through for this phrase, and a
+      field that differs between the two readings without either using it is a disagreement the
+      standing check would carry for ever.
+
+      *Which* of your creatures still matters, for the same reason it does on Soulherder: a token
+      blinked does not come back.
+    */
+    friendly: true,
     blinks: true,
     filter: (state, candidate, controller) => creatureYouControl(state, candidate, controller),
   }],
@@ -7008,9 +7036,22 @@ const BASILICA_SCREECHER: CardScript = {
  * is a life. Skyward Writ holds the Fog Banks, the Wall of Air and the Healers; what it has never
  * had is a reason for the game going long to be *good* for it.
  */
+/**
+ * Basilica Guards: a 0/4 wall with extort, and one line fewer than it had.
+ *
+ * It carried `statics: [{ scope: 'self', effect: { cantAttack: true } }]` — a hand-written spelling
+ * of defender — until D419. `defender` is a printed keyword, `KEYWORDS` has it, and
+ * `characteristicsOf` sets `cantAttack` from it unconditionally (the line is
+ * `if (hasType(typeLine, 'creature') && keywords.has('defender')) cantAttack = true`). So the static
+ * restated what the card's own text already says, and the compiled reading of this card — which
+ * has no static — refuses the attack just as firmly.
+ *
+ * Found by `compiled-vs-written.test.ts`, deleted rather than mirrored into the compiler, and
+ * asserted either way: the test that goes with this change declares an attack with the Guards and
+ * checks it is refused.
+ */
 const BASILICA_GUARDS: CardScript = {
   name: 'Basilica Guards',
-  statics: [{ scope: 'self', effect: { cantAttack: true } }],
   triggers: [extort()],
 };
 
@@ -12078,7 +12119,21 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
         // See the split in `composeEffects` (D418): an ability asks its questions before it runs,
         // exactly as a spell does, so the half that comes first has to be carried here too.
         ...(read.beforeDecisions === undefined ? {} : { beforeDecisions: read.beforeDecisions }),
-        ...(read.abilityFlags ?? {}),
+        /*
+          **`untapsOnly` is dropped on a loyalty ability** (D419), and the field's own docblock is
+          the authority: "Garruk's +1 untaps two lands *and* puts a loyalty counter on him — both
+          have a payoff the question below would miss."
+
+          A `+N` loyalty cost **gains** a counter, so the untap is never the whole effect, and the
+          flag exists for exactly one thing: stopping the bot tapping and untapping for ever
+          because the board ended where it started. Here the board did not end where it started.
+          Found by `compiled-vs-written.test.ts`, which is the only check that compares a compiled
+          ability's flags against the hand-written one's.
+        */
+        ...(() => {
+          const { untapsOnly, ...rest } = (read.abilityFlags ?? {}) as { untapsOnly?: boolean };
+          return rest;
+        })(),
         // See `ReadEffect.appliesNothing`, as the sized branch below.
         ...(read.appliesNothing === true ? {} : { effect: read.effect }),
       } as AbilityDef],

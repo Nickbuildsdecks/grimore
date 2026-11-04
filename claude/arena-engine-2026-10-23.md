@@ -11097,3 +11097,25 @@ and a conjunction whose second half asks.
 
 No coverage change — this is about what a compiled card does, not how much compiles. Disagreements
 **11 → 10**.
+
+## Five disagreements, and two were real in opposite directions (#327, D419)
+
+Second batch off the standing check's list, and the pattern is the finding: of five rows, **two were
+defects, one in each reading of the same card**.
+
+**Garruk Wildspeaker** was wrong both ways. The compiled `+1` carried `untapsOnly`, which that
+field's own docblock forbids by name — a `+N` loyalty cost gains a counter, so the untap is never
+the whole effect and the anti-loop flag does not apply. And the hand-written spec lacked `friendly`,
+which on a card that says "target lands" with no "you control" is the difference between the bot
+untapping its own lands and the opponent's. Neither would have been found by reading one of them.
+
+**Cloudshift, Blossoming Defense, Dive Down** carried `friendly` on the compiled side only, beside a
+filter that already restricts to your side — written on the hand-written cards too, rather than kept
+as a permanent exception.
+
+**Basilica Guards** had a static that restated its own printed `defender`. Deleted, and proved: a new
+row asks `canAttack` of the Guards and of a Serra Angel on the same board — one refused, one not —
+and deleting the keyword handling fails it and two older rows.
+
+No coverage change. Disagreements **10 → 5**: what is left is Capsize's missing filter, two
+`removesACreature` gaps, and ninjutsu and dash as a keyword field versus a hand-written expansion.

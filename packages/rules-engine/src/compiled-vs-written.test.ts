@@ -184,35 +184,11 @@ const DISAGREE: Readonly<Record<string, { readonly why: string; readonly keys: r
   */
   'Journey to Nowhere': { why: 'missing removesACreature, which only the spell path can currently set', keys: ['removesACreature'], digest: '7895f0f1' },
   /*
-    Garruk's `+1` is "Untap two target lands" — **any** lands, not yours. The compiled spec adds
-    `friendly: true`, and it also adds `untapsOnly: true` where the hand-written ability has
-    neither. Whether the filter restricts as well is the thing to check first: a reading that can
-    only point at your own lands is a different card from the print.
-  */
-  'Garruk Wildspeaker': { why: 'adds friendly and untapsOnly to an ability that points at any land', keys: ['abilities'], digest: 'c71fff1d' },
-  /*
-    Three of a kind, and the most likely to be harmless: the compiled spec carries `friendly: true`
-    beside a filter that already restricts to your own side. `targetSpecFrom`'s own comment says the
-    flag is "moot here, since every legal candidate is already on the side the phrase names" — so
-    this is probably a spelling difference, and it is on this list until that is checked rather than
-    assumed, because the bot reads `friendly` as well as the filter.
-  */
-  Cloudshift: { why: 'adds friendly beside a filter that already restricts to your side', keys: ['targets'], digest: '9677ee13' },
-  'Blossoming Defense': { why: 'adds friendly beside a filter that already restricts to your side', keys: ['targets'], digest: 'd94a9632' },
-  'Dive Down': { why: 'adds friendly beside a filter that already restricts to your side', keys: ['targets'], digest: 'd94a9632' },
-  /*
     The other direction, and the one worth looking at soonest: the compiled spec has **no filter at
     all** where the hand-written one does. A spec that filters nothing is a spell that can be
     pointed somewhere the card does not allow.
   */
   Capsize: { why: 'compiled spec has no filter where the hand-written one does', keys: ['targets'], digest: '33c1e3e6' },
-  /*
-    `statics: [{ effect: { cantAttack: true }, scope: 'self' }]` — the hand-written spelling of
-    defender. `defender` is also a printed keyword, so the question is whether `characteristicsOf`
-    already refuses the attack from the keyword alone, in which case this is the `keywords` case
-    again in a different field.
-  */
-  'Basilica Guards': { why: 'hand-written static for defender; printed keyword may already cover it', keys: ['statics'], digest: 'b52fe57d' },
   /*
     Two spellings of ninjutsu: the compiled reading sets the `ninjutsu` field from the keyword
     declaration, the hand-written card writes an ability with `returnsUnblockedAttacker`. Which one
@@ -225,6 +201,22 @@ const DISAGREE: Readonly<Record<string, { readonly why: string; readonly keys: r
     engine. If the engine does not add that trigger itself, a dashed Mardu Scout stays.
   */
   'Mardu Scout': { why: 'hand-written delayed end-step trigger for dash; engine may add it from the field', keys: ['triggers'], digest: 'e8c83d75' },
+  /*
+    **Five rows were here and are settled (D419).** Four were about `friendly` on a target spec and
+    one about defender:
+
+    - **Garruk Wildspeaker** was a real defect in **both** readings. The compiled `+1` carried
+      `untapsOnly`, which `AbilityDef.untapsOnly`'s own docblock forbids by name — "Garruk's +1
+      untaps two lands *and* puts a loyalty counter on him" — so the loyalty branch drops it; and
+      the hand-written spec lacked `friendly`, which on a card that says "target lands" with no "you
+      control" is the difference between the bot untapping its own lands and the opponent's.
+    - **Cloudshift, Blossoming Defense, Dive Down** carried `friendly` on the compiled side only,
+      beside a filter that already restricts to your own side. Harmless either way, and written on
+      the hand-written cards too rather than carried here for ever.
+    - **Basilica Guards** had a hand-written static for defender. `defender` is a printed keyword and
+      `characteristicsOf` sets `cantAttack` from it, so the static restated the card's own text; it
+      is deleted, and the test that goes with it declares an attack and checks the refusal.
+  */
 };
 
 describe('every compiled reading against the hand-written script for the same card', () => {
