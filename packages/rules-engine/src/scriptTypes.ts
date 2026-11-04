@@ -459,6 +459,26 @@ export type TriggerEvent =
        * `noncreature` because an artifact is a noncreature spell and is not an instant.
        */
       readonly spell?: 'creature' | 'noncreature' | 'instant-or-sorcery' | 'any';
+      /**
+       * "Whenever you cast an **artifact** spell" — one lowercased card type the spell must have.
+       *
+       * The question `types` below is the answer to, which is the same split `spell`/`types` and
+       * `from`/`cameFrom` already keep: one field is what a card asks and the other is what the
+       * engine supplies, and a field that is both ends up being neither.
+       *
+       * Separate from `spell` rather than another value in it, because `spell` is answered from the
+       * engine's own creature/noncreature split and this is answered from the type line. An
+       * artifact creature spell is a creature spell *and* an artifact spell, so the two filters
+       * have to be askable together rather than instead of each other.
+       *
+       * Measured before it was added (D435): 17 legal corpus lines print "an enchantment spell" and
+       * 21 "an artifact spell", with 9 and 7 cards respectively whose body this compiler already
+       * reads. "A **historic** spell" (19 lines, 4 cards) and "a **multicolored** spell" (19, 4)
+       * are deliberately **not** expressible here — historic is artifact-or-legendary-or-Saga and
+       * multicolored is a fact about the mana cost, so neither is a card type and a reading that
+       * pretended otherwise would fire on the wrong spells.
+       */
+      readonly ofType?: string;
       /** Set by the engine when it raises the event: the spell's card types, lowercased. */
       readonly types?: readonly string[];
       /**

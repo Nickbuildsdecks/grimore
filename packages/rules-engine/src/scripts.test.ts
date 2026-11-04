@@ -21515,3 +21515,154 @@ describe('the step of the turn a card names, as printed text', () => {
     expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held + 1);
   });
 });
+
+/*
+  The cast trigger, read off the prologue (D435).
+
+  `spell-cast` has had `by`, `spell`, `self` and `how` since the engine's first Guttersnipe, and the
+  compiler could read three of the sentences that use them. Seven more rows now, chosen on cards
+  whose body the compiler already reads rather than on lines printed (D434's rule).
+
+  Three of the seven needed a runtime test rather than a shape assertion, and the reason is specific
+  to each:
+
+   - `ofType` is a **new field**, so both halves of it are new behaviour.
+   - `spell: 'creature'` was a union member and a comparison in `triggerMatches` that **nothing in
+     the pool used** — a branch with no user is a branch with no evidence, which is the shape D433
+     and D434 both found a defect in.
+   - `self: true` is exercised by hand-written cascade and storm, but never from a *compiled*
+     prologue, and the thing that could go wrong is specific to that: a compiled permanent firing
+     its battlefield triggers on the way past, or its stack trigger never firing at all.
+
+  The other four rows are the pre-existing `by` and `spell: 'any'` filters, which Kambal, Chalice of
+  the Void and every prowess creature already drive at runtime; for those the new claim is only
+  which sentence maps to which trigger, and that is asserted in `compile.test.ts`.
+*/
+describe('the cast trigger, as printed text', () => {
+  /** A custom deck around one printed row, with Mountains and two castable spells to trigger it. */
+  const tableWith = (
+    row: Record<string, unknown>,
+    battlefield: readonly string[],
+    hand: readonly string[],
+  ) => {
+    const name = row['name'] as string;
+    const list = customDeck({
+      id: 'cast-list',
+      name,
+      entries: [
+        { name, count: 1 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Lightning Bolt', count: 4 },
+        { name: 'Bonesplitter', count: 4 },
+        { name: 'Arcbound Worker', count: 4 },
+        { name: 'Mountain', count: 43 },
+      ],
+      data: [row as never],
+    });
+    expect(list.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'cast-list', 1: 'verdant-guard' },
+      deckSpecs: { 'cast-list': list.deck },
+      battlefield: { 0: battlefield },
+      hands: { 0: hand },
+      turn: 3,
+      firstSeat: 0,
+    });
+  };
+
+  const BEAST_WHISPERER = {
+    name: 'Beast Whisperer', type_line: 'Creature — Elf Druid', mana_cost: '{2}{G}{G}',
+    cmc: 4, colors: ['G'], layout: 'normal', power: '2', toughness: '3',
+    oracle_text: 'Whenever you cast a creature spell, draw a card.',
+  };
+
+  it.each([
+    // Beast Whisperer, printed text out of the corpus, against the two kinds of spell its filter is
+    // about. `spell: 'creature'` had no user anywhere in the pool before this row.
+    ['Raging Goblin', 1],
+    ['Lightning Bolt', 0],
+  ])('Beast Whisperer: casting %s draws %d', (spell, drawn) => {
+    let s = tableWith(BEAST_WHISPERER, ['Beast Whisperer', 'Mountain'], [spell as string]);
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    const held = ids(s, 0 as SeatIndex, 'hand').length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', spell as string),
+      ...(spell === 'Lightning Bolt' ? { targets: [{ kind: 'player', seat: 1 }] } : {}),
+    } as Action)));
+    // The spell leaves the hand either way; the draw is the difference.
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held - 1 + (drawn as number));
+  });
+
+  const EFFICIENT_CONSTRUCTION = {
+    name: 'Efficient Construction', type_line: 'Enchantment', mana_cost: '{3}{U}',
+    cmc: 4, colors: ['U'], layout: 'normal',
+    oracle_text: 'Whenever you cast an artifact spell, create a 1/1 colorless Thopter artifact'
+      + ' creature token with flying.',
+  };
+
+  it.each([
+    /*
+      `ofType` is the new field, so it gets both halves. Bonesplitter is an artifact and Raging
+      Goblin is a creature, and the point of keeping `ofType` separate from `spell` is that the two
+      questions are independent — an artifact creature spell is both — so a filter that answered
+      from the creature/noncreature split would get one of these two rows wrong whichever way it
+      leaned.
+    */
+    ['Bonesplitter', 1],
+    ['Raging Goblin', 0],
+    /*
+      **Arcbound Worker is the row a break run asked for**, and the only one of the three that can
+      tell `ofType` from the creature/noncreature split. It is an *artifact creature* — an artifact
+      spell and a creature spell at once — so a filter answered from `e.spell` gets it wrong
+      whichever way it leans, while the two rows above it agree with both readings. Rewriting the
+      filter as `e.spell === 'creature' -> reject` failed no test until this row existed, which is
+      the same "a check that cannot fail" the last two entries each found twice.
+    */
+    ['Arcbound Worker', 1],
+  ])('Efficient Construction: casting %s makes %d Thopter', (spell, made) => {
+    let s = tableWith(EFFICIENT_CONSTRUCTION, ['Efficient Construction', 'Mountain'], [spell as string]);
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', spell as string),
+    } as Action)));
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield').filter((n) => n === 'Thopter'))
+      .toHaveLength(made as number);
+  });
+
+  it('fires a compiled "When you cast this spell" from the stack, not from the battlefield', () => {
+    /*
+      It of the Horrid Swarm: "When you cast this spell, create two 1/1 green Insect creature
+      tokens." Printed text out of the corpus, and its emerge line stays unread — which is the
+      point of D362's hybrid: the cast trigger is read and flagged alongside the line that is not.
+
+      Two things could go wrong and only one of them is about the trigger firing. The tokens arriving
+      is the first. The second is that the permanent, once on the battlefield, must **not** keep
+      firing it — a battlefield watcher that saw its own card type would make two more Insects every
+      time anything was cast — so the board is read again after a second spell.
+    */
+    const row = {
+      name: 'It of the Horrid Swarm', type_line: 'Creature — Eldrazi Insect', mana_cost: '{8}',
+      cmc: 8, colors: [], layout: 'normal', power: '4', toughness: '4',
+      oracle_text: 'Emerge {6}{G}\nWhen you cast this spell, create two 1/1 green Insect creature tokens.',
+    };
+    // Nine lands, not eight: the Eldrazi costs {8} and the second cast below has to be payable
+    // out of what is left, or the test stops being about the trigger.
+    let s = tableWith(row, Array.from({ length: 9 }, () => 'Mountain'),
+      ['It of the Horrid Swarm', 'Raging Goblin']);
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'It of the Horrid Swarm'),
+    } as Action)));
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toContain('It of the Horrid Swarm');
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield').filter((n) => n === 'Insect')).toHaveLength(2);
+    // And now a second spell with the Eldrazi already in play: still two Insects, not four.
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Raging Goblin'),
+    } as Action)));
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield').filter((n) => n === 'Insect')).toHaveLength(2);
+  });
+});

@@ -27150,3 +27150,86 @@ by shape.
 Legal-only coverage 15,964 of 56,421 lines (28.3%), 7,018 cards with a script. The line count barely
 moves, and that is the point: the 280 lines this fixes were already *counted* as compiled. They just
 did not work.
+
+## D435 — The cast family: four filters that existed, one that did not, and one branch nothing used
+
+`spell-cast` has carried `by`, `spell`, `self` and `how` since the engine's first Guttersnipe. The
+compiler could read **three** of the sentences that use them: "you cast an instant or sorcery
+spell", "you cast a noncreature spell", "an opponent casts a noncreature spell". Everything else in
+the family went unread, which the body/prologue split put at the top of the remaining queue — the
+cast cluster is the largest coherent group of prologue gaps left after D434.
+
+Ten candidate spellings, counted in the legal corpus and judged on **cards whose body the compiler
+already reads** rather than on lines printed, which is D434's rule and the only measure that
+predicts anything: a row for a card whose body stays unread changes nothing, because the line is
+flagged either way (D362).
+
+| printed | lines | cards | shipped as |
+| --- | --- | --- | --- |
+| you cast a creature spell | 44 | **11** | `by: 'you', spell: 'creature'` |
+| you cast an enchantment spell | 17 | **9** | `ofType: 'enchantment'` |
+| you cast a spell | 49 | **8** | `by: 'you', spell: 'any'` |
+| when you cast this spell | 80 | **7** | `self: true` |
+| you cast an artifact spell | 21 | **7** | `ofType: 'artifact'` |
+| a player casts a spell | 35 | **2** | `by: 'any'` |
+| an opponent casts a spell | 27 | **1** | `by: 'opponent'` |
+| you cast a historic spell | 19 | 4 | refused |
+| you cast a multicolored spell | 19 | 4 | refused |
+| an opponent casts a creature spell | 7 | 0 | not yet |
+
+Seven rows, 45 cards. **The two refusals are refused on the mechanism, not the count**, and that
+distinction is asserted rather than described: "historic" is artifact *or* legendary *or* Saga and
+"multicolored" is a fact about the mana cost, so neither is a card type and neither is expressible
+by the new field. A reading that pretended otherwise would fire the ability on the wrong spells,
+which is worse than leaving the line for a human. The opponent-creature row is the other kind —
+expressible today, held back only because nothing it would read has a readable body yet — and it
+sits beside the other two in the test table so the two reasons cannot be confused later.
+
+### One new field, and the shape of its docblock
+
+`ofType` holds one lowercased card type and is compared against the `types` the engine already
+raises on the event. It is **separate from `spell` rather than another value in it**, because
+`spell` is answered from the engine's creature/noncreature split and this is answered from the type
+line: an artifact creature spell is a creature spell *and* an artifact spell, so the two filters
+have to be askable together rather than instead of each other.
+
+### `spell: 'creature'` had no user anywhere
+
+It was in the union and it had a comparison in `triggerMatches`, and `grep` found **zero** scripts
+setting it. A branch with no user is a branch with no evidence — the same shape that hid a defect
+twice in D433 and once in D434 — so it gets a runtime test of both halves rather than a shape
+assertion: Beast Whisperer draws for Raging Goblin and does not draw for Lightning Bolt.
+
+### The break run found the hole that mattered
+
+Seven breaks. Six failed a named test immediately. The seventh —
+
+```
+if (want.ofType !== undefined && e.spell === 'creature') return false;
+```
+
+— rewriting the new filter as the creature/noncreature split it is deliberately *not*, **failed
+nothing**, because both `ofType` fixtures agreed with both readings: Bonesplitter is a noncreature
+artifact and Raging Goblin is a non-artifact creature. The discriminating case is the one the
+docblock's whole argument rests on: an **artifact creature** spell, which is both. **Arcbound
+Worker** is now the third row, and the break bites.
+
+That is three increments in a row where a plausible, well-commented claim turned out to have no
+test that could contradict it. The pattern is specific enough to name: when a field's docblock
+argues that two things must be kept apart, the fixture set needs the case where they *overlap*, or
+the argument is decoration.
+
+### Verified
+
+Six runtime tests, every fixture a compiled card from printed corpus text driven through
+`customDeck` (the route an uploaded decklist takes, D430), plus a 13-row compile table for
+sentence-to-trigger and three rows holding the refusals unread. The four rows whose filters already
+had hand-written users — `by` and `spell: 'any'`, driven by Kambal, Chalice of the Void and every
+prowess creature — are asserted at the shape level only, and that is stated where it is done.
+
+The `self: true` test also reads the board *after a second spell*, because the failure that is
+specific to a compiled permanent is not the trigger missing but the trigger firing again from the
+battlefield.
+
+Legal-only coverage 16,016 of 56,421 lines (28.4%), **7,066 cards with a script** (7,018 → 7,066),
+3,953 cards with every printed line read. GATE OK, 1,942 engine tests.

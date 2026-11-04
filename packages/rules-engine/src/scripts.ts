@@ -10682,6 +10682,86 @@ const TRIGGER_SHAPES: readonly {
     prologue: () => /^Whenever you cast a noncreature spell, (.+)$/i,
     on: [{ kind: 'spell-cast', by: 'you', spell: 'noncreature' }],
   },
+  /*
+    ── The rest of the cast family ─────────────────────────────────────────────────────────
+
+    The `spell-cast` event has had `by`, `spell`, `self` and `how` since the engine's first
+    Guttersnipe, and until these rows the compiler could read exactly three of the sentences that
+    use them. Ten candidate spellings were counted in the legal corpus and judged the way D434
+    established — on cards whose **body** this compiler already reads, not on lines printed, because
+    a row for a card whose body stays unread changes nothing (D362):
+
+    | printed | lines | cards | trigger |
+    | --- | --- | --- | --- |
+    | you cast a creature spell | 44 | **11** | `by: 'you', spell: 'creature'` |
+    | you cast an enchantment spell | 17 | **9** | `ofType: 'enchantment'` |
+    | you cast a spell | 49 | **8** | `by: 'you'` |
+    | when you cast this spell | 80 | **7** | `self: true` |
+    | you cast an artifact spell | 21 | **7** | `ofType: 'artifact'` |
+    | you cast a historic spell | 19 | 4 | — |
+    | you cast a multicolored spell | 19 | 4 | — |
+    | a player casts a spell | 35 | **2** | `by: 'any'` |
+    | an opponent casts a spell | 27 | **1** | `by: 'opponent'` |
+    | an opponent casts a creature spell | 7 | 0 | — |
+
+    **Historic and multicolored are refused on the mechanism, not the count.** "Historic" is
+    artifact *or* legendary *or* Saga and "multicolored" is a fact about the mana cost; neither is a
+    card type, so neither is expressible by `ofType` and a reading that pretended otherwise would
+    fire on the wrong spells — which is worse than leaving the line for a human (D362). The
+    opponent-creature row is left out on the count alone: nothing it would read has a readable body
+    yet, and the row costs nothing to add the day one does.
+
+    `by: 'you'` is printed on every one of these that says "you", and it is also the *default* — so
+    the rows that say it are saying what the card says rather than leaning on the default, which is
+    the same note the two rows above carry.
+  */
+  {
+    prologue: () => /^Whenever you cast a creature spell, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'you', spell: 'creature' }],
+  },
+  {
+    prologue: () => /^Whenever you cast an artifact spell, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'you', ofType: 'artifact' }],
+  },
+  {
+    prologue: () => /^Whenever you cast an enchantment spell, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'you', ofType: 'enchantment' }],
+  },
+  /*
+    "Whenever you cast a spell" with no filter at all, and it goes **after** the five narrower rows
+    above it on purpose. The patterns are anchored and mutually exclusive as English, so the order
+    is not load-bearing today — but a reader who widens one of them later should find the general
+    case underneath rather than above, because a row that matches everything above a row that
+    matches something is how a filter stops being read.
+  */
+  {
+    prologue: () => /^Whenever you cast a spell, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'you', spell: 'any' }],
+  },
+  {
+    prologue: () => /^Whenever a player casts a spell, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'any', spell: 'any' }],
+  },
+  {
+    prologue: () => /^Whenever an opponent casts a spell, (.+)$/i,
+    on: [{ kind: 'spell-cast', by: 'opponent', spell: 'any' }],
+  },
+  /*
+    "When you cast **this** spell" — the one trigger that fires from the stack rather than from the
+    battlefield, which is what cascade, storm and replicate all abbreviate. 80 printed lines, the
+    largest single spelling in the family, and `self: true` is the whole of it: `raise` offers the
+    cast event to the card on the stack only for triggers that set it, and `fireTrigger` refuses
+    every other trigger while the card is on the stack, so a compiled permanent cannot fire its
+    battlefield triggers on the way past.
+
+    `by` is deliberately absent rather than `'you'`: a spell is cast by its own controller, so the
+    field would be a second statement of the same fact — and `triggerMatches` answers `self` first
+    and on its own terms for exactly that reason.
+  */
+  {
+    prologue: () => /^When you cast this spell, (.+)$/i,
+    on: [{ kind: 'spell-cast', self: true }],
+  },
   // Ajani's Pridemate.
   {
     prologue: () => /^Whenever you gain life, (.+)$/i,

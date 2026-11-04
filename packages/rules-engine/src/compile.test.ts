@@ -6941,3 +6941,67 @@ describe('the step of the turn, read off the prologue', () => {
     expect(field(read.script, 'triggers')).toBeUndefined();
   });
 });
+
+/*
+  The cast family, read off the prologue (D435).
+
+  Which printed sentence becomes which trigger. The runtime tests in `scripts.test.ts` cover the
+  three rows whose *behaviour* was new — `ofType`, the unused `spell: 'creature'`, and `self: true`
+  from a compiled card — and this covers the mapping for all seven, plus the three spellings that
+  are refused on the mechanism rather than on a count.
+*/
+describe('the cast trigger, read off the prologue', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const permanent = (text: string) => compileCard({
+    name: 'Casting Thing', type_line: 'Enchantment', mana_cost: '{2}', cmc: 2,
+    colors: [], layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    ['Whenever you cast a creature spell', { kind: 'spell-cast', by: 'you', spell: 'creature' }],
+    ['Whenever you cast an artifact spell', { kind: 'spell-cast', by: 'you', ofType: 'artifact' }],
+    ['Whenever you cast an enchantment spell', { kind: 'spell-cast', by: 'you', ofType: 'enchantment' }],
+    ['Whenever you cast a spell', { kind: 'spell-cast', by: 'you', spell: 'any' }],
+    ['Whenever a player casts a spell', { kind: 'spell-cast', by: 'any', spell: 'any' }],
+    ['Whenever an opponent casts a spell', { kind: 'spell-cast', by: 'opponent', spell: 'any' }],
+    ['When you cast this spell', { kind: 'spell-cast', self: true }],
+    // And the three that already existed, so widening the family cannot quietly capture them.
+    ['Whenever you cast an instant or sorcery spell',
+      { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' }],
+    ['Whenever you cast a noncreature spell', { kind: 'spell-cast', by: 'you', spell: 'noncreature' }],
+    ['Whenever an opponent casts a noncreature spell',
+      { kind: 'spell-cast', by: 'opponent', spell: 'noncreature' }],
+  ])('%s becomes the trigger it prints', (prologue, on) => {
+    const read = permanent(`${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]!.on).toEqual(on);
+  });
+
+  it.each([
+    /*
+      Refused on the mechanism rather than on the count, which is the distinction worth asserting:
+      these are not "not yet", they are "not expressible without lying about the card".
+
+      `ofType` holds one card type. Historic is artifact *or* legendary *or* Saga and multicolored
+      is a fact about the mana cost, so reading either as a type would fire the ability on the wrong
+      spells — and a trigger that fires on the wrong spells is worse than a line left for a human
+      (D362). The opponent-creature row is the other kind of refusal and is here to keep the two
+      apart: it is held back only on the count, and D435's table records that nothing it would read
+      has a readable body yet.
+    */
+    ['Whenever you cast a historic spell', 'artifact or legendary or Saga, not a card type'],
+    ['Whenever you cast a multicolored spell', 'a fact about the mana cost'],
+    ['Whenever an opponent casts a creature spell', 'expressible, but 0 cards to exercise it'],
+  ])('leaves "%s" unread: %s', (prologue) => {
+    const read = permanent(`${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+    expect(field(read.script, 'triggers')).toBeUndefined();
+  });
+});

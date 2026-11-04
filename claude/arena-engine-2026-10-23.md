@@ -11494,3 +11494,37 @@ test that pins a gap fails the day the gap closes.
 
 Legal-only coverage is 15,964 of 56,421 lines (28.3%) and 7,018 cards with a script. The line count
 barely moves, which is the point: the 280 lines this fixes were already counted as compiled.
+
+## The cast family (D435)
+
+`spell-cast` has had `by`, `spell`, `self` and `how` since the engine's first Guttersnipe, and the
+compiler could read three of the sentences that use them. Seven more rows now — 45 cards — chosen
+the way D434 established: on cards whose *body* the compiler already reads, not on lines printed.
+
+| printed | lines | cards |
+| --- | --- | --- |
+| you cast a creature spell | 44 | 11 |
+| you cast an enchantment spell | 17 | 9 |
+| you cast a spell | 49 | 8 |
+| when you cast this spell | 80 | 7 |
+| you cast an artifact spell | 21 | 7 |
+| a player casts a spell | 35 | 2 |
+| an opponent casts a spell | 27 | 1 |
+
+"Historic" (19 lines, 4 cards) and "multicolored" (19, 4) are refused on the **mechanism** rather
+than the count: historic is artifact-or-legendary-or-Saga and multicolored is a fact about the mana
+cost, so neither is a card type and a reading that pretended otherwise would fire on the wrong
+spells. One new field, `ofType`, holds a card type and is kept separate from `spell` because an
+artifact creature spell is both at once.
+
+Two findings worth the entry. `spell: 'creature'` was in the union with a comparison in the matcher
+and **no script anywhere set it** — a branch with no user is a branch with no evidence. And the
+break run caught the hole that mattered: rewriting `ofType` as the creature/noncreature split failed
+nothing, because both fixtures agreed with both readings. The case that separates them is an
+artifact *creature* spell, so Arcbound Worker is now a test row.
+
+Three increments running, a plausible well-commented claim has turned out to have no test that
+could contradict it. Named for next time: when a docblock argues two things must be kept apart, the
+fixtures need the case where they overlap, or the argument is decoration.
+
+Legal-only coverage 16,016 of 56,421 lines (28.4%), 7,066 cards with a script.

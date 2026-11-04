@@ -782,6 +782,13 @@ function triggerMatches(
       const by = want.by ?? 'you';
       if (by === 'you' && actorSeat !== sourceSeat) return false;
       if (by === 'opponent' && actorSeat === sourceSeat) return false;
+      /*
+        The card type the spell has to have, asked **before** the creature/noncreature split and
+        separately from it: an artifact creature spell is both, so "whenever you cast an artifact
+        spell" and "whenever you cast a creature spell" are two filters rather than two values of
+        one. `types` is lowercased where the engine raises it, so the question is too.
+      */
+      if (want.ofType !== undefined && !(e.types ?? []).includes(want.ofType)) return false;
       const spell = want.spell ?? 'any';
       if (spell === 'any') return true;
       // The narrow one is answered from the spell's own types rather than from the broad
