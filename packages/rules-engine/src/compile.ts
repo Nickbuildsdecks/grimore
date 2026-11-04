@@ -40,7 +40,10 @@
  */
 import type { CardDef } from './cards.js';
 import { hasType, isPrintedAbilityLine, parseTypeLine } from './characteristics.js';
-import { cardFromData, printedDef, printedRulesLines, type CardDataRow, type DerivedKind } from './fromCardData.js';
+import {
+  cardFromData, printedBody, printedDef, printedLoyalty, printedRulesLines,
+  type CardDataRow, type DerivedKind,
+} from './fromCardData.js';
 import {
   isKeywordDeclaration, lineScriptFor, spellScriptFor, wholeCardShapeFor,
 } from './scripts.js';
@@ -153,6 +156,42 @@ function reasonFor(line: string): 'no-reader' | 'unimplemented-keyword' {
   return isKeywordDeclaration(line) ? 'unimplemented-keyword' : 'no-reader';
 }
 
+/** A printed size this engine can use as a number. Mirrors `fromCardData`'s own test. */
+const INTEGER = /^\d+$/;
+
+/**
+ * Why this creature cannot be given a size, or `null` if it can.
+ *
+ * The printed number is enough on its own for 18,370 of the corpus's 18,603 creatures. The other
+ * 233 print `*` or `1+*`, and for those the size is a characteristic-defining ability: playable
+ * exactly when the compiler read one, which is why this is asked after the lines rather than
+ * before them.
+ *
+ * `definesSize` always supplies the power and supplies the toughness unless it says
+ * `applies: 'power'` — Enigma Drake is a `*`/`4`, whose printed toughness is a real number and
+ * whose power is the count. So the two halves are checked separately: a card whose power is read
+ * off the board and whose toughness is a `*` nothing read would still be a creature with zero
+ * toughness, and zero toughness is the same CR 704.5f death as a 0/0.
+ */
+function unsizeable(
+  name: string,
+  row: CardDataRow,
+  statics: unknown,
+): string | null {
+  const defines = (Array.isArray(statics) ? statics : [])
+    .map((entry) => (entry as { effect?: { definesSize?: { applies?: string } } })?.effect)
+    .find((effect) => effect?.definesSize !== undefined)?.definesSize;
+  const body = printedBody(name, row);
+  if (!('why' in body)) return null;
+  if (defines === undefined) return body.why;
+  // The count covers the power always and the toughness unless the ability is power-only.
+  if (defines.applies !== 'power') return null;
+  const toughness = (row.toughness ?? '').trim();
+  return INTEGER.test(toughness)
+    ? null
+    : `${name}: its power is a count but its toughness of ${toughness || '(none)'} is not a number`;
+}
+
 /**
  * Compiles one row of printed card data into as much of a `CardScript` as this engine can build.
  *
@@ -163,7 +202,21 @@ export function compileCard(row: CardDataRow): Compilation {
   const printed = printedDef(row);
   if ('why' in printed) return { ok: false, why: printed.why };
   const def = printed.def;
+  const typeLine = parseTypeLine(def.typeLine);
   const lines = printedRulesLines(row.oracle_text);
+
+  /*
+    A planeswalker with no starting loyalty this engine can read is refused outright rather than
+    compiled, and so is a creature it cannot size — see `sizedBody` below for the creature, which
+    has to wait until the text has been read. Both are the case where automating the card destroys
+    it: the permanent arrives at zero and the state-based actions bin it (CR 704.5i, CR 704.5f)
+    before anybody has priority, so there is no unread line left for a human to apply afterwards
+    and D362's trade does not apply. Two of the corpus's 327 planeswalkers land here.
+  */
+  if (hasType(typeLine, 'planeswalker')) {
+    const loyalty = printedLoyalty(def.name, row);
+    if ('why' in loyalty) return { ok: false, why: loyalty.why };
+  }
 
   /*
     `cardFromData` first, and its answer taken whole when it has one.
@@ -192,7 +245,6 @@ export function compileCard(row: CardDataRow): Compilation {
     spell whose second sentence went unread would resolve and silently do half of what it prints,
     with nothing flagged for anybody to notice.
   */
-  const typeLine = parseTypeLine(def.typeLine);
   if (hasType(typeLine, 'instant') || hasType(typeLine, 'sorcery')) {
     const spell = spellScriptFor(lines, def.name);
     return {
@@ -252,6 +304,20 @@ export function compileCard(row: CardDataRow): Compilation {
       continue;
     }
     compiled.push(line);
+  }
+
+  /*
+    The size, now that the text has been read.
+
+    A creature printed `*`/`*` has no size of its own — the number comes from a
+    characteristic-defining ability — so whether the engine can play it depends on whether it read
+    that ability, which is only known here. Lhurgoyf's count *is* read, and it is a 2/3 with two
+    creature cards in a graveyard; Hand Goyf's is not, and dealing it would put a 0/0 on the
+    battlefield for CR 704.5f to bin on arrival. So one is kept and the other refused.
+  */
+  if (hasType(typeLine, 'creature')) {
+    const refusal = unsizeable(def.name, row, built.statics);
+    if (refusal !== null) return { ok: false, why: refusal };
   }
 
   const anything = Object.keys(built).length > 0;

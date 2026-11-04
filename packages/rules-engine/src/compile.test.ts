@@ -3980,14 +3980,33 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         count the engine can take, so the line is refused rather than read as one of the two it
         does have. A card compiled with the wrong count is a creature of the wrong size, every
         turn, with nothing flagged.
+
+        Two arms, because D431 made the printed size matter here. A `*`/`*` whose count went unread
+        has **no** size at all, so the whole card is refused: dealing it would put a 0/0 on the
+        battlefield and CR 704.5f would bin it before anybody had priority, which is worse than the
+        player playing the card by hand. The same text on a card that prints a real 2/2 is kept —
+        it is a 2/2 with one line nobody is running, which is exactly D362's trade — and that arm is
+        what pins the refusal above to the *count* rather than to the type line.
       */
-      const odd = compileCard({
+      const starred = compileCard({
         name: 'Hand Goyf', type_line: 'Creature — Lhurgoyf', mana_cost: '{2}{G}', cmc: 3,
         colors: ['G'], power: '*', toughness: '*',
         oracle_text: 'Hand Goyf’s power is equal to the number of cards in your hand.',
       });
-      expect(odd.ok).toBe(true);
-      if (odd.ok) expect(odd.script).toBeUndefined();
+      expect(starred.ok).toBe(false);
+      if (!starred.ok) expect(starred.why).toContain('comes from an ability, not a number');
+
+      const sized = compileCard({
+        name: 'Hand Goyf', type_line: 'Creature — Lhurgoyf', mana_cost: '{2}{G}', cmc: 3,
+        colors: ['G'], power: '2', toughness: '2',
+        oracle_text: 'Hand Goyf’s power is equal to the number of cards in your hand.',
+      });
+      expect(sized.ok).toBe(true);
+      if (sized.ok) {
+        expect(sized.script).toBeUndefined();
+        expect(sized.unread).toHaveLength(1);
+        expect(sized.def.power).toBe('2');
+      }
     });
 
     /*
@@ -6354,9 +6373,16 @@ describe('compileCard, against the cards a person wrote by hand', () => {
   describe('enters tapped, and the two steps a card names after the upkeep', () => {
     const field = (script: unknown, key: string) =>
       (script as Record<string, unknown> | undefined)?.[key];
+    /*
+      A creature arm gets a printed size, because a creature with none is a card the compiler now
+      refuses outright (D431): `printedDef` carries the printed power and toughness, and a row that
+      prints neither would be dealt as a 0/0 and binned by CR 704.5f on arrival. The land arm keeps
+      no size, which is what a land prints.
+    */
     const card = (text: string, type_line = 'Land') => compileCard({
       name: 'Joined Up', type_line, mana_cost: '', cmc: 0, colors: [], oracle_text: text,
-      power: null, toughness: null, loyalty: null, layout: 'normal',
+      ...(/\bCreature\b/.test(type_line) ? { power: '2', toughness: '2' } : {}),
+      loyalty: null, layout: 'normal',
     });
 
     it.each([
@@ -6518,6 +6544,98 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       const read = card('Whenever a land an opponent controls enters, draw a card.');
       expect(read.ok).toBe(true);
       if (read.ok) expect(read.unread).toHaveLength(1);
+    });
+  });
+  /*
+    The printed body, which is the fourth batch and the one that was a defect rather than a gap
+    (D431).
+
+    `printedDef` built every `CardDef` the compiler hands back, and it carried no `power`, no
+    `toughness` and no `loyalty`. Nothing noticed while the only consumer of a compiled script was
+    `derive.ts`, which takes `script` and `unread` and gets its def from somewhere else — but
+    `customDeck` started taking the def itself (D430), and `characteristicsOf` reads a missing size
+    as zero. Every one of the corpus's 18,603 creatures was arriving as a 0/0 for CR 704.5f to bin,
+    and all 327 of its planeswalkers at zero loyalty for CR 704.5i.
+  */
+  describe('the printed size, and the two permanents that die without one', () => {
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const row = (over: Record<string, unknown>) => compileCard({
+      name: 'Sized Thing', type_line: 'Creature — Human Soldier', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], oracle_text: '', layout: 'normal', ...over,
+    } as Parameters<typeof compileCard>[0]);
+
+    it('carries the printed power and toughness onto the def', () => {
+      const read = row({ power: '2', toughness: '3' });
+      expect(read.ok).toBe(true);
+      if (read.ok) expect([read.def.power, read.def.toughness]).toEqual(['2', '3']);
+    });
+
+    it('carries a printed starting loyalty onto the def', () => {
+      const read = row({
+        type_line: 'Legendary Planeswalker — Jace', loyalty: '3',
+        oracle_text: '+1: Draw a card.',
+      });
+      expect(read.ok).toBe(true);
+      if (read.ok) expect(read.def.loyalty).toBe('3');
+    });
+
+    it('refuses a creature whose row prints no size, rather than dealing a 0/0', () => {
+      /*
+        The corpus has none of these — every creature file carries a `PT:` line — but the engine's
+        own `CardDef` path does: `derive.ts` rebuilds a row out of a def, and a def with no size
+        (a token, a card somebody typed by hand) must not come back as a playable creature.
+      */
+      const read = row({ power: null, toughness: null });
+      expect(read.ok).toBe(false);
+      if (!read.ok) expect(read.why).toContain('no printed power or toughness');
+    });
+
+    it('refuses a planeswalker whose row prints no loyalty', () => {
+      const read = row({
+        type_line: 'Legendary Planeswalker — Jace', loyalty: null,
+        oracle_text: '+1: Draw a card.',
+      });
+      expect(read.ok).toBe(false);
+      if (!read.ok) expect(read.why).toContain('no printed loyalty');
+    });
+
+    it.each([
+      /*
+        A `*` is only playable when the compiler read the ability that defines it, which is why the
+        refusal waits for the text. The first row is Lhurgoyf's shape — a count that supplies both
+        halves — and it is kept. The second is the same count the engine does not have, so nothing
+        defines the size and the card is refused. The third is the half-and-half case: a count that
+        `definesSize` applies to the **power only** (`applies: 'power'`), leaving a toughness of `*`
+        that nothing supplies, which is a creature with zero toughness and the same death.
+      */
+      ['a count that supplies both halves', 'creature cards in all graveyards', '*', true],
+      ['a count this engine does not have', 'cards in your hand', '*', false],
+      ['a power-only count beside a starred toughness', 'instant and sorcery cards in your graveyard', '*', false],
+    ])('%s: kept = %s', (_label, count, toughness, kept) => {
+      const text = count === 'instant and sorcery cards in your graveyard'
+        ? `Sized Thing's power is equal to the number of ${count}.`
+        : `Sized Thing's power is equal to the number of ${count} and its toughness is equal to`
+          + ' that number plus 1.';
+      const read = row({
+        type_line: 'Creature — Lhurgoyf', power: '*', toughness, oracle_text: text,
+      });
+      expect(read.ok).toBe(kept);
+    });
+
+    it('keeps a starred power beside a printed toughness, which is what Enigma Drake prints', () => {
+      // `*`/`4`: the count defines the power and the 4 is a real number, so the creature has a
+      // size either way and is dealt. The row above is the same text with a `*` toughness.
+      const read = row({
+        type_line: 'Creature — Drake', power: '*', toughness: '4',
+        oracle_text: "Sized Thing's power is equal to the number of instant and sorcery cards in"
+          + ' your graveyard.',
+      });
+      expect(read.ok).toBe(true);
+      if (read.ok) {
+        expect(read.def.toughness).toBe('4');
+        expect(field(read.script, 'statics')).toHaveLength(1);
+      }
     });
   });
 });

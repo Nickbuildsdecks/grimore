@@ -31,7 +31,8 @@
  */
 import type { CardDef, DeckSpec } from './cards.js';
 import { STARTER_DECKS } from './starterDecks.js';
-import { cardFromData, type CardDataRow } from './fromCardData.js';
+import { type CardDataRow } from './fromCardData.js';
+import { compileCard } from './compile.js';
 
 /** One line of a pasted list. Mirrors `DecklistEntry` in `@grimore/shared` without importing it. */
 export interface CustomDeckEntry {
@@ -138,16 +139,49 @@ export function customDeck(input: CustomDeckInput): CustomDeckResult {
     if (key !== '') rows.set(key, row);
   }
 
-  /** The best card available under that name: the pool, then the data, then cardboard. */
+  /**
+   * The best card available under that name: the pool, then the data, then cardboard.
+   *
+   * ## The data step asks `compileCard`, not `cardFromData` (D430)
+   *
+   * It used to ask `cardFromData`, which is the **whole-card** derivation: all-or-nothing by
+   * design, because its job is to decide whether a card's data *is* its rules. A card it refuses
+   * became cardboard — a blank def with an empty type line and "Move it by hand" for text.
+   *
+   * That was right when it was written and became wrong the moment the oracle-text compiler
+   * existed, and `corpus-decks.mjs` is what said so: of 60 random real cards, **34 were cardboard**
+   * — not because nothing could read them, but because nothing asked. The compiler reads 27.2% of
+   * all printed lines and 7,126 cards have a script, and an uploaded deck saw none of it, because the
+   * card was replaced by a blank *before the engine ever looked at it*. A blank def can never be
+   * scripted: `scriptForCard` is handed a card with no name the registry knows, no type line and no
+   * text.
+   *
+   * So this asks `compileCard`, which is the same function `derive.ts` uses at play time, and keeps
+   * its `def` — the **printed** card. What happens next is already built and is exactly D362's
+   * hybrid automation: `scriptForCard` gives that def the hand-written script if there is one, the
+   * whole-card derivation if it reads everything, or the partial script the compiler built; and
+   * `unreadLines` names whatever is left so the table can flag it for a human (D363's badge).
+   *
+   * Cardboard is still the right answer, and still reached, for a row `compileCard` refuses: no type
+   * line at all, a layout with more than one face, or — D431 — a creature whose printed size is a
+   * `*` that nothing read, which would arrive as a 0/0 and be binned by CR 704.5f before anybody
+   * could apply a thing by hand. Those are cards the engine cannot be dealt at all rather than
+   * cards it plays imperfectly, and they are 0.3 of a 60-card deck of random real cards.
+   *
+   * **Why a partial card is strictly better than a blank one.** Cardboard cannot be cast: no cost,
+   * no type line, nothing. A printed def with a partial script is cast for its real cost, does the
+   * part that was read, and says which line it did not — which is the difference between a deck
+   * somebody can play with a few manual steps and a deck of 34 cards nobody can touch.
+   */
   const resolve = (name: string): CardDef => {
     const pooled = poolCardNamed(name);
     if (pooled !== undefined) return pooled;
     const row = rows.get(name.trim().toLowerCase());
     if (row !== undefined) {
-      const derived = cardFromData(row);
-      if (derived.ok) {
+      const compiled = compileCard(row);
+      if (compiled.ok) {
         fromData.push(name);
-        return derived.def;
+        return compiled.def;
       }
     }
     unknown.push(name);

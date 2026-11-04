@@ -26790,3 +26790,94 @@ and Tatyova.
 Seven deliberate breaks, seven failures: no cycling reader, cycling without `discardSelf`, the
 pattern widened to the typed cyclings, the landfall prologue made unmatchable, landfall watching any
 seat's land, landfall watching creatures instead, and `landfall` removed from the ability words.
+
+## D430 — The compiler was never asked by the one path a player's own deck takes
+
+Nine increments of compiler work (D418-D429) had been measured against two things: the 348-card
+pool, and the 33,847-card corpus as *text*. Neither of those is the goal. The goal is "no matter
+what deck we upload, it enforces the rules of the game", and nothing had ever asked that question,
+because nothing played a deck of arbitrary real cards.
+
+`scripts/measure/corpus-decks.mjs` asks it. Two random 60-card decks out of the corpus — 24 basics
+in the colours the spells need, 36 distinct non-lands of mana value 6 or less — resolved through
+`customDeck` exactly as a pasted list is, then played bot against bot to a finish. It reads three
+things a coverage percentage cannot: whether the engine **throws** (`applyAction` is deliberately
+not wrapped inside the loop, for D244's reason), whether the table **stalls** (a move that does not
+move `stateVersion`, or a position with nobody to act and the game unfinished), and how much of each
+deck was automated at all.
+
+The first run answered the goal question, and the answer was no:
+
+> **34.3 of the 60 cards in each deck were cardboard** — a blank with no cost, no type line and
+> nothing anybody can do with it.
+
+Not because nothing could read those cards. Because nothing asked. `customDeck`'s `resolve` called
+`cardFromData`, which answers the all-or-nothing question *is this card's text nothing but its
+data?* — false for every instant, every planeswalker and every creature with a paragraph. The
+oracle-text compiler, which by then read 27% of every printed line in Magic, was wired into
+`derive.ts` for cards the engine already held and was **never consulted for a card a player
+uploaded**. Every increment since #317 opened had been improving a reader that the upload path could
+not reach.
+
+`resolve` now calls `compileCard` and keeps `compiled.def`. The cardboard branch stays for a row
+`printedDef` refuses — no type line, or more than one face — which is what cardboard now means.
+
+| per 60-card deck of random real cards | before | after |
+| --- | --- | --- |
+| cardboard — nothing playable | **34.3** | **0.3** |
+| playable from printed data | 1.4 | **35.3** |
+| with a hand-written script | 11.1 | 11.1 |
+| with at least one flagged line (D362) | 13.2 | **30.3** |
+
+The table is the same six seeds either side, so it is the same two decks and the same shuffles.
+The remaining 0.3 cardboard is D431's refusal, below. Games still reach a finish — and they finish
+in 22.5 turns rather than 93.3, because a board now develops instead of two players drawing blanks
+at each other for ninety turns.
+
+Widened to 40 games (80 random decks) on the fixed engine: **40 finished, no throw and no stall**,
+21.8 turns and 70 moves on average, 9.9 scripted / 35.2 from data / 31.0 with a flagged line / 0.3
+cardboard per deck. That is the first time the project has been able to say anything at all about a
+deck nobody built.
+
+## D431 — Every creature the compiler dealt was a 0/0, and the state-based actions binned it
+
+D430's measurement was 34.3 cardboard cards replaced by 34.3 playable ones, and one of its new
+assertions did not agree: a compiled creature's `power` and `toughness` came back `undefined`.
+
+`printedDef` — "the printed data as a `CardDef`, with no judgement at all" — built the def without
+`power`, `toughness` or `loyalty`. It had been that way since it was split out of `cardFromData` in
+#317, and it was invisible for as long as its only two callers were `cardFromData`, which adds the
+size itself in its creature branch, and `derive.ts`, which takes the compiler's `script` and
+`unread` and gets its def from somewhere else entirely. D430 made the compiler's own def the card a
+player is dealt, and `characteristicsOf` reads a missing size as zero.
+
+So **every one of the corpus's 18,603 creatures arrived as a 0/0**, and CR 704.5f put it in the
+graveyard before anybody had priority. All 327 of its planeswalkers arrived at zero loyalty for
+CR 704.5i to do the same. D430 had not turned 34 blanks into 34 playable cards; it had turned 34
+blanks into 34 corpses, and the only reason the harness read it as an improvement is that a deck of
+corpses still finishes a game faster than a deck of blanks.
+
+Three pieces, and the split between them is the fix:
+
+- **`printedDef` carries the printed size as printed** — `*` and `1+*` included, which is what
+  `CardDef.power` is a string for — and omits the field when the card prints none, so a Lightning
+  Bolt does not gain two blank ones.
+- **`printedBody` and `printedLoyalty`** are the one place that says whether a printed size is a
+  number the engine can play. `cardFromData` and `compileCard` both ask, so neither can be more
+  generous than the other. This is where the two used to disagree in the worst direction: one
+  refused a `*`/`*` creature outright, the other silently dealt every creature sizeless.
+- **The compiler refuses what it cannot size**, rather than flagging it for a human (D362). That
+  trade does not apply here: a 0/0 is gone before anybody can apply anything by hand, so there is no
+  unread line left to be the player's job. Cardboard — the card played manually — is strictly
+  better, which is the probe `cardFromData`'s own refusal was built on.
+
+The refusal waits until the text has been read, which is the part worth keeping in mind. A `*`/`*`
+creature *is* playable when the compiler read the characteristic-defining ability that sizes it:
+Lhurgoyf is a 2/3 with two creature cards in a graveyard and is dealt. Hand Goyf's count ("cards in
+your hand") is one `definesSize` does not have, so nothing sizes it and it is refused. And
+`definesSize` supplies the toughness only when it does not say `applies: 'power'`, so a `*`
+toughness beside a power-only count is refused too while Enigma Drake's printed `4` is kept — the
+one asymmetry that a table-driven test pins rather than assumes.
+
+233 of the corpus's 18,603 creatures and 2 of its 327 planeswalkers land in the refusal. That is the
+0.3 cards per deck that are still cardboard.

@@ -11,11 +11,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
-  applyAction, createGame, customDeck, deckIsAutomatable, legalActions, poolCardNamed,
-  STARTER_DECKS, viewFor,
+  applyAction, characteristicsOf, createGame, customDeck, deckIsAutomatable, legalActions,
+  poolCardNamed, STARTER_DECKS, unreadLines, viewFor,
 } from './index.js';
-import { PLAYERS } from './testkit.js';
-import type { Action, ActionContext, GameState } from './types.js';
+import { arena, find, PLAYERS } from './testkit.js';
+import type { Action, ActionContext, GameState, SeatIndex } from './types.js';
 
 describe('looking a pasted name up in the pool', () => {
   it('finds the card, whatever case and spacing the list was written in', () => {
@@ -393,18 +393,150 @@ describe('a pasted list resolved against card data', () => {
     expect(fromData).toEqual([]);
   });
 
-  it('leaves a card whose text is a paragraph as cardboard, and names it', () => {
+  /*
+    A row nothing can be dealt from at all, which is where the cardboard line moved to (D430).
+
+    These two tests used to assert that a card whose *text* the whole-card derivation refused became
+    cardboard, and that was the behaviour until the oracle-text compiler existed. `corpus-decks.mjs`
+    is what made it untenable: of 60 random real cards, **34** were cardboard — not because nothing
+    could read them, but because `customDeck` asked `cardFromData`, which is all-or-nothing, and
+    never asked `compileCard`, which reads 27% of all printed lines.
+
+    So the boundary is now about what `printedDef` can make a card from, not about how much of the
+    text reads: an empty type line, or a layout with more than one face. Everything else is dealt as
+    its printed self, and whatever the compiler could not read is **flagged** rather than deleted
+    (D362).
+  */
+  const typeless = (name: string) => ({
+    name, type_line: '', mana_cost: '{1}', cmc: 1, colors: [], layout: 'normal',
+    oracle_text: 'Draw a card.',
+  });
+  const twoFaced = (name: string) => ({
+    name, type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'split',
+    oracle_text: 'Datawood Split deals 2 damage to any target.',
+  });
+
+  it('deals a card the whole-card derivation refuses, with its unread line flagged', () => {
+    /*
+      The case this change is for. "Whenever you cast a noncreature spell, put a +1/+1 counter on
+      this creature" is a paragraph `cardFromData` will not take — and `compileCard` reads it, so
+      the card is a real 1/3 with a real cost and a real trigger instead of a blank.
+    */
     const { deck, unknown, fromData } = customDeck({
       id: 'custom:0', name: 'Mine',
       entries: [{ name: 'Datawood Bear', count: 1 }, { name: 'Prowess Person', count: 1 }],
       data: [bear('Datawood Bear'), paragraph('Prowess Person')],
     });
-    // A row the derivation refuses is as good as a row nobody supplied.
-    expect(unknown).toEqual(['Prowess Person']);
+    expect(unknown).toEqual([]);
+    expect(fromData).toEqual(['Datawood Bear', 'Prowess Person']);
+    const person = deck.cards[1]!.card;
+    expect(person.typeLine).toBe('Creature — Human Wizard');
+    expect([person.power, person.toughness]).toEqual(['1', '3']);
+    expect(person.manaCost).toBe('{2}{U}');
+    // Playable, which is the whole point: a blank card has no cost and can never be cast.
+    expect(deckIsAutomatable(deck)).toBe(true);
+  });
+
+  it('still leaves a row nothing can be dealt from as cardboard, and names it', () => {
+    const { deck, unknown, fromData } = customDeck({
+      id: 'custom:0', name: 'Mine',
+      entries: [
+        { name: 'Datawood Bear', count: 1 },
+        { name: 'Datawood Nothing', count: 1 },
+        { name: 'Datawood Split', count: 1 },
+      ],
+      data: [bear('Datawood Bear'), typeless('Datawood Nothing'), twoFaced('Datawood Split')],
+    });
+    // No type line is cardboard's own marker, and a split card is two spells on one piece of
+    // cardboard — `printedDef` refuses both by name rather than guessing.
+    expect(unknown).toEqual(['Datawood Nothing', 'Datawood Split']);
     expect(fromData).toEqual(['Datawood Bear']);
     expect(deck.cards[1]!.card.typeLine).toBe('');
-    // And one unreadable card still refuses the Arena table, exactly as before.
+    expect(deck.cards[2]!.card.typeLine).toBe('');
     expect(deckIsAutomatable(deck)).toBe(false);
+  });
+
+  /*
+    ── The size the card prints, which is what nearly broke this (D431) ─────────────────────────
+
+    `printedDef` built its `CardDef` without `power` or `toughness`, and nothing noticed for as long
+    as the only caller was `cardFromData` — which adds the size itself in its creature branch. The
+    compiler reads the same function and does not, so the moment `customDeck` started dealing
+    compiled cards, all 18,603 creatures in the corpus arrived with no printed size.
+    `characteristicsOf` reads a missing size as zero, so each one was a 0/0 that CR 704.5f binned on
+    arrival: the deck stopped being 34 blanks and became 34 corpses.
+  */
+  it('deals a creature at its printed size, which the engine then reads off the board', () => {
+    /*
+      Read from the battlefield rather than off the `CardDef`, because the field being populated is
+      not the claim — the claim is that the creature *survives arrival*, and a size that reached the
+      def but not `characteristicsOf` would still be a 1/3 on paper and a dead 0/0 at the table.
+    */
+    const list = Array.from({ length: 56 }, () => ({ name: 'Mountain', count: 1 }));
+    const built = customDeck({
+      id: 'mine', name: 'Mine',
+      entries: [{ name: 'Prowess Person', count: 4 }, ...list],
+      data: [paragraph('Prowess Person')],
+    });
+    expect(built.unknown).toEqual([]);
+    const s = arena({
+      decks: { 0: 'mine' },
+      deckSpecs: { mine: built.deck },
+      battlefield: { 0: ['Prowess Person'] },
+      turn: 3,
+    });
+    const id = find(s, 0 as SeatIndex, 'battlefield', 'Prowess Person');
+    const live = characteristicsOf(s, s.instances[id]!);
+    expect([live.power, live.toughness]).toEqual([1, 3]);
+    // Still there, which is the half a populated field cannot assert: a 0/0 is gone by now.
+    expect(s.instances[id]!.zone).toBe('battlefield');
+  });
+
+  it('keeps a creature whose size is a count it cannot read as cardboard, and names it', () => {
+    /*
+      The other side of the same rule, and the reason the refusal lives in the compiler rather than
+      here: a `*`/`*` creature has no printed size at all, so "deal it and flag the line" (D362) is
+      not available — the card would be a 0/0 and die before anybody could apply anything by hand.
+      233 of the corpus's 18,603 creatures print a size like this. Cardboard is what the player can
+      actually use, so cardboard is what they get, with the name reported.
+    */
+    const starred = {
+      name: 'Datawood Goyf', type_line: 'Creature — Lhurgoyf', mana_cost: '{2}{G}', cmc: 3,
+      colors: ['G'], layout: 'normal', power: '*', toughness: '*',
+      oracle_text: 'Datawood Goyf\u2019s power is equal to the number of cards in your hand.',
+    };
+    const { deck, unknown, fromData } = customDeck({
+      id: 'custom:0', name: 'Mine',
+      entries: [{ name: 'Datawood Bear', count: 1 }, { name: 'Datawood Goyf', count: 1 }],
+      data: [bear('Datawood Bear'), starred],
+    });
+    expect(unknown).toEqual(['Datawood Goyf']);
+    expect(fromData).toEqual(['Datawood Bear']);
+    expect(deck.cards[1]!.card.typeLine).toBe('');
+  });
+
+  it('flags the line it could not read rather than deleting the card (D362)', () => {
+    /*
+      Hybrid automation, which is what makes dealing a partly-read card the right answer rather
+      than a reckless one. "At the beginning of each opponent's upkeep" has no prologue — `of` on a
+      step trigger is `'you' | 'any'` and this needs a third value — so the line is **reported**,
+      and the table shows the card with that line flagged for a human to apply.
+    */
+    const unreadable = {
+      name: 'Datawood Watcher', type_line: 'Creature — Human Scout', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: "At the beginning of each opponent's upkeep, draw a card.",
+    };
+    const { deck, unknown } = customDeck({
+      id: 'custom:0', name: 'Mine',
+      entries: [{ name: 'Datawood Watcher', count: 1 }],
+      data: [unreadable],
+    });
+    expect(unknown).toEqual([]);
+    const card = deck.cards[0]!.card;
+    expect(card.typeLine).toBe('Creature — Human Scout');
+    expect(unreadLines(card).map((entry) => entry.line))
+      .toEqual(["At the beginning of each opponent's upkeep, draw a card."]);
   });
 
   it('matches a row by name the same way the pool is matched', () => {
@@ -446,8 +578,8 @@ describe('a pasted list resolved against card data', () => {
     */
     const { unknown } = customDeck({
       id: 'custom:0', name: 'Mine',
-      entries: [{ name: 'Datawood Bear', count: 1 }, { name: 'Prowess Person', count: 1 }],
-      data: [bear('Datawood Bear'), paragraph('Prowess Person')],
+      entries: [{ name: 'Datawood Bear', count: 1 }, { name: 'Datawood Nothing', count: 1 }],
+      data: [bear('Datawood Bear'), typeless('Datawood Nothing')],
     });
     expect(unknown).toHaveLength(1);
   });

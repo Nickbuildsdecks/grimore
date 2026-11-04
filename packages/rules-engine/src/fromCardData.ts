@@ -576,6 +576,68 @@ const NOT_CARDS = new Set(['token', 'double_faced_token', 'emblem', 'art_series'
  * table's answer is to keep that card as cardboard, which is what it does today for every name.
  */
 /**
+ * A creature's printed size, or why this engine cannot give it one.
+ *
+ * Shared by `cardFromData` and the compiler (#317) on purpose, because the two used to disagree in
+ * the worst possible direction. `cardFromData` refuses a `*`/`*` creature outright; `printedDef`
+ * carried **no** power or toughness at all, so the compiler — which builds its `CardDef` from
+ * `printedDef` — handed back every creature in the corpus with no printed size. `characteristicsOf`
+ * reads a missing size as zero, so each of those 18,603 cards was a 0/0 that died to CR 704.5f the
+ * instant it arrived. Found by D430, which started dealing compiled cards into real decks: the
+ * cards stopped being cardboard and started being corpses, which is not an improvement.
+ *
+ * The split of responsibility is the fix. `printedDef` now carries the printed size as printed —
+ * `*` and `1+*` included, which is what `CardDef.power` is a string for — and this function is the
+ * one place that says whether that size is a number the engine can play. Both callers ask it, so
+ * neither can be more generous than the other.
+ *
+ * Why a non-numeric size is refused rather than flagged for a human (D362): a size from a
+ * characteristic-defining ability is not a line somebody can apply by hand afterwards. The card
+ * would be a 0/0 and the state-based action would bin it before anybody had priority. Cardboard —
+ * a card the player plays manually, with nothing automated — is strictly better, which is what the
+ * probe behind `cardFromData`'s own refusal found.
+ */
+export function printedBody(
+  name: string,
+  row: CardDataRow,
+): { readonly power: string; readonly toughness: string } | { readonly why: string } {
+  const power = (row.power ?? '').trim();
+  const toughness = (row.toughness ?? '').trim();
+  if (power === '' || toughness === '') {
+    return { why: `${name}: a creature with no printed power or toughness` };
+  }
+  /*
+    `*`, `1+*` and `?` are printed values and the columns hold them (migration 0015 types them
+    TEXT for exactly that reason) — but a size that comes from a characteristic-defining ability is
+    a size this engine cannot compute. See the docblock for what shipping one costs.
+  */
+  if (!INTEGER.test(power) || !INTEGER.test(toughness)) {
+    return { why: `${name}: its ${power}/${toughness} comes from an ability, not a number` };
+  }
+  return { power, toughness };
+}
+
+/**
+ * A planeswalker's printed starting loyalty, or why this engine cannot give it one.
+ *
+ * The same defect as `printedBody`, one zone over and one step more fatal: loyalty counters are put
+ * on from the printed number (CR 306.5b), and a planeswalker with none is a planeswalker at zero
+ * loyalty, which CR 704.5i puts in the graveyard immediately. Two of the corpus's 327 planeswalkers
+ * print a loyalty this cannot read; the other 325 print a number and are now given it.
+ */
+export function printedLoyalty(
+  name: string,
+  row: CardDataRow,
+): { readonly loyalty: string } | { readonly why: string } {
+  const loyalty = (row.loyalty ?? '').trim();
+  if (loyalty === '') return { why: `${name}: a planeswalker with no printed loyalty` };
+  if (!INTEGER.test(loyalty)) {
+    return { why: `${name}: its starting loyalty of ${loyalty} is not a number` };
+  }
+  return { loyalty };
+}
+
+/**
  * The printed data as a `CardDef`, with no judgement at all about whether the engine can play it.
  *
  * Split out of `cardFromData` for the oracle-text compiler (#317), and the split is the point.
@@ -609,6 +671,16 @@ export function printedDef(row: CardDataRow): { readonly def: CardDef } | { read
   const cmcRaw = row.cmc;
   const cmc = typeof cmcRaw === 'number' ? cmcRaw : Number(cmcRaw ?? 0);
 
+  /*
+    The printed size, carried as printed. Omitted rather than empty when the card has none, so a
+    Lightning Bolt's def does not gain two blank fields — and carried for a land that is also a
+    creature (Dryad Arbor), which this function cannot tell apart from any other land and does not
+    need to. `printedBody` is what decides whether a size is one the engine can play.
+  */
+  const power = (row.power ?? '').trim();
+  const toughness = (row.toughness ?? '').trim();
+  const loyalty = (row.loyalty ?? '').trim();
+
   return {
     def: {
       name,
@@ -617,6 +689,9 @@ export function printedDef(row: CardDataRow): { readonly def: CardDef } | { read
       cmc: Number.isFinite(cmc) ? cmc : 0,
       oracleText: (row.oracle_text ?? '').trim(),
       colors,
+      ...(power === '' ? {} : { power }),
+      ...(toughness === '' ? {} : { toughness }),
+      ...(loyalty === '' ? {} : { loyalty }),
       ...(row.image_uri ? { imageUri: row.image_uri } : {}),
       ...(row.id ? { scryfallId: row.id } : {}),
     },
@@ -728,22 +803,10 @@ export function cardFromData(row: CardDataRow): Derivation {
 
   // ── Creatures ──────────────────────────────────────────────────────────────────────────────────
   if (hasType(typeLine, 'creature')) {
-    const power = (row.power ?? '').trim();
-    const toughness = (row.toughness ?? '').trim();
-    if (power === '' || toughness === '') {
-      return { ok: false, why: `${name}: a creature with no printed power or toughness` };
-    }
-    /*
-      `*`, `1+*` and `?` are printed values and the columns hold them (migration 0015 types them
-      TEXT for exactly that reason) — but a size that comes from a characteristic-defining ability
-      is a size this module cannot compute. The probe settled what happens if it ships anyway: the
-      creature is a 0/0 and dies the instant it arrives (CR 704.5f). Cardboard is strictly better.
-    */
-    if (!INTEGER.test(power) || !INTEGER.test(toughness)) {
-      return { ok: false, why: `${name}: its ${power}/${toughness} comes from an ability, not a number` };
-    }
-
-    const withBody = { ...base, power, toughness };
+    const body = printedBody(name, row);
+    if ('why' in body) return { ok: false, why: body.why };
+    // `printedDef` already carried the printed size onto `base`; `body` is the judgement on it.
+    const withBody = base;
     if (lines.length === 0) return { ok: true, kind: 'vanilla-creature', def: withBody };
 
     /*

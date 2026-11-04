@@ -11340,3 +11340,45 @@ reading wins.
 
 Corpus **16,543 of 60,940 (27.1%)**, 7,145 cards with a script; pool **415 of 538 (77.1%)**, 239
 complete — Compelling Argument and Tatyova left the incomplete list. Seven breaks, seven failures.
+
+## The question the project is for, asked for the first time (#317/#318, D430-D431)
+
+Nine increments of compiler work had been measured two ways — against the 348-card pool, and against
+the 33,847-card corpus as **text**. Neither is the goal. The goal is a deck somebody uploads being
+played by the rules, and `scripts/measure/corpus-decks.mjs` is the first thing that asks: two random
+60-card decks out of the corpus, resolved through `customDeck` exactly as a pasted list is, played
+bot against bot to a finish, with `applyAction` deliberately unwrapped inside the loop so a throw is
+a crash attributed to a seed and a deck rather than a short game (D244).
+
+It found the largest defect in the project to date, and then a second one underneath it.
+
+**D430 — `customDeck` never asked the compiler.** Its `resolve` called `cardFromData`, which answers
+the all-or-nothing question *is this card's text nothing but its data?* So **34.3 of the 60 cards in
+each random real deck were blank cardboard** — not because nothing could read them, but because
+nothing asked. Every reader written since #317 opened was unreachable from the one path a player's
+own deck takes. `resolve` now calls `compileCard`; cardboard is left for a row `printedDef` refuses.
+
+**D431 — and every creature it then dealt was a 0/0.** `printedDef` built its `CardDef` with no
+`power`, `toughness` or `loyalty`, which was invisible while its only callers added the size
+themselves or took the def from elsewhere. `characteristicsOf` reads a missing size as zero, so all
+18,603 corpus creatures were arriving for CR 704.5f to bin, and all 327 planeswalkers at zero
+loyalty for CR 704.5i. D430 had replaced 34 blanks with 34 corpses.
+
+The printed size is now carried as printed, and a single shared pair of judgements —
+`printedBody` and `printedLoyalty` — decides whether it is a number the engine can use, asked by
+`cardFromData` and `compileCard` both so the two cannot drift again. A size the compiler *does*
+read still counts: Lhurgoyf's `*`/`*` is dealt and is a 2/3 with two creature cards in a graveyard,
+while a count `definesSize` does not have is refused rather than dealt as a corpse — the refusal
+therefore waits until the text has been read.
+
+| per 60-card deck of random real cards, same six seeds | before D430 | after D431 |
+| --- | --- | --- |
+| cardboard | **34.3** | **0.3** |
+| playable from printed data | 1.4 | **35.3** |
+| with a flagged line (D362) | 13.2 | **30.3** |
+| turns to a finish | 93.3 | **22.5** |
+
+Widened: **40 games, 80 random decks, all 40 finished with no throw and no stall**, 21.8 turns and
+70 moves on average. Corpus coverage **16,448 of 60,460 lines (27.2%)**, 7,126 cards with a script —
+the denominators move because 223 cards (221 creatures and 2 planeswalkers) are now refused for a
+size nothing can read, which is what the 0.3 cardboard per deck is.
