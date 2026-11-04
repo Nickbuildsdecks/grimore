@@ -9228,6 +9228,13 @@ export function isKeywordDeclaration(line: string): boolean {
 const WORD_NUMBERS: Readonly<Record<string, number>> = {
   a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5,
   six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  /*
+    Above ten the words are rare and the pool prints exactly one — Jace Beleren's "mills twenty
+    cards", which went unread for want of this row while the two lines around it compiled. The
+    others are the round numbers a mill or a token count is printed with; nothing beyond is added,
+    because a word nobody prints is a row nobody can test.
+  */
+  eleven: 11, twelve: 12, thirteen: 13, fifteen: 15, twenty: 20,
 };
 
 /** A printed count, or `null` when it is a word this does not know. */
@@ -9384,7 +9391,27 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     };
   }
 
-  const drawn = /^draw ([\w]+) cards?$/i.exec(text);
+  /*
+    "Each player draws a card" — symmetrical, the opponent included, which is the card: Jace
+    Beleren's +2 is not simply a better Divination. Eliminated seats are skipped, as the
+    hand-written ability skips them, and the draw is immediate rather than owed because a draw for
+    somebody who is not the controller cannot be put on `drawsOwed` for them to take later.
+  */
+  const roundTheTable = /^each player draws ([\w]+) cards?$/i.exec(text);
+  if (roundTheTable !== null) {
+    const n = countFrom(roundTheTable[1]!);
+    if (n !== null) {
+      return {
+        effect: (c) => c.state.seats.reduce(
+          (state, seat) => (seat.eliminated ? state : draw(state, seat.index, n)),
+          c.state,
+        ),
+      };
+    }
+  }
+
+  // "You draw a card" and "Draw a card" are the same sentence; a planeswalker spells it the long way.
+  const drawn = /^(?:you )?draw ([\w]+) cards?$/i.exec(text);
   if (drawn !== null) {
     const n = countFrom(drawn[1]!);
     if (n !== null) {
@@ -11167,6 +11194,32 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   const split = /^([^:]+):\s*(.+)$/.exec(text);
   if (split === null) return null;
   const clause = split[2]!.replace(/\.\s*$/, '').trim();
+
+  /*
+    A loyalty cost, which is the one cost that is a number rather than a list of components.
+
+    `+1`, `0`, `−3` — and the minus is printed as U+2212, not a hyphen, so both are read. It is
+    taken before the component loop because it shares nothing with it: `AbilityCost.loyalty` carries
+    its own restrictions (sorcery speed, once a turn, and only by the permanent's controller), which
+    is why it is a field rather than a cost component, and a planeswalker's line has no `{T}` or
+    mana in it to classify.
+  */
+  const loyalty = /^([+\u2212-]?)(\d+)$/.exec(split[1]!.trim());
+  if (loyalty !== null) {
+    const read = composeEffects(clausesOf(clause), name);
+    if (read === null) return null;
+    const amount = loyalty[1] === '+' || loyalty[1] === '' ? Number(loyalty[2]) : -Number(loyalty[2]);
+    return {
+      abilities: [{
+        cost: { loyalty: amount },
+        description: text,
+        ...(read.targets === undefined ? {} : { targets: read.targets }),
+        ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
+        ...(read.abilityFlags ?? {}),
+        effect: read.effect,
+      } as AbilityDef],
+    };
+  }
 
   let taps = 0;
   let life = 0;

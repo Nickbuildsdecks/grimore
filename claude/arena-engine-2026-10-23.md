@@ -10571,3 +10571,21 @@ the Squid clause compiles with the islandwalk it prints.
 
 **341 → 344 of 538 lines (63.4% → 63.9%), 216 → 217 of 339 cards.** Four breaks, four failing tests;
 the whole engine suite 1671 green.
+
+## Loyalty abilities (#317, D393)
+
+A planeswalker's line is an activated ability whose cost is a number, not a list of components, so
+the cost parse takes it first; `AbilityCost.loyalty` is a field because it carries its own
+restrictions (sorcery speed, once a turn, controller only). **The printed minus is U+2212**, and
+reading it as a plus would make a planeswalker that gains loyalty for its ultimate — both spellings
+are read, and collapsing the sign fails two tests.
+
+Two clause readers came with it: `each player draws N cards` (symmetrical, the opponent included —
+that is Jace Beleren's +2, not a better Divination) and `you draw a card`. And one missing row:
+`WORD_NUMBERS` stopped at ten, so "mills twenty cards" went unread while the two lines around it
+compiled.
+
+**344 → 353 of 538 lines (63.9% → 65.6%), 217 → 222 of 339 cards.** Jace, Memory Adept and Jace
+Beleren compile whole — the first planeswalkers read end to end. Garruk is the hybrid test: one
+ability automated, two lines reported for a human. Three breaks, three failing tests; the engine
+suite 1678 green.

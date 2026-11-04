@@ -3027,4 +3027,108 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(resolve('the number of creature cards in your graveyard', dead)).toBe(1);
     });
   });
+  describe('loyalty abilities, against the two planeswalkers that compile whole', () => {
+    const contextOn = (
+      state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],
+    ): EffectContext => ({ state, controller: seat, source, targets, decisions: [] } as unknown as EffectContext);
+
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+    const abilitiesOf = (script: unknown) =>
+      (field(script, 'abilities') as readonly AbilityDef[] | undefined) ?? [];
+
+    /*
+      A loyalty cost is the one cost that is a number rather than a list of components, and
+      `AbilityCost.loyalty` is a field rather than a component because it carries its own
+      restrictions: sorcery speed, once a turn, controller only. So the cost parse takes it before
+      the component loop, which has no `{T}` or mana to classify on a planeswalker's line.
+    */
+    it.each([
+      ['Jace, Memory Adept'],
+      ['Jace Beleren'],
+    ])('%s reads ability for ability, cost and description, like the hand-written card', (card) => {
+      const compiled = compiledScript(card as string);
+      expect(compiled.unread).toEqual([]);
+      const mine = abilitiesOf(compiled.script);
+      const theirs = abilitiesOf(scriptFor(card as string));
+      expect(mine).toHaveLength(theirs.length);
+      mine.forEach((ability, i) => {
+        expect(ability.cost).toEqual(theirs[i]!.cost);
+        expect(ability.description).toBe(theirs[i]!.description);
+        expect(ability.targets).toEqual(theirs[i]!.targets);
+      });
+    });
+
+    it('reads the minus as a minus, which is a typographic one on a real card', () => {
+      /*
+        A printed loyalty cost spells its minus U+2212, not a hyphen, and reading it as a plus would
+        make a planeswalker that pays nothing and gains loyalty for its ultimate. Both spellings are
+        read; the pool only prints the typographic one, so the hyphen is pinned by a synthetic.
+      */
+      const beleren = abilitiesOf(compiledScript('Jace Beleren').script);
+      expect(beleren.map((a) => a.cost?.loyalty)).toEqual([2, -1, -10]);
+
+      const hyphen = compileCard({
+        name: 'Plain Walker', type_line: 'Legendary Planeswalker — Test', mana_cost: '{2}{U}',
+        cmc: 3, colors: ['U'], loyalty: '3', oracle_text: '-2: Draw a card.',
+      });
+      expect(hyphen.ok).toBe(true);
+      if (!hyphen.ok) return;
+      expect(hyphen.unread).toEqual([]);
+      expect(abilitiesOf(hyphen.script)[0]?.cost?.loyalty).toBe(-2);
+    });
+
+    it('draws for everybody, the opponent included, as Jace Beleren’s +2 does', () => {
+      const base = arena({ decks: { 0: 'tidal-mind', 1: 'verdant-guard' } });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = abilitiesOf(compiledScript('Jace Beleren').script)[0]!.effect!(ctx);
+      const theirs = abilitiesOf(scriptFor('Jace Beleren'))[0]!.effect!(ctx);
+      expect(mine).toEqual(theirs);
+      // Symmetrical, which is the card: a reader that drew only for the controller would be a
+      // strictly better Divination, and this is the assertion that says so.
+      expect(mine.zones[zoneKey(0 as SeatIndex, 'hand')]).toHaveLength(1);
+      expect(mine.zones[zoneKey(1 as SeatIndex, 'hand')]).toHaveLength(1);
+    });
+
+    it('owes the controller a card for "You draw a card", as the hand-written minus does', () => {
+      const base = arena({ decks: { 0: 'tidal-mind' } });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
+      const mine = abilitiesOf(compiledScript('Jace Beleren').script)[1]!.effect!(ctx);
+      const theirs = abilitiesOf(scriptFor('Jace Beleren'))[1]!.effect!(ctx);
+      expect(mine).toEqual(theirs);
+      expect(mine.drawsOwed.filter((seat) => seat === 0)).toHaveLength(1);
+    });
+
+    it('mills twenty, which needed the word as well as the clause', () => {
+      /*
+        "mills twenty cards" went unread for want of one row in `WORD_NUMBERS` while the two lines
+        around it compiled — a count printed as a word above ten, which the pool prints exactly
+        once. Twenty is the assertion, because ten would pass a reader that stopped at the word it
+        knew.
+      */
+      const base = arena({ decks: { 0: 'tidal-mind', 1: 'verdant-guard' } });
+      const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'player', seat: 1 as SeatIndex }]);
+      const mine = abilitiesOf(compiledScript('Jace Beleren').script)[2]!.effect!(ctx);
+      const theirs = abilitiesOf(scriptFor('Jace Beleren'))[2]!.effect!(ctx);
+      expect(mine).toEqual(theirs);
+      expect(mine.zones[zoneKey(1 as SeatIndex, 'graveyard')]).toHaveLength(20);
+    });
+
+    it('refuses a loyalty line whose clause has no reader, and reads its neighbours', () => {
+      /*
+        Garruk Wildspeaker: three abilities, one of which untaps two target lands — a count on a
+        target phrase this module cannot read — and one a team pump with a keyword grant. The middle
+        one reads, so the card is partly automated and the two lines that are not are reported for a
+        human to play by hand (D362). That is the hybrid the compiler exists to produce, and this is
+        the test that it still refuses line by line rather than card by card.
+      */
+      const garruk = compiledScript('Garruk Wildspeaker');
+      expect(garruk.unread.map((u) => u.line)).toEqual([
+        '+1: Untap two target lands.',
+        '−4: Creatures you control get +3/+3 and gain trample until end of turn.',
+      ]);
+      expect(abilitiesOf(garruk.script)).toHaveLength(1);
+      expect(abilitiesOf(garruk.script)[0]?.description).toBe('−1: Create a 3/3 green Beast creature token.');
+    });
+  });
 });

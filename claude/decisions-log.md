@@ -24593,3 +24593,46 @@ printed landwalk. The whole engine suite is 1671 green, and a 30,000-row shuffle
 One stale refusal row left `tokenEffect`'s list: "Create X … where X is …" is read now, and the "for
 each" spelling of the same count remains, since that grammar puts the count after the token rather
 than in a `where X is` tail.
+
+## D393
+
+**Loyalty abilities, and a number word nobody had printed before** (#317)
+
+A planeswalker's line is an activated ability with a cost that is a **number** rather than a list of
+components: `+1`, `0`, `−3`. So the cost parse takes it before the component loop, which has no
+`{T}` and no mana to classify on such a line, and `AbilityCost.loyalty` is a field rather than a
+component because it carries its own restrictions — sorcery speed, once a turn, controller only.
+
+**The minus is U+2212, not a hyphen.** A real card prints the typographic minus, and reading it as a
+plus would make a planeswalker that gains loyalty for its ultimate instead of paying it. Both
+spellings are read; the pool prints only the typographic one, so the hyphen is pinned by a synthetic
+card, and collapsing the sign fails two tests.
+
+Two clause readers came with it, because the pool's planeswalkers are mostly made of clauses the
+compiler already had:
+
+- `each player draws N cards` — symmetrical, the opponent included, eliminated seats skipped. That
+  *is* Jace Beleren's +2: a reader that drew only for the controller would be a strictly better
+  Divination, and the test asserts both hands.
+- `you draw a card`, which is the same sentence as `draw a card` spelled the long way.
+
+### The word that was missing
+
+`WORD_NUMBERS` stopped at ten, and Jace Beleren's `−10: Target player mills twenty cards` went
+unread for want of one row while the two lines around it compiled. Eleven through twenty's round
+numbers are added — and nothing beyond, because a word nobody prints is a row nobody can test. The
+mill test asserts **twenty**, since ten would pass a reader that stopped at the word it knew.
+
+### Measured
+
+**344 → 353 of 538 printed lines (63.9% → 65.6%)**, and **217 → 222 of 339 cards**. Jace, Memory
+Adept and Jace Beleren now compile **whole** — the first planeswalkers the compiler reads end to
+end.
+
+Garruk Wildspeaker is the test for the hybrid this exists to produce: his `−1` reads, his `+1`
+(untap two target lands) and his `−4` (a team pump with a keyword grant) do not, so one ability is
+automated and the two unread lines are reported for a human to play by hand (D362). Nissa and Ajani
+are the same shape, each one line short.
+
+Three deliberate breaks, three failing tests. The whole engine suite is 1678 green and a 30,000-row
+shuffled run found no throw.
