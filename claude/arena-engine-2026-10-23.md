@@ -10220,3 +10220,26 @@ shuffle". The readers now match the first clause and the bare `shuffle` reads as
 because `searchYourLibrary` already shuffles — doing it twice would make two boards incomparable.
 Both searches are deliberately narrow (no filter for the tutor, `isBasicLand` for Rampant Growth),
 and `min: 0` is asserted, because a search you may decline is a different card from one you may not.
+
+## Soulbond, a team pump, and an opponent-only phrase (#317, D382)
+
+**316 of 538 printed lines, up from 309 (57.4% → 58.7%). 199 of 339 cards get a script, up from
+196.** Trusted Forcemage, Wolfir Silverheart, Master of Pearls, Ainok Survivalist's turn-up.
+
+**Soulbond was a named refusal and this is the stage it was waiting for.** Its line is the word
+alone and the bonus is on the next line, so it is the third whole-card shape after attachments and
+exile-until-leaves: both lines or neither, with `soulbondTriggers` alongside, because a pairing that
+does nothing and a bonus with no pairing are each half a card. Only the bonus form — Tandem Lookout
+hands out an *ability*, declared as `grants: [0]` against a `grantedTriggers` entry nothing here can
+build, so it is refused rather than compiled into a pair that gets nothing.
+
+**`pumpTeam`, not `pump` over a list.** "Creatures you control get +2/+2 until end of turn" is a
+continuous effect with a scope: a creature that arrives later in the turn is out, and one that
+leaves does not take the bonus with it. The same sentence *without* a duration is a static and is
+read elsewhere — the duration is the whole difference.
+
+**One phrase, two tests, and the second was not covered until it was broken.**
+`target artifact or enchantment an opponent controls` is the first place the type list and the
+controller test compose, so `permanentFilter` gained a live-read `types` option. The first draft of
+the test put an artifact on each side of the table, which proves the side and says nothing about the
+types; dropping `types` left it green. A creature on the opponent's side was the missing row.

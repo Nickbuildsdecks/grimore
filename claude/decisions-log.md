@@ -23932,3 +23932,51 @@ nothing reads today is a moving target, and the property is about the two *kinds
 Verified: compile.test.ts 153/153; the two static scopes, the accumulating `statics`, the Fog's bot
 hint, the tutor's `min: 0` and Rampant Growth's basic-land filter each proved to fail when
 deliberately broken.
+
+## D382
+
+**Soulbond, a team pump, and the phrase that may not point at your own Sol Ring** (#317)
+
+**316 of 538 printed lines, up from 309 (57.4% → 58.7%); 199 of 339 cards get a script, up from
+196.** Trusted Forcemage, Wolfir Silverheart, Master of Pearls, and Ainok Survivalist's turn-up.
+
+### Soulbond was a named refusal, and this is the stage it was waiting for
+
+`keywordScriptFor`'s docblock listed it first among what is deliberately absent: "its line is the
+word alone; the bonus the pair gets is on the *next* line", and a number guessed from the word
+Soulbond would be invented (D259). So it is the **third whole-card shape**, after attachments and
+exile-until-leaves: `Soulbond` plus "As long as ~ is paired with another creature, each of those
+creatures gets +1/+1" is one mechanic printed as two lines, and neither line is a unit — a pairing
+that does nothing, or a bonus with no pairing to hang from. The shape emits the declaration and
+`soulbondTriggers` together, or nothing.
+
+Only the bonus form. Tandem Lookout prints "each of those creatures **has** 'Whenever this creature
+deals damage to a player, draw a card'", declared in the pool as `grants: [0]` against a
+`grantedTriggers` entry nothing here can build. Compiling it as a pair that gets *nothing* would be
+a card that works and does half of what it says, so it is refused — and that refusal has its own
+test, which is what caught a broadened regex that would have fed `NaN` into the bonus.
+
+### `pumpTeam`, which is not `pump` over the creatures currently out
+
+"Creatures you control get +2/+2 until end of turn" is a continuous effect with a **scope**: a
+creature that arrives later in the turn is not included and one that leaves does not carry the
+bonus away. `pump` over a list of ids would be right on the board it saw and wrong a moment later,
+and comparing the two resulting boards is what tells them apart.
+
+The same sentence without a duration is a *static* and is read by `staticFromLine` (D381). The
+duration is the whole of the difference, and the two readers sit in different places because of it.
+
+### One phrase, two tests, and the second was not covered until it was broken
+
+`target artifact or enchantment an opponent controls` is the first place the type list and the
+controller test compose, so `permanentFilter` gained a `types` option — read **live** through
+`characteristicsOf`, like its other tests. Ainok Survivalist's own comment says why the restriction
+matters more here than on a Naturalize: the trigger is **mandatory**, so without it a morph turned
+up on an otherwise empty board would have to destroy its controller's own Sol Ring.
+
+The first draft of the test put an artifact on each side of the table, which proves the controller
+test and says nothing about the types — dropping `types` left it green. A creature on the opponent's
+side is the row that was missing.
+
+Verified: compile.test.ts 158/158; the soulbond triggers, the soulbond refusal, `pumpTeam`, the
+phrase's controller test and its type test each proved to fail when deliberately broken.

@@ -770,6 +770,118 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       .toContain(description as string);
   });
 
+  describe('soulbond, a team pump and an opponent-only phrase', () => {
+    const field = (script: unknown, key: string): unknown =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    it.each([
+      ['Trusted Forcemage'],
+      ['Wolfir Silverheart'],
+    ])('%s reads its soulbond off both printed lines', (card) => {
+      /*
+        The bonus is on the second line, which is why `keywordScriptFor` refused the keyword on its
+        own: a number guessed from the word "Soulbond" would be invented (D259). Both lines together
+        are the mechanic, so the shape emits both halves — the declaration and `soulbondTriggers` —
+        or neither.
+      */
+      const compiled = compiledScript(card as string);
+      expect(field(compiled.script, 'soulbond'))
+        .toEqual(field(scriptFor(card as string), 'soulbond'));
+      // And the pairing triggers, without which the bonus has nothing to hang from.
+      const descriptions = (script: unknown) =>
+        ((field(script, 'triggers') ?? []) as readonly { description?: string }[])
+          .map((t) => t.description ?? '');
+      for (const written of descriptions(scriptFor(card as string))) {
+        expect(descriptions(compiled.script), `${card as string}: missing "${written}"`)
+          .toContain(written);
+      }
+      // Two printed lines, both accounted for: these two cards are nothing else.
+      expect(compiled.unread).toEqual([]);
+      expect(fullyCompiled(compiled)).toBe(true);
+    });
+
+    it('refuses the soulbond that hands out an ability instead of a body', () => {
+      /*
+        Tandem Lookout's pair does not get bigger, it draws a card — "each of those creatures has
+        'Whenever this creature deals damage to a player, draw a card'". The pool declares that as
+        `grants: [0]` against a `grantedTriggers` entry, and nothing here can build one. Compiling
+        it as a pair that gets *nothing* would be a card that works and does half of what it says.
+      */
+      const lookout = compiledScript('Tandem Lookout');
+      expect(field(lookout.script, 'soulbond')).toBeUndefined();
+      expect(lookout.unread.map((u) => u.line).some((l) => /^Soulbond$/i.test(l))).toBe(true);
+    });
+
+    it("reads Master of Pearls' turn-up, which pumps the team rather than a list", () => {
+      /*
+        `pumpTeam` and not `pump` over the creatures currently out: the scope is "creatures you
+        control" as a continuous effect, so a creature that arrives later in the turn is not
+        included and one that leaves does not carry the bonus away. Comparing the boards is what
+        tells the two apart.
+      */
+      const base = arena({
+        decks: { 0: 'forge-alliance' }, battlefield: { 0: ['Elite Vanguard', 'Doomed Traveler'] },
+        turn: 3,
+      });
+      const source = find(base, 0 as SeatIndex, 'battlefield', 'Elite Vanguard');
+      const ctx = { state: base, controller: 0 as SeatIndex, source, targets: [] } as
+        unknown as EffectContext;
+      const only = (script: unknown) =>
+        ((field(script, 'triggers') ?? []) as readonly TriggerDef[])
+          .find((t) => t.description === 'creatures you control get +2/+2 until end of turn');
+      const written = only(scriptFor('Master of Pearls'));
+      const compiled = only(compiledScript('Master of Pearls').script);
+      expect(written, 'no hand-written turn-up').toBeDefined();
+      expect(compiled, 'compiled no turn-up').toBeDefined();
+      if (written === undefined || compiled === undefined) return;
+      expect(compiled.on).toEqual(written.on);
+      expect(compiled.effect(ctx)).toEqual(written.effect(ctx));
+      expect(compiled.effect(ctx), 'the team pump changed nothing').not.toEqual(base);
+    });
+
+    it("reads Ainok Survivalist's phrase, which may not point at your own Sol Ring", () => {
+      /*
+        The restriction is the card. This trigger is **mandatory**, so a morph turned up on a board
+        with nothing else on it would have to destroy its controller's own artifact — which is why
+        the hand-written filter tests the controller as well as the two types, and why a compiled
+        version with only the types would be a strictly worse card that never refuses.
+
+        The filter is a closure, so what is compared is the printed description and then the filter
+        itself, run against one artifact on each side of the table.
+      */
+      const spec = (script: unknown) =>
+        ((field(script, 'triggers') ?? []) as readonly TriggerDef[])
+          .flatMap((t) => t.targets ?? [])[0];
+      const written = spec(scriptFor('Ainok Survivalist'));
+      const compiled = spec(compiledScript('Ainok Survivalist').script);
+      expect(written, 'no hand-written target').toBeDefined();
+      expect(compiled, 'compiled no target').toBeDefined();
+      if (written === undefined || compiled === undefined) return;
+      expect(compiled.description).toBe(written.description);
+
+      const base = arena({
+        decks: { 0: 'forge-alliance', 1: 'forge-alliance' },
+        battlefield: { 0: ['Bonesplitter'], 1: ['Bonesplitter', 'Elite Vanguard'] },
+        turn: 3,
+      });
+      const mine = find(base, 0 as SeatIndex, 'battlefield', 'Bonesplitter');
+      const theirs = find(base, 1 as SeatIndex, 'battlefield', 'Bonesplitter');
+      // An opponent's **creature**, which is the row that tests the types rather than the side.
+      const theirBody = find(base, 1 as SeatIndex, 'battlefield', 'Elite Vanguard');
+      for (const [label, filter] of [['hand-written', written.filter], ['compiled', compiled.filter]] as const) {
+        expect(filter, `${label}: no filter at all`).toBeDefined();
+        expect(filter?.(base, { kind: 'card', id: theirs }, 0 as SeatIndex, 'c1'), `${label}: theirs`)
+          .toBe(true);
+        expect(filter?.(base, { kind: 'card', id: mine }, 0 as SeatIndex, 'c1'), `${label}: mine`)
+          .toBe(false);
+        expect(
+          filter?.(base, { kind: 'card', id: theirBody }, 0 as SeatIndex, 'c1'),
+          `${label}: an opponent's creature is not an artifact or an enchantment`,
+        ).toBe(false);
+      }
+    });
+  });
+
   describe('statics, a Fog and a library search, against the hand-written ones', () => {
     const field = (script: unknown, key: string): unknown =>
       (script as Record<string, unknown> | undefined)?.[key];

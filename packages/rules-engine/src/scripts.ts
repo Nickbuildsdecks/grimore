@@ -9263,6 +9263,23 @@ function untargetedEffect(clause: string): ReadEffect | null {
   */
   if (/^shuffle$/i.test(text)) return { effect: (c) => c.state };
 
+  /*
+    A pump on the whole team, which is `pumpTeam` and not `pump` over a list: the scope is
+    "creatures you control" as a continuous effect, so a creature that arrives later in the turn is
+    **not** included and one that leaves does not take the bonus with it. Master of Pearls' turn-up
+    and the pool's team pumps all call it.
+
+    "Creatures you control get +1/+1" with no duration is a *static* and is read elsewhere
+    (`staticFromLine`); this one ends at end of turn, which is what makes it an effect.
+  */
+  const team = /^creatures you control get \+(\d+)\/\+(\d+) until end of turn$/i.exec(text);
+  if (team !== null) {
+    const bonus = sizeBonus(Number(team[1]), Number(team[2]));
+    if (bonus !== null) {
+      return { effect: (c) => pumpTeam(c.state, c.source, c.controller, bonus) };
+    }
+  }
+
   if (/^you become the monarch$/i.test(text)) {
     return { effect: (c) => becomeMonarch(c.state, c.controller) };
   }
@@ -9652,10 +9669,51 @@ function exileUntilLeavesShapeFor(
  *
  * `compileCard` calls this once, before the per-line loop, and skips whatever it claimed.
  */
+/**
+ * Soulbond, which is two printed lines and one mechanic (CR 702.95a).
+ *
+ * The third shape read from more than one line, and the one `keywordScriptFor`'s docblock named as
+ * deliberately absent: "its line is the word alone; the bonus the pair gets is on the *next* line",
+ * and a `soulbond: { effect: { power: 1, toughness: 1 } }` guessed from the keyword would be a
+ * number this module made up (D259). Reading the pair together is the answer that was waiting for
+ * a stage that reads sentences.
+ *
+ * Neither line is a unit. `Soulbond` on its own is a pairing that does nothing, and "As long as ~
+ * is paired with another creature, each of those creatures gets +1/+1" on its own is a bonus with
+ * no pairing to hang it from — so this emits both halves or neither, and `soulbondTriggers` comes
+ * with them because the pairing is what the triggers do.
+ *
+ * Only the **bonus** form. Tandem Lookout prints "each of those creatures has 'Whenever this
+ * creature deals damage to a player, draw a card'", which is a granted *ability* — declared in the
+ * pool as `grants: [0]` against a `grantedTriggers` entry this module has no way to build — so that
+ * card is refused rather than compiled into a pair that gets nothing.
+ */
+function soulbondShapeFor(def: CardDef, lines: readonly string[]): WholeCardReading | null {
+  const keyword = lines.find((line) => plain(line).trim().toLowerCase() === 'soulbond');
+  if (keyword === undefined) return null;
+  const self = escapeName(def.name);
+  for (const line of lines) {
+    const paired = new RegExp(
+      `^As long as ${self} is paired with another creature, each of those creatures gets \\+(\\d+)/\\+(\\d+)\\.?$`,
+      'i',
+    ).exec(plain(line).trim());
+    if (paired === null) continue;
+    const effect = sizeBonus(Number(paired[1]), Number(paired[2]));
+    if (effect === null) return null;
+    return {
+      fragment: { soulbond: { effect }, triggers: [...soulbondTriggers()] },
+      claimed: [keyword, line],
+    };
+  }
+  return null;
+}
+
 export function wholeCardShapeFor(
   def: CardDef, lines: readonly string[],
 ): WholeCardReading | null {
-  return attachmentScriptFor(def, lines) ?? exileUntilLeavesShapeFor(def, lines);
+  return attachmentScriptFor(def, lines)
+    ?? exileUntilLeavesShapeFor(def, lines)
+    ?? soulbondShapeFor(def, lines);
 }
 
 /**
@@ -10024,7 +10082,13 @@ const permanentOfTypes = (
  * "nonland permanent".
  */
 const permanentFilter = (
-  opts: { readonly another?: boolean; readonly nonland?: boolean; readonly opponents?: boolean },
+  opts: {
+    readonly another?: boolean;
+    readonly nonland?: boolean;
+    readonly opponents?: boolean;
+    /** One of these types, read **live** rather than off the printed line — see `permanentOfTypes`. */
+    readonly types?: readonly string[];
+  },
 ): NonNullable<TargetSpec['filter']> => (state, candidate, controller, source) => {
   if (candidate.kind !== 'card') return false;
   // "Another" means not the permanent whose ability this is — a Banishing Light cannot exile itself.
@@ -10032,7 +10096,9 @@ const permanentFilter = (
   const inst = state.instances[candidate.id];
   if (inst === undefined) return false;
   if (opts.opponents === true && inst.zoneSeat === controller) return false;
-  if (opts.nonland === true && hasType(characteristicsOf(state, inst).typeLine, 'land')) return false;
+  const live = characteristicsOf(state, inst).typeLine;
+  if (opts.nonland === true && hasType(live, 'land')) return false;
+  if (opts.types !== undefined && !opts.types.some((type) => hasType(live, type))) return false;
   return true;
 };
 
@@ -10117,6 +10183,18 @@ function targetSpecFrom(phrase: string, friendly: boolean): TargetSpec | null {
       return spec({ kind: 'permanent', filter: permanentOfTypes('land') });
     case 'target artifact or enchantment':
       return spec({ kind: 'permanent', filter: permanentOfTypes('artifact', 'enchantment') });
+    /*
+      The same two types, restricted to an opponent's, which is Ainok Survivalist's phrase and the
+      first place the type list and the controller test compose. Its own comment says why the
+      restriction matters more here than on a Naturalize: the trigger is **mandatory**, so without
+      it a morph turned up on an otherwise empty board would have to destroy its controller's own
+      Sol Ring.
+    */
+    case 'target artifact or enchantment an opponent controls':
+      return spec({
+        kind: 'permanent',
+        filter: permanentFilter({ opponents: true, types: ['artifact', 'enchantment'] }),
+      });
 
     // A card in a graveyard is a different object from a permanent, with its own target kinds.
     case 'target creature card in your graveyard':
