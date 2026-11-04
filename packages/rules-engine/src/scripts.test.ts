@@ -2231,6 +2231,47 @@ describe('planeswalkers', () => {
     expect(s.instances[jace]!.zone).toBe('graveyard');
   });
 
+  it('is a legal target for "target player or planeswalker", and a creature is not', () => {
+    /*
+      Lava Spike's printed target phrase names two of the three things "any target" covers
+      (CR 115.4), and the omission is the card: a one-mana Lightning Bolt that cannot kill a
+      creature is playable, and one that can is not. Both burn spells that print the phrase carried
+      `TARGET_PLAYER` until now, so neither could be aimed at a planeswalker at all — with four of
+      them in this pool.
+
+      Both halves are asserted, and the second is the one that was never wrong before: the
+      planeswalker may be hit, and a creature may not.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'tidal-mind' },
+      hands: { 0: ['Lava Spike'] },
+      battlefield: { 0: ['Mountain', 'Monastery Swiftspear'], 1: ['Jace Beleren'] },
+      turn: 3, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Mountain'), abilityIndex: 0,
+    });
+    const spike = find(s, 0, 'hand', 'Lava Spike');
+    const jace = find(s, 1, 'battlefield', 'Jace Beleren');
+    const creature = find(s, 0, 'battlefield', 'Monastery Swiftspear');
+
+    // A creature is refused, whoever controls it.
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: spike, targets: [{ kind: 'card', id: creature }] }))
+      .not.toBeNull();
+
+    /*
+      The planeswalker is not, and three damage to three loyalty kills it (CR 120.3c, CR 704.5i).
+
+      `drain` rather than one `passBoth`, because the Swiftspear's prowess goes on the stack above
+      the Spike — so a single round of priority resolves the trigger and leaves the burn spell
+      sitting there. Found by probing the stack depth, which read 2.
+    */
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: spike, targets: [{ kind: 'card', id: jace }],
+    }));
+    expect(s.instances[jace]!.zone).toBe('graveyard');
+  });
+
   it('can be attacked instead of its controller (CR 506.2)', () => {
     let s = arena({
       decks: { 0: 'ember-rush', 1: 'tidal-mind' },

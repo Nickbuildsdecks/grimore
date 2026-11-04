@@ -86,6 +86,16 @@ function biggestToughness(state: GameState): number {
 const COLOURS = ['W', 'U', 'B', 'R', 'G'] as const;
 
 const ANY_TARGET: TargetSpec = { kind: 'any', description: 'any target' };
+/**
+ * "Target player or planeswalker": `any target` with the creatures taken out.
+ *
+ * The two burn spells that print it carried `TARGET_PLAYER` until now, which could not be pointed
+ * at a planeswalker at all — and the pool has four. See `TargetSpec.kind` for why the difference is
+ * a kind rather than a filter.
+ */
+const TARGET_PLAYER_OR_PLANESWALKER: TargetSpec = {
+  kind: 'player-or-planeswalker', description: 'target player or planeswalker',
+};
 /** The same spec on a card that *helps* what it points at. See `TargetSpec.friendly`. */
 const ANY_TARGET_HELPED: TargetSpec = { kind: 'any', description: 'any target', friendly: true };
 const TARGET_CREATURE: TargetSpec = { kind: 'creature', description: 'target creature' };
@@ -233,13 +243,17 @@ const SHOCK: CardScript = {
   onResolve: (c) => damageFirstTarget(c, 2),
 };
 
+/**
+ * Lava Spike: three to the face, and the card that is only playable because it cannot do more.
+ *
+ * `damageFirstTarget` rather than a player-only resolution, because the target may now be a
+ * planeswalker and damage to one removes that many loyalty counters (CR 120.3c) — which
+ * `dealDamage` already does, and a seat-shaped resolution could never reach.
+ */
 const LAVA_SPIKE: CardScript = {
   name: 'Lava Spike',
-  targets: [TARGET_PLAYER],
-  onResolve: (c) => {
-    const seat = firstPlayerTarget(c);
-    return seat === null ? c.state : dealDamage(c.state, { kind: 'player', seat }, 3, { controller: c.controller, source: c.source });
-  },
+  targets: [TARGET_PLAYER_OR_PLANESWALKER],
+  onResolve: (c) => damageFirstTarget(c, 3),
 };
 
 /**
@@ -4102,11 +4116,8 @@ const HEALERS_HAWK: CardScript = { name: "Healer's Hawk", keywords: ['flying', '
 
 const LAVA_AXE: CardScript = {
   name: 'Lava Axe',
-  targets: [TARGET_PLAYER],
-  onResolve: (c) => {
-    const seat = firstPlayerTarget(c);
-    return seat === null ? c.state : dealDamage(c.state, { kind: 'player', seat }, 5, { controller: c.controller, source: c.source });
-  },
+  targets: [TARGET_PLAYER_OR_PLANESWALKER],
+  onResolve: (c) => damageFirstTarget(c, 5),
 };
 
 /**
@@ -10238,6 +10249,7 @@ function targetSpecFrom(phrase: string, friendly: boolean): TargetSpec | null {
         filter: permanentFilter({ another: true, nonland: true, opponents: true }),
       });
     case 'target player': return spec({ kind: 'player' });
+    case 'target player or planeswalker': return spec({ kind: 'player-or-planeswalker' });
     case 'target spell': return spec({ kind: 'spell' });
 
     /*

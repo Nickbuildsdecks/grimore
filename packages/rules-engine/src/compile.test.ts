@@ -2201,6 +2201,39 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       ]);
     });
   });
+  describe('the burn that may not kill a creature', () => {
+    const field = (script: unknown, key: string) =>
+      (script as Record<string, unknown> | undefined)?.[key];
+
+    /*
+      "Target player or planeswalker" — `any target` with the creatures taken out, and the omission
+      is what makes a one-mana three-damage spell printable at all.
+
+      The phrase needed a `TargetSpec.kind` of its own before it could be read: `player` loses the
+      planeswalker half and `any` gains a creature the card may not touch, and both are a different
+      card. Both pool cards that print it carried `TARGET_PLAYER` until this stage, so neither could
+      be pointed at a planeswalker — with four of them in the pool. `scripts.test.ts` has the rules
+      half of that fix; this is the compiler reading the phrase.
+    */
+    it.each([
+      ['Lava Spike'],
+      ['Lava Axe'],
+    ])('%s points at exactly the spec the hand-written card points at', (card) => {
+      const compiled = compiledScript(card as string);
+      expect(compiled.unread).toEqual([]);
+      expect(field(compiled.script, 'targets')).toEqual(field(scriptFor(card as string), 'targets'));
+    });
+
+    it('keeps "any target" distinct from it, which is the whole difference between the two cards', () => {
+      const spike = (field(compiledScript('Lava Spike').script, 'targets') as
+        readonly TargetSpec[])[0]!;
+      const bolt = (field(compiledScript('Lightning Bolt').script, 'targets') as
+        readonly TargetSpec[])[0]!;
+      expect(spike.kind).toBe('player-or-planeswalker');
+      expect(bolt.kind).toBe('any');
+    });
+  });
+
   describe('modal spells, chosen as the spell is cast', () => {
     const contextOn = (
       state: GameState, seat: SeatIndex, source: string, targets: readonly Target[] = [],

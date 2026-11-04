@@ -24351,3 +24351,45 @@ Discovery compile at all.
 Manipulation and Grim Discovery, mode for mode against the hand-written cards. Three deliberate
 breaks — a loose header, skipping an unreadable bullet instead of refusing, and dropping the leftover
 flag rule — each fail tests. A further 30,000-row shuffled run found no throw.
+
+## D389
+
+**Two burn spells could not point at a planeswalker, which their printed text allows** (#323)
+
+Lava Spike prints "Lava Spike deals 3 damage to target player or planeswalker" and was scripted with
+`TARGET_PLAYER`. So was Lava Axe. Neither could be aimed at a planeswalker at all, and this pool has
+four of them — a player facing a Garruk could not Lava Axe it, which the card plainly permits.
+
+The phrase is **`any target` with the creatures taken out** (CR 115.4 names the three; this phrase
+names two), and the omission is the card rather than a detail: a one-mana three-damage spell is
+printable precisely because it cannot kill a creature, and a five-mana five-damage one is playable
+only to the face. So neither existing kind will do — `player` loses the planeswalker half, `any`
+gains a creature the card may not touch — and the fix is a new `TargetSpec.kind`,
+`player-or-planeswalker`, rather than a filter on an existing one.
+
+It is three lines of `targeting.ts`: the player candidate is admitted, a battlefield candidate must
+be a planeswalker, and `legalTargets` lists the seats as well as the permanents. Both cards now point
+at the shared spec and resolve through `damageFirstTarget`, which hands the target straight to
+`dealDamage` — the one path that turns damage on a planeswalker into lost loyalty (CR 120.3c). A
+seat-shaped resolution could never reach it.
+
+### The test, and both directions of it
+
+A board with Jace Beleren on one side and a Monastery Swiftspear on the other: the creature is
+refused ("that is not target player or planeswalker") and three damage to three loyalty puts Jace in
+the graveyard (CR 704.5i). Reverting the card to `TARGET_PLAYER` fails the second half; deleting the
+planeswalker-only line in `targeting.ts` fails the first, and also fails the older "Lava Spike deals
+3 to a player only" test, which had been pinning half of this all along.
+
+**Found while probing: the Swiftspear's prowess goes on the stack above the Spike**, so one round of
+priority resolves the trigger and leaves the burn spell sitting there. The test uses `drain` and says
+why, because the stack depth read 2 and a single `passBoth` would have made the test fail for a
+reason that has nothing to do with targeting.
+
+### And the compiler reads the phrase
+
+`targetSpecFrom` gained the case, so `damageEffect` reads both cards straight off their printed line:
+**329 → 331 of 538 lines (61.2% → 61.5%)**, 207 → 209 of 339 cards. The compiled spec is compared for
+identity against the hand-written one, and a second test keeps "any target" and "target player or
+planeswalker" distinct — which is the whole difference between a Lightning Bolt and a Lava Spike. A
+30,000-row shuffled run found no throw.

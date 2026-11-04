@@ -92,7 +92,8 @@ function satisfies(
   source: string | undefined, forAttachment: boolean,
 ): boolean {
   if (candidate.kind === 'player') {
-    if (spec.kind !== 'player' && spec.kind !== 'any') return false;
+    if (spec.kind !== 'player' && spec.kind !== 'any'
+      && spec.kind !== 'player-or-planeswalker') return false;
     const seat = state.seats[candidate.seat];
     if (seat === undefined || seat.eliminated) return false;
     return spec.filter ? spec.filter(state, candidate, controller, source) : true;
@@ -166,6 +167,9 @@ function satisfies(
   const isPlaneswalker = hasType(ch.typeLine, 'planeswalker');
   if (spec.kind === 'creature' && !ch.isCreature) return false;
   if (spec.kind === 'any' && !ch.isCreature && !isPlaneswalker) return false;
+  // "Target player or planeswalker" is "any target" with the creatures taken out (CR 115.4 lists
+  // the three, and this phrase names two of them), so on the battlefield it is planeswalkers only.
+  if (spec.kind === 'player-or-planeswalker' && !isPlaneswalker) return false;
   // Hexproof stops opponents targeting it; shroud stops everyone. Neither says anything about an
   // Aura already attached, which is what `forAttachment` is for.
   if (!forAttachment && ch.keywords.has('shroud')) return false;
@@ -182,7 +186,8 @@ export function legalTargets(
   state: GameState, spec: TargetSpec, controller: SeatIndex, source?: string,
 ): Target[] {
   const out: Target[] = [];
-  if (spec.kind === 'player' || spec.kind === 'any') {
+  if (spec.kind === 'player' || spec.kind === 'any'
+    || spec.kind === 'player-or-planeswalker') {
     for (const seat of state.seats) {
       const candidate: Target = { kind: 'player', seat: seat.index };
       if (isLegalTarget(state, spec, candidate, controller, source)) out.push(candidate);

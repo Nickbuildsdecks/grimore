@@ -34,9 +34,15 @@ export interface TargetSpec {
    * card and an ability is not, so they arrive as different `Target` shapes and a card that takes
    * either says `spell-or-ability` rather than hoping. Those three are the printed difference
    * between a Cancel, a Stifle and a Disallow.
+   *
+   * `player-or-planeswalker` is `any` minus the creatures, and it exists because the difference is
+   * printed: a Shock says "any target" and a Lava Spike says "target player or planeswalker", and
+   * the whole of what makes Lava Spike a worse card for its cost is that it cannot kill a creature.
+   * Reading it as `player` loses the planeswalker half, reading it as `any` gains a creature the
+   * card may not touch, and both are a different card.
    */
   readonly kind:
-    | 'creature' | 'permanent' | 'player' | 'any' | 'spell'
+    | 'creature' | 'permanent' | 'player' | 'any' | 'player-or-planeswalker' | 'spell'
     | 'ability' | 'spell-or-ability'
     | 'graveyard-creature' | 'graveyard-land' | 'graveyard-card';
   /** Shown to the player choosing, e.g. "target creature an opponent controls". */

@@ -10452,3 +10452,21 @@ return became a creature-or-land family.
 
 **323 → 329 of 538 lines (60.0% → 61.2%), 205 → 207 of 339 cards.** Three deliberate breaks each
 fail tests.
+
+## Two burn spells could not hit a planeswalker (#323, D389)
+
+Lava Spike and Lava Axe both print "target player or planeswalker" and were both scripted with
+`TARGET_PLAYER`, so neither could be aimed at a planeswalker — and the pool has four. The phrase is
+"any target" with the creatures taken out, and that omission is the card: a one-mana three-damage
+spell is printable because it cannot kill a creature. `player` loses the planeswalker half and `any`
+gains a creature the card may not touch, so the fix is a new target kind rather than a filter.
+
+Three lines of `targeting.ts`, both cards repointed, and both resolving through
+`damageFirstTarget` — the path that turns damage on a planeswalker into lost loyalty (CR 120.3c),
+which a seat-shaped resolution could never reach. The test asserts both directions: the creature is
+refused, and three damage kills a three-loyalty Jace. Reverting the card fails one half; deleting the
+targeting line fails the other.
+
+The compiler gained the phrase too: **329 → 331 of 538 lines (61.2% → 61.5%), 207 → 209 cards**, with
+the compiled spec compared for identity against the hand-written one and a second test keeping "any
+target" distinct from it.
