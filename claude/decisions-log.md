@@ -29432,3 +29432,60 @@ Coverage, measured rather than assumed: **9,219 cards with a script** (from 9,22
 line this was, and Samut, whose other two were already unread — while Ral keeps its `+1`, because the
 refusal is per line and not per card. Paying two cards to stop a throw in a hundred pods is the right
 side of that trade.
+
+## D464 — 100 pods of real decks, every one to a finish; and the loop class, closed by counting
+
+Two results, one of them a decision **not** to write code.
+
+### The sweep the last two entries were waiting on
+
+`LEGAL=1 POD=1 GAMES=100 SEED0=30000` on the D463 build: **100 finished, 100**. No throw, no stall,
+no `looping`. 70.6 turns and 408 moves a game; 0.4 cardboard cards per 100-card deck.
+
+That is the figure D462 and D463 both left open, and it closes tasks **#334** (the pod that could not
+end) and **#336** (the ability offered and then refused). Four-player Commander pods of arbitrary real
+decks now reach a finish every time, which is the first time that sentence has been true of a hundred
+of them.
+
+### The loop class: #335, closed as a recorded negative result
+
+D462 fixed one free-activation loop and the obvious next move looked like the **class** — a rule that
+a seat does not take an action returning it to a position it has already been at in this step. It was
+designed and **started**: a `seenThisStep` field on `GameState` beside `passed`, cleared in
+`advanceStep`, read in the bot's option loop where `after = simulate(…)` already is. It compiled.
+
+Then it was **reverted**, because the question it rested on had not been asked: is there a card the
+existing seventeen filters miss? `scripts/measure/free-abilities.mjs` asks it. A loop needs an
+ability that is **free and repeatable** — a cost the board can pay only once is a cost that stops on
+its own — so the population is every compiled ability the engine charges nothing to activate.
+
+Over 31,654 legal cards: **176 free repeatable abilities, 176 cards**, and every one is covered.
+
+ * **172 are `Crew N`**, whose compiled cost is `{crew: N}`. Answered by `crewsAVehicle` and
+   `crewBuysMoreThanItCosts`, and self-limiting besides: crewing is paid by tapping creatures, and a
+   board runs out of them.
+ * **4 are Equipment with a free equip** — Grafted Wargear, Shuko, Lightning Greaves, Umbral Mantle —
+   all answered by `equipMovesSideways`, both directions, since D462.
+
+So there is no card in the corpus that can loop past the family. Shipping the rule would have been a
+guard with nothing to discriminate against, whose break run cannot fail — which is what
+`untapBoughtSomething`'s own docblock calls a reader written ahead of need, and what D258 refused for
+the clock. **The count is a stronger statement than the rule would have been**: it names the whole
+population instead of guarding against an imagined member of it.
+
+The instrument stays, and that is the standing value: a new free ability shape appearing in its output
+is the failing case #335 needs, available *before* a pod finds it rather than after a 20,000-move
+trace read by eye.
+
+### A cross-check that was itself wrong, which is the method note
+
+The first reading of that population was **187**, from an inline probe, against the instrument's 176.
+Rather than publish either, the two lists were dumped and diffed. The eleven extra cards were
+`_____ _____ Rocketship`, `The Belligerent and Useless Island`, `Unicycle` and eight more — **un-cards**.
+The inline probe had called `all.filter(isLegal)` without the environment the legality filter reads,
+so it ran over all 33,847 rows instead of the 31,654 legal ones.
+
+D463's lesson was "a count that moves by the wrong amount is a test". This is its other half: **a
+disagreement between two counts says one of them is wrong, not which one** — and here it was the
+cross-check, not the instrument. The diff is what settled it, in one run, where more reasoning would
+only have produced a better-argued wrong answer.

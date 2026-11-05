@@ -12374,3 +12374,21 @@ through one predicate now. A count that moves by the wrong amount is a test.
 discriminating failures, the spell test green in both; seed 30072 finishes on turn 66 in 270 moves;
 coverage 9,221 → **9,219** cards and 18,918 → **18,916** of 56,421 lines (33.5%), which is the price
 of the fix and is named rather than rounded away.
+
+## A hundred pods, and the rule that was not written (D464)
+
+`LEGAL=1 POD=1 GAMES=100 SEED0=30000` on the D463 build: **100/100 finished**, no throw, no stall, no
+`looping`, 70.6 turns and 408 moves a game. That closes #334 and #336, and it is the first time a
+hundred four-player pods of arbitrary real decks have every one reached a finish.
+
+The loop class (#335) is closed too — **by counting rather than by code**. The structural rule was
+designed, started and reverted, because `scripts/measure/free-abilities.mjs` answered the question it
+depended on: a loop needs a **free repeatable** ability, and over 31,654 legal cards there are
+**176**, all covered. 172 are `Crew N` (answered by the crew rules, and self-limiting because crewing
+taps creatures); 4 are Equipment with a free equip (answered by `equipMovesSideways` since D462). A
+guard with no failing case is a reader written ahead of need, and its break run cannot fail.
+
+**And the cross-check was the thing that was wrong.** An inline probe read 187 against the
+instrument's 176; dumping both lists and diffing them named the eleven extras as un-cards — the probe
+had skipped the legality filter. A disagreement between two counts says one is wrong, not which, and
+one diff settled it where more reasoning would have produced a better-argued wrong answer.
