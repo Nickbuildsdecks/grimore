@@ -11662,3 +11662,30 @@ longer list: "I", "II" and "III" are also letters before an em dash, so a genera
 Saga's chapters.
 
 Legal-only coverage 16,363 of 56,421 lines (29.0%) and **7,374 cards with a script**.
+
+## The label in front of an ability (D441)
+
+`withoutAbilityWord` knew three words. The corpus says a list cannot work: **2,733 legal lines**
+carry a letters-only label and an em dash, across **540 distinct labels**, and most of the readable
+ones are named on one card — "Rosarius", "Keen Senses", "Gae Bolg". Universes Beyond prints a
+flavour name where older cards print a shared ability word, and both are flavour with no rules
+meaning (CR 207.2c).
+
+So it is a refusal list now: a label comes off unless it has a rules meaning. What does:
+
+- a **keyword ability's name**, matched on the whole label and on its first word, because there the
+  em dash joins a keyword to its *cost* — "Cumulative upkeep—Put a -1/-1 counter on Aboroth" would
+  otherwise become an unconditional effect;
+- **ward** and **channel**, two keywords the keyword list does not name;
+- a **Saga's chapter markers**, which are 473 legal lines of letters before an em dash.
+
+The judgement worth remembering: `Exhaust`, `Boast` and `Max speed` print "<keyword> — <activated
+ability>", so stripping them *would* finish 28 cards — and they are refused anyway, because the
+keyword **is** the restriction (exhaust once only; boast only after that creature attacked). 28 wrong
+readings is worse than 28 lines unread.
+
+Most of those refusals cannot be falsified by any printed card — every real line carrying one has a
+remainder the compiler cannot read either way — so they are pinned on a probe sentence with a
+control, rather than on a fixture that would pass whatever the code did.
+
+Legal-only coverage 16,400 of 56,421 lines (29.1%) and **7,405 cards with a script**.

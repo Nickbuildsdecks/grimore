@@ -3911,32 +3911,38 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(mine.seats[0]!.life).toBe(base.seats[0]!.life + 3);
     });
 
-    it('strips only the ability words it knows, and refuses the rest', () => {
+    it('reads a sentence the same with a label in front of it and without', () => {
       /*
-        The named list, asserted as a decision. A general "capitalised word then a dash" would also
-        eat a saga's chapter markers and anything else printed with an em dash, and a line
-        mis-split is a line read wrongly rather than refused — so an ability word nothing has
-        needed yet is left in place, and the card stays a hybrid until somebody adds it.
-      */
-      const unknown = compileCard({
-        name: 'Starry Steed', type_line: 'Creature — Construct', mana_cost: '{3}', cmc: 3,
-        colors: [], power: '2', toughness: '2',
-        oracle_text: 'Constellation — Starry Steed gets +2/+2 as long as you control three or more artifacts.',
-      });
-      expect(unknown.ok).toBe(true);
-      if (unknown.ok) expect(unknown.script).toBeUndefined();
+        **This row used to assert the opposite of its second half, and D441 retired that.** It read
+        "strips only the ability words it knows, and refuses the rest", and its first assertion was
+        that `Constellation — <static>` compiled to no script at all, on the argument that a general
+        rule would eat a Saga's chapter markers. The hazard was real and the conclusion was not: the
+        corpus has 540 distinct labels on 2,733 legal lines, most of the readable ones named on one
+        card, so an allow list is a list of cards. `withoutAbilityWord` refuses by rules meaning
+        now, and `Constellation` has none — it reads. The refusals have their own table, under "the
+        label in front of an ability, which has no rules meaning".
 
-      // And the same sentence with a known ability word, or none at all, reads identically.
+        What survives is the invariant that was always worth asserting, now for **any** label rather
+        than for the three the list happened to name: the label changes nothing about the reading.
+      */
       const read = (text: string) => compileCard({
         name: 'Plain Steed', type_line: 'Creature — Construct', mana_cost: '{3}', cmc: 3,
         colors: [], power: '2', toughness: '2', oracle_text: text,
       });
       const bare = read('Plain Steed gets +2/+2 as long as you control three or more artifacts.');
-      const worded = read('Metalcraft — Plain Steed gets +2/+2 as long as you control three or more artifacts.');
-      expect(bare.ok && worded.ok).toBe(true);
-      if (!bare.ok || !worded.ok) return;
-      expect(field(worded.script, 'statics')).toEqual(field(bare.script, 'statics'));
+      expect(bare.ok).toBe(true);
+      if (!bare.ok) return;
       expect(field(bare.script, 'statics')).toBeDefined();
+
+      for (const label of ['Metalcraft', 'Constellation', 'Keen Senses']) {
+        const worded = read(
+          `${label} — Plain Steed gets +2/+2 as long as you control three or more artifacts.`,
+        );
+        expect(worded.ok).toBe(true);
+        if (!worded.ok) continue;
+        expect(worded.unread).toEqual([]);
+        expect(field(worded.script, 'statics')).toEqual(field(bare.script, 'statics'));
+      }
     });
   });
 
@@ -7410,5 +7416,125 @@ describe('the cast ordinal, read off the prologue', () => {
     expect(read.unread.map((u) => u.line)).toEqual([
       'Whenever you cast your third spell each turn, you gain 2 life.',
     ]);
+  });
+});
+
+describe('the label in front of an ability, which has no rules meaning', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const unreadLines = (c: ReturnType<typeof compileCard>) =>
+    (c.ok ? c.unread : []).map((u) => u.line);
+  const card = (row: Record<string, unknown>) => compileCard(row as never);
+
+  it.each([
+    /*
+      A one-card flavour name, which is the shape an allow list cannot cover: of the 2,733 legal
+      lines carrying a letters-only label and an em dash there are 540 distinct labels, and most of
+      the readable ones are named on exactly one card (D441).
+    */
+    [{
+      name: 'Owlbear', type_line: 'Creature — Bird Bear', mana_cost: '{3}{G}{G}', cmc: 5,
+      colors: ['G'], power: '4', toughness: '4', layout: 'normal',
+      oracle_text: 'Trample\nKeen Senses — When Owlbear enters, draw a card.',
+    }],
+    // The same, with a three-word label and the card's short name in the ability (D438).
+    [{
+      name: 'Primaris Chaplain', type_line: 'Creature — Astartes Cleric', mana_cost: '{2}{W}{B}',
+      cmc: 4, colors: ['W', 'B'], power: '3', toughness: '3', layout: 'normal',
+      oracle_text: 'Rosarius — Whenever Primaris Chaplain attacks, it gains indestructible until'
+        + ' end of turn.',
+    }],
+    // And a shared ability word, which the three-word allow list already read: nothing it could
+    // read before stops reading.
+    [{
+      name: 'Ardent Recruit', type_line: 'Creature — Human Soldier', mana_cost: '{W}', cmc: 1,
+      colors: ['W'], power: '1', toughness: '1', layout: 'normal',
+      oracle_text: 'Metalcraft — Ardent Recruit gets +2/+2 as long as you control three or more'
+        + ' artifacts.',
+    }],
+  ])('$name reads the ability behind its label', (row) => {
+    const read = card(row);
+    expect(read.ok).toBe(true);
+    expect(unreadLines(read)).toEqual([]);
+  });
+
+  it.each([
+    /*
+      The em dash joins a keyword to its **cost** on these, not a label to an ability. Dropping the
+      label would turn a price into an unconditional effect, which is the worst reading this module
+      can produce — so each stays unread, and each row fails if the refusal is lifted.
+    */
+    ['a keyword and its cost (cumulative upkeep)', {
+      name: 'Aboroth', type_line: 'Creature — Elemental', mana_cost: '{4}{G}{G}', cmc: 6,
+      colors: ['G'], power: '9', toughness: '9', layout: 'normal',
+      oracle_text: 'Cumulative upkeep—Put a -1/-1 counter on Aboroth.',
+    }],
+    /*
+      And the judgement in this entry: `Boast` and `Exhaust` print "<keyword> — <activated
+      ability>", so their remainders **would** read — 8 and 15 cards. The keyword *is* the
+      restriction on the ability (boast only during your turn and only after this creature attacked;
+      each exhaust ability only once), so reading the remainder on its own would offer an
+      unrestricted ability. 23 wrong readings, not 23 lines left unread (D362).
+    */
+    ['a keyword that is the restriction (boast)', {
+      name: 'Axgard Braggart', type_line: 'Creature — Dwarf Warrior', mana_cost: '{3}{W}', cmc: 4,
+      colors: ['W'], power: '3', toughness: '3', layout: 'normal',
+      oracle_text: 'Boast — {1}{W}: Untap Axgard Braggart. Put a +1/+1 counter on it.',
+    }],
+    ['a keyword that is the restriction (exhaust)', {
+      name: 'Afterburner Expert', type_line: 'Creature — Goblin Artificer', mana_cost: '{2}{G}',
+      cmc: 3, colors: ['G'], power: '4', toughness: '2', layout: 'normal',
+      oracle_text: 'Exhaust — {2}{G}{G}: Put two +1/+1 counters on this creature.',
+    }],
+    // A digit in the label, which the label pattern refuses outright.
+    ['a label with a number in it (descend)', {
+      name: 'Akawalli, the Seething Tower', type_line: 'Legendary Creature — Fungus',
+      mana_cost: '{1}{B}{G}', cmc: 3, colors: ['B', 'G'], power: '3', toughness: '3',
+      layout: 'normal',
+      oracle_text: 'Descend 4 — As long as there are four or more permanent cards in your'
+        + ' graveyard, Akawalli, the Seething Tower gets +2/+2 and has trample.',
+    }],
+  ])('leaves %s unread', (_label, row) => {
+    const read = card(row);
+    expect(read.ok).toBe(true);
+    expect(unreadLines(read)).toHaveLength(1);
+  });
+
+  /*
+    The refusals that **no printed card can discriminate today**, on one probe sentence.
+
+    Each of these labels has a rules meaning, and each is refused — but the remainder of every
+    printed line carrying one is a cost or a bare effect that this compiler cannot read either way,
+    so a fixture built from a real card would pass whether the refusal were there or not. A probe
+    sentence the compiler definitely reads makes the guard falsifiable, which is the whole point of
+    having it: these entries protect a reading that does not exist yet.
+
+    - `Suspend X` and `Splice onto Arcane` are the first-word rule: "Suspend 3—{2}{R}" is caught by
+      the digit, "Suspend X" is not, and both join a keyword to its cost.
+    - `Channel` and `Ward` are keyword abilities `KEYWORD_ABILITY_NAMES` does not name. 40 legal
+      lines print "Channel — <ability>" and that ability is activated from your **hand**, so reading
+      the remainder as an ordinary one would offer it from the battlefield.
+    - `I` and `III` are a Saga's chapter markers (CR 714) — 473 legal lines, and the one case where
+      stripping the label changes a reading rather than leaving a line unread: the chapter ability
+      would become an ability the Saga simply has.
+
+    `Keen Senses` is the control, so the table fails if the probe sentence ever stops reading rather
+    than reading every row as a refusal.
+  */
+  it.each([
+    ['Suspend X', false], ['Splice onto Arcane', false],
+    ['Channel', false], ['Ward', false],
+    ['I', false], ['III', false],
+    ['Keen Senses', true],
+  ])('%s: the ability behind it reads = %s', (label, reads) => {
+    const sentence = 'Whenever you gain life, draw a card.';
+    const read = compileCard({
+      name: 'Probe Thing', type_line: 'Enchantment — Saga', mana_cost: '{2}', cmc: 2,
+      colors: [], layout: 'normal', oracle_text: `${label} — ${sentence}`,
+    });
+    expect(read.ok).toBe(true);
+    expect(unreadLines(read)).toEqual(reads === true ? [] : [`${label} — ${sentence}`]);
+    expect(field(read.ok ? read.script : undefined, 'triggers') ?? [])
+      .toHaveLength(reads === true ? 1 : 0);
   });
 });

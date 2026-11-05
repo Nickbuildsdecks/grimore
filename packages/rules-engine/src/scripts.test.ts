@@ -22209,3 +22209,52 @@ describe('the second spell you cast each turn, as printed text', () => {
     expect(spirits(s)).toBe(0);
   });
 });
+
+/*
+  A label with no rules meaning, played (D441).
+
+  `withoutAbilityWord` was an allow list of three shared ability words. The corpus says that cannot
+  work: 2,733 legal lines carry a letters-only label and an em dash, across **540 distinct labels**,
+  and most readable ones are named on one card. It is a refusal list now — a label comes off unless
+  it has a rules meaning (a keyword ability's name, or a Saga's chapter).
+*/
+describe('a label in front of an ability, as printed text', () => {
+  it('draws the card behind Owlbear\'s flavour label', () => {
+    /*
+      "Keen Senses — When Owlbear enters, draw a card." Both halves are needed: the label has to
+      come off for the entry trigger to be found, and the trigger has to fire for a card to arrive.
+      A compile assertion says only that the line was read.
+    */
+    const list = customDeck({
+      id: 'label-list',
+      name: 'Owlbear',
+      entries: [
+        { name: 'Owlbear', count: 1 },
+        { name: 'Forest', count: 59 },
+      ],
+      data: [{
+        name: 'Owlbear', type_line: 'Creature — Bird Bear', mana_cost: '{3}{G}{G}', cmc: 5,
+        colors: ['G'], layout: 'normal', power: '4', toughness: '4', loyalty: null,
+        oracle_text: 'Trample\nKeen Senses — When Owlbear enters, draw a card.',
+      } as never],
+    });
+    expect(list.unknown).toEqual([]);
+    let s = arena({
+      decks: { 0: 'label-list', 1: 'verdant-guard' },
+      deckSpecs: { 'label-list': list.deck },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Forest', 'Forest'] },
+      hands: { 0: ['Owlbear'] },
+      turn: 3,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    const held = ids(s, 0 as SeatIndex, 'hand').length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Owlbear'),
+    } as Action)));
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toContain('Owlbear');
+    // The Owlbear itself left the hand, so one card drawn leaves the hand exactly as full.
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held);
+  });
+});

@@ -13043,36 +13043,73 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
 }
 
 /**
- * An ability word, taken off the front of a line.
+* A label with no rules meaning, taken off the front of a line.
  *
- * "Metalcraft — ~ gets +2/+2 as long as …" and "Battalion — Whenever ~ and at least two other
- * creatures attack, …". An ability word is **flavour with no rules meaning** (CR 207.2c): it names
- * a pattern for players, and the sentence after the dash is the whole of the ability. So the right
- * thing to do with one is drop it, which is what both `staticFromLine` and `triggerFromLine` do
- * before reading what is left.
+ * "Metalcraft — ~ gets +2/+2 as long as …", "Battalion — Whenever ~ and at least two other
+ * creatures attack, …", "Blade of Magnus — Whenever Magnus the Red deals combat damage to a
+ * player, …". An **ability word** is flavour with no rules meaning (CR 207.2c): it names a pattern
+ * for players, and the sentence after the dash is the whole of the ability. Universes Beyond prints
+ * the same shape with a one-card flavour name instead of a shared word, which is the same thing
+ * wearing a different hat. So the right thing to do with either is drop it.
  *
- * A **named list** rather than a general "capitalised word then a dash", for the usual reason: the
- * general form would also eat a saga's chapter markers — "I", "II" and "III" are letters before an
- * em dash too — and a line this module mis-splits is a line it then reads wrongly rather than
- * refuses. The list grows with the cards that need it.
+ * ## It is a refusal list, not an allow list, and the corpus is why
  *
- * `flurry` and `eukrasia` are the ability words printed in front of "whenever you cast your second
- * spell each turn", which is why they arrive with D440 rather than on their own: 13 legal lines
- * print "Flurry — " (6 whose remainder this compiler reads) and 1 prints "Eukrasia — ".
+ * This was three words — `metalcraft`, `battalion`, `landfall` — on the argument that a general
+ * rule would also eat a Saga's chapter markers. The corpus says an allow list cannot work: of the
+ * **2,733 legal lines** carrying a letters-only label and an em dash, there are **540 distinct
+ * labels**, and most of the ones whose remainder this compiler can read are *one-card* names —
+ * "Rosarius", "Keen Senses", "Gae Bolg". A list naming them would be a list of cards.
  *
- * **There are 2,129 legal unread lines carrying some word and an em dash, and 56 of them read once
- * the word comes off** — `exhaust` (44 lines, 15), `alliance` (24, 10), `boast` (18, 8) and a long
- * tail of one-card flavour names like "Diana — Equip {2}". That is its own increment: the list is
- * the easy half and telling a flavour name from a Saga chapter is the part that needs care.
+ * So the question is inverted: a label comes off **unless** it has a rules meaning. Three things do:
+ *
+ * 1. **A keyword ability's name.** `KEYWORD_ABILITY_NAMES` is the vocabulary, matched on the whole
+ *    label or on its first word, which is what catches "Suspend X" and "Splice onto Arcane". The
+ *    em dash there joins a keyword to its **cost**, not a label to an ability:
+ *    "Cumulative upkeep—Put a -1/-1 counter on Aboroth", "Escape—{2}{R}, Exile three other cards",
+ *    "Flashback—{1}{G}, Pay 3 life". Dropping "Cumulative upkeep" turns a price into an
+ *    unconditional effect, which is the worst thing this module can do (D362).
+ *
+ *    **Including the three whose remainder *would* read**, which is the judgement in this entry:
+ *    `Exhaust` (43 lines, 15 readable), `Boast` (18, 8) and `Max speed` (40, 5) print
+ *    "<keyword> — <activated ability>", and each keyword *is* the restriction on that ability —
+ *    exhaust may be activated only once, boast only during your turn and only after this creature
+ *    attacked. Read the remainder on its own and the engine offers an unrestricted ability, which
+ *    is a wrong reading of 28 real cards rather than 28 lines left unread.
+ *
+ * 2. **`ward` and `channel`**, two keyword abilities `KEYWORD_ABILITY_NAMES` does not name — it
+ *    lists the keywords whose *declaration* this module recognises, and those two are read
+ *    elsewhere. 51 legal lines print "Ward—<cost>" and 40 "Channel — <ability>", and channel's
+ *    ability is activated from your **hand**, so the remainder read as an ordinary activated
+ *    ability would be activatable from the battlefield.
+ *
+ * 3. **A Saga's chapter markers** (CR 714), which are letters before an em dash like any label:
+ *    `I`, `II`, `III`, `IV` account for **473 legal lines**. "I, II" and "II, III" carry a comma
+ *    and the label pattern already refuses them.
+ *
+ * The label pattern itself does the rest of the refusing: letters, apostrophes and spaces only, at
+ * most four words, so a digit ("Suspend 3", "Descend 4", a loyalty die's "3 —"), a bullet
+ * ("• Khans"), a mana symbol ("+ {1} —", "{TK}{TK} —") or a comma can never be a label. Modal
+ * spells are safe for a different reason, measured rather than assumed: **no** legal line prints
+ * "Choose one —" with anything after it on the same line.
+ *
+ * Em and en dash only. The ASCII hyphen was in the old separator class and never mattered, because
+ * the allow list had three entries; with a general rule it would let a hyphen inside a label split
+ * the line, so it is gone.
  */
-const ABILITY_WORDS: readonly string[] = [
-  'metalcraft', 'battalion', 'landfall', 'flurry', 'eukrasia',
+const NOT_AN_ABILITY_WORD: readonly string[] = [
+  ...KEYWORD_ABILITY_NAMES, 'ward', 'channel', 'i', 'ii', 'iii', 'iv', 'v',
 ];
 
 function withoutAbilityWord(line: string): string {
-  const split = /^([A-Za-z]+)\s*[——-]\s*(.+)$/.exec(line.trim());
+  const split = /^([A-Za-z][A-Za-z'’]*(?: [A-Za-z'’]+){0,3})\s*[—–]\s*(.+)$/
+    .exec(line.trim());
   if (split === null) return line;
-  return ABILITY_WORDS.includes(split[1]!.toLowerCase()) ? split[2]!.trim() : line;
+  const label = plain(split[1]!).toLowerCase();
+  // The whole label, and its first word: "Suspend X" and "Splice onto Arcane" are keyword costs,
+  // and no ability word in the corpus begins with a keyword's name.
+  if (NOT_AN_ABILITY_WORD.includes(label)) return line;
+  if (NOT_AN_ABILITY_WORD.includes(label.split(' ')[0]!)) return line;
+  return split[2]!.trim();
 }
 
 /**

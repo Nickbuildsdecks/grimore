@@ -27566,3 +27566,76 @@ Legal-only coverage 16,363 of 56,421 lines (29.0%), **7,374 cards with a script*
 The gate caught one thing the engine suite could not: a conditional spread in the new fixture made
 `battlefield[1]` optional, which `tsc -p tsconfig.test.json` refuses and vitest does not typecheck
 at all (D246's reason for having that step at all, earning itself again).
+
+## D441 — The label in front of an ability, inverted from an allow list to a refusal list
+
+`withoutAbilityWord` dropped three words: `metalcraft`, `battalion`, `landfall`. Its docblock argued
+for a named list on the ground that a general "capitalised word then a dash" rule would also eat a
+Saga's chapter markers. The argument is right about the hazard and wrong about the conclusion, and
+the corpus is what settles it.
+
+**Of 2,733 legal lines carrying a letters-only label and an em dash there are 540 distinct labels**,
+and most of the ones whose remainder this compiler can read are named on *one card*: "Rosarius",
+"Keen Senses", "Gae Bolg", "Blade of Magnus". Universes Beyond prints a flavour name where older
+cards print a shared ability word, and both are the same thing — flavour with no rules meaning
+(CR 207.2c). A list naming them would be a list of cards.
+
+So the question is inverted: a label comes off **unless it has a rules meaning**. Three things do,
+each measured:
+
+1. **A keyword ability's name** — `KEYWORD_ABILITY_NAMES`, matched on the whole label *and* on its
+   first word. There the em dash joins a keyword to its **cost**: "Cumulative upkeep—Put a -1/-1
+   counter on Aboroth", "Escape—{2}{R}, Exile three other cards", "Flashback—{1}{G}, Pay 3 life",
+   "Suspend X—{X}{3}{U}", "Splice onto Arcane—Exile four cards". Dropping "Cumulative upkeep" turns
+   a price into an unconditional effect. Both checks are needed and neither is redundant: the whole
+   label catches "cumulative upkeep", the first word catches "Suspend X" (whose digit sibling
+   "Suspend 3" the label pattern refuses anyway).
+2. **`ward` and `channel`**, two keyword abilities that list does not name — it names the keywords
+   whose *declaration* this module recognises, and those two are read elsewhere. 51 legal lines
+   print "Ward—<cost>" and 40 "Channel — <ability>", and a channel ability is activated from your
+   **hand**.
+3. **A Saga's chapter markers** (CR 714): `I`, `II`, `III`, `IV` are letters before an em dash like
+   any label, and they carry **473 legal lines**.
+
+### The judgement: three keywords whose remainder would read
+
+`Exhaust` (43 lines, 15 readable), `Boast` (18, 8) and `Max speed` (40, 5) print
+"<keyword> — <activated ability>", so stripping the label *would* finish 28 cards. They are refused
+anyway, because **the keyword is the restriction on the ability**: an exhaust ability may be
+activated only once, a boast ability only during your turn and only after that creature attacked.
+Read the remainder on its own and the engine offers an unrestricted ability — 28 wrong readings
+rather than 28 lines left unread, which is the trade D362 settles the other way.
+
+### Six refusals, and the honest note about which can be tested
+
+Every printed line carrying `Ward`, `Channel`, `Suspend X`, `Splice onto Arcane` or a chapter marker
+has a remainder this compiler cannot read either way, so a fixture built from a real card would pass
+whether the refusal were there or not — the check-that-cannot-fail shape this log keeps naming. They
+are pinned on a **probe sentence** the compiler definitely reads instead, with `Keen Senses` as the
+control, so each guard fails the day a reader makes its collision reachable.
+
+### Verified
+
+One runtime test on printed **Owlbear** through `customDeck` — "Keen Senses — When Owlbear enters,
+draw a card." — which needs the label off *and* the trigger to fire. A three-row compile table on
+printed rows (a one-word flavour name, a three-word one, and `Metalcraft`, so nothing the allow list
+read stops reading), a four-row refusal table on printed rows (cumulative upkeep, boast, exhaust,
+and a digit in the label), and the seven-row probe table above.
+
+**Six breaks, six failures.**
+
+### One existing test retired, in place
+
+`compile.test.ts`'s "strips only the ability words it knows, and refuses the rest" asserted the
+decision this entry reverses — that `Constellation — <static>` compiles to no script at all. The row
+is rewritten rather than deleted, with the old claim and the reason it went quoted in its comment,
+and what survives is the invariant that was always the valuable half: **a label changes nothing
+about the reading**, now asserted for any label rather than for the three the list happened to name.
+
+Legal-only coverage 16,400 of 56,421 lines (29.1%), **7,405 cards with a script** (7,374 → 7,405),
+4,032 with every printed line read (4,013 → 4,032). GATE OK, 2,007 engine tests.
+
+The worker restarted mid-increment and took the scratch Postgres and Redis with it, so the first
+gate run stopped at `services-up.js` — which is exactly the trap that script exists for, since
+turbo's cache would otherwise have printed a page of passing tests without either service running
+(D303). Restarted both; the gate is green on a real Postgres 16 and Redis.
