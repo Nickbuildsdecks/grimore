@@ -11817,10 +11817,19 @@ function blockTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][] | n
 function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
   const groups = matched.groups ?? {};
   const who = BOARD_WHO[(groups.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
-  const what = (groups.what ?? '').toLowerCase();
   const dies = /dies$/i.test(groups.event ?? '');
   const filter = boardFilter(groups.filter ?? '');
   if (who === undefined || filter === null) return null;
+  /*
+    "a **nontoken** creature you control dies / enters" (D484) — a filter on the subject rather than
+    a kind of subject, so it comes off the front and the rest of the parse runs unchanged. 101 legal
+    lines print it, and `dies` has had the field since the beginning while `etb` got it here.
+  */
+  const nonToken = /^nontoken /i.test((groups.what ?? '').trim())
+    ? { nontoken: true as const }
+    : {};
+  const subject = (groups.what ?? '').trim().replace(/^nontoken /i, '');
+  const what = subject.toLowerCase();
   /*
     A **tribe** rather than a card type (D479): "whenever a Dragon you control enters". Told apart
     by the capital letter the printed line gives it, which is the same discriminator the cast parse
@@ -11831,11 +11840,12 @@ function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
     and an Equipment is an artifact: the tribe is the whole of what the line says, and adding a
     type the card does not print would narrow the trigger.
   */
-  const printed = (groups.what ?? '').trim();
+  const printed = subject;
   if (/^[A-Z][A-Za-z'-]*$/.test(printed)) {
     const dying = /dies$/i.test(groups.event ?? '');
     return [{
       kind: dying ? 'dies' : 'etb', who, of: 'you', what: 'permanent', ofSubtypes: [printed],
+      ...nonToken,
       ...filter,
     } as BoardEvent];
   }
@@ -11844,7 +11854,9 @@ function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
   // "Whenever a land you control dies" is not printed, and `dies` is defined for creatures only
   // (CR 700.4), so the land half of the parse exists on the entry and nowhere else.
   if (dies && what === 'land') return null;
-  return [{ kind: dies ? 'dies' : 'etb', who, of: 'you', what, ...filter } as BoardEvent];
+  return [{
+    kind: dies ? 'dies' : 'etb', who, of: 'you', what, ...nonToken, ...filter,
+  } as BoardEvent];
 }
 
 /**
@@ -11881,7 +11893,16 @@ function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
 function orAnotherTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
   const groups = matched.groups ?? {};
   const dies = /dies$/i.test(groups.event ?? '');
-  const printed = (groups.what ?? '').trim();
+  /*
+    "~ or another **nontoken** creature you control dies" (D484), on the `another` half only: the
+    card printing the line is a card rather than a token, so its own arm needs no filter — and a
+    token copy of it that somehow existed would be a different object from the one the line is
+    about anyway.
+  */
+  const nonToken = /^nontoken /i.test((groups.what ?? '').trim())
+    ? { nontoken: true as const }
+    : {};
+  const printed = (groups.what ?? '').trim().replace(/^nontoken /i, '');
   // A tribe optionally followed by the type it is a tribe of: "another Human creature you control".
   const parts = /^([A-Z][A-Za-z'-]*)(?: (creature|permanent|artifact|enchantment))?$/.exec(printed);
   const bare = /^(creature|permanent|artifact|enchantment|land)$/i.exec(printed);
@@ -11896,6 +11917,7 @@ function orAnotherTrigger(matched: RegExpExecArray): readonly BoardEvent[] | nul
     who: 'another',
     of: 'you',
     what,
+    ...nonToken,
     ...(parts === null ? {} : { ofSubtypes: [parts[1]!] }),
   } as BoardEvent;
   return [self, another];
@@ -12243,7 +12265,9 @@ const TRIGGER_SHAPES: readonly ({
   },
   {
     prologue: () => new RegExp(
-      `^When(?:ever)? (?<who>a|an|another) (?<what>[a-z]+) you control(?<filter>[^,]*)`
+      // `nontoken` is part of the subject rather than of the filter (D484), so the group takes it
+      // as an optional first word and `boardTrigger` lifts it off.
+      `^When(?:ever)? (?<who>a|an|another) (?<what>(?:nontoken )?[a-z]+) you control(?<filter>[^,]*)`
       + ` (?<event>${ENTERS}|dies), (?<clause>.+)$`,
       'i',
     ),

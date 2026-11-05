@@ -27226,3 +27226,103 @@ describe('"~ or another <thing> you control", parsed (D483)', () => {
     ]);
   });
 });
+
+describe('nontoken, on the entry as well as the death (D484)', () => {
+  /*
+    `dies` has had this filter since the beginning; `etb` did not, and that one-word asymmetry was
+    the whole of what stopped **101 legal lines** — 68 of them a plain "nontoken creature".
+
+    The card that makes the stakes obvious is Blessed Sanctuary: *"Whenever a nontoken creature you
+    control enters, create a 2/2 white Unicorn creature token."* Without the filter the Unicorn is a
+    creature entering, which makes another Unicorn, which makes another. The word is not a nicety on
+    this card, it is the difference between a trigger and a loop.
+  */
+  const BLESSED_SANCTUARY = {
+    name: 'Blessed Sanctuary', type_line: 'Enchantment', mana_cost: '{3}{W}{W}', cmc: 5,
+    colors: ['W'], layout: 'normal',
+    oracle_text: 'Prevent all noncombat damage that would be dealt to you and creatures you'
+      + ' control.\nWhenever a nontoken creature you control enters,'
+      + ' create a 2/2 white Unicorn creature token.',
+  };
+  const ARNI = {
+    name: 'Arni, Humble Scribe', type_line: 'Legendary Creature — Human Wizard',
+    mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal', power: '2', toughness: '3',
+    oracle_text: 'Whenever another nontoken creature you control enters, untap Arni.\n'
+      + '{T}: Draw a card, then discard a card.',
+  };
+  const EAGER_CADET = {
+    name: 'Eager Cadet', type_line: 'Creature — Human Soldier', mana_cost: '{W}', cmc: 1,
+    colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: '',
+  };
+
+  const tokensOn = (s: GameState, seat: SeatIndex) =>
+    ids(s, seat, 'battlefield').filter((id) => s.instances[id]!.isToken === true);
+
+  const table = (battlefield: readonly string[], hand: readonly string[]) => {
+    const list = customDeck({
+      id: 'nontoken-entry',
+      name: 'Nontoken Entry',
+      entries: [
+        { name: 'Blessed Sanctuary', count: 2 },
+        { name: 'Arni, Humble Scribe', count: 2 },
+        { name: 'Eager Cadet', count: 4 },
+        { name: 'Plains', count: 52 },
+      ],
+      data: [BLESSED_SANCTUARY, ARNI, EAGER_CADET] as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort())
+      .toEqual(['Arni, Humble Scribe', 'Blessed Sanctuary', 'Eager Cadet']);
+    let s = arena({
+      decks: { 0: 'nontoken-entry', 1: 'nontoken-entry' },
+      deckSpecs: { 'nontoken-entry': list.deck },
+      battlefield: { 0: [...battlefield] },
+      hands: { 0: [...hand] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return tapAllLands(s, 0 as SeatIndex);
+  };
+
+  it('makes one token for a card creature, and the token does not make another', () => {
+    let s = table(['Blessed Sanctuary', 'Plains'], ['Eager Cadet']);
+    expect(tokensOn(s, 0 as SeatIndex)).toHaveLength(0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Eager Cadet'),
+    } as Action)), 60);
+    /*
+      Exactly one. Without `nontoken` on the entry this is a loop, and the honest shape of the
+      failure is not "two" but "as many as the harness will resolve" — which is what the break run
+      below reads.
+    */
+    expect(tokensOn(s, 0 as SeatIndex)).toHaveLength(1);
+  });
+
+  it('untaps for a card creature and not for a token: Arni beside the Sanctuary', () => {
+    /*
+      Both cards on one board, which is the pair the filter is about: casting a Cadet is one
+      nontoken entry, so Arni untaps once — and the Unicorn the Sanctuary makes in response is a
+      token entry, which is not Arni's business either.
+    */
+    let s = table(['Blessed Sanctuary', 'Arni, Humble Scribe', 'Plains'], ['Eager Cadet']);
+    const arni = find(s, 0 as SeatIndex, 'battlefield', 'Arni, Humble Scribe');
+    s = { ...s, instances: { ...s.instances, [arni]: { ...s.instances[arni]!, tapped: true } } };
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Eager Cadet'),
+    } as Action)), 60);
+    expect(s.instances[arni]!.tapped).toBe(false);
+    expect(tokensOn(s, 0 as SeatIndex)).toHaveLength(1);
+  });
+
+  it('reads the filter onto the event, on the entry and the death alike', () => {
+    const sanctuary = compileCard(BLESSED_SANCTUARY as never);
+    expect(sanctuary.ok).toBe(true);
+    if (!sanctuary.ok) return;
+    const triggers = (sanctuary.script as { triggers?: readonly { readonly on: unknown }[] })
+      .triggers ?? [];
+    expect(triggers.map((t) => t.on)).toEqual([
+      { kind: 'etb', who: 'any', of: 'you', what: 'creature', nontoken: true },
+    ]);
+  });
+});

@@ -968,7 +968,10 @@ function triggerMatches(
         subjectCounters?: Readonly<Record<string, number>>;
         alone?: boolean; declared?: number;
       };
-      if (want.kind === 'dies' && want.nontoken === true && e.subjectIsToken === true) return false;
+      // "a nontoken creature you control dies", and since D484 the same filter on the entry: both
+      // events carry `subjectIsToken`, and both are printed with this word for the same reason.
+      if ((want.kind === 'dies' || want.kind === 'etb') && want.nontoken === true
+        && e.subjectIsToken === true) return false;
       // "attacks **alone**" — exalted's clause, and a fact about the declaration rather than about
       // the creature, which is why the event has to carry it (CR 702.90b).
       if (want.kind === 'attacks' && want.alone === true && e.alone !== true) return false;
@@ -1426,7 +1429,9 @@ function raise(
             subjectSubtypes: live.typeLine.subtypes,
           }
           : {}),
-        ...(event.kind === 'dies' ? { subjectIsToken: inst.isToken } : {}),
+        // On the entry as well as the death (D484): 101 legal lines print "nontoken" across these
+        // prologues, and until this line the entry could not answer the question.
+        ...(event.kind === 'dies' || event.kind === 'etb' ? { subjectIsToken: inst.isToken } : {}),
         // What it had on it, for a trigger that has to count its own counters after they are gone.
         ...(Object.keys(inst.counters).length === 0 ? {} : { subjectCounters: inst.counters }),
       };

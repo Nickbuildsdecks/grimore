@@ -191,10 +191,24 @@ export type TriggerEvent =
        * boolean of their own.
        */
       readonly what?: 'creature' | 'permanent' | 'land' | 'artifact' | 'enchantment';
+      /**
+       * "a **nontoken** creature you control enters" (D484) — `dies`' own filter, on the entry.
+       *
+       * **101 legal corpus lines** print it across the board prologues, 68 of them on a plain
+       * "nontoken creature", and the reason it is printed is always the same: a deck that makes
+       * tokens would otherwise trigger its own payoff off its own chaff. A token entering is still
+       * a permanent entering; it is just not this trigger's business.
+       *
+       * Answered from `subjectIsToken` below, which the engine now sets on an entry as well as on
+       * a death — that one-word asymmetry is the whole of what blocked these lines.
+       */
+      readonly nontoken?: boolean;
       /** Set by the engine when it raises the event. */
       readonly subjectSeat?: SeatIndex;
       /** Set by the engine when it raises the event: whether the subject is a creature. */
       readonly subjectIsCreature?: boolean;
+      /** Set by the engine when it raises the event: whether the subject is a token (D484). */
+      readonly subjectIsToken?: boolean;
       /** Set by the engine when it raises the event: whether the subject is a land. */
       readonly subjectIsLand?: boolean;
       /**

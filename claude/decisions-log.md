@@ -31146,3 +31146,62 @@ trigger looser than the card (D362): `nontoken` (a field `dies` has and `etb` do
 two types in one subject ("creature **or** planeswalker"). Together they are most of the 52-shape
 tail — and `nontoken` is the one worth taking next, because the field exists on one of the two events
 already.
+
+## D484 — One word on the wrong event: `nontoken` on the entry
+
+`dies` has carried a `nontoken` filter since the beginning — *"whenever a nontoken creature you
+control dies"* is how nearly every death payoff is printed, and its docblock says why: a deck of 1/1
+tokens would otherwise drain the table to zero by accident. `etb` did not carry it. That one-word
+asymmetry was the whole of what stopped **101 legal lines**:
+
+| printed subject | lines |
+| --- | --- |
+| nontoken creature (dies) | 39 |
+| nontoken creature (enters) | 22 |
+| ~ or another nontoken creature | 7 |
+| nontoken artifact | 7 |
+| nontoken tribes (Dragon, Spirit, Zombie, Vampire, Wizard, Sliver, …) | ~19 |
+| subjects still refused (modified, historic, legendary, "Elf or Berserker", …) | 7 |
+
+The change is three lines of engine and a word lifted off the front of the subject in two parses:
+`subjectIsToken` is set on an entry as well as on a death, the matcher asks for it on both kinds, and
+`boardTrigger` and `orAnotherTrigger` take `nontoken` off the subject before reading the rest. On the
+"or another" shape the filter goes on the **another** half only — the card printing the line is a
+card rather than a token, so its own arm needs no filter.
+
+### The card that shows what the word is for
+
+*Blessed Sanctuary*: **"Whenever a nontoken creature you control enters, create a 2/2 white Unicorn
+creature token."** Without the filter the Unicorn is a creature entering, which makes another
+Unicorn, which makes another. The word is not a nicety on this card — it is the difference between a
+trigger and a loop, and the break run says so in the plainest terms available: dropping the entry
+half of the filter produced **30 Unicorns** off one Eager Cadet, bounded only by the test harness's
+resolution budget rather than by anything in the rules.
+
+A second runtime test puts *Arni, Humble Scribe* ("whenever another nontoken creature you control
+enters, untap Arni") on the board beside the Sanctuary, which is the pair the filter is about: one
+Cadet is one nontoken entry, so Arni untaps once, and the Unicorn that arrives in response is not
+Arni's business either.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 10,076 | **10,091** |
+| cards with every printed line read | 5,768 | **5,775** |
+| printed rules lines read | 20,057 / 56,421 (35.5%) | **20,077 / 56,421 (35.6%)** |
+
++15 cards for three lines of engine, which is the best ratio of any entry in this run — and the
+reason is that the parses were already there. Nine mapping rows across the two prologue describes.
+
+**The yield understates the change.** 101 lines now read where 0 did, and only 15 cards crossed from
+"one line short" to "finished", because most of these cards are long: Bane, Lord of Darkness and
+Brenard, Ginger Sculptor are short a clause rather than a prologue. The prologue being readable is
+what lets those clauses be worth writing.
+
+### What is still refused
+
+The subject words that are filters no field expresses: `modified` (a defined condition about
+counters and attachments, CR 701.x), `historic`, `legendary`, and two types in one subject
+("artifact creature or Vehicle", "Elf or Berserker"). Seven lines between them, and each would
+compile into a trigger looser than the card (D362).

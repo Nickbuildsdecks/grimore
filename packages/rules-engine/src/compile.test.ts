@@ -7236,6 +7236,23 @@ describe('the board trigger, read off the prologue', () => {
     ['Whenever another creature you control with flying dies',
       { kind: 'dies', who: 'another', of: 'you', what: 'creature', withKeyword: 'flying' }],
     /*
+      `nontoken` (D484), which is part of the subject rather than of the filter: 101 legal lines
+      print it across these prologues, 68 of them on a plain "nontoken creature". `dies` has had
+      the field from the beginning; the entry got it with this row.
+    */
+    ['Whenever a nontoken creature you control enters',
+      { kind: 'etb', who: 'any', of: 'you', what: 'creature', nontoken: true }],
+    ['Whenever another nontoken creature you control enters',
+      { kind: 'etb', who: 'another', of: 'you', what: 'creature', nontoken: true }],
+    ['Whenever a nontoken creature you control dies',
+      { kind: 'dies', who: 'any', of: 'you', what: 'creature', nontoken: true }],
+    ['Whenever a nontoken artifact you control enters',
+      { kind: 'etb', who: 'any', of: 'you', what: 'artifact', nontoken: true }],
+    // And with a tribe under it, which is two fields off one subject.
+    ['Whenever another nontoken Dragon you control enters',
+      { kind: 'etb', who: 'another', of: 'you', what: 'permanent', ofSubtypes: ['Dragon'],
+        nontoken: true }],
+    /*
       The tribe in place of the card type (D479), told apart by the capital letter the printed line
       gives it. `permanent` beneath it rather than `creature`: a Cartouche is an enchantment and an
       Equipment an artifact, so the tribe is the whole of what the sentence says.
@@ -9475,6 +9492,14 @@ describe('the "or another" prologue, read off the printed subject', () => {
     ['Whenever Watching Thing or another permanent you control enters',
       [{ kind: 'etb', who: 'self' },
         { kind: 'etb', who: 'another', of: 'you', what: 'permanent' }]],
+    // `nontoken`, on the "another" half only: the card printing the line is a card (D484).
+    ['Whenever Watching Thing or another nontoken creature you control enters',
+      [{ kind: 'etb', who: 'self' },
+        { kind: 'etb', who: 'another', of: 'you', what: 'creature', nontoken: true }]],
+    ['Whenever Watching Thing or another nontoken Zombie you control dies',
+      [{ kind: 'dies', who: 'self' },
+        { kind: 'dies', who: 'another', of: 'you', what: 'permanent', nontoken: true,
+          ofSubtypes: ['Zombie'] }]],
     // The death half, which takes the same subjects minus `land`.
     ['Whenever Watching Thing or another Goblin you control dies',
       [{ kind: 'dies', who: 'self' },
@@ -9504,8 +9529,6 @@ describe('the "or another" prologue, read off the printed subject', () => {
       into a trigger looser than the card — which is the wrong direction (D362). Together they are
       most of the family's 52-shape tail.
     */
-    ['Whenever Watching Thing or another nontoken creature you control enters',
-      '`nontoken`, a field `dies` has and `etb` does not'],
     ['Whenever Watching Thing or another black creature you control enters',
       'a colour, which no board event asks about'],
     ['Whenever Watching Thing or another legendary creature you control enters',
