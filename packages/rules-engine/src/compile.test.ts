@@ -25,6 +25,20 @@ for (const deck of Object.values(STARTER_DECKS)) {
   if (deck.commander) POOL.set(deck.commander.name, deck.commander);
 }
 
+/**
+ * A pool card that is **partly** read: some lines compile and at least one does not.
+ *
+ * Named rather than searched for, so the test below says which card it is about. Contagion Clasp
+ * prints two lines — an enters trigger this compiler reads, and "{4}, {T}: Proliferate.", which it
+ * does not — and the pair is what hybrid automation (D362) is for.
+ *
+ * **It is expected to stop being true.** When proliferate joins the clause vocabulary this card
+ * becomes fully read and the test fails loudly, which is the right failure: whoever reads that
+ * line moves this constant to another partly-read card and says so, the way D447 moved it off
+ * Mystic Remora.
+ */
+const PARTLY_READ_CARD = 'Contagion Clasp';
+
 /** A card's own printed data, as the row an importer would hand over. */
 function rowFor(name: string): CardDataRow {
   const def = POOL.get(name);
@@ -197,16 +211,26 @@ describe('compileCard, against the cards a person wrote by hand', () => {
   });
 
   it('names the lines it could not read, rather than refusing the card', () => {
-    // Mystic Remora is cumulative upkeep plus one triggered ability. The keyword compiles; the
-    // sentence does not, and the card is still a card.
-    const remora = compiledScript('Mystic Remora');
-    expect(remora.source).toBe('lines');
-    expect(fullyCompiled(remora)).toBe(false);
-    expect(remora.unread.map((u) => u.line).join(' ')).toContain('noncreature spell');
-    expect(remora.unread.every((u) => u.why === 'no-reader')).toBe(true);
+    /*
+      **Retired subject (D447).** This test used **Mystic Remora** and asserted
+      `fullyCompiled(remora)` was `false`, with the comment "Mystic Remora is cumulative upkeep plus
+      one triggered ability. The keyword compiles; the sentence does not, and the card is still a
+      card." Its sentence is "Whenever an opponent casts a noncreature spell, you may draw two
+      cards", and D447 reads it — so the Remora is now compiled whole and cannot demonstrate a card
+      that is only partly read. The claim is not weakened, it is **relocated**: the assertions below
+      are the same four, on a card that still has an unread line.
+
+      Remora keeps its own test above, which pins the half that has not changed — that the keyword
+      line compiles into `cumulativeUpkeep`.
+    */
+    const partly = compiledScript(PARTLY_READ_CARD);
+    expect(partly.source).toBe('lines');
+    expect(fullyCompiled(partly)).toBe(false);
+    expect(partly.unread.length).toBeGreaterThan(0);
+    expect(partly.unread.every((u) => u.why === 'no-reader')).toBe(true);
     // And the printed data survived regardless, which is what hybrid mode plays with.
-    expect(remora.def.name).toBe('Mystic Remora');
-    expect(remora.def.typeLine).toContain('Enchantment');
+    expect(partly.def.name).toBe(PARTLY_READ_CARD);
+    expect(partly.def.oracleText.length).toBeGreaterThan(0);
   });
 
   it('hands a whole-card derivation straight back, rather than re-deriving it', () => {
@@ -7872,5 +7896,114 @@ describe('an ability cost that is not mana, a tap or life', () => {
       { tap: true, sacrificeSelf: true },
       { tap: true, sacrificeSelf: true },
     ]);
+  });
+});
+
+describe('"you may": the optional triggered ability', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const triggersOf = (c: ReturnType<typeof compileCard>) =>
+    (field(c.ok ? c.script : undefined, 'triggers') ?? []) as readonly TriggerDef[];
+  const unreadLines = (c: ReturnType<typeof compileCard>) =>
+    (c.ok ? c.unread : []).map((u) => u.line);
+  const read = (text: string) => compileCard({
+    name: 'Probe Thing', type_line: 'Creature — Bird', mana_cost: '{2}{U}', cmc: 3,
+    colors: ['U'], power: '2', toughness: '2', layout: 'normal', oracle_text: text,
+  } as never);
+  /** The one `ChoiceDecisionSpec` a read "you may" carries, as a plain object. */
+  const choice = (c: ReturnType<typeof compileCard>) => {
+    const specs = triggersOf(c)[0]?.decisions ?? [];
+    expect(specs).toHaveLength(1);
+    const spec = specs[0];
+    expect(typeof spec).not.toBe('function');
+    return spec as unknown as Record<string, unknown>;
+  };
+
+  it.each([
+    /*
+      The commonest two words in Magic's trigger clauses, and until D447 they made the whole line
+      unreadable: the clause vocabulary is about what an effect does, and "you may" is about whether
+      it happens. 82 legal lines on 50 cards are exactly a prologue this compiler reads, a "you
+      may", and an effect it reads.
+    */
+    ['the enters trigger', 'When Probe Thing enters, you may draw a card.', 'Draw a card?'],
+    ['a counter on itself',
+      'Whenever Probe Thing attacks, you may put a +1/+1 counter on Probe Thing.',
+      'Put a +1/+1 counter on Probe Thing?'],
+    ['a step trigger', 'At the beginning of your end step, you may draw a card.', 'Draw a card?'],
+    // With a target, which is chosen when the trigger goes on the stack and so is not part of the
+    // question: the yes-or-no is asked as it resolves (CR 601.2c against CR 603.3).
+    ['a targeted effect', 'When Probe Thing enters, you may destroy target artifact.',
+      'Destroy target artifact?'],
+  ])('reads %s and asks before it acts', (_label, text, prompt) => {
+    const compiled = read(text as string);
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([]);
+    const spec = choice(compiled);
+    expect(spec['who']).toBe('controller');
+    expect(spec['prompt']).toBe(prompt);
+    /*
+      Yes **first**, and no `best`. `ChoiceDecisionSpec.options` documents the first option as the
+      answer a bot falls back on when the card gives none, and that is the right fallback for every
+      one of the 82 lines this reads — all of them are pure upside for the controller. The refusal
+      table below is what keeps that true.
+    */
+    expect(spec['options']).toEqual(['Yes', 'No']);
+    expect(spec['best']).toBeUndefined();
+  });
+
+  it('leaves a mandatory trigger with no question at all', () => {
+    /*
+      The other arm of the pair, and the one that makes the rows above mean something: the same
+      clause without the two words must read as a trigger that simply happens. A reader that put a
+      yes-or-no on every trigger would pass every row above.
+    */
+    const compiled = read('When Probe Thing enters, draw a card.');
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([]);
+    expect(triggersOf(compiled)).toHaveLength(1);
+    expect(triggersOf(compiled)[0]?.decisions).toBeUndefined();
+  });
+
+  it('keeps the printed clause as the description, "you may" and all', () => {
+    // The description is what the card says, not what the reading made of it (see
+    // `triggerFromLine`), so the table and the log show the printed words.
+    const compiled = read('When Probe Thing enters, you may draw a card.');
+    expect(triggersOf(compiled)[0]?.description).toBe('you may draw a card');
+  });
+
+  it.each([
+    /*
+      A "may" whose effect asks its own question is refused. The engine asks a resolution's
+      questions in order and cannot skip a later one on an earlier answer, so the search would open
+      the library **before** the yes-or-no could be read — a player who declined would have seen
+      their library anyway. That is a wrong reading and an information leak, and it costs 9 legal
+      lines on 7 cards, all of them this one printed shape.
+    */
+    ['an effect that asks its own question',
+      'When Probe Thing enters, you may search your library for a basic land card, put it onto the'
+        + ' battlefield tapped, then shuffle.'],
+    // And a "may" whose effect is not in the vocabulary at all is refused for the ordinary reason:
+    // stripping two words off a line does not make the rest readable.
+    ['an effect with no reader', 'When Probe Thing enters, you may bargain with the umpire.'],
+  ])('refuses %s', (_label, text) => {
+    const compiled = read(text as string);
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([text]);
+    expect(triggersOf(compiled)).toHaveLength(0);
+  });
+
+  it('reads the pool\'s own Mystic Remora, which was an unread line until this', () => {
+    /*
+      The card this increment finished in the pool, and the reason the hand-written Remora now
+      spells its question `['Yes', 'No']`: before D447 its trigger line was unread and the two
+      readings could not be compared at all.
+    */
+    const remora = compiledScript('Mystic Remora');
+    expect(fullyCompiled(remora)).toBe(true);
+    const spec = (remora.script?.triggers ?? [])
+      .flatMap((t) => t.decisions ?? [])
+      .filter((d) => typeof d !== 'function') as unknown as Record<string, unknown>[];
+    expect(spec.map((d) => d['prompt'])).toContain('Draw two cards?');
   });
 });

@@ -7762,13 +7762,24 @@ const MYSTIC_REMORA: CardScript = {
     {
       on: { kind: 'spell-cast', by: 'opponent', spell: 'noncreature' },
       description: 'you may draw two cards',
+      /*
+        The words and their order are the compiled reading's (D447), and the `best` this used to
+        carry is gone with them.
+
+        It read `options: ['Decline', 'Draw two']` with `best: () => 'Draw two'` — which is a bot
+        hint written to undo the option order rather than to say anything about the board.
+        `ChoiceDecisionSpec.options` documents the **first** option as the answer a bot falls back
+        on, so putting the answer nobody would choose first and then overriding it is two levers
+        where one does. Yes first, no `best`, and the bot draws because the question's own default
+        says to. This is also what the compiler emits for every "you may" it reads, so the two
+        readings of this card agree rather than being listed as a disagreement.
+      */
       decisions: [{
         who: 'controller',
-        prompt: 'Mystic Remora: draw two cards?',
-        options: ['Decline', 'Draw two'],
-        best: () => 'Draw two',
+        prompt: 'Draw two cards?',
+        options: ['Yes', 'No'],
       }],
-      effect: (c) => (chosenOption(c) === 'Draw two' ? drawLater(c.state, c.controller, 2) : c.state),
+      effect: (c) => (chosenOption(c) === 'Yes' ? drawLater(c.state, c.controller, 2) : c.state),
     },
   ],
 };
@@ -11632,11 +11643,65 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     if (matched === null) continue;
     const clause = matched[1]!.replace(/\.\s*$/, '').trim();
     /*
+      "You may" — the optional triggered ability (D447).
+
+      The commonest two words in all of Magic's trigger clauses, and until now they made the whole
+      line unreadable: the clause vocabulary is about what an effect *does*, and "you may" is about
+      whether it happens. **82 legal lines on 50 cards** are exactly this — a prologue this compiler
+      already reads, a "you may", and an effect it already reads — among them *Gravedigger*,
+      *Reclamation Sage*, *Consecrated Sphinx* and *Ninja of the Deep Hours*.
+
+      It is read the way the pool's one hand-written optional trigger is (Ophidian, D116): a
+      `ChoiceDecisionSpec` with two words and an effect that returns the board untouched when the
+      answer is the second one. The engine has no optional-trigger flag and does not need one — a
+      "may" **is** a question with two answers, and the table already draws a row of buttons for one.
+
+      Two things are deliberate about the words.
+
+      `'Yes'` is first, and `ChoiceDecisionSpec.options` documents the first option as the answer a
+      bot falls back on when the card gives no `best`. That is the right fallback here and it is a
+      measured claim rather than a hope: **every one of the 82 lines this reads is pure upside for
+      the controller** — a draw, a counter on your own creature, a destroy, a bounce, an untap. Not
+      one of them costs the controller anything, which is why no `best` is written and why the
+      refusal below exists to keep that true as the clause vocabulary grows.
+
+      A `may` whose effect asks its own question is **refused**. The engine asks a resolution's
+      questions in order and cannot skip a later one on an earlier answer, so "you may search your
+      library for a basic land card" would open the library *before* the yes-or-no could be read —
+      a player who declined would have seen their library anyway, which is both a wrong reading and
+      an information leak. That costs 9 lines on 7 cards (all the basic-land search), recorded as a
+      refusal rather than taken: D362's rule, and the engine change that would unlock it is its own
+      task.
+    */
+    /*
       The event-relative clauses first — "that player" is `c.actor`, which only a trigger has. See
       `eventRelativeEffect` for why that reading cannot live in the shared clause vocabulary.
     */
-    const read = eventRelativeEffect(clause, name) ?? composeEffects(clausesOf(clause), name);
+    const reader = (text: string): ReadEffect | null =>
+      eventRelativeEffect(text, name) ?? composeEffects(clausesOf(text), name);
+    /*
+      **The whole clause is tried first, and that order is the guard.** Some clauses in the
+      vocabulary already begin with "you may" and read as one phrase — a payment offered to the
+      event's own player, for instance — and stripping the two words off those would hand the rest
+      to a reader that was never written for it. So the strip is only reached when the clause does
+      not read at all, which is the only case where there is nothing to lose.
+    */
+    const whole = reader(clause);
+    const may = whole === null ? /^you may (.+)$/i.exec(clause) : null;
+    const inner = may === null ? clause : may[1]!.trim();
+    const read = whole ?? reader(inner);
     if (read === null) return null;
+    if (may !== null
+      && (read.decisions !== undefined || read.beforeDecisions !== undefined)) return null;
+    const optional: Partial<TriggerDef> = may === null ? {} : {
+      decisions: [{
+        who: 'controller',
+        // The printed clause, as a question in the player's own words: "Draw a card?"
+        prompt: `${inner.charAt(0).toUpperCase()}${inner.slice(1).replace(/\.$/, '')}?`,
+        options: ['Yes', 'No'],
+      }],
+      effect: (c) => (chosenOption(c) === 'Yes' ? read.effect(c) : c.state),
+    };
     // `spellFlags` is deliberately not spread: it is advice about casting a spell, and a triggered
     // ability is not cast. See `targetedEffect`.
     return {
@@ -11648,6 +11713,8 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
         // See the split in `composeEffects` (D418): a trigger asks before it runs, as a spell does.
         ...(read.beforeDecisions === undefined ? {} : { beforeDecisions: read.beforeDecisions }),
         effect: read.effect,
+        // Last, so the yes-or-no and its wrapped effect replace the unconditional pair above.
+        ...optional,
       } as TriggerDef)),
     };
   }

@@ -27967,3 +27967,104 @@ to hand-write.
 Legal-only coverage **17,419 of 56,421 lines (30.9%)** — the first increment to carry it past 30% —
 **8,029 cards with a script** (7,669 → 8,029, **+360**), 4,552 with every printed line read
 (4,172 → 4,552, +380), 39,002 lines nothing could read. GATE OK, 2,056 engine tests.
+
+## D447 — "You may": the optional triggered ability, and seven pool cards that lost one
+
+The commonest two words in Magic's trigger clauses, and they made the whole line unreadable. The
+clause vocabulary answers "what does this effect do"; "you may" answers "does it happen at all", so
+every reader refused it and the line fell through to nothing.
+
+Ranked the way D444 established — by **cards one unread line from finished**, not lines printed:
+
+| | legal lines | cards one line short |
+| --- | --- | --- |
+| `<prologue>, you may <effect this compiler reads>` | 82 | **50** |
+| the same with a payment in front ("you may pay {M}. If you do, …") | 58 | 43 |
+| `that player <effect>` | 6 | 5 |
+| two effects in one line ("`<A>. <B>.`") | 2 | 1 |
+
+This increment takes the first row. The second is the same family one step on and is the obvious
+next one.
+
+### Read as a question, because that is what it is
+
+The engine has no optional-trigger flag and does not need one. Ophidian (D116) has done this by
+hand since the pool's early days: a `ChoiceDecisionSpec` with two words, and an effect that returns
+the board untouched when the answer is the second. A "may" **is** a question with two answers, the
+table already draws a row of buttons for one, and the mechanism is where the rules about it live.
+
+So the compiler emits exactly that shape, with the printed clause as the prompt — "Draw a card?",
+"Return target creature card from your graveyard to your hand?".
+
+**`'Yes'` is first and there is no `best`, and that is a measured claim.**
+`ChoiceDecisionSpec.options` documents the first option as the answer a bot falls back on when the
+card writes no hint. Reading all 82 lines rather than sampling them: **every one is pure upside for
+the controller** — a draw, a counter on your own creature, a destroy, a bounce, an untap, a search.
+Not one costs the controller anything. That is why no `best` is written, and why the next refusal
+exists to keep it true as the vocabulary grows.
+
+### Two refusals, and what each costs
+
+**A may whose effect asks its own question is refused** — 9 lines on 7 cards, all of them "you may
+search your library for a basic land card". The engine asks a resolution's questions in order and
+cannot skip a later one on an earlier answer, so the search would open the library *before* the
+yes-or-no could be read: a player who declined would have seen their library anyway. That is both a
+wrong reading and an information leak, so the line stays unread (D362). The engine change that would
+unlock it — a decision that is asked only if an earlier answer allows it — is a real feature and its
+own piece of work.
+
+**The whole clause is tried before the two words are stripped.** Some clause in the vocabulary could
+read "you may …" as one phrase, and stripping it would hand the rest to a reader never written for
+it. **This guard has no falsifying case today**, and the break run says so rather than the comment
+claiming otherwise: removing the ordering leaves all 1,491 tests green, because no clause the
+vocabulary reads begins with those words. Kept as precedence rather than as a tested branch — the
+same honesty D445 applied to its trailing anchor, which at least had a probe row; this one does not.
+
+### The pool had been paying for this in card text
+
+Two findings came out of building it, and the second is the one worth the entry.
+
+**Mystic Remora's line was unread, and is now read.** Its hand-written trigger asked
+`options: ['Decline', 'Draw two']` with `best: () => 'Draw two'` — a bot hint written to undo an
+option order rather than to say anything about the board. The compiled reading disagreed with it, so
+D419's rule applied: settle it by making one side right. The hand-written card now spells the
+question the way the compiler does, and the `best` is gone with the order that needed it. Two levers
+became one. The compile test that asserted the Remora was only *partly* read is retired in place,
+with its old claim quoted, and relocated to Contagion Clasp.
+
+**Seven pool cards drop a printed "you may" (task #328).** The runtime test for this increment was
+written on printed Gravedigger and passed without the compiler being involved at all — the pool
+hand-writes Gravedigger, a hand-written script wins the precedence, and the log gave it away: the
+trigger resolved with no question and its description had no "you may" in it. Comparing every pool
+card's `oracleText` against the same card's printed text in the corpus found 29 "you may"
+differences, 22 of them keyword reminder text in parentheses and **7 real**: Goblin Arsonist,
+Gravedigger, Ninja of the Deep Hours, Ophidian Eye, Gelectrode, Angel of Sanctions and Yavimaya
+Granger are all mandatory in the pool and optional in print.
+
+That is #215's family, and it is a task rather than a rider here for a specific reason: changing
+seven shipped cards changes what the bot does, and therefore the deck win rates that #96, D231 and
+#268 spent thousands of games measuring. It wants its own before-and-after. The runtime test moved
+to **Cadaver Imp**, which prints the same sentence and is in no deck, so nothing shadows it.
+
+### Verified
+
+Three runtime tests on printed Cadaver Imp through `customDeck` (D430): the question is asked in the
+printed words with Yes first, "Yes" returns the card from the graveyard, and **"No" leaves it
+there**. The third is the one that makes the may a may — a reader that dropped the two words passes
+the first two and fails that one, with a card that does something its controller declined and
+nothing at the table to flag it.
+
+Nine compile rows: four read (the enters trigger, a counter on itself, a step trigger, and a
+targeted effect), the same clause **without** the two words asserting no question at all, the
+printed description kept intact, and two refusals.
+
+**Twelve breaks, twelve failures**, plus the one documented pass above. One of those twelve matters
+more than the rest: the first run of the break script reported ten failures against a **dirty
+baseline** — the Remora runtime test was still answering 'Draw two' after the card's words changed,
+so every arm inherited one failure. Re-run on a clean baseline the counts are different and the
+verdicts hold, but the lesson is that a break run is only as good as the baseline under it, and this
+one was checked second rather than first.
+
+Legal-only coverage **17,500 of 56,421 lines (31.0%)**, **8,099 cards with a script**
+(8,029 → 8,099, +70), 4,599 with every printed line read (4,552 → 4,599, +47), 38,921 lines nothing
+could read. GATE OK.

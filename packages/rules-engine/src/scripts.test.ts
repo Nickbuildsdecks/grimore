@@ -18135,8 +18135,12 @@ describe('cumulative upkeep: the price that climbs', () => {
     s = drain(apply(s, {
       type: 'auto:cast', by: 1, card: shock, targets: [{ kind: 'player', seat: 0 }],
     }), 40);
-    // The Remora's own question, answered by its controller rather than by the caster.
-    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Draw two' }), 40);
+    /*
+      The Remora's own question, answered by its controller rather than by the caster. The word is
+      'Yes' rather than the old 'Draw two' because D447 gave this card the shape the compiler emits
+      for every "you may" — see the comment on its decision in `scripts.ts`.
+    */
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Yes' }), 40);
     expect(ids(s, 0, 'hand').length).toBe(before + 2);
   });
 
@@ -22727,5 +22731,89 @@ describe('a sacrifice as an ability cost, from printed text', () => {
     expect(refusal(s, {
       type: 'auto:activate', by: 0, card: altar, abilityIndex: 0,
     } as Action)).not.toBe(null);
+  });
+});
+
+describe('"you may", from printed text (D447)', () => {
+  /*
+    Printed Cadaver Imp, compiled from its own corpus row through `customDeck` (D430): the trigger
+    prologue and the effect were both readable before D447 and the two words between them made the
+    whole line unread. It is the right card for the runtime pair because it is **targeted** — the
+    target is chosen as the trigger goes on the stack and the yes-or-no is asked as it resolves, so
+    a reading that put the question in the wrong place would be visible here and not in a table.
+
+    **Not Gravedigger**, which prints the same sentence, because the pool hand-writes Gravedigger
+    and a hand-written script wins the precedence — the test would have driven the hand-written
+    card and passed without the compiler being involved at all. It did, on the first attempt, and
+    the log gave it away: the trigger resolved with no question and its description had no "you
+    may" in it. The pool's Gravedigger is one of seven cards whose `oracleText` drops a printed
+    "you may" (task #328); the card under test here is in no deck, so there is nothing to shadow it.
+  */
+  const IMP = {
+    name: 'Cadaver Imp', type_line: 'Creature — Imp', mana_cost: '{2}{B}', cmc: 3,
+    colors: ['B'], layout: 'normal', power: '1', toughness: '1', loyalty: null,
+    oracle_text: 'Flying\nWhen Cadaver Imp enters, you may return target creature card from your'
+      + ' graveyard to your hand.',
+  };
+
+  /** The Imp in hand, a creature already in the graveyard, and the mana to cast it. */
+  const table = () => {
+    const built = customDeck({
+      id: 'imp-list',
+      name: 'Cadaver Imp',
+      entries: [
+        { name: 'Cadaver Imp', count: 1 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Swamp', count: 55 },
+      ],
+      data: [IMP as never],
+    });
+    expect(built.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'imp-list', 1: 'verdant-guard' },
+      deckSpecs: { 'imp-list': built.deck },
+      hands: { 0: ['Cadaver Imp'] },
+      graveyard: { 0: ['Raging Goblin'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp'] },
+      turn: 5,
+      firstSeat: 0,
+    });
+  };
+
+  /** The board with the Imp cast and the table stopped on its question. */
+  const asking = (): GameState => {
+    let s = advanceTo(table(), 'precombat-main');
+    for (const land of ids(s, 0 as SeatIndex, 'battlefield')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: land, abilityIndex: 0 } as Action);
+    }
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Cadaver Imp'),
+    } as Action);
+    return drain(passBoth(s), 40);
+  };
+
+  it('asks before it acts, in the words the card prints', () => {
+    const s = asking();
+    expect(s.pendingDecision?.prompt)
+      .toBe('Return target creature card from your graveyard to your hand?');
+    // Yes first, which is what makes a bot take the upside without the card writing a hint.
+    expect(s.pendingDecision?.options).toEqual(['Yes', 'No']);
+  });
+
+  it('returns the card on yes', () => {
+    const s = drain(apply(asking(), { type: 'auto:decide', by: 0, option: 'Yes' } as Action), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'hand')).toContain('Raging Goblin');
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).not.toContain('Raging Goblin');
+  });
+
+  it('leaves the card where it was on no', () => {
+    /*
+      The half that makes the "may" a may. A reader that dropped the two words would pass the test
+      above and fail this one — the card would come back whatever the player said, which is a
+      different card and one nothing at the table would flag.
+    */
+    const s = drain(apply(asking(), { type: 'auto:decide', by: 0, option: 'No' } as Action), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Raging Goblin');
+    expect(namesIn(s, 0 as SeatIndex, 'hand')).not.toContain('Raging Goblin');
   });
 });

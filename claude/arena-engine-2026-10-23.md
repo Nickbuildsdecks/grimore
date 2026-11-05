@@ -11805,3 +11805,43 @@ Two findings worth keeping:
 
 Coverage **17,419 of 56,421 legal lines (30.9%)**, the first pass over thirty per cent, and **8,029
 cards with a script** (+360), 4,552 fully read.
+
+## Two words, 50 cards, and seven cards that had paid for their absence (D447)
+
+"You may" is the commonest pair of words in Magic's trigger clauses, and it made the whole line
+unreadable: the clause vocabulary answers *what an effect does*, and this answers *whether it
+happens*. 82 legal lines are a prologue this compiler reads, a "you may", and an effect it reads —
+**50 cards one line from finished**, among them Gravedigger, Reclamation Sage, Consecrated Sphinx
+and Ninja of the Deep Hours.
+
+It is read as what it is: a question with two answers, the shape Ophidian has been written in by
+hand since D116. Yes is the first option, which `ChoiceDecisionSpec` documents as the bot's
+fallback, and that is right because **all 82 lines are pure upside for the controller** — read, not
+sampled. No card in the set costs its controller anything to say yes.
+
+**What is refused:** a may whose effect asks its own question (9 lines, all "you may search your
+library for a basic land card"). The engine asks a resolution's questions in order, so a declined
+search would have opened the library first — a wrong reading *and* an information leak. Unlocking
+it needs a conditional decision in the engine, which is its own feature.
+
+### The pool had been paying for this in card text
+
+The runtime test was first written on printed Gravedigger and passed without the compiler being
+involved: the pool hand-writes Gravedigger, hand-written wins the precedence, and its pool text has
+no "you may" in it. Checking that against the corpus found **seven pool cards that drop a printed
+"you may"** — Goblin Arsonist, Gravedigger, Ninja of the Deep Hours, Ophidian Eye, Gelectrode, Angel
+of Sanctions, Yavimaya Granger. All mandatory in the pool, optional in print. Logged as task #328
+rather than fixed here, because changing seven shipped cards moves the bot and therefore the deck
+win rates that #96, D231 and #268 measured over thousands of games.
+
+Mystic Remora, whose line this increment finished, is settled the other way (D419): its hand-written
+question now spells `['Yes', 'No']` like the compiled one, and the `best` that existed only to undo
+a confusing option order is gone.
+
+**One process note worth keeping.** The first break run reported ten clean failures against a
+**dirty baseline** — a runtime test still answering the Remora's old option word. The verdicts held
+once the baseline was fixed, but a break run is only as good as the baseline under it, and that
+should be the first thing checked rather than the second.
+
+Coverage **17,500 of 56,421 legal lines (31.0%)**, **8,099 cards with a script** (+70), 4,599 fully
+read (+47).
