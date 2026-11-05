@@ -27621,3 +27621,76 @@ describe('a subtype in the target noun position, at the table (D486)', () => {
     expect(s.instances[bears]!.zone).toBe('graveyard');
   });
 });
+
+describe("a spell whose other line is not its resolution, at the table (D487)", () => {
+  /*
+    Punishing Fire, from the corpus: a two-line instant whose first line is a damage clause this
+    compiler has read since D407 and whose second is a graveyard recursion trigger it cannot. Before
+    D487 the trigger refused the damage, because `spellScriptFor` put every unreadable line into the
+    resolution and `readResolution` is all-or-nothing.
+
+    The card is the right one to test at the table rather than in `compile.test.ts` alone, because
+    the claim is not only "it compiles": it is that the spell **resolves and does what its first
+    line prints**, with the recursion left to a human. A card that compiled and did nothing would
+    pass a compile-side row and fail here.
+  */
+  const PUNISHING_FIRE = {
+    name: 'Punishing Fire', type_line: 'Instant', mana_cost: '{1}{R}', cmc: 2,
+    colors: ['R'], layout: 'normal',
+    oracle_text: 'Punishing Fire deals 2 damage to any target.\n'
+      + 'Whenever an opponent gains life, you may pay {R}. If you do, return Punishing Fire from'
+      + ' your graveyard to your hand.',
+  };
+
+  const table = (id: string) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        { name: 'Punishing Fire', count: 4 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Mountain', count: 52 },
+      ],
+      data: [PUNISHING_FIRE] as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    // D430's trap: a pool card of the same name would be preferred, and the point is the compiled one.
+    expect(list.fromData).toContain('Punishing Fire');
+    let s = arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: { 0: [...Array(4).fill('Mountain')], 1: ['Grizzly Bears'] },
+      hands: { 0: ['Punishing Fire'] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return tapAllLands(s, 0 as SeatIndex);
+  };
+
+  it('resolves its damage clause, which the recursion trigger used to refuse', () => {
+    let s = table('spell-other-line');
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Punishing Fire'),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action);
+    s = drain(passBoth(s), 40);
+    // Two damage on a 2/2 is lethal, and the death is what says the clause ran.
+    expect(s.instances[bears]!.zone).toBe('graveyard');
+  });
+
+  it('and the recursion is reported unread, so the card is flagged rather than half claimed', () => {
+    const read = compileCard(PUNISHING_FIRE as never);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.compiled).toEqual(['Punishing Fire deals 2 damage to any target.']);
+    expect(read.unread).toHaveLength(1);
+    expect(read.unread[0]!.line).toMatch(/^Whenever an opponent gains life/);
+    /*
+      And it is NOT reported as a keyword declaration: `compile.ts` tags the two apart because a
+      keyword is one way to cast a card and this is an ability the card has. See `UnreadLine.why`.
+    */
+    expect(read.unread[0]!.why).toBe('no-reader');
+  });
+});

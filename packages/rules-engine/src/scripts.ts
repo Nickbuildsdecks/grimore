@@ -9893,6 +9893,62 @@ const KEYWORD_ABILITY_NAMES: readonly string[] = [
  * avoid. The list is what stops it — a line is a declaration only if every comma-separated part of
  * it begins with a name the rules define.
  */
+/**
+ * A printed line on an **instant or sorcery** that is not part of its resolution — or `null`.
+ *
+ * `isKeywordDeclaration` answers the same question for keyword lines, and its docblock has the whole
+ * argument: `readResolution` is all-or-nothing by design, so every line `spellScriptFor` cannot read
+ * and puts into the resolution refuses the card, and a line that is not *about* the resolution has
+ * no business refusing it. `Miracle {R}` refused Thunderous Wrath's damage clause until that
+ * function existed. These three families refuse 106 more spells in the legal corpus for the same
+ * reason, measured by setting one line aside and asking the compiler again:
+ *
+ * - **A cost modification** (64) — "This spell costs {3} less to cast if it targets a tapped
+ *   creature". A way to cast the card, exactly like a keyword.
+ * - **A triggered ability** (36) — and on a spell these function somewhere other than resolution:
+ *   from the graveyard (Punishing Fire, Spit Flame, Reach of Branches), from the library (Creeping
+ *   Chill), out of a discard (Gorilla Tactics, Psychic Purge), on cycling (the Resounding cycle,
+ *   Decree of Justice, Slice and Dice). Every one was read before this list was written.
+ * - **An activated ability** (6) — Hammer of Bogardan, Geistblast, Wither and Bloom: all paid from
+ *   the graveyard or a discard.
+ *
+ * ## The three it refuses, and each is a card that would get *better* than printed
+ *
+ * The safety property is not "this line is not the resolution" — it is **the spell, read without
+ * this line, gives its controller no more than the printed card does**. Three families break it and
+ * stay in the resolution, so the card stays unread and flagged (D362):
+ *
+ * - **A casting restriction** — "Cast this spell only if you control two or more Vampires" (9).
+ *   Dropping it lets the engine cast a card the rules forbid. The clearest widening of the three.
+ * - **`costs {X} more`** (13) — Fireball's and Strive's whole cost structure. Dropping it makes the
+ *   spell cheaper than printed.
+ * - **"When you cast this spell, ..."** (14) — the one family where the shape does not decide.
+ *   Empyrial Storm and Show of Confidence copy the spell, a benefit; **Dash Hopes** lets any player
+ *   pay 5 life to counter it, which is the card's drawback and the reason it is printed at {B}.
+ *   Nothing here can tell the two apart, so all fourteen are refused rather than five read and one
+ *   turned into a strictly better Counterspell.
+ */
+function notPartOfTheResolution(line: string): string | null {
+  const text = plain(line).trim();
+  // A casting restriction, and `costs {X} more`: refused above, so they must not match below.
+  if (/^Cast .* only/i.test(text)) return null;
+  if (/costs \{[^}]*\} more to cast/i.test(text)) return null;
+  if (/costs \{[^}]*\} less to cast/i.test(text)) return 'cost-modification';
+  // "When you cast this spell" is the family whose shape does not decide. See the docblock.
+  if (/^When you cast this spell/i.test(text)) return null;
+  if (/^When(ever)? /i.test(text)) return 'triggered-ability';
+  /*
+    An activated ability: a cost, then a colon. The cost may be mana, or a word ("Discard this
+    card"), or several separated by commas — `{2}{R}{R}{R}:`, `{1}{B}, Exile Gollum's Bite from your
+    graveyard:`, `{2}, Discard this card:`. The colon is the whole signal, and the guard against
+    swallowing a resolution sentence is that the part before it must start with a mana symbol: an
+    ability word ("Strive —") uses a dash, and a resolution sentence with a colon in it is quoting a
+    granted ability, which arrives inside quotes rather than at the front of the line.
+  */
+  if (/^\{[^}]*\}[^:"]*:/.test(text)) return 'activated-ability';
+  return null;
+}
+
 export function isKeywordDeclaration(line: string): boolean {
   const text = plain(line).trim();
   if (text === '') return false;
@@ -16403,6 +16459,8 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
         sentence is not.
       */
       if (isKeywordDeclaration(line)) { declared.push(line); continue; }
+      // And the lines that are not the spell's resolution at all (D487) — same rule, same reason.
+      if (notPartOfTheResolution(line) !== null) { declared.push(line); continue; }
       resolution.push(line);
       continue;
     }

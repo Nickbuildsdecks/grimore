@@ -31434,3 +31434,92 @@ disjunction.
 `destroy target squirrel` stays on the refusal list and is more useful than it was: the same word
 with a capital now reads, so the pair is what proves the capitalisation is load-bearing rather than
 decorative.
+
+## D487 — A spell's lines that are not its resolution
+
+`readResolution` is **all-or-nothing** by design, and its docblock says why: a spell that resolves
+and silently does half of what it prints is worse than one left unread, because an unread card is a
+manual object inside an automated game and says so (D362), and a half-read one says nothing. So
+`spellScriptFor` compiles a spell whole or not at all.
+
+The consequence is that **any** line it cannot read refuses the card — including a line that is not
+about the resolution. `isKeywordDeclaration` exists because of exactly that: `Miracle {R}` was
+refusing Thunderous Wrath, whose other line, "deals 5 damage to any target", this compiler reads
+perfectly well. That function's argument is the one this increment extends: "every keyword a spell
+can carry is a **cost or a modifier** — a way to cast the card, not a step of resolving it."
+
+Three more families are the same thing, and were measured by setting one line aside and asking the
+compiler again:
+
+| | lines | what it is |
+| --- | --- | --- |
+| a cost modification | 64 | "This spell costs {3} less to cast if it targets a tapped creature" |
+| a triggered ability | 36 | and on a spell these function elsewhere: from the graveyard (Punishing Fire, Spit Flame, Reach of Branches), from the library (Creeping Chill), out of a discard (Gorilla Tactics, Psychic Purge), on cycling (the Resounding cycle, Decree of Justice, Slice and Dice) |
+| an activated ability | 6 | Hammer of Bogardan, Geistblast, Wither and Bloom — all paid from the graveyard or a discard |
+
+All 106 were read individually before the list was written, not sampled.
+
+| | 242358d | now |
+| --- | --- | --- |
+| cards with a compiled script | 10,278 | **10,364** |
+| cards with every printed line read | 5,928 | 5,928 |
+| printed rules lines read | 20,337 / 56,421 (36.0%) | **20,440 / 56,421 (36.2%)** |
+
+"Every printed line read" is deliberately **unchanged**, and that is the honest shape of this
+increment rather than a shortfall: the ability line is still unread and still reported, so these
+cards are playable with one line flagged for a human — which is what `compile.ts` already says a
+keyword declaration means, and why it tags the two reasons apart.
+
+### The safety property, which is not "this line is not the resolution"
+
+It is: **the spell read without this line gives its controller no more than the printed card does.**
+Three families next door break it, so they stay in the resolution and the card stays unread.
+
+* **A casting restriction** — "Cast this spell only if you control two or more Vampires" (9 lines),
+  "Cast this spell only during the declare attackers step" (the Assassin's Blade cycle). Dropping it
+  lets the engine cast a card the rules forbid: the clearest widening of the three, and the only one
+  that is a rules violation rather than a price.
+* **`costs {X} more to cast`** (13) — Fireball's "for each target beyond the first", and Strive.
+  Dropping it makes the spell *cheaper* than printed. The regex that reads the cost modification had
+  to be split in two for this; matching `less|more` together would have shipped a free Fireball.
+* **"When you cast this spell, …"** (14) — the one family where the shape does not decide. Empyrial
+  Storm, Show of Confidence, Storm of Forms and Mentor's Guidance copy the spell, which is a
+  benefit; **Dash Hopes** lets any player pay 5 life to counter it, which is the card's drawback and
+  the reason it is printed at {B}{B}. Nothing in this file can tell those apart, so all fourteen are
+  refused rather than five read and one turned into a strictly better Counterspell.
+
+Both halves have break runs. Removing the routing fails 9 rows; letting a casting restriction
+through fails 2 — and the second is the one worth having, because it is the test that would catch
+somebody widening the classifier by one regex later.
+
+### Where this came from, and the bigger thing it replaced
+
+The queue said the biggest remaining structural gap was the **multi-sentence line**: 9,760 unread
+lines on 9,381 cards carry more than one sentence, and 2,262 of them read in part. Reading those in
+part looked like the largest increment the compiler had ever had in front of it.
+
+It is not an increment, it is a rule this project already decided against, and the reason is written
+in `readResolution`'s own docblock. The audit made the cost concrete:
+
+* "`{1}: Add {W}, {B}, or {G}.` **Activate only once each turn.**" — dropping the second sentence is
+  an unlimited mana ability and a bot loop (#124, D463).
+* "Exile target creature. **Return it to the battlefield under its owner's control at the beginning
+  of the next end step.**" — becomes permanent removal.
+* "**Sacrifice it at the beginning of your next end step**" — becomes permanent reanimation.
+
+A first pass flagged 787 of the 2,262 as restrictions and called 1,475 safe; reading the population
+by opening phrase (888 distinct, 1,756 sentences) found the second class — the printed **downside**
+— which that list missed entirely. The compiler cannot tell an upside delayed trigger from a card's
+printed cost, and the bot does not read flags (#322): a human at the table polices an unread
+sentence, the bot plays the partial reading as the whole card.
+
+So that family is **refused, deliberately**, and the measurement is recorded rather than the code
+written — #342 holds it. What the audit did turn up on the way is this increment: of the spells that
+read once one line is set aside, 106 are refused by a line that is not their resolution at all, and
+that is the same defect `isKeywordDeclaration` was written for, two years of card design wider.
+
+Of those 106, 35 looked at first like the sentence-split family — "Feast of Blood :: Destroy target
+creature. You gain 4 life." reads as two sentences and was still refused. Probing the card showed
+the sentence split was never the cause: its other line is "Cast this spell only if you control two
+or more Vampires". The right fix was the line classifier, and Feast of Blood is one of the nine that
+still refuses, correctly.

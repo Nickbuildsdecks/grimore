@@ -9708,3 +9708,64 @@ describe('a subtype in the target noun position (D486)', () => {
     expect(field(read.script, 'removesACreature') === true).toBe(wanted);
   });
 });
+
+/*
+  A spell's lines that are **not its resolution** (D487).
+
+  `readResolution` is all-or-nothing by design, so every line `spellScriptFor` puts into the
+  resolution can refuse the card — and `isKeywordDeclaration` exists because `Miracle {R}` was
+  refusing Thunderous Wrath's perfectly readable damage clause. These are the same defect in three
+  more families, and the three next to them that must keep refusing because dropping them would make
+  the card better than printed.
+*/
+describe("a spell's non-resolution lines (D487)", () => {
+  const spell = (text: string) => compileCard({
+    name: 'Flinging Thing', type_line: 'Instant', mana_cost: '{1}{R}', cmc: 2,
+    colors: ['R'], layout: 'normal', oracle_text: text,
+  });
+  const RESOLUTION = 'Flinging Thing deals 2 damage to any target.';
+
+  it.each([
+    // A cost modification: a way to cast the card, exactly like a keyword (64 lines).
+    'This spell costs {3} less to cast if it targets a tapped creature.',
+    'This spell costs {2} less to cast if it was bargained.',
+    // A triggered ability, which on a spell functions somewhere other than resolution (36).
+    'Whenever an opponent gains life, you may pay {R}. If you do, return Flinging Thing from your'
+      + ' graveyard to your hand.',
+    'When you cycle Flinging Thing, you may gain 2 life.',
+    'When a spell or ability an opponent controls causes you to discard Flinging Thing, you gain'
+      + ' 2 life.',
+    // An activated ability, paid from the graveyard or a discard (6).
+    '{2}{R}{R}{R}: Return Flinging Thing from your graveyard to your hand.',
+    '{2}, Discard this card: Look at the top two cards of your library.',
+  ])('reads the resolution beside "%s"', (other) => {
+    const read = spell(`${RESOLUTION}\n${other}`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    // The resolution compiled, and the other line is the one thing left for a human.
+    expect(read.compiled).toContain(RESOLUTION);
+    expect(read.unread.map((u) => u.line)).toEqual([other]);
+  });
+
+  it.each([
+    /*
+      And the three that keep refusing, because the safety property is not "this is not the
+      resolution" — it is that the spell read **without** this line gives its controller no more
+      than the printed card does.
+    */
+    ['Cast this spell only if you control two or more Vampires.',
+      'a casting restriction: dropping it casts a card the rules forbid'],
+    ['Cast this spell only during the declare attackers step.',
+      'the same, on a timing restriction'],
+    ['This spell costs {1} more to cast for each target beyond the first.',
+      "Fireball's cost structure: dropping it makes the spell cheaper than printed"],
+    ['When you cast this spell, any player may pay 5 life. If a player does, counter Flinging Thing.',
+      "Dash Hopes' drawback, which no shape separates from Empyrial Storm's copy"],
+  ])('still refuses the whole card beside "%s": %s', (other) => {
+    const read = spell(`${RESOLUTION}\n${other}`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    // Both lines unread: the spell is compiled whole or not at all.
+    expect(read.unread.map((u) => u.line).sort()).toEqual([RESOLUTION, other].sort());
+  });
+});
