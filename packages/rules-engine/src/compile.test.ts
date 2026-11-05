@@ -9875,6 +9875,16 @@ describe('counter unless its controller pays (D489)', () => {
     // A spell filter the target parse already reads.
     'Counter target noncreature spell unless its controller pays {2}.',
     'Counter target creature spell unless its controller pays {2}.',
+    /*
+      Two rows that **were refusals** in this table when D489 shipped, with a comment recording that
+      a disjunction in the spell-kind position did not read in the plain "Counter target instant or
+      sorcery spell" either. D490 taught that position to read, so the gap those rows described is
+      closed and they belong here. The history is kept rather than the rows deleted, because the
+      pair is the evidence that this arm never cared about the spell filter in front of it — it
+      asks `targetSpecFrom` and checks the answer points at the stack.
+    */
+    'Counter target instant or sorcery spell unless its controller pays {1}.',
+    'Counter target artifact or creature spell unless its controller pays {4}.',
   ])('reads "%s"', (text) => {
     const read = instant(text as string);
     expect(read.ok).toBe(true);
@@ -9897,19 +9907,126 @@ describe('counter unless its controller pays (D489)', () => {
       "Perplex: a cost that is not mana, which `pendingPayment` cannot price"],
     ['Counter target spell unless its controller exiles all cards from their graveyard.',
       'Grip of Amnesia, the same'],
-    /*
-      And two that are refused by their **target phrase** rather than by this arm — a disjunction in
-      the spell-kind position, which does not read in the plain "Counter target instant or sorcery
-      spell" either. Checked both ways before this row was written, so it records a pre-existing gap
-      (about ten lines in the corpus) rather than something this increment introduced.
-    */
-    ['Counter target instant or sorcery spell unless its controller pays {1}.',
-      'a disjunction of spell kinds, which the target parse does not read'],
-    ['Counter target artifact or creature spell unless its controller pays {4}.', 'the same'],
   ])('leaves "%s" unread: %s', (text) => {
     const read = instant(text as string);
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
+  });
+});
+
+describe('a kind of spell in the target noun position (D490)', () => {
+  const instant = (text: string) => compileCard({
+    name: 'Asking Thing', type_line: 'Instant', mana_cost: '{1}{U}', cmc: 2,
+    colors: ['U'], layout: 'normal', oracle_text: text,
+  });
+
+  /*
+    Each row is a printed phrase from a real corpus card, named in the comment. The assertion is on
+    the spec's **description**, because that is the prompt a player reads and the string the
+    ground-truth test compares against a hand-written twin: a phrase that reads to the right filter
+    under the wrong description is still a bug.
+  */
+  it.each([
+    // One word: a card type.
+    ['Counter target artifact spell.', 'target artifact spell'],
+    ['Counter target enchantment spell.', 'target enchantment spell'],
+    ['Counter target instant spell.', 'target instant spell'],
+    ['Counter target sorcery spell.', 'target sorcery spell'],
+    // One word: a colour. Blue Elemental Blast and Deathgrip, which are the oldest of these.
+    ['Counter target red spell.', 'target red spell'],
+    ['Counter target green spell.', 'target green spell'],
+    ['Counter target blue spell.', 'target blue spell'],
+    ['Counter target black spell.', 'target black spell'],
+    ['Counter target white spell.', 'target white spell'],
+    // One word: how many colours, which is not a colour (CR 202.2).
+    ['Counter target colorless spell.', 'target colorless spell'],
+    ['Counter target multicolored spell.', 'target multicolored spell'],
+    // A negation, over either half of the vocabulary.
+    ['Counter target nonblue spell.', 'target nonblue spell'],
+    ['Counter target nonartifact spell.', 'target nonartifact spell'],
+    // A disjunction of card types, which is the commonest shape in the corpus.
+    ['Counter target instant or sorcery spell.', 'target instant or sorcery spell'],
+    ['Counter target artifact or creature spell.', 'target artifact or creature spell'],
+    ['Counter target artifact or enchantment spell.', 'target artifact or enchantment spell'],
+    ['Counter target creature or planeswalker spell.', 'target creature or planeswalker spell'],
+    ['Counter target creature or sorcery spell.', 'target creature or sorcery spell'],
+    // A disjunction of colours.
+    ['Counter target red or green spell.', 'target red or green spell'],
+    ['Counter target white or black spell.', 'target white or black spell'],
+    // The one supertype printed in this position, on Icy Reception.
+    ['Counter target creature or legendary spell.', 'target creature or legendary spell'],
+    /*
+      Guttural Response, which is the card that makes the grammar a disjunction of **conjunctions**
+      rather than a flat list: it counters a spell that is both blue and an instant. Read as a flat
+      disjunction it would counter every instant at the table, which is a strictly better card.
+    */
+    ['Counter target blue instant spell.', 'target blue instant spell'],
+  ])('reads "%s" as "%s"', (text, description) => {
+    const read = instant(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.targets?.map((t) => t.description)).toEqual([description]);
+  });
+
+  it.each([
+    /*
+      One unknown word refuses the whole phrase (D362: a wrong reading is worse than an unread
+      line). Consign to Memory is the real card behind the first row — its phrase reaches across
+      two kinds of stack object, and reading it as "target colorless spell" would print a card
+      that cannot answer the triggered ability it was printed to answer.
+    */
+    ['Counter target triggered ability or colorless spell.',
+      'Consign to Memory: "triggered ability" is not a spell kind, and the phrase spans two kinds'],
+    ['Counter target cheap spell.', 'a word the engine cannot test'],
+    ['Counter target historic spell.', 'a real Magic word, and not one of these'],
+    /*
+      The row the break run asked for. The three above are each a term of **one** unknown word, and
+      the "a term with no readable word refuses the phrase" guard turns all three down on its own —
+      so with the per-word refusal deleted they all still passed. A term that mixes a known word
+      with an unknown one is the case that separates the two rules: without the per-word refusal
+      this reads as "target blue spell", which counters every blue spell at the table instead of
+      nothing.
+    */
+    ['Counter target blue historic spell.',
+      'one unknown word refuses the phrase, not just the word'],
+    ['Counter target Goblin spell.', 'a subtype, which a spell on the stack is not filtered by here'],
+    /*
+      `land` is left out of the vocabulary deliberately: a land is played, never cast (CR 305.1), so
+      a phrase that read would match nothing on any stack and make the card silently uncastable —
+      the failure #341 is open about. Refusing it keeps the rule stated.
+    */
+    ['Counter target land spell.', 'there is no such thing as a land spell'],
+    /*
+      And the clause family that is still open rather than closed by this increment: a mana-value
+      restriction on the spell, which Change the Equation prints beside a colour disjunction this
+      now reads. The phrase as a whole still does not read, and the row records which half is the
+      reason.
+    */
+    ['Counter target red or green spell with mana value 6 or less.',
+      'Change the Equation: the mana-value clause, not the colours'],
+  ])('leaves "%s" unread: %s', (text) => {
+    const read = instant(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  /*
+    The two phrases that stay in `targetSpecFrom`'s exact switch, asserted as *descriptions that
+    read* rather than as the functions behind them — those are what `compiled-vs-written.test.ts`
+    compares by identity against Essence Scatter and Negate. This parse would read both to the same
+    answer through a different function, so the switch has to win, and these rows fail loudly if
+    anything reorders it.
+  */
+  it.each([
+    ['Counter target creature spell.', 'target creature spell'],
+    ['Counter target noncreature spell.', 'target noncreature spell'],
+  ])('keeps "%s" on the exact switch', (text, description) => {
+    const read = instant(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.targets?.map((t) => t.description)).toEqual([description]);
   });
 });

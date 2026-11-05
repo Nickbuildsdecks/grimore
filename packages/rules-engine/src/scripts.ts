@@ -19,7 +19,7 @@
  */
 import {
   characteristicsOf, hasSubtype, hasType, isKeyword, isLegendary, parseTypeLine, printedKeywords,
-  printedLandwalk, type TypeLine,
+  printedLandwalk, type Characteristics, type TypeLine,
 } from './characteristics.js';
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
@@ -14038,6 +14038,16 @@ function targetSpecFrom(
   */
   if (!parsed) return null;
   /*
+    The **kind of spell** a phrase names, read before the permanent parse because the two
+    vocabularies share words and point at different zones: "target artifact spell" is an object on
+    the stack and "target artifact" is one on the battlefield. `parsedTargetPhrase` refuses every
+    phrase ending in `spell` already — `spell` is not one of its nouns, so "target artifact spell"
+    reaches its qualifier run with `spell` in the noun position and is turned down — which makes the
+    order below a stated rule rather than the thing that keeps it correct.
+  */
+  const onTheStack = spellTargetPhrase(trimmed);
+  if (onTheStack !== null) return spec(onTheStack);
+  /*
     `trimmed`, not `printed`: the parse is handed the phrase with its **printed capitalisation**
     intact, because that is the only signal that separates a subtype from a qualifier (D486). Magic
     prints "target Equipment" and "target tapped creature", and the difference between the two is a
@@ -14048,6 +14058,126 @@ function targetSpecFrom(
   */
   const read = parsedTargetPhrase(trimmed);
   return read === null ? null : spec(read);
+}
+
+/**
+ * One printed word of a spell-kind phrase, as a question about the spell on the stack.
+ *
+ * Read from **live** characteristics rather than the printed type line, for the reason #319 gave
+ * when it corrected five hand-written filters: a spell whose type or colour an effect has changed
+ * is the spell the phrase is about, and `characteristicsOf` is the only answer that knows. This is
+ * what `isCreatureSpell` does by hand for the one phrase it serves; these are the rest of the
+ * vocabulary, written once each.
+ */
+type SpellWord = (card: Characteristics) => boolean;
+
+/**
+ * The card types a **spell** can have.
+ *
+ * `land` is deliberately absent, and the omission is the point rather than an oversight: a land is
+ * played, never cast, so there is no such thing as a land spell (CR 305.1). Reading "target land
+ * spell" would produce a phrase that compiles, matches nothing on any stack, and therefore makes
+ * the card uncastable in silence — which is exactly the failure #341 is open about for subtypes,
+ * and the one D486 refused a whole shape to avoid. Nothing in the corpus prints it; refusing it
+ * costs nothing and keeps the rule stated.
+ *
+ * `battle` and `planeswalker` are here because both are cast and both are printed in this position
+ * ("target creature or planeswalker spell" is on six corpus cards).
+ */
+const SPELL_TYPES: readonly string[] = [
+  'artifact', 'battle', 'creature', 'enchantment', 'instant', 'planeswalker', 'sorcery',
+];
+
+/**
+ * One word of a spell-kind phrase, or `null` if this file cannot test it.
+ *
+ * The vocabulary is card types, the one supertype that is printed here (`legendary`, on Icy
+ * Reception), the five colour words, the two words that are about how *many* colours a spell has,
+ * and a `non` negation of any of them. A word outside it refuses the phrase it is in, which is
+ * D259's rule applied one word at a time: "target triggered ability or colorless spell" has
+ * `triggered` and `ability` in it, and reading that phrase as "target colorless spell" would print
+ * a strictly narrower card than Consign to Memory.
+ */
+function spellWordMatch(word: string): SpellWord | null {
+  /*
+    `non` first, so the negation is one rule over the whole vocabulary instead of a second table.
+    Only `nonartifact`, `nonblue` and `noncreature` are printed in this position, and the third is
+    served by `targetSpecFrom`'s exact switch — but a negation that works for two words and not the
+    third would be the kind of partial rule this file keeps finding bugs in.
+  */
+  if (word.startsWith('non') && word.length > 'non'.length) {
+    const positive = spellWordMatch(word.slice('non'.length));
+    return positive === null ? null : (card) => !positive(card);
+  }
+  // CR 202.2: no mana symbols is colourless, more than one colour is multicoloured.
+  if (word === 'colorless') return (card) => card.colors.length === 0;
+  if (word === 'multicolored') return (card) => card.colors.length > 1;
+  if (word === 'legendary') return (card) => isLegendary(card.typeLine);
+  const colour = COLOUR_WORDS[word];
+  if (colour !== undefined) return (card) => card.colors.includes(colour);
+  if (SPELL_TYPES.includes(word)) return (card) => hasType(card.typeLine, word);
+  return null;
+}
+
+/**
+ * A target phrase whose noun is `spell`, with a kind in front of it (D490).
+ *
+ * ## The grammar, which is a disjunction of conjunctions
+ *
+ * Printed text puts `or` between the alternatives and nothing between the words of one
+ * alternative, so "instant or sorcery" is two one-word alternatives and "blue instant" is one
+ * two-word alternative. Guttural Response is the card that forces the distinction: it counters a
+ * spell that is **both** blue and an instant, and reading its phrase as a disjunction would let it
+ * counter every instant at the table.
+ *
+ * That makes this the same shape as D486's noun-position disjunction, for stack objects instead of
+ * permanents, and it is split with the same expression — commas, `, or`, and a bare `or` all
+ * separate alternatives, because Magic prints all three ("creature or planeswalker", "Bird, Cat,
+ * Dog, Goat, Ox, or Snake").
+ *
+ * ## Every word has to read, or the phrase does not
+ *
+ * One unknown word refuses the whole phrase rather than being dropped, which is D362's rule: a
+ * wrong reading is worse than an unread line. The refusals this buys are real cards — Consign to
+ * Memory ("triggered ability or colorless"), whose printed phrase reaches across two kinds of stack
+ * object and cannot be a `kind: 'spell'` at all.
+ *
+ * ## Why the two exact phrases stay in the switch
+ *
+ * `targetSpecFrom` runs its switch first, so "target creature spell" and "target noncreature spell"
+ * are still `isCreatureSpell` and `isNoncreatureSpell` — the identical functions the hand-written
+ * Essence Scatter and Negate carry. This parse would read both to the same answer, but to a
+ * *different function*, and `compiled-vs-written.test.ts` compares the specs by identity. Keeping
+ * the switch in front keeps that test an identity rather than a resemblance, which is the argument
+ * `isCreatureSpell`'s own docblock makes.
+ */
+function spellTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | null {
+  const opened = /^target\s+(.+?)\s+spell$/i.exec(printed.trim());
+  if (opened === null) return null;
+  const terms = opened[1]!.split(/,\s*or\s+|\s+or\s+|,\s*/).map((term) => term.trim())
+    .filter((term) => term !== '');
+  if (terms.length === 0) return null;
+  const alternatives: SpellWord[][] = [];
+  for (const term of terms) {
+    const asked: SpellWord[] = [];
+    for (const word of term.split(/\s+/).filter((word) => word !== '')) {
+      const match = spellWordMatch(word.toLowerCase());
+      if (match === null) return null;
+      asked.push(match);
+    }
+    if (asked.length === 0) return null;
+    alternatives.push(asked);
+  }
+  return {
+    kind: 'spell',
+    filter: (state, candidate) => {
+      if (candidate.kind !== 'card') return false;
+      const inst = state.instances[candidate.id];
+      if (inst === undefined) return false;
+      const live = characteristicsOf(state, inst);
+      return alternatives.some((term) => term.every((asks) => asks(live)));
+    },
+  };
 }
 
 /**

@@ -27894,3 +27894,145 @@ describe('counter unless its controller pays, at the table (D489)', () => {
     expect(said).not.toContain('ward');
   });
 });
+
+describe('a kind of spell in the target phrase, at the table (D490)', () => {
+  /*
+    Three corpus counterspells, one per piece of the grammar, each pointed at a legal spell and at
+    an illegal one. `refusal` is the assertion rather than a resolution, because the thing this
+    increment builds is a **filter**: what it is worth is which spells the engine lets the card be
+    aimed at, and a test that only watched the legal arm resolve would pass for a spec with no
+    filter at all.
+
+      - Flashfreeze    "target red or green spell"  — the disjunction
+      - Guttural Response "target blue instant spell" — the conjunction
+      - Frazzle        "target nonblue spell"       — the negation
+
+    The two spells being answered are Lightning Bolt (a red instant, from the pool) and Opt (a blue
+    instant, from the corpus). Between them they separate every one of the three: a card that read
+    "blue instant" as a flat disjunction would counter the Bolt, and one that dropped the negation
+    would counter the Opt.
+  */
+  const COUNTERS = [
+    {
+      name: 'Flashfreeze', type_line: 'Instant', mana_cost: '{1}{U}', cmc: 2,
+      colors: ['U'], layout: 'normal', oracle_text: 'Counter target red or green spell.',
+    },
+    {
+      name: 'Guttural Response', type_line: 'Instant', mana_cost: '{R/G}', cmc: 1,
+      colors: ['R', 'G'], layout: 'normal', oracle_text: 'Counter target blue instant spell.',
+    },
+    {
+      name: 'Frazzle', type_line: 'Instant', mana_cost: '{3}{U}', cmc: 4,
+      colors: ['U'], layout: 'normal', oracle_text: 'Counter target nonblue spell.',
+    },
+    {
+      name: 'Opt', type_line: 'Instant', mana_cost: '{U}', cmc: 1,
+      colors: ['U'], layout: 'normal', oracle_text: 'Scry 1.\nDraw a card.',
+    },
+  ];
+
+  const table = (id: string) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        { name: 'Flashfreeze', count: 2 },
+        { name: 'Guttural Response', count: 2 },
+        { name: 'Frazzle', count: 2 },
+        { name: 'Opt', count: 2 },
+        { name: 'Lightning Bolt', count: 2 },
+        { name: 'Island', count: 25 },
+        { name: 'Mountain', count: 25 },
+      ],
+      data: COUNTERS as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    // The four that come from the corpus row rather than the pool. Lightning Bolt is deliberately
+    // not among them: `customDeck` prefers a pool card of the same name, and the Bolt has a script.
+    expect(list.fromData.slice().sort()).toEqual(['Flashfreeze', 'Frazzle', 'Guttural Response', 'Opt']);
+    /*
+      Seat 1's turn — `firstSeat: 1` with turn 4, which D489 checked against the engine rather than
+      reasoning about turn parity — because seat 1 is the one casting the spell that gets answered.
+      Everything here is an instant, so the step only has to be one where priority exists.
+
+      No `tapAllLands`: a mana ability needs priority, so pre-tapping seat 0's lands on seat 1's
+      turn throws in the setup. `auto:cast` taps for its own cost.
+    */
+    const s = arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: {
+        0: [...Array(4).fill('Island'), ...Array(2).fill('Mountain')],
+        1: ['Mountain', 'Island'],
+      },
+      hands: {
+        0: ['Flashfreeze', 'Guttural Response', 'Frazzle'],
+        1: ['Lightning Bolt', 'Opt'],
+      },
+      turn: 4,
+      firstSeat: 1,
+    });
+    return advanceTo(s, 'precombat-main');
+  };
+
+  /** Seat 1 casts the named spell and passes, leaving it on the stack for seat 0 to answer. */
+  const onTheStack = (s: GameState, spell: 'Lightning Bolt' | 'Opt') => {
+    let next = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1 as SeatIndex, 'hand', spell),
+      // The Bolt needs an aim of its own; Opt takes none.
+      ...(spell === 'Lightning Bolt' ? { targets: [{ kind: 'player', seat: 0 }] } : {}),
+    } as Action);
+    const id = next.stackOrder[next.stackOrder.length - 1]!;
+    // The caster keeps priority after casting (CR 117.3c), so seat 1 passes before seat 0 answers.
+    next = apply(next, { type: 'auto:pass', by: 1 } as Action);
+    return { state: next, id };
+  };
+
+  const answer = (s: GameState, counter: string, id: string) => refusal(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', counter),
+    targets: [{ kind: 'card', id }],
+  } as Action);
+
+  it('aims a disjunction of colours at either colour and nothing else', () => {
+    const bolt = onTheStack(table('d490-ff-bolt'), 'Lightning Bolt');
+    expect(answer(bolt.state, 'Flashfreeze', bolt.id)).toBeNull();
+
+    const opt = onTheStack(table('d490-ff-opt'), 'Opt');
+    expect(answer(opt.state, 'Flashfreeze', opt.id)).not.toBeNull();
+  });
+
+  it('aims a conjunction only where both words hold', () => {
+    // Blue *and* an instant: Opt is both.
+    const opt = onTheStack(table('d490-gr-opt'), 'Opt');
+    expect(answer(opt.state, 'Guttural Response', opt.id)).toBeNull();
+
+    /*
+      The Bolt is an instant and is not blue, so it is the spell a flat-disjunction reading would
+      wrongly let this counter. This is the assertion the conjunction exists for.
+    */
+    const bolt = onTheStack(table('d490-gr-bolt'), 'Lightning Bolt');
+    expect(answer(bolt.state, 'Guttural Response', bolt.id)).not.toBeNull();
+  });
+
+  it('aims a negation everywhere the word does not hold', () => {
+    const bolt = onTheStack(table('d490-fz-bolt'), 'Lightning Bolt');
+    expect(answer(bolt.state, 'Frazzle', bolt.id)).toBeNull();
+
+    const opt = onTheStack(table('d490-fz-opt'), 'Opt');
+    expect(answer(opt.state, 'Frazzle', opt.id)).not.toBeNull();
+  });
+
+  it('counters the spell it is aimed at, so the filter is not the whole card', () => {
+    const { state, id } = onTheStack(table('d490-resolves'), 'Lightning Bolt');
+    let next = apply(state, {
+      type: 'auto:cast', by: 0, card: find(state, 0 as SeatIndex, 'hand', 'Flashfreeze'),
+      targets: [{ kind: 'card', id }],
+    } as Action);
+    expect(next.stackOrder).toHaveLength(2);
+    next = drain(passBoth(next), 40);
+    // The Bolt never resolved, so seat 0 is still on 20 and the card is in seat 1's graveyard.
+    expect(next.instances[id]!.zone).toBe('graveyard');
+    expect(life(next, 0 as SeatIndex)).toBe(20);
+    expect(next.stackOrder).toEqual([]);
+  });
+});

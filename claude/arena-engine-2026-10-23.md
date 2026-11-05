@@ -14271,3 +14271,100 @@ Worth saying that the answer was to fix the fixture rather than make the field o
 which is the exact lie this change removed — and it would be a default that is right for one raiser
 and wrong for every future one. Required means a new raiser cannot compile without saying what its
 card says, which is the property worth having.
+
+## D490 — The kind of spell a target phrase names: "target blue instant spell"
+
+The sibling D489 named as the next thing to do, and it is D486's noun-position disjunction again for
+objects on the stack instead of permanents. `targetSpecFrom` had exactly two spell filters, both
+exact-match switch cases: `target creature spell` and `target noncreature spell`. Everything else
+Magic prints in that position — a card type, a colour, a count of colours, a negation, or a
+disjunction of any of them — fell through to `parsedTargetPhrase`, whose noun vocabulary has no
+`spell` in it, and was refused.
+
+Measured before it was built, by substitution in place: swap each unread `target <words> spell` for
+`target spell`, which reads, and ask the compiler again. **302 unread lines on 295 cards** carry
+such a phrase, and **41 lines on 32 cards** are refused by *nothing else* — the rest have a second
+problem in the same sentence. The phrases, by count: `instant or sorcery` 8, `artifact` 3,
+`artifact or creature` 3, then `enchantment`, `red`, `instant`, `sorcery`, `blue`, `black` at 2 each,
+and thirteen singles.
+
+### The grammar is a disjunction of conjunctions, and one card forces that
+
+`or` separates alternatives; nothing separates the words *inside* one. So `instant or sorcery` is two
+one-word alternatives and `blue instant` is one two-word alternative. **Guttural Response** is the
+card that makes the distinction load-bearing: it counters a spell that is **both** blue and an
+instant, and read as a flat disjunction it would counter every instant at the table — a strictly
+better card than the one printed, which is the failure class D259 is about.
+
+Split with the same expression D486 uses, because printed text spells a disjunction three ways:
+a comma, `, or`, and a bare `or`.
+
+### The vocabulary, and the two words that are not colours
+
+Each word is read as a card type, the one supertype printed in this position (`legendary`, on Icy
+Reception), one of the five colour words, `colorless`, `multicolored`, or a `non` negation of any of
+them. The last two are not colours but counts of them (CR 202.2): no mana symbols, and more than
+one. `non` is one rule over the whole vocabulary rather than a second table — only `nonartifact`,
+`nonblue` and `noncreature` are printed, and a negation that worked for two of the three would be
+the kind of partial rule this file keeps finding bugs in.
+
+Read off **live** characteristics, not the printed type line, for the reason #319 gave when it
+corrected five hand-written filters: a spell whose colour or type an effect has changed is the spell
+the phrase is about.
+
+### `land` is left out on purpose, and that is the interesting refusal
+
+A land is played, never cast (CR 305.1), so there is no such thing as a land spell. A phrase that
+*read* would compile, match nothing on any stack, and make its card silently uncastable — which is
+exactly the failure #341 is open about for subtypes, and the trade D486 refused a whole shape
+(capitalised nouns ending in `s`) to avoid. Nothing in the corpus prints it. Refusing it costs
+nothing and keeps the rule stated rather than accidental.
+
+### One unknown word refuses the whole phrase
+
+D362, applied one word at a time. **Consign to Memory** is the real card behind it: "Counter target
+triggered ability or colorless spell" reaches across two kinds of stack object, and reading it as
+"target colorless spell" would print a card that cannot answer the triggered ability it exists to
+answer. `triggered` and `ability` are not in the vocabulary, so the phrase stays unread.
+
+### The two exact phrases stay in the switch, and the reason is a test
+
+`targetSpecFrom` runs its switch first, so `target creature spell` and `target noncreature spell`
+are still `isCreatureSpell` and `isNoncreatureSpell` — the *identical functions* hand-written Essence
+Scatter and Negate carry. This parse would read both to the same answer through a different
+function, and `compiled-vs-written.test.ts` compares specs by identity, which is the argument
+`isCreatureSpell`'s own docblock makes. Two test rows assert the switch still wins.
+
+### The break run found a test that was not testing what it said
+
+Five breaks, four caught on the first pass. The one that was not: deleting the per-word refusal left
+every "unknown word" row still passing, because all three were a term of **one** unknown word and a
+separate guard ("a term with no readable word refuses the phrase") turned them down on its own. The
+row that separates the two rules is a term that *mixes* a known word with an unknown one —
+`target blue historic spell`, which without the per-word refusal reads as "target blue spell" and
+counters every blue spell at the table. Added, and the break then failed as it should.
+
+The other four: the conjunction read as a disjunction (Guttural Response's runtime test), the
+negation dropped (Frazzle's), `land` added to the type list (its refusal row), and the filter
+deleted outright (three runtime tests).
+
+### What it bought
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 10,438 | **10,476** |
+| cards with every printed line read | 6,003 | **6,040** |
+| printed rules lines read | 20,553 / 56,421 (36.4%) | **20,603 / 56,421 (36.5%)** |
+
+Fifty lines against a probe that predicted forty-one: the extra nine are knock-ons, lines that were
+already readable in a modal or a second sentence whose *other* half was this phrase.
+
+Two of D489's own refusal rows moved to its mapping table, since the gap they recorded is the gap
+this closed. The history is kept in a comment rather than the rows deleted, because the pair is the
+evidence that the unless-paid arm never cared about the spell filter in front of it.
+
+### Still open in this family, named rather than guessed
+
+**A mana-value clause on the spell**: Change the Equation prints "Counter target red or green spell
+with mana value 6 or less", and the colours now read while the clause does not. Its refusal row says
+which half is the reason.
