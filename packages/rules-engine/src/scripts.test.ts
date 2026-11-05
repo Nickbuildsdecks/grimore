@@ -27078,3 +27078,151 @@ describe('the bare block: once, however many creatures (D482)', () => {
     expect(s.instances[bears]!.zone).toBe('graveyard');
   });
 });
+
+describe('"~ or another <thing> you control", parsed (D483)', () => {
+  /*
+    The largest prologue family left when it was written: **151 legal lines across 52 shapes** —
+    Ally 39, enchantment 23 (constellation's own wording), creature 13, creature-dies 8, artifact 5,
+    Human 4, and a long tail of one- and two-card tribes. No new engine work: D477 gave the board
+    events their `what` and D479 their `ofSubtypes`, so this is a parse of the sentence's *subject*
+    where those two parsed its event.
+
+    Two cards drive it, both printed and both finished by the parse: Beregond of the Guard for a
+    tribe and Eidolon of Blossoms for a card type.
+  */
+  const BEREGOND = {
+    name: 'Beregond of the Guard', type_line: 'Legendary Creature — Human Soldier',
+    mana_cost: '{3}{W}', cmc: 4, colors: ['W'], layout: 'normal', power: '3', toughness: '3',
+    oracle_text: 'Whenever Beregond of the Guard or another Human you control enters,'
+      + ' creatures you control get +1/+1 and gain vigilance until end of turn.',
+  };
+  const EIDOLON = {
+    name: 'Eidolon of Blossoms', type_line: 'Enchantment Creature — Spirit',
+    mana_cost: '{2}{G}{G}', cmc: 4, colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Constellation — Whenever Eidolon of Blossoms or another enchantment you control'
+      + ' enters, draw a card.',
+  };
+  // Eager Cadet is a Human Soldier and Grizzly Bears is not a Human — the pair the tribe arm needs.
+  const EAGER_CADET = {
+    name: 'Eager Cadet', type_line: 'Creature — Human Soldier', mana_cost: '{W}', cmc: 1,
+    colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: '',
+  };
+  const DATA = [BEREGOND, EIDOLON, EAGER_CADET];
+
+  const table = (id: string, entries: readonly { name: string; count: number }[],
+    battlefield: readonly string[], hand: readonly string[]) => {
+    const list = customDeck({ id, name: id, entries: [...entries], data: DATA as never[] });
+    expect(list.unknown).toEqual([]);
+    let s = arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: { 0: [...battlefield] },
+      hands: { 0: [...hand] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return tapAllLands(s, 0 as SeatIndex);
+  };
+
+  const humans = (battlefield: readonly string[], hand: readonly string[]) => table(
+    'or-another-human',
+    [
+      { name: 'Beregond of the Guard', count: 2 },
+      { name: 'Eager Cadet', count: 4 },
+      { name: 'Serra Angel', count: 4 },
+      { name: 'Plains', count: 50 },
+    ],
+    battlefield,
+    hand,
+  );
+
+  const power = (s: GameState, id: string) => characteristicsOf(s, s.instances[id]!).power;
+
+  it('fires for another of its tribe entering', () => {
+    let s = humans(['Beregond of the Guard', ...Array(4).fill('Plains')], ['Eager Cadet']);
+    const beregond = find(s, 0 as SeatIndex, 'battlefield', 'Beregond of the Guard');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Eager Cadet'),
+    } as Action)));
+    // A Human entered, so the whole team is +1/+1: the 3/3 is a 4/4.
+    expect(power(s, beregond)).toBe(4);
+  });
+
+  it('does not fire for a creature outside the tribe', () => {
+    // Serra Angel rather than a green body, because this deck's lands are Plains: the first draft
+    // tried to cast a Grizzly Bears off five Plains.
+    let s = humans(['Beregond of the Guard', ...Array(5).fill('Plains')], ['Serra Angel']);
+    const beregond = find(s, 0 as SeatIndex, 'battlefield', 'Beregond of the Guard');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Serra Angel'),
+    } as Action)));
+    // An Angel is not a Human, so nothing happened.
+    expect(power(s, beregond)).toBe(3);
+  });
+
+  it('fires for its own arrival, which is the half the filter must not eat', () => {
+    /*
+      The `self` arm. Cast Beregond with another Human already out and the team grows, including the
+      creature that was already there — so the trigger fired for the card's own entry rather than
+      only for somebody else's.
+    */
+    let s = humans(['Eager Cadet', ...Array(5).fill('Plains')], ['Beregond of the Guard']);
+    const cadet = find(s, 0 as SeatIndex, 'battlefield', 'Eager Cadet');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Beregond of the Guard'),
+    } as Action)));
+    expect(power(s, cadet)).toBe(2);
+  });
+
+  const enchantments = (battlefield: readonly string[], hand: readonly string[]) => table(
+    'or-another-ench',
+    [
+      { name: 'Eidolon of Blossoms', count: 2 },
+      { name: 'Rancor', count: 4 },
+      { name: 'Forest', count: 50 },
+    ],
+    battlefield,
+    hand,
+  );
+
+  it('reads a card type the same way: its own arrival draws', () => {
+    let s = enchantments(Array(4).fill('Forest'), ['Eidolon of Blossoms']);
+    const before = ids(s, 0 as SeatIndex, 'hand').length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Eidolon of Blossoms'),
+    } as Action)));
+    // One card out of hand to cast it, one drawn by the trigger: the hand is where it started.
+    expect(ids(s, 0 as SeatIndex, 'hand').length).toBe(before);
+  });
+
+  it('and another enchantment entering draws as well', () => {
+    /*
+      Rancor is the pool's own Aura and an enchantment, so casting it onto the Eidolon is the
+      `another` arm of a *type* rather than a tribe. A fresh table rather than a second cast on the
+      first one, because lands tapped for the Eidolon are still tapped — which is what the first
+      draft of this test got wrong.
+    */
+    let s = enchantments(['Eidolon of Blossoms', ...Array(3).fill('Forest')], ['Rancor']);
+    const eidolon = find(s, 0 as SeatIndex, 'battlefield', 'Eidolon of Blossoms');
+    const before = ids(s, 0 as SeatIndex, 'hand').length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Rancor'),
+      targets: [{ kind: 'card', id: eidolon }],
+    } as Action)));
+    expect(ids(s, 0 as SeatIndex, 'hand').length).toBe(before);
+  });
+
+  it('reads as two triggers, which is what the sentence says', () => {
+    const read = compileCard(BEREGOND as never);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = (read.script as { triggers?: readonly { readonly on: unknown }[] })
+      .triggers ?? [];
+    expect(triggers.map((t) => t.on)).toEqual([
+      { kind: 'etb', who: 'self' },
+      { kind: 'etb', who: 'another', of: 'you', what: 'permanent', ofSubtypes: ['Human'] },
+    ]);
+  });
+});

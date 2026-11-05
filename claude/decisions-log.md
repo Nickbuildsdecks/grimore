@@ -31061,3 +31061,88 @@ procedure demands: 24 legal corpus lines, and the runtime test on printed Chub T
    engine work, and it is the next bite.
  * **A timing on the effect** — "destroy that creature at end of combat" (3), "return that creature
    to its owner's hand at end of combat" (2), on the per-creature pair.
+
+## D483 — "~ or another Ally you control": the subject, parsed
+
+With the board prologue's *event* parsed (D477), its filters read (D478) and its tribe read (D479),
+the biggest prologue family left is the one that names **the card and its kind in one breath**.
+Measured over the legal rows: **151 lines across 52 shapes**, which is more than the previous three
+entries put together.
+
+| printed subject | lines |
+| --- | --- |
+| Ally | 39 |
+| enchantment (constellation's own wording) | 23 |
+| creature (enters) | 13 |
+| creature (dies) | 8 |
+| artifact | 5 |
+| Human | 4 |
+| nontoken creature | 4 |
+| Pirate, nontoken creature (dies) | 3 each |
+| Zombie, Vampire, Dragon, Cat, Goblin, legendary creature | 2 each |
+| a tail of 34 shapes | 1 each |
+
+No new engine work. D477 gave the board events their `what` and D479 their `ofSubtypes`; this entry
+is a parse of the sentence's **subject** where those two parsed its event. A tribe followed by the
+type it is a tribe of — "another **Human creature** you control" — fills both fields at once.
+
+### Two events, and an honest account of why
+
+The row reads `[{ who: 'self' }, { who: 'another', of: 'you', <filter> }]`: the card itself, **or**
+another permanent that matches. One event with `who: 'any'` and the same filter would be shorter.
+
+**On today's corpus the two are identical**, and that was measured rather than assumed: a scan of
+the legal rows finds **zero** cards that name a tribe or a type their own type line lacks. So the
+filter never excludes the card's own arrival, and this is not a bug fix dressed as a parse.
+
+The two-event form is still what shipped, because it is what the sentence says — the card is named
+unconditionally and the filter governs only the "another" — and because a card printed tomorrow whose
+own type line lacks the tribe it names reads correctly here and would not under `who: 'any'`. The
+pair cannot double-fire: `another` excludes the subject and `self` requires it.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 10,031 | **10,076** |
+| cards with every printed line read | 5,731 | **5,768** |
+| printed rules lines read | 20,010 / 56,421 (35.5%) | **20,057 / 56,421 (35.5%)** |
+
+Two printed cards drive both arms through a game. *Beregond of the Guard* ("or another **Human** you
+control enters, creatures you control get +1/+1 and gain vigilance") grows the team when an Eager
+Cadet arrives, does **not** when a Serra Angel does, and grows a Cadet already on the board when
+Beregond itself arrives — which is the `self` arm doing work the filter must not eat. *Eidolon of
+Blossoms* does the same for a card **type**: it draws on its own arrival and again when a Rancor
+(the pool's own Aura, and an enchantment) comes down.
+
+Ten mapping rows and nine refusals in `compile.test.ts`. Break-run both ways: dropping the `self`
+arm fails exactly the two own-arrival tests, and dropping `ofSubtypes` makes Beregond fire for an
+Angel.
+
+Two test drafts were wrong about mana rather than about the parse, and both are noted where they
+were fixed: a Grizzly Bears cannot be cast off five Plains, and lands tapped for the Eidolon are
+still tapped when the next spell wants them.
+
+### A second pool card changed shape, and the check that insisted
+
+`compiled-vs-written` failed once on this change too, on **Zulaport Cutthroat** — printed "whenever
+~ or another creature you control dies, each opponent loses 1 life and you gain 1 life", and
+hand-written as a single `{ kind: 'dies', who: 'any', of: 'you', what: 'creature' }`.
+
+Unlike D482's Ichorclaw Myr this is **not a bug**: a Zulaport Cutthroat is itself a creature, so the
+two shapes fire on exactly the same deaths. It is a representational disagreement, and that table's
+own rule is that a new disagreement is *settled* rather than listed. The hand-written side moved to
+the two-event shape, because the parse is the half that matches the sentence.
+
+Worth saying plainly: two increments in a row, the first thing the new parse did was disagree with a
+hand-written card. Once it was a live bug and once it was a shape — and the check cannot tell them
+apart, which is why each one has to be read rather than waved through.
+
+### What it refuses
+
+Every refusal is a **filter** on the subject rather than a type, and each would compile into a
+trigger looser than the card (D362): `nontoken` (a field `dies` has and `etb` does not), a colour
+("another **black** creature"), `legendary`, `snow`, `historic`, a negated subtype ("non-Human"), and
+two types in one subject ("creature **or** planeswalker"). Together they are most of the 52-shape
+tail — and `nontoken` is the one worth taking next, because the field exists on one of the two events
+already.

@@ -1291,17 +1291,27 @@ const BLOOD_ARTIST: CardScript = {
 const ZULAPORT_CUTTHROAT: CardScript = {
   name: 'Zulaport Cutthroat',
   triggers: [
-    {
-      // Only its controller's creatures, which is the difference from Blood Artist — and the
-      // reason it needs no target: "each opponent" is not a choice.
-      on: { kind: 'dies', who: 'any', of: 'you', what: 'creature' },
+    /*
+      Only its controller's creatures, which is the difference from Blood Artist — and the reason it
+      needs no target: "each opponent" is not a choice.
+
+      **Two events rather than one `who: 'any'`, which is a shape change D483 settled.** The printed
+      line is "whenever ~ **or another** creature you control dies", and the compiler reads that as
+      the card plus a filtered other. For this card the two are identical, because a Zulaport
+      Cutthroat is itself a creature — but the standing compiled-vs-written check compares shapes,
+      and its rule is that a new disagreement is settled rather than listed. The parse is the half
+      that matches the sentence (the card is named unconditionally and the filter governs only the
+      "another"), so the hand-written side moved.
+    */
+    ...([{ kind: 'dies', who: 'self' }, { kind: 'dies', who: 'another', of: 'you', what: 'creature' }] as const).map((on) => ({
+      on,
       description: 'each opponent loses 1 life and you gain 1 life',
-      effect: (c) => gainLife(
+      effect: (c: EffectContext) => gainLife(
         opponentsOf(c.state, c.controller).reduce((state, seat) => loseLife(state, seat, 1), c.state),
         c.controller,
         1,
       ),
-    },
+    })),
   ],
 };
 
@@ -11837,6 +11847,60 @@ function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
   return [{ kind: dies ? 'dies' : 'etb', who, of: 'you', what, ...filter } as BoardEvent];
 }
 
+/**
+ * "Whenever ~ **or another** Ally you control enters" — the card and its tribe in one sentence
+ * (D483).
+ *
+ * **151 legal lines across 52 shapes**, which makes it the largest prologue family left: Ally 39,
+ * enchantment 23 (constellation's own wording), creature 13, creature-dies 8, artifact 5, Human 4,
+ * and a tail of one- and two-card tribes behind them. Nothing in it is new engine work — D477 gave
+ * the board events their `what` and D479 their `ofSubtypes` — so this is a parse of the *subject*
+ * where those two were a parse of the event.
+ *
+ * ## Two events rather than one, which is what the sentence says
+ *
+ * `[{ who: 'self' }, { who: 'another', of: 'you', <filter> }]` — the card itself, **or** another
+ * permanent that matches. One event with `who: 'any'` and the same filter would be shorter, and
+ * **on today's corpus the two agree exactly**: a scan of the legal rows finds *zero* cards that name
+ * a tribe or a type they are not, so the filter never excludes the card's own arrival. That was
+ * measured rather than assumed, and it is the honest reason this is not presented as a bug fix.
+ *
+ * The two-event form is still the one written, because it is what the sentence says: the card is
+ * named unconditionally and the filter applies only to the "another". A card printed tomorrow whose
+ * own type line lacks the tribe it names reads correctly here and would not under `who: 'any'`. The
+ * pair cannot double-fire: `another` excludes the subject and `self` requires it.
+ *
+ * ## What it refuses
+ *
+ * A subject word the event's fields cannot express, which is most of the tail and all of it is a
+ * filter rather than a type: `nontoken` (a field `dies` has and `etb` does not), a colour ("another
+ * **black** creature"), `legendary`, `snow`, `historic`, `non-Human`, and "creature **or**
+ * planeswalker". Each would compile into a trigger looser than the card, which is the wrong
+ * direction (D362).
+ */
+function orAnotherTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
+  const groups = matched.groups ?? {};
+  const dies = /dies$/i.test(groups.event ?? '');
+  const printed = (groups.what ?? '').trim();
+  // A tribe optionally followed by the type it is a tribe of: "another Human creature you control".
+  const parts = /^([A-Z][A-Za-z'-]*)(?: (creature|permanent|artifact|enchantment))?$/.exec(printed);
+  const bare = /^(creature|permanent|artifact|enchantment|land)$/i.exec(printed);
+  if (parts === null && bare === null) return null;
+  const self: BoardEvent = { kind: dies ? 'dies' : 'etb', who: 'self' } as BoardEvent;
+  const what = (parts?.[2] ?? bare?.[1] ?? 'permanent').toLowerCase();
+  // `dies` is defined for creatures (CR 700.4), so a land has no death half — the same refusal
+  // `boardTrigger` makes.
+  if (dies && what === 'land') return null;
+  const another: BoardEvent = {
+    kind: dies ? 'dies' : 'etb',
+    who: 'another',
+    of: 'you',
+    what,
+    ...(parts === null ? {} : { ofSubtypes: [parts[1]!] }),
+  } as BoardEvent;
+  return [self, another];
+}
+
 /** One `spell-cast` trigger, which is the only event the parsed cast prologue below builds. */
 type CastEvent = Extract<TriggerDef['on'], { readonly kind: 'spell-cast' }>;
 
@@ -12163,6 +12227,20 @@ const TRIGGER_SHAPES: readonly ({
      * **Two events in one line** — "enters **and** whenever you activate a power-up ability",
        "another creature **or a land**" — where the regex's comma simply does not match.
   */
+  /*
+    ── "~ or another <thing> you control", parsed (D483) ───────────────────────────────────
+
+    The largest prologue family left: 151 legal lines, 52 shapes. See `orAnotherTrigger` for why it
+    reads as two events rather than one, and for the subject words it refuses.
+  */
+  {
+    prologue: (self) => new RegExp(
+      `^When(?:ever)? ${self} or another (?<what>[^,]*?) you control`
+      + ` (?<event>${ENTERS}|dies), (?<clause>.+)$`,
+      'i',
+    ),
+    from: orAnotherTrigger,
+  },
   {
     prologue: () => new RegExp(
       `^When(?:ever)? (?<who>a|an|another) (?<what>[a-z]+) you control(?<filter>[^,]*)`

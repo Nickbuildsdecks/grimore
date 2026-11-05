@@ -9437,3 +9437,95 @@ describe('the block trigger, read off the prologue', () => {
     expect(read.unread).toHaveLength(1);
   });
 });
+
+/*
+  "~ or another <thing> you control", as printed text (D483).
+
+  Which subject becomes which pair of events, and the subject words the fields cannot express. The
+  runtime tests in `scripts.test.ts` drive both arms through a game on printed Beregond of the Guard
+  and Eidolon of Blossoms; these rows say what the parse accepts and what it leaves alone.
+*/
+describe('the "or another" prologue, read off the printed subject', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const permanent = (text: string) => compileCard({
+    name: 'Watching Thing', type_line: 'Creature — Human Soldier', mana_cost: '{2}{W}', cmc: 3,
+    colors: ['W'], layout: 'normal', power: '2', toughness: '2', oracle_text: text,
+  });
+
+  it.each([
+    // A tribe, which is the bulk of the family: Ally alone is 39 legal lines.
+    ['Whenever Watching Thing or another Ally you control enters',
+      [{ kind: 'etb', who: 'self' },
+        { kind: 'etb', who: 'another', of: 'you', what: 'permanent', ofSubtypes: ['Ally'] }]],
+    // A tribe and the type it is a tribe of, which are two fields rather than a choice.
+    ['Whenever Watching Thing or another Human creature you control enters',
+      [{ kind: 'etb', who: 'self' },
+        { kind: 'etb', who: 'another', of: 'you', what: 'creature', ofSubtypes: ['Human'] }]],
+    // A bare card type: constellation's own wording, 23 legal lines.
+    ['Whenever Watching Thing or another enchantment you control enters',
+      [{ kind: 'etb', who: 'self' },
+        { kind: 'etb', who: 'another', of: 'you', what: 'enchantment' }]],
+    ['Whenever Watching Thing or another creature you control enters',
+      [{ kind: 'etb', who: 'self' },
+        { kind: 'etb', who: 'another', of: 'you', what: 'creature' }]],
+    ['Whenever Watching Thing or another artifact you control enters',
+      [{ kind: 'etb', who: 'self' },
+        { kind: 'etb', who: 'another', of: 'you', what: 'artifact' }]],
+    ['Whenever Watching Thing or another permanent you control enters',
+      [{ kind: 'etb', who: 'self' },
+        { kind: 'etb', who: 'another', of: 'you', what: 'permanent' }]],
+    // The death half, which takes the same subjects minus `land`.
+    ['Whenever Watching Thing or another Goblin you control dies',
+      [{ kind: 'dies', who: 'self' },
+        { kind: 'dies', who: 'another', of: 'you', what: 'permanent', ofSubtypes: ['Goblin'] }]],
+    ['Whenever Watching Thing or another creature you control dies',
+      [{ kind: 'dies', who: 'self' },
+        { kind: 'dies', who: 'another', of: 'you', what: 'creature' }]],
+    // The long spelling of the entry, and `When` as well as `Whenever`.
+    ['Whenever Watching Thing or another Spirit you control enters the battlefield',
+      [{ kind: 'etb', who: 'self' },
+        { kind: 'etb', who: 'another', of: 'you', what: 'permanent', ofSubtypes: ['Spirit'] }]],
+    ['When Watching Thing or another Zombie you control dies',
+      [{ kind: 'dies', who: 'self' },
+        { kind: 'dies', who: 'another', of: 'you', what: 'permanent', ofSubtypes: ['Zombie'] }]],
+  ])('%s becomes the pair it prints', (prologue, on) => {
+    const read = permanent(`${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers.map((t) => t.on)).toEqual(on);
+  });
+
+  it.each([
+    /*
+      Every refusal here is a **filter** on the subject rather than a type, and each would compile
+      into a trigger looser than the card — which is the wrong direction (D362). Together they are
+      most of the family's 52-shape tail.
+    */
+    ['Whenever Watching Thing or another nontoken creature you control enters',
+      '`nontoken`, a field `dies` has and `etb` does not'],
+    ['Whenever Watching Thing or another black creature you control enters',
+      'a colour, which no board event asks about'],
+    ['Whenever Watching Thing or another legendary creature you control enters',
+      'a supertype'],
+    ['Whenever Watching Thing or another snow permanent you control enters', 'the same, for snow'],
+    ['Whenever Watching Thing or another historic permanent you control enters',
+      'a defined class (CR 701.x) that is three things at once'],
+    ['Whenever Watching Thing or another non-Human creature you control enters',
+      'a negated subtype, which `ofSubtypes` cannot say'],
+    ['Whenever Watching Thing or another creature or planeswalker you control dies',
+      'two types in one subject'],
+    ['Whenever Watching Thing or another land you control dies',
+      'dies is defined for creatures (CR 700.4), so the land half exists on the entry only'],
+    ['Whenever Watching Thing or another creature an opponent controls enters',
+      "a board that is not yours: the parse reads `you control` and nothing else"],
+  ])('leaves "%s" unread: %s', (prologue) => {
+    const read = permanent(`${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+    expect(field(read.script, 'triggers')).toBeUndefined();
+  });
+});
