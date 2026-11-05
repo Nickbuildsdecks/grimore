@@ -12343,4 +12343,7 @@ break levers against a baseline verified green first, two failures. Seed 30002 f
 347 moves. 60 duels 60/60 (20.8 turns, 66 moves — unmoved by the fix). The 60-pod set that held the
 failure: **60/60, 69.4 turns, 397 moves** — and that last number corrects D461's 747, which was one
 looping game dragging the average; a real four-player pod costs about four hundred moves. A 100-pod
-set is re-running after its first attempt was cut off by a background time limit.
+set reads **99/100: 99 finished, 1 threw** — seed 30072 on `the engine cannot divide an activated
+ability yet`, which is D460's invariant again in a different place and not a regression from this
+change (30000–30059 is 60/60; 30060–30099 had never been run). Three corpus cards carry a divided
+activated ability — Mogg Mob, Ral, Caller of Storms and Samut, the Tested — and it is task **#336**.

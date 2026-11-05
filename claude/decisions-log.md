@@ -29346,9 +29346,18 @@ before. And the pace figure changes with it: **69.4 turns and 397 moves** a game
 game spending 20,000 moves on the Mantle; take it out and a four-player pod of arbitrary real cards
 costs about four hundred moves, which is the number to quote.
 
-A **100-pod set on the same build is re-running** (its first attempt was cut off by a background time
-limit, not by a failure); its figure lands in the next commit rather than being assumed from the
-sixty.
+**And the 100-pod set is not clean: 99 finished, 1 threw** (SEED0=30000, the sixty above plus forty
+seeds nothing had ever run). Seed 30072 dies on `the engine cannot divide an activated ability yet`
+— `autoActions.ts:1367`, a refusal whose own comment states the premise that has just expired: "no
+ability in the pool divides anything — and the day one does, this is the line that says so". The
+corpus has three: **Mogg Mob**, **Ral, Caller of Storms** (-2) and **Samut, the Tested** (-2), counted
+rather than guessed.
+
+It is the same invariant as D460 in a different place — `legalActions` offers the ability,
+`autoActions` refuses the action built from it — and it is **not** a regression from this change:
+D461 and D462 both swept 30000–30059, which is 60/60. Opened as task **#336**, and worth saying
+plainly rather than rounding to "the pods are clean": one throw in a hundred four-player pods is one
+beta table in a hundred that ends in an error box.
 
 
 ### What is still open, and it is not small
