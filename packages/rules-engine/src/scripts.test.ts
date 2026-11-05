@@ -24727,3 +24727,180 @@ describe('a bounce the controller chooses, not a target (D465)', () => {
     expect(compiled.ok ? (compiled.script?.triggers ?? null) : 'not ok').toBe(null);
   });
 });
+
+describe('a card that picks itself up, and the zone that decides whether it may (D466)', () => {
+  /*
+    The other half of D465's family: the same printed sentence pointed at the card printing it,
+    instead of at something the controller chooses. About 38 legal cards, and what makes it a reader
+    rather than a one-liner is that **two kinds of card print it and they want opposite guards**.
+
+     * `{1}{U}: Return Fleeting Image to its owner's hand` is activated from the battlefield. If the
+       Image is in a graveyard by the time the ability resolves, the ability does **nothing** (CR
+       400.7 — the object it names has changed zones), and a reading that returned it from there
+       would be a wrong card rather than an unread line.
+     * `When Brilliant Halo is put into a graveyard from the battlefield, return Brilliant Halo to
+       its owner's hand` fires **from** the graveyard, so it must return it from there.
+
+    So the reader is handed where its subject is expected to be (`SubjectZone`), derived from the
+    trigger shape or from the ability being an ability, and leaves the line unread when the caller
+    cannot say. The middle test below is the one that discriminates: it is the only place in the
+    suite where the guard is the difference between doing something and doing nothing.
+
+    Three real printings, none of them in any built-in deck.
+  */
+  const IMAGE = {
+    name: 'Fleeting Image', type_line: 'Creature — Illusion', mana_cost: '{2}{U}', cmc: 3,
+    colors: ['U'], power: '2', toughness: '1', loyalty: null, layout: 'normal',
+    oracle_text: "Flying (This creature can't be blocked except by creatures with flying or reach.)\n"
+      + "{1}{U}: Return Fleeting Image to its owner's hand.",
+  };
+  const HALO = {
+    name: 'Brilliant Halo', type_line: 'Enchantment — Aura', mana_cost: '{1}{W}', cmc: 2,
+    colors: ['W'], power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Enchant creature\nEnchanted creature gets +1/+2.\n'
+      + "When Brilliant Halo is put into a graveyard from the battlefield, return Brilliant Halo to "
+      + "its owner's hand.",
+  };
+  const FANG = {
+    name: 'Glitterfang', type_line: 'Creature — Spirit', mana_cost: '{R}', cmc: 1,
+    colors: ['R'], power: '1', toughness: '1', loyalty: null, layout: 'normal',
+    oracle_text: 'Haste\n'
+      + "At the beginning of the end step, return Glitterfang to its owner's hand.",
+  };
+  const ROACHES = {
+    name: 'Endless Cockroaches', type_line: 'Creature — Insect', mana_cost: '{1}{B}{B}', cmc: 3,
+    colors: ['B'], power: '1', toughness: '1', loyalty: null, layout: 'normal',
+    oracle_text: "When Endless Cockroaches dies, return it to its owner's hand.",
+  };
+
+  const deck = (entries: readonly { name: string; count: number }[]) => {
+    const built = customDeck({
+      id: 'd466-list',
+      name: 'Picks itself up',
+      entries: [...entries],
+      data: [IMAGE, HALO, ROACHES, FANG] as never,
+    });
+    expect(built.unknown).toEqual([]);
+    const fixtures = new Set(['Brilliant Halo', 'Endless Cockroaches', 'Fleeting Image',
+      'Glitterfang']);
+    expect([...built.fromData].sort())
+      .toEqual(entries.map((e) => e.name).filter((name) => fixtures.has(name)).sort());
+    return built.deck;
+  };
+
+  const withImage = () => {
+    const built = deck([
+      { name: 'Fleeting Image', count: 4 },
+      { name: 'Island', count: 56 },
+    ]);
+    return advanceTo(arena({
+      decks: { 0: 'd466-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd466-list': built },
+      battlefield: { 0: ['Fleeting Image', 'Island', 'Island'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+  };
+
+  it('reads both kinds, and neither card has a line left over', () => {
+    const image = compileCard(IMAGE as never);
+    expect(image.ok).toBe(true);
+    expect(image.ok ? image.unread : ['not ok']).toEqual([]);
+    // The battlefield kind is an activated ability, priced in mana.
+    const ability = (image.ok ? (image.script?.abilities ?? []) : [])[0];
+    expect(ability?.cost.mana).toBe('{1}{U}');
+
+    const halo = compileCard(HALO as never);
+    expect(halo.ok).toBe(true);
+    expect(halo.ok ? halo.unread : ['not ok']).toEqual([]);
+    // The graveyard kind is a `to-graveyard` trigger about itself, which is the event D157 added.
+    const triggers = halo.ok ? (halo.script?.triggers ?? []) : [];
+    expect(triggers.find((t) => t.on.kind === 'to-graveyard')?.on)
+      .toEqual({ kind: 'to-graveyard', who: 'self' });
+  });
+
+  it('returns itself from the battlefield when the ability resolves', () => {
+    let s = tapAllLands(withImage(), 0 as SeatIndex);
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0,
+      card: find(s, 0 as SeatIndex, 'battlefield', 'Fleeting Image'), abilityIndex: 0,
+    } as Action), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'hand')).toContain('Fleeting Image');
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).not.toContain('Fleeting Image');
+  });
+
+  /*
+    **The guard, and the only test in the suite that discriminates on it.**
+
+    The ability is activated, and the Image reaches a graveyard while that ability is still on the
+    stack. CR 400.7: "Return Fleeting Image to its owner's hand" names an object that has changed
+    zones, so the ability does as much as it can, which is nothing. A reader that guarded on
+    "battlefield or graveyard" — the guard that would read both of this block's cards with one
+    rule — passes every other test here and fails this one, which is why it exists.
+  */
+  it('does nothing if it has left the battlefield before the ability resolves (CR 400.7)', () => {
+    let s = tapAllLands(withImage(), 0 as SeatIndex);
+    const image = find(s, 0 as SeatIndex, 'battlefield', 'Fleeting Image');
+    s = apply(s, { type: 'auto:activate', by: 0, card: image, abilityIndex: 0 } as Action);
+    // The ability is waiting, and the Image is put into the graveyard underneath it.
+    expect(stackNames(s).join()).toContain('Return Fleeting Image');
+    s = apply(s, { type: 'card:move', by: 0, card: image, toZone: 'graveyard' });
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Fleeting Image');
+    s = drain(passBoth(s), 40);
+    // Still in the graveyard: the ability resolved and did nothing.
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Fleeting Image');
+    expect(namesIn(s, 0 as SeatIndex, 'hand')).not.toContain('Fleeting Image');
+  });
+
+  /*
+    A **trigger** whose subject is on the battlefield, which the three above between them do not
+    cover: Fleeting Image reaches the reader through an *ability*, and the Halo and the Cockroaches
+    are both graveyard events. So a zone map that answered "graveyard" for every trigger shape
+    passed all four of the other tests here — found by breaking exactly that and watching nothing
+    fail, which is what a break run is for.
+  */
+  it('returns itself from the battlefield when a trigger is what fires, not an ability', () => {
+    const built = deck([
+      { name: 'Glitterfang', count: 4 },
+      { name: 'Mountain', count: 56 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd466-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd466-list': built },
+      battlefield: { 0: ['Glitterfang', 'Mountain'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toContain('Glitterfang');
+    /*
+      Its own printed clock: the end step comes and the Spirit goes home. `nextTurn` rather than
+      `advanceTo(s, 'end')`, because the turn owes a declaration first and `advanceTo` refuses to
+      answer one on the test's behalf — which is the right rule for it and the wrong tool here.
+    */
+    s = nextTurn(s);
+    expect(namesIn(s, 0 as SeatIndex, 'hand')).toContain('Glitterfang');
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).not.toContain('Glitterfang');
+  });
+
+  it('returns itself from the graveyard when that is where its trigger fires', () => {
+    const built = deck([
+      { name: 'Endless Cockroaches', count: 4 },
+      { name: 'Swamp', count: 56 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd466-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd466-list': built },
+      battlefield: { 0: ['Endless Cockroaches', 'Swamp', 'Swamp'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    const roaches = find(s, 0 as SeatIndex, 'battlefield', 'Endless Cockroaches');
+    s = drain(destroy(s, roaches), 40);
+    /*
+      Back in hand, from a graveyard it had already reached — the opposite verdict to the test above
+      on the same printed sentence, decided by the event rather than by the words.
+    */
+    expect(namesIn(s, 0 as SeatIndex, 'hand')).toContain('Endless Cockroaches');
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).not.toContain('Endless Cockroaches');
+  });
+});

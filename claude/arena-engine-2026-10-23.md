@@ -12433,3 +12433,35 @@ pinning the refusal, rather than bought with a guess.
 | printed rules lines read | 18,916 / 56,421 (33.5%) | **18,975 / 56,421 (33.6%)** |
 
 Engine suite 2,262 green. Six levers broken one at a time, each failing exactly one test.
+
+## The card that picks itself up (D466)
+
+The other half of D465's family: the same sentence pointed at the card printing it rather than at
+something the controller chooses. **About 38 legal cards**, and two kinds of card print it that want
+**opposite guards** — `{1}{U}: Return Fleeting Image to its owner's hand` is activated from the
+battlefield, and `When Brilliant Halo is put into a graveyard from the battlefield, return Brilliant
+Halo to its owner's hand` fires from the graveyard.
+
+CR 400.7 decides it: an ability naming an object that has changed zones does nothing. So a battlefield
+self-bounce resolving after its permanent died must **not** pull the card back out of the graveyard,
+and a graveyard one must. A guard of "battlefield or graveyard" reads both cards with one rule and is
+wrong about the first in exactly the case the rule is for.
+
+The engine does not record where an ability's source was when it went on the stack — but the compiler
+knows, because every caller of `composeEffects` knows which trigger shape or ability it is assembling.
+So a `SubjectZone | null` is threaded through `composeEffects` → `readEffect` → `selfEffect`, read off
+the **event** for a trigger (`dies` and `to-graveyard` → graveyard; `leaves` and `to-exile` → `null`;
+the rest → battlefield), `battlefield` for an ability, and `null` for a spell, which leaves the line
+unread.
+
+**The break run earned its keep again.** Five levers; four failed a test immediately. The fifth —
+answering `graveyard` for every trigger shape — passed everything, because no test covered a *trigger*
+whose subject is on the battlefield. Glitterfang is one, it has a test now, and the lever fails.
+
+| | D465 | D466 |
+| --- | --- | --- |
+| cards with a compiled script | 9,264 | **9,291** |
+| cards fully read | 5,086 | **5,126** |
+| printed rules lines read | 18,975 / 56,421 (33.6%) | **19,053 / 56,421 (33.8%)** |
+
+Engine suite 2,267 green.

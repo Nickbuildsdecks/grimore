@@ -29696,3 +29696,80 @@ reached and the worst place to stop looking — and driving the chain from an id
 `pod:action` does. It is recorded as a second change rather than folded into the first, because the
 probe says it never fired in ten runs and claiming it as the fix would be a guess dressed as a
 diagnosis.
+
+## D466 — The card that picks itself up, and the zone that decides whether it may
+
+D465 read the bounce the controller *chooses* and left the other half of its 128-card family: the
+same printed sentence pointed at the card printing it. **About 38 legal cards**, and what makes it a
+reader rather than a one-liner is that two kinds of card print it and **they want opposite guards**.
+
+ * A permanent moving itself off the **battlefield**: `{1}{U}: Return Fleeting Image to its owner's
+   hand`, `At the beginning of the end step, return Glitterfang to its owner's hand`, plus Arcanis,
+   Blinking Spirit, Darting Merfolk, Viashino Sandstalker, Agoraphobia, Cage of Hands.
+ * A card coming **back from a graveyard**: `When Brilliant Halo is put into a graveyard from the
+   battlefield, return Brilliant Halo to its owner's hand`, Whip Silk, Shimmering Wings, Despondency,
+   Endless Cockroaches, Immortal Phoenix — and the pool's own hand-written **Rancor**, whose docblock
+   already says exactly this and guards on `zone === 'graveyard'`.
+
+CR 400.7 is why a guard is needed at all. An ability that names an object which has since changed
+zones does as much as it can, which is nothing — so a battlefield self-bounce resolving after its own
+permanent died must **not** pull the card out of the graveyard, and a graveyard one must. A guard of
+"battlefield **or** graveyard" reads both cards with one rule and is wrong about the first in exactly
+the case the rule exists for: a wrong reading, which D362 ranks below an unread line.
+
+### `SubjectZone`, threaded from the caller that knows
+
+The engine does not record where an ability's source was when it went on the stack, and
+`EffectContext` has no field for it. Adding one would be a wider change than this family justifies —
+and unnecessary, because **the compiler knows**: every caller of `composeEffects` knows which trigger
+shape or which ability it is assembling. So a `SubjectZone | null` parameter runs through
+`composeEffects` → `readEffect` → `selfEffect`, and through `conjoinedEffect` so a nested composition
+keeps it. The six call sites answer it from what they are:
+
+| caller | zone |
+| --- | --- |
+| a trigger shape | read off `shape.on` (below) |
+| a planeswalker loyalty ability | `battlefield` |
+| an activated ability on a permanent | `battlefield` |
+| a modal spell's mode | `null` |
+| a spell's resolution | `null` |
+
+The trigger map is read from the **event**, not guessed from the words: `dies` and `to-graveyard` fire
+from a graveyard; `leaves` and `to-exile` are `null`, because a `leaves` subject could be in any of
+four zones; everything else fires while the permanent is on the battlefield. Every entry in `shape.on`
+is consulted rather than the first, because a shape may emit several events — the Aura-and-Equipment
+row emits two — and disagreement answers `null`. That is D463's lesson applied before it could bite:
+two assembly sites of one rule drift, so there is one rule.
+
+`null` leaves the line unread. A spell's "itself" is a card on the stack rather than a permanent, and
+there is no printing of this sentence on one.
+
+### The break run found a lever with no test, which is what a break run is for
+
+Five levers, each run on a verified-green baseline. Four failed a test at once. The fifth —
+**answering `graveyard` for every trigger shape** — passed everything, because Fleeting Image reaches
+the reader through an *ability* and the Halo and the Cockroaches are both graveyard events. There was
+no test for a **trigger** whose subject is on the battlefield. Glitterfang is one, so it has a test
+now, and the lever fails.
+
+That is the second time this session a break run has been the thing that found the gap rather than
+confirming the fix (D463's half-fix was caught by a coverage count that moved by the wrong amount).
+A lever that cannot fail is not a safe lever; it is an untested one.
+
+### The numbers
+
+Coverage over 31,654 legal cards, against D465:
+
+| | D465 | D466 |
+| --- | --- | --- |
+| cards with a compiled script | 9,264 | **9,291** |
+| cards with every printed line read | 5,086 | **5,126** |
+| printed rules lines read | 18,975 of 56,421 (33.6%) | **19,053 of 56,421 (33.8%)** |
+
+Forty more cards fully read off twenty-seven more scripts, which is the shape to expect from a reader
+for a line many cards print as their *only* unread one.
+
+Two neighbours stay unread on purpose, both for want of a subject this reader has: `return that card
+to its owner's hand` (2 cards — "that card" is event-relative, `eventRelativeEffect`'s business) and
+`return enchanted creature to its owner's hand` (2 — the Aura's host, which is `who: 'attached'`).
+Engine suite 2,267 green.

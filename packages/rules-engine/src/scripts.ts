@@ -10882,16 +10882,99 @@ function grantedKeywordList(granted: string): Keyword[] | null {
  * reads the same way, and the cards that change are exactly the ones whose subject is somebody
  * else.
  */
+/**
+ * Where the object a clause calls by its own name, or "it", is expected to be when the clause runs.
+ *
+ * Only one family of readings needs this and it needs it absolutely: `return ~ to its owner's hand`.
+ * The same sentence is printed by a permanent moving itself off the **battlefield** (`{1}{U}: Return
+ * Fleeting Image to its owner's hand`) and by a card returning itself from a **graveyard** (`When
+ * Endless Cockroaches dies, return it to its owner's hand`), and the guard those two want is the
+ * opposite one. CR 400.7 is why a guard is needed at all: an ability that names an object which has
+ * since changed zones does as much as it can, which is nothing — so a battlefield self-bounce that
+ * resolved after its own permanent died must **not** pull the card out of the graveyard, and a
+ * graveyard one must.
+ *
+ * `null` means the caller does not know, which happens for a spell (whose "itself" is not a
+ * permanent at all) and for the three events that leave the subject's zone genuinely open —
+ * `leaves`, `to-exile` and `undying`. A reader that needs this refuses when it is `null`, which is
+ * D362's rule: an unread line beats a guessed one.
+ *
+ * It is a parameter rather than a field on `EffectContext` because the engine does not record where
+ * an ability's source was when it went on the stack. Adding that would be a wider change than this
+ * family justifies, and the compiler **does** know: every caller of `composeEffects` knows which
+ * trigger shape or ability it is assembling.
+ */
+type SubjectZone = 'battlefield' | 'graveyard';
+
 function itMeans(named: string | undefined, c: EffectContext): string {
   return named === undefined ? c.subject ?? c.source : c.source;
 }
 
-function selfEffect(clause: string, name: string): ReadEffect | null {
+function selfEffect(
+  clause: string, name: string, where: SubjectZone | null,
+): ReadEffect | null {
   const text = clause.trim();
   const self = selfRef(name);
 
   if (new RegExp(`^untap ${self}$`, 'i').test(text)) {
     return { effect: (c) => tap(c.state, c.source, false) };
+  }
+
+  /*
+    "Return ~ to its owner's hand" — a card that picks itself up, and the reason `SubjectZone` exists.
+
+    The other half of the family D465 measured at 128 one-line-short cards: that increment read the
+    bounce the controller *chooses* from their own battlefield, and left this one, which is the same
+    sentence pointed at the card printing it. **About 38 legal cards**, and three quite different
+    kinds of card print it:
+
+     * a permanent that moves itself off the battlefield — `{1}{U}: Return Fleeting Image to its
+       owner's hand`, `At the beginning of the end step, return Glitterfang to its owner's hand`,
+       Arcanis, Blinking Spirit, Darting Merfolk, Viashino Sandstalker;
+     * an Aura or a card that comes **back from a graveyard** — `When Brilliant Halo is put into a
+       graveyard from the battlefield, return Brilliant Halo to its owner's hand`, Whip Silk,
+       Shimmering Wings, Endless Cockroaches, Immortal Phoenix;
+     * and the pool's own hand-written Rancor, which is the second kind.
+
+    ## Why the zone is a parameter and not a guess
+
+    The two kinds want **opposite** guards, and getting it wrong is a wrong reading rather than an
+    unread line (D362). An activated ability whose permanent died while the ability was on the stack
+    does **nothing** — CR 400.7, the object it names has changed zones — so a battlefield self-bounce
+    must not pull the card back out of the graveyard. A to-graveyard trigger fires *from* the
+    graveyard, so it must. Rancor's hand-written twin says exactly this in its own docblock and
+    guards on `zone === 'graveyard'`.
+
+    A guard of "battlefield or graveyard" would read both cards and be wrong about the first one in
+    precisely the case the rule is for, which is why `where` is threaded from the caller that knows
+    (see `SubjectZone`) rather than inferred here. `where === null` — a spell, or a `leaves` or
+    `to-exile` event whose subject could be in any of four zones — leaves the line unread.
+
+    ## "It" and the card's own name are one reading
+
+    `itMeans` already resolves the difference: a clause that names the card means `c.source`, and one
+    that says "it" means the event's subject when there is one. Both are right here. "When Endless
+    Cockroaches dies, return **it** to its owner's hand" is the self; a `dies` trigger watching
+    another creature and saying "return it" means that creature, and `moveToHand` sends a card to
+    **its own owner's** hand either way, which is what the printed words say.
+
+    Two neighbours stay unread on purpose, both for want of a subject this reader has: `return that
+    card to its owner's hand` (2 cards — "that card" is event-relative, `eventRelativeEffect`'s
+    business) and `return enchanted creature to its owner's hand` (2 — the Aura's host, which is
+    `who: 'attached'` rather than the subject).
+  */
+  const picksItselfUp = new RegExp(
+    `^return (?:(${self})|it) to its owner's hand$`, 'i',
+  ).exec(text);
+  if (picksItselfUp !== null && where !== null) {
+    const named = picksItselfUp[1];
+    return {
+      effect: (c) => {
+        const id = itMeans(named, c);
+        // CR 400.7 / 608.2: still where it was, or the ability does as much as it can, which is none.
+        return c.state.instances[id]?.zone === where ? moveToHand(c.state, [id]) : c.state;
+      },
+    };
   }
 
   const grown = new RegExp(
@@ -12457,11 +12540,32 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       something *before* its questions, and one whose question cannot be gated — both below.
     */
     /*
+      Where the clause's own subject is when it runs, read off the **event** rather than guessed.
+
+      A shape fires at a moment, and the moment says where the object the clause names by its own
+      name or calls "it" has got to. `dies` and `to-graveyard` fire from a graveyard, so a card
+      returning itself returns from there; every other shape here fires while the permanent is on
+      the battlefield. The three that are genuinely open are `null`: a `leaves` subject could be in
+      any of four zones, and a `to-exile` subject is in exile, where `return it to its owner's hand`
+      is not a sentence this compiler has seen printed. (`undying` is a third open case in the
+      engine's event vocabulary and is deliberately absent here: it is not a `TriggerDef['on']` kind
+      at all, so naming it would be a comparison TypeScript refuses.)
+
+      Every entry in `shape.on` is consulted rather than the first, because a shape may emit several
+      events (the Aura and Equipment row emits two) and a reading that is right for one and wrong for
+      another is the kind of drift D463 was. Disagreement means `null`.
+    */
+    const zones = new Set(shape.on.map((on) => (
+      on.kind === 'dies' || on.kind === 'to-graveyard' ? 'graveyard' as const
+        : on.kind === 'leaves' || on.kind === 'to-exile' ? null
+          : 'battlefield' as const)));
+    const where: SubjectZone | null = zones.size === 1 ? [...zones][0]! : null;
+    /*
       The event-relative clauses first — "that player" is `c.actor`, which only a trigger has. See
       `eventRelativeEffect` for why that reading cannot live in the shared clause vocabulary.
     */
     const reader = (text: string): ReadEffect | null =>
-      eventRelativeEffect(text, name) ?? composeEffects(clausesOf(text), name);
+      eventRelativeEffect(text, name) ?? composeEffects(clausesOf(text), name, where);
     /*
       **The whole clause is tried first, and that order is the guard.** Some clauses in the
       vocabulary already begin with "you may" and read as one phrase — a payment offered to the
@@ -13794,11 +13898,13 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
  * has no " and " left in it, so the part's own `readEffect` reaches this function, finds nothing to
  * split, and stops.
  */
-function conjoinedEffect(clause: string, name: string): ReadEffect | null {
+function conjoinedEffect(
+  clause: string, name: string, where: SubjectZone | null,
+): ReadEffect | null {
   const parts = clause.trim().split(/\s+and\s+/i).map((part) => part.trim())
     .filter((part) => part !== '');
   if (parts.length < 2) return null;
-  return composeEffects(parts, name);
+  return composeEffects(parts, name, where);
 }
 
 /**
@@ -13809,14 +13915,17 @@ function conjoinedEffect(clause: string, name: string): ReadEffect | null {
  * are not targets at all, so it has to see the clause before `targetedEffect` reads "to" as a
  * target phrase.
  */
-function readEffect(clause: string, name: string): ReadEffect | null {
+function readEffect(
+  clause: string, name: string, where: SubjectZone | null,
+): ReadEffect | null {
   return untargetedEffect(clause, name)
     ?? damageEffect(clause, name)
-    ?? selfEffect(clause, name)
+    // `where` goes only here and to the conjunction below: see `SubjectZone`.
+    ?? selfEffect(clause, name, where)
     ?? targetedEffect(clause, name)
     // Last, and the docblock on `conjoinedEffect` is about why: a conjunction any reader above
     // understands as one clause must keep that reading.
-    ?? conjoinedEffect(clause, name);
+    ?? conjoinedEffect(clause, name, where);
 }
 
 /**
@@ -13861,11 +13970,13 @@ function clausesOf(line: string): readonly string[] {
  * control" — and composing them here would silently hand both the *same* target. That is a wrong
  * card rather than an unread one, so it is refused.
  */
-function composeEffects(clauses: readonly string[], name: string): ReadEffect | null {
+function composeEffects(
+  clauses: readonly string[], name: string, where: SubjectZone | null,
+): ReadEffect | null {
   if (clauses.length === 0) return null;
   const parts: ReadEffect[] = [];
   for (const clause of clauses) {
-    const read = readEffect(clause, name);
+    const read = readEffect(clause, name, where);
     if (read === null) return null;
     parts.push(read);
   }
@@ -14080,7 +14191,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   */
   const loyalty = /^([+\u2212-]?)(\d+)$/.exec(split[1]!.trim());
   if (loyalty !== null) {
-    const read = composeEffects(clausesOf(clause), name);
+    // A loyalty ability is activated from the battlefield, so that is where its subject is.
+    const read = composeEffects(clausesOf(clause), name, 'battlefield');
     if (read === null) return null;
     // See `dividesAQuantity`: Ral, Caller of Storms and Samut, the Tested both print it on a -2.
     if (dividesAQuantity(read)) return null;
@@ -14255,7 +14367,9 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     the loyalty branch above — a planeswalker animating itself is a sentence no card in the pool
     prints, and a reader with nothing to check against is a reader written ahead of need.
   */
-  const read = animateSelf(clause, name) ?? composeEffects(clausesOf(clause), name);
+  // An activated ability on a permanent is activated from the battlefield (see `SubjectZone`).
+  const read = animateSelf(clause, name)
+    ?? composeEffects(clausesOf(clause), name, 'battlefield');
   if (read === null) return null;
   /*
     A **divided** quantity on an activated ability is refused, and the line stays unread.
@@ -14762,7 +14876,8 @@ function modalScriptFor(lines: readonly string[], name: string): { modal: ModalD
     const bullet = /^[•\u2022]\s*(.+)$/.exec(plain(line).trim());
     if (bullet === null) return null;
     const printed = bullet[1]!.replace(/\s*\.\s*$/, '').trim();
-    const read = composeEffects(clausesOf(printed), name);
+    // A spell's "itself" is a card on the stack, not a permanent: see `SubjectZone`.
+    const read = composeEffects(clausesOf(printed), name, null);
     if (read === null) return null;
     const flags = { ...(read.spellFlags ?? {}) } as Record<string, unknown>;
     const expires = flags['expiresAtEndOfTurn'] === true;
@@ -15233,5 +15348,6 @@ function readResolution(lines: readonly string[], name: string): ReadEffect | nu
     ?? lootResolution(lines, name)
     ?? blinkResolution(lines, name)
     ?? exileForLifeResolution(lines, name)
-    ?? composeEffects(lines.flatMap(clausesOf), name);
+    // A spell's "itself" is a card on the stack, not a permanent: see `SubjectZone`.
+    ?? composeEffects(lines.flatMap(clausesOf), name, null);
 }
