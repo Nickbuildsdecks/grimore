@@ -7418,8 +7418,11 @@ describe('deck coverage', () => {
       - `attack-declared`: 92 legal corpus lines, 8 compilable cards. Driven at runtime by "the
         declaration, as printed text", on printed Bard, Heir of Girion — including the count that is
         the whole point of the event (one draw for a three-creature swing).
+      - `combat-damage-dealt`: 26 legal corpus lines, 8 compilable cards. Driven at runtime by "the
+        batched hit, as printed text", on printed Grim Hireling — two Treasures for a two-creature
+        swing, and four when the swing splits between two opponents in a pod.
     */
-    const compilerOnly = new Set(['trigger attack-declared']);
+    const compilerOnly = new Set(['trigger attack-declared', 'trigger combat-damage-dealt']);
 
     const declared = [
       ...fields.map((f) => `script ${f}`),
@@ -22383,5 +22386,118 @@ describe('the declaration, as printed text', () => {
       attackers: [{ attacker: find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears'), defender: 0 }],
     } as Action));
     expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held);
+  });
+});
+
+/*
+  "Whenever one or more creatures you control deal combat damage to a player", played (D443).
+
+  The batched half of `combat-damage`, which D439 refused for exactly this reason: that event is
+  raised once per creature that connected, so any reading of this line taken off it would pay a Grim
+  Hireling per attacker. 26 legal lines, 8 compilable cards. The test that matters is the count.
+*/
+describe('the batched hit, as printed text', () => {
+  const HIRELING = {
+    name: 'Grim Hireling', type_line: 'Creature — Tiefling Rogue', mana_cost: '{3}{B}', cmc: 4,
+    colors: ['B'], layout: 'normal', power: '3', toughness: '2', loyalty: null,
+    oracle_text: 'Whenever one or more creatures you control deal combat damage to a player, create'
+      + ' two Treasure tokens.\n{B}, Sacrifice X Treasures: Target creature gets -X/-X until end of'
+      + ' turn. Activate only as a sorcery.',
+  };
+
+  const list = () => {
+    const built = customDeck({
+      id: 'hireling-list',
+      name: 'Grim Hireling',
+      entries: [
+        { name: 'Grim Hireling', count: 1 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Mountain', count: 55 },
+      ],
+      data: [HIRELING as never],
+    });
+    expect(built.unknown).toEqual([]);
+    return built.deck;
+  };
+
+  const treasures = (s: GameState, seat: SeatIndex) =>
+    namesIn(s, seat, 'battlefield').filter((n) => n === 'Treasure').length;
+  const goblins = (s: GameState, seat: SeatIndex) => [...ids(s, seat, 'battlefield')]
+    .filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Raging Goblin');
+
+  it.each([
+    // One attacker and two, on the same board: two Treasures either way, which is the whole of
+    // "one or more". Read off `combat-damage` the second row makes four.
+    ['one creature', 1, 2],
+    ['two creatures', 2, 2],
+  ])('makes two Treasures when %s connects', (_label, attackers, made) => {
+    let s = arena({
+      decks: { 0: 'hireling-list', 1: 'verdant-guard' },
+      deckSpecs: { 'hireling-list': list() },
+      battlefield: { 0: ['Grim Hireling', 'Raging Goblin', 'Raging Goblin'] },
+      turn: 3,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const mine = goblins(s, 0 as SeatIndex);
+    expect(mine).toHaveLength(2);
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: mine.slice(0, attackers as number).map((id) => ({ attacker: id, defender: 1 })),
+    } as Action));
+    // Seat 1's board is empty, so the engine declares the empty block and both attackers connect.
+    s = drain(advanceTo(s, 'end-combat'), 40);
+    expect(treasures(s, 0 as SeatIndex)).toBe(made as number);
+  });
+
+  it('fires once for each player hit, which is what "that player" means', () => {
+    /*
+      The judgement in this entry, tested rather than asserted in a comment. Anowon, the Ruin Thief
+      prints "…deal combat damage to a player, **that player** mills a card for each 1 damage dealt
+      to them", and "that player" can only mean one — so a swing that splits between two opponents
+      is two hits and two triggers. In a duel the two readings agree, which is why it takes a pod to
+      see: four Treasures, not two.
+    */
+    let s = arena({
+      format: 'pod',
+      seats: 3,
+      decks: { 0: 'hireling-list', 1: 'verdant-guard', 2: 'verdant-guard' },
+      deckSpecs: { 'hireling-list': list() },
+      battlefield: { 0: ['Grim Hireling', 'Raging Goblin', 'Raging Goblin'] },
+      turn: 3,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const [a, b] = goblins(s, 0 as SeatIndex) as [string, string];
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: a, defender: 1 }, { attacker: b, defender: 2 }],
+    } as Action));
+    s = drain(advanceTo(s, 'end-combat'), 60);
+    expect(treasures(s, 0 as SeatIndex)).toBe(4);
+  });
+
+  it('does not fire for an opponent\'s creatures', () => {
+    // `by: 'you'`, which is the only form printed. Seat 1 connects with seat 0, who holds the
+    // Hireling and watches from the battlefield.
+    let s = arena({
+      decks: { 0: 'hireling-list', 1: 'verdant-guard' },
+      deckSpecs: { 'hireling-list': list() },
+      battlefield: { 0: ['Grim Hireling'], 1: ['Grizzly Bears'] },
+      turn: 3,
+      firstSeat: 1,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 1,
+      attackers: [{ attacker: find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears'), defender: 0 }],
+    } as Action));
+    // The Hireling could block, so seat 0 has a declaration to make: it declines, and the Bears
+    // connect. Without this the board never reaches the damage step at all.
+    s = advanceTo(s, 'declare-blockers');
+    s = drain(apply(s, { type: 'auto:block', by: 0, blocks: [] } as Action));
+    s = drain(advanceTo(s, 'end-combat'), 40);
+    expect(treasures(s, 0 as SeatIndex)).toBe(0);
+    expect(treasures(s, 1 as SeatIndex)).toBe(0);
   });
 });

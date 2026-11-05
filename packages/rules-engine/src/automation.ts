@@ -823,6 +823,18 @@ function triggerMatches(
       return true;
     }
     /*
+      And the batched hit, filtered the same way and for the same reason: `raise` offers it to the
+      whole battlefield, and whose creatures dealt it is the whole of the question. Which player was
+      hit travels on the event rather than being filtered here — no card asks "to *you*", and the
+      ones that ask about the player say "that player", which is an answer rather than a filter.
+    */
+    case 'combat-damage-dealt': {
+      const by = want.by ?? 'you';
+      if (by === 'you') return actorSeat === sourceSeat;
+      if (by === 'opponent') return actorSeat !== sourceSeat;
+      return true;
+    }
+    /*
       A draw, with the same three-way `by` a cast has.
 
       `you` by default rather than `any`, so a card that says nothing watches its own controller —
@@ -1167,7 +1179,8 @@ function fireTrigger(
   */
   const attacked = event.kind === 'attacks' || event.kind === 'attacks-unblocked'
     ? event.attacked
-    : event.kind === 'combat-damage' && event.defender !== undefined
+    : (event.kind === 'combat-damage' || event.kind === 'combat-damage-dealt')
+      && event.defender !== undefined
       ? { defender: event.defender }
       : undefined;
   const answering = answeringFor(event);
@@ -2334,6 +2347,29 @@ function settle(state: GameState, before: GameState): GameState {
       next = raise(
         next, { kind: 'combat-damage', defender }, next.instances[creature]?.zoneSeat, creature,
       );
+    }
+    /*
+      And **one** event per hit, which is a different question from the creatures that made it.
+
+      "Whenever one or more creatures you control deal combat damage to a player" fires once however
+      many of them connected — 26 legal corpus lines and 8 compilable cards, which D439 refused
+      precisely because reading it off the loop above would pay a Grim Hireling per attacker. See
+      the `combat-damage-dealt` event's own declaration, including why the batch is per **damaged
+      player** rather than per combat.
+
+      Grouped off `connected` rather than counted on the way through, because the key is a pair —
+      whose creature, and who it hit — and a swing that splits between two opponents is two hits.
+      The key is a string because that is what a `Set` can hold; the seats are read back off the
+      entry rather than parsed out of it.
+    */
+    const hits = new Map<string, { readonly by: SeatIndex; readonly defender: SeatIndex }>();
+    for (const { creature, defender } of connected) {
+      const by = next.instances[creature]?.zoneSeat;
+      if (by === undefined) continue;
+      hits.set(`${by}:${defender}`, { by, defender });
+    }
+    for (const { by, defender } of hits.values()) {
+      next = raise(next, { kind: 'combat-damage-dealt', defender }, by);
     }
     /*
       Draws, before the deaths and the arrivals in this pass.

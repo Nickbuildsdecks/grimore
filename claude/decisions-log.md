@@ -27709,3 +27709,44 @@ possibly carry) is untouched.
 
 Legal-only coverage 16,408 of 56,421 lines (29.1%), **7,411 cards with a script** (7,405 → 7,411),
 4,036 with every printed line read. GATE OK, 2,020 engine tests.
+
+## D443 — The batched hit, which D439 refused and D442's answer unlocked
+
+"Whenever **one or more** creatures you control deal combat damage to a player" is 26 legal corpus
+lines and **8** cards this compiler can finish. D439 measured it, read it, and **refused to ship
+it**, because `combat-damage` is raised once per creature that connected — so the row would have paid
+a Grim Hireling two Treasures per *attacker* instead of two per hit. That refusal was recorded with
+a test asserting the line stays unread, and the reason: a wrong reading is worse than a line left
+unread (D362).
+
+D442 built the batched event for the attack declaration. This is the same move for the damage, and
+the two now sit side by side: `attacks` / `attack-declared` for the declaration, `combat-damage` /
+`combat-damage-dealt` for the hit. In each pair the first is about a creature and raised per
+creature, the second is about the event and raised once.
+
+### Once per damaged player, and the templating is the evidence
+
+The batch is keyed on a **pair** — whose creature, and who it hit — not on the combat. *Anowon, the
+Ruin Thief* prints "whenever one or more Rogues you control deal combat damage to a player, **that
+player** mills a card for each 1 damage dealt to them", and "that player" can only mean one. So a
+swing that splits between two opponents is two hits and two triggers, which is also the only reading
+that makes `defender` a single seat.
+
+In a duel the two readings agree, so this is tested in a **pod**: two creatures, two opponents, four
+Treasures. Keying the batch on the seat alone fails exactly that row and nothing else.
+
+### Verified
+
+Four runtime tests on printed **Grim Hireling** through `customDeck`. The pair that matters is one
+board attacked with one creature and with two — **two Treasures either way**, where the per-creature
+event would make four. Plus the pod row above, and an opponent's hit (nothing). The D439 compile row
+that asserted the refusal is **rewritten in place**, with the old claim and why it was right at the
+time quoted in its comment, and a second row keeps the singular and plural readings apart: they
+differ by one word of English and by how many times they fire.
+
+`combat-damage-dealt` joins `attack-declared` in the mechanic-coverage test's `compilerOnly` set,
+with its corpus count and the name of the runtime block that drives it (D442's rule for that set).
+
+**Five breaks, five failures.**
+
+Legal-only coverage 16,416 of 56,421 lines (29.1%), **7,419 cards with a script** (7,411 → 7,419). GATE OK, 2,025 engine tests.

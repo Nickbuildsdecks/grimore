@@ -502,6 +502,38 @@ export type TriggerEvent =
        */
       readonly of?: 'you' | 'opponent' | 'any';
     }
+  /**
+   * "Whenever **one or more** creatures you control deal combat damage to a player."
+   *
+   * The batched half of `combat-damage`, and the same relation `attack-declared` has to `attacks`:
+   * that event is about a creature and is raised once per creature that connected, this one is
+   * about the hit and is raised **once** however many creatures were in it. 26 legal corpus lines
+   * print it and 8 are cards this compiler can finish — D439 refused the prologue on exactly this
+   * ground, because read off `combat-damage` a Grim Hireling would make two Treasures *per
+   * attacker* instead of two per hit (D443).
+   *
+   * **Once per damaged player**, not once per combat, and the templating is the evidence: Anowon,
+   * the Ruin Thief prints "whenever one or more Rogues you control deal combat damage to a player,
+   * **that player** mills a card for each 1 damage dealt to them", and "that player" can only mean
+   * one. So a swing that connects with two opponents at once is two triggers, each about one of
+   * them, which is also the only reading that makes `defender` a single seat. In a duel the two
+   * readings agree, which is why this is said out loud rather than left to a test.
+   */
+  | {
+      readonly kind: 'combat-damage-dealt';
+      /**
+       * Whose creatures dealt it. `you` is the default and the only form printed — "creatures
+       * **you control**" — with the other two values present so `by` means the same three things
+       * here as everywhere else in this file.
+       */
+      readonly by?: 'you' | 'opponent' | 'any';
+      /**
+       * Set by the engine: the player who was hit, carried for "that player". It reaches the
+       * ability through `EffectContext.attacked`, the same channel `attacks` and `combat-damage`
+       * use, so there is one way an ability learns which player its event was about.
+       */
+      readonly defender?: SeatIndex;
+    }
   | {
       readonly kind: 'spell-cast';
       readonly by?: 'you' | 'opponent' | 'any';

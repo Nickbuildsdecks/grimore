@@ -7348,24 +7348,38 @@ describe('combat damage dealt to a player, read off the prologue', () => {
     expect(triggers[0]!.on).toEqual({ kind: 'combat-damage' });
   });
 
-  it('refuses the batched plural, which this engine would fire once per attacker', () => {
+  it('reads the batched plural as its own trigger, which fires once per hit', () => {
     /*
-      "Whenever **one or more** creatures you control deal combat damage to a player" is 26 legal
-      lines and 8 compilable cards, and it is left unread on purpose. It fires **once** however many
-      creatures connected; this engine raises one `combat-damage` event per creature, so the row
-      would pay Grim Hireling two Treasures per attacker instead of two per combat.
+      **This row asserted the opposite until D443, and that was the right refusal at the time.** It
+      read "refuses the batched plural, which this engine would fire once per attacker": "whenever
+      **one or more** creatures you control deal combat damage to a player" fires once however many
+      creatures connected, and D439 had only `combat-damage`, which is raised per creature — so
+      reading it would have paid a Grim Hireling two Treasures per attacker. A wrong reading is
+      worse than a line left unread (D362).
 
-      A reading that is wrong is worse than a line left unread (D362), so it waits for a batched
-      event. This row's job is to fail if someone adds the prologue without the event — at which
-      point the plural would be read, and read wrongly.
+      D443 built the batched event, so the line reads now, and the two prologues differ by one word
+      of English and by how many times they fire. The count itself is asserted at runtime, under
+      "the batched hit, as printed text" — a compile row can only say which trigger it became.
     */
     const read = permanent('Whenever one or more creatures you control deal combat damage to a'
       + ' player, you gain 1 life.');
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.unread.map((u) => u.line)).toEqual([
-      'Whenever one or more creatures you control deal combat damage to a player, you gain 1 life.',
-    ]);
+    expect(read.unread).toEqual([]);
+    const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]!.on).toEqual({ kind: 'combat-damage-dealt', by: 'you' });
+  });
+
+  it('keeps the singular reading apart from it, which is one word of English', () => {
+    // The pair that makes the two rows one lever: "a creature" is per creature, "one or more
+    // creatures" is per hit, and a prologue row that swallowed the other would show up here.
+    const singular = permanent('Whenever a creature you control deals combat damage to a player,'
+      + ' you gain 1 life.');
+    expect(singular.ok).toBe(true);
+    if (!singular.ok) return;
+    const triggers = field(singular.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers[0]!.on).toEqual({ kind: 'combat-damage', who: 'any', of: 'you' });
   });
 });
 

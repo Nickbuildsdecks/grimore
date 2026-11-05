@@ -11710,3 +11710,22 @@ creatures you control have total power 8 or greater" (2). Each carries a restric
 express, and six compile rows fail if a prologue is widened to swallow one.
 
 Legal-only coverage 16,408 of 56,421 lines (29.1%) and **7,411 cards with a script**.
+
+## The batched hit (D443)
+
+D439 measured "whenever one or more creatures you control deal combat damage to a player" — 26 legal
+lines, 8 compilable cards — and refused to ship it, because `combat-damage` is raised per creature
+and the row would have paid Grim Hireling two Treasures per attacker. D442 built the batched event
+for the attack declaration; this is the same move for the damage, and the engine now has both pairs:
+
+| about a creature, raised per creature | about the event, raised once |
+| --- | --- |
+| `attacks` | `attack-declared` |
+| `combat-damage` | `combat-damage-dealt` |
+
+The batch is keyed on **(whose creature, who was hit)**, not on the combat, and the templating is
+why: Anowon prints "…deal combat damage to a player, **that player** mills…", and "that player" can
+only mean one. A duel cannot tell the two readings apart, so the test is a pod — two creatures, two
+opponents, four Treasures.
+
+Legal-only coverage 16,416 of 56,421 lines (29.1%) and **7,419 cards with a script**.

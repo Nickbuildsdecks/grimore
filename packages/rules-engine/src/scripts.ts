@@ -11068,15 +11068,21 @@ const TRIGGER_SHAPES: readonly {
     without a clause to make them.
 
     The plural form — "whenever **one or more** creatures you control deal combat damage to a
-    player", 26 legal lines and 8 cards — is deliberately **not** here. It is a batched trigger that
-    fires once however many creatures connected, and this engine raises one event per creature, so
-    the row would fire it once per attacker: Grim Hireling would make two Treasures per creature
-    instead of two per combat. A reading that is wrong is worse than a line left unread (D362), so
-    it waits for a batched event.
+    player", 26 legal lines and 8 cards — was deliberately not here when D439 shipped: it is a
+    batched trigger that fires once however many creatures connected, and reading it off
+    `combat-damage` would have paid a Grim Hireling two Treasures per *attacker*. **D443 built the
+    batched event and the row is below**, which is the same answer D442 gave the attack declaration.
   */
   {
     prologue: () => /^Whenever a creature you control deals combat damage to a player, (.+)$/i,
     on: [{ kind: 'combat-damage', who: 'any', of: 'you' }],
+  },
+  // And the batched one, on the event D443 added. The singular row above and this one differ by one
+  // word of English and by how many times they fire.
+  {
+    prologue: () =>
+      /^Whenever one or more creatures you control deal combat damage to a player, (.+)$/i,
+    on: [{ kind: 'combat-damage-dealt', by: 'you' }],
   },
   /*
     "Whenever **you** attack" — the declaration, once per combat (D442).
