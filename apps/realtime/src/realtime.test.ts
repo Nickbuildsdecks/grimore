@@ -9,7 +9,10 @@ import { TokenBucket } from './ratelimit.js';
 import { createClient, type RedisClientType } from 'redis';
 import { withRolledFirstSeat, PodStore, makePlayerId, type PodSnapshot } from './pod.js';
 import { generateCode, toEngineFormat, maxSeatsFor } from './pod.js';
-import { unpackView, viewFor, type PackedView, type GameView } from '@grimore/rules-engine';
+import {
+  unpackView, viewFor, type PackedView, type GameView, type CardDataRow,
+} from '@grimore/rules-engine';
+import type { CardLibrary } from './cardLibrary.js';
 import { POD_CODE_REGEX } from '@grimore/shared';
 
 const REDIS_URL = process.env.REDIS_URL;
@@ -1750,4 +1753,340 @@ describe('rolling for who goes first', () => {
   it('does nothing at a table with no seats, rather than rolling a seat that is not there', () => {
     expect(withRolledFirstSeat(start, [], () => 0)).toBe(start);
   });
+});
+
+/**
+ * A pasted list resolved against the card table (D459).
+ *
+ * The thing the whole corpus was for: a deck of cards nobody hand-wrote, played by the rules engine
+ * rather than by hand. `customDeck` has been able to do this since D430 — pool, then printed data,
+ * then cardboard — and **no caller in this app supplied any data**, so every pasted name outside the
+ * 348-card pool was cardboard whatever was in `scryfall_cards`.
+ *
+ * Its own server, with its own card library, because the suite above is the behaviour of a table
+ * with no card table and is worth keeping exactly as it is: the two together are the before and
+ * after. The library is a fake rather than Postgres — two rows this file wrote, so the assertions
+ * name cards instead of counting corpus — and `cardLibrary.test.ts` is where the real one is run
+ * against the real schema.
+ *
+ * Every fixture is a printed card the pool does **not** have, which is load-bearing: `customDeck`
+ * consults the pool first, so a Lightning Bolt here would resolve to the hand-written script and
+ * prove nothing about the card table at all.
+ */
+describe.skipIf(!REDIS_URL)('a pasted list read out of the card table (requires REDIS_URL)', () => {
+  const ROWS: CardDataRow[] = [
+    {
+      name: 'Wall of Omens',
+      type_line: 'Creature — Wall',
+      oracle_text: 'Defender\nWhen Wall of Omens enters, draw a card.',
+      mana_cost: '{1}{W}',
+      cmc: 2,
+      colors: ['W'],
+      power: '0',
+      toughness: '4',
+      layout: 'normal',
+    },
+    {
+      name: 'Elvish Mystic',
+      type_line: 'Creature — Elf Druid',
+      oracle_text: '{T}: Add {G}.',
+      mana_cost: '{G}',
+      cmc: 1,
+      colors: ['G'],
+      power: '1',
+      toughness: '1',
+      layout: 'normal',
+    },
+  ];
+
+  /** What the lookup was asked for, so a test can say the warm happened where it has to. */
+  const asked: string[][] = [];
+  const cards: CardLibrary = {
+    warm: async (names) => {
+      asked.push([...names]);
+    },
+    rowFor: (name) => ROWS.find((r) => r.name!.toLowerCase() === name.trim().toLowerCase()),
+    close: async () => {},
+  };
+
+  let rt: Realtime;
+  let url: string;
+  const clients: Socket[] = [];
+
+  beforeAll(async () => {
+    rt = await createRealtime({
+      redisUrl: REDIS_URL!,
+      allowedOrigins: [],
+      log: pino({ level: 'silent' }),
+      store: { keyPrefix: `test-cards:${Date.now().toString(36)}:${process.pid}`, cards },
+      rateLimit: { rate: 20, burst: 40 },
+    });
+    await new Promise<void>((resolve) => rt.httpServer.listen(0, '127.0.0.1', resolve));
+    url = `http://127.0.0.1:${(rt.httpServer.address() as AddressInfo).port}`;
+  });
+
+  afterEach(() => {
+    for (const c of clients.splice(0)) c.disconnect();
+    asked.splice(0);
+  });
+
+  afterAll(async () => {
+    await rt.store.flushPrefix();
+    await rt.close();
+  });
+
+  const client = async (name: string): Promise<Socket> => {
+    const s = connect(url, { transports: ['websocket'], forceNew: true, auth: { name }, reconnection: false });
+    clients.push(s);
+    await waitFor(s, 'connect');
+    return s;
+  };
+
+  /**
+   * Two players seated and readied, which is what deals the table. The list is this suite's
+   * subject, not the pod, so this is the shortest route to a table that will accept `deck:load`.
+   */
+  const seated = async () => {
+    const a = await client('Alice');
+    const b = await client('Bob');
+    const created = okAck(await emitAck(a, 'pod:create', {
+      name: 'Card table', format: 'commander', visibility: 'private',
+    }));
+    const code = created.code!;
+    const bothSeated = waitFor<PodStateEvent>(a, 'pod:state', (st) => st.pod.seats.length === 2);
+    okAck(await emitAck(b, 'pod:join', { code, name: 'Bob' }));
+    await bothSeated;
+    const dealt = waitFor<PodStateEvent>(b, 'pod:state', (st) => st.pod.status === 'in_progress');
+    okAck(await emitAck(a, 'pod:ready', { ready: true }));
+    okAck(await emitAck(b, 'pod:ready', { ready: true }));
+    await dealt;
+    asked.splice(0);
+    return { a, b, code };
+  };
+
+  const LIST = ['Deck', '40 Forest', '10 Wall of Omens', '9 Elvish Mystic'].join('\n');
+
+  it('resolves a name the pool does not have into the printed card', async () => {
+    const { a } = await seated();
+    const ack = okAck(await emitAck(a, 'pod:deck', { text: LIST }));
+    // Nothing unreadable: 40 basics from the pool, 19 cards from the card table. The same paste
+    // against the suite above — the server with no card library — reports 19.
+    expect(ack.deck).toMatchObject({ total: 59, distinct: 3, unknownCount: 0 });
+    expect(ack.deck!.unknown).toEqual([]);
+  }, 20_000);
+
+  it('reads the same list into the summary, the ack and the dealt deck', async () => {
+    /*
+      D459's version of the three-way agreement above, and the reason the warm lives in
+      `PodStore.mutate` rather than at the call sites: a pasted list is read three times inside one
+      mutation — the ack, the lobby summary, the deck dealt — and they can only agree if all three
+      see the same rows. Two names the table has and two it does not, so a reading that saw no rows
+      (4 unreadable), or that saw rows for only the newly pasted list (2), is a different number
+      from the right one.
+    */
+    const { a } = await seated();
+    const text = [
+      'Commander', '1 Elvish Mystic', '',
+      'Deck', '40 Forest', '10 Wall of Omens',
+      '5 Nonsense Card', '4 Also Not A Card',
+    ].join('\n');
+
+    const ack = okAck(await emitAck(a, 'pod:deck', { text }));
+    expect(ack.deck).toMatchObject({ total: 59, unknownCount: 2 });
+    expect(ack.deck!.unknown!.slice().sort()).toEqual(['Also Not A Card', 'Nonsense Card']);
+
+    const seen = await waitFor<PodStateEvent>(a, 'pod:state', (st) => st.pod.seats[0]?.list !== undefined);
+    expect(seen.pod.seats[0]!.list).toMatchObject({ total: 59, unknown: 2 });
+
+    const loaded = okAck(await emitAck(a, 'pod:action', {
+      action: { type: 'deck:load', seat: 0, deckId: 'custom:0' },
+      expectedVersion: ack.stateVersion!,
+    }));
+    const after = await waitFor<PodStateEvent>(a, 'pod:state', (st) => st.stateVersion >= loaded.stateVersion!);
+    const view = unpackView(after.state as unknown as PackedView);
+    expect(view.seats.find((st) => st.index === 0)?.libraryCount).toBe(59);
+    expect(view.zones['0:command']?.length).toBe(1);
+  }, 20_000);
+
+  it('deals a game in which the card table cards are played by the engine, not by hand', async () => {
+    /*
+      The payoff, read off `view.manual` — the list of cards the engine cannot play in the dealt
+      game, which is what tells a person which ones to move themselves (D362, D363). Wall of Omens
+      and Elvish Mystic are not on it, so the table is dealing them as cards with rules: a 0/4
+      Defender that draws a card when it arrives, and a creature that taps for green.
+    */
+    const { a } = await seated();
+    const pasted = okAck(await emitAck(a, 'pod:deck', { text: LIST }));
+    const mine = okAck(await emitAck(a, 'pod:action', {
+      action: { type: 'deck:load', seat: 0, deckId: 'custom:0' },
+      expectedVersion: pasted.stateVersion!,
+    }));
+    const theirs = okAck(await emitAck(a, 'pod:action', {
+      action: { type: 'deck:load', seat: 1, deckId: 'ember-rush' },
+      expectedVersion: mine.stateVersion!,
+    }));
+    const started = okAck(await emitAck(a, 'pod:action', {
+      action: { type: 'game:start' }, expectedVersion: theirs.stateVersion!,
+    }));
+    const auto = okAck(await emitAck(a, 'pod:action', {
+      action: { type: 'auto:start' }, expectedVersion: started.stateVersion!,
+    }));
+    const dealt = await waitFor<PodStateEvent>(a, 'pod:state', (st) => st.stateVersion >= auto.stateVersion!);
+    const view = unpackView(dealt.state as unknown as PackedView);
+    expect(view.manual.map((m) => m.name)).toEqual([]);
+    // And the cards really are the printed ones rather than a name with nothing behind it: read off
+    // the hand, which is the one zone this seat may see.
+    /*
+      And the cards in hand really are the printed ones, not names with nothing behind them. Read
+      through `view.cards`, because a zone carries instance ids and the definitions travel once each
+      (D26) — so this is also the reading that would catch a card dealt as cardboard: cardboard has
+      an empty type line, which is what `deckIsAutomatable` and the manual badge both key off.
+    */
+    const hand = (view.zones['0:hand'] ?? []).map((id) => view.cards[id]);
+    expect(hand.length).toBeGreaterThan(0);
+    for (const card of hand) {
+      expect(['Forest', 'Wall of Omens', 'Elvish Mystic']).toContain(card?.card?.name);
+      expect(card?.card?.typeLine ?? '').not.toBe('');
+    }
+    const omens = hand.find((c) => c?.card?.name === 'Wall of Omens')?.card;
+    if (omens !== undefined) {
+      // The printed card, from the card table: a 0/4 whose text is its own. The size travels as the
+      // printed string, because `*` and `1+*` are printed values (see migration 0015).
+      expect({ power: omens.power, toughness: omens.toughness }).toEqual({ power: '0', toughness: '4' });
+      expect(omens.oracleText).toContain('When Wall of Omens enters, draw a card.');
+    }
+  }, 30_000);
+
+  it('asks the card table for the names being pasted, before the list is on the record', async () => {
+    /*
+      `warmCards` inside `mutate` reads the lists already stored on the record, and a list being
+      pasted is not on it yet — so `setDeck` warms the parsed names itself. Without that the ack,
+      which is the reading the player is shown, would be the one reading that saw no rows.
+
+      Asserted on what the lookup was asked for rather than on the ack alone, because the ack would
+      also be right if the rows happened to be cached from an earlier test.
+    */
+    const { a } = await seated();
+    okAck(await emitAck(a, 'pod:deck', { text: LIST }));
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked[0]!.slice().sort()).toEqual(['Elvish Mystic', 'Forest', 'Wall of Omens']);
+  }, 20_000);
+
+  it('resolves a list stored by one node when a second node deals it', async () => {
+    /*
+      Why `warmCards` is in `mutate` and not only in `setDeck`, found by a break run: removing it
+      changed nothing, because the test above pastes and deals through the same process, and the
+      cache the paste warmed is still warm when the deal reads it.
+
+      That is not how this runs. Pods live entirely in Redis so **any node can serve any socket**
+      (see this file's header), and an in-process cache is per node — so the node that deals a table
+      is routinely not the node the list was pasted to, and its cache for those names is cold. Two
+      stores over the same Redis and the same keyspace are exactly that pair of nodes, and the
+      second one's library has never been asked for anything.
+
+      Without the warm in `mutate`, the second node deals a deck of cardboard: the same list, the
+      same player, a different table, because of which process happened to answer.
+    */
+    const prefix = `test-twonode:${Date.now().toString(36)}:${process.pid}`;
+    /*
+      A library that starts cold and only answers for what it was warmed with — which the fake
+      shared by the tests above is not, and that is why those tests could not catch the missing
+      warm. A fake that answers unconditionally is a fake with no cache in it, so it models the one
+      situation that never happens.
+    */
+    const libraryFor = (): CardLibrary => {
+      const warmed = new Map<string, CardDataRow>();
+      return {
+        warm: async (names) => {
+          for (const name of names) {
+            const row = ROWS.find((r) => r.name!.toLowerCase() === name.trim().toLowerCase());
+            if (row !== undefined) warmed.set(name.trim().toLowerCase(), row);
+          }
+        },
+        rowFor: (name) => warmed.get(name.trim().toLowerCase()),
+        close: async () => {},
+      };
+    };
+    const first = new PodStore(rt.redis, { keyPrefix: prefix, cards: libraryFor() });
+    /*
+      Two more nodes rather than one, because the warm happens in two places and each has to be
+      shown on a cache that is genuinely cold. `dealer` is asked to act without reading first, which
+      is the mutation path; `reader` only ever reads. Sharing one would hide whichever came second:
+      the first call warms its library, and after that nothing about it is cold any more.
+    */
+    const dealer = new PodStore(rt.redis, { keyPrefix: prefix, cards: libraryFor() });
+    const reader = new PodStore(rt.redis, { keyPrefix: prefix, cards: libraryFor() });
+    try {
+      const host = await first.create(
+        { format: 'commander', visibility: 'private', name: 'Two nodes', bots: 1 },
+        { id: makePlayerId('Alice'), name: 'Alice' },
+      );
+      const code = host.pod.code;
+      const pasted = await first.setDeck(code, host.playerId, { text: LIST });
+      expect(pasted.summary).toMatchObject({ unknownCount: 0 });
+      const dealt = await first.ready(code, host.playerId, true);
+
+      /*
+        A node that has read nothing about this table, asked to deal the list straight away, and
+        then to start the rules engine on it — because `view.manual` is the only reading that tells
+        a resolved card from cardboard, and it is populated only once automation is running. The
+        first draft of this stopped after the load and asserted `libraryCount`, which is 59 whether
+        the deck is 19 printed cards or 19 blanks: a break run that removed the warm altogether left
+        it passing.
+      */
+      const loaded = await dealer.applyAction(
+        code, host.playerId,
+        { type: 'deck:load', seat: 0, deckId: 'custom:0' },
+        dealt.stateVersion,
+      );
+      expect(viewFor(loaded.state!, 0).seats.find((st) => st.index === 0)?.libraryCount).toBe(59);
+      const started = await dealer.applyAction(
+        code, host.playerId, { type: 'game:start' }, loaded.stateVersion,
+      );
+      const auto = await dealer.applyAction(
+        code, host.playerId, { type: 'auto:start' }, started.stateVersion,
+      );
+      expect(viewFor(auto.state!, 0).manual.map((m) => m.name)).toEqual([]);
+
+      // And a node that only reads: the summary it hands a player joining the table.
+      const seen = await reader.get(code);
+      expect(seen?.pod.seats[0]?.list).toMatchObject({ total: 59, unknown: 0 });
+    } finally {
+      await first.flushPrefix();
+    }
+  }, 30_000);
+
+  it('still deals the built-in decks without asking the card table anything', async () => {
+    /*
+      A table playing the 348 hand-written cards must not pay for this at all: no pasted list, no
+      names, no lookup. The guard is in `warmCards`, and this is what says it is there.
+
+      Its own store and its own recording array, which the first two drafts did not have and which
+      is the whole difficulty of asserting that something did *not* happen. Disconnecting the
+      previous test's sockets makes the server mark those seats disconnected, and that mutation
+      warms the previous pod's lists — asynchronously, landing whenever it lands. So a shared array
+      picked up a lookup belonging to a test that had already finished, and clearing the array first
+      did not help: the stray write arrives after the clear. Nothing can leak into an array only
+      this test's store can write to.
+    */
+    const solo: string[][] = [];
+    const store = new PodStore(rt.redis, {
+      keyPrefix: `test-solo:${Date.now().toString(36)}:${process.pid}`,
+      cards: {
+        warm: async (names) => void solo.push([...names]),
+        rowFor: () => undefined,
+        close: async () => {},
+      },
+    });
+    const pod = await store.create(
+      { format: 'commander', visibility: 'private', name: 'Built-ins', bots: 1 },
+      { id: makePlayerId('Solo'), name: 'Solo' },
+    );
+    await store.ready(pod.pod.code, pod.playerId, true);
+    expect(solo).toEqual([]);
+    // And the table really was dealt, so this is a lookup that did not happen rather than a
+    // mutation that did not run.
+    expect((await store.get(pod.pod.code))?.pod.status).toBe('in_progress');
+    await store.flushPrefix();
+  }, 20_000);
 });

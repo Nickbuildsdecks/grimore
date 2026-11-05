@@ -44,8 +44,10 @@ import {
   type DeckSpec,
   type FormatId,
   type GameState,
+  type CardDataRow,
   customDeck,
 } from '@grimore/rules-engine';
+import type { CardLibrary } from './cardLibrary.js';
 
 /** What the server read in a pasted list, sent back to the player who pasted it. */
 export interface DeckListSummary {
@@ -137,6 +139,18 @@ export interface Player {
 export interface PodStoreOptions {
   /** Prepended to every key; lets tests isolate and flush their own keyspace. */
   keyPrefix?: string;
+  /**
+   * Where a pasted name that is not in the pool gets its printed card from.
+   *
+   * Optional, and a table with none behaves exactly as it did before D459: a name the 348
+   * hand-written cards do not have is cardboard, moved by hand. With one, that name becomes the
+   * printed card and whatever share of its text the compiler read (D430, D362).
+   *
+   * Injected rather than built here so this file stays free of Postgres — and so a test can hand
+   * it two rows it wrote itself and assert what the table does with them, which is cheaper and
+   * far clearer than asserting against 33,847 rows of corpus.
+   */
+  cards?: CardLibrary;
   ttlSeconds?: number;
   /** How long a disconnected seat is held for reclaim. */
   graceMs?: number;
@@ -252,7 +266,7 @@ export function maxSeatsFor(format: Format): number {
   return Math.min(POD_MAX_SEATS, FORMATS[toEngineFormat(format)].maxPlayers);
 }
 
-const publicSeat = (s: SeatRecord): PodSeat => ({
+const publicSeat = (s: SeatRecord, cards: CardLibrary | undefined): PodSeat => ({
   seat: s.seat,
   playerId: s.playerId,
   name: s.name,
@@ -262,7 +276,7 @@ const publicSeat = (s: SeatRecord): PodSeat => ({
   bot: s.bot === true,
   // The list's shape but never its cards: how big it is, and how much of it the engine cannot
   // read, which is what decides whether this table can be played with the rules engine at all.
-  ...(s.pastedList === undefined ? {} : { list: listSummary(s.pastedList) }),
+  ...(s.pastedList === undefined ? {} : { list: listSummary(s.pastedList, cards) }),
 });
 
 /**
@@ -287,20 +301,47 @@ const publicSeat = (s: SeatRecord): PodSeat => ({
  * be the same word.
  */
 function deckFromPastedList(
-  list: NonNullable<SeatRecord['pastedList']>, id: string, fallbackName: string,
+  list: NonNullable<SeatRecord['pastedList']>,
+  id: string,
+  fallbackName: string,
+  data: readonly CardDataRow[] = [],
 ): ReturnType<typeof customDeck> {
   return customDeck({
     id,
     name: list.name ?? fallbackName,
     entries: list.entries,
     ...(list.commander === undefined ? {} : { commander: list.commander }),
+    data,
   });
 }
 
+/**
+ * The printed rows for a list's names, out of whatever card library the store was given.
+ *
+ * `undefined` library, or a name the library has not got, is the same answer as before: nothing,
+ * and the name is cardboard. The rows are read synchronously because every reader of a list runs
+ * inside the compare-and-set mutation — `PodStore.mutate` warms the library before calling it.
+ */
+function rowsForList(
+  list: NonNullable<SeatRecord['pastedList']>, cards: CardLibrary | undefined,
+): readonly CardDataRow[] {
+  if (cards === undefined) return [];
+  const names = list.entries.map((e) => e.name);
+  if (list.commander !== undefined) names.push(list.commander);
+  const rows: CardDataRow[] = [];
+  for (const name of names) {
+    const row = cards.rowFor(name);
+    if (row !== undefined) rows.push(row);
+  }
+  return rows;
+}
+
 /** A pasted list as everybody at the table may see it: a name, a size and a cannot-read count. */
-function listSummary(list: NonNullable<SeatRecord['pastedList']>): NonNullable<PodSeat['list']> {
+function listSummary(
+  list: NonNullable<SeatRecord['pastedList']>, cards: CardLibrary | undefined,
+): NonNullable<PodSeat['list']> {
   // The id is never read here: only `unknown` is, which is what the table is allowed to know.
-  const { unknown } = deckFromPastedList(list, 'summary', 'A pasted list');
+  const { unknown } = deckFromPastedList(list, 'summary', 'A pasted list', rowsForList(list, cards));
   return {
     ...(list.name === undefined ? {} : { name: list.name }),
     total: list.entries.reduce((n, e) => n + e.count, 0),
@@ -339,11 +380,13 @@ export function withRolledFirstSeat(
   return { ...action, firstSeat: seats[index]!.seat };
 }
 
-export function toSnapshot(record: PodRecord, version: number): PodSnapshot {
+export function toSnapshot(
+  record: PodRecord, version: number, cards?: CardLibrary,
+): PodSnapshot {
   return {
     pod: {
       ...record.pod,
-      seats: record.seats.map(publicSeat),
+      seats: record.seats.map((s) => publicSeat(s, cards)),
       // Whether there is a move to take back, rather than the move itself: the client needs to
       // know the button is live, and the stored record is a whole game state that nobody but this
       // server may see.
@@ -402,6 +445,8 @@ export class PodStore {
   private readonly onSlowWrite: (info: { code: string; reason: string }) => void;
   private readonly botMovesPerWrite: number;
   private readonly slowWriteMs: number;
+  /** See `PodStoreOptions.cards`. Undefined is a table with no card library, as before D459. */
+  private readonly cards: CardLibrary | undefined;
 
   constructor(
     private readonly redis: RedisClientType,
@@ -416,6 +461,7 @@ export class PodStore {
     this.onSlowWrite = opts.onSlowWrite ?? ((): void => {});
     this.botMovesPerWrite = opts.botMovesPerWrite ?? BOT_MOVES_PER_WRITE;
     this.slowWriteMs = opts.slowWriteMs ?? SLOW_WRITE_MS;
+    this.cards = opts.cards;
   }
 
   // -------------------------------------------------------------------------
@@ -466,9 +512,39 @@ export class PodStore {
     return Number(res);
   }
 
+  /**
+   * The pod as it stands, including every seat's reading of its own pasted list.
+   *
+   * Warms the card library first, for the same reason `mutate` does and one found the same way: a
+   * read is served by whichever node the socket is connected to, and that node's cache for another
+   * node's pasted names is cold. Without this, a player joining a table somebody else pasted a list
+   * to is told the engine cannot read 19 of their cards — which is not a stale number, it is a
+   * different answer from the one the table will actually deal.
+   */
   async get(code: string): Promise<PodSnapshot | null> {
     const s = await this.read(code);
-    return s ? toSnapshot(s.record, s.version) : null;
+    if (!s) return null;
+    await this.warmCards(s.record);
+    return toSnapshot(s.record, s.version, this.cards);
+  }
+
+  /**
+   * Fetches the printed rows for every pasted list at this table.
+   *
+   * Never throws: `CardLibrary.warm` reports a failed lookup and returns, which leaves those names
+   * unresolved and therefore cardboard. A card table that is down must not stop a game being
+   * played — it costs the automation on cards nobody hand-wrote, which is what the table had before
+   * there was a card table at all.
+   */
+  private async warmCards(record: PodRecord): Promise<void> {
+    if (this.cards === undefined) return;
+    const names = new Set<string>();
+    for (const seat of record.seats) {
+      if (seat.pastedList === undefined) continue;
+      for (const entry of seat.pastedList.entries) names.add(entry.name);
+      if (seat.pastedList.commander !== undefined) names.add(seat.pastedList.commander);
+    }
+    if (names.size > 0) await this.cards.warm([...names]);
   }
 
   /**
@@ -487,6 +563,21 @@ export class PodStore {
       const stored = await this.read(code);
       if (!stored) throw new PodError('not_found', `pod ${code} does not exist`);
       const before = stored.record;
+      /*
+        The printed rows for every list at this table, fetched here and read synchronously below.
+
+        Here rather than at the two call sites that obviously need them, because *three* readings of
+        a pasted list happen inside `fn`: the ack the player who pasted it gets, the summary every
+        seat sees, and the deck actually dealt. They are required to agree — there is a test named
+        for it — and they can only agree if they all see the same rows. `fn` is synchronous by
+        construction (it runs between a read and a compare-and-set, so it cannot await anything), so
+        the one place that can fetch is just before it.
+
+        A no-op on a table with no pasted lists, which is every table playing the built-in decks,
+        and a no-op on the second and later attempts of a CAS retry because the library remembers
+        what it has already looked up.
+      */
+      await this.warmCards(before);
       let outcome: { record: PodRecord | null; result: T };
       try {
         outcome = fn(structuredClone(before), stored.version);
@@ -521,7 +612,7 @@ export class PodStore {
       const res = await this.cas(code, stored.version, record);
       if (res === CAS_RESULT.OK) {
         await this.syncIndexes(code, before, record);
-        return { snapshot: toSnapshot(record, stored.version + 1), result };
+        return { snapshot: toSnapshot(record, stored.version + 1, this.cards), result };
       }
       if (res === CAS_RESULT.MISSING) throw new PodError('not_found', `pod ${code} does not exist`);
     }
@@ -602,7 +693,10 @@ export class PodStore {
       if (res === CAS_RESULT.OK) {
         if (input.visibility === 'public') await this.redis.sAdd(this.publicKey(), code);
         await this.redis.set(this.tokenKey(token), `${code}:0`, { EX: this.ttl });
-        return { ...toSnapshot(record, 0), seat: 0, seatToken: token, playerId: host.playerId, reclaimed: false };
+        return {
+          ...toSnapshot(record, 0, this.cards),
+          seat: 0, seatToken: token, playerId: host.playerId, reclaimed: false,
+        };
       }
     }
     throw new PodError('internal', 'could not allocate a pod code');
@@ -775,6 +869,22 @@ export class PodStore {
   async setDeck(
     code: string, playerId: string, input: { text: string; name?: string },
   ): Promise<{ snapshot: PodSnapshot; summary: DeckListSummary }> {
+    /*
+      The names in the text being pasted, fetched before the mutation.
+
+      `warmCards` inside `mutate` reads the lists already *on the record*, and this list is not on
+      it yet — so without this the ack for a freshly pasted deck would be the one reading that saw
+      no rows, and it is the reading the player is shown. Parsed twice, here and inside `fn`,
+      deliberately: the parse is pure and costs nothing against 400 lines, and moving it out would
+      change which error a bad list in a nonexistent pod reports (`illegal_action` instead of
+      `not_found`) for no gain.
+    */
+    if (this.cards !== undefined) {
+      const peek = parseDecklist(input.text);
+      const names = peek.entries.map((e) => e.name);
+      if (peek.commander !== undefined) names.push(peek.commander);
+      if (names.length > 0) await this.cards.warm(names);
+    }
     const { snapshot, result } = await this.mutate(code, (record) => {
       const seat = record.seats.find((s) => s.playerId === playerId);
       if (!seat) throw new PodError('not_in_pod', 'you are not seated in this pod');
@@ -797,6 +907,7 @@ export class PodStore {
       */
       const { unknown } = deckFromPastedList(
         seat.pastedList, customDeckIdFor(seat.seat), 'Your list',
+        rowsForList(seat.pastedList, this.cards),
       );
       return {
         record,
@@ -855,8 +966,10 @@ export class PodStore {
       for (const s of record.seats) {
         if (s.pastedList === undefined) continue;
         if (!everySeatsList && s.seat !== mySeat) continue;
-        decks[customDeckIdFor(s.seat)] =
-          deckFromPastedList(s.pastedList, customDeckIdFor(s.seat), 'A pasted list').deck;
+        decks[customDeckIdFor(s.seat)] = deckFromPastedList(
+          s.pastedList, customDeckIdFor(s.seat), 'A pasted list',
+          rowsForList(s.pastedList, this.cards),
+        ).deck;
       }
       // Read before the action so a move that bought nothing can be told from one that did; see
       // `onNoProgress`, and `runBots`, which has made the same comparison since it was written.

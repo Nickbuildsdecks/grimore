@@ -193,12 +193,88 @@ function unsizeable(
 }
 
 /**
+ * Compilations already built, by the data they were built from.
+ *
+ * ## Why a cache, measured rather than assumed
+ *
+ * Compiling a card is read-only work over its printed text, and 99 of them cost **14.65 ms** —
+ * which was fine while the only caller was a measuring script and became a problem the moment a
+ * pasted deck was resolved through this function. `apps/realtime` rebuilds a seat's deck from its
+ * list on **every action**, and builds every seat's summary on **every snapshot**, so a four-seat
+ * pod paid that cost five times a move: with the 25-move write bound (D325) that is over a second
+ * of compiling for one client message, all of it producing the identical answer.
+ *
+ * So: memoised, and the same 99 cards cost 0.37 ms on the second build. The cache is what makes
+ * reading a pasted deck out of the card table affordable at all.
+ *
+ * ## The key is the whole row, deliberately
+ *
+ * Not the name. Two rows can carry the same name and different text — a hand-written pool card and
+ * its corpus row, a corpus loaded twice from different sources, a test fixture built to probe one
+ * clause — and a cache keyed on the name would hand the second caller the first one's card. That
+ * is not a stale cache, it is a card with the wrong rules, and it would be invisible: the
+ * compilation it returns is internally consistent and reads perfectly well.
+ *
+ * `JSON.stringify` of the row captures every field this function reads and several it does not,
+ * which is the right way round: a key that is too specific costs a miss, and a miss costs 0.15 ms.
+ * Field order affects the string, so two rows with the same fields in a different order miss rather
+ * than collide — again the safe direction.
+ *
+ * ## Safe to cache because a `Compilation` is immutable
+ *
+ * The returned object is frozen in practice — nothing in this engine writes to a `Compilation`, and
+ * its `def` and `script` are read by `scriptForCard` and `derive.ts` and never mutated. The scripts
+ * are closures over the row, which is data. So two callers sharing one compilation share the same
+ * card, which is what they would have got anyway.
+ *
+ * ## The cap, and the arithmetic behind the number
+ *
+ * Measured by compiling the whole corpus into a cache with no cap: **33,847 compilations cost
+ * 172 MB**, or about 4.6 KB each, and the first pass took 86 s against 105 ms for the second. So an
+ * uncapped cache is not an option on a server started with `--max-old-space-size=768`, and the cap
+ * is set where the thing that needs caching fits: the cards of the lists pasted at the pods
+ * currently live. A four-seat pod is at most 400 names, so **10,000** is twenty-five concurrent
+ * tables of entirely distinct decks, at roughly 46 MB.
+ *
+ * A plain clear rather than an LRU, because what a clear costs is one rebuild per card still in
+ * play and the measuring scripts that sweep all 33,847 compile each card once anyway — an eviction
+ * order would buy nothing either of them would notice.
+ */
+const COMPILED = new Map<string, Compilation>();
+const COMPILED_CAP = 10_000;
+
+/**
  * Compiles one row of printed card data into as much of a `CardScript` as this engine can build.
  *
  * Refuses only what is not a single-face card at all — see `printedDef`. Everything else returns
  * `ok: true` with a `def`, whatever share of its text became rules, and the rest named.
+ *
+ * Memoised on the row — see `COMPILED` above for why that is both necessary and safe.
  */
 export function compileCard(row: CardDataRow): Compilation {
+  let key: string | null;
+  try {
+    key = JSON.stringify(row);
+  } catch {
+    // A row that will not serialise (a cycle, a BigInt) is compiled and not cached. It cannot
+    // arrive from Postgres or from a corpus file; it can arrive from a test, and a test deserves an
+    // answer rather than a throw from the cache layer.
+    key = null;
+  }
+  if (key !== null) {
+    const hit = COMPILED.get(key);
+    if (hit !== undefined) return hit;
+  }
+  const built = compileUncached(row);
+  if (key !== null) {
+    if (COMPILED.size >= COMPILED_CAP) COMPILED.clear();
+    COMPILED.set(key, built);
+  }
+  return built;
+}
+
+/** The compilation itself. Called only by `compileCard`, which caches it. */
+function compileUncached(row: CardDataRow): Compilation {
   const printed = printedDef(row);
   if ('why' in printed) return { ok: false, why: printed.why };
   const def = printed.def;

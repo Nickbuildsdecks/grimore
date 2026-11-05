@@ -86,21 +86,36 @@ export const envSchema = envBaseSchema.superRefine((cfg, ctx) => {
 export type Env = z.infer<typeof envSchema>;
 
 /**
- * What `apps/realtime` actually needs: a port, Redis, the socket origin allow list and a log level.
+ * What `apps/realtime` actually needs: a port, Redis, the socket origin allow list, a log level, and
+ * — optionally — the card table.
  *
  * It had been calling `parseEnv()`, the whole-platform schema, so it refused to boot without
- * `DATABASE_URL` and `SESSION_SECRET` — neither of which it ever reads. That is worse than
- * inconvenient: a process that demands a database URL it never opens invites someone to put the
- * production one into its environment, and it makes "the table will not start" look like a database
- * problem when there is no database involved.
+ * `DATABASE_URL` and `SESSION_SECRET` — neither of which it read. That is worse than inconvenient:
+ * a process that demands a database URL it never opens invites someone to put the production one
+ * into its environment, and it makes "the table will not start" look like a database problem when
+ * there is no database involved.
+ *
+ * **`DATABASE_URL` is now read, and is optional, and the difference matters.** D459 taught the
+ * table to resolve a pasted decklist's names out of `scryfall_cards`, which is the only way a deck
+ * of cards nobody hand-wrote can be played with the rules engine rather than by hand. So realtime
+ * does open a database now — read-only, one `SELECT` over at most 151 names per pasted list.
+ *
+ * Optional because the original objection still stands for every other deployment of this process.
+ * With no `DATABASE_URL` the table boots, deals the built-in decks, and treats every pasted name the
+ * pool does not have exactly as it did before: cardboard, moved by hand. That is a worse table, not
+ * a broken one, and it is what the 47 realtime tests run against — they need Redis and nothing else.
+ * A service that refuses to start without a database it only reads card text from would be the same
+ * mistake as before, pointing the other way.
  */
-export const realtimeEnvSchema = envBaseSchema.pick({
-  NODE_ENV: true,
-  PORT: true,
-  REDIS_URL: true,
-  SOCKET_ALLOWED_ORIGINS: true,
-  LOG_LEVEL: true,
-});
+export const realtimeEnvSchema = envBaseSchema
+  .pick({
+    NODE_ENV: true,
+    PORT: true,
+    REDIS_URL: true,
+    SOCKET_ALLOWED_ORIGINS: true,
+    LOG_LEVEL: true,
+  })
+  .extend({ DATABASE_URL: z.string().url().optional() });
 
 export type RealtimeEnv = z.infer<typeof realtimeEnvSchema>;
 

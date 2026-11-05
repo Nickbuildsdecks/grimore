@@ -28926,3 +28926,129 @@ failed *two* tests, because the test that deletes `WHERE set_code = 'FORGE'` was
 for the test after it — so those row counts were reading two tests' writes at once, and a count that
 was right for the wrong reason would have passed. The file now truncates before each test, every
 count is this test's own, and the `toBeGreaterThanOrEqual(3)` that hid the coupling is an equality.
+
+## D459 — The pasted deck, read out of the card table
+
+D458 put 33,847 printed cards in `scryfall_cards`. **Nothing read them for a deck somebody pasted**,
+and that was the whole point of loading them.
+
+`customDeck` has been able to resolve a pasted name three ways since D430 — the 348 hand-written
+pool cards, then printed card data supplied by the caller, then cardboard — and `customDeck.ts`'
+header has said all along why the middle one was never used: its three call sites in `apps/realtime`
+run inside a synchronous compare-and-set write where no query can happen, so the rows have to arrive
+as data or not at all. So every pasted name outside the pool was cardboard, whatever was in the card
+table, and the corpus, the compiler and the 9,213 scripted cards were all sitting on the far side of
+one missing lookup.
+
+### Measured, which is the only honest way to state what it bought
+
+A list a person could actually paste — 35 Forest plus 99 distinct Commander-legal spells of mana
+value 5 or less, drawn from the card table itself, run through the real `PodStore` twice over the
+same Redis (`scripts/measure/pasted-deck.mjs`):
+
+| | cardboard | unplayable | cast and played, a line flagged | fully automated |
+|---|---|---|---|---|
+| no card table | 97 | 97 | 0 | 3 |
+| card table | **1** | **1** | **79** | **20** |
+
+Read the middle column as the result. Those 79 cards are cast for their real cost, do the part the
+compiler read, and carry a badge naming the line that does nothing — which is D362's bargain, and
+before this they were 79 blanks that could not be cast at all. 20 more run end to end with nothing
+flagged.
+
+The one card still unplayable is **Daxos, Blessed by the Sun**, a `2/*` whose toughness is a count
+nothing read — refused on purpose by D431, because a creature with zero toughness is binned by
+CR 704.5f before anybody has priority, and that is worse than a card you move by hand.
+
+### Where the rows are fetched, and why nothing is stored
+
+Three designs were on the table, and the choice was made on a measurement rather than on taste:
+**150 card rows are 60 KB of JSON**, so a four-seat pod's lists are 240 KB.
+
+* *On the pod record* — rejected. The record is the CAS value, written whole on every move, and one
+  step of undo keeps a serialized copy of it (`PodRecord.previous`): half a megabyte written per
+  move, to carry data that never changes.
+* *In a side Redis key* — rejected as the same data in a worse place, with a TTL that could drift
+  out of step with the pod it belongs to.
+* *In the process* — chosen. Printed card text is immutable reference data, which is the ideal thing
+  to cache: `apps/realtime/src/cardLibrary.ts` fetches the rows a pod's lists need (`warm`) and
+  answers synchronously afterwards (`rowFor`). Nothing new is persisted anywhere.
+
+`DATABASE_URL` is now read by `apps/realtime` and is **optional**, which took some justifying
+because `realtimeEnvSchema` carried a pointed comment about this process not wanting a database:
+"a process that demands a database URL it never opens invites someone to put the production one into
+its environment". That objection still stands for every deployment that is not resolving pasted
+lists, so with the variable unset the table boots, deals and plays, and a pasted name outside the
+pool is cardboard exactly as before. The 47 realtime tests need Redis and nothing else.
+
+### The warm is in `mutate`, and a break run is why
+
+A pasted list is read **three times inside one mutation** — the ack the player who pasted it is
+shown, the summary every other seat sees, and the deck actually dealt — and they are required to
+agree (there is a test named for it). They can only agree if all three see the same rows, and the
+mutation callback is synchronous by construction. So the one place that can fetch is `mutate`, after
+it reads the record and before it runs the callback.
+
+Two more warms, both found by breaking things rather than by thinking:
+
+* **`setDeck` warms the names it is about to store**, because `mutate` warms the lists already on
+  the record and the list being pasted is not on it yet. Without it the ack — the one reading the
+  player actually sees — would be the reading that saw no rows.
+* **`get` warms too.** A pod lives entirely in Redis so any node can serve any socket, and an
+  in-process cache is per node. A player joining a table somebody else pasted a list to was told the
+  engine could not read 19 of their cards: not a stale number, a *different answer* from the one the
+  table would deal. This came out of writing the two-node test, which is itself the thing the break
+  run demanded.
+
+### Three tests that passed while checking nothing, and what fixed each
+
+The break run was worth more than the implementation here, and all three lessons are about fakes and
+proxies rather than about this feature:
+
+1. **A fake with no cache in it.** The two-node test used a library whose `rowFor` answered
+   unconditionally, so removing the warm from `mutate` changed nothing — the fake modelled the one
+   situation that never happens. It now starts cold and answers only for what it was warmed with.
+2. **An assertion that cannot tell cardboard from a card.** That same test then asserted
+   `libraryCount === 59`, which is 59 whether the deck is 19 printed cards or 19 blanks. `view.manual`
+   is the reading that discriminates, and it is populated only once automation is running — so the
+   test now starts the engine.
+3. **A measurement that looked direct and was not.** The negative-caching test counted queries via
+   `pg_stat_database`'s transaction counter either side of a second warm. Removing the negative
+   caching altogether left it green, because those statistics are snapshotted per transaction and the
+   counter had not moved. It is now asserted by consequence: the row is inserted *after* the miss is
+   remembered, and the same library still answers undefined.
+
+### The compiler needed a cache before any of this was affordable
+
+Compiling 99 cards costs **14.65 ms**, which was fine while the only caller was a measuring script.
+`apps/realtime` rebuilds a seat's deck on every action and every seat's summary on every snapshot, so
+a four-seat pod would have paid that five times a move — over a second of compiling per client
+message, all of it producing the identical answer.
+
+So `compileCard` is memoised, **keyed on the whole row rather than on the name**. Two rows can
+legitimately share a name with different text — a pool card and its corpus row, a corpus loaded from
+two sources, a fixture built to probe one clause — and a name-keyed cache would hand the second
+caller the first one's card. That is not a stale cache; it is a card with the wrong rules, and it is
+invisible, because the compilation returned is internally consistent and reads perfectly well. The
+break run confirmed the risk is not theoretical: keying on the name alone failed **existing** tests
+in `compile.test.ts`, which already contains name-colliding fixtures.
+
+The cap is 10,000 compilations, from a measurement: the whole corpus cached costs **172 MB** (about
+4.6 KB each; 86 s for the first pass against 105 ms for the second), and this process runs with
+`--max-old-space-size=768`. A four-seat pod is at most 400 names, so 10,000 is twenty-five concurrent
+tables of entirely distinct decks at roughly 46 MB. Over the cap it clears rather than evicting in
+order: a clear costs one rebuild per card still in play.
+
+The cost at the table, measured: a 100-name paste takes **587 ms** the first time and **11 ms** the
+second. The first is one query plus the first compile of each card; the second is the cache.
+
+### Verified
+
+59 realtime tests (47 + 12 new, across `realtime.test.ts` and the new `cardLibrary.test.ts`), 2,244
+engine tests, and the gate. **Twelve break levers on the wiring and the lookup, twelve failures**, plus four
+on the compilation cache, four failures. Three of the twelve needed the test fixed before they bit,
+which is recorded above.
+
+What is still not done, and is the next thing: `apps/api` reads `scryfall_cards` for search and
+suggestions but does not supply rows anywhere a deck is built, so a deck opened from a saved Grimore
+deck list rather than pasted as text does not go through this path yet.

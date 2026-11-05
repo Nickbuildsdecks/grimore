@@ -9080,3 +9080,74 @@ describe('an Aura attaches even when its statics do not read (D456)', () => {
     expect(unreadLines(compiled)).toEqual(['Enchant creature']);
   });
 });
+
+describe('the compilation cache (D459)', () => {
+  /*
+    `compileCard` memoises on the row, and the reason it is worth testing at all is the one way a
+    cache here could be wrong rather than slow: handing a caller somebody else's card.
+
+    99 cards cost 14.65 ms to compile and 1.04 ms when they are already compiled, which is what
+    makes reading a pasted deck out of the card table affordable — `apps/realtime` rebuilds a seat's
+    deck on every action and every seat's summary on every snapshot. So the cache is not an
+    optimisation looking for a problem; it is the thing that lets the wiring happen at all.
+  */
+  const rowFor = (name: string, oracleText: string): CardDataRow => ({
+    name,
+    type_line: 'Creature — Human Soldier',
+    oracle_text: oracleText,
+    mana_cost: '{1}{W}',
+    cmc: 2,
+    colors: ['W'],
+    power: '2',
+    toughness: '2',
+    layout: 'normal',
+  });
+
+  it('returns the same compilation for the same row', () => {
+    // Object identity, which is the only assertion that can tell a cache that is working from one
+    // that is not: two equal-but-separate compilations would pass any assertion about contents.
+    const row = rowFor('Cache Probe', 'Flying');
+    expect(compileCard(row)).toBe(compileCard({ ...row }));
+  });
+
+  it('does not give two cards with the same name the same rules', () => {
+    /*
+      The failure a name-keyed cache would cause, and it would be invisible: the compilation handed
+      back is internally consistent and reads perfectly well — it is simply a different card. Two
+      rows can share a name legitimately (a pool card and its corpus row, a corpus loaded from two
+      sources, a fixture built to probe one clause), so the key is the whole row.
+    */
+    const flier = compileCard(rowFor('Same Name', 'Flying'));
+    const trampler = compileCard(rowFor('Same Name', 'Trample'));
+    expect(flier).not.toBe(trampler);
+    // The card's own text, which is what a name-keyed cache would hand to the second caller: a 2/2
+    // that flies where the list asked for a 2/2 that tramples, with nothing anywhere saying so.
+    expect(flier.ok && flier.def.oracleText).toBe('Flying');
+    expect(trampler.ok && trampler.def.oracleText).toBe('Trample');
+    expect(flier.ok && flier.compiled).toEqual(['Flying']);
+    expect(trampler.ok && trampler.compiled).toEqual(['Trample']);
+  });
+
+  it('tells apart two rows that differ only in a field the key must cover', () => {
+    // Size is the field most likely to be left out of a hand-written key, and the one whose being
+    // wrong is worst: a creature with the wrong toughness dies to the wrong amount of damage.
+    const small = compileCard(rowFor('Sized Probe', 'Flying'));
+    const big = compileCard({ ...rowFor('Sized Probe', 'Flying'), power: '5', toughness: '5' });
+    expect(small).not.toBe(big);
+    expect(small.ok && small.def.toughness).toBe('2');
+    expect(big.ok && big.def.toughness).toBe('5');
+  });
+
+  it('compiles a row that cannot be serialised rather than throwing', () => {
+    /*
+      A cycle cannot arrive from Postgres or from a corpus file, but it can arrive from a test or a
+      fixture builder — and a cache layer that throws where the compiler would have answered is a
+      cache that has changed the compiler's contract. So the key is skipped and the card compiled.
+    */
+    const row = rowFor('Cyclic Probe', 'Flying') as CardDataRow & { self?: unknown };
+    (row as { self?: unknown }).self = row;
+    const compiled = compileCard(row);
+    expect(compiled.ok).toBe(true);
+    expect(compiled.ok && compiled.def.name).toBe('Cyclic Probe');
+  });
+});

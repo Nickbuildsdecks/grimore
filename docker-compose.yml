@@ -80,10 +80,15 @@ services:
         condition: service_healthy
 
   # The Play Realm table server. Behind the same `v2` profile as the API, so a plain
-  # `docker compose up -d` does not start it. Note what it does NOT have: no DATABASE_URL and no
-  # Postgres dependency — tables live entirely in Redis and a player is identified by the seat token
-  # this service issues, not by a Grimore account. Giving it a database URL it never opens would be
-  # handing a credential to a process with no use for one.
+  # `docker compose up -d` does not start it. Tables live entirely in Redis and a player is
+  # identified by the seat token this service issues, not by a Grimore account.
+  #
+  # It had no DATABASE_URL and no Postgres dependency, on the stated grounds that handing a
+  # credential to a process with no use for one is a bad trade. D459 gave it a use: a pasted
+  # decklist's names are resolved against `scryfall_cards`, which is the only way a deck of cards
+  # nobody hand-wrote plays by the rules rather than by hand. Read-only, one SELECT per pasted list,
+  # and **optional** — with the variable unset this service still boots, deals and plays, and every
+  # pasted name outside the 348-card pool is cardboard, exactly as before.
   realtime:
     profiles: ["v2"]
     build:
@@ -97,10 +102,14 @@ services:
       - PORT=3000
       - NODE_ENV=production
       - REDIS_URL=redis://redis:6379
+      # The card table a pasted decklist is resolved against. Same database as apps/api, read only.
+      - DATABASE_URL=postgres://grimore_user:${POSTGRES_PASSWORD:-grimore_password_99}@postgres:5432/grimore_db
       # The origins a browser may open a table socket from. Leave unset to allow any origin; set it
       # once DNS is in front of the VM so a page on another site cannot drive your table.
       - SOCKET_ALLOWED_ORIGINS=${SOCKET_ALLOWED_ORIGINS:-}
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
 

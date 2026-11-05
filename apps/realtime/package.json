@@ -15,13 +15,16 @@
     "@grimore/rules-engine": "workspace:*",
     "@grimore/shared": "workspace:*",
     "@socket.io/redis-streams-adapter": "^0.2.2",
+    "pg": "^8.22.0",
     "pino": "^9.5.0",
     "redis": "^4.7.0",
     "socket.io": "^4.8.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@grimore/db": "workspace:*",
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
     "socket.io-client": "^4.8.1",
     "typescript": "^5.6.0",
     "vitest": "^3.0.0"

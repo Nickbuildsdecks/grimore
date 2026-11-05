@@ -12168,3 +12168,48 @@ the next increment, and it is worth 9,213 scripted cards against 348.
 Eight break levers, eight failures. One of them earned a change: breaking the FORGE marking failed
 two tests, because the test that deletes the FORGE rows was also cleaning up for the next one — so
 the file truncates before each test and the counts are equalities now.
+
+## The pasted deck, read out of the card table (D459)
+
+D458 loaded 33,847 printed cards. **Nothing read them for a pasted deck** — `customDeck`'s `data`
+parameter, the one that turns a pasted name into a compiled card, had no caller in the product,
+because its three call sites sit inside a synchronous compare-and-set write where no query can
+happen. So the corpus, the compiler and 9,213 scripted cards were all behind one missing lookup.
+
+Measured through the real `PodStore`, on a list a person could paste — 35 Forest plus 99 distinct
+Commander-legal spells of mana value ≤ 5, drawn from the card table itself
+(`scripts/measure/pasted-deck.mjs`):
+
+| | cardboard | cast and played, a line flagged | fully automated |
+|---|---|---|---|
+| no card table | 97 | 0 | 3 |
+| card table | **1** | **79** | **20** |
+
+The 79 are cast for their real cost, do what the compiler read, and badge the line that does nothing
+— D362's bargain. Before, they were blanks nobody could cast. The one card still unplayable is
+Daxos, Blessed by the Sun, a `2/*` whose toughness is a count nothing read: refused on purpose by
+D431, because a 2/0 is binned by CR 704.5f before anybody has priority.
+
+**Nothing is stored.** 150 rows is 60 KB of JSON, so a four-seat pod's lists are 240 KB — written
+whole on every move if they lived on the pod record, and doubled by the one step of undo. Printed
+card text never changes, so `apps/realtime/src/cardLibrary.ts` caches it in the process: `warm`
+fetches, `rowFor` answers synchronously. `DATABASE_URL` is now read by this app and is **optional** —
+unset, the table boots, deals and plays, and a pasted name outside the pool is cardboard as before.
+
+The warm lives in `PodStore.mutate`, because a list is read three times inside one mutation — the
+ack, the lobby summary, the dealt deck — and they must agree. Two more warms came out of the break
+run: `setDeck` warms the names it is about to store (the ack is the reading the player sees), and
+`get` warms too, because any node can serve any socket and a player joining somebody else's table
+was being told the engine could not read 19 of their cards.
+
+`compileCard` is now memoised, which is what makes any of this affordable: 99 cards cost 14.65 ms to
+compile, and the table would have paid that five times a move. Keyed on the **whole row**, never the
+name — two rows can share a name with different text, and a name-keyed cache hands back a card with
+the wrong rules, which reads perfectly well. Cap 10,000, from the measurement that the whole corpus
+cached costs 172 MB against a 768 MB heap. A 100-name paste: 587 ms cold, **11 ms** warm.
+
+Twelve break levers on the wiring, twelve failures — but three only after the test was fixed, and
+those are the lesson. A fake library that answered unconditionally had no cache in it, so it modelled
+the one case that never happens; `libraryCount` is 59 whether the deck is printed cards or blanks;
+and a query count read off `pg_stat_database` could not see negative caching disappear, because those
+statistics are snapshotted per transaction. Each is now asserted by consequence instead.

@@ -10,12 +10,22 @@ import { createClient, type RedisClientType } from 'redis';
 import type { Logger } from 'pino';
 import { registerHandlers, type RealtimeServer } from './handlers.js';
 import { PodStore, type PodStoreOptions } from './pod.js';
+import { createCardLibrary, type CardLibrary } from './cardLibrary.js';
 import type { RateLimitOptions } from './ratelimit.js';
 
 export interface RealtimeOptions {
   redisUrl: string;
   allowedOrigins: string[];
   log: Logger;
+  /**
+   * The card table, read-only, so a pasted decklist can be resolved into printed cards (D459).
+   *
+   * Optional, and absent is the behaviour this process had before: a pasted name the 348
+   * hand-written pool cards do not have is cardboard, moved by hand. See `realtimeEnvSchema` for
+   * why this process is allowed to want a database at all, having spent a while pointedly not
+   * wanting one.
+   */
+  databaseUrl?: string;
   store?: PodStoreOptions;
   rateLimit?: RateLimitOptions;
   /** Passed through to the handlers; see `HandlerOptions.botContinuationRounds`. */
@@ -121,8 +131,19 @@ export async function createRealtime(opts: RealtimeOptions): Promise<Realtime> {
     onward?.({ code, reason });
   };
 
+  /*
+    Built here, from a URL, rather than taken as an object — and overridden by `store.cards` when a
+    caller passes one, which is how the tests hand the table two rows they wrote themselves.
+  */
+  let cards: CardLibrary | null = null;
+  if (opts.store?.cards === undefined && opts.databaseUrl !== undefined) {
+    cards = createCardLibrary({ databaseUrl: opts.databaseUrl, log });
+    log.info({}, 'card table attached: pasted lists will be resolved against it');
+  }
+
   const store = new PodStore(redis, {
     ...opts.store,
+    ...(cards === null ? {} : { cards }),
     /*
       A table waiting on a seat the server plays, with the reason.
 
@@ -155,7 +176,7 @@ export async function createRealtime(opts: RealtimeOptions): Promise<Realtime> {
       if (!httpServer.listening) return resolve();
       httpServer.close(() => resolve());
     });
-    await Promise.allSettled([redis.quit(), adapterRedis?.quit()]);
+    await Promise.allSettled([redis.quit(), adapterRedis?.quit(), cards?.close()]);
   };
 
   return { io, httpServer, store, redis, close };

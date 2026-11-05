@@ -8,6 +8,9 @@ const log = pino({ level: env.LOG_LEVEL, name: 'realtime' });
 const rt = await createRealtime({
   redisUrl: env.REDIS_URL,
   allowedOrigins: env.SOCKET_ALLOWED_ORIGINS,
+  // Optional: with no DATABASE_URL the table still deals and plays, and a pasted name the pool does
+  // not have is cardboard. See `realtimeEnvSchema`.
+  ...(env.DATABASE_URL === undefined ? {} : { databaseUrl: env.DATABASE_URL }),
   log,
 });
 
