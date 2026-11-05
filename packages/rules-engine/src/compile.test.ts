@@ -8618,3 +8618,113 @@ describe('a counter on each permanent a printed scope names (D453)', () => {
     expect(unreadLines(probe(text))).toEqual([`When Probe Beast enters, ${text}`]);
   });
 });
+
+describe('the shrink, which is the pump with one character changed (D454)', () => {
+  const unreadLines = (c: ReturnType<typeof compileCard>) =>
+    (c.ok ? c.unread : []).map((u) => u.line);
+  const spell = (text: string) => compileCard({
+    name: 'Probe Bolt', type_line: 'Instant', mana_cost: '{B}', cmc: 1, colors: ['B'],
+    layout: 'normal', oracle_text: text,
+  } as never);
+  const target = (c: ReturnType<typeof compileCard>) =>
+    ((((c.ok ? c.script : undefined) as Record<string, unknown> | undefined)?.['targets']
+      ?? []) as readonly Record<string, unknown>[])[0];
+  const flags = (c: ReturnType<typeof compileCard>) =>
+    ((c.ok ? c.script : undefined) as Record<string, unknown> | undefined) ?? {};
+
+  it.each([
+    /*
+      **265 legal cards print this clause** and none of them read until this increment, because the
+      pattern demanded a `+`. It is the largest single clause family that was waiting on one
+      character.
+    */
+    ['the common one', 'Target creature gets -2/-2 until end of turn.'],
+    ['a one-point shrink', 'Target creature gets -1/-1 until end of turn.'],
+    ['a big one', 'Target creature gets -5/-5 until end of turn.'],
+    // Befuddle and the blue "shrink the power only" cycle. `sizeBonus` leaves the zero component
+    // out of the bonus entirely rather than passing it as 0, which is its own rule and the reason
+    // it exists: two bonuses that behave identically must not compare unequal.
+    ['power only', 'Target creature gets -4/-0 until end of turn.'],
+    ['toughness only', 'Target creature gets -0/-2 until end of turn.'],
+  ])('reads %s', (_label, text) => {
+    const compiled = spell(text as string);
+    expect(unreadLines(compiled)).toEqual([]);
+    /*
+      It points at a creature and asks nothing. The size itself is proved where it can be seen —
+      the runtime block in `scripts.test.ts` kills a 3/3 with Dark Deed's -4/-4 and leaves it at
+      0/3 with Befuddle's -4/-0 — because a shrink until end of turn is a continuous effect that
+      wears off (CR 611.2), not the -1/-1 counter D453's clause puts on.
+    */
+    expect(target(compiled)?.['kind']).toBe('creature');
+    expect(flags(compiled)['decisions']).toBeUndefined();
+  });
+
+  it('points at the enemy, where the pump points at a friend', () => {
+    /*
+      **This is the increment.** The two sentences differ by one character and point in opposite
+      directions, and `TargetSpec.friendly` is where that lands (D252): without the flag the bot's
+      default is "the enemy and the enemy's creatures", which is exactly right for a shrink and
+      exactly wrong for a pump. So the pair is asserted together — a reading that passed `friendly`
+      for both would make every shrink in the corpus a card the bot points at its own board.
+    */
+    const shrink = spell('Target creature gets -2/-2 until end of turn.');
+    expect(target(shrink)?.['friendly']).toBeUndefined();
+    const pump = spell('Target creature gets +2/+2 until end of turn.');
+    expect(target(pump)?.['friendly']).toBe(true);
+  });
+
+  it.each([
+    // Both hostile spellings of the same set of creatures, which `targetSpecFrom` already read.
+    ['an opponent controls', 'Target creature an opponent controls gets -2/-2 until end of turn.'],
+    ['you don’t control', 'Target creature you don’t control gets -3/-3 until end of turn.'],
+    // And the friendly phrase, which a printed shrink does use — a creature you control shrinking
+    // is a cost, not a mistake.
+    ['you control', 'Target creature you control gets -1/-1 until end of turn.'],
+  ])('reads the phrase that says whose creature it is: %s', (_label, text) => {
+    expect(unreadLines(spell(text as string))).toEqual([]);
+  });
+
+  it.each([
+    /*
+      **The mixed sign is refused, and the refusal is about the bot rather than the effect.**
+      Auger Spree prints "+4/-4" and 14 legal cards print a mixed size. `pump` would apply it
+      correctly; what the sentence does not say is whose creature it is for, because +4/-4 is
+      removal pointed across the table and a trick pointed at your own 1/1 depending on the rest of
+      the card. A `friendly` flag guessed wrong is a bot that aims the spell at the wrong half of
+      the table every time — a silent degradation, which is what D362 says to flag instead.
+    */
+    ['a pump with a shrunk toughness', 'Target creature gets +4/-4 until end of turn.'],
+    ['a shrink with a pumped toughness', 'Target creature gets -1/+1 until end of turn.'],
+    ['a mixed size with a grant', 'Target creature gets +1/-1 and gains haste until end of turn.'],
+    /*
+      And a **grant on a shrink**, which no printed card has: across the corpus the `and gains …`
+      tail appears only on `+`/`+` and `+`/`-` sizes, so reading one would be inventing the only
+      card it could apply to (D259).
+    */
+    ['a shrink that grants a keyword', 'Target creature gets -2/-2 and gains menace until end of turn.'],
+    // No duration at all, which would be a permanent effect rather than a trick.
+    ['a shrink with no duration', 'Target creature gets -2/-2.'],
+    // "Another" means "not the other target", and a script has one target list — the same refusal
+    // that keeps "target creature fights target creature" honest.
+    ['a second target', 'Another target creature gets -2/-2 until end of turn.'],
+    // A type-restricted phrase `targetSpecFrom` cannot build.
+    ['a subtype phrase', 'Target Kavu creature gets -1/-1 until end of turn.'],
+  ])('refuses %s', (_label, text) => {
+    expect(unreadLines(spell(text as string))).toEqual([text]);
+  });
+
+  it('wears off at end of turn, which on a shrink is what kills the creature', () => {
+    /*
+      `expiresAtEndOfTurn` is **Darkblast's** field, not a new judgement: the pool's one
+      hand-written card of this shape sets it, with a comment saying that wearing off at end of
+      turn is what kills the creature before the shrink expires. `compiled-vs-written` compares the
+      whole reading against that card, so this row is the local half of a check that is also made
+      against the pool.
+    */
+    const compiled = spell('Target creature gets -2/-2 until end of turn.');
+    expect(flags(compiled)['expiresAtEndOfTurn']).toBe(true);
+    // And `removesACreature` is not set: -1/-1 kills a Glistener Elf and is a wasted card on a
+    // 5/5, which is the board rather than the spell. Darkblast sets no such flag either.
+    expect(flags(compiled)['removesACreature']).toBeUndefined();
+  });
+});

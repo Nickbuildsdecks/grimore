@@ -13040,8 +13040,63 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     have been a card that silently does less than it prints — a Blossoming Defense that pumps and
     leaves the creature targetable is the opposite of why anybody casts it.
   */
-  const pumped = /^(target creature(?: you control)?) gets \+(\d+)\/\+(\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$/i
+  const sized = /^(target creature(?: you control| an opponent controls| you don't control)?) gets ([-+]\d+)\/([-+]\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$/i
     .exec(text);
+  /*
+    **The sign decides whose creature it is**, and that is the whole reason one regex reads both
+    halves of this family.
+
+    "Target creature gets +2/+2 until end of turn" and "Target creature gets -2/-2 until end of
+    turn" are the same sentence with one character changed, and 265 legal cards print the second —
+    the largest single clause family left unread when this was written, and unread because the
+    pattern above it demanded a `+`. What they do differs only in the number passed to `pump`; what
+    they *mean* differs completely, and `TargetSpec.friendly` is where that lands (D252). So the
+    size is read first and the sign picks the branch, rather than two readers that could drift.
+
+    A **mixed** sign — Auger Spree's "+4/-4", and 14 cards print one — is refused, and the refusal
+    is about the bot rather than the effect. `pump` would apply it correctly either way; what cannot
+    be read off the sentence is which creature it is for, because a card that gives +4/-4 is
+    removal pointed at them and a trick pointed at your own 1/1 depending on the rest of the card.
+    `friendly` guessed wrong is a bot that aims the spell at the wrong half of the table every time,
+    which is a silent degradation rather than a refusal — the thing D362 says to flag instead.
+  */
+  const pumped = sized === null ? null
+    : Number(sized[2]) >= 0 && Number(sized[3]) >= 0 ? sized : null;
+  const shrunk = sized === null || pumped !== null ? null
+    : Number(sized[2]) <= 0 && Number(sized[3]) <= 0 ? sized : null;
+  if (shrunk !== null) {
+    /*
+      The shrink, and **Darkblast is the ground truth for every field of it**: the pool's one
+      hand-written card of this shape points at `TARGET_CREATURE` — the hostile default, not the
+      helped one — and sets `expiresAtEndOfTurn`, with a comment saying why that flag is right on a
+      shrink: wearing off at end of turn is what kills the creature before the shrink expires.
+
+      `removesACreature` is deliberately **not** set, for the same reason the pump branch refuses to
+      guess a hint for `indestructible`: nothing hand-written pairs that flag with a shrink, and
+      -1/-1 kills a Glistener Elf while -1/-1 on a 5/5 is a wasted card. Which it is depends on the
+      board, which is what the bot's search sees by playing it out.
+
+      A granted keyword is refused here although the pump branch reads one: no printed shrink has a
+      grant (checked across the corpus — the `and gains` tail appears only on `+`/`+` and `+`/`-`
+      sizes), so reading one would be inventing the only card it could apply to.
+    */
+    if (shrunk[4] === undefined) {
+      const bonus = sizeBonus(Number(shrunk[2]), Number(shrunk[3]));
+      const spec = targetSpecFrom(shrunk[1]!, false);
+      if (spec !== null && bonus !== null) {
+        return {
+          targets: [spec],
+          effect: (c) => {
+            const id = firstCardTarget(c);
+            return id === null
+              ? c.state
+              : pump(c.state, [id], c.source, c.controller, bonus);
+          },
+          spellFlags: { expiresAtEndOfTurn: true },
+        };
+      }
+    }
+  }
   if (pumped !== null) {
     const bonus = pumpAndGrant(Number(pumped[2]), Number(pumped[3]), pumped[4]);
     const spec = targetSpecFrom(pumped[1]!, true);

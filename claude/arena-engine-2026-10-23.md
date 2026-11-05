@@ -12024,3 +12024,29 @@ subtype no permanent has.
 
 Coverage **17,869 of 56,421 legal lines (31.7%)**, **8,354 cards with a script (+25)**, 4,846 fully
 read (+26).
+
+## The shrink, which is the pump with one character changed (D454)
+
+"Target creature gets -2/-2 until end of turn" — **265 legal cards print it and none of them read**,
+because the pattern above it demanded a `+`. The largest single clause family left in the corpus was
+waiting on one character.
+
+The effect was never missing: `pump` has taken a negative bonus since the sweeper. What was missing
+is that **the sign decides whose creature it is**. The same sentence one character apart is a trick
+you aim at your own board and removal you aim across the table, and `TargetSpec.friendly` is where
+that lands (D252) — without the flag the bot's default is "the enemy and the enemy's creatures",
+which is exactly right for a shrink and exactly wrong for a pump. So one regex reads both halves,
+the size is read first, and the sign picks the branch.
+
+**Darkblast is the ground truth for every field of it.** The pool's one hand-written shrink points
+at the hostile `TARGET_CREATURE` and sets `expiresAtEndOfTurn` — on a shrink, wearing off at end of
+turn is what kills the creature before the shrink expires. The compiled reading of its printed line
+now matches the hand-written script field for field, and `compiled-vs-written` is what says so.
+
+**A mixed size is refused**, and the refusal is about the bot rather than the effect: 14 cards print
+`+4/-4`, `pump` would apply it correctly, and what the sentence does not say is which creature it is
+for. A `friendly` guessed wrong aims the spell at the wrong half of the table every time.
+
+Nine break levers, nine failures. Coverage **18,010 of 56,421 legal lines (31.9%)**, **8,457 cards
+with a script (+103)**, 4,938 fully read (+92) — the second-largest increment yet, from one
+character in a regex.

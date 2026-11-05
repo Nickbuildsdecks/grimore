@@ -28526,3 +28526,64 @@ the counter-key guard.
 Legal-only coverage **17,869 of 56,421 lines (31.7%)**, **8,354 cards with a script**
 (8,329 → 8,354, **+25**), 4,846 with every printed line read (4,820 → 4,846, **+26**). Full engine
 suite 2,171 tests. GATE OK.
+
+## D454 — The shrink, which is the pump with one character changed
+
+**"Target creature gets -2/-2 until end of turn" — 265 legal cards print it and none of them read.**
+The pattern above it demanded a `+`, so the largest single clause family left in the corpus was
+waiting on one character.
+
+It is not a new effect. `pump` has taken a negative bonus since the sweeper (`All creatures get
+-1/-1`) and Darkblast has been in the pool since #188. What was missing is that **the sign decides
+whose creature it is**: the same sentence, one character apart, is a trick you aim at your own board
+and removal you aim across the table, and `TargetSpec.friendly` is where that lands (D252). Without
+the flag the bot's default is "the enemy and the enemy's creatures" — exactly right for a shrink and
+exactly wrong for a pump.
+
+So one regex reads both, the size is read first, and the sign picks the branch. Two readers for two
+signs could drift; one cannot.
+
+### Darkblast is the ground truth for every field of the shrink
+
+The pool's one hand-written card of this shape points at `TARGET_CREATURE` — the hostile default,
+not the helped one — and sets `expiresAtEndOfTurn`, with a comment saying why that flag belongs on a
+shrink: wearing off at end of turn is what kills the creature before the shrink expires. The
+compiled reading of Darkblast's own printed line now comes out **field for field identical** to the
+hand-written script, targets, flag and dredge included, and `compiled-vs-written` is the check that
+says so.
+
+`removesACreature` is deliberately **not** set, for the reason the pump branch gives for refusing to
+guess a hint for `indestructible`: nothing hand-written pairs that flag with a shrink, and -1/-1
+kills a Glistener Elf while -1/-1 on a 5/5 is a wasted card. Which it is is the board, not the
+spell, and the bot's search sees the board.
+
+### The mixed sign is refused, and the refusal is about the bot rather than the effect
+
+14 legal cards print a mixed size — Auger Spree's `+4/-4`, Flowstone Channeler's `+1/-1`. `pump`
+would apply either correctly. What the sentence does **not** say is which creature it is for: +4/-4
+is removal pointed across the table and a trick pointed at your own 1/1, depending on the rest of
+the card. A `friendly` flag guessed wrong is a bot that aims the spell at the wrong half of the
+table every time — a silent degradation, which is the thing D362 says to flag instead of ship. So
+mixed signs keep their badge, and a compile row names each spelling.
+
+A granted keyword on a shrink is refused for D259's reason rather than the bot's: across the corpus
+the `and gains …` tail appears only on `+`/`+` and `+`/`-` sizes, so reading one would be inventing
+the only card it could apply to.
+
+### Verified
+
+Three runtime tests on printed spells through `customDeck` (D430), none in any built-in deck —
+**Dark Deed** takes a 3/3 to -1/-1 and the state-based action puts it in the graveyard (CR 704.5f);
+**Befuddle** takes the same 3/3 to **-1/3** and it lives, because `sizeBonus` leaves the printed
+zero out and a negative power is not a death, and `nextTurn` shows the 3 come back (CR 611.2);
+**Afflict** kills a one-drop with one point and still draws, so the second clause is read beside the
+shrink rather than instead of it. Seventeen compile rows, including the pair assertion that is the
+whole increment: a shrink's spec carries no `friendly` flag and a pump's carries `true`.
+
+**Nine break levers, nine failures** — the clause unread, the shrink aimed at a friend, the pump
+aimed at an enemy, a mixed size read either way, the grant dropped instead of refused, the
+end-of-turn flag dropped, the sign flipped, and the printed duration made optional.
+
+Legal-only coverage **18,010 of 56,421 lines (31.9%)**, **8,457 cards with a script**
+(8,354 → 8,457, **+103**), 4,938 with every printed line read (4,846 → 4,938, **+92**) — the
+second-largest increment yet, from one character in a regex. Full engine suite 2,191 tests. GATE OK.

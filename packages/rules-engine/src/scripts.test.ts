@@ -23780,3 +23780,110 @@ describe('a counter on each permanent a printed scope names, from printed text (
     expect(counters(s, shikari, '+1/+1')).toBe(2);
   });
 });
+
+describe('the shrink, from printed text (D454)', () => {
+  /*
+    Three printed spells through `customDeck` (D430), none of them in any built-in deck — the
+    pool's only hand-written shrink is Darkblast and a hand-written script wins the precedence
+    (D447, D450). Between them they cover what the clause has to get right: a shrink that kills, a
+    shrink that only takes power and wears off, and a shrink with a second clause after it.
+  */
+  const DARK_DEED = {
+    name: 'Dark Deed', type_line: 'Instant', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Target creature gets -4/-4 until end of turn.',
+  };
+  const BEFUDDLE = {
+    name: 'Befuddle', type_line: 'Instant', mana_cost: '{2}{U}', cmc: 3, colors: ['U'],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Target creature gets -4/-0 until end of turn.\nDraw a card.',
+  };
+  const AFFLICT = {
+    name: 'Afflict', type_line: 'Instant', mana_cost: '{2}{B}', cmc: 3, colors: ['B'],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Target creature gets -1/-1 until end of turn.\nDraw a card.',
+  };
+
+  const list = () => {
+    const built = customDeck({
+      id: 'shrink-list',
+      name: 'Shrinks',
+      entries: [
+        { name: 'Dark Deed', count: 1 },
+        { name: 'Befuddle', count: 1 },
+        { name: 'Afflict', count: 1 },
+        { name: 'Swamp', count: 29 },
+        { name: 'Island', count: 28 },
+      ],
+      data: [DARK_DEED as never, BEFUDDLE as never, AFFLICT as never],
+    });
+    expect(built.unknown).toEqual([]);
+    return built.deck;
+  };
+
+  /** Seat 0 in its main phase with `hand` in hand and seat 1 holding a 3/3 and a 1/1. */
+  const table = (hand: readonly string[], lands: readonly string[]): GameState => {
+    let s = arena({
+      decks: { 0: 'shrink-list', 1: 'verdant-guard' },
+      deckSpecs: { 'shrink-list': list() },
+      hands: { 0: hand },
+      battlefield: { 0: lands, 1: ['Centaur Courser', 'Llanowar Elves'] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return tapAllLands(s, 0 as SeatIndex);
+  };
+
+  const cast = (s: GameState, name: string, onto: string): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', name),
+    targets: [{ kind: 'card', id: onto }],
+  } as Action)), 40);
+
+  it('kills the creature it shrinks past its toughness', () => {
+    let s = table(['Dark Deed'], ['Swamp', 'Swamp']);
+    const courser = find(s, 1 as SeatIndex, 'battlefield', 'Centaur Courser');
+    expect(characteristicsOf(s, s.instances[courser]!).toughness).toBe(3);
+    s = cast(s, 'Dark Deed', courser);
+    // A 3/3 at -4/-4 is a -1/-1, and a creature with toughness 0 or less is put into its owner's
+    // graveyard as a state-based action (CR 704.5f) — the clearest evidence the size landed.
+    expect(namesIn(s, 1 as SeatIndex, 'graveyard')).toContain('Centaur Courser');
+    expect(ids(s, 1 as SeatIndex, 'battlefield')).not.toContain(courser);
+  });
+
+  it('takes only the power when only the power is printed, and gives it back at end of turn', () => {
+    /*
+      Befuddle's `-4/-0`. Two things are under test: `sizeBonus` leaving the zero component out, so
+      the toughness is untouched and the creature lives; and the duration, because a shrink until
+      end of turn is a **continuous effect** (CR 611.2) rather than a counter — it has to wear off,
+      and D453's clause is the one that does not.
+    */
+    let s = table(['Befuddle'], ['Island', 'Island', 'Island']);
+    const courser = find(s, 1 as SeatIndex, 'battlefield', 'Centaur Courser');
+    const held = ids(s, 0 as SeatIndex, 'hand').length;
+    s = cast(s, 'Befuddle', courser);
+    // A 3/3 at -4/-0 is a **-1/3**, and a negative power is not a death: only toughness 0 or less
+    // puts a creature in the graveyard (CR 704.5f). A reader that shrank the toughness too would
+    // have killed it.
+    expect(characteristicsOf(s, s.instances[courser]!).power).toBe(-1);
+    expect(characteristicsOf(s, s.instances[courser]!).toughness).toBe(3);
+    expect(ids(s, 1 as SeatIndex, 'battlefield')).toContain(courser);
+    // And the draw happened: the second clause is read beside the shrink, not instead of it, so
+    // the card that left the hand to be cast was replaced.
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held);
+
+    s = nextTurn(s);
+    expect(characteristicsOf(s, s.instances[courser]!).power).toBe(3);
+  });
+
+  it('kills a one-drop with one point, and still draws the card', () => {
+    let s = table(['Afflict'], ['Swamp', 'Swamp', 'Swamp']);
+    const elves = find(s, 1 as SeatIndex, 'battlefield', 'Llanowar Elves');
+    const held = ids(s, 0 as SeatIndex, 'hand').length;
+    s = cast(s, 'Afflict', elves);
+    expect(namesIn(s, 1 as SeatIndex, 'graveyard')).toContain('Llanowar Elves');
+    // The spell left the hand and the draw put a card back, so the count is unchanged — which a
+    // reading that dropped the second clause would fail.
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held);
+  });
+});
