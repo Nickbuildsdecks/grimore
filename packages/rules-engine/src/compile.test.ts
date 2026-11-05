@@ -7235,6 +7235,24 @@ describe('the board trigger, read off the prologue', () => {
       { kind: 'etb', who: 'any', of: 'you', what: 'creature', withKeyword: 'flying' }],
     ['Whenever another creature you control with flying dies',
       { kind: 'dies', who: 'another', of: 'you', what: 'creature', withKeyword: 'flying' }],
+    /*
+      The tribe in place of the card type (D479), told apart by the capital letter the printed line
+      gives it. `permanent` beneath it rather than `creature`: a Cartouche is an enchantment and an
+      Equipment an artifact, so the tribe is the whole of what the sentence says.
+    */
+    ['Whenever a Dragon you control enters',
+      { kind: 'etb', who: 'any', of: 'you', what: 'permanent', ofSubtypes: ['Dragon'] }],
+    ['Whenever another Zombie you control dies',
+      { kind: 'dies', who: 'another', of: 'you', what: 'permanent', ofSubtypes: ['Zombie'] }],
+    // `When` as well as `Whenever`, which the printed Egg and Ally cards use.
+    ['When a Cleric you control dies',
+      { kind: 'dies', who: 'any', of: 'you', what: 'permanent', ofSubtypes: ['Cleric'] }],
+    // A tribe and a characteristic filter in one prologue, each read by its own arm.
+    ['Whenever a Goblin you control with power 2 or greater enters',
+      {
+        kind: 'etb', who: 'any', of: 'you', what: 'permanent', ofSubtypes: ['Goblin'],
+        powerAtLeast: 2,
+      }],
   ])('%s becomes the trigger it prints', (prologue, on) => {
     const read = permanent(`${prologue}, you gain 1 life.`);
     expect(read.ok).toBe(true);
@@ -7249,12 +7267,13 @@ describe('the board trigger, read off the prologue', () => {
     /*
       Each refused for its own reason, and the reason is what makes the row worth keeping.
 
-      A **subtype** is the one that would do damage if it were read: `what` takes a card type and
-      the event carries no subtypes, so `Dragon` would compile into a filter nothing ever matches —
-      a trigger that never fires, which is a wrong reading and not a missing one (D362).
+      A **subtype** was on this list until D479 taught both board events to carry one; those two
+      rows live in the mapping table above now. What is still refused is a prologue naming two
+      tribes: `ofSubtypes` is an any-of and would read it correctly, but the regex cannot span the
+      "or", so the line stays whole rather than half-read.
     */
-    ['Whenever a Dragon you control enters', 'a subtype, and the event carries no subtypes'],
-    ['Whenever another Zombie you control dies', 'the same, on the death half'],
+    ['Whenever a Human or Dwarf you control enters',
+      'two tribes in one prologue, which `(?<what>[a-z]+)` cannot span'],
     ['Whenever a creature you control with power equal to its toughness enters',
       'a comparison between two of its own characteristics, which no field asks'],
     ['Whenever a creature you control with power or toughness 1 or less dies',

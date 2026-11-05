@@ -241,6 +241,22 @@ export type TriggerEvent =
       readonly subjectToughness?: number;
       /** Set by the engine when it raises the event: the keywords it had, lowercased. */
       readonly subjectKeywords?: readonly string[];
+      /**
+       * "Whenever a **Dragon** you control enters", "whenever another **Zombie** you control dies"
+       * — the subtypes the permanent has to be one of (D479).
+       *
+       * The board's half of the question D474 added to the cast event, and it arrives second for a
+       * reason worth keeping: the cast event carried the spell's subtypes from the start, so the
+       * cast parse could read "a Spirit or Arcane spell" on day one, while this event carried only
+       * types and the board parse had to refuse every tribe. **About 40 legal cards** print one,
+       * spread over 30-odd shapes with one or two cards each — Dragon, Cartouche, Ally, Human,
+       * Zombie, Vampire and a long tail.
+       *
+       * Any-of, and matched case-insensitively, exactly as the cast event's `ofSubtypes` is.
+       */
+      readonly ofSubtypes?: readonly string[];
+      /** Set by the engine when it raises the event: the subject's live subtypes, as printed. */
+      readonly subjectSubtypes?: readonly string[];
       /** Set by the engine when it raises the event: *which* permanent entered. See `subject`. */
       readonly subject?: string;
     }
@@ -319,6 +335,22 @@ export type TriggerEvent =
       readonly subjectToughness?: number;
       /** Set by the engine when it raises the event: the keywords it had, lowercased. */
       readonly subjectKeywords?: readonly string[];
+      /**
+       * "Whenever a **Dragon** you control enters", "whenever another **Zombie** you control dies"
+       * — the subtypes the permanent has to be one of (D479).
+       *
+       * The board's half of the question D474 added to the cast event, and it arrives second for a
+       * reason worth keeping: the cast event carried the spell's subtypes from the start, so the
+       * cast parse could read "a Spirit or Arcane spell" on day one, while this event carried only
+       * types and the board parse had to refuse every tribe. **About 40 legal cards** print one,
+       * spread over 30-odd shapes with one or two cards each — Dragon, Cartouche, Ally, Human,
+       * Zombie, Vampire and a long tail.
+       *
+       * Any-of, and matched case-insensitively, exactly as the cast event's `ofSubtypes` is.
+       */
+      readonly ofSubtypes?: readonly string[];
+      /** Set by the engine when it raises the event: the subject's live subtypes, as printed. */
+      readonly subjectSubtypes?: readonly string[];
       /** Set by the engine when it raises the event: *which* creature died. See `subject`. */
       readonly subject?: string;
     }

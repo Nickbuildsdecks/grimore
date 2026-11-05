@@ -26561,3 +26561,95 @@ describe('the characteristic filter on a board trigger (D478)', () => {
       .toBe(strength as number);
   });
 });
+
+/*
+  The tribe on a board trigger: "whenever an Angel you control enters" (D479).
+
+  The board half of the question D474 gave the cast event, and it arrives five entries later for a
+  reason worth writing down: the cast event carried its spell's subtypes from the start, so the cast
+  parse could read "a Spirit or Arcane spell" on day one, while the entry and death events carried
+  only types — so D477's board parse refused every tribe and D478's filters did not touch them.
+
+  **128 legal cards print one** in a board prologue, over 30-odd shapes with one or two cards each,
+  which is why it is a parse rather than rows: Dragon, Insect, Egg, Ally, Bear, Cave, Forest,
+  Dinosaur, Zombie, Angel, Demon, Goblin and a long tail nobody would enumerate.
+
+  Bishop of Wings is the test because it prints **both halves** — an Angel entering and an Angel
+  dying — on one card, so one fixture exercises the entry and the death arm of the same parse.
+*/
+describe('the tribe on a board trigger (D479)', () => {
+  const BISHOP_OF_WINGS = {
+    name: 'Bishop of Wings', type_line: 'Creature — Human Cleric', mana_cost: '{W}{W}', cmc: 2,
+    colors: ['W'], layout: 'normal', power: '1', toughness: '4',
+    oracle_text: 'Whenever an Angel you control enters, you gain 4 life.\n'
+      + 'Whenever an Angel you control dies,'
+      + ' create a 1/1 white Spirit creature token with flying.',
+  };
+  // Serra Angel is the pool's own Angel, so it is **not** a fixture — the `fromData` assertion
+  // below says which three are, and D430 is why: a fixture sharing a pool card's name is silently
+  // replaced by the pool's.
+  const EAGER_CADET = {
+    name: 'Eager Cadet', type_line: 'Creature — Human Soldier', mana_cost: '{W}', cmc: 1,
+    colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: '',
+  };
+
+  const table = (hand: readonly string[]) => {
+    const list = customDeck({
+      id: 'tribe-parse',
+      name: 'Bishop of Wings',
+      entries: [
+        { name: 'Bishop of Wings', count: 1 },
+        { name: 'Serra Angel', count: 4 },
+        { name: 'Eager Cadet', count: 4 },
+        { name: 'Plains', count: 51 },
+      ],
+      data: [BISHOP_OF_WINGS as never, EAGER_CADET as never],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual(['Bishop of Wings', 'Eager Cadet'].sort());
+    let s = arena({
+      decks: { 0: 'tribe-parse', 1: 'tribe-parse' },
+      deckSpecs: { 'tribe-parse': list.deck },
+      battlefield: {
+        0: ['Bishop of Wings', 'Plains', 'Plains', 'Plains', 'Plains', 'Plains'],
+      },
+      hands: { 0: hand },
+      turn: 3,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return tapAllLands(s, 0 as SeatIndex);
+  };
+
+  it.each([
+    // Serra Angel is an Angel and Eager Cadet is a Human Soldier. Both are white vanilla-ish
+    // creatures, so the tribe on the event is the only thing separating these two rows.
+    ['Serra Angel', 4],
+    ['Eager Cadet', 0],
+  ])('Bishop of Wings: %s entering gains %d life', (spell, gained) => {
+    let s = table([spell as string]);
+    const before = life(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', spell as string),
+    } as Action)));
+    expect(life(s, 0 as SeatIndex)).toBe(before + (gained as number));
+  });
+
+  it('reads the death half of the same card, which is the other arm of the parse', () => {
+    /*
+      "Whenever an Angel you control dies, create a 1/1 white Spirit creature token with flying."
+      Both of Bishop of Wings' lines read, so the card is finished rather than flagged — and the
+      death arm is a different `kind` off the same parse, which is what this asserts.
+    */
+    const read = compileCard(BISHOP_OF_WINGS as never);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = (read.script as { triggers?: readonly { readonly on: unknown }[] })
+      .triggers ?? [];
+    expect(triggers.map((t) => t.on)).toEqual([
+      { kind: 'etb', who: 'any', of: 'you', what: 'permanent', ofSubtypes: ['Angel'] },
+      { kind: 'dies', who: 'any', of: 'you', what: 'permanent', ofSubtypes: ['Angel'] },
+    ]);
+  });
+});

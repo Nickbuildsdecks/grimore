@@ -13263,3 +13263,78 @@ distinguishes.
 **Wind Drake is the pool's own flier rather than a fixture**, which the `fromData` assertion states —
 D430's trap is that a fixture sharing a pool card's name is silently replaced by the pool's, so a
 test about printed data quietly becomes a test about the pool.
+
+## D479 — The tribe: the same parse, one capital letter further in
+
+D477 read "whenever a[nother] `<kind>` you control enters / dies"; D478 read the characteristic
+filter printed between the kind and the event. The one thing both refused was a **tribe** in place
+of the card type — "whenever a Dragon you control enters" — and that refusal was honest when it was
+written: `what` takes a card type, the two board events carried no subtypes at all, and compiling
+`Dragon` as a type would have made a filter nothing ever matches, which is a trigger that never
+fires rather than a line left for a human (D362).
+
+The **cast** event has carried subtypes since D474, where the same sentence one zone over —
+"whenever you cast a Dragon spell" — reads off `ofSubtypes`. So the tribe lands five entries after
+the parse that could already have asked for it, and the thing that was missing was never the parse:
+it was the event.
+
+### What the board events now carry
+
+`etb` and `dies` take `ofSubtypes`, an **any-of** matched case-insensitively, and the engine answers
+`subjectSubtypes` from the characteristics `raise` already computes for D477's types and D478's
+size — so the tribe costs one more array off a call that was already being made. As with every
+other field in this family the fact is read **where the event is raised**, not off the board at
+resolution: by the time a death trigger resolves the permanent is in a graveyard, and a graveyard
+card has the printed subtypes but none of the live ones an animation or a type-changing effect gave
+it (CR 603.6e, CR 400.7).
+
+**`what: 'permanent'` beneath the tribe, not `'creature'`.** The corpus is the argument: of the 52
+distinct tribes printed in this prologue, `Equipment` is an artifact, `Shrine` and `Cartouche` are
+enchantments and `Forest` and `Cave` are lands. The tribe is the whole of what the line says, and
+adding a card type the card does not print would narrow the trigger to less than its text.
+
+### The discriminator is the capital letter
+
+Magic capitalises subtypes and nothing on the way into the compiler lowercases them, so
+`/^[A-Z][A-Za-z'-]*$/` on the printed `what` tells `Dragon` from `creature` — the same test the cast
+parse makes, and the only one available: the engine has no list of creature types, and a guess would
+compile a filter nothing matches.
+
+### Measured
+
+A corpus scan over the 31,654 Commander-legal rows finds **130 cards** printing a tribe in a board
+prologue across **52 tribes** — Zombie 10, Dragon 10, Villain 9, Human 8, then Equipment, Angel,
+Shrine, Elf and Cartouche at 5 each, Ally and Forest at 4, and a long tail of ones and twos. That
+tail is why this is a parse and not a table: no list of sentences would have been worth writing for
+52 tribes, and the parse reads all of them off one row.
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 9,931 | **9,982** |
+| cards with every printed line read | 5,651 | **5,686** |
+| printed rules lines read | 19,886 / 56,421 (35.2%) | **19,957 / 56,421 (35.4%)** |
+
+**+51 cards on one shape**, the largest single-shape increment of the session, from a change whose
+compiler half is six lines.
+
+*Bishop of Wings* drives it through a game, because both of its printed lines read off the one
+parse: it gains 4 life when Serra Angel enters and 0 when Eager Cadet enters — two creatures that
+differ only in the subtype on the event — and its death half makes a Spirit token. Four mapping rows
+and one refusal in `compile.test.ts`, including `When` as well as `Whenever` (the printed Egg and
+Ally cards use the short spelling, which is why the row's regex was widened) and a tribe carrying a
+D478 filter, where each arm reads its own half. Break-run in both directions: dropping the
+comparison fires on Eager Cadet (24 life, not 20); raising an empty subtype list stops firing on
+Serra Angel (20, not 24).
+
+**Serra Angel is the pool's own card rather than a fixture** — D430's trap is that a fixture sharing
+a pool card's name is silently replaced, so the test asserts `built.fromData` and leaves the Angel
+to the pool.
+
+### What stays refused
+
+ * **Two tribes in one prologue** — "a Human or Dwarf you control". `ofSubtypes` is an any-of and
+   would read it correctly; `(?<what>[a-z]+)` cannot span the "or", so the line is left whole rather
+   than half-read.
+ * **The three filters D478 named** — a comparison between two of the subject's own characteristics,
+   an **or** across two bounds, and an unnamed counter. `boardFilter` returns `null` for each, and a
+   `null` filter refuses the whole line.

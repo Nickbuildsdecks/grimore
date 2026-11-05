@@ -960,7 +960,7 @@ function triggerMatches(
         subjectSeat?: SeatIndex; subjectIsCreature?: boolean; subjectIsToken?: boolean;
         subjectIsLand?: boolean; subjectTypes?: readonly string[];
         subjectPower?: number; subjectToughness?: number;
-        subjectKeywords?: readonly string[];
+        subjectKeywords?: readonly string[]; subjectSubtypes?: readonly string[];
         subjectCounters?: Readonly<Record<string, number>>;
         alone?: boolean; declared?: number;
       };
@@ -1016,6 +1016,14 @@ function triggerMatches(
           && (e.subjectCounters?.[want.withCounter] ?? 0) < 1) return false;
         if (want.withKeyword !== undefined
           && !(e.subjectKeywords ?? []).includes(want.withKeyword)) return false;
+        /*
+          And the tribe (D479), matched case-insensitively against the subject's live subtypes —
+          the same comparison the cast event's `ofSubtypes` makes, because the printed line
+          capitalises a subtype and nothing lowercases it on the way past.
+        */
+        if (want.ofSubtypes !== undefined && !want.ofSubtypes.some((sub) => (
+          (e.subjectSubtypes ?? []).some((printed) => printed.toLowerCase() === sub.toLowerCase())
+        ))) return false;
       }
       const of = want.of ?? 'any';
       if (of === 'any') return true;
@@ -1404,6 +1412,9 @@ function raise(
             subjectPower: live.power,
             subjectToughness: live.toughness,
             subjectKeywords: [...live.keywords],
+            // And its tribes, for the subtype filter (D479) — as printed, since the question
+            // lowercases both sides when it compares.
+            subjectSubtypes: live.typeLine.subtypes,
           }
           : {}),
         ...(event.kind === 'dies' ? { subjectIsToken: inst.isToken } : {}),

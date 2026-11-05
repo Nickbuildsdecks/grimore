@@ -11753,6 +11753,24 @@ function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
   const dies = /dies$/i.test(groups.event ?? '');
   const filter = boardFilter(groups.filter ?? '');
   if (who === undefined || filter === null) return null;
+  /*
+    A **tribe** rather than a card type (D479): "whenever a Dragon you control enters". Told apart
+    by the capital letter the printed line gives it, which is the same discriminator the cast parse
+    uses and the only one available — the engine has no list of creature types, and guessing would
+    compile a filter nothing matches.
+
+    `what: 'permanent'` beneath it rather than `'creature'`, because a Cartouche is an enchantment
+    and an Equipment is an artifact: the tribe is the whole of what the line says, and adding a
+    type the card does not print would narrow the trigger.
+  */
+  const printed = (groups.what ?? '').trim();
+  if (/^[A-Z][A-Za-z'-]*$/.test(printed)) {
+    const dying = /dies$/i.test(groups.event ?? '');
+    return [{
+      kind: dying ? 'dies' : 'etb', who, of: 'you', what: 'permanent', ofSubtypes: [printed],
+      ...filter,
+    } as BoardEvent];
+  }
   if (what !== 'creature' && what !== 'artifact' && what !== 'enchantment'
     && what !== 'land' && what !== 'permanent') return null;
   // "Whenever a land you control dies" is not printed, and `dies` is defined for creatures only
@@ -12044,18 +12062,23 @@ const TRIGGER_SHAPES: readonly ({
     `artifact` and `enchantment` are new on the event and the engine half is in `scriptTypes.ts`;
     `creature`, `land` and `permanent` were already askable and had no prologue to ask them.
 
-    **What it refuses, each for its own reason:**
+    **Read since, on top of this entry:** the characteristic filter between the kind and the event
+    (D478 — a bound on power or on toughness, a named counter, a keyword) and the **tribe** in
+    place of the card type (D479 — "a Dragon you control", 128 legal cards). Both are answered off
+    the event where it is raised rather than off the board at resolution, which is the only correct
+    time: by the time a death trigger resolves the permanent is in a graveyard with no counters and
+    no keywords (CR 603.6e, CR 400.7).
 
-     * **A subtype** — "a Dragon you control", "another Zombie you control", 30-odd shapes with one
-       or two cards each. `what` takes a card type and the event carries no subtypes, so reading
-       `Dragon` as a type would make a filter nothing matches: a trigger that never fires, which is
-       a wrong reading and not a missing one (D362). Same ground as the cast parse's subtype arm,
-       in reverse — there the event *does* carry them.
-     * **A characteristic filter** — "with power 3 or greater", "with a +1/+1 counter on it",
-       "with flying", "with power equal to its toughness". **About 18 cards** between them and the
-       largest thing left in this family, which makes it the obvious next increment: the event
-       carries the subject's id but not its power, its toughness or its keywords, and reading those
-       off the board at resolution is the wrong time (the permanent may have changed or left).
+    **What it still refuses, each for its own reason:**
+
+     * **Two tribes in one prologue** — "a Human or Dwarf you control". `ofSubtypes` is an any-of
+       and would read it correctly, but `(?<what>[a-z]+)` cannot span the "or", so the line is left
+       whole rather than half-read.
+     * **A filter no field asks** — "with power equal to its toughness" (a comparison between two
+       of its own characteristics), "with power or toughness 1 or less" (an or across two bounds,
+       where `powerAtMost` and `toughnessAtMost` are an and) and "with a counter on it" (any
+       counter rather than a named one). `boardFilter` returns `null` for each, which refuses the
+       whole line rather than reading a filter looser than the one printed.
      * **"leaves the battlefield"** (5 cards) — a different event, whose filter fields this entry
        did not widen.
      * **"is put into a graveyard from the battlefield"** on an artifact or an enchantment (5) —
@@ -12065,7 +12088,7 @@ const TRIGGER_SHAPES: readonly ({
   */
   {
     prologue: () => new RegExp(
-      `^Whenever (?<who>a|an|another) (?<what>[a-z]+) you control(?<filter>[^,]*)`
+      `^When(?:ever)? (?<who>a|an|another) (?<what>[a-z]+) you control(?<filter>[^,]*)`
       + ` (?<event>${ENTERS}|dies), (?<clause>.+)$`,
       'i',
     ),
