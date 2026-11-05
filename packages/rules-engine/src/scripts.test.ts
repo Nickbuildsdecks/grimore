@@ -23365,3 +23365,176 @@ describe('a price paid in energy, from printed text (D451)', () => {
     expect(energy(again)).toBe(1);
   });
 });
+
+describe('surveil, from printed text (D452)', () => {
+  /*
+    Printed Barrier of Bones, compiled through `customDeck` (D430), and printed Preordain from the
+    pool beside it. The pair is the point: both ask the **same** question about the top of the
+    library, and only the destination differs — so the scry half is what stops a reading that sends
+    every scry to the graveyard from passing.
+  */
+  const BARRIER = {
+    name: 'Barrier of Bones', type_line: 'Creature — Skeleton Wall', mana_cost: '{B}', cmc: 1,
+    colors: ['B'], layout: 'normal', power: '0', toughness: '3', loyalty: null,
+    oracle_text: 'Defender\nWhen Barrier of Bones enters, surveil 1. (Look at the top card of your'
+      + ' library. You may put that card into your graveyard.)',
+  };
+
+  /** The Barrier cast, with the table stopped on its surveil. */
+  const surveilling = (): GameState => {
+    const built = customDeck({
+      id: 'barrier-list',
+      name: 'Barrier',
+      entries: [
+        { name: 'Barrier of Bones', count: 1 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Swamp', count: 55 },
+      ],
+      data: [BARRIER as never],
+    });
+    expect(built.unknown).toEqual([]);
+    let s = arena({
+      decks: { 0: 'barrier-list', 1: 'verdant-guard' },
+      deckSpecs: { 'barrier-list': built.deck },
+      hands: { 0: ['Barrier of Bones'] },
+      battlefield: { 0: ['Swamp'] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, {
+      type: 'auto:activate', by: 0,
+      card: find(s, 0 as SeatIndex, 'battlefield', 'Swamp'), abilityIndex: 0,
+    } as Action);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Barrier of Bones'),
+    } as Action);
+    return drain(passBoth(s), 40);
+  };
+
+  it('asks about the top card in the keyword\'s own words', () => {
+    const s = surveilling();
+    expect(s.pendingDecision?.prompt).toBe('Surveil 1 — put any of these into your graveyard');
+    expect(s.pendingDecision?.candidates).toHaveLength(1);
+    // `min: 0`: keeping it is a legal answer, which is what makes this a decision at all.
+    expect(s.pendingDecision?.min).toBe(0);
+  });
+
+  it('puts the chosen card into the graveyard, not on the bottom', () => {
+    let s = surveilling();
+    const top = (s.pendingDecision?.candidates ?? [])[0]!;
+    const name = nameOf(s, top);
+    const before = ids(s, 0 as SeatIndex, 'library').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [top] } as Action), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain(name);
+    // And it really left the library rather than being copied: one card fewer, and it is not the
+    // bottom card either, which is where a scry would have put it.
+    expect(ids(s, 0 as SeatIndex, 'library')).toHaveLength(before - 1);
+    expect(ids(s, 0 as SeatIndex, 'library')).not.toContain(top);
+  });
+
+  it('leaves the card on top when none is chosen', () => {
+    let s = surveilling();
+    const top = (s.pendingDecision?.candidates ?? [])[0]!;
+    const before = ids(s, 0 as SeatIndex, 'library').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] } as Action), 40);
+    expect(ids(s, 0 as SeatIndex, 'graveyard')).toEqual([]);
+    expect(ids(s, 0 as SeatIndex, 'library')).toHaveLength(before);
+    expect(ids(s, 0 as SeatIndex, 'library')[0]).toBe(top);
+  });
+
+  it('still sends a scry to the bottom, which is the other half of the pair', () => {
+    /*
+      Preordain, from the pool. Both keywords compile to the same `library-top` question, so
+      without this a reading that ignored `chosenGoTo` and sent everything to the graveyard would
+      pass every test above — and would quietly turn every scry in the pool into a self-mill.
+    */
+    let s = arena({
+      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      hands: { 0: ['Preordain'] },
+      battlefield: { 0: ['Island'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, {
+      type: 'auto:activate', by: 0,
+      card: find(s, 0 as SeatIndex, 'battlefield', 'Island'), abilityIndex: 0,
+    } as Action);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Preordain'),
+    } as Action)), 40);
+    const top = (s.pendingDecision?.candidates ?? [])[0];
+    expect(top).toBeDefined();
+    const library = ids(s, 0 as SeatIndex, 'library');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [top!] } as Action), 40);
+    expect(ids(s, 0 as SeatIndex, 'graveyard')).not.toContain(top);
+    // Bottomed, so it is still in the library and now last — and the draw that follows did not
+    // take it.
+    const after = ids(s, 0 as SeatIndex, 'library');
+    expect(after).toContain(top);
+    expect(after[after.length - 1]).toBe(top);
+    expect(after).toHaveLength(library.length - 1);
+  });
+});
+
+describe('surveil as a resolution\'s second question (D452, probe)', () => {
+  /*
+    **A probe, and the break run is why it exists.** Reading the spec from `decisionSpecsFor(...)[0]`
+    instead of from the resume plan's own `specIndex` left every test green, because on every
+    printed surveil card the library-top question *is* the first one the resolution asks.
+
+    No card in the corpus prints an optional surveil — checked, zero — so the shape that
+    discriminates has to be built. D450's gate produces it: "you may surveil 1" compiles to a
+    yes-or-no **then** the surveil, which puts the surveil at index 1. A lookup that read index 0
+    would find the yes-or-no, see no `chosenGoTo` on it, and send the card to the bottom of the
+    library instead of the graveyard — a card that works and does the wrong thing, which is D362's
+    failure and the one this file exists to catch.
+
+    If a printed optional surveil ever appears, this probe should be replaced by it.
+  */
+  const WALL = {
+    name: 'Probe Wall', type_line: 'Creature — Skeleton Wall', mana_cost: '{B}', cmc: 1,
+    colors: ['B'], layout: 'normal', power: '0', toughness: '3', loyalty: null,
+    oracle_text: 'Defender\nWhen Probe Wall enters, you may surveil 1.',
+  };
+
+  it('bins the card when the surveil is the second question, not the first', () => {
+    const built = customDeck({
+      id: 'wall-list',
+      name: 'Wall',
+      entries: [
+        { name: 'Probe Wall', count: 1 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Swamp', count: 55 },
+      ],
+      data: [WALL as never],
+    });
+    expect(built.unknown).toEqual([]);
+    let s = arena({
+      decks: { 0: 'wall-list', 1: 'verdant-guard' },
+      deckSpecs: { 'wall-list': built.deck },
+      hands: { 0: ['Probe Wall'] },
+      battlefield: { 0: ['Swamp'] },
+      turn: 5, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, {
+      type: 'auto:activate', by: 0,
+      card: find(s, 0 as SeatIndex, 'battlefield', 'Swamp'), abilityIndex: 0,
+    } as Action);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Probe Wall'),
+    } as Action)), 40);
+
+    // The yes-or-no first (D450), so the surveil is question number two.
+    expect(s.pendingDecision?.options).toEqual(['Yes', 'No']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Yes' } as Action), 40);
+    expect(s.pendingDecision?.from).toBe('library-top');
+
+    const top = (s.pendingDecision?.candidates ?? [])[0]!;
+    const name = nameOf(s, top);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [top] } as Action), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain(name);
+    expect(ids(s, 0 as SeatIndex, 'library')).not.toContain(top);
+  });
+});

@@ -11960,3 +11960,28 @@ real rules difference, so it stays refused.
 
 Coverage **17,701 of 56,421 legal lines (31.4%)**, 8,237 cards with a script (+3), **4,741 fully
 read (+16)** — the fully-read figure is the one this increment was for.
+
+## Surveil: one clause, one field, 92 cards (D452)
+
+The largest clause left in the corpus that needed **no new machinery**. 227 unread legal lines
+mention surveil and 120 are a card's only unread line — and every prologue they hang off was already
+read, so the whole family was waiting on one reader.
+
+Scry and surveil are the same decision with two destinations (CR 701.18, CR 701.42). So
+`CardsDecisionSpec.chosenGoTo` says which, and `surveil(n)` is `scry(n)` plus that field — not a
+second zone, because the candidates, the `min: 0`, the no-shuffle rule and the order of what stays
+are all identical.
+
+**The scry half is what makes the field mean anything.** Both compile to the same `library-top`
+question, so testing surveil alone would pass a reading that sent every scry in the pool to the
+graveyard — Preordain and Magma Jet quietly becoming self-mill. The pair is asserted in both the
+compile table and the runtime block, and two break levers cross the wires in both directions.
+
+**The break run found one more hole and it needed a probe.** Reading the spec from index 0 instead of
+the resume plan's own index left everything green, because on every printed surveil card the
+library-top question *is* the first one asked. No corpus card prints an optional surveil, so D450's
+gate was used to build the shape that discriminates: "you may surveil 1" puts the surveil second.
+
+Coverage **17,836 of 56,421 legal lines (31.6%)**, **8,329 cards with a script (+92)**, 4,820 fully
+read (+79) — the largest increment since D444, and for the same reason: rank the queue by what a card
+is *waiting for*, not by what prints most.

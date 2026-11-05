@@ -8387,3 +8387,85 @@ describe('a price paid in energy rather than mana (D451)', () => {
     expect(unreadLines(read(text))).toEqual([text]);
   });
 });
+
+describe('surveil, which is scry with the other destination (D452)', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const unreadLines = (c: ReturnType<typeof compileCard>) =>
+    (c.ok ? c.unread : []).map((u) => u.line);
+  const spell = (text: string) => compileCard({
+    name: 'Probe Thing', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'],
+    layout: 'normal', oracle_text: text,
+  } as never);
+  const question = (c: ReturnType<typeof compileCard>) =>
+    ((field(c.ok ? c.script : undefined, 'decisions') ?? []) as readonly unknown[])[0] as
+      Record<string, unknown>;
+
+  it.each([
+    /*
+      The largest clause left in the corpus that needed no new machinery: **227 unread legal lines
+      mention surveil, 120 of them a card's only unread line**. Every prologue they hang off was
+      already read — an enters trigger, an attack, a step, an activated ability, a spell's own
+      resolution — so one clause reader and one field were all they were waiting for.
+    */
+    ['one', 'Surveil 1.', 1],
+    ['two', 'Surveil 2.', 2],
+    ['four', 'Surveil 4.', 4],
+  ])('reads surveil %s', (_label, text, count) => {
+    const compiled = spell(text as string);
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([]);
+    const spec = question(compiled);
+    expect(spec['from']).toBe('library-top');
+    expect(spec['look']).toBe(count);
+    // `min: 0` is what makes "keep them all" a legal answer, and it matters more here than for
+    // scry: surveilling into your own graveyard is a cost on some boards and a gain on others.
+    expect(spec['min']).toBe(0);
+    expect(spec['max']).toBe(count);
+    expect(spec['chosenGoTo']).toBe('graveyard');
+  });
+
+  it('leaves scry pointed at the bottom, which is the half that makes the field mean anything', () => {
+    /*
+      The pair. Both keywords compile to a `library-top` question with the same candidates and the
+      same bounds; the **only** difference is the destination, so a test that checked one without
+      the other would pass a reading that sent every scry to the graveyard.
+    */
+    const scried = spell('Scry 2.');
+    expect(unreadLines(scried)).toEqual([]);
+    const spec = question(scried);
+    expect(spec['from']).toBe('library-top');
+    expect(spec['look']).toBe(2);
+    expect(spec['chosenGoTo']).toBeUndefined();
+  });
+
+  it('reads the keyword off a trigger and off an activated ability, not only off a spell', () => {
+    // The 120 cards are spread across these prologues, so the clause has to work wherever the
+    // clause vocabulary is consulted. Both of these are printed shapes (Barrier of Bones, Coastal
+    // Bulwark).
+    const onEnter = compileCard({
+      name: 'Probe Wall', type_line: 'Creature — Skeleton Wall', mana_cost: '{B}', cmc: 1,
+      colors: ['B'], power: '0', toughness: '3', layout: 'normal',
+      oracle_text: 'Defender\nWhen Probe Wall enters, surveil 1.',
+    } as never);
+    expect(unreadLines(onEnter)).toEqual([]);
+    const activated = compileCard({
+      name: 'Probe Bulwark', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [],
+      layout: 'normal', oracle_text: '{2}, {T}: Surveil 1.',
+    } as never);
+    expect(unreadLines(activated)).toEqual([]);
+  });
+
+  it.each([
+    // A count outside what any card prints is a corrupt row rather than a card, and reading it
+    // would put a question on screen with forty cards in it.
+    ['nought', 'Surveil 0.'],
+    ['an absurd count', 'Surveil 40.'],
+    // And the keyword with anything else on the same clause: "surveil 2, then draw two cards" is
+    // read as a composition by `clausesOf`, but a clause this reader does not recognise whole
+    // stays unread rather than having its first two words taken.
+    ['a clause that is not just the keyword', 'Surveil for the empire.'],
+  ])('refuses %s', (_label, text) => {
+    expect(unreadLines(spell(text as string))).toEqual([text]);
+  });
+});

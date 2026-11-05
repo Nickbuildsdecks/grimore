@@ -28387,3 +28387,58 @@ Legal-only coverage **17,701 of 56,421 lines (31.4%)**, **8,237 cards with a scr
 with every printed line read (4,725 → 4,741, **+16**). The cards-with-a-script figure moves little
 because most of these cards were already partly read; the fully-read figure is the one this
 increment was for. Full engine suite 2,127 tests. GATE OK.
+
+## D452 — Surveil, which is scry with the other destination
+
+The largest clause left in the corpus that needed **no new machinery**: **227 unread legal lines
+mention surveil and 120 of them are a card's only unread line**. Every prologue they hang off was
+already read — an enters trigger, an attack, a step, an activated ability, a spell's own resolution —
+so the whole family was waiting on one clause and one field.
+
+Scry and surveil are the same decision (CR 701.18, CR 701.42): look at the top N, pick any number of
+them. They differ in **where the picked cards go** — the bottom of your library, or your graveyard.
+So `CardsDecisionSpec.chosenGoTo` says which, and `surveil(n)` is `scry(n)` plus that field.
+
+A field rather than a second `DecisionZone`, because everything else about the two is identical: the
+candidates, the `min: 0` that makes keeping them all a legal answer, the "no shuffle" rule, and the
+order the cards left behind stay in. A `'library-top-graveyard'` zone would have duplicated all of
+that to change one line.
+
+The putting-away stays the **engine's** job, as it already was for scry — it is part of the keyword,
+not part of what the card does afterwards (Preordain's own effect is the draw). The engine reads the
+destination back through the resume plan rather than off the pending decision, because the pending
+decision crosses the wire to every seat and this is not something a client needs told.
+
+### The pair is what makes the field mean anything
+
+Both keywords compile to a `library-top` question with the same candidates and bounds. A test that
+checked surveil alone would pass a reading that sent **every scry in the pool to the graveyard** —
+quietly turning Preordain, Magma Jet and five other cards into self-mill. So the compile table and
+the runtime block each carry the scry half beside the surveil half, and two break levers cross the
+wires in both directions.
+
+### The break run found one more hole, and it needed a probe
+
+Reading the spec from `decisionSpecsFor(...)[0]` instead of from the resume plan's own `specIndex`
+left all 1,562 tests green — because on every printed surveil card the library-top question **is**
+the first one its resolution asks. No card in the corpus prints an *optional* surveil (checked:
+zero), so the discriminating shape had to be built, and D450's gate builds it: "you may surveil 1"
+compiles to a yes-or-no and **then** the surveil, which puts the surveil at index 1. A lookup reading
+index 0 finds the yes-or-no, sees no `chosenGoTo` on it, and bottoms the card instead of binning it.
+
+That probe is marked as one, with the note that a printed optional surveil should replace it if one
+is ever printed. **Nine breaks, nine failures** once it exists.
+
+### Verified
+
+Four runtime tests on printed **Barrier of Bones** through `customDeck` (D430) — the question is
+asked in the keyword's own words with `min: 0`; the chosen card reaches the graveyard and is really
+gone from the library; choosing none leaves it **on top**, not merely in the library; and pool
+Preordain still bottoms — plus the probe above. Twelve compile rows: three counts, the scry control,
+the keyword off a trigger and off an activated ability, and three refusals (nought, an absurd count,
+and a clause that merely starts with the word).
+
+Legal-only coverage **17,836 of 56,421 lines (31.6%)**, **8,329 cards with a script**
+(8,237 → 8,329, **+92**), 4,820 with every printed line read (4,741 → 4,820, **+79**) — the largest
+increment since D444, and for the same reason: the queue was read by what a card is *waiting* for,
+not by what prints most. Full engine suite 2,140 tests. GATE OK.

@@ -408,6 +408,30 @@ const scry = (count: number): CardsDecisionSpec => ({
 });
 
 /**
+ * Surveil N (CR 701.42): scry's question with the graveyard as the destination (D452).
+ *
+ * The two keywords are the same decision — look at the top N, pick any number of them — and differ
+ * only in where the picked cards go, which is why this is `scry`'s shape plus
+ * `CardsDecisionSpec.chosenGoTo` rather than a second mechanism. `min: 0` is what makes "keep them
+ * all" a legal answer, and it matters more here than for scry: surveilling into your own graveyard
+ * is a cost on some boards and a benefit on others.
+ *
+ * It is the largest single clause left in the corpus that needed no new machinery: **227 unread
+ * legal lines mention surveil and 120 of them are a card's only unread line**, hanging off
+ * prologues this compiler already reads — an enters trigger, an attack, a step, an activated
+ * ability, or a spell's own resolution.
+ */
+const surveil = (count: number): CardsDecisionSpec => ({
+  who: 'controller',
+  from: 'library-top',
+  look: count,
+  chosenGoTo: 'graveyard',
+  prompt: `Surveil ${count} — put any of these into your graveyard`,
+  min: 0,
+  max: count,
+});
+
+/**
  * "Deals 2 damage to any target. Scry 2."
  *
  * The damage is in `beforeDecisions` because the card does it first: by the time the player is
@@ -10169,6 +10193,23 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   {
     const search = searchClause(text, name);
     if (search !== null) return search;
+  }
+  /*
+    Surveil N, which is a question and no effect at all — the engine puts the chosen cards in the
+    graveyard, exactly as it bottoms a scry's. See `surveil`.
+
+    The count is bounded at a sane maximum rather than taken from the text unchecked: the largest
+    printed surveil is well inside it, and a line reading "surveil 40" would be a corrupt row
+    rather than a card.
+  */
+  {
+    const surveilled = /^surveil (\d+)$/i.exec(text.trim());
+    if (surveilled !== null) {
+      const count = Number(surveilled[1]);
+      if (count >= 1 && count <= 20) {
+        return { decisions: [surveil(count)], effect: (c) => c.state, appliesNothing: true };
+      }
+    }
   }
 
   /*

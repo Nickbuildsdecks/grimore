@@ -859,6 +859,24 @@ export interface CardsDecisionSpec {
    * question whose answer is a sequence rather than a set, and no card in the pool turns on it.
    */
   readonly look?: number;
+  /**
+   * For `library-top`: where the cards the chooser picks go. `'bottom'` by default (D452).
+   *
+   * Scry and surveil are the **same question** with two destinations (CR 701.18, CR 701.42): look
+   * at the top N, and the ones you pick either go to the bottom of your library or into your
+   * graveyard. The putting-away is part of the keyword rather than part of what the card does
+   * afterwards — Preordain's own effect is the draw — so the engine does it, and this says which.
+   *
+   * It is a field rather than a second `DecisionZone` because everything else about the two is
+   * identical: the candidates, the `min: 0` that makes keeping them all a legal answer, the "no
+   * shuffle" rule, and the order the cards left behind stay in. A `'library-top-graveyard'` zone
+   * would have duplicated all of that to change one line.
+   *
+   * **227 unread legal lines mention surveil, 120 of them on cards one line short** — and every
+   * prologue those lines hang off was already read, so this one field is what they were waiting
+   * for.
+   */
+  readonly chosenGoTo?: 'bottom' | 'graveyard';
   /** Shown to whoever is choosing, in their own words: "Search your library for a creature card". */
   readonly prompt: string;
   /** Both default to 1, and both are clamped to what the zone actually holds. */

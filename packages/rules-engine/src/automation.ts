@@ -40,7 +40,7 @@ import {
   counterSpell, destroy,
   recordExpiry,
   draw,
-  drawLater, energyOf, exileCard, loseLife, mill, spendEnergy, suspendedCast,
+  drawLater, energyOf, exileCard, loseLife, mill, moveToGraveyard, spendEnergy, suspendedCast,
   madnessOffer, miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
@@ -3293,16 +3293,29 @@ export function answerDecision(
       searching: false,
     });
   }
-  // Scry: the cards chosen go to the bottom and the rest stay on top, in the order they were
-  // already in. Done here rather than by the card, because putting them back is part of the
-  // keyword and not part of what the spell does afterwards — Preordain's own effect is the draw.
-  // No shuffle: a scry that shuffled would be a very different card.
+  /*
+    Scry and surveil: the cards chosen leave the top and the rest stay there, in the order they
+    were already in. Done here rather than by the card, because putting them back is part of the
+    keyword and not part of what the spell does afterwards — Preordain's own effect is the draw.
+    No shuffle: a scry that shuffled would be a very different card.
+
+    **Where they go is the card's to say** (`CardsDecisionSpec.chosenGoTo`, D452): the bottom of
+    the library for scry, the graveyard for surveil. The spec is read back through the resume plan
+    rather than carried on the pending decision, because the pending decision crosses the wire to
+    every seat and this is not something a client needs to be told.
+  */
   if (pending.from === 'library-top') {
     const key = zoneKey(pending.seat, 'library');
-    const bottomed = chosen.filter((id) => pending.candidates.includes(id));
-    if (bottomed.length > 0) {
-      const rest = listAt(next, key).filter((id) => !bottomed.includes(id));
-      next = withZones(next, { [key]: [...rest, ...bottomed] });
+    const picked = chosen.filter((id) => pending.candidates.includes(id));
+    const asked = object === undefined
+      ? undefined
+      : decisionSpecsFor(next, object)[pending.resume.plan[pending.resume.at]?.specIndex ?? -1];
+    const destination = asked !== undefined && 'chosenGoTo' in asked ? asked.chosenGoTo : undefined;
+    if (picked.length > 0 && destination === 'graveyard') {
+      next = moveToGraveyard(next, picked);
+    } else if (picked.length > 0) {
+      const rest = listAt(next, key).filter((id) => !picked.includes(id));
+      next = withZones(next, { [key]: [...rest, ...picked] });
     }
   }
   // The object leaving the stack mid-resolution should not be possible — nothing else can happen
