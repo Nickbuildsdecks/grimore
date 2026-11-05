@@ -10161,6 +10161,31 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
+    A counter on every permanent a printed **scope** names: "Put a +1/+1 counter on each other
+    Dragon creature you control", and the same sentence with `-1/-1` pointed across the table.
+
+    The scope is the new vocabulary and `boardScope` is where it is read; this clause is only the
+    counter. **Two keys and no others.** `+1/+1` and `-1/-1` are the two the engine's state-based
+    actions know about — they cancel in pairs (CR 704.5q, D269) and `characteristicsOf` reads them
+    as size — and they are the two every printed card of this shape uses. A "+2/+2 counter" would be
+    a key nothing reads, so that line stays unread rather than compiling to counters that sit on a
+    creature and change nothing: D362's badge beats a card that resolves and does nothing.
+
+    The list of permanents is built once, before any counter lands, for the reason `destroy all
+    creatures` gives: the clause acts on the board it saw.
+  */
+  const eachCounter = /^put a (\+1\/\+1|-1\/-1) counter on each (.+)$/i.exec(text);
+  if (eachCounter !== null) {
+    const kind = eachCounter[1]!.startsWith('+') ? '+1/+1' : '-1/-1';
+    const scope = boardScope(eachCounter[2]!);
+    if (scope !== null) {
+      return {
+        effect: (c) => scope.ids(c).reduce((state, id) => addCounters(state, id, kind, 1), c.state),
+      };
+    }
+  }
+
+  /*
     A Fog. `preventCombatDamage` is the primitive and `preventsDamage` is the bot hint that goes
     with it — nothing in the engine reads the flag, the bot does, so a Fog without it is a card
     that works and is cast into an empty board. Fog and Holy Day are the same two fields.
@@ -10297,6 +10322,151 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   return null;
+}
+
+/** The card types a printed board scope can name: the permanent types, and no others (CR 205.2a). */
+const PERMANENT_TYPES: readonly string[] = [
+  'artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker',
+];
+
+/**
+ * One word of a printed board scope, as a test on a **live** type line.
+ *
+ * The capitalisation rule is `libraryFilter`'s and the argument for it is the same: Magic prints
+ * card types and supertypes lowercase — "artifact creature", "legendary creature" — and subtypes
+ * capitalised — "Dragon creature", "each Ooze you control". So a capitalised word is a subtype, and
+ * a lowercase one has to be on one of the two lists or the scope is refused.
+ *
+ * **The lowercase allow-list is the whole guard**, and `PERMANENT_TYPES` is deliberately shorter
+ * than `SEARCHABLE_TYPES`: a battlefield scope reading "each instant you control" would match
+ * nothing, every time, which is the silent-nothing failure D449 found in the search filters. Here
+ * it cannot arise, because `instant` and `sorcery` are not on the list and the line stays unread.
+ *
+ * The line this reads is the one `characteristicsOf` computed, not the printed one — #319's rule.
+ * An animated land is a creature for "each creature you control" and a crewed Vehicle is swept with
+ * the rest (CR 613), for the same reason `destroy all creatures` reads it live.
+ */
+function permanentWordMatch(word: string): ((line: TypeLine) => boolean) | null {
+  /*
+    **The word has to be a word**, and this is the guard that does the real work.
+
+    A printed scope arrives as the phrase between "each" and the controller clause, so a list comes
+    in with its punctuation attached: "Pest, Bat, Insect, Snake, and Spider" splits into `Pest,`
+    with the comma still on it. Classified by capitalisation alone, `Pest,` is a subtype — and
+    `hasSubtype(line, 'pest,')` is false for every permanent ever printed, so the scope would be
+    empty on every board. That is the silent-nothing failure D449 found in the search filters,
+    arrived at from a different direction: not a type that does not exist, but a word that is not
+    one. A comma, a slash (`and/or`) or a digit refuses the scope instead.
+  */
+  if (!/^[A-Za-z][A-Za-z'-]*$/.test(word)) return null;
+  const lower = word.toLowerCase();
+  if (/^[A-Z]/.test(word)) return (line) => hasSubtype(line, lower);
+  if (PERMANENT_TYPES.includes(lower)) return (line) => hasType(line, lower);
+  if (SUPERTYPES.includes(lower)) {
+    return (line) => line.supertypes.some((type) => type.toLowerCase() === lower);
+  }
+  return null;
+}
+
+/**
+ * A printed **board scope** — "each other Dragon creature you control" — as the permanents it names.
+ *
+ * This is the first piece of vocabulary in this file that reads a *set of permanents* off a phrase
+ * rather than one target or one count, and it is written as its own reader because Magic prints the
+ * same scope into several grammars: a counter on each of them (the clause above), a sweep, a pump.
+ * One reader means "each other Dragon creature you control" cannot come to mean two different sets
+ * in two clauses.
+ *
+ * ## What it reads, and what it refuses
+ *
+ * Three parts, peeled off in the order they are printed: an optional `other`, the type words, and
+ * an optional controller clause. So:
+ *
+ * - `creature you control`, `other creature you control`
+ * - `Dragon creature you control`, `artifact creature you control`, `legendary creature you control`
+ * - `Ooze you control`, `other Squirrel you control`
+ * - `creature your opponents control`, `creature you don't control`, `creature each opponent controls`
+ * - `creature` on its own, which is every creature on the battlefield
+ *
+ * Everything else is refused, and the refusals are the point. "Each creature you control **with a
+ * +1/+1 counter on it**" and "each creature **with modular** you control" both put a condition
+ * after the noun that this does not read; "each Pest, Bat, Insect, Snake, and Spider you control"
+ * is a list; "each creature **that convoked it**" is a fact about the spell. Each of those would
+ * compile to a *wider or narrower* set than the card prints, which is worse than an unread line —
+ * a counter on the wrong creatures is a board a player cannot argue with (D362).
+ *
+ * ## "Other" is the source, not the type
+ *
+ * `other` excludes the permanent whose ability this is, which is `c.source` — the same reading
+ * `permanentFilter`'s `another` flag uses, and the reason the two words can share one meaning here:
+ * on every card of this shape the scope is printed on the permanent it excludes.
+ */
+function boardScope(phrase: string): {
+  readonly ids: (c: EffectContext) => readonly string[];
+} | null {
+  let rest = plain(phrase).trim().replace(/\.$/, '');
+  /*
+    The controller clause, read off the end. "You don't control" and "your opponents control" and
+    "each opponent controls" are one set in a duel and the same set in a pod — every permanent whose
+    controller is not this effect's — which is the reading `targetSpecFrom` already gives the two
+    target phrases of that shape, and its docblock argues the case.
+  */
+  const CONTROLLERS: readonly (readonly [RegExp, 'you' | 'opponents'])[] = [
+    [/\s+you control$/i, 'you'],
+    [/\s+you don't control$/i, 'opponents'],
+    [/\s+your opponents control$/i, 'opponents'],
+    [/\s+each opponent controls$/i, 'opponents'],
+  ];
+  let who: 'you' | 'opponents' | 'any' = 'any';
+  for (const [pattern, seatRule] of CONTROLLERS) {
+    if (!pattern.test(rest)) continue;
+    who = seatRule;
+    rest = rest.replace(pattern, '');
+    break;
+  }
+  const other = /^other\s+/i.test(rest);
+  if (other) rest = rest.replace(/^other\s+/i, '');
+
+  /*
+    The type words, every one of which has to classify — so a scope is read only when **all** of it
+    is understood, and the set is the conjunction.
+
+    There is no upper bound on how many words a scope may have, and a break run is why. The first
+    draft bounded it at two, on the theory that a longer phrase was a shape this reader had not
+    read; breaking the bound changed nothing in 1,585 tests, so the bound was measured against the
+    corpus instead. **Every** printed scope of three words or more is refused by the word
+    classification itself: `creature with modular`, `creature target player controls`, `Merfolk
+    and/or Knight`, `creature you control with lifelink`, `of up to two target creatures`, `of those
+    creatures` — in each one at least one word is a lowercase non-type (`with`, `target`, `and/or`,
+    `you`, `of`), which is the same refusal the bound was giving with an extra rule nobody could
+    test. The refusal rows in `compile.test.ts` name all six shapes, so the day a word-shape change
+    lets one of them through, that is what fails.
+
+    The emptiness check below is the one guard in this function that **no input can reach**, and it
+    is kept deliberately. Every controller pattern above begins with `\s+`, so stripping one always
+    leaves a word behind: "on each you control" has no space before "you", so that pattern does not
+    match and the phrase is refused by `you` not being a card type instead. Breaking the check
+    passes the whole suite for exactly that reason, which is recorded here rather than papered over
+    with a test that would pass for the wrong one. It stays because `[].every(…)` is **true**: the
+    day a controller pattern loses its `\s+`, an empty word list would mean every permanent you
+    control, lands included — a silent wrong answer rather than a refusal.
+  */
+  const words = rest.trim().split(/\s+/).filter((word) => word !== '');
+  if (words.length < 1) return null;
+  const matchers = words.map(permanentWordMatch);
+  if (matchers.some((matcher) => matcher === null)) return null;
+
+  return {
+    ids: (c) => battlefield(c.state, (id) => {
+      const inst = c.state.instances[id];
+      if (inst === undefined) return false;
+      if (other && id === c.source) return false;
+      if (who === 'you' && inst.zoneSeat !== c.controller) return false;
+      if (who === 'opponents' && inst.zoneSeat === c.controller) return false;
+      const { typeLine } = characteristicsOf(c.state, inst);
+      return matchers.every((matcher) => matcher!(typeLine));
+    }),
+  };
 }
 
 /**

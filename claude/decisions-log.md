@@ -28442,3 +28442,87 @@ Legal-only coverage **17,836 of 56,421 lines (31.6%)**, **8,329 cards with a scr
 (8,237 → 8,329, **+92**), 4,820 with every printed line read (4,741 → 4,820, **+79**) — the largest
 increment since D444, and for the same reason: the queue was read by what a card is *waiting* for,
 not by what prints most. Full engine suite 2,140 tests. GATE OK.
+
+## D453 — A printed board scope, and a counter on each permanent in it
+
+The clause: **"Put a +1/+1 counter on each other Dragon creature you control"**, and the same
+sentence with `-1/-1` pointed across the table. 294 legal cards print a counter-on-each clause, and
+until now none of them read.
+
+What was actually missing is not the counter — `addCounters` has been there since #37 — but a way to
+read **a set of permanents off a phrase**. Every reader in `scripts.ts` until now answered with one
+target (`targetSpecFrom`), one number (`countOfThing`) or one card in a library (`libraryFilter`).
+`boardScope` is the first that answers with a list, and that is why it is its own function rather
+than a regex inside the clause: Magic prints the same scope into several grammars — a counter on
+each of them, a sweep, a pump — and one reader means "each other Dragon creature you control" cannot
+come to mean two different sets in two clauses.
+
+### The grammar, and the measurement that drew its edges
+
+Three parts, peeled off in printed order: an optional `other`, the type words, an optional controller
+clause (`you control`, `you don't control`, `your opponents control`, `each opponent controls`, or
+none at all, which is every creature in the game). Each word is classified by **capitalisation**,
+which is D449's rule in a second place: Magic prints card types and supertypes lowercase and subtypes
+capitalised, so `artifact creature` and `legendary creature` and `Dragon creature` are three
+different readings of the same shape.
+
+**150 cards** print a scope this now reads, across 45 distinct phrases — from `creature you control`
+(76 cards) down to `each Moogle you control`. **144** are refused, across 80 phrases, and the
+refusals are the point: `creature you control with a +1/+1 counter on it`, `Pest, Bat, Insect, Snake,
+and Spider`, `creature that convoked it`, `of up to two target creatures`, `white creature you
+control`. Each would have compiled to a **wider or narrower** set than the card prints, and a counter
+on the wrong creatures is a board a player cannot argue with — worse than the badge an unread line
+gets (D362).
+
+`PERMANENT_TYPES` is deliberately shorter than `SEARCHABLE_TYPES`: a battlefield scope reading "each
+instant you control" matches nothing on every board, every time, which is the silent-nothing failure
+D449 found in the search filters. A compile row pins it although no card prints it, because the
+allow-list is the only thing stopping it.
+
+### The break run deleted a guard and bought two tests
+
+**Eleven levers, three passed**, and each said something different.
+
+- **The opponents half of the scope filter** — removing it left all 1,585 tests green, because the
+  three scopes under test were "yours", "yours except this one" and "everyone's". Nothing watched the
+  half that says *not* yours. Aku Djinn now does: its upkeep trigger grows **their** board, which is
+  the whole drawback of the card, and a reading that dropped the clause would have turned it into a
+  one-sided anthem.
+- **The conjunction** — reading two type words as an either-or instead of both also passed, because
+  every scope under test was one word long. Arcbound Shikari now does: `each other artifact creature
+  you control` with a Chrome Steed (artifact creature) and a Raging Goblin (creature) beside it, so
+  an either-or reading grows the Goblin.
+- **The two-word bound** — and this one was a *redundant guard*, so it was deleted rather than
+  tested. The first draft refused any scope longer than two type words on the theory that a longer
+  phrase was a shape it had not read. Measured against the corpus instead: **every** printed scope of
+  three words or more is refused by the word classification itself, because at least one of its words
+  is a lowercase non-type (`with`, `target`, `and/or`, `you`, `of`, `that's`). Six refusal rows name
+  those shapes, the bound is gone, and coverage did not move by a single line.
+
+What replaced it is the guard that was actually doing work: **a word has to be a word**. A printed
+list arrives with its punctuation attached — `Pest,` with the comma still on — and `Pest,`
+classified as a subtype is `hasSubtype(line, 'pest,')`, false for every permanent ever printed. The
+one card that prints that list is saved by its `and`, which is luck rather than a guard, so the word
+shape is checked: letters, apostrophes and hyphens only.
+
+One guard is kept **knowing no input can reach it**, and the file says so: every controller pattern
+begins with `\s+`, so stripping one always leaves a word behind, and breaking the emptiness check
+passes the whole suite for that reason. It stays because `[].every(…)` is `true` — the day a
+controller pattern loses its `\s+`, an empty word list would mean every permanent you control, lands
+included.
+
+### Verified
+
+Five runtime tests on three printed cards through `customDeck` (D430), none of them in any built-in
+deck — the pool-precedence trap D447 and D450 both fell into. **Katara, Heroic Healer**: the rest of
+the team gets a counter, Katara does not, the opponent's one-drop does not, and the counter is a real
+size change. **Biogenic Ooze**: its own token and itself grow at end of step, the Goblin beside them
+does not. **Harbinger of Night**: both one-drops are 1/1s and both are in their owners' graveyards,
+which is the clearest possible evidence that a scope with no controller clause crosses the table.
+**Aku Djinn** and **Arcbound Shikari** are the two the break run asked for. Twenty-six compile rows:
+ten scope forms read, thirteen refused, the type-that-matches-nothing guard, the word-shape guard and
+the counter-key guard.
+
+Legal-only coverage **17,869 of 56,421 lines (31.7%)**, **8,354 cards with a script**
+(8,329 → 8,354, **+25**), 4,846 with every printed line read (4,820 → 4,846, **+26**). Full engine
+suite 2,171 tests. GATE OK.

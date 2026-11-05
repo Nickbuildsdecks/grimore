@@ -8469,3 +8469,152 @@ describe('surveil, which is scry with the other destination (D452)', () => {
     expect(unreadLines(spell(text as string))).toEqual([text]);
   });
 });
+
+describe('a counter on each permanent a printed scope names (D453)', () => {
+  const unreadLines = (c: ReturnType<typeof compileCard>) =>
+    (c.ok ? c.unread : []).map((u) => u.line);
+  /*
+    The scope is read on a **creature** rather than on an instant, because that is where the corpus
+    prints it: of the 51 one-line-short legal cards whose only unread line is a counter-on-each
+    clause, every one of the twenty this increment reads is a permanent, and most hang the clause
+    off an enters trigger. A probe card is used rather than a real one for the same reason the rest
+    of this file does: the reading under test is the phrase, and a real card would also drag in
+    whatever else it prints.
+  */
+  const probe = (text: string) => compileCard({
+    name: 'Probe Beast', type_line: 'Creature — Beast', mana_cost: '{3}{G}', cmc: 4, colors: ['G'],
+    power: '3', toughness: '3', layout: 'normal',
+    oracle_text: `When Probe Beast enters, ${text}`,
+  } as never);
+
+  it.each([
+    /*
+      Every scope form this reads, one row each — and the list is the grammar: an optional `other`,
+      one or two type words, an optional controller clause. The example beside each is the printed
+      card the form was taken from, which is what keeps this list a reading of Magic rather than of
+      a regex.
+    */
+    ['the whole team', 'put a +1/+1 counter on each creature you control.'],
+    // Katara, Heroic Healer and five others: the commonest form in the corpus.
+    ['the team except this one', 'put a +1/+1 counter on each other creature you control.'],
+    // Acid-Spewer Dragon: a capitalised word is a subtype (CR 205.3).
+    ['a subtype', 'put a +1/+1 counter on each other Dragon creature you control.'],
+    // Biogenic Ooze: the subtype with no "creature" after it.
+    ['a subtype with no noun', 'put a +1/+1 counter on each Ooze you control.'],
+    // Arcbound Shikari: a lowercase word is a card type.
+    ['a card type', 'put a +1/+1 counter on each other artifact creature you control.'],
+    // The two white legendary-matters cards print this; `legendary` is a supertype (CR 205.4a).
+    ['a supertype', 'put a +1/+1 counter on each legendary creature you control.'],
+    // Aku Djinn, and the other two spellings of the same set of permanents.
+    ['the other side of the table', 'put a +1/+1 counter on each creature each opponent controls.'],
+    ['their creatures, said the second way', 'put a -1/-1 counter on each creature your opponents control.'],
+    ['their creatures, said the third way', 'put a -1/-1 counter on each creature you don’t control.'],
+    // Harbinger of Night: no controller clause at all, which is every creature on the battlefield.
+    ['every creature in the game', 'put a -1/-1 counter on each creature.'],
+  ])('reads %s', (_label, text) => {
+    const compiled = probe(text as string);
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([]);
+    /*
+      And asks nothing and points at nothing. A scope is not a target (CR 115.1), so a reading that
+      came out with a `targets` list would put a prompt on screen for a card that prints none — and
+      would make the trigger wait for an answer the player cannot give.
+    */
+    const script = compiled.ok ? (compiled.script as Record<string, unknown> | undefined) : undefined;
+    const trigger = ((script?.['triggers'] ?? []) as readonly Record<string, unknown>[])[0];
+    expect(trigger?.['targets']).toBeUndefined();
+    expect(trigger?.['decisions']).toBeUndefined();
+  });
+
+  it.each([
+    /*
+      The refusals, and they are the reason this reader is worth trusting. Each of these prints a
+      scope **narrower or wider** than the three parts above can express, so a reading would put
+      counters on a set of creatures the card does not name — a board a player cannot argue with,
+      which D362 says is worse than the badge an unread line gets.
+    */
+    // Patron of the Valiant: a condition after the noun.
+    ['a condition on the permanents', 'put a +1/+1 counter on each creature you control with a +1/+1 counter on it.'],
+    // Arcbound Overseer: a condition before it, which is the same problem from the other side.
+    ['a keyword condition', 'put a +1/+1 counter on each creature with modular you control.'],
+    // Blech, Loafing Pest: five subtypes in a list.
+    ['a list of subtypes', 'put a +1/+1 counter on each Pest, Bat, Insect, Snake, and Spider you control.'],
+    // Venerated Loxodon: a fact about how the spell was cast, not about the board.
+    ['a fact about the cast', 'put a +1/+1 counter on each creature that convoked it.'],
+    // Choking Fumes: a combat scope, which this reader has no vocabulary for yet.
+    ['an attacking scope', 'put a -1/-1 counter on each attacking creature.'],
+    // Charmed Stray: a name, and a name needs a card database to resolve.
+    ['a named scope', 'put a +1/+1 counter on each other creature you control named Charmed Stray.'],
+    // The support/bolster shape, which is a targeted clause and belongs to a different reader.
+    ['targets rather than a scope', 'put a +1/+1 counter on each of up to two target creatures.'],
+    /*
+      **The rest of the printed three-word-and-longer shapes**, and this group is load-bearing
+      rather than thorough.
+
+      The first draft of `boardScope` bounded a scope at two type words, on the theory that a longer
+      phrase was a shape it had not read. Breaking that bound changed nothing in 1,585 tests, so the
+      bound was measured against the corpus rather than kept on the theory: of 294 printed
+      counter-on-each clauses, **every** scope of three words or more is one of the shapes below,
+      and each is refused by the word classification itself — `with`, `target`, `and/or`, `you`,
+      `of` and `that's` are lowercase words that are not card types. The bound was a second rule
+      saying what these rows say, and nothing could tell the two apart, so the rows are what is
+      left. If a word-shape change ever lets one of these through, this is what fails.
+    */
+    ['a controller said as a target', 'put a +1/+1 counter on each creature target player controls.'],
+    ['a union of two types', 'put a +1/+1 counter on each artifact creature and/or Vehicle you control.'],
+    ['a keyword the creature has', 'put a +1/+1 counter on each creature you control with lifelink.'],
+    ['a back-reference to earlier creatures', 'put a +1/+1 counter on each of those creatures.'],
+    ['a colour', 'put a +1/+1 counter on each white creature you control.'],
+    ['a second clause riding along', 'put a +1/+1 counter on each creature you control and gain 4 life.'],
+  ])('refuses %s', (_label, text) => {
+    expect(unreadLines(probe(text as string))).toEqual([`When Probe Beast enters, ${text as string}`]);
+  });
+
+  it('refuses a type no permanent can have, rather than a scope that matches nothing', () => {
+    /*
+      **This is the D449 guard in a second place, and the reason `PERMANENT_TYPES` is shorter than
+      `SEARCHABLE_TYPES`.** "Each instant you control" is a well-formed phrase whose set is always
+      empty on a battlefield, so a reader that classified `instant` as a card type would compile a
+      card that resolves, puts no counters anywhere, and is flagged by nothing. That is the failure
+      D362 is about: the badge on an unread line is a human looking at the card, and a silent
+      nothing is not.
+
+      No printed card says this — it is here because the lowercase allow-list is the only thing
+      stopping it, and a list is exactly the kind of guard that gets widened by someone who does not
+      know what it is for.
+    */
+    const text = 'put a +1/+1 counter on each instant you control.';
+    expect(unreadLines(probe(text))).toEqual([`When Probe Beast enters, ${text}`]);
+  });
+
+  it('refuses a word that is not a word, rather than a scope that matches nothing', () => {
+    /*
+      The punctuation guard, and the reason it exists rather than the word count.
+
+      A printed list arrives with its punctuation attached — "Pest, Bat, Insect, Snake, and Spider"
+      splits into `Pest,` with the comma still on it — and a capitalised word is classified as a
+      subtype. So `Pest,` would become `hasSubtype(line, 'pest,')`, which is false for every
+      permanent ever printed: the scope would be empty on every board, on a card that otherwise
+      resolves. `and` is what saves the one card that prints that list, which is luck rather than a
+      guard, so the word shape is checked.
+
+      Blech, Loafing Pest is the printed card; this row is the same list with the "and" taken out,
+      which no card prints — it is here because the guard has no printed counter-example and a
+      guard nobody can test gets removed by someone who does not know what it is for.
+    */
+    const text = 'put a +1/+1 counter on each Pest, Bat you control.';
+    expect(unreadLines(probe(text))).toEqual([`When Probe Beast enters, ${text}`]);
+  });
+
+  it('refuses a counter key the engine does not read as size', () => {
+    /*
+      `+1/+1` and `-1/-1` are the two keys the state-based actions pair off (CR 704.5q, D269) and
+      the two `characteristicsOf` adds to a creature's size. A "+2/+2 counter" is a real printed
+      thing on a handful of cards and would compile to counters that sit on the creature doing
+      nothing at all — so the clause refuses the key rather than the scope, and the line keeps its
+      badge.
+    */
+    const text = 'put a +2/+2 counter on each creature you control.';
+    expect(unreadLines(probe(text))).toEqual([`When Probe Beast enters, ${text}`]);
+  });
+});

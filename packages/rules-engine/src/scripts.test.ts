@@ -23538,3 +23538,245 @@ describe('surveil as a resolution\'s second question (D452, probe)', () => {
     expect(ids(s, 0 as SeatIndex, 'library')).not.toContain(top);
   });
 });
+
+describe('a counter on each permanent a printed scope names, from printed text (D453)', () => {
+  /*
+    Three printed cards through `customDeck` (D430), chosen because between them they are the whole
+    grammar: Katara is `each other creature you control`, Biogenic Ooze is a **subtype** scope, and
+    Harbinger of Night has no controller clause at all — so its counters have to cross the table.
+
+    None of the three is in any built-in deck, which is the trap D447 and D450 both fell into: a
+    hand-written pool script beats a compiled reading, so a runtime test for the compiler has to
+    name a card the pool has never had.
+  */
+  const KATARA = {
+    name: 'Katara, Heroic Healer', type_line: 'Legendary Creature — Human Warrior Ally',
+    mana_cost: '{4}{W}', cmc: 5, colors: ['W'], power: '2', toughness: '3', loyalty: null,
+    layout: 'normal',
+    oracle_text: 'Lifelink (Damage dealt by this creature also causes you to gain that much life.)'
+      + '\nWhen Katara enters, put a +1/+1 counter on each other creature you control.',
+  };
+  const OOZE = {
+    name: 'Biogenic Ooze', type_line: 'Creature — Ooze', mana_cost: '{3}{G}{G}', cmc: 5,
+    colors: ['G'], power: '2', toughness: '2', loyalty: null, layout: 'normal',
+    oracle_text: 'When Biogenic Ooze enters, create a 2/2 green Ooze creature token.'
+      + '\nAt the beginning of your end step, put a +1/+1 counter on each Ooze you control.'
+      + '\n{1}{G}{G}{G}: Create a 2/2 green Ooze creature token.',
+  };
+  const HARBINGER = {
+    name: 'Harbinger of Night', type_line: 'Creature — Spirit', mana_cost: '{2}{B}{B}', cmc: 4,
+    colors: ['B'], power: '2', toughness: '3', loyalty: null, layout: 'normal',
+    oracle_text: 'At the beginning of your upkeep, put a -1/-1 counter on each creature.',
+  };
+  const AKU = {
+    name: 'Aku Djinn', type_line: 'Creature — Djinn', mana_cost: '{3}{B}{B}', cmc: 5,
+    colors: ['B'], power: '5', toughness: '6', loyalty: null, layout: 'normal',
+    oracle_text: 'Trample\nAt the beginning of your upkeep, put a +1/+1 counter on each creature'
+      + ' each opponent controls.',
+  };
+  const SHIKARI = {
+    name: 'Arcbound Shikari', type_line: 'Artifact Creature — Cat Soldier', mana_cost: '{1}{R}{W}',
+    cmc: 3, colors: ['R', 'W'], power: '0', toughness: '0', loyalty: null, layout: 'normal',
+    oracle_text: 'First strike\nWhen Arcbound Shikari enters, put a +1/+1 counter on each other'
+      + ' artifact creature you control.\nModular 2 (This creature enters with two +1/+1 counters'
+      + ' on it. When it dies, you may put its +1/+1 counters on target artifact creature.)',
+  };
+
+  const list = () => {
+    const built = customDeck({
+      id: 'scope-list',
+      name: 'Scopes',
+      entries: [
+        { name: 'Katara, Heroic Healer', count: 1 },
+        { name: 'Biogenic Ooze', count: 1 },
+        { name: 'Harbinger of Night', count: 1 },
+        { name: 'Aku Djinn', count: 1 },
+        { name: 'Arcbound Shikari', count: 1 },
+        { name: 'Centaur Courser', count: 2 },
+        { name: 'Raging Goblin', count: 2 },
+        { name: 'Chrome Steed', count: 1 },
+        { name: 'Plains', count: 13 },
+        { name: 'Forest', count: 13 },
+        { name: 'Swamp', count: 12 },
+        { name: 'Mountain', count: 12 },
+      ],
+      data: [KATARA as never, OOZE as never, HARBINGER as never, AKU as never, SHIKARI as never],
+    });
+    expect(built.unknown).toEqual([]);
+    return built.deck;
+  };
+
+  const counters = (s: GameState, id: string, key: '+1/+1' | '-1/-1'): number =>
+    s.instances[id]?.counters[key] ?? 0;
+
+  it('grows the rest of the team and not the creature that arrived', () => {
+    let s = arena({
+      decks: { 0: 'scope-list', 1: 'verdant-guard' },
+      deckSpecs: { 'scope-list': list() },
+      hands: { 0: ['Katara, Heroic Healer'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains', 'Plains', 'Plains', 'Centaur Courser', 'Raging Goblin'],
+        1: ['Llanowar Elves'],
+      },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Katara, Heroic Healer'),
+    } as Action);
+    s = drain(passBoth(s), 40);
+
+    const courser = find(s, 0 as SeatIndex, 'battlefield', 'Centaur Courser');
+    const goblin = find(s, 0 as SeatIndex, 'battlefield', 'Raging Goblin');
+    const katara = find(s, 0 as SeatIndex, 'battlefield', 'Katara, Heroic Healer');
+    const elves = find(s, 1 as SeatIndex, 'battlefield', 'Llanowar Elves');
+    expect(counters(s, courser, '+1/+1')).toBe(1);
+    expect(counters(s, goblin, '+1/+1')).toBe(1);
+    // "Other" is the permanent the ability is printed on, and this is the half a reading that
+    // dropped the word would fail: Katara would come down a 3/4.
+    expect(counters(s, katara, '+1/+1')).toBe(0);
+    expect(characteristicsOf(s, s.instances[katara]!).power).toBe(2);
+    // And "you control" is the other half: the opponent's one-drop is not on the team.
+    expect(counters(s, elves, '+1/+1')).toBe(0);
+    // The counter is a real size change, not a number in a record (CR 613.4c).
+    expect(characteristicsOf(s, s.instances[goblin]!).power).toBe(2);
+  });
+
+  it('a subtype scope grows the Oozes and leaves the Goblin alone', () => {
+    /*
+      Biogenic Ooze's own end-step trigger, which is the printed card's engine: it makes a token on
+      arrival and then grows **each Ooze you control** every turn. The Goblin beside it is the
+      discriminator — a scope that ignored the subtype would grow it too, and the card would read
+      "each creature you control", which is a different and much stronger card.
+    */
+    let s = arena({
+      decks: { 0: 'scope-list', 1: 'verdant-guard' },
+      deckSpecs: { 'scope-list': list() },
+      hands: { 0: ['Biogenic Ooze'] },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Forest', 'Forest', 'Forest', 'Raging Goblin'],
+      },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Biogenic Ooze'),
+    } as Action);
+    s = drain(passBoth(s), 40);
+    const ooze = find(s, 0 as SeatIndex, 'battlefield', 'Biogenic Ooze');
+    const token = ids(s, 0 as SeatIndex, 'battlefield')
+      .find((id) => nameOf(s, id) === 'Ooze');
+    expect(token).toBeDefined();
+    const goblin = find(s, 0 as SeatIndex, 'battlefield', 'Raging Goblin');
+    // Nothing yet: the trigger is on the end step, not on the arrival.
+    expect(counters(s, ooze, '+1/+1')).toBe(0);
+
+    // Nobody attacks: the test wants the end step, and the engine will not walk past a
+    // declaration that is owed.
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [] } as Action);
+    s = drain(passBoth(advanceTo(s, 'end')), 40);
+    expect(counters(s, ooze, '+1/+1')).toBe(1);
+    expect(counters(s, token!, '+1/+1')).toBe(1);
+    expect(counters(s, goblin, '+1/+1')).toBe(0);
+  });
+
+  it('a scope with no controller clause reaches across the table, and the -1/-1 kills', () => {
+    /*
+      Harbinger of Night prints "each creature" and means it — its own, the opponent's, and itself.
+      Two things are under test and neither is cosmetic: the **absent** controller clause, which a
+      reader that defaulted to "you control" would get wrong in the card's favour, and the `-1/-1`
+      key, which the engine's state-based actions act on (CR 704.5f, D269). A reading that put
+      `+1/+1` counters on instead would grow both boards.
+    */
+    let s = arena({
+      decks: { 0: 'scope-list', 1: 'verdant-guard' },
+      deckSpecs: { 'scope-list': list() },
+      battlefield: {
+        0: ['Swamp', 'Harbinger of Night', 'Raging Goblin'],
+        1: ['Llanowar Elves'],
+      },
+      turn: 5,
+      firstSeat: 0,
+    });
+    const harbinger = find(s, 0 as SeatIndex, 'battlefield', 'Harbinger of Night');
+    s = drain(passBoth(advanceTo(s, 'upkeep')), 40);
+
+    expect(counters(s, harbinger, '-1/-1')).toBe(1);
+    expect(characteristicsOf(s, s.instances[harbinger]!).toughness).toBe(2);
+    // Both one-drops were 1/1s and are now 0/0s, so they are in their owners' graveyards — which
+    // is the clearest possible evidence that the counters landed on both sides of the table.
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Raging Goblin');
+    expect(namesIn(s, 1 as SeatIndex, 'graveyard')).toContain('Llanowar Elves');
+  });
+
+  it('"each opponent controls" grows their board and not yours', () => {
+    /*
+      Aku Djinn, whose whole drawback is that its upkeep trigger points the wrong way: it grows
+      **their** creatures. A break run is why this test exists — removing the opponents half of the
+      scope filter left all 1,585 tests passing, because the three scopes under test until then
+      were "yours", "yours except this one" and "everyone's". So the half that says *not* yours had
+      nothing watching it, and a reading that dropped it would have turned the card's drawback into
+      a one-sided anthem.
+    */
+    let s = arena({
+      decks: { 0: 'scope-list', 1: 'verdant-guard' },
+      deckSpecs: { 'scope-list': list() },
+      battlefield: {
+        0: ['Swamp', 'Aku Djinn', 'Raging Goblin'],
+        1: ['Llanowar Elves', 'Centaur Courser'],
+      },
+      turn: 5,
+      firstSeat: 0,
+    });
+    const djinn = find(s, 0 as SeatIndex, 'battlefield', 'Aku Djinn');
+    const mine = find(s, 0 as SeatIndex, 'battlefield', 'Raging Goblin');
+    const elves = find(s, 1 as SeatIndex, 'battlefield', 'Llanowar Elves');
+    const courser = find(s, 1 as SeatIndex, 'battlefield', 'Centaur Courser');
+    s = drain(passBoth(advanceTo(s, 'upkeep')), 40);
+
+    expect(counters(s, elves, '+1/+1')).toBe(1);
+    expect(counters(s, courser, '+1/+1')).toBe(1);
+    expect(counters(s, mine, '+1/+1')).toBe(0);
+    expect(counters(s, djinn, '+1/+1')).toBe(0);
+  });
+
+  it('two type words are both required, not either one', () => {
+    /*
+      Arcbound Shikari: `each other **artifact creature** you control`. The second break-run gap —
+      reading the two words as an either-or instead of a conjunction passed every test, because
+      every other scope under test is one word long. The Chrome Steed beside it is an artifact
+      creature and the Raging Goblin is a creature, so an either-or reading grows the Goblin too.
+
+      Shikari's own counters are the third assertion: modular 2 puts two on it as it enters, and
+      "other" keeps the sweep off it — three would mean the word was dropped.
+    */
+    let s = arena({
+      decks: { 0: 'scope-list', 1: 'verdant-guard' },
+      deckSpecs: { 'scope-list': list() },
+      hands: { 0: ['Arcbound Shikari'] },
+      battlefield: {
+        0: ['Mountain', 'Plains', 'Plains', 'Chrome Steed', 'Raging Goblin'],
+      },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Arcbound Shikari'),
+    } as Action);
+    s = drain(passBoth(s), 40);
+
+    const steed = find(s, 0 as SeatIndex, 'battlefield', 'Chrome Steed');
+    const goblin = find(s, 0 as SeatIndex, 'battlefield', 'Raging Goblin');
+    const shikari = find(s, 0 as SeatIndex, 'battlefield', 'Arcbound Shikari');
+    expect(counters(s, steed, '+1/+1')).toBe(1);
+    expect(counters(s, goblin, '+1/+1')).toBe(0);
+    expect(counters(s, shikari, '+1/+1')).toBe(2);
+  });
+});

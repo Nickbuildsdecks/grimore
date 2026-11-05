@@ -11985,3 +11985,42 @@ gate was used to build the shape that discriminates: "you may surveil 1" puts th
 Coverage **17,836 of 56,421 legal lines (31.6%)**, **8,329 cards with a script (+92)**, 4,820 fully
 read (+79) — the largest increment since D444, and for the same reason: rank the queue by what a card
 is *waiting for*, not by what prints most.
+
+## A printed board scope, and the first reader that answers with a set (D453)
+
+"Put a +1/+1 counter on each other Dragon creature you control" — 294 legal cards print a
+counter-on-each clause and none of them read. The counter was never the missing piece; reading **a
+set of permanents off a phrase** was. Every reader in the compiler until now answered with one
+target, one number or one card in a library, so `boardScope` is the first that answers with a list —
+its own function, because Magic prints the same scope into a counter clause, a sweep and a pump, and
+one reader is what stops it meaning two different sets in two places.
+
+Three parts in printed order: an optional `other`, the type words, an optional controller clause
+(`you control`, `you don't control`, `your opponents control`, `each opponent controls`, or none,
+which is every creature in the game). Words are classified by **capitalisation** — D449's rule again:
+lowercase is a card type or supertype, capitalised is a subtype, so `artifact creature`, `legendary
+creature` and `Dragon creature` are three readings of one shape.
+
+**150 cards** print a scope this reads, across 45 phrases. **144** are refused across 80, and that is
+the half worth stating: `creature you control with a +1/+1 counter on it`, `Pest, Bat, Insect, Snake,
+and Spider`, `creature that convoked it`, `white creature you control`. Each would have put counters
+on a wider or narrower set than the card prints, and a counter on the wrong creature is a board a
+player cannot argue with.
+
+**The allow-list of types is shorter than the search filters'** on purpose: "each instant you
+control" is a well-formed phrase whose set is empty on every battlefield, which is D449's
+silent-nothing failure arriving from a new direction.
+
+**The break run deleted a guard and bought two tests.** Eleven levers, three passed. Removing the
+*opponents* half of the scope filter left 1,585 tests green, because every scope under test was
+"yours", "yours except this one" or "everyone's" — Aku Djinn, whose drawback is that it grows *their*
+board, now watches it. Reading two type words as an either-or also passed, because every scope under
+test was one word long — Arcbound Shikari, with an artifact creature and a plain creature beside it,
+now watches that. The third was a two-word bound kept on theory; measured against the corpus, every
+printed scope of three words or more is already refused by a lowercase non-type in it (`with`,
+`target`, `and/or`, `you`, `of`), so the bound went and six refusal rows took its place. What
+replaced it is the guard that was doing the work: a word has to **be** a word, or `Pest,` becomes a
+subtype no permanent has.
+
+Coverage **17,869 of 56,421 legal lines (31.7%)**, **8,354 cards with a script (+25)**, 4,846 fully
+read (+26).
