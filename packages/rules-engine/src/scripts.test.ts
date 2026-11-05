@@ -22919,3 +22919,212 @@ describe('a "may" with a price on it, from printed text (D448)', () => {
     expect(myrs(s)).toBe(0);
   });
 });
+
+describe('a library search, generalised, from printed text (D449)', () => {
+  /*
+    Printed Eladamri's Call and printed Beneath the Sands, both compiled through `customDeck`
+    (D430). Two cards because the pair covers the two halves a compile table cannot: that the
+    **filter** really restricts what the search offers, and that the **destination** really is where
+    the card goes.
+  */
+  const CALL = {
+    name: "Eladamri's Call", type_line: 'Instant', mana_cost: '{G}{W}', cmc: 2, colors: ['G', 'W'],
+    layout: 'normal', power: null, toughness: null, loyalty: null,
+    oracle_text: 'Search your library for a creature card, reveal that card, put it into your'
+      + ' hand, then shuffle.',
+  };
+  const SANDS = {
+    name: 'Beneath the Sands', type_line: 'Sorcery', mana_cost: '{2}{G}', cmc: 3, colors: ['G'],
+    layout: 'normal', power: null, toughness: null, loyalty: null,
+    oracle_text: 'Search your library for a basic land card, put it onto the battlefield tapped,'
+      + ' then shuffle.\nCycling {2}',
+  };
+
+  const table = (spell: Record<string, unknown>, lands: number) => {
+    const built = customDeck({
+      id: 'search-list',
+      name: 'Search',
+      entries: [
+        { name: spell['name'] as string, count: 1 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Forest', count: 25 },
+        { name: 'Mountain', count: 25 },
+        { name: 'Plains', count: 5 },
+      ],
+      data: [spell as never],
+    });
+    expect(built.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'search-list', 1: 'verdant-guard' },
+      deckSpecs: { 'search-list': built.deck },
+      hands: { 0: [spell['name'] as string] },
+      // A Plains beside the Forests, because Eladamri's Call costs {G}{W} and the first run of
+      // this block gave it two Forests and a "cannot pay {G}{W}".
+      battlefield: { 0: ['Plains', ...Array.from({ length: lands }, () => 'Forest')] },
+      turn: 5,
+      firstSeat: 0,
+    });
+  };
+
+  /** The spell cast and the table stopped on its search. */
+  const searching = (spell: Record<string, unknown>, lands: number): GameState => {
+    let s = advanceTo(table(spell, lands), 'precombat-main');
+    for (const land of ids(s, 0 as SeatIndex, 'battlefield')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: land, abilityIndex: 0 } as Action);
+    }
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', spell['name'] as string),
+    } as Action);
+    return drain(passBoth(s), 40);
+  };
+
+  it('offers only the cards the printed filter names', () => {
+    /*
+      The assertion the compile table cannot make. "A creature card" has to admit the Goblins and
+      refuse 55 lands — and the deck is built so that getting it wrong is loud: a filter that
+      matched everything would offer 59 cards and a filter that matched nothing would offer none.
+    */
+    const s = searching(CALL, 2);
+    const offered = (s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id));
+    expect(offered.length).toBeGreaterThan(0);
+    expect(new Set(offered)).toEqual(new Set(['Raging Goblin']));
+  });
+
+  it('puts what it found in your hand', () => {
+    let s = searching(CALL, 2);
+    const goblin = (s.pendingDecision?.candidates ?? [])[0]!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [goblin] } as Action), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'hand')).toContain('Raging Goblin');
+  });
+
+  it('puts a land onto the battlefield tapped, which is the cost of the card', () => {
+    /*
+      The other destination, and `tapped` is not a detail: an untapped arrival would make this a
+      strictly better land drop, which is a different card. The deck holds two basic land types so
+      the filter has more than one answer and cannot pass by having exactly one.
+    */
+    let s = searching(SANDS, 3);
+    const offered = (s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id));
+    expect(new Set(offered)).toEqual(new Set(['Forest', 'Mountain', 'Plains']));
+    const pick = (s.pendingDecision?.candidates ?? [])
+      .find((id) => nameOf(s, id) === 'Mountain')!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [pick] } as Action), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toContain('Mountain');
+    expect(s.instances[pick]?.tapped).toBe(true);
+  });
+
+  it('leaves the library shuffled by the search rather than by the clause', () => {
+    /*
+      "Then shuffle" is read as the identity (it has been since the narrow readers), because
+      `searchYourLibrary` shuffles when the search ends. This pins the consequence rather than the
+      comment: after the search the library holds one card fewer and the game is still playable,
+      which a double shuffle would also satisfy — so the real check is that the clause emitted no
+      second shuffle, and `compiled-vs-written` is what compares this card's reading against a
+      hand-written one.
+    */
+    let s = searching(SANDS, 3);
+    const before = ids(s, 0 as SeatIndex, 'library').length;
+    const pick = (s.pendingDecision?.candidates ?? [])[0]!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [pick] } as Action), 40);
+    expect(ids(s, 0 as SeatIndex, 'library').length).toBe(before - 1);
+  });
+});
+
+describe('what a printed search filter actually admits (D449)', () => {
+  /*
+    **The break run asked for this block.** The compile table checks that a filter *exists*; two
+    break levers — matching a supertype as a subtype, and a subtype as a type — left all 1,529 tests
+    green, because a filter that matches **nothing** has the same shape as one that works. These
+    tests ask what the search offers, which is the only question that tells them apart.
+  */
+  /** Captain Sisay, printed — the legend the supertype test has to find in a library. */
+  const SISAY = {
+    name: 'Captain Sisay', type_line: 'Legendary Creature — Human Soldier', mana_cost: '{3}{G}{W}',
+    cmc: 5, colors: ['G', 'W'], layout: 'normal', power: '2', toughness: '2', loyalty: null,
+    oracle_text: '{T}: Search your library for a legendary card, reveal that card, put it into'
+      + ' your hand, then shuffle.',
+  };
+
+  const deckWith = (
+    spell: Record<string, unknown>,
+    extra: readonly { name: string; count: number }[],
+    extraData: readonly Record<string, unknown>[] = [],
+  ) => {
+    const built = customDeck({
+      id: 'filter-list',
+      name: 'Filter',
+      entries: [{ name: spell['name'] as string, count: 1 }, ...extra],
+      data: [spell as never, ...extraData as never[]],
+    });
+    expect(built.unknown).toEqual([]);
+    return built.deck;
+  };
+
+  /** Cast `spell` from hand off four Forests and stop on its search. */
+  const offered = (
+    spell: Record<string, unknown>,
+    extra: readonly { name: string; count: number }[],
+    extraData: readonly Record<string, unknown>[] = [],
+  ) => {
+    let s = arena({
+      decks: { 0: 'filter-list', 1: 'verdant-guard' },
+      deckSpecs: { 'filter-list': deckWith(spell, extra, extraData) },
+      hands: { 0: [spell['name'] as string] },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Forest'] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const land of ids(s, 0 as SeatIndex, 'battlefield')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: land, abilityIndex: 0 } as Action);
+    }
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', spell['name'] as string),
+    } as Action);
+    const stopped = drain(passBoth(s), 40);
+    return new Set((stopped.pendingDecision?.candidates ?? []).map((id) => nameOf(stopped, id)));
+  };
+
+  it('a basic land type is a subtype, so it admits the Forests and refuses the Mountains', () => {
+    /*
+      "A Forest card" must not be read as the card **type** Forest, because there is no such type —
+      that reading offers nothing. It must not be read as a substring of the type line either: it
+      is `hasSubtype` against the parsed line, so a land that is a Forest qualifies and a Mountain
+      does not, with both in the same library.
+    */
+    const hunt = {
+      name: 'Probe Hunt', type_line: 'Sorcery', mana_cost: '{2}{G}', cmc: 3, colors: ['G'],
+      layout: 'normal', power: null, toughness: null, loyalty: null,
+      oracle_text: 'Search your library for a Forest card, put it onto the battlefield tapped,'
+        + ' then shuffle.',
+    };
+    expect(offered(hunt, [
+      { name: 'Forest', count: 20 },
+      { name: 'Mountain', count: 20 },
+      { name: 'Raging Goblin', count: 19 },
+    ])).toEqual(new Set(['Forest']));
+  });
+
+  it('"legendary" is a supertype, so it admits the legend and refuses the plain creature', () => {
+    /*
+      Captain Sisay's phrase, and the other half of the same mistake: matching it against subtypes
+      offers nothing at all. Both candidates here are creature cards, so the only thing that can
+      tell them apart is the supertype — a filter reading types or subtypes would offer both or
+      neither, and either way this fails.
+    */
+    const call = {
+      name: 'Probe Summons', type_line: 'Sorcery', mana_cost: '{2}{G}', cmc: 3, colors: ['G'],
+      layout: 'normal', power: null, toughness: null, loyalty: null,
+      oracle_text: 'Search your library for a legendary card, reveal it, put it into your hand,'
+        + ' then shuffle.',
+    };
+    const seen = offered(call, [
+      // Both are creature cards; only one is legendary, so nothing but the supertype can tell them
+      // apart — a filter reading types or subtypes offers both or neither.
+      { name: 'Captain Sisay', count: 4 },
+      { name: 'Raging Goblin', count: 20 },
+      { name: 'Forest', count: 35 },
+    ], [SISAY]);
+    expect(seen).toEqual(new Set(['Captain Sisay']));
+  });
+});

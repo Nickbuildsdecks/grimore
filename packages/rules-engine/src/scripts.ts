@@ -19,7 +19,7 @@
  */
 import {
   characteristicsOf, hasSubtype, hasType, isKeyword, parseTypeLine, printedKeywords,
-  printedLandwalk,
+  printedLandwalk, type TypeLine,
 } from './characteristics.js';
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
@@ -1680,6 +1680,163 @@ const searchYourLibrary = (
   who: 'controller', from: 'library', prompt, min: 0, max: 1,
   ...(filter === undefined ? {} : { filter }),
 });
+
+/**
+ * A printed library search, as a `searchYourLibrary` question and one thing done with what it
+ * found (D449).
+ *
+ * This replaced two exact-string readers — Diabolic Tutor's and Rampant Growth's — which between
+ * them covered two of the **173 distinct shapes** this clause takes in the corpus. The shapes are
+ * not 173 different mechanics: they are one mechanic crossed with a filter, an optional reveal, two
+ * spellings of "the card you found", and three destinations. So it is read as that product.
+ *
+ * Measured over the unread legal lines containing a library search (439 of them):
+ *
+ * | printed filter | lines | cards it alone is blocking |
+ * | --- | --- | --- |
+ * | `a basic land card` | 58 | 35 |
+ * | `a card` | 10 | 6 |
+ * | `a card named <this card>` | 9 | 6 |
+ * | `a Forest card` and the other four basic land types | 8 | 7 |
+ * | `a creature card` / `a Dragon card` / `an Aura card` / `a planeswalker card` … | 8 | 7 |
+ *
+ * and the destinations: `put it into your hand` (114 lines), `onto the battlefield tapped` (24 as
+ * "it" plus 14 as "that card"), `onto the battlefield` (18 plus 11).
+ *
+ * ## The reveal is read as nothing, and that is a stated deviation
+ *
+ * 78 of those lines print ", reveal it," between the search and the destination, which is the
+ * single biggest row — so refusing it would cost more than any other decision here. It is read as
+ * a no-op, and the engine already has that position on record: `CardScript.miracle`'s docblock says
+ * in as many words that it "deliberately does not model the **reveal** … a hidden-information
+ * difference in the player's favour … small — but it is a difference, and a card that punished an
+ * opponent for the reveal would need the reveal to be real."
+ *
+ * The same holds here and for the same reason. A printed reveal on a search exists so the other
+ * players can check that the card taken matched the filter; here the **filter is enforced by the
+ * engine**, so the verification the reveal exists to provide is already done. What is lost is that
+ * opponents do not learn which card was taken. No card in the pool punishes a reveal, and when one
+ * is added this reader is where the honesty has to be repaid.
+ *
+ * ## What is refused
+ *
+ * Everything whose filter this module cannot build, and everything plural. "Up to two basic land
+ * cards", "any number of cards named ~" and "reveal them, put them into your hand" need a count on
+ * the question and a destination applied to a set; "a basic land card or Gate card" is two filters;
+ * "an artifact card with mana value 4 or 5" and "a card with mana value less than or equal to the
+ * number of lands you control" are conditions on a characteristic; "search your library and/or
+ * graveyard" is two zones; and ", then shuffle and put that card on top" is a fourth destination
+ * (the top of the library) that `searchYourLibrary`'s shuffle would undo. Each stays unread (D362).
+ */
+function searchClause(text: string, name: string): ReadEffect | null {
+  const parsed =
+    /^search your library for (an? [^,]+?)(?:, reveal (?:it|that card))?, put (?:it|that card) (into your hand|onto the battlefield tapped|onto the battlefield)$/i
+      .exec(text.trim());
+  if (parsed === null) return null;
+  const filter = libraryFilter(parsed[1]!.trim(), name);
+  if (filter === null) return null;
+  const destination = parsed[2]!.toLowerCase();
+  return {
+    decisions: [searchYourLibrary(
+      `Search your library for ${filter.phrase}`,
+      ...(filter.filter === null ? [] : [filter.filter] as const),
+    )],
+    effect: (c) => {
+      const found = chosenCard(c);
+      if (found === null) return c.state;
+      if (destination === 'into your hand') return moveToHand(c.state, [found]);
+      return putOntoBattlefield(c.state, found, c.controller, {
+        tapped: destination === 'onto the battlefield tapped',
+      });
+    },
+  };
+}
+
+/** The card types a printed search phrase can name, as `hasType` reads them (CR 205.2a). */
+const SEARCHABLE_TYPES: readonly string[] = [
+  'artifact', 'battle', 'creature', 'enchantment', 'instant', 'land', 'planeswalker', 'sorcery',
+];
+
+/** The supertypes (CR 205.4a). "Search your library for a legendary card" is Captain Sisay. */
+const SUPERTYPES: readonly string[] = ['basic', 'legendary', 'snow', 'world'];
+
+/**
+ * A printed search filter, as a `CardsDecisionSpec.filter` and the words to show the player.
+ *
+ * `filter: null` means "any card", which is not the same as no reader: Diabolic Tutor's search has
+ * no filter and still has to be told apart from a phrase this module cannot build.
+ *
+ * Every filter reads `state.cardDefs[...].typeLine` — the **printed** line — and that is correct
+ * here where #319 says it would be wrong elsewhere: a card in a library has no live
+ * characteristics, because nothing on the battlefield is modifying it. The distinction is worth the
+ * sentence because the identical-looking read on a *battlefield* permanent is the defect #319 was
+ * opened for.
+ */
+function libraryFilter(
+  phrase: string, name: string,
+): { readonly phrase: string; readonly filter: CardsDecisionSpec['filter'] | null } | null {
+  const lower = phrase.toLowerCase();
+  const lineOf = (state: GameState, id: string): TypeLine => {
+    const inst = state.instances[id];
+    return parseTypeLine(inst === undefined ? '' : state.cardDefs[inst.defKey]?.typeLine);
+  };
+  if (lower === 'a card') return { phrase: 'a card', filter: null };
+  if (lower === 'a basic land card') return { phrase, filter: isBasicLand };
+  // "a card named <this card's own name>", which is the only name a printed line can give this
+  // reader without a card database to look the name up in.
+  const named = /^an? card named (.+)$/i.exec(phrase);
+  if (named !== null) {
+    if (plain(named[1]!).toLowerCase() !== plain(name).toLowerCase()) return null;
+    return {
+      phrase,
+      filter: (state, id) => {
+        const inst = state.instances[id];
+        return inst !== undefined && state.cardDefs[inst.defKey]?.name === name;
+      },
+    };
+  }
+  const typed = /^an? ([A-Za-z][A-Za-z' -]*) card$/i.exec(phrase);
+  if (typed === null) return null;
+  const word = typed[1]!.toLowerCase();
+  /*
+    **Magic's own capitalisation tells a type from a subtype**, and that is what makes this safe to
+    read at all.
+
+    Card types and supertypes are printed lowercase — "a creature card", "a planeswalker card", "a
+    legendary card" — and subtypes are capitalised: "a Dragon card", "a Forest card", "an Arcane
+    card", "a Mercenary card". So a lowercase word has to be on one of the two lists above, and a
+    capitalised word is a subtype.
+
+    **The lowercase allow-list is the whole guard, and the first draft of this function did not have
+    it.** Without it "a **permanent** card" (Mystic Sanctuary's shape) compiled to a filter asking
+    for a card whose type line contains the type "permanent" — which no card has, because permanent
+    is not a type (CR 205.2a). The search would have offered **nothing**, every time, on a card that
+    otherwise worked: the exact failure D362 is about, and worse than leaving the line unread
+    because nothing at the table would flag it. "A legendary card" had the same shape from the other
+    side: it is a **supertype**, so matching subtypes would have found nothing either.
+
+    Subtypes are matched with `hasSubtype` against the **parsed** line rather than by searching the
+    string, which is what keeps "a Forest card" matching Snow-Covered Forest and the typed duals
+    while not matching a card merely *named* for a forest.
+  */
+  if (word.includes(' ')) return null;
+  const capitalised = /^[A-Z]/.test(typed[1]!);
+  if (capitalised) {
+    return { phrase, filter: (state, id) => hasSubtype(lineOf(state, id), word) };
+  }
+  if (SEARCHABLE_TYPES.includes(word)) {
+    return { phrase, filter: (state, id) => hasType(lineOf(state, id), word) };
+  }
+  if (SUPERTYPES.includes(word)) {
+    return {
+      phrase,
+      filter: (state, id) =>
+        lineOf(state, id).supertypes.some((t) => t.toLowerCase() === word),
+    };
+  }
+  // A lowercase word that is neither: not a type this reader can name, so the line stays unread.
+  return null;
+}
 
 const isBasicLand = (state: GameState, id: string): boolean => {
   const inst = state.instances[id];
@@ -10008,17 +10165,9 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       effect: (c) => moveToHand(c.state, chosenCards(c)),
     };
   }
-  if (/^search your library for a basic land card, put it onto the battlefield tapped$/i
-    .test(text)) {
-    return {
-      decisions: [searchYourLibrary('Search your library for a basic land card', isBasicLand)],
-      effect: (c) => {
-        const found = chosenCard(c);
-        return found === null
-          ? c.state
-          : putOntoBattlefield(c.state, found, c.controller, { tapped: true });
-      },
-    };
+  {
+    const search = searchClause(text, name);
+    if (search !== null) return search;
   }
 
   /*

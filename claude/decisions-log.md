@@ -28157,3 +28157,93 @@ a code change and two further failing levers.
 Legal-only coverage **17,537 of 56,421 lines (31.1%)**, **8,129 cards with a script**
 (8,099 → 8,129, +30), 4,627 with every printed line read (4,599 → 4,627, +28). Full engine suite
 2,083 tests. GATE OK.
+
+## D449 — The library search, read as a product instead of as two strings
+
+Two exact-string readers covered Diabolic Tutor and Rampant Growth. The corpus prints this clause in
+**173 distinct shapes** across **439 unread legal lines** — and they are not 173 mechanics. They are
+one mechanic crossed with a filter, an optional reveal, two spellings of "the card you found", and
+three destinations. So it is read as that product.
+
+| printed filter | lines | cards it alone was blocking |
+| --- | --- | --- |
+| `a basic land card` | 58 | 35 |
+| `a card` | 10 | 6 |
+| `a card named <this card>` | 9 | 6 |
+| `a Forest card` and the four other basic land types | 8 | 7 |
+| `a creature card`, `a Dragon card`, `an Aura card`, `a planeswalker card` … | 8 | 7 |
+
+Destinations: `put it into your hand` (114 lines), `onto the battlefield tapped` (24 as "it" plus 14
+as "that card"), `onto the battlefield` (18 plus 11). **72 legal cards now read a library search
+whole**, among them Demonic Tutor, Eladamri's Call, Call the Gatewatch, Beneath the Sands and Deep
+Reconnaissance.
+
+### The reveal is read as nothing, and the engine already had that position on record
+
+78 lines print ", reveal it," between the search and the destination — the single biggest row, so
+refusing it would have cost more than any other choice here. `CardScript.miracle`'s docblock settled
+this long ago, in as many words: it "deliberately does not model the **reveal** … a
+hidden-information difference in the player's favour … small — but it is a difference, and a card
+that punished an opponent for the reveal would need the reveal to be real."
+
+The same holds, and with one more argument for it: a printed reveal on a search exists so the other
+players can check the card taken matched the filter, and here **the filter is enforced by the
+engine**, so the verification the reveal provides is already done. What is lost is that opponents do
+not learn which card was taken. The debt is recorded where it would have to be repaid.
+
+### Printed capitalisation is what makes the filter safe to read
+
+Magic prints card types and supertypes lowercase — "a creature card", "a planeswalker card", "a
+legendary card" — and subtypes capitalised: "a Dragon card", "a Forest card", "an Arcane card". So a
+lowercase word must be on one of two short lists and a capitalised word is a subtype.
+
+**The first draft had no lowercase allow-list, and it was wrong in both directions.**
+
+- "a **permanent** card" compiled to a search for the type "permanent", which no card has, because
+  permanent is not a type (CR 205.2a). It would have offered **nothing**, every time, on a card whose
+  other lines worked.
+- "a **legendary** card" (Captain Sisay) is a **supertype** (CR 205.4a), so matching subtypes found
+  nothing either.
+
+Both are the D362 failure exactly: a card that plays and plays wrongly, with nothing at the table to
+flag it. The allow-list refuses the first and a supertype branch reads the second. The one-word guard
+is what refuses the printed multi-word traps — `a Rebel permanent card` (10 lines), `a basic Plains
+card` (14), `a green creature card` (4), `an instant or sorcery card` (7) — each of which ends in
+" card" and so reaches the type branch, where a two-word name would be matched against a subtype list
+holding one word per entry.
+
+### Four break levers passed, and each one named a missing test
+
+This is the run's most useful result. Thirteen levers, nine failed, **four passed**:
+
+1. matching a supertype as a subtype — green, because the Captain Sisay row only asserted the line
+   *read*, not that the filter *found* anything;
+2. matching a subtype as a type — green for the same reason;
+3. deleting the `a card` no-filter branch — green, because nothing tested the comma form of that
+   phrase (Demonic Tutor prints it);
+4. deleting the one-word guard — green, because no row named a multi-word phrase ending in " card".
+
+A filter that matches **nothing** has the same shape as one that works, so a table that only inspects
+the spec cannot tell them apart. The answer is two runtime tests that ask what the search actually
+*offers*, on a library built so that a wrong reading is loud: the Forest filter must admit Forests
+and refuse Mountains with both present, and the legendary filter must admit Captain Sisay and refuse
+Raging Goblin — **both creature cards**, so nothing but the supertype can separate them. With those
+and two new compile rows, all thirteen levers fail.
+
+### What is refused
+
+A count on the question ("up to two basic land cards"), a destination applied to a set ("reveal them,
+put them into your hand"), two filters at once, a condition on a characteristic ("an artifact card
+with mana value 4 or 5"), two zones ("your library and/or graveyard"), and the top of the library as
+a destination — that last is not merely unread but a reading that could not be correct, because
+`searchYourLibrary`'s own shuffle would undo it.
+
+**Still refused, and now the biggest single thing in the way:** `you may search your library …`
+(128 cards one line short, 42 on the commonest sub-shape). D447 and D448 both refuse a "may" whose
+effect asks its own question, because the engine asks a resolution's questions in order. That one
+engine feature — a decision asked only if an earlier answer allows it — is worth more than any
+remaining reader.
+
+Legal-only coverage **17,625 of 56,421 lines (31.2%)**, **8,192 cards with a script**
+(8,129 → 8,192, +63), 4,680 with every printed line read (4,627 → 4,680, +53). Full engine suite
+2,114 tests. GATE OK.

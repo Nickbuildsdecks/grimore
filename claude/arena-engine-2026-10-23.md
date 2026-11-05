@@ -11872,3 +11872,35 @@ missing test.
 
 Coverage **17,537 of 56,421 legal lines (31.1%)**, **8,129 cards with a script** (+30), 4,627 fully
 read (+28).
+
+## 173 shapes, one mechanic (D449)
+
+Two exact-string readers covered the library search. The corpus prints it in **173 distinct shapes**
+over 439 unread legal lines — one mechanic crossed with a filter, an optional reveal, two spellings
+of "the card you found", and three destinations. Read as that product, **72 legal cards now read a
+search whole**: Demonic Tutor, Eladamri's Call, Call the Gatewatch, Beneath the Sands, Deep
+Reconnaissance among them.
+
+The reveal is read as nothing, which the engine had already decided: `miracle` says in its own
+docblock that it does not model a reveal, calls it a hidden-information difference in the player's
+favour, and says a card that punished the reveal would need it to be real. Here there is one more
+argument — the filter is enforced by the engine, so the checking a printed reveal exists for is
+already done.
+
+**Printed capitalisation is the guard.** Types and supertypes are lowercase, subtypes capitalised. The
+first draft had no lowercase allow-list and was wrong both ways: "a **permanent** card" searched for
+a type no card has, and "a **legendary** card" is a supertype, not a subtype. Both would have offered
+**nothing**, every time, on cards whose other lines worked — D362's failure exactly.
+
+**The break run's best outing yet: four of thirteen levers passed**, and each named a missing test. A
+filter that matches nothing has the same shape as one that works, so inspecting the spec cannot tell
+them apart. Two runtime tests now ask what the search *offers*, on a library built to make a wrong
+reading loud — the legendary filter has to pick Captain Sisay over Raging Goblin, and both are
+creature cards. All thirteen fail now.
+
+**The biggest thing left in the way is one engine feature, not a reader**: `you may search your
+library …` is 128 cards one line short, and D447/D448 refuse it because the engine cannot skip a
+later question on an earlier answer.
+
+Coverage **17,625 of 56,421 legal lines (31.2%)**, **8,192 cards with a script** (+63), 4,680 fully
+read (+53).

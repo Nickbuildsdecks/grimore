@@ -8106,3 +8106,190 @@ describe('a "may" with a price on it (D448)', () => {
       .toBe('you may pay {1}. If you do, draw a card');
   });
 });
+
+describe('a library search, generalised (D449)', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const unreadLines = (c: ReturnType<typeof compileCard>) =>
+    (c.ok ? c.unread : []).map((u) => u.line);
+  const spell = (text: string, name = 'Probe Thing', typeLine = 'Sorcery') => compileCard({
+    name, type_line: typeLine, mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal',
+    // A creature row needs a printed body or `compileCard` refuses the card outright, for a reason
+    // that has nothing to do with this clause.
+    ...(/creature/i.test(typeLine) ? { power: '2', toughness: '2' } : {}),
+    oracle_text: text,
+  } as never);
+  /** The one search question a read clause carries, as a plain object. */
+  const question = (c: ReturnType<typeof compileCard>) => {
+    const specs = (field(c.ok ? c.script : undefined, 'decisions') ?? []) as readonly unknown[];
+    expect(specs).toHaveLength(1);
+    return specs[0] as Record<string, unknown>;
+  };
+
+  it.each([
+    /*
+      Two exact-string readers covered two of the **173 distinct shapes** this clause takes in the
+      corpus. They are not 173 mechanics: they are one mechanic crossed with a filter, an optional
+      reveal, two spellings of "the card you found", and three destinations — 439 unread legal
+      lines in all.
+    */
+    ['a basic land card to the battlefield tapped (Rampant Growth)',
+      'Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.'],
+    // "that card" where the line above says "it": a wording variant, 14 lines of it.
+    ['the same with "that card" (Deep Reconnaissance)',
+      'Search your library for a basic land card, put that card onto the battlefield tapped, then'
+        + ' shuffle.'],
+    ['an untapped arrival (Khalni Heart Expedition’s shape)',
+      'Search your library for a basic land card, put it onto the battlefield, then shuffle.'],
+    ['a reveal before the hand (Attune with Aether)',
+      'Search your library for a basic land card, reveal it, put it into your hand, then shuffle.'],
+    ['"reveal that card" (Braidwood Sextant)',
+      'Search your library for a basic land card, reveal that card, put it into your hand, then'
+        + ' shuffle.'],
+    // A card type, lowercase in print.
+    ['a card type (Eladamri’s Call)',
+      'Search your library for a creature card, reveal that card, put it into your hand, then'
+        + ' shuffle.'],
+    ['a planeswalker (Call the Gatewatch)',
+      'Search your library for a planeswalker card, reveal it, put it into your hand, then shuffle.'],
+    // A subtype, capitalised in print.
+    ['a creature subtype (Cateran Summons)',
+      'Search your library for a Mercenary card, reveal that card, put it into your hand, then'
+        + ' shuffle.'],
+    ['a basic land type (Flagstones of Trokair)',
+      'Search your library for a Plains card, put it onto the battlefield tapped, then shuffle.'],
+  ])('reads %s', (_label, text) => {
+    const compiled = spell(text as string);
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([]);
+    const spec = question(compiled);
+    expect(spec['from']).toBe('library');
+    expect(spec['max']).toBe(1);
+    expect(typeof spec['filter']).toBe('function');
+  });
+
+  it('reads the comma form of "a card", with no filter at all', () => {
+    /*
+      Demonic Tutor, printed. "A card" is the one phrase whose reading is the **absence** of a
+      filter, and it has to be told apart from a phrase this module cannot build rather than
+      falling through to one: a search with a filter that matches nothing and a search with no
+      filter look identical in the spec until you ask what it offers.
+    */
+    const compiled = spell(
+      'Search your library for a card, put that card into your hand, then shuffle.',
+    );
+    expect(unreadLines(compiled)).toEqual([]);
+    expect(question(compiled)['filter']).toBeUndefined();
+  });
+
+  it.each([
+    /*
+      The multi-word filters, which are the dangerous refusals rather than the obvious ones: each
+      ends in " card" like a type phrase and so reaches the type branch, where a capitalised
+      multi-word name would be matched against a subtype list that holds one word per entry — and
+      find nothing, silently, on a card that otherwise works. The one-word guard is what refuses
+      them, and these are the printed shapes it is refusing (counts are legal lines in the corpus).
+    */
+    ['a subtype and a type together', 'a Rebel permanent card'],                      // 10 lines
+    ['a basic of a named type', 'a basic Plains card'],                               // 14
+    ['a colour and a type', 'a green creature card'],                                 // 4
+    ['two types', 'an instant or sorcery card'],                                      // 7
+    ['a supertype and a type', 'a legendary creature card'],
+  ])('refuses %s, which ends in "card" but is not a type', (_label, filterPhrase) => {
+    const text = `Search your library for ${filterPhrase as string}, put that card into your hand,`
+      + ' then shuffle.';
+    const compiled = spell(text);
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([text]);
+  });
+
+
+  it('reads a supertype, which is neither a type nor a subtype', () => {
+    /*
+      Captain Sisay prints "a legendary card". **This was a defect in the first draft of this
+      reader** and the reason the lowercase allow-list exists: "legendary" is a supertype
+      (CR 205.4a), so a reader matching subtypes found nothing, every time, on a card that
+      otherwise worked. See the next test for the other half of the same mistake.
+    */
+    const compiled = spell(
+      '{T}: Search your library for a legendary card, reveal that card, put it into your hand,'
+        + ' then shuffle.',
+      'Captain Sisay',
+      // A tap ability needs a permanent to live on: the same line on a Sorcery is refused for that
+      // reason and not for its filter, which is a distinction worth not tripping over.
+      'Legendary Creature — Human Soldier',
+    );
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([]);
+  });
+
+  it('refuses "a permanent card", because permanent is not a type', () => {
+    /*
+      The control, and the reading this test exists to forbid. "Permanent" is a *category* of
+      types, not a type (CR 205.2a), so no card's type line contains it — a reader that accepted the
+      word would compile a search that offers **nothing**, on a card whose other lines work. That is
+      worse than leaving the line unread, because the card plays and plays wrongly (D362), and
+      nothing at the table would flag it.
+    */
+    const text = 'Search your library for a permanent card, put that card into your hand, then'
+      + ' shuffle.';
+    const compiled = spell(text);
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([text]);
+  });
+
+  it('reads "a card named <itself>" and refuses any other name', () => {
+    /*
+      Avarax's shape, and the only name a printed line can give this reader: the card's own. A line
+      naming some *other* card would need a database to look the name up in, and a filter matching a
+      name that is not in the deck is a search that finds nothing.
+    */
+    const own = spell(
+      'Search your library for a card named Probe Thing, reveal it, put it into your hand, then'
+        + ' shuffle.',
+    );
+    expect(unreadLines(own)).toEqual([]);
+    const other = 'Search your library for a card named Shivan Dragon, reveal it, put it into your'
+      + ' hand, then shuffle.';
+    expect(unreadLines(spell(other))).toEqual([other]);
+  });
+
+  it.each([
+    /*
+      What is refused, each with its printed shape. All of them need something this reader has not
+      got: a count on the question, a destination applied to a set, two filters, a condition on a
+      characteristic, two zones, or a fourth destination.
+    */
+    ['a count on the question',
+      'Search your library for up to two basic land cards, put them onto the battlefield tapped,'
+        + ' then shuffle.'],
+    ['a destination applied to a set',
+      'Search your library for any number of cards named Probe Thing, reveal them, put them into'
+        + ' your hand, then shuffle.'],
+    ['two filters at once',
+      'Search your library for a basic land card or Gate card, put it onto the battlefield tapped,'
+        + ' then shuffle.'],
+    ['a condition on a characteristic',
+      'Search your library for an artifact card with mana value 4 or 5, reveal that card, put it'
+        + ' into your hand, then shuffle.'],
+    ['two zones',
+      'Search your library and/or graveyard for a creature card, reveal it, put it into your hand,'
+        + ' then shuffle.'],
+    // The top of the library is a fourth destination, and `searchYourLibrary`'s own shuffle would
+    // undo it — so this one is not merely unread, it is a reading that could not be correct.
+    ['the top of the library as a destination',
+      'Search your library for a basic land card, reveal it, then shuffle and put that card on top.'],
+  ])('refuses %s', (_label, text) => {
+    const compiled = spell(text as string);
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([text]);
+  });
+
+  it('still reads the two cards the narrow readers it replaced were written for', () => {
+    // Diabolic Tutor keeps its own exact-string reader ("...for a card and put that card into your
+    // hand"), which this clause's comma form does not cover; Rampant Growth goes through the new
+    // one. Both are in the pool and `compiled-vs-written` compares them against their scripts.
+    expect(fullyCompiled(compiledScript('Diabolic Tutor'))).toBe(true);
+    expect(fullyCompiled(compiledScript('Rampant Growth'))).toBe(true);
+  });
+});
