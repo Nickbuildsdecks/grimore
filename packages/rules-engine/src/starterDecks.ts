@@ -3097,7 +3097,7 @@ const WOE_STRIDER: CardDef = {
   power: '3',
   toughness: '2',
   oracleText: 'When Woe Strider enters the battlefield, create a 0/1 white Goat creature token.\n'
-    + '{0}: Sacrifice another creature. Scry 1.\n'
+    + 'Sacrifice another creature: Scry 1.\n'
     + 'Escape—{4}{B}, Exile three other cards from your graveyard.',
   colors: ['B'],
 };

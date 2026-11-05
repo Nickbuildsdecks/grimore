@@ -25569,3 +25569,231 @@ describe('every target the phrase asked for, not the first (D470)', () => {
     expect(specOf("Return two target creatures to their owners' hands")).toBeNull();
   });
 });
+
+describe('a sacrifice the controller chooses (D471)', () => {
+  /*
+    The third of three families in one measured row, and the reason the row had to be split.
+
+    `phrase-gap.mjs` put `sacrifice <permanent>` at **81 cards** one unread line from a finished
+    script. Classified by sub-shape, that is not one reader:
+
+    - **44** print `sacrifice it unless you <cost>` — a demanded price with a consequence, echo's
+      shape (#196), needing a cost vocabulary of its own (the Karoo lands' bounce, a discard, a mana
+      payment, a second sacrifice). Its own increment.
+    - **19** are a *trigger*: `Whenever you sacrifice a <thing>, …`. The substitution rewrote the
+      prologue rather than an effect — an event this engine does not raise. Its own increment too.
+    - **16** are this one: the printed sentence instructs, and the controller picks.
+
+    Reading the row as one phrase would have bought a third of what the number promised, which is
+    the same class of mistake `phrase-gap.mjs` was built to stop (its docblock lists three). A row
+    can be a family even when the phrase in it is identical.
+  */
+  const CENTAUR = {
+    name: 'Accursed Centaur', type_line: 'Creature — Zombie Centaur', mana_cost: '{B}', cmc: 1,
+    colors: ['B'], power: '2', toughness: '2', loyalty: null, layout: 'normal',
+    oracle_text: 'When Accursed Centaur enters, sacrifice a creature.',
+  };
+  const SPIRIT = {
+    name: 'Foul Spirit', type_line: 'Creature — Spirit', mana_cost: '{2}{B}', cmc: 3,
+    colors: ['B'], power: '3', toughness: '2', loyalty: null, layout: 'normal',
+    oracle_text: 'Flying\nWhen Foul Spirit enters, sacrifice a land.',
+  };
+  const TASKMASTER = {
+    name: 'Demonic Taskmaster', type_line: 'Creature — Demon', mana_cost: '{2}{B}', cmc: 3,
+    colors: ['B'], power: '4', toughness: '3', loyalty: null, layout: 'normal',
+    oracle_text:
+      'Flying\nAt the beginning of your upkeep, sacrifice a creature other than Demonic Taskmaster.',
+  };
+  const OFFERING = {
+    name: 'Death Pit Offering', type_line: 'Enchantment', mana_cost: '{2}{B}{B}', cmc: 4,
+    colors: ['B'], power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'When Death Pit Offering enters, sacrifice all creatures you control.\n'
+      + 'Creatures you control get +2/+2.',
+  };
+  const DATA = [CENTAUR, SPIRIT, TASKMASTER, OFFERING];
+
+  const deck = (entries: readonly { name: string; count: number }[]) => {
+    const built = customDeck({
+      id: 'd471-list', name: 'Chosen sacrifice', entries: [...entries], data: DATA as never,
+    });
+    expect(built.unknown).toEqual([]);
+    // D430 again: every fixture has to come from the printed data, or the test is about the pool.
+    const fixtures = new Set(DATA.map((card) => card.name));
+    expect([...built.fromData].sort())
+      .toEqual(entries.map((e) => e.name).filter((name) => fixtures.has(name)).sort());
+    return built.deck;
+  };
+
+  it('asks on the controller\'s own battlefield, and may be answered with itself', () => {
+    const built = deck([
+      { name: 'Accursed Centaur', count: 4 },
+      { name: 'Soul Warden', count: 4 },
+      { name: 'Swamp', count: 52 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd471-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd471-list': built },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Soul Warden'] },
+      hands: { 0: ['Accursed Centaur'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Accursed Centaur'),
+    } as Action);
+    s = drain(passBoth(s), 40);
+
+    /*
+      Both creatures, the Centaur included — the card says "a creature" and not "another", so a
+      board with nothing else means it eats itself, which is the card. The two Swamps are not
+      offered, which is the filter reading the noun.
+    */
+    expect(choices(s)).toEqual(['Accursed Centaur', 'Soul Warden']);
+    s = drain(decide(s, ['Soul Warden']), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Soul Warden');
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toContain('Accursed Centaur');
+  });
+
+  it('eats itself when it is the only creature, with nobody asked', () => {
+    /*
+      `decisionBounds` clamps both bounds to what the chooser controls, so one candidate is answered
+      by the engine rather than put on a screen as a one-button prompt — and CR 701.17a means the
+      candidate set is the controller's own battlefield, which `from: 'battlefield'` already says.
+    */
+    const built = deck([
+      { name: 'Accursed Centaur', count: 4 },
+      { name: 'Swamp', count: 56 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd471-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd471-list': built },
+      battlefield: { 0: ['Swamp', 'Swamp'] },
+      hands: { 0: ['Accursed Centaur'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Accursed Centaur'),
+    } as Action)), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Accursed Centaur');
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toEqual(['Swamp', 'Swamp']);
+  });
+
+  it('reads the noun, so a printed land sacrifice offers lands and not creatures', () => {
+    const built = deck([
+      { name: 'Foul Spirit', count: 4 },
+      { name: 'Soul Warden', count: 4 },
+      { name: 'Swamp', count: 52 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd471-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd471-list': built },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Soul Warden'] },
+      hands: { 0: ['Foul Spirit'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Foul Spirit'),
+    } as Action)), 40);
+    expect(choices(s)).toEqual(['Swamp', 'Swamp', 'Swamp']);
+    s = drain(decide(s, ['Swamp']), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Swamp');
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toContain('Soul Warden');
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toContain('Foul Spirit');
+  });
+
+  it('excludes the source when the print says "other than" its own name', () => {
+    /*
+      `another` wearing the card's own name, which is how a print says it when the permanent is not
+      one of the things it is asking for. Read as the same exclusion, and only when the name is
+      **this card's** — "other than" naming anything else is a restriction this reader cannot
+      express, so it refuses rather than ignoring the words.
+
+      Asserted through the spec's filter rather than a resolution, because the trigger is an upkeep
+      one: the exclusion is the whole claim and the filter is where it lives. The spec is a **thunk**
+      for the reason `CardsDecisionSpec.filter` is not handed the source (D465, #337).
+    */
+    const compiled = compileCard(TASKMASTER as never);
+    expect(compiled.ok).toBe(true);
+    expect(compiled.ok ? compiled.unread : ['not ok']).toEqual([]);
+    const upkeep = (compiled.ok ? (compiled.script?.triggers ?? []) : [])
+      .find((t) => t.on.kind === 'step');
+    const spec = (upkeep?.decisions ?? [])[0];
+    expect(typeof spec).toBe('function');
+
+    const s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'verdant-guard' },
+      battlefield: { 0: ['Mountain', 'Raging Goblin', 'Monastery Swiftspear'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    const source = find(s, 0 as SeatIndex, 'battlefield', 'Raging Goblin');
+    const other = find(s, 0 as SeatIndex, 'battlefield', 'Monastery Swiftspear');
+    const land = find(s, 0 as SeatIndex, 'battlefield', 'Mountain');
+    const built = (spec as (state: GameState, source: string) => {
+      filter?: (state: GameState, id: string) => boolean;
+    })(s, source);
+    expect(built.filter?.(s, other)).toBe(true);
+    // The permanent whose ability it is, excluded — which is what "other than" buys.
+    expect(built.filter?.(s, source)).toBe(false);
+    expect(built.filter?.(s, land)).toBe(false);
+  });
+
+  it('sacrifices every one of them when the print says "all", and asks nothing', () => {
+    const built = deck([
+      { name: 'Death Pit Offering', count: 4 },
+      { name: 'Soul Warden', count: 4 },
+      { name: 'Swamp', count: 52 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd471-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd471-list': built },
+      battlefield: {
+        0: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Soul Warden', 'Soul Warden'],
+        1: ['Grizzly Bears'],
+      },
+      hands: { 0: ['Death Pit Offering'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Death Pit Offering'),
+    } as Action)), 40);
+
+    // Both of mine, with no question asked; the opponent's keeps standing, because "you control".
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield').filter((n) => n === 'Soul Warden')).toEqual([]);
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard').filter((n) => n === 'Soul Warden'))
+      .toEqual(['Soul Warden', 'Soul Warden']);
+    expect(namesIn(s, 1 as SeatIndex, 'battlefield')).toContain('Grizzly Bears');
+  });
+
+  it('refuses a subtype, for the reason D469 refuses one in a target phrase', () => {
+    /*
+      `permanentDescribed` takes a permanent type and a colour, both of which survive being
+      lower-cased. A **subtype** does not: "sacrifice a Forest" and "sacrifice a non-Zombie
+      creature" need the printed capitalisation to tell a type from a word, and the phrase reaches
+      this reader already lower-cased for the prompt's sake. Fifteen of the corpus's sacrifices print
+      one, and they stay unread and badged rather than read as "any land" or "any creature" — which
+      would make Rogue Elephant eat a Mountain.
+    */
+    const refused = (text: string) => {
+      const compiled = compileCard({
+        name: 'Probe Beast', type_line: 'Creature — Human', mana_cost: '{2}{G}', cmc: 3,
+        colors: ['G'], power: '2', toughness: '2', loyalty: null, layout: 'normal',
+        oracle_text: `When Probe Beast enters, ${text}.`,
+      } as never);
+      return compiled.ok ? (compiled.unread ?? []).map((u) => u.line) : ['not ok'];
+    };
+    expect(refused('sacrifice a Forest')).toHaveLength(1);
+    expect(refused('sacrifice a non-Zombie creature')).toHaveLength(1);
+    // And the shapes it does read, so the refusal above is narrow rather than a reader that is off.
+    expect(refused('sacrifice a creature')).toEqual([]);
+    expect(refused('sacrifice two creatures')).toEqual([]);
+    expect(refused('sacrifice a nonland permanent')).toEqual([]);
+  });
+});

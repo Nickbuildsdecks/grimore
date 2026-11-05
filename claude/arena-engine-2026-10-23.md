@@ -12671,3 +12671,90 @@ widens what a reader **accepts**, re-read every effect downstream of it in the s
 acceptance and the resolution are two edits, and D469 made only one of them. The sixth family is the
 proof that the lesson is not rhetorical: five readers were fixed, and asking the same question once
 more found a sixth that the increment had also widened and nobody had listed.
+
+## D471 — A sacrifice the controller chooses, and a measured row that was three readers
+
+The `sacrifice <permanent>` row has sat near the top of the queue since D469 at **81 cards one
+unread line from a finished script**. It is not one reader, and finding that out before building was
+the whole of the planning.
+
+### The row, classified
+
+Dumped the 81 and read them. Three families share the identical phrase:
+
+| | cards | what it is |
+| --- | --- | --- |
+| `sacrifice it unless you <cost>` | **44** | a demanded price with a consequence — echo's shape (#196) |
+| `Whenever you sacrifice a <thing>,` | **19** | a *trigger event* this engine does not raise |
+| `sacrifice a <permanent>` | **16** | the effect: the print instructs, the controller picks |
+| `sacrifice all <permanents> you control` | 2 | the same effect with nothing to choose |
+
+Reading the row as one phrase would have bought a third of what the number promised. This increment
+is the third family and the sweep — the only two that are an *effect* — and the other two are now
+scoped with their own hazards named:
+
+- The **44** need a cost vocabulary before they can be read at all: the Karoo lands' bounce
+  (17 of them), a discard (10), a mana payment (4), a second sacrifice (8), a tap (2). Measured
+  which of those already read as effects: the bounce reads for `another creature`/`an artifact` but
+  **not** for `an untapped Island`, `a non-Lair land` or `two Forests`; the discard reads for
+  `a card`/`at random`/`two cards` but not for `a land card`. So that increment is a qualifier pass
+  and then the construct.
+- The **19** are an event (`Whenever you sacrifice …`), and every one of their payoffs already
+  reads. That makes it a trigger-kind increment, not a clause one.
+
+### The reader
+
+`sacrifice (a|an|another|two|three|up to two|up to three) <permanent>` is a `CardsDecisionSpec` on
+the controller's own battlefield — the same shape as D465's chosen bounce, and for the same reason:
+nothing is targeted, the pick happens as the ability resolves, and `from: 'battlefield'` already
+means the chooser's own side, so CR 701.17a ("a player can only sacrifice a permanent they control")
+needs no filter that could disagree with the zone.
+
+Mandatory, with the bounds clamped by `decisionBounds`: **Accursed Centaur with no other creature
+eats itself**, a board with none does nothing (CR 608.2 — as much as it can), and a board with
+exactly one answers without putting a one-button prompt on anybody's screen.
+
+`sacrifice a creature other than <this card>` is read as `another` wearing the card's own name
+(Demonic Taskmaster), and only when the name is this card's: "other than" naming anything else is a
+restriction this reader cannot express, so it refuses. `BOUNCE_COUNTS` and `permanentDescribed` are
+both reused rather than copied (D441, D438, D465).
+
+**Subtypes are refused**, for the reason D469 refuses one in a target phrase: `permanentDescribed`
+is handed a phrase already lower-cased for the prompt's sake, so "a Forest" and "a non-Zombie
+creature" cannot be told from a word. Fifteen printed sacrifices name one; they stay unread and
+badged rather than read as "any land", which would have Rogue Elephant eat a Mountain.
+
+### What the standing check caught, which is worth more than the increment
+
+`compiled-vs-written.test.ts` went red on **Woe Strider**, a card this change does not mention.
+
+The deck list printed its ability as `{0}: Sacrifice another creature. Scry 1.` The real card says
+**`Sacrifice another creature: Scry 1.`** — the sacrifice is the cost, before the colon, exactly how
+Bloodthrone Vampire and Izoni are written two hundred lines away in the same file. The script was
+always right (`cost: { sacrifice: 'another-creature' }`); the text beside it was a paraphrase nobody
+had compared to the printing.
+
+It was harmless until this increment, and then it was not: a chosen sacrifice read as an **effect**
+turned the paraphrase into a free, repeatable `{0}` ability that scries whether or not there is a
+creature to eat. A different and much better card, compiled out of a typo.
+
+Fixed by correcting the pool's text. The two readings then agree except for an identity `effect` the
+hand-written ability carried and the compiled reading does not emit (a scry's work is applying its
+own answer, D467), so that field is deleted rather than listed in `DISAGREE` — the same disposal
+D419 and D420 gave the same shape of difference. Third defect that check has found in a text nobody
+was reading.
+
+### The numbers
+
+| | D470 | D471 |
+| --- | --- | --- |
+| cards with a compiled script | 9,657 | **9,675** |
+| cards with every printed line read | 5,436 | **5,449** |
+| printed rules lines read | 19,557 of 56,421 (34.7%) | **19,583 of 56,421 (34.7%)** |
+
++13 fully read against a ceiling of 16 for the family, with the subtype spellings deliberately out.
+Engine suite **2,288** green (2,282 + the six tests here).
+
+Three levers broken one at a time on a green baseline, each failing exactly one test: the noun
+filter (a land sacrifice stops offering lands), the source exclusion ("other than" stops excluding
+the card), and the sweep (`all` takes only the first).

@@ -2254,9 +2254,28 @@ const WOE_STRIDER: CardScript = {
         reads a creature dying and none of them could make one die.
       */
       cost: { sacrifice: 'another-creature' },
-      description: '{0}: Sacrifice another creature. Scry 1.',
+      description: 'Sacrifice another creature: Scry 1.',
       decisions: [scry(1)],
-      effect: (c) => c.state,
+      /*
+        **No `effect`, and the pool's text was wrong (D471).**
+
+        The deck list printed this ability as `{0}: Sacrifice another creature. Scry 1.`, which is
+        not what the card says: the real printing is `Sacrifice another creature: Scry 1.`, with the
+        sacrifice **before** the colon as the cost — exactly how Bloodthrone Vampire and Izoni are
+        written two hundred lines away. The script was always right (`cost.sacrifice`) and the text
+        beside it was a paraphrase.
+
+        It mattered the moment the compiler learned to read a chosen sacrifice as an effect: the
+        paraphrase then compiled into a **free, repeatable** `{0}` ability that scries whether or not
+        there is a creature to eat, which is a different and much better card. Found by
+        `compiled-vs-written.test.ts`, which is the third defect that standing check has caught in a
+        text nobody was looking at.
+
+        With the text corrected the two readings agree except for this field: an identity `effect`
+        the compiled reading does not emit, because a scry's work is done by applying its own answer
+        (D467). Deleted rather than listed in `DISAGREE`, which is what D419 and D420 did with the
+        same shape of difference.
+      */
     },
   ],
 };
@@ -10373,6 +10392,90 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
           })
           : { ...shared, filter: (state: GameState, id: string) => describes(state, id) }],
         effect: (c) => moveToHand(c.state, chosenCards(c)),
+      };
+    }
+  }
+
+
+  /*
+    "Sacrifice a creature" — the sacrifice the **controller chooses**, which is the third family in
+    this row and the one the measurement had to be split to find.
+
+    `phrase-gap.mjs` put `sacrifice <permanent>` at **81 cards** one unread line from finished, and
+    that number is three readers rather than one. Classified by sub-shape:
+
+    - **44** print `sacrifice it unless you <cost>` — a demanded price with a consequence, which is
+      echo's shape (#196) and needs a cost vocabulary of its own (the Karoo lands' bounce, a
+      discard, a mana payment, a second sacrifice). Its own increment.
+    - **19** are a *trigger*: `Whenever you sacrifice a <thing>, …`. The substitution rewrote the
+      prologue, not an effect — an event kind this engine does not raise, and its own increment too.
+    - **16** are this one: the effect, where the printed sentence instructs and the controller picks.
+
+    So the row was never one phrase, and reading it as one would have bought a third of what the
+    number promised. Recorded because the same mistake is what `phrase-gap.mjs` itself exists to stop
+    (its docblock lists three), and a row can be a family even when the phrase is identical.
+
+    ## Mandatory, and the clamp is CR 608.2
+
+    A sacrifice is not optional and not a target: "sacrifice a creature" with one creature sacrifices
+    it, with none does nothing, and with several asks. `min` and `max` are both the printed count and
+    `decisionBounds` clamps them to what the chooser actually controls, which is the same reading the
+    bounce above leans on and the rule that a player instructed to sacrifice more permanents than
+    they control sacrifices as many as they can.
+
+    `from: 'battlefield'` is the chooser's **own** battlefield, so "you control" needs no filter and
+    cannot disagree with one (CR 701.17a: a player can only sacrifice a permanent they control).
+    The suffix is read and discarded for exactly that reason.
+
+    `BOUNCE_COUNTS` is reused rather than copied: the two families print the same quantifiers and two
+    lists of one thing is the shape this file keeps removing (D441, D438, D465).
+  */
+  const sweepingSacrifice = /^sacrifice (?:all|each) (.+?) you control$/i.exec(text);
+  if (sweepingSacrifice !== null) {
+    const describes = permanentDescribed(sweepingSacrifice[1]!);
+    if (describes !== null) {
+      return {
+        effect: (c) => moveToGraveyard(
+          c.state,
+          listAt(c.state, zoneKey(c.controller, 'battlefield'))
+            .filter((id) => describes(c.state, id)),
+        ),
+      };
+    }
+  }
+
+  /*
+    "Sacrifice a creature other than Demonic Taskmaster" is `another` wearing the card's own name,
+    which is how the print says it when the permanent is not a creature of the same kind. Read as
+    the same exclusion rather than as a second qualifier, and only when the name is **this card's**:
+    "other than" naming anything else is a restriction this reader cannot express, so it refuses.
+  */
+  const sacrificed = /^sacrifice (a|an|another|two|three|up to two|up to three) (.+?)$/i.exec(text);
+  if (sacrificed !== null) {
+    const selfExcluded = new RegExp(`^(.+?) other than ${escapeName(name)}$`, 'i')
+      .exec(sacrificed[2]!.trim());
+    const phrase = (selfExcluded === null ? sacrificed[2]! : selfExcluded[1]!)
+      .trim().replace(/ you control$/i, '');
+    const counts = BOUNCE_COUNTS[sacrificed[1]!.toLowerCase()];
+    const describes = permanentDescribed(phrase);
+    const another = counts?.another === true || selfExcluded !== null;
+    if (counts !== undefined && counts.all !== true && describes !== null) {
+      const shared = {
+        who: 'controller' as const,
+        from: 'battlefield' as const,
+        prompt: `Sacrifice ${sacrificed[1]!.toLowerCase()} ${phrase}`,
+        min: counts.min,
+        max: counts.max,
+      };
+      return {
+        decisions: [another
+          // The thunk, for the same reason the bounce needs one: a filter is not handed the source.
+          ? (_state: GameState, source: string): CardsDecisionSpec => ({
+            ...shared,
+            filter: (state: GameState, id: string) => id !== source && describes(state, id),
+          })
+          : { ...shared, filter: (state: GameState, id: string) => describes(state, id) }],
+        effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
       };
     }
   }
