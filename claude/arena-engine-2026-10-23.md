@@ -12347,3 +12347,30 @@ set reads **99/100: 99 finished, 1 threw** — seed 30072 on `the engine cannot 
 ability yet`, which is D460's invariant again in a different place and not a regression from this
 change (30000–30059 is 60/60; 30060–30099 had never been run). Three corpus cards carry a divided
 activated ability — Mogg Mob, Ral, Caller of Storms and Samut, the Tested — and it is task **#336**.
+
+## The ability the engine offered and then refused (D463)
+
+Seed 30072 of the 100-pod sweep threw on `the engine cannot divide an activated ability yet`. That
+refusal was written on a premise its own comment stated — "no ability in the pool divides anything" —
+and the corpus has three such cards: **Mogg Mob**, and the -2 of **Ral, Caller of Storms** and
+**Samut, the Tested**.
+
+It is **D460's invariant again**: `legalActions` offers the ability, `autoActions` refuses the action
+built from it, and `playout.test.ts`' "never offers a play it then refuses" is green because no
+built-in deck holds one. Twice in one session, so the lesson is about the assertion rather than the
+cards: it is only as broad as the decks it runs on.
+
+Three cards is a line in the compiler, not a feature in the engine, so the ability is no longer
+emitted and the line is flagged — unread beats offered-then-refused (D362). Spells keep division,
+which the engine implements (#119), pinned by a test on Arc Lightning.
+
+**The half-fix is the part worth remembering.** The first version guarded one assembly site and the
+card I checked by hand was correct; the **coverage count** came back one card lower where three were
+expected, and that was the whole signal. The compiler builds an activated ability in two places and
+the planeswalker loyalty branch is the second, so Ral and Samut were still emitting it. Both go
+through one predicate now. A count that moves by the wrong amount is a test.
+
+**Verified**: gate green (engine 2,255, api 325, web 246, realtime 59); two break levers, two
+discriminating failures, the spell test green in both; seed 30072 finishes on turn 66 in 270 moves;
+coverage 9,221 → **9,219** cards and 18,918 → **18,916** of 56,421 lines (33.5%), which is the price
+of the fix and is named rather than rounded away.

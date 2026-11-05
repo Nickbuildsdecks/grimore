@@ -12820,6 +12820,23 @@ function sweepDestination(
   };
 }
 
+/**
+ * Whether a reading carries a **divided** quantity, which an activated ability cannot resolve.
+ *
+ * `AutoActivateAction` carries no division — `autoActions.ts` throws rather than dealing the whole
+ * amount to the first target — so an ability built from such a reading is one the engine offers and
+ * then refuses. The line stays unread instead, which is the honest half of D362: an unread line is
+ * a line a human resolves, where an offered-then-refused one is a button that ends the game with an
+ * error.
+ *
+ * One function and two call sites, because there are two: the ordinary `cost: effect` assembly and
+ * the planeswalker `+N:` / `-N:` one. D463 guarded only the first, and the coverage figure caught it
+ * — three cards print this and the count moved by one, so the other two were still emitting it.
+ * Spells keep division, which the engine implements (#119); only the ability path has no machinery.
+ */
+const dividesAQuantity = (read: ReadEffect): boolean =>
+  (read.targets ?? []).some((spec) => spec.divided !== undefined);
+
 function damageEffect(clause: string, name: string): ReadEffect | null {
   const self = selfRef(name);
 
@@ -13902,6 +13919,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   if (loyalty !== null) {
     const read = composeEffects(clausesOf(clause), name);
     if (read === null) return null;
+    // See `dividesAQuantity`: Ral, Caller of Storms and Samut, the Tested both print it on a -2.
+    if (dividesAQuantity(read)) return null;
     const amount = loyalty[1] === '+' || loyalty[1] === '' ? Number(loyalty[2]) : -Number(loyalty[2]);
     return {
       abilities: [{
@@ -14075,6 +14094,30 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   */
   const read = animateSelf(clause, name) ?? composeEffects(clausesOf(clause), name);
   if (read === null) return null;
+  /*
+    A **divided** quantity on an activated ability is refused, and the line stays unread.
+
+    `AutoActivateAction` carries no division — `autoActions.ts` says so and throws rather than
+    dealing the whole amount to the first target — so emitting the ability here produces a card the
+    engine offers and then refuses. That is not a wrong reading in the D362 sense; it is worse,
+    because `legalActions` puts the button on the table and pressing it ends the game with an error.
+    `playout.test.ts`' standing invariant says the engine never offers a play it then refuses, and
+    this is the second place this session where that assertion was green only because no built-in
+    deck had the card (D460 was the first).
+
+    So the honest reading is no reading: the line is flagged, the rest of the card still compiles,
+    and the card is cast and played with one line a human has to resolve.
+
+    Found by `corpus-decks.mjs` at seed 30072 of a 100-pod sweep (#336, D463). Three legal cards
+    print it on an activated ability — **Mogg Mob** ("Sacrifice Mogg Mob: It deals 3 damage divided
+    as you choose among one, two, or three targets"), and the -2 of **Ral, Caller of Storms** and
+    **Samut, the Tested**. Counted over the whole corpus rather than guessed, which is what decided
+    the fix: three cards is a line here, not a feature in the engine.
+
+    The **spell** path keeps division, because the engine implements it there (#119): the amounts are
+    announced as the spell is cast. Only the ability path has no machinery for it.
+  */
+  if (dividesAQuantity(read)) return null;
   return {
     abilities: [{
       ...timing,

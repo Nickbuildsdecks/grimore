@@ -24217,6 +24217,123 @@ describe('an Aura the compiler only half reads still goes onto something (D456)'
   });
 });
 
+describe('an activated ability that divides a quantity (D463)', () => {
+  /*
+    The engine refuses to resolve a divided **activated** ability — `autoActions.ts` says so and
+    throws, because `AutoActivateAction` carries no division and dealing the whole amount to the
+    first target would be a wrong card. Its comment stated the premise: "no ability in the pool
+    divides anything — and the day one does, this is the line that says so."
+
+    The day came. A 100-pod sweep of arbitrary real decks threw at seed 30072 (#336): `legalActions`
+    offered the ability, the bot took it, and the engine refused the action it had been handed —
+    `playout.test.ts`' standing "never offers a play it then refuses" invariant green again only
+    because no built-in deck holds such a card. Second time this session, after D460.
+
+    Three legal cards print it on an activated ability, counted over the whole corpus: **Mogg Mob**,
+    and the -2 of **Ral, Caller of Storms** and **Samut, the Tested**. Three cards is a line in the
+    compiler, not a feature in the engine — so the ability is no longer emitted and the printed line
+    is flagged, which is the honest half of D362: unread beats offered-then-refused.
+
+    Both halves here, and the second is the one that keeps the fix honest: the **spell** path still
+    divides, because the engine implements division there (#119). A fix that took Arc Lightning's
+    reading away with it would have cost a working card to spare a broken one.
+
+    Mogg Mob is in no built-in deck, which is load-bearing: `customDeck` consults the pool before
+    the printed data, so a pool card would prove nothing about the compiler.
+  */
+  const MOB = {
+    name: 'Mogg Mob', type_line: 'Creature — Goblin', mana_cost: '{3}{R}', cmc: 4, colors: ['R'],
+    power: '3', toughness: '3', loyalty: null, layout: 'normal',
+    oracle_text: 'Sacrifice Mogg Mob: It deals 3 damage divided as you choose among one, two, or '
+      + 'three targets.',
+  };
+
+  it('is not read, so the card ships with the line flagged rather than offered', () => {
+    const compiled = compileCard(MOB as never);
+    expect(compiled.ok).toBe(true);
+    // No ability at all, rather than one the engine would refuse.
+    expect(compiled.ok ? (compiled.script?.abilities ?? null) : 'not ok').toBe(null);
+    // And the line says so, which is what the table shows the player.
+    expect(compiled.ok ? compiled.unread.map((u) => u.why) : []).toEqual(['no-reader']);
+  });
+
+  it('still divides on a spell, which is where the engine implements it', () => {
+    const bolt = compileCard({
+      name: 'Arc Lightning', type_line: 'Instant', mana_cost: '{2}{R}', cmc: 3, colors: ['R'],
+      power: null, toughness: null, loyalty: null, layout: 'normal',
+      oracle_text: 'Arc Lightning deals 3 damage divided as you choose among one, two, or three '
+        + 'targets.',
+    } as never);
+    expect(bolt.ok).toBe(true);
+    expect(bolt.ok ? bolt.unread : ['not ok']).toEqual([]);
+    expect(bolt.ok ? (bolt.script?.targets?.[0]?.divided ?? null) : null).toBe(3);
+  });
+
+  /*
+    And the **second** assembly site, which the first version of this fix missed.
+
+    The compiler builds an activated ability in two places — the ordinary `cost: effect` line and
+    the planeswalker `+N:` / `-N:` one — and guarding only the first left Ral and Samut still
+    emitting the ability the engine refuses. Nothing in the suite caught that; the **coverage
+    figure** did: three cards print this clause on an ability and the card count moved by one, so
+    two of them were still reading it. A count that moves by the wrong amount is a test.
+
+    Both are refused through one predicate now, so the next reader added to either branch cannot
+    drift apart from the other.
+  */
+  it('is refused on a planeswalker loyalty ability too, which is the second place one is built', () => {
+    const ral = compileCard({
+      name: 'Ral, Caller of Storms', type_line: 'Legendary Planeswalker — Ral',
+      mana_cost: '{3}{U}{R}', cmc: 5, colors: ['U', 'R'],
+      power: null, toughness: null, loyalty: '4', layout: 'normal',
+      oracle_text: '+1: Draw a card.\n'
+        + '-2: Ral, Caller of Storms deals 3 damage divided as you choose among one, two, or three '
+        + 'targets.\n'
+        + '-7: Draw seven cards. Ral, Caller of Storms deals 7 damage to each creature your '
+        + 'opponents control.',
+    } as never);
+    expect(ral.ok).toBe(true);
+    const abilities = ral.ok ? (ral.script?.abilities ?? []) : [];
+    // The +1 still reads — the refusal is per line, not per card.
+    expect(abilities).toHaveLength(1);
+    expect(abilities[0]?.cost.loyalty).toBe(1);
+    // And nothing left on the card divides anything.
+    expect(abilities.flatMap((a) => (a.targets ?? []).filter((t) => t.divided !== undefined)))
+      .toEqual([]);
+  });
+
+  it('is never offered at a real table, so no seat can press a button the engine refuses', () => {
+    const built = customDeck({
+      id: 'd463-list',
+      name: 'Divided ability',
+      entries: [
+        { name: 'Mogg Mob', count: 4 },
+        { name: 'Mountain', count: 56 },
+      ],
+      data: [MOB as never],
+    });
+    expect(built.unknown).toEqual([]);
+    expect(built.fromData).toEqual(['Mogg Mob']);
+
+    const s = advanceTo(arena({
+      decks: { 0: 'd463-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd463-list': built.deck },
+      battlefield: { 0: ['Mogg Mob', 'Mountain', 'Mountain'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+
+    const mob = find(s, 0 as SeatIndex, 'battlefield', 'Mogg Mob');
+    /*
+      The card is on the battlefield and it is a creature — it was cast and it can attack. What it
+      does not have is an activate play, because the line that would have made one is unread.
+    */
+    expect(ids(s, 0 as SeatIndex, 'battlefield')).toContain(mob);
+    expect(legalActions(s, 0 as SeatIndex).plays
+      .filter((play) => play.card === mob && play.kind === 'activate')).toEqual([]);
+  });
+});
+
 describe('two printed prologues the compiler could not read (D461)', () => {
   /*
     Both rows were found by re-asking which half of a trigger line is the gap with a probe that can

@@ -29373,3 +29373,62 @@ decision the way D257 priced the castable term.
 Worth stating for beta: a loop is worse at a real table than a crash. `apps/realtime` bounds engine
 moves at 25 a write (D325), so a looping bot does not hang the process — it spends all 25 on nothing,
 every write, and the table never advances with no error anywhere for anybody to see.
+
+## D463 — The ability the engine offered and then refused, and the count that caught the half-fix
+
+Task #336, found by the 100-pod sweep D462's entry had to correct: seed 30072 threw on `the engine
+cannot divide an activated ability yet`.
+
+`autoActions.ts:1367` refuses to resolve a divided **activated** ability rather than deal the whole
+amount to the first target, and its comment stated the premise plainly: *"`AutoActivateAction`
+carries no division, because no ability in the pool divides anything — and the day one does, this is
+the line that says so."* The pool is 348 hand-written cards. The corpus is 31,654, and the day came.
+
+**The same invariant as D460, in a different place.** `legalActions` offered the ability, the bot took
+it, and the engine refused the action built from it. `playout.test.ts` asserts the engine never offers
+a play it then refuses; it was green both times, because no built-in deck holds either card. Twice in
+one session is a pattern worth naming: that assertion is only as broad as the decks it runs on, and
+the corpus sweeps are now the only thing that really tests it.
+
+### The fix, and why it is a line rather than a feature
+
+Counted before choosing: **three** legal cards print the clause on an activated ability — **Mogg
+Mob**, and the **-2** of **Ral, Caller of Storms** and **Samut, the Tested**. Three cards is a line in
+the compiler, not damage-division machinery in the engine. So the compiler no longer emits the
+ability and the printed line stays flagged, which is the honest half of D362: an unread line is one a
+human resolves, where an offered-then-refused one is a button that ends the game in an error box.
+
+The **spell** path keeps division, because the engine implements it there (#119) — the amounts are
+announced as the spell is cast. A test pins Arc Lightning still reading with `divided: 3`, because a
+fix that took a working card away to spare a broken one would be a bad trade.
+
+### The half-fix, and the thing that found it
+
+The first version guarded one site and I checked Mogg Mob by hand: refused, correct. Then the
+coverage re-measure came back **one card lower, not three**. Three cards print this; a drop of one
+meant two were still reading it.
+
+They were. The compiler builds an activated ability in **two** places — the ordinary `cost: effect`
+line and the planeswalker `+N:` / `-N:` branch — and Ral and Samut go through the second. Both now
+call one shared `dividesAQuantity`, so a reader added to either branch cannot drift from the other.
+
+**A count that moves by the wrong amount is a test.** The suite was green, the card I inspected was
+right, and only the arithmetic disagreed — and the arithmetic was correct. That is written into the
+test's docblock rather than just into the code, because the same two-site drift is available to the
+next reader added here.
+
+### Verified
+
+Gate green: rules-engine **2,255** (2,251 + 4), apps/api 325, apps/web 246, apps/realtime 59.
+
+Two break levers against a baseline verified green first — the ordinary-path guard removed (2 of 4
+fail) and the loyalty guard removed (1 of 4 fails) — and in both runs the Arc Lightning test stays
+green, which is what says the spell path is untouched.
+
+Seed 30072 itself: **finished, turn 66, 270 moves**, where before it threw.
+
+Coverage, measured rather than assumed: **9,219 cards with a script** (from 9,221) and **18,916 of
+56,421 legal lines, 33.5%** (from 18,918). Two cards lose their script entirely — Mogg Mob, whose only
+line this was, and Samut, whose other two were already unread — while Ral keeps its `+1`, because the
+refusal is per line and not per card. Paying two cards to stop a throw in a hundred pods is the right
+side of that trade.
