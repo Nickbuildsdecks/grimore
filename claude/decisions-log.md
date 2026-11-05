@@ -28747,3 +28747,68 @@ covered it now says it covers the pipeline.
 Legal-only coverage **18,887 of 56,421 lines (33.5%)**, **9,213 cards with a script**
 (8,530 → 9,213, **+683**), 5,020 with every printed line read. Auras with an attachment: **496 →
 1,077**. Full engine suite 2,240 tests. GATE OK.
+
+## D457 — Where else does a card come out unplayable? An audit, and one decision
+
+D456 found a card type where "the compiler read nothing" meant "cannot be played at all", which is a
+different and worse thing than an unread line. That is a question worth asking of the whole
+compiler rather than of one reader, so it was asked.
+
+### A card with no script is still a card you can play — for every type but the one D456 fixed
+
+**23,246 of 30,710 legal cards compile to no script**, and the shape of that number matters more than
+its size: 12,682 Creatures, 2,905 Instants, 2,764 Sorceries, 1,895 Enchantments, 1,033 Artifacts,
+891 Artifact Creatures, 171 Planeswalkers, and about 400 rows for formats this engine does not play
+at all (Plane, Scheme, Vanguard, Conspiracy, Phenomenon, Contraption, Attraction).
+
+Driven through a real table rather than reasoned about: a printed Instant whose only line this
+compiler refuses is **still offered as a play**, still spends its mana, and still reaches the
+graveyard on resolution. A creature with no script is a vanilla body that can be cast, attack and
+block. So for both, "no script" is the hybrid reading working as designed — the card is at the
+table and its text is flagged for a person (D362).
+
+An Aura was the exception, because the attachment is the only way the card gets where it belongs, and
+there is no tabletop move that puts it there. That was D456, and this audit is what says it was the
+only one of its kind.
+
+### The three whole-card readers, checked
+
+`wholeCardShapeFor` has three: the attachment (fixed), `exileUntilLeavesShapeFor` and
+`soulbondShapeFor`. The last two each match **one** printed line and claim that line, so an
+unreadable sibling cannot poison them — every other line goes through the per-line path and is
+flagged on its own. Only the attachment read two lines as a unit, which is why only the attachment
+could lose a card to one of them.
+
+### The modal reader is all-or-nothing, and stays that way
+
+It is the one remaining reader that refuses a whole mechanism over one line: a card whose modes do
+not all read loses **every** mode and its "Choose one —" header with them.
+
+Measured: **526 legal modal cards, 51 with a modal reading.** Of the 475 without, **161 are one mode
+short** (123 read 1 of 2, 32 read 2 of 3, 6 read 3 of 4 or 4 of 5) and about 210 have no readable
+mode at all.
+
+**Decided: a partial modal is not shipped**, and the reason is the difference from the Aura case. A
+mode is chosen **as the spell is cast** (CR 601.2b) — the choice *is* the cast — so offering two of
+three modes does not hand the player an incomplete mechanism, it hands them a **different card**, one
+whose third mode cannot be taken at all. An Aura that attaches with no bonus is the opposite: the
+mechanism offered (cast, target, attach) is complete and correct, and what is missing is text that
+applies afterwards and carries a badge. Shipping two modes of three would be the first reading in
+this compiler to remove a legal choice from a player while the card looked automated, and the fact
+that the missing mode is flagged does not give it back.
+
+So those 161 cards stay unread, which means they stay castable by hand with every line flagged — the
+same bargain every other scriptless spell gets. The way to fix them is to read the third mode, which
+is the ordinary clause work the queue is already ranked by.
+
+**One small defect found on the way, and left as task #331:** 11 legal cards whose every mode reads
+and which still compile without a modal, because their header is one this reader does not know —
+`Choose one or more —` (3), `Choose three. You may choose the same mode more than once.` (3),
+`Choose one or both —` (2), and one each of `Choose two —`, `Choose one —` with X in a mode, and
+Widow's Bite's teamwork clause.
+
+### Verified
+
+No code changed, so the evidence is the measurements above and the probe that drove a refused
+printed Instant through a table to its graveyard. Numbers from the 33,847-row corpus at
+`18f85b3`; the engine suite and the gate were green at that commit.

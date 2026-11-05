@@ -12104,3 +12104,26 @@ Measured across 1,880 legal attachments afterwards: **0 bonus lines neither expr
 
 Coverage **18,887 of 56,421 legal lines (33.5%)**, **9,213 cards with a script (+683)** — the largest
 single increment so far, and Auras with an attachment went **496 → 1,077**.
+
+## Where else does a card come out unplayable? (D457)
+
+D456 found a type where "read nothing" meant "cannot be played", which is worse than an unread line.
+Asked of the whole compiler: **23,246 of 30,710 legal cards compile to no script**, and that is
+mostly fine. Driven through a real table: a printed Instant this compiler refuses is still offered as
+a play, still spends its mana and still reaches the graveyard; a creature with no script is a vanilla
+body that casts, attacks and blocks. The Aura was the exception because attaching is the only way the
+card reaches where it belongs — and the audit says it was the only one of its kind.
+
+Of the three whole-card readers, only the attachment read two lines as a unit; the exile-until-leaves
+and soulbond readers each claim one line, so an unreadable sibling cannot poison them.
+
+**The modal reader is all-or-nothing and stays so.** 526 legal modal cards, 51 read, **161 one mode
+short**. A mode is chosen as the spell is cast (CR 601.2b), so the choice *is* the cast: offering two
+of three modes does not give the player an incomplete mechanism, it gives them a different card whose
+third mode cannot be taken — the first reading here that would remove a legal choice while looking
+automated. An Aura that attaches with no bonus is the opposite: complete mechanism, flagged text. So
+those 161 stay castable by hand, and the fix is to read the third mode.
+
+Left as task #331: 11 cards whose every mode reads and which still refuse, because of an unknown
+header (`Choose one or more —`, `Choose three. You may choose the same mode more than once.`,
+`Choose one or both —`).
