@@ -2385,6 +2385,8 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       readonly effect: (c: EffectContext) => GameState;
       readonly expiresAtEndOfTurn?: boolean;
       readonly removesACreature?: boolean;
+      // The third mode-level bot hint, added when Healing Salve began to compile (D488).
+      readonly preventsDamage?: boolean;
     }
     const modal = (script: unknown) =>
       field(script, 'modal') as { modes: readonly Mode[]; min?: number; max?: number } | undefined;
@@ -2456,20 +2458,25 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       `legalActions` offers a play per legal combination of modes, so a charm missing its third mode
       is a charm whose third mode nobody can choose, with nothing at the table to say so.
     */
-    it('refuses Healing Salve whole, all 3 lines, because one bullet has no reader', () => {
+    it('reads Healing Salve whole, which was the last pool card refusing a bullet', () => {
       /*
-        This row has emptied twice, exactly as its own note said it would. Golgari Charm left when
-        its regenerate mode was read; **Selesnya Charm** left with D404's exile-by-power, and it is
-        asserted mode for mode further down instead. Healing Salve is the last pool card holding
-        the property — its second bullet prevents damage, which nothing reads — and the synthetic
-        row below it is what will hold the property when that one goes too.
+        This row has now emptied three times, exactly as its own note said it would. Golgari Charm
+        left when its regenerate mode was read; **Selesnya Charm** left with D404's exile-by-power;
+        and **Healing Salve** left with D488's prevention reader. No pool card holds the property
+        any more — the synthetic row below it does, which is why that row was written.
+
+        So this row is inverted rather than deleted: it asserted that the whole card was refused,
+        and it now asserts that the whole card is read. Both directions matter, and keeping the card
+        here keeps the note's history attached to it.
       */
       const compiled = compiledScript('Healing Salve');
-      expect(compiled.source).toBe('printed-only');
-      expect(compiled.script).toBeUndefined();
-      expect(compiled.unread).toHaveLength(3);
-      // Including the header, which is the line that would otherwise look readable on its own.
-      expect(compiled.unread[0]!.line).toMatch(/^Choose one/);
+      expect(compiled.source).toBe('lines');
+      expect(compiled.unread).toEqual([]);
+      const modes = modal(compiled.script)!.modes;
+      expect(modes).toHaveLength(2);
+      // And the mode-level bot hint, which the hand-written card has always carried.
+      expect(modes[1]!.preventsDamage).toBe(true);
+      expect(modes[0]!.preventsDamage).toBeUndefined();
     });
 
     it('refuses a synthetic charm whose third bullet has no reader, header and all', () => {
@@ -9767,5 +9774,83 @@ describe("a spell's non-resolution lines (D487)", () => {
     if (!read.ok) return;
     // Both lines unread: the spell is compiled whole or not at all.
     expect(read.unread.map((u) => u.line).sort()).toEqual([RESOLUTION, other].sort());
+  });
+});
+
+/*
+  "Prevent the next N damage that would be dealt to <somewhere> this turn" (D488).
+
+  Ranked top of the clause queue by cards finished: 105 printed lines on 50 legal cards, in 27
+  distinct destination forms — all 27 were listed before the reader was written. `preventDamage` is
+  the primitive and has been here since #85, and `shieldFirstTarget` is the wrapper the two
+  hand-written prevention cards already use, so this is a reader and not an engine change.
+*/
+describe('prevent the next N damage (D488)', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const wall = (text: string) => compileCard({
+    name: 'Shielding Wall', type_line: 'Creature — Wall', mana_cost: '{2}{W}', cmc: 3,
+    colors: ['W'], layout: 'normal', power: '0', toughness: '4', oracle_text: text,
+  });
+
+  it.each([
+    // The dominant form, 61 printed lines (Alabaster Wall, Abuna Acolyte, Samite Healer).
+    '{T}: Prevent the next 1 damage that would be dealt to any target this turn.',
+    // 16 lines (Abuna's Chant, Wandering Mage).
+    '{T}: Prevent the next 5 damage that would be dealt to target creature this turn.',
+    // And the narrower target phrases, each a real printing.
+    '{T}: Prevent the next 1 damage that would be dealt to target artifact creature this turn.',
+    '{T}: Prevent the next 1 damage that would be dealt to target player or planeswalker this turn.',
+    '{T}: Prevent the next 1 damage that would be dealt to target legendary creature this turn.',
+    // The controller, 7 lines (Conservator). Not a side — see the reader's docblock.
+    '{T}: Prevent the next 2 damage that would be dealt to you this turn.',
+    // The source itself, 7 lines (Rock Hydra, Ethereal Champion, Opal-Eye, Rasputin Dreamweaver).
+    '{T}: Prevent the next 1 damage that would be dealt to Shielding Wall this turn.',
+  ])('reads "%s"', (text) => {
+    const read = wall(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    const abilities = field(read.script, 'abilities') as readonly Record<string, unknown>[];
+    expect(abilities).toHaveLength(1);
+    // The bot hint, on the ability: do not spend a shield on a board with nothing coming.
+    expect(abilities[0]!['preventsDamage']).toBe(true);
+  });
+
+  it.each([
+    /*
+      X first, and it is the one refusal that is about where the number comes from rather than what
+      the destination is. X is chosen as a spell is cast (CR 601.2b); on a trigger or an activated
+      ability `c.x` is zero, so reading bare X here would give a card that works and prevents
+      nothing, with nothing left unread for anybody to notice. `xSpellResolution`'s argument.
+    */
+    ['{T}: Prevent the next X damage that would be dealt to target creature this turn.',
+      'X comes from a cost this clause cannot see'],
+    // A scope is not a target: `preventDamage` pushes one effect per target (Kitsune Palliator).
+    ['{T}: Prevent the next 1 damage that would be dealt to each creature and each player this turn.',
+      'a scope, which would shield the first and silently drop the rest'],
+    ['{T}: Prevent the next 1 damage that would be dealt to each creature you control this turn.',
+      'the same, on your own board'],
+    // The Aura host, which D469 says is a different question from a target phrase (Fylgja).
+    ['{T}: Prevent the next 1 damage that would be dealt to enchanted creature this turn.',
+      'the Aura host'],
+    // Event-relative: it belongs to whatever raised the event (Guardian Angel).
+    ['{T}: Prevent the next 1 damage that would be dealt to that permanent or player this turn.',
+      '"that permanent or player" names something an event carried'],
+    /*
+      And one this increment got wrong first time. I wrote this row as a *mapping* row on the
+      argument that D486 reads a disjunction in the noun position — but Wandering Mage's phrase is a
+      disjunction whose parts **share a trailing noun**, and D486 splits on `or` and then requires
+      each part to be a single word, so "Wizard creature" refuses the run. The capability I claimed
+      is not the capability that shipped. One printed line; recorded as the shape to read next
+      rather than widened here, because a shared trailing noun changes what the parts mean.
+    */
+    ['{T}: Prevent the next 1 damage that would be dealt to target Cleric or Wizard creature this turn.',
+      'a disjunction sharing a trailing noun, which D486 does not read'],
+  ])('leaves "%s" unread: %s', (text) => {
+    const read = wall(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
   });
 });

@@ -163,6 +163,22 @@ const attackingOrBlocking: NonNullable<TargetSpec['filter']> = (state, candidate
 };
 
 const TARGET_PLAYER: TargetSpec = { kind: 'player', description: 'target player' };
+/**
+ * The same spec on a card that *helps* the player it points at — see `TargetSpec.friendly`.
+ *
+ * Added in D488, and by a route worth recording: the prevention reader made Healing Salve compile
+ * for the first time, and `compiled-vs-written.test.ts` then found its **other** mode disagreeing.
+ * "Target player gains 3 life" has been read as friendly by the life clause all along; the
+ * hand-written card said plain `TARGET_PLAYER`, so the bot could offer to gain an opponent three
+ * life. The compiled reading is the better one and the hand-written side moved to it.
+ *
+ * A constant beside `TARGET_PLAYER` rather than a change to it, because `TARGET_PLAYER` has sixteen
+ * users and most of them point at a player the card is doing something *to* — "target player mills
+ * three cards" is not friendly. Same shape as `ANY_TARGET_HELPED` beside `ANY_TARGET`.
+ */
+const TARGET_PLAYER_HELPED: TargetSpec = {
+  kind: 'player', description: 'target player', friendly: true,
+};
 
 const creatureYouControl = (state: GameState, candidate: Target, controller: SeatIndex): boolean =>
   candidate.kind === 'card' && state.instances[candidate.id]?.zoneSeat === controller;
@@ -4850,7 +4866,8 @@ const HEALING_SALVE: CardScript = {
     modes: [
       {
         description: 'Target player gains 3 life',
-        targets: [TARGET_PLAYER],
+        // Friendly: three life for an opponent is not a play. See `TARGET_PLAYER_HELPED` (D488).
+        targets: [TARGET_PLAYER_HELPED],
         effect: (c) => {
           const seat = firstPlayerTarget(c);
           return seat === null ? c.state : gainLife(c.state, seat, 3);
@@ -15336,10 +15353,105 @@ function conjoinedEffect(
  * are not targets at all, so it has to see the clause before `targetedEffect` reads "to" as a
  * target phrase.
  */
+/**
+ * "Prevent the next N damage that would be dealt to <somewhere> this turn" (D488).
+ *
+ * One reader for the whole family rather than a row in each of `untargetedEffect`, `selfEffect` and
+ * `targetedEffect`, for the reason `damageDestination` is one function: the sentence is fixed and
+ * only its **destination** varies, so splitting it across three readers would be three copies of
+ * the same parse differing in one clause. 105 printed lines on 50 cards in the legal corpus, in 27
+ * distinct forms — every one of which was listed before this was written.
+ *
+ * `preventDamage` is the primitive and it has been here since #85; `shieldFirstTarget` is the
+ * wrapper the two hand-written cards already use. So this increment is a **reader**, not an engine
+ * change, which is why it can be this short.
+ *
+ * ## The three destinations it reads
+ *
+ * - **A target phrase** — "any target" (61 lines), "target creature" (16), "target artifact
+ *   creature", "target player or planeswalker", "target legendary creature", and "target Cleric or
+ *   Wizard creature", which only began to read in D486. Whatever `targetSpecFrom` can express.
+ * - **`you`** (7) — a shield on the controller, not on a side: "you and/or permanents you control"
+ *   is `preventDamageToSide` and a different printed phrase.
+ * - **The source itself** (7) — Rock Hydra, Ethereal Champion, Opal-Eye, Rasputin Dreamweaver and
+ *   the rest print their own name there.
+ *
+ * ## What it refuses, and why each
+ *
+ * - **`X` instead of a number** (11 lines). X is chosen as a spell is cast (CR 601.2b), and on a
+ *   trigger or an activated ability `c.x` is zero — so a clause reader that understood bare X would
+ *   produce a card that *works and does nothing* the moment the sentence appeared off the spell
+ *   path, with nothing left unread for anybody to notice. That is `xSpellResolution`'s argument and
+ *   it is why these stay on the shelf rather than being read here.
+ * - **A scope** — "each creature and each player", "each creature you control", "target creature
+ *   and each other creature that shares a color with it". A set of permanents is not a target, and
+ *   `preventDamage` pushes one effect per target; reading these would shield the first and silently
+ *   drop the rest.
+ * - **"enchanted creature"** — the Aura host, which D469 says in as many words is a different
+ *   question from a target phrase.
+ * - **"that permanent or player"** — an event-relative destination, so it belongs to whatever raised
+ *   the event rather than to this sentence.
+ * - **"this creature by Torrent of Lava"** — prevention from one named source, which the shield has
+ *   no field for: `ContinuousEffect.preventsDamageAmount` absorbs the next N points from anywhere.
+ */
+/**
+ * `preventsDamage`, on both paths, which `compiled-vs-written.test.ts` caught the moment this reader
+ * landed: Samite Healer carries it on its **ability** and Healing Salve on its **mode**, and both
+ * disagreed with the compiled reading until it was set.
+ *
+ * It is the same kind of field as `removesACreature` (D486) and the argument is `targetedEffect`'s:
+ * nothing in the engine reads it, the bot does — do not spend a shield on a board with no damage
+ * coming. A compiled card that emitted the effect alone would *work* and *play badly*, which is
+ * worse than an unread line because nothing flags it. Both keys are set because the two paths pick
+ * it up from different places: `modalScriptFor` lifts it off `spellFlags` onto the mode, and the
+ * activated-ability path reads `abilityFlags`.
+ */
+const PREVENTS = {
+  spellFlags: { preventsDamage: true },
+  abilityFlags: { preventsDamage: true },
+} as const;
+
+function preventionEffect(clause: string, name: string): ReadEffect | null {
+  const text = plain(clause).trim().replace(/\.\s*$/, '');
+  const read = /^Prevent the next (\d+) damage that would be dealt to (.+?) this turn$/i.exec(text);
+  if (read === null) return null;
+  const amount = Number(read[1]);
+  if (!Number.isInteger(amount) || amount <= 0) return null;
+  const where = read[2]!.trim();
+
+  // The controller, as a player. Not a side: see the docblock.
+  if (/^you$/i.test(where)) {
+    return {
+      effect: (c) => preventDamage(
+        c.state, c.source, c.controller, { kind: 'player', seat: c.controller }, amount,
+      ),
+      ...PREVENTS,
+    };
+  }
+  // The source itself, which these cards print by name.
+  if (new RegExp(`^(?:${selfRef(name)})$`, 'i').test(where)) {
+    return {
+      effect: (c) => preventDamage(c.state, c.source, c.controller, { kind: 'card', id: c.source }, amount),
+      ...PREVENTS,
+    };
+  }
+  /*
+    And a target phrase. `friendly` is true because a shield is something you want on your own
+    permanent: it is the one piece of advice this sentence carries, and `targetSpecFrom`'s flag is
+    where the hand-written prevention cards put it.
+  */
+  const spec = targetSpecFrom(where, true);
+  if (spec === null) return null;
+  // A spell on the stack and an ability cannot be dealt damage, so they cannot be shielded either.
+  if (pointsAtTheStack(spec)) return null;
+  return { targets: [spec], effect: (c) => shieldFirstTarget(c, amount), ...PREVENTS };
+}
+
 function readEffect(
   clause: string, name: string, where: SubjectZone | null,
 ): ReadEffect | null {
-  return untargetedEffect(clause, name)
+  return preventionEffect(clause, name)
+    ?? untargetedEffect(clause, name)
     ?? damageEffect(clause, name)
     // `where` goes only here and to the conjunction below: see `SubjectZone`.
     ?? selfEffect(clause, name, where)

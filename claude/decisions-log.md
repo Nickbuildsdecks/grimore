@@ -31523,3 +31523,128 @@ creature. You gain 4 life." reads as two sentences and was still refused. Probin
 the sentence split was never the cause: its other line is "Cast this spell only if you control two
 or more Vampires". The right fix was the line classifier, and Feast of Blood is one of the nine that
 still refuses, correctly.
+
+## D488 — Prevent the next N damage
+
+Top of the clause queue by cards finished (D434's ordering): **105 printed lines on 50
+Commander-legal cards**, in 27 distinct destination forms, every one of which was listed from the
+corpus before the reader was written.
+
+It is the cheapest increment of this run because the engine already had everything: `preventDamage`
+has been the primitive since #85, `shieldFirstTarget` is the wrapper the two hand-written prevention
+cards already call, and `ContinuousEffect.preventsDamageAmount` is where the points go. So this is a
+**reader**, not an engine change.
+
+| | 44db9d2 | now |
+| --- | --- | --- |
+| cards with a compiled script | 10,364 | **10,412** |
+| cards with every printed line read | 5,928 | **5,976** |
+| printed rules lines read | 20,440 / 56,421 (36.2%) | **20,511 / 56,421 (36.4%)** |
+
+Every one of the 48 cards is fully read rather than playable-with-a-flag, which is the difference
+from D487: a prevention ability is usually the whole of what its card does beyond a body.
+
+One reader for the whole family rather than a row in each of `untargetedEffect`, `selfEffect` and
+`targetedEffect`, for the reason `damageDestination` is one function: the sentence is fixed and only
+its **destination** varies, so three readers would be three copies of one parse differing in a
+clause. The three destinations:
+
+* **A target phrase** — "any target" (61 lines), "target creature" (16), and the narrower ones:
+  "target artifact creature", "target player or planeswalker", "target legendary creature".
+  Whatever `targetSpecFrom` can express, which is why this reader is 40 lines long.
+* **`you`** (7) — a shield on the controller. Not a *side*: "you and/or permanents you control" is
+  `preventDamageToSide` and a different printed phrase.
+* **The source itself** (7) — Rock Hydra, Ethereal Champion, Opal-Eye, Rasputin Dreamweaver and the
+  rest print their own name in the destination slot.
+
+### What it refuses
+
+* **`X` instead of a number** (11 lines). X is chosen as a spell is cast (CR 601.2b), and on a
+  trigger or an activated ability `c.x` is zero — so a clause reader that understood bare X would
+  build a card that *works and prevents nothing*, with nothing left unread for anybody to notice.
+  That is `xSpellResolution`'s argument for keeping X on the spell path, and it holds here.
+* **A scope** — "each creature and each player" (Kitsune Palliator), "each creature you control".
+  `preventDamage` pushes one effect per target, so reading these would shield the first and silently
+  drop the rest.
+* **"enchanted creature"** — the Aura host, which D469 says in as many words is a different question.
+* **"that permanent or player"** — an event-relative destination, so it belongs to whatever raised
+  the event.
+* **"this creature by Torrent of Lava"** — prevention from one named source, which the shield has no
+  field for: `preventsDamageAmount` absorbs the next N points from anywhere.
+
+### Two bot hints, and a card that compiled for the first time
+
+`compiled-vs-written.test.ts` went red twice on this increment, and both were the check doing its
+job on a field no runtime test would have missed.
+
+**Samite Healer** carries `preventsDamage: true` on its **ability** and Healing Salve on its
+**mode** — a hint nothing in the engine reads and the bot does: do not spend a shield on a board
+with no damage coming. The compiled reading had the effect and not the hint, which is the failure
+`targetedEffect`'s docblock names — a card that works and plays badly, and nothing flags it. Both
+keys are set now, because the two paths take it from different places: `modalScriptFor` lifts it off
+`spellFlags` onto the mode, and the activated-ability path reads `abilityFlags`.
+
+**Healing Salve** is the more interesting one. Its second bullet prevents damage, so the card has
+never compiled at all — and the moment it did, the check found its **first** bullet disagreeing.
+"Target player gains 3 life" has been read as `friendly` by the life clause all along; the
+hand-written card said plain `TARGET_PLAYER`, so the bot could offer three life to an opponent. The
+compiled reading is the better one, so the hand-written side moved to a new `TARGET_PLAYER_HELPED`
+beside `ANY_TARGET_HELPED` — a constant rather than a change to `TARGET_PLAYER`, which has sixteen
+users and most of them point at a player the card is doing something *to*.
+
+That is a defect found by a reader for an unrelated clause, in a card whose other half this
+increment never touched, and it is the second time the standing check has paid for itself this run
+(Vraska's Contempt was the first, in D486).
+
+### A row that inverted, and a claim of mine that was wrong
+
+`compile.test.ts` had a row asserting Healing Salve is **refused whole, all three lines**, with a
+note saying it was "the last pool card holding the property" and that the synthetic row below it
+would hold the property when that one went. That has now happened — Golgari Charm left when
+regenerate was read, Selesnya Charm with D404's exile-by-power, Healing Salve with this. The row is
+inverted rather than deleted, so it now asserts the whole card reads and the note's history stays
+attached to the card.
+
+And one claim of mine was simply wrong. I wrote Wandering Mage's "target Cleric or Wizard creature"
+as a **mapping** row on the argument that D486 reads a disjunction in the noun position. It does
+not read that one: D486 splits on `or` and then requires each part to be a single type or subtype
+word, and "Wizard creature" is two. The capability I claimed is not the capability that shipped.
+One printed line, moved to the refusals with the real reason, and left as the shape to read next —
+a disjunction whose parts share a trailing noun changes what the parts mean, so it is not a
+widening of the existing branch.
+
+### #246's check earned its keep again
+
+The first full gate on this increment failed at `typecheck:tests`, not at a test: `compile.test.ts`
+declares its own local `Mode` interface for reading a compiled modal, and the new assertion read a
+`preventsDamage` field that interface did not list. `tsc --noEmit -p tsconfig.json` is clean on that
+file either way, because the test tsconfig is a separate project — which is the whole reason #246
+added `typecheck:tests` to the gate, and the second time this run that a check written for an
+earlier increment caught something the one before it would have let through.
+
+### The clause queue, ranked by cards finished — and why that ordering matters
+
+The instrument that picked this increment (`clause-pick.mjs`) substitutes each candidate clause for
+one the compiler certainly reads and counts the cards whose **whole text** then reads. Run over the
+eight largest candidate families:
+
+| cards finished | lines | family |
+| --- | --- | --- |
+| **50** | 105 | prevent the next N damage — *this increment* |
+| **30** | 121 | search your library for a `<card>` |
+| **28** | 93 | counter target spell unless its controller pays {X} |
+| **26** | 143 | `you may pay {M}. If you do, …` |
+| 7 | 199 | add one mana of any color |
+| 2 | 271 | sacrifice a `<permanent>` |
+| 1 | 323 | deals N damage to each `<scope>` |
+| 0 | 145 | `~` gets +N/+N as long as `<condition>` |
+
+The bottom half is the point. **`sacrifice a <permanent>` is 271 printed lines and finishes two
+cards**; `deals N damage to each …` is 323 lines and finishes one; the as-long-as static is 145
+lines and finishes none. Those cards have other gaps, so reading the clause buys a line in the
+percentage and no playable card — which is D434's rule stated with numbers rather than as a
+principle, and a correction to the queue this loop was working from, which had `sacrifice a
+<permanent>` (87 cards) and the cost-like family near the front on line counts.
+
+Ranked this way the next three are the library search, the counter-unless-they-pay, and the
+`you may pay {M}` offer, in that order.

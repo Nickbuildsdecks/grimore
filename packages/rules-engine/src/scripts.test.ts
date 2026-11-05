@@ -27694,3 +27694,76 @@ describe("a spell whose other line is not its resolution, at the table (D487)", 
     expect(read.unread[0]!.why).toBe('no-reader');
   });
 });
+
+describe('prevent the next N damage, at the table (D488)', () => {
+  /*
+    Alabaster Wall, from the corpus: "{T}: Prevent the next 1 damage that would be dealt to any
+    target this turn." The compile-side table asserts the line reads and that the ability carries
+    `preventsDamage`; this asserts the shield actually absorbs a point on a real board, which is a
+    different claim — a reader that built the ability and pointed `preventDamage` at nothing would
+    pass the first and fail here.
+
+    Serra Angel rather than Grizzly Bears as the host, because the arithmetic has to leave the
+    creature alive to be looked at: 3 damage less a 1-point shield is 2, which kills a 2/2 and marks
+    a 4/4.
+  */
+  const ALABASTER_WALL = {
+    name: 'Alabaster Wall', type_line: 'Creature — Wall', mana_cost: '{2}{W}', cmc: 3,
+    colors: ['W'], layout: 'normal', power: '0', toughness: '4',
+    oracle_text: "Defender (This creature can't attack.)\n"
+      + '{T}: Prevent the next 1 damage that would be dealt to any target this turn.',
+  };
+
+  const table = (id: string) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        { name: 'Alabaster Wall', count: 2 },
+        { name: 'Lightning Bolt', count: 4 },
+        { name: 'Serra Angel', count: 2 },
+        { name: 'Mountain', count: 26 },
+        { name: 'Plains', count: 26 },
+      ],
+      data: [ALABASTER_WALL] as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    // D430's trap: the point is the compiled Wall, not a pool card that happens to share its name.
+    expect(list.fromData).toContain('Alabaster Wall');
+    let s = arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: {
+        0: ['Alabaster Wall', 'Serra Angel', ...Array(3).fill('Mountain')],
+        1: [],
+      },
+      hands: { 0: ['Lightning Bolt'] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return tapAllLands(s, 0 as SeatIndex);
+  };
+
+  it('absorbs one point of a Lightning Bolt, so a 4/4 takes 2 and lives', () => {
+    let s = table('prevent-shield');
+    const angel = find(s, 0 as SeatIndex, 'battlefield', 'Serra Angel');
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0 as SeatIndex, 'battlefield', 'Alabaster Wall'),
+      abilityIndex: 0, targets: [{ kind: 'card', id: angel }],
+    } as Action);
+    s = drain(passBoth(s), 40);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: angel }],
+    } as Action);
+    s = drain(passBoth(s), 40);
+    /*
+      The break run for the whole increment: without `preventionEffect` the Wall has no ability at
+      all, so the activation throws and this never reaches the arithmetic. With the shield built but
+      pointed at the wrong object, the Angel takes all 3.
+    */
+    expect(damageOn(s, angel)).toBe(2);
+    expect(s.instances[angel]!.zone).toBe('battlefield');
+  });
+});
