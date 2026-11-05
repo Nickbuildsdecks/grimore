@@ -28151,3 +28151,205 @@ describe('a mana-value clause and the word permanent, searched at the table (D49
     )).toEqual(new Set(['Ageless Guardian']));
   });
 });
+
+describe('a mana-value clause on a target phrase, at the table (D492)', () => {
+  /*
+    The pair of tests that matter here are the two Endless One ones, because they are the only way
+    to see that the clause reads **two different numbers** depending on where the object is.
+
+    Endless One is printed `{X}` — a printed mana cost whose mana value is **nought** (CR 202.3b).
+    Cast for X=4 it is a 4/4 on the battlefield with mana value 0, and while it is on the stack its
+    mana value is 4. So:
+
+      - "Destroy target creature with mana value 1 or less" may point at the resolved 4/4.
+      - "Counter target spell with mana value 4 or greater" may point at it on the stack.
+
+    A reader that used the printed cost for both would fail the second; one that used the stack
+    value for both would fail the first; one that read power instead of cost would fail both. No
+    assertion on an ordinary creature can tell those apart, which is why this card is here.
+  */
+  const ANSWERS = [
+    {
+      name: 'Probe Eliminate', type_line: 'Instant', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal',
+      oracle_text: 'Destroy target creature with mana value 3 or less.',
+    },
+    {
+      name: 'Probe Pinpoint', type_line: 'Instant', mana_cost: '{B}', cmc: 1,
+      colors: ['B'], layout: 'normal',
+      oracle_text: 'Destroy target creature with mana value 1 or less.',
+    },
+    {
+      name: 'Probe Stroke', type_line: 'Instant', mana_cost: '{1}{U}', cmc: 2,
+      colors: ['U'], layout: 'normal',
+      oracle_text: 'Counter target spell with mana value 4 or greater.',
+    },
+  ];
+
+  const table = (id: string, hand0: readonly string[], hand1: readonly string[], board1: readonly string[] = []) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        ...ANSWERS.map((card) => ({ name: card.name, count: 2 })),
+        { name: 'Grizzly Bears', count: 2 },
+        { name: 'Serra Angel', count: 2 },
+        { name: 'Endless One', count: 2 },
+        { name: 'Swamp', count: 22 },
+        { name: 'Island', count: 22 },
+        { name: 'Forest', count: 8 },
+      ],
+      data: ANSWERS as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Probe Eliminate', 'Probe Pinpoint', 'Probe Stroke']);
+    const s = arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: {
+        0: [...Array(5).fill('Swamp'), ...Array(3).fill('Island')],
+        1: [...Array(6).fill('Forest'), ...board1],
+      },
+      hands: { 0: [...hand0], 1: [...hand1] },
+      // Seat 1 active, as D489 established for `firstSeat: 1, turn: 4`.
+      turn: 4,
+      firstSeat: 1,
+    });
+    /*
+      **Seat 1 holds priority here**, which the engine was asked rather than reasoned about:
+      `activeSeat=1 priority=1 step=precombat-main`. So a test where seat 0 acts first has to pass
+      priority over, and a test where seat 1 casts must not — the first draft passed for everybody
+      in this helper and broke the three casting tests. D489's turn-parity mistake was the same
+      shape, "fixed" on a guess and made worse; one printed line settles it in a run.
+    */
+    return advanceTo(s, 'precombat-main');
+  };
+
+  it('a two-drop is within "3 or less" and a five-drop is not', () => {
+    // Seat 1 is active and holds priority, so it passes before seat 0 may cast an instant.
+    const s = apply(
+      table('d492-board', ['Probe Eliminate'], [], ['Grizzly Bears', 'Serra Angel']),
+      { type: 'auto:pass', by: 1 } as Action,
+    );
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const angel = find(s, 1 as SeatIndex, 'battlefield', 'Serra Angel');
+    const aim = (id: string) => refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Probe Eliminate'),
+      targets: [{ kind: 'card', id }],
+    } as Action);
+    // Grizzly Bears is {1}{G}; Serra Angel is {3}{W}{W}.
+    expect(aim(bears)).toBeNull();
+    expect(aim(angel)).not.toBeNull();
+  });
+
+  it('keeps the phrase\'s own restriction beside the clause, not instead of it', () => {
+    /*
+      Baffling End's shape: "an opponent controls" **and** "mana value 3 or less". The clause
+      narrows the phrase rather than replacing it, so a two-drop of seat 0's own is within the bound
+      and still not a legal target.
+
+      This row exists because the break run asked for it: dropping the inner filter and keeping only
+      the number passed every other test in this block, since "target creature" carries no filter of
+      its own for the clause to shadow.
+    */
+    const list = customDeck({
+      id: 'd492-theirs',
+      name: 'd492-theirs',
+      entries: [
+        { name: 'Probe Banish', count: 2 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Swamp', count: 28 },
+        { name: 'Forest', count: 28 },
+      ],
+      data: [{
+        name: 'Probe Banish', type_line: 'Instant', mana_cost: '{1}{B}', cmc: 2,
+        colors: ['B'], layout: 'normal',
+        oracle_text: 'Exile target creature an opponent controls with mana value 3 or less.',
+      }] as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    let s = arena({
+      decks: { 0: 'd492-theirs', 1: 'd492-theirs' },
+      deckSpecs: { 'd492-theirs': list.deck },
+      battlefield: {
+        0: [...Array(4).fill('Swamp'), 'Grizzly Bears'],
+        1: [...Array(2).fill('Forest'), 'Grizzly Bears'],
+      },
+      hands: { 0: ['Probe Banish'], 1: [] },
+      turn: 4,
+      firstSeat: 1,
+    });
+    s = apply(advanceTo(s, 'precombat-main'), { type: 'auto:pass', by: 1 } as Action);
+    const aim = (id: string) => refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Probe Banish'),
+      targets: [{ kind: 'card', id }],
+    } as Action);
+    // Both Bears are mana value 2. Only seat 1's is a legal target.
+    expect(aim(find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears'))).toBeNull();
+    expect(aim(find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears'))).not.toBeNull();
+  });
+
+  it('an {X} permanent on the battlefield has mana value nought, whatever X was paid (CR 202.3b)', () => {
+    /*
+      Endless One cast for X=4 resolves as a 4/4. Its *printed* mana cost is `{X}`, so its mana
+      value on the battlefield is 0 — which "1 or less" admits and a reader looking at the four
+      counters, or at the value announced on the stack, would not.
+    */
+    let s = table('d492-xboard', ['Probe Pinpoint'], ['Endless One']);
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1 as SeatIndex, 'hand', 'Endless One'), x: 4,
+    } as Action);
+    /*
+      Resolving it hands priority back to the active player, so seat 1 passes once more before seat
+      0 may answer. Asked rather than assumed: after the drain the engine reads
+      `activeSeat=1 priority=1 step=precombat-main`.
+    */
+    s = apply(drain(passBoth(s), 40), { type: 'auto:pass', by: 1 } as Action);
+    const one = find(s, 1 as SeatIndex, 'battlefield', 'Endless One');
+    // It really is a 4/4, so the test is about mana value and not about a card that fizzled.
+    expect(characteristicsOf(s, s.instances[one]!).power).toBe(4);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Probe Pinpoint'),
+      targets: [{ kind: 'card', id: one }],
+    } as Action)).toBeNull();
+  });
+
+  it('the same {X} spell on the stack has the mana value that was announced', () => {
+    /*
+      The other half, and the one that needs `manaValueOnStack`: on the stack Endless One cast for
+      X=4 is mana value 4, so "4 or greater" may answer it. Read off the printed cost it would be
+      nought and this counterspell could never point at an X spell at all — which is most of what
+      a Disdainful Stroke is for.
+    */
+    let s = table('d492-xstack', ['Probe Stroke'], ['Endless One']);
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1 as SeatIndex, 'hand', 'Endless One'), x: 4,
+    } as Action);
+    const onStack = s.stackOrder[s.stackOrder.length - 1]!;
+    // The caster keeps priority after casting (CR 117.3c).
+    s = apply(s, { type: 'auto:pass', by: 1 } as Action);
+    let next = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Probe Stroke'),
+      targets: [{ kind: 'card', id: onStack }],
+    } as Action);
+    expect(next.stackOrder).toHaveLength(2);
+    next = drain(passBoth(next), 40);
+    expect(next.instances[onStack]!.zone).toBe('graveyard');
+    expect(namesIn(next, 1 as SeatIndex, 'battlefield')).not.toContain('Endless One');
+  });
+
+  it('and refuses a spell under the bound', () => {
+    // Grizzly Bears on the stack is mana value 2, so "4 or greater" cannot answer it. Without this
+    // the test above would pass for a filter that admitted everything.
+    let s = table('d492-cheap', ['Probe Stroke'], ['Grizzly Bears']);
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1 as SeatIndex, 'hand', 'Grizzly Bears'),
+    } as Action);
+    const onStack = s.stackOrder[s.stackOrder.length - 1]!;
+    s = apply(s, { type: 'auto:pass', by: 1 } as Action);
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Probe Stroke'),
+      targets: [{ kind: 'card', id: onStack }],
+    } as Action)).not.toBeNull();
+  });
+});

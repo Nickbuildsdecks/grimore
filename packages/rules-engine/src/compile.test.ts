@@ -10024,13 +10024,17 @@ describe('a kind of spell in the target noun position (D490)', () => {
     */
     ['Counter target land spell.', 'there is no such thing as a land spell'],
     /*
-      And the clause family that is still open rather than closed by this increment: a mana-value
-      restriction on the spell, which Change the Equation prints beside a colour disjunction this
-      now reads. The phrase as a whole still does not read, and the row records which half is the
-      reason.
+      **A row retired by D492**, kept here as a note rather than deleted. D490 wrote it as "the
+      clause family that is still open rather than closed by this increment", naming the
+      mana-value restriction as the half that did not read while the colour disjunction did. D492
+      peels that clause in `targetSpecFrom`, so the phrase reads whole and the row moved to D492's
+      mapping table.
+
+      It is worth a sentence because this is the fifth refusal row in five increments that a later
+      increment turned into a reading, and the third I wrote myself. Writing the *reason* beside a
+      refusal is what makes that visible: the row did not quietly become false, it failed in the
+      gate and named which half had changed.
     */
-    ['Counter target red or green spell with mana value 6 or less.',
-      'Change the Equation: the mana-value clause, not the colours'],
   ])('leaves "%s" unread: %s', (text) => {
     const read = instant(text as string);
     expect(read.ok).toBe(true);
@@ -10157,5 +10161,113 @@ describe('a mana-value clause, and the word permanent, in a search filter (D491)
       .toBe('Search your library for a basic land card');
     expect(found('Search your library for a card, put it into your hand, then shuffle')?.prompt)
       .toBe('Search your library for a card');
+  });
+});
+
+describe('a mana-value clause on a target phrase (D492)', () => {
+  const instant = (text: string) => compileCard({
+    name: 'Asking Thing', type_line: 'Instant', mana_cost: '{1}{B}', cmc: 2,
+    colors: ['B'], layout: 'normal', oracle_text: text,
+  });
+
+  /*
+    The description is the assertion, and it has to be the **whole** printed phrase: the clause is
+    part of what a player reads before choosing, and a spec that quietly dropped it from the prompt
+    while keeping it in the filter would offer a legal target list nobody could predict.
+  */
+  it.each([
+    // A bare creature, both directions. Eliminate and Epic Downfall.
+    ['Destroy target creature with mana value 3 or less.', 'target creature with mana value 3 or less'],
+    ['Exile target creature with mana value 3 or greater.', 'target creature with mana value 3 or greater'],
+    // The clause sits AFTER the controller clause, which is what forces the peel to run first.
+    ['Exile target creature an opponent controls with mana value 3 or less.',
+      'target creature an opponent controls with mana value 3 or less'],
+    ['Exile target nonland permanent an opponent controls with mana value 2 or less.',
+      'target nonland permanent an opponent controls with mana value 2 or less'],
+    // A disjunction in the noun position (D486) with a clause on the end of it.
+    ['Destroy target creature or planeswalker with mana value 3 or less.',
+      'target creature or planeswalker with mana value 3 or less'],
+    ['Destroy target artifact or enchantment with mana value 4 or less.',
+      'target artifact or enchantment with mana value 4 or less'],
+    // The switch phrases.
+    ['Destroy target nonland permanent with mana value 3 or less.',
+      'target nonland permanent with mana value 3 or less'],
+    ['Exile target permanent with mana value 4 or greater.', 'target permanent with mana value 4 or greater'],
+    ['Destroy target artifact with mana value 3 or less.', 'target artifact with mana value 3 or less'],
+    // A spell on the stack: Disdainful Stroke, Minor Misstep, Thoughtbind.
+    ['Counter target spell with mana value 4 or greater.', 'target spell with mana value 4 or greater'],
+    ['Counter target spell with mana value 1 or less.', 'target spell with mana value 1 or less'],
+    // And a spell whose KIND is read by D490, with this clause behind it.
+    ['Counter target creature spell with mana value 4 or less.',
+      'target creature spell with mana value 4 or less'],
+    ['Counter target red or green spell with mana value 6 or less.',
+      'target red or green spell with mana value 6 or less'],
+  ])('reads "%s" as "%s"', (text, description) => {
+    const read = instant(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.targets?.map((t) => t.description)).toEqual([description]);
+  });
+
+  /*
+    Narrowed on `ok` once here rather than at each call site. `Compilation` is a union whose failing
+    arm has no `script` at all, so `instant(text).script` does not typecheck — `typecheck:tests`
+    (#246) caught that for the fourth increment running, and the plain `tsc -p tsconfig.json` is
+    clean on it every time.
+  */
+  const scriptOf = (text: string) => {
+    const read = instant(text);
+    expect(read.ok).toBe(true);
+    return read.ok ? read.script : undefined;
+  };
+
+  it('keeps the kind the phrase without the clause would have had', () => {
+    /*
+      The peel re-reads the inner phrase and keeps its `kind`, which is load-bearing twice over:
+      `pointsAtTheStack` decides whether a counter arm may use the spec at all, and
+      `mayRemoveACreature` reads the kind to set the bot hint. A peel that returned a bare
+      `permanent` for everything would silently disarm both.
+    */
+    expect(scriptOf('Counter target spell with mana value 4 or greater.')?.targets?.[0]?.kind)
+      .toBe('spell');
+    expect(scriptOf('Destroy target creature with mana value 3 or less.')?.targets?.[0]?.kind)
+      .toBe('creature');
+    expect(scriptOf('Exile target permanent with mana value 4 or greater.')?.targets?.[0]?.kind)
+      .toBe('permanent');
+  });
+
+  it('still sets the bot hint on a removal whose phrase carries a clause', () => {
+    // `removesACreature` keeps a card from being cast with nothing to point at (#89). The clause
+    // must not cost a card its hint, and the kind is what carries it through the peel.
+    expect(scriptOf('Destroy target creature with mana value 3 or less.')?.removesACreature)
+      .toBe(true);
+    expect(scriptOf('Destroy target creature or planeswalker with mana value 3 or less.')?.removesACreature)
+      .toBe(true);
+  });
+
+  it.each([
+    /*
+      Refused for where the **bound** comes from, which is the rule D489 and D491 both needed.
+    */
+    ['Destroy target creature with mana value X or less.', 'X is chosen as this is cast'],
+    ['Destroy target creature with mana value equal to the number of lands you control.',
+      'a bound that is a fact about the board'],
+    ['Destroy target creature with mana value 3.',
+      'Magic prints "or less" and "or greater" here, and this reads neither alone'],
+    /*
+      And refused for the **phrase** rather than the clause — each is a real printing whose inner
+      phrase this compiler cannot read, so the clause has nothing to attach to. The rows are here
+      to record that the peel refuses rather than inventing a spec for an unreadable noun.
+    */
+    ['Return target spell or permanent with mana value 1 or greater to its owner\'s hand.',
+      'Divide by Zero: "spell or permanent" reaches across the stack and the battlefield'],
+    ['Target player sacrifices a creature with mana value 3 or less.',
+      'Exile into Darkness: the clause is on a sacrifice, not on a target'],
+  ])('leaves "%s" unread: %s', (text) => {
+    const read = instant(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
   });
 });

@@ -14510,3 +14510,126 @@ still be the bug that test was written to forbid.
 One row left behind in D449 on purpose: `a green creature card`. A colour is not on the type line at
 all, so it needs a filter over `CardDef.colors` — the next increment in this family, and now the
 only row in that table.
+
+## D492 — A mana-value clause on a target phrase
+
+The other half of D491, and the measurement **corrected my own framing of it twice** before any code
+was written. Both corrections are the point of the entry.
+
+### First correction: the clause is not a search feature
+
+D491's probe found `with mana value N or less|greater` printed in four different places, not one. So
+`mv-context.mjs` priced each context separately, by substitution in place, ranked by cards finished
+(D434):
+
+| reader | cards finished | lines | cards touched |
+| --- | --- | --- | --- |
+| **battlefield permanent target** | **17** | 29 | 155 |
+| **spell on the stack** | **3** | 5 | 10 |
+| graveyard/hand **card** target | 1 | 2 | 90 |
+| cast-trigger condition | 0 | 0 | 26 |
+| library dig | 0 | 0 | 4 |
+
+### Second correction: the biggest printed block is nearly worthless
+
+I had said the graveyard-card block was the thing to build, because it prints ~91 lines across four
+shapes (`target creature card with mana value N or less` alone is 47). By **cards finished** it is
+**one card**. It touches 90 and unblocks almost none of them, because those lines — the reanimation
+and return-to-hand shapes — fail on something else that this clause is not holding up.
+
+That is precisely the error D434 was written about, after the clause-queue ranking made it. I made it
+again, from a line count, and the only reason it cost nothing is that the probe was run before the
+code. Worth stating plainly: **a line count is not a work estimate in this compiler**, because a line
+with two problems counts once in the family of each.
+
+So the increment is the top two rows — 20 cards, 34 lines — and the bottom three are recorded rather
+than built.
+
+### One peel, two numbers, and that is the whole subtlety
+
+The clause is peeled in `targetSpecFrom` and the rest of the phrase is **re-read by the same
+function**, one level deep. That is why it works for every shape at once: the switch's exact phrases,
+D486's noun-position disjunction, D490's spell kinds, and the controller clauses all keep working with
+a clause bolted on, and nothing downstream learns about mana value. It has to be peeled *first*
+because the clause sits **after** the controller clause — "target creature an opponent controls with
+mana value 3 or less" — and `parsedTargetPhrase` strips `an opponent controls` by matching the end of
+the body.
+
+Where the number comes from depends on the spec's `kind`:
+
+* **A permanent** — the mana value of its **printed** mana cost, where X counts as nought
+  (CR 202.3b). Despark does not see an X creature as a seven-drop because its controller paid seven.
+* **A spell on the stack** — `manaValueOnStack`, which exists for exactly this: X is the announced
+  value while the spell is being cast. Disdainful Stroke would never be able to answer an X spell if
+  this read the printed cost.
+
+Endless One is the card that makes both testable, and the runtime pair is the best thing in this
+increment: printed `{X}`, cast for X=4, it is a 4/4 on the battlefield with mana value **0** and a
+mana value of **4** while on the stack. So "destroy target creature with mana value 1 or less" may
+point at the resolved 4/4, and "counter target spell with mana value 4 or greater" may point at the
+same card on the stack. The break run confirms they are independent: using the printed cost for both
+fails only the stack test, and using the stack value for both fails only the battlefield test.
+
+### What it refuses
+
+Where the **bound** comes from, which is the rule D489 and D491 both needed: Lin Sivvi's `{X}`, a
+bound that is a fact about the board, and a bare `with mana value 3` (Magic prints `or less` and
+`or greater` here and this reads neither alone). Plus two refused by their **phrase** rather than the
+clause, each a real printing: Divide by Zero's "spell or permanent", which reaches across the stack
+and the battlefield at once, and Exile into Darkness, where the clause is on a *sacrifice* and not on
+a target.
+
+### The break run asked for a test I had not written
+
+Five breaks, five caught — but break 4, dropping the inner filter and keeping only the number, passed
+every test in the block on the first pass. "Target creature" carries no filter of its own, so there
+was nothing for the break to shadow. The row that catches it is Baffling End's shape, "an opponent
+controls **and** mana value 3 or less", asserting that a two-drop of your own is within the bound and
+still not a legal target. Added, and the break then failed as it should.
+
+### `typecheck:tests`, for the fourth increment running
+
+`Compilation` is a union whose failing arm has no `script`, so `instant(text).script` does not
+typecheck. Narrowed once in a helper rather than cast at five call sites. The plain
+`tsc -p tsconfig.json` has been clean on every one of these four.
+
+### What it bought
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 10,504 | **10,527** |
+| cards with every printed line read | 6,065 | **6,085** |
+| printed rules lines read | 20,635 / 56,421 (36.6%) | **20,665 / 56,421 (36.6%)** |
+
+### Found while probing this, and bigger than it: "This spell can't be countered"
+
+Abrupt Decay's resolution line reads perfectly on its own and the card still does not compile,
+because `This spell can't be countered.` is an unread line and a spell needs every line read. Sized:
+**85 legal cards touched, 95 lines, 24 cards finished outright.**
+
+It is **not** a parse. Dropping the line makes the card strictly worse than printed — answerable when
+it should not be — and that is still a wrong reading even though it errs conservatively. It wants a
+`CardScript` flag that `counterSpell` and `counterUnlessPaid` respect, which is an engine feature with
+its own tests, so it is recorded as its own task rather than bolted onto this one.
+
+### Addendum: a fifth stale refusal row, and this one was mine from two increments ago
+
+The gate failed on one row, in D490's own table:
+
+```
+['Counter target red or green spell with mana value 6 or less.',
+  'Change the Equation: the mana-value clause, not the colours'],
+```
+
+D490 wrote it deliberately, with a comment calling it "the clause family that is still open rather
+than closed by this increment" and naming which half of the phrase was the reason. D492 closes that
+half, so the row failed — loudly, in the gate, saying exactly what had changed.
+
+That is now **five refusal rows in five increments** that a later increment turned into a reading
+(D469's `destroy target Wall`, D489's two spell-kind rows, D491's four in D449/D455, and this one),
+and the third I wrote myself. It is worth stating as a property rather than an annoyance: this suite
+writes the *reason* beside every refusal, so closing a gap cannot quietly make a test's stated
+rationale untrue — the test fails and names the half that moved. A suite that only asserted "this
+does not read" would have gone on passing while its explanation rotted.
+
+The row moved to D492's mapping table; the note stays where the row was.

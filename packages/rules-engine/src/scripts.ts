@@ -59,7 +59,7 @@ import type { EffectFn } from './effects.js';
   types, and none of them is this file.
 */
 import { keywordWithCost } from './fromCardData.js';
-import { parseManaCost, timesCost } from './mana.js';
+import { costValue, parseManaCost, timesCost } from './mana.js';
 import type { Color, ManaType } from './mana.js';
 import type { Keyword } from './characteristics.js';
 import type { GameState, SeatIndex } from './types.js';
@@ -13987,6 +13987,65 @@ function targetSpecFrom(
   const helped = friendly ? { friendly: true as const } : {};
   const spec = (rest: Omit<TargetSpec, 'description'>): TargetSpec =>
     ({ ...rest, description: printed, ...helped });
+
+  /*
+    **A mana-value clause, peeled off the end of the phrase (D492).**
+
+    "Destroy target creature with mana value 3 or less" (Eliminate), "Exile target permanent with
+    mana value 4 or greater" (Despark), "Counter target spell with mana value 2 or less"
+    (Disdainful Stroke). 34 lines on 20 cards, measured per reader rather than per line — the same
+    clause also appears on graveyard-card targets (90 cards touched, **one** finished) and on cast
+    triggers (nothing finished), and those are left unread because the clause is not what is
+    blocking them.
+
+    ## Why it recurses instead of being another field
+
+    The clause is always last, *after* the controller clause: "target creature an opponent controls
+    with mana value 3 or less". `parsedTargetPhrase` strips `an opponent controls` by matching the
+    **end** of the body, so a clause left in place would hide it — and the switch above would miss
+    "target spell with mana value 2 or less" for the same reason. Peeling here and re-reading the
+    rest means every phrase this function already knows keeps working with a clause bolted on, and
+    nothing downstream has to learn about mana value. One level only: the inner phrase has no
+    clause left to peel.
+
+    The **description stays whole**, clause included, because it is the prompt a player reads.
+
+    ## The number comes from two different places, and that is the whole subtlety
+
+    A permanent's mana value is the mana value of its **printed** mana cost, where X counts as zero
+    (CR 202.3b) — so Despark's "4 or greater" does not see an X creature as a 7-drop just because
+    its controller paid seven. A spell on the **stack** is the exception that rule exists for: X is
+    the announced value while it is being cast, which is why `manaValueOnStack` exists and is used
+    for the stack kinds. Reading the printed cost for both would make Disdainful Stroke miss an
+    `{X}` spell cast for six; reading the stack for both would ask a battlefield permanent for a
+    value it does not have.
+  */
+  const clause = /^(.*?) with mana value (\d+) or (less|greater)$/i.exec(printed);
+  if (clause !== null) {
+    const inner = targetSpecFrom(clause[1]!.trim(), friendly, parsed);
+    if (inner === null) return null;
+    const bound = Number(clause[2]!);
+    const atMost = clause[3]!.toLowerCase() === 'less';
+    const onTheStack = inner.kind === 'spell' || inner.kind === 'ability'
+      || inner.kind === 'spell-or-ability';
+    const withinBound: NonNullable<TargetSpec['filter']> = (state, candidate, controller, source) => {
+      if (candidate.kind !== 'card') return false;
+      let value: number;
+      if (onTheStack) {
+        value = manaValueOnStack(state, candidate.id);
+      } else {
+        const inst = state.instances[candidate.id];
+        const def = inst === undefined ? undefined : state.cardDefs[inst.defKey];
+        if (def === undefined) return false;
+        value = costValue(parseManaCost(def.manaCost));
+      }
+      if (!(atMost ? value <= bound : value >= bound)) return false;
+      // The phrase's own restrictions still apply; this clause narrows them rather than replacing
+      // them. `source` is threaded through because `another` reads it.
+      return inner.filter === undefined || inner.filter(state, candidate, controller, source);
+    };
+    return { ...inner, description: printed, filter: withinBound };
+  }
 
   switch (printed.toLowerCase()) {
     case 'any target': return spec({ kind: 'any' });
