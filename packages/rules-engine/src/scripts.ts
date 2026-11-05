@@ -6117,7 +6117,7 @@ const KAMBAL: CardScript = {
  * "Ward [cost]" means "whenever this permanent becomes the target of a spell or ability an
  * opponent controls, counter it unless that player pays [cost]", and writing it out as the trigger
  * it abbreviates is what lets it use the machinery already here: the event comes from
- * `raiseWard`, the ability goes on the stack above the spell and resolves first, and the question
+ * `raiseTargeted`, the ability goes on the stack above the spell and resolves first, and the question
  * it asks is `wardAsks`. Nothing about ward is a static ability and nothing about it is a
  * replacement effect, which is the mistake worth not making — a warded creature can be targeted
  * all day, and the spell is answered on the stack rather than prevented from being aimed.
@@ -11314,6 +11314,66 @@ const TRIGGER_SHAPES: readonly {
     prologue: (self) => new RegExp(`^Whenever ${self} becomes tapped, (.+)$`, 'i'),
     on: [{ kind: 'becomes-tapped' }],
   },
+  /*
+    "When ~ is put into a graveyard from the battlefield" on its own (D461).
+
+    The paired form — "When ~ enters **or** is put into a graveyard from the battlefield" — has been
+    read since the table was written, because Ichor Wellspring prints it; the solo form is the same
+    event with nothing in front of it and **27 legal cards** print it. Brilliant Halo, Audacity and
+    Aspect of Mongoose are Auras, which is who prints this sentence at all: "dies" is defined for
+    creatures only (CR 700.4), so a noncreature permanent has to spell the zone change out.
+
+    `who: 'self'` is **not** the default on this event — it is `another`, which is Planar Void's
+    reading — so it is written out. Without it an Audacity would draw its controller a card every
+    time anything reached any graveyard.
+  */
+  {
+    prologue: (self) => new RegExp(
+      `^When ${self} is put into a graveyard from the battlefield, (.+)$`, 'i',
+    ),
+    on: [{ kind: 'to-graveyard', who: 'self' }],
+  },
+  /*
+    "Whenever ~ becomes the target of a spell or ability" (D461). **8 legal cards**, among them
+    Angelic Protector and Cephalid Aristocrat.
+
+    `by: 'any'` is written out because the event's default is `opponent`, and that default exists
+    for ward — the only thing that used this event before — which never triggers off its own
+    controller's spells. The printed sentence here has no "an opponent casts" in it, so it fires off
+    either side's spell, and taking the default would have made a card that reads one way behave
+    another.
+  */
+  {
+    prologue: (self) => new RegExp(
+      `^Whenever ${self} becomes the target of a spell or ability, (.+)$`, 'i',
+    ),
+    on: [{ kind: 'targeted', by: 'any' }],
+  },
+  /*
+    **The block family is refused, and the count is the reason it is worth writing down.**
+
+    Four printed shapes, 90 legal cards one line short between them, and each is refused for its
+    own reason rather than for want of a row:
+
+     * **"Whenever ~ becomes blocked" (52 cards).** The engine's `becomes-blocked` is raised **once
+       per blocker** — that is what "by a creature" means and what its own docblock says — while the
+       bare printed form fires **once** however many creatures blocked. Reading one off the other
+       would pay an Alley Grifters' discard three times against three blockers, which is a wrong
+       reading of a real card and the thing D362 ranks below leaving a line unread. It wants the
+       batched event, the way D443 built one for combat damage rather than reading the batched line
+       off the per-creature one.
+     * **"Whenever ~ blocks or becomes blocked by …" (38).** Almost every one carries a filter on
+       the other creature — "by a green or white creature", "by one or more blue and/or black
+       creatures" — and the event has no such filter. Two events from one line is already supported
+       (`on` is a list); the filter is not.
+     * **"Whenever ~ blocks" (15) and "becomes blocked by a creature" (12)** map cleanly onto
+       `blocks` and `becomes-blocked`, and are held back by their **effects** rather than by their
+       prologues: most print "that creature", which is the *other* creature in the combat —
+       `EffectContext.blocked` — and the clause vocabulary reads "that creature" as
+       `EffectContext.subject`, which on these two events is the card itself. A row without that
+       distinction would return the wrong creature to its owner's hand. The reading is worth having
+       and wants `blocked` taught to the clause vocabulary first.
+  */
   // Thermo-Alchemist, Guttersnipe. `by: 'you'` is printed: "Whenever **you** cast".
   {
     prologue: () => /^Whenever you cast an instant or sorcery spell, (.+)$/i,

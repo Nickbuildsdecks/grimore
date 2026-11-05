@@ -29132,25 +29132,124 @@ in two hundred that nobody at the table could play by the rules.
 
 The duel arm, re-run on the same build: 60 of 60, 21.1 turns, 0.3 cardboard per 60-card deck.
 
-### A better work queue, found while picking the next increment
+### A better work queue, found while picking the next increment — **and corrected in D461**
+
+> **This section's numbers are wrong and are left here with the correction beside them.** It said:
+> "**387 cards** have a prologue the compiler cannot read and an effect it can. **5,535 cards** have
+> a prologue it knows and an effect it cannot. So the queue to work is the effect vocabulary, and its
+> biggest readable cluster is the **self-subject effect** — `~ gets +N/+N until end of turn` (54),
+> `it gets +N/+N until end of turn` (29), `put a +1/+1 counter on ~` (62)".
+>
+> The probe behind those numbers tested each effect half as the whole text of a **sorcery named
+> "Probe Of The Halves"**. Every self prologue and every self-subject effect is written against the
+> card's *own* name, so a probe under a different name reads none of them — and every self-subject
+> effect was therefore misfiled as "the effect is the gap". It is not: the compiler has read
+> `Whenever ~ attacks, ~ gets +1/+1 until end of turn` and `put a +1/+1 counter on ~` all along.
+> What those cards are missing is the **prologue**.
+>
+> Re-measured with both halves probed under the card's own name: **690 cards are short a prologue**
+> and **3,509 short an effect**. See D461 for the corrected ranking and the two rows it shipped.
 
 `one-line-short.mjs` ranks the compiler's queue by the opening words of the unread line, and its top
 row is "199 cards: Whenever ~ deals combat damage to a" — a prologue the compiler **already reads**.
-Splitting each trigger-shaped line at the comma and asking the two halves separately (D455's lesson,
-applied to triggers) says where the gap really is:
-
-* **387 cards** have a prologue the compiler cannot read and an effect it can.
-* **5,535 cards** have a prologue it knows and an effect it cannot.
-
-So the queue to work is the effect vocabulary, and its biggest readable cluster is the
-**self-subject effect** — `~ gets +N/+N until end of turn` (54), `it gets +N/+N until end of turn`
-(29), `put a +1/+1 counter on ~` (62), and 22 more behind a "you may". `eventRelativeEffect` already
-matches `(?:${self}|it)` subjects and has both `c.source` and `c.subject`, and the hand-written twins
-are one `pump` or `addCounters` call each. Left as task **#333**, with the one decision it needs
-written down: what "it" refers to depends on the prologue, and getting that wrong pumps the wrong
-creature.
+That observation stands: splitting each trigger-shaped line at the comma and asking the two halves
+separately (D455's lesson, applied to triggers) is the right instrument. Only the probe was wrong.
 
 ### Verified
 
 2,247 engine tests (2,244 + 3), the gate, and the 100-pod run above. Four break levers on the fix,
 four failures. Scryfall egress re-tested: all three hosts still `000`.
+
+## D461 — A probe that could not see a self-referential effect, and the two prologues it was hiding
+
+D460 picked the next increment off a probe, and the probe was wrong. This corrects it, ships what the
+corrected ranking actually names, and records the engine change one of the two rows asked for.
+
+### The probe
+
+It split every trigger-shaped unread line at the comma and asked whether the effect half read on its
+own — as the whole text of **a sorcery named "Probe Of The Halves"**. Every self prologue and every
+self-subject effect in this compiler is written against the card's own name (`${self}`), so a probe
+under a different name reads none of them. The result was that **every self-subject effect was
+misfiled as "the effect is the gap"**, and D460's queue named the self-subject effect as the biggest
+missing family.
+
+It was never missing. `Whenever ~ attacks, ~ gets +1/+1 until end of turn` and
+`put a +1/+1 counter on ~` have both read since the trigger table was written — checked directly,
+which is the thing that should have been checked before 155 cards were written into a task.
+
+Re-measured with **both** halves probed under the card's own name, each inside a frame known to read
+(the effect behind `When <name> enters,`, the prologue in front of `draw a card.`):
+
+| | D460 said | corrected |
+|---|---|---|
+| short a prologue | 387 | **690** |
+| short an effect | 5,535 | **3,509** |
+
+The general lesson is narrower than "check your probes": **a probe that normalises a card's name away
+cannot see anything a card says about itself**, and in Magic that is a large fraction of all printed
+text. The same trap is why `shapeOf` replaces the name with `~` for *display* and the probe must not.
+
+### What shipped, from the corrected ranking
+
+Two rows in `TRIGGER_SHAPES`, the largest clean families in the prologue queue:
+
+* **`When ~ is put into a graveyard from the battlefield` — 27 legal cards.** The paired form ("When
+  ~ enters **or** is put into a graveyard …") has read since the table was written because Ichor
+  Wellspring prints it; this is the same event with nothing in front of it. Who prints the sentence
+  at all is the interesting part: "dies" is defined for creatures only (CR 700.4), so a noncreature
+  permanent has to spell the zone change out — Brilliant Halo, Audacity, Chromatic Star. `who: 'self'`
+  is written out because this event's default is `another` (Planar Void's reading), and without it an
+  Audacity would draw a card every time anything reached any graveyard.
+* **`Whenever ~ becomes the target of a spell or ability` — 8 legal cards.** `by: 'any'` is written
+  out because the event's default is `opponent`, a default that exists for ward and is right for
+  ward only.
+
+Coverage: **9,221 cards with a script (+8), 5,042 with every line read (+22), 18,918 of 56,421 lines
+(33.5%, +31)**. A small increment by the numbers, which is what a prologue row is worth when the
+effects behind it were already readable.
+
+### The engine change the second row asked for
+
+`raiseWard` — now `raiseTargeted` — skipped the controller's **own** permanents. That was one
+caller's rule written into the engine: ward never triggers off its own controller's spells, and
+`triggerMatches` already enforces exactly that from the trigger's side through `by` defaulting to
+`opponent`. Two statements of one rule, and the one in the engine could not be narrowed, so a card
+printing the sentence with nobody named — Tethered Skirge, Task Force, Angelic Protector — had a
+trigger asking for `by: 'any'` against an event that was never raised. The card read as automated and
+did nothing, which D362 ranks below leaving the line unread.
+
+The filter lives in one place now. What the skip also bought was not walking every target through the
+watcher machinery; `raise` narrows to the targeted permanent's own abilities, so the cost is a lookup
+per card target rather than a board sweep, and neither the suite nor the pods moved on it.
+
+### Three families refused, with the count on each
+
+The block family is 90 legal cards one line short and all of it waits:
+
+* **"Whenever ~ becomes blocked" (52).** The engine's `becomes-blocked` is raised **once per
+  blocker**; the bare printed form fires **once** however many blocked. Reading one off the other
+  would pay an Alley Grifters' discard three times against three blockers. It wants a batched event,
+  the way D443 built one for combat damage rather than reading the batched line off the per-creature
+  one.
+* **"Whenever ~ blocks or becomes blocked by …" (38).** Almost every one filters the other creature
+  ("by a green or white creature"), and the event has no such filter.
+* **"Whenever ~ blocks" (15) and "becomes blocked by a creature" (12)** map cleanly onto the events
+  and are held back by their *effects*: most say "that creature", meaning the other creature in the
+  combat — `EffectContext.blocked` — while the clause vocabulary reads "that creature" as
+  `EffectContext.subject`, which on these two events is the card itself. A row without that
+  distinction would return the wrong creature to its owner's hand.
+
+### Verified
+
+2,250 engine tests (2,247 + 3) and the gate. Five break levers — the row removed, `who: 'self'`
+widened, the targeted row removed, `by: 'any'` dropped to its default, and the engine's skip
+restored — five failures, each naming the test that caught it.
+
+A 60-pod run on a **fresh seed set** (SEED0=30000) after the engine change: **59 finished, 1
+unfinished**, no throw and no stall. The unfinished one is seed 30002, which hit the 20,000-move
+bound rather than breaking — and these decks are grindier than the first set in any case (747 moves a
+game against 352). It is not attributable to this change: the seeds had never been run, the 100-pod
+set D460 cleared still clears, and nothing here touches combat, priority or the stack. Left as task
+**#334** rather than waved at, because a pod that cannot finish is the same thing to two people at a
+table as a pod that stalls.

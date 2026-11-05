@@ -23,6 +23,7 @@ import {
   legalActions,
   manaSources,
   parseTypeLine,
+  compileCard,
   packView, parseManaCost, pendingDeclaration, isPrintedAbilityLine, printedKeywords,
   printedLandwalk, printedProtection, proliferate,
   proliferateCandidates, protectedFrom,
@@ -7615,7 +7616,7 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
     /*
       Flametongue Kavu's arrival deals its damage to a *target* creature, so it is a triggered
       ability with a target an opponent chose — the third of the four places an object on the stack
-      gains one. Without `raiseWard` there, a Ward {1} would have answered a Doom Blade and not a
+      gains one. Without `raiseTargeted` there, a Ward {1} would have answered a Doom Blade and not a
       Kavu, which reads as a bug rather than as a rule.
     */
     let s = advanceTo(arena({
@@ -24213,5 +24214,135 @@ describe('an Aura the compiler only half reads still goes onto something (D456)'
       type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Wild Growth'),
       targets: [{ kind: 'card', id: courser }],
     } as Action)).not.toBeNull();
+  });
+});
+
+describe('two printed prologues the compiler could not read (D461)', () => {
+  /*
+    Both rows were found by re-asking which half of a trigger line is the gap with a probe that can
+    see a self-referential effect — see D461 for why the first probe could not, and what it got
+    wrong. The population it names is prologues, and these two are the largest clean families in it:
+    **27 legal cards** print "When ~ is put into a graveyard from the battlefield" on its own, and
+    **8** print "Whenever ~ becomes the target of a spell or ability".
+
+    Two printed cards, neither in any built-in deck — which is load-bearing, because `customDeck`
+    consults the pool before the data and a pool card would prove nothing about the compiler.
+
+    Chromatic Star is the zone change on a permanent that is not a creature, which is who prints
+    that sentence at all: "dies" is defined for creatures only (CR 700.4). Tethered Skirge is the
+    targeting trigger with the simplest possible effect, so what the test watches is the event
+    firing rather than a clause being read.
+  */
+  const STAR = {
+    name: 'Chromatic Star', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: '{1}, {T}, Sacrifice Chromatic Star: Add one mana of any color.\n'
+      + 'When Chromatic Star is put into a graveyard from the battlefield, draw a card.',
+  };
+  const SKIRGE = {
+    name: 'Tethered Skirge', type_line: 'Creature — Phyrexian Imp', mana_cost: '{2}{B}', cmc: 3,
+    colors: ['B'], power: '3', toughness: '1', loyalty: null, layout: 'normal',
+    oracle_text: 'Flying\n'
+      + 'Whenever Tethered Skirge becomes the target of a spell or ability, you lose 1 life.',
+  };
+
+  const list = () => {
+    const built = customDeck({
+      id: 'd461-list',
+      name: 'Two prologues',
+      entries: [
+        { name: 'Chromatic Star', count: 2 },
+        { name: 'Tethered Skirge', count: 2 },
+        { name: 'Lightning Bolt', count: 2 },
+        { name: 'Swamp', count: 27 },
+        { name: 'Mountain', count: 27 },
+      ],
+      data: [STAR as never, SKIRGE as never],
+    });
+    expect(built.unknown).toEqual([]);
+    // By distinct name, which is what `fromData` reports: two copies of each is two names.
+    expect(built.fromData.slice().sort()).toEqual(['Chromatic Star', 'Tethered Skirge']);
+    return built.deck;
+  };
+
+  const table = (battlefield: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'd461-list', 1: 'verdant-guard' },
+    deckSpecs: { 'd461-list': list() },
+    battlefield: { 0: battlefield },
+    // A Bolt in hand for the two halves that need something to target, and something to put in a
+    // graveyard that is not the Star — `arena` empties the opening hand, so a card has to be asked
+    // for by name.
+    hands: { 0: ['Lightning Bolt'] },
+    turn: 5,
+    firstSeat: 0,
+  }), 'precombat-main');
+
+  it('reads both lines of Chromatic Star, and neither is flagged', () => {
+    const compiled = compileCard(STAR as never);
+    expect(compiled.ok).toBe(true);
+    expect(compiled.ok && compiled.unread).toEqual([]);
+    // The event, by name: `to-graveyard` with `who: 'self'`, which is **not** that event's default
+    // (it is `another`, Planar Void's reading). Without it a Chromatic Star would draw a card every
+    // time anything reached any graveyard.
+    const triggers = compiled.ok ? (compiled.script?.triggers ?? []) : [];
+    expect(triggers.find((t) => t.on.kind === 'to-graveyard')?.on)
+      .toEqual({ kind: 'to-graveyard', who: 'self' });
+  });
+
+  it('draws a card when it goes to the graveyard, and not when something else does', () => {
+    let s = table(['Chromatic Star', 'Mountain', 'Mountain', 'Swamp']);
+    const before = ids(s, 0 as SeatIndex, 'hand').length;
+    /*
+      Sacrificed as the cost of its own mana ability, which is how this card reaches a graveyard at
+      a real table — so the trigger and the sacrifice are one move and the test is the card rather
+      than a `card:move`.
+    */
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0,
+      card: find(s, 0 as SeatIndex, 'battlefield', 'Chromatic Star'), abilityIndex: 0,
+    } as Action), 40);
+    expect(nameOf(s, ids(s, 0 as SeatIndex, 'graveyard')[0]!)).toBe('Chromatic Star');
+    expect(ids(s, 0 as SeatIndex, 'hand').length).toBe(before + 1);
+
+    /*
+      And the half `who: 'self'` buys: a second Chromatic Star on the battlefield draws **nothing**
+      when a different card reaches a graveyard. Without the flag this is the assertion that fails,
+      and it fails quietly — a card that draws too often looks like a card that works.
+    */
+    let other = table(['Chromatic Star', 'Mountain', 'Mountain', 'Swamp']);
+    other = tapAllLands(other, 0 as SeatIndex);
+    const held = ids(other, 0 as SeatIndex, 'hand').length;
+    const bolt = find(other, 0 as SeatIndex, 'hand', 'Lightning Bolt');
+    other = drain(apply(other, {
+      type: 'auto:cast', by: 0, card: bolt, targets: [{ kind: 'player', seat: 1 }],
+    } as Action), 40);
+    // The Bolt itself left the hand and reached the graveyard; the Star drew nothing for it.
+    expect(ids(other, 0 as SeatIndex, 'graveyard').map((id) => nameOf(other, id))).toContain('Lightning Bolt');
+    expect(ids(other, 0 as SeatIndex, 'hand').length).toBe(held - 1);
+  });
+
+  it('loses its controller a life whenever it is targeted, by either side', () => {
+    const compiled = compileCard(SKIRGE as never);
+    expect(compiled.ok && compiled.unread).toEqual([]);
+    /*
+      `by: 'any'` is written out because the event's default is `opponent` — a default that exists
+      for ward, which never triggers off its own controller's spells. This card's printed sentence
+      names nobody, so it fires off either side's spell.
+    */
+    const triggers = compiled.ok ? (compiled.script?.triggers ?? []) : [];
+    expect(triggers.find((t) => t.on.kind === 'targeted')?.on)
+      .toEqual({ kind: 'targeted', by: 'any' });
+
+    let s = table(['Tethered Skirge', 'Mountain', 'Mountain', 'Swamp']);
+    s = tapAllLands(s, 0 as SeatIndex);
+    const skirge = find(s, 0 as SeatIndex, 'battlefield', 'Tethered Skirge');
+    const life0 = life(s, 0 as SeatIndex);
+    // Its own controller's spell, which is the half `by: 'any'` is for: a Bolt of its own at its own
+    // Skirge costs a life as well as killing it.
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'card', id: skirge }],
+    } as Action), 40);
+    expect(life(s, 0 as SeatIndex)).toBe(life0 - 1);
   });
 });

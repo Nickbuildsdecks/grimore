@@ -1231,8 +1231,8 @@ function fireTrigger(
   );
   if (auto !== null) {
     // An ability the engine aimed for its controller has its targets now, so anything it took
-    // aim at that wards gets to say so. See `raiseWard`.
-    return raiseWard(next, next.stackOrder[next.stackOrder.length - 1]!);
+    // aim at that wards gets to say so. See `raiseTargeted`.
+    return raiseTargeted(next, next.stackOrder[next.stackOrder.length - 1]!);
   }
   // Otherwise the controller chooses, and nothing happens until they do.
   const stackId = next.stackOrder[next.stackOrder.length - 1]!;
@@ -1536,12 +1536,24 @@ function obviousTargets(
  * deals its damage to a *target* creature, so without it a Ward {1} would stop a Doom Blade and
  * not a Kavu, which is the kind of inconsistency a player reads as a bug rather than a rule.
  *
- * Only the controller's *opponents'* permanents are offered the event, and only permanents: a
- * player target has no abilities, and a target in a graveyard is not on the battlefield to ward
- * anything. `triggerMatches` makes the same check from the trigger's side — this one keeps the
- * engine from walking every target of every spell through the whole watcher machinery.
+ * Only permanents are offered the event: a player target has no abilities, and a target in a
+ * graveyard is not on the battlefield to ward anything.
+ *
+ * **It used to skip the controller's own permanents, and that was one caller's rule written into
+ * the engine (D461).** Ward never triggers off its own controller's spells — and `triggerMatches`
+ * already enforces exactly that, from the trigger's side, through `by` defaulting to `opponent`.
+ * The skip here was a second statement of the same rule, and the second statement was the one that
+ * could not be narrowed: **8 legal cards print "Whenever ~ becomes the target of a spell or
+ * ability"** with nobody named, which fires off either side's spell (Tethered Skirge, Angelic
+ * Protector, Task Force). Their trigger says `by: 'any'` and the event was never raised for it, so
+ * the card read as automated and did nothing — which D362 ranks below leaving the line unread.
+ *
+ * So the filter lives in one place now, where the trigger can ask for something else. What the skip
+ * also bought was not walking every target of every spell through the watcher machinery; `raise`
+ * narrows to the targeted permanent's own abilities, so the cost is one lookup per card target
+ * rather than a sweep of the board, and the 2,250-test suite and 100 pods did not move on it.
  */
-export function raiseWard(state: GameState, objectId: string): GameState {
+export function raiseTargeted(state: GameState, objectId: string): GameState {
   const object = state.stackObjects[objectId];
   if (object === undefined) return state;
   let next = state;
@@ -1549,7 +1561,6 @@ export function raiseWard(state: GameState, objectId: string): GameState {
     if (target.kind !== 'card') continue;
     const inst = next.instances[target.id];
     if (inst === undefined || inst.zone !== 'battlefield') continue;
-    if (inst.zoneSeat === object.controller) continue;
     next = raise(next, { kind: 'targeted', object: objectId }, object.controller, target.id);
   }
   return next;

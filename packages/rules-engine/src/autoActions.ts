@@ -18,7 +18,7 @@ import {
   canAttack, canBlock, checkTargets, damageOrdersOwed, endTurnCleanup, forcedAttackers, legalAttackers,
   legalBlockers, legalDefenders, menaceSatisfied, payFrom, pendingDeclaration, raiseUnblockedAttacks,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
-  raiseWard, resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop,
+  raiseTargeted, resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop,
   stateBasedActions, unblockedAttackersOf,
   stillDeciding, takeDredge, tapAttackers,
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
@@ -889,7 +889,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // And ward, off the same cast, for everything the spell took aim at. After the cast triggers
   // rather than before: both happen as the spell is cast and go on the stack together, and this is
   // the order a player watched them in — the spell, then what it is pointed at answering.
-  next = raiseWard(next, object.id);
+  next = raiseTargeted(next, object.id);
   next = resetPriority(settle(next, state), action.by);
   return {
     state: next,
@@ -1527,8 +1527,8 @@ function activate(
     `${ch.name}: ${ability.description}`,
     ninjutsuTarget === null ? {} : { enteringAttack: ninjutsuTarget });
   // Ward triggers off an ability as readily as off a spell (CR 702.21b) — an Icy Manipulator aimed
-  // at a warded creature is exactly the case the keyword is printed for. See `raiseWard`.
-  next = raiseWard(next, next.stackOrder[next.stackOrder.length - 1]!);
+  // at a warded creature is exactly the case the keyword is printed for. See `raiseTargeted`.
+  next = raiseTargeted(next, next.stackOrder[next.stackOrder.length - 1]!);
   next = resetPriority(settle(next, state), action.by);
   return {
     state: next,
@@ -2290,8 +2290,8 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
     pendingChoice: null,
   };
   // The ability has its targets now, which is the moment ward's event happens for a trigger the
-  // engine could not aim on its own. See `raiseWard`.
-  next = raiseWard(next, object.id);
+  // engine could not aim on its own. See `raiseTargeted`.
+  next = raiseTargeted(next, object.id);
   next = resetPriority(settle(next, state));
   return {
     state: next,

@@ -12242,9 +12242,54 @@ real check: the pool's two miracle cards cost `{R}` and `{W}`, so the mechanic a
 After the fix: **100 of 100 pods to a finish, no throw, no stall**, 66.5 turns and 352 moves on
 average. Per 100-card deck: 20.5 scripted, 52.6 with a flagged line, **0.5 cardboard**.
 
-And a better work queue for the compiler, found on the way. Splitting each trigger-shaped unread line
-at the comma: **387** cards are short a prologue, **5,535** are short an *effect*. So
-`one-line-short.mjs`'s top row ("199 cards: Whenever ~ deals combat damage to a") names a trigger the
-compiler reads fine. The biggest readable cluster is the self-subject effect — `~ gets +N/+N until
-end of turn` (54), `it gets …` (29), `put a +1/+1 counter on ~` (62) — left as task #333 with the
-"it" question written down.
+And a better work queue for the compiler, found on the way — **with the numbers corrected in D461**.
+The instrument is right: split each trigger-shaped unread line at the comma and ask the two halves
+separately, because `one-line-short.mjs`'s top row ("199 cards: Whenever ~ deals combat damage to a")
+names a trigger the compiler reads fine. The first probe was not: it tested each effect as the text
+of a sorcery under *its own* name, so every self-referential effect read as unreadable. It reported
+387 cards short a prologue and 5,535 short an effect, and named the self-subject effect as the
+biggest cluster; re-measured under the card's own name it is **690 short a prologue** and **3,509
+short an effect**, and the self-subject effect was never missing at all.
+
+## A probe that could not see a self-referential effect (D461)
+
+D460 chose the next increment off a probe that tested each effect half as the text of **a sorcery
+under a different name**. Every self prologue and every self-subject effect in this compiler is
+written against the card's own name, so that probe read none of them and filed every self-subject
+effect as "the effect is the gap". It was never the gap: `Whenever ~ attacks, ~ gets +1/+1 until end
+of turn` and `put a +1/+1 counter on ~` have read all along. Corrected split: **690 cards short a
+prologue, 3,509 short an effect** (D460 said 387 and 5,535).
+
+The lesson is sharper than "check the probe": a probe that normalises a card's name away cannot see
+anything a card says about itself, which in Magic is a large share of all printed text.
+
+From the corrected ranking, two rows shipped — the largest clean prologue families:
+
+- **`When ~ is put into a graveyard from the battlefield`** (27 cards). "Dies" is defined for
+  creatures only (CR 700.4), so a noncreature permanent spells the zone change out: Brilliant Halo,
+  Audacity, Chromatic Star. `who: 'self'` written out, because this event defaults to `another`.
+- **`Whenever ~ becomes the target of a spell or ability`** (8 cards), `by: 'any'` written out
+  because the event defaults to `opponent` — a default that is right for ward and nothing else.
+
+That second row needed an engine change. `raiseWard`, now `raiseTargeted`, skipped the controller's
+own permanents: one caller's rule written into the engine, when `triggerMatches` already enforces it
+from the trigger's side. So a card printing the sentence with nobody named had a trigger the event
+never reached — automated-looking and doing nothing, which is the one outcome D362 ranks below an
+unread line.
+
+Coverage **9,221 cards with a script (+8), 5,042 fully read (+22), 18,918 of 56,421 lines (33.5%)**.
+Small, which is what a prologue row is worth when the effects behind it already read.
+
+**Three families refused with their counts**, all of the block family: "becomes blocked" (52) wants a
+batched event, because the engine's fires once per blocker and the printed line fires once;
+"blocks or becomes blocked by …" (38) filters the other creature and the event cannot; "blocks" (15)
+and "becomes blocked by a creature" (12) say "that creature" meaning the *other* one, which the clause
+vocabulary reads as the card itself.
+
+Five break levers, five failures.
+
+A 60-pod run on a fresh seed set after the engine change: **59 finished, 1 unfinished** (seed 30002,
+which ran out of the 20,000-move bound rather than breaking), no throw and no stall. Not attributable
+to this change — the seeds had never been run and nothing here touches combat, priority or the stack
+— and left as task #334, because a pod that cannot finish is the same thing to two people at a table
+as a pod that stalls.
