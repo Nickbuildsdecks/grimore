@@ -9361,3 +9361,80 @@ describe('the compilation cache (D459)', () => {
     expect(compiled.ok && compiled.def.name).toBe('Cyclic Probe');
   });
 });
+
+/*
+  The block prologue, as printed text (D480).
+
+  Three spellings, two events, and the eight refusals that say where the parse stops. The runtime
+  tests in `scripts.test.ts` drive the damage, the two pumps and the counter through a real combat;
+  these rows say which sentence becomes which pair of triggers, and which sentences do not.
+*/
+describe('the block trigger, read off the prologue', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const creature = (text: string) => compileCard({
+    name: 'Blocking Thing', type_line: 'Creature — Beast', mana_cost: '{2}{G}', cmc: 3,
+    colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: text,
+  });
+
+  it.each([
+    ['Whenever Blocking Thing blocks a creature', [{ kind: 'blocks' }]],
+    ['Whenever Blocking Thing becomes blocked by a creature', [{ kind: 'becomes-blocked' }]],
+    // One line, both events — which is the shape most of the family prints.
+    ['Whenever Blocking Thing blocks or becomes blocked by a creature',
+      [{ kind: 'blocks' }, { kind: 'becomes-blocked' }]],
+    // "This creature" is the same subject under another name, which `selfRef` already folds in.
+    ['Whenever this creature blocks a creature', [{ kind: 'blocks' }]],
+  ])('%s becomes the triggers it prints', (prologue, on) => {
+    const read = creature(`${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers.map((t) => t.on)).toEqual(on);
+  });
+
+  it.each([
+    /*
+      The two **bare** spellings are the whole reason this parse requires "a creature", and they are
+      refused for a counting reason rather than a vocabulary one: the printed line fires once per
+      combat and the engine's events fire once per creature.
+    */
+    ['Whenever Blocking Thing becomes blocked',
+      'the batched form: fires once however many creatures blocked'],
+    ['Whenever Blocking Thing blocks', 'the same, from the blocker’s side'],
+    ['Whenever Blocking Thing blocks or becomes blocked', 'both halves batched'],
+    // A filter on the other creature, which no field on either event asks.
+    ['Whenever Blocking Thing blocks or becomes blocked by a non-Wall creature',
+      'Thicket Basilisk’s filter on the other creature'],
+    ['Whenever Blocking Thing becomes blocked by a green creature', 'a colour filter on the other'],
+    ['Whenever Blocking Thing becomes blocked by two or more creatures',
+      'a count of blockers, which is a different question again'],
+    ['Whenever Blocking Thing blocks a Wall', 'a subtype in place of "a creature"'],
+    ['Whenever Blocking Thing becomes blocked by a creature with flying',
+      'a keyword filter on the other creature'],
+  ])('leaves "%s" unread: %s', (prologue) => {
+    const read = creature(`${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+    expect(field(read.script, 'triggers')).toBeUndefined();
+  });
+
+  it.each([
+    /*
+      And the clause side: "that creature" is read **only** under a block prologue. Under an `etb`
+      or a `dies` prologue the same words mean the permanent that entered or died, which is a
+      different creature and a different field — so the gate refuses rather than reading the wrong
+      one (D475's rule, applied to a creature instead of a player).
+    */
+    ['Whenever a creature you control enters, Blocking Thing deals 1 damage to that creature'],
+    ['Whenever a creature you control dies, put a -1/-1 counter on that creature'],
+    ['Whenever Blocking Thing attacks, that creature gets +1/+1 until end of turn'],
+  ])('leaves "%s" unread: the event does not carry the other creature', (line) => {
+    const read = creature(line);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+});

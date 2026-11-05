@@ -26653,3 +26653,164 @@ describe('the tribe on a board trigger (D479)', () => {
     ]);
   });
 });
+
+describe('the block, per creature (D480)', () => {
+  /*
+    Three printed spellings, two engine events, and the clause that reads the *other* creature.
+
+    The pair that makes this worth a game rather than a mapping row is Flailing Drake against Cave
+    Tiger: one printed line says "that creature gets +1/+1" and the other says "<name> gets +1/+1",
+    and they are the same sentence pointed at opposite creatures. A reader that resolved "that
+    creature" to the subject would pass both compile checks and pump the wrong body in a real game.
+  */
+  const ASHMOUTH_HOUND = {
+    name: 'Ashmouth Hound', type_line: 'Creature — Elemental Dog', mana_cost: '{1}{R}', cmc: 2,
+    colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Whenever Ashmouth Hound blocks or becomes blocked by a creature,'
+      + ' Ashmouth Hound deals 1 damage to that creature.',
+  };
+  const FLAILING_DRAKE = {
+    name: 'Flailing Drake', type_line: 'Creature — Drake', mana_cost: '{3}{G}', cmc: 4,
+    colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Flying\nWhenever Flailing Drake blocks or becomes blocked by a creature,'
+      + ' that creature gets +1/+1 until end of turn.',
+  };
+  const CAVE_TIGER = {
+    name: 'Cave Tiger', type_line: 'Creature — Cat', mana_cost: '{2}{G}', cmc: 3,
+    colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Whenever Cave Tiger becomes blocked by a creature,'
+      + ' Cave Tiger gets +1/+1 until end of turn.',
+  };
+  const QUAGMIRE_LAMPREY = {
+    name: 'Quagmire Lamprey', type_line: 'Creature — Fish', mana_cost: '{2}{B}', cmc: 3,
+    colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: 'Whenever Quagmire Lamprey becomes blocked by a creature,'
+      + ' put a -1/-1 counter on that creature.',
+  };
+  // Grizzly Bears is the pool's own 2/2, so it is not a fixture here (D430).
+  const DATA = [ASHMOUTH_HOUND, FLAILING_DRAKE, CAVE_TIGER, QUAGMIRE_LAMPREY];
+
+  const table = (mine: readonly string[], theirs: readonly string[]) => {
+    const list = customDeck({
+      id: 'block-parse',
+      name: 'Block Parse',
+      entries: [
+        { name: 'Ashmouth Hound', count: 2 },
+        { name: 'Flailing Drake', count: 2 },
+        { name: 'Cave Tiger', count: 2 },
+        { name: 'Quagmire Lamprey', count: 2 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Forest', count: 48 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual(
+      ['Ashmouth Hound', 'Cave Tiger', 'Flailing Drake', 'Quagmire Lamprey'],
+    );
+    return arena({
+      decks: { 0: 'block-parse', 1: 'block-parse' },
+      deckSpecs: { 'block-parse': list.deck },
+      battlefield: { 0: [...mine], 1: [...theirs] },
+      turn: 3,
+      firstSeat: 0,
+    });
+  };
+
+  const power = (s: GameState, id: string) => characteristicsOf(s, s.instances[id]!).power;
+
+  it('reads the attacker it blocked: Ashmouth Hound burns what it stops', () => {
+    let s = table(['Grizzly Bears'], ['Ashmouth Hound']);
+    s = advanceTo(s, 'declare-attackers');
+    const bears = find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const hound = find(s, 1 as SeatIndex, 'battlefield', 'Ashmouth Hound');
+    s = passBoth(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }],
+    } as Action));
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: hound, attacker: bears }],
+    } as Action));
+    // 1 from the trigger plus 2 from the Hound's own body is lethal to a 2/2.
+    expect(s.instances[bears]!.damage).toBe(1);
+    s = advanceTo(s, 'postcombat-main', 120);
+    expect(s.instances[bears]!.zone).toBe('graveyard');
+  });
+
+  it('reads the blocker, off the other half of the same line', () => {
+    let s = table(['Ashmouth Hound'], ['Grizzly Bears']);
+    s = advanceTo(s, 'declare-attackers');
+    const hound = find(s, 0 as SeatIndex, 'battlefield', 'Ashmouth Hound');
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    s = passBoth(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: hound, defender: 1 }],
+    } as Action));
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: bears, attacker: hound }],
+    } as Action));
+    expect(s.instances[bears]!.damage).toBe(1);
+  });
+
+  it('pumps the other creature, not itself: Flailing Drake', () => {
+    /*
+      The Drake blocks rather than attacks, because it **has flying** and a Grizzly Bears cannot
+      block it — the first draft of this test attacked with the Drake and the engine refused the
+      block, which is the engine being right about the card.
+    */
+    let s = table(['Grizzly Bears'], ['Flailing Drake']);
+    s = advanceTo(s, 'declare-attackers');
+    const bears = find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const drake = find(s, 1 as SeatIndex, 'battlefield', 'Flailing Drake');
+    s = passBoth(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }],
+    } as Action));
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: drake, attacker: bears }],
+    } as Action));
+    // The Drake's own controller grows the creature attacking them, which is what the card says.
+    expect(power(s, bears)).toBe(3);
+    expect(power(s, drake)).toBe(2);
+  });
+
+  it('pumps itself where the line names itself: Cave Tiger, the other half of that pair', () => {
+    let s = table(['Cave Tiger'], ['Grizzly Bears']);
+    s = advanceTo(s, 'declare-attackers');
+    const tiger = find(s, 0 as SeatIndex, 'battlefield', 'Cave Tiger');
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    s = passBoth(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: tiger, defender: 1 }],
+    } as Action));
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: bears, attacker: tiger }],
+    } as Action));
+    expect(power(s, tiger)).toBe(3);
+    expect(power(s, bears)).toBe(2);
+  });
+
+  it('puts the counter on the blocker: Quagmire Lamprey', () => {
+    let s = table(['Quagmire Lamprey'], ['Grizzly Bears']);
+    s = advanceTo(s, 'declare-attackers');
+    const lamprey = find(s, 0 as SeatIndex, 'battlefield', 'Quagmire Lamprey');
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    s = passBoth(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: lamprey, defender: 1 }],
+    } as Action));
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: bears, attacker: lamprey }],
+    } as Action));
+    expect(s.instances[bears]!.counters?.['-1/-1']).toBe(1);
+    expect(power(s, bears)).toBe(1);
+  });
+
+  it('reads both halves of "blocks or becomes blocked by a creature" off one parse', () => {
+    const read = compileCard(ASHMOUTH_HOUND as never);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = (read.script as { triggers?: readonly { readonly on: unknown }[] })
+      .triggers ?? [];
+    expect(triggers.map((t) => t.on)).toEqual([
+      { kind: 'blocks' },
+      { kind: 'becomes-blocked' },
+    ]);
+  });
+});

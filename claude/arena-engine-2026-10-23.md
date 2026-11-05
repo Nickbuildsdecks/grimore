@@ -13338,3 +13338,89 @@ to the pool.
  * **The three filters D478 named** — a comparison between two of the subject's own characteristics,
    an **or** across two bounds, and an unnamed counter. `boardFilter` returns `null` for each, and a
    `null` filter refuses the whole line.
+
+## D480 — "That creature" is the other creature, and the block parse that needed it
+
+The block family has been the top of the compiler's queue for several entries, and the docblock
+over it said the family was refused for three different reasons. This takes the half of it that is
+readable **without** guessing, and the thing that was actually missing turned out to be a referent
+rather than a prologue.
+
+### Three spellings, two events, one parse
+
+| printed | read as |
+| --- | --- |
+| Whenever ~ blocks a creature | `blocks` |
+| Whenever ~ becomes blocked by a creature | `becomes-blocked` |
+| Whenever ~ blocks or becomes blocked by a creature | both, off one line |
+
+All three carry "a creature", and that phrase is the whole of why these three are readable while
+the bare forms are not. The engine raises `blocks` once per attacker blocked and `becomes-blocked`
+once per blocker (CR 509.1a, CR 509.1h) — **per creature**, which is what these lines say. The bare
+"Whenever ~ becomes blocked" fires **once** however many creatures blocked, so reading it off the
+per-creature event would pay an Alley Grifters' discard three times against three blockers: a wrong
+reading of a real card, which D362 ranks below leaving the line alone. **92 legal lines** print a
+bare spelling — "becomes blocked" 57, "blocks" 24, "blocks or becomes blocked" 11 — and they want a
+batched event, the way D443 built one for combat damage rather than reading the batched line off the
+per-creature one.
+
+### The referent, which is what was missing
+
+The prologue was never the hard part — `on` has taken a list of events since D134. What stopped
+this family was that **almost every one of these cards prints "that creature"**, meaning the *other*
+creature in the combat, and the clause vocabulary read "that creature" as `EffectContext.subject`,
+which on both of these events is the card whose trigger it is. A row written without that
+distinction would have had Aether Membrane return *itself* to hand and Quagmire Lamprey shrink
+*itself*.
+
+`EffectContext.blocked` has carried the other creature since D134 and nothing read it. Four clauses
+now do, gated on every event in the prologue being a block:
+
+ * `~ deals N damage to that creature` — Ashmouth Hound (6 corpus lines on this clause alone),
+   Inferno Elemental, Acolyte of the Inferno;
+ * `destroy that creature` — Evil Eye of Urborg;
+ * `that creature gets +N/+N until end of turn` — Flailing Drake;
+ * `put a +1/+1 or -1/-1 counter on that creature` — Quagmire Lamprey.
+
+**"It" is deliberately left alone.** Acolyte of the Inferno prints "it deals 2 damage to that
+creature" in one sentence, where "it" is the Acolyte and "that creature" is the blocker — so this is
+a second referent and not a remapping of the subject. A remapping would have had the Acolyte deal
+its damage on behalf of the creature it was damaging.
+
+**The gate is D475's rule applied to a creature instead of a player.** Under an `etb` or a `dies`
+prologue "that creature" means the permanent that entered or died, which is a different field; the
+clause is claimed only where every event in the prologue carries `blocked`. Three rows in
+`compile.test.ts` hold that line, and the break run below is what proves they are not decoration.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 9,982 | **9,996** |
+| cards with every printed line read | 5,686 | **5,699** |
+| printed rules lines read | 19,957 / 56,421 (35.4%) | **19,972 / 56,421 (35.4%)** |
+
++14 cards from 47 legal lines across the three spellings, which is the honest yield: the prologue
+reads all 47, and the clause vocabulary finishes the cards whose effect is one of the four above.
+The rest are one clause short, and the clauses they are short of are named below.
+
+Five runtime tests drive a real combat, and the pair that makes them worth more than a mapping row
+is **Flailing Drake against Cave Tiger**: one prints "that creature gets +1/+1" and the other
+"Cave Tiger gets +1/+1", the same sentence pointed at opposite creatures. The Drake blocks rather
+than attacks, because it has flying and a Grizzly Bears cannot block it — the first draft of that
+test attacked with the Drake and the engine refused the block, which was the engine being right
+about the card.
+
+Break-run, both directions: resolving "that creature" to the subject pumps the Drake instead of the
+Bears (2, not 3); dropping the event gate from the counter clause makes a `dies` prologue read
+"that creature" as the dead permanent, which the gate row catches.
+
+### What is still refused
+
+ * **The bare spellings** (92 legal lines) — the counting argument above.
+ * **A filter on the other creature** (28 legal lines) — "by a non-Wall creature" (Thicket Basilisk),
+   "by a green or white creature", "by two or more creatures". Two events from one line is parsed
+   now; a filter on the *other* creature is not a field either event has.
+ * **A timing on the effect** — "destroy that creature **at end of combat**" (3), "return that
+   creature to its owner's hand at end of combat" (2). `scheduleDelayed` is the mechanism and the
+   clause reader is the only work, so this is the next bite out of the family.

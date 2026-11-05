@@ -11746,6 +11746,35 @@ function boardFilter(printed: string): Partial<BoardEvent> | null {
  * card type, a filter it does not read — which refuses the line rather than reading a narrower
  * trigger as a wider one.
  */
+/**
+ * "Whenever ~ blocks a creature" / "becomes blocked by a creature" / "blocks or becomes blocked by
+ * a creature" — three printed shapes, one parse, because they differ only in **which of the two
+ * engine events** the sentence is about (D480).
+ *
+ * Every one of the three carries "by a creature" or "a creature", and that phrase is the whole
+ * reason these three are readable while the bare "whenever ~ blocks" and "whenever ~ becomes
+ * blocked" are not: the engine raises `blocks` once per attacker blocked and `becomes-blocked` once
+ * per blocker (CR 509.1a, CR 509.1h), which is **per creature**, and so are these lines. The bare
+ * forms fire once however many creatures are involved, so reading one off the other would pay the
+ * effect several times — a wrong reading, which D362 ranks below leaving the line alone.
+ *
+ * `null` for anything else, which falls through to the next shape.
+ */
+function blockTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][] | null {
+  const shape = (matched.groups?.shape ?? '').toLowerCase();
+  if (shape === 'blocks a creature') return [{ kind: 'blocks' }];
+  if (shape === 'becomes blocked by a creature') return [{ kind: 'becomes-blocked' }];
+  /*
+    Both halves off one line, which `on` has taken as a list since D134 — and the pair is what
+    `EffectContext.blocked` was built for: the subject is this card under either event and `blocked`
+    is the other creature under either, so one clause reads correctly on both.
+  */
+  if (shape === 'blocks or becomes blocked by a creature') {
+    return [{ kind: 'blocks' }, { kind: 'becomes-blocked' }];
+  }
+  return null;
+}
+
 function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
   const groups = matched.groups ?? {};
   const who = BOARD_WHO[(groups.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
@@ -11969,6 +11998,20 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^When ${self} is turned face up, (.+)$`, 'i'),
     on: [{ kind: 'turned-face-up' }],
   },
+  /*
+    ── The block, per creature (D480) ──────────────────────────────────────────────────────
+
+    Ashmouth Hound, Thicket Basilisk's shape, Cave Tiger, Inferno Elemental: 47 legal lines across
+    the three spellings, and `blockTrigger`'s docblock is why these three and not the bare forms.
+  */
+  {
+    prologue: (self) => new RegExp(
+      `^Whenever ${self} (?<shape>blocks a creature|becomes blocked by a creature`
+      + '|blocks or becomes blocked by a creature), (?<clause>.+)$',
+      'i',
+    ),
+    from: blockTrigger,
+  },
   // Borderland Marauder.
   {
     prologue: (self) => new RegExp(`^Whenever ${self} attacks, (.+)$`, 'i'),
@@ -12021,29 +12064,31 @@ const TRIGGER_SHAPES: readonly ({
     on: [{ kind: 'targeted', by: 'any' }],
   },
   /*
-    **The block family is refused, and the count is the reason it is worth writing down.**
+    **The block family: the per-creature half is read (D480), the batched half is not.**
 
-    Four printed shapes, 90 legal cards one line short between them, and each is refused for its
-    own reason rather than for want of a row:
+    What D480 took is the three spellings that carry "a creature", because the engine raises
+    `blocks` once per attacker blocked and `becomes-blocked` once per blocker (CR 509.1a,
+    CR 509.1h) — per creature, which is what those lines say. See `blockTrigger` for the parse and
+    the "that creature" block in `eventRelativeEffect` for the referent, which is the thing that
+    was actually missing: the clause vocabulary read "that creature" as the subject, and on these
+    two events the subject is the card itself, so the reading would have returned the wrong
+    creature to its owner's hand.
 
-     * **"Whenever ~ becomes blocked" (52 cards).** The engine's `becomes-blocked` is raised **once
-       per blocker** — that is what "by a creature" means and what its own docblock says — while the
-       bare printed form fires **once** however many creatures blocked. Reading one off the other
-       would pay an Alley Grifters' discard three times against three blockers, which is a wrong
-       reading of a real card and the thing D362 ranks below leaving a line unread. It wants the
-       batched event, the way D443 built one for combat damage rather than reading the batched line
-       off the per-creature one.
-     * **"Whenever ~ blocks or becomes blocked by …" (38).** Almost every one carries a filter on
-       the other creature — "by a green or white creature", "by one or more blue and/or black
-       creatures" — and the event has no such filter. Two events from one line is already supported
-       (`on` is a list); the filter is not.
-     * **"Whenever ~ blocks" (15) and "becomes blocked by a creature" (12)** map cleanly onto
-       `blocks` and `becomes-blocked`, and are held back by their **effects** rather than by their
-       prologues: most print "that creature", which is the *other* creature in the combat —
-       `EffectContext.blocked` — and the clause vocabulary reads "that creature" as
-       `EffectContext.subject`, which on these two events is the card itself. A row without that
-       distinction would return the wrong creature to its owner's hand. The reading is worth having
-       and wants `blocked` taught to the clause vocabulary first.
+    **What is still refused, and why it is not a row:**
+
+     * **The bare spellings — 92 legal lines** ("becomes blocked" 57, "blocks" 24, "blocks or
+       becomes blocked" 11). The printed line fires **once** however many creatures are involved;
+       the engine's events fire once each. Reading one off the other would pay an Alley Grifters' discard three times
+       against three blockers — a wrong reading of a real card, which D362 ranks below leaving the
+       line unread. It wants a batched event, the way D443 built one for combat damage rather than
+       reading the batched line off the per-creature one.
+     * **A filter on the other creature** — "by a green or white creature", "by a non-Wall
+       creature" (Thicket Basilisk), "by one or more blue and/or black creatures". Two events from
+       one line is supported (`on` is a list, D134) and now parsed; the filter on the *other*
+       creature is not a field the event has. 28 legal lines.
+     * **A timing on the effect** — "destroy that creature **at end of combat**" (3), "return that
+       creature to its owner's hand at end of combat" (2). `scheduleDelayed` is the mechanism and
+       the clause reader is the work, so this is the obvious next bite out of the family.
   */
   /*
     ── The board prologue, parsed ──────────────────────────────────────────────────────────
@@ -12948,6 +12993,67 @@ function eventRelativeEffect(
           controller: c.controller, source: c.source,
         });
       },
+    };
+  }
+
+  /*
+    ── "That creature": the other creature in the combat (D480) ────────────────────────────
+
+    The same question D475 asked about "that player", with the same answer — read it only where the
+    event carries the thing the sentence means. `blocks` and `becomes-blocked` both travel with
+    `blocked` (the attacker on the first, one of the blockers on the second) and on **both** the
+    subject is the card whose trigger this is. So "that creature" is `c.blocked` under either event,
+    and a line that prints both halves — "whenever ~ blocks or becomes blocked by a creature" —
+    reads correctly from one clause.
+
+    "It" is deliberately left alone: Acolyte of the Inferno prints "it deals 2 damage to that
+    creature" in one sentence, where "it" is the Acolyte and "that creature" is the other one. That
+    is why this is a separate referent and not a remapping of the subject — a remapping would make
+    the Acolyte damage the blocker on behalf of the blocker.
+
+    Gated on every event being a block, so "that creature" after an `etb` or a `dies` prologue
+    (where it means the permanent that entered or died) is **not** claimed here.
+  */
+  const BLOCK_EVENTS = new Set(['blocks', 'becomes-blocked']);
+  const aboutTheOther = events.length > 0 && events.every((one) => BLOCK_EVENTS.has(one.kind));
+
+  // Ashmouth Hound (6 corpus lines on this clause alone), Inferno Elemental, Acolyte of the Inferno.
+  const burned = new RegExp(`^(?:${self}|it) deals (\\d+) damage to that creature$`, 'i').exec(text);
+  if (burned !== null && aboutTheOther) {
+    const amount = Number(burned[1]);
+    return {
+      effect: (c) => (c.blocked === undefined ? c.state : dealDamage(
+        c.state, { kind: 'card', id: c.blocked }, amount,
+        { controller: c.controller, source: c.source },
+      )),
+    };
+  }
+
+  // Evil Eye of Urborg's shape: the block itself is the removal, with no timing attached.
+  if (/^destroy that creature$/i.test(text) && aboutTheOther) {
+    return { effect: (c) => (c.blocked === undefined ? c.state : destroy(c.state, c.blocked)) };
+  }
+
+  // Flailing Drake: the pump that lands on the other creature rather than on this one.
+  const sized = /^that creature gets ([+-]\d+)\/([+-]\d+) until end of turn$/i.exec(text);
+  if (sized !== null && aboutTheOther) {
+    const power = Number(sized[1]);
+    const toughness = Number(sized[2]);
+    return {
+      effect: (c) => (c.blocked === undefined ? c.state : pump(
+        c.state, [c.blocked], c.source, c.controller, { power, toughness },
+      )),
+    };
+  }
+
+  // Quagmire Lamprey. `-1/-1` and `+1/+1` are both accepted because the clause names which.
+  const marked = /^put a (\+1\/\+1|-1\/-1) counter on that creature$/i.exec(text);
+  if (marked !== null && aboutTheOther) {
+    const kind = marked[1]!.startsWith('+') ? '+1/+1' : '-1/-1';
+    return {
+      effect: (c) => (c.blocked === undefined
+        ? c.state
+        : addCounters(c.state, c.blocked, kind, 1)),
     };
   }
 
