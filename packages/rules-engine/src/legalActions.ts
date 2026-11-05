@@ -1380,8 +1380,15 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     const changeOn = cost.generic === taxed.generic
       ? {}
       : { costChange: cost.generic - taxed.generic, costNote: change.notes[0] ?? '' };
-    // X at zero is a legal cast of an X spell and sometimes the only one available, so a cost with
-    // {X} is offered whenever the rest of it can be paid; `xMax` says how high the player may go.
+    /*
+      X at zero is a legal cast of an X spell and sometimes the only one available, so a cost with
+      {X} is offered whenever the rest of it can be paid; `xMax` says how high the player may go.
+
+      `payable` is the cost **being paid**, which is the offer's own cost on an offered cast — so a
+      cascade hit is offered with no X (its cost is empty, so `payable.x` is false) and a miracle'd
+      `{X}{R}` is offered with one. That distinction is CR 107.3b, and until D460 the engine's other
+      half disagreed with it: see the refusal in `autoActions`.
+    */
     const xOn = payable.x ? { xMax: maxAffordableX(poolOf(state, seat), payable, sources) } : {};
 
     // A modal spell is offered once per legal combination of modes, and a combination whose

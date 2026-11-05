@@ -29052,3 +29052,105 @@ which is recorded above.
 What is still not done, and is the next thing: `apps/api` reads `scryfall_cards` for search and
 suggestions but does not supply rows anywhere a deck is built, so a deck opened from a saved Grimore
 deck list rather than pasted as text does not go through this path yet.
+
+## D460 — Four people, four of their own decks: the pod arm, and the engine throw it found
+
+The goal says "me and some friends … play a bunch of games", and what they will play is **four-player
+Commander with four of their own decks**. Nothing had ever asked that question. `corpus-decks.mjs`
+asked the two-seat version — can two decks of arbitrary real cards be played to a finish — and had
+been green for weeks; every pod instrument in `scripts/measure` plays the **thirteen built-in
+decks**. So the one configuration a beta tester will actually sit down at was the one nothing
+measured.
+
+### The arm
+
+`POD=1` on `corpus-decks.mjs`: four seats, the engine's `pod` format, singleton 100-card decks, and a
+legendary creature in each command zone drawn from the same pool as the spells — 3,044 of the corpus
+qualify (CR 903.3), and a commander the compiler reads nothing of is as likely as anything else in
+the deck, which is the point. The commander is counted in the per-deck figures too: it is the one
+card a Commander game is guaranteed to see, so leaving it out would make the pod arm's numbers
+quietly better than the deck.
+
+The duel arm is **bit-identical** after the refactor to N seats, checked by diffing a 60-game run
+against the one taken before the change: `seed * SEATS + seat` is `seed * 2 + seat` at two seats.
+
+### What it found, on its first run
+
+**3 of 100 pods died**, all three the same way:
+
+```
+seed 20050: threw — X is 0 when a spell is cast without paying its mana cost
+seed 20068: threw — ditto
+seed 20075: threw — ditto
+```
+
+Instrumented rather than guessed at: every one was **Bonfire of the Damned**, whose miracle cost is
+`{X}{R}`, cast with `x = 7`.
+
+Two halves of the engine disagreed about one rule. `legalActions` offers `xMax` whenever the cost
+**being paid** has an `{X}` in it, which for a miracle'd `{X}{R}` is a number; `autoActions` refused
+*any* `offered` cast carrying an X at all, citing CR 107.3b — X is nought in a cost that is not being
+paid — without asking whether a cost was being paid. Miracle and madness pay one. The bot took the X
+it was offered, and the engine threw.
+
+In the product that is not a bad play, it is an `illegal_action` on a move the table had drawn a
+button for — and on a bot seat, a write that dies.
+
+### The fix is in the refusal, and the first attempt was in the wrong place
+
+The refusal is now gated on the offer having no cost of its own. `payFrom` already charges `action.x`
+on that path exactly as on every other, so nothing else had to change: this was one condition, not a
+mechanism.
+
+**The first attempt was to stop `legalActions` offering the X**, and the break run is what rejected
+it — reverting that change left all three new tests green, because a *free* offer has an empty cost,
+so `payable.x` is already false and no X was ever offered for a cascade. It only ever suppressed the
+**miracle's** X, which is a cost being paid. That is not a fix: it means a miracle'd Bonfire is cast
+for X=0 — a card that looks automated and does nothing, which D362 calls worse than leaving a line
+unread. A test that passes against both the fix and its opposite is not a test, and that is what
+sent me to instrument the throw instead of reasoning about it.
+
+### Why the invariant test that exists did not catch this
+
+`playout.test.ts` has "never offers a play it then refuses", in two- and four-seat flavours, and
+`bot.ts` cites it by name. It is a real check and it was green: those games are played with the
+thirteen built-in decks, whose two miracle cards cost `{R}` and `{W}`. The mechanic and {X} never
+meet in the pool, so the pair could not be produced. **An invariant is only as broad as the decks it
+is asserted over** — which is the general lesson, and the whole argument for the pod arm.
+
+The three new tests pin it from the pool anyway, by putting the offer in the state rather than
+earning it off a real miracle: Fireball is the pool's own `{X}{R}` sorcery, and the two offers differ
+only in the field the rule turns on. Nothing in them invents printed text. Four break levers, four
+failures.
+
+### After the fix
+
+**100 of 100 four-player Commander pods reached a finish, with no throw and no stall.** 66.5 turns
+and 352 moves on average. Per 100-card deck: 20.5 cards with a script, 52.6 with at least one line
+nothing could read, 61.8 playable only because of the printed data, and **0.5 cardboard** — one card
+in two hundred that nobody at the table could play by the rules.
+
+The duel arm, re-run on the same build: 60 of 60, 21.1 turns, 0.3 cardboard per 60-card deck.
+
+### A better work queue, found while picking the next increment
+
+`one-line-short.mjs` ranks the compiler's queue by the opening words of the unread line, and its top
+row is "199 cards: Whenever ~ deals combat damage to a" — a prologue the compiler **already reads**.
+Splitting each trigger-shaped line at the comma and asking the two halves separately (D455's lesson,
+applied to triggers) says where the gap really is:
+
+* **387 cards** have a prologue the compiler cannot read and an effect it can.
+* **5,535 cards** have a prologue it knows and an effect it cannot.
+
+So the queue to work is the effect vocabulary, and its biggest readable cluster is the
+**self-subject effect** — `~ gets +N/+N until end of turn` (54), `it gets +N/+N until end of turn`
+(29), `put a +1/+1 counter on ~` (62), and 22 more behind a "you may". `eventRelativeEffect` already
+matches `(?:${self}|it)` subjects and has both `c.source` and `c.subject`, and the hand-written twins
+are one `pump` or `addCounters` call each. Left as task **#333**, with the one decision it needs
+written down: what "it" refers to depends on the prologue, and getting that wrong pumps the wrong
+creature.
+
+### Verified
+
+2,247 engine tests (2,244 + 3), the gate, and the 100-pod run above. Four break levers on the fix,
+four failures. Scryfall egress re-tested: all three hosts still `000`.

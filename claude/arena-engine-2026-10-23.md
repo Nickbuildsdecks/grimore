@@ -12213,3 +12213,38 @@ those are the lesson. A fake library that answered unconditionally had no cache 
 the one case that never happens; `libraryCount` is 59 whether the deck is printed cards or blanks;
 and a query count read off `pg_stat_database` could not see negative caching disappear, because those
 statistics are snapshotted per transaction. Each is now asserted by consequence instead.
+
+## Four people, four of their own decks (D460)
+
+The beta scenario — four-player Commander, everybody on their own deck — had never been measured.
+`corpus-decks.mjs` asked the two-seat version of the question; every pod instrument plays the
+thirteen built-in decks. So `POD=1` was added: four seats, the `pod` format, singleton 100-card decks
+and a legendary commander each, drawn from the same 28,542-card pool as the spells. The duel arm is
+bit-identical after the refactor, checked by diffing a 60-game run against the one before it.
+
+**It found an engine throw on its first run.** 3 of 100 pods died with `X is 0 when a spell is cast
+without paying its mana cost` — all three on **Bonfire of the Damned**, miracle `{X}{R}`, cast with
+X=7. Two halves of the engine disagreed: `legalActions` offers an X whenever the cost *being paid*
+has one, and `autoActions` refused any X on an `offered` cast without asking whether a cost was being
+paid. Miracle and madness pay one. In the product that is an `illegal_action` on a button the table
+had drawn.
+
+The fix is one condition on the refusal; `payFrom` already charges `action.x` on that path. **The
+first attempt was in the wrong place** — suppressing the offer — and the break run rejected it:
+reverting that change left every new test green, because a free offer has no X to suppress. All it
+did was take the miracle's X away, which turns a Bonfire into a card that looks automated and does
+nothing. That is what sent me to instrument the throw rather than reason about it.
+
+`playout.test.ts` already asserts "never offers a play it then refuses". It was green and it is a
+real check: the pool's two miracle cards cost `{R}` and `{W}`, so the mechanic and {X} never meet.
+**An invariant is only as broad as the decks it is asserted over.**
+
+After the fix: **100 of 100 pods to a finish, no throw, no stall**, 66.5 turns and 352 moves on
+average. Per 100-card deck: 20.5 scripted, 52.6 with a flagged line, **0.5 cardboard**.
+
+And a better work queue for the compiler, found on the way. Splitting each trigger-shaped unread line
+at the comma: **387** cards are short a prologue, **5,535** are short an *effect*. So
+`one-line-short.mjs`'s top row ("199 cards: Whenever ~ deals combat damage to a") names a trigger the
+compiler reads fine. The biggest readable cluster is the self-subject effect — `~ gets +N/+N until
+end of turn` (54), `it gets …` (29), `put a +1/+1 counter on ~` (62) — left as task #333 with the
+"it" question written down.

@@ -41,9 +41,27 @@
  *   node scripts/measure/corpus-decks.mjs --file corpus.json
  *   GAMES=50 SEED0=100 node scripts/measure/corpus-decks.mjs --file corpus.json
  *   VERBOSE=1 node scripts/measure/corpus-decks.mjs --file corpus.json   # every game, one line
+ *   POD=1 LEGAL=1 GAMES=100 node scripts/measure/corpus-decks.mjs --file corpus.json
  *
- * Exits non-zero if any game threw or stalled. It reads clean — 40 games, 80 random decks, every
- * one to a finish — and it is still **not** a gate step, for a reason that is about the corpus
+ * ## Two arms, and the second one is the question Nick actually asked
+ *
+ * The default is a two-seat duel of random 60-card decks. **`POD=1` is four-player Commander**: four
+ * seats, forty life, singleton 100-card decks and a legendary creature in each command zone — which
+ * is what "me and some friends play a bunch of games" means, and a materially harder question. A pod
+ * is where every stall this project has found actually lived (#297, #302, #330): more seats, longer
+ * games, and politics the bot has to resolve. The duel arm stays the default because its figures are
+ * recorded across many commits and because it is the faster signal; the pod arm is the one to run
+ * before claiming anything about beta readiness.
+ *
+ * Exits non-zero if any game threw or stalled.
+ *
+ * **It has read clean and it has not.** The duel arm has been green since it was written — 60 games,
+ * 120 random decks, every one to a finish. The pod arm found an engine throw on its **first** run:
+ * 3 of 100 pods died on Bonfire of the Damned, whose miracle cost is `{X}{R}`, because the engine
+ * offered an X on an offered cast and then refused the action carrying it (D460). So the pod arm
+ * earned its place on the day it was written, and the figure to quote is 100/100 after that fix.
+ *
+ * It is still **not** a gate step, for a reason that is about the corpus
  * rather than the result: `--file` needs the 12 MB JSON that `scripts/corpus/from-forge.mjs`
  * builds, which is somebody else's transcription of copyrighted card text and is deliberately not
  * committed (see that script's docblock). So this is run by hand, with the corpus rebuilt first.
@@ -66,11 +84,29 @@ if (file === null) {
 }
 const GAMES = Number(process.env.GAMES ?? 20);
 const SEED0 = Number(process.env.SEED0 ?? 1);
-const SIZE = Number(process.env.SIZE ?? 60);
-const LANDS = Number(process.env.LANDS ?? 24);
+/*
+  `POD=1` is the beta scenario rather than a variant of this harness's default.
+
+  Nick's own words are "me and some friends … play a bunch of games", and what they will play is
+  **four-player Commander with four of their own decks**. The default arm here is a two-seat duel of
+  60-card decks, which is the right first question and not that one — and a pod is where every stall
+  this project has found actually lived (#297, #302, #330): four seats, forty life, a command zone,
+  and games long enough for a loop to form.
+
+  So the pod arm changes the four things that make it a pod, and nothing else: four seats, the
+  engine's `pod` format, singleton 100-card decks, and a legendary creature in the command zone.
+  Defaults move with it so `POD=1` alone is a sensible run; every one is still overridable.
+*/
+const POD = process.env.POD === '1';
+const SEATS = Number(process.env.SEATS ?? (POD ? 4 : 2));
+const SIZE = Number(process.env.SIZE ?? (POD ? 100 : 60));
+const LANDS = Number(process.env.LANDS ?? (POD ? 37 : 24));
 const MAXCMC = Number(process.env.MAXCMC ?? 6);
-const MOVES = Number(process.env.MOVES ?? 6000);
+// A pod is four seats of forty life: more turns, more moves a turn, and a bound that has to clear
+// both. Measured rather than guessed — see the pod figures in D460.
+const MOVES = Number(process.env.MOVES ?? (POD ? 20000 : 6000));
 const VERBOSE = process.env.VERBOSE === '1';
+const SEAT_IDS = Array.from({ length: SEATS }, (_, i) => `corpus:${i}`);
 
 const allRows = (() => {
   const parsed = JSON.parse(readFileSync(file, 'utf8'));
@@ -101,14 +137,27 @@ const spells = rows.filter((row) => (row.type_line ?? '') !== ''
 const basics = BASICS
   .map((name) => rows.find((row) => row.name === name))
   .filter((row) => row !== undefined);
+/*
+  Commanders: legendary creatures, which is CR 903.3's requirement and the only deckbuilding rule
+  this harness enforces. Drawn from the same pool as the spells so a commander is as likely to be a
+  card the compiler reads nothing of as anything else in the deck — a harness that picked only
+  fully-read commanders would be measuring the pool it chose rather than the engine.
+*/
+const commanders = spells.filter((row) => /\bLegendary\b/.test(row.type_line ?? '')
+  && /\bCreature\b/.test(row.type_line ?? ''));
 
 console.log(`Source: ${file}`);
 console.log(`  ${provenanceLine({ FILE: file, GAMES: String(GAMES), SEED0: String(SEED0) })}`);
 console.log(`${legalLine(allRows.length, rows.length)}`);
 console.log(`Castable non-land pool: ${spells.length} of ${rows.length} rows`);
+if (POD) console.log(`Legendary creatures to be commanders: ${commanders.length}`);
 console.log(`Basics found: ${basics.map((row) => row.name).join(', ')}\n`);
 if (basics.length < 5) {
   console.error('!! the corpus is missing a basic land, so decks cannot be given mana');
+  process.exit(2);
+}
+if (POD && commanders.length === 0) {
+  console.error('!! no legendary creature in the corpus, so no pod deck can have a commander');
   process.exit(2);
 }
 
@@ -126,7 +175,14 @@ function buildDeck(id, seed) {
   const next = rng(seed);
   const chosen = [];
   const seen = new Set();
-  while (chosen.length < SIZE - LANDS) {
+  /*
+    The commander first, and its name reserved, because a Commander deck is singleton (CR 903.5b)
+    and a 99 that happened to contain a second copy of the commander would be a deck no tournament
+    and no friend would let you play.
+  */
+  const commander = POD ? commanders[Math.floor(next() * commanders.length)] : undefined;
+  if (commander !== undefined) seen.add(commander.name);
+  while (chosen.length < SIZE - LANDS - (commander === undefined ? 0 : 1)) {
     const row = spells[Math.floor(next() * spells.length)];
     if (row === undefined || seen.has(row.name)) continue;
     seen.add(row.name);
@@ -149,7 +205,13 @@ function buildDeck(id, seed) {
     entries.push({ name: BASIC_OF[colours[i]], count: share });
   }
 
-  const built = customDeck({ id, name: id, entries, data: [...chosen, ...basics] });
+  const built = customDeck({
+    id,
+    name: id,
+    entries,
+    ...(commander === undefined ? {} : { commander: commander.name }),
+    data: [...chosen, ...basics, ...(commander === undefined ? [] : [commander])],
+  });
   // What the engine made of the list, which is the second half of what this harness reports.
   let scripted = 0;
   let partial = 0;
@@ -159,24 +221,41 @@ function buildDeck(id, seed) {
     if (scriptForCard(def) !== undefined) scripted += 1;
     if (unreadLines(def).length > 0) partial += 1;
   }
-  return { ...built, colours, distinct: built.deck.cards.length, scripted, partial };
+  /*
+    The commander is counted too. It is the one card a Commander game is guaranteed to see every
+    time, so a commander the engine cannot read is worth far more than one of the 99 — and leaving
+    it out of these counts would make the pod arm's numbers quietly better than the deck.
+  */
+  const commanderDef = built.deck.commander;
+  if (commanderDef !== undefined && (commanderDef.typeLine ?? '') !== '') {
+    if (scriptForCard(commanderDef) !== undefined) scripted += 1;
+    if (unreadLines(commanderDef).length > 0) partial += 1;
+  }
+  return {
+    ...built,
+    colours,
+    distinct: built.deck.cards.length,
+    scripted,
+    partial,
+    commanderName: commander?.name,
+    commanderIsCardboard: commanderDef !== undefined && (commanderDef.typeLine ?? '') === '',
+  };
 }
 
 /** One game to a finish, or to the first thing that stops it. */
 function play(seed) {
-  const a = buildDeck('corpus:a', seed * 2);
-  const b = buildDeck('corpus:b', seed * 2 + 1);
-  const decks = { 'corpus:a': a.deck, 'corpus:b': b.deck };
+  const built = SEAT_IDS.map((id, seat) => buildDeck(id, seed * SEATS + seat));
+  const decks = Object.fromEntries(SEAT_IDS.map((id, seat) => [id, built[seat].deck]));
   const host = { isHost: true, decks };
 
   let s = createGame({
     id: `corpus${seed}`,
-    format: 'modern',
-    players: [{ playerId: 'p0', name: 'A' }, { playerId: 'p1', name: 'B' }],
+    format: POD ? 'pod' : 'modern',
+    players: SEAT_IDS.map((_, seat) => ({ playerId: `p${seat}`, name: `P${seat}` })),
     seed,
   });
-  for (const [seat, id] of [[0, 'corpus:a'], [1, 'corpus:b']]) {
-    s = applyAction(s, { type: 'deck:load', by: seat, seat, deckId: id }, host);
+  for (let seat = 0; seat < SEATS; seat++) {
+    s = applyAction(s, { type: 'deck:load', by: seat, seat, deckId: SEAT_IDS[seat] }, host);
   }
   s = applyAction(s, { type: 'game:start', by: 0, firstSeat: 0 }, host);
   s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, host);
@@ -185,11 +264,11 @@ function play(seed) {
   for (; moves < MOVES && !s.finished; moves++) {
     const seat = seatsToAct(s)[0];
     if (seat === undefined) {
-      return { verdict: 'nobody-to-act', seed, moves, turn: s.turn, a, b };
+      return { verdict: 'nobody-to-act', seed, moves, turn: s.turn, decks: built };
     }
     const action = botAction(s, seat, {});
     if (action === null) {
-      return { verdict: 'no-move', seed, moves, turn: s.turn, a, b };
+      return { verdict: 'no-move', seed, moves, turn: s.turn, decks: built };
     }
     const before = s.stateVersion;
     /*
@@ -200,13 +279,13 @@ function play(seed) {
     s = applyAction(s, action);
     if (s.stateVersion === before) {
       return {
-        verdict: 'stalled', seed, moves, turn: s.turn, a, b,
+        verdict: 'stalled', seed, moves, turn: s.turn, decks: built,
         detail: `${action.type} by seat ${seat} changed nothing`,
       };
     }
   }
-  if (!s.finished) return { verdict: 'unfinished', seed, moves, turn: s.turn, a, b };
-  return { verdict: 'finished', seed, moves, turn: s.turn, winner: s.winnerSeat, a, b };
+  if (!s.finished) return { verdict: 'unfinished', seed, moves, turn: s.turn, decks: built };
+  return { verdict: 'finished', seed, moves, turn: s.turn, winner: s.winnerSeat, decks: built };
 }
 
 const tally = new Map();
@@ -232,7 +311,7 @@ for (let i = 0; i < GAMES; i++) {
   if (result.verdict !== 'finished' && result.verdict !== 'threw') problems.push(result);
   totalMoves += result.moves ?? 0;
   totalTurns += result.turn ?? 0;
-  for (const deck of [result.a, result.b]) {
+  for (const deck of result.decks ?? []) {
     if (deck === undefined) continue;
     decksBuilt += 1;
     scripted += deck.scripted;
@@ -241,7 +320,9 @@ for (let i = 0; i < GAMES; i++) {
     fromData += deck.fromData.length;
   }
   if (VERBOSE) {
-    const shape = result.a === undefined ? '' : ` [${result.a.colours.join('')} v ${result.b.colours.join('')}]`;
+    const shape = result.decks === undefined
+      ? ''
+      : ` [${result.decks.map((d) => d.colours.join('')).join(' v ')}]`;
     console.log(`  seed ${seed}: ${result.verdict}${shape} turn ${result.turn ?? '-'} `
       + `moves ${result.moves ?? '-'}${result.detail === undefined ? '' : ` — ${result.detail}`}`);
   }

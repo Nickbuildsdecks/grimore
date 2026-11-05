@@ -191,9 +191,27 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     if (offer.card !== inst.id) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'that is not the card on offer');
     }
-    // CR 107.3b: X is nought in a cost that is not being paid, so an X on the action is a client
-    // trying to buy something for nothing rather than a choice the rules offer.
-    if (action.x !== undefined && action.x !== 0) {
+    /*
+      CR 107.3b: X is nought in a cost that is **not being paid**, so an X on such an action is a
+      client trying to buy something for nothing rather than a choice the rules offer.
+
+      **Gated on the offer having no cost (D460), which it was not.** Two of the four things that
+      offer a cast carry a cost of their own — miracle and madness — and those *are* costs being
+      paid, so X is chosen as normal (CR 601.2b) and `payFrom` below already charges it: it is
+      handed `action.x` on this path exactly as on every other.
+
+      The blanket refusal made the engine disagree with its own offer list. `legalActions` offers
+      `xMax` whenever the cost being paid has an {X} in it, which for a miracle'd `{X}{R}` is a
+      number — the bot took it, and the engine threw. **3 of 100 four-player Commander pods built
+      from arbitrary real cards died on this**, every one of them on Bonfire of the Damned, whose
+      miracle cost is `{X}{R}`: `corpus-decks.mjs POD=1`, seeds 20050, 20068 and 20075.
+
+      Suppressing the offer instead was tried first and rejected on the reading rather than on the
+      crash: it stops the throw, and it also means a miracle'd Bonfire is cast for X=0 — a card that
+      looks automated and does nothing, which is the one thing D362 says is worse than leaving a
+      line unread.
+    */
+    if ((offer.cost ?? '') === '' && action.x !== undefined && action.x !== 0) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'X is 0 when a spell is cast without paying its mana cost');
     }
   }

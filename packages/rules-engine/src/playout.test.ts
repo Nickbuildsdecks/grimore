@@ -3163,3 +3163,102 @@ describe('how many turns this board leaves me', () => {
     expect(evaluate(board, 0)).not.toBe(evaluate(board, 0, { weights: { clockTurns: 1 } }));
   });
 });
+
+describe('an offered cast of an {X} spell (D460)', () => {
+  /*
+    The engine offered a play it then refused, and `playout.test.ts`'s own invariant — "never offers
+    a play it then refuses", two tests, two and four seats — could not see it.
+
+    `legalActions` offers `xMax` whenever the cost **being paid** has an {X} in it, which for a
+    miracle'd `{X}{R}` is a number. `autoActions` refused any `offered` cast carrying an X at all,
+    on CR 107.3b — X is nought in a cost that is not being paid — without asking whether a cost was
+    being paid. Miracle and madness pay one. The bot took the X it was offered and the engine threw.
+
+    **Why the invariant held for months.** Those games are played with the thirteen built-in decks,
+    whose two miracle cards cost `{R}` and `{W}` — no {X} anywhere near the mechanic. It took
+    `corpus-decks.mjs POD=1`, four singleton 100-card Commander decks drawn from 28,542 real cards,
+    to put the two together: **3 of its first 100 pods died**, all three on Bonfire of the Damned,
+    miracle `{X}{R}` (seeds 20050, 20068, 20075). An invariant is only as broad as the decks it is
+    asserted over, which is the general lesson and the reason the pod arm exists.
+
+    The offer is set in the state rather than earned off a real miracle, which keeps the test honest
+    in a way a fixture card would not: nothing here invents printed text. Fireball is the pool's own
+    `{X}{R}` sorcery, and the two offers below differ only in the one field the rule turns on.
+  */
+  const withOffer = (cost: string, lands: number): { state: GameState; card: string } => {
+    const board = arena({
+      hands: { 0: ['Fireball'] },
+      battlefield: { 0: Array(lands).fill('Mountain') },
+      turn: 3,
+    });
+    const card = find(board, 0, 'hand', 'Fireball');
+    return {
+      state: {
+        ...board,
+        pendingOfferedCast: {
+          seat: 0, card, source: card, stays: true,
+          ...(cost === '' ? {} : { cost }),
+          prompt: cost === '' ? 'Cast Fireball for free?' : `Cast Fireball for ${cost}?`,
+        },
+      },
+      card,
+    };
+  };
+
+  it('offers an X on an offer that pays a cost, and charges it', () => {
+    const { state, card } = withOffer('{X}{R}', 8);
+    const play = legalActions(state, 0).plays.find((p) => p.card === card && p.offered === true);
+    expect(play, 'the offered cast is not on the list at all').toBeDefined();
+    // Eight Mountains, one of them paying the {R}: X may be seven, which is the number the bot took
+    // and the engine refused before this fix.
+    expect(play!.xMax).toBe(7);
+    const cast = applyAction(state, {
+      type: 'auto:cast', by: 0, card, offered: true, x: play!.xMax!,
+      targets: [{ kind: 'player', seat: 1 }],
+    }, HOST);
+    expect(cast.pendingOfferedCast).toBeNull();
+    // Every Mountain is tapped, so the X really was paid rather than waved through.
+    expect(ids(cast, 0, 'battlefield').filter((id) => cast.instances[id]!.tapped)).toHaveLength(8);
+    // And resolving it deals that X, which is what makes the X mean anything.
+    const resolved = passBoth(cast);
+    expect(life(resolved, 1)).toBe(life(state, 1) - 7);
+  });
+
+  it('refuses an X on an offer that pays nothing, and never offers one', () => {
+    /*
+      The other half, and the rule this keeps: a cascade hit is cast **without paying its mana
+      cost**, so X is nought (CR 107.3b). `legalActions` already agrees — the cost being paid is
+      empty, so there is no {X} in it to offer — and the engine's refusal is what makes a crafted
+      action carrying one fail rather than buy a Fireball for seven off an empty board.
+    */
+    const { state, card } = withOffer('', 8);
+    const play = legalActions(state, 0).plays.find((p) => p.card === card && p.offered === true);
+    expect(play?.xMax).toBeUndefined();
+    expect(() => applyAction(state, {
+      type: 'auto:cast', by: 0, card, offered: true, x: 3,
+      targets: [{ kind: 'player', seat: 1 }],
+    }, HOST)).toThrow(/X is 0 when a spell is cast without paying its mana cost/);
+    // And with no X it is a free Fireball for nothing, which is exactly what a cascade hit is.
+    const cast = applyAction(state, {
+      type: 'auto:cast', by: 0, card, offered: true, targets: [{ kind: 'player', seat: 1 }],
+    }, HOST);
+    expect(ids(cast, 0, 'battlefield').filter((id) => cast.instances[id]!.tapped)).toHaveLength(0);
+  });
+
+  it('still offers X on the same card cast for its real cost', () => {
+    /*
+      So the fix cannot be "never offer X on an offered cast", which was the first attempt. With no
+      offer in the state Fireball is an ordinary {X}{R} cast and `xMax` is what tells the player how
+      big it can be. In a main phase, because Fireball is a sorcery and the board `arena` hands over
+      starts in the upkeep — where it is correctly not castable at all.
+    */
+    const board = advanceTo(
+      arena({ hands: { 0: ['Fireball'] }, battlefield: { 0: Array(8).fill('Mountain') }, turn: 3 }),
+      'precombat-main',
+    );
+    const card = find(board, 0, 'hand', 'Fireball');
+    const play = legalActions(board, 0).plays.find((p) => p.card === card);
+    expect(play?.offered).toBeUndefined();
+    expect(play?.xMax).toBe(7);
+  });
+});
