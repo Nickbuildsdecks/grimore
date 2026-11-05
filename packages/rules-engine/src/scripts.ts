@@ -10917,13 +10917,69 @@ export function attachmentScriptFor(
   const subject = isAura ? /^enchanted creature/i : /^equipped creature/i;
   const staticLine = lines.find((line) => subject.test(plain(line).trim()));
   const read = staticLine === undefined ? null : attachmentBonus(staticLine);
-  if (staticLine !== undefined && read === null) return null;
+  /*
+    **A bonus line this module cannot read no longer refuses the attachment (D456).**
+
+    It used to: `if (staticLine !== undefined && read === null) return null`. The docblock two
+    paragraphs up already argued the other way for any *other* unreadable line — "A second line the
+    compiler cannot read is fine too: the Aura attaches and the line is flagged, which is the hybrid
+    reading working rather than failing" — and the code contradicted it for exactly one line, the one
+    starting with the word "Enchanted". So "Enchant creature / When enchanted creature dies, draw a
+    card" attached and flagged the trigger, while "Enchant creature / Enchanted creature doesn't
+    untap during its controller's untap step" compiled to **nothing at all**: not an Aura, not
+    castable, not attachable, 738 legal Auras with no attachment of any kind.
+
+    That is the worse of the two failures by this file's own rule. An unread line is dealt to a
+    human (D362) and the card is still *at the table*; a card that cannot be put onto a creature
+    cannot be played by hand either, because the engine has no attachment for the player to make.
+
+    So the bonus is taken when it reads, and when it does not the line is left unclaimed and
+    flagged, exactly as a trigger the compiler cannot read already is. `claimed` below says so: a
+    line that was not understood is not claimed, so it keeps its badge.
+  */
 
   if (isAura) {
-    // `Enchant creature` exactly: an `Enchant artifact` or `Enchant player` is a different target
-    // and this reads only the one the pool prints.
-    const declared = lines.find((line) => /^enchant creature$/i.test(plain(line).trim()));
-    if (declared === undefined) return null;
+    /*
+      **What the Aura may be put on, as the card prints it (D456).**
+
+      This read `/^enchant creature$/` exactly, because that is what all ten of the pool's
+      attachments print. The corpus prints eleven other phrases, and 356 legal Auras were refused
+      for naming one of them: `Enchant land` (82), `Enchant creature you control` (54), `Enchant
+      player` (42), `Enchant artifact or creature` (22), `Enchant permanent` (22), `Enchant
+      artifact` (19), `Enchant creature or Vehicle` (10), `Enchant land you control` (7), `Enchant
+      creature an opponent controls` (5), `Enchant planeswalker` (5).
+
+      The phrase is read through `targetSpecFrom` — the same reader every other target phrase goes
+      through — by asking it for `target <thing>`, so the filters are the ones the rest of the file
+      already uses and there is no second definition of what a land is. The spec's description is
+      then the **printed** phrase, "enchant land", because that is what a player reads in the prompt
+      and what the hand-written Auras store.
+
+      **`Enchant player` is refused although `targetSpecFrom` can build it**, and the refusal is the
+      point of this comment. The engine attaches an Aura by writing `attachedTo` with the id of a
+      **card** — `object.targets.find((t) => t.kind === 'card')` — so an Aura pointed at a seat
+      would resolve, find no card among its targets, and sit on the battlefield attached to nothing:
+      the "works and does nothing" shape this reader exists to avoid. Enchanting a player needs the
+      engine to hold an attachment to a seat, which it does not, so those 42 cards keep their badge
+      until it does. `Enchant planeswalker` and the two compound phrases are refused by
+      `targetSpecFrom` itself, which has no spec for them.
+
+      **No reminder text is stripped here, and a break run is why.** The first draft ended the
+      pattern with `(?:\s*\(.*\))?$` for the printings that carry "(Target a creature as you cast
+      this. This card enters attached to that creature.)" — and breaking that group changed nothing
+      in 1,758 tests, because `printedRulesLines` has already taken the reminder off every line
+      before this reader sees one (CR 207.2). The group was a second place doing a job one place
+      already does, so it is gone and the test that covers it says what it is really covering.
+    */
+    const enchant = lines
+      .map((line) => /^enchant ([a-z][a-z' ]*)$/i.exec(plain(line).trim()))
+      .find((m) => m !== null);
+    if (enchant === undefined || enchant === null) return null;
+    const declared = enchant[0]!;
+    const thing = enchant[1]!.trim().toLowerCase();
+    if (thing === 'player') return null;
+    const host = targetSpecFrom(`target ${thing}`, read !== null && !read.harmful);
+    if (host === null) return null;
     /*
       An Aura whose *whole card* is `Enchant creature` is still refused, and that is the invariant
       the test below the bonus-optional change had to keep: a declaration on its own is an Aura you
@@ -10956,23 +11012,23 @@ export function attachmentScriptFor(
     return {
       fragment: {
         aura: {
-          target: {
-            kind: 'creature',
-            description: 'enchant creature',
-            /*
-              `friendly` is claimed only when a bonus line says the Aura helps. With no bonus there
-              is no signal either way — Bequeathal wants to be on your own creature and Banewasp
-              Affliction wants to be on theirs, and both print nothing but a trigger — so the flag
-              is **omitted** rather than guessed, which is the same answer the harmful case gives
-              and leaves the bot to read the board instead of a wrong hint.
-            */
-            ...(read !== null && !read.harmful ? { friendly: true as const } : {}),
-          },
+          /*
+            The spec `targetSpecFrom` built, wearing the printed phrase as its description.
+
+            `friendly` is claimed only when a bonus line says the Aura helps — it is passed to
+            `targetSpecFrom` above. With no bonus there is no signal either way: Bequeathal wants to
+            be on your own creature and Banewasp Affliction wants to be on theirs, and both print
+            nothing but a trigger. So the flag is **omitted** rather than guessed, which is the same
+            answer the harmful case gives and leaves the bot to read the board instead of a wrong
+            hint.
+          */
+          target: { ...host, description: `enchant ${thing}` },
           effect: read?.bonus ?? {},
         },
         ...(read?.harmful === true ? { removesACreature: true as const } : {}),
       },
-      claimed: staticLine === undefined ? [declared] : [declared, staticLine],
+      // Only a line that was **read** is claimed; an unreadable bonus keeps its badge (D456).
+      claimed: read === null ? [declared] : [declared, staticLine!],
     };
   }
 
@@ -10991,17 +11047,27 @@ export function attachmentScriptFor(
         actually does instead. Not the bonus phrase with the bonus missing, which would describe a
         card that does not exist.
       */
-      staticLine === undefined
+      read === null
         ? 'attach it to a creature you control'
         : (() => {
-          const text = plain(staticLine).trim().replace(/\.$/, '');
+          const text = plain(staticLine!).trim().replace(/\.$/, '');
           return text.charAt(0).toLowerCase() + text.slice(1);
         })(),
     ),
-    // Only the lines this actually accounted for: with no bonus line there is nothing to claim
-    // but the equip itself, and claiming one that does not exist would hide a line from the
-    // per-line readers.
-    claimed: staticLine === undefined ? [equip.input] : [equip.input, staticLine],
+    /*
+      Only the lines this actually accounted for: with no bonus line there is nothing to claim but
+      the equip itself, and claiming one that does not exist would hide a line from the per-line
+      readers.
+
+      **`read === null` rather than `staticLine === undefined` (D456)**, and the difference is a
+      badge. Since an unreadable bonus no longer refuses the attachment, an Equipment printing
+      "Equipped creature has soaring" equips and grants nothing — and if this still claimed that
+      line, the card would grant nothing with **nothing anywhere saying so**, which is the silent
+      failure the whole hybrid reading exists to avoid. The description above is keyed off the same
+      test, so an Equipment whose bonus was not read describes what it does do — attach — rather
+      than quoting a bonus it is not giving.
+    */
+    claimed: read === null ? [equip.input] : [equip.input, staticLine!],
   };
 }
 

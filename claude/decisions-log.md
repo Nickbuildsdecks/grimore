@@ -28662,3 +28662,88 @@ filter-behaviour tests above.
 Legal-only coverage **18,113 of 56,421 lines (32.1%)**, **8,530 cards with a script**
 (8,457 → 8,530, **+73**), **5,015 with every printed line read** (4,938 → 5,015, **+77**) — the
 first time more than five thousand cards read end to end. Full engine suite 2,221 tests. GATE OK.
+
+## D456 — An Aura attaches even when its statics do not read
+
+A measurement, and then a one-line defect.
+
+**1,240 legal Auras, and 738 of them compiled to no attachment at all.** Not castable onto anything,
+not attachable, nothing on the card for the engine to do — and so nothing for a person to play by
+hand either, which is the half that makes this worse than an unread line. D362's bargain is that the
+card plays as far as it was read and the rest is flagged; these were flagged and *also* unplayable.
+
+Two rules did it, and both read as deliberate until the counts were in.
+
+### The one-line defect: "Enchanted" was the one word that poisoned the card
+
+```ts
+if (staticLine !== undefined && read === null) return null;
+```
+
+An Aura whose line starting `Enchanted creature …` could not be read was refused **whole**. The
+docblock two paragraphs above that line already argued the other way for every *other* unreadable
+line — "A second line the compiler cannot read is fine too: the Aura attaches and the line is
+flagged, which is the hybrid reading working rather than failing" — so the file contradicted itself,
+and the contradiction was worth 382 cards. "Enchant creature / When enchanted creature dies, draw a
+card" attached and flagged its trigger; "Enchant creature / Enchanted creature doesn't untap during
+its controller's untap step" (48 legal Auras' only other line) compiled to nothing.
+
+The bonus is now taken when it reads, and when it does not the line is **left unclaimed**, which is
+what keeps its badge. The Equipment half of the same function got the same treatment and one extra
+fix it needed: it was *claiming* the line it could not read, so an Equipment printing "Equipped
+creature has soaring" equipped, granted nothing, and had **nothing anywhere saying so** — the silent
+failure the whole hybrid reading exists to avoid. Its ability's description is keyed off the same
+test, so an Equipment whose bonus was not read now says "attach it to a creature you control" rather
+than quoting a bonus it is not granting.
+
+### The second rule: `Enchant creature` exactly
+
+The pool's ten attachments all print that phrase, so the reader matched it literally. The corpus
+prints eleven others, and 356 legal Auras named one: `Enchant land` (82), `Enchant creature you
+control` (54), `Enchant player` (42), `Enchant artifact or creature` (22), `Enchant permanent` (22),
+`Enchant artifact` (19), `Enchant creature or Vehicle` (10), `Enchant land you control` (7),
+`Enchant creature an opponent controls` (5), `Enchant planeswalker` (5).
+
+The phrase now goes through `targetSpecFrom` — the reader every other target phrase uses — by asking
+it for `target <thing>`, so the filters are the ones the rest of the file already has and there is no
+second definition of what a land is. The spec then wears the **printed** phrase as its description,
+because that is what a player reads in the prompt.
+
+**`Enchant player` is refused although `targetSpecFrom` can build it**, and that refusal is the one
+thing here that had to be written rather than inherited. The engine attaches an Aura by writing
+`attachedTo` with the id of a **card**: an Aura pointed at a seat would resolve, find no card among
+its targets, and sit on the battlefield attached to nothing — "works and does nothing", which is the
+shape this reader exists to avoid and which no badge would cover, because its lines all read.
+Enchanting a player needs the engine to hold an attachment to a seat, which it does not.
+
+### What this does not do
+
+It does not read the statics. An Aura that attaches with `effect: {}` grants nothing, and the line
+that says what it should grant keeps its badge — so the card is at the table, aimed at a legal host,
+with one line for a person to apply. **Measured across all 1,880 legal attachments: 0 printed bonus
+lines neither expressed nor flagged, and 0 cards where an unclaimed "Enchanted …" line was picked up
+as a card-wide static by some other reader.** That second number is the one that would have been a
+silent wrong card.
+
+The invariant D364 and D437 both kept is untouched: an Aura whose **whole card** is the declaration
+is still refused, because there the badge cannot do its job — every line it has was read, so nothing
+would be flagged.
+
+### Verified
+
+Sixteen compile rows: six printed `Enchant` phrases with the spec kind and the printed description,
+the unreadable static attaching with no effect and keeping its badge and claiming no `friendly`, the
+readable bonus unchanged, the reminder-text printing, `Enchant player` refused, five phrases
+`targetSpecFrom` refuses, and the whole-card-is-a-declaration invariant. Three runtime tests on
+printed **Bonds of Quicksilver** (onto an opponent's creature, which keeps its 3/3 exactly) and
+printed **Wild Growth** (onto a land — a host the reader used to refuse — and refused when aimed at a
+creature).
+
+**Nine break levers, nine failures.** A tenth was removed rather than kept: the declaration pattern
+carried an optional reminder-text group, and breaking it changed nothing in 1,758 tests because
+`printedRulesLines` strips reminder text from every line before any reader sees one. The test that
+covered it now says it covers the pipeline.
+
+Legal-only coverage **18,887 of 56,421 lines (33.5%)**, **9,213 cards with a script**
+(8,530 → 9,213, **+683**), 5,020 with every printed line read. Auras with an attachment: **496 →
+1,077**. Full engine suite 2,240 tests. GATE OK.

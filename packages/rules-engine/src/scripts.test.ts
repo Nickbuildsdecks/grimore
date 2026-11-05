@@ -24116,3 +24116,102 @@ describe('what a printed search filter actually admits (D455)', () => {
     expect(ids(s, 0 as SeatIndex, 'battlefield')).not.toContain(found);
   });
 });
+
+describe('an Aura the compiler only half reads still goes onto something (D456)', () => {
+  /*
+    Two printed Auras through `customDeck` (D430), neither in any built-in deck, and neither of
+    their statics readable by this compiler: **Bonds of Quicksilver** ("doesn't untap during its
+    controller's untap step", 48 legal Auras' only other line) and **Wild Growth**, whose host is a
+    **land** — a phrase the reader refused outright until D456.
+
+    What is under test is that the card is **playable**: it can be cast, it can be pointed at a
+    legal host, and it ends up attached to it. Before this, 738 of 1,240 legal Auras compiled to no
+    attachment at all, so there was nothing for a person to play by hand either.
+  */
+  const BONDS = {
+    name: 'Bonds of Quicksilver', type_line: 'Enchantment — Aura', mana_cost: '{3}{U}', cmc: 4,
+    colors: ['U'], power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Flash (You may cast this spell any time you could cast an instant.)\nEnchant'
+      + ' creature\nEnchanted creature doesn’t untap during its controller’s untap step.',
+  };
+  const WILD_GROWTH = {
+    name: 'Wild Growth', type_line: 'Enchantment — Aura', mana_cost: '{G}', cmc: 1, colors: ['G'],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Enchant land\nWhenever enchanted land is tapped for mana, its controller adds an'
+      + ' additional {G}.',
+  };
+
+  const list = () => {
+    const built = customDeck({
+      id: 'aura-list',
+      name: 'Auras',
+      entries: [
+        { name: 'Bonds of Quicksilver', count: 1 },
+        { name: 'Wild Growth', count: 1 },
+        { name: 'Island', count: 29 },
+        { name: 'Forest', count: 29 },
+      ],
+      data: [BONDS as never, WILD_GROWTH as never],
+    });
+    expect(built.unknown).toEqual([]);
+    return built.deck;
+  };
+
+  const casting = (hand: readonly string[], lands: readonly string[]): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'aura-list', 1: 'verdant-guard' },
+      deckSpecs: { 'aura-list': list() },
+      hands: { 0: hand },
+      battlefield: { 0: lands, 1: ['Centaur Courser'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0 as SeatIndex);
+  };
+
+  it('goes onto a creature, and invents nothing while it is there', () => {
+    let s = casting(['Bonds of Quicksilver'], ['Island', 'Island', 'Island', 'Island']);
+    const courser = find(s, 1 as SeatIndex, 'battlefield', 'Centaur Courser');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Bonds of Quicksilver'),
+      targets: [{ kind: 'card', id: courser }],
+    } as Action)), 40);
+
+    const bonds = find(s, 0 as SeatIndex, 'battlefield', 'Bonds of Quicksilver');
+    expect(s.instances[bonds]?.attachedTo).toBe(courser);
+    /*
+      And the creature is exactly what it was. The printed line this compiler could not read says
+      the creature does not untap, and reading it wrongly — as a pump, as removal, as anything — is
+      the failure D362 ranks worse than an unread line. So the Aura is on the board, the line is
+      flagged, and the host's characteristics are untouched.
+    */
+    expect(characteristicsOf(s, s.instances[courser]!).power).toBe(3);
+    expect(characteristicsOf(s, s.instances[courser]!).toughness).toBe(3);
+  });
+
+  it('goes onto a land, which is a host the reader used to refuse', () => {
+    let s = casting(['Wild Growth'], ['Forest']);
+    const forest = find(s, 0 as SeatIndex, 'battlefield', 'Forest');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Wild Growth'),
+      targets: [{ kind: 'card', id: forest }],
+    } as Action)), 40);
+    const growth = find(s, 0 as SeatIndex, 'battlefield', 'Wild Growth');
+    expect(s.instances[growth]?.attachedTo).toBe(forest);
+  });
+
+  it('will not go onto a creature when the card says land', () => {
+    /*
+      The other half of reading the phrase: `Enchant land` is a restriction, not decoration. The
+      spec comes from `targetSpecFrom`, so the engine refuses an illegal host the same way it does
+      for every other target — and an Aura that could go anywhere would be a card the compiler
+      invented.
+    */
+    const s = casting(['Wild Growth'], ['Forest']);
+    const courser = find(s, 1 as SeatIndex, 'battlefield', 'Centaur Courser');
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Wild Growth'),
+      targets: [{ kind: 'card', id: courser }],
+    } as Action)).not.toBeNull();
+  });
+});

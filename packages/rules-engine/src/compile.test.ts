@@ -1464,16 +1464,31 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         { target?: { friendly?: boolean } }).target?.friendly).toBe(true);
     });
 
-    it('refuses an Aura that grants a quoted ability rather than a keyword', () => {
+    it('attaches an Aura whose granted ability it cannot read, and still flags the line', () => {
       /*
-        Ophidian Eye: `Enchanted creature has "Whenever this creature deals damage to a player, draw
-        a card."` The hand-written script expresses that with `grants`, an index into a table of
-        abilities this module cannot build — and a reader that dropped the quoted text would be an
-        Aura you can cast, that attaches, and that silently grants nothing. So the pair is refused
-        and the card is reported unread, which is what gets it played by hand (D362).
+        **Retired claim (D456), and this row is the argument it lost.**
+
+        It read "refuses an Aura that grants a quoted ability rather than a keyword", and said of
+        Ophidian Eye — `Enchanted creature has "Whenever this creature deals damage to a player,
+        draw a card."` — that "a reader that dropped the quoted text would be an Aura you can cast,
+        that attaches, and that silently grants nothing. So the pair is refused and the card is
+        reported unread, which is what gets it played by hand (D362)."
+
+        The half that is still true is that the quoted ability must not be invented: it is not read,
+        and the line below is still asserted unread. The half that was wrong is **"silently"**. The
+        badge *is* the flag, and with the attachment refused the card was flagged and also
+        unplayable — the engine had no attachment for a person to make, so "played by hand" was not
+        available either. Measured across the corpus: **738 legal Auras had no attachment of any
+        kind**, 581 of them because of exactly this rule.
+
+        So the attachment ships and the line keeps its badge, which is what D362 promises for every
+        other card type.
       */
       const eye = compiledScript('Ophidian Eye');
-      expect(field(eye.script, 'aura')).toBeUndefined();
+      const aura = field(eye.script, 'aura') as { target?: { description?: string } } | undefined;
+      expect(aura?.target?.description).toBe('enchant creature');
+      // And it grants nothing, rather than guessing at the quoted text.
+      expect((aura as { effect?: Record<string, unknown> } | undefined)?.effect).toEqual({});
       expect(eye.unread.map((u) => u.line)).toContain(
         'Enchanted creature has "Whenever this creature deals damage to a player, draw a card."',
       );
@@ -1516,19 +1531,40 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       if (noEquipCost.ok) expect(noEquipCost.script).toBeUndefined();
     });
 
-    it('refuses a keyword the engine would not read back out of what it wrote', () => {
+    it('writes no bonus for a keyword the engine would not read back, and still equips', () => {
       /*
-        The same validation `tokenEffect` uses, for the same reason: the bonus's keywords are read
-        by `printedKeywords`, so the reader asks that function whether the text it is about to write
-        down yields the keywords the line named. An Equipment printed "has soaring" would otherwise
-        grant nothing at all.
+        **Retired claim (D456).** This asserted `script` was `undefined` — no equip ability at all —
+        for an Equipment printing a keyword `printedKeywords` does not recognise.
+
+        The validation itself is unchanged and is still the point: the bonus's keywords are read by
+        `printedKeywords`, so the reader asks that function whether the text it is about to write
+        down yields the keywords the line named, exactly as `tokenEffect` does. "Has soaring" grants
+        nothing, so **no bonus is written**.
+
+        What changed is that refusing the bonus no longer refuses the equip ability with it. An
+        Equipment that moves onto a creature and grants nothing is a complete, playable mechanic
+        with a flagged line — the same reading D433 gave Armory of Iroas, which prints no bonus at
+        all — and it beats a card that cannot be equipped and is flagged anyway.
       */
       const nonsense = compileCard({
         name: 'Soaring Blade', type_line: 'Artifact — Equipment', mana_cost: '{1}', cmc: 1,
         colors: [], oracle_text: 'Equipped creature has soaring.\nEquip {1}',
       });
       expect(nonsense.ok).toBe(true);
-      if (nonsense.ok) expect(nonsense.script).toBeUndefined();
+      const script = (nonsense.ok ? nonsense.script : undefined) as
+        Record<string, unknown> | undefined;
+      // The equip ability is there, and the bonus it would have granted is empty.
+      expect(script?.['abilities']).toHaveLength(1);
+      expect(script?.['equipBonus']).toEqual({});
+      /*
+        And the ability describes what it **does** — attach — rather than quoting a bonus it is not
+        granting. A description read off the printed line here would put "has soaring" on a button
+        that grants nothing.
+      */
+      expect((script?.['abilities'] as readonly { description?: string }[])[0]?.description)
+        .toBe('Equip {1} — attach it to a creature you control');
+      expect((nonsense.ok ? nonsense.unread : []).map((u) => u.line))
+        .toContain('Equipped creature has soaring.');
     });
   });
   /*
@@ -8914,5 +8950,133 @@ describe('the library search as a product, widened (D455)', () => {
     // `compiled-vs-written` compares their compiled readings against their hand-written scripts.
     expect(fullyCompiled(compiledScript('Diabolic Tutor'))).toBe(true);
     expect(fullyCompiled(compiledScript('Rampant Growth'))).toBe(true);
+  });
+});
+
+describe('an Aura attaches even when its statics do not read (D456)', () => {
+  const unreadLines = (c: ReturnType<typeof compileCard>) =>
+    (c.ok ? c.unread : []).map((u) => u.line);
+  const aura = (text: string, typeLine = 'Enchantment — Aura') => compileCard({
+    name: 'Probe Aura', type_line: typeLine, mana_cost: '{1}{G}', cmc: 2, colors: ['G'],
+    layout: 'normal', oracle_text: text,
+  } as never);
+  const attachment = (c: ReturnType<typeof compileCard>) =>
+    (((c.ok ? c.script : undefined) as Record<string, unknown> | undefined)?.['aura']) as
+      { target?: { kind?: string; description?: string }; effect?: Record<string, unknown> }
+      | undefined;
+
+  it.each([
+    /*
+      **738 of 1,240 legal Auras had no attachment of any kind** when this was measured: not
+      castable, not attachable, nothing for a person to play by hand either. 356 of them named a
+      phrase this reader did not know and 382 printed a static it could not read, which used to
+      refuse the whole card.
+
+      Each row below is a printed phrase with the count of legal Auras that print it.
+    */
+    ['a creature', 'Enchant creature', 'creature', 382],
+    ['a land', 'Enchant land', 'permanent', 82],
+    ['your own creature', 'Enchant creature you control', 'creature', 54],
+    ['any permanent', 'Enchant permanent', 'permanent', 22],
+    ['an artifact', 'Enchant artifact', 'permanent', 19],
+    ['their creature', 'Enchant creature an opponent controls', 'creature', 5],
+  ])('reads "enchant %s"', (_label, declaration, kind) => {
+    const compiled = aura(`${declaration as string}\nWhen this Aura enters, you gain 2 life.`);
+    const read = attachment(compiled);
+    // The spec comes from `targetSpecFrom`, so the filters are the ones the rest of the file uses.
+    expect(read?.target?.kind).toBe(kind);
+    // And the description is the **printed** phrase, which is what a player reads in the prompt.
+    expect(read?.target?.description).toBe((declaration as string).toLowerCase());
+  });
+
+  it('attaches with no bonus when the static line cannot be read, and flags the line', () => {
+    /*
+      The change, in one card. `Enchanted creature doesn't untap during its controller's untap step`
+      is 48 legal Auras' only other line, and the reader used to answer `null` for the whole card
+      because that line reached `attachmentBonus` and came back unread.
+
+      Now the attachment ships with **no effect at all** — nothing is invented — and the line keeps
+      its badge, which is the hybrid reading D362 gives every other card type.
+    */
+    const text = 'Enchant creature\nEnchanted creature doesn’t untap during its controller’s'
+      + ' untap step.';
+    const compiled = aura(text);
+    expect(attachment(compiled)?.target?.description).toBe('enchant creature');
+    expect(attachment(compiled)?.effect).toEqual({});
+    /*
+      And `friendly` is **omitted**, not guessed. With no bonus read there is no signal about which
+      side of the table the Aura is for — this one is removal and Bequeathal's trigger wants your
+      own creature — so the bot is left to read the board instead of a wrong hint (D252).
+    */
+    expect((attachment(compiled)?.target as { friendly?: boolean } | undefined)?.friendly)
+      .toBeUndefined();
+    expect(unreadLines(compiled))
+      .toEqual(['Enchanted creature doesn’t untap during its controller’s untap step.']);
+  });
+
+  it('still reads the bonus when it can, and claims the line', () => {
+    // The control: nothing about the hybrid path changes a card whose bonus does read.
+    const compiled = aura('Enchant creature\nEnchanted creature gets +2/+2.');
+    expect(attachment(compiled)?.effect).toEqual({ power: 2, toughness: 2 });
+    expect(attachment(compiled)?.target).toMatchObject({ friendly: true });
+    expect(unreadLines(compiled)).toEqual([]);
+  });
+
+  it('reads a declaration whose printing carries reminder text', () => {
+    /*
+      **And the stripping is not this reader's, which a break run established.** The declaration
+      pattern used to end with an optional parenthetical; breaking that group changed nothing,
+      because `printedRulesLines` removes reminder text from every line before any reader sees it
+      (CR 207.2). So the group is gone and this row covers the pipeline rather than a second copy of
+      it — if the upstream stripping is ever dropped, this is what fails.
+    */
+    const compiled = aura('Enchant creature (Target a creature as you cast this. This card enters'
+      + ' attached to that creature.)\nEnchanted creature gets +1/+1.');
+    expect(attachment(compiled)?.target?.description).toBe('enchant creature');
+    expect(unreadLines(compiled)).toEqual([]);
+  });
+
+  it('refuses "enchant player", although the target phrase itself reads', () => {
+    /*
+      **The deliberate refusal, and the reason it is not an oversight.** `targetSpecFrom` can build
+      `target player`, so without this the 42 legal Auras printing `Enchant player` would compile.
+
+      The engine attaches an Aura by writing `attachedTo` with the id of a **card** — the resolution
+      looks for `targets.find((t) => t.kind === 'card')` — so an Aura pointed at a seat would
+      resolve, find no card among its targets, and sit on the battlefield attached to nothing. That
+      is the "works and does nothing" shape this reader exists to avoid, and it is worse than the
+      badge because nothing at the table would say so.
+    */
+    const text = 'Enchant player\nAt the beginning of the upkeep of enchanted player, that player'
+      + ' loses 1 life.';
+    const compiled = aura(text);
+    expect(attachment(compiled)).toBeUndefined();
+    expect(unreadLines(compiled)).toContain('Enchant player');
+  });
+
+  it.each([
+    // Refused by `targetSpecFrom`, which has no spec for any of them. Each is a real printed
+    // phrase, with the count of legal Auras that print it.
+    ['a planeswalker', 'Enchant planeswalker'],                 // 5
+    ['two types at once', 'Enchant artifact or creature'],      // 22
+    ['a type and a subtype', 'Enchant creature or Vehicle'],    // 10
+    ['a controller on a land', 'Enchant land you control'],     // 7
+    ['a colour', 'Enchant red or green creature'],              // 3
+  ])('refuses "enchant %s"', (_label, declaration) => {
+    const compiled = aura(`${declaration as string}\nWhen this Aura enters, you gain 2 life.`);
+    expect(attachment(compiled)).toBeUndefined();
+    expect(unreadLines(compiled)).toContain(declaration as string);
+  });
+
+  it('still refuses an Aura whose whole card is the declaration', () => {
+    /*
+      The invariant D364 and D437 both kept, and D456 does not touch: a declaration on its own is an
+      Aura you can cast, that attaches, and that does nothing — and *nothing* is flagged, because
+      the only line it has was read. That is the one case where the badge cannot do its job, so the
+      card stays unread and a human plays it.
+    */
+    const compiled = aura('Enchant creature');
+    expect(attachment(compiled)).toBeUndefined();
+    expect(unreadLines(compiled)).toEqual(['Enchant creature']);
   });
 });

@@ -12075,3 +12075,32 @@ guards overlapping, and the fix was a row that isolates each.
 
 Coverage **18,113 of 56,421 legal lines (32.1%)**, **8,530 cards with a script (+73)**, **5,015 with
 every line read (+77)** — the first time past five thousand cards that read end to end.
+
+## An Aura attaches even when its statics do not read (D456)
+
+**1,240 legal Auras, and 738 of them compiled to no attachment at all** — not castable onto
+anything, not attachable, and so nothing for a person to play by hand either. That last part is what
+made it worse than an unread line: D362's bargain is that the card plays as far as it was read and
+the rest is flagged, and these were flagged *and* unplayable.
+
+Two rules did it. The first was one line, and the file already disagreed with itself about it: an
+Aura whose `Enchanted creature …` line could not be read was refused **whole**, while an Aura whose
+unreadable line was a *trigger* attached and flagged it. 382 cards turned on that inconsistency. The
+bonus is now taken when it reads and the line left unclaimed when it does not, which is what keeps
+its badge. The Equipment half had the same rule plus a worse bug: it *claimed* the line it could not
+read, so an Equipment printing "has soaring" equipped, granted nothing, and nothing anywhere said so.
+
+The second was `Enchant creature` matched literally. The corpus prints eleven other phrases and 356
+Auras named one — `Enchant land` (82), `Enchant creature you control` (54), `Enchant artifact` (19)
+and the rest. They go through `targetSpecFrom` now, so the filters are the ones every other target
+phrase uses, and the spec wears the printed phrase as its description.
+
+**`Enchant player` is refused on purpose**, although the spec exists: the engine attaches by writing
+`attachedTo` with a **card** id, so an Aura aimed at a seat would resolve and attach to nothing —
+"works and does nothing", which no badge covers because all its lines read.
+
+Measured across 1,880 legal attachments afterwards: **0 bonus lines neither expressed nor flagged,
+0 unclaimed "Enchanted …" lines picked up as card-wide statics**. Nine break levers, nine failures.
+
+Coverage **18,887 of 56,421 legal lines (33.5%)**, **9,213 cards with a script (+683)** — the largest
+single increment so far, and Auras with an attachment went **496 → 1,077**.
