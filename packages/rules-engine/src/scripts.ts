@@ -1884,6 +1884,68 @@ const SEARCHABLE_TYPES: readonly string[] = [
 /** The supertypes (CR 205.4a). "Search your library for a legendary card" is Captain Sisay. */
 const SUPERTYPES: readonly string[] = ['basic', 'legendary', 'snow', 'world'];
 
+
+/**
+ * A printed search filter, with a **mana-value clause** peeled off the end of it (D491).
+ *
+ * "a Rebel permanent card with mana value 3 or less" (Amrou Scout), "an artifact card with mana
+ * value 1 or less" (Artificer's Intuition), "a creature card with mana value 6 or greater" (Fierce
+ * Empath), and — the case that makes this a wrapper rather than one more arm inside the body — "a
+ * card with mana value 6 or greater" (Behold My Grandeur), whose body is the one phrase that reads
+ * to `filter: null`.
+ *
+ * That is why the clause is peeled here instead of being added to each arm below. `filter: null`
+ * means "any card", so an arm that ignored the clause on that phrase would hand Behold My Grandeur
+ * a search of the whole library: a strictly better card than the one printed, which is the failure
+ * class D259 is about. Peeling first makes the clause apply to every body uniformly, including the
+ * one with no filter of its own.
+ *
+ * ## The number is the **printed** mana value, and here that is right
+ *
+ * `CardDef.cmc`, not a live read. A card in a library has no live characteristics — nothing on the
+ * battlefield is modifying it — which is the argument the body's own docblock makes about type
+ * lines, and it applies to mana value for the same reason. The identical-looking clause on a
+ * *battlefield* permanent or a spell on the stack is a different read and a different increment;
+ * `manaValueOnStack` already exists for the second of those. Keeping the two apart is deliberate:
+ * one function answering both questions is exactly the shape #319 found five bugs in.
+ *
+ * Only `or less` and `or greater` are read, because those are the two Magic prints in this
+ * position. A bare "with mana value 3" would fall through to the body, fail there, and leave the
+ * line unread, which is the honest default.
+ */
+function libraryFilter(
+  phrase: string, name: string,
+): { readonly phrase: string; readonly filter: CardsDecisionSpec['filter'] | null } | null {
+  const whole = phrase.trim();
+  const clause = /^(.*?) with mana value (\d+) or (less|greater)$/i.exec(whole);
+  const body = cardFilterBody(clause === null ? whole : clause[1]!.trim(), name);
+  if (body === null) return null;
+  if (clause === null) return body;
+  const bound = Number(clause[2]!);
+  const atMost = clause[3]!.toLowerCase() === 'less';
+  const inRange: NonNullable<CardsDecisionSpec['filter']> = (state, id) => {
+    const inst = state.instances[id];
+    const def = inst === undefined ? undefined : state.cardDefs[inst.defKey];
+    if (def === undefined) return false;
+    return atMost ? def.cmc <= bound : def.cmc >= bound;
+  };
+  /*
+    `null` *and* `undefined`: the field is optional as well as nullable, and "any card" arrives as
+    either depending on which arm of the body answered. One guard covers both, and it is the guard
+    the docblock above is about — this is the branch that keeps Behold My Grandeur's clause from
+    being dropped.
+  */
+  const typed = body.filter;
+  return {
+    // The **whole** printed phrase, clause included, because the prompt is what a player reads and
+    // "search for a Rebel permanent card" is a different instruction from the one on the card.
+    phrase: whole,
+    filter: typed === null || typed === undefined
+      ? inRange
+      : (state, id, seat) => typed(state, id, seat) && inRange(state, id, seat),
+  };
+}
+
 /**
  * A printed search filter, as a `CardsDecisionSpec.filter` and the words to show the player.
  *
@@ -1896,7 +1958,7 @@ const SUPERTYPES: readonly string[] = ['basic', 'legendary', 'snow', 'world'];
  * sentence because the identical-looking read on a *battlefield* permanent is the defect #319 was
  * opened for.
  */
-function libraryFilter(
+function cardFilterBody(
   phrase: string, name: string,
 ): { readonly phrase: string; readonly filter: CardsDecisionSpec['filter'] | null } | null {
   const lower = phrase.toLowerCase();
@@ -2001,6 +2063,18 @@ function cardWordMatch(word: string): ((line: TypeLine) => boolean) | null {
   if (!/^[A-Za-z][A-Za-z'-]*$/.test(word)) return null;
   const lower = word.toLowerCase();
   if (/^[A-Z]/.test(word)) return (line) => hasSubtype(line, lower);
+  /*
+    **`permanent` is not a type**, and reading it as one is the bug this function's own docblock
+    records from its first draft: "a permanent card" compiled to a filter asking for a type line
+    containing the word, no card has it, and the search offered nothing on a card that otherwise
+    worked. So it is read as what CR 110.1 says it is — any of the six permanent types — rather
+    than as a word on the line (D491).
+
+    It is worth almost nothing on its own (five cards in the corpus) and a great deal beside the
+    mana-value clause, because the Rebel and Mercenary tutor chains print both at once: "a Rebel
+    permanent card with mana value 3 or less" is nineteen lines between them.
+  */
+  if (lower === 'permanent') return (line) => PERMANENT_TYPES.some((t) => hasType(line, t));
   if (SEARCHABLE_TYPES.includes(lower)) return (line) => hasType(line, lower);
   if (SUPERTYPES.includes(lower)) {
     return (line) => line.supertypes.some((t) => t.toLowerCase() === lower);
@@ -10997,7 +11071,16 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   return null;
 }
 
-/** The card types a printed board scope can name: the permanent types, and no others (CR 205.2a). */
+/**
+ * The six permanent types (CR 110.1), which are also the card types a printed board scope can name
+ * and no others (CR 205.2a).
+ *
+ * Shared by `permanentWordMatch`, which reads a board scope's words, and by `cardWordMatch`, where
+ * it is what the word `permanent` *means* in a search filter (D491) rather than a word to look for
+ * on the line. One list for both, because "is this a permanent" has one answer and two callers;
+ * `instant` and `sorcery` are searchable types that are never permanents, which is exactly why
+ * this is not `SEARCHABLE_TYPES`.
+ */
 const PERMANENT_TYPES: readonly string[] = [
   'artifact', 'battle', 'creature', 'enchantment', 'land', 'planeswalker',
 ];

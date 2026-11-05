@@ -8514,8 +8514,17 @@ describe('a library search, generalised (D449)', () => {
       silent-nothing the rows were guarding against is still impossible, and the two rows left are
       the shapes that genuinely cannot be read: `permanent` is not a type (CR 205.2a) and a colour
       is not on the type line at all.
+
+      **A fourth row retired (D491).** `a Rebel permanent card`, 10 lines, refused here because
+      "`permanent` is not a type (CR 205.2a)". That sentence is still true and is no longer a reason
+      to refuse the phrase: `cardWordMatch` reads the word as what CR 110.1 says a permanent *is* —
+      any of the six permanent types — rather than as a word to look for on the line. So the
+      silent-nothing this row guarded against is impossible for the same reason the three above are,
+      and the row is a reading now.
+
+      **One row is left**, and it is the next increment in this family rather than a rule: a colour
+      is not on the type line at all, so `a green creature card` needs a filter over `CardDef.colors`.
     */
-    ['a subtype and a type together', 'a Rebel permanent card'],                      // 10 lines
     ['a colour and a type', 'a green creature card'],                                 // 4
   ])('refuses %s, which ends in "card" but is not a type', (_label, filterPhrase) => {
     const text = `Search your library for ${filterPhrase as string}, put that card into your hand,`
@@ -8545,19 +8554,25 @@ describe('a library search, generalised (D449)', () => {
     expect(unreadLines(compiled)).toEqual([]);
   });
 
-  it('refuses "a permanent card", because permanent is not a type', () => {
+  it('reads "a permanent card" as the six permanent types, not as a word on the line', () => {
     /*
-      The control, and the reading this test exists to forbid. "Permanent" is a *category* of
-      types, not a type (CR 205.2a), so no card's type line contains it — a reader that accepted the
-      word would compile a search that offers **nothing**, on a card whose other lines work. That is
-      worse than leaving the line unread, because the card plays and plays wrongly (D362), and
-      nothing at the table would flag it.
+      **This was a refusal until D491**, and the reason it gave is kept because it is still correct:
+      "permanent" is a *category* of types, not a type (CR 205.2a), so no card's type line contains
+      it — a reader that accepted the word as a type would compile a search offering **nothing**, on
+      a card whose other lines work. That is worse than leaving the line unread, because the card
+      plays and plays wrongly (D362), and nothing at the table would flag it.
+
+      What changed is the reading, not the rule. The word is not matched against the line at all
+      now: it is read as what CR 110.1 says a permanent **is**, over the `PERMANENT_TYPES` list
+      `permanentWordMatch` already used for board scopes. So the failure this test was written to
+      forbid is still forbidden. `scripts.test.ts` holds the assertion that makes the difference
+      observable — the same search offers the creatures *and* the land, and turns down the instant.
     */
     const text = 'Search your library for a permanent card, put that card into your hand, then'
       + ' shuffle.';
     const compiled = spell(text);
     expect(compiled.ok).toBe(true);
-    expect(unreadLines(compiled)).toEqual([text]);
+    expect(unreadLines(compiled)).toEqual([]);
   });
 
   it('reads "a card named <itself>" and refuses any other name', () => {
@@ -9130,10 +9145,20 @@ describe('the library search as a product, widened (D455)', () => {
     // X is chosen at cast time and "that many" points back at a count in an earlier clause.
     ['a count of X', 'Search your library for up to X basic land cards, put them onto the battlefield tapped.'],
     ['a count that points backwards', 'Search your library for up to that many land cards, put them onto the battlefield tapped.'],
-    // A condition on a characteristic, which is a filter this module cannot build.
-    ['a mana value condition', 'Search your library for a creature card with mana value 3 or less, put it onto the battlefield.'],
-    // `permanent` is not a type (CR 205.2a), so the D449 guard still refuses it — in a list now.
-    ['a category that is not a type', 'Search your library for an artifact or permanent card, put it into your hand.'],
+    /*
+      **Two rows retired here (D491)**, both of which this list called shapes rather than oversights,
+      and both of which were:
+
+      | row | printed phrase | why it was refused | why it reads now |
+      | --- | --- | --- | --- |
+      | `a mana value condition` | `a creature card with mana value 3 or less` | "a filter this module cannot build" | peeled off in a wrapper, read against `CardDef.cmc` |
+      | `a category that is not a type` | `an artifact or permanent card` | the D449 `permanent` guard | `permanent` is the six permanent types (CR 110.1) |
+
+      The first was the honest answer while nothing read a characteristic off a library card. The
+      second was a correct refusal whose reason stopped applying when the word's *reading* changed
+      rather than when the rule did. The assertions for both now live in this file's D491 block and
+      in `scripts.test.ts`.
+    */
     // Two zones.
     ['two zones', 'Search your library and/or graveyard for a creature card, reveal it, put it into your hand.'],
     // The top of the library, which `searchYourLibrary`'s own shuffle would undo.
@@ -10028,5 +10053,109 @@ describe('a kind of spell in the target noun position (D490)', () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.script?.targets?.map((t) => t.description)).toEqual([description]);
+  });
+});
+
+describe('a mana-value clause, and the word permanent, in a search filter (D491)', () => {
+  const tutor = (text: string) => compileCard({
+    name: 'Asking Thing', type_line: 'Sorcery', mana_cost: '{2}{B}', cmc: 3,
+    colors: ['B'], layout: 'normal', oracle_text: text,
+  });
+
+  const found = (text: string) => {
+    const read = tutor(text);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return undefined;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    /*
+      A `DecisionSpecOf` may be a **function** of the state — that is how a question whose shape
+      depends on the board is declared — and a search is not one. Narrowed rather than cast,
+      because an `as` here would turn "this compiled to the wrong kind of decision" into a
+      runtime `undefined` that the assertions below would read as a missing prompt. `typecheck:tests`
+      (#246) is what found this, for the third increment running.
+    */
+    const spec = read.script?.decisions?.[0];
+    expect(typeof spec).not.toBe('function');
+    return typeof spec === 'function' ? undefined : spec;
+  };
+
+  /*
+    The prompt is the assertion, because it is the whole printed phrase and a player reads it. A
+    clause silently dropped would still produce a working search — of a wider pool than the card
+    prints — so "it compiled" is not the property worth checking here.
+  */
+  it.each([
+    // The two chains this increment is really about, 19 lines between them.
+    'Search your library for a Rebel permanent card with mana value 3 or less, put it onto the battlefield, then shuffle',
+    'Search your library for a Mercenary permanent card with mana value 2 or less, put it onto the battlefield, then shuffle',
+    // The clause on a plain card type.
+    'Search your library for an artifact card with mana value 1 or less, put it into your hand, then shuffle',
+    'Search your library for a creature card with mana value 6 or greater, put it into your hand, then shuffle',
+    'Search your library for an enchantment card with mana value 3 or less, put it onto the battlefield, then shuffle',
+    // `permanent` with no clause, and with a supertype in front of it.
+    'Search your library for a Dragon permanent card, reveal it, and put it into your hand',
+    'Search your library for a legendary Spirit permanent card, put it onto the battlefield, then shuffle',
+    'Search your library for a snow permanent card, put it into your hand, then shuffle',
+    /*
+      The phrase the wrapper exists for: "a card" is the one body that reads to `filter: null`, so
+      an arm that applied the clause per-body would leave this one searching the whole library.
+    */
+    'Search your library for a card with mana value 6 or greater, put it into your hand, then shuffle',
+  ])('reads "%s"', (text) => {
+    const read = tutor(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('keeps the whole printed phrase, clause included, in the prompt', () => {
+    const decision = found(
+      'Search your library for a Rebel permanent card with mana value 3 or less, put it onto the battlefield, then shuffle',
+    );
+    expect(decision?.prompt).toBe(
+      'Search your library for a Rebel permanent card with mana value 3 or less',
+    );
+  });
+
+  it.each([
+    /*
+      Every refusal here is about **where the number comes from** — the same rule D489's
+      unless-paid arm turned out to need, for the same reason: a bound this reader cannot compute
+      must not be read as one it can.
+    */
+    ['{X}, {T}: Search your library for a Rebel permanent card with mana value X or less, put it onto the battlefield, then shuffle',
+      "Lin Sivvi: X is chosen when the ability is activated"],
+    ['Search your library for a legendary permanent card with mana value less than this creature\'s power, put it onto the battlefield, then shuffle',
+      "Sisay, Weatherlight Captain: a bound that is a fact about the board"],
+    ['Search your library for a creature card with mana value equal to the number of lands you control, put it into your hand, then shuffle',
+      'a computed bound, and not even a comparison this reads'],
+    ['Search your library for a creature card with mana value 3, put it into your hand, then shuffle',
+      'Magic prints "or less" and "or greater" in this position and this reads neither alone'],
+    /*
+      And the vocabulary still missing, each a real printing, each left unread rather than read
+      loosely. These are the next increment in this family, not oversights.
+    */
+    ['Search your library for a nonland permanent card with mana value 3 or less, put it onto the battlefield, then shuffle',
+      'Guardian Sunmare: a `non` negation in a card filter'],
+    ['Search your library for a colorless creature card with mana value 7 or greater, put it into your hand, then shuffle',
+      'Conduit of Ruin: a colour word in a card filter'],
+    ['Search your library for a nonlegendary green creature card with mana value 3 or less, put it onto the battlefield, then shuffle',
+      'Woodland Bellower: both of the above at once'],
+    ['Search your library for a permanent card with the same name as target nontoken creature, put it onto the battlefield, then shuffle',
+      'Bifurcate: a filter that reads another object entirely'],
+  ])('leaves "%s" unread: %s', (text) => {
+    const read = tutor(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('did not widen the two searches that already read', () => {
+    // Rampant Growth and Diabolic Tutor, whose prompts are pinned elsewhere too. A wrapper that
+    // changed the no-clause path would show up here first.
+    expect(found('Search your library for a basic land card, put it onto the battlefield tapped, then shuffle')?.prompt)
+      .toBe('Search your library for a basic land card');
+    expect(found('Search your library for a card, put it into your hand, then shuffle')?.prompt)
+      .toBe('Search your library for a card');
   });
 });

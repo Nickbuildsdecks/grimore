@@ -28036,3 +28036,118 @@ describe('a kind of spell in the target phrase, at the table (D490)', () => {
     expect(next.stackOrder).toEqual([]);
   });
 });
+
+describe('a mana-value clause and the word permanent, searched at the table (D491)', () => {
+  /*
+    The library is six **real vanilla printings**, one per mana value, so the only thing that can
+    tell them apart is the number on the card — no text to go unread, no script to interfere, and
+    nothing invented (D259). That is the whole design of this table: a filter that ignored the
+    clause offers all six, one that read the bound backwards offers the complement, and one that
+    read `cmc` off the wrong place offers none.
+  */
+  const LIBRARY = [
+    { name: 'Aegis Turtle', type_line: 'Creature — Turtle', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: '', power: '0', toughness: '5' },
+    { name: 'Ageless Guardian', type_line: 'Creature — Spirit Soldier', mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal', oracle_text: '', power: '1', toughness: '4' },
+    { name: 'Alaborn Trooper', type_line: 'Creature — Human Soldier', mana_cost: '{2}{W}', cmc: 3, colors: ['W'], layout: 'normal', oracle_text: '', power: '2', toughness: '3' },
+    { name: 'Amphin Cutthroat', type_line: 'Creature — Salamander Rogue', mana_cost: '{3}{U}', cmc: 4, colors: ['U'], layout: 'normal', oracle_text: '', power: '2', toughness: '4' },
+    { name: 'Ancient Carp', type_line: 'Creature — Fish', mana_cost: '{4}{U}', cmc: 5, colors: ['U'], layout: 'normal', oracle_text: '', power: '2', toughness: '5' },
+    // The one non-permanent, for the `permanent` test. Its two lines both read, so it is a card the
+    // compiler is happy with and the filter still has to turn down.
+    { name: 'Opt', type_line: 'Instant', mana_cost: '{U}', cmc: 1, colors: ['U'], layout: 'normal', oracle_text: 'Scry 1.\nDraw a card.' },
+  ];
+
+  /** Cast a one-line tutor off four Forests and read back what its search offers. */
+  const offered = (text: string) => {
+    const spell = {
+      name: 'Probe Tutor', type_line: 'Sorcery', mana_cost: '{2}{G}', cmc: 3, colors: ['G'],
+      layout: 'normal', oracle_text: text,
+    };
+    const built = customDeck({
+      id: 'mv-list',
+      name: 'Mana value',
+      entries: [
+        { name: 'Probe Tutor', count: 1 },
+        ...LIBRARY.map((card) => ({ name: card.name, count: 2 })),
+        { name: 'Forest', count: 47 },
+      ],
+      data: [spell as never, ...LIBRARY as never[]],
+    });
+    expect(built.unknown).toEqual([]);
+    expect(built.fromData).toContain('Probe Tutor');
+
+    let s = arena({
+      decks: { 0: 'mv-list', 1: 'verdant-guard' },
+      deckSpecs: { 'mv-list': built.deck },
+      hands: { 0: ['Probe Tutor'] },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Forest'] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const land of ids(s, 0 as SeatIndex, 'battlefield')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: land, abilityIndex: 0 } as Action);
+    }
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Probe Tutor'),
+    } as Action);
+    const stopped = drain(passBoth(s), 40);
+    return new Set((stopped.pendingDecision?.candidates ?? []).map((id) => nameOf(stopped, id)));
+  };
+
+  it('"3 or less" offers the one, two and three drops and nothing above them', () => {
+    expect(offered(
+      'Search your library for a creature card with mana value 3 or less, put it into your hand, then shuffle.',
+    )).toEqual(new Set(['Aegis Turtle', 'Ageless Guardian', 'Alaborn Trooper']));
+  });
+
+  it('"4 or greater" is the other direction, not the same bound read loosely', () => {
+    /*
+      The complement of the test above, which is what makes the pair worth having: a reader that
+      took every clause as `<=` would pass the first test and fail here, and one that dropped the
+      clause passes neither.
+    */
+    expect(offered(
+      'Search your library for a creature card with mana value 4 or greater, put it into your hand, then shuffle.',
+    )).toEqual(new Set(['Amphin Cutthroat', 'Ancient Carp']));
+  });
+
+  it('the bound is inclusive, as "or less" says', () => {
+    expect(offered(
+      'Search your library for a creature card with mana value 1 or less, put it into your hand, then shuffle.',
+    )).toEqual(new Set(['Aegis Turtle']));
+  });
+
+  it('a clause on "a card" applies to the whole library, which is the wrapper\'s reason', () => {
+    /*
+      Behold My Grandeur's shape. "A card" is the one body that reads to `filter: null`, so a clause
+      applied per-body would leave this searching everything — and the Forests are what prove it
+      did not: 47 of them are in this library at mana value 0.
+    */
+    expect(offered(
+      'Search your library for a card with mana value 2 or less, put it into your hand, then shuffle.',
+    )).toEqual(new Set(['Forest', 'Aegis Turtle', 'Ageless Guardian', 'Opt']));
+  });
+
+  it('"a permanent card" admits a creature and a land and refuses the instant (CR 110.1)', () => {
+    /*
+      `permanent` is not a card type, so this cannot be a `hasType` against the line — that reading
+      offers nothing, which is the bug `cardWordMatch`'s docblock records from its first draft. The
+      Forest is in the expectation on purpose: it proves the word is read as *all six* permanent
+      types rather than as "creature" with extra steps.
+    */
+    expect(offered(
+      'Search your library for a permanent card, put it into your hand, then shuffle.',
+    )).toEqual(new Set([
+      'Forest', 'Aegis Turtle', 'Ageless Guardian', 'Alaborn Trooper', 'Amphin Cutthroat',
+      'Ancient Carp',
+    ]));
+  });
+
+  it('a subtype, "permanent" and a clause in one phrase, which is the shape this was built for', () => {
+    // Amrou Scout's filter, with Soldier standing in for Rebel because this library has Soldiers in
+    // it at two mana values and the grammar is what is under test, not the tribe.
+    expect(offered(
+      'Search your library for a Soldier permanent card with mana value 2 or less, put it into your hand, then shuffle.',
+    )).toEqual(new Set(['Ageless Guardian']));
+  });
+});

@@ -31834,3 +31834,145 @@ evidence that the unless-paid arm never cared about the spell filter in front of
 **A mana-value clause on the spell**: Change the Equation prints "Counter target red or green spell
 with mana value 6 or less", and the colours now read while the clause does not. Its refusal row says
 which half is the reason.
+
+## D491 — A mana-value clause on a search filter, and the word `permanent`
+
+### The measurement changed the increment
+
+The standing note said this was "a mana-value clause on a search filter, 82 lines on 82 cards". The
+first probe (`scratchpad/mv-filter.mjs`, substitution in place) said something different: the clause
+is **cross-cutting**, not a search feature. Its shape list has these in it beside the tutors —
+
+```
+Destroy target creature or planeswalker with mana value N or less
+exile target artifact or creature an opponent controls with mana value N or less   (Annex Sentry)
+Counter target spell with mana value 2 or less                                     (Change the Equation)
+Whenever … another creature you control with mana value 4 or greater dies          (Caldaia Guardian)
+```
+
+— which is four different readers of one printed phrase: `parsedTargetPhrase`'s permanent scopes,
+D490's new `spellTargetPhrase`, `libraryFilter`, and a trigger's subject scope. So a second probe
+(`mv-split.mjs`) priced each context on its own, because the whole arm measured 46 cards and the
+question was whether that is one increment or two:
+
+| arm | cards finished | lines |
+| --- | --- | --- |
+| mana value in a **search** filter only | 6 | 9 |
+| mana value **not** in a search (target / spell / trigger) | 21 | 35 |
+| the word `permanent` in a search only | 5 | 5 |
+| **search: mana value and `permanent` together** | **25** | **32** |
+| everything at once | 46 | 66 |
+
+The two halves are exactly additive — 21 + 25 = 46 — so they are separable, and **they are separated
+on purpose**. A card in a library has a printed mana value; a permanent on the battlefield and a
+spell on the stack have a live one. One function answering both is the shape #319 found five bugs
+in. This is the library half, which is also the bigger of the two.
+
+It also says the two additions have to ship **together**: `permanent` alone finishes five cards and
+the clause alone six, but the Rebel and Mercenary tutor chains print both at once ("a Rebel permanent
+card with mana value 3 or less" is nineteen lines between them), so together they finish 25.
+
+### The clause is peeled in a wrapper, and one card is the reason
+
+`libraryFilter` is now a wrapper that peels ` with mana value N or less|greater` off the end and
+hands the rest to the old body, renamed `cardFilterBody`. Not an arm inside the body, because of
+**Behold My Grandeur**: "a card with mana value 6 or greater". The body reads "a card" to
+`filter: null`, which means *any card* — so an arm that applied the clause per-body would leave that
+phrase searching the whole library, a strictly better card than the one printed. Peeling first makes
+the clause apply to every body uniformly, including the one with no filter of its own. The runtime
+test for it is the one with 47 Forests in the library.
+
+`filter` is optional **as well as** nullable, so the guard tests both: "any card" arrives as `null`
+or `undefined` depending on which arm answered.
+
+### `permanent` is not a type, and that was already a recorded bug
+
+`cardWordMatch` refused `permanent` deliberately — its own docblock records that the first draft
+compiled "a permanent card" into a filter asking for a type line containing the word, which no card
+has (CR 205.2a), so the search offered nothing on a card that otherwise worked. It is read now as
+what CR 110.1 says a permanent **is**: any of the six permanent types. The list is the
+`PERMANENT_TYPES` that `permanentWordMatch` already had, shared rather than copied, because "is this
+a permanent" has one answer and now two callers — and the difference from `SEARCHABLE_TYPES` is the
+point, since `instant` and `sorcery` are searchable and never permanents.
+
+### What it refuses, and all of it is about where the bound comes from
+
+The same rule D489's unless-paid arm needed, for the same reason.
+
+* **`{X}`** — Lin Sivvi, Defiant Hero: "a Rebel permanent card with mana value X or less", where X is
+  chosen when the ability is activated.
+* **A bound that is a fact about the board** — Sisay, Weatherlight Captain: "with mana value less
+  than Sisay's power". The regex requires a digit, so both of these fall through and stay unread.
+* **A bare equality** — "with mana value 3". Magic prints `or less` and `or greater` here; neither
+  alone is read.
+
+And the vocabulary still missing in this position, each a real printing, each left unread rather
+than read loosely: a `non` negation (`a nonland permanent card`, Guardian Sunmare), a colour word
+(`a colorless creature card`, Conduit of Ruin), both at once (`a nonlegendary green creature card`,
+Woodland Bellower), a filter that reads another object (`with the same name as target nontoken
+creature`, Bifurcate), and a three-way disjunction across filters (Search for Glory). Those are the
+next increment in this family, not oversights — the compile test has a row for each.
+
+### The break run, and one test that is weaker than it reads
+
+Five breaks, all five caught: the comparison inverted, the bound made exclusive, the clause peeled
+and then discarded, the body filter dropped so only the number is read, and `permanent` read as a
+word on the line.
+
+Worth recording that break 4 — dropping the body filter — failed only **three** of the five runtime
+tests. "4 or greater" passed it, because nothing else in that library has mana value 4 or more, so
+the type filter was doing no work in that one case. The other three catch it, so the suite
+discriminates; the single test does not, and saying so is cheaper than discovering it later.
+
+### `typecheck:tests` again, for the third increment running
+
+`#246`'s target caught it again, and the plain typecheck is clean on it: a `DecisionSpecOf` may be a
+**function** of the state — that is how a question whose shape depends on the board is declared — so
+`decisions[0].prompt` does not typecheck. Narrowed with an assertion rather than cast, because an
+`as` would have turned "this compiled to the wrong kind of decision" into a runtime `undefined` that
+the prompt assertions would have read as a missing prompt.
+
+### What it bought
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 10,476 | **10,504** |
+| cards with every printed line read | 6,040 | **6,065** |
+| printed rules lines read | 20,603 / 56,421 (36.5%) | **20,635 / 56,421 (36.6%)** |
+
+25 cards and 32 lines, which is what `mv-split.mjs` predicted for this arm to the card.
+
+### Still open, and now sized
+
+**The other half: a mana-value clause outside a search** — 21 cards, 35 lines, on target phrases,
+D490's spell phrases and a trigger's subject scope. It reads a *live* mana value, which is why it is
+its own increment and not this one.
+
+### Addendum: the gate found four stale refusal rows, and one of them was a test I had written myself
+
+The first full gate run failed in `compile.test.ts` with four failures, all of the same kind — rows
+asserting that the compiler **refuses** exactly what this increment makes it read:
+
+| where | row | what it said |
+| --- | --- | --- |
+| D449 | `a Rebel permanent card` | "`permanent` is not a type (CR 205.2a)" |
+| D449 | `refuses "a permanent card"` | a standalone test, with a paragraph on why accepting it would be worse than an unread line |
+| D455 | `a mana value condition` | "a filter this module cannot build" |
+| D455 | `a category that is not a type` | "the D449 guard still refuses it" |
+
+This is the third increment running where the gate caught a stale row rather than a defect (D469's
+`destroy target Wall`, D489's two spell-kind rows), and it is worth saying why that keeps happening
+and why it is a good sign: this suite writes its *refusals* down with the reason, so closing a gap
+makes the old reason fail loudly instead of quietly becoming untrue. Four rows is four places the
+project would otherwise now be lying about what it can read.
+
+Each was moved rather than deleted, with its history in place — D449 already had a "retired rows"
+table from D455, so this is the fourth entry in it. The D449 standalone test is the interesting one:
+its reasoning is still entirely correct ("permanent" is not a type, and reading it as one offers
+nothing, silently), so the test keeps the paragraph and inverts the assertion, because what changed
+is the *reading* and not the rule. A reader that matched `permanent` against the type line would
+still be the bug that test was written to forbid.
+
+One row left behind in D449 on purpose: `a green creature card`. A colour is not on the type line at
+all, so it needs a filter over `CardDef.colors` — the next increment in this family, and now the
+only row in that table.
