@@ -20,9 +20,15 @@ import type { CardDef } from './cards.js';
  * Every one of those was found the same way: **somebody read a card beside its script.** Four
  * increments in a row argued that the reading should be mechanical instead, and this is it.
  *
- * The pool is 348 cards. `compile.test.ts` covers something like sixty of them by hand. This covers
- * **every card that has both a hand-written script and a compiled reading with nothing unread** —
- * 205 of them — and it compares the whole script rather than the fields somebody thought to assert.
+ * The pool is 349 cards, 338 of them with a hand-written script. `compile.test.ts` covers something
+ * like sixty by hand. This covers **every card that has both a hand-written script and a compiled
+ * reading with nothing unread** — 231 of them — and it compares the whole script rather than the
+ * fields somebody thought to assert.
+ *
+ * Those three numbers were 348 / — / 205 when this file was written and have drifted upward as the
+ * compiler learned to read more of the pool, which is the direction they should drift. They are
+ * prose rather than assertions; the assertion is the `>= 200` floor below, deliberately a floor and
+ * not an equality so that reading more of the pool does not fail a test.
  *
  * It matters more for what comes next than for the pool. #318 imports tens of thousands of cards
  * with **no hand-written script to check against**, so the only ground truth the compiler will ever
