@@ -7538,3 +7538,55 @@ describe('the label in front of an ability, which has no rules meaning', () => {
       .toHaveLength(reads === true ? 1 : 0);
   });
 });
+
+describe('the declaration, read off the prologue', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const creature = (text: string) => compileCard({
+    name: 'Swinging Thing', type_line: 'Creature — Human Soldier', mana_cost: '{1}{W}', cmc: 2,
+    colors: ['W'], power: '2', toughness: '2', layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    ['Whenever you attack'],
+    // The longer spelling of the same sentence, which is 5 legal lines.
+    ['Whenever one or more creatures you control attack'],
+  ])('%s becomes the declaration trigger', (prologue) => {
+    const read = creature(`${prologue}, you gain 2 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]!.on).toEqual({ kind: 'attack-declared', by: 'you' });
+  });
+
+  it.each([
+    // Every variant carries a restriction the event cannot express, with its corpus count. Read as
+    // the bare declaration each would be a wrong reading of a real card (D362), so each stays
+    // unread — and these rows fail if a prologue row is ever widened to swallow one.
+    ['Whenever you attack with three or more creatures'],      // 8 legal lines
+    ['Whenever you attack with two or more creatures'],         // 6
+    ['Whenever you attack with one or more creatures'],         // 3
+    ['Whenever you attack a player'],                           // 7
+    ['Whenever you attack with your commander'],                // 2
+    ['Whenever two or more creatures you control attack a player'], // 2
+  ])('refuses %s, which this event cannot express', (prologue) => {
+    const line = `${prologue}, you gain 2 life.`;
+    const read = creature(line);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([line]);
+  });
+
+  it('still reads one creature attacking, which is a different trigger', () => {
+    // The row the new ones must not swallow: "Whenever this creature attacks" is about the creature
+    // and is raised once per attacker, which is what `attacks` has always been.
+    const read = creature('Whenever Swinging Thing attacks, you gain 2 life.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers[0]!.on).toEqual({ kind: 'attacks' });
+  });
+});

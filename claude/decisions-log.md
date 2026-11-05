@@ -27639,3 +27639,73 @@ The worker restarted mid-increment and took the scratch Postgres and Redis with 
 gate run stopped at `services-up.js` — which is exactly the trap that script exists for, since
 turbo's cache would otherwise have printed a page of passing tests without either service running
 (D303). Restarted both; the gate is green on a real Postgres 16 and Redis.
+
+## D442 — "Whenever you attack": one event for the declaration, not one per creature
+
+92 legal corpus lines print "Whenever you attack" and **8** of them are cards this compiler can
+finish — the largest prologue family left after D440. Five more print the longer spelling of the same
+sentence, "Whenever one or more creatures you control attack".
+
+It could not be read off `attacks`, and not because of a missing filter. `attacks` is about a
+*creature*, so the declaration handler raises it once per attacker; "whenever you attack" is about
+the **declaration**, and fires once however many creatures were in it (CR 508.1). Any reading taken
+from `attacks` would have made Adeline create a token per opponent *per attacker*, and Bard draw
+three cards for a three-creature swing. That is the shape D439 refused for the plural combat-damage
+line, met from the other side — and this time the fix is the event rather than the refusal.
+
+### The new event
+
+`{ kind: 'attack-declared' }`, raised once at the end of the declaration handler, **only when at
+least one attack was declared** — "one or more" said out loud, and the engine's own log line for the
+other case is "attacks with nothing". `by` defaults to `'you'` and is the only form printed; the
+other two values exist so that `by` means the same three things here as everywhere else in the file.
+
+Three details inherited rather than written:
+
+- **Myriad raises nothing**, for the reason `myriadCopies`' own comment already gives: a myriad token
+  was never declared as an attacker (CR 508.4), so it is no more part of this declaration than it is
+  part of battalion's count. The new raise sits after that call and reads `attacks`, which is the
+  declaration and not the board.
+- **After the per-attack loop.** The two sets of triggers are simultaneous (CR 508.1) and within one
+  player's batch the order on the stack is that player's own choice, so the engine picks one.
+- **Every permanent sees it.** The event has no subject, so `raise` falls through to the whole
+  battlefield and the `by` filter is the only thing narrowing it — which is what the opponent test
+  checks.
+
+### Five variants refused, each with its count
+
+Every other printed shape carries a restriction this event cannot express, and reading one as the
+bare declaration would be a wrong reading of a real card (D362): "with three or more creatures" (8
+legal lines), "with one or more <type>" (8), "a player" (7), "with two or more creatures" (6), "with
+your commander" (2), "while creatures you control have total power 8 or greater" (2). Six compile
+rows assert they stay unread, so widening a prologue row to swallow one fails.
+
+### Verified
+
+Four runtime tests on printed **Bard, Heir of Girion** through `customDeck`. The one that matters is
+a pair on one board: attack with one creature and with all three, and the draw is **one card either
+way** — read off `attacks` the second row draws three. Plus the empty declaration (draws nothing) and
+an opponent's declaration (draws nothing). A two-row compile table, the six refusals, and the row the
+new ones must not swallow: "Whenever ~ attacks" is still `{ kind: 'attacks' }`.
+
+**Six breaks, six failures.**
+
+### The mechanic-coverage test needed a decision, and it has one
+
+`deck coverage > has a card behind every mechanic it declares` failed on
+`trigger attack-declared`, which is #223's check working exactly as designed: D229's rule is that a
+mechanic needs a card to exist in the pool, and that test reads "a card" as "a card in one of the
+thirteen starter decks".
+
+**That reading predates the compiler.** Since D430 a `TriggerEvent` kind can have cards — printed,
+real, tested — without any of them being in a built-in deck, and adding a card to a deck whose
+balance has been measured since #96 to satisfy a test would be the tail wagging the dog. So the test
+now carries a small `compilerOnly` exemption set, and an entry has to **name its evidence**: the
+corpus count, and the runtime block that drives a compiled card through `customDeck` and asserts the
+mechanic does what the card says. A second assertion keeps the exemptions honest in the other
+direction — each one must *still* be an orphan in the pool, so an entry left behind after its card
+arrives in a deck is reported rather than carried for ever. The control row (a mechanic nothing can
+possibly carry) is untouched.
+
+Legal-only coverage 16,408 of 56,421 lines (29.1%), **7,411 cards with a script** (7,405 → 7,411),
+4,036 with every printed line read. GATE OK, 2,020 engine tests.

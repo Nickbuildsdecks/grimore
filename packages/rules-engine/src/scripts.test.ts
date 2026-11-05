@@ -7400,12 +7400,36 @@ describe('deck coverage', () => {
     const orphansAmong = (declared: readonly string[]): readonly string[] =>
       declared.filter((mechanic) => !carried.has(mechanic));
 
+    /*
+      **Mechanics the compiler reads that the hand-written pool does not print** (D442).
+
+      D229's rule is that a mechanic needs a card to exist, and this test has always read "a card"
+      as "a card in one of the thirteen starter decks". That was the whole pool until the
+      oracle-text compiler started reading printed corpus text (D430): a `TriggerEvent` kind can now
+      have cards — real, printed, tested — without any of them being in a built-in deck, and the
+      honest answer is not to add a card to a measured deck to satisfy a test.
+
+      So an exemption is allowed and it has to **name its evidence**: the corpus count, and the
+      runtime block in this file that drives a compiled card through `customDeck` and asserts the
+      mechanic does what the card says. An entry with nothing behind it is the capability-nobody-has
+      failure this test exists to catch, so the bar for adding one is a printed card and a passing
+      runtime test, not a docblock.
+
+      - `attack-declared`: 92 legal corpus lines, 8 compilable cards. Driven at runtime by "the
+        declaration, as printed text", on printed Bard, Heir of Girion — including the count that is
+        the whole point of the event (one draw for a three-creature swing).
+    */
+    const compilerOnly = new Set(['trigger attack-declared']);
+
     const declared = [
       ...fields.map((f) => `script ${f}`),
       ...kinds.map((k) => `trigger ${k}`),
       ...KEYWORDS.map((k) => `keyword ${k}`),
-    ];
+    ].filter((mechanic) => !compilerOnly.has(mechanic));
     expect(orphansAmong(declared)).toEqual([]);
+    // And the exemptions are **still** orphans in the pool, so an entry left here after its card
+    // arrives in a deck is reported rather than quietly carried for ever.
+    expect(orphansAmong([...compilerOnly])).toEqual([...compilerOnly]);
 
     /*
       **And the control, which runs every time rather than the day somebody wonders.** An empty
@@ -22255,6 +22279,109 @@ describe('a label in front of an ability, as printed text', () => {
     } as Action)));
     expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toContain('Owlbear');
     // The Owlbear itself left the hand, so one card drawn leaves the hand exactly as full.
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held);
+  });
+});
+
+/*
+  "Whenever you attack", played — once per declaration (D442).
+
+  `attacks` is raised once per attacking creature, so every reading of this line taken off it would
+  have fired once per attacker: 92 legal lines and 8 compilable cards, all of them Adeline-shaped.
+  The new event is raised once for the declaration, and the test that matters is the **count**.
+*/
+describe('the declaration, as printed text', () => {
+  const BARD = {
+    name: 'Bard, Heir of Girion', type_line: 'Legendary Creature — Human Archer',
+    mana_cost: '{2}{W}{U}', cmc: 4, colors: ['W', 'U'], layout: 'normal',
+    power: '4', toughness: '4', loyalty: null,
+    oracle_text: 'Reach, vigilance\nOther creatures you control get +1/+1.\nWhenever you attack,'
+      + ' draw a card.',
+  };
+
+  const table = () => {
+    const list = customDeck({
+      id: 'bard-list',
+      name: 'Bard, Heir of Girion',
+      entries: [
+        { name: 'Bard, Heir of Girion', count: 1 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Mountain', count: 55 },
+      ],
+      data: [BARD as never],
+    });
+    expect(list.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'bard-list', 1: 'verdant-guard' },
+      deckSpecs: { 'bard-list': list.deck },
+      battlefield: { 0: ['Bard, Heir of Girion', 'Raging Goblin', 'Raging Goblin', 'Mountain'] },
+      turn: 3,
+      firstSeat: 0,
+    });
+  };
+
+  const goblins = (s: GameState) => [...ids(s, 0 as SeatIndex, 'battlefield')]
+    .filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Raging Goblin');
+
+  it.each([
+    // One attacker and three, on the same board: the draw is one either way, which is the whole of
+    // "once per declaration". Read off `attacks` the second row would draw three.
+    ['one creature', 1],
+    ['every creature', 3],
+  ])('draws one card when you attack with %s', (_label, attackers) => {
+    let s = advanceTo(table(), 'declare-attackers');
+    const bard = find(s, 0 as SeatIndex, 'battlefield', 'Bard, Heir of Girion');
+    const mine = [bard, ...goblins(s)];
+    expect(mine).toHaveLength(3);
+    const held = ids(s, 0 as SeatIndex, 'hand').length;
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: mine.slice(0, attackers as number).map((id) => ({ attacker: id, defender: 1 })),
+    } as Action));
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held + 1);
+  });
+
+  it('draws nothing when you attack with nothing', () => {
+    /*
+      "One or more" is the other half of the sentence, and the engine's own wording for an empty
+      declaration is "attacks with nothing" — which is not attacking. The row is cheap and it is the
+      lever for the `attacks.length > 0` guard.
+    */
+    let s = advanceTo(table(), 'declare-attackers');
+    const held = ids(s, 0 as SeatIndex, 'hand').length;
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [] } as Action));
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held);
+  });
+
+  it('does not fire for an opponent\'s declaration', () => {
+    /*
+      `by: 'you'`, which is the only form printed. Seat 1 swings into seat 0, who holds the Bard —
+      and the Bard is on the battlefield watching, because `raise` offers the event to the whole
+      table and the filter is the only thing narrowing it.
+    */
+    const list = customDeck({
+      id: 'bard-list-2',
+      name: 'Bard, Heir of Girion',
+      entries: [
+        { name: 'Bard, Heir of Girion', count: 1 },
+        { name: 'Mountain', count: 59 },
+      ],
+      data: [BARD as never],
+    });
+    expect(list.unknown).toEqual([]);
+    let s = arena({
+      decks: { 0: 'bard-list-2', 1: 'verdant-guard' },
+      deckSpecs: { 'bard-list-2': list.deck },
+      battlefield: { 0: ['Bard, Heir of Girion'], 1: ['Grizzly Bears'] },
+      turn: 3,
+      firstSeat: 1,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const held = ids(s, 0 as SeatIndex, 'hand').length;
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 1,
+      attackers: [{ attacker: find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears'), defender: 0 }],
+    } as Action));
     expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held);
   });
 });

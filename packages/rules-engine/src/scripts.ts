@@ -11079,6 +11079,27 @@ const TRIGGER_SHAPES: readonly {
     on: [{ kind: 'combat-damage', who: 'any', of: 'you' }],
   },
   /*
+    "Whenever **you** attack" — the declaration, once per combat (D442).
+
+    92 legal lines print it and **8** are cards this compiler can finish, which makes it the largest
+    prologue family left; 5 more print the longer spelling of the same sentence and map to the same
+    trigger. It needed a new event rather than a new filter, because `attacks` is raised once per
+    attacking creature and either reading taken off it would fire an Adeline once per attacker.
+
+    The variants are **not** read, and each is a restriction this event cannot express: 8 legal lines
+    say "with three or more creatures", 8 "with one or more <type>", 7 "a player", 6 "with two or
+    more creatures", 2 "while creatures you control have total power 8 or greater". Reading any of
+    them as the bare declaration would be a wrong reading of a real card (D362), so they wait.
+  */
+  {
+    prologue: () => /^Whenever you attack, (.+)$/i,
+    on: [{ kind: 'attack-declared', by: 'you' }],
+  },
+  {
+    prologue: () => /^Whenever one or more creatures you control attack, (.+)$/i,
+    on: [{ kind: 'attack-declared', by: 'you' }],
+  },
+  /*
     The attachment's own creature dying, which completes the family D433 opened: `who: 'attached'`
     on `dies` as well as on `attacks` and `combat-damage`. 52 legal lines print "enchanted creature
     dies" (**7** cards finished) and 17 "equipped creature dies" (**5**).

@@ -243,6 +243,39 @@ export type TriggerEvent =
       /** Set by the engine when it raises the event: *which* creature died. See `subject`. */
       readonly subject?: string;
     }
+  /**
+   * "Whenever **you** attack" — one event for the whole declaration, not one per creature.
+   *
+   * The same moment as `attacks` below and a different question. `attacks` is about a creature, so
+   * it is raised once per attacker; this is about the *declaration*, so it is raised once however
+   * many creatures were in it (CR 508.1). 92 legal corpus lines print "Whenever you attack" and 5
+   * the longer spelling of the same sentence, "Whenever one or more creatures you control attack" —
+   * and until this event existed neither could be written, because reading them off `attacks` would
+   * have fired an Adeline for every attacker instead of once per combat (D442).
+   *
+   * Raised only when at least one attack was declared, which is what "one or more" means: a seat
+   * that attacks with nothing has not attacked.
+   *
+   * **A myriad token raises nothing here either**, for the reason the declaration handler's own
+   * comment gives: a myriad token was never declared as an attacker (CR 508.4), so it is not part
+   * of this declaration any more than it is part of battalion's count.
+   *
+   * There is no size filter and no type filter, and the corpus is why: 8 legal lines print
+   * "with three or more creatures", 8 "with one or more <type>", 7 "a player", and each of those is
+   * a restriction this event cannot express — so they stay unread rather than being read as the
+   * bare declaration, which would be a wrong reading of a real card (D362). `withAtLeast` can
+   * arrive here the day one of them is worth finishing.
+   */
+  | {
+      readonly kind: 'attack-declared';
+      /**
+       * Whose declaration it watches. `you` is the default and the only form printed: "whenever
+       * **you** attack" is about the watcher's own controller. The other two values exist because
+       * every `by` in this file means the same three things, and a reader that needed "whenever an
+       * opponent attacks" would otherwise be the one to invent a fourth vocabulary.
+       */
+      readonly by?: 'you' | 'opponent' | 'any';
+    }
   | {
       readonly kind: 'attacks';
       /**

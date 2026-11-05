@@ -1913,6 +1913,26 @@ function declareAttackers(state: GameState, action: AutoAttackAction): Outcome {
       attack.attacker,
     );
   }
+  /*
+    And **one** event for the declaration itself, which is a different question from the attacks.
+
+    "Whenever you attack" is about the declaration and fires once however many creatures were in it
+    (CR 508.1); the loop above is about each creature. 92 legal corpus lines print it and 5 print the
+    longer spelling of the same sentence, "Whenever one or more creatures you control attack" — and
+    read off `attacks` either of them would fire an Adeline once per attacker (D442).
+
+    Only when something was actually declared: a seat that attacks with nothing has not attacked,
+    which is what "one or more" says out loud. After the loop rather than before it, because the two
+    sets of triggers are simultaneous (CR 508.1) and within one player's batch the order on the
+    stack is that player's own choice — so the engine picks one and this is it.
+
+    Myriad is already excluded, for the reason `myriadCopies`' comment above gives: a myriad token
+    was never declared as an attacker, so it is no more part of this declaration than it is part of
+    battalion's count.
+  */
+  if (attacks.length > 0) {
+    next = raise(next, { kind: 'attack-declared' }, action.by);
+  }
   next = resetPriority(settle(next, state));
   return {
     state: next,

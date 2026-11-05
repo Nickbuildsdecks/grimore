@@ -11689,3 +11689,24 @@ remainder the compiler cannot read either way — so they are pinned on a probe 
 control, rather than on a fixture that would pass whatever the code did.
 
 Legal-only coverage 16,400 of 56,421 lines (29.1%) and **7,405 cards with a script**.
+
+## One event for the declaration (D442)
+
+"Whenever you attack" is 92 legal lines and 8 compilable cards, and it is not a filter on `attacks`:
+`attacks` is about a creature and is raised once per attacker, while this is about the declaration
+and fires once however many creatures were in it (CR 508.1). Read off `attacks`, Adeline would make a
+token per opponent *per attacker*.
+
+So `{ kind: 'attack-declared' }` is raised once at the end of the declaration handler, only when
+something was actually declared. Myriad is already excluded — a myriad token was never declared
+(CR 508.4) — because the raise reads the declaration rather than the board.
+
+The test that matters is a count, not a shape: the same board, attacked with one creature and with
+three, draws **one card either way**.
+
+Refused, each with its corpus count: "with three or more creatures" (8 lines), "with one or more
+<type>" (8), "a player" (7), "with two or more creatures" (6), "with your commander" (2), "while
+creatures you control have total power 8 or greater" (2). Each carries a restriction the event cannot
+express, and six compile rows fail if a prologue is widened to swallow one.
+
+Legal-only coverage 16,408 of 56,421 lines (29.1%) and **7,411 cards with a script**.

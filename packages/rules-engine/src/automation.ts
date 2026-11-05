@@ -811,6 +811,18 @@ function triggerMatches(
     case 'life-gained':
       return (want.by ?? 'you') === 'any' || actorSeat === sourceSeat;
     /*
+      "Whenever you attack" — the declaration, which is one event however many creatures were in it.
+      `raise` offers it to every permanent on the battlefield, so whose declaration it was is the
+      whole of the filter: there is no subject to be, and no size or type to ask about (see the
+      event's own declaration for why those stay unread).
+    */
+    case 'attack-declared': {
+      const by = want.by ?? 'you';
+      if (by === 'you') return actorSeat === sourceSeat;
+      if (by === 'opponent') return actorSeat !== sourceSeat;
+      return true;
+    }
+    /*
       A draw, with the same three-way `by` a cast has.
 
       `you` by default rather than `any`, so a card that says nothing watches its own controller —
