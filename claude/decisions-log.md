@@ -29822,3 +29822,105 @@ was three commands — write the guard, rebuild, re-measure — and it took abou
 something I would otherwise have shipped with a confident docblock on it. That docblock is the part
 worth noticing: it asserted "the coverage figure is unchanged by this guard, to the card and to the
 line" **before** the figure had been taken.
+
+## D468 — The discard, in every person it is printed about; and D467's guard, got right on the second try
+
+The largest concentrated family the compiler had left, and the increment that turned D467 from a
+negative result into a corrected one.
+
+### 114 cards, measured before a line was written
+
+`phrase-gap.mjs`' method — substitute the whole family in place, then ask whether the **whole line**
+reads — over 31,654 legal cards. The discard appears on 795 one-line-short cards and **finishes 114**,
+which is more than D465 and D466 split between them. Finishes / appears:
+
+| shape | |
+| --- | --- |
+| `you discard a card` | 48 / 348 |
+| `each opponent discards a card` | 14 / 30 |
+| `that player discards a card` | 12 / 24 |
+| `each player discards a card` | 6 / 11 |
+| `target opponent discards a card` | 5 / 11 |
+| `you discard three cards` | 3 / 5 |
+| the `at random` variants | ~6 |
+| `you discard two cards` | 1 / 25 |
+
+plus a tail of conjunctions ("and you gain 3 life", "and you draw a card") that come free through
+`conjoinedEffect` once the clause itself reads.
+
+### What shipped, and what did not
+
+Read: the controller's discard of N cards or of their hand, `each player` and `each opponent`
+discarding N, and the `at random` form of each. Everything is a **question** — `CardsDecisionSpec`
+with `from: 'hand'` — because the discarding player chooses, which `who`'s own docblock names Mind Rot
+for: a compiler that reached for `discardAtRandom` because it was simpler would have built Ravenous
+Rats and called it Mind Rot. `discardAtRandom` is reached only where the printed words say so.
+
+Not read, each for a stated reason rather than an oversight:
+
+ * **`target opponent discards …` (5 + 2)** — `targetSpecFrom` has no spec for "target opponent" at
+   all; `target opponent loses 2 life` does not read either. One spec lifts the discard, the life loss
+   and the mill together, so it is worth more as its own increment than as a rider here.
+ * **`that player discards …` (12 + 6)** — needs the event's player, which `eventRelativeEffect` reads
+   as `c.actor` and `CardsDecisionSpec.who` cannot name: there is no `'actor'` among its four values.
+   An engine change, so it waits for one.
+ * **`discard a creature card` (17) and `discard a land card` (8)** — finish **nothing**. Every one is
+   the opener of a `you may X. If you do, Y` whose construct is also unread, so they arrive with that
+   reader.
+
+Also folded away a duplicate: D465 shipped a five-name copy of `PERMANENT_TYPES` that was missing
+`battle`, so "return a battle you control to its owner's hand" would not have read. One list now.
+
+### D467's guard was needed after all — and was the wrong shape
+
+D467 recorded this hazard and then **refuted** it: `composeEffects` concatenates its parts' answers
+into one list while a part reads its own by index, so a second answer-reading part reads the first
+one's answer — but the guard for it (refuse a composition with more than one *decision-bearing* part)
+cost two working cards and, it said, prevented nothing.
+
+Half of that stands and half of it does not.
+
+**The hazard is real, and this increment made it reachable.** `compile.test.ts` already held the card:
+Greedy Rummage, `Draw two cards, then discard two cards. Target player discards a card.` Before the
+general discard reader, `discard two cards` went unread and the line was refused for that reason.
+After it, the whole line composes — and both discards call `chosenCards(c)`, both get index 0, so the
+caster's cards move to the graveyard twice and the target player discards nothing. The full suite
+caught it on the first run after the reader went in.
+
+**D467's guard was the wrong shape, and its two cards said so.** A scry asks a question and reads
+**nothing**: its effect is the identity, because the engine applies a `library-top` answer to its own
+plan entry. So the guard is *at most one part that reads answers*, and `appliesNothing` — already the
+field meaning "the question is the whole effect" — is what tells them apart. Derived from an existing
+field rather than a new flag, and safe by default: a reader that asks and forgets `appliesNothing` is
+treated as answer-reading, which refuses a composition rather than mis-reading one.
+
+Narrow guard: Greedy Rummage refused, Cryptic Annelid and Fill with Fright still read, coverage
+**unchanged to the line**.
+
+### The method note, which is the part worth keeping
+
+D467 concluded "no card in the corpus prints one" and stopped. That was true of the corpus and the
+wrong test, because the corpus is not the only printed text this compiler sees — the suite's own
+fixtures are text too, and one of them was the failing case. Two counts were available and only one
+was consulted.
+
+What found it was not reasoning: it was **running the whole suite after the reader went in**, which is
+the step that exists precisely because a reader's reach is wider than the lines you wrote it for. And
+the thing that distinguishes the narrow guard from the broad one is still only a count — no test did,
+until this increment added the two assertions that pin Cryptic Annelid and Fill with Fright. A guard
+whose correctness lives only in a coverage figure is a guard one refactor from being wrong.
+
+### The numbers
+
+| | D466 | D468 |
+| --- | --- | --- |
+| cards with a compiled script | 9,291 | **9,423** |
+| cards with every printed line read | 5,126 | **5,214** |
+| printed rules lines read | 19,053 of 56,421 (33.8%) | **19,216 of 56,421 (34.1%)** |
+
++88 fully read against a predicted ~89 — the 114 figure less the 25 cards in the two shapes
+deliberately left out, which is the measurement predicting the increment to within one card.
+
+Engine suite 2,272 green. Six levers broken one at a time on the reader (who, each-player vs
+each-opponent, the random path, the count, the prompt's noun) plus two on the guard (off, and
+D467's broad version), each failing a test and nothing else.

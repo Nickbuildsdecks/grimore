@@ -10023,11 +10023,6 @@ const BOUNCE_COUNTS: Readonly<Record<string, {
   'each other': { min: 0, max: 0, all: true, another: true },
 };
 
-/** The five permanent types a printed description in this family ever names. */
-const PERMANENT_NOUNS: readonly string[] = [
-  'creature', 'land', 'artifact', 'enchantment', 'planeswalker',
-];
-
 /**
  * A printed permanent description, as a test on one candidate already in a battlefield zone.
  *
@@ -10053,7 +10048,13 @@ const permanentDescribed = (
 ): ((state: GameState, id: string) => boolean) | null => {
   const words = phrase.trim().toLowerCase().split(/\s+/).filter((word) => word !== 'or');
   const noun = (words.pop() ?? '').replace(/s$/, '');
-  if (noun !== 'permanent' && !PERMANENT_NOUNS.includes(noun)) return null;
+  /*
+    `PERMANENT_TYPES` is the list that was already here for printed board scopes (CR 205.2a), and
+    using it rather than a second one is the point: D465 shipped a five-name copy of it that was
+    missing `battle`, so "return a battle you control to its owner's hand" would not have read. Two
+    lists of one thing is the shape this file keeps removing (D441, D438).
+  */
+  if (noun !== 'permanent' && !PERMANENT_TYPES.includes(noun)) return null;
   const type = noun === 'permanent' ? null : noun;
   const colours: Color[] = [];
   let nonland = false;
@@ -10609,11 +10610,129 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   const token = tokenEffect(text, name);
   if (token !== null) return token;
 
-  if (/^each opponent discards a card at random$/i.test(text)) {
+  /*
+    The discard, in every person it is printed about — and the largest concentrated family the
+    compiler has left.
+
+    Measured by `phrase-gap.mjs`' method (substitute the whole family in place, then ask whether the
+    **whole line** reads): the discard appears on 795 one-line-short cards and **finishes 114**, which
+    is more than the bounce family D465 and D466 split between them. The shapes, finishes/appears:
+
+    | | |
+    | --- | --- |
+    | `you discard a card` | 48 / 348 |
+    | `each opponent discards a card` | 14 / 30 |
+    | `each player discards a card` | 6 / 11 |
+    | `you discard three cards` | 3 / 5 |
+    | the `at random` variants | ~6 |
+    | `you discard two cards` | 1 / 25 |
+
+    plus a tail of conjunctions ("and you gain 1 life", "and you draw a card") that come free through
+    `conjoinedEffect` once the clause itself reads.
+
+    ## The player chooses, except where the card says otherwise
+
+    `CardsDecisionSpec.who`'s own docblock names Mind Rot for this and says getting it wrong "would
+    make Mind Rot a very different card": the **discarding** player picks, not the caster. So this is
+    a question, and `discardAtRandom` is reached **only** where the printed words say "at random".
+    A compiler that took the random primitive because it was simpler would build Ravenous Rats and
+    call it Mind Rot — a card that works and is wrong, which is the D362 failure rather than the
+    unread line.
+
+    `min` and `max` are both N and `decisionBounds` clamps to the hand, so a player holding one card
+    discards one and a player holding none is never asked. The prompt echoes the printed count **and
+    its noun** rather than being rebuilt from the number, which keeps "Discard a card" singular.
+
+    "Discard your hand" asks nothing: every card goes, so there is no question to put and it is an
+    effect. 20 legal cards print it.
+
+    ## What is not here
+
+    **`target player discards N cards` already reads** — in `targetedEffect`, since D366 — and
+    `target opponent …` does **not**, because `targetSpecFrom` has no spec for "target opponent" at
+    all (`target opponent loses 2 life` does not read either). That is worth more than this family
+    and is its own increment rather than a rider: one spec lifts the discard, the life loss and the
+    mill together.
+
+    **`that player discards a card`** (12 cards, plus 6 at random) needs the event's player, which
+    `eventRelativeEffect` reads as `c.actor` and `CardsDecisionSpec.who` cannot name — there is no
+    `'actor'` among its four values. An engine change, so it waits for one.
+
+    **`discard a creature card`** (17) and `discard a land card` (8) finish **nothing**: every one is
+    the opener of a `you may X. If you do, Y` whose construct is also unread, so they arrive with that
+    reader and not this one.
+
+    ## The limitation this shares with the edict, stated rather than discovered
+
+    The round-the-table reading sums **every** answer in the context, which is the idiom the
+    `each player sacrifices a creature` reader above already uses, and for the same reason: a
+    `who: 'each-player'` spec expands into one plan entry per seat, so there is no count of specs to
+    index by. In a composition with a *second* question-asking clause it would therefore sum answers
+    that are not its own. D467 is why that is written down rather than guarded: the guard for it cost
+    two working cards and prevented nothing, because the only other readers that ask questions apply
+    their own answers through the engine. The composition that matters — "each opponent discards a
+    card and you gain 1 life" — has a test at a real table below rather than an argument here.
+  */
+  const roundDiscard = /^each (player|opponent) discards ([\w]+) (cards?)( at random)?$/i.exec(text);
+  if (roundDiscard !== null) {
+    const n = countFrom(roundDiscard[2]!);
+    if (n !== null) {
+      const opponentsOnly = roundDiscard[1]!.toLowerCase() === 'opponent';
+      const seatsOf = (c: EffectContext): readonly SeatIndex[] => (opponentsOnly
+        ? opponentsOf(c.state, c.controller)
+        : c.state.seats.filter((seat) => !seat.eliminated).map((seat) => seat.index));
+      if (roundDiscard[4] !== undefined) {
+        return {
+          effect: (c) => seatsOf(c).reduce((state, seat) => discardAtRandom(state, seat, n), c.state),
+        };
+      }
+      return {
+        decisions: [{
+          who: opponentsOnly ? 'each-opponent' : 'each-player',
+          from: 'hand',
+          prompt: `Discard ${roundDiscard[2]!} ${roundDiscard[3]!}`,
+          min: n,
+          max: n,
+        }],
+        effect: (c) => c.decisions.reduce(
+          (state, answer) => moveToGraveyard(state, answer.ids), c.state,
+        ),
+      };
+    }
+  }
+
+  // "Discard your hand": no question, because there is nothing to choose between.
+  if (/^(?:you )?discard your hand$/i.test(text)) {
     return {
-      effect: (c) => opponentsOf(c.state, c.controller)
-        .reduce((state, seat) => discardAtRandom(state, seat, 1), c.state),
+      effect: (c) => moveToGraveyard(
+        c.state, [...listAt(c.state, zoneKey(c.controller, 'hand'))],
+      ),
     };
+  }
+
+  /*
+    The controller's own discard. "You discard a card" and "Discard a card" are the same sentence —
+    a planeswalker and a spell spell it the long way — which is the same `(?:you )?` the draw reader
+    above already carries.
+  */
+  const myDiscard = /^(?:you )?discard ([\w]+) (cards?)( at random)?$/i.exec(text);
+  if (myDiscard !== null) {
+    const n = countFrom(myDiscard[1]!);
+    if (n !== null) {
+      if (myDiscard[3] !== undefined) {
+        return { effect: (c) => discardAtRandom(c.state, c.controller, n) };
+      }
+      return {
+        decisions: [{
+          who: 'controller',
+          from: 'hand',
+          prompt: `Discard ${myDiscard[1]!} ${myDiscard[2]!}`,
+          min: n,
+          max: n,
+        }],
+        effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
+      };
+    }
   }
 
   return null;
@@ -13985,6 +14104,41 @@ function composeEffects(
   const targeted = parts.filter((part) => part.targets !== undefined);
   // See the docblock: two target choices cannot share one `targets` list.
   if (targeted.length > 1) return null;
+
+  /*
+    **At most one clause may read its own answers**, which is the same rule as the one above it and
+    took two goes to get right.
+
+    A resolution's answers are one list and a part reads its own by **index** — `chosenCard(c)` is
+    `c.decisions[0]`, `chosenCards(c, 1)` the second. The concatenation below records nothing about
+    which part an answer came from, so a *second* answer-reading part reads the **first** one's
+    answer. `Draw two cards, then discard two cards. Target player discards a card.` is the shape:
+    both discards call `chosenCards(c)`, both get index 0, and the target player discards nothing
+    while the caster's cards are moved to the graveyard twice. A wrong card, not an unread one.
+
+    ## Why "answer-reading" and not "asks a question"
+
+    D467 wrote this guard as "at most one part with `decisions`" and **measured it costing two cards
+    that work**: Cryptic Annelid (`scry 1, then scry 2, then scry 3`) and Fill with Fright (`Target
+    player discards two cards. Scry 2.`). A scry asks a question and reads **nothing** — its effect
+    is the identity, because the engine applies a `library-top` answer to its own plan entry. Three
+    scries are three plan entries, each applied to itself, and that composition is correct.
+
+    `appliesNothing` is already the field that says so ("the question is the whole effect"), set by
+    scry and surveil, so the test is derived from it rather than from a new flag nobody would
+    remember to set. It is also **safe by default**: a reader that asks a question and forgets
+    `appliesNothing` is treated as answer-reading, which refuses a composition rather than
+    mis-reading one.
+
+    D467's own conclusion was that the hazard had no failing case in the corpus. That was right about
+    the corpus and wrong about the claim: `compile.test.ts` already had Greedy Rummage, and the
+    general discard reader (D468) is what made it reachable. The corpus is not the only source of
+    printed text this compiler sees.
+  */
+  const answerReaders = parts.filter(
+    (part) => (part.decisions ?? []).length > 0 && part.appliesNothing !== true,
+  );
+  if (answerReaders.length > 1) return null;
 
   /*
     A composition cannot carry two pre-question halves, so a part that already has one refuses it.

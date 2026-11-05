@@ -12483,3 +12483,39 @@ The hazard is real only where two parts **both** read answers by index, and no c
 one. Build the reader, then verify a composition at a real table; fix it when there is a card that
 fails. Reading code and finding a hole is a hypothesis, and the cheapest test of this one was three
 commands.
+
+## The discard, and D467's guard got right (D468)
+
+The largest concentrated family left: measured by substitution, the discard appears on 795
+one-line-short cards and **finishes 114** — more than D465 and D466 split between them. Read: the
+controller's discard of N cards or their hand, `each player` and `each opponent`, and the `at random`
+form of each. Every one is a **question** (`from: 'hand'`), because the discarding player chooses —
+`discardAtRandom` is reached only where the words say so, or the compiler would build Ravenous Rats
+and call it Mind Rot.
+
+Left out with reasons: `target opponent discards` (no "target opponent" spec exists at all — one spec
+lifts the discard, the life loss and the mill together, so it is its own increment), `that player
+discards` (needs a `who: 'actor'` the decision machinery has not got), and `discard a creature card`
+(finishes nothing — it is a `you may … If you do` opener).
+
+**D467's guard was needed after all, and was the wrong shape.** That entry recorded the hazard —
+`composeEffects` concatenates answers, a part reads its own by index — and then refuted it, because
+the guard cost two working cards. The hazard is real and this increment made it reachable: Greedy
+Rummage (`Draw two cards, then discard two cards. Target player discards a card.`) was already in
+`compile.test.ts`, and the full suite caught it on the first run after the reader went in. Both
+discards read index 0, so the target player discards nothing.
+
+The right guard is *at most one part that reads answers*, told apart by `appliesNothing` — a scry asks
+and reads nothing, because the engine applies a `library-top` answer to its own plan entry. Coverage
+unchanged to the line, Greedy Rummage refused, the two scry cards kept.
+
+The method note: D467 consulted the corpus and concluded there was no failing case. The suite's own
+fixtures are printed text too, and one of them was it.
+
+| | D466 | D468 |
+| --- | --- | --- |
+| cards with a compiled script | 9,291 | **9,423** |
+| cards fully read | 5,126 | **5,214** |
+| printed rules lines read | 19,053 / 56,421 (33.8%) | **19,216 / 56,421 (34.1%)** |
+
+Engine suite 2,272 green; eight levers broken one at a time.

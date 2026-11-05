@@ -24904,3 +24904,270 @@ describe('a card that picks itself up, and the zone that decides whether it may 
     expect(namesIn(s, 0 as SeatIndex, 'graveyard')).not.toContain('Endless Cockroaches');
   });
 });
+
+describe('the discard, in every person it is printed about (D468)', () => {
+  /*
+    The largest concentrated family the compiler had left: measured by substitution over 31,654 legal
+    cards, the discard appears on 795 one-line-short cards and **finishes 114** — more than the bounce
+    family D465 and D466 split between them.
+
+    What matters about the reading is **who chooses**. `CardsDecisionSpec.who`'s own docblock names
+    Mind Rot for this and says getting it wrong "would make Mind Rot a very different card": the
+    discarding player picks, not the caster. So every shape here is a question, and `discardAtRandom`
+    is reached only where the printed words say "at random".
+
+    Five real printings, none in any built-in deck. Each is a different `who` or a different piece of
+    assembly machinery.
+  */
+  const BRAWLER = {
+    name: 'Bloodrage Brawler', type_line: 'Creature — Minotaur Warrior', mana_cost: '{1}{R}', cmc: 2,
+    colors: ['R'], power: '4', toughness: '3', loyalty: null, layout: 'normal',
+    oracle_text: 'When Bloodrage Brawler enters, discard a card.',
+  };
+  const RAT = {
+    name: 'Burglar Rat', type_line: 'Creature — Rat', mana_cost: '{1}{B}', cmc: 2,
+    colors: ['B'], power: '1', toughness: '1', loyalty: null, layout: 'normal',
+    oracle_text: 'When Burglar Rat enters, each opponent discards a card.',
+  };
+  const MUMMY = {
+    name: 'Miasmic Mummy', type_line: 'Creature — Zombie Jackal', mana_cost: '{1}{B}', cmc: 2,
+    colors: ['B'], power: '2', toughness: '2', loyalty: null, layout: 'normal',
+    oracle_text: 'When Miasmic Mummy enters, each player discards a card.',
+  };
+  const HAUNT = {
+    name: 'Basilica Bell-Haunt', type_line: 'Creature — Spirit', mana_cost: '{W}{W}{B}{B}', cmc: 4,
+    colors: ['W', 'B'], power: '3', toughness: '4', loyalty: null, layout: 'normal',
+    oracle_text: 'When Basilica Bell-Haunt enters, each opponent discards a card and you gain 3 life.',
+  };
+  const TRADEMAGE = {
+    name: 'Bazaar Trademage', type_line: 'Creature — Human Wizard', mana_cost: '{2}{U}', cmc: 3,
+    colors: ['U'], power: '3', toughness: '4', loyalty: null, layout: 'normal',
+    oracle_text: 'Flying\nWhen Bazaar Trademage enters, draw two cards, then discard three cards.',
+  };
+
+  const deck = (entries: readonly { name: string; count: number }[]) => {
+    const built = customDeck({
+      id: 'd468-list',
+      name: 'The discard',
+      entries: [...entries],
+      data: [BRAWLER, RAT, MUMMY, HAUNT, TRADEMAGE] as never,
+    });
+    expect(built.unknown).toEqual([]);
+    const fixtures = new Set(['Basilica Bell-Haunt', 'Bazaar Trademage', 'Bloodrage Brawler',
+      'Burglar Rat', 'Miasmic Mummy']);
+    expect([...built.fromData].sort())
+      .toEqual(entries.map((e) => e.name).filter((name) => fixtures.has(name)).sort());
+    return built.deck;
+  };
+
+  it('is a question on the discarding player\'s own hand, not a random pitch', () => {
+    const mine = compileCard(BRAWLER as never);
+    expect(mine.ok).toBe(true);
+    expect(mine.ok ? mine.unread : ['not ok']).toEqual([]);
+    const spec = ((mine.ok ? (mine.script?.triggers ?? []) : [])[0]?.decisions ?? [])[0] as
+      { who?: string; from?: string; min?: number; max?: number; prompt?: string };
+    expect(spec.who).toBe('controller');
+    expect(spec.from).toBe('hand');
+    expect(spec.min).toBe(1);
+    expect(spec.max).toBe(1);
+    // The printed count and its noun, so the singular stays singular.
+    expect(spec.prompt).toBe('Discard a card');
+
+    // "Each opponent" and "each player" are one word apart and a different card.
+    const rat = compileCard(RAT as never);
+    const mummy = compileCard(MUMMY as never);
+    expect(rat.ok ? rat.unread : ['not ok']).toEqual([]);
+    expect(mummy.ok ? mummy.unread : ['not ok']).toEqual([]);
+    const whoOf = (r: ReturnType<typeof compileCard>) => (((r.ok ? (r.script?.triggers ?? []) : [])[0]
+      ?.decisions ?? [])[0] as { who?: string }).who;
+    expect(whoOf(rat)).toBe('each-opponent');
+    expect(whoOf(mummy)).toBe('each-player');
+  });
+
+  it('lets the controller choose which card to pitch', () => {
+    const built = deck([
+      { name: 'Bloodrage Brawler', count: 4 },
+      { name: 'Lightning Bolt', count: 8 },
+      { name: 'Mountain', count: 48 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd468-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd468-list': built },
+      battlefield: { 0: ['Mountain', 'Mountain'] },
+      hands: { 0: ['Bloodrage Brawler', 'Lightning Bolt', 'Mountain'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Bloodrage Brawler'),
+    } as Action);
+    s = drain(passBoth(s), 40);
+    /*
+      The player picks, which is the whole reading — this is not `discardAtRandom`. The offered list
+      is the hand as it stands, so it is checked by what it must and must not contain rather than by
+      an exact list: `arena` deals the turn's draw too, and pinning the count would make this test
+      about the harness instead of the card.
+    */
+    expect(choices(s)).toContain('Lightning Bolt');
+    expect(choices(s)).toContain('Mountain');
+    // The Brawler itself is on the battlefield by now, so it is not a card it can pitch.
+    expect(choices(s)).not.toContain('Bloodrage Brawler');
+    s = drain(decide(s, ['Mountain']), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Mountain');
+    // And the card they kept is still theirs.
+    expect(namesIn(s, 0 as SeatIndex, 'hand')).toContain('Lightning Bolt');
+  });
+
+  it('asks the opponent, not the caster, when the card says "each opponent"', () => {
+    const built = deck([
+      { name: 'Burglar Rat', count: 4 },
+      { name: 'Swamp', count: 56 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd468-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd468-list': built },
+      battlefield: { 0: ['Swamp', 'Swamp'] },
+      hands: { 0: ['Burglar Rat'], 1: ['Forest', 'Grizzly Bears'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Burglar Rat'),
+    } as Action);
+    s = drain(passBoth(s), 40);
+    /*
+      Seat 1 is on the clock, holding seat 1's cards. A reader that had asked the controller would
+      offer an empty list here and discard nothing, which is a card that looks like it works.
+    */
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(choices(s).length).toBe(2);
+    s = drain(decide(s, ['Forest']), 40);
+    expect(namesIn(s, 1 as SeatIndex, 'graveyard')).toContain('Forest');
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).not.toContain('Forest');
+  });
+
+  /*
+    **The composition, which D467 says to test rather than guard against.**
+
+    "Each opponent discards a card **and** you gain 3 life" is read by `conjoinedEffect` as two parts,
+    and the round-the-table discard sums every answer in the context — so a composition is exactly
+    where that idiom could over-reach. D467 wrote the guard for this shape, measured it, and found it
+    cost two working cards and prevented nothing. This is the replacement: the card, at a table, with
+    both halves checked.
+  */
+  it('composes with another clause: the opponent pitches and the caster gains life', () => {
+    const built = deck([
+      { name: 'Basilica Bell-Haunt', count: 4 },
+      { name: 'Plains', count: 28 },
+      { name: 'Swamp', count: 28 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd468-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd468-list': built },
+      battlefield: { 0: ['Plains', 'Plains', 'Swamp', 'Swamp'] },
+      hands: { 0: ['Basilica Bell-Haunt'], 1: ['Forest', 'Grizzly Bears'] },
+      turn: 7,
+      firstSeat: 0,
+    }), 'precombat-main');
+    const life0 = life(s, 0 as SeatIndex);
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Basilica Bell-Haunt'),
+    } as Action);
+    s = drain(passBoth(s), 40);
+    expect(s.pendingDecision?.seat).toBe(1);
+    s = drain(decide(s, ['Forest']), 40);
+    // Both halves: the card is gone from their hand, and the life is on the board.
+    expect(namesIn(s, 1 as SeatIndex, 'graveyard')).toContain('Forest');
+    expect(life(s, 0 as SeatIndex)).toBe(life0 + 3);
+  });
+
+  /*
+    **The guard this reader needed, and the boundary that makes it the right guard.**
+
+    `composeEffects` concatenates its parts' answers into one list, and a part reads its own by index
+    — `chosenCards(c)` is `c.decisions[0]`. So a composition with two **answer-reading** parts has the
+    second one reading the first one's answer. `compile.test.ts` already had the card that proves it
+    (Greedy Rummage, `Draw two cards, then discard two cards. Target player discards a card.`), and
+    the general discard reader is what made that shape reachable: both discards would call
+    `chosenCards(c)`, both get index 0, and the target player discards nothing.
+
+    The guard is "at most one part that reads answers", not "at most one part that asks a question",
+    and the two tests below are the difference. D467 wrote the broad version, measured it, and found
+    it cost **two working cards** — these two. A scry asks and reads nothing: its effect is the
+    identity, because the engine applies a `library-top` answer to its own plan entry. So three
+    scries compose, and a discard composes with a scry.
+
+    No test distinguished the broad guard from the narrow one — only the coverage count did, which is
+    D463's rule again (a count that moves by the wrong amount is a test). These two assertions are
+    that count, written down where a break run can reach it.
+  */
+  it('still composes a clause that asks without reading, which the broad guard refused', () => {
+    // Three scries in one resolution, each applied to its own plan entry by the engine.
+    const annelid = compileCard({
+      name: 'Cryptic Annelid', type_line: 'Creature — Worm Beast', mana_cost: '{3}{U}', cmc: 4,
+      colors: ['U'], power: '1', toughness: '4', loyalty: null, layout: 'normal',
+      oracle_text: 'When Cryptic Annelid enters, scry 1, then scry 2, then scry 3. (To scry X, look '
+        + 'at the top X cards of your library, then put any number of them on the bottom of your '
+        + 'library and the rest on top in any order.)',
+    } as never);
+    expect(annelid.ok).toBe(true);
+    expect(annelid.ok ? annelid.unread : ['not ok']).toEqual([]);
+    expect(((annelid.ok ? (annelid.script?.triggers ?? []) : [])[0]?.decisions ?? []))
+      .toHaveLength(3);
+
+    // And a discard — which does read its answer — beside a scry, which does not.
+    const fright = compileCard({
+      name: 'Fill with Fright', type_line: 'Sorcery', mana_cost: '{3}{B}', cmc: 4, colors: ['B'],
+      power: null, toughness: null, loyalty: null, layout: 'normal',
+      oracle_text: 'Target player discards two cards. Scry 2. (Look at the top two cards of your '
+        + 'library, then put any number of them on the bottom and the rest on top in any order.)',
+    } as never);
+    expect(fright.ok).toBe(true);
+    expect(fright.ok ? fright.unread : ['not ok']).toEqual([]);
+  });
+
+  /*
+    And the other piece of assembly this family leans on: the question has to be asked about the hand
+    the **draw has already happened to**. `composeEffects` splits a composition at its first question
+    and runs everything before it in `beforeDecisions` (D418) — Magma Jet's rule, reached here by a
+    card whose printed sequence is a draw and then a discard.
+  */
+  it('asks about the hand after the draw, not before it', () => {
+    const built = deck([
+      { name: 'Bazaar Trademage', count: 4 },
+      { name: 'Island', count: 56 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd468-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd468-list': built },
+      battlefield: { 0: ['Island', 'Island', 'Island'] },
+      hands: { 0: ['Bazaar Trademage'] },
+      turn: 7,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Bazaar Trademage'),
+    } as Action);
+    s = drain(passBoth(s), 40);
+    /*
+      **No question is asked, and that is the correct behaviour rather than a miss.** Three cards are
+      asked for and the hand holds fewer, so `decisionBounds` clamps both bounds to what is there and
+      `min === max === available` — the engine answers it itself, because a prompt whose only possible
+      answer is "all of them" is noise (its own docblock says so).
+
+      What the test is really about is *which* hand was counted. Asked before the draw, the hand was
+      the one the Trademage was cast out of, and three cards would have been taken from it. Asked
+      after, the hand is what the draw produced. Both drawn cards are in the graveyard and the hand
+      is empty, which only the second reading gives.
+    */
+    expect(s.pendingDecision).toBeNull();
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(0);
+    expect(ids(s, 0 as SeatIndex, 'graveyard').length).toBeGreaterThanOrEqual(2);
+    // The Trademage survived: it was cast, not discarded.
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toContain('Bazaar Trademage');
+  });
+});
