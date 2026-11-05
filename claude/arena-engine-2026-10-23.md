@@ -11845,3 +11845,30 @@ should be the first thing checked rather than the second.
 
 Coverage **17,500 of 56,421 legal lines (31.0%)**, **8,099 cards with a script** (+70), 4,599 fully
 read (+47).
+
+## The same question with a price on it (D448)
+
+D447's queue had a second row: `you may pay <cost>. If you do, <effect>` — 66 legal lines, **39
+with a cost the engine can charge**. `payIfChosen` has been that shape since echo (#196), so this
+is the free "may" plus one field rather than new machinery.
+
+The words are deliberately asymmetrical with D447's. A free may puts **Yes** first, because all 82
+of its lines are pure upside — measured, not assumed. A priced may puts **Decline** first, because
+`options[0]` is a bot's fallback and spending mana is not safe. Neither writes a `best`, and the
+cost of that is stated plainly: **the bot never pays one of these**. A human is asked properly and
+the card is correct either way; whether a generic hint beats the safe answer is a deck-table
+question, not a guess.
+
+Everything refused is a cost the engine cannot charge: energy (19 lines), life (4), a mana cost plus
+something else (4), and an announced X. `parseManaCost` refuses them all through the same check that
+validated D446's ability costs. **Energy is the next obvious question** — a price on an answer paid
+in something other than mana.
+
+**The break run earned its keep again.** One lever passed: a guard reading
+`whole === null && priced === null` could be broken with all 1,506 tests green, because the ordering
+was already decided by the selection below it. Two statements of one rule — removed, and breaking the
+real one fails. Third increment running where the break run found a redundant lever rather than a
+missing test.
+
+Coverage **17,537 of 56,421 legal lines (31.1%)**, **8,129 cards with a script** (+30), 4,627 fully
+read (+28).

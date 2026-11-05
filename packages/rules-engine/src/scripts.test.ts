@@ -22817,3 +22817,105 @@ describe('"you may", from printed text (D447)', () => {
     expect(namesIn(s, 0 as SeatIndex, 'hand')).not.toContain('Raging Goblin');
   });
 });
+
+describe('a "may" with a price on it, from printed text (D448)', () => {
+  /*
+    Printed Myrsmith and printed Mind Stone, both compiled through `customDeck` (D430). Myrsmith is
+    the right card for this pair because the price and the effect are both cheap and the trigger is
+    easy to raise: casting any artifact spell asks the question.
+  */
+  const MYRSMITH = {
+    name: 'Myrsmith', type_line: 'Creature — Human Artificer', mana_cost: '{1}{W}', cmc: 2,
+    colors: ['W'], layout: 'normal', power: '2', toughness: '1', loyalty: null,
+    oracle_text: 'Whenever you cast an artifact spell, you may pay {1}. If you do, create a 1/1'
+      + ' colorless Myr artifact creature token.',
+  };
+  const MIND_STONE = {
+    name: 'Mind Stone', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [],
+    layout: 'normal', power: null, toughness: null, loyalty: null,
+    oracle_text: '{T}: Add {C}.\n{1}, {T}, Sacrifice Mind Stone: Draw a card.',
+  };
+
+  /** Myrsmith out, a Mind Stone in hand, and `lands` Plains to spend on both. */
+  const table = (lands: number) => {
+    const built = customDeck({
+      id: 'myr-list',
+      name: 'Myrsmith',
+      entries: [
+        { name: 'Myrsmith', count: 1 },
+        { name: 'Mind Stone', count: 4 },
+        { name: 'Plains', count: 55 },
+      ],
+      data: [MYRSMITH as never, MIND_STONE as never],
+    });
+    expect(built.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'myr-list', 1: 'verdant-guard' },
+      deckSpecs: { 'myr-list': built.deck },
+      hands: { 0: ['Mind Stone'] },
+      battlefield: { 0: ['Myrsmith', ...Array.from({ length: lands }, () => 'Plains')] },
+      turn: 5,
+      firstSeat: 0,
+    });
+  };
+
+  /** The Mind Stone cast with `lands` Plains tapped for it, and the table stopped if it asks. */
+  const cast = (lands: number): GameState => {
+    let s = advanceTo(table(lands), 'precombat-main');
+    for (const land of ids(s, 0 as SeatIndex, 'battlefield')
+      .filter((id) => nameOf(s, id) === 'Plains')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: land, abilityIndex: 0 } as Action);
+    }
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Mind Stone'),
+    } as Action);
+    return drain(passBoth(s), 40);
+  };
+
+  const myrs = (s: GameState) =>
+    namesIn(s, 0 as SeatIndex, 'battlefield').filter((n) => n === 'Myr').length;
+
+  it('asks with the price on one answer, and the decline first', () => {
+    const s = cast(3);
+    expect(s.pendingDecision?.prompt).toBe('Pay {1} — Create a 1/1 colorless Myr artifact creature token?');
+    /*
+      Decline first, which is what a bot falls back on. The compiled card writes no `best` because
+      it cannot price {1} against the board — see the note in `triggerFromLine`. Extort and echo
+      write one; this is the same question without the card's own knowledge behind it.
+    */
+    expect(s.pendingDecision?.options).toEqual(['Decline', 'Pay {1}']);
+  });
+
+  it('makes the token when the price is paid, and spends the mana', () => {
+    const s = drain(apply(cast(3), {
+      type: 'auto:decide', by: 0, option: 'Pay {1}',
+    } as Action), 40);
+    expect(myrs(s)).toBe(1);
+    // The third Plains went on the {1}: the payment is the engine's, which is the whole point of
+    // `payIfChosen` over a cost the card tries to charge itself.
+    expect(s.pools[String(0)]?.W ?? 0).toBe(0);
+  });
+
+  it('makes nothing when it is declined', () => {
+    /*
+      The half that makes the may a may, and here it also proves the payment is tied to the answer:
+      a reading that charged the mana and then skipped the effect would pass the test above and
+      leave the player a Plains down for nothing.
+    */
+    const s = drain(apply(cast(3), { type: 'auto:decide', by: 0, option: 'Decline' } as Action), 40);
+    expect(myrs(s)).toBe(0);
+    expect(s.pools[String(0)]?.W ?? 0).toBe(1);
+  });
+
+  it('does not even offer the price to a player who cannot pay it', () => {
+    /*
+      Two Plains, both spent on the Mind Stone itself. `ChoiceDecisionSpec.payIfChosen` says an
+      option the seat cannot pay for is **not offered**, which leaves a question with one answer —
+      and the engine answers a one-answer question itself rather than stopping the table on a
+      prompt with one button. So there is no pending decision at all, and no token.
+    */
+    const s = cast(2);
+    expect(s.pendingDecision).toBeNull();
+    expect(myrs(s)).toBe(0);
+  });
+});

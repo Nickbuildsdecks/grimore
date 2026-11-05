@@ -28068,3 +28068,92 @@ one was checked second rather than first.
 Legal-only coverage **17,500 of 56,421 lines (31.0%)**, **8,099 cards with a script**
 (8,029 → 8,099, +70), 4,599 with every printed line read (4,552 → 4,599, +47), 38,921 lines nothing
 could read. GATE OK.
+
+## D448 — A "may" with a price on it, and a guard that could not fail
+
+The second row of the queue D447 measured, taken with the same method. 66 legal lines print
+`<prologue>, you may pay <cost>. If you do, <effect>`, and **39 of them name a cost this engine can
+charge**.
+
+`ChoiceDecisionSpec.payIfChosen` has been exactly this shape since echo (#196): a price on one
+answer, which the engine pays **before** the effect runs and does not even *offer* when the seat
+cannot afford it. So this reading is the free "may" of D447 with one field added, not new machinery —
+which is the sign a vocabulary is converging rather than growing.
+
+### The words are asymmetrical with D447's, on purpose
+
+| | first option | `payIfChosen` | `best` |
+| --- | --- | --- | --- |
+| a free may (D447) | `Yes` | — | none |
+| a priced may (D448) | `Decline` | on the paying answer | none |
+
+`options[0]` is the answer a bot falls back on, and the two questions have different safe answers.
+D447's claim was measured: all 82 of its lines are pure upside, so taking them is safe. This one
+can tap a player out, and `extort()`'s docblock already settled which way that falls — "the engine
+answers with [the first option] when there is no real question to ask, and *do not spend mana* is
+the safe one of the two".
+
+**And no `best`, with the consequence stated rather than hidden.** Extort and echo each write one,
+because each knows something about its own question: extort fires after the turn's spell is already
+paid for, so its mana is mana the turn did not use. A compiled card knows nothing of the kind — the
+same shape covers paying {1} to draw a card and paying {4} to untap a Mana Vault. So the hint is
+left out and the safe answer stands, which means **the bot never pays one of these**. That is a
+play-quality gap, not a rules error: a human is asked properly, the price is charged only if they
+say yes, and the card does what it says either way. Whether one generic `best` beats the safe answer
+is a question for the deck table, not for a guess.
+
+### The refusals are all one thing: a cost the engine cannot charge
+
+| printed price | legal lines | why |
+| --- | --- | --- |
+| `{E}` / `{E}{E}` / `{E}{E}{E}` | 19 | energy exists (#180) but not as a price on an answer |
+| `N life` | 4 | `payIfChosen.cost` is a mana string |
+| `{M} and discard a card` / `and sacrifice a token` | 4 | two costs, one field |
+| `{X}` | — | an announced X on a trigger's price, the line D446 drew |
+
+`parseManaCost` is what refuses all of them rather than a second list of shapes: it records an
+unrecognised symbol instead of reading it as generic mana, so `{E}` and `{X}` fall out of the same
+check that already validated D446's ability costs. The 19 energy lines are the biggest single group
+and the obvious next question — a price on an answer that is paid in something other than mana.
+
+The shared refusal from D447 still applies and is now written once for both: a may whose **effect**
+asks its own question is refused, because the engine asks a resolution's questions in order and
+cannot skip a later one on an earlier answer. Drainpipe Vermin ("pay {B}. If you do, target player
+discards a card") is the printed example.
+
+### A guard that could not fail, found by the break run
+
+The bare-"may" regex was written `whole === null && priced === null ? …`. Breaking that guard —
+letting the bare regex match a priced clause too — **changed nothing**: all 1,506 tests stayed
+green. The ordering between the two readings is decided further down, where `inner` and `pay` both
+prefer `priced`; the regex guard was a second statement of a rule already stated once. It is gone,
+and breaking the selection that actually orders them does fail, twice.
+
+This is the third increment in a row where the break run found a redundant lever rather than a
+missing test (D438's letter guard, D446's nothing, this). The pattern is worth naming: a guard
+written "for clarity" beside a precedence that already decides the case is not clarity, it is a
+second source for one fact.
+
+### Verified
+
+Four runtime tests on printed **Myrsmith** casting printed **Mind Stone** through `customDeck`
+(D430), all four green first time:
+
+- the question is asked with the price on one answer and the decline first;
+- paying makes the Myr token **and** empties the pool — the mana really went;
+- declining makes no token **and leaves the mana** , which a reading that charged first and skipped
+  the effect would get wrong while passing the test above;
+- a player with two Plains, both spent on the Mind Stone itself, is **not offered** the price at
+  all — a one-answer question the engine answers without stopping the table.
+
+Ten compile rows: three read (generic, coloured, hybrid), six refusals (the four printed prices
+above, X, and the inner question), the printed description kept whole, and one row that asserts the
+**pair** of option orders in a single test so the asymmetry with D447 cannot drift — two rows each
+checking their own order would both pass if a change made them the same.
+
+**Thirteen breaks: twelve failures and the one documented pass above**, which was then turned into
+a code change and two further failing levers.
+
+Legal-only coverage **17,537 of 56,421 lines (31.1%)**, **8,129 cards with a script**
+(8,099 → 8,129, +30), 4,627 with every printed line read (4,599 → 4,627, +28). Full engine suite
+2,083 tests. GATE OK.

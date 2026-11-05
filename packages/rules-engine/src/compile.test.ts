@@ -8007,3 +8007,102 @@ describe('"you may": the optional triggered ability', () => {
     expect(spec.map((d) => d['prompt'])).toContain('Draw two cards?');
   });
 });
+
+describe('a "may" with a price on it (D448)', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const triggersOf = (c: ReturnType<typeof compileCard>) =>
+    (field(c.ok ? c.script : undefined, 'triggers') ?? []) as readonly TriggerDef[];
+  const unreadLines = (c: ReturnType<typeof compileCard>) =>
+    (c.ok ? c.unread : []).map((u) => u.line);
+  const read = (text: string) => compileCard({
+    name: 'Probe Thing', type_line: 'Creature — Bird', mana_cost: '{2}{U}', cmc: 3,
+    colors: ['U'], power: '2', toughness: '2', layout: 'normal', oracle_text: text,
+  } as never);
+  const choice = (c: ReturnType<typeof compileCard>) => {
+    const specs = triggersOf(c)[0]?.decisions ?? [];
+    expect(specs).toHaveLength(1);
+    return specs[0] as unknown as Record<string, unknown>;
+  };
+
+  it.each([
+    /*
+      66 legal lines print this and 39 name a cost the engine can charge.
+      `ChoiceDecisionSpec.payIfChosen` is the shape, unchanged since echo (#196): a price on one
+      answer, paid before the effect, and **not offered at all** when the seat cannot afford it.
+    */
+    ['one generic symbol', 'When Probe Thing enters, you may pay {1}. If you do, draw a card.',
+      '{1}', 'Pay {1} — Draw a card?'],
+    ['a coloured cost',
+      'When Probe Thing enters, you may pay {2}{B}. If you do, draw a card.',
+      '{2}{B}', 'Pay {2}{B} — Draw a card?'],
+    // Hybrid, which `parseManaCost` has understood since #167 — Shu Yun prints exactly this.
+    ['a hybrid cost',
+      'Whenever Probe Thing attacks, you may pay {R/W}{R/W}. If you do, draw a card.',
+      '{R/W}{R/W}', 'Pay {R/W}{R/W} — Draw a card?'],
+  ])('reads %s', (_label, text, cost, prompt) => {
+    const compiled = read(text as string);
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([]);
+    const spec = choice(compiled);
+    expect(spec['prompt']).toBe(prompt);
+    expect(spec['payIfChosen']).toEqual({ option: `Pay ${cost as string}`, cost });
+    /*
+      **The decline is first, where a free "may" puts Yes first**, and the asymmetry is the point.
+      `options[0]` is a bot's fallback, and `extort()`'s docblock says which way a price falls:
+      "do not spend mana" is the safe one of the two. A free may cannot cost its controller
+      anything; this one can tap them out.
+    */
+    expect(spec['options']).toEqual(['Decline', `Pay ${cost as string}`]);
+    expect(spec['best']).toBeUndefined();
+  });
+
+  it('puts Yes first on the free may and Decline first on the priced one', () => {
+    /*
+      The pair, stated as one assertion so the asymmetry cannot drift. Two rows that each checked
+      their own order would both pass if a change made them the same.
+    */
+    const free = choice(read('When Probe Thing enters, you may draw a card.'));
+    const priced = choice(read('When Probe Thing enters, you may pay {1}. If you do, draw a card.'));
+    expect(free['options']).toEqual(['Yes', 'No']);
+    expect(priced['options']).toEqual(['Decline', 'Pay {1}']);
+    expect(free['payIfChosen']).toBeUndefined();
+  });
+
+  it.each([
+    /*
+      Every refusal here is a cost `payIfChosen` cannot charge, with its corpus count. Inventing a
+      payment would be worse than leaving the line unread: a trigger that fires for free when the
+      card says it costs something is a different card (D362).
+    */
+    // Energy, the Kaladesh commons. `{E}` exists in this engine (#180) but not as a price on an
+    // answer, and `parseManaCost` is what refuses it rather than a list of exceptions.
+    ['energy, which is not mana',
+      'Whenever Probe Thing attacks, you may pay {E}{E}. If you do, draw a card.'],            // 19
+    ['life, which has no field here',
+      'When Probe Thing dies, you may pay 2 life. If you do, draw a card.'],                   // 4
+    ['mana and a discard, which is two costs',
+      'When Probe Thing enters, you may pay {1} and discard a card. If you do, draw a card.'], // 2
+    ['mana and a sacrifice, which is two costs',
+      'When Probe Thing enters, you may pay {2} and sacrifice a token. If you do, draw a card.'],
+    // An announced X on a trigger's price is machinery this reader does not reach — the same line
+    // D446's ability costs drew.
+    ['an announced X',
+      'When Probe Thing enters, you may pay {X}. If you do, draw a card.'],
+    // And the shared refusal: an effect that asks its own question would be asked before the
+    // yes-or-no. Drainpipe Vermin prints this one.
+    ['an effect that asks its own question',
+      'When Probe Thing dies, you may pay {B}. If you do, target player discards a card.'],
+  ])('refuses %s', (_label, text) => {
+    const compiled = read(text as string);
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([text]);
+    expect(triggersOf(compiled)).toHaveLength(0);
+  });
+
+  it('keeps the whole printed clause as the description', () => {
+    const compiled = read('When Probe Thing enters, you may pay {1}. If you do, draw a card.');
+    expect(triggersOf(compiled)[0]?.description)
+      .toBe('you may pay {1}. If you do, draw a card');
+  });
+});

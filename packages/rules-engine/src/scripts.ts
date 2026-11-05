@@ -11687,17 +11687,103 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       not read at all, which is the only case where there is nothing to lose.
     */
     const whole = reader(clause);
+    /*
+      **A "may" with a price on it** (D448): "you may pay {1}. If you do, draw a card."
+
+      The second row of the queue D447 measured, and the same family one step on: 66 legal lines
+      print it, of which **39 name a cost this engine can charge** — a mana run, hybrid symbols
+      included. `ChoiceDecisionSpec.payIfChosen` is exactly this shape and has been since echo
+      (#196): a price on one answer, which the engine pays before the effect runs and does not even
+      **offer** when the seat cannot afford it, so a tapped-out player is never asked a question
+      with one button.
+
+      Tried before the bare "you may" below, because this clause begins with those two words too
+      and stripping them would leave "pay {1}. If you do, …" for a reader that has never seen a
+      payment.
+
+      **What is refused, and all of it is a cost the engine cannot charge here.**
+      `payIfChosen.cost` is a mana string, so: 19 lines pay energy (`{E}`, the Kaladesh commons —
+      energy exists in this engine since #180 but not as a price on an answer), 4 pay life, and 4
+      pay a mana cost **and** something else ("{1} and discard a card", "{2} and sacrifice a
+      token"). `parseManaCost` is what refuses them rather than a second list of shapes: it records
+      an unrecognised symbol instead of reading it as generic mana, which is the same guard D446's
+      ability costs lean on.
+    */
+    const priced = whole === null
+      ? /^you may pay ((?:\{[^}]+\})+)\.\s*If you do, (.+)$/i.exec(clause)
+      : null;
+    /*
+      The bare "may" regex is **not** guarded on `priced`, and a break run is why.
+
+      It was written as `whole === null && priced === null ? …`, and breaking that guard — letting
+      the bare regex match a priced clause too — changed nothing: all 1,506 tests stayed green. The
+      guard could not fail, because the ordering between the two readings is decided below, where
+      `inner` and `pay` both prefer `priced`. Two statements of one rule is the shape this file
+      keeps removing (D441, D438), so the redundant one is gone and the selection below is the only
+      lever. Breaking **that** does fail.
+    */
     const may = whole === null ? /^you may (.+)$/i.exec(clause) : null;
-    const inner = may === null ? clause : may[1]!.trim();
+    const inner = priced !== null
+      ? priced[2]!.trim()
+      : may === null ? clause : may[1]!.trim();
     const read = whole ?? reader(inner);
     if (read === null) return null;
-    if (may !== null
+    /*
+      Either kind of "may" is refused when its own effect asks a question, and for one reason: the
+      engine asks a resolution's questions in order and cannot skip a later one on an earlier
+      answer, so the effect's question would be put to a player who has not yet said yes. See the
+      note under the bare "may" for what that costs.
+    */
+    if ((may !== null || priced !== null)
       && (read.decisions !== undefined || read.beforeDecisions !== undefined)) return null;
-    const optional: Partial<TriggerDef> = may === null ? {} : {
+    const sentence = (text: string): string =>
+      `${text.charAt(0).toUpperCase()}${text.slice(1).replace(/\.$/, '')}`;
+    const pricedCost = priced === null ? null : priced[1]!;
+    if (pricedCost !== null) {
+      const parsed = parseManaCost(pricedCost);
+      if (parsed.unsupported !== undefined || parsed.x) return null;
+    }
+    /*
+      The words, and they are not symmetrical with the free "may" above on purpose.
+
+      **The decline is first here**, where "Yes" is first there, because `options[0]` is the answer
+      a bot falls back on and the two questions have different safe answers. A free may is pure
+      upside, so taking it is safe; a may with a price can tap a player out, and
+      `extort()`'s docblock already says which way that falls — "the engine answers with [the first
+      option] when there is no real question to ask, and *do not spend mana* is the safe one of the
+      two".
+
+      **And no `best`.** Extort and echo both write one, because each knows something about its own
+      question: extort fires after the turn's spell is already paid for, so its mana is mana the
+      turn did not use. A compiled card knows nothing of the kind — this same shape covers paying
+      {1} to draw a card and paying {4} to untap a Mana Vault — so the honest reading leaves the
+      hint out and takes the safe answer. The consequence is stated rather than hidden: **the bot
+      never pays one of these**, which is a play-quality gap and not a rules error, since a human
+      is asked properly and the card does exactly what it says either way. Whether one generic
+      `best` is worth more than the safe answer is a question for the deck table, not for a guess.
+    */
+    const pay = pricedCost === null ? null : `Pay ${pricedCost}`;
+    const optional: Partial<TriggerDef> = pay !== null ? {
+      decisions: [{
+        who: 'controller',
+        /*
+          "Pay {1} — Draw a card?", rather than extort's "pay {W/B} so each opponent loses 1 life".
+          A hand-written card can write one sentence because it knows its own clause; these clauses
+          are not all the same grammar — "draw a card" is addressed to the player and "target
+          creature gains double strike until end of turn" is about the board — and "Pay {R/W}{R/W}
+          to target creature gains double strike" is not English. The dash joins the price to the
+          printed words without having to inflect them.
+        */
+        prompt: `${pay} — ${sentence(inner)}?`,
+        options: ['Decline', pay],
+        payIfChosen: { option: pay, cost: pricedCost! },
+      }],
+      effect: (c) => (chosenOption(c) === pay ? read.effect(c) : c.state),
+    } : may === null ? {} : {
       decisions: [{
         who: 'controller',
         // The printed clause, as a question in the player's own words: "Draw a card?"
-        prompt: `${inner.charAt(0).toUpperCase()}${inner.slice(1).replace(/\.$/, '')}?`,
+        prompt: `${sentence(inner)}?`,
         options: ['Yes', 'No'],
       }],
       effect: (c) => (chosenOption(c) === 'Yes' ? read.effect(c) : c.state),
