@@ -23128,3 +23128,92 @@ describe('what a printed search filter actually admits (D449)', () => {
     expect(seen).toEqual(new Set(['Captain Sisay']));
   });
 });
+
+describe('a question asked only if the "may" was taken (D450)', () => {
+  /*
+    Printed Ondu Giant, whose line is the commonest shape in the family this unlocks:
+    "When ~ enters, you may search your library for a basic land card, put it onto the battlefield
+    tapped, then shuffle." 42 legal cards are one line short on exactly this.
+
+    **Not Yavimaya Granger**, which prints the same sentence and was this test's first subject: the
+    pool hand-writes the Granger, a hand-written script wins the precedence, and the pool's text
+    drops the "you may" (task #328) — so the test drove a mandatory search and never reached the
+    compiler at all. The log is what gave it away, exactly as in D447. Ondu Giant is in no deck.
+
+    **The declining test is the one that matters.** Before `askOnlyIfChosen`, the only two readings
+    available were "refuse the line" and "open the library before asking" — and the second is an
+    information leak that no board-state assertion would catch, because the cards go back. What
+    catches it is that the table stops on the **search** when it should be stopping on the
+    yes-or-no, and that after a decline there is no pending question at all.
+  */
+  const GIANT = {
+    name: 'Ondu Giant', type_line: 'Creature — Giant Druid', mana_cost: '{3}{G}', cmc: 4,
+    colors: ['G'], layout: 'normal', power: '2', toughness: '4', loyalty: null,
+    oracle_text: 'When Ondu Giant enters, you may search your library for a basic land card, put'
+      + ' it onto the battlefield tapped, then shuffle.',
+  };
+
+  /** The Giant cast, with the table stopped wherever it stops. */
+  const cast = (): GameState => {
+    const built = customDeck({
+      id: 'giant-list',
+      name: 'Giant',
+      entries: [
+        { name: 'Ondu Giant', count: 1 },
+        { name: 'Forest', count: 30 },
+        { name: 'Mountain', count: 29 },
+      ],
+      data: [GIANT as never],
+    });
+    expect(built.unknown).toEqual([]);
+    let s = arena({
+      decks: { 0: 'giant-list', 1: 'verdant-guard' },
+      deckSpecs: { 'giant-list': built.deck },
+      hands: { 0: ['Ondu Giant'] },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Forest'] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const land of ids(s, 0 as SeatIndex, 'battlefield')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: land, abilityIndex: 0 } as Action);
+    }
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Ondu Giant'),
+    } as Action);
+    return drain(passBoth(s), 40);
+  };
+
+  it('stops on the yes-or-no, not on the search', () => {
+    /*
+      The order, asserted as an order. A question with candidates is the search; a question with
+      options is the "may". Reading the library first is exactly the leak this field exists to
+      stop, and it would look like a working card from the board alone.
+    */
+    const s = cast();
+    expect(s.pendingDecision?.options).toEqual(['Yes', 'No']);
+    expect(s.pendingDecision?.candidates).toEqual([]);
+  });
+
+  it('never opens the library when the player declines', () => {
+    const s = drain(apply(cast(), { type: 'auto:decide', by: 0, option: 'No' } as Action), 40);
+    // No second question, and no land arrived: the search was not merely answered empty, it was
+    // never put to the player.
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield').filter((n) => n === 'Mountain')).toEqual([]);
+    expect(ids(s, 0 as SeatIndex, 'battlefield').filter((id) => nameOf(s, id) === 'Forest'))
+      .toHaveLength(4);
+  });
+
+  it('opens the library on a yes, and the land arrives tapped', () => {
+    let s = drain(apply(cast(), { type: 'auto:decide', by: 0, option: 'Yes' } as Action), 40);
+    // Now the search, with the filter doing its work: basics only, and both types are in there.
+    const offered = (s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id));
+    expect(new Set(offered)).toEqual(new Set(['Forest', 'Mountain']));
+    const pick = (s.pendingDecision?.candidates ?? [])
+      .find((id) => nameOf(s, id) === 'Mountain')!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [pick] } as Action), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toContain('Mountain');
+    expect(s.instances[pick]?.tapped).toBe(true);
+  });
+});

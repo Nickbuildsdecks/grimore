@@ -7972,20 +7972,52 @@ describe('"you may": the optional triggered ability', () => {
     expect(triggersOf(compiled)[0]?.description).toBe('you may draw a card');
   });
 
-  it.each([
+  it('asks the yes-or-no before the effect\'s own question, not after it', () => {
     /*
-      A "may" whose effect asks its own question is refused. The engine asks a resolution's
-      questions in order and cannot skip a later one on an earlier answer, so the search would open
-      the library **before** the yes-or-no could be read — a player who declined would have seen
-      their library anyway. That is a wrong reading and an information leak, and it costs 9 legal
-      lines on 7 cards, all of them this one printed shape.
+      **Retired refusal (D450).** This block's refusal table used to open with
+      `['an effect that asks its own question', 'When Probe Thing enters, you may search your
+      library for a basic land card, put it onto the battlefield tapped, then shuffle.']`, and the
+      comment above it read: "The engine asks a resolution's questions in order and cannot skip a
+      later one on an earlier answer, so the search would open the library **before** the yes-or-no
+      could be read … That is a wrong reading and an information leak, and it costs 9 legal lines on
+      7 cards."
+
+      It cost rather more than that in the end — 42 cards on this sub-shape alone — and D450 paid it
+      by adding `DecisionSpec.askOnlyIfChosen`. The claim is kept here because the rule it states
+      has not changed: the question must not be asked before the "may" is answered. What changed is
+      that the engine can now express that, so the line reads instead of being refused.
     */
-    ['an effect that asks its own question',
-      'When Probe Thing enters, you may search your library for a basic land card, put it onto the'
-        + ' battlefield tapped, then shuffle.'],
-    // And a "may" whose effect is not in the vocabulary at all is refused for the ordinary reason:
-    // stripping two words off a line does not make the rest readable.
+    const compiled = read('When Probe Thing enters, you may search your library for a basic land'
+      + ' card, put it onto the battlefield tapped, then shuffle.');
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([]);
+    const specs = (triggersOf(compiled)[0]?.decisions ?? []) as unknown as Record<string, unknown>[];
+    expect(specs).toHaveLength(2);
+    // The yes-or-no first, with no condition on it...
+    expect(specs[0]?.['options']).toEqual(['Yes', 'No']);
+    expect(specs[0]?.['askOnlyIfChosen']).toBeUndefined();
+    // ...and the search second, asked only on a yes.
+    expect(specs[1]?.['from']).toBe('library');
+    expect(specs[1]?.['askOnlyIfChosen']).toBe('Yes');
+  });
+
+  it.each([
+    // A "may" whose effect is not in the vocabulary at all is still refused, for the ordinary
+    // reason: stripping two words off a line does not make the rest readable.
     ['an effect with no reader', 'When Probe Thing enters, you may bargain with the umpire.'],
+    /*
+      And a "may" whose effect runs something **before** its question, which is still refused after
+      D450. `composeEffects` splits a composition at its first question and puts what comes before
+      it in `beforeDecisions` (D418), so here the draw would happen and *then* the player would be
+      asked whether they wanted any of it.
+
+      **A probe row**, added because a break run found the guard untestable: no printed card in this
+      family composes an effect in front of a question. It is the one shape `askOnlyIfChosen` cannot
+      rescue, because the thing that needs gating is not a question.
+    */
+    ['an effect that runs before its own question',
+      'When Probe Thing enters, you may draw a card, then search your library for a basic land'
+        + ' card, put it into your hand.'],
   ])('refuses %s', (_label, text) => {
     const compiled = read(text as string);
     expect(compiled.ok).toBe(true);
@@ -8089,10 +8121,6 @@ describe('a "may" with a price on it (D448)', () => {
     // D446's ability costs drew.
     ['an announced X',
       'When Probe Thing enters, you may pay {X}. If you do, draw a card.'],
-    // And the shared refusal: an effect that asks its own question would be asked before the
-    // yes-or-no. Drainpipe Vermin prints this one.
-    ['an effect that asks its own question',
-      'When Probe Thing dies, you may pay {B}. If you do, target player discards a card.'],
   ])('refuses %s', (_label, text) => {
     const compiled = read(text as string);
     expect(compiled.ok).toBe(true);

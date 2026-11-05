@@ -3054,6 +3054,25 @@ function askOrFinish(
       answers = [...answers, { seat: entry.seat, ids: [] }];
       continue;
     }
+    /*
+      A question the card says to ask **only if** an earlier answer was a particular word (D450).
+      See `CardsDecisionSpec.askOnlyIfChosen`: this is what lets "you may search your library …"
+      ask the yes-or-no first and open the library only on a yes.
+
+      Read from the most recent earlier answer that carries an option at all, which is a choice
+      question's answer — `each-opponent` expands into several plan entries, so counting back a
+      fixed number of places would be counting something the card cannot know.
+
+      The skip is an **empty answer** rather than a gap, so the positions every effect indexes by
+      do not shift under it.
+    */
+    if (spec.askOnlyIfChosen !== undefined) {
+      const chosen = [...answers].reverse().find((answer) => answer.option !== undefined)?.option;
+      if (chosen !== spec.askOnlyIfChosen) {
+        answers = [...answers, { seat: entry.seat, ids: [] }];
+        continue;
+      }
+    }
     // Nothing already chosen by this seat earlier in the same resolution. Answers are applied by
     // the effect at the end, not as the questions are asked — which is right, because "each player
     // sacrifices a creature" is simultaneous and the second player must not see the first's

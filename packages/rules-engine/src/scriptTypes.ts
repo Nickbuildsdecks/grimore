@@ -818,6 +818,26 @@ export type TriggerEvent =
  */
 export interface CardsDecisionSpec {
   /**
+   * Ask this question **only if** an earlier answer in the same resolution was this word (D450).
+   *
+   * The engine asks a resolution's questions in order and applies the answers at the end. Without
+   * this, every question in the list is asked — so "you may search your library for a basic land
+   * card" opened the library *before* the yes-or-no could be read, and a player who declined had
+   * seen their library anyway. That is both a wrong reading and an information leak, and it is why
+   * the compiler refused the whole family (D447, D448). **128 legal cards are one line short on it.**
+   *
+   * The word is matched against the **most recent earlier answer that carries one** — a
+   * `ChoiceDecisionSpec` answer, since those are the only ones with an `option`. Most recent rather
+   * than "the one before", because a question can expand into several plan entries (`each-opponent`
+   * asks one per seat) and the index of "the one before" is then not a fact the card knows.
+   *
+   * A question that is skipped is **answered empty**, not dropped: the answers keep their positions,
+   * so `chosenCards(c, 1)` still means the second question whether or not the first one ran. An
+   * empty answer is what every other unasked question already produces — an eliminated seat, a
+   * zone with nothing in it — so nothing downstream needed teaching.
+   */
+  readonly askOnlyIfChosen?: string;
+  /**
    * Who chooses. "Target player discards two cards" is chosen by the player discarding, not by the
    * caster — getting that wrong would make Mind Rot a very different card. `each-player` and
    * `each-opponent` expand into one question each, asked in turn order starting from the active
@@ -892,6 +912,26 @@ export interface CardsDecisionSpec {
  * a prompt with one button is noise.
  */
 export interface ChoiceDecisionSpec {
+  /**
+   * Ask this question **only if** an earlier answer in the same resolution was this word (D450).
+   *
+   * The engine asks a resolution's questions in order and applies the answers at the end. Without
+   * this, every question in the list is asked — so "you may search your library for a basic land
+   * card" opened the library *before* the yes-or-no could be read, and a player who declined had
+   * seen their library anyway. That is both a wrong reading and an information leak, and it is why
+   * the compiler refused the whole family (D447, D448). **128 legal cards are one line short on it.**
+   *
+   * The word is matched against the **most recent earlier answer that carries one** — a
+   * `ChoiceDecisionSpec` answer, since those are the only ones with an `option`. Most recent rather
+   * than "the one before", because a question can expand into several plan entries (`each-opponent`
+   * asks one per seat) and the index of "the one before" is then not a fact the card knows.
+   *
+   * A question that is skipped is **answered empty**, not dropped: the answers keep their positions,
+   * so `chosenCards(c, 1)` still means the second question whether or not the first one ran. An
+   * empty answer is what every other unasked question already produces — an eliminated seat, a
+   * zone with nothing in it — so nothing downstream needed teaching.
+   */
+  readonly askOnlyIfChosen?: string;
   readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent';
   readonly prompt: string;
   /** The words, in the order the table shows them. The first is the default a bot falls back on. */
@@ -953,6 +993,26 @@ export interface ChoiceDecisionSpec {
  * is at that moment rather than as it was when the spell was cast.
  */
 export interface NumberDecisionSpec {
+  /**
+   * Ask this question **only if** an earlier answer in the same resolution was this word (D450).
+   *
+   * The engine asks a resolution's questions in order and applies the answers at the end. Without
+   * this, every question in the list is asked — so "you may search your library for a basic land
+   * card" opened the library *before* the yes-or-no could be read, and a player who declined had
+   * seen their library anyway. That is both a wrong reading and an information leak, and it is why
+   * the compiler refused the whole family (D447, D448). **128 legal cards are one line short on it.**
+   *
+   * The word is matched against the **most recent earlier answer that carries one** — a
+   * `ChoiceDecisionSpec` answer, since those are the only ones with an `option`. Most recent rather
+   * than "the one before", because a question can expand into several plan entries (`each-opponent`
+   * asks one per seat) and the index of "the one before" is then not a fact the card knows.
+   *
+   * A question that is skipped is **answered empty**, not dropped: the answers keep their positions,
+   * so `chosenCards(c, 1)` still means the second question whether or not the first one ran. An
+   * empty answer is what every other unasked question already produces — an eliminated seat, a
+   * zone with nothing in it — so nothing downstream needed teaching.
+   */
+  readonly askOnlyIfChosen?: string;
   readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent';
   readonly prompt: string;
   /** The numbers on offer, inclusive, read off the board when the question is asked. */
@@ -997,6 +1057,12 @@ export interface NumberDecisionSpec {
  * object with no targets, with several, or with only one legal target to choose is not asked.
  */
 export interface TargetDecisionSpec {
+  /**
+   * Not offered on this shape. A retarget and a counter question are both parts of one effect
+   * rather than steps a player may decline, so neither has a "may" in front of it to be
+   * conditional on. See `CardsDecisionSpec.askOnlyIfChosen`.
+   */
+  readonly askOnlyIfChosen?: never;
   readonly who: 'controller';
   readonly prompt: string;
   /**
@@ -1051,6 +1117,12 @@ export interface StackObjectLike {
  * proliferate does not accelerate a suspended spell in paper either.
  */
 export interface CountersDecisionSpec {
+  /**
+   * Not offered on this shape. A retarget and a counter question are both parts of one effect
+   * rather than steps a player may decline, so neither has a "may" in front of it to be
+   * conditional on. See `CardsDecisionSpec.askOnlyIfChosen`.
+   */
+  readonly askOnlyIfChosen?: never;
   readonly who: 'controller';
   readonly prompt: string;
   /** The discriminator. The shapes are told apart by which of these fields is present. */

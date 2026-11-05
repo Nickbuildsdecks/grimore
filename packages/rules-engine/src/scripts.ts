@@ -41,8 +41,9 @@ import {
   type EffectContext, type PumpOptions,
 } from './effects.js';
 import type {
-  AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, CountersDecisionSpec, DecisionSpecOf,
-  ModalDef, ModeDef, TargetDecisionSpec, TargetSpec, TriggerDef,
+  AbilityCost, AbilityDef, CardScript, CardsDecisionSpec, ChoiceDecisionSpec,
+  CountersDecisionSpec, DecisionSpecOf, ModalDef, ModeDef, NumberDecisionSpec, TargetDecisionSpec,
+  TargetSpec, TriggerDef,
 } from './scriptTypes.js';
 // The compiler's shared `ReadEffect` stores an effect under one name for both the trigger path and
 // the spell path, so it needs the function type both fields have.
@@ -11814,13 +11815,14 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       one of them costs the controller anything, which is why no `best` is written and why the
       refusal below exists to keep that true as the clause vocabulary grows.
 
-      A `may` whose effect asks its own question is **refused**. The engine asks a resolution's
-      questions in order and cannot skip a later one on an earlier answer, so "you may search your
-      library for a basic land card" would open the library *before* the yes-or-no could be read —
-      a player who declined would have seen their library anyway, which is both a wrong reading and
-      an information leak. That costs 9 lines on 7 cards (all the basic-land search), recorded as a
-      refusal rather than taken: D362's rule, and the engine change that would unlock it is its own
-      task.
+      A `may` whose effect asks its own question **was refused here, and is not any more (D450).**
+      The engine asked a resolution's questions in order and could not skip a later one on an
+      earlier answer, so "you may search your library for a basic land card" opened the library
+      *before* the yes-or-no could be read — a player who declined had seen their library anyway,
+      which is both a wrong reading and an information leak. It was recorded as a refusal rather
+      than taken (D362), and the engine change it asked for is `DecisionSpec.askOnlyIfChosen`,
+      which those questions now travel behind. The refusals left are a may whose effect runs
+      something *before* its questions, and one whose question cannot be gated — both below.
     */
     /*
       The event-relative clauses first — "that player" is `c.actor`, which only a trigger has. See
@@ -11883,8 +11885,30 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       answer, so the effect's question would be put to a player who has not yet said yes. See the
       note under the bare "may" for what that costs.
     */
+    /*
+      A "may" whose own effect runs **before** its questions is still refused: `beforeDecisions`
+      exists precisely to do something ahead of the asking (D418), so putting a yes-or-no in front
+      of it would be putting the question after the effect.
+
+      Its questions, though, are now carried behind `askOnlyIfChosen` (D450) rather than refusing
+      the card — which is what lets "you may search your library for a basic land card" ask the
+      yes-or-no first and open the library only on a yes. That was the biggest single thing left in
+      this compiler's way: 128 legal cards one line short, 42 on the commonest sub-shape.
+    */
+    /*
+      And a question this reader cannot put behind the gate: a retarget or a counter question
+      (`askOnlyIfChosen` is declared `never` on both, because neither is a step a player declines),
+      or a spec that is a **function** of the board rather than a literal — the flag would have to
+      be added to whatever it returns, which cannot be checked here. Neither appears in the family
+      this increment is for: every search in the corpus is a literal `CardsDecisionSpec`.
+    */
+    const gatable = (spec: DecisionSpecOf):
+      spec is CardsDecisionSpec | ChoiceDecisionSpec | NumberDecisionSpec => typeof spec !== 'function'
+        && (spec.from !== undefined || spec.options !== undefined || spec.range !== undefined);
     if ((may !== null || priced !== null)
-      && (read.decisions !== undefined || read.beforeDecisions !== undefined)) return null;
+      && (read.beforeDecisions !== undefined || !(read.decisions ?? []).every(gatable))) {
+      return null;
+    }
     const sentence = (text: string): string =>
       `${text.charAt(0).toUpperCase()}${text.slice(1).replace(/\.$/, '')}`;
     const pricedCost = priced === null ? null : priced[1]!;
@@ -11912,6 +11936,30 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       `best` is worth more than the safe answer is a question for the deck table, not for a guess.
     */
     const pay = pricedCost === null ? null : `Pay ${pricedCost}`;
+    /*
+      The effect's own questions, asked only if the "may" was taken (D450).
+
+      A spec in `decisions` may be a function of the board rather than a literal
+      (`DecisionSpecOf`), so the flag is added either by spreading the object or by wrapping the
+      function — not by assuming one shape.
+    */
+    const gatedOn = (word: string): readonly DecisionSpecOf[] =>
+      (read.decisions ?? []).filter(gatable).map((spec) => ({ ...spec, askOnlyIfChosen: word }));
+    /*
+      **The inner effect must not see this reader's own question.**
+
+      The yes-or-no goes in front of the clause's questions, so every answer after it has shifted
+      one place — and the clause's effect reads its answers by index (`chosenCard(c)` is
+      `c.decisions[0]`). Handing it the whole list would have it read the yes-or-no's empty answer
+      as "nothing was found", which is a search that offers the right cards and then does nothing
+      with the one you pick. That is what the first run of this increment's runtime test caught.
+
+      So the context handed on has the first answer dropped. The clause is then written exactly as
+      it would be with no "may" in front of it, which is the point: the gate is this reader's
+      business and not the clause's.
+    */
+    const withoutOurs = (c: EffectContext): EffectContext =>
+      ({ ...c, decisions: c.decisions.slice(1) });
     const optional: Partial<TriggerDef> = pay !== null ? {
       decisions: [{
         who: 'controller',
@@ -11926,16 +11974,16 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
         prompt: `${pay} — ${sentence(inner)}?`,
         options: ['Decline', pay],
         payIfChosen: { option: pay, cost: pricedCost! },
-      }],
-      effect: (c) => (chosenOption(c) === pay ? read.effect(c) : c.state),
+      }, ...gatedOn(pay)],
+      effect: (c) => (chosenOption(c) === pay ? read.effect(withoutOurs(c)) : c.state),
     } : may === null ? {} : {
       decisions: [{
         who: 'controller',
         // The printed clause, as a question in the player's own words: "Draw a card?"
         prompt: `${sentence(inner)}?`,
         options: ['Yes', 'No'],
-      }],
-      effect: (c) => (chosenOption(c) === 'Yes' ? read.effect(c) : c.state),
+      }, ...gatedOn('Yes')],
+      effect: (c) => (chosenOption(c) === 'Yes' ? read.effect(withoutOurs(c)) : c.state),
     };
     // `spellFlags` is deliberately not spread: it is advice about casting a spell, and a triggered
     // ability is not cast. See `targetedEffect`.

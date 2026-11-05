@@ -11904,3 +11904,32 @@ later question on an earlier answer.
 
 Coverage **17,625 of 56,421 legal lines (31.2%)**, **8,192 cards with a script** (+63), 4,680 fully
 read (+53).
+
+## The first engine feature this run needed (D450)
+
+Everything else in the queue was a reader. This was not: "you may search your library …" was the
+biggest single thing in the compiler's way — **128 legal cards one line from finished** — and the
+engine simply could not express it. It asks a resolution's questions in order, so the only readings
+available were "refuse the line" or "open the library before asking", and the second is an
+information leak that no board-state check would catch, because the cards go back.
+
+`DecisionSpec.askOnlyIfChosen` is the feature: ask this question only if an earlier answer was this
+word. Twenty lines, three decisions worth keeping:
+
+- a skipped question is **answered empty**, not dropped, so answer positions do not shift;
+- the word is matched against the **most recent** earlier answer with an option, because a question
+  can expand into several entries and "the one before" is not a position a card knows;
+- the gate belongs to the reader, not the clause — so the context handed to the inner effect has the
+  yes-or-no's own answer **removed**, and the clause is written as if there were no "may".
+
+That last one was a real bug for about ten minutes: the search offered the right cards, the player
+picked a Mountain, and nothing arrived, because the clause's `chosenCard(c)` was reading the
+yes-or-no's empty answer. The runtime test caught it.
+
+**And the pool shadowed the test again.** The first subject was Yavimaya Granger, which prints this
+exact sentence — but the pool hand-writes it with the "you may" dropped (#328), so the test drove a
+mandatory search and never reached the compiler. Second time this run (Gravedigger, D447). Pick a
+card that is in no deck.
+
+Coverage **17,682 of 56,421 legal lines (31.3%)**, **8,234 cards with a script** (+42, exactly the
+sub-shape's measured count), 4,725 fully read (+45).

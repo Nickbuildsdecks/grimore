@@ -28247,3 +28247,76 @@ remaining reader.
 Legal-only coverage **17,625 of 56,421 lines (31.2%)**, **8,192 cards with a script**
 (8,129 → 8,192, +63), 4,680 with every printed line read (4,627 → 4,680, +53). Full engine suite
 2,114 tests. GATE OK.
+
+## D450 — A question asked only if an earlier answer allows it
+
+The first **engine** feature this run has added rather than a reader, and it was taken because the
+measurement said so: of everything left in the compiler's queue, "you may search your library …" was
+the biggest single thing in the way — **128 legal cards one unread line from finished**, 42 on one
+sub-shape — and no reader could reach it.
+
+`DecisionSpec.askOnlyIfChosen` is the whole feature. The engine asks a resolution's questions in
+order and applies the answers at the end; a spec carrying this word is asked only when the most
+recent earlier answer that has an `option` is that word, and skipped otherwise. D447 and D448 had
+both refused this family rather than ask the inner question first, which would have opened a player's
+library *before* they had said yes — a wrong reading **and** an information leak, and one no
+board-state assertion could have caught, because the cards go back.
+
+### Three decisions inside a twenty-line change
+
+**A skipped question is answered empty, not dropped.** The answers keep their positions, so an effect
+reading `chosenCards(c, 1)` still means the second question. It is also what every other unasked
+question already produces — an eliminated seat, a zone with nothing in it — so nothing downstream
+needed teaching.
+
+**The word is matched against the most recent earlier answer carrying one**, not against a fixed
+index. A question can expand into several plan entries (`each-opponent` asks one per seat), so "the
+one before" is not a position the card can know.
+
+**The gate is this reader's business, not the clause's.** The compiler puts its yes-or-no in *front*
+of the clause's questions, which shifts every later answer one place — and the clause's effect reads
+its answers by index. So the context handed to the inner effect has the first answer dropped, and the
+clause is written exactly as it would be with no "may" at all. **The first run of the runtime test
+caught this**: the search offered the right cards, the player picked a Mountain, and nothing arrived,
+because `chosenCard(c)` was reading the yes-or-no's empty answer as "nothing was found".
+
+### Verified
+
+Three runtime tests on printed **Ondu Giant** through `customDeck`, in the order that matters:
+
+1. the table stops on the **yes-or-no** — a question with options, not one with candidates;
+2. on "No" there is **no second question and no land**, so the search was never put to the player
+   rather than asked and answered empty;
+3. on "Yes" the search opens, offers basics only with two types present, and the chosen Mountain
+   arrives **tapped**.
+
+**Not Yavimaya Granger**, which prints the same sentence and was this test's first subject: the pool
+hand-writes it, a hand-written script wins the precedence, and the pool's text drops the "you may"
+(task #328) — so the test drove a mandatory search and never reached the compiler. The log gave it
+away, exactly as Gravedigger did in D447. That is twice now; the lesson is to pick a card that is in
+no deck when testing a compiled reading, and D450's comment says so where the next person will read
+it.
+
+Two compile assertions retired in place: D447's and D448's refusal rows for "an effect that asks its
+own question". The **rule** they stated has not changed — the question must not be asked before the
+"may" is answered — so D447's row is now a test that the two specs come out in that order with the
+gate on the second. The old wording is quoted above it.
+
+### The break run: six of eight, and two guards with no printed case
+
+- **A skipped question leaving a gap instead of an empty answer** is green. The compiler always
+  appends the gated questions last, so nothing follows them to be shifted. Kept anyway, because the
+  branch two lines above it pushes an empty answer for an unasked question and two adjacent branches
+  disagreeing about that would be a trap for whoever adds a card with a question after a gated one.
+- **Reading the first answer with an option rather than the most recent** is green, because the
+  compiler emits exactly one choice question. Discriminating it needs a script with two, and no test
+  file in this package can build an ad-hoc script — a hole worth noting more than the lever is.
+
+The third passing lever was fixed rather than recorded: a probe row now pins the one shape
+`askOnlyIfChosen` cannot rescue, a "may" whose effect runs something **before** its question
+(`composeEffects` puts that in `beforeDecisions`, D418), so the draw would happen and then the player
+would be asked whether they wanted it.
+
+Legal-only coverage **17,682 of 56,421 lines (31.3%)**, **8,234 cards with a script**
+(8,192 → 8,234, **+42**, exactly the sub-shape's count), 4,725 with every printed line read
+(4,680 → 4,725, +45). Full engine suite 2,117 tests. GATE OK.
