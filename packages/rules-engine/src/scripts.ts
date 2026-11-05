@@ -9994,6 +9994,87 @@ interface ReadEffect {
 }
 
 /**
+ * How many a printed bounce quantifier asks for, and whether it excludes the permanent asking.
+ *
+ * "A permanent you control" and "another permanent you control" are one word apart and a completely
+ * different card: Kor Skyfisher may return **itself**, which is the whole reason it is a 2/3 for two,
+ * and Invasive Species may not. So the quantifier is read from a table rather than assumed, and a
+ * spelling that is not in the table leaves the line unread.
+ *
+ * `all` is "each other", which asks nobody anything: Denizen of the Deep returns the rest of your
+ * board whether you like it or not, so there is no question to put and `min`/`max` are not consulted.
+ */
+const BOUNCE_COUNTS: Readonly<Record<string, {
+  readonly min: number;
+  readonly max: number;
+  readonly another?: true;
+  readonly all?: true;
+}>> = {
+  a: { min: 1, max: 1 },
+  an: { min: 1, max: 1 },
+  another: { min: 1, max: 1, another: true },
+  two: { min: 2, max: 2 },
+  three: { min: 3, max: 3 },
+  'up to one': { min: 0, max: 1 },
+  'up to two': { min: 0, max: 2 },
+  'up to three': { min: 0, max: 3 },
+  'up to one other': { min: 0, max: 1, another: true },
+  'up to two other': { min: 0, max: 2, another: true },
+  'each other': { min: 0, max: 0, all: true, another: true },
+};
+
+/** The five permanent types a printed description in this family ever names. */
+const PERMANENT_NOUNS: readonly string[] = [
+  'creature', 'land', 'artifact', 'enchantment', 'planeswalker',
+];
+
+/**
+ * A printed permanent description, as a test on one candidate already in a battlefield zone.
+ *
+ * "A land", "a nonland permanent", "a red or green creature", "an enchantment" — the adjectives the
+ * corpus actually prints in front of the forty-eight cards this was built for, and nothing wider.
+ * The noun is read last and the words before it are qualifiers, which is the grammar printed text
+ * uses and the reason a list of whole phrases was not written instead: "green or white creature" and
+ * "white or blue creature" are the same two rules in a different order.
+ *
+ * **Everything is read live** (CR 109.2), which is the same discipline `permanentFilter` keeps and
+ * the defect #319 recorded in five hand-written filters: an animated Mutavault is a creature for
+ * "return a creature you control" and a land that has become a creature is still a land for "a
+ * nonland permanent". Reading the printed type line instead would disagree with the board a player
+ * is looking at.
+ *
+ * A colour list is a disjunction — "a red or green creature" is a creature that is red **or** green,
+ * not one that is both — and a word that is neither a colour nor `nonland` refuses the whole
+ * description rather than being dropped, so an unrecognised adjective leaves the line unread
+ * instead of widening what the card may return.
+ */
+const permanentDescribed = (
+  phrase: string,
+): ((state: GameState, id: string) => boolean) | null => {
+  const words = phrase.trim().toLowerCase().split(/\s+/).filter((word) => word !== 'or');
+  const noun = (words.pop() ?? '').replace(/s$/, '');
+  if (noun !== 'permanent' && !PERMANENT_NOUNS.includes(noun)) return null;
+  const type = noun === 'permanent' ? null : noun;
+  const colours: Color[] = [];
+  let nonland = false;
+  for (const word of words) {
+    if (word === 'nonland') { nonland = true; continue; }
+    const colour = COLOUR_WORDS[word];
+    if (colour === undefined) return null;
+    colours.push(colour);
+  }
+  return (state: GameState, id: string): boolean => {
+    const inst = state.instances[id];
+    if (inst === undefined) return false;
+    const live = characteristicsOf(state, inst);
+    if (type !== null && !hasType(live.typeLine, type)) return false;
+    if (nonland && hasType(live.typeLine, 'land')) return false;
+    if (colours.length > 0 && !colours.some((colour) => live.colors.includes(colour))) return false;
+    return true;
+  };
+};
+
+/**
  * What one **untargeted** effect clause does, as the fields a `TriggerDef` needs for it.
  *
  * The second stage of the compiler (#317, D366), and deliberately only the untargeted half. A
@@ -10187,6 +10268,88 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       }],
       effect: (c) => c.decisions.reduce((state, answer) => moveToGraveyard(state, answer.ids), c.state),
     };
+  }
+
+  /*
+    "Return a land you control to its owner's hand" — a bounce the controller **chooses**, which is
+    the other half of a family this compiler could only read one member of.
+
+    `targetedEffect` has read `return target <permanent> to its owner's hand` since D366. What it
+    cannot read is the far commoner printing, where nothing is targeted and the controller simply
+    picks something of their own as the permanent resolves: the Karoo land cycle (Azorius Chancery
+    and its nine siblings), Kor Skyfisher, Whitemane Lion, Roaring Primadox, Esperzoa. Measured by
+    `phrase-gap.mjs` over 31,654 legal cards, **48 are one unread line from a finished script and
+    that line is this one** — twelve of them lands, which is a kind of card the pool has never had.
+
+    ## Why it is a question and not a target
+
+    A target is chosen when the ability goes on the **stack**, is visible to every opponent, and can
+    be made illegal in between. This is chosen as the ability **resolves**, from whatever the board
+    looks like then, which is what the print means and also what makes Kor Skyfisher playable: you
+    pick after seeing whether your opponent answered something. `CardsDecisionSpec` with
+    `from: 'battlefield'` is exactly that question, and `DecisionZone` already says that zone is the
+    **chooser's own** battlefield — so "you control" is enforced by the zone rather than by a filter
+    that could disagree with it.
+
+    ## Mandatory, and doing as much as it can
+
+    `min: 1` is not a suggestion: Kor Skyfisher with nothing else on your board returns **itself**.
+    `decisionBounds` clamps both bounds to what the chooser actually has, so a board with no legal
+    candidate answers empty and nothing moves — CR 608.2, an ability does as much as it can and no
+    more — and a board with exactly one answers itself without putting a one-button prompt on
+    anybody's screen.
+
+    ## The one spec that is a function, and the four cards that costs
+
+    "Another permanent you control" has to exclude the permanent whose ability this is, and
+    `CardsDecisionSpec.filter` is `(state, id, chooser)` — it is not handed the source. `DecisionSpecOf`
+    is, so the `another` spellings are written as the thunk that type exists for (cumulative upkeep
+    was the first) and the rest stay literals.
+
+    That split is **not** tidiness, and the cost is named rather than hidden: the bare-`may` reader's
+    `gatable` refuses a spec that is a function, because `askOnlyIfChosen` would have to be added to
+    whatever the function returns and that cannot be checked where the decision is made. So
+    `you may return another permanent you control…` — Ambrosia Whiteheart, Aviary Mechanic, Loyal
+    Gryff, Rescuer Chwinga — stays unread, while the same phrase without the "may" is read. Four
+    cards, recorded as task #337 rather than bought with a guess, and keeping the non-`another`
+    spellings as literals is what lets the other `you may return…` cards (Tazeem Raptor) through.
+  */
+  const ownBounce = /^return (a|an|another|each other|up to one other|up to two other|up to one|up to two|up to three|two|three) (.+?) you control to (?:its|their) owner's hand$/i
+    .exec(text);
+  if (ownBounce !== null) {
+    const counts = BOUNCE_COUNTS[ownBounce[1]!.toLowerCase()];
+    const describes = permanentDescribed(ownBounce[2]!);
+    if (counts !== undefined && describes !== null) {
+      // "Each other creature you control" asks nothing: every one of them goes back.
+      if (counts.all === true) {
+        return {
+          effect: (c) => moveToHand(
+            c.state,
+            listAt(c.state, zoneKey(c.controller, 'battlefield'))
+              .filter((id) => id !== c.source && describes(c.state, id)),
+          ),
+        };
+      }
+      const prompt = `Return ${ownBounce[1]!.toLowerCase()} ${ownBounce[2]!.trim()}`
+        + ' you control to its owner\'s hand';
+      const shared = {
+        who: 'controller' as const,
+        from: 'battlefield' as const,
+        prompt,
+        min: counts.min,
+        max: counts.max,
+      };
+      return {
+        decisions: [counts.another === true
+          // The thunk, for the one qualifier that needs the source. See the docblock above.
+          ? (_state: GameState, source: string): CardsDecisionSpec => ({
+            ...shared,
+            filter: (state: GameState, id: string) => id !== source && describes(state, id),
+          })
+          : { ...shared, filter: (state: GameState, id: string) => describes(state, id) }],
+        effect: (c) => moveToHand(c.state, chosenCards(c)),
+      };
+    }
   }
 
   /*

@@ -308,18 +308,43 @@ describe.skipIf(!REDIS_URL)('the write budget, against the store (requires REDIS
       let at = pod.at;
       const cap = 1;
       let hitTheCap = false;
-      let why = 'the person ran out of moves to make';
+      /*
+        The budget was 30 and that is what failed the gate, twice (#330, D465). The assertion that
+        fired carried this string's **initial** value — "the person ran out of moves to make" — which
+        says the loop ran every iteration it had without hitting the cap and without any break. So
+        the cause was the budget, not the hunt: probed over ten runs the cap is reached at move 2, 7,
+        14 or 21 depending on the shuffle, and a shuffle a little slower than the slowest of those
+        ran out of 30. Sixty is about three times the slowest reading rather than one more than it.
 
-      for (let move = 0; move < 30 && !hitTheCap; move += 1) {
+        The message is written per iteration from here on, so the next time this fails it says how
+        far it got instead of repeating a default.
+      */
+      const budget = 60;
+      let why = `the person ran out of moves to make inside ${budget}`;
+
+      for (let move = 0; move < budget && !hitTheCap; move += 1) {
+        why = `the cap was not reached in ${move + 1} of ${budget} moves`;
         const view = seen(at);
         const you = view.automation?.you;
         if (you === undefined || you === null) { why = 'the view stopped reporting this seat'; break; }
-        if (!you.hasPriority && you.mustDeclare === null && you.mustDecide === null && you.mustDiscard === 0) {
-          why = `nobody held priority at ${view.automation?.step} on turn ${view.turn}`;
-          break;
+        const idle = !you.hasPriority && you.mustDeclare === null
+          && you.mustDecide === null && you.mustDiscard === 0;
+        if (!idle) {
+          at = await store.applyAction(pod.code, pod.playerId, personMove(view, you), at.stateVersion);
         }
-        at = await store.applyAction(pod.code, pod.playerId, personMove(view, you), at.stateVersion);
-        // One batch, then give up, exactly as the handler's round cap does.
+        /*
+          **The chain is driven whether or not the person moved.** This is a second change and
+          **not** the one that fixed the gate failure — the budget above was that — but it removes
+          the other way this hunt could end early. It used to give up the moment the person had
+          nothing to do (`nobody held priority at <step> on turn <turn>`), and that is not a failure
+          of the thing under test at all: a person who is idle is precisely a table where the
+          *server's* seats owe the moves, so it is the likeliest place for a capped chain to be
+          reached and the worst place to stop looking.
+
+          Driving the chain from an idle table is also what the handler does: `pod:action` calls
+          `continueBots` after whatever the socket sent, and the person being out of plays does not
+          stop the bots taking their turns.
+        */
         let rounds = 0;
         for (; rounds < cap; rounds += 1) {
           const next = await store.continueBots(pod.code);
@@ -329,6 +354,11 @@ describe.skipIf(!REDIS_URL)('the write budget, against the store (requires REDIS
         if (rounds === cap) {
           hitTheCap = true;
           store.reportBotStall(pod.code, `${cap} continuation rounds and the server's seats were still moving`);
+        } else if (idle) {
+          // Nobody can move: the person is idle and the chain came back with nothing owed. That is
+          // a genuinely stuck table rather than a hunt that has not finished, so say which.
+          why = `nothing was owed and nobody held priority at ${view.automation?.step} on turn ${view.turn}`;
+          break;
         }
       }
 

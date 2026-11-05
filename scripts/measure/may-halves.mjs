@@ -25,6 +25,25 @@
  *  * the **consequence**, under `Whenever <self> attacks,` — with the card's own name re-pointed at
  *    the probe's, so a self-referential consequence still reads (D461).
  *
+ * ## RETRACTED: the 63 below is not a reader's yield either (D465)
+ *
+ * The third wrong answer off this family, and it is this file's. The table below measures the
+ * **prologue** and the **consequence** and never substitutes **X**, the opener — so it counts cards
+ * that are one gap away from being *two* gaps away. Probed in place by `phrase-gap.mjs`, X reads for
+ * **0 of the 63**: `discard a card`, `sacrifice another creature`, `exile it` and `pay 2 life` are
+ * each an unread clause in their own right, and `Whenever ~ attacks, discard a card.` does not read
+ * either. **The yield of a free-`may` two-sentence reader alone is zero cards.**
+ *
+ * The error is the same shape as D461's, which this file's own docblock names two paragraphs above:
+ * testing one part while assuming the rest. Naming it was not enough to avoid repeating it, because
+ * the fix was partial — two of three parts instead of one of two. `phrase-gap.mjs` substitutes in
+ * place and asks whether the **whole line** reads, which is the only form of this question that
+ * cannot be answered by a reconstruction.
+ *
+ * The table is kept rather than deleted: the **split** it measures is still true and still useful
+ * (the priced form reads 1 because it already has a reader, which a single count could not have
+ * said). What is retracted is reading the 63 as a yield. For a yield, use `phrase-gap.mjs`.
+ *
  * ## The reading at ee59e8a, over 31,654 legal cards
  *
  * Cards one unread line from finished, where that line has the shape:
@@ -40,8 +59,9 @@
  * | priced | gap   | gap   | 52 |
  * | priced | gap   | reads | 44 |
  *
- * **63 is the yield of a free-`may` two-sentence reader** — the only bucket a reader for this shape
- * finishes. The priced bucket reads 1 because `you may pay {M}. If you do, Y` **already has a
+ * **63 is NOT the yield of a free-`may` two-sentence reader** — see the retraction above; it is the
+ * only bucket such a reader *could* finish, and it finishes none of them, because the opener this
+ * table never substituted is unread in all 63. The priced bucket reads 1 because `you may pay {M}. If you do, Y` **already has a
  * reader**; its one-line-short cards are held up by their prologues and consequences instead,
  * which is what the split says and a single count could not.
  *
@@ -75,7 +95,7 @@
  * reader wants the option refused when the opener is impossible, not merely asked.
  */
 import { readFileSync } from 'node:fs';
-import { compileCard } from '../../packages/rules-engine/dist/index.js';
+import { compileCard } from '../lib/engine.mjs';
 import { isLegal, legalLine } from '../lib/legal.mjs';
 import { provenanceLine } from '../lib/provenance.mjs';
 

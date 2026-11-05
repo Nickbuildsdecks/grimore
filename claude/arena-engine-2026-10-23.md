@@ -12392,3 +12392,44 @@ guard with no failing case is a reader written ahead of need, and its break run 
 instrument's 176; dumping both lists and diffing them named the eleven extras as un-cards — the probe
 had skipped the legality filter. A disagreement between two counts says one is wrong, not which, and
 one diff settled it where more reasoning would have produced a better-argued wrong answer.
+
+## The reader worth 63 cards was worth 0, and the bounce you choose (D465)
+
+**The retraction first.** D464 named the next increment and measured it: `you may X. If you do, Y`,
+63 legal cards, from `may-halves.mjs`. Wrong. That instrument substituted the construct's **prologue**
+and its **consequence** and never substituted **X**, the opener — and X reads for **0 of the 63**.
+`discard a card`, `sacrifice another creature`, `exile it`, `pay 2 life`: the clause vocabulary has no
+reader for any of them, as an opener or as a plain effect. The yield of that reader alone is zero.
+
+That is the **third** wrong answer taken off `one-line-short.mjs`' ranking (after D461's prologue row
+and a clause-splitting probe that returned 1,241 artefacts), and three is a method problem: **a probe
+that reconstructs part of a line measures the reconstruction.**
+
+`scripts/measure/phrase-gap.mjs` is the method that survives — leave the line as printed, replace one
+phrase with an effect known to read, ask the compiler whether the **whole line** now reads. Its top
+rows over 31,654 legal cards: `return <permanent> to its owner's hand` **128**, `put a counter on
+<permanent>` 94, `sacrifice <permanent>` 81, `you may X. If you do, Y` 66, `discard a card` 55. The
+cost-like actions together finish 158, and with the conditional on top, 234 — so the conditional is
+the **roof** on an increment, not an increment.
+
+**What shipped** is the top row: a bounce the controller *chooses*. `targetedEffect` has read `return
+target <permanent>…` since D366; the commoner printing targets nothing and the controller picks
+something of their own as the ability **resolves** — `CardsDecisionSpec` with `from: 'battlefield'`,
+which `DecisionZone` already scopes to the chooser's own side, so "you control" is enforced by the
+zone. **45 cards**, twelve of them lands (the whole Karoo cycle), plus Kor Skyfisher, Whitemane Lion,
+Roaring Primadox, Esperzoa, Denizen of the Deep.
+
+`min: 1` is not a suggestion — Kor Skyfisher with nothing else on your board returns **itself**, and
+"another" excludes the source where the card prints the word. That one qualifier needs the source,
+which `CardsDecisionSpec.filter` is not handed, so those spellings are the thunk form of
+`DecisionSpecOf`. **Named cost:** the bare-`may` reader refuses a spec that is a function, so
+`you may return another permanent you control…` stays unread — four cards, filed as #337 with a test
+pinning the refusal, rather than bought with a guess.
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 9,219 | **9,264** |
+| cards fully read | 5,041 | **5,086** |
+| printed rules lines read | 18,916 / 56,421 (33.5%) | **18,975 / 56,421 (33.6%)** |
+
+Engine suite 2,262 green. Six levers broken one at a time, each failing exactly one test.

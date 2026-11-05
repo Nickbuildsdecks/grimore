@@ -29489,3 +29489,210 @@ D463's lesson was "a count that moves by the wrong amount is a test". This is it
 disagreement between two counts says one of them is wrong, not which one** — and here it was the
 cross-check, not the instrument. The diff is what settled it, in one run, where more reasoning would
 only have produced a better-argued wrong answer.
+
+## D465 — The reader worth 63 cards was worth 0, and the bounce the controller chooses
+
+Two things happened this increment and the first is a retraction.
+
+### The 63 was mine, and it was zero
+
+D464 closed with the next increment named and measured: a reader for `you may X. If you do, Y`,
+**63 legal cards**, from `scripts/measure/may-halves.mjs`. That number is wrong, and not by a little.
+
+`may-halves.mjs` measured two of the construct's three parts. It substituted the **prologue** against
+a known consequence, and the **consequence** against a known prologue, and counted the cards where
+both read. It never substituted **X** — the opener. Probed properly, X reads for **0 of the 63**:
+
+```
+gap    discard a card                                   gap    sacrifice another creature
+gap    sacrifice Probe Beast                             gap    pay 2 life
+gap    exile it                                          gap    exile target creature card from a graveyard
+gap    remove a +1/+1 counter from this creature         gap    tap another untapped Citizen you control
+```
+
+Every opener in that family is itself an unread clause, and `Whenever ~ attacks, discard a card.` does
+not read either — the clause vocabulary has no reader for a discard, a sacrifice, a graveyard exile or
+a counter removal **as an effect at all**. So the yield of that reader alone is zero cards, and the
+"63" was a count of cards one gap away from being two gaps away.
+
+This is the **third** wrong answer taken off `one-line-short.mjs`' ranking, and three is a method
+problem rather than three slips:
+
+1. Its top row, "Whenever ~ deals combat damage to a player" (199 cards), looked like a trigger family
+   and is not one — probed under the card's own name the prologue already reads (D461).
+2. The 63 above, which assumed the part it did not substitute.
+3. A first attempt at the fix, which tried to find the blocking **clause** by reading each clause
+   *alone* under a reconstructed prologue. It returned 1,241 cards as "several clauses" and 13,006 as
+   "prologue gap" — both artefacts. A clause that refers to an earlier one cannot read alone, and a
+   line that is a spell, a static or an activated ability has no comma prologue to find.
+
+The shape all three share: **a probe that reconstructs part of a line measures the reconstruction.**
+
+### `phrase-gap.mjs`, which substitutes in place
+
+The method that survives is to leave the line exactly as printed, replace one phrase with an effect
+known to read, and ask the compiler whether the **whole line** now reads. Nothing is reconstructed,
+nothing is assumed about the rest of the line, and a card only counts when the line reads — which is
+the thing a reader has to achieve. Over 31,654 legal cards, 16,596 of them one unread line from a
+finished script:
+
+| finishes | appears | phrase |
+| --- | --- | --- |
+| **128** | 422 | `return <permanent> to its owner's hand` |
+| 94 | 1007 | `put a counter on <permanent>` |
+| 81 | 824 | `sacrifice <permanent>` |
+| 66 | 492 | `you may X. If you do, Y` (as "Y") |
+| 55 | 706 | `discard a card` |
+| 18 | 224 | `exile <card> from a graveyard` |
+| 6 | 107 | `remove a counter from <permanent>` |
+| 3 | 445 | `sacrifice ~` |
+| 3 | 144 | `tap <permanent> you control` |
+| 0 | 95 | `pay N life` |
+| 0 | 145 | `When you do, Y` (as "Y") |
+
+The cost-like actions read **together** finish 158 cards, and with the `may` construct on top of them,
+234. That is the honest shape of the queue the 63 was standing in front of: the conditional is not an
+increment, it is the **roof** on one, and the openers are the walls.
+
+`appears` against `finishes` is the column that was missing all along. `put a counter on <permanent>`
+is printed by 1,007 one-line-short cards and finishes 94 of them; `sacrifice ~` is printed by 445 and
+finishes 3. A phrase with a high `appears` and a low `finishes` buys a flagged line, not a card.
+
+### What shipped: a bounce the controller chooses, not a target
+
+The top row, read. `targetedEffect` has read `return target <permanent> to its owner's hand` since
+D366; the far commoner printing targets nothing and the controller picks something of their own as the
+ability **resolves** — the Karoo land cycle, Kor Skyfisher, Roaring Primadox, Esperzoa, Whitemane
+Lion. The 128 splits into three shapes, of which this increment took two:
+
+ * **48 cards**: `return a|an|another|each other|up to N <description> you control to its owner's hand`
+   — shipped, and it finished **45** of them (three print the phrase twice or carry a second gap).
+ * ~38 cards: a **self**-bounce (`return ~ to its owner's hand`, `return it to its owner's hand`).
+   Deliberately not shipped, and the reason is a rules one worth its own increment: the guard has to
+   know which zone the object is returning **from**. Rancor's hand-written twin guards on
+   `zone === 'graveyard'` because it fires from the graveyard; `{1}{U}: Return Fleeting Image to its
+   owner's hand` must guard on the battlefield, and returning it from a graveyard after it died with
+   the ability on the stack would be a wrong reading (CR 400.7). `readEffect` is handed a clause and
+   not the trigger shape, so the expected zone has to be threaded to it — a refactor, not a rider.
+ * ~30 cards: targeted variants `targetSpecFrom` cannot spell yet (`up to one other target nonland
+   permanent`, `target legendary creature`, `target X you control`). That one lifts destroy, exile and
+   counter with it, so it is its own increment and a bigger one.
+
+**It is a question and not a target, and that distinction is the card.** A target is chosen when the
+ability goes on the stack, is visible to every opponent, and can be made illegal in between. This is
+chosen as the ability resolves, from the board as it is then — which is what makes Kor Skyfisher
+playable, because you pick after seeing whether your opponent answered something.
+`CardsDecisionSpec` with `from: 'battlefield'` is exactly that question, and `DecisionZone` already
+says that zone is the **chooser's own** battlefield, so "you control" is enforced by the zone rather
+than by a filter that could disagree with it.
+
+`min: 1` is not a suggestion: **Kor Skyfisher with nothing else on your board returns itself**, which
+is the whole reason it is a 2/3 flier for two. `decisionBounds` clamps both bounds to what the chooser
+holds, so a board with no legal candidate answers empty and nothing moves (CR 608.2, an ability does
+as much as it can), and a board with exactly one answers itself without a one-button prompt.
+
+Everything is read **live** (CR 109.2) — an animated Mutavault is a creature for "return a creature
+you control", and a land that became a creature is still a land for "a nonland permanent". That is the
+discipline `permanentFilter` keeps and the defect #319 recorded in five hand-written filters that read
+the printed type line instead.
+
+### The one spec that is a function, and the four cards it costs
+
+"Another permanent you control" has to exclude the permanent whose ability it is, and
+`CardsDecisionSpec.filter` is `(state, id, chooser)` — it is **not** handed the source. `DecisionSpecOf`
+is, so the `another` spellings are written as the thunk that type exists for (cumulative upkeep was
+its first use) and every other spelling stays a literal.
+
+That split has a price and it is named rather than hidden. The bare-`may` reader's `gatable` refuses a
+spec that is a function, because `askOnlyIfChosen` would have to be added to whatever the function
+returns and that cannot be checked where the decision is made. So **`you may return another permanent
+you control…` stays unread** — Ambrosia Whiteheart, Aviary Mechanic, Loyal Gryff, Rescuer Chwinga —
+while the same phrase without the "may" reads, and `you may return a land you control…` (Tazeem
+Raptor) reads because its spec is a literal. Four cards, filed as **#337** rather than bought with a
+guess, and a test pins the refusal so the four cannot silently become forty.
+
+### The adjective vocabulary, and the refusal with no fixture
+
+The description reader takes a colour list, `nonland`, and five type nouns, which is what the
+forty-eight print and nothing wider. What the corpus prints and this refuses, counted:
+
+ * **11** `tapped creature` — every one of them inside **web-slinging reminder text**, which is an
+   alternative cost and not this clause (`Web-slinging {2}{W} (You may cast this spell for {2}{W} if
+   you also return a tapped creature you control to its owner's hand.)`).
+ * **5** `non-Lair land` — all five the Lair land cycle, inside `sacrifice it unless you return …`,
+   again a different construct.
+ * ~14 basic land types (`island`, `untapped forest`, `snow lands`), 1 `bird`, 1 `elf`, 1
+   `card named Ominous Traveler`.
+
+So **no real printing exercises the adjective refusal**, which is why there is no test for it: a
+refusal test would have to invent card text, and D259 ranks that below leaving the mechanic out. The
+count is the measurement instead.
+
+### The numbers, and the break run
+
+Coverage over 31,654 legal cards, against D463's build:
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 9,219 | **9,264** |
+| cards with every printed line read | 5,041 | **5,086** |
+| printed rules lines read | 18,916 of 56,421 (33.5%) | **18,975 of 56,421 (33.6%)** |
+
+Twelve of the forty-five are lands — Azorius Chancery, Boros Garrison, Dimir Aqueduct, Golgari Rot
+Farm, Gruul Turf, Guildless Commons, Izzet Boilerworks, Noggle Bridgebreaker, Orzhov Basilica, Rakdos
+Carnarium, Selesnya Sanctuary, Simic Growth Chamber — a kind of card the pool has never had.
+
+Engine suite 2,262 tests green (2,255 before, seven new). Six levers broken one at a time, each
+failing exactly one test and nothing else: the `another` exclusion, the colour list read as a
+conjunction instead of a disjunction, `nonland`, the type test, `each other`'s self-exclusion, and
+`min: 1` lowered to 0.
+
+### And the gate was red on the two commits before this one
+
+Running the gate for this increment failed on `scripts/guards.js`, not on a test:
+
+```
+[guards] 2 script(s) import the engine's dist directly:
+[guards]   scripts/measure/free-abilities.mjs
+[guards]   scripts/measure/may-halves.mjs
+```
+
+Both are mine, from D464's increment, and `git show` confirms the violation is in the pushed trees of
+**`ee59e8a` and `29c68b3`** — so the gate was red when both were pushed. The standing rule for this
+project is "verify the gate before every push", and it was broken twice in a row: the gate must have
+been run before those two files existed and not re-run after they were written.
+
+The violation itself is small — an instrument that imports `packages/rules-engine/dist/index.js`
+directly skips `scripts/lib/engine.mjs`' staleness warning, which is the thing that stops a run after
+a source change but before a rebuild printing an honest number about the **previous** build (D338,
+D359). Both now import `../lib/engine.mjs`, and `node scripts/guards.js` is clean.
+
+Worth writing down because the failure was not the import: it was reporting a gate I had not re-run,
+twice. A gate run before the last file is written is not a gate run.
+
+### #330, closed: the hunt was not hunting too narrowly, it was out of budget
+
+The second gate run failed in `apps/realtime` instead — `the capped chain never hit its cap` — which
+is **#330**, a test that had already failed the gate once and has now done it twice. Nothing to do
+with this increment: no card in the thirteen built-in decks prints the phrase this reader added
+(checked, 0 of the pool's rows), so the engine's behaviour on the decks that test plays is identical.
+
+The test hunts for a moment: it plays the person's turn out and, after each move, drives one capped
+`continueBots` round, asserting that the cap is reached. **The message named the cause** — the
+assertion carried the *initial* value of `why`, "the person ran out of moves to make", which means the
+loop spent every iteration it had without hitting the cap and without taking any of its early exits.
+So the budget was the binding constraint, not the hunt's shape.
+
+Probed over ten runs, the cap is reached at move **2, 7, 14 or 21** depending on the shuffle. The
+budget was **30**. A shuffle slightly slower than the slowest of those ran out, which is a one-in-many
+failure and exactly the shape #330 described. It is now **60** — about three times the slowest
+observed reading rather than one more than it — and `why` is rewritten on every iteration, so the next
+failure says how far it got instead of repeating a default.
+
+A second change went in beside it and is **not** the fix: the loop used to give up the moment the
+person had nothing to do. That exit is wrong on its own terms — a person who is idle is precisely a
+table where the *server's* seats owe the moves, so it is the likeliest place for a capped chain to be
+reached and the worst place to stop looking — and driving the chain from an idle table is also what
+`pod:action` does. It is recorded as a second change rather than folded into the first, because the
+probe says it never fired in ten runs and claiming it as the fix would be a guess dressed as a
+diagnosis.

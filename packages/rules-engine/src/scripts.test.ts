@@ -24463,3 +24463,267 @@ describe('two printed prologues the compiler could not read (D461)', () => {
     expect(life(s, 0 as SeatIndex)).toBe(life0 - 1);
   });
 });
+
+describe('a bounce the controller chooses, not a target (D465)', () => {
+  /*
+    `targetedEffect` has read `return target <permanent> to its owner's hand` since D366. The far
+    commoner printing targets nothing: the controller picks something of their own as the ability
+    **resolves**, which is the Karoo land cycle, Kor Skyfisher, Roaring Primadox and Esperzoa.
+    `phrase-gap.mjs` counted it over 31,654 legal cards — **48 one unread line from finished**, of
+    which 45 now have a whole script, twelve of them lands.
+
+    The five fixtures are real printings, none in any built-in deck, which is load-bearing:
+    `customDeck` consults the pool before the printed data, so a pool card would prove nothing about
+    the compiler. Each one is here for a different claim.
+  */
+  const SKYFISHER = {
+    name: 'Kor Skyfisher', type_line: 'Creature — Kor Soldier', mana_cost: '{1}{W}', cmc: 2,
+    colors: ['W'], power: '2', toughness: '3', loyalty: null, layout: 'normal',
+    oracle_text: 'Flying\n'
+      + "When Kor Skyfisher enters, return a permanent you control to its owner's hand.",
+  };
+  const SPECIES = {
+    name: 'Invasive Species', type_line: 'Creature — Insect', mana_cost: '{2}{G}', cmc: 3,
+    colors: ['G'], power: '3', toughness: '3', loyalty: null, layout: 'normal',
+    oracle_text:
+      "When Invasive Species enters, return another permanent you control to its owner's hand.",
+  };
+  const DENIZEN = {
+    name: 'Denizen of the Deep', type_line: 'Creature — Serpent', mana_cost: '{6}{U}{U}', cmc: 8,
+    colors: ['U'], power: '11', toughness: '11', loyalty: null, layout: 'normal',
+    oracle_text:
+      "When Denizen of the Deep enters, return each other creature you control to its owner's hand.",
+  };
+  const PANTHER = {
+    name: 'Fleetfoot Panther', type_line: 'Creature — Cat', mana_cost: '{1}{G}{W}', cmc: 3,
+    colors: ['G', 'W'], power: '3', toughness: '4', loyalty: null, layout: 'normal',
+    oracle_text: 'Flash\n'
+      + "When Fleetfoot Panther enters, return a green or white creature you control to its owner's hand.",
+  };
+  const STATUE = {
+    name: 'Ancestral Statue', type_line: 'Artifact Creature — Golem', mana_cost: '{4}', cmc: 4,
+    colors: [], power: '3', toughness: '4', loyalty: null, layout: 'normal',
+    oracle_text:
+      "When Ancestral Statue enters, return a nonland permanent you control to its owner's hand.",
+  };
+  const MECHANIC = {
+    name: 'Aviary Mechanic', type_line: 'Creature — Dwarf Artificer', mana_cost: '{1}{W}', cmc: 2,
+    colors: ['W'], power: '2', toughness: '2', loyalty: null, layout: 'normal',
+    oracle_text:
+      "When Aviary Mechanic enters, you may return another permanent you control to its owner's hand.",
+  };
+
+  const deck = (entries: readonly { name: string; count: number }[]) => {
+    const built = customDeck({
+      id: 'd465-list',
+      name: 'Chosen bounce',
+      entries: [...entries],
+      data: [SKYFISHER, SPECIES, DENIZEN, PANTHER, STATUE] as never,
+    });
+    expect(built.unknown).toEqual([]);
+    /*
+      Every fixture in the list was read off the printed data rather than out of the pool, which is
+      the premise of the whole block: `customDeck` consults the pool first, so a name it found there
+      would make the assertions below about a hand-written card.
+    */
+    const fixtures = new Set(['Ancestral Statue', 'Aviary Mechanic', 'Denizen of the Deep',
+      'Fleetfoot Panther', 'Invasive Species', 'Kor Skyfisher']);
+    expect([...built.fromData].sort())
+      .toEqual(entries.map((e) => e.name).filter((name) => fixtures.has(name)).sort());
+    return built.deck;
+  };
+
+  it('is a question on the controller\'s own battlefield, not a target', () => {
+    const compiled = compileCard(SKYFISHER as never);
+    expect(compiled.ok).toBe(true);
+    expect(compiled.ok ? compiled.unread : ['not ok']).toEqual([]);
+    const triggers = compiled.ok ? (compiled.script?.triggers ?? []) : [];
+    const etb = triggers.find((t) => t.on.kind === 'etb');
+    /*
+      No `targets` at all, which is the distinction the docblock is about: a target is chosen when
+      the ability goes on the stack and can be made illegal in between, and this is chosen as it
+      resolves.
+    */
+    expect(etb?.targets ?? null).toBe(null);
+    const specs = etb?.decisions ?? [];
+    expect(specs).toHaveLength(1);
+    // A literal rather than a thunk, which is what lets a "may" gate it — see #337.
+    expect(typeof specs[0]).toBe('object');
+    const spec = specs[0] as { from?: string; min?: number; max?: number; who?: string };
+    expect(spec.from).toBe('battlefield');
+    expect(spec.who).toBe('controller');
+    // Mandatory and exactly one: Kor Skyfisher is not a "you may".
+    expect(spec.min).toBe(1);
+    expect(spec.max).toBe(1);
+  });
+
+  it('offers the permanent whose ability it is, because the card says "a" and not "another"', () => {
+    const built = deck([
+      { name: 'Kor Skyfisher', count: 4 },
+      { name: 'Plains', count: 56 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd465-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd465-list': built },
+      battlefield: { 0: ['Plains', 'Plains'] },
+      hands: { 0: ['Kor Skyfisher'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Kor Skyfisher'),
+    } as Action);
+    s = drain(passBoth(s), 40);
+
+    /*
+      Three candidates: the two Plains and the Skyfisher itself. Returning itself is the whole
+      reason the card is a 2/3 flier for two, and a filter that excluded the source would be
+      reading "another" off a card that does not print it.
+    */
+    expect(choices(s)).toEqual(['Kor Skyfisher', 'Plains', 'Plains']);
+    s = drain(decide(s, ['Plains']), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'hand')).toContain('Plains');
+    // And the Skyfisher stayed, because the player chose the land.
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toContain('Kor Skyfisher');
+  });
+
+  it('excludes the permanent whose ability it is when the card says "another"', () => {
+    const built = deck([
+      { name: 'Invasive Species', count: 4 },
+      { name: 'Forest', count: 56 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd465-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd465-list': built },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest'] },
+      hands: { 0: ['Invasive Species'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Invasive Species'),
+    } as Action);
+    s = drain(passBoth(s), 40);
+    /*
+      The three Forests and **not** the Species. `CardsDecisionSpec.filter` is not handed the
+      source, so this spec is the thunk form of `DecisionSpecOf` — the one place in this reader that
+      is a function of the board, and the reason #337 exists.
+    */
+    expect(choices(s)).toEqual(['Forest', 'Forest', 'Forest']);
+  });
+
+  it('asks nothing for "each other", and takes only the creatures', () => {
+    const built = deck([
+      { name: 'Denizen of the Deep', count: 4 },
+      { name: 'Invasive Species', count: 4 },
+      { name: 'Island', count: 30 },
+      { name: 'Forest', count: 22 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd465-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd465-list': built },
+      battlefield: {
+        0: ['Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Island',
+          'Invasive Species'],
+      },
+      hands: { 0: ['Denizen of the Deep'] },
+      turn: 9,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Denizen of the Deep'),
+    } as Action);
+    s = drain(passBoth(s), 40);
+
+    // No question: "each other creature you control" leaves the player nothing to decide.
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0 as SeatIndex, 'hand')).toContain('Invasive Species');
+    const board = namesIn(s, 0 as SeatIndex, 'battlefield');
+    // The Denizen itself stayed — "each **other**" — and so did all eight lands.
+    expect(board).toContain('Denizen of the Deep');
+    expect(board.filter((name) => name === 'Island')).toHaveLength(8);
+    expect(board).not.toContain('Invasive Species');
+  });
+
+  it('reads a colour list as a disjunction, so a blue creature is not a candidate', () => {
+    const built = deck([
+      { name: 'Fleetfoot Panther', count: 4 },
+      { name: 'Invasive Species', count: 4 },
+      { name: 'Denizen of the Deep', count: 4 },
+      { name: 'Forest', count: 24 },
+      { name: 'Plains', count: 12 },
+      { name: 'Island', count: 12 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd465-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd465-list': built },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Plains', 'Invasive Species', 'Denizen of the Deep'],
+      },
+      hands: { 0: ['Fleetfoot Panther'] },
+      turn: 7,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Fleetfoot Panther'),
+    } as Action);
+    s = drain(passBoth(s), 40);
+    /*
+      The green Species and the green-white Panther itself. Not the blue Denizen — "a green or
+      white creature" is a creature that is green **or** white, and reading the list as "any colour
+      named appears" is the widening this refuses. Not the lands either: they are not creatures.
+    */
+    expect(choices(s)).toEqual(['Fleetfoot Panther', 'Invasive Species']);
+  });
+
+  it('reads "nonland" as a restriction, so a land is not a candidate', () => {
+    const built = deck([
+      { name: 'Ancestral Statue', count: 4 },
+      { name: 'Invasive Species', count: 4 },
+      { name: 'Forest', count: 52 },
+    ]);
+    let s = advanceTo(arena({
+      decks: { 0: 'd465-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd465-list': built },
+      battlefield: { 0: ['Forest', 'Forest', 'Forest', 'Forest', 'Invasive Species'] },
+      hands: { 0: ['Ancestral Statue'] },
+      turn: 7,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Ancestral Statue'),
+    } as Action);
+    s = drain(passBoth(s), 40);
+    /*
+      The Species and the Statue itself — the card says "a" and not "another" — and none of the four
+      Forests, which is the whole content of the word "nonland". Read live (CR 109.2): a land that
+      had become a creature would still be a land here, which is the defect #319 recorded in five
+      hand-written filters that read the printed type line instead.
+    */
+    expect(choices(s)).toEqual(['Ancestral Statue', 'Invasive Species']);
+  });
+
+  /*
+    The cost, named rather than hidden (#337).
+
+    `you may return another permanent you control…` stays unread, while the same phrase without the
+    "may" reads. The bare-`may` reader refuses a decision spec that is a function, because
+    `askOnlyIfChosen` would have to be added to whatever the function returns — and "another" is
+    exactly the qualifier that needs the thunk. Four legal cards print it: Ambrosia Whiteheart,
+    Aviary Mechanic, Loyal Gryff, Rescuer Chwinga.
+
+    This test is here so the four cannot silently become forty: a reader that starts matching
+    `you may return another…` without #337's wrapper would fail it.
+  */
+  it('still cannot read "you may return another", which is #337 and four cards', () => {
+    const compiled = compileCard(MECHANIC as never);
+    expect(compiled.ok).toBe(true);
+    expect(compiled.ok ? compiled.unread.map((u) => u.why) : []).toEqual(['no-reader']);
+    expect(compiled.ok ? (compiled.script?.triggers ?? null) : 'not ok').toBe(null);
+  });
+});

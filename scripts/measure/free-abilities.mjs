@@ -48,7 +48,7 @@
  * finds it — which beats a 20,000-move trace read by eye.
  */
 import { readFileSync } from 'node:fs';
-import { compileCard } from '../../packages/rules-engine/dist/index.js';
+import { compileCard } from '../lib/engine.mjs';
 import { isLegal, legalLine } from '../lib/legal.mjs';
 import { provenanceLine } from '../lib/provenance.mjs';
 
