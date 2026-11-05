@@ -12127,3 +12127,44 @@ those 161 stay castable by hand, and the fix is to read the third mode.
 Left as task #331: 11 cards whose every mode reads and which still refuse, because of an unknown
 header (`Choose one or more —`, `Choose three. You may choose the same mode more than once.`,
 `Choose one or both —`).
+
+## The card table, filled from the corpus already on disk (D458)
+
+`scryfall_cards` — what the card search reads, the recommender joins and a legality check would
+consult — had **never held a row on Postgres**. D329 found why: the bulk importer named a column the
+table does not have and its catch discarded every raise, and the fixed statement still needs a
+Scryfall bulk file this container cannot fetch (all four hosts re-tested, all four still `000`). The
+data, though, has been on disk since the corpus was built from `Card-Forge/forge`, which git can
+reach.
+
+`scripts/corpus/to-postgres.mjs` is the importer's loop over that file, and
+`apps/api/src/corpus-to-postgres.test.ts` executes **its** statement — not a copy — against a
+freshly migrated database. That is the whole reason the helpers are exported behind a main guard: the
+bug D329 found was a statement nothing had ever run, and a copy of it would have passed on the broken
+version too.
+
+**Loaded: 33,847 rows, 32,057 with legalities, 31,615 Commander-legal, 10,754 Pauper-legal.** The id
+is `sha1(name)` as a UUID, so the load is idempotent — 33,847 names, 33,847 distinct ids, no
+collision — and every row is marked `set_code = 'FORGE'`, which is load-bearing: a real Scryfall
+import keys by printing id and would otherwise leave two rows per card, the fan-out D23 and D24 both
+found.
+
+`color_identity` is derived because CR 903.4 counts the mana symbols in the text box as well as the
+cost, and `colors` does not: **4,334 rows have an identity that differs from their colours, 1,166
+have no coloured cost at all and a coloured identity.** Ten columns Forge has no data for are left
+null and asserted null — a null price falls through to the `COALESCE(…, 0.15)` the product already
+uses, while an invented one is wrong and looks right.
+
+Verified end to end: the card search route's own SQL now returns Lightning Bolt and seven more for
+`lightning%`, with cost, type line, derived identity and the price floor. First row that query has
+ever returned on Postgres.
+
+**Nothing reads these rows for a pasted deck yet**, and that is task #332. `customDeck`'s `data`
+parameter is supplied by no production caller — `deckFromPastedList` passes no rows — so a pasted
+name outside the 348-card pool is still cardboard. Its three call sites sit inside a synchronous
+compare-and-set write where no query can happen, so the rows have to be fetched before it. That is
+the next increment, and it is worth 9,213 scripted cards against 348.
+
+Eight break levers, eight failures. One of them earned a change: breaking the FORGE marking failed
+two tests, because the test that deletes the FORGE rows was also cleaning up for the next one — so
+the file truncates before each test and the counts are equalities now.

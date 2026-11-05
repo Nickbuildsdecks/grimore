@@ -28812,3 +28812,117 @@ Widow's Bite's teamwork clause.
 No code changed, so the evidence is the measurements above and the probe that drove a refused
 printed Instant through a table to its graveyard. Numbers from the 33,847-row corpus at
 `18f85b3`; the engine suite and the gate were green at that commit.
+
+## D458 — The card table, filled from the corpus already on disk
+
+`scryfall_cards` is the table the card search reads, the recommender joins against, the deck
+suggestions order and the legality check would consult. On Postgres it had **never held a single
+row**, and the reason was two failures stacked on top of each other: D329 found the bulk importer
+naming a `scryfall_id` column the table does not have, with the import loop's catch — labelled
+"ignore parse errors" and wrapping the write too — discarding every raise and reporting success; and
+the fixed statement still needs Scryfall's bulk file, which this container cannot fetch.
+`api.scryfall.com`, `data.scryfall.io`, `mtgjson.com` and `api.magicthegathering.io` were re-tested
+this pass and all four still answer `000`.
+
+But the data has been on disk since the corpus was built. `scripts/corpus/from-forge.mjs` reads the
+printed rows out of `Card-Forge/forge`, which git can reach, and `scripts/corpus/legality.mjs`
+answers which formats each card is legal in from the same repository. So the missing piece was never
+the data; it was a loader that writes **this** table from **that** file.
+
+### What landed
+
+`scripts/corpus/to-postgres.mjs` — the importer's loop over a file instead of a stream, and
+`apps/api/src/corpus-to-postgres.test.ts`, which executes its statement against a freshly migrated
+database.
+
+That test is the point of the file's shape. `UPSERT`, `paramsFor`, `colorIdentityOf` and `idFor` are
+exported and the command-line body sits behind a main guard, because the bug D329 found was not a
+typo — it was **a statement nothing had ever executed**. A loader whose SQL is unreachable from a
+test is one migration away from being that bug again, so the test runs the real statement with the
+real parameters, not a copy: a copy would have passed on the `scryfall_id` version too.
+
+### The id, which was the one real design decision
+
+`scryfall_cards`' primary key is a Scryfall **printing** id, and Forge's data has no ids at all. The
+id here is `sha1(name)` formatted as a UUID, and `oracle_id` is given the same value, which is
+honest for a corpus with one row per card rather than one per printing. Measured on the real load:
+**33,847 rows, 33,847 distinct names, 33,847 distinct ids** — no collision, and the load is
+idempotent, so a re-run updates rows instead of doubling them.
+
+Every row is marked `set_code = 'FORGE'`, and that marking is load-bearing rather than decorative.
+When Scryfall egress opens, the real import keys rows by its own printing ids and would otherwise
+leave **two** rows per card — which is the fan-out bug D23 and D24 both found, where joining
+`scryfall_cards` on `LOWER(name)` multiplied a card's weight by the size of its print run. So the
+real import has to `DELETE WHERE set_code = 'FORGE'` first, `--replace` does the same for a re-load,
+and a test asserts that every row this loader writes carries the mark, because the delete is worth
+nothing if one row does not.
+
+### Colour identity is derived; nine other columns are deliberately null
+
+`color_identity` is computed rather than left empty, because it is the rule a Commander deck is made
+of and `colors` is **not** a substitute: CR 903.4 counts every mana symbol in the cost *and in the
+rules text*, so a card with a black symbol only in its text box has black identity. That is not a
+corner case in this corpus — **4,334 rows have an identity that differs from their colours, and
+1,166 have no coloured mana cost at all and a coloured identity**. Abandoned Campground is the
+shape: a colourless land, `colors` empty, identity white and blue, and a deck checker reading
+`colors` would wave it into a mono-red deck.
+
+The derivation is the rule itself rather than a guess — the symbols are in the text the corpus
+already carries. Its one stated gap is colour *indicators*, which are printed as a dot rather than a
+symbol and are not in Forge's data, so a handful of transform back faces read narrower than they
+are.
+
+Null, with the reason recorded on each in the loader's header and asserted by a test so that filling
+one has to be deliberate: `price`, `foil_price`, `image_uri`, `scryfall_uri`, `rarity`,
+`collector_number`, `edhrec_rank`, `keywords`, `card_faces`, `produced_mana`. The tempting thing to
+do with every one of them is invent a value, and the asymmetry is why not — a null price falls
+through to the `COALESCE(pc.price, sc.price, 0.15)` every price query in the product already uses,
+while a wrong price does not; a null `edhrec_rank` orders the suggestions arbitrarily, while a
+made-up rank orders them wrongly and looks right. `keywords` is Scryfall's parsed vocabulary rather
+than this compiler's, and writing `printedKeywords` into it would make a later real import look like
+a change in the data rather than in the source. `card_faces` is absent because Forge keeps each face
+as its own card file, so a split or modal card arrives as two rows and the join between them is not
+in the data — `layout` is written, so the rows at least say what they are (899 of them are not
+`normal`).
+
+`power`, `toughness` and `loyalty` are written as printed, and the columns are TEXT for a reason the
+corpus demonstrates: **219 cards have `*` power**, and an `integer` column would accept every other
+assertion in the test file and silently drop exactly the cards whose size is a rule.
+
+### What the table now answers, and what it still does not
+
+Loaded: **33,847 rows, 32,057 with legalities, 31,615 legal in Commander, 10,754 in Pauper**; 18,823
+with a power, 327 with loyalty.
+
+Verified end to end rather than assumed: the card search route's own SQL — `CARD_SELECT` and
+`CARD_FROM` from `apps/api/src/routes/cards.ts`, lateral price join and all — returns Lightning Bolt
+and seven more for `lightning%`, each with its cost, its type line, its derived identity and the
+0.15 floor standing in for the price nobody loaded. That query has been in the product since the
+monorepo started and this is the first time it has returned a row on Postgres.
+
+**And nothing reads these rows for a pasted deck**, which is the honest limit of this increment and
+is now task #332. `customDeck`'s `data` parameter — the one that turns a pasted name into a compiled
+card — is supplied by no caller in production: `deckFromPastedList` in `apps/realtime/src/pod.ts`
+passes `id`, `name`, `entries` and `commander` and no rows, so every name outside the 348-card
+hand-written pool is still cardboard. The reason is structural and already written down in
+`customDeck.ts`' header: its three call sites run inside a synchronous compare-and-set write where
+no query can happen, so the rows have to arrive as data. Loading them before that write is the next
+increment, and it is worth 9,213 scripted cards against 348.
+
+One note for whoever writes that query: `legalities`, `colors` and `color_identity` are all TEXT
+columns holding JSON, and the route reads them through `try_jsonb()` (migration 0004), which turns a
+malformed column into NULL rather than aborting the query. A format check that writes `legalities->>`
+against the raw column gets `operator does not exist: text ->>`, which is how this pass found out.
+
+### Verified
+
+Ten tests, and a break run of eight levers against a verified-green baseline: colour identity
+ignoring the text box, an id not derived from the name, rows not marked FORGE, a nameless row
+written anyway, a printed `*` coerced to a number, an invented price, dropped legalities, and a
+column dropped from the conflict clause. **Eight levers, eight failures, one named test each.**
+
+The break run earned one change rather than only confirming the tests. Breaking the FORGE marking
+failed *two* tests, because the test that deletes `WHERE set_code = 'FORGE'` was also what cleaned up
+for the test after it — so those row counts were reading two tests' writes at once, and a count that
+was right for the wrong reason would have passed. The file now truncates before each test, every
+count is this test's own, and the `toBeGreaterThanOrEqual(3)` that hid the coupling is an equality.
