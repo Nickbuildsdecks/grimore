@@ -345,6 +345,14 @@ const EXEMPT = new Map([
     in another card's ability.
   */
   [join('packages', 'rules-engine', 'src', 'liveTypes.test.ts'), 'reaches a trigger only for its target spec'],
+  /*
+    Compiles a **probe card** of its own making — one printed clause under one trigger prologue — and
+    counts the questions that clause asks (D472). There is no board, no instance and no second
+    permanent in the whole script, so nothing can have handed this probe an ability: the only
+    trigger it can ever have is the one the probe's own text prints. Reading `grantedTriggers` here
+    would read a field that is empty by construction.
+  */
+  [join('scripts', 'measure', 'may-if-you-do.mjs'), 'compiles a one-clause probe card with no board'],
 ]);
 
 function checkEveryTriggerReaderKnowsAboutGrants() {

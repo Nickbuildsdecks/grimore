@@ -25797,3 +25797,195 @@ describe('a sacrifice the controller chooses (D471)', () => {
     expect(refused('sacrifice a nonland permanent')).toEqual([]);
   });
 });
+
+describe('you may X. If you do, Y — the construct, read as what it means (D472)', () => {
+  /*
+    The third row of the queue, and the one that had to be measured twice before it could be built.
+
+    `phrase-gap.mjs` prices it at **77 cards** by substituting the whole construct with **Y**, and
+    says in its own docblock that the figure is a ceiling rather than a reading: a reader has to
+    refuse Y when X was not performed (CR 608.2). `may-halves.mjs` had already retracted a number
+    for measuring halves that are not what a reader would build (D465). So this increment was scoped
+    with a third instrument, `may-if-you-do.mjs`, which asks what a reader can actually answer: does
+    each half read, and **how many questions does each ask?**
+
+    That last column decides everything, because of one property of the engine's gate.
+    `askOnlyIfChosen` holds a question back on an **option word** that was chosen (D450). Nothing
+    holds a question back on "an earlier card answer came back non-empty". So exactly two shapes are
+    readable:
+
+    - **X asks nothing** — a draw, a mill. "If you do" *is* "you said yes", so Y's own questions ride
+      the same gate and the reading is exact.
+    - **X asks once** — a sacrifice, a discard, a chosen bounce. "If you do" is "that answer named
+      something", which the effect reads with `chosenCards`; Y must then ask nothing, because its
+      question could not be held back on that.
+
+    Everything else is refused rather than guessed, and the tests below assert the refusals as
+    carefully as the readings — a wrong reading here does the back half of a card for free.
+  */
+  const probe = (text: string) => compileCard({
+    name: 'Probe Beast', type_line: 'Creature — Human', mana_cost: '{2}{G}', cmc: 3,
+    colors: ['G'], power: '2', toughness: '2', loyalty: null, layout: 'normal',
+    oracle_text: `When Probe Beast enters, ${text}.`,
+  } as never);
+  const unreadOf = (text: string) => {
+    const compiled = probe(text);
+    return compiled.ok ? (compiled.unread ?? []).map((u) => u.line) : ['not ok'];
+  };
+  const promptsOf = (text: string) => {
+    const compiled = probe(text);
+    const trigger = (compiled.ok ? (compiled.script?.triggers ?? []) : [])[0];
+    return (trigger?.decisions ?? []).map((spec) => (typeof spec === 'function'
+      ? 'thunk'
+      : (spec as { prompt?: string }).prompt ?? '(no prompt)'));
+  };
+
+  it('reads both shapes, and puts the yes-or-no in front of the half that asks', () => {
+    // X asks once: the sacrifice is the gated question, and its prompt is the printed phrase.
+    expect(unreadOf('you may sacrifice a creature. If you do, draw a card')).toEqual([]);
+    expect(promptsOf('you may sacrifice a creature. If you do, draw a card'))
+      .toEqual(['Sacrifice a creature — draw a card?', 'Sacrifice a creature']);
+    // X asks nothing, Y asks: the same gate, now in front of Y's question.
+    expect(unreadOf('you may draw a card. If you do, discard a card')).toEqual([]);
+    expect(promptsOf('you may draw a card. If you do, discard a card'))
+      .toEqual(['Draw a card — discard a card?', 'Discard a card']);
+    // And a Y that asks nothing at all, which is the commonest printing of both shapes.
+    expect(unreadOf('you may sacrifice a land. If you do, you gain 2 life')).toEqual([]);
+  });
+
+  it('refuses the shapes whose "if you do" it could not enforce', () => {
+    /*
+      Each of these is a refusal with a reason, not a gap nobody noticed:
+
+      - **both halves ask.** The yes-or-no can gate both questions, but "if you do" then depends on
+        X's answer being non-empty and Y's question is already on the plan by then. A reader that
+        asked it anyway would do Y's half of the card after a discard that did not happen.
+      - **a half that does not read.** `pay 2 life` is not a clause this compiler reads at all, so
+        the line stays badged rather than becoming a free "if you do".
+      - **a half that points at something.** A target is chosen when the ability goes on the stack,
+        before anybody has said yes, which is a different machine from a question (D465).
+    */
+    expect(unreadOf('you may discard a card. If you do, discard a card')).toHaveLength(1);
+    expect(unreadOf('you may pay 2 life. If you do, draw a card')).toHaveLength(1);
+    expect(unreadOf('you may sacrifice a creature. If you do, destroy target creature'))
+      .toHaveLength(1);
+    // The priced form is **not** affected: it was read before this increment and still is (D448).
+    expect(unreadOf('you may pay {2}. If you do, draw a card')).toEqual([]);
+  });
+
+  const PEDDLER = {
+    name: 'Discerning Peddler', type_line: 'Creature — Human Rogue', mana_cost: '{1}{R}', cmc: 2,
+    colors: ['R'], power: '2', toughness: '2', loyalty: null, layout: 'normal',
+    oracle_text: 'When Discerning Peddler enters, you may discard a card. If you do, draw a card.',
+  };
+  const table = (hand: readonly string[]) => {
+    const built = customDeck({
+      id: 'd472-list',
+      name: 'If you do',
+      entries: [
+        { name: 'Discerning Peddler', count: 4 },
+        { name: 'Mountain', count: 56 },
+      ],
+      data: [PEDDLER] as never,
+    });
+    expect(built.unknown).toEqual([]);
+    expect([...built.fromData]).toEqual(['Discerning Peddler']);
+    let s = advanceTo(arena({
+      decks: { 0: 'd472-list', 1: 'verdant-guard' },
+      deckSpecs: { 'd472-list': built.deck },
+      battlefield: { 0: ['Mountain', 'Mountain'] },
+      hands: { 0: [...hand] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    /*
+      The hand is made **exactly** the list asked for. `advanceTo` walks through the draw step, so
+      the seat has drawn a card on top of what `arena` placed — and the third case below is about a
+      hand with nothing in it, which that extra card would quietly make untrue. Everything surplus
+      goes to the bottom of the library, which is a tabletop move and not an engine one.
+    */
+    const needed = new Map<string, number>();
+    for (const name of hand) needed.set(name, (needed.get(name) ?? 0) + 1);
+    for (const id of [...ids(s, 0 as SeatIndex, 'hand')]) {
+      const name = nameOf(s, id);
+      const left = needed.get(name) ?? 0;
+      if (left > 0) { needed.set(name, left - 1); continue; }
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' } as Action);
+    }
+    expect(namesIn(s, 0 as SeatIndex, 'hand').sort()).toEqual([...hand].sort());
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Discerning Peddler'),
+    } as Action)), 40);
+    return s;
+  };
+
+  /** Answers a yes-or-no, which `decide` cannot: it looks for a card among the candidates. */
+  const say = (s: GameState, option: string) => drain(apply(s, {
+    type: 'auto:decide', by: s.pendingDecision?.seat ?? 0, option,
+  } as Action), 40);
+
+  it('does Y only when X was actually done — the half the ceiling could not price', () => {
+    /*
+      `Discerning Peddler` is the printing: "When Discerning Peddler enters, you may discard a card.
+      If you do, draw a card." Three resolutions, and the third is the one this increment is about.
+    */
+    // Taken, with a card to pitch: the discard is asked behind the yes, and the draw follows.
+    let s = table(['Discerning Peddler', 'Mountain', 'Mountain']);
+    expect(s.pendingDecision?.options).toEqual(['Yes', 'No']);
+    s = say(s, 'Yes');
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toEqual([]);
+    s = drain(decide(s, ['Mountain']), 40);
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toEqual(['Mountain']);
+    /*
+      The draw happened, which is the half that depends on "if you do": two cards were in hand after
+      the cast, one was discarded and one was drawn, so the count is back to two.
+    */
+    expect(namesIn(s, 0 as SeatIndex, 'hand').length).toBe(2);
+
+    // Declined: nothing moves at all, which is what a "may" is for.
+    let declined = table(['Discerning Peddler', 'Mountain', 'Mountain']);
+    declined = say(declined, 'No');
+    expect(namesIn(declined, 0 as SeatIndex, 'graveyard')).toEqual([]);
+    expect(namesIn(declined, 0 as SeatIndex, 'hand')).toEqual(['Mountain', 'Mountain']);
+
+    /*
+      **Taken with an empty hand, which is CR 608.2 and the whole point.** The yes is given, the
+      discard asks nothing because `decisionBounds` clamps it to a hand with no cards in it, and
+      "if you do" is therefore false — so no card is drawn. A reader that treated the yes as the
+      condition would hand the player a free card here, which is the wrong reading
+      `phrase-gap.mjs`' 77 was a ceiling for.
+    */
+    let empty = table(['Discerning Peddler']);
+    expect(empty.pendingDecision?.options).toEqual(['Yes', 'No']);
+    empty = say(empty, 'Yes');
+    expect(namesIn(empty, 0 as SeatIndex, 'graveyard')).toEqual([]);
+    expect(namesIn(empty, 0 as SeatIndex, 'hand')).toEqual([]);
+  });
+
+  it('is the reading a real card gets, not only a probe', () => {
+    /*
+      `Abomination of Gudul` is the printing `may-if-you-do.mjs` names first in the X-asks-nothing
+      bucket, and the one card in the family whose Y is itself a question. Asserted at the shape
+      rather than through combat: the trigger is a combat-damage one and the claim here is about the
+      questions, which the resolution test below drives on a card that does not need an attack.
+    */
+    const compiled = compileCard({
+      name: 'Abomination of Gudul', type_line: 'Creature — Horror', mana_cost: '{3}{B}{G}{U}',
+      cmc: 6, colors: ['B', 'G', 'U'], power: '3', toughness: '4', loyalty: null, layout: 'normal',
+      oracle_text: 'Flying\n'
+        + 'Whenever Abomination of Gudul deals combat damage to a player, you may draw a card. '
+        + 'If you do, discard a card.\n'
+        + 'Morph {2}{B}{G}{U} (You may cast this card face down as a 2/2 creature for {3}. '
+        + 'Turn it face up any time for its morph cost.)',
+    } as never);
+    expect(compiled.ok).toBe(true);
+    const connects = (compiled.ok ? (compiled.script?.triggers ?? []) : [])
+      .find((t) => t.on.kind === 'combat-damage');
+    const specs = (connects?.decisions ?? []);
+    expect(specs).toHaveLength(2);
+    expect((specs[0] as { options?: readonly string[] }).options).toEqual(['Yes', 'No']);
+    // The discard rides the same gate, which is only sound because the draw asks nothing.
+    expect((specs[1] as { askOnlyIfChosen?: string }).askOnlyIfChosen).toBe('Yes');
+  });
+});

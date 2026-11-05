@@ -12758,3 +12758,92 @@ Engine suite **2,288** green (2,282 + the six tests here).
 Three levers broken one at a time on a green baseline, each failing exactly one test: the noun
 filter (a land sacrifice stops offering lands), the source exclusion ("other than" stops excluding
 the card), and the sweep (`all` takes only the first).
+
+## D472 — `you may X. If you do, Y`, read as what it means
+
+The third row of the queue, and the one that had to be measured three times before it could be
+built.
+
+### Why the 77 was never the number
+
+`phrase-gap.mjs` prices this construct at **77 cards** by substituting the whole thing with **Y** —
+"you may sacrifice a creature. If you do, draw a card" becomes "draw a card" — and says in its own
+docblock that the figure is a ceiling, not a reading, because a reader has to refuse Y when X was
+not performed (CR 608.2). Before that, `may-halves.mjs` reported **63** and had to retract it
+(D465): it measured halves that are not what a reader would build.
+
+So this increment got its own instrument, `may-if-you-do.mjs`, which asks what a reader can actually
+answer. For every legal card one unread line short whose line is this construct — **472 of them** —
+it compiles each half on its own under a prologue known to read, and counts **how many questions
+each half asks**.
+
+That last column is the whole design, because of one property of the engine's gate.
+`askOnlyIfChosen` holds a question back on an **option word** that was chosen (D450). Nothing holds
+a question back on "an earlier card answer came back non-empty". So:
+
+| | cards | why |
+| --- | --- | --- |
+| X asks nothing (Y may ask) | **13** | "if you do" *is* "you said yes", so Y's questions ride the same gate |
+| X asks once, Y asks nothing | **18** | "if you do" is "that answer named something", read by the effect |
+| X asks once, Y asks too | 5 | Y's question cannot be gated on X's answer — refused |
+| X asks more than once | 0 | nothing prints it |
+| **X unread** | **402** | the opener is a clause this compiler cannot read at all |
+| Y unread | 34 | the consequence is |
+
+**The 402 is the real finding.** The construct was never the blocker for most of this family — the
+*opener* is, and the openers are a vocabulary of their own: `exile it`, `pay N life`, `reveal it`,
+`look at the top card`, `put a card from your hand onto the battlefield`. Reading the construct
+finishes the cards whose halves already read, and names the next piece of work precisely rather
+than leaving 77 looking like one reader's yield.
+
+### The reading
+
+`sequence` composes the two halves into one `ReadEffect` that the existing "may" wrapper gates
+without knowing there are two of them — so the yes-or-no, the prompt, the answer-index shift
+(`withoutOurs`) and the `gatable` refusal are all unchanged from D448/D450. X runs through
+`immediate` where it has one, for the reason `composeEffects` does on a non-final clause: a deferred
+draw cannot be read by anything after it (D387).
+
+"If you do" is then one line:
+
+```ts
+const did = xAsks === 0 || chosenCards(c).length > 0;
+return did ? y.effect({ ...c, state: after }) : after;
+```
+
+Refused rather than guessed: both halves asking, either half pointing at a target (a target is
+chosen on the stack, before anybody has said yes — a different machine, D465), and a half that does
+not read.
+
+### What the lever proves
+
+`Discerning Peddler` ("When Discerning Peddler enters, you may discard a card. If you do, draw a
+card.") through `customDeck`, three resolutions: taken with a card to pitch (discard then draw),
+declined (nothing moves), and **taken with an empty hand** — where the discard is clamped to nothing
+by `decisionBounds`, so "if you do" is false and no card is drawn. That third case is the one the
+ceiling could not price and the one a reader that treated the yes as the condition would get wrong,
+handing the player a free card.
+
+The test had to make the hand *exactly* what it says: `advanceTo` walks the draw step, so the seat
+holds one more card than `arena` placed, and the empty-hand case would have been quietly untrue.
+
+Three levers broken one at a time, each failing exactly one test: `did` forced true, the
+both-halves-ask refusal, and the target refusal.
+
+### The numbers
+
+| | D471 | D472 |
+| --- | --- | --- |
+| cards with a compiled script | 9,675 | **9,712** |
+| cards with every printed line read | 5,449 | **5,471** |
+| printed rules lines read | 19,583 of 56,421 (34.7%) | **19,629 of 56,421 (34.8%)** |
+
+Engine suite **2,292** green (2,288 + the four tests here).
+
++22 fully read. The instrument's two readable buckets are 31, and the gap between that and 22 is the
+honest part: it was run **after** the change, so the cards still in those buckets are the ones this
+reader cannot reach — their prologue is one the compiler does not read (`enters or attacks`, an
+intervening-if, `Valiant —`), or the card is a **spell**, where `you may` has no reader at all
+(`composeEffects` hands "you may discard a card" to the clause vocabulary, which is about what an
+effect does rather than whether it happens). Eight of the 18 are spells. Both are named increments
+now rather than a number nobody can explain.

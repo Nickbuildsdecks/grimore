@@ -12878,12 +12878,92 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       keeps removing (D441, D438), so the redundant one is gone and the selection below is the only
       lever. Breaking **that** does fail.
     */
+    /*
+      **A price that is not mana: `you may X. If you do, Y`** (D472).
+
+      The third row of the queue and the one `phrase-gap.mjs` prices at **77 cards** — with its own
+      docblock saying that figure is a ceiling, because it measures the construct substituted by
+      **Y** and a reader has to refuse Y when X was not performed (CR 608.2). `may-halves.mjs` had
+      to retract a number for measuring halves that are not what a reader would build (D465), so
+      this one was scoped with `may-if-you-do.mjs`, which asks the narrower question: does each half
+      read, and how many questions does each ask?
+
+      That last column decides the shape, and the engine's gate is why.
+      `ChoiceDecisionSpec.askOnlyIfChosen` holds a question back on an **option word** that was
+      chosen (D450); nothing holds one back on "an earlier card answer came back non-empty". So two
+      shapes are readable and the rest are refused:
+
+      - **X asks nothing** — a draw, a mill, a life payment. "If you do" *is* "you said yes", so Y's
+        own questions ride the same gate and the reading is exact.
+      - **X asks once** — a sacrifice, a discard, a chosen bounce. "If you do" is "that answer was
+        not empty", which the effect below reads with `chosenCards`; Y must then ask nothing,
+        because its question could not be held back on that.
+
+      Anything else is refused rather than guessed: X asking twice, either half pointing at a
+      target, or a half that does not read at all.
+    */
+    const doneThen = whole === null && priced === null && energyPriced === null
+      ? /^you may ([^.]+)\.\s*If you do, (.+)$/i.exec(clause)
+      : null;
+    /*
+      The two halves, composed into one reading the "may" wrapper below can gate without knowing
+      there are two of them. `immediate` for X for the same reason `composeEffects` uses it on a
+      non-final clause: a deferred draw cannot be read by anything after it (D387).
+    */
+    const sequence = ((): { prompt: string; read: ReadEffect } | null => {
+      if (doneThen === null) return null;
+      const xText = doneThen[1]!.trim();
+      const yText = doneThen[2]!.trim();
+      const x = reader(xText);
+      const y = reader(yText);
+      if (x === null || y === null) return null;
+      const xAsks = (x.decisions ?? []).length;
+      const yAsks = (y.decisions ?? []).length;
+      if ((x.targets ?? []).length > 0 || (y.targets ?? []).length > 0) return null;
+      if (xAsks > 1) return null;
+      if (xAsks === 1 && yAsks > 0) return null;
+      const xEffect = x.immediate ?? x.effect;
+      return {
+        prompt: `${xText} — ${yText}`,
+        read: {
+          decisions: [...(x.decisions ?? []), ...(y.decisions ?? [])],
+          effect: (c) => {
+            const after = xEffect(c);
+            /*
+              "If you do" is a fact about whether X happened, and the two shapes read it
+              differently: a question-less X happened the moment the yes was given, and a X that
+              asked happened only if its answer named something. A board with nothing to sacrifice
+              answers empty (CR 608.2 — as much as it can), and then Y must not happen.
+            */
+            const did = xAsks === 0 || chosenCards(c).length > 0;
+            return did ? y.effect({ ...c, state: after }) : after;
+          },
+        },
+      };
+    })();
+    /*
+      The bare "may" regex is **not** guarded on `priced`, and a break run is why.
+
+      It was written as `whole === null && priced === null ? …`, and breaking that guard — letting
+      the bare regex match a priced clause too — changed nothing: all 1,506 tests stayed green. The
+      guard could not fail, because the ordering between the two readings is decided below, where
+      `inner` and `pay` both prefer `priced`. Two statements of one rule is the shape this file
+      keeps removing (D441, D438), so the redundant one is gone and the selection below is the only
+      lever. Breaking **that** does fail.
+
+      The same applies to `sequence`: the bare regex matches `you may X. If you do, Y` too, and the
+      selection below prefers the sequenced reading. A clause whose halves do not both read falls
+      through to the bare reader, which then tries to read "X. If you do, Y" as one clause and
+      fails — which is the refusal that was there before this increment.
+    */
     const may = whole === null ? /^you may (.+)$/i.exec(clause) : null;
     const charged = priced ?? energyPriced;
     const inner = charged !== null
       ? charged[2]!.trim()
-      : may === null ? clause : may[1]!.trim();
-    const read = whole ?? reader(inner);
+      : sequence !== null
+        ? sequence.prompt
+        : may === null ? clause : may[1]!.trim();
+    const read = whole ?? sequence?.read ?? reader(inner);
     if (read === null) return null;
     /*
       Either kind of "may" is refused when its own effect asks a question, and for one reason: the
