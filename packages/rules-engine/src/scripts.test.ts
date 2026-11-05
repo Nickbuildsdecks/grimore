@@ -26015,8 +26015,10 @@ describe('you may X. If you do, Y — the construct, read as what it means (D472
    - **Pyrostatic Pillar** reads a mana-value ceiling off the event rather than off the card.
    - **Rewards of Diversity** reads `multicoloured`, which was twice refused as "a fact about the
      mana cost" before D474 showed it is a fact about the card's colours (CR 105.1).
+   - **Wingsteed Rider** reads heroic's `targetsSelf` (D476): a spell pointed at it, the same spell
+     pointed at the creature beside it, and a spell that points at nothing.
 */
-describe('the cast prologue, parsed: colour, subtype and mana value (D474)', () => {
+describe('the cast prologue, parsed: colour, subtype, mana value and heroic (D474, D476)', () => {
   // Six vanilla creatures, verbatim from the legal corpus. A vanilla body is deliberate: the only
   // thing each one contributes to the test is its colour, its mana value and its subtype.
   const SPELLS = [
@@ -26043,6 +26045,7 @@ describe('the cast prologue, parsed: colour, subtype and mana value (D474)', () 
     holder: SeatIndex,
     caster: SeatIndex,
     hand: readonly string[],
+    extra: readonly string[] = [],
   ) => {
     const name = watcher['name'] as string;
     const list = customDeck({
@@ -26051,8 +26054,12 @@ describe('the cast prologue, parsed: colour, subtype and mana value (D474)', () 
       entries: [
         { name, count: 1 },
         ...SPELLS.map((spell) => ({ name: spell.name, count: 4 })),
-        { name: 'Forest', count: 12 },
-        { name: 'Plains', count: 7 },
+        // The one spell here that is **not** a fixture: Giant Growth is a pool card, and the only
+        // thing in the list that can point at a creature. The `fromData` assertion below is what
+        // says so — it names the seven fixtures and the watcher, and not this.
+        { name: 'Giant Growth', count: 4 },
+        { name: 'Forest', count: 10 },
+        { name: 'Plains', count: 5 },
         { name: 'Island', count: 6 },
         { name: 'Swamp', count: 6 },
       ],
@@ -26065,7 +26072,10 @@ describe('the cast prologue, parsed: colour, subtype and mana value (D474)', () 
     let s = arena({
       decks: { 0: 'cast-parse', 1: 'cast-parse' },
       deckSpecs: { 'cast-parse': list.deck },
-      battlefield: { [holder]: [name, ...LANDS], ...(holder === caster ? {} : { [caster]: LANDS }) },
+      battlefield: {
+        [holder]: [name, ...LANDS, ...extra],
+        ...(holder === caster ? {} : { [caster]: LANDS }),
+      },
       hands: { [caster]: hand },
       turn: 3,
       firstSeat: caster,
@@ -26194,6 +26204,44 @@ describe('the cast prologue, parsed: colour, subtype and mana value (D474)', () 
     const before = life(s, 0 as SeatIndex);
     s = cast(s, 1 as SeatIndex, spell as string);
     expect(life(s, 0 as SeatIndex)).toBe(before + (gained as number));
+  });
+
+  const WINGSTEED_RIDER = {
+    name: 'Wingsteed Rider', type_line: 'Creature — Human Knight', mana_cost: '{1}{W}{W}', cmc: 3,
+    colors: ['W'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Flying\nHeroic — Whenever you cast a spell that targets Wingsteed Rider,'
+      + ' put a +1/+1 counter on Wingsteed Rider.',
+  };
+
+  it.each([
+    /*
+      Heroic (CR 702.86a, D476), and the three rows are the whole of what it has to tell apart: a
+      spell pointed at the Rider, the same spell pointed at something else, and a spell that points
+      at nothing. Giant Growth is the pool's own card and the only thing in the list that can target
+      a creature; Bear Cub is the decoy and, cast from hand, the untargeted spell.
+
+      The ability word comes off before the prologue is matched, so "Heroic — " is not a fourth
+      spelling to support (CR 207.2c).
+    */
+    ['the Rider itself', 'Wingsteed Rider', 1],
+    ['another creature', 'Bear Cub', 0],
+  ])('Wingsteed Rider: a spell aimed at %s leaves %s with %d counter', (_, aim, counters) => {
+    let s = tableWith(WINGSTEED_RIDER, 0 as SeatIndex, 0 as SeatIndex, ['Giant Growth'], ['Bear Cub']);
+    const rider = find(s, 0 as SeatIndex, 'battlefield', 'Wingsteed Rider');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast',
+      by: 0,
+      card: find(s, 0 as SeatIndex, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: find(s, 0 as SeatIndex, 'battlefield', aim as string) }],
+    } as Action)));
+    expect(s.instances[rider]!.counters['+1/+1'] ?? 0).toBe(counters as number);
+  });
+
+  it('Wingsteed Rider ignores a spell that targets nothing', () => {
+    let s = tableWith(WINGSTEED_RIDER, 0 as SeatIndex, 0 as SeatIndex, ['Bear Cub']);
+    const rider = find(s, 0 as SeatIndex, 'battlefield', 'Wingsteed Rider');
+    s = cast(s, 0 as SeatIndex, 'Bear Cub');
+    expect(s.instances[rider]!.counters['+1/+1'] ?? 0).toBe(0);
   });
 
   it('Copper Tablet hits every player at their own upkeep, its controller included (D475)', () => {

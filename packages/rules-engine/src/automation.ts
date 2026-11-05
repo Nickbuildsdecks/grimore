@@ -1113,6 +1113,19 @@ function fireTrigger(
   */
   if (fromStack && !(trigger.on.kind === 'spell-cast' && trigger.on.self === true)) return next;
   /*
+    Heroic: "whenever you cast a spell **that targets this creature**" (CR 702.86a, D476).
+
+    Here rather than in `triggerMatches` for the reason `self` above is: it is a question about
+    which permanent is watching, and `triggerMatches` is not told the holder. The targets are on
+    the event — `targetIds`, card targets only — because by the time this ability resolves the
+    spell may have been countered or have resolved off the stack.
+
+    `targetIds` is absent on an event the engine raised before this field existed; an absent list
+    means "no card targets", which is the reading that refuses rather than the one that fires.
+  */
+  if (trigger.on.kind === 'spell-cast' && trigger.on.targetsSelf === true
+    && !(event.kind === 'spell-cast' && (event.targetIds ?? []).includes(holder))) return next;
+  /*
     The attachment, resolved here rather than in `triggerMatches` for the same reason `self` is:
     it is a fact about where the watcher *is*, not about what the event was.
 

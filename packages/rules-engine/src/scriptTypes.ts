@@ -644,6 +644,30 @@ export type TriggerEvent =
       /** Set by the engine when it raises the event: the spell's subtypes, as printed. */
       readonly subtypes?: readonly string[];
       /**
+       * "Whenever you cast a spell **that targets** this creature" — heroic (CR 702.86a).
+       *
+       * **40 legal cards** one unread line from a finished script print it, which made it the
+       * largest single thing the D474 cast parse had to refuse: 22 under the `Heroic` ability word,
+       * 7 under `Repartee`, and 11 that print the sentence bare. It is the second-biggest prologue
+       * family in the corpus after the cast filters themselves (D476).
+       *
+       * Answered in `fireTrigger` rather than in `triggerMatches`, beside `self` and the
+       * attachment, and for the same reason their own comments give: it is a question about
+       * **which permanent is watching**, not about what the event was, and `triggerMatches` is not
+       * told the holder. The targets travel on the event as `targetIds` because a trigger resolves
+       * after the spell may have left the stack.
+       *
+       * Card targets only. A spell that targets *you* does not trigger your creature's heroic, and
+       * "a spell that targets you or a creature you control" — Reparations, Danitha — is a
+       * different sentence this does not read.
+       */
+      readonly targetsSelf?: true;
+      /**
+       * Set by the engine when it raises the event: the **card** targets the spell was cast with,
+       * as instance ids. Player and ability targets are deliberately absent — see `targetsSelf`.
+       */
+      readonly targetIds?: readonly string[];
+      /**
        * "Whenever you cast a spell with **mana value 4 or greater**" — the floor, inclusive.
        *
        * 16 legal cards print a mana-value bound in a cast prologue (D474). Two fields rather than

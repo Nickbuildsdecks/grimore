@@ -7131,6 +7131,11 @@ describe('the cast trigger, read off the prologue', () => {
       { kind: 'spell-cast', by: 'opponent', spell: 'creature' }],
     ['Whenever a player casts an enchantment spell',
       { kind: 'spell-cast', by: 'any', ofType: 'enchantment' }],
+    // Heroic's tail, which reads the permanent's own name off `selfRef` (D476).
+    ['Whenever you cast a spell that targets Casting Thing',
+      { kind: 'spell-cast', by: 'you', spell: 'any', targetsSelf: true }],
+    ['Whenever you cast a spell that targets this creature',
+      { kind: 'spell-cast', by: 'you', spell: 'any', targetsSelf: true }],
   ])('%s becomes the trigger it prints', (prologue, on) => {
     const read = permanent(`${prologue}, you gain 1 life.`);
     expect(read.ok).toBe(true);
@@ -7158,8 +7163,8 @@ describe('the cast trigger, read off the prologue', () => {
     ['Whenever you cast a legendary spell', 'a supertype, which the event does not carry'],
     ['Whenever an opponent casts a white or blue instant or sorcery spell',
       'a colour and a type in one descriptor: read as neither, not as half of each'],
-    ['Whenever you cast a spell that targets Casting Thing',
-      "heroic — the cast event does not carry its spell's targets"],
+    ['Whenever an opponent casts a spell that targets you or a creature you control',
+      'a seat and a board filter in one phrase; its "targets ~" sibling reads since D476'],
     ['Whenever you cast a spell from your graveyard', 'the zone a spell was cast from'],
     ['Whenever you cast a spell during an opponent’s turn', 'a fact about the turn'],
     ['Whenever you cast another spell', 'another than what? a permanent is not a spell'],

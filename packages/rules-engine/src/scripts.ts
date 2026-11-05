@@ -11738,28 +11738,37 @@ function castDescriptor(printed: string): Partial<CastEvent> | null {
 }
 
 /**
- * "…spell **with mana value 4 or greater**" — the tail after the word *spell*, as a bound.
+ * "…spell **with mana value 4 or greater**", "…spell **that targets ~**" — the tail after the word
+ * *spell*, as the fields that answer it.
  *
- * `{}` when there is no tail, `null` when there is one this does not read: "that targets ~", "from
- * a graveyard", "during an opponent's turn" all land here and refuse the line.
+ * `{}` when there is no tail, `null` when there is one this does not read: "from a graveyard",
+ * "during an opponent's turn" and "that targets you or a creature you control" all land here and
+ * refuse the line.
+ *
+ * `self` is the card's own `selfRef`, because heroic's tail names the permanent: "a spell that
+ * targets **Akroan Crusader**". It is a non-capturing alternation of the full name, the short name
+ * and "this creature", so all three printed spellings reach the same field.
  */
-function castBound(printed: string): Partial<CastEvent> | null {
+function castBound(printed: string, self: string): Partial<CastEvent> | null {
   const text = printed.trim();
   if (text === '') return {};
   const bound = /^with mana value (\d+) or (less|greater)$/i.exec(text);
-  if (bound === null) return null;
-  const value = Number(bound[1]);
-  return bound[2]!.toLowerCase() === 'less'
-    ? { manaValueAtMost: value }
-    : { manaValueAtLeast: value };
+  if (bound !== null) {
+    const value = Number(bound[1]);
+    return bound[2]!.toLowerCase() === 'less'
+      ? { manaValueAtMost: value }
+      : { manaValueAtLeast: value };
+  }
+  if (new RegExp(`^that targets ${self}$`, 'i').test(text)) return { targetsSelf: true };
+  return null;
 }
 
 /** The parsed cast prologue, as the one event it names. `null` refuses the line. */
-function castTrigger(matched: RegExpExecArray): readonly CastEvent[] | null {
+function castTrigger(matched: RegExpExecArray, self: string): readonly CastEvent[] | null {
   const groups = matched.groups ?? {};
   const by = CAST_BY[(groups.who ?? '').toLowerCase() as keyof typeof CAST_BY];
   const what = castDescriptor(groups.what ?? '');
-  const bound = castBound(groups.tail ?? '');
+  const bound = castBound(groups.tail ?? '', self);
   if (by === undefined || what === null || bound === null) return null;
   return [{
     kind: 'spell-cast',
@@ -11815,7 +11824,11 @@ const TRIGGER_SHAPES: readonly ({
    * Only the cast family takes this today. The step prologues are the obvious next candidate and
    * are deliberately left enumerated until something measures them.
    */
-  | { readonly from: (matched: RegExpExecArray) => readonly TriggerDef['on'][] | null }
+  | {
+    readonly from: (
+      matched: RegExpExecArray, self: string,
+    ) => readonly TriggerDef['on'][] | null
+  }
 ))[] = [
   /*
     An Aura's or an Equipment's own creature, which is what `who: 'attached'` is for (D433).
@@ -11967,6 +11980,7 @@ const TRIGGER_SHAPES: readonly ({
     | printed | read as |
     | --- | --- |
     | a spell | `spell: 'any'` |
+    | …**that targets** ~ | `targetsSelf` — heroic (D476) |
     | a creature spell / a noncreature spell | `spell` |
     | an instant or sorcery spell | `spell: 'instant-or-sorcery'` |
     | an artifact spell / an enchantment spell | `ofType` |
@@ -11992,8 +12006,9 @@ const TRIGGER_SHAPES: readonly ({
     **What it refuses, and why each stays refused.** Every one of these was read off the dump and
     left for a human rather than approximated:
 
-     * **"a spell that targets ~"** (40 cards, heroic and repartee) — the cast event does not carry
-       its spell's targets, so this is an engine increment and not a parse.
+     * **"a spell that targets you or a creature you control"** (Reparations, Danitha) — a seat and
+       a board filter in one phrase, where the engine carries the spell's **card** targets only. Its
+       sibling "a spell that targets ~" was refused beside it and reads since D476.
      * **"from a graveyard" / "from anywhere other than your hand"** — the zone a spell was cast
        from is not on the event.
      * **"during an opponent's turn" / "during your turn"** — a fact about the turn, not the spell.
@@ -12865,7 +12880,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       and a refusal has to keep looking rather than stop, because a later row may read the same
       line. See the cast family's docblock.
     */
-    const on = 'from' in shape ? shape.from(matched) : shape.on;
+    const on = 'from' in shape ? shape.from(matched, self) : shape.on;
     if (on === null || on.length === 0) continue;
     /*
       The clause is `clause` where a row names it, and group 1 everywhere else. Two ways of saying

@@ -30547,3 +30547,54 @@ readable and which now damage a controller who casts a cheap spell, and Barbed W
 and Sulfuric Vortex, which now hit their own controller's upkeep as well as everybody else's. A
 coverage instrument cannot see any of that, which is the argument for a runtime test per reader
 rather than a mapping assertion.
+
+## D476 — Heroic: the one thing the cast parse had to refuse
+
+D474's parse read every cast prologue the corpus prints except one shape, and that shape was the
+largest single thing it left behind: **"Whenever you cast a spell that targets ~"**, 22 cards under
+the `Heroic` ability word, 7 under `Repartee`, and 6 that print the sentence bare — *Gnarlback
+Rhino*, *Tenth District Legionnaire* and the four *Hero of the …* creatures.
+
+It was refused on a real gap rather than on effort: the `spell-cast` event said what *kind* of spell
+was cast and not **what it was pointed at**.
+
+### Three small pieces
+
+1. **The event carries the targets.** `targetIds` on `spell-cast`, set where the cast is raised from
+   `object.targets` — **card targets only**, as instance ids. A spell that targets *you* does not
+   trigger your creature's heroic, so putting a seat in the same list would make "targets you" look
+   like the same question. A face-down cast gets `[]` (it has nothing to target with).
+2. **The question is answered in `fireTrigger`.** `targetsSelf: true`, asked beside `self` and the
+   attachment and for the reason their comments already give: it is a fact about **which permanent
+   is watching**, and `triggerMatches` is not told the holder. An absent `targetIds` reads as "no
+   card targets", so the missing-field case refuses rather than fires.
+3. **The compiler reads the tail.** `castBound` already handled "with mana value N or less"; it now
+   also matches `that targets <selfRef>`, which covers the full name, the short name and "this
+   creature" in one alternation. Nothing else about the parse changed — the prologue regex already
+   captured the tail and already refused what it could not read.
+
+The targets travel on the event rather than being looked up at resolution for the reason everything
+else on that event does: a heroic trigger resolves after its spell may have been countered or have
+resolved off the stack, and `object.targets` is gone by then.
+
+### What stays refused
+
+**"A spell that targets you or a creature you control"** — *Reparations*, *Danitha, Spear of Agony*.
+A seat and a board filter in one phrase, and the engine deliberately carries card targets only. Two
+cards, and reading it as the card half alone would fire on the wrong spells (D362).
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 9,833 | **9,868** |
+| cards with every printed line read | 5,570 | **5,601** |
+| printed rules lines read | 19,780 / 56,421 (35.1%) | **19,816 / 56,421 (35.1%)** |
+
+`LEGAL=1`, 31,654 rows. +35 cards is exactly the 35 the dump named, which is the first time a
+prologue increment has landed on its own prediction to the card.
+
+Three runtime rows on *Wingsteed Rider*'s own printing — a Giant Growth pointed at it, the same spell
+pointed at the Bear Cub beside it, and a creature spell that points at nothing — plus two mapping
+rows for the full name and "this creature". Break-run: answering `targetsSelf` from "the spell
+targeted *something*" rather than from the holder fails the middle row.

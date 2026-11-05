@@ -894,6 +894,15 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     colors: characteristics.colors,
     manaValue: (next.cardDefs[inst.defKey]?.cmc ?? 0) + (object.x ?? 0),
     subtypes: characteristics.typeLine.subtypes,
+    /*
+      And what it was pointed at, for heroic (D476). Card targets only, because that is the whole
+      of what the printed sentence asks — "a spell that targets **this creature**" — and a seat in
+      the same list would make "targets you" look like the same question.
+
+      On the event rather than looked up at resolution, like everything above it: a heroic trigger
+      resolves after its spell may have been countered or resolved off the stack.
+    */
+    targetIds: object.targets.flatMap((t) => (t.kind === 'card' ? [t.id] : [])),
     // Which spell, as well as what kind of spell: a Chalice of the Void has to read its mana value
     // and then counter that object. See the `spell-cast` event's `object`.
     object: object.id,
@@ -1000,6 +1009,8 @@ function castFaceDown(
     colors: [],
     manaValue: 0,
     subtypes: [],
+    // A face-down spell has nothing to target with (`castFaceDown` refuses an action carrying one).
+    targetIds: [],
     object: object.id,
     // A morph is a cast, so it is one of this caster's spells this turn like any other.
     nth: next.spellsCastThisTurnBy[String(action.by)] ?? 1,
