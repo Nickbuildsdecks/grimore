@@ -13031,9 +13031,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
 
   /*
     A mana ability, which is `produces` and no effect at all. `Add {R}{G}` is two symbols and one
-    ability; `Add {R} or {G}` is a *choice*, which `AbilityDef` expresses with one ability per
-    colour on the hand-written dual lands, so it is left to `cardFromData`'s land path rather than
-    guessed at here.
+    ability.
   */
   const adding = /^add ((?:\{[WUBRGC]\}\s*)+)$/i.exec(clause);
   if (adding !== null) {
@@ -13041,6 +13039,50 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       .map((sym) => sym.slice(1, -1).toUpperCase() as ManaType);
     if (produces.length === 0) return null;
     return { abilities: [{ cost, description: text, produces }] };
+  }
+
+  /*
+    And a mana ability that is a **choice** of colours: "Add {B} or {R}", "Add {W}, {U}, or {B}",
+    "Add one mana of any color".
+
+    `AbilityDef` has no "one of these" — the hand-written dual lands and Birds of Paradise express it
+    as **one ability per colour**, and `manaSources` collapses several free tap-for-mana abilities on
+    one permanent back into a single source that makes one of their colours. So this emits the same
+    shape the pool already uses rather than a new one.
+
+    **This branch's docblock used to say the opposite** — that a choice "is left to `cardFromData`'s
+    land path rather than guessed at here" — and the corpus says that leaves cards on the floor
+    rather than safe: 252 legal lines print "Add {c} or {c}", 112 "Add one mana of any color" and 22
+    "Add {c}, {c}, or {c}", and **67 + 55 of those cards have no other unread line at all** (D444).
+    `cardFromData` reads a whole card or nothing, so a dual land that also enters tapped and gains
+    its controller a life gets no script from it, and this reader is the only thing that can finish
+    one.
+
+    The description is **per colour**, not the printed line, for the same reason the Guildgates are
+    written that way: the table shows a description on the button a player presses, and two buttons
+    both reading "{T}: Add {B} or {R}." cannot be told apart. The cost prefix is kept verbatim, so
+    "{1}, {T}: Add {B} or {R}." becomes two abilities reading "{1}, {T}: Add {B}." and "{1}, {T}: Add
+    {R}.".
+
+    Everything narrower stays unread, and each is a restriction this shape cannot express: "Spend
+    this mana only to cast a creature spell" (37 legal lines), "Add one mana of the chosen color"
+    (20 — there is no chosen colour until an `As ~ enters` reader exists), "Add two mana in any
+    combination of colors" (10), "Add {c} or one mana of the chosen color" (10). They are refused by
+    the anchors rather than by a list: a second sentence or an extra word simply does not match.
+  */
+  const choice = /^add ((?:\{[WUBRGC]\}, )*\{[WUBRGC]\},? or \{[WUBRGC]\})$/i.exec(clause);
+  const anyColour = /^add one mana of any colou?r$/i.test(clause);
+  if (choice !== null || anyColour) {
+    const options: readonly ManaType[] = choice === null
+      ? COLOURS
+      : (choice[1]!.match(/\{([WUBRGC])\}/g) ?? [])
+        .map((sym) => sym.slice(1, -1).toUpperCase() as ManaType);
+    if (options.length === 0) return null;
+    return {
+      abilities: options.map((colour) => ({
+        cost, description: `${split[1]!.trim()}: Add {${colour}}.`, produces: [colour],
+      })),
+    };
   }
 
   /*

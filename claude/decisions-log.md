@@ -27750,3 +27750,74 @@ with its corpus count and the name of the runtime block that drives it (D442's r
 **Five breaks, five failures.**
 
 Legal-only coverage 16,416 of 56,421 lines (29.1%), **7,419 cards with a script** (7,411 → 7,419). GATE OK, 2,025 engine tests.
+
+## D444 — A mana ability that is a choice of colours, which was left to a path that cannot reach it
+
+The single biggest "one line from finished" shape in the corpus, found by asking a better question:
+instead of ranking prologue families by lines printed, rank **shapes by how many cards have no other
+unread line**. 17,439 legal cards are one line from finished, and the top of that list is a mana
+ability:
+
+| shape | legal lines | cards one line from finished |
+| --- | --- | --- |
+| `{T}: Add {B} or {R}` | 252 | 67 |
+| `{T}: Add one mana of any color` | 112 | 55 |
+| `{T}: Add {W}, {B}, or {G}` | 22 | — |
+
+The branch that reads an activated ability had a comment saying a choice "is a *choice*, which
+`AbilityDef` expresses with one ability per colour on the hand-written dual lands, so it is left to
+`cardFromData`'s land path rather than guessed at here". The first half is right and the conclusion
+does not follow: **`cardFromData` reads a whole card or nothing**, so *Akoum Refuge* — which also
+enters tapped and gains its controller a life — got no script from either path. A reader that defers
+to a path that cannot reach the card is not deferring, it is dropping it.
+
+### The shape is the pool's own
+
+`AbilityDef` has no "one of these", and it does not need one: the hand-written Guildgates and Birds
+of Paradise express a choice as **one ability per colour**, and `manaSources` already collapses
+several free tap-for-mana abilities on one permanent back into a single source that makes one of
+their colours. So this emits two abilities for "Add {B} or {R}", three for the Oxford-comma form and
+five for "any color" — nothing new in the model.
+
+The descriptions are **per colour**, not the printed line, because the table puts one on each button
+and two buttons reading "{T}: Add {B} or {R}." cannot be told apart. The cost prefix is kept
+verbatim, so *An-Havva Township*'s "{2}, {T}: Add {R} or {W}." becomes "{2}, {T}: Add {R}." and
+"{2}, {T}: Add {W}.".
+
+### What stays unread, and why the anchors do the refusing
+
+Each narrower form carries a restriction this shape cannot express: "Spend this mana only to cast a
+creature spell" (37 legal lines), "Add one mana of the chosen color" (20 — there is no chosen colour
+until something reads "As ~ enters, choose a color"), "Add two mana in any combination of colors"
+(10), "Add {c} or one mana of the chosen color" (10), and *Adarkar Wastes*' painland sentence. None
+needs a refusal list: the pattern is anchored at both ends, so a second sentence or an extra word
+simply does not match.
+
+### The break run caught a test that could not fail
+
+The "any color" row was first written with Accomplished Alchemist's *first* line only — and the
+break that disabled the branch passed. With one line, `cardFromData` reads the whole card as a mana
+creature (#309) and the line reader is never reached. Both printed lines are in the fixture now, so
+the whole-card path refuses and the row exercises what it claims to.
+
+### Verified
+
+Two runtime tests on printed **Akoum Refuge** through `customDeck`: three copies pay for a Lightning
+Bolt ({R}) and then a Doom Blade ({1}{B}) off one printed line, which is the choice working in both
+directions through the engine's own auto-tapper; and a fourth copy played from hand arrives tapped
+and gains the life, which are the other two lines `cardFromData` used to refuse the card over. Plus
+a five-row compile table on printed cards and four refusals.
+
+**Six breaks, six failures.**
+
+### The instrument is the deliverable
+
+The probe that found this is now `scripts/measure/one-line-short.mjs`, with a row in the measure
+README. It prints what `compilable.mjs` cannot: 16,698 legal cards are **exactly one unread line**
+from a finished script, grouped by that line's shape and ranked by how many cards each shape would
+finish. Its own docblock says the row is a ceiling and not a forecast, and names the row that must
+*stay* unread ("Spend this mana only to cast a creature spell") so nobody reads the list as a to-do.
+
+Legal-only coverage **16,855 of 56,421 lines (29.9%)**, **7,652 cards with a script**
+(7,419 → 7,652, +233), 4,157 with every printed line read (4,036 → 4,157, +121) — the largest single
+increment in this run. GATE OK, 2,035 engine tests.

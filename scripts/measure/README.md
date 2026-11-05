@@ -118,6 +118,7 @@ it.
 | `state-invariants.mjs` | is the state self-consistent after every action of a real game? | `SEEDS=4 node scripts/measure/state-invariants.mjs`, `SEEDS=2 POD=1 …` |
 | `wire-growth.mjs` | does a per-seat view stay inside `STATE_MAX_BYTES` for a **whole** game, not just one position? | `SEEDS=6 node scripts/measure/wire-growth.mjs`, `SEEDS=4 SINGLETON=1 …` (four pasted hundred-card lists) |
 | `derivable.mjs` | what share of a card set plays with **no hand-written script at all**, by card type, and what are the commonest reasons the rest are refused? | `node scripts/measure/derivable.mjs` (the pool, a floor), `… --file oracle-cards.json` (the real answer, once the import has been run) |
+| `one-line-short.mjs` | of the cards that are **exactly one unread line** from a finished script, what does that line look like? The work queue ranked by cards finished rather than lines printed — which is what found D444, worth +233 cards against about +10 for each of the six increments picked off `compilable.mjs`'s ranking. | `LEGAL=1 node scripts/measure/one-line-short.mjs --file corpus.json`, `TOP=40 …` |
 
 **Pair your arms, or do not believe the difference.** Two canonical 288-game tables of the same
 thirteen decks, differing only in which seeds they used, disagree by up to **thirty games** on one

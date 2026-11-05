@@ -22501,3 +22501,86 @@ describe('the batched hit, as printed text', () => {
     expect(treasures(s, 1 as SeatIndex)).toBe(0);
   });
 });
+
+/*
+  A compiled mana ability that is a choice of colours, played (D444).
+
+  "Add {B} or {R}" is 252 legal lines, and 67 of those cards have no other unread line — the single
+  biggest "one line from finished" shape in the corpus. A compile assertion says the line became two
+  abilities; these say the land actually pays for a spell of either colour.
+*/
+describe('a dual land from printed text', () => {
+  const REFUGE = {
+    name: 'Akoum Refuge', type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+    power: null, toughness: null, loyalty: null,
+    oracle_text: 'Akoum Refuge enters tapped.\nWhen Akoum Refuge enters, you gain 1 life.\n{T}: Add'
+      + ' {B} or {R}.',
+  };
+
+  const table = () => {
+    const built = customDeck({
+      id: 'refuge-list',
+      name: 'Akoum Refuge',
+      entries: [
+        { name: 'Akoum Refuge', count: 5 },
+        { name: 'Lightning Bolt', count: 4 },
+        { name: 'Doom Blade', count: 4 },
+        { name: 'Mountain', count: 47 },
+      ],
+      data: [REFUGE as never],
+    });
+    expect(built.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'refuge-list', 1: 'verdant-guard' },
+      deckSpecs: { 'refuge-list': built.deck },
+      battlefield: {
+        0: ['Akoum Refuge', 'Akoum Refuge', 'Akoum Refuge'],
+        1: ['Grizzly Bears'],
+      },
+      hands: { 0: ['Lightning Bolt', 'Doom Blade', 'Akoum Refuge'] },
+      turn: 3,
+      firstSeat: 0,
+    });
+  };
+
+  const refuges = (s: GameState) => [...ids(s, 0 as SeatIndex, 'battlefield')]
+    .filter((id) => s.cardDefs[s.instances[id]!.defKey]!.name === 'Akoum Refuge');
+
+  it('taps for red for a Bolt and for black for a Doom Blade, off one printed line', () => {
+    /*
+      Both halves of the choice on one board, which is what makes this about the choice rather than
+      about a land that happens to make mana: the Bolt needs {R} and the Doom Blade {B}, and the
+      only sources are two copies of the same land. The engine's auto-tapper picks the ability, so a
+      card that offered only one colour would fail the second cast rather than the first.
+    */
+    let s = advanceTo(table(), 'precombat-main');
+    // Three, because the Bolt spends one for {R} and the Doom Blade needs {1}{B} off the other two.
+    expect(refuges(s)).toHaveLength(3);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Lightning Bolt'),
+      targets: [{ kind: 'player', seat: 1 }],
+    } as Action)));
+    expect(s.seats[1]!.life).toBe(17);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears') }],
+    } as Action)));
+    expect(namesIn(s, 1 as SeatIndex, 'graveyard')).toContain('Grizzly Bears');
+  });
+
+  it('arrives tapped and gains the life, which are the other two printed lines', () => {
+    /*
+      The card is only finished if all three lines are, and the other two are what `cardFromData`
+      used to refuse the whole card over. Cast from the hand so the arrival is real rather than set
+      up: it enters tapped, so it cannot pay for anything this turn.
+    */
+    let s = advanceTo(table(), 'precombat-main');
+    const before = s.seats[0]!.life;
+    s = drain(apply(s, {
+      type: 'auto:playLand', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Akoum Refuge'),
+    } as Action));
+    const played = refuges(s).filter((id) => s.instances[id]!.tapped);
+    expect(played).toHaveLength(1);
+    expect(s.seats[0]!.life).toBe(before + 1);
+  });
+});

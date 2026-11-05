@@ -7604,3 +7604,93 @@ describe('the declaration, read off the prologue', () => {
     expect(triggers[0]!.on).toEqual({ kind: 'attacks' });
   });
 });
+
+describe('a mana ability that is a choice of colours', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const descriptions = (c: ReturnType<typeof compileCard>) =>
+    ((field(c.ok ? c.script : undefined, 'abilities') ?? []) as readonly { description: string }[])
+      .map((a) => a.description);
+  const unreadLines = (c: ReturnType<typeof compileCard>) =>
+    (c.ok ? c.unread : []).map((u) => u.line);
+
+  it.each([
+    /*
+      "Add {B} or {R}" is 252 legal lines, and 67 of those cards have no other unread line at all.
+      The branch that reads it used to say a choice "is left to `cardFromData`'s land path rather
+      than guessed at here" — and `cardFromData` reads a whole card or nothing, so a dual land that
+      also enters tapped and gains a life got no script from either (D444).
+
+      `AbilityDef` has no "one of these": the hand-written Guildgates and Birds of Paradise express
+      a choice as one ability per colour, so this emits the pool's own shape. The descriptions are
+      per colour because the table puts one on each button, and two buttons reading "Add {B} or
+      {R}." cannot be told apart.
+    */
+    ['Akoum Refuge', 'Land', '', 0,
+      'Akoum Refuge enters tapped.\nWhen Akoum Refuge enters, you gain 1 life.\n{T}: Add {B} or {R}.',
+      ['{T}: Add {B}.', '{T}: Add {R}.']],
+    // Three colours, printed with the Oxford comma; the other line stays unread, which costs this
+    // one nothing (D362).
+    ['Abzan Banner', 'Artifact', '{3}', 3,
+      '{T}: Add {W}, {B}, or {G}.',
+      ['{T}: Add {W}.', '{T}: Add {B}.', '{T}: Add {G}.']],
+    // And a cost that is not just a tap: the prefix is kept verbatim on each option.
+    ['An-Havva Township', 'Land', '', 0,
+      '{2}, {T}: Add {R} or {W}.',
+      ['{2}, {T}: Add {R}.', '{2}, {T}: Add {W}.']],
+  ])('%s becomes one ability per colour', (name, typeLine, cost, cmc, text, expected) => {
+    const read = compileCard({
+      name, type_line: typeLine, mana_cost: cost, cmc, colors: [], layout: 'normal',
+      oracle_text: text,
+    });
+    expect(read.ok).toBe(true);
+    expect(descriptions(read)).toEqual(expected);
+  });
+
+  it('reads "any color" as the five Birds of Paradise abilities', () => {
+    /*
+      The same shape with five options, which is how Birds of Paradise is written by hand. Its own
+      row because a creature needs a printed body to compile at all — and **both** of Accomplished
+      Alchemist's printed lines are here on purpose: with only the first, `cardFromData` reads the
+      whole card as a mana creature (#309) and this reader is never reached, so the break run showed
+      the row passing with the branch disabled. The second line stays unread, which is what forces
+      the line-by-line path.
+    */
+    const read = compileCard({
+      name: 'Accomplished Alchemist', type_line: 'Creature — Elf Druid', mana_cost: '{3}{G}',
+      cmc: 4, colors: ['G'], power: '2', toughness: '5', layout: 'normal',
+      oracle_text: '{T}: Add one mana of any color.\n{T}: Add X mana of any one color, where X is'
+        + ' the amount of life you gained this turn.',
+    });
+    expect(read.ok).toBe(true);
+    expect(descriptions(read)).toEqual([
+      '{T}: Add {W}.', '{T}: Add {U}.', '{T}: Add {B}.', '{T}: Add {R}.', '{T}: Add {G}.',
+    ]);
+    expect(unreadLines(read)).toHaveLength(1);
+  });
+
+  it.each([
+    /*
+      Each refusal is a restriction this shape cannot express, and each is refused by the anchors
+      rather than by a list — a second sentence or an extra word simply does not match.
+    */
+    // 37 legal lines. Reading it would make a Ziggurat tap for any spell.
+    ['Ancient Ziggurat', 'Land',
+      '{T}: Add one mana of any color. Spend this mana only to cast a creature spell.'],
+    // 20 legal lines, and there is no chosen colour until an "As ~ enters, choose a colour" reader
+    // exists to make one.
+    ['Colour Thing', 'Land', '{T}: Add one mana of the chosen color.'],
+    // 10 legal lines: two mana, not one, and the combination is a choice per symbol.
+    ['Combination Thing', 'Artifact', '{T}: Add two mana in any combination of colors.'],
+    // A second sentence, which is Adarkar Wastes' painland clause — the choice is right and the
+    // damage is not read, so the line stays whole.
+    ['Adarkar Wastes', 'Land', '{T}: Add {W} or {U}. Adarkar Wastes deals 1 damage to you.'],
+  ])('leaves %s\'s narrower mana ability unread', (name, typeLine, text) => {
+    const read = compileCard({
+      name, type_line: typeLine, mana_cost: '', cmc: 0, colors: [], layout: 'normal',
+      oracle_text: text,
+    });
+    expect(read.ok).toBe(true);
+    expect(unreadLines(read)).toEqual([text]);
+  });
+});

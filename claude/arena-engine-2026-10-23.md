@@ -11729,3 +11729,28 @@ only mean one. A duel cannot tell the two readings apart, so the test is a pod �
 opponents, four Treasures.
 
 Legal-only coverage 16,416 of 56,421 lines (29.1%) and **7,419 cards with a script**.
+
+## The question that found the biggest gap (D444)
+
+Six increments of prologue families moved coverage about half a point each. Then the queue was
+re-asked a better way: not "which family prints the most lines" but **"which shape is the last thing
+standing between a card and a finished script"**. 17,439 legal cards are one unread line from
+finished, and the top of that list was not a trigger at all — it was a mana ability:
+`{T}: Add {B} or {R}` (252 lines, **67** cards one line from finished) and `{T}: Add one mana of any
+color` (112 lines, **55**).
+
+The reader had a comment explaining that a choice of colours "is left to `cardFromData`'s land path
+rather than guessed at here". `cardFromData` reads a whole card or nothing — so Akoum Refuge, which
+also enters tapped and gains a life, got no script from either path. Deferring to a path that cannot
+reach the card is dropping it.
+
+The fix emits the pool's own shape: one ability per colour, exactly as the hand-written Guildgates
+and Birds of Paradise are written, with per-colour descriptions because the table puts one on each
+button.
+
+**+233 cards with a script in one increment**, against roughly +10 for each of the six before it.
+Coverage 16,855 of 56,421 legal lines (29.9%), 7,652 cards scripted, 4,157 fully read.
+
+The lesson is about the instrument, not the mana: a queue ranked by lines printed kept pointing at
+trigger prologues whose cards had three other gaps each. `scripts/measure` should keep the
+"one line from finished" view.
