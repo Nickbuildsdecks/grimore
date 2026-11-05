@@ -17,7 +17,7 @@
 import type { CardDef, ZoneId } from './cards.js';
 import type { Keyword } from './characteristics.js';
 import type { EffectFn, PumpOptions } from './effects.js';
-import type { ManaType } from './mana.js';
+import type { Color, ManaType } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
 import type { AttackedTarget, DecisionZone, Step, Target } from './turnTypes.js';
 
@@ -585,14 +585,81 @@ export type TriggerEvent =
        *
        * Measured before it was added (D435): 17 legal corpus lines print "an enchantment spell" and
        * 21 "an artifact spell", with 9 and 7 cards respectively whose body this compiler already
-       * reads. "A **historic** spell" (19 lines, 4 cards) and "a **multicolored** spell" (19, 4)
-       * are deliberately **not** expressible here — historic is artifact-or-legendary-or-Saga and
-       * multicolored is a fact about the mana cost, so neither is a card type and a reading that
-       * pretended otherwise would fire on the wrong spells.
+       * reads. "A **historic** spell" (19 lines, 4 cards) is deliberately **not** expressible here —
+       * artifact-or-legendary-or-Saga is not a card type, and a reading that pretended otherwise
+       * would fire on the wrong spells. "A **multicolored** spell" was refused beside it on the
+       * stated ground that it is "a fact about the mana cost"; that was wrong — CR 105.1 makes it a
+       * fact about the card's colours — and it has its own field below since D474.
        */
       readonly ofType?: string;
       /** Set by the engine when it raises the event: the spell's card types, lowercased. */
       readonly types?: readonly string[];
+      /**
+       * "Whenever you cast a **white** spell", and "a **blue or black** spell" — the colours the
+       * spell has to be one of (CR 105.2).
+       *
+       * Measured before it was added (D474): the cast prologue is the biggest family in the
+       * `prologue-gap.mjs` ranking, and **46 legal cards** one unread line from a finished script
+       * print a colour in it — 16 for "you", 20 for "a player", 10 for "an opponent". It is a
+       * question about the spell on the stack rather than about a card type, so it cannot ride in
+       * `ofType`: a white artifact spell is both, and an artifact spell is not a colour.
+       *
+       * A **list, answered any-of**, because the corpus prints both widths and the two-colour
+       * spelling means exactly that: a Mold Adder's "a blue or black spell" fires on a spell that
+       * is either, and a Snake Pit's does too. A spell that is both still fires it once, which is
+       * what one event per cast already gives.
+       */
+      readonly ofColours?: readonly Color[];
+      /**
+       * "Whenever a player casts a **multicolored** spell" — two or more colours (CR 105.1).
+       *
+       * **This was refused twice before it was read** (D435, D440), on the ground that multicolored
+       * "is a fact about the mana cost" rather than a card type. The first half of that was simply
+       * wrong: CR 105.1 makes it a fact about the card's *colours*, which the engine has always
+       * computed and, since D474, puts on this event. So the refusal came off with the field it was
+       * waiting for, and the 8 legal cards behind it read.
+       *
+       * Asked of the event's colours rather than of a count on the card, so a spell made
+       * multicoloured by an effect counts and a face-down one — colourless, CR 708.2 — does not.
+       */
+      readonly multicoloured?: true;
+      /** Set by the engine when it raises the event: the spell's colours (CR 202.2). */
+      readonly colors?: readonly Color[];
+      /**
+       * "Whenever you cast a **Spirit or Arcane** spell" — the subtypes the spell has to be one of.
+       *
+       * Kamigawa's whole block prints this one line, and it is the largest single cast spelling in
+       * the corpus after the colours: **16 legal cards** one unread line from a finished script say
+       * "Spirit or Arcane", and another eight name a single tribe (Goblin, Giant, Wizard, Elf,
+       * Pirate, Knight, Aura, Eldrazi).
+       *
+       * Separate from `ofType` rather than folded into it, because the two sides of a type line are
+       * different questions: *Arcane* is a subtype of an instant and *artifact* is a type, and a
+       * field that accepted either would make "an Aura spell" and "an artifact spell" look like the
+       * same kind of filter when one is read off the back of the dash and one off the front.
+       * Compared case-insensitively, since the printed line capitalises a subtype and the engine
+       * lowercases nothing on the way past.
+       */
+      readonly ofSubtypes?: readonly string[];
+      /** Set by the engine when it raises the event: the spell's subtypes, as printed. */
+      readonly subtypes?: readonly string[];
+      /**
+       * "Whenever you cast a spell with **mana value 4 or greater**" — the floor, inclusive.
+       *
+       * 16 legal cards print a mana-value bound in a cast prologue (D474). Two fields rather than
+       * one signed comparison, because both halves are printed — "or greater" and "or less" — and
+       * a card that printed both would be asking for a range rather than for two readings of one
+       * bound.
+       *
+       * The value is the spell's **mana value as it was cast**, which the event carries: by the
+       * time the trigger resolves the object may be gone, and an {X} spell's mana value on the
+       * stack counts X as chosen (CR 202.3b) — which is what the engine supplies in `manaValue`.
+       */
+      readonly manaValueAtLeast?: number;
+      /** "…with mana value 3 or less" — the ceiling, inclusive. See `manaValueAtLeast`. */
+      readonly manaValueAtMost?: number;
+      /** Set by the engine when it raises the event: the spell's mana value as cast. */
+      readonly manaValue?: number;
       /**
        * Set by the engine: the spell on the stack, so a trigger can read it or answer it.
        *

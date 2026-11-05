@@ -25989,3 +25989,285 @@ describe('you may X. If you do, Y — the construct, read as what it means (D472
     expect((specs[1] as { askOnlyIfChosen?: string }).askOnlyIfChosen).toBe('Yes');
   });
 });
+
+/*
+  The cast prologue, parsed rather than enumerated (D474).
+
+  D435 put eight exact sentences in `TRIGGER_SHAPES` and this entry replaced them with one parse:
+  who cast it, times what kind of spell, times whether a copy counts. `compile.test.ts` asserts the
+  mapping for every spelling it reads and the eight it refuses; what is here is the **behaviour**,
+  because three of the filters are new fields on the event and a field that is only read by a
+  mapping test is a field nothing has ever asked a question of.
+
+  Every card below is a real printing, pasted out of the legal corpus with its own power, toughness
+  and cost, and so is every spell cast at it — six vanilla creatures, which is the cleanest way to
+  choose a colour, a mana value and a subtype without a second effect in the way.
+
+  What each test can tell apart, which is the thing worth writing down:
+
+   - **Titania's Chosen** reads a colour and `by: 'any'`: a green spell counts, a white one does
+     not, and an *opponent's* green spell counts too — the row that tells "a player" from "you".
+   - **Mold Adder** reads two colours and `by: 'opponent'`: blue counts, black counts, green does
+     not, and your own blue spell does not. Four rows because `ofColours` is any-of and a reading
+     that took the first colour, or all of them, passes one or two of these and fails the rest.
+   - **Kami of the Hunt** reads a subtype pair, which is the back half of a type line: a Spirit
+     spell pumps it and a Bear does not.
+   - **Pyrostatic Pillar** reads a mana-value ceiling off the event rather than off the card.
+   - **Rewards of Diversity** reads `multicoloured`, which was twice refused as "a fact about the
+     mana cost" before D474 showed it is a fact about the card's colours (CR 105.1).
+*/
+describe('the cast prologue, parsed: colour, subtype and mana value (D474)', () => {
+  // Six vanilla creatures, verbatim from the legal corpus. A vanilla body is deliberate: the only
+  // thing each one contributes to the test is its colour, its mana value and its subtype.
+  const SPELLS = [
+    { name: 'Eager Cadet', type_line: 'Creature — Human Soldier', mana_cost: '{W}', cmc: 1, colors: ['W'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' },
+    { name: 'Bear Cub', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '' },
+    { name: 'Coral Merfolk', type_line: 'Creature — Merfolk', mana_cost: '{1}{U}', cmc: 2, colors: ['U'], layout: 'normal', power: '2', toughness: '1', oracle_text: '' },
+    { name: 'Dakmor Scorpion', type_line: 'Creature — Scorpion', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal', power: '2', toughness: '1', oracle_text: '' },
+    { name: 'Gnarled Mass', type_line: 'Creature — Spirit', mana_cost: '{1}{G}{G}', cmc: 3, colors: ['G'], layout: 'normal', power: '3', toughness: '3', oracle_text: '' },
+    { name: 'Axebane Beast', type_line: 'Creature — Beast', mana_cost: '{3}{G}', cmc: 4, colors: ['G'], layout: 'normal', power: '3', toughness: '4', oracle_text: '' },
+    { name: 'Grizzled Leotau', type_line: 'Creature — Cat', mana_cost: '{G}{W}', cmc: 2, colors: ['G', 'W'], layout: 'normal', power: '1', toughness: '5', oracle_text: '' },
+  ];
+
+  /** Six lands, one of every colour the spells above need, and the watcher already in play. */
+  const LANDS = ['Forest', 'Forest', 'Forest', 'Plains', 'Island', 'Swamp'];
+
+  /**
+   * A table built around one printed watcher, held by `holder`, with `caster` on the clock.
+   *
+   * Both seats load the same list so either of them can hold a fixture spell: the `by` filters are
+   * half of what is being tested here, and a deck only one seat can cast from cannot test them.
+   */
+  const tableWith = (
+    watcher: Record<string, unknown>,
+    holder: SeatIndex,
+    caster: SeatIndex,
+    hand: readonly string[],
+  ) => {
+    const name = watcher['name'] as string;
+    const list = customDeck({
+      id: 'cast-parse',
+      name,
+      entries: [
+        { name, count: 1 },
+        ...SPELLS.map((spell) => ({ name: spell.name, count: 4 })),
+        { name: 'Forest', count: 12 },
+        { name: 'Plains', count: 7 },
+        { name: 'Island', count: 6 },
+        { name: 'Swamp', count: 6 },
+      ],
+      data: [watcher as never, ...(SPELLS as never[])],
+    });
+    expect(list.unknown).toEqual([]);
+    // D430: `customDeck` consults the pool before the printed rows, so a fixture that shared a name
+    // with a pool card would be silently replaced by it. These seven do not, and this says so.
+    expect([...list.fromData].sort()).toEqual([...SPELLS.map((one) => one.name), name].sort());
+    let s = arena({
+      decks: { 0: 'cast-parse', 1: 'cast-parse' },
+      deckSpecs: { 'cast-parse': list.deck },
+      battlefield: { [holder]: [name, ...LANDS], ...(holder === caster ? {} : { [caster]: LANDS }) },
+      hands: { [caster]: hand },
+      turn: 3,
+      firstSeat: caster,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return tapAllLands(s, caster);
+  };
+
+  /** Casts one creature from `caster`'s hand and lets everything it started resolve. */
+  const cast = (s: GameState, caster: SeatIndex, spell: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: caster, card: find(s, caster, 'hand', spell),
+  } as Action)));
+
+  const TITANIAS_CHOSEN = {
+    name: "Titania's Chosen", type_line: 'Creature — Elf Archer', mana_cost: '{2}{G}', cmc: 3,
+    colors: ['G'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: "Whenever a player casts a green spell, put a +1/+1 counter on Titania's Chosen.",
+  };
+
+  it.each([
+    ['Bear Cub', 1],
+    ['Eager Cadet', 0],
+  ])("Titania's Chosen: your %s leaves %d counter on it", (spell, counters) => {
+    let s = tableWith(TITANIAS_CHOSEN, 0 as SeatIndex, 0 as SeatIndex, [spell as string]);
+    s = cast(s, 0 as SeatIndex, spell as string);
+    const elf = find(s, 0 as SeatIndex, 'battlefield', "Titania's Chosen");
+    expect(s.instances[elf]!.counters['+1/+1'] ?? 0).toBe(counters as number);
+  });
+
+  it("Titania's Chosen counts an opponent's green spell: \"a player\" is not \"you\"", () => {
+    // The row that tells `by: 'any'` from `by: 'you'`. Seat 1 is on the clock and casts; the Elf
+    // belongs to seat 0 and never cast anything.
+    let s = tableWith(TITANIAS_CHOSEN, 0 as SeatIndex, 1 as SeatIndex, ['Bear Cub']);
+    s = cast(s, 1 as SeatIndex, 'Bear Cub');
+    const elf = find(s, 0 as SeatIndex, 'battlefield', "Titania's Chosen");
+    expect(s.instances[elf]!.counters['+1/+1'] ?? 0).toBe(1);
+  });
+
+  const MOLD_ADDER = {
+    name: 'Mold Adder', type_line: 'Creature — Fungus Snake', mana_cost: '{G}', cmc: 1,
+    colors: ['G'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: 'Whenever an opponent casts a blue or black spell,'
+      + ' you may put a +1/+1 counter on Mold Adder.',
+  };
+
+  it.each([
+    // Any-of, both ways round: the printed "or" means either colour, not the first and not both.
+    ['Coral Merfolk', 1],
+    ['Dakmor Scorpion', 1],
+    ['Bear Cub', 0],
+  ])('Mold Adder: an opponent casting %s leaves %d counter on it', (spell, counters) => {
+    let s = tableWith(MOLD_ADDER, 0 as SeatIndex, 1 as SeatIndex, [spell as string]);
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1 as SeatIndex, 'hand', spell as string),
+    } as Action);
+    s = passBoth(s);
+    // The printed "you may" is a question put to the Adder's controller, which is seat 0 (D447).
+    if (s.pendingDecision !== null) {
+      expect(s.pendingDecision.seat).toBe(0);
+      s = apply(s, { type: 'auto:decide', by: 0, option: 'Yes' } as Action);
+    } else {
+      expect(counters).toBe(0);
+    }
+    s = drain(s);
+    const adder = find(s, 0 as SeatIndex, 'battlefield', 'Mold Adder');
+    expect(s.instances[adder]!.counters['+1/+1'] ?? 0).toBe(counters as number);
+  });
+
+  it('Mold Adder ignores its own controller’s blue spell: "an opponent" is not "a player"', () => {
+    let s = tableWith(MOLD_ADDER, 0 as SeatIndex, 0 as SeatIndex, ['Coral Merfolk']);
+    s = cast(s, 0 as SeatIndex, 'Coral Merfolk');
+    const adder = find(s, 0 as SeatIndex, 'battlefield', 'Mold Adder');
+    expect(s.instances[adder]!.counters['+1/+1'] ?? 0).toBe(0);
+    expect(s.pendingDecision).toBeNull();
+  });
+
+  const KAMI_OF_THE_HUNT = {
+    name: 'Kami of the Hunt', type_line: 'Creature — Spirit', mana_cost: '{2}{G}', cmc: 3,
+    colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Whenever you cast a Spirit or Arcane spell,'
+      + ' Kami of the Hunt gets +1/+1 until end of turn.',
+  };
+
+  it.each([
+    // Gnarled Mass is a Spirit and Bear Cub is a Bear, and both are green {1}{G}-ish creatures —
+    // so the only thing that can separate these two rows is the back half of the type line.
+    ['Gnarled Mass', 3],
+    ['Bear Cub', 2],
+  ])('Kami of the Hunt: casting %s leaves it a %d-power creature', (spell, strength) => {
+    let s = tableWith(KAMI_OF_THE_HUNT, 0 as SeatIndex, 0 as SeatIndex, [spell as string]);
+    s = cast(s, 0 as SeatIndex, spell as string);
+    expect(power(s, find(s, 0 as SeatIndex, 'battlefield', 'Kami of the Hunt')))
+      .toBe(strength as number);
+  });
+
+  const PYROSTATIC_PILLAR = {
+    name: 'Pyrostatic Pillar', type_line: 'Enchantment', mana_cost: '{1}{R}', cmc: 2,
+    colors: ['R'], layout: 'normal', power: null, toughness: null,
+    oracle_text: 'Whenever a player casts a spell with mana value 3 or less,'
+      + ' Pyrostatic Pillar deals 2 damage to that player.',
+  };
+
+  it.each([
+    // The bound is inclusive and it is read off the event, not off the card: Gnarled Mass is
+    // exactly 3 and Axebane Beast is 4.
+    ['Gnarled Mass', 2],
+    ['Axebane Beast', 0],
+  ])('Pyrostatic Pillar: casting %s costs its caster %d life', (spell, lost) => {
+    let s = tableWith(PYROSTATIC_PILLAR, 0 as SeatIndex, 0 as SeatIndex, [spell as string]);
+    const before = life(s, 0 as SeatIndex);
+    s = cast(s, 0 as SeatIndex, spell as string);
+    expect(life(s, 0 as SeatIndex)).toBe(before - (lost as number));
+  });
+
+  const REWARDS_OF_DIVERSITY = {
+    name: 'Rewards of Diversity', type_line: 'Enchantment', mana_cost: '{2}{W}', cmc: 3,
+    colors: ['W'], layout: 'normal', power: null, toughness: null,
+    oracle_text: 'Whenever an opponent casts a multicolored spell, you gain 4 life.',
+  };
+
+  it.each([
+    ['Grizzled Leotau', 4],
+    ['Bear Cub', 0],
+  ])('Rewards of Diversity: an opponent casting %s gains its controller %d life', (spell, gained) => {
+    let s = tableWith(REWARDS_OF_DIVERSITY, 0 as SeatIndex, 1 as SeatIndex, [spell as string]);
+    const before = life(s, 0 as SeatIndex);
+    s = cast(s, 1 as SeatIndex, spell as string);
+    expect(life(s, 0 as SeatIndex)).toBe(before + (gained as number));
+  });
+
+  it('Copper Tablet hits every player at their own upkeep, its controller included (D475)', () => {
+    /*
+      "At the beginning of each player's upkeep, Copper Tablet deals 1 damage to that player" —
+      printed text out of the corpus, and the card that D475's guard was silently halving.
+
+      `raise` passes the **active** seat for a step trigger, so "that player" is whoever's upkeep it
+      is. The old reading dropped the effect whenever that seat was the Tablet's own controller, so
+      the card hit the opponent every turn and its owner never — which is not the card, and is the
+      kind of wrongness nothing notices because the trigger still fires and still logs.
+
+      Both halves are asserted, in one game: the opponent's upkeep and then the controller's own.
+    */
+    const list = customDeck({
+      id: 'upkeep-tablet',
+      name: 'Copper Tablet',
+      entries: [{ name: 'Copper Tablet', count: 1 }, { name: 'Mountain', count: 59 }],
+      data: [{
+        name: 'Copper Tablet', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [],
+        layout: 'normal', power: null, toughness: null,
+        oracle_text: "At the beginning of each player's upkeep,"
+          + ' Copper Tablet deals 1 damage to that player.',
+      } as never],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData]).toEqual(['Copper Tablet']);
+    let s = arena({
+      decks: { 0: 'upkeep-tablet', 1: 'upkeep-tablet' },
+      deckSpecs: { 'upkeep-tablet': list.deck },
+      battlefield: { 0: ['Copper Tablet'] },
+      turn: 3,
+      firstSeat: 0,
+    });
+    const mine = life(s, 0 as SeatIndex);
+    const theirs = life(s, 1 as SeatIndex);
+    /*
+      `arena` leaves the table **in** the upkeep of the turn it built, and `nextTurn` walks to the
+      next one — so the first call resolves seat 0's upkeep and the second seat 1's, in that order.
+      The controller's own half therefore comes first, which is the half that used to do nothing.
+    */
+    s = nextTurn(s);
+    expect(life(s, 0 as SeatIndex)).toBe(mine - 1);
+    expect(life(s, 1 as SeatIndex)).toBe(theirs);
+    s = nextTurn(s);
+    expect(life(s, 1 as SeatIndex)).toBe(theirs - 1);
+    expect(life(s, 0 as SeatIndex)).toBe(mine - 1);
+  });
+
+  it('reads magecraft\'s "cast or copy" as the one filter that counts a copy', () => {
+    /*
+      Storm-Kiln Artist, printed text out of the corpus. Its first line — a power that counts
+      artifacts — stays unread, which is D362's hybrid working: the magecraft trigger is compiled
+      and flagged beside the line that is not.
+
+      A shape assertion rather than a game, and the reason is that the copy half already has one:
+      the pool's two hand-written magecraft cards drive `how: 'any'` through a real Twincast
+      (D231), so what is new here is only that a *compiled* prologue asks for it.
+    */
+    const read = compileCard({
+      name: 'Storm-Kiln Artist', type_line: 'Creature — Dwarf Shaman', mana_cost: '{3}{R}', cmc: 4,
+      colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Storm-Kiln Artist gets +1/+0 for each artifact you control.\n'
+        + 'Magecraft — Whenever you cast or copy an instant or sorcery spell, create a Treasure token.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line))
+      .toEqual(['Storm-Kiln Artist gets +1/+0 for each artifact you control.']);
+    const triggers = (read.script as { triggers?: readonly { readonly on: unknown }[] })
+      .triggers ?? [];
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]!.on).toEqual({
+      kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery', how: 'any',
+    });
+  });
+});

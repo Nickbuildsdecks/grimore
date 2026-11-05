@@ -11699,6 +11699,77 @@ export function wholeCardShapeFor(
     ?? soulbondShapeFor(def, lines);
 }
 
+/** One `spell-cast` trigger, which is the only event the parsed cast prologue below builds. */
+type CastEvent = Extract<TriggerDef['on'], { readonly kind: 'spell-cast' }>;
+
+/** Printed caster to the event's `by`. "A player" is anybody, including you. */
+const CAST_BY = {
+  you: 'you', 'a player': 'any', 'an opponent': 'opponent',
+} as const satisfies Readonly<Record<string, NonNullable<CastEvent['by']>>>;
+
+/** The five colour words, printed in lower case — which is how they are told from a subtype. */
+const CAST_COLOURS = {
+  white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G',
+} as const satisfies Readonly<Record<string, Color>>;
+
+/**
+ * "…an **instant or sorcery** spell", "a **blue or black** spell", "a **Spirit or Arcane** spell" —
+ * the descriptor between the article and the word *spell*, as the fields that answer it.
+ *
+ * Returns `{}` for a bare "a spell" and **`null` for anything it does not know**, which refuses the
+ * whole line rather than reading a narrower trigger as a wider one. The capital-letter test is the
+ * subtype test and the comment on the table's cast row says why it has to be.
+ */
+function castDescriptor(printed: string): Partial<CastEvent> | null {
+  const text = printed.trim();
+  if (text === '') return { spell: 'any' };
+  const lower = text.toLowerCase();
+  if (lower === 'creature') return { spell: 'creature' };
+  if (lower === 'noncreature') return { spell: 'noncreature' };
+  if (lower === 'instant or sorcery') return { spell: 'instant-or-sorcery' };
+  if (lower === 'artifact' || lower === 'enchantment') return { ofType: lower };
+  if (lower === 'multicolored' || lower === 'multicoloured') return { multicoloured: true };
+  const words = text.split(/ or /i);
+  const colours = words.map((word) => CAST_COLOURS[word.toLowerCase() as keyof typeof CAST_COLOURS]);
+  if (colours.every((colour) => colour !== undefined)) return { ofColours: colours as Color[] };
+  // A subtype is capitalised where it is printed; nothing else in this position is.
+  if (words.every((word) => /^[A-Z][A-Za-z'-]*$/.test(word))) return { ofSubtypes: words };
+  return null;
+}
+
+/**
+ * "…spell **with mana value 4 or greater**" — the tail after the word *spell*, as a bound.
+ *
+ * `{}` when there is no tail, `null` when there is one this does not read: "that targets ~", "from
+ * a graveyard", "during an opponent's turn" all land here and refuse the line.
+ */
+function castBound(printed: string): Partial<CastEvent> | null {
+  const text = printed.trim();
+  if (text === '') return {};
+  const bound = /^with mana value (\d+) or (less|greater)$/i.exec(text);
+  if (bound === null) return null;
+  const value = Number(bound[1]);
+  return bound[2]!.toLowerCase() === 'less'
+    ? { manaValueAtMost: value }
+    : { manaValueAtLeast: value };
+}
+
+/** The parsed cast prologue, as the one event it names. `null` refuses the line. */
+function castTrigger(matched: RegExpExecArray): readonly CastEvent[] | null {
+  const groups = matched.groups ?? {};
+  const by = CAST_BY[(groups.who ?? '').toLowerCase() as keyof typeof CAST_BY];
+  const what = castDescriptor(groups.what ?? '');
+  const bound = castBound(groups.tail ?? '');
+  if (by === undefined || what === null || bound === null) return null;
+  return [{
+    kind: 'spell-cast',
+    by,
+    ...what,
+    ...bound,
+    // "cast **or copy**" is magecraft, and the only printed line that counts a copy (CR 707.12).
+    ...(groups.copy === undefined ? {} : { how: 'any' as const }),
+  }];
+}
 /**
  * The printed trigger prologues this compiler knows, and the events each one names.
  *
@@ -11728,10 +11799,24 @@ export function wholeCardShapeFor(
  * tried before the plain one — which the regexes already enforce, since the plain one requires a
  * comma straight after "battlefield".
  */
-const TRIGGER_SHAPES: readonly {
+const TRIGGER_SHAPES: readonly ({
   readonly prologue: (self: string) => RegExp;
-  readonly on: readonly TriggerDef['on'][];
-}[] = [
+} & (
+  /** The events this prologue names, when the sentence names them by being itself. */
+  | { readonly on: readonly TriggerDef['on'][] }
+  /**
+   * Or the events **parsed out of the match**, for a family whose members differ only in a filter.
+   *
+   * Returning `null` refuses the line, and refusing is the point: a parsed row matches a wide
+   * sentence and then has to decide whether it understood the narrow part of it, which a fixed `on`
+   * never has to. A refusal falls through to the rest of the table and then to "unread", which is
+   * the outcome D362 asks for.
+   *
+   * Only the cast family takes this today. The step prologues are the obvious next candidate and
+   * are deliberately left enumerated until something measures them.
+   */
+  | { readonly from: (matched: RegExpExecArray) => readonly TriggerDef['on'][] | null }
+))[] = [
   /*
     An Aura's or an Equipment's own creature, which is what `who: 'attached'` is for (D433).
 
@@ -11867,79 +11952,67 @@ const TRIGGER_SHAPES: readonly {
        distinction would return the wrong creature to its owner's hand. The reading is worth having
        and wants `blocked` taught to the clause vocabulary first.
   */
-  // Thermo-Alchemist, Guttersnipe. `by: 'you'` is printed: "Whenever **you** cast".
-  {
-    prologue: () => /^Whenever you cast an instant or sorcery spell, (.+)$/i,
-    on: [{ kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' }],
-  },
-  // Firebrand Archer.
-  {
-    prologue: () => /^Whenever you cast a noncreature spell, (.+)$/i,
-    on: [{ kind: 'spell-cast', by: 'you', spell: 'noncreature' }],
-  },
   /*
-    ── The rest of the cast family ─────────────────────────────────────────────────────────
+    ── The cast family, parsed rather than enumerated ──────────────────────────────────────
 
-    The `spell-cast` event has had `by`, `spell`, `self` and `how` since the engine's first
-    Guttersnipe, and until these rows the compiler could read exactly three of the sentences that
-    use them. Ten candidate spellings were counted in the legal corpus and judged the way D434
-    established — on cards whose **body** this compiler already reads, not on lines printed, because
-    a row for a card whose body stays unread changes nothing (D362):
+    One row for every printed "Whenever <someone> casts <some kind of> spell,", which replaces the
+    eight hand-written rows that stood here (D474). The move is D469's, one level up: a family whose
+    members differ only in a filter is a parse, and a table of exact sentences reads the five
+    spellings somebody happened to measure and none of the forty-odd the corpus actually prints.
 
-    | printed | lines | cards | trigger |
-    | --- | --- | --- | --- |
-    | you cast a creature spell | 44 | **11** | `by: 'you', spell: 'creature'` |
-    | you cast an enchantment spell | 17 | **9** | `ofType: 'enchantment'` |
-    | you cast a spell | 49 | **8** | `by: 'you'` |
-    | when you cast this spell | 80 | **7** | `self: true` |
-    | you cast an artifact spell | 21 | **7** | `ofType: 'artifact'` |
-    | you cast a historic spell | 19 | 4 | — |
-    | you cast a multicolored spell | 19 | 4 | — |
-    | a player casts a spell | 35 | **2** | `by: 'any'` |
-    | an opponent casts a spell | 27 | **1** | `by: 'opponent'` |
-    | an opponent casts a creature spell | 7 | 0 | — |
+    **What the prologue decomposes into.** Who cast it — `you`, `a player`, `an opponent` — times
+    what kind of spell, times whether a copy counts. Each of the three is a field the event already
+    has or gained in this entry, so the parse adds no reading the engine cannot answer:
 
-    **Historic and multicolored are refused on the mechanism, not the count.** "Historic" is
-    artifact *or* legendary *or* Saga and "multicolored" is a fact about the mana cost; neither is a
-    card type, so neither is expressible by `ofType` and a reading that pretended otherwise would
-    fire on the wrong spells — which is worse than leaving the line for a human (D362). The
-    opponent-creature row is left out on the count alone: nothing it would read has a readable body
-    yet, and the row costs nothing to add the day one does.
+    | printed | read as |
+    | --- | --- |
+    | a spell | `spell: 'any'` |
+    | a creature spell / a noncreature spell | `spell` |
+    | an instant or sorcery spell | `spell: 'instant-or-sorcery'` |
+    | an artifact spell / an enchantment spell | `ofType` |
+    | a white spell / a blue or black spell | `ofColours`, any-of |
+    | a multicolored spell | `multicoloured` |
+    | a Spirit or Arcane spell / a Goblin spell | `ofSubtypes`, any-of |
+    | …with mana value N or less / or greater | `manaValueAtMost` / `manaValueAtLeast` |
+    | cast **or copy** | `how: 'any'` |
 
-    `by: 'you'` is printed on every one of these that says "you", and it is also the *default* — so
-    the rows that say it are saying what the card says rather than leaning on the default, which is
-    the same note the two rows above carry.
+    **Measured first** (`prologue-gap.mjs`, the legal corpus, cards one unread line from a finished
+    script): 736 cards are finished by a prologue reader at all and **168 of them print a cast
+    prologue**, which makes it the largest family in the ranking by a factor of four. Within it the
+    colours are 46, "Spirit or Arcane" 16, a mana-value bound 16, magecraft's "cast or copy" 10 and
+    a card type with a caster 9.
+
+    **A subtype is told from a colour by its capital letter**, which is what the printed line gives
+    and the only thing that could: the engine has no list of creature types, and a reading that
+    guessed would turn "a kicked spell" into a filter for a subtype nothing has — a trigger that
+    silently never fires, which is a wrong reading and not a missing one (D362). So `Spirit`,
+    `Arcane` and `Goblin` are subtypes and `white`, `creature` and `kicked` are not, and anything
+    that is neither a known word nor a capitalised one refuses the whole line.
+
+    **What it refuses, and why each stays refused.** Every one of these was read off the dump and
+    left for a human rather than approximated:
+
+     * **"a spell that targets ~"** (40 cards, heroic and repartee) — the cast event does not carry
+       its spell's targets, so this is an engine increment and not a parse.
+     * **"from a graveyard" / "from anywhere other than your hand"** — the zone a spell was cast
+       from is not on the event.
+     * **"during an opponent's turn" / "during your turn"** — a fact about the turn, not the spell.
+     * **"a historic spell"** (4) — artifact *or* legendary *or* Saga, which is three fields joined
+       by an or across the two halves of a type line and a supertype; expressible only as a
+       predicate, which no field here takes.
+     * **"a white or blue instant or sorcery spell"** (Mindsparker) — a colour *and* a type in one
+       descriptor, which the parse reads as neither rather than as half of each.
+     * **"another spell"**, **"a kicked spell"**, **"a legendary spell"**, **"a spell using
+       teamwork"**, **"a spell other than your first spell each turn"** — one or two cards each, and
+       none of them a question any field can ask.
   */
   {
-    prologue: () => /^Whenever you cast a creature spell, (.+)$/i,
-    on: [{ kind: 'spell-cast', by: 'you', spell: 'creature' }],
-  },
-  {
-    prologue: () => /^Whenever you cast an artifact spell, (.+)$/i,
-    on: [{ kind: 'spell-cast', by: 'you', ofType: 'artifact' }],
-  },
-  {
-    prologue: () => /^Whenever you cast an enchantment spell, (.+)$/i,
-    on: [{ kind: 'spell-cast', by: 'you', ofType: 'enchantment' }],
-  },
-  /*
-    "Whenever you cast a spell" with no filter at all, and it goes **after** the five narrower rows
-    above it on purpose. The patterns are anchored and mutually exclusive as English, so the order
-    is not load-bearing today — but a reader who widens one of them later should find the general
-    case underneath rather than above, because a row that matches everything above a row that
-    matches something is how a filter stops being read.
-  */
-  {
-    prologue: () => /^Whenever you cast a spell, (.+)$/i,
-    on: [{ kind: 'spell-cast', by: 'you', spell: 'any' }],
-  },
-  {
-    prologue: () => /^Whenever a player casts a spell, (.+)$/i,
-    on: [{ kind: 'spell-cast', by: 'any', spell: 'any' }],
-  },
-  {
-    prologue: () => /^Whenever an opponent casts a spell, (.+)$/i,
-    on: [{ kind: 'spell-cast', by: 'opponent', spell: 'any' }],
+    prologue: () => new RegExp(
+      '^Whenever (?<who>you|a player|an opponent) (?:cast|casts)'
+      + '(?<copy> or (?:copy|copies))? an? (?<what>[^,]*?)spell(?<tail>[^,]*), (?<clause>.+)$',
+      'i',
+    ),
+    from: castTrigger,
   },
   /*
     "When you cast **this** spell" — the one trigger that fires from the stack rather than from the
@@ -12662,24 +12735,58 @@ function tokenEffect(clause: string, name: string): ReadEffect | null {
  * same way — the reading lives on the path where the word means something, so the other path cannot
  * reach it.
  *
- * Both clauses carry the same guard, which is the hand-written cards' own: an event with no actor,
- * or one whose actor is the controller, does **nothing**. Fate Unraveler had `?? c.controller` there
- * until D407 and that was worse than nothing — it would have drained the controller, the opposite of
- * what the card says.
+ * **Both clauses read `c.actor ?? c.controller`, and the `??` is the value rather than a fallback
+ * (D474).** `fireTrigger` leaves `actor` off the stack object when the actor *is* the watcher's own
+ * controller — the line that builds `TriggerAbout` says so, and `EffectContext.actor` documents it
+ * — so an absent actor on a trigger about somebody's action means "me", not "nobody".
+ *
+ * This is a correction. These two readers were written for Kambal and Fate Unraveler, both
+ * "whenever an **opponent** …", and both guarded `who === c.controller` as well as `undefined`:
+ * unreachable belt and braces on cards whose trigger cannot fire on their own controller. Then
+ * D474's cast parse made "whenever **a player** casts…" readable and Pyrostatic Pillar — which
+ * damages whoever cast the cheap spell, its controller included — fired, resolved, logged
+ * "Pyrostatic Pillar deals 2 damage to that player resolves" and did nothing at all. A trigger that
+ * fires and silently no-ops is the D362 failure in its worst form, because the log says the card
+ * worked.
+ *
+ * D407's premise was that an absent actor means nobody. **Ruric Thar, the Unbowed** had already
+ * found otherwise and says so in its own comment — "an absent actor means *me*, and reading it as
+ * nobody is how this card first dealt no damage at all to its own side" — and that comment was
+ * eleven entries old when this reader was written past it.
  */
-function eventRelativeEffect(clause: string, name: string): ReadEffect | null {
+function eventRelativeEffect(
+  clause: string, name: string, events: readonly TriggerDef['on'][],
+): ReadEffect | null {
   const text = plain(clause).trim().replace(/\.\s*$/, '');
   const self = selfRef(name);
+  /*
+    **"That player" is read only where the event's `actor` is the player the sentence means** (D475),
+    and `events` is here for that one question.
+
+    Four of the engine's events pass the right seat, and each `raise` call is the evidence:
+    `spell-cast` passes the caster, `draws` the seat that drew, `life-gained` the seat that gained,
+    and `step` the **active** seat — so "At the beginning of each player's upkeep, ~ deals 1 damage to
+    that player" is Barbed Wire and reads correctly.
+
+    The others pass the **watcher's own side**, which is a different player from the one the sentence
+    is about. `combat-damage` passes the attacking creature's controller while the card means the
+    player who was hit — Furnace Scamp, "Whenever ~ deals combat damage to a player, you may
+    sacrifice it. If you do, ~ deals 3 damage to that player", where the damaged seat is
+    `c.attacked.defender` and not the actor at all. `attacks`, `etb` and `dies` are the same shape.
+    Those lines are refused and left for a human rather than read as the wrong player (D362), which
+    is what this gate buys: without it Furnace Scamp compiled, fired, and hit nobody.
+  */
+  const PLAYER_ACTIONS = new Set(['spell-cast', 'draws', 'life-gained', 'step']);
+  const aboutAPlayer = events.length > 0 && events.every((one) => PLAYER_ACTIONS.has(one.kind));
 
   // Kambal: "that player loses 2 life and you gain 2 life".
   const drained = /^that player loses (\d+) life and you gain (\d+) life$/i.exec(text);
-  if (drained !== null) {
+  if (drained !== null && aboutAPlayer) {
     const lost = Number(drained[1]);
     const gained = Number(drained[2]);
     return {
       effect: (c) => {
-        const who = c.actor;
-        if (who === undefined || who === c.controller) return c.state;
+        const who = c.actor ?? c.controller;
         return gainLife(loseLife(c.state, who, lost), c.controller, gained);
       },
     };
@@ -12688,12 +12795,11 @@ function eventRelativeEffect(clause: string, name: string): ReadEffect | null {
   // Fate Unraveler: "~ deals 1 damage to that player" — damage and not a drain, which is the whole
   // of D407.
   const dealt = new RegExp(`^(?:${self}|it) deals (\\d+) damage to that player$`, 'i').exec(text);
-  if (dealt !== null) {
+  if (dealt !== null && aboutAPlayer) {
     const amount = Number(dealt[1]);
     return {
       effect: (c) => {
-        const who = c.actor;
-        if (who === undefined || who === c.controller) return c.state;
+        const who = c.actor ?? c.controller;
         return dealDamage(c.state, { kind: 'player', seat: who }, amount, {
           controller: c.controller, source: c.source,
         });
@@ -12753,7 +12859,20 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
   for (const shape of TRIGGER_SHAPES) {
     const matched = shape.prologue(self).exec(text);
     if (matched === null) continue;
-    const clause = matched[1]!.replace(/\.\s*$/, '').trim();
+    /*
+      The events, which a parsed row works out from the match and a plain row simply has. A parsed
+      row may match the sentence and still refuse the filter inside it — see the table's `from` —
+      and a refusal has to keep looking rather than stop, because a later row may read the same
+      line. See the cast family's docblock.
+    */
+    const on = 'from' in shape ? shape.from(matched) : shape.on;
+    if (on === null || on.length === 0) continue;
+    /*
+      The clause is `clause` where a row names it, and group 1 everywhere else. Two ways of saying
+      the same thing because the parsed row's own groups come first in the sentence: the effect is
+      the last thing a cast prologue captures, not the first.
+    */
+    const clause = (matched.groups?.clause ?? matched[1]!).replace(/\.\s*$/, '').trim();
     /*
       "You may" — the optional triggered ability (D447).
 
@@ -12798,13 +12917,13 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       engine's event vocabulary and is deliberately absent here: it is not a `TriggerDef['on']` kind
       at all, so naming it would be a comparison TypeScript refuses.)
 
-      Every entry in `shape.on` is consulted rather than the first, because a shape may emit several
+      Every entry in `on` is consulted rather than the first, because a shape may emit several
       events (the Aura and Equipment row emits two) and a reading that is right for one and wrong for
       another is the kind of drift D463 was. Disagreement means `null`.
     */
-    const zones = new Set(shape.on.map((on) => (
-      on.kind === 'dies' || on.kind === 'to-graveyard' ? 'graveyard' as const
-        : on.kind === 'leaves' || on.kind === 'to-exile' ? null
+    const zones = new Set(on.map((kind) => (
+      kind.kind === 'dies' || kind.kind === 'to-graveyard' ? 'graveyard' as const
+        : kind.kind === 'leaves' || kind.kind === 'to-exile' ? null
           : 'battlefield' as const)));
     const where: SubjectZone | null = zones.size === 1 ? [...zones][0]! : null;
     /*
@@ -12812,7 +12931,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       `eventRelativeEffect` for why that reading cannot live in the shared clause vocabulary.
     */
     const reader = (text: string): ReadEffect | null =>
-      eventRelativeEffect(text, name) ?? composeEffects(clausesOf(text), name, where);
+      eventRelativeEffect(text, name, on) ?? composeEffects(clausesOf(text), name, where);
     /*
       **The whole clause is tried first, and that order is the guard.** Some clauses in the
       vocabulary already begin with "you may" and read as one phrase — a payment offered to the
@@ -13082,8 +13201,8 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     // `spellFlags` is deliberately not spread: it is advice about casting a spell, and a triggered
     // ability is not cast. See `targetedEffect`.
     return {
-      triggers: shape.on.map((on) => ({
-        on,
+      triggers: on.map((event) => ({
+        on: event,
         description: clause,
         ...(read.targets === undefined ? {} : { targets: read.targets }),
         ...(read.decisions === undefined ? {} : { decisions: read.decisions }),

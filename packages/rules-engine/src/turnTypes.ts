@@ -8,7 +8,7 @@
  */
 import type { CardInstance, ZoneId } from './cards.js';
 import type { ContinuousEffect, GrantedTriggerRef } from './characteristics.js';
-import type { ManaPool } from './mana.js';
+import type { Color, ManaPool } from './mana.js';
 import type { SeatIndex } from './types.js';
 
 /**
@@ -74,6 +74,19 @@ export interface CopiedSpell {
   readonly types: readonly string[];
   /** Whose copy it is: the controller a magecraft trigger compares itself against. */
   readonly controller: SeatIndex;
+  /**
+   * The copy's colours and its mana value, carried for the same reason `types` is (D474).
+   *
+   * A copy of a spell has the copied spell's characteristics (CR 707.2), and the cast filters added
+   * for the colour and the mana-value prologues read them off the event. Without these two a
+   * trigger printed "cast **or copy** a white spell" would see every cast and miss every copy —
+   * which is the half-reading D470 was about, in a place nothing prints yet. Recorded because the
+   * copy is made here and this is the only place that cannot forget.
+   */
+  readonly colors: readonly Color[];
+  readonly manaValue: number;
+  /** The copy's subtypes, as printed on the copied card. See `colors`. */
+  readonly subtypes: readonly string[];
 }
 
 /** One clock that ran out: which object, which counter it was counting, and what it was called. */

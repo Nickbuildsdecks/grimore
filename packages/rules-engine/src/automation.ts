@@ -799,6 +799,30 @@ function triggerMatches(
         one. `types` is lowercased where the engine raises it, so the question is too.
       */
       if (want.ofType !== undefined && !(e.types ?? []).includes(want.ofType)) return false;
+      /*
+        The colour, the subtypes and the mana value, all answered from the event rather than from
+        the board (D474). The object may already have left the stack by the time this is asked, and
+        an {X} spell's mana value counts the X it was cast for (CR 202.3b) — neither of which a
+        reader looking at a card definition could recover.
+
+        `ofColours` is any-of, so a white-and-blue spell passes "a white spell" and a Mold Adder's
+        "a blue or black spell" fires on either — which is what CR 105.2 says a colour is and what
+        the printed "or" says it means. `multicoloured` is CR 105.1's two-or-more, asked of the same
+        list, and `ofSubtypes` is the back half of the type line, matched case-insensitively because
+        the printed line capitalises a subtype and nothing lowercases it on the way past.
+      */
+      if (want.ofColours !== undefined
+        && !want.ofColours.some((colour) => (e.colors ?? []).includes(colour))) return false;
+      if (want.multicoloured === true && (e.colors ?? []).length < 2) return false;
+      if (want.ofSubtypes !== undefined && !want.ofSubtypes.some((sub) => (
+        (e.subtypes ?? []).some((printed) => printed.toLowerCase() === sub.toLowerCase())
+      ))) return false;
+      if (want.manaValueAtLeast !== undefined && (e.manaValue ?? 0) < want.manaValueAtLeast) {
+        return false;
+      }
+      if (want.manaValueAtMost !== undefined && (e.manaValue ?? 0) > want.manaValueAtMost) {
+        return false;
+      }
       const spell = want.spell ?? 'any';
       if (spell === 'any') return true;
       // The narrow one is answered from the spell's own types rather than from the broad
@@ -2462,7 +2486,7 @@ function settle(state: GameState, before: GameState): GameState {
       loop that argument is the seat the subject belonged to, and this is the same question asked
       before the zone change rather than after it.
     */
-    for (const { types, controller } of copies) {
+    for (const { types, subtypes, controller, colors, manaValue } of copies) {
       /*
         Raised as a `spell-cast` carrying `how: 'copied'` rather than as an event of its own.
 
@@ -2475,7 +2499,9 @@ function settle(state: GameState, before: GameState): GameState {
         No `object`: the copy is a stack object with no card, and by the time this ability resolves
         it has resolved or been countered. Nothing printed with magecraft asks which spell it was.
       */
-      next = raise(next, { kind: 'spell-cast', how: 'copied', types }, controller);
+      next = raise(next, {
+        kind: 'spell-cast', how: 'copied', types, subtypes, colors, manaValue,
+      }, controller);
     }
     /*
       And the transforms, raised after the copies and before the arrivals for no reason beyond

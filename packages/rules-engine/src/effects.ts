@@ -14,7 +14,7 @@
  * be a tutor that chooses your card for you, which is worse than one you resolve by hand.
  */
 import {
-  characteristicsOf, hasType, parseTypeLine, protectedFrom, type ContinuousEffect,
+  characteristicsOf, hasType, parseTypeLine, printedColors, protectedFrom, type ContinuousEffect,
   type EffectDuration, type Keyword,
 } from './characteristics.js';
 import { defKeyFor, facesOf, zoneKey, type CardDef, type CardInstance } from './cards.js';
@@ -1078,14 +1078,31 @@ export function copySpellOnStack(
     object is gone by the time anything reads it. `typeLine` is parsed the same way a cast's event
     does it, so "instant or sorcery" means the same thing either way round.
   */
-  const types = parseTypeLine(state.cardDefs[object.cardKey]?.typeLine).types
-    .map((t) => t.toLowerCase());
+  const copiedDef = state.cardDefs[object.cardKey];
+  const copiedLine = parseTypeLine(copiedDef?.typeLine);
+  const types = copiedLine.types.map((t) => t.toLowerCase());
+  /*
+    And its colours and mana value, for the cast filters that are facts about the spell rather than
+    about its type line (D474). A copy has the copied spell's characteristics (CR 707.2), and the
+    mana value of a copy of an {X} spell counts the X the original was cast for (CR 706.10) — which
+    is what the stack object carries. `printedColors` rather than `def.colors` because card data
+    carries the colours as plain strings, and a filter against the engine's own five keeps a
+    malformed printing from smuggling a sixth colour into an event.
+  */
+  const colors = printedColors(copiedDef);
+  const manaValue = (copiedDef?.cmc ?? 0) + (object.x ?? 0);
   return {
     ...state,
     autoSeq: seq,
     stackObjects: { ...state.stackObjects, [copyId]: copy },
     stackOrder: [...state.stackOrder, copyId],
-    ...(state.automated ? { copied: [...(state.copied ?? []), { types, controller }] } : {}),
+    ...(state.automated
+      ? {
+        copied: [...(state.copied ?? []), {
+          types, subtypes: copiedLine.subtypes, controller, colors, manaValue,
+        }],
+      }
+      : {}),
   };
 }
 

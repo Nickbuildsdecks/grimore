@@ -880,6 +880,20 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // (D436's rule, third time). See `GameState.spellsCastThisTurnBy`.
     nth: next.spellsCastThisTurnBy[String(action.by)] ?? 1,
     types: characteristics.typeLine.types.map((t) => t.toLowerCase()),
+    /*
+      The spell's colours and its mana value **as cast** (D474), for the two cast filters that are
+      facts about the spell rather than about its type line. Both travel on the event for the reason
+      `nth` does: by the time a trigger resolves the object may be gone from the stack, and an {X}
+      spell's mana value on the stack counts the X it was cast for (CR 202.3b) — `object.x` is that
+      X, and `def.cmc` is the printed cost with X as zero.
+
+      The subtypes travel beside `types` for the Kamigawa line, "a Spirit or Arcane spell", and are
+      left **as printed**: the question lowercases both sides when it compares, which keeps a
+      capitalised subtype from being a different filter from the same word in lower case.
+    */
+    colors: characteristics.colors,
+    manaValue: (next.cardDefs[inst.defKey]?.cmc ?? 0) + (object.x ?? 0),
+    subtypes: characteristics.typeLine.subtypes,
     // Which spell, as well as what kind of spell: a Chalice of the Void has to read its mana value
     // and then counter that object. See the `spell-cast` event's `object`.
     object: object.id,
@@ -976,6 +990,16 @@ function castFaceDown(
     kind: 'spell-cast',
     spell: 'creature',
     types: anonymous.typeLine.types.map((t) => t.toLowerCase()),
+    /*
+      A face-down spell is a **colourless 2/2 creature with mana value 0 and no subtypes**
+      (CR 708.2), which is what the morph profile says and why these three are literals rather than
+      reads off the card: its colour, its cost and its tribe are exactly what nobody at the table
+      may know yet. So a Kamigawa Spirit cast face down does not fire "whenever you cast a Spirit
+      spell", which is the rule and not a simplification.
+    */
+    colors: [],
+    manaValue: 0,
+    subtypes: [],
     object: object.id,
     // A morph is a cast, so it is one of this caster's spells this turn like any other.
     nth: next.spellsCastThisTurnBy[String(action.by)] ?? 1,

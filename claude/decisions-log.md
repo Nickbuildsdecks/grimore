@@ -30380,3 +30380,170 @@ Also dropped: the `grantedTriggers` exemption the first version of the instrumen
 `scripts/guards.js`. The rewrite reads no triggers at all, so the exemption was a dead entry
 describing a file that no longer does the thing — two statements of one rule, which this project
 keeps removing (D441, D438).
+
+## D474 — The cast prologue, parsed: one row for a family of eight
+
+D473 said the next increment was the trigger prologue vocabulary, and `prologue-gap.mjs` says which
+part of it. Over the legal corpus, **736** cards one unread line from a finished script are finished
+by a prologue reader at all, and **168 of them print a cast prologue** — the largest family in the
+ranking by a factor of four over the next shape (38).
+
+The eight rows that stood in `TRIGGER_SHAPES` read five of the sentences somebody had measured and
+none of the forty-odd the corpus prints. So the cast family is now a **parse**, which is the move
+D469 made one level down on target phrases: who cast it, times what kind of spell, times whether a
+copy counts.
+
+| printed | read as |
+| --- | --- |
+| a spell | `spell: 'any'` |
+| a creature spell / a noncreature spell | `spell` |
+| an instant or sorcery spell | `spell: 'instant-or-sorcery'` |
+| an artifact spell / an enchantment spell | `ofType` |
+| a white spell / a blue or black spell | `ofColours`, any-of |
+| a multicolored spell | `multicoloured` |
+| a Spirit or Arcane spell / a Goblin spell | `ofSubtypes`, any-of |
+| …with mana value N or less / or greater | `manaValueAtMost` / `manaValueAtLeast` |
+| cast **or copy** | `how: 'any'` |
+
+times `you` / `a player` / `an opponent`.
+
+### The engine half: three facts the cast event did not carry
+
+`spell-cast` already had `by`, `spell`, `ofType`, `self`, `how` and `onNth`. It now also carries the
+spell's **colours**, its **mana value as cast** and its **subtypes**, each recorded where the event is
+raised rather than looked up later — by the time a trigger resolves the object may be gone, and an
+{X} spell's mana value counts the X it was cast for (CR 202.3b). Three raise sites had to agree: an
+ordinary cast, a **morph** (colourless, mana value 0, no subtypes — CR 708.2, so a Kamigawa Spirit
+cast face down does not fire a Spirit trigger), and a **copy** (the copied card's characteristics,
+CR 707.2), which also widened `CopiedSpell`.
+
+### Two refusals came off, and one of them was wrong rather than early
+
+"A multicolored spell" was refused twice — D435 and D440 — on the stated ground that it is "a fact
+about the mana cost" and therefore not expressible. **That was wrong.** CR 105.1 makes multicoloured
+a fact about the card's *colours*, which this engine has always computed; the field was missing, not
+the mechanism. It reads now, and the two docblocks and the test that carried the wrong reason have
+been corrected rather than quietly edited. "An opponent casts a creature spell" was refused on the
+count alone and the parse reads it for free.
+
+### What a subtype is told from, and why it has to be the capital letter
+
+The engine has no list of creature types, and guessing would turn "a kicked spell" into a filter for
+a subtype nothing has — a trigger that silently never fires, which is a wrong reading and not a
+missing one (D362). The printed line capitalises a subtype and nothing else in that position, so
+`Spirit`, `Arcane` and `Goblin` are subtypes and `white`, `creature` and `kicked` are not. Anything
+that is neither a known word nor a capitalised one refuses the whole line.
+
+### What it refuses, each read off the dump rather than guessed
+
+ * **"a spell that targets ~"** — 40 cards, heroic and repartee. The cast event does not carry its
+   spell's targets, so this is an engine increment and the next obvious one.
+ * **"from a graveyard" / "from anywhere other than your hand"** — the zone a spell was cast from.
+ * **"during an opponent's turn"** — a fact about the turn, not the spell.
+ * **"a historic spell"** (4) — artifact *or* legendary *or* Saga: three fields joined by an `or`
+   across both halves of a type line and a supertype, which no field here can ask.
+ * **"a white or blue instant or sorcery spell"** — a colour *and* a type in one descriptor, read as
+   neither rather than as half of each.
+ * **"another spell"**, **"a kicked spell"**, **"a legendary spell"**, **"a spell using teamwork"** —
+   one or two cards each and no field for any of them.
+
+### The table grew a second kind of row
+
+`TRIGGER_SHAPES` entries now carry either `on` (the events, when the sentence names them by being
+itself) or `from` (the events parsed out of the match, with `null` refusing the line). A parsed row
+matches a wide sentence and then has to decide whether it understood the narrow part, which a fixed
+`on` never has to — and a refusal falls through to the rest of the table and then to "unread".
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 9,712 | **9,833** |
+| cards with every printed line read | 5,471 | **5,570** |
+| printed rules lines read | 19,629 / 56,421 (34.8%) | **19,780 / 56,421 (35.1%)** |
+
+`LEGAL=1`, 31,654 rows. D475's gate costs none of them — measured, not assumed. Fifteen runtime
+tests on seven real printings, plus twenty mapping rows and eight refusals in `compile.test.ts`.
+
+## D475 — A trigger that fired, resolved, logged and did nothing: "that player" meant nobody
+
+Writing D474's test for **Pyrostatic Pillar** — "Whenever a player casts a spell with mana value 3 or
+less, Pyrostatic Pillar deals 2 damage to that player" — the filter worked, the trigger went on the
+stack, the log said *Pyrostatic Pillar deals 2 damage to that player resolves*, and nobody lost any
+life.
+
+### The cause
+
+`eventRelativeEffect`'s two "that player" readers guarded `who === undefined || who === c.controller`
+and returned the board untouched. The second half of that guard was copied off the two hand-written
+cards the readers were written for — Kambal and Fate Unraveler, both "whenever an **opponent** …" —
+where a trigger cannot fire on its own controller's action, so the clause was unreachable belt and
+braces. D474 made "whenever **a player** casts…" readable and reached it.
+
+And the `undefined` half was wrong about what absence means. `fireTrigger` omits `actor` from the
+stack object **when the actor is the watcher's own controller**; `EffectContext.actor` documents it,
+and Ruric Thar's hand-written script says it out loud: "an absent actor means *me*, and reading it as
+nobody is how this card first dealt no damage at all to its own side." That comment was eleven
+entries old when D407 wrote the opposite premise into this reader.
+
+### Three cards were being half-read, and they are the reason this is its own entry
+
+`Barbed Wire`, `Copper Tablet` and `Sulfuric Vortex` all print "At the beginning of **each player's**
+upkeep, ~ deals N damage to **that player**", and a step trigger passes the **active** seat as the
+actor. So on an opponent's upkeep the card worked; on its controller's own upkeep the actor *was* the
+controller, was therefore omitted from the stack object, and the guard threw the effect away. These
+three have been hitting one side of a duel and not the other for as long as the compiler has read
+them — firing, logging and doing nothing every other turn. That is Pyrostatic Pillar's bug with a
+different prologue, and it was already shipping.
+
+### The fix, and the gate that replaces the guard
+
+Both readers now take `c.actor ?? c.controller`, where the `??` is the value rather than a fallback.
+
+What the guard was really protecting against is a "that player" whose actor is **not** the player the
+sentence means, and that is now answered where it can be answered properly: `eventRelativeEffect` is
+handed the prologue's events and reads these two clauses only where `raise` passes the right seat.
+
+| event | the seat `raise` passes | "that player"? |
+| --- | --- | --- |
+| `spell-cast` | the caster | yes |
+| `draws` | the seat that drew | yes |
+| `life-gained` | the seat that gained | yes |
+| `step` | the **active** seat | yes — Barbed Wire's "each player's upkeep" |
+| `combat-damage` | the attacking creature's controller | **no** — the card means the seat it hit |
+| `attacks`, `etb`, `dies` | the watcher's own side | **no** |
+
+**Furnace Scamp** is the sentence the second half is about: "Whenever ~ deals combat damage to a
+player, you may sacrifice it. If you do, ~ deals 3 damage to that player" — the damaged seat lives in
+`c.attacked.defender`, nowhere near the actor, so `?? c.controller` without a gate would have hit
+**its own controller**.
+
+**The gate costs nothing today, and that is measured rather than assumed.** Compiling the 1,482 legal
+cards whose text contains "that player", with the gate off and on, reads the same 216 lines either
+way: Furnace Scamp's line, and the two other candidates (`Lim-Dûl's Hex`, `Star Athlete`), are
+already unread for reasons of their own. So the gate is a guard against a reading that would become
+wrong the day the clause around one of those sentences starts compiling — which is the cheapest
+moment to put it in, and the one where nobody is watching.
+
+### The test that could not fail
+
+The old assertion required that both an actorless event and an actor-is-controller event do nothing,
+on two cards where neither case can arise — so it could not fail for any real card, which is the
+shape D415 and D433 each found twice. It now asserts that the two contexts **agree** (they are one
+state spelled two ways), that Fate Unraveler's controller really loses the life, and that the same
+sentence reads under a cast and an each-player upkeep prologue while a combat-damage prologue leaves
+it unread. Copper Tablet's own printing is driven through a game in `scripts.test.ts`: the opponent's
+upkeep, then the controller's, which is the half that used to do nothing.
+
+Both halves were break-run: restoring the guard fails Pyrostatic Pillar and Copper Tablet, and
+turning `ofColours`' any-of into an all-of fails the two Mold Adder rows.
+
+### Measured
+
+No coverage change in either direction: 216 "that player" lines read before and after, and D474's
+9,833 / 5,570 / 19,780 stand. What changed is **behaviour**, on every card whose event can
+name its own controller: Pyrostatic Pillar and Eidolon of the Great Revel, which D474 had just made
+readable and which now damage a controller who casts a cheap spell, and Barbed Wire, Copper Tablet
+and Sulfuric Vortex, which now hit their own controller's upkeep as well as everybody else's. A
+coverage instrument cannot see any of that, which is the argument for a runtime test per reader
+rather than a mapping assertion.

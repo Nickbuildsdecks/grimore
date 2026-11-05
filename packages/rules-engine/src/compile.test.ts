@@ -4658,25 +4658,39 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(compiled.effect(ctx).seats[1]!.life).toBeLessThan(base.seats[1]!.life);
     });
 
-    it('does nothing when the event had no actor, and never hits its own controller', () => {
+    it('reads an absent actor as the controller, which is what the engine means by it', () => {
       /*
-        The guard, which is the hand-written cards' own and the reason this reader is trigger-only.
-        "That player" is `c.actor`; a stack object that is not a triggered ability carries none, so
-        a reading reachable from a spell would silently do nothing — the hazard D399's X spells have
-        in reverse.
+        **This assertion was the other way round until D474**, and the entry is worth reading before
+        this test is changed again. It used to require that an actorless event, and an event whose
+        actor *is* the controller, both do nothing — a guard copied off two "whenever an **opponent**
+        …" cards whose trigger cannot fire on their own controller's action, so neither case was
+        reachable and the assertion could not fail for a real card.
 
-        And the controller is never the victim. Fate Unraveler had `?? c.controller` there until
-        D407, which would have drained **the caster** on an actorless event: the opposite of the
-        card, and the kind of wrongness that only shows up in a game nobody can reconstruct.
+        Then the cast parse made "whenever **a player** casts…" readable, and Pyrostatic Pillar —
+        which damages whoever cast the cheap spell, its controller included — fired, resolved and
+        did nothing. The engine's own convention is the fix: `fireTrigger` omits `actor` when the
+        actor is the watcher's controller, so **absent means me**, which `EffectContext.actor` and
+        Ruric Thar's `?? c.controller` both already said.
+
+        The two contexts below are therefore the same state spelled two ways, and the first thing
+        asserted is that they agree. What keeps a *spell* out of this reader is the next test, and
+        what keeps a prologue with no player at all out of it is the one after that.
+
+        **Only Fate Unraveler can show it is not a no-op**, and that is the cards rather than the
+        test: Kambal's clause takes two life off "that player" and gives two to "you", so with one
+        seat answering both it nets to nothing. Fate Unraveler's is damage in one direction, so the
+        controller's own life goes down and the reading is visible.
       */
       const base = arena({ decks: { 0: 'ashen-rite', 1: 'hollow-tide' }, turn: 3 });
       for (const card of ['Kambal, Consul of Allocation', 'Fate Unraveler']) {
         const trigger = triggerOf(compiledScript(card).script)!;
-        // No actor at all.
-        expect(trigger.effect(contextOn(base, 0 as SeatIndex, 'c1'))).toEqual(base);
-        // And an actor who is the controller — a seat drawing its own card, say.
-        expect(trigger.effect(contextOn(base, 0 as SeatIndex, 'c1', 0 as SeatIndex))).toEqual(base);
+        const absent = trigger.effect(contextOn(base, 0 as SeatIndex, 'c1'));
+        const mine = trigger.effect(contextOn(base, 0 as SeatIndex, 'c1', 0 as SeatIndex));
+        expect(absent).toEqual(mine);
       }
+      const unraveler = triggerOf(compiledScript('Fate Unraveler').script)!;
+      expect(unraveler.effect(contextOn(base, 0 as SeatIndex, 'c1')).seats[0]!.life)
+        .toBeLessThan(base.seats[0]!.life);
     });
 
     it('is not reachable from a spell, where "that player" means nothing', () => {
@@ -4691,6 +4705,41 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       });
       expect(spell.ok).toBe(true);
       if (spell.ok) expect(spell.script).toBeUndefined();
+    });
+
+    it('is read only where the event names the player the sentence means', () => {
+      /*
+        The gate D475 added, and the reason the test above can be as blunt as it is.
+
+        `raise` passes the caster for a cast, the drawing seat for a draw, the gaining seat for a
+        life gain and the **active** seat for a step — four events where the actor is the player the
+        sentence is about. It passes the *watcher's own side* for combat damage, an attack, an entry
+        and a death, where the sentence means somebody else entirely: Furnace Scamp's "deals 3
+        damage to that player" means the player it hit, which lives in `c.attacked.defender`.
+
+        So the cast and the upkeep read, and the combat-damage line is refused and left for a human
+        rather than read as the wrong player (D362). **Discriminating, not vacuous**: nothing else
+        in this compiler reads "deals N damage to that player", so without the gate the third row
+        would compile — and before D475 it did, firing and hitting nobody.
+      */
+      const card = (text: string) => compileCard({
+        name: 'Vague Clock', type_line: 'Enchantment', mana_cost: '{B}', cmc: 1, colors: ['B'],
+        oracle_text: text,
+      });
+      for (const prologue of [
+        'Whenever a player casts a spell',
+        "At the beginning of each player's upkeep",
+      ]) {
+        const read = card(`${prologue}, Vague Clock deals 1 damage to that player.`);
+        expect(read.ok).toBe(true);
+        if (read.ok) expect(read.unread).toEqual([]);
+      }
+      const combat = card(
+        'Whenever Vague Clock deals combat damage to a player,'
+        + ' Vague Clock deals 1 damage to that player.',
+      );
+      expect(combat.ok).toBe(true);
+      if (combat.ok) expect(combat.unread).toHaveLength(1);
     });
 
     it('keeps both halves of the printed event', () => {
@@ -7026,12 +7075,17 @@ describe('the step of the turn, read off the prologue', () => {
 });
 
 /*
-  The cast family, read off the prologue (D435).
+  The cast family, read off the prologue (D435, and parsed rather than enumerated in D474).
 
   Which printed sentence becomes which trigger. The runtime tests in `scripts.test.ts` cover the
-  three rows whose *behaviour* was new — `ofType`, the unused `spell: 'creature'`, and `self: true`
-  from a compiled card — and this covers the mapping for all seven, plus the three spellings that
-  are refused on the mechanism rather than on a count.
+  rows whose *behaviour* was new — `ofType`, the unused `spell: 'creature'`, `self: true` from a
+  compiled card, and D474's colour, subtype and mana-value filters — and this covers the mapping
+  for every spelling the parse reads, plus the ones it refuses.
+
+  **The refusals are the half of this table that can rot.** A parse matches a wide sentence and then
+  decides whether it understood the narrow part, so the day somebody widens `castDescriptor` the
+  refused rows below are what notices. Each is asserted with a body the compiler definitely reads,
+  which is what makes "unread" mean the prologue and nothing else (D415, D433).
 */
 describe('the cast trigger, read off the prologue', () => {
   const field = (script: unknown, key: string) =>
@@ -7055,6 +7109,28 @@ describe('the cast trigger, read off the prologue', () => {
     ['Whenever you cast a noncreature spell', { kind: 'spell-cast', by: 'you', spell: 'noncreature' }],
     ['Whenever an opponent casts a noncreature spell',
       { kind: 'spell-cast', by: 'opponent', spell: 'noncreature' }],
+    /*
+      And the filters the parse added (D474): a colour, two colours, multicoloured, a subtype pair,
+      a single tribe, both mana-value bounds, magecraft's copy, and the caster-times-type cells the
+      enumerated table never had a row for.
+    */
+    ['Whenever a player casts a white spell', { kind: 'spell-cast', by: 'any', ofColours: ['W'] }],
+    ['Whenever an opponent casts a blue or black spell',
+      { kind: 'spell-cast', by: 'opponent', ofColours: ['U', 'B'] }],
+    ['Whenever you cast a multicolored spell', { kind: 'spell-cast', by: 'you', multicoloured: true }],
+    ['Whenever you cast a Spirit or Arcane spell',
+      { kind: 'spell-cast', by: 'you', ofSubtypes: ['Spirit', 'Arcane'] }],
+    ['Whenever a player casts a Goblin spell', { kind: 'spell-cast', by: 'any', ofSubtypes: ['Goblin'] }],
+    ['Whenever a player casts a spell with mana value 3 or less',
+      { kind: 'spell-cast', by: 'any', spell: 'any', manaValueAtMost: 3 }],
+    ['Whenever you cast a spell with mana value 4 or greater',
+      { kind: 'spell-cast', by: 'you', spell: 'any', manaValueAtLeast: 4 }],
+    ['Whenever you cast or copy an instant or sorcery spell',
+      { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery', how: 'any' }],
+    ['Whenever an opponent casts a creature spell',
+      { kind: 'spell-cast', by: 'opponent', spell: 'creature' }],
+    ['Whenever a player casts an enchantment spell',
+      { kind: 'spell-cast', by: 'any', ofType: 'enchantment' }],
   ])('%s becomes the trigger it prints', (prologue, on) => {
     const read = permanent(`${prologue}, you gain 1 life.`);
     expect(read.ok).toBe(true);
@@ -7067,19 +7143,27 @@ describe('the cast trigger, read off the prologue', () => {
 
   it.each([
     /*
-      Refused on the mechanism rather than on the count, which is the distinction worth asserting:
-      these are not "not yet", they are "not expressible without lying about the card".
+      Refused on the mechanism, which is the distinction worth asserting: these are not "not yet",
+      they are "not expressible without lying about the card" — and a trigger that fires on the
+      wrong spells, or never fires at all, is worse than a line left for a human (D362).
 
-      `ofType` holds one card type. Historic is artifact *or* legendary *or* Saga and multicolored
-      is a fact about the mana cost, so reading either as a type would fire the ability on the wrong
-      spells — and a trigger that fires on the wrong spells is worse than a line left for a human
-      (D362). The opponent-creature row is the other kind of refusal and is here to keep the two
-      apart: it is held back only on the count, and D435's table records that nothing it would read
-      has a readable body yet.
+      **Two rows left this list in D474 and the reason is worth keeping.** "A multicolored spell"
+      was refused here on the ground that it is "a fact about the mana cost"; CR 105.1 makes it a
+      fact about the card's *colours*, which the engine always computed and now puts on the cast
+      event, so the refusal was wrong about the mechanism and came off with the field it needed.
+      "An opponent casts a creature spell" was refused on the count alone, and the parse reads it
+      for free whether or not a card exercises it.
     */
-    ['Whenever you cast a historic spell', 'artifact or legendary or Saga, not a card type'],
-    ['Whenever you cast a multicolored spell', 'a fact about the mana cost'],
-    ['Whenever an opponent casts a creature spell', 'expressible, but 0 cards to exercise it'],
+    ['Whenever you cast a historic spell', 'artifact or legendary or Saga, not one field'],
+    ['Whenever you cast a legendary spell', 'a supertype, which the event does not carry'],
+    ['Whenever an opponent casts a white or blue instant or sorcery spell',
+      'a colour and a type in one descriptor: read as neither, not as half of each'],
+    ['Whenever you cast a spell that targets Casting Thing',
+      "heroic — the cast event does not carry its spell's targets"],
+    ['Whenever you cast a spell from your graveyard', 'the zone a spell was cast from'],
+    ['Whenever you cast a spell during an opponent’s turn', 'a fact about the turn'],
+    ['Whenever you cast another spell', 'another than what? a permanent is not a spell'],
+    ['Whenever you cast a kicked spell', 'no field asks whether a cost was paid'],
   ])('leaves "%s" unread: %s', (prologue) => {
     const read = permanent(`${prologue}, you gain 1 life.`);
     expect(read.ok).toBe(true);
