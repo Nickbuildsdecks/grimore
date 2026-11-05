@@ -3767,9 +3767,10 @@ function activationBuysNothing(state: GameState, seat: SeatIndex, action: Action
  *
  * **Power is the test**, which is a proxy and the honest cost of the rule: deathtouch is worth more
  * on a creature that will block than on a bigger one that will not, and this drops that move too.
- * What it keeps is every first equip, every move onto something bigger, and every move off a host
- * that is gone, tapped or no longer a creature — which is what the printed reason to move an
- * Equipment usually is.
+ * What it keeps is every first equip, every move onto an untapped creature that is bigger, and
+ * every move off a host that is gone, no longer a creature, or tapped where the new one is not —
+ * which is what the printed reason to move an Equipment usually is. The tapped clauses used to be
+ * one clause about the host alone, and that was the two loops D462 found: see the comment on them.
  */
 function equipMovesSideways(state: GameState, seat: SeatIndex, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
@@ -3783,12 +3784,32 @@ function equipMovesSideways(state: GameState, seat: SeatIndex, action: Action): 
   // A host that has left, or stopped being a creature this seat controls, is a reason to move.
   if (host === undefined || host.zone !== 'battlefield' || host.zoneSeat !== seat) return false;
   if (!characteristicsOf(state, host).isCreature) return false;
-  // And a host that is tapped cannot attack or block with the bonus on it, so moving is fair.
-  if (host.tapped) return false;
   const target = action.targets?.[0];
   if (target === undefined || target.kind !== 'card') return false;
   const to = state.instances[target.id];
   if (to === undefined) return false;
+  /*
+    A creature that is lying sideways cannot attack or block with the bonus on it, so the target's
+    tapped state is asked **first and on its own**: moving an Equipment onto a tapped creature buys
+    nothing this turn whatever it is worth. Then, and only then, a tapped *host* is a reason to
+    move — onto the one creature that can still use it.
+
+    That ordering is the whole of D462. The rule shipped reading the host's tapped state as a
+    reason and never asking the same question of the target, which left **two** loops: two tapped
+    creatures, where both directions read as fair; and a tapped creature bigger than an untapped
+    one, where the power test sent the bonus one way and the tapped-host clause sent it back. With
+    an equip cost of nothing, either runs for ever.
+
+    Found by `corpus-decks.mjs` in a four-player pod of real cards (#334): Umbral Mantle — a real
+    card, printed "Equip {0}" — on seat 2's board at turn 44, Air-Cult Elemental and Hotshot
+    Mechanic both tapped from attacking, 20,000 moves of `auto:activate` and not one change to any
+    life total, hand, battlefield or library. Nothing threw and nothing stalled: every one of those
+    moves was legal, bumped the state version, and bought nothing, so the harness's stall detector
+    — which compares consecutive state versions — could not see it either. The game could not end,
+    because the loop is inside one step, so the step never passes and the creatures never untap.
+  */
+  if (to.tapped) return true;
+  if (host.tapped) return false;
   return characteristicsOf(state, to).power <= characteristicsOf(state, host).power;
 }
 

@@ -1590,6 +1590,98 @@ describe('an Equipment moved onto a creature that is no bigger', () => {
   });
 });
 
+describe('an Equipment moved onto a creature that is tapped (D462)', () => {
+  /*
+    The hole the rule above shipped with, and the first unfinishable game this project has had.
+
+    `equipMovesSideways` let the move through whenever the **host** was tapped, because a creature
+    lying sideways cannot attack or block with the bonus on it and moving it is a real gain. It
+    never asked the same question of the creature the Equipment was moving *to*, and that left two
+    loops rather than one: two tapped creatures, where both directions read as fair; and a tapped
+    creature bigger than an untapped one, where the power test sent the bonus across and the
+    tapped-host clause sent it straight back. An Equipment whose equip cost is nothing then moves
+    for as long as anybody is willing to watch.
+
+    `corpus-decks.mjs` found it in a four-player pod of arbitrary real cards (#334): seat 2 at turn
+    44 holding Umbral Mantle — a real card, printed "Equip {0}" — with Air-Cult Elemental and
+    Hotshot Mechanic both tapped from attacking. Twenty thousand moves, 19,854 of them this one
+    activation, and not one change to any life total, hand, battlefield or library. The game could
+    not end: the loop lives inside one step, so the step never passes, so the creatures never untap.
+
+    **Nothing in the harness could see it, and that is the part worth keeping.** The engine did not
+    throw — every one of those equips is legal, and the rules really do allow a free equip as often
+    as you like. The stall detector compares consecutive state versions and each equip bumps one.
+    `playout.test.ts`'s own "never offers a play it then refuses" invariant was green, because the
+    play is offered *and* taken. Only the move cap noticed, and a move cap cannot tell a game that
+    needs more moves from a game that will never end — which is why `TRACE` now prints the turn,
+    the life totals, the libraries and the commonest activation, and why the fix is asserted here
+    on the same two-creature board rather than on a 100-card pod.
+
+    The fix is an ordering: the **target's** tapped state is asked first and on its own, because a
+    bonus on a tapped creature buys nothing this turn whatever it is worth; only then is a tapped
+    host a reason to move. Three cases, which is both loops and the escape the rule exists for:
+    tapped onto tapped is declined, untapped onto tapped is declined even though the tapped one is
+    four times the size, and tapped onto untapped is still taken — that last one proves the escape
+    survives, because the power test alone would refuse it.
+  */
+  /** Bonesplitter on `host`, with every creature in `asleep` tapped. */
+  const wearing = (
+    host: 'Serra Angel' | 'Doomed Traveler', asleep: readonly string[],
+  ): GameState => {
+    const base = advanceTo(arena({
+      decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Bonesplitter', 'Serra Angel', 'Doomed Traveler'],
+        1: ['Island'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const axe = find(base, 0, 'battlefield', 'Bonesplitter');
+    let s = passBoth(apply(base, {
+      type: 'auto:activate', by: 0, card: axe, abilityIndex: 0,
+      targets: [{ kind: 'card', id: find(base, 0, 'battlefield', host) }],
+    }));
+    for (const name of asleep) {
+      s = apply(s, { type: 'card:tap', by: 0, card: find(s, 0, 'battlefield', name), tapped: true });
+    }
+    return s;
+  };
+
+  it('is left where it is, and is still moved off a tapped host onto one that can use it', () => {
+    const bothTapped = wearing('Serra Angel', ['Serra Angel', 'Doomed Traveler']);
+    const axe = find(bothTapped, 0, 'battlefield', 'Bonesplitter');
+    const traveler = find(bothTapped, 0, 'battlefield', 'Doomed Traveler');
+    // Offered, because the rules allow it: a tapped creature can wear an Equipment.
+    expect(legalActions(bothTapped, 0).plays.some((play) => play.card === axe
+      && play.candidates[0]?.some((c) => c.kind === 'card' && c.id === traveler))).toBe(true);
+    const declined = botAction(bothTapped, 0);
+    expect(declined?.type === 'auto:activate' && declined.card === axe).toBe(false);
+
+    /*
+      And the other loop's direction: the axe is on the untapped 1/1 and the 4/4 is tapped, so the
+      power test on its own would send it across — onto a creature that cannot swing or block with
+      it this turn, and straight back again next move.
+    */
+    const angelAsleep = wearing('Doomed Traveler', ['Serra Angel']);
+    const refused = botAction(angelAsleep, 0);
+    expect(refused?.type === 'auto:activate'
+      && refused.card === find(angelAsleep, 0, 'battlefield', 'Bonesplitter')).toBe(false);
+
+    /*
+      And the escape itself, on the direction the power test would refuse: the 4/4 is tapped and
+      the 1/1 is not, so the bonus is worth more on the 1/1 — the one creature that can still use
+      it this turn.
+    */
+    const onTheSleeper = wearing('Serra Angel', ['Serra Angel']);
+    const taken = botAction(onTheSleeper, 0);
+    expect(taken?.type).toBe('auto:activate');
+    expect(taken?.type === 'auto:activate' ? taken.card : null)
+      .toBe(find(onTheSleeper, 0, 'battlefield', 'Bonesplitter'));
+    expect(taken?.type === 'auto:activate' ? taken.targets : [])
+      .toEqual([{ kind: 'card', id: find(onTheSleeper, 0, 'battlefield', 'Doomed Traveler') }]);
+  });
+});
+
 describe('a Naturalize pointed at its own board', () => {
   /*
     The fifteenth of the "spent on nothing" family, and the first one an instrument asked for by

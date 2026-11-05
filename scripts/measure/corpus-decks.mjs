@@ -42,6 +42,8 @@
  *   GAMES=50 SEED0=100 node scripts/measure/corpus-decks.mjs --file corpus.json
  *   VERBOSE=1 node scripts/measure/corpus-decks.mjs --file corpus.json   # every game, one line
  *   POD=1 LEGAL=1 GAMES=100 node scripts/measure/corpus-decks.mjs --file corpus.json
+ *   POD=1 GAMES=1 SEED0=30002 TRACE=2000 node scripts/measure/corpus-decks.mjs --file corpus.json
+ *   LOOP=0 node scripts/measure/corpus-decks.mjs --file corpus.json   # no loop detector
  *
  * ## Two arms, and the second one is the question Nick actually asked
  *
@@ -53,7 +55,7 @@
  * recorded across many commits and because it is the faster signal; the pod arm is the one to run
  * before claiming anything about beta readiness.
  *
- * Exits non-zero if any game threw or stalled.
+ * Exits non-zero if any game threw, stalled, looped, or ran out the move cap.
  *
  * **It has read clean and it has not.** The duel arm has been green since it was written — 60 games,
  * 120 random decks, every one to a finish. The pod arm found an engine throw on its **first** run:
@@ -106,6 +108,35 @@ const MAXCMC = Number(process.env.MAXCMC ?? 6);
 // both. Measured rather than guessed — see the pod figures in D460.
 const MOVES = Number(process.env.MOVES ?? (POD ? 20000 : 6000));
 const VERBOSE = process.env.VERBOSE === '1';
+/*
+  TRACE=<n> prints where the game has got to every n moves, and is the only arm that can answer
+  the question an `unfinished` verdict raises: a game that neither throws nor stalls has been
+  *doing* something for twenty thousand moves, and the verdict says only that it was not a win.
+  A move cap too low and a game that cannot end look identical in the tally and differ in exactly
+  one reading — whether the turn number, the life totals and the libraries move while the moves
+  are spent.
+*/
+const TRACE = Number(process.env.TRACE ?? 0);
+/*
+  And the bound that tells a game which needs more moves from a game that cannot end.
+
+  `MOVES` alone cannot: a pod that hits it reports `unfinished`, which is the same word for "this
+  table was always going to be a long game" and "this table has been doing the same free thing
+  2,000 times". D462's loop wore the second disguise, and it took a trace read by eye to tell —
+  20,000 legal moves, each one bumping the state version so the stall check could not see it.
+
+  So the harness asks the question itself. Every move it fingerprints what a player would call
+  progress — the turn, the step, each seat's life and poison, and the size of each of their five
+  zones — and a run of `LOOP` moves that moves none of it is reported as `looping`, with the action
+  and the card that filled the window. Not `unfinished`: a different word, because it is a
+  different bug, and that difference is the whole of what D462 cost to find.
+
+  Counters, tapped state and the stack are deliberately **out** of the fingerprint, because a loop
+  that only moves those is still a loop. That makes the bound the load-bearing choice: 2,000 moves
+  is a tenth of the pod cap and about three whole pods' worth of moves, far past any honest run of
+  mana taps and activations inside one step. `LOOP=0` turns it off.
+*/
+const LOOP = Number(process.env.LOOP ?? 2000);
 const SEAT_IDS = Array.from({ length: SEATS }, (_, i) => `corpus:${i}`);
 
 const allRows = (() => {
@@ -242,6 +273,41 @@ function buildDeck(id, seed) {
   };
 }
 
+/** The name of the card an instance id names, for a trace a person has to read. */
+const nameOf = (st, id) => st.cardDefs[st.instances[id]?.defKey ?? '']?.name ?? 'something';
+
+/** What a player would call progress, as one string: turn, step, life, poison, zone sizes. */
+const progressOf = (st) => `${st.turn}|${st.step}|`
+  + st.seats.map((seat) => `${seat.life}/${seat.poison ?? 0}`
+    + ['hand', 'battlefield', 'library', 'graveyard', 'exile']
+      .map((zone) => (st.zones[`${seat.index}:${zone}`] ?? []).length).join('.')).join(',');
+
+/**
+ * One line of "is this game going anywhere": the turn and step, then each seat's life, hand,
+ * battlefield and library, then the actions spent since the run began, commonest first.
+ *
+ * Libraries are in it because decking is a pod's usual terminator — four seats drawing a card a
+ * turn end a game the damage never would — and a library that stops emptying says the draw step
+ * is no longer happening. The action histogram is cumulative rather than per-period on purpose: a
+ * loop shows up as one action type climbing while nothing else does, which a per-period count
+ * states less plainly.
+ */
+const traceLine = (s, moves, counts, whats) => {
+  const seats = s.seats.map((seat) => {
+    const bf = (s.zones[`${seat.index}:battlefield`] ?? []).length;
+    const hand = (s.zones[`${seat.index}:hand`] ?? []).length;
+    const lib = (s.zones[`${seat.index}:library`] ?? []).length;
+    const gone = seat.eliminated ? `OUT:${seat.eliminatedReason ?? '?'}` : '';
+    return `p${seat.index} ${seat.life}life h${hand} b${bf} lib${lib}${gone === '' ? '' : ` ${gone}`}`;
+  }).join(' | ');
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([type, n]) => `${type}×${n}`).join(' ');
+  const cards = [...whats.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4)
+    .map(([what, n]) => `${what}×${n}`).join(', ');
+  return `    move ${moves} turn ${s.turn} ${s.step} :: ${seats} :: ${top}`
+    + `${cards === '' ? '' : `\n      cards: ${cards}`}`;
+};
+
 /** One game to a finish, or to the first thing that stops it. */
 function play(seed) {
   const built = SEAT_IDS.map((id, seat) => buildDeck(id, seed * SEATS + seat));
@@ -261,16 +327,38 @@ function play(seed) {
   s = applyAction(s, { type: 'auto:start', by: 0, firstSeat: 0, autoPass: true }, host);
 
   let moves = 0;
+  const counts = new Map();
+  /*
+    Which card, not only which kind of action. A loop of `auto:activate` names nothing on its own;
+    the same ability of the same permanent taken ten thousand times names the bug.
+  */
+  const whats = new Map();
+  let sinceProgress = 0;
+  const inWindow = new Map();
+  let lastWhat = '';
   for (; moves < MOVES && !s.finished; moves++) {
+    if (TRACE > 0 && moves % TRACE === 0) console.log(traceLine(s, moves, counts, whats));
     const seat = seatsToAct(s)[0];
     if (seat === undefined) {
       return { verdict: 'nobody-to-act', seed, moves, turn: s.turn, decks: built };
     }
     const action = botAction(s, seat, {});
+    if (action !== null) {
+      counts.set(action.type, (counts.get(action.type) ?? 0) + 1);
+      if (action.card !== undefined) {
+        const aimed = action.targets?.[0];
+        const at = aimed?.kind === 'card' ? ` → ${nameOf(s, aimed.id)}`
+          : aimed?.kind === 'player' ? ` → p${aimed.seat}` : '';
+        lastWhat = `${nameOf(s, action.card)}`
+          + `${action.abilityIndex === undefined ? '' : `#${action.abilityIndex}`}${at}`;
+        if (TRACE > 0) whats.set(lastWhat, (whats.get(lastWhat) ?? 0) + 1);
+      }
+    }
     if (action === null) {
       return { verdict: 'no-move', seed, moves, turn: s.turn, decks: built };
     }
     const before = s.stateVersion;
+    const movedBefore = LOOP > 0 ? progressOf(s) : '';
     /*
       Deliberately **not** wrapped. A throw here is the thing this harness exists to find, and
       catching it would turn a crash into a short game — which is exactly how 35 harnesses hid the
@@ -283,8 +371,29 @@ function play(seed) {
         detail: `${action.type} by seat ${seat} changed nothing`,
       };
     }
+    if (LOOP > 0) {
+      if (progressOf(s) === movedBefore) {
+        sinceProgress += 1;
+        inWindow.set(action.type, (inWindow.get(action.type) ?? 0) + 1);
+        if (sinceProgress >= LOOP) {
+          const top = [...inWindow.entries()].sort((a, b) => b[1] - a[1])[0];
+          return {
+            verdict: 'looping', seed, moves, turn: s.turn, decks: built,
+            detail: `${LOOP} moves with no progress in ${s.step} of turn ${s.turn}`
+              + `${top === undefined ? '' : `, ${top[1]} of them ${top[0]}`}`
+              + `${lastWhat === '' ? '' : ` (${lastWhat})`}`,
+          };
+        }
+      } else {
+        sinceProgress = 0;
+        inWindow.clear();
+      }
+    }
   }
-  if (!s.finished) return { verdict: 'unfinished', seed, moves, turn: s.turn, decks: built };
+  if (!s.finished) {
+    if (TRACE > 0) console.log(traceLine(s, moves, counts, whats));
+    return { verdict: 'unfinished', seed, moves, turn: s.turn, decks: built };
+  }
   return { verdict: 'finished', seed, moves, turn: s.turn, winner: s.winnerSeat, decks: built };
 }
 
