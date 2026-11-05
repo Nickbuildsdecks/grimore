@@ -3215,6 +3215,30 @@ function damageFirstTarget(c: EffectContext, amount: number): GameState {
   return dealDamage(c.state, target, amount, { controller: c.controller, source: c.source });
 }
 
+/**
+ * The same amount to **every** target, which is what "to each of up to two target creatures" says.
+ *
+ * `damageFirstTarget` above is the reader for a spec whose `count` is one, and it is still the
+ * right one for the hand-written cards that call it. The compiler's two open-phrase damage readers
+ * are not: `each of up to two` is a quantifier `parsedTargetPhrase` accepts, so Dual Shot and Fire
+ * Shrine Keeper compiled a spec asking for two creatures and dealt their damage to one. Same defect
+ * as D470's five, found in the same pass by asking which other reader takes a phrase rather than a
+ * fixed sentence.
+ *
+ * Not the same thing as `dividedAmong`, which is the other multi-target damage shape and splits one
+ * budget between the targets (CR 601.2d). This repeats the whole amount on each, which is what the
+ * printed "to each of" says and the reason the two cannot share an effect.
+ *
+ * Folding over `c.targets` rather than `cardTargets` because a damage spec can be `any target`: a
+ * player is a legal one and `dealDamage` takes either.
+ */
+function damageEveryTarget(c: EffectContext, amount: number): GameState {
+  return c.targets.reduce(
+    (state, target) => dealDamage(state, target, amount, { controller: c.controller, source: c.source }),
+    c.state,
+  );
+}
+
 /** "Prevent the next N damage that would be dealt to any target" — a creature or a player. */
 function shieldFirstTarget(c: EffectContext, amount: number): GameState {
   const target = c.targets[0];
@@ -13688,9 +13712,32 @@ function damageDestination(where: string): {
       the flag.
     */
     ...(spec.kind === 'creature' ? { spellFlags: { removesACreature: true } } : {}),
-    apply: (c, n) => (n <= 0 ? c.state : damageFirstTarget(c, n)),
+    apply: (c, n) => (n <= 0 ? c.state : damageEveryTarget(c, n)),
   };
 }
+
+/**
+ * Every card target, folded over in the order the player chose them.
+ *
+ * `firstCardTarget` is the right reader for a spec whose `count` is one, and **D469 made that
+ * assumption false the moment it shipped**. Giving the open-phrase readers
+ * `TARGET_QUANTIFIER_PREFIX` let `Destroy two target creatures` compile: the engine asks for two
+ * targets, fills both, and the effect destroyed the first one and dropped the second. The card
+ * read as automated and did half of what it says, which is worse than the unread line it replaced
+ * (D259, D362) — an unread line is badged for a human to play by hand, a half-read one is not.
+ *
+ * It is the fold `untappedMany` has had since the counted untap, lifted out so the five families
+ * that take an open target phrase share one spelling of it rather than five.
+ *
+ * Written as `(state, id) => each(state, id)` rather than handing `each` to `reduce` directly
+ * because `reduce` passes an index and the array as third and fourth arguments, and an effect
+ * primitive that takes an options object third would silently be handed a number.
+ */
+const foldCardTargets = (
+  c: EffectContext,
+  each: (state: GameState, id: string) => GameState,
+): GameState => cardTargets(c).reduce((state, id) => each(state, id), c.state);
+
 
 /**
  * A clause that points at something: its target spec, its effect, and the script-level flags the
@@ -13727,10 +13774,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     if (spec !== null && pointsAtAPermanent(spec)) {
       return {
         targets: [spec],
-        effect: (c) => {
-          const id = firstCardTarget(c);
-          return id === null ? c.state : destroy(c.state, id);
-        },
+        effect: (c) => foldCardTargets(c, destroy),
         // Only when the target really is a creature. A Disenchant that claimed to remove one would
         // have the bot holding it for a board it cannot answer.
         ...(spec.kind === 'creature' ? { spellFlags: { removesACreature: true } } : {}),
@@ -13753,10 +13797,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     if (spec !== null && pointsAtAPermanent(spec)) {
       return {
         targets: [spec],
-        effect: (c) => {
-          const id = firstCardTarget(c);
-          return id === null ? c.state : exileCard(c.state, id);
-        },
+        effect: (c) => foldCardTargets(c, exileCard),
         // As on the destroy above, and for the same reason: only when the target really is a
         // creature is this a card the bot should hold for a board it can answer.
         ...(spec.kind === 'creature' ? { spellFlags: { removesACreature: true } } : {}),
@@ -13772,10 +13813,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     if (spec !== null && pointsAtAPermanent(spec)) {
       return {
         targets: [spec],
-        effect: (c) => {
-          const id = firstCardTarget(c);
-          return id === null ? c.state : bounceToHand(c.state, id);
-        },
+        effect: (c) => foldCardTargets(c, bounceToHand),
       };
     }
   }
@@ -13812,12 +13850,16 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     if (spec !== null && pointsAtTheStack(spec)) {
       return {
         targets: [spec],
-        effect: (c) => {
-          const object = c.targets[0];
-          return object === undefined || object.kind === 'player'
-            ? c.state
-            : counterSpell(c.state, object.id);
-        },
+        /*
+          Every object pointed at, not the first — see `foldCardTargets`, which this cannot use
+          because an ability on the stack is an `ability` target and `cardTargets` keeps only
+          cards. A player is skipped rather than refused: `pointsAtTheStack` has already ruled
+          out a spec that could fill one, so the branch is unreachable and written for the type.
+        */
+        effect: (c) => c.targets.reduce(
+          (state, object) => (object.kind === 'player' ? state : counterSpell(state, object.id)),
+          c.state,
+        ),
       };
     }
   }
@@ -13934,10 +13976,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
       return {
         targets: [spec],
         abilityFlags: { untapsOnly: true },
-        effect: (c) => {
-          const id = firstCardTarget(c);
-          return id === null ? c.state : tap(c.state, id, false);
-        },
+        effect: (c) => foldCardTargets(c, (state, id) => tap(state, id, false)),
       };
     }
   }
@@ -15593,7 +15632,7 @@ function xSpellResolution(lines: readonly string[], name: string): ReadEffect | 
     const spec = targetSpecFrom(where, false);
     // No zero guard here, and Fireball's hand-written script has none either: `dealDamage` refuses
     // a non-positive amount, so a Fireball cast for zero deals nothing without a branch saying so.
-    if (spec !== null) return { targets: [spec], effect: (c) => damageFirstTarget(c, c.x) };
+    if (spec !== null) return { targets: [spec], effect: (c) => damageEveryTarget(c, c.x) };
   }
 
   /*

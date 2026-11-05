@@ -25382,3 +25382,190 @@ describe('a printed target phrase, parsed rather than enumerated (D469)', () => 
     expect(specOf('destroy target planeswalker')).toMatchObject({ kind: 'permanent' });
   });
 });
+
+describe('every target the phrase asked for, not the first (D470)', () => {
+  /*
+    **A wrong reading D469 shipped, found by re-measuring its own queue minutes later.**
+
+    D469 gave the five open-phrase readers `TARGET_QUANTIFIER_PREFIX`, so `Destroy two target
+    creatures` compiled and the engine asked the player to point at two creatures. Every one of
+    those readers then ended in `const id = firstCardTarget(c)` — the right reader while every
+    spec's `count` was one, and wrong the moment one was two. The card read as fully automated, two
+    targets were chosen, and one creature died.
+
+    That is worse than the unread line it replaced (D259, D362): an unread line wears the badge that
+    tells a human to resolve it by hand, and a half-read one wears nothing. Neither the engine suite
+    nor the pod sweep could have caught it — these are real printings in no built-in deck, which is
+    the population the compiler exists for and the only one neither harness plays.
+
+    `foldCardTargets` is the fix. The two resolution tests below fail against the shipped reading.
+
+    There is a **sixth** family, found by asking the same question once more after the five were
+    fixed: `damageEffect` also takes an open phrase, and `each of up to two target creatures` is a
+    phrase it accepts. Its test is below, with the reason it is not `dividedAmong`.
+
+    Which of the families a real card can reach is itself a measured fact, taken off the corpus
+    rather than assumed, and it is why there are three resolution tests rather than six:
+
+    - **destroy** — `Curtains' Call`, `Reckless Spite`, `Wicked Pact`, `Violent Ultimatum`,
+      `Lavaball Trap`, `Rain of Salt`, `Peace and Quiet`, `Rack and Ruin`. Reachable, and tested.
+    - **exile** — `Into the Core` and `Dust to Dust` ("Exile two target artifacts"). Reachable, and
+      tested. `Ashes to Ashes` is **not**: `nonartifact` is not in the qualifier vocabulary, so its
+      line is unread and stays badged.
+    - **untap** — `Join Forces` and `Synchronized Strike` print `Untap up to two target creatures`,
+      which reads on its own, but both cards' lines continue `They each get +2/+2 until end of
+      turn`, which does not — so the whole line is unread today and no real card reaches the fold.
+      The clause is asserted below rather than resolved.
+    - **counter** — `Double Negative` ("Counter up to two target spells") is the one printing and it
+      does not read: the plural stack noun is not in the vocabulary. Its fold is written inline
+      rather than through `foldCardTargets`, because an ability on the stack is an `ability` target
+      and `cardTargets` keeps only cards.
+    - **bounce** — unreachable by construction. The reader's phrase ends `to its owner's hand`, and
+      all 38 multi-target printings in the corpus say `to their owners' hands` or `to their owner's
+      hand`. The fold is written anyway: a regex is a weaker guarantee than an effect that is right
+      whatever it is handed.
+  */
+  const CURTAINS_CALL = {
+    name: "Curtains' Call", type_line: 'Instant', mana_cost: '{5}{B}', cmc: 6, colors: ['B'],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Destroy two target creatures.',
+  };
+  const INTO_THE_CORE = {
+    name: 'Into the Core', type_line: 'Instant', mana_cost: '{2}{R}{R}', cmc: 4, colors: ['R'],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Exile two target artifacts.',
+  };
+  const DUAL_SHOT = {
+    name: 'Dual Shot', type_line: 'Instant', mana_cost: '{R}', cmc: 1, colors: ['R'],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Dual Shot deals 1 damage to each of up to two target creatures.',
+  };
+
+  const table = (hand: string) => {
+    const built = customDeck({
+      id: 'd470-list',
+      name: 'Two at a time',
+      entries: [
+        { name: "Curtains' Call", count: 4 },
+        { name: 'Into the Core', count: 4 },
+        { name: 'Dual Shot', count: 4 },
+        { name: 'Mind Stone', count: 2 },
+        { name: 'Swamp', count: 23 },
+        { name: 'Mountain', count: 23 },
+      ],
+      data: [CURTAINS_CALL, INTO_THE_CORE, DUAL_SHOT] as never,
+    });
+    expect(built.unknown).toEqual([]);
+    /*
+      D430: `customDeck` consults the pool before the printed data, so a fixture that is already a
+      pool card would be testing the hand-written script instead of the compiler. Both spells come
+      from the data; `Mind Stone` is deliberately a pool card, because it is the thing being pointed
+      at rather than the thing being read.
+    */
+    expect([...built.fromData].sort())
+      .toEqual(["Curtains' Call", 'Dual Shot', 'Into the Core']);
+
+    let s = advanceTo(arena({
+      decks: { 0: 'd470-list', 1: 'skyward-writ' },
+      deckSpecs: { 'd470-list': built.deck },
+      battlefield: {
+        0: ['Swamp', 'Swamp', 'Swamp', 'Mountain', 'Mountain', 'Mountain', 'Mind Stone', 'Mind Stone'],
+        1: ["Healer's Hawk", 'Soul Warden'],
+      },
+      hands: { 0: [hand] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    return { s, spell: find(s, 0 as SeatIndex, 'hand', hand) };
+  };
+
+  it('destroys both creatures a two-target destroy was pointed at', () => {
+    const { s, spell } = table("Curtains' Call");
+    const hawk = find(s, 1 as SeatIndex, 'battlefield', "Healer's Hawk");
+    const warden = find(s, 1 as SeatIndex, 'battlefield', 'Soul Warden');
+
+    const after = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: spell, targets: [
+        { kind: 'card', id: hawk }, { kind: 'card', id: warden },
+      ],
+    } as Action), 40);
+    /*
+      Both of them, in the graveyard. Against the shipped reading the second creature chosen is
+      still on the battlefield, which is the whole of the defect: the player was asked for two and
+      the card killed one.
+    */
+    expect(namesIn(after, 1 as SeatIndex, 'graveyard')).toContain("Healer's Hawk");
+    expect(namesIn(after, 1 as SeatIndex, 'graveyard')).toContain('Soul Warden');
+    expect(namesIn(after, 1 as SeatIndex, 'battlefield')).toEqual([]);
+  });
+
+  it('exiles both artifacts, which is the same fold through a different primitive', () => {
+    const { s, spell } = table('Into the Core');
+    const [first, second] = ids(s, 0 as SeatIndex, 'battlefield')
+      .filter((id) => nameOf(s, id) === 'Mind Stone');
+    expect(second).toBeDefined();
+
+    const after = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: spell, targets: [
+        { kind: 'card', id: first! }, { kind: 'card', id: second! },
+      ],
+    } as Action), 40);
+    expect(namesIn(after, 0 as SeatIndex, 'battlefield')).not.toContain('Mind Stone');
+    // Exiled, not destroyed — the difference CR 701.19a draws, and the reason destroy and exile are
+    // two readers rather than one.
+    expect(namesIn(after, 0 as SeatIndex, 'graveyard')).not.toContain('Mind Stone');
+    expect(namesIn(after, 0 as SeatIndex, 'exile')).toContain('Mind Stone');
+  });
+
+  it('deals the damage to each creature named, which is a sixth reader with the same defect', () => {
+    /*
+      Found by asking which *other* reader takes an open target phrase rather than a fixed sentence.
+      `damageEffect` does, and `each of up to two` is a quantifier `parsedTargetPhrase` accepts — so
+      `Dual Shot` and `Fire Shrine Keeper` compiled a spec asking for two creatures and dealt their
+      damage to one. The count of families the defect reached is six, not five, and the only reason
+      the sixth was caught is that the fix made the question worth asking a second time.
+
+      Not `dividedAmong`, which is the other multi-target damage shape: that splits one budget
+      between the chosen targets (Arc Lightning, Electrolyze, Forked Bolt, Twin Bolt, Chandra's
+      Pyrohelix, Flames of the Firebrand, Gang of Devils, all correct throughout). "To each of"
+      repeats the whole amount, which is why the two cannot share an effect.
+    */
+    const { s, spell } = table('Dual Shot');
+    const hawk = find(s, 1 as SeatIndex, 'battlefield', "Healer's Hawk");
+    const warden = find(s, 1 as SeatIndex, 'battlefield', 'Soul Warden');
+
+    const after = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: spell, targets: [
+        { kind: 'card', id: hawk }, { kind: 'card', id: warden },
+      ],
+    } as Action), 40);
+    // Both are 1/1s, so one point each is lethal to each of them (CR 704.5g).
+    expect(namesIn(after, 1 as SeatIndex, 'graveyard')).toContain("Healer's Hawk");
+    expect(namesIn(after, 1 as SeatIndex, 'graveyard')).toContain('Soul Warden');
+  });
+
+  it('reads the counted phrase on every family, including the two no printing reaches', () => {
+    /*
+      A record of what the five readers accept, so that a later change which narrows them fails here
+      rather than quietly losing the cards. The untap line is the one a real card (`Join Forces`)
+      gets half of; `counter` and the plural bounce are the two the docblock above records as
+      unreachable, and the assertions state that rather than leaving it to be rediscovered.
+    */
+    const specOf = (text: string) => {
+      const compiled = compileCard({
+        name: 'Probe Writ', type_line: 'Instant', mana_cost: '{1}{U}', cmc: 2, colors: ['U'],
+        power: null, toughness: null, loyalty: null, layout: 'normal', oracle_text: `${text}.`,
+      } as never);
+      if (!compiled.ok || (compiled.unread ?? []).length > 0) return null;
+      return (compiled.script?.targets ?? [])[0] ?? null;
+    };
+    expect(specOf('Destroy two target creatures')).toMatchObject({ count: 2 });
+    expect(specOf('Exile two target artifacts')).toMatchObject({ count: 2 });
+    expect(specOf('Untap up to two target creatures'))
+      .toMatchObject({ count: 2, optional: true, friendly: true });
+    // The two with no printing behind them, asserted as unread rather than as something they do.
+    expect(specOf('Counter up to two target spells')).toBeNull();
+    expect(specOf("Return two target creatures to their owners' hands")).toBeNull();
+  });
+});

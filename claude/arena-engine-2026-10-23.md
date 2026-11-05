@@ -12557,3 +12557,117 @@ argument; keeping that refusal cost 26 cards with a script and one fully read, m
 
 Engine suite 2,278 green. Seven levers broken one at a time — and two failed nothing at first, because
 the test leant on a phrase the switch answers rather than the parser.
+
+## D470 — Every target the phrase asked for, not the first: a wrong reading D469 shipped
+
+D469 went out at `d1e9680`. Twenty minutes later, re-measuring its own queue, I read the five
+readers it had widened and found that all five end the same way:
+
+```ts
+effect: (c) => {
+  const id = firstCardTarget(c);
+  return id === null ? c.state : destroy(c.state, id);
+},
+```
+
+`firstCardTarget` is the correct reader while every spec's `count` is one. D469 made that false in
+the same commit that relied on it: giving destroy, exile, return-to-hand, untap and counter
+`TARGET_QUANTIFIER_PREFIX` let `Destroy two target creatures` compile, so the engine asked the
+player to point at two creatures — and the effect killed one.
+
+### Why this is worse than the unread line it replaced
+
+D362's rule is that a line left unread is **badged**, and a human resolves it by hand. D259's is
+that inventing a card's text is worse than leaving a mechanic out. A half-read line fails both at
+once: the card reports itself fully automated, the player is asked for two targets, one of them is
+quietly ignored, and nothing anywhere says so. Before D469 those cards were badged and played
+correctly by a person. After it they were silently wrong.
+
+### 18 cards over six families, and the method that found them
+
+Nothing in the repository could have caught this. The engine suite's fixtures are built-in pool
+cards and none prints a counted target phrase; the pod sweep plays the thirteen built-in decks. These
+are real printings in no built-in deck — the population the compiler exists for, and the only one
+neither harness plays. It was found by reading the code the increment had just changed, which is not
+a method that scales and is the reason the lever below exists.
+
+Measured over the 31,654 legal rows: **28 cards compile a script asking for more than one target.**
+Ten of them are correct by another path — the seven damage-**divided** cards (Arc Lightning,
+Electrolyze, Forked Bolt, Twin Bolt, Chandra's Pyrohelix, Flames of the Firebrand, Gang of Devils),
+which split one budget between the targets through `dividedAmong` (CR 601.2d), and the three
+`Untap two target lands` cards (Argothian Elder, Ley Weaver, Garruk Wildspeaker), read by
+`untappedMany`, which has folded over `cardTargets` since the counted untap was written.
+
+The other **18 were resolving one target of two or three**:
+
+- **destroy and exile** (14) — Armaggon Future Shark, Barrier Breach, Curtains' Call, Dust to Dust,
+  Into the Core, Numot the Devastator, Peace and Quiet, Petradon, Rack and Ruin, Rain of Salt,
+  Reckless Spite, Ulamog the Ceaseless Hunger, Violent Ultimatum, Wicked Pact.
+- **untap** (2) — Garruk Curse Breaker and Tezzeret the Seeker, whose `up to two` `untappedMany`
+  cannot match: its count is `[\w]+` and `up to two` is three words, so they fall to the open-phrase
+  reader.
+- **damage** (2) — **a sixth family, and D469 had widened it too.** `Dual Shot` and `Fire Shrine
+  Keeper` print "deals N damage to each of up to two target creatures"; `each of up to two` is a
+  quantifier `parsedTargetPhrase` accepts, and `damageFirstTarget` dealt the damage to one of them.
+  Found by asking which *other* reader takes an open phrase rather than a fixed sentence — the
+  question the first five made worth asking again, and the one D469 should have asked.
+  `damageEveryTarget` repeats the full amount on each target, which is what "to each of" says and
+  why it cannot share an effect with `dividedAmong`. Both of the compiler's damage readers (the
+  printed number and the X) now use it; the hand-written cards keep `damageFirstTarget`, which is
+  correct for a spec whose count is one.
+
+### The fix, and the one place it is not shared
+
+`foldCardTargets(c, each)` reduces `each` over every card target, which is `untappedMany`'s fold
+lifted out so the families share one spelling of it. Four readers use it. Two do not: the **counter**
+reader folds inline, because an ability on the stack is an `ability` target and `cardTargets` keeps
+only cards, and the **damage** readers use `damageEveryTarget`, because a damage spec can be `any
+target` and a player is a legal one.
+
+**The fold is only safe because `composeEffects` refuses a second targeting clause.** `c.targets` is
+one list per script, so if two clauses could each point at something, folding destroy over the list
+would destroy the other clause's target too. That invariant is written down where it is enforced —
+"two target choices cannot share one `targets` list" — and it is what makes "every target in the
+list" the same thing as "every target this clause asked for".
+
+It is written `(state, id) => each(state, id)` rather than handing `each` to `reduce`, because
+`reduce` passes an index and the array as third and fourth arguments and an effect primitive taking
+an options object third would silently be handed a number.
+
+### Which families a real card can actually reach, taken off the corpus
+
+- **destroy** and **exile** — reachable, and the two tests below resolve them (`Curtains' Call`,
+  `Into the Core`).
+- **untap** — `Join Forces` and `Synchronized Strike` print `Untap up to two target creatures`,
+  which reads on its own, but their lines continue `They each get +2/+2 until end of turn`, which
+  does not, so the whole line is unread. The two planeswalkers above reach it.
+- **counter** — `Double Negative` ("Counter up to two target spells") is the only printing and it
+  does not read: the plural stack noun is not in the vocabulary.
+- **bounce** — unreachable by construction. The reader's phrase ends `to its owner's hand`; all 38
+  multi-target printings in the corpus say `to their owners' hands` or `to their owner's hand`. The
+  fold is still written, because a regex is a weaker guarantee than an effect that is right whatever
+  it is handed.
+
+### The lever
+
+Two resolution tests on real printings through `customDeck`, asserted via `built.fromData` (D430):
+`Curtains' Call` must put **both** creatures in the graveyard, `Into the Core` must exile **both**
+artifacts and put neither in a graveyard (CR 701.19a), and `Dual Shot` must kill **both** 1/1s. Break
+run: restoring the shipped `firstCardTarget` reading fails each of the three in turn and leaves the
+fourth (the spec-level record of what each family accepts) green, which is the right shape — the
+defect was never about reading.
+
+Coverage is unchanged, and re-measured rather than asserted: **9,657** cards with a script, **5,436**
+fully read, **19,557 of 56,421** printed lines (34.7%) — the same three figures D469 printed, because
+this increment changes what a read line *does*, not how many read. Engine suite **2,282** green
+(2,278 + the four tests here).
+
+### What this says about the practice
+
+The D468 guard, the D469 Aura refusal and this are three in a row where a reader's reach was wider
+than the lines it was written for, and the first two were caught by the full suite. This one was not,
+because the suite cannot see cards that are not in a deck. The standing lesson: when an increment
+widens what a reader **accepts**, re-read every effect downstream of it in the same pass — the
+acceptance and the resolution are two edits, and D469 made only one of them. The sixth family is the
+proof that the lesson is not rhetorical: five readers were fixed, and asking the same question once
+more found a sixth that the increment had also widened and nobody had listed.
