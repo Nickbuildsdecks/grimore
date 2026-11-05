@@ -1,38 +1,32 @@
 /**
- * `you may X. If you do, Y` — the yield of reading it as what it **means**.
+ * `you may X. If you do, Y` — which **half** is holding each card up, substituted in place.
  *
  *   pnpm --filter @grimore/rules-engine build
  *   LEGAL=1 node scripts/measure/may-if-you-do.mjs --file corpus.json
- *   LEGAL=1 DUMP="X asks once, Y asks nothing" node scripts/measure/may-if-you-do.mjs --file corpus.json
+ *   LEGAL=1 DUMP="the opener" node scripts/measure/may-if-you-do.mjs --file corpus.json
  *
- * ## Why this is not `phrase-gap.mjs`' row
+ * ## The first version of this file got its own biggest number wrong (D473)
  *
- * `phrase-gap.mjs` prices this construct by substituting the whole thing with **Y** — "you may
- * sacrifice a creature. If you do, draw a card" becomes "draw a card" — and its own docblock says
- * that figure is a ceiling rather than a reading: a reader must refuse Y when X was not performed
- * (CR 608.2), and `may-halves.mjs` already had to retract a number for measuring halves that are not
- * what a reader would build (D465).
+ * It compiled each half **as a bare clause** under a probe prologue — `When ~ enters, pay {2}.` —
+ * and reported **402 of 472** cards blocked by the opener, which D472's entry then quoted as "the
+ * real finding". It is an artefact. `pay {2}` is not a clause this compiler reads and never needs
+ * to be: it is read by the *construct's* own reader, and has been since D448. So 146 of those 402
+ * are mana and energy payments whose openers were never the problem.
  *
- * This asks the narrower question a real reader can answer. For every legal card **one unread line
- * short** of a finished script, where that line is this construct:
+ * That is the third time this family has been mismeasured by asking about a half in a position the
+ * half never appears in — `may-halves.mjs` (63, retracted D465) and `phrase-gap.mjs`' own docblock
+ * list the other two — and the method that survives is the one `phrase-gap.mjs` settled on:
+ * **substitution in place.** Leave the printed line exactly as it is, replace ONE half with
+ * something known to read in that position, and ask the compiler whether the whole line reads.
  *
- *  - does **X** read on its own, as a clause under a trigger prologue?
- *  - does **Y**?
- *  - how many questions does each half ask?
+ * So, for every legal card one unread line short whose line is this construct:
  *
- * That last column is the one that decides the shape, because of what the engine's gate can do.
- * `ChoiceDecisionSpec.askOnlyIfChosen` holds a question back on an **option word** that was chosen
- * (D450); nothing can hold one back on "an earlier card answer came back non-empty". So:
+ *  - **the opener** — substitute X with `pay {1}`; if the line now reads, X was the blocker.
+ *  - **the consequence** — substitute Y with `draw a card`; if the line now reads, Y was.
+ *  - **either** — both substitutions read, so either half alone finishes the card.
+ *  - **the line around them** — neither reads: the prologue, or a clause beside the construct.
  *
- *  - **X asks nothing** (a draw, a mana or life payment): "if you do" *is* "you said yes", so Y's
- *    own questions can ride the same gate and the reading is complete.
- *  - **X asks once** (a sacrifice, a discard, a bounce): "if you do" is "that answer was not empty",
- *    which an effect can read and a question cannot be gated on — so Y must ask nothing.
- *  - **X asks more than once**, or either half points at a target: out of scope, counted separately
- *    rather than hidden in a total.
- *
- * The buckets are therefore a build order, not a ranking: the first two are what one increment can
- * read correctly, and the rest are the reasons the other cards stay badged.
+ * A card counts in exactly one bucket, and the buckets are a build order rather than a ranking.
  *
  * ## `LEGAL=1`
  *
@@ -50,42 +44,28 @@ const fileArg = process.argv.indexOf('--file');
 const file = fileArg === -1 ? null : process.argv[fileArg + 1];
 const DUMP = process.env.DUMP ?? '';
 
-const PROBE = 'Probe Beast';
-const asCard = (text) => ({
-  name: PROBE,
-  type_line: 'Creature — Human',
-  mana_cost: '{2}{G}',
-  cmc: 3,
-  colors: ['G'],
-  power: '2',
-  toughness: '2',
-  loyalty: null,
-  layout: 'normal',
-  oracle_text: text,
-});
+/** Known to read **in the opener's position**: the priced form has been read since D448. */
+const KNOWN_X = 'pay {1}';
+/** Known to read as a consequence, and the commonest one printed (96 of the 472). */
+const KNOWN_Y = 'draw a card';
 
 const memo = new Map();
-/**
- * What one clause reads as, under a trigger prologue that is known to read: `null` when the clause
- * does not read at all, otherwise how many questions and targets it carries.
- */
-function readingOf(clause) {
-  if (!memo.has(clause)) {
-    let out = null;
+/** Does this whole printed line read, on the card that prints it? */
+function reads(row, line) {
+  const key = `${row.name}\u0000${line}`;
+  if (!memo.has(key)) {
+    let ok = false;
     try {
-      const compiled = compileCard(asCard(`When ${PROBE} enters, ${clause}.`));
-      if (compiled.ok && (compiled.unread ?? []).length === 0) {
-        const trigger = (compiled.script?.triggers ?? [])[0];
-        out = {
-          asks: (trigger?.decisions ?? []).length + (trigger?.targets ?? []).length,
-        };
-      }
+      const swapped = (row.oracle_text ?? '').split('\n')
+        .map((printed) => (printed === line.original ? line.text : printed)).join('\n');
+      const compiled = compileCard({ ...row, oracle_text: swapped });
+      ok = compiled.ok && (compiled.unread ?? []).length === 0;
     } catch {
-      out = null;
+      ok = false;
     }
-    memo.set(clause, out);
+    memo.set(key, ok);
   }
-  return memo.get(clause);
+  return memo.get(key);
 }
 
 const all = file === null ? poolRows() : JSON.parse(readFileSync(file, 'utf8'));
@@ -98,12 +78,10 @@ if (process.env.LEGAL === '1') console.log(legalLine(all.length, rows.length));
 /** `<prologue> you may <X>. If you do, <Y>`, with the prologue optional. */
 const SHAPE = /^(.*?)\byou may ([^.]+)\.\s*if you do,\s*(.+?)\.?$/i;
 const buckets = new Map([
-  ['X asks nothing (Y may ask)', []],
-  ['X asks once, Y asks nothing', []],
-  ['X asks once, Y asks too', []],
-  ['X asks more than once', []],
-  ['X unread', []],
-  ['Y unread', []],
+  ['the opener', []],
+  ['the consequence', []],
+  ['either half alone', []],
+  ['the line around them', []],
 ]);
 
 let oneShort = 0;
@@ -117,33 +95,31 @@ for (const row of rows) {
   if (!compiled?.ok) continue;
   const unread = (compiled.unread ?? []).map((u) => u.line);
   if (unread.length !== 1) continue;
-  const match = SHAPE.exec(unread[0].trim());
+  const original = unread[0];
+  const match = SHAPE.exec(original.trim());
   if (match === null) continue;
   oneShort += 1;
   const [, prologue, x, y] = match;
-  const xr = readingOf(x.trim());
-  const yr = readingOf(y.trim());
-  const where = xr === null ? 'X unread'
-    : yr === null ? 'Y unread'
-      : xr.asks === 0 ? 'X asks nothing (Y may ask)'
-        : xr.asks > 1 ? 'X asks more than once'
-          : yr.asks === 0 ? 'X asks once, Y asks nothing'
-            : 'X asks once, Y asks too';
-  buckets.get(where).push(
-    `${row.name}: you may ${x.trim()}. If you do, ${y.trim()}.`
-    + (prologue.trim() === '' ? '' : `   [after: ${prologue.trim()}]`),
-  );
+  const withX = `${prologue}you may ${KNOWN_X}. If you do, ${y}`;
+  const withY = `${prologue}you may ${x.trim()}. If you do, ${KNOWN_Y}.`;
+  const xFixed = reads(row, { original, text: withX });
+  const yFixed = reads(row, { original, text: withY });
+  const where = xFixed && yFixed ? 'either half alone'
+    : xFixed ? 'the opener'
+      : yFixed ? 'the consequence'
+        : 'the line around them';
+  buckets.get(where).push(`${row.name}: you may ${x.trim()}. If you do, ${y.trim()}.`
+    + (prologue.trim() === '' ? '' : `   [after: ${prologue.trim()}]`));
 }
 
-console.log(`\nCards one unread line short whose line is this construct: ${oneShort}\n`);
+console.log(`\nCards one unread line short whose line is this construct: ${oneShort}`);
+console.log('Which half, substituted in place, makes the whole line read:\n');
 for (const [key, cards] of buckets) {
   console.log(`  ${String(cards.length).padStart(4)}  ${key}`);
   if (cards.length > 0) console.log(`         e.g. ${cards[0]}`);
 }
-const readable = buckets.get('X asks nothing (Y may ask)').length
-  + buckets.get('X asks once, Y asks nothing').length;
-console.log(`\nWhat one reader can finish correctly today: ${readable} cards`);
-console.log('(the other buckets are not a ranking — they are the reasons those cards stay badged)');
+console.log('\n"either half alone" is the only bucket a single reader finishes on its own;');
+console.log('the other two name which vocabulary to grow, and the last one is not this family.');
 
 if (buckets.has(DUMP)) {
   const cards = buckets.get(DUMP);

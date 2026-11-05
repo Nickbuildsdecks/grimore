@@ -12840,10 +12840,77 @@ both-halves-ask refusal, and the target refusal.
 
 Engine suite **2,292** green (2,288 + the four tests here).
 
-+22 fully read. The instrument's two readable buckets are 31, and the gap between that and 22 is the
-honest part: it was run **after** the change, so the cards still in those buckets are the ones this
-reader cannot reach — their prologue is one the compiler does not read (`enters or attacks`, an
-intervening-if, `Valiant —`), or the card is a **spell**, where `you may` has no reader at all
-(`composeEffects` hands "you may discard a card" to the clause vocabulary, which is about what an
-effect does rather than whether it happens). Eight of the 18 are spells. Both are named increments
-now rather than a number nobody can explain.
++22 fully read.
+
+> **The 402 figure above is retracted (D473), and so is the sentence calling it "the real finding".**
+> The instrument compiled each half as a bare clause, and `pay {2}` is not a clause this compiler
+> reads or needs to — the construct's own reader has read it since D448. So 146 of those 402 were
+> mana and energy payments whose openers were never the problem. Re-measured by substitution in
+> place, **no** card in this family is held up by its opener or its consequence alone: 47 are
+> finished by either half and 425 are held up by the **line around the construct**, overwhelmingly a
+> trigger prologue the compiler cannot read. The read of the engine's gate, the reader this
+> increment shipped and the +22 are unaffected; the queue it pointed at was wrong. See D473.
+
+## D473 — The 402 was my instrument's artefact, and the real blocker is the prologue
+
+D472's entry quoted its own instrument's biggest number as "the real finding": **402 of 472** cards
+in the `you may X. If you do, Y` family held up by the **opener**. That is wrong, and it was wrong
+within the hour, found by grouping the bucket I had just published instead of taking its headline.
+
+### What the instrument did
+
+`may-if-you-do.mjs` compiled each half **as a bare clause** under a probe prologue —
+`When ~ enters, pay {2}.` — and counted the halves that came back unread. But `pay {2}` is not a
+clause this compiler reads and does not need to be: it is read by the **construct's own** reader and
+has been since D448. The top two groups of the 402 were `pay {M}` (99) and `pay {M}{M}` (47), so
+**146 of them were payments whose openers were never the problem.**
+
+That is the **third** time this family has been mismeasured by asking about a half in a position the
+half never appears in. `may-halves.mjs` reported 63 and retracted it (D465); the first clause-level
+probe produced 1,241 "several clauses" and 13,006 "prologue gap", both artefacts; and now this. The
+method that survives all three is the one `phrase-gap.mjs` settled on and that I did not apply here:
+**substitution in place** — leave the printed line as it is, replace one half with something known to
+read *in that position*, and ask whether the whole line reads.
+
+### The corrected attribution
+
+The instrument now substitutes in place: X with `pay {1}`, Y with `draw a card`, each on the card's
+own printed line. Over the same 472 cards:
+
+| | cards |
+| --- | --- |
+| the opener alone | **0** |
+| the consequence alone | **0** |
+| either half alone finishes it | **47** |
+| the **line around them** | **425** |
+
+So nothing in this family is waiting on an opener or a consequence. What holds 425 cards up is the
+frame, and grouping that bucket says what the frame is:
+
+| | |
+| --- | --- |
+| 49 | `At the beginning of …` prologues the compiler does not read |
+| 46 | another clause before the construct on the same line |
+| 26 | `Whenever you cast …` |
+| 23 | `Whenever a player …` |
+| 15 | no prologue at all — a spell, where `you may` has no reader |
+| 14 | `Whenever a creature …` |
+| 12 | `Kinship —` |
+| 7 each | `Inspired —`, `Whenever this creature …` |
+| the rest | 50-odd prologue shapes with 3 to 6 cards each |
+
+**The next increment is the trigger prologue vocabulary**, not an opener and not the construct. That
+is a different piece of work from everything in D465-D472, which were all about what a clause *does*;
+this is about the event a line fires on.
+
+### What this does not change
+
+The reader D472 shipped, its tests, its break runs and its **+22 fully read** all stand — they were
+measured by `compilable.mjs` against real cards, not by the instrument that was wrong. What was wrong
+is the queue the entry pointed at, which is exactly the kind of error that compounds: the next
+increment would have been spent on an opener vocabulary that finishes nothing.
+
+Also dropped: the `grantedTriggers` exemption the first version of the instrument needed in
+`scripts/guards.js`. The rewrite reads no triggers at all, so the exemption was a dead entry
+describing a file that no longer does the thing — two statements of one rule, which this project
+keeps removing (D441, D438).
