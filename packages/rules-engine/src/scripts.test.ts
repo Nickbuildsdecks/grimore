@@ -25264,6 +25264,18 @@ describe('a printed target phrase, parsed rather than enumerated (D469)', () => 
     // The description is the printed phrase, which is what a player reads in the prompt.
     expect(specOf('destroy up to one other target creature')?.description)
       .toBe('up to one other target creature');
+    /*
+      And the noun position, which D486 added: a subtype, and a disjunction of subtypes and card
+      types. `kind` is `permanent` for both — see `parsedTargetPhrase` on why it cannot be
+      `creature`, and note the description keeps the printed capital, because only the *first*
+      character of a phrase is lower-cased and the noun is never first.
+    */
+    expect(specOf('destroy target Wall')).toMatchObject({ kind: 'permanent' });
+    expect(specOf('destroy target Wall')?.description).toBe('target Wall');
+    expect(specOf('destroy target creature or Vehicle')).toMatchObject({ kind: 'permanent' });
+    expect(specOf('destroy target Djinn or Efreet')).toMatchObject({ kind: 'permanent' });
+    expect(specOf('destroy another target Soldier you control'))
+      .toMatchObject({ kind: 'permanent' });
   });
 
   it('refuses a phrase it cannot express, rather than widening what the card may hit', () => {
@@ -25273,17 +25285,27 @@ describe('a printed target phrase, parsed rather than enumerated (D469)', () => 
       unrecognised word refuses the whole phrase and the line stays unread and flagged.
 
       Each of these is a real printed phrase with a stated reason, in `parsedTargetPhrase`'s
-      docblock: a **subtype** needs the printed capitalisation, which `targetSpecFrom` has already
-      lower-cased away; **defending player** is a fact about an attack and a filter is not told which
-      attack; **dealt damage this turn** needs a per-turn record of who was dealt damage rather than
-      how much is marked on them now.
+      docblock: **defending player** is a fact about an attack and a filter is not told which attack;
+      **dealt damage this turn** needs a per-turn record of who was dealt damage rather than how much
+      is marked on them now; a capitalised word ending in **`s`** may be a plural or a singular
+      subtype (`Plains`, `Fungus`) and no rule here separates them, so reading one would be a spell
+      that is never castable and never flagged (D486); a **negated** subtype is on none of the
+      qualifier lists.
+
+      `destroy target Wall` was on this list until D486 and is now in the table above: that was the
+      row recording that a subtype needs the printed capitalisation, and the capitalisation is
+      threaded through now. `destroy target squirrel` stays, and is the pair that shows the capital
+      is what carries the meaning — the same word lower-cased is a qualifier this parse does not
+      know, and refusing it is right.
     */
     for (const phrase of [
-      'destroy target Wall',
       'destroy target creature defending player controls',
       'destroy target creature that was dealt damage this turn',
       'destroy target squirrel',
       'destroy target creature with squelching',
+      'destroy target Sagas',
+      'destroy target non-Human creature',
+      'destroy target tapped Goblin or Elf',
     ]) {
       expect(specOf(phrase), phrase).toBeNull();
     }
@@ -27457,5 +27479,145 @@ describe('the counter clause, parsed: how many, which kind, and what it points a
       if (!read.ok) return;
       expect(read.unread).toEqual([]);
     }
+  });
+});
+
+describe('a subtype in the target noun position, at the table (D486)', () => {
+  /*
+    The target phrase is the chokepoint every targeted reader goes through — destroy, exile, bounce,
+    the damage family, the pump, the counter clause — so the **noun position** was the broadest
+    single thing left unread in it: 290 lines on 285 cards print a capitalised word there, and
+    `parsedTargetPhrase` lower-cased its phrase before the parse began, which threw away the one
+    signal that separates "target Equipment" from "target tapped creature".
+
+    Two printed cards, each exercising a different half, and both pulled from the corpus rather than
+    typed from memory (D259).
+
+    Aeronaut Cavalry is the **filter**: "another target Soldier you control" has to offer the other
+    Soldier and refuse the Bears standing beside it. Daring Demolition is the **disjunction**, and it
+    is the one that decides the spec's `kind`: an uncrewed Vehicle is a legal target and is not a
+    creature, so a reading of `kind: 'creature'` would have refused the card's own printed target.
+  */
+  const AERONAUT_CAVALRY = {
+    name: 'Aeronaut Cavalry', type_line: 'Creature — Human Soldier', mana_cost: '{4}{W}', cmc: 5,
+    colors: ['W'], layout: 'normal', power: '3', toughness: '4',
+    oracle_text: 'Flying\nWhen Aeronaut Cavalry enters,'
+      + ' put a +1/+1 counter on another target Soldier you control.',
+  };
+  const DARING_DEMOLITION = {
+    name: 'Daring Demolition', type_line: 'Sorcery', mana_cost: '{2}{B}{B}', cmc: 4,
+    colors: ['B'], layout: 'normal', oracle_text: 'Destroy target creature or Vehicle.',
+  };
+  const CONSULATE_DREADNOUGHT = {
+    name: 'Consulate Dreadnought', type_line: 'Artifact — Vehicle', mana_cost: '{1}', cmc: 1,
+    colors: [], layout: 'normal', power: '7', toughness: '11',
+    oracle_text: 'Crew 6 (Tap any number of creatures you control with total power 6 or more:'
+      + ' This Vehicle becomes an artifact creature until end of turn.)',
+  };
+
+  const table = (id: string, spell: string, mine: readonly string[], theirs: readonly string[]) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        { name: 'Aeronaut Cavalry', count: 3 },
+        { name: 'Daring Demolition', count: 3 },
+        { name: 'Consulate Dreadnought', count: 2 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Plains', count: 25 },
+        { name: 'Swamp', count: 23 },
+      ],
+      data: [AERONAUT_CAVALRY, DARING_DEMOLITION, CONSULATE_DREADNOUGHT] as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    /*
+      Asserted rather than assumed, because D430's trap is exactly this shape: `customDeck` prefers
+      a pool card of the same name, and all three of these would silently become hand-written cards
+      if one were ever added. The whole point is to exercise the compiled reading.
+    */
+    expect(list.fromData).toContain('Aeronaut Cavalry');
+    expect(list.fromData).toContain('Daring Demolition');
+    let s = arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: {
+        0: [...mine, ...Array(5).fill('Plains'), ...Array(4).fill('Swamp')],
+        1: [...theirs],
+      },
+      hands: { 0: [spell] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return tapAllLands(s, 0 as SeatIndex);
+  };
+
+  const sizeOf = (s: GameState, id: string) => {
+    const live = characteristicsOf(s, s.instances[id]!);
+    return `${live.power}/${live.toughness}`;
+  };
+
+  /*
+    These two are not the shape they were first written in, and the reason is the result.
+
+    The first draft answered the trigger with an explicit `auto:choose` and the engine said "nothing
+    is waiting for a choice" — because the subtype filter had already cut two creatures down to
+    **one** legal target, and the engine does not ask a question with a single answer. That is a
+    better assertion than the one intended: with the `anyOf` test deleted the Bears are legal too,
+    the question has two answers, the engine stops to ask, and `drain` never gets to the counter.
+    So "nothing was asked, and the Soldier grew" is the discriminating pair.
+  */
+  it('cuts two creatures to one legal Soldier, so nothing is asked and the Soldier grows', () => {
+    const s = table('subtype-soldier', 'Aeronaut Cavalry', ['Aeronaut Cavalry', 'Grizzly Bears'], []);
+    const soldier = find(s, 0 as SeatIndex, 'battlefield', 'Aeronaut Cavalry');
+    const bears = find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    expect(sizeOf(s, soldier)).toBe('3/4');
+    const next = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Aeronaut Cavalry'),
+    } as Action)), 40);
+    expect(next.pendingChoice).toBe(null);
+    expect(sizeOf(next, soldier)).toBe('4/5');
+    // And the Bears, which is a creature you control and not a Soldier, was never a candidate.
+    expect(sizeOf(next, bears)).toBe('2/2');
+  });
+
+  it('has no legal target at all when the only other creature is a Bear', () => {
+    const s = table('subtype-refused', 'Aeronaut Cavalry', ['Grizzly Bears'], []);
+    const bears = find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const next = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Aeronaut Cavalry'),
+    } as Action)), 40);
+    /*
+      A trigger with no legal target is removed from the stack (CR 608.2b), so the whole board is
+      unchanged — and the entering Cavalry is not a target either, because the printed word is
+      "another". Both halves of the filter are load-bearing here.
+    */
+    expect(next.pendingChoice).toBe(null);
+    expect(sizeOf(next, bears)).toBe('2/2');
+    expect(next.stackOrder.length).toBe(0);
+  });
+
+  it('destroys an uncrewed Vehicle, which is the disjunction and not a creature', () => {
+    let s = table('subtype-vehicle', 'Daring Demolition', [], ['Consulate Dreadnought']);
+    const vehicle = find(s, 1 as SeatIndex, 'battlefield', 'Consulate Dreadnought');
+    // Uncrewed: an Artifact — Vehicle is not a creature until something taps power 6 into it.
+    expect(characteristicsOf(s, s.instances[vehicle]!).isCreature).toBe(false);
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Daring Demolition'),
+      targets: [{ kind: 'card', id: vehicle }],
+    } as Action);
+    s = drain(passBoth(s), 40);
+    expect(s.instances[vehicle]!.zone).toBe('graveyard');
+  });
+
+  it('and the same spell still kills a creature, which is the other half of the "or"', () => {
+    let s = table('subtype-creature', 'Daring Demolition', [], ['Grizzly Bears']);
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Daring Demolition'),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action);
+    s = drain(passBoth(s), 40);
+    expect(s.instances[bears]!.zone).toBe('graveyard');
   });
 });

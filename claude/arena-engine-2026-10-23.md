@@ -13823,3 +13823,148 @@ fails the test, and that is the point of asserting an equality rather than a sub
  * **A counter kind with its own rules** — a loyalty counter, a stun counter. `addCounters` would
    store the name happily, and the rules attached to it are not implemented, so a card that looked
    automated would do nothing (D362).
+
+## D486 — A subtype in the target noun position, and the disjunction it is spelled with
+
+`targetSpecFrom` is the chokepoint every targeted reader goes through — destroy, exile, bounce, the
+damage family, the pump, the counter clause, the discard's `target opponent`. D469 made it a parse
+instead of a list of thirty phrases, and `parsedTargetPhrase`'s docblock has carried one deliberate
+omission ever since: **subtypes**. "target Equipment", "another target Soldier you control",
+"{T}: Untap target Forest". The signal needed is a capital letter, and the function could not see one,
+because `targetSpecFrom` lower-cases its phrase at the top for the description's sake before the
+parse begins. That docblock said fixing it was "a change to that function's contract rather than a
+line here", and this is that change.
+
+### What it cost to make the contract change
+
+The parse is handed `trimmed` — the phrase with its printed capitalisation — instead of `printed`,
+and lower-cases **each word where it is compared**: the quantifier lookup, the `opponent` test, the
+`with <keyword>` word, the controller clause, every qualifier in the run. `printed` is still what
+the description is built from, because a player reads "choose target creature" mid-question and not
+"Target creature". The noun position is never the first word of a target phrase — the first word is
+always `target`, `another` or `up to` — so lower-casing the first character costs the parse nothing,
+which is what makes the two forms separable at all.
+
+The noun position then reads two shapes, which are one shape:
+
+* **One capitalised word** — a subtype, classified by `permanentWordMatch`, the reader that already
+  owns that rule for printed board scopes ("each Ooze you control"). Sharing it is the point: a word
+  that is one thing in a scope is the same thing in a target.
+* **A disjunction** — "target creature or Vehicle", "target Scarecrow or Plains", "target Bird, Cat,
+  Dog, Goat, Ox, or Snake", read before the qualifier run because a disjunction's words *are* the
+  noun; popping one off the end would leave `creature or` to be read as qualifiers.
+
+Both land in one new `permanentFilter` option, `anyOf`, which is a list of predicates rather than a
+list of words — because the words are not one vocabulary, and because "creature or Vehicle" is a
+**disjunction** where every other field on that factory is a test the candidate must pass. Each
+predicate reads the live type line (CR 109.2, #319).
+
+### The measurement, and where it paid out
+
+| | 77806da | now |
+| --- | --- | --- |
+| cards with a compiled script | 10,145 | **10,278** |
+| cards with every printed line read | 5,801 | **5,928** |
+| printed rules lines read | 20,145 / 56,421 (35.7%) | **20,337 / 56,421 (36.0%)** |
+
+Scoped by substitution in place before it was written: 290 lines on 285 cards carry a capitalised
+noun position, and swapping the word for a noun known to read finished 48 lines and 33 cards — the
+rest are unread for a **second** reason (regenerate, tap, the copy clause, characteristic-setting),
+which this increment does not touch. The disjunction half measured 21 lines and 16 cards the same
+way.
+
+Afterwards, the breadth is what the chokepoint promised: **88** lines with a capitalised noun
+position now read, spread across at least twelve clause families — destroy 28, the counter clause
+26, bounce 5, regenerate 3, untap 3, attach 1, and a tail. And the larger payer was the half with no
+capital in it at all: **242** lowercase disjunctions read, because "destroy target artifact,
+enchantment, or land" (Acidic Slime, Aftershock) was a three-way run the switch's exact phrases never
+covered. The disjunction branch was ten lines of code and came free with the parse.
+
+### The plural, which this increment got wrong first and corrected
+
+The first draft kept the printed word as spelled, on the argument that three of the corpus's
+capitalised noun positions are singular subtypes ending in `s` (`Plains`, `Fungus`, `Bolas`) and
+de-pluralising would read `Fungus` as `Fungu`. A `compile.test.ts` row written to assert that
+`target Sagas` stays unread **failed**: it reads. `permanentWordMatch` guards a word's *shape*, not
+its membership in any vocabulary, so `hasSubtype(line, 'sagas')` is simply false on every board ever
+printed — the line reads, the spell can never be cast, and unlike an unread line **nothing flags it**
+for a human to play by hand. That is the silent-nothing failure D449 found in the search filters and
+the exact case D362 calls worse than an unread line.
+
+So a capitalised word ending in `s` is refused. It costs the three singulars and buys back four
+plurals as lines a human is told about. The guard has its own break run: deleting it fails three
+rows, two of them the ones that record the cost.
+
+Measured rather than reasoned, against the corpus's own type lines: of the **80** distinct
+capitalised noun positions in the legal corpus, **72** are subtypes some printed card actually has.
+Four of the eight that are not are those plurals. The other four — `Charix` (a card naming itself),
+`Contraption`, `Attraction`, `Reflection` — read and match nothing, four lines of 290, and want a
+subtype vocabulary the engine does not have. Recorded as **#341**, not guessed at here.
+
+### Vraska's Contempt, and the bot hint the disjunction nearly dropped
+
+`compiled-vs-written.test.ts` went red on one card the moment the disjunction began to read, in two
+fields: `removesACreature` and `targets`. Both were settled rather than added as a row, which is that
+table's own rule.
+
+`kind` first. "Exile target creature or planeswalker" has to read as `kind: 'permanent'`, because
+`targeting.ts` turns `kind: 'creature'` into "and the candidate is a creature *now*" and an uncrewed
+Vehicle is a legal target for Daring Demolition that is not one. The hand-written card said
+`kind: 'any'` with a filter that threw players away — the only one of the pool's nine `kind: 'any'`
+specs that was not the printed phrase "any target", and `legalTargets` enumerates every seat for
+`any` only for the filter to refuse each one. The hand-written side moved to the compiled shape: the
+same legal targets by a shorter route.
+
+`removesACreature` second, and this is the one that mattered. `targetedEffect`'s own docblock argues
+that a compiled card which *works* and *plays badly* is worse than an unread line, because a line
+left unread is flagged and a badly played one is not. The flag had been derived from
+`spec.kind === 'creature'` at three sites, and the disjunction can no longer carry it there. So all
+three now ask `mayRemoveACreature(spec, phrase)`, which adds one case: a `permanent` spec whose
+**printed phrase** names a creature. The word is in the card's own text. "Destroy target Equipment"
+and "destroy target artifact or enchantment" still answer no, and "destroy target Scarecrow or Plains"
+answers no as well — a true miss, since nothing in the file can tell a creature subtype from a
+Vehicle's, which is #341 again.
+
+### What is still refused, and why each
+
+* **A capitalised word ending in `s`** — above.
+* **A negated subtype** — "target non-Human creature" (44 lines) and "target non-Aura" (5). The
+  qualifier run refuses `non-human` because it is on none of its lists, which is the right answer
+  until there is a reader for it.
+* **A disjunction carrying a qualifier** — "target tapped Goblin or Elf". None is printed; refusing
+  rather than reading it with the qualifier dropped is the honest default either way.
+* **A conjunction** — "target Goblin and Elf" is not one target.
+
+### The tests
+
+Four runtime tests through `customDeck`, on two printings pulled from the corpus rather than typed
+from memory (D259): Aeronaut Cavalry for the filter and Daring Demolition with Consulate Dreadnought
+for the disjunction. The first two are not the shape they were drafted in — answering the trigger
+with an explicit `auto:choose` got "nothing is waiting for a choice", because the subtype filter had
+already cut two creatures down to **one** legal target and the engine does not ask a question with a
+single answer. That is the better assertion: with `anyOf` deleted the Bears are legal too, the
+question has two answers, the engine stops, and `drain` never reaches the counter. The break run
+fails exactly those two.
+
+Plus 24 compile-side rows: 14 printed lines that read, 6 refusals, and 4 on the `removesACreature`
+hint. And the stale row from D485 — "a subtype target: the target parse lower-cases its phrase before
+it could tell" — deleted, because that is what this increment was.
+
+### A second stale refusal row, found by the gate
+
+`compile.test.ts` had D485's row — "a subtype target: the target parse lower-cases its phrase before
+it could tell" — and deleting it was expected. The full gate then found a second one in
+`scripts.test.ts`: D469's own refusal table asserts `destroy target Wall` returns `null`, with the
+same reason in its comment. `target Wall` is 11 printed lines in the legal corpus and reading it is
+what this increment is.
+
+Both rows were records of *this* omission rather than refusals on their own merits, which is why the
+list of refusals in `parsedTargetPhrase`'s docblock is the thing to keep current: two test files were
+quoting it, and a row that quotes a reason outlives the reason unless the reason is somewhere one
+file owns. The phrase moved up into the mapping table, and the row's slot now holds the three
+refusals this increment does make — the trailing `s`, the negated subtype, and a qualifier inside a
+disjunction.
+
+`destroy target squirrel` stays on the refusal list and is more useful than it was: the same word
+with a capital now reads, so the pair is what proves the capitalisation is load-bearing rather than
+decorative.

@@ -6131,12 +6131,26 @@ const REVITALIZE: CardScript = {
  * an Aerialist and another on a Pridemate. `removesACreature` applies cleanly: a planeswalker is
  * the only other thing it can point at, there are two in the pool, and holding it on a board with
  * nothing but a planeswalker is a far smaller mistake than casting it at your own creature.
+ *
+ * ## `permanent`, not `any` (D486)
+ *
+ * This was `kind: 'any'` with a filter that threw players away, and it was the only card in the
+ * pool spelling a two-type disjunction that way — the other eight `kind: 'any'` specs are all the
+ * printed phrase "any target". `legalTargets` enumerates every seat for `any` and then the filter
+ * refused each one, so the loose kind bought nothing and cost a pass over the table.
+ *
+ * It was changed when the compiler learnt to read a disjunction in the noun position and
+ * `compiled-vs-written.test.ts` put the two side by side: the compiled reading is
+ * `kind: 'permanent'` with one test per printed word, which is the same set of legal targets by a
+ * shorter route. The hand-written side moved to it rather than the table gaining a row, which is
+ * that table's own rule. The filter still reads the **live** type line (CR 109.2, #319): a crewed
+ * Vehicle is a legal target here and an animated land is too.
  */
 const VRASKAS_CONTEMPT: CardScript = {
   name: "Vraska's Contempt",
   removesACreature: true,
   targets: [{
-    kind: 'any',
+    kind: 'permanent',
     description: 'target creature or planeswalker',
     filter: (state, candidate) => {
       if (candidate.kind !== 'card') return false;
@@ -13685,6 +13699,22 @@ const permanentFilter = (
     readonly legendary?: boolean;
     /** "target **nonbasic** land": the other supertype a printed target phrase names. */
     readonly basic?: boolean;
+    /**
+     * The printed **noun position** of a target phrase, as a disjunction of type and subtype tests.
+     *
+     * "target Equipment" is one entry, "target creature or Vehicle" is two, and "target Bird, Cat,
+     * Dog, Goat, Ox, or Snake" is six (D486). It is a list of predicates rather than a list of words
+     * because the words are not one vocabulary: `permanentWordMatch` classifies each by its printed
+     * capitalisation — lowercase is a card type or a supertype off an allow-list, capitalised is a
+     * subtype — and that is the same reader the board scopes use, not a second answer beside it.
+     *
+     * A **disjunction**, so it cannot be spelled as `types` plus a second option: "creature or
+     * Vehicle" is satisfied by either, and every other field on this factory is a test the candidate
+     * must pass. Each predicate reads the **live** type line, like the rest (CR 109.2) — a crewed
+     * Vehicle is a legal "target creature or Vehicle" twice over, and a Mutavault animated into a
+     * Human is a legal "target Human".
+     */
+    readonly anyOf?: readonly ((line: TypeLine) => boolean)[];
   },
 ): NonNullable<TargetSpec['filter']> => (state, candidate, controller, source) => {
   if (candidate.kind !== 'card') return false;
@@ -13706,6 +13736,8 @@ const permanentFilter = (
   if (opts.nonland === true && hasType(live.typeLine, 'land')) return false;
   if (opts.types !== undefined
     && !opts.types.some((type) => hasType(live.typeLine, type))) return false;
+  if (opts.anyOf !== undefined
+    && !opts.anyOf.some((is) => is(live.typeLine))) return false;
   if (opts.powerAtLeast !== undefined && live.power < opts.powerAtLeast) return false;
   if (opts.colours !== undefined
     && !opts.colours.some((colour) => live.colors.includes(colour))) return false;
@@ -13931,7 +13963,16 @@ function targetSpecFrom(
     than one fewer code path.
   */
   if (!parsed) return null;
-  const read = parsedTargetPhrase(printed);
+  /*
+    `trimmed`, not `printed`: the parse is handed the phrase with its **printed capitalisation**
+    intact, because that is the only signal that separates a subtype from a qualifier (D486). Magic
+    prints "target Equipment" and "target tapped creature", and the difference between the two is a
+    capital letter. `printed` is still what the description is built from — a player reads "choose
+    target creature", not "Target creature" — so the two forms have different jobs and both are
+    needed. The noun position is never the first word of a target phrase, so lower-casing the first
+    character costs the parse nothing.
+  */
+  const read = parsedTargetPhrase(trimmed);
   return read === null ? null : spec(read);
 }
 
@@ -14014,11 +14055,14 @@ const TARGET_NOUNS: Readonly<Record<string, {
  *
  * ## What is deliberately not here
  *
- * - **Subtypes** ("target Wall", "target Merfolk you control", 3 + 2 + … cards). Printed text
- *   capitalises a subtype and lower-cases a qualifier, which is exactly the signal needed — and
- *   `targetSpecFrom` lower-cases its phrase at the top, for the description's sake, before this is
- *   reached. Reading them means keeping the printed case alongside, which is a change to that
- *   function's contract rather than a line here.
+ * - ~~Subtypes~~ — **read** as of D486, and the contract change it asked for was made: this reader
+ *   is handed the phrase with its printed capitalisation and lower-cases each word where it is
+ *   compared, so "target Equipment" and "target tapped creature" are told apart by the capital.
+ *   Still refused, and each for a stated reason: any capitalised word ending in `s` (`Sagas`,
+ *   `Elves`, and `Plains` with them), because a plural and a singular subtype are the same shape
+ *   and reading one that matches nothing is worse than not reading it; a **negated**
+ *   subtype ("target non-Human creature", 44 + 5 lines), which the qualifier run refuses because
+ *   `non-human` is on none of its lists; and a disjunction carrying a qualifier.
  * - **"defending player controls"** (2 cards). The defending player is a fact about *an attack*, and
  *   a `TargetSpec.filter` is handed the state, the candidate, the controller and the source — not
  *   which attack this is. `attackingOrBlocking` can read `state.combat` because "is this creature
@@ -14029,7 +14073,12 @@ const TARGET_NOUNS: Readonly<Record<string, {
  *   engine fact to add, not a filter to write.
  */
 function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | null {
-  const whole = printed.trim().toLowerCase();
+  /*
+    **Not** lower-cased (D486). Every comparison below lower-cases the one word it is about, which
+    leaves the printed capitalisation readable where it carries meaning: the noun position, where a
+    capital is a subtype (CR 205.3) and lower case is a card type off an allow-list.
+  */
+  const whole = printed.trim();
   const opened = /^(another|up to one other|up to one|up to two other|up to two|up to three|each of up to two|each of up to three|two|three)?\s*target\s+(.+)$/i
     .exec(whole);
   if (opened === null) return null;
@@ -14050,9 +14099,10 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     family, and the same spec lifts `target opponent loses N life` and `target opponent mills N`
     with it.
   */
-  if (body === 'opponent' || body === 'opponent or planeswalker') {
+  const players = body.toLowerCase();
+  if (players === 'opponent' || players === 'opponent or planeswalker') {
     return {
-      kind: body === 'opponent' ? 'player' : 'player-or-planeswalker',
+      kind: players === 'opponent' ? 'player' : 'player-or-planeswalker',
       filter: (_state, candidate, controller) => (candidate.kind === 'player'
         ? candidate.seat !== controller
         // The planeswalker half of "target opponent or planeswalker": not one of yours.
@@ -14063,7 +14113,7 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
 
   // "with flying" — a keyword, read live, so a granted one counts.
   let keyword: Keyword | undefined;
-  const withKeyword = /^(.*?)\s+with\s+([a-z]+)$/i.exec(body);
+  const withKeyword = /^(.*?)\s+with\s+([A-Za-z]+)$/i.exec(body);
   if (withKeyword !== null) {
     const word = withKeyword[2]!.toLowerCase();
     // A word the engine cannot test is not a filter (D259's rule applied to one): refuse the phrase.
@@ -14086,10 +14136,79 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     break;
   }
 
+  /*
+    The **disjunction** in the noun position, which printed text spells with commas and `or`:
+    "target creature or Vehicle", "target Scarecrow or Plains", "target Bird, Cat, Dog, Goat, Ox, or
+    Snake" (D486). It is read before the qualifier run below because a disjunction's words are the
+    noun — popping one off the end would leave `creature or` to be read as qualifiers.
+
+    Every part has to be a single type or subtype word or the phrase is refused, so a disjunction
+    carrying a qualifier ("target tapped Goblin or Elf") stays unread rather than being read with the
+    qualifier dropped. None is printed; the refusal is the honest default either way.
+  */
+  const parts = body.split(/,\s*or\s+|\s+or\s+|,\s*/).map((part) => part.trim())
+    .filter((part) => part !== '');
+  if (parts.length > 1) {
+    const matches = parts.map((part) => permanentWordMatch(part));
+    const named = matches.filter((match): match is (line: TypeLine) => boolean => match !== null);
+    if (named.length !== matches.length) return null;
+    return {
+      // `permanent`, not `creature`: "creature or Vehicle" is satisfied by an uncrewed Vehicle, and
+      // the disjunction in the filter is what narrows it. See the single-word case below.
+      kind: 'permanent',
+      filter: permanentFilter({
+        ...(quantifier.another === true ? { another: true } : {}),
+        ...(yours === undefined ? {} : { yours: true }),
+        ...(opponents === undefined ? {} : { opponents: true }),
+        ...(keyword === undefined ? {} : { keyword }),
+        anyOf: named,
+      }),
+      ...counted,
+    };
+  }
+
   // What is left is a run of qualifiers and then the noun, singular or plural.
   const words = body.split(/\s+/).filter((word) => word !== '');
-  const noun = TARGET_NOUNS[(words.pop() ?? '').replace(/s$/, '')];
-  if (noun === undefined) return null;
+  const printedNoun = words.pop() ?? '';
+  const noun = TARGET_NOUNS[printedNoun.toLowerCase().replace(/s$/, '')];
+  /*
+    A **subtype** in the noun position: "target Equipment", "another target Soldier you control",
+    "{T}: Untap target Forest" (D486). The capital is the whole signal, and `permanentWordMatch` is
+    the reader that already owns that rule for printed board scopes — a capitalised word is a
+    subtype (CR 205.3), a lowercase one has to be a card type or a supertype off an allow-list.
+    Sharing it rather than writing a second classifier is the point: a word that is one thing in
+    "each Ooze you control" is the same thing in "target Ooze".
+
+    A capitalised word ending in **`s` is refused**, and that is a correction to this increment's
+    first draft rather than a design: five of the corpus's capitalised noun positions end in `s` and
+    are singular subtypes (`Plains`, `Fungus`, `Bolas`), four are plurals (`Sagas`, `Forests`,
+    `Elves`), and no rule separates them without a vocabulary this file does not have. Neither
+    answer is free, but they fail differently. De-pluralising reads `Fungus` as `Fungu`; keeping the
+    plural reads `Sagas` as a subtype, and `hasSubtype(line, 'sagas')` is false for every permanent
+    ever printed — so the line **reads**, the spell can never be cast, and nothing flags it, which
+    is the silent-nothing failure `permanentWordMatch`'s own docblock records from D449 and the exact
+    case D362 says is worse than an unread line. Refusing the shape it cannot tell apart costs the
+    three singulars and buys back the four plurals as lines a human is told about.
+
+    Measured rather than reasoned: of the 80 distinct capitalised noun positions in the legal
+    corpus, **72** are subtypes some printed card's own type line carries. Of the eight that are
+    not, four are those plurals. The other four — `Charix` (a card naming itself), `Contraption`,
+    `Attraction`, `Reflection` — read and match nothing, which is the same failure in four lines of
+    290 and wants a subtype vocabulary to fix. Recorded as #341, not guessed at here.
+
+    The kind is `permanent` rather than `creature` even for a creature subtype, and that is a
+    deliberate understatement: nothing here can tell a creature subtype from a Vehicle or a Room, so
+    claiming `creature` would be the compiler asserting a fact it has not read. The cost is that
+    `removesACreature` — advice to the bot, not a rule — is not set on "destroy target Zombie";
+    recorded as #340 rather than guessed at here.
+  */
+  let subtype: ((line: TypeLine) => boolean) | undefined;
+  if (noun === undefined) {
+    if (!/^[A-Z]/.test(printedNoun) || /s$/.test(printedNoun)) return null;
+    const match = permanentWordMatch(printedNoun);
+    if (match === null) return null;
+    subtype = match;
+  }
 
   const colours: Color[] = [];
   const notColours: Color[] = [];
@@ -14098,8 +14217,11 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
   let blocking: true | undefined;
   let legendary: boolean | undefined;
   let basic: boolean | undefined;
-  const types = [...(noun.types ?? [])];
-  for (const word of words) {
+  const types = [...(noun?.types ?? [])];
+  for (const cased of words) {
+    // Lower-cased here rather than up front: the noun position above needs the printed capital, and
+    // a qualifier never carries meaning in its case ("tapped", "nonblack", "legendary").
+    const word = cased.toLowerCase();
     const negated = word.startsWith('non') ? word.slice(3) : null;
     const colour = COLOUR_WORDS[word];
     const negatedColour = negated === null ? undefined : COLOUR_WORDS[negated];
@@ -14135,13 +14257,37 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
     ...(legendary === undefined ? {} : { legendary }),
     ...(basic === undefined ? {} : { basic }),
     ...(keyword === undefined ? {} : { keyword }),
+    ...(subtype === undefined ? {} : { anyOf: [subtype] }),
   });
-  return { kind: noun.kind, filter, ...counted };
+  return { kind: noun?.kind ?? 'permanent', filter, ...counted };
 }
 
 /** Whether a spec points at something `destroy`, `bounceToHand` and the like can be given. */
 const pointsAtAPermanent = (spec: TargetSpec): boolean =>
   spec.kind === 'creature' || spec.kind === 'permanent';
+
+/**
+ * Whether a removal clause can be pointed at a **creature**, which is what `removesACreature` says.
+ *
+ * `kind: 'creature'` is the plain case, and was the whole test until D486. The other is a
+ * **disjunction** in the printed noun position: "destroy target creature or Vehicle" has to read as
+ * `kind: 'permanent'`, because `targeting.ts` turns `kind: 'creature'` into "and the candidate is a
+ * creature *now*" and an uncrewed Vehicle is a legal target that is not one. So the kind cannot
+ * carry the hint for those cards, and dropping it is not a free understatement: `targetedEffect`'s
+ * own docblock argues that a compiled card which works and plays badly is worse than an unread
+ * line, because nothing flags it. `compiled-vs-written.test.ts` said the same thing from the other
+ * side the moment the disjunction began to read — Vraska's Contempt, whose hand-written script has
+ * carried the flag since it was written.
+ *
+ * The phrase is read rather than the spec because the word is in the **card's own text**: a
+ * disjunction that names a creature is a card that kills creatures. It is the printed phrase the
+ * caller matched, not prose, and the match is on the whole word so "target nonland permanent" and
+ * "target Scarecrow or Plains" both answer no. The second of those is a creature subtype and so a
+ * true miss; nothing in this file can tell a creature subtype from a Vehicle's, which is the same
+ * understatement the subtype arm records against #340.
+ */
+const mayRemoveACreature = (spec: TargetSpec, phrase: string): boolean => spec.kind === 'creature'
+  || (spec.kind === 'permanent' && /\bcreatures?\b/i.test(phrase));
 
 /**
  * Whether a spec points at an object on the **stack**, which is what `counterSpell` can be given.
@@ -14418,7 +14564,7 @@ function damageDestination(where: string): {
       creature on it is still a board they do something on, and neither hand-written card carries
       the flag.
     */
-    ...(spec.kind === 'creature' ? { spellFlags: { removesACreature: true } } : {}),
+    ...(mayRemoveACreature(spec, text) ? { spellFlags: { removesACreature: true } } : {}),
     apply: (c, n) => (n <= 0 ? c.state : damageEveryTarget(c, n)),
   };
 }
@@ -14484,7 +14630,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
         effect: (c) => foldCardTargets(c, destroy),
         // Only when the target really is a creature. A Disenchant that claimed to remove one would
         // have the bot holding it for a board it cannot answer.
-        ...(spec.kind === 'creature' ? { spellFlags: { removesACreature: true } } : {}),
+        ...(mayRemoveACreature(spec, destroyed[1]!) ? { spellFlags: { removesACreature: true } } : {}),
       };
     }
   }
@@ -14507,7 +14653,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
         effect: (c) => foldCardTargets(c, exileCard),
         // As on the destroy above, and for the same reason: only when the target really is a
         // creature is this a card the bot should hold for a board it can answer.
-        ...(spec.kind === 'creature' ? { spellFlags: { removesACreature: true } } : {}),
+        ...(mayRemoveACreature(spec, exiled[1]!) ? { spellFlags: { removesACreature: true } } : {}),
       };
     }
   }

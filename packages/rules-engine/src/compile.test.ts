@@ -9586,6 +9586,13 @@ describe('the counter clause, read off the printed phrase', () => {
     // The target parse reaches past creatures, and the counter clause comes with it.
     ['Put a +1/+1 counter on target creature with flying.', 1],
     ['Put two -1/-1 counters on target creature an opponent controls.', 1],
+    /*
+      And a **subtype** in the noun position, which was the row below until D486 taught the target
+      parse to keep its phrase's printed capitalisation. Deeproot Elite is the card that failed this
+      increment's own probe, so it is here as itself.
+    */
+    ['Put a +1/+1 counter on target Merfolk you control.', 1],
+    ['Put two +1/+1 counters on target Goblin or Orc you control.', 1],
   ])('%s reads, and asks for its target', (text, targets) => {
     const read = sorcery(text as string);
     expect(read.ok).toBe(true);
@@ -9603,13 +9610,101 @@ describe('the counter clause, read off the printed phrase', () => {
     ['Put that many +1/+1 counters on target creature.', '"that many" names an earlier count'],
     ['Put four +1/+1 counters on target creature.', 'a count past what the corpus prints'],
     ['Put a loyalty counter on target creature.', 'a counter kind with its own rules'],
-    ['Put a +1/+1 counter on target Merfolk you control.',
-      'a subtype target: the target parse lower-cases its phrase before it could tell'],
+    ['Put a +1/+1 counter on target Sagas you control.',
+      'a plural subtype, which no rule separates from the singulars ending in s (D486)'],
+    ['Put a +1/+1 counter on target non-Human creature.',
+      'a negated subtype: the qualifier run has no list it is on'],
     ['Put a +1/+1 counter on enchanted creature.', 'the Aura host, which is a different question'],
   ])('leaves "%s" unread: %s', (text) => {
     const read = sorcery(text as string);
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
+  });
+});
+
+/*
+  A **subtype in the noun position** of a target phrase, and the disjunction it is spelled with
+  (D486).
+
+  The table below is the whole family at once, which is the point of putting it in `targetSpecFrom`:
+  the same noun position is read by destroy, exile, bounce, the damage family, the pump and the
+  counter clause, so a card that says "destroy target Equipment" and one that says "put a +1/+1
+  counter on target Merfolk you control" are one change. Each row is a printed line from the legal
+  corpus, named in the comment beside it where the card is the reason the row exists.
+*/
+describe('a subtype in the target noun position (D486)', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const sorcery = (text: string) => compileCard({
+    name: 'Pointing Thing', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2,
+    colors: ['B'], layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    // Bare, one word: the shape 165 of the family's lines print.
+    ['Destroy target Equipment.', 1],                          // Acid Web Spider
+    ['Exile target Zombie.', 1],                               // Aim for the Head
+    ['Destroy target Aura.', 1],
+    ['Return target Ally you control to its owner\'s hand.', 1], // Ally Encampment
+    ['Put a +1/+1 counter on another target Soldier you control.', 1], // Aeronaut Cavalry
+    // A qualifier in front of a subtype noun, which the qualifier run reads as it always did.
+    ['Destroy target attacking Goblin.', 1],                   // Boggart Prankster's shape
+    ['Destroy target tapped Merfolk you control.', 1],
+    // A land subtype, which is a subtype like any other.
+    ['Destroy target Forest.', 1],                             // Arbor Elf's shape
+    // The disjunction, 65 more lines: a card type beside a subtype, and subtypes among themselves.
+    ['Destroy target creature or Vehicle.', 1],                // Daring Demolition
+    ['Destroy target Island or Swamp an opponent controls.', 1], // Marshdrinker Giant
+    ['Destroy target Djinn or Efreet.', 1],                    // King Suleiman
+    ['Put a +1/+1 counter on target Bird, Cat, Dog, Goat, Ox, or Snake.', 1], // Animal Sanctuary
+    ['Destroy target artifact or enchantment.', 1],
+  ])('%s reads, and asks for one target', (text, targets) => {
+    const read = sorcery(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    expect((field(read.script, 'targets') as readonly unknown[]).length).toBe(targets);
+  });
+
+  it.each([
+    /*
+      The refusals, each because the phrase says something this reader cannot check.
+
+      The first is the one this increment got wrong first time and corrected: a capitalised word
+      ending in `s` may be a plural (`Sagas`) or a singular subtype (`Plains`, `Fungus`), and the
+      half that is a plural would read a line whose target can never be chosen — a card that is
+      never castable and, unlike an unread line, is never flagged (D362, D449).
+    */
+    ['Destroy target Sagas.', 'a capitalised word ending in s: plural or subtype, unknowable here'],
+    ['Destroy target Plains.', 'the same shape, and the cost of refusing it'],
+    ['Destroy target non-Human creature.', 'a negated subtype, on none of the qualifier lists'],
+    ['Destroy target tapped Goblin or Elf.', 'a qualifier inside a disjunction'],
+    ['Destroy target Goblin or player.', 'a player is not a permanent, so the run is refused'],
+    ['Destroy target Goblin and Elf.', 'a conjunction, which is not one target'],
+  ])('leaves "%s" unread: %s', (text) => {
+    const read = sorcery(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  /*
+    And the bot hint, which the disjunction nearly dropped. `targetedEffect`'s docblock argues that a
+    compiled card that works and plays badly is worse than an unread line, and
+    `compiled-vs-written.test.ts` proved it on Vraska's Contempt the moment this arm began to read:
+    "exile target creature or planeswalker" has to be `kind: 'permanent'`, so the kind could no
+    longer carry `removesACreature` and the printed phrase had to.
+  */
+  it.each([
+    ['Destroy target creature or Vehicle.', true],
+    ['Exile target creature or planeswalker.', true],
+    ['Destroy target Equipment.', false],
+    ['Destroy target artifact or enchantment.', false],
+  ])('%s: removesACreature is %s', (text, wanted) => {
+    const read = sorcery(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(field(read.script, 'removesACreature') === true).toBe(wanted);
   });
 });
