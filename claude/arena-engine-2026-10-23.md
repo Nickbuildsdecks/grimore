@@ -12465,3 +12465,21 @@ whose subject is on the battlefield. Glitterfang is one, it has a test now, and 
 | printed rules lines read | 18,975 / 56,421 (33.6%) | **19,053 / 56,421 (33.8%)** |
 
 Engine suite 2,267 green.
+
+## A guard measured and thrown away (D467)
+
+Not an increment — a refutation worth not re-deriving. Reading `composeEffects` before building the
+discard reader, it looked unsafe for two question-asking parts: it concatenates their `decisions`
+without offsetting the answers, and a part reads its own by index. So I wrote the guard that refuses
+such a composition, and predicted it would cost nothing.
+
+It cost **two cards** — 9,291 → 9,289 — and diffing the per-card verdicts named them: **Cryptic
+Annelid** (`scry 1, then scry 2, then scry 3`) and **Fill with Fright** (`Target player discards two
+cards. Scry 2.`). Both work today, because a scry's effect is the *identity*: the engine applies a
+`library-top` answer to its own plan entry, so nothing indexes anything. The guard deleted two
+correct readings and prevented nothing. Reverted.
+
+The hazard is real only where two parts **both** read answers by index, and no corpus card prints
+one. Build the reader, then verify a composition at a real table; fix it when there is a card that
+fails. Reading code and finding a hole is a hypothesis, and the cheapest test of this one was three
+commands.

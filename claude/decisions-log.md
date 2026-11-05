@@ -29773,3 +29773,52 @@ Two neighbours stay unread on purpose, both for want of a subject this reader ha
 to its owner's hand` (2 cards — "that card" is event-relative, `eventRelativeEffect`'s business) and
 `return enchanted creature to its owner's hand` (2 — the Aura's host, which is `who: 'attached'`).
 Engine suite 2,267 green.
+
+## D467 — A guard I wrote, measured, and threw away: two working cards, nothing fixed
+
+Not an increment. A refutation, recorded so it is not re-derived.
+
+The next increment is the discard (114 legal cards, measured by substitution — see #317), and reading
+`composeEffects` ahead of writing it turned up what looked like a hole. It concatenates its parts'
+`decisions` into one list and does **not** offset the answers, while a part reads its own by index:
+`chosenCard(c)` is `c.decisions[0]`, `chosenCards(c, 1)` the second. So a question-asking part that
+is not the first one looked certain to read an earlier part's answer — a card that offers the right
+cards and then does something else with the one you pick. That is a wrong card rather than an unread
+one, and the same function already refuses two *target* choices for exactly this reason: one list,
+read by index.
+
+So I wrote the guard — refuse a composition with more than one decision-bearing part — and predicted
+in its docblock that it would cost nothing, having counted the 85 scripted objects that carry two or
+more decisions and found every one of them getting those decisions from a **single** reader (a
+"you may" and the question its own effect asks, travelling behind `askOnlyIfChosen`).
+
+**It cost two cards.** 9,291 → 9,289 with a script, 5,126 → 5,124 fully read, 19,053 → 19,051 lines.
+D463's rule — a count that moves by the wrong amount is a test — so the per-card verdicts were dumped
+before and after and diffed, which named them in one run:
+
+ * **Cryptic Annelid**, `When Cryptic Annelid enters, scry 1, then scry 2, then scry 3.`
+ * **Fill with Fright**, `Target player discards two cards. Scry 2.`
+
+Both are **working cards**, and the premise was wrong about why. A scry's effect is the **identity**:
+`scry(n)` is a `from: 'library-top'` spec and the *engine* applies its answer to its own plan entry,
+so nothing indexes anything. Three scries are three plan entries, each applied to itself. And Fill
+with Fright's discard is the first part, so its index-0 read is its own answer. The guard removed two
+correct readings and prevented nothing.
+
+Reverted, coverage back to 19,053 to the line. The hazard is real only for a composition of **two
+parts that both read answers by index**, and no card in the corpus prints one. D465's own lesson
+cuts this way: a guard whose break run cannot fail is a reader written ahead of need — and here the
+only cards it touched were evidence *against* my reading of the code, not for it.
+
+What the discard increment does instead: build the reader without the guard, and verify at a real
+table that a composition like "each opponent discards a card and you gain 1 life" behaves correctly.
+If it misbehaves, fix it then, with the failing card in hand. A general per-part offset is not
+available anyway — a `who: 'each-player'` spec expands into one plan entry per seat, so the number of
+answers is not the number of specs, which is the same thing the bare-`may` reader's `withoutOurs`
+works around by dropping exactly its own one.
+
+**The method note.** Reading code and finding a hole is a hypothesis. The cheapest test of it here
+was three commands — write the guard, rebuild, re-measure — and it took about four minutes to refute
+something I would otherwise have shipped with a confident docblock on it. That docblock is the part
+worth noticing: it asserted "the coverage figure is unchanged by this guard, to the card and to the
+line" **before** the figure had been taken.
