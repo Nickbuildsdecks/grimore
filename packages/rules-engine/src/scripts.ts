@@ -1700,11 +1700,21 @@ const GRIM_DISCOVERY: CardScript = {
  * not make that call for them, which means the prompt always has a "choose nothing" answer.
  */
 const searchYourLibrary = (
-  prompt: string, filter?: CardsDecisionSpec['filter'],
+  prompt: string, filter?: CardsDecisionSpec['filter'], max = 1,
 ): CardsDecisionSpec => ({
-  who: 'controller', from: 'library', prompt, min: 0, max: 1,
+  who: 'controller', from: 'library', prompt, min: 0, max,
   ...(filter === undefined ? {} : { filter }),
 });
+
+/**
+ * The `max` for a search that prints "any number of".
+ *
+ * `CardsDecisionSpec.max` is clamped to what the zone actually holds, so this only has to be larger
+ * than any library can be — the clamp is what makes it right, and a tuned bound would be a second
+ * rule to keep true. A hundred-card Commander deck is the largest legal one; this is an order of
+ * magnitude above it.
+ */
+const ANY_NUMBER = 1000;
 
 /**
  * A printed library search, as a `searchYourLibrary` question and one thing done with what it
@@ -1743,36 +1753,98 @@ const searchYourLibrary = (
  * opponents do not learn which card was taken. No card in the pool punishes a reveal, and when one
  * is added this reader is where the honesty has to be repaid.
  *
- * ## What is refused
+ * ## What is refused, after D455 widened it
  *
- * Everything whose filter this module cannot build, and everything plural. "Up to two basic land
- * cards", "any number of cards named ~" and "reveal them, put them into your hand" need a count on
- * the question and a destination applied to a set; "a basic land card or Gate card" is two filters;
- * "an artifact card with mana value 4 or 5" and "a card with mana value less than or equal to the
- * number of lands you control" are conditions on a characteristic; "search your library and/or
- * graveyard" is two zones; and ", then shuffle and put that card on top" is a fourth destination
- * (the top of the library) that `searchYourLibrary`'s shuffle would undo. Each stays unread (D362).
+ * **416 legal cards were one unread line from finished and that line was a library search** — the
+ * largest family in the corpus by a distance — and the refusals this docblock used to list were the
+ * reason: a count, a destination applied to a set, and a filter of more than one word. The corpus
+ * says those are not exotic, they are the normal way Magic prints the clause, so D455 reads them:
+ * three quantities (`a`, `up to N`, `any number of`), four destinations plus exile, both plural
+ * pronouns, the reveal in all its spellings, and a filter that is alternatives of conjunctions with
+ * a leading `basic` distributing over them.
+ *
+ * What is still refused, and each is a shape rather than an oversight: a count this reader cannot
+ * name (`up to X`, `up to that many`); a condition on a characteristic ("with mana value 3 or
+ * less"); a category that is not a type (`permanent`, which D449's own guard caught); two zones
+ * ("search your library **and/or graveyard**"); two filters rather than two words of one ("a basic
+ * land card **or a Desert card**"); a split destination (Cultivate's one-here-one-there); and the
+ * top of the library, which `searchYourLibrary`'s own shuffle would undo. Each stays unread (D362).
  */
+/**
+ * How many cards a printed search asks for, and whether it says so in the plural.
+ *
+ * Three printed quantities and no others: `a`/`an`, `up to <number>`, and `any number of`. **The
+ * minimum is always nought**, which is not a simplification — a player may always fail to find
+ * (CR 701.19c), and that is what makes a search a decision rather than a lookup.
+ *
+ * The count comes back with the **singular** of the phrase, because that is what `libraryFilter`
+ * reads: "up to two basic land cards" is two of the thing "a basic land card" names. Only the noun
+ * is singularised (`cards` → `card`); a subtype inside the phrase keeps its own number, which is
+ * why "up to three cards named Howling Wolf" works and nothing has to know that Wolf is singular.
+ */
+function searchQuantity(
+  phrase: string,
+): { readonly max: number; readonly singular: string } | null {
+  const singularise = (rest: string): string => `a ${rest.trim().replace(/\bcards\b/i, 'card')}`;
+  const one = /^an? (.+)$/i.exec(phrase);
+  if (one !== null) return { max: 1, singular: `a ${one[1]!.trim()}` };
+  const counted = /^up to (\w+) (.+)$/i.exec(phrase);
+  if (counted !== null) {
+    const max = countFrom(counted[1]!);
+    // "Up to X" and "up to that many" are counts this reader cannot name: X is chosen at cast time
+    // and "that many" points back at a number in an earlier clause.
+    return max === null || max < 1 ? null : { max, singular: singularise(counted[2]!) };
+  }
+  const any = /^any number of (.+)$/i.exec(phrase);
+  if (any !== null) return { max: ANY_NUMBER, singular: singularise(any[1]!) };
+  return null;
+}
+
 function searchClause(text: string, name: string): ReadEffect | null {
   const parsed =
-    /^search your library for (an? [^,]+?)(?:, reveal (?:it|that card))?, put (?:it|that card) (into your hand|onto the battlefield tapped|onto the battlefield)$/i
+    /^search your library for (.+?)(?:, reveal (?:it|that card|them|those cards))?, (?:and )?(put (?:it|that card|them|those cards) (?:into your hand|onto the battlefield tapped|onto the battlefield|into your graveyard)|exile (?:it|that card|them|those cards))$/i
       .exec(text.trim());
   if (parsed === null) return null;
-  const filter = libraryFilter(parsed[1]!.trim(), name);
+  const printed = parsed[1]!.trim();
+  const quantity = searchQuantity(printed);
+  if (quantity === null) return null;
+  const filter = libraryFilter(quantity.singular, name);
   if (filter === null) return null;
-  const destination = parsed[2]!.toLowerCase();
+
+  const action = parsed[2]!.toLowerCase();
+  const pronoun = /\b(it|that card|them|those cards)\b/.exec(action)![1]!;
+  const destination = action.startsWith('exile')
+    ? 'exile' : action.replace(/^put (?:it|that card|them|those cards) /, '');
+  /*
+    **The pronoun has to agree with the count**, and the check is a guard on this reader rather than
+    a rule about Magic: a printed card never says "up to two cards … put it into your hand". So a
+    disagreement means the quantity was parsed wrong — the phrase said something this reader read as
+    a count and was not one — and the honest answer is to leave the line unread rather than apply a
+    singular destination to a set, or a set's to one card.
+  */
+  if ((pronoun === 'them' || pronoun === 'those cards') !== (quantity.max > 1)) return null;
+
   return {
     decisions: [searchYourLibrary(
-      `Search your library for ${filter.phrase}`,
-      ...(filter.filter === null ? [] : [filter.filter] as const),
+      // The prompt is the **printed** phrase, plural and all, because it is what a player reads.
+      `Search your library for ${printed}`,
+      filter.filter === null ? undefined : filter.filter,
+      quantity.max,
     )],
     effect: (c) => {
-      const found = chosenCard(c);
-      if (found === null) return c.state;
-      if (destination === 'into your hand') return moveToHand(c.state, [found]);
-      return putOntoBattlefield(c.state, found, c.controller, {
-        tapped: destination === 'onto the battlefield tapped',
-      });
+      const found = chosenCards(c);
+      if (found.length === 0) return c.state;
+      if (destination === 'into your hand') return moveToHand(c.state, found);
+      if (destination === 'into your graveyard') return moveToGraveyard(c.state, found);
+      if (destination === 'exile') {
+        return found.reduce((state, id) => exileCard(state, id), c.state);
+      }
+      return found.reduce(
+        (state, id) => putOntoBattlefield(state, id, c.controller, {
+          tapped: destination === 'onto the battlefield tapped',
+        }),
+        c.state,
+      );
     },
   };
 }
@@ -1820,9 +1892,45 @@ function libraryFilter(
       },
     };
   }
-  const typed = /^an? ([A-Za-z][A-Za-z' -]*) card$/i.exec(phrase);
+  const typed = /^an? (.+) cards?$/i.exec(phrase);
   if (typed === null) return null;
-  const word = typed[1]!.toLowerCase();
+  /*
+    **The type words, as alternatives of conjunctions**, which is the grammar Magic prints: "a
+    basic Forest, Plains, or Island card" is one of three, "an artifact creature card" is both at
+    once, and a leading `basic` distributes over the whole list rather than attaching to the first
+    word of it (a Panorama finds a basic Island, not an Island and a basic anything).
+
+    So the list is split on `, or `, `,` and ` or `, each alternative's words are AND-ed, and the
+    alternatives are OR-ed. One `basic` in front of the list is peeled off and applied to all of
+    them.
+  */
+  let list = typed[1]!.trim();
+  let basicOnly = false;
+  if (/^basic\s+/i.test(list)) {
+    basicOnly = true;
+    list = list.replace(/^basic\s+/i, '').trim();
+  }
+  const alternatives = list.split(/\s*,\s*or\s+|\s*,\s*|\s+or\s+/i)
+    .map((part) => part.trim()).filter((part) => part !== '');
+  if (alternatives.length > 1 || alternatives.some((part) => part.includes(' ')) || basicOnly) {
+    const built = alternatives.map((part) => {
+      const words = part.split(/\s+/).map(cardWordMatch);
+      return words.some((word) => word === null)
+        ? null
+        : (line: TypeLine) => words.every((word) => word!(line));
+    });
+    if (built.some((match) => match === null)) return null;
+    const isBasic = (line: TypeLine) => line.supertypes.some((t) => t.toLowerCase() === 'basic');
+    return {
+      phrase,
+      filter: (state, id) => {
+        const line = lineOf(state, id);
+        if (basicOnly && !isBasic(line)) return false;
+        return built.some((match) => match!(line));
+      },
+    };
+  }
+  const word = alternatives[0]!.toLowerCase();
   /*
     **Magic's own capitalisation tells a type from a subtype**, and that is what makes this safe to
     read at all.
@@ -1844,20 +1952,31 @@ function libraryFilter(
     string, which is what keeps "a Forest card" matching Snow-Covered Forest and the typed duals
     while not matching a card merely *named* for a forest.
   */
-  if (word.includes(' ')) return null;
-  const capitalised = /^[A-Z]/.test(typed[1]!);
-  if (capitalised) {
-    return { phrase, filter: (state, id) => hasSubtype(lineOf(state, id), word) };
-  }
-  if (SEARCHABLE_TYPES.includes(word)) {
-    return { phrase, filter: (state, id) => hasType(lineOf(state, id), word) };
-  }
-  if (SUPERTYPES.includes(word)) {
-    return {
-      phrase,
-      filter: (state, id) =>
-        lineOf(state, id).supertypes.some((t) => t.toLowerCase() === word),
-    };
+  const match = cardWordMatch(alternatives[0]!);
+  if (match === null) return null;
+  return { phrase, filter: (state, id) => match(lineOf(state, id)) };
+}
+
+/**
+ * One word of a printed card filter, as a test on a **printed** type line.
+ *
+ * The capitalisation rule is the one `libraryFilter`'s docblock argues for and `permanentWordMatch`
+ * uses on the battlefield side (D453): Magic prints card types and supertypes lowercase and
+ * subtypes capitalised, so a lowercase word has to be on one of the two lists and a capitalised one
+ * is a subtype. The lowercase allow-list is the guard, and the reason is written out below.
+ *
+ * The word must also **be** a word — letters, apostrophes and hyphens — so a comma or a slash that
+ * survived the split refuses the filter instead of becoming a subtype no card has. That is D453's
+ * guard for D453's reason: a filter matching nothing is worse than an unread line, because nothing
+ * at the table flags it.
+ */
+function cardWordMatch(word: string): ((line: TypeLine) => boolean) | null {
+  if (!/^[A-Za-z][A-Za-z'-]*$/.test(word)) return null;
+  const lower = word.toLowerCase();
+  if (/^[A-Z]/.test(word)) return (line) => hasSubtype(line, lower);
+  if (SEARCHABLE_TYPES.includes(lower)) return (line) => hasType(line, lower);
+  if (SUPERTYPES.includes(lower)) {
+    return (line) => line.supertypes.some((t) => t.toLowerCase() === lower);
   }
   // A lowercase word that is neither: not a type this reader can name, so the line stays unread.
   return null;
@@ -10250,6 +10369,19 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     on the cards that print it; this clause only ever appears as the tail of a search.
   */
   if (/^shuffle$/i.test(text)) return { effect: (c) => c.state };
+
+  /*
+    The same word with the condition newer cards print in front of it: "If you search your library
+    this way, shuffle." It reads as the identity for the clause above's reason — `searchYourLibrary`
+    shuffles when the search ends — and the condition needs no reading either, because the only
+    thing it guards is the shuffle that already happened.
+
+    31 cards print it, and all of them print a search on the line before. A line that printed this
+    without a search would shuffle nothing, which is also what this does.
+  */
+  if (/^if you search your library this way, shuffle$/i.test(text)) {
+    return { effect: (c) => c.state };
+  }
 
   /*
     A pump on the whole team, which is `pumpTeam` and not `pump` over a list: the scope is

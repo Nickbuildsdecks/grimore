@@ -23887,3 +23887,232 @@ describe('the shrink, from printed text (D454)', () => {
     expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held);
   });
 });
+
+describe('the library search as a product, from printed text (D455)', () => {
+  /*
+    Two printed cards through `customDeck` (D430), neither in any built-in deck: **Armillary
+    Sphere** is the plural search — up to two cards, revealed, into the hand — and **Bloodstained
+    Mire** is the compound filter, which is what the ten fetchlands print and what blocked every one
+    of them.
+  */
+  const SPHERE = {
+    name: 'Armillary Sphere', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: '{2}, {T}, Sacrifice Armillary Sphere: Search your library for up to two basic'
+      + ' land cards, reveal them, put them into your hand, then shuffle.',
+  };
+  const MIRE = {
+    name: 'Bloodstained Mire', type_line: 'Land', mana_cost: '', cmc: 0, colors: [],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: '{T}, Pay 1 life, Sacrifice Bloodstained Mire: Search your library for a Swamp or'
+      + ' Mountain card, put it onto the battlefield, then shuffle.',
+  };
+
+  const list = () => {
+    const built = customDeck({
+      id: 'search-list',
+      name: 'Searches',
+      entries: [
+        { name: 'Armillary Sphere', count: 1 },
+        { name: 'Bloodstained Mire', count: 1 },
+        { name: 'Raging Goblin', count: 2 },
+        { name: 'Swamp', count: 20 },
+        { name: 'Mountain', count: 19 },
+        { name: 'Forest', count: 17 },
+      ],
+      data: [SPHERE as never, MIRE as never],
+    });
+    expect(built.unknown).toEqual([]);
+    return built.deck;
+  };
+
+  const table = (battlefield: readonly string[]): GameState => advanceTo(arena({
+    decks: { 0: 'search-list', 1: 'verdant-guard' },
+    deckSpecs: { 'search-list': list() },
+    battlefield: { 0: battlefield },
+    turn: 5,
+    firstSeat: 0,
+  }), 'precombat-main');
+
+  it('asks for up to two basic lands, takes both, and offers nothing else', () => {
+    let s = table(['Armillary Sphere', 'Swamp', 'Swamp']);
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0,
+      card: find(s, 0 as SeatIndex, 'battlefield', 'Armillary Sphere'), abilityIndex: 0,
+    } as Action), 40);
+
+    const asked = s.pendingDecision;
+    expect(asked?.prompt).toBe('Search your library for up to two basic land cards');
+    // The printed count, as the question's bounds: nought is a legal answer because a player may
+    // always fail to find (CR 701.19c), and two is the printed maximum.
+    expect(asked?.min).toBe(0);
+    expect(asked?.max).toBe(2);
+    // And the filter really filters: the deck's two Raging Goblins are not basic lands.
+    const offered = (asked?.candidates ?? []).map((id) => nameOf(s, id));
+    expect(offered.length).toBeGreaterThan(2);
+    expect(new Set(offered)).toEqual(new Set(['Swamp', 'Mountain', 'Forest']));
+
+    const pair = (asked?.candidates ?? []).slice(0, 2);
+    const held = ids(s, 0 as SeatIndex, 'hand').length;
+    const library = ids(s, 0 as SeatIndex, 'library').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: pair } as Action), 40);
+    // Both cards, not one: the destination is applied to the set the question answered with.
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held + 2);
+    expect(ids(s, 0 as SeatIndex, 'library')).toHaveLength(library - 2);
+    for (const id of pair) expect(ids(s, 0 as SeatIndex, 'hand')).toContain(id);
+    // The Sphere paid for itself with its own body.
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Armillary Sphere');
+  });
+
+  it('a fetchland offers both of its types and neither of the others', () => {
+    /*
+      Bloodstained Mire: `a Swamp or Mountain card`. The compound filter is the whole reason the
+      fetchlands were unread, and the Forests in the deck are what makes the assertion mean
+      something — an OR that had collapsed to its first word, or to "any land", would offer them.
+    */
+    let s = table(['Bloodstained Mire']);
+    const before = life(s, 0 as SeatIndex);
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0,
+      card: find(s, 0 as SeatIndex, 'battlefield', 'Bloodstained Mire'), abilityIndex: 0,
+    } as Action), 40);
+
+    const offered = (s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id));
+    expect(new Set(offered)).toEqual(new Set(['Swamp', 'Mountain']));
+    expect(s.pendingDecision?.max).toBe(1);
+    // The printed cost: a life, and the land itself.
+    expect(life(s, 0 as SeatIndex)).toBe(before - 1);
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Bloodstained Mire');
+
+    const found = (s.pendingDecision?.candidates ?? [])[0]!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [found] } as Action), 40);
+    // Onto the battlefield, and **untapped**: this card does not print "tapped", and the reader
+    // that reads the word is the same one that must not add it.
+    expect(ids(s, 0 as SeatIndex, 'battlefield')).toContain(found);
+    expect(s.instances[found]?.tapped).toBe(false);
+  });
+});
+
+describe('what a printed search filter actually admits (D455)', () => {
+  /*
+    A break run is why this block exists. Reading the filter's alternatives as an AND instead of an
+    OR, reading the words inside one alternative as an OR instead of an AND, and dropping the
+    leading `basic` all left the whole suite green — because a compile row can only see that the
+    line read, and every one of those misreadings still reads. What they change is **which cards the
+    search offers**, which only a game can show.
+
+    So three printed spells, each with a library built to discriminate: Time of Need (`a legendary
+    creature card`), Field Trip (`a basic Forest card`) and Entomb (the graveyard destination).
+  */
+  const TIME_OF_NEED = {
+    name: 'Time of Need', type_line: 'Sorcery', mana_cost: '{1}{G}', cmc: 2, colors: ['G'],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Search your library for a legendary creature card, reveal it, put it into your'
+      + ' hand, then shuffle.',
+  };
+  const FIELD_TRIP = {
+    name: 'Field Trip', type_line: 'Sorcery', mana_cost: '{2}{G}', cmc: 3, colors: ['G'],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Search your library for a basic Forest card, put that card onto the battlefield'
+      + ' tapped, then shuffle.',
+  };
+  const ENTOMB = {
+    name: 'Entomb', type_line: 'Instant', mana_cost: '{B}', cmc: 1, colors: ['B'],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Search your library for a card, put that card into your graveyard, then shuffle.',
+  };
+  /*
+    The discriminator for `basic`: a **nonbasic** land with the Forest subtype. Its own printed text
+    is not what is under test — it is in the deck to be offered or not offered.
+  */
+  const BREEDING_POOL = {
+    name: 'Breeding Pool', type_line: 'Land — Forest Island', mana_cost: '', cmc: 0, colors: [],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: '({T}: Add {G} or {U}.)\nAs Breeding Pool enters, you may pay 2 life. If you'
+      + ' don’t, it enters tapped.',
+  };
+
+  const list = () => {
+    const built = customDeck({
+      id: 'filter-list',
+      name: 'Filters',
+      entries: [
+        { name: 'Time of Need', count: 1 },
+        { name: 'Field Trip', count: 1 },
+        { name: 'Entomb', count: 1 },
+        // The three creatures-and-not-creatures that make the conjunction mean something.
+        { name: 'Sigarda, Host of Herons', count: 1 },
+        { name: 'Garruk Wildspeaker', count: 1 },
+        { name: 'Raging Goblin', count: 2 },
+        { name: 'Breeding Pool', count: 1 },
+        { name: 'Forest', count: 20 },
+        { name: 'Plains', count: 12 },
+        { name: 'Swamp', count: 20 },
+      ],
+      data: [TIME_OF_NEED as never, FIELD_TRIP as never, ENTOMB as never, BREEDING_POOL as never],
+    });
+    expect(built.unknown).toEqual([]);
+    return built.deck;
+  };
+
+  /** Seat 0 in its main phase with `hand` in hand and `lands` tapped for mana. */
+  const casting = (hand: readonly string[], lands: readonly string[]): GameState => {
+    const s = advanceTo(arena({
+      decks: { 0: 'filter-list', 1: 'verdant-guard' },
+      deckSpecs: { 'filter-list': list() },
+      hands: { 0: hand },
+      battlefield: { 0: lands },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    return tapAllLands(s, 0 as SeatIndex);
+  };
+
+  const offered = (s: GameState): ReadonlySet<string> =>
+    new Set((s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id)));
+
+  it('a supertype and a type are both required, not either one', () => {
+    let s = casting(['Time of Need'], ['Forest', 'Forest']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Time of Need'),
+    } as Action)), 40);
+    /*
+      Only Sigarda. Garruk Wildspeaker is legendary and not a creature; the Raging Goblins are
+      creatures and not legendary. An OR would offer all four, and dropping either word would offer
+      one of the two wrong groups — and the card would find a Goblin where it prints a legend.
+    */
+    expect(offered(s)).toEqual(new Set(['Sigarda, Host of Herons']));
+  });
+
+  it('a leading "basic" applies to the subtype beside it', () => {
+    let s = casting(['Field Trip'], ['Forest', 'Forest', 'Forest']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Field Trip'),
+    } as Action)), 40);
+    // The Breeding Pool is a Forest and is not basic, so the search must not see it — and the
+    // Plains and Swamps are basic and are not Forests, so it must not see those either.
+    expect(offered(s)).toEqual(new Set(['Forest']));
+
+    const found = (s.pendingDecision?.candidates ?? [])[0]!;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [found] } as Action), 40);
+    // "Onto the battlefield **tapped**", which is the word this card prints and the Mire does not.
+    expect(ids(s, 0 as SeatIndex, 'battlefield')).toContain(found);
+    expect(s.instances[found]?.tapped).toBe(true);
+  });
+
+  it('a card searched to the graveyard reaches the graveyard, not the hand', () => {
+    let s = casting(['Entomb'], ['Swamp']);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Entomb'),
+    } as Action)), 40);
+    // No filter at all: "a card" means any card, which is a reading in its own right (D449).
+    expect((s.pendingDecision?.candidates ?? []).length).toBeGreaterThan(50);
+    const found = (s.pendingDecision?.candidates ?? [])[0]!;
+    const held = ids(s, 0 as SeatIndex, 'hand').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [found] } as Action), 40);
+    expect(ids(s, 0 as SeatIndex, 'graveyard')).toContain(found);
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held);
+    expect(ids(s, 0 as SeatIndex, 'battlefield')).not.toContain(found);
+  });
+});

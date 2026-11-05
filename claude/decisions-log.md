@@ -28587,3 +28587,78 @@ end-of-turn flag dropped, the sign flipped, and the printed duration made option
 Legal-only coverage **18,010 of 56,421 lines (31.9%)**, **8,457 cards with a script**
 (8,354 → 8,457, **+103**), 4,938 with every printed line read (4,846 → 4,938, **+92**) — the
 second-largest increment yet, from one character in a regex. Full engine suite 2,191 tests. GATE OK.
+
+## D455 — The library search as a product, widened
+
+**416 legal cards were one unread line from finished, and that line was a library search.** The
+largest family in the corpus by a distance, and the reason was D449's own refusal list: a count, a
+destination applied to a set, and a filter of more than one word. Measured against the corpus, those
+are not exotic shapes — they are the normal way Magic prints this clause.
+
+So the product D449 built got three more axes.
+
+**The quantity**, printed three ways: `a`/`an`, `up to <number>`, `any number of`. The minimum is
+always nought, which is not a simplification: a player may always fail to find (CR 701.19c), and
+that is what makes a search a decision rather than a lookup. The count comes back with the
+*singular* of the phrase, because that is what the filter reader takes — "up to two basic land
+cards" is two of the thing "a basic land card" names.
+
+**The destination applied to a set**: both plural pronouns, the reveal in all its printed spellings
+(`reveal them`, `reveal those cards`, and the newer `reveal it, and put …`), and five destinations —
+hand, battlefield, battlefield tapped, graveyard, exile.
+
+**The filter as alternatives of conjunctions**, which is the grammar Magic prints: "a basic Forest,
+Plains, or Island card" is one of three, "an artifact creature card" is both at once, and a leading
+`basic` distributes over the whole list rather than attaching to the first word of it — a Panorama
+finds a basic Island, not an Island and a basic anything. 136 distinct printed filters now read
+across 636 lines, from `a basic land card` (215) down to `a Moogle card`, and the **ten fetchlands**
+come with them: `a Swamp or Mountain card` was a compound filter and nothing more.
+
+Plus the conditional shuffle 31 cards print after the search ("If you search your library this way,
+shuffle"), which reads as the identity for the same reason the bare word does.
+
+### Five obsolete refusal claims, retired in place
+
+Three rows of D449's multi-word-filter list and two of its refusal list made claims this reader no
+longer honours: `a basic Plains card`, `an instant or sorcery card`, `a legendary creature card`, a
+count on the question, and a destination applied to a set. Each is retired where it stood, with the
+claim it made quoted and the reason it stopped being true — the reading that replaced it splits the
+phrase into alternatives of conjunctions and still classifies every word on its own, so the
+silent-nothing those rows guarded against is still impossible.
+
+### The break run found five holes, and four of them needed a game to see
+
+**Thirteen levers.** Five passed on the first run, and the pattern is worth keeping: a compile row
+can only see *that* a line read, and every one of those misreadings still reads. What they change is
+**which cards the search offers**, which only a game shows.
+
+- Reading the alternatives as an AND, the words inside an alternative as an OR, and dropping the
+  leading `basic` all left 1,681 tests green. Three runtime tests on printed **Time of Need** (`a
+  legendary creature card`, with a legendary planeswalker and two nonlegendary creatures beside it
+  in the library) and printed **Field Trip** (`a basic Forest card`, with a nonbasic Breeding Pool
+  beside it) now watch them.
+- The graveyard destination was asserted nowhere: printed **Entomb** now puts its card there and
+  not in the hand.
+- The fifth was two guards overlapping rather than a missing test. `up to X` is refused by the count
+  reader *and* by the pronoun-agreement check beside it, so breaking either left the printed shapes
+  refused; a row with a singular pronoun isolates the count. The same went for the word-shape guard,
+  which is measured **redundant for every printed filter** — 136 read either way — because the split
+  already removes commas and the lowercase allow-list refuses the rest. What it still catches is a
+  *capitalised* non-word: `Forest/Plains` would become a subtype no card has, and the search would
+  offer nothing. A row names it, so the guard is tested rather than merely present.
+
+Thirteen levers, thirteen failures once those existed.
+
+### Verified
+
+Thirty compile rows: the three quantities with their bounds, the printed prompt, seven filter
+shapes, five destinations and spellings, the conditional shuffle, ten refusals, the pronoun
+disagreement in both directions, and the two pool cards (Diabolic Tutor, Rampant Growth) whose
+ground truth this widening had to leave alone. Five runtime tests on printed **Armillary Sphere**
+(up to two, both taken, and the question's own bounds), printed **Bloodstained Mire** (both of its
+types offered and neither of the others, a life paid, the land arriving **untapped**), and the three
+filter-behaviour tests above.
+
+Legal-only coverage **18,113 of 56,421 lines (32.1%)**, **8,530 cards with a script**
+(8,457 → 8,530, **+73**), **5,015 with every printed line read** (4,938 → 5,015, **+77**) — the
+first time more than five thousand cards read end to end. Full engine suite 2,221 tests. GATE OK.

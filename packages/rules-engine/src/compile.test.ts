@@ -8226,11 +8226,27 @@ describe('a library search, generalised (D449)', () => {
       find nothing, silently, on a card that otherwise works. The one-word guard is what refuses
       them, and these are the printed shapes it is refusing (counts are legal lines in the corpus).
     */
+    /*
+      **Retired rows (D455).** This list opened with five, and three of them have since become
+      readings rather than refusals:
+
+      | row | printed phrase | why it was refused | why it reads now |
+      | --- | --- | --- | --- |
+      | `a basic of a named type` | `a basic Plains card` | the one-word guard | a leading `basic` distributes over the list |
+      | `two types` | `an instant or sorcery card` | the one-word guard | alternatives are OR-ed |
+      | `a supertype and a type` | `a legendary creature card` | the one-word guard | words inside an alternative are AND-ed |
+
+      The claim they made was "each ends in ' card' like a type phrase and so reaches the type
+      branch, where a capitalised multi-word name would be matched against a subtype list that holds
+      one word per entry — and find nothing, silently". That was true of a reader that took the whole
+      phrase as one word. D455 splits the phrase into alternatives of conjunctions, which is the
+      grammar Magic actually prints, and each word still has to classify on its own — so the
+      silent-nothing the rows were guarding against is still impossible, and the two rows left are
+      the shapes that genuinely cannot be read: `permanent` is not a type (CR 205.2a) and a colour
+      is not on the type line at all.
+    */
     ['a subtype and a type together', 'a Rebel permanent card'],                      // 10 lines
-    ['a basic of a named type', 'a basic Plains card'],                               // 14
     ['a colour and a type', 'a green creature card'],                                 // 4
-    ['two types', 'an instant or sorcery card'],                                      // 7
-    ['a supertype and a type', 'a legendary creature card'],
   ])('refuses %s, which ends in "card" but is not a type', (_label, filterPhrase) => {
     const text = `Search your library for ${filterPhrase as string}, put that card into your hand,`
       + ' then shuffle.';
@@ -8296,12 +8312,16 @@ describe('a library search, generalised (D449)', () => {
       got: a count on the question, a destination applied to a set, two filters, a condition on a
       characteristic, two zones, or a fourth destination.
     */
-    ['a count on the question',
-      'Search your library for up to two basic land cards, put them onto the battlefield tapped,'
-        + ' then shuffle.'],
-    ['a destination applied to a set',
-      'Search your library for any number of cards named Probe Thing, reveal them, put them into'
-        + ' your hand, then shuffle.'],
+    /*
+      **Retired rows (D455).** Two rows have left this list: `a count on the question` ("up to two
+      basic land cards, put them onto the battlefield tapped") and `a destination applied to a set`
+      ("any number of cards named ~, reveal them, put them into your hand"). Both were refused
+      because this reader had neither a count nor a set — "Up to two basic land cards, any number of
+      cards named ~ and reveal them, put them into your hand need a count on the question and a
+      destination applied to a set", as the docblock then said. D455 gave it both, and the two
+      shapes are now read and asserted in its own block below; 416 legal cards were one unread line
+      from finished and that line was a library search.
+    */
     ['two filters at once',
       'Search your library for a basic land card or Gate card, put it onto the battlefield tapped,'
         + ' then shuffle.'],
@@ -8726,5 +8746,173 @@ describe('the shrink, which is the pump with one character changed (D454)', () =
     // And `removesACreature` is not set: -1/-1 kills a Glistener Elf and is a wasted card on a
     // 5/5, which is the board rather than the spell. Darkblast sets no such flag either.
     expect(flags(compiled)['removesACreature']).toBeUndefined();
+  });
+});
+
+describe('the library search as a product, widened (D455)', () => {
+  const unreadLines = (c: ReturnType<typeof compileCard>) =>
+    (c.ok ? c.unread : []).map((u) => u.line);
+  const spell = (text: string) => compileCard({
+    name: 'Probe Tutor', type_line: 'Sorcery', mana_cost: '{2}{B}', cmc: 3, colors: ['B'],
+    layout: 'normal', oracle_text: text,
+  } as never);
+  const question = (c: ReturnType<typeof compileCard>) =>
+    ((((c.ok ? c.script : undefined) as Record<string, unknown> | undefined)?.['decisions']
+      ?? []) as readonly Record<string, unknown>[])[0];
+
+  it.each([
+    /*
+      **416 legal cards were one unread line from finished and that line was a library search** —
+      by far the largest family left. D449 read the singular form; the refusals it listed were a
+      count, a set to apply the destination to, and a filter of more than one word. The corpus says
+      those are not exotic: they are the normal way Magic prints this clause.
+    */
+    // The count, printed three ways. `up to two basic land cards` alone blocks 18 cards.
+    ['one', 'Search your library for a basic land card, put it onto the battlefield tapped.', 1],
+    ['up to two', 'Search your library for up to two basic land cards, put them onto the battlefield tapped.', 2],
+    ['up to three', 'Search your library for up to three creature cards, put them into your graveyard.', 3],
+    // "Any number of" is the Relentless Rats family. The max is clamped to the zone, so the number
+    // only has to be bigger than a library.
+    ['any number', 'Search your library for any number of cards named Probe Tutor, reveal them, put them into your hand.', 1000],
+  ])('reads a count of %s on the question', (_label, text, max) => {
+    const compiled = spell(text as string);
+    expect(unreadLines(compiled)).toEqual([]);
+    expect(question(compiled)?.['max']).toBe(max);
+    /*
+      And the minimum is nought whatever the count, which is not a simplification: a player may
+      always fail to find (CR 701.19c). That is what makes a search a decision rather than a
+      lookup, and it is what `searchYourLibrary` has always set.
+    */
+    expect(question(compiled)?.['min']).toBe(0);
+  });
+
+  it('shows the printed phrase in the prompt, plural and all', () => {
+    // The prompt is what a player reads mid-question, so it says what the card says rather than the
+    // singular this reader classified the filter from.
+    const compiled = spell(
+      'Search your library for up to two basic land cards, put them onto the battlefield tapped.',
+    );
+    expect(question(compiled)?.['prompt']).toBe('Search your library for up to two basic land cards');
+  });
+
+  it.each([
+    /*
+      The filter, as the grammar Magic prints: alternatives of conjunctions, with a leading `basic`
+      distributing over the whole list. Each row is a printed family, with the card it was read
+      from.
+    */
+    // Bloodstained Mire and the nine other fetchlands.
+    ['two subtypes', 'a Swamp or Mountain card'],
+    // The Panoramas.
+    ['a basic of three subtypes', 'a basic Island, Swamp, or Mountain card'],
+    // Aerial Surveyor and the basic-fetch cycle.
+    ['a basic of one subtype', 'a basic Plains card'],
+    // Mystical Tutor.
+    ['two card types', 'an instant or sorcery card'],
+    // The Seriema.
+    ['a supertype and a type', 'a legendary creature card'],
+    // Dragon's Approach.
+    ['a subtype and a type', 'a Dragon creature card'],
+    // Anchor to Reality.
+    ['two subtypes of artifact', 'an Equipment or Vehicle card'],
+  ])('reads %s', (_label, filterPhrase) => {
+    const text = `Search your library for ${filterPhrase as string}, put it into your hand.`;
+    expect(unreadLines(spell(text))).toEqual([]);
+  });
+
+  it.each([
+    // Entomb, and the Buried Alive family.
+    ['the graveyard', 'Search your library for a creature card, put that card into your graveyard.'],
+    // Mana Severance.
+    ['exile', 'Search your library for any number of land cards, exile them.'],
+    // Academy Rector's spelling of the battlefield.
+    ['the battlefield, said with "that card"', 'Search your library for an enchantment card, put that card onto the battlefield.'],
+    // The newer template, which puts an "and" in front of the destination.
+    ['a destination after "and"', 'Search your library for a creature card, reveal it, and put it into your hand.'],
+    // The plural reveal, Armillary Sphere's spelling.
+    ['a plural reveal', 'Search your library for up to two basic land cards, reveal them, put them into your hand.'],
+  ])('reads %s', (_label, text) => {
+    expect(unreadLines(spell(text as string))).toEqual([]);
+  });
+
+  it('reads the conditional shuffle newer cards print after the search', () => {
+    /*
+      "If you search your library this way, shuffle." — 31 cards print it, and it reads as the
+      identity for the same reason the bare word does: `searchYourLibrary` shuffles when the search
+      ends, so a reader that shuffled again would shuffle twice. The condition needs no reading
+      either, because the only thing it guards is the shuffle that has already happened.
+    */
+    const text = 'Search your library for a creature card, reveal it, and put it into your hand.'
+      + ' If you search your library this way, shuffle.';
+    expect(unreadLines(spell(text))).toEqual([]);
+  });
+
+  it.each([
+    /*
+      What is still refused, and each of these is a shape rather than an oversight.
+    */
+    // X is chosen at cast time and "that many" points back at a count in an earlier clause.
+    ['a count of X', 'Search your library for up to X basic land cards, put them onto the battlefield tapped.'],
+    ['a count that points backwards', 'Search your library for up to that many land cards, put them onto the battlefield tapped.'],
+    // A condition on a characteristic, which is a filter this module cannot build.
+    ['a mana value condition', 'Search your library for a creature card with mana value 3 or less, put it onto the battlefield.'],
+    // `permanent` is not a type (CR 205.2a), so the D449 guard still refuses it — in a list now.
+    ['a category that is not a type', 'Search your library for an artifact or permanent card, put it into your hand.'],
+    // Two zones.
+    ['two zones', 'Search your library and/or graveyard for a creature card, reveal it, put it into your hand.'],
+    // The top of the library, which `searchYourLibrary`'s own shuffle would undo.
+    ['the top of the library', 'Search your library for a basic land card, reveal it, then shuffle and put that card on top.'],
+    // Cultivate: one card to one place and the other to another.
+    ['a split destination', 'Search your library for up to two basic land cards, reveal those cards, put one onto the battlefield tapped and the other into your hand.'],
+    // Shefet Monitor: two filters rather than two words of one.
+    ['two filters', 'Search your library for a basic land card or a Desert card, put it onto the battlefield tapped.'],
+  ])('refuses %s', (_label, text) => {
+    expect(unreadLines(spell(text as string))).toEqual([text]);
+  });
+
+  it('refuses a pronoun that disagrees with the count', () => {
+    /*
+      A guard on this reader rather than a rule about Magic: no printed card says "up to two cards …
+      put **it** into your hand". So a disagreement means the quantity was parsed wrong — something
+      was read as a count that was not one — and the honest answer is an unread line rather than a
+      singular destination applied to a set, or a set's applied to one card.
+    */
+    const singular = 'Search your library for up to two basic land cards, put it onto the battlefield tapped.';
+    expect(unreadLines(spell(singular))).toEqual([singular]);
+    const plural = 'Search your library for a basic land card, put them onto the battlefield tapped.';
+    expect(unreadLines(spell(plural))).toEqual([plural]);
+  });
+
+  it.each([
+    /*
+      Two rows that **no card prints**, and they are here because a break run said the guards they
+      pin were otherwise untested. Both are the D362 failure in its quietest form: a reading that
+      compiles, resolves, and offers the player nothing at all.
+
+      `up to X` with a singular pronoun isolates the count guard from the agreement guard beside it
+      — on the printed cards the two overlap, and a reader that took "X" as 1 would be refused by
+      the plural "them" rather than by the number. Here nothing else refuses it, and taking X as one
+      card would quietly cap a search the card lets the player size.
+
+      `a Forest/Plains card` isolates the word-shape guard. Measured across the whole legal corpus,
+      dropping that guard changes **nothing** — 136 distinct filters read either way, because the
+      split already removes commas and the lowercase allow-list refuses the rest. What it still
+      catches is a *capitalised* word that is not a word: `Forest/Plains` would be read as the
+      subtype "forest/plains", which no card has, so the search would offer nothing on a card whose
+      other lines work.
+    */
+    ['a count of X, with nothing else to refuse it',
+      'Search your library for up to X cards, put it into your hand.'],
+    ['a capitalised word that is not a word',
+      'Search your library for a Forest/Plains card, put it into your hand.'],
+  ])('refuses %s', (_label, text) => {
+    expect(unreadLines(spell(text as string))).toEqual([text]);
+  });
+
+  it('still reads the two cards the narrow readers were written for', () => {
+    // The ground truth this widening must not disturb: both are in the pool, and
+    // `compiled-vs-written` compares their compiled readings against their hand-written scripts.
+    expect(fullyCompiled(compiledScript('Diabolic Tutor'))).toBe(true);
+    expect(fullyCompiled(compiledScript('Rampant Growth'))).toBe(true);
   });
 });

@@ -12050,3 +12050,28 @@ for. A `friendly` guessed wrong aims the spell at the wrong half of the table ev
 Nine break levers, nine failures. Coverage **18,010 of 56,421 legal lines (31.9%)**, **8,457 cards
 with a script (+103)**, 4,938 fully read (+92) — the second-largest increment yet, from one
 character in a regex.
+
+## The library search, widened to the shape the corpus prints (D455)
+
+**416 legal cards were one unread line from finished and that line was a library search** — the
+largest family left, and the blockers were exactly the refusals D449 listed: a count, a destination
+applied to a set, and a filter of more than one word. The corpus says those are not exotic shapes;
+they are how Magic normally prints the clause.
+
+Three more axes on the same product. **The quantity** — `a`, `up to N`, `any number of` — with a
+minimum of nought always, because a player may always fail to find (CR 701.19c). **The destination
+applied to a set** — both plural pronouns, every printed spelling of the reveal, and five places to
+put what was found. **The filter as alternatives of conjunctions**, which is the printed grammar: "a
+basic Forest, Plains, or Island card" is one of three, "an artifact creature card" is both at once,
+and a leading `basic` distributes over the list. 136 distinct filters now read across 636 lines —
+and the ten **fetchlands** come with them, because `a Swamp or Mountain card` was never more than a
+compound filter.
+
+**The break run's lesson is worth keeping.** Five of thirteen levers passed, and four of them because
+a compile row can only see *that* a line read: AND-ing the alternatives, OR-ing the words inside one,
+and dropping the `basic` all still read. What they change is which cards the search **offers**, which
+only a game shows — so printed Time of Need, Field Trip and Entomb now play it out. The fifth was two
+guards overlapping, and the fix was a row that isolates each.
+
+Coverage **18,113 of 56,421 legal lines (32.1%)**, **8,530 cards with a script (+73)**, **5,015 with
+every line read (+77)** — the first time past five thousand cards that read end to end.
