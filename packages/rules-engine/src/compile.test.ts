@@ -7694,3 +7694,84 @@ describe('a mana ability that is a choice of colours', () => {
     expect(unreadLines(read)).toEqual([text]);
   });
 });
+
+describe('a timing restriction on an activated ability', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const abilities = (c: ReturnType<typeof compileCard>) =>
+    (field(c.ok ? c.script : undefined, 'abilities') ?? []) as
+      readonly { description: string; sorcerySpeed?: boolean }[];
+
+  it('reads "Activate only as a sorcery" into the flag the engine already enforces', () => {
+    /*
+      The sentence is a **timing** restriction, not an effect, so it is taken off the end of the line
+      before the clause vocabulary reads the rest — and a line that kept it read as nothing at all,
+      which is why cards printing it were unread (D445).
+
+      `AbilityDef.sorcerySpeed` has existed since planeswalkers (#43) and the engine enforces it, so
+      this is a sentence read into a field rather than a rule taught.
+    */
+    const read = compileCard({
+      name: 'Brave-Kin Duo', type_line: 'Creature — Rabbit Mouse', mana_cost: '{W}', cmc: 1,
+      colors: ['W'], power: '1', toughness: '1', layout: 'normal',
+      oracle_text: '{1}, {T}: Target creature gets +1/+1 until end of turn. Activate only as a'
+        + ' sorcery.',
+    });
+    expect(read.ok).toBe(true);
+    expect(read.ok ? read.unread : []).toEqual([]);
+    expect(abilities(read)).toHaveLength(1);
+    expect(abilities(read)[0]!.sorcerySpeed).toBe(true);
+    // The printed line is kept whole as the description, restriction and all, because that is what
+    // the table shows on the button.
+    expect(abilities(read)[0]!.description).toContain('Activate only as a sorcery.');
+  });
+
+  it('does not set the flag on the same ability without the sentence', () => {
+    // The other half of the lever: the restriction is read from the text and not assumed, so the
+    // unrestricted version of the same line is still an instant-speed ability.
+    const read = compileCard({
+      name: 'Brave-Kin Duo', type_line: 'Creature — Rabbit Mouse', mana_cost: '{W}', cmc: 1,
+      colors: ['W'], power: '1', toughness: '1', layout: 'normal',
+      oracle_text: '{1}, {T}: Target creature gets +1/+1 until end of turn.',
+    });
+    expect(read.ok).toBe(true);
+    expect(abilities(read)).toHaveLength(1);
+    expect(abilities(read)[0]!.sorcerySpeed).toBeUndefined();
+  });
+
+  it('refuses a line that puts text after the restriction', () => {
+    /*
+      The sentence is anchored at the **end** of the line, and this is the row that makes that
+      anchor falsifiable — no printed card puts text after it, so nothing real can discriminate it.
+
+      Without the anchor the non-greedy capture takes the text *before* the sentence and throws the
+      rest away: "{1}: Put a +1/+1 counter on this creature. Activate only as a sorcery. Draw a
+      card." would compile to an ability that puts a counter and never draws. A silently missing
+      effect is the worst reading this module can produce (D362), so the line stays unread instead.
+    */
+    const read = compileCard({
+      name: 'Probe Thing', type_line: 'Creature — Human Soldier', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: '{1}: Put a +1/+1 counter on this creature. Activate only as a sorcery. Draw a'
+        + ' card.',
+    });
+    expect(read.ok).toBe(true);
+    expect(read.ok ? read.unread : []).toHaveLength(1);
+    expect(abilities(read)).toEqual([]);
+  });
+
+  it('reads it beside a mana ability that is a choice of colours', () => {
+    // Charisma Bobblehead, printed: D444's reader finishes the first line and this one the second,
+    // which is the hybrid compiler finishing a card neither change could finish alone.
+    const read = compileCard({
+      name: 'Charisma Bobblehead', type_line: 'Artifact — Bobblehead', mana_cost: '{3}', cmc: 3,
+      colors: [], layout: 'normal',
+      oracle_text: '{T}: Add one mana of any color.\n{4}, {T}: Create X 1/1 white Soldier creature'
+        + ' tokens, where X is the number of Bobbleheads you control. Activate only as a sorcery.',
+    });
+    expect(read.ok).toBe(true);
+    expect(read.ok ? read.unread : []).toEqual([]);
+    expect(abilities(read).filter((a) => a.sorcerySpeed === true)).toHaveLength(1);
+    expect(abilities(read)).toHaveLength(6);
+  });
+});

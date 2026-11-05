@@ -22584,3 +22584,66 @@ describe('a dual land from printed text', () => {
     expect(s.seats[0]!.life).toBe(before + 1);
   });
 });
+
+/*
+  "Activate only as a sorcery", played (D445).
+
+  The compile table says the sentence became `sorcerySpeed: true`. These say the engine then refuses
+  the ability at instant speed — which is the point: a flag read and not enforced would be a card
+  that plays and plays wrongly (#322), and a flag enforced and not read is 23 cards that cheat.
+*/
+describe('a timing restriction read off printed text', () => {
+  const DUO = {
+    name: 'Brave-Kin Duo', type_line: 'Creature — Rabbit Mouse', mana_cost: '{W}', cmc: 1,
+    colors: ['W'], layout: 'normal', power: '1', toughness: '1', loyalty: null,
+    oracle_text: '{1}, {T}: Target creature gets +1/+1 until end of turn. Activate only as a'
+      + ' sorcery.',
+  };
+
+  const table = () => {
+    const built = customDeck({
+      id: 'duo-list',
+      name: 'Brave-Kin Duo',
+      entries: [
+        { name: 'Brave-Kin Duo', count: 1 },
+        { name: 'Plains', count: 59 },
+      ],
+      data: [DUO as never],
+    });
+    expect(built.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'duo-list', 1: 'verdant-guard' },
+      deckSpecs: { 'duo-list': built.deck },
+      battlefield: { 0: ['Brave-Kin Duo', 'Plains', 'Plains'] },
+      turn: 3,
+      firstSeat: 0,
+    });
+  };
+
+  it('is offered in a main phase and refused in combat', () => {
+    /*
+      A pair on one board, because "it worked" and "it was refused" are each half of a timing rule.
+      The main phase is where a sorcery could be cast; the **end step** is not — and the end step
+      rather than a combat step because the active player holds priority there, where
+      `declare-attackers` holds none until the attack is declared. Getting there means declaring an
+      empty attack first, which is the declaration the step owes.
+    */
+    let s = advanceTo(table(), 'precombat-main');
+    const duo = find(s, 0 as SeatIndex, 'battlefield', 'Brave-Kin Duo');
+    const pump = { type: 'auto:activate', by: 0, card: duo, abilityIndex: 0,
+      targets: [{ kind: 'card', id: duo }] } as Action;
+    // The refusal is the engine's own wording for `sorcerySpeed` — "that ability can only be
+    // activated in a main phase while the stack is empty" — not the word "sorcery", which is the
+    // card's word for the same rule.
+
+    let main = tapAllLands(s, 0 as SeatIndex);
+    main = drain(passBoth(apply(main, pump)));
+    expect(characteristicsOf(main, main.instances[duo]!).power).toBe(2);
+
+    let late = advanceTo(s, 'declare-attackers');
+    late = drain(apply(late, { type: 'auto:attack', by: 0, attackers: [] } as Action));
+    late = tapAllLands(advanceTo(late, 'end'), 0 as SeatIndex);
+    expect(late.step).toBe('end');
+    expect(refusal(late, pump)).toMatch(/can only be activated/i);
+  });
+});

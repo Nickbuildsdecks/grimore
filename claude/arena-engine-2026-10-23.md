@@ -11754,3 +11754,23 @@ Coverage 16,855 of 56,421 legal lines (29.9%), 7,652 cards scripted, 4,157 fully
 The lesson is about the instrument, not the mana: a queue ranked by lines printed kept pointing at
 trigger prologues whose cards had three other gaps each. `scripts/measure` should keep the
 "one line from finished" view.
+
+## A flag that existed and a sentence that did not (D445)
+
+`AbilityDef.sorcerySpeed` has been enforced since planeswalkers (#43). The compiler never read the
+sentence that sets it, so "Activate only as a sorcery." made the whole line unreadable — a timing
+restriction is not an effect, and the clause vocabulary is about effects. It comes off the end of the
+line now, and **23 cards carry a sorcery-speed ability the engine can enforce** where before they
+carried none.
+
+**The instrument over-promised by a factor of twelve, and that is the lesson.** A scratch probe put
+this sentence first in all of Magic at 213 cards; the change delivered +17. The probe split each
+unread line into sentences and counted a card once per *sentence* that failed, so a line with three
+unreadable parts was promised three times over. On most of those 213 the **cost** is also unreadable
+("Sacrifice a land:", "Tap two untapped artifacts and/or creatures you control:"). `one-line-short.mjs`
+does not have that flaw — it counts whole lines — and the sentence-level probe was deliberately not
+shipped.
+
+The next increment off this family is the **ability costs**, which is where those cards actually stop.
+
+Coverage 16,876 of 56,421 legal lines (29.9%), 7,669 cards scripted.

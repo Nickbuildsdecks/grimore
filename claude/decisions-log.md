@@ -27821,3 +27821,49 @@ finish. Its own docblock says the row is a ceiling and not a forecast, and names
 Legal-only coverage **16,855 of 56,421 lines (29.9%)**, **7,652 cards with a script**
 (7,419 → 7,652, +233), 4,157 with every printed line read (4,036 → 4,157, +121) — the largest single
 increment in this run. GATE OK, 2,035 engine tests.
+
+## D445 — "Activate only as a sorcery", and an instrument that over-promised
+
+`AbilityDef.sorcerySpeed` has existed since planeswalkers (#43) and the engine enforces it. The
+compiler never read the sentence that sets it, so a line printing "Activate only as a sorcery." read
+as **nothing at all** — the clause vocabulary is about what an ability does, and a timing restriction
+is not an effect. It is stripped off the end of the line now, before the effect is read, and spread
+into whichever branch reads the rest.
+
+**23 cards now carry a sorcery-speed ability the engine can enforce**, where before they carried
+none — among them *Brave-Kin Duo*, *Cat Burglar* and *Charisma Bobblehead*, which D444 and this
+increment finish between them.
+
+### The instrument over-promised, by a factor of twelve
+
+A scratch probe had ranked this sentence first in all of Magic: **213 legal cards** whose only
+unread line contained it. The change delivered **+17 cards**. The probe was wrong in a specific,
+instructive way: it split each unread line into sentences and asked which sentences fail *on their
+own*, so a line with three unreadable parts was counted once against each of them. "Activate only as
+a sorcery" sat on 213 cards — but on most of them the **cost** is also unreadable ("Sacrifice a
+land:", "Tap two untapped artifacts and/or creatures you control:", "Sacrifice X Treasures"), so
+reading the restriction finishes nothing there.
+
+`one-line-short.mjs` (D444) does not have this flaw — it counts whole lines, and a card is one line
+short or it is not. The sentence-level probe is **not** shipped, and this entry is the reason: a
+queue that counts a card once per unreadable fragment reads like a promise and is not one. The next
+increment off this family is the **costs**, which is where those 213 cards actually stop.
+
+### Verified
+
+One runtime test on printed **Brave-Kin Duo** through `customDeck`, as a pair on one board: the
+ability pumps in the main phase and is refused in the end step, with the engine's own wording. A flag
+read but not enforced is #322's failure (a card that plays and plays wrongly); a flag enforced but
+not read is 23 cards that cheat — the pair covers both directions.
+
+Four compile rows: the sentence read into the flag, the same ability without it (no flag), the
+Bobblehead that needs D444's reader and this one together, and a **probe** row for the trailing
+anchor. That last one exists because no printed card puts text after the restriction, so nothing real
+can falsify the anchor — and without it the non-greedy capture would silently throw the tail away,
+compiling "…counter on this creature. Activate only as a sorcery. Draw a card." to an ability that
+never draws.
+
+**Four breaks, four failures.**
+
+Legal-only coverage 16,876 of 56,421 lines (29.9%), **7,669 cards with a script** (7,652 → 7,669),
+4,172 with every printed line read (4,157 → 4,172). GATE OK, 2,040 engine tests.

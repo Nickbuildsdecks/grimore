@@ -12956,7 +12956,26 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   */
   const split = /^([^:]+):\s*(.+)$/.exec(text);
   if (split === null) return null;
-  const clause = split[2]!.replace(/\.\s*$/, '').trim();
+  /*
+    "Activate only as a sorcery." — a timing restriction, taken off the end before the effect is
+    read (D445).
+
+    It is the largest single sentence standing between a card and a finished script: **213 legal
+    cards have no other unread line**, and the one-line-short queue (`one-line-short.mjs`) puts it
+    at the top by a factor of two. It is also the cheapest, because `AbilityDef.sorcerySpeed`
+    already exists and the engine already enforces it — a planeswalker's loyalty cost has carried
+    the same restriction since #43, so this reads a sentence into a field rather than teaching the
+    engine a rule.
+
+    Stripped here rather than in `composeEffects`, because it is not an effect: the sentence says
+    *when* the ability may be activated, and the clause vocabulary below is about what it does. A
+    line whose restriction were left in would fail to read at all, which is what has been happening.
+  */
+  const restricted = /^(.*?)\.?\s*Activate only as a sorcery\.?\s*$/i.exec(split[2]!.trim());
+  const clause = (restricted === null ? split[2]! : restricted[1]!)
+    .replace(/\.\s*$/, '').trim();
+  /** The flag the restriction sets, spread into whichever branch below reads the rest of the line. */
+  const timing = restricted === null ? {} : { sorcerySpeed: true as const };
 
   /*
     A loyalty cost, which is the one cost that is a number rather than a list of components.
@@ -12974,6 +12993,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     const amount = loyalty[1] === '+' || loyalty[1] === '' ? Number(loyalty[2]) : -Number(loyalty[2]);
     return {
       abilities: [{
+        ...timing,
         cost: { loyalty: amount },
         description: text,
         ...(read.targets === undefined ? {} : { targets: read.targets }),
@@ -13038,7 +13058,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     const produces = (adding[1]!.match(/\{([WUBRGC])\}/g) ?? [])
       .map((sym) => sym.slice(1, -1).toUpperCase() as ManaType);
     if (produces.length === 0) return null;
-    return { abilities: [{ cost, description: text, produces }] };
+    return { abilities: [{ ...timing, cost, description: text, produces }] };
   }
 
   /*
@@ -13080,6 +13100,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     if (options.length === 0) return null;
     return {
       abilities: options.map((colour) => ({
+        ...timing,
         cost, description: `${split[1]!.trim()}: Add {${colour}}.`, produces: [colour],
       })),
     };
@@ -13095,6 +13116,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   if (read === null) return null;
   return {
     abilities: [{
+      ...timing,
       cost,
       // The printed line, which is what every hand-written ability stores.
       description: text,
