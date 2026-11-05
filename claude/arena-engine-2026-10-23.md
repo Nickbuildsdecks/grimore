@@ -13202,3 +13202,64 @@ separates an artifact entering from a creature entering; *Glaze Fiend* is an **a
 that watches *another* artifact, so its own arrival must not pump it and a filter answered from the
 type line alone would get that wrong; *Favored of Iroas* is constellation, an ability word in front
 of an enchantment filter. Ten mapping rows and eight refusals in `compile.test.ts`.
+
+## D478 — The characteristic filter: the event knew *which* permanent and nothing about it
+
+D477's board parse read "whenever a[nother] `<kind>` you control enters / dies" and refused every
+filter printed between the kind and the event. That refusal was the largest thing it left behind —
+**about 19 legal cards** — and the reason was a real gap rather than effort: the event carried the
+subject's seat, its types and (on a death) its counters, and nothing about its **size** or its
+**keywords**.
+
+| printed | read as |
+| --- | --- |
+| with power 3 or greater | `powerAtLeast` |
+| with power 2 or less | `powerAtMost` |
+| with toughness 4 or greater / 2 or less | `toughnessAtLeast` / `toughnessAtMost` |
+| with a +1/+1 counter on it | `withCounter` |
+| with flying | `withKeyword` |
+
+### Where the facts come from, and why not the board
+
+`raise` already made one characteristics computation for the three facts D477 needs; the size and
+the keywords come off that same call, so the four filters cost two numbers and an array this
+function had in hand. **They are asked of the event and not of the board** because by the time a
+death trigger resolves the permanent is in a graveyard with no counters and no keywords at all
+(CR 603.6e) — which `subjectCounters`' own docblock had already written down, ending "when a card
+needs the power it had, or the types, this is where that goes". D477 put the types there; this puts
+the power.
+
+**A missing fact fails the filter.** An event raised for something that is not a creature carries no
+power, and "a creature with power 3 or greater" is not true of it, so `undefined` is refused rather
+than read as a very small number — the lenient direction would have been the wrong one.
+
+### What stays refused
+
+ * **"with power equal to its toughness"** (Symmetry Matrix, Master Symmetrist) — a comparison
+   between two of the subject's own characteristics, which no field here asks.
+ * **"with power or toughness 1 or less"** (Arnyn) — an **or** across two bounds, where
+   `powerAtMost` and `toughnessAtMost` together are an **and**. Reading it as the and would fire on
+   strictly fewer creatures than the card: a wrong reading, so the line stays for a human (D362).
+ * **"with a counter on it"** (Ray Fillet, Yathan Tombguard) — any counter rather than a named one.
+ * **A word this engine has no keyword for.** `isKeyword` is the whole of the check, and it is the
+   same refusal the subtype arm makes: a filter for a keyword nothing has is a trigger that never
+   fires, which is worse than a line that never compiles.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 9,902 | **9,931** |
+| cards with every printed line read | 5,631 | **5,651** |
+| printed rules lines read | 19,852 / 56,421 (35.2%) | **19,886 / 56,421 (35.2%)** |
+
+Two of the four filters are driven through a game, chosen as the two a vanilla body can prove:
+*Elemental Bond* against Gnarled Mass (3/3) and Bear Cub (2/2), two green vanilla creatures where
+the only difference is the power on the event; and *Waterkin Shaman* against Wind Drake and Bear
+Cub, two 2/2 vanilla creatures where the only difference is a keyword. Seven mapping rows and four
+refusals in `compile.test.ts`. Break-run: dropping either filter fails exactly the row that card
+distinguishes.
+
+**Wind Drake is the pool's own flier rather than a fixture**, which the `fromData` assertion states —
+D430's trap is that a fixture sharing a pool card's name is silently replaced by the pool's, so a
+test about printed data quietly becomes a test about the pool.

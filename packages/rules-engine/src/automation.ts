@@ -959,6 +959,9 @@ function triggerMatches(
       const e = event as {
         subjectSeat?: SeatIndex; subjectIsCreature?: boolean; subjectIsToken?: boolean;
         subjectIsLand?: boolean; subjectTypes?: readonly string[];
+        subjectPower?: number; subjectToughness?: number;
+        subjectKeywords?: readonly string[];
+        subjectCounters?: Readonly<Record<string, number>>;
         alone?: boolean; declared?: number;
       };
       if (want.kind === 'dies' && want.nontoken === true && e.subjectIsToken === true) return false;
@@ -988,6 +991,32 @@ function triggerMatches(
       if ((want.kind === 'etb' || want.kind === 'dies')
         && (want.what === 'artifact' || want.what === 'enchantment')
         && !(e.subjectTypes ?? []).includes(want.what)) return false;
+      /*
+        The characteristic filters (D478), each asked of what the event carries rather than of the
+        board: by the time a death trigger resolves the permanent is in a graveyard with no
+        counters and no keywords (CR 603.6e), and by the time an entry trigger resolves another
+        effect may already have changed it.
+
+        A missing fact fails the filter rather than passing it. An event raised without a power —
+        anything that is not a creature — cannot be "a creature with power 3 or greater", so the
+        `?? -Infinity` reading would be wrong in the lenient direction; `undefined` is refused.
+      */
+      if (want.kind === 'etb' || want.kind === 'dies') {
+        if (want.powerAtLeast !== undefined
+          && !(e.subjectPower !== undefined && e.subjectPower >= want.powerAtLeast)) return false;
+        if (want.powerAtMost !== undefined
+          && !(e.subjectPower !== undefined && e.subjectPower <= want.powerAtMost)) return false;
+        if (want.toughnessAtLeast !== undefined
+          && !(e.subjectToughness !== undefined
+            && e.subjectToughness >= want.toughnessAtLeast)) return false;
+        if (want.toughnessAtMost !== undefined
+          && !(e.subjectToughness !== undefined
+            && e.subjectToughness <= want.toughnessAtMost)) return false;
+        if (want.withCounter !== undefined
+          && (e.subjectCounters?.[want.withCounter] ?? 0) < 1) return false;
+        if (want.withKeyword !== undefined
+          && !(e.subjectKeywords ?? []).includes(want.withKeyword)) return false;
+      }
       const of = want.of ?? 'any';
       if (of === 'any') return true;
       if (e.subjectSeat === undefined) return false;
@@ -1365,7 +1394,17 @@ function raise(
           target filters have taken since D419.
         */
         ...(event.kind === 'etb' || event.kind === 'dies'
-          ? { subjectTypes: live.typeLine.types.map((t) => t.toLowerCase()) }
+          ? {
+            subjectTypes: live.typeLine.types.map((t) => t.toLowerCase()),
+            /*
+              And its size and its keywords, for the characteristic filters (D478). Off the same
+              one computation as everything above, so the four filters cost nothing beyond the
+              two numbers and an array this function already had in hand.
+            */
+            subjectPower: live.power,
+            subjectToughness: live.toughness,
+            subjectKeywords: [...live.keywords],
+          }
           : {}),
         ...(event.kind === 'dies' ? { subjectIsToken: inst.isToken } : {}),
         // What it had on it, for a trigger that has to count its own counters after they are gone.

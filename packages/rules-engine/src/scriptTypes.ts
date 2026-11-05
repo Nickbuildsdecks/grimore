@@ -208,6 +208,39 @@ export type TriggerEvent =
        * the type-line questions nothing else asks.
        */
       readonly subjectTypes?: readonly string[];
+      /**
+       * Set by the engine: the counters it entered with, by name — a permanent can arrive with
+       * them (CR 614.1c, a replacement effect), which is what `withCounter` is asked of.
+       */
+      readonly subjectCounters?: Readonly<Record<string, number>>;
+      /**
+       * **The characteristic filters** (D478): "a creature you control **with power 3 or greater**
+       * enters", "**with toughness 4 or greater** dies", "**with a +1/+1 counter on it** dies",
+       * "**with flying** enters".
+       *
+       * ~19 legal cards one unread line from a finished script print one of these, which made it
+       * the largest thing D477's board parse had to refuse. All four are asked of what the event
+       * carries — `subjectPower`, `subjectToughness`, `subjectCounters`, `subjectKeywords` — and
+       * not of the board, because by the time a death trigger resolves the permanent is in a
+       * graveyard with no counters and no keywords at all (CR 603.6e, and `subjectCounters`'
+       * docblock is where this reading was first written down).
+       *
+       * Both bounds of each, because both halves are printed: "power 3 or greater" is Elemental
+       * Bond and "power 2 or less" is Mentor of the Meek.
+       */
+      readonly powerAtLeast?: number;
+      readonly powerAtMost?: number;
+      readonly toughnessAtLeast?: number;
+      readonly toughnessAtMost?: number;
+      /** One counter the permanent has to have at least one of, by name: `'+1/+1'`. */
+      readonly withCounter?: string;
+      /** One keyword it has to have — "a creature you control **with flying** enters". */
+      readonly withKeyword?: Keyword;
+      /** Set by the engine when it raises the event: the subject's power and toughness as it was. */
+      readonly subjectPower?: number;
+      readonly subjectToughness?: number;
+      /** Set by the engine when it raises the event: the keywords it had, lowercased. */
+      readonly subjectKeywords?: readonly string[];
       /** Set by the engine when it raises the event: *which* permanent entered. See `subject`. */
       readonly subject?: string;
     }
@@ -258,6 +291,34 @@ export type TriggerEvent =
        * it had, or the types, this is where that goes.
        */
       readonly subjectCounters?: Readonly<Record<string, number>>;
+      /**
+       * **The characteristic filters** (D478): "a creature you control **with power 3 or greater**
+       * enters", "**with toughness 4 or greater** dies", "**with a +1/+1 counter on it** dies",
+       * "**with flying** enters".
+       *
+       * ~19 legal cards one unread line from a finished script print one of these, which made it
+       * the largest thing D477's board parse had to refuse. All four are asked of what the event
+       * carries — `subjectPower`, `subjectToughness`, `subjectCounters`, `subjectKeywords` — and
+       * not of the board, because by the time a death trigger resolves the permanent is in a
+       * graveyard with no counters and no keywords at all (CR 603.6e, and `subjectCounters`'
+       * docblock is where this reading was first written down).
+       *
+       * Both bounds of each, because both halves are printed: "power 3 or greater" is Elemental
+       * Bond and "power 2 or less" is Mentor of the Meek.
+       */
+      readonly powerAtLeast?: number;
+      readonly powerAtMost?: number;
+      readonly toughnessAtLeast?: number;
+      readonly toughnessAtMost?: number;
+      /** One counter the permanent has to have at least one of, by name: `'+1/+1'`. */
+      readonly withCounter?: string;
+      /** One keyword it has to have — "a creature you control **with flying** enters". */
+      readonly withKeyword?: Keyword;
+      /** Set by the engine when it raises the event: the subject's power and toughness as it was. */
+      readonly subjectPower?: number;
+      readonly subjectToughness?: number;
+      /** Set by the engine when it raises the event: the keywords it had, lowercased. */
+      readonly subjectKeywords?: readonly string[];
       /** Set by the engine when it raises the event: *which* creature died. See `subject`. */
       readonly subject?: string;
     }

@@ -26458,3 +26458,106 @@ describe('the board prologue, parsed: what entered and whose it was (D477)', () 
       .toBe(gained as boolean);
   });
 });
+
+/*
+  The characteristic filter on a board trigger (D478).
+
+  D477's parse read "whenever a[nother] <kind> you control enters / dies" and refused every filter
+  printed between them — "with power 3 or greater", "with toughness 4 or greater", "with a +1/+1
+  counter on it", "with flying" — because the event said *which* permanent it was about and nothing
+  about its size, its counters or its keywords. About 19 legal cards print one, which made it the
+  largest thing that parse left behind.
+
+  All four are now on the event, off the one characteristics computation `raise` already makes, and
+  asked there rather than of the board: by the time a death trigger resolves the permanent is in a
+  graveyard with no counters and no keywords at all (CR 603.6e).
+
+  Two of the four are driven through a game here, and they are the two that can be driven with a
+  vanilla body: a power bound, both ways round, and a keyword. The toughness bound is the power one
+  with a different field, and the counter filter wants a creature that dies with a counter on it;
+  both are asserted as mappings in `compile.test.ts` rather than given a game that proves the same
+  comparison twice.
+*/
+describe('the characteristic filter on a board trigger (D478)', () => {
+  const GNARLED_MASS = {
+    name: 'Gnarled Mass', type_line: 'Creature — Spirit', mana_cost: '{1}{G}{G}', cmc: 3,
+    colors: ['G'], layout: 'normal', power: '3', toughness: '3', oracle_text: '',
+  };
+  const BEAR_CUB = {
+    name: 'Bear Cub', type_line: 'Creature — Bear', mana_cost: '{1}{G}', cmc: 2,
+    colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: '',
+  };
+  // Wind Drake is the pool's own 2/2 flier, so it is **not** a fixture — the `fromData` assertion
+  // below is what says so, and D430 is why that matters: a fixture sharing a pool card's name is
+  // silently replaced by the pool's, which would make a test about the data a test about the pool.
+
+  const tableWith = (watcher: Record<string, unknown>, hand: readonly string[]) => {
+    const name = watcher['name'] as string;
+    const list = customDeck({
+      id: 'filter-parse',
+      name,
+      entries: [
+        { name, count: 1 },
+        { name: 'Gnarled Mass', count: 4 },
+        { name: 'Bear Cub', count: 4 },
+        { name: 'Wind Drake', count: 4 },
+        { name: 'Forest', count: 24 },
+        { name: 'Island', count: 23 },
+      ],
+      data: [watcher as never, GNARLED_MASS as never, BEAR_CUB as never],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual([name, 'Gnarled Mass', 'Bear Cub'].sort());
+    let s = arena({
+      decks: { 0: 'filter-parse', 1: 'filter-parse' },
+      deckSpecs: { 'filter-parse': list.deck },
+      battlefield: { 0: [name, 'Forest', 'Forest', 'Forest', 'Island', 'Island'] },
+      hands: { 0: hand },
+      turn: 3,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return tapAllLands(s, 0 as SeatIndex);
+  };
+
+  const ELEMENTAL_BOND = {
+    name: 'Elemental Bond', type_line: 'Enchantment', mana_cost: '{2}{G}', cmc: 3,
+    colors: ['G'], layout: 'normal', power: null, toughness: null,
+    oracle_text: 'Whenever a creature you control with power 3 or greater enters, draw a card.',
+  };
+  const WATERKIN_SHAMAN = {
+    name: 'Waterkin Shaman', type_line: 'Creature — Elemental Shaman', mana_cost: '{1}{U}', cmc: 2,
+    colors: ['U'], layout: 'normal', power: '1', toughness: '3',
+    oracle_text: 'Whenever a creature you control with flying enters,'
+      + ' Waterkin Shaman gets +1/+1 until end of turn.',
+  };
+
+  it.each([
+    // The bound is inclusive, and Gnarled Mass is exactly 3 where Bear Cub is 2. Both are green
+    // vanilla creatures, so the only thing separating these rows is the power on the event.
+    ['Gnarled Mass', 1],
+    ['Bear Cub', 0],
+  ])('Elemental Bond: %s entering draws %d', (spell, drawn) => {
+    let s = tableWith(ELEMENTAL_BOND, [spell as string]);
+    const held = ids(s, 0 as SeatIndex, 'hand').length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', spell as string),
+    } as Action)));
+    // The creature leaves the hand either way; the draw is the difference.
+    expect(ids(s, 0 as SeatIndex, 'hand')).toHaveLength(held - 1 + (drawn as number));
+  });
+
+  it.each([
+    // Wind Drake and Bear Cub are both 2/2 vanilla creatures. Only the keyword separates them, so
+    // a filter answered from anything else gets one of these two rows wrong.
+    ['Wind Drake', 2],
+    ['Bear Cub', 1],
+  ])('Waterkin Shaman: %s entering leaves it a %d-power creature', (spell, strength) => {
+    let s = tableWith(WATERKIN_SHAMAN, [spell as string]);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', spell as string),
+    } as Action)));
+    expect(power(s, find(s, 0 as SeatIndex, 'battlefield', 'Waterkin Shaman')))
+      .toBe(strength as number);
+  });
+});

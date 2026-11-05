@@ -11706,23 +11706,59 @@ type BoardEvent = Extract<TriggerDef['on'], { readonly kind: 'etb' | 'dies' }>;
 const BOARD_WHO = { a: 'any', an: 'any', another: 'another' } as const;
 
 /**
- * The parsed board prologue: "Whenever a[nother] <kind> you control enters / dies," (D477).
+ * "…you control **with power 3 or greater** enters" — the filter between the kind and the event.
+ *
+ * `{}` when there is none, `null` when there is one this does not read, which refuses the whole
+ * line (D478). The four shapes are what the corpus prints: a bound on power or on toughness, a
+ * named counter, and a keyword.
+ */
+function boardFilter(printed: string): Partial<BoardEvent> | null {
+  const text = printed.trim();
+  if (text === '') return {};
+  const size = /^with (power|toughness) (\d+) or (greater|less)$/i.exec(text);
+  if (size !== null) {
+    const value = Number(size[2]);
+    const least = size[3]!.toLowerCase() === 'greater';
+    return size[1]!.toLowerCase() === 'power'
+      ? (least ? { powerAtLeast: value } : { powerAtMost: value })
+      : (least ? { toughnessAtLeast: value } : { toughnessAtMost: value });
+  }
+  const counter = /^with a (\+1\/\+1|-1\/-1) counter on it$/i.exec(text);
+  if (counter !== null) return { withCounter: counter[1]! };
+  /*
+    A keyword, and `isKeyword` is the whole of the check: a word this engine does not implement
+    would compile into a filter nothing ever has, which is a trigger that never fires — the same
+    refusal the subtype arm makes, for the same reason (D362).
+  */
+  const keyword = /^with ([a-z][a-z ]*)$/i.exec(text);
+  if (keyword !== null) {
+    const word = keyword[1]!.trim().toLowerCase();
+    if (isKeyword(word)) return { withKeyword: word as Keyword };
+  }
+  return null;
+}
+
+/**
+ * The parsed board prologue: "Whenever a[nother] <kind> you control [<filter>] enters / dies,"
+ * (D477, and the filter in D478).
  *
  * Returns `null` for a combination the engine cannot ask — a land dying, a subtype in place of a
- * card type — which refuses the line rather than reading a narrower trigger as a wider one.
+ * card type, a filter it does not read — which refuses the line rather than reading a narrower
+ * trigger as a wider one.
  */
 function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
   const groups = matched.groups ?? {};
   const who = BOARD_WHO[(groups.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
   const what = (groups.what ?? '').toLowerCase();
   const dies = /dies$/i.test(groups.event ?? '');
-  if (who === undefined) return null;
+  const filter = boardFilter(groups.filter ?? '');
+  if (who === undefined || filter === null) return null;
   if (what !== 'creature' && what !== 'artifact' && what !== 'enchantment'
     && what !== 'land' && what !== 'permanent') return null;
   // "Whenever a land you control dies" is not printed, and `dies` is defined for creatures only
   // (CR 700.4), so the land half of the parse exists on the entry and nowhere else.
   if (dies && what === 'land') return null;
-  return [{ kind: dies ? 'dies' : 'etb', who, of: 'you', what } as BoardEvent];
+  return [{ kind: dies ? 'dies' : 'etb', who, of: 'you', what, ...filter } as BoardEvent];
 }
 
 /** One `spell-cast` trigger, which is the only event the parsed cast prologue below builds. */
@@ -12029,8 +12065,8 @@ const TRIGGER_SHAPES: readonly ({
   */
   {
     prologue: () => new RegExp(
-      `^Whenever (?<who>a|an|another) (?<what>[a-z]+) you control (?<event>${ENTERS}|dies),`
-      + ' (?<clause>.+)$',
+      `^Whenever (?<who>a|an|another) (?<what>[a-z]+) you control(?<filter>[^,]*)`
+      + ` (?<event>${ENTERS}|dies), (?<clause>.+)$`,
       'i',
     ),
     from: boardTrigger,

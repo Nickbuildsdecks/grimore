@@ -7216,6 +7216,25 @@ describe('the board trigger, read off the prologue', () => {
       { kind: 'dies', who: 'any', of: 'you', what: 'creature' }],
     ['Whenever another creature you control dies',
       { kind: 'dies', who: 'another', of: 'you', what: 'creature' }],
+    /*
+      The characteristic filters (D478). Both bounds of both sizes, a named counter and a keyword,
+      on the entry and on the death — the two runtime tests in `scripts.test.ts` drive a power
+      bound and a keyword through a game, and these are the rows that say the other four map.
+    */
+    ['Whenever a creature you control with power 3 or greater enters',
+      { kind: 'etb', who: 'any', of: 'you', what: 'creature', powerAtLeast: 3 }],
+    ['Whenever another creature you control with power 2 or less enters',
+      { kind: 'etb', who: 'another', of: 'you', what: 'creature', powerAtMost: 2 }],
+    ['Whenever a creature you control with toughness 4 or greater dies',
+      { kind: 'dies', who: 'any', of: 'you', what: 'creature', toughnessAtLeast: 4 }],
+    ['Whenever a creature you control with toughness 2 or less dies',
+      { kind: 'dies', who: 'any', of: 'you', what: 'creature', toughnessAtMost: 2 }],
+    ['Whenever a creature you control with a +1/+1 counter on it dies',
+      { kind: 'dies', who: 'any', of: 'you', what: 'creature', withCounter: '+1/+1' }],
+    ['Whenever a creature you control with flying enters',
+      { kind: 'etb', who: 'any', of: 'you', what: 'creature', withKeyword: 'flying' }],
+    ['Whenever another creature you control with flying dies',
+      { kind: 'dies', who: 'another', of: 'you', what: 'creature', withKeyword: 'flying' }],
   ])('%s becomes the trigger it prints', (prologue, on) => {
     const read = permanent(`${prologue}, you gain 1 life.`);
     expect(read.ok).toBe(true);
@@ -7236,9 +7255,15 @@ describe('the board trigger, read off the prologue', () => {
     */
     ['Whenever a Dragon you control enters', 'a subtype, and the event carries no subtypes'],
     ['Whenever another Zombie you control dies', 'the same, on the death half'],
-    ['Whenever a creature you control with power 3 or greater enters',
-      "a characteristic filter — the event has the subject's id, not its power"],
-    ['Whenever a creature you control with a +1/+1 counter on it dies', 'the same, on counters'],
+    ['Whenever a creature you control with power equal to its toughness enters',
+      'a comparison between two of its own characteristics, which no field asks'],
+    ['Whenever a creature you control with power or toughness 1 or less dies',
+      'an or across two bounds; `powerAtMost` and `toughnessAtMost` are an and'],
+    ['Whenever a creature you control with a counter on it dies',
+      'any counter rather than a named one, which `withCounter` cannot say'],
+    ['Whenever a creature you control with annihilator enters',
+      'a word this engine has no keyword for: `isKeyword` refuses it rather than compiling a'
+      + ' filter nothing ever has'],
     ['Whenever another creature you control leaves the battlefield',
       'a different event, whose filters this parse did not widen'],
     ['Whenever an artifact you control is put into a graveyard from the battlefield',
