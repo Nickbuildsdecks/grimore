@@ -8107,10 +8107,18 @@ describe('a "may" with a price on it (D448)', () => {
       payment would be worse than leaving the line unread: a trigger that fires for free when the
       card says it costs something is a different card (D362).
     */
-    // Energy, the Kaladesh commons. `{E}` exists in this engine (#180) but not as a price on an
-    // answer, and `parseManaCost` is what refuses it rather than a list of exceptions.
-    ['energy, which is not mana',
-      'Whenever Probe Thing attacks, you may pay {E}{E}. If you do, draw a card.'],            // 19
+    /*
+      **Retired row (D451).** This list opened with
+      `['energy, which is not mana', 'Whenever Probe Thing attacks, you may pay {E}{E}. If you do,
+      draw a card.']` — 19 legal lines — and the comment read: "`{E}` exists in this engine (#180)
+      but not as a price on an answer, and `parseManaCost` is what refuses it rather than a list of
+      exceptions."
+
+      The first half of that was the whole limitation, and D451 removed it: `payIfChosen.energy`
+      prices an answer in energy, so the row moved to that increment's own table. The **rule** this
+      test states has not changed — a price the engine cannot charge refuses the line — and the
+      three rows left are the ones it still cannot charge.
+    */
     ['life, which has no field here',
       'When Probe Thing dies, you may pay 2 life. If you do, draw a card.'],                   // 4
     ['mana and a discard, which is two costs',
@@ -8319,5 +8327,63 @@ describe('a library search, generalised (D449)', () => {
     // one. Both are in the pool and `compiled-vs-written` compares them against their scripts.
     expect(fullyCompiled(compiledScript('Diabolic Tutor'))).toBe(true);
     expect(fullyCompiled(compiledScript('Rampant Growth'))).toBe(true);
+  });
+});
+
+describe('a price paid in energy rather than mana (D451)', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const triggersOf = (c: ReturnType<typeof compileCard>) =>
+    (field(c.ok ? c.script : undefined, 'triggers') ?? []) as readonly TriggerDef[];
+  const unreadLines = (c: ReturnType<typeof compileCard>) =>
+    (c.ok ? c.unread : []).map((u) => u.line);
+  const read = (text: string) => compileCard({
+    name: 'Probe Thing', type_line: 'Creature — Gremlin', mana_cost: '{1}{R}', cmc: 2,
+    colors: ['R'], power: '2', toughness: '1', layout: 'normal', oracle_text: text,
+  } as never);
+  const price = (c: ReturnType<typeof compileCard>) => {
+    const specs = triggersOf(c)[0]?.decisions ?? [];
+    return (specs[0] as unknown as Record<string, unknown>)['payIfChosen'];
+  };
+
+  it.each([
+    /*
+      The biggest refusal D448 left behind. `payIfChosen.cost` was a mana string, and `{E}` is not
+      mana — so 19 of that increment's 66 lines paid a price the engine could not charge, even
+      though `AbilityCost.energy` has charged an *activated* ability in energy since #180.
+    */
+    ['one energy', 'Whenever Probe Thing attacks, you may pay {E}. If you do, draw a card.', 1],
+    ['two', 'Whenever Probe Thing attacks, you may pay {E}{E}. If you do, draw a card.', 2],
+    ['three', 'When Probe Thing dies, you may pay {E}{E}{E}. If you do, draw a card.', 3],
+  ])('reads %s', (_label, text, energy) => {
+    const compiled = read(text as string);
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([]);
+    expect(price(compiled)).toEqual({ option: `Pay ${'{E}'.repeat(energy as number)}`, energy });
+  });
+
+  it('keeps a mana price a mana price', () => {
+    /*
+      The control, and the reason the energy reader is tried **first**. `{E}` matches the mana
+      reader's own `\\{[^}]+\\}`, so that reader matches an energy clause too and then hands
+      "{E}{E}" to `parseManaCost`, which refuses it — and the line reads as nothing. That is what
+      the first run of this change did, and the coverage measure caught it: not one card moved.
+      This row is the other half of the pair, so the ordering cannot be "fixed" by swapping it back.
+    */
+    const compiled = read('Whenever Probe Thing attacks, you may pay {1}{R}. If you do, draw a'
+      + ' card.');
+    expect(unreadLines(compiled)).toEqual([]);
+    expect(price(compiled)).toEqual({ option: 'Pay {1}{R}', cost: '{1}{R}' });
+  });
+
+  it('refuses a price that is mana and energy at once', () => {
+    /*
+      Two currencies in one price, which `payIfChosen` holds one of. The energy reader wants a run
+      of nothing but `{E}`, so this falls through to the mana reader, where `parseManaCost` records
+      `{E}` as unsupported and the line stays unread (D362). No printed card pays both; the row is
+      here because the two readers in sequence could otherwise half-read it.
+    */
+    const text = 'Whenever Probe Thing attacks, you may pay {1}{E}. If you do, draw a card.';
+    expect(unreadLines(read(text))).toEqual([text]);
   });
 });

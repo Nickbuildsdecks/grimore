@@ -28320,3 +28320,70 @@ would be asked whether they wanted it.
 Legal-only coverage **17,682 of 56,421 lines (31.3%)**, **8,234 cards with a script**
 (8,192 → 8,234, **+42**, exactly the sub-shape's count), 4,725 with every printed line read
 (4,680 → 4,725, +45). Full engine suite 2,117 tests. GATE OK.
+
+## D451 — A price paid in energy, and the biggest refusal D448 left behind
+
+D448 read a "may" with a price on it and refused four kinds of price it could not charge. Energy was
+the largest of them — 19 of that increment's 66 lines — and the reason was one field:
+`payIfChosen.cost` is a mana string. `AbilityCost.energy` has charged an **activated** ability in
+energy since #180, so the engine always knew how to spend it; nothing could put that price on an
+*answer*.
+
+`payIfChosen.energy` is the whole change. Two fields rather than one string, because mana and energy
+are paid differently: mana means tapping things, so only the engine can do it and the pool has to be
+read; energy is a number on the seat, so paying is subtraction. Folding energy into the mana string
+would mean `parseManaCost` growing a symbol that is not mana and every reader of a cost having to
+know about it.
+
+The affordability question is asked **twice** about the same answer — once to decide whether the
+priced option is offered at all (CR 601.2h), once when the answer comes back, because a client can
+send an `auto:decide` naming a word that was never offered — so it is one function, `canPayForAnswer`,
+rather than two readings that can drift. That is a small tidy of what D448 shipped as well.
+
+### The reader order is load-bearing, and the measure caught it
+
+`{E}` matches the mana reader's own `\{[^}]+\}`. So the first run put the energy reader *after* the
+mana one, the mana reader matched every energy clause, handed `{E}{E}` to `parseManaCost`, which
+refused it — and the whole line read as nothing. **Coverage did not move a single card**, which is
+how it was found: the compile table was green because none of its rows exercised the ordering, and
+only the corpus measurement could tell. A run of nothing but `{E}` is unambiguously energy, so
+asking that question first costs nothing. There is a compile row for each side of the pair now, so
+the order cannot be swapped back without a failure.
+
+### The runtime tests use no test-only plumbing, and that is what makes the last one possible
+
+Printed **Aether Chaser** is the whole mechanic on one card: its arrival gives two energy and its
+attack offers to spend them. So the energy the question charges is energy the card itself produced,
+and the sequence of six tests is all printed text:
+
+the Chaser arrives with two energy; the attack asks with the price on one answer; paying makes the
+Servo **and leaves nought**; declining makes no Servo **and leaves two**; a second attack on nought
+is not offered at all; and — the one the break run asked for — a seat holding **one** energy is not
+offered a two-energy price either.
+
+That last one needed a board one energy short, which is only reachable with a card whose energy gain
+is exactly one: printed **Aether Hub**. Without it the "spent" test leaves the seat on nought, which
+is below both a correct threshold and one short by one, so `>= price - 1` passed. Now it does not.
+
+### Eight breaks, eight failures
+
+Including both halves of the ordering, the symbol count (so `{E}{E}{E}` is three and not one), the
+engine charging nothing, the engine charging *mana* for an energy price, affordability ignoring the
+seat's energy, and the off-by-one above.
+
+D448's refusal row for energy is retired in place with its old wording quoted; the rule it stated —
+a price the engine cannot charge refuses the line — is unchanged, and the three prices left (life,
+mana-plus-something, an announced X) are the ones it still cannot charge.
+
+### What is left of the family, measured
+
+**19 legal cards** still print an energy-priced may and are not read whole, and none of them is
+about the price: 6 use "**When** you do," rather than "If you do," — which is a reflexive trigger
+that goes on the stack and can be responded to, not a continuation of the resolution, so reading it
+as "if you do" would be a real rules difference and it stays refused — and the rest are held by a
+prologue or an inner effect this compiler does not read yet.
+
+Legal-only coverage **17,701 of 56,421 lines (31.4%)**, **8,237 cards with a script** (+3), 4,741
+with every printed line read (4,725 → 4,741, **+16**). The cards-with-a-script figure moves little
+because most of these cards were already partly read; the fully-read figure is the one this
+increment was for. Full engine suite 2,127 tests. GATE OK.

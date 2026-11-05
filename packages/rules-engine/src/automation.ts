@@ -40,7 +40,7 @@ import {
   counterSpell, destroy,
   recordExpiry,
   draw,
-  drawLater, exileCard, loseLife, mill, suspendedCast,
+  drawLater, energyOf, exileCard, loseLife, mill, spendEnergy, suspendedCast,
   madnessOffer, miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
@@ -3038,6 +3038,29 @@ function decisionBounds(
  * Anything else is a real decision, and the game stops until it is answered. A library decision is
  * a search, so the chooser is allowed to look through their library while they decide.
  */
+/**
+ * Whether a seat can pay the price on one answer, in mana or in energy (D451).
+ *
+ * One function because it is asked **twice** about the same answer and the two readings must not
+ * drift: once when the question is asked, to decide whether the priced option is offered at all
+ * (CR 601.2h — the same discipline `legalActions` keeps about plays), and once when the answer
+ * comes back, because a client is free to send an `auto:decide` naming a word that was never
+ * offered. The comment at the second call site says that in full.
+ *
+ * `cost.unsupported` counts as unpayable rather than throwing: a mana string this engine cannot
+ * parse is a card bug, and a card bug that silently charged nothing would be worse than an answer
+ * that is never offered.
+ */
+function canPayForAnswer(
+  state: GameState, seat: SeatIndex,
+  price: { readonly cost?: string; readonly energy?: number },
+): boolean {
+  if (price.energy !== undefined) return energyOf(state, seat) >= price.energy;
+  const cost = parseManaCost(price.cost ?? '');
+  return cost.unsupported === undefined
+    && canAfford(poolOf(state, seat), cost, manaSources(state, seat));
+}
+
 function askOrFinish(
   state: GameState, object: StackObject,
   plan: readonly { seat: SeatIndex; specIndex: number }[], from: number,
@@ -3099,10 +3122,7 @@ function askOrFinish(
       const options = spec.payIfChosen === undefined
         ? spec.options
         : spec.options.filter((word) => word !== spec.payIfChosen?.option
-          || canAfford(
-            poolOf(state, entry.seat), parseManaCost(spec.payIfChosen.cost),
-            manaSources(state, entry.seat),
-          ));
+          || canPayForAnswer(state, entry.seat, spec.payIfChosen));
       if (options.length < 2) {
         answers = [...answers, {
           seat: entry.seat, ids: [], ...(options[0] === undefined ? {} : { option: options[0] }),
@@ -3560,10 +3580,8 @@ function completeResolution(
   for (const price of priced) {
     const chosen = paidAnswers.findIndex((answer) => answer.option === price.option);
     if (chosen < 0) continue;
-    const cost = parseManaCost(price.cost);
     const seat = paidAnswers[chosen]!.seat;
-    if (cost.unsupported !== undefined
-      || !canAfford(poolOf(next, seat), cost, manaSources(next, seat))) {
+    if (!canPayForAnswer(next, seat, price)) {
       // Not payable after all, so the answer was never available: it reads as the first option,
       // which is the word the card puts first for exactly this reason.
       const fallback = decisionSpecsFor(next, object)
@@ -3573,7 +3591,9 @@ function completeResolution(
         : answer));
       continue;
     }
-    next = payFrom(next, seat, cost, 0).state;
+    next = price.energy === undefined
+      ? payFrom(next, seat, parseManaCost(price.cost ?? ''), 0).state
+      : spendEnergy(next, seat, price.energy);
   }
   answers = paidAnswers;
 

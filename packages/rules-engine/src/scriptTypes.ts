@@ -964,7 +964,26 @@ export interface ChoiceDecisionSpec {
    * effect**, so an effect that reads `chosenOption` is reading an answer that has already been
    * paid for.
    */
-  readonly payIfChosen?: { readonly option: string; readonly cost: string };
+  readonly payIfChosen?: {
+    readonly option: string;
+    /** Mana, in the printed `{1}{R}` form. Omitted when the price is energy. */
+    readonly cost?: string;
+    /**
+     * Energy instead of mana (CR 122), as a count of `{E}` (D451).
+     *
+     * `AbilityCost.energy` has priced an *activated* ability in energy since #180; this is the
+     * same price on an **answer**, which is what the Kaladesh commons print: "Whenever ~ attacks,
+     * you may pay {E}{E}. If you do, create a 1/1 colorless Servo artifact creature token."
+     * **56 legal cards are one unread line short on it.**
+     *
+     * Energy and mana are different enough to be two fields rather than one string. Mana is paid
+     * by tapping things, so only the engine can do it and the pool has to be read; energy is a
+     * number on the seat, so paying is subtraction. Folding energy into the mana string would mean
+     * `parseManaCost` growing a symbol that is not mana and every reader of a cost having to know
+     * it. Exactly one of the two is set.
+     */
+    readonly energy?: number;
+  };
   /** Never set on this shape; the four are told apart by which of these is present. */
   readonly from?: never;
   readonly range?: never;

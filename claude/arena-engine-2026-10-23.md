@@ -11933,3 +11933,30 @@ card that is in no deck.
 
 Coverage **17,682 of 56,421 legal lines (31.3%)**, **8,234 cards with a script** (+42, exactly the
 sub-shape's measured count), 4,725 fully read (+45).
+
+## Energy as a price on an answer (D451)
+
+D448's largest refusal, closed by one field. `payIfChosen.cost` was a mana string, so the Kaladesh
+commons — "you may pay {E}{E}. If you do, create a 1/1 Servo" — named a price the engine could not
+charge, even though `AbilityCost.energy` has charged an *activated* ability in energy since #180.
+`payIfChosen.energy` is the same price in the other currency, and the affordability question is now
+one function asked at both the moments it has to be asked.
+
+**The reader order was load-bearing and only the corpus measure could see it.** `{E}` matches the
+mana reader's `\{[^}]+\}`, so putting the energy reader second meant every energy clause went to
+`parseManaCost`, was refused, and read as nothing — coverage did not move one card while the compile
+table stayed green. Energy first; a row for each side of the pair now pins the order.
+
+**No test-only plumbing.** Printed Aether Chaser gives itself two energy on arrival and offers to
+spend them when it attacks, so six runtime tests run on printed text alone — including the one the
+break run demanded, where a seat holding **one** energy must not be offered a two-energy price.
+Reaching that board needs a card whose gain is exactly one: printed Aether Hub. Without it the
+threshold could be short by one and every test still passed.
+
+Honest residual: **19 legal cards** still print an energy-priced may and are not read whole, none of
+them because of the price. Six say "**When** you do," which is a reflexive trigger that can be
+responded to rather than a continuation of the resolution — reading it as "if you do" would be a
+real rules difference, so it stays refused.
+
+Coverage **17,701 of 56,421 legal lines (31.4%)**, 8,237 cards with a script (+3), **4,741 fully
+read (+16)** — the fully-read figure is the one this increment was for.

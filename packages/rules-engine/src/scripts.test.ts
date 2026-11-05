@@ -23217,3 +23217,151 @@ describe('a question asked only if the "may" was taken (D450)', () => {
     expect(s.instances[pick]?.tapped).toBe(true);
   });
 });
+
+describe('a price paid in energy, from printed text (D451)', () => {
+  /*
+    Printed Aether Chaser, which is the whole mechanic on one card: its arrival gives two energy
+    and its attack offers to spend them. Both lines are compiled from its own corpus row through
+    `customDeck` (D430), so the energy the question charges is energy the card itself produced —
+    **no test-only plumbing sets the counter**, which is what makes the last test below possible.
+  */
+  const CHASER = {
+    name: 'Aether Chaser', type_line: 'Creature — Human Artificer', mana_cost: '{1}{R}', cmc: 2,
+    colors: ['R'], layout: 'normal', power: '2', toughness: '1', loyalty: null,
+    oracle_text: 'First strike\nWhen Aether Chaser enters, you get {E}{E} (two energy counters).'
+      + '\nWhenever Aether Chaser attacks, you may pay {E}{E}. If you do, create a 1/1 colorless'
+      + ' Servo artifact creature token.',
+  };
+
+  const energy = (s: GameState): number => s.seats[0]?.counters['energy'] ?? 0;
+  const servos = (s: GameState): number =>
+    namesIn(s, 0 as SeatIndex, 'battlefield').filter((n) => n === 'Servo').length;
+
+  /** The Chaser cast (so its own trigger gives the energy) and the board back in the main phase. */
+  const cast = (): GameState => {
+    const built = customDeck({
+      id: 'chaser-list',
+      name: 'Chaser',
+      entries: [
+        { name: 'Aether Chaser', count: 1 },
+        // Aether Hub's arrival gives exactly **one** energy, which is the only way to reach a
+        // board one energy short of the Chaser's price — see the last test.
+        { name: 'Aether Hub', count: 4 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Mountain', count: 51 },
+      ],
+      data: [CHASER as never],
+    });
+    expect(built.unknown).toEqual([]);
+    let s = arena({
+      decks: { 0: 'chaser-list', 1: 'verdant-guard' },
+      deckSpecs: { 'chaser-list': built.deck },
+      hands: { 0: ['Aether Chaser', 'Aether Hub'] },
+      battlefield: { 0: ['Mountain', 'Mountain'] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    for (const land of ids(s, 0 as SeatIndex, 'battlefield')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: land, abilityIndex: 0 } as Action);
+    }
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Aether Chaser'),
+    } as Action);
+    return drain(passBoth(s), 40);
+  };
+
+  /** Attack with the Chaser on a later turn, since it has no haste, and stop where it stops. */
+  const attack = (from: GameState): GameState => {
+    let s = advanceTo(nextTurn(nextTurn(from)), 'declare-attackers');
+    s = apply(s, {
+      type: 'auto:attack',
+      by: 0,
+      attackers: [{ attacker: find(s, 0 as SeatIndex, 'battlefield', 'Aether Chaser'), defender: 1 }],
+    } as Action);
+    return drain(s, 40);
+  };
+
+  it('arrives with two energy off its own trigger', () => {
+    // The precondition, asserted rather than assumed: the price below is paid out of this.
+    expect(energy(cast())).toBe(2);
+  });
+
+  it('asks with the energy price on one answer', () => {
+    const s = attack(cast());
+    expect(s.pendingDecision?.prompt)
+      .toBe('Pay {E}{E} — Create a 1/1 colorless Servo artifact creature token?');
+    expect(s.pendingDecision?.options).toEqual(['Decline', 'Pay {E}{E}']);
+  });
+
+  it('spends the energy and makes the Servo', () => {
+    const s = drain(apply(attack(cast()), {
+      type: 'auto:decide', by: 0, option: 'Pay {E}{E}',
+    } as Action), 40);
+    expect(servos(s)).toBe(1);
+    // Both halves: the token arrived (the effect ran) and the energy is gone (the engine charged
+    // it). A reading that emitted the question without the price would get the first one right.
+    expect(energy(s)).toBe(0);
+  });
+
+  it('keeps the energy when the answer is declined', () => {
+    const s = drain(apply(attack(cast()), {
+      type: 'auto:decide', by: 0, option: 'Decline',
+    } as Action), 40);
+    expect(servos(s)).toBe(0);
+    expect(energy(s)).toBe(2);
+  });
+
+  it('is not offered again once the energy has been spent', () => {
+    /*
+      The same discipline `payIfChosen` already kept about mana, now about energy: an option the
+      seat cannot pay for is not offered, which leaves a question with one answer that the engine
+      takes itself — so the table does not stop at all on the second attack.
+
+      It is also the strongest statement that the first payment was real. The energy here was not
+      set by the test; it was produced by the card and then spent by the engine.
+    */
+    const paid = drain(apply(attack(cast()), {
+      type: 'auto:decide', by: 0, option: 'Pay {E}{E}',
+    } as Action), 40);
+    expect(energy(paid)).toBe(0);
+    const again = attack(paid);
+    expect(again.pendingDecision).toBeNull();
+    expect(servos(again)).toBe(1);
+  });
+
+  it('is not offered to a seat holding one energy, which is one short', () => {
+    /*
+      **The off-by-one, and the break run asked for it.** The test above leaves the seat on nought,
+      which is below both a correct threshold and a threshold short by one — so a check reading
+      `>= price - 1` passed it. One energy for a price of two is the board that tells them apart.
+
+      Reaching it takes a card whose energy gain is **one**: printed Aether Hub, whose arrival gives
+      exactly that. So the sequence is the Chaser's two energy plus the Hub's one, two spent on the
+      first attack, and one left for the second — all of it from printed text, none of it set by
+      the test.
+    */
+    let s = cast();
+    s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    s = drain(apply(s, {
+      type: 'auto:playLand', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Aether Hub'),
+    } as Action), 40);
+    expect(energy(s)).toBe(3);
+
+    s = advanceTo(s, 'declare-attackers');
+    s = drain(apply(s, {
+      type: 'auto:attack',
+      by: 0,
+      attackers: [{ attacker: find(s, 0 as SeatIndex, 'battlefield', 'Aether Chaser'), defender: 1 }],
+    } as Action), 40);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Pay {E}{E}' } as Action), 40);
+    expect(energy(s)).toBe(1);
+    expect(servos(s)).toBe(1);
+
+    // One energy, a two-energy price: not offered, so the table does not stop and no second Servo.
+    const again = attack(s);
+    expect(again.pendingDecision).toBeNull();
+    expect(servos(again)).toBe(1);
+    expect(energy(again)).toBe(1);
+  });
+});

@@ -11860,7 +11860,29 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       an unrecognised symbol instead of reading it as generic mana, which is the same guard D446's
       ability costs lean on.
     */
-    const priced = whole === null
+    /*
+      **Energy, which D448 refused and could not then charge (D451).**
+
+      It was the biggest single refusal that increment left behind — 19 lines there, 56 legal cards
+      one line short once the whole family is counted — and the reason was narrow:
+      `payIfChosen.cost` was a mana string. `payIfChosen.energy` is the same price in the other
+      currency, and `AbilityCost.energy` has charged an *activated* ability in energy since #180,
+      so the engine always knew how. `{E}{E}` is a count rather than a symbol run, which is why it
+      is read here and not by `parseManaCost`: energy has no colours and no sources to tap, so
+      there is nothing for a mana parser to do with it.
+    */
+    const energyPriced = whole === null
+      ? /^you may pay ((?:\{E\})+)\.\s*If you do, (.+)$/i.exec(clause)
+      : null;
+    /*
+      The mana price is tried **after** the energy one, and that order is load-bearing rather than
+      tidy: `{E}` matches `\{[^}]+\}`, so the mana regex below matches an energy clause too and
+      then hands "{E}{E}" to `parseManaCost`, which refuses it — and the whole line reads as
+      nothing. That is exactly what the first run of this change did, and the measure caught it:
+      coverage did not move a single card. A run of nothing but `{E}` is unambiguously energy, so
+      asking that question first costs nothing and leaves the mana reader unchanged.
+    */
+    const priced = whole === null && energyPriced === null
       ? /^you may pay ((?:\{[^}]+\})+)\.\s*If you do, (.+)$/i.exec(clause)
       : null;
     /*
@@ -11874,8 +11896,9 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       lever. Breaking **that** does fail.
     */
     const may = whole === null ? /^you may (.+)$/i.exec(clause) : null;
-    const inner = priced !== null
-      ? priced[2]!.trim()
+    const charged = priced ?? energyPriced;
+    const inner = charged !== null
+      ? charged[2]!.trim()
       : may === null ? clause : may[1]!.trim();
     const read = whole ?? reader(inner);
     if (read === null) return null;
@@ -11905,7 +11928,7 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     const gatable = (spec: DecisionSpecOf):
       spec is CardsDecisionSpec | ChoiceDecisionSpec | NumberDecisionSpec => typeof spec !== 'function'
         && (spec.from !== undefined || spec.options !== undefined || spec.range !== undefined);
-    if ((may !== null || priced !== null)
+    if ((may !== null || charged !== null)
       && (read.beforeDecisions !== undefined || !(read.decisions ?? []).every(gatable))) {
       return null;
     }
@@ -11916,6 +11939,10 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       const parsed = parseManaCost(pricedCost);
       if (parsed.unsupported !== undefined || parsed.x) return null;
     }
+    // `{E}{E}` is two energy. The symbols are counted rather than parsed, for the reason above.
+    const energyCost = energyPriced === null
+      ? null
+      : (energyPriced[1]!.match(/\{E\}/gi) ?? []).length;
     /*
       The words, and they are not symmetrical with the free "may" above on purpose.
 
@@ -11935,7 +11962,9 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       is asked properly and the card does exactly what it says either way. Whether one generic
       `best` is worth more than the safe answer is a question for the deck table, not for a guess.
     */
-    const pay = pricedCost === null ? null : `Pay ${pricedCost}`;
+    const pay = pricedCost !== null
+      ? `Pay ${pricedCost}`
+      : energyCost === null ? null : `Pay ${'{E}'.repeat(energyCost)}`;
     /*
       The effect's own questions, asked only if the "may" was taken (D450).
 
@@ -11973,7 +12002,9 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
         */
         prompt: `${pay} — ${sentence(inner)}?`,
         options: ['Decline', pay],
-        payIfChosen: { option: pay, cost: pricedCost! },
+        payIfChosen: pricedCost !== null
+          ? { option: pay, cost: pricedCost }
+          : { option: pay, energy: energyCost! },
       }, ...gatedOn(pay)],
       effect: (c) => (chosenOption(c) === pay ? read.effect(withoutOurs(c)) : c.state),
     } : may === null ? {} : {
