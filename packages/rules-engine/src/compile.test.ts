@@ -1741,17 +1741,27 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         different one — and nothing at the table would flag it, because the ability works.
 
         So a cost component this reader cannot express refuses the whole line rather than being
-        skipped. `Sacrifice another creature`, a counter removal and a discard are all in the pool
-        and all refused here.
+        skipped. A counter removal and a discard of *another* card are both in the pool and both
+        refused here.
 
         A life payment is deliberately **not** in this list: `AbilityCost.life` exists and the
         engine honours it, so that component is said rather than dropped. The test below pins that
         from the other side. An earlier draft of this test asserted a life cost was refused and
         failed against `cardFromData`, which was already reading one correctly — which is how the
         distinction between "cannot be expressed" and "this reader does not read it" was found.
+
+        **Retired row (D446).** This list used to open with
+        `'{B}{G}, Sacrifice another creature: You gain 1 life.'`, and the claim above read
+        "`Sacrifice another creature`, a counter removal and a discard are all in the pool and all
+        refused here." That stopped being true when D446 taught the cost reader
+        `AbilityCost.sacrifice`: "Sacrifice another creature" is now expressible, so it is read
+        rather than refused, and its row moved to the D446 table below. The rule the test states is
+        unchanged — a component with no field on `AbilityCost` refuses the line — and the two rows
+        left are the ones that still have no field. The row was retired here rather than deleted
+        because the old claim named a card shape that now reads, and a reader comparing the two
+        increments should be able to see why.
       */
       for (const text of [
-        '{B}{G}, Sacrifice another creature: You gain 1 life.',
         'Remove a +1/+1 counter from Nonesuch: Draw a card.',
         '{1}, Discard a card: Draw a card.',
       ]) {
@@ -7773,5 +7783,94 @@ describe('a timing restriction on an activated ability', () => {
     expect(read.ok ? read.unread : []).toEqual([]);
     expect(abilities(read).filter((a) => a.sorcerySpeed === true)).toHaveLength(1);
     expect(abilities(read)).toHaveLength(6);
+  });
+});
+
+describe('an ability cost that is not mana, a tap or life', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const costs = (c: ReturnType<typeof compileCard>) =>
+    ((field(c.ok ? c.script : undefined, 'abilities') ?? []) as
+      readonly { cost: Record<string, unknown> }[]).map((a) => a.cost);
+  const unreadLines = (c: ReturnType<typeof compileCard>) =>
+    (c.ok ? c.unread : []).map((u) => u.line);
+  const read = (name: string, typeLine: string, text: string, extra: Record<string, unknown> = {}) =>
+    compileCard({
+      name, type_line: typeLine, mana_cost: '{2}', cmc: 2, colors: [], layout: 'normal',
+      ...extra, oracle_text: text,
+    } as never);
+
+  it.each([
+    /*
+      `AbilityCost` has carried `sacrificeSelf`, `sacrifice` and `discardSelf` for a long time and
+      the payment enforces all three; the cost loop read none of them, so an ability naming one read
+      as nothing at all (D446). Of the unread lines whose **effect** this compiler can already read
+      once the cost is swapped for `{1}`, 415 print "Sacrifice <this permanent>", 143 the three
+      filtered sacrifices and 14 "Discard <this card>".
+    */
+    ['Sacrifice Probe Thing: Draw a card.', { sacrificeSelf: true }],
+    // The other three spellings of the same cost, which `selfRef` already knew (D426, D438).
+    ['{2}, {T}, Sacrifice this artifact: You gain 3 life.',
+      { mana: '{2}', tap: true, sacrificeSelf: true }],
+    ['{4}, {T}, Sacrifice this land: Draw a card.',
+      { mana: '{4}', tap: true, sacrificeSelf: true }],
+    // Ashnod's Altar: the sacrifice is the **whole** cost, which the "is there a cost at all" guard
+    // has to count or the line is refused for having no cost.
+    ['Sacrifice a creature: Add {C}{C}.', { sacrifice: 'creature' }],
+    ['{1}, Sacrifice another creature: Draw a card.',
+      { mana: '{1}', sacrifice: 'another-creature' }],
+    ['Sacrifice an artifact: Draw a card.', { sacrifice: 'artifact' }],
+    ['{T}, Discard Probe Thing: Draw a card.', { tap: true, discardSelf: true }],
+  ])('reads %s', (text, cost) => {
+    const compiled = read('Probe Thing', 'Artifact', text);
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([]);
+    expect(costs(compiled)).toEqual([cost]);
+  });
+
+  it.each([
+    /*
+      What is refused, and why each one must be: there is **no field on `AbilityCost`** for any of
+      these, so there is nothing to read them into — and inventing one would be a cost the payment
+      does not charge, which is an ability that activates for free. Each is a printed shape with its
+      corpus count.
+    */
+    ['a land, which has no field', '{1}{B}, Sacrifice a land: Draw a card.'],            // 27 lines
+    ['a creature type, which has no field', '{1}, Sacrifice a Goblin: Draw a card.'],    // 15
+    ['tapping somebody else, which has no field',
+      'Tap an untapped creature you control: Draw a card.'],                             // 18
+    ['taking a counter off, which has no field',
+      '{1}, Remove a +1/+1 counter from Probe Thing: Draw a card.'],                     // 35
+    ['exiling from a graveyard, which has no field',
+      '{2}, Exile Probe Thing from your graveyard: Draw a card.'],                       // 17
+    // And two sacrifices in one cost, which the field cannot count: refused rather than halved.
+    ['two sacrifices in one cost, which the field cannot count',
+      'Sacrifice a creature, Sacrifice an artifact: Draw a card.'],
+  ])('refuses %s', (_label, text) => {
+    const compiled = read('Probe Thing', 'Artifact', text);
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([text]);
+    expect(costs(compiled)).toEqual([]);
+  });
+
+  it('finishes Abandoned Outpost, which needs this reader and D444 together', () => {
+    // Printed. The first line is "enters tapped", the second a mana ability, the third a mana
+    // ability that is a choice of colours behind a sacrifice — three readers and one card.
+    const compiled = compileCard({
+      name: 'Abandoned Outpost', type_line: 'Land', mana_cost: '', cmc: 0, colors: [],
+      layout: 'normal',
+      oracle_text: 'Abandoned Outpost enters tapped.\n{T}: Add {W}.\n{T}, Sacrifice Abandoned'
+        + ' Outpost: Add one mana of any color.',
+    });
+    expect(compiled.ok).toBe(true);
+    expect(unreadLines(compiled)).toEqual([]);
+    expect(costs(compiled)).toEqual([
+      { tap: true },
+      { tap: true, sacrificeSelf: true },
+      { tap: true, sacrificeSelf: true },
+      { tap: true, sacrificeSelf: true },
+      { tap: true, sacrificeSelf: true },
+      { tap: true, sacrificeSelf: true },
+    ]);
   });
 });

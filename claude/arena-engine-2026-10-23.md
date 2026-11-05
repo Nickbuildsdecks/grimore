@@ -11774,3 +11774,34 @@ shipped.
 The next increment off this family is the **ability costs**, which is where those cards actually stop.
 
 Coverage 16,876 of 56,421 legal lines (29.9%), 7,669 cards scripted.
+
+## The cost half of the reader, which refused everything (D446)
+
+D445 pointed here, and the stop was total: the activated-ability reader accepted a mana run, one
+`{T}` and `Pay N life`, and **refused the whole line** on any other component. "Sacrifice this
+creature: …" read as nothing — and after mana, that is the commonest cost in Magic.
+
+Three components already had a field on `AbilityCost` and a payment that charges them; only the
+reading was missing. Measured over unread lines whose effect this compiler can already read:
+**415** print `Sacrifice <this permanent>`, 143 a filtered sacrifice, 14 `Discard <this card>`.
+
+`selfRef` is why 415 lines are one regex: the corpus spells the same cost as the card's name, "this
+artifact", "this land" and "this creature", and D426/D438 already taught that function all four.
+
+**What stays unread is the point.** `Sacrifice a land` (27), `Sacrifice a Goblin` (15), `Tap an
+untapped creature you control` (18), `Remove a +1/+1 counter from ~` (35) and `Exile ~ from your
+graveyard` (17) have no field to read into. Inventing one would be a cost the payment never charges,
+which is an ability that activates for free on a card that otherwise works — nothing at the table
+would catch it. Leaving the line unread is the honest half of D362.
+
+Two findings worth keeping:
+
+- **The full suite caught what a targeted run could not.** An older test asserted "Sacrifice another
+  creature" was refused. That claim stopped being true; the row was retired in place with the old
+  wording quoted, the way D441 retired its allow-list. The rule the test states is unchanged.
+- **A disagreement goes on the card, not in a table of excuses.** `compiled-vs-written` failed on
+  Shambling Shell because the compiled target spec said `friendly: true` and the hand-written one did
+  not. The compiled reading was right, so the hand-written card was fixed — D419's rule.
+
+Coverage **17,419 of 56,421 legal lines (30.9%)**, the first pass over thirty per cent, and **8,029
+cards with a script** (+360), 4,552 fully read.

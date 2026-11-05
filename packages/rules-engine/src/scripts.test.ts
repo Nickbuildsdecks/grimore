@@ -22647,3 +22647,85 @@ describe('a timing restriction read off printed text', () => {
     expect(refusal(late, pump)).toMatch(/can only be activated/i);
   });
 });
+
+/*
+  An ability whose cost is a sacrifice, played (D446).
+
+  The cost fields have always been enforced; the compiler never read them, so 415 + 143 + 14 lines
+  named a cost the reader refused and the whole line went unread. These say the compiled cost is
+  charged — a cost read but not charged is an ability that activates for free, which is worse than
+  an ability nobody can activate.
+*/
+describe('a sacrifice as an ability cost, from printed text', () => {
+  const ALTAR = {
+    name: "Ashnod's Altar", type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [],
+    layout: 'normal', power: null, toughness: null, loyalty: null,
+    oracle_text: 'Sacrifice a creature: Add {C}{C}.',
+  };
+
+  const table = () => {
+    const built = customDeck({
+      id: 'altar-list',
+      name: "Ashnod's Altar",
+      entries: [
+        { name: "Ashnod's Altar", count: 1 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Mountain', count: 55 },
+      ],
+      data: [ALTAR as never],
+    });
+    expect(built.unknown).toEqual([]);
+    return arena({
+      decks: { 0: 'altar-list', 1: 'verdant-guard' },
+      deckSpecs: { 'altar-list': built.deck },
+      battlefield: { 0: ["Ashnod's Altar", 'Raging Goblin'] },
+      turn: 3,
+      firstSeat: 0,
+    });
+  };
+
+  it('eats the creature and pays for a spell with it', () => {
+    /*
+      The whole cost is the sacrifice — no mana, no tap — which is the case the "is there a cost at
+      all" guard had to be taught to count. Both halves are asserted: the goblin reaches the
+      graveyard (the cost was charged) and two colourless mana arrive (the ability resolved), which
+      a cost read but not charged would get half right.
+    */
+    let s = advanceTo(table(), 'precombat-main');
+    const altar = find(s, 0 as SeatIndex, 'battlefield', "Ashnod's Altar");
+    const goblin = find(s, 0 as SeatIndex, 'battlefield', 'Raging Goblin');
+    // No passing: a mana ability does not use the stack, and passing priority would empty the pool
+    // at the end of the step before it could be read.
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: altar, abilityIndex: 0,
+      sacrifice: goblin,
+    } as Action);
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Raging Goblin');
+    expect(s.pools[String(0)]?.C ?? 0).toBe(2);
+  });
+
+  it('is not offered with nothing to feed it', () => {
+    // The other direction: the cost is a real cost, so an empty board cannot pay it. `legalActions`
+    // is what the table reads to draw the button, so this is the player-visible half.
+    let s = advanceTo(arena({
+      decks: { 0: 'altar-list', 1: 'verdant-guard' },
+      deckSpecs: { 'altar-list': customDeck({
+        id: 'altar-list',
+        name: "Ashnod's Altar",
+        entries: [
+          { name: "Ashnod's Altar", count: 1 },
+          { name: 'Raging Goblin', count: 4 },
+          { name: 'Mountain', count: 55 },
+        ],
+        data: [ALTAR as never],
+      }).deck },
+      battlefield: { 0: ["Ashnod's Altar"] },
+      turn: 3,
+      firstSeat: 0,
+    }), 'precombat-main');
+    const altar = find(s, 0 as SeatIndex, 'battlefield', "Ashnod's Altar");
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: altar, abilityIndex: 0,
+    } as Action)).not.toBe(null);
+  });
+});

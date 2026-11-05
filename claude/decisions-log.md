@@ -27867,3 +27867,103 @@ never draws.
 
 Legal-only coverage 16,876 of 56,421 lines (29.9%), **7,669 cards with a script** (7,652 → 7,669),
 4,172 with every printed line read (4,157 → 4,172). GATE OK, 2,040 engine tests.
+
+## D446 — An ability cost that is not mana, a tap or life
+
+D445 named this increment: *"The next increment off this family is the **costs**, which is where
+those 213 cards actually stop."* It is where they stop, and the stop was total. The cost half of the
+activated-ability reader accepted exactly three components — a mana run, one `{T}`, and `Pay N life`
+— and **refused the whole line** on anything else. So "Sacrifice this creature: …" read as nothing
+at all, which is the commonest cost in Magic after mana.
+
+Measured on the unread lines whose *effect* this compiler can already read once the cost is swapped
+for `{1}`:
+
+| printed component | legal lines |
+| --- | --- |
+| `Sacrifice <this permanent>` | 415 |
+| `Sacrifice a creature` / `another creature` / `an artifact` | 143 |
+| `Discard <this card>` | 14 |
+
+All three already have a field on `AbilityCost` — `sacrificeSelf`, `sacrifice`, `discardSelf` — and
+the payment has charged all three since #24, #310 and cycling (#45). Nothing was missing but the
+reading.
+
+### `selfRef` is what makes 415 lines one reader
+
+The corpus prints the same cost four ways: "Sacrifice Abandoned Outpost", "Sacrifice this artifact",
+"Sacrifice this land", "Sacrifice this creature". `selfRef` (D426, extended by D438 to the comma
+short name) already knows all four spellings, so this is one regex rather than five, and it picks up
+the alias work the two earlier increments did for free. Two break levers pin that: narrowing either
+reader from `selfRef(name)` to `escapeName(name)` — the printed name only — fails tests, so the
+"this permanent" spelling is really being read and not merely tolerated.
+
+### What is refused is as deliberate as what is read
+
+These components appear in the same position and stay unread:
+
+| printed component | legal lines | why it cannot be read |
+| --- | --- | --- |
+| `Sacrifice a land` | 27 | no `AbilityCost` field for a filtered land |
+| `Sacrifice a Goblin` | 15 | no field for a subtype filter |
+| `Tap an untapped creature you control` | 18 | no field; this is convoke's machinery, not a cost |
+| `Remove a +1/+1 counter from ~` | 35 | no field |
+| `Exile ~ from your graveyard` | 17 | no field |
+
+Inventing a field would be worse than leaving them unread, and not by a little: a cost the payment
+does not charge is **an ability that activates for free**, on a card that otherwise works, which
+nothing at the table would flag. That is D362's honest half, and it is the same argument the
+pre-existing test "refuses a cost it would have to drop a component of" has made since the reader was
+written.
+
+### A retired claim, in place
+
+That test's list opened with `'{B}{G}, Sacrifice another creature: You gain 1 life.'` and its comment
+claimed "`Sacrifice another creature`, a counter removal and a discard are all in the pool and all
+refused here." The first third of that is no longer true, so the row moved out of the refusal list
+and into this increment's table, and the old claim is quoted in place above the two rows that
+survive — the D441 treatment. The **rule** the test states did not change: a component with no field
+on `AbilityCost` refuses the line. Only the set of components with no field did.
+
+This is also the second time the full suite caught what a targeted run could not. The compile table
+and the runtime tests for this increment were green before the obsolete row was found; `npx vitest
+run` on everything is the step that found it.
+
+### One sacrifice per cost, and a sacrifice that is the whole cost
+
+`AbilityCost.sacrifice` is one filter, not a count, so a second filtered sacrifice in one cost
+refuses the line rather than being silently dropped — nothing in the corpus prints two, and dropping
+one is exactly the free ability above.
+
+The three new components also had to count towards "is there a cost at all". *Ashnod's Altar* is
+`Sacrifice a creature: Add {C}{C}` — no mana, no tap, no life — and before this change the guard
+that refuses an empty cost would have thrown it away after the reader had understood it.
+
+### The hand-written card that disagreed, settled on the card (D419's precedent)
+
+`compiled-vs-written.test.ts` failed on **Shambling Shell**: the compiled ability's target spec
+carried `friendly: true` and the hand-written one did not. The compiled reading is the right one —
+dredge's sacrifice outlet puts a counter on *your* creature — so the fix went on the card
+(`TARGET_CREATURE` → `TARGET_CREATURE_HELPED`), not into a row of excuses. That is D419's rule: the
+standing check's table stays empty, and a disagreement is settled by making one side right.
+
+### Verified
+
+Two runtime tests on printed **Ashnod's Altar** through `customDeck` (D430), so the card under test
+is compiled from corpus text: activating it puts the sacrificed Raging Goblin in the graveyard and
+leaves {C}{C} in the pool. The second assertion is the one that matters — a cost read but not charged
+would still produce mana, so only reading the *graveyard* proves the creature was really eaten. The
+test uses plain `apply` rather than `passBoth` because a mana ability does not use the stack and
+passing priority empties the pool at end of step; that cost one failed run and is now a comment.
+
+Fourteen compile rows: seven read (self-sacrifice under all four spellings, the three filters, the
+discard, and a cost that is a sacrifice and nothing else) and six refusals (the five components
+above plus a second filtered sacrifice), plus **Abandoned Outpost** end to end as a card nobody had
+to hand-write.
+
+**Twelve breaks, twelve failures.** One anchor had to be split in two (the `selfRef` lever, since
+`const self = selfRef(name)` appears twelve times in the file) and both halves fail.
+
+Legal-only coverage **17,419 of 56,421 lines (30.9%)** — the first increment to carry it past 30% —
+**8,029 cards with a script** (7,669 → 8,029, **+360**), 4,552 with every printed line read
+(4,172 → 4,552, +380), 39,002 lines nothing could read. GATE OK, 2,056 engine tests.

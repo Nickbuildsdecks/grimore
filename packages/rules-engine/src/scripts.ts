@@ -7846,7 +7846,14 @@ const SHAMBLING_SHELL: CardScript = {
     {
       cost: { sacrificeSelf: true },
       description: 'Sacrifice Shambling Shell: Put a +1/+1 counter on target creature.',
-      targets: [TARGET_CREATURE],
+      /*
+        `_HELPED`, which the hand-written card lacked until D446 made the compiler able to read it
+        and `compiled-vs-written.test.ts` put the two side by side. Without `friendly` the bot is
+        free to aim a +1/+1 counter at an opponent's creature — the same defect D419 found on
+        Garruk, and settled the same way: the hint goes on the hand-written card rather than into a
+        row of excuses.
+      */
+      targets: [TARGET_CREATURE_HELPED],
       effect: (c) => {
         const id = firstCardTarget(c);
         return id === null ? c.state : addCounters(c.state, id, '+1/+1', 1);
@@ -13024,12 +13031,51 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
 
   let taps = 0;
   let life = 0;
+  let sacrificesSelf = false;
+  let discardsSelf = false;
+  let sacrifices: 'creature' | 'another-creature' | 'artifact' | null = null;
   const mana: string[] = [];
+  const self = selfRef(name);
   for (const component of split[1]!.split(/,\s*/).map((part) => part.trim())) {
     if (component === '') return null;
     if (/^\{T\}$/i.test(component)) { taps += 1; continue; }
     const paid = /^Pay\s+(\d+)\s+life$/i.exec(component);
     if (paid !== null) { life += Number(paid[1]); continue; }
+    /*
+      The three costs that are **not** mana, a tap or life, and that `AbilityCost` already carries
+      and the payment already enforces (D446).
+
+      This loop refused everything else, so an ability whose cost named one of them read as nothing
+      at all — and it is the commonest cost in Magic after mana: of the unread lines whose *effect*
+      this compiler can already read once the cost is swapped for `{1}`, **415** print "Sacrifice
+      <this permanent>", 143 "Sacrifice a creature / another creature / an artifact", and 14
+      "Discard <this card>".
+
+      `selfRef` is what makes the first one one reader rather than five: the corpus prints
+      "Sacrifice Abandoned Outpost", "Sacrifice this artifact", "Sacrifice this land" and "Sacrifice
+      this creature" for the same cost, and that function already knows all four spellings (D426,
+      D438).
+
+      **What is refused is as deliberate as what is read.** "Sacrifice a land" (27 lines),
+      "Sacrifice a Goblin" (15), "Tap an untapped creature you control" (18), "Remove a +1/+1
+      counter from ~" (35) and "Exile ~ from your graveyard" (17) have **no field on
+      `AbilityCost`**, so there is nothing to read them into — and inventing one would be a cost the
+      payment does not charge, which is an ability that activates for free. A line naming one stays
+      unread, which is the honest half of D362.
+    */
+    if (new RegExp(`^Sacrifice ${self}$`, 'i').test(component)) { sacrificesSelf = true; continue; }
+    if (new RegExp(`^Discard ${self}$`, 'i').test(component)) { discardsSelf = true; continue; }
+    const sacrificed = /^Sacrifice (a creature|another creature|an artifact)$/i.exec(component);
+    if (sacrificed !== null) {
+      // One sacrifice per cost: nothing prints two, and two would need a count the field has not
+      // got, so a second one refuses the line rather than being silently dropped.
+      if (sacrifices !== null) return null;
+      const which = sacrificed[1]!.toLowerCase();
+      sacrifices = which === 'a creature'
+        ? 'creature'
+        : which === 'another creature' ? 'another-creature' : 'artifact';
+      continue;
+    }
     if (!/^(?:\{[^}]+\})+$/.test(component)) return null;
     /*
       `parseManaCost` records an unrecognised symbol rather than ignoring it, which is what makes it
@@ -13041,12 +13087,22 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     if (parsed.unsupported !== undefined || parsed.x) return null;
     mana.push(component);
   }
-  // More than one tap is not a cost; a cost that is nothing at all is not a line this reads.
-  if (taps > 1 || (taps === 0 && mana.length === 0 && life === 0)) return null;
+  /*
+    More than one tap is not a cost; a cost that is nothing at all is not a line this reads.
+
+    The three new components count towards "is there a cost at all", which they have to: "Sacrifice
+    a creature: Add {C}{C}" is Ashnod's Altar, whose whole cost is the sacrifice.
+  */
+  const anything = taps > 0 || mana.length > 0 || life > 0
+    || sacrificesSelf || discardsSelf || sacrifices !== null;
+  if (taps > 1 || !anything) return null;
   const cost: AbilityCost = {
     ...(mana.length === 0 ? {} : { mana: mana.join('') }),
     ...(taps === 1 ? { tap: true } : {}),
     ...(life === 0 ? {} : { life }),
+    ...(sacrificesSelf ? { sacrificeSelf: true as const } : {}),
+    ...(discardsSelf ? { discardSelf: true as const } : {}),
+    ...(sacrifices === null ? {} : { sacrifice: sacrifices }),
   };
 
   /*
