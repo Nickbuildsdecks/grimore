@@ -18,7 +18,7 @@
  * unscripted and resolved by hand rather than approximated.
  */
 import {
-  characteristicsOf, hasSubtype, hasType, isKeyword, parseTypeLine, printedKeywords,
+  characteristicsOf, hasSubtype, hasType, isKeyword, isLegendary, parseTypeLine, printedKeywords,
   printedLandwalk, type TypeLine,
 } from './characteristics.js';
 import { zoneKey, type CardDef } from './cards.js';
@@ -11343,7 +11343,8 @@ export function attachmentScriptFor(
     const declared = enchant[0]!;
     const thing = enchant[1]!.trim().toLowerCase();
     if (thing === 'player') return null;
-    const host = targetSpecFrom(`target ${thing}`, read !== null && !read.harmful);
+    // `false`: an Aura's host vocabulary is the switch's exact phrases only. See `targetSpecFrom`.
+    const host = targetSpecFrom(`target ${thing}`, read !== null && !read.harmful, false);
     if (host === null) return null;
     /*
       An Aura whose *whole card* is `Enchant creature` is still refused, and that is the invariant
@@ -12933,6 +12934,26 @@ const permanentFilter = (
      * instead would be the #319 defect in a new place.
      */
     readonly powerAtLeast?: number;
+    /** "target creature you control" — the other side of `opponents`, and not its negation. */
+    readonly yours?: boolean;
+    /**
+     * A colour the candidate must be, any one of them: "target **black** creature", and
+     * "target creature that's white or blue" is the same disjunction spelled out (CR 105.2).
+     */
+    readonly colours?: readonly Color[];
+    /** A colour the candidate must **not** be: "target **nonblack** creature" (CR 105.3). */
+    readonly notColours?: readonly Color[];
+    /** "target **tapped** creature", and `false` for "untapped". */
+    readonly tapped?: boolean;
+    /** "target **attacking** creature" / "target **blocking** creature", read off the combat. */
+    readonly attacking?: boolean;
+    readonly blocking?: boolean;
+    /** "target creature **with flying**", read **live** so a granted keyword counts (CR 109.2). */
+    readonly keyword?: Keyword;
+    /** "target **legendary** creature", and `false` for "nonlegendary" — a supertype (CR 205.4). */
+    readonly legendary?: boolean;
+    /** "target **nonbasic** land": the other supertype a printed target phrase names. */
+    readonly basic?: boolean;
   },
 ): NonNullable<TargetSpec['filter']> => (state, candidate, controller, source) => {
   if (candidate.kind !== 'card') return false;
@@ -12941,13 +12962,47 @@ const permanentFilter = (
   const inst = state.instances[candidate.id];
   if (inst === undefined) return false;
   if (opts.opponents === true && inst.zoneSeat === controller) return false;
-  const live = characteristicsOf(state, inst).typeLine;
-  if (opts.nonland === true && hasType(live, 'land')) return false;
-  if (opts.types !== undefined && !opts.types.some((type) => hasType(live, type))) return false;
-  if (opts.powerAtLeast !== undefined
-    && characteristicsOf(state, inst).power < opts.powerAtLeast) return false;
+  if (opts.yours === true && inst.zoneSeat !== controller) return false;
+  /*
+    Everything below is read **live** (CR 109.2), which is the discipline this factory exists to
+    keep and the defect #319 recorded in five hand-written filters that read the printed line
+    instead. An animated Mutavault is a legal "target creature"; a creature given flying is a legal
+    "target creature with flying"; a white creature turned black by a Painter's Servant is no longer
+    a legal "target nonblack creature". Reading the printed card would disagree with the board the
+    player is looking at in every one of those cases.
+  */
+  const live = characteristicsOf(state, inst);
+  if (opts.nonland === true && hasType(live.typeLine, 'land')) return false;
+  if (opts.types !== undefined
+    && !opts.types.some((type) => hasType(live.typeLine, type))) return false;
+  if (opts.powerAtLeast !== undefined && live.power < opts.powerAtLeast) return false;
+  if (opts.colours !== undefined
+    && !opts.colours.some((colour) => live.colors.includes(colour))) return false;
+  if (opts.notColours !== undefined
+    && opts.notColours.some((colour) => live.colors.includes(colour))) return false;
+  if (opts.tapped !== undefined && inst.tapped !== opts.tapped) return false;
+  if (opts.legendary !== undefined && isLegendary(live.typeLine) !== opts.legendary) return false;
+  /*
+    `basic` is a **supertype**, read off the printed line rather than live, and that is the one
+    deliberate exception to the paragraph above: nothing in Magic makes a land basic or unbasic, and
+    `characteristicsOf` does not carry supertypes through its type-changing layers — an animated
+    Mutavault keeps its printed supertypes, which is what the phrase means. `isBasicLand` is the
+    function `RAMPANT_GROWTH` has used since #28 rather than a second one beside it.
+  */
+  if (opts.basic !== undefined && isBasicLand(state, candidate.id) !== opts.basic) return false;
+  if (opts.keyword !== undefined && !live.keywords.has(opts.keyword)) return false;
+  /*
+    The combat tests, which are the only ones here that read something other than the permanent.
+    `attackingOrBlocking` already does this for the phrase that takes either; these are the halves,
+    which the corpus prints separately ("target attacking creature", "target blocking creature").
+  */
+  if (opts.attacking === true
+    && !state.combat.attacks.some((a) => a.attacker === candidate.id)) return false;
+  if (opts.blocking === true
+    && !state.combat.attacks.some((a) => a.blockers.includes(candidate.id))) return false;
   return true;
 };
+
 
 /**
  * A printed target phrase, as the spec the engine points with.
@@ -12975,7 +13030,29 @@ const permanentFilter = (
  * Mortars ask, and its docblock there argues the case; this reads them the same way for the same
  * reason rather than inventing a second answer.
  */
-function targetSpecFrom(phrase: string, friendly: boolean): TargetSpec | null {
+function targetSpecFrom(
+  phrase: string,
+  friendly: boolean,
+  /**
+   * Whether the **parsed** vocabulary is available, or only the exact phrases in the switch.
+   *
+   * One caller passes `false`, and it is the Aura host (D469). "What may this phrase be pointed at"
+   * and "what may an Aura be attached to" are different questions, and the Aura reader had been
+   * answering the second with the first — it accepted whatever `targetSpecFrom` could build and
+   * refused what it could not. That worked while the switch was a fixed list and stopped working
+   * the moment this function learned to parse: `Enchant planeswalker` and `Enchant land you
+   * control` began to read, and `compile.test.ts` had a table of five printed Aura declarations
+   * asserting exactly that they do not. Two of the five broke on the first full-suite run.
+   *
+   * Those refusals are kept as they were rather than widened in passing. An Aura is attached by
+   * writing `attachedTo` with a card id and then policed by CR 704.5m (D305), so whether this
+   * engine can carry an Aura on a planeswalker or on a land you control is a question about the
+   * attachment machinery with its own cards to count — not a side effect of a target-phrase
+   * change. The flag makes the Aura's narrower vocabulary a **stated rule** instead of an accident
+   * of how much of Magic this switch happened to cover.
+   */
+  parsed = true,
+): TargetSpec | null {
   const trimmed = plain(phrase).trim();
   /*
     Lower-cased at the front, because the same phrase arrives both ways: `Target creature gets
@@ -13098,8 +13175,237 @@ function targetSpecFrom(phrase: string, friendly: boolean): TargetSpec | null {
     case 'target land card in your graveyard':
       return spec({ kind: 'graveyard-land', filter: yourGraveyardLand.filter });
 
-    default: return null;
+    default: break;
   }
+
+  /*
+    Everything the switch above does not spell out, **parsed** rather than enumerated (D469).
+
+    The switch is thirty-odd exact phrases and it cannot grow to cover this family, because printed
+    target phrases are **combinatorial**: a quantifier, a run of qualifiers in no fixed order, a
+    noun, and a controller clause. `another target nonblack creature you control` is four independent
+    facts, and a list of whole phrases would need one entry per combination the corpus happens to
+    print — which is exactly how `permanentDescribed` (D465) ended up as a parser rather than a list.
+
+    Measured before it was written, by the `phrase-gap.mjs` method: target phrases appear on **5,978**
+    one-line-short cards and substituting one known to read finishes **299**, which is the largest
+    family this compiler has had in front of it. It is large because `targetSpecFrom` is the
+    chokepoint for *every* targeted reader at once — damage, destroy, exile, bounce, the counters,
+    the discard's `target opponent` form — so one phrase read here lifts all of them.
+
+    The switch stays, in front, and is not folded into the parser: those thirty phrases are the ones
+    whose specs are compared character-for-character against a hand-written twin by
+    `compiled-vs-written.test.ts`, and some carry a hand-written `filter` function by reference
+    (`yourGraveyardCreature.filter`). An exact-phrase fast path that cannot drift is worth more there
+    than one fewer code path.
+  */
+  if (!parsed) return null;
+  const read = parsedTargetPhrase(printed);
+  return read === null ? null : spec(read);
+}
+
+/**
+ * A printed target phrase's quantifier, as `TargetSpec`'s own `count` and `optional`.
+ *
+ * Both fields already existed — `count` is "how many of this spec", `optional` is "up to", castable
+ * with fewer including none — so the quantifiers needed **no engine change at all**, only reading.
+ * That was checked before the increment was scoped rather than assumed.
+ *
+ * `another` is not a count: it is `permanentFilter`'s `another`, excluding the permanent whose
+ * ability this is. It travels in this table because the words it shares a slot with are counts, and
+ * a phrase may carry both ("up to one other").
+ */
+const TARGET_QUANTIFIERS: Readonly<Record<string, {
+  readonly count?: number;
+  readonly optional?: true;
+  readonly another?: true;
+}>> = {
+  '': {},
+  another: { another: true },
+  'up to one': { optional: true },
+  'up to one other': { optional: true, another: true },
+  'up to two': { optional: true, count: 2 },
+  'up to two other': { optional: true, count: 2, another: true },
+  'up to three': { optional: true, count: 3 },
+  'each of up to two': { optional: true, count: 2 },
+  'each of up to three': { optional: true, count: 3 },
+  two: { count: 2 },
+  three: { count: 3 },
+};
+
+/**
+ * The quantifier words a target phrase may open with, as a regex fragment for the **callers**.
+ *
+ * `parsedTargetPhrase` reads the quantifier, but it only ever sees a phrase a reader handed it — and
+ * every reader's own regex was anchored on the literal word `target`, so `destroy another target
+ * creature you control` never reached it at all. Five readers (destroy, exile, return-to-hand,
+ * counter, untap) share this fragment rather than each repeating the alternation, which is the
+ * difference between adding a quantifier in one place and adding it in six.
+ *
+ * Kept in step with `TARGET_QUANTIFIERS` by construction: it is built from that table's own keys,
+ * longest first so `up to one other` wins over `up to one`.
+ */
+const TARGET_QUANTIFIER_PREFIX = `(?:${Object.keys(TARGET_QUANTIFIERS)
+  .filter((word) => word !== '')
+  .sort((a, b) => b.length - a.length)
+  // Each alternative carries its own trailing space. Joining on a bare `|` and putting one space
+  // at the end gives it to the LAST alternative only, so `another target creature` matched nothing
+  // while `two target creatures` matched — which is how this was found.
+  .map((word) => `${word} `)
+  .join('|')})?`;
+
+/** The nouns a printed target phrase ends in, and the `TargetSpec.kind` each one is. */
+const TARGET_NOUNS: Readonly<Record<string, {
+  readonly kind: TargetSpec['kind'];
+  readonly types?: readonly string[];
+}>> = {
+  creature: { kind: 'creature' },
+  permanent: { kind: 'permanent' },
+  artifact: { kind: 'permanent', types: ['artifact'] },
+  enchantment: { kind: 'permanent', types: ['enchantment'] },
+  land: { kind: 'permanent', types: ['land'] },
+  planeswalker: { kind: 'permanent', types: ['planeswalker'] },
+};
+
+/**
+ * One printed target phrase, decomposed — or `null`, which leaves the line unread.
+ *
+ * The grammar, in the order it is peeled off, which is the order printed English puts it in:
+ *
+ * ```
+ * [quantifier] target [qualifier…] <noun>[s] [with <keyword>] [<controller clause>]
+ * ```
+ *
+ * **Refusing is the default.** A word that is not in one of the tables below refuses the whole
+ * phrase, so an unrecognised qualifier leaves the line unread rather than widening what the card may
+ * be pointed at. That is D362 where it matters most: a wrong *target* is not a card that does too
+ * little, it is a removal spell aimed at the wrong permanent, and the bot will take that play.
+ *
+ * ## What is deliberately not here
+ *
+ * - **Subtypes** ("target Wall", "target Merfolk you control", 3 + 2 + … cards). Printed text
+ *   capitalises a subtype and lower-cases a qualifier, which is exactly the signal needed — and
+ *   `targetSpecFrom` lower-cases its phrase at the top, for the description's sake, before this is
+ *   reached. Reading them means keeping the printed case alongside, which is a change to that
+ *   function's contract rather than a line here.
+ * - **"defending player controls"** (2 cards). The defending player is a fact about *an attack*, and
+ *   a `TargetSpec.filter` is handed the state, the candidate, the controller and the source — not
+ *   which attack this is. `attackingOrBlocking` can read `state.combat` because "is this creature
+ *   attacking" is a question about the board; "whose defender is it" is not.
+ * - **"that was dealt damage this turn"** (5 + 5 cards). Damage marked on a permanent is state the
+ *   engine keeps, but "this turn" needs a per-turn record of *who was dealt* damage rather than how
+ *   much is on them now — a creature healed to zero marked damage was still dealt it. That is an
+ *   engine fact to add, not a filter to write.
+ */
+function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | null {
+  const whole = printed.trim().toLowerCase();
+  const opened = /^(another|up to one other|up to one|up to two other|up to two|up to three|each of up to two|each of up to three|two|three)?\s*target\s+(.+)$/i
+    .exec(whole);
+  if (opened === null) return null;
+  const quantifier = TARGET_QUANTIFIERS[(opened[1] ?? '').trim().toLowerCase()];
+  if (quantifier === undefined) return null;
+  const counted = {
+    ...(quantifier.count === undefined ? {} : { count: quantifier.count }),
+    ...(quantifier.optional === true ? { optional: true } : {}),
+  };
+  let body = opened[2]!.trim();
+
+  /*
+    The players, which have no qualifiers and no noun to parse. "Target opponent" is `kind: 'player'`
+    with a filter, and that works because `satisfies` runs a spec's filter over a player candidate
+    just as it does over a card — checked in `targeting.ts` rather than hoped for.
+
+    It is worth reading early for a second reason: it is what D468 had to leave out of the discard
+    family, and the same spec lifts `target opponent loses N life` and `target opponent mills N`
+    with it.
+  */
+  if (body === 'opponent' || body === 'opponent or planeswalker') {
+    return {
+      kind: body === 'opponent' ? 'player' : 'player-or-planeswalker',
+      filter: (_state, candidate, controller) => (candidate.kind === 'player'
+        ? candidate.seat !== controller
+        // The planeswalker half of "target opponent or planeswalker": not one of yours.
+        : candidate.kind === 'card' && _state.instances[candidate.id]?.zoneSeat !== controller),
+      ...counted,
+    };
+  }
+
+  // "with flying" — a keyword, read live, so a granted one counts.
+  let keyword: Keyword | undefined;
+  const withKeyword = /^(.*?)\s+with\s+([a-z]+)$/i.exec(body);
+  if (withKeyword !== null) {
+    const word = withKeyword[2]!.toLowerCase();
+    // A word the engine cannot test is not a filter (D259's rule applied to one): refuse the phrase.
+    if (!isKeyword(word)) return null;
+    keyword = word;
+    body = withKeyword[1]!.trim();
+  }
+
+  // The controller clause, which is always last in the printed phrase.
+  let yours: true | undefined;
+  let opponents: true | undefined;
+  for (const [clause, side] of [
+    [' you control', 'yours'],
+    [" you don't control", 'opponents'],
+    [' an opponent controls', 'opponents'],
+  ] as const) {
+    if (!body.toLowerCase().endsWith(clause)) continue;
+    if (side === 'yours') yours = true; else opponents = true;
+    body = body.slice(0, body.length - clause.length).trim();
+    break;
+  }
+
+  // What is left is a run of qualifiers and then the noun, singular or plural.
+  const words = body.split(/\s+/).filter((word) => word !== '');
+  const noun = TARGET_NOUNS[(words.pop() ?? '').replace(/s$/, '')];
+  if (noun === undefined) return null;
+
+  const colours: Color[] = [];
+  const notColours: Color[] = [];
+  let tapped: boolean | undefined;
+  let attacking: true | undefined;
+  let blocking: true | undefined;
+  let legendary: boolean | undefined;
+  let basic: boolean | undefined;
+  const types = [...(noun.types ?? [])];
+  for (const word of words) {
+    const negated = word.startsWith('non') ? word.slice(3) : null;
+    const colour = COLOUR_WORDS[word];
+    const negatedColour = negated === null ? undefined : COLOUR_WORDS[negated];
+    if (colour !== undefined) { colours.push(colour); continue; }
+    if (negatedColour !== undefined) { notColours.push(negatedColour); continue; }
+    if (word === 'tapped') { tapped = true; continue; }
+    if (word === 'untapped') { tapped = false; continue; }
+    if (word === 'attacking') { attacking = true; continue; }
+    if (word === 'blocking') { blocking = true; continue; }
+    if (word === 'legendary') { legendary = true; continue; }
+    if (word === 'nonlegendary') { legendary = false; continue; }
+    if (word === 'basic') { basic = true; continue; }
+    if (word === 'nonbasic') { basic = false; continue; }
+    /*
+      A type word in front of the noun — "target **artifact** creature" — which is a second type the
+      candidate must also have, not an alternative to the noun's.
+    */
+    if (PERMANENT_TYPES.includes(word)) { types.push(word); continue; }
+    // Anything else: the phrase stays unread. See the docblock.
+    return null;
+  }
+
+  const filter = permanentFilter({
+    ...(quantifier.another === true ? { another: true } : {}),
+    ...(yours === undefined ? {} : { yours: true }),
+    ...(opponents === undefined ? {} : { opponents: true }),
+    ...(types.length === 0 ? {} : { types }),
+    ...(colours.length === 0 ? {} : { colours }),
+    ...(notColours.length === 0 ? {} : { notColours }),
+    ...(tapped === undefined ? {} : { tapped }),
+    ...(attacking === undefined ? {} : { attacking }),
+    ...(blocking === undefined ? {} : { blocking }),
+    ...(legendary === undefined ? {} : { legendary }),
+    ...(basic === undefined ? {} : { basic }),
+    ...(keyword === undefined ? {} : { keyword }),
+  });
+  return { kind: noun.kind, filter, ...counted };
 }
 
 /** Whether a spec points at something `destroy`, `bounceToHand` and the like can be given. */
@@ -13415,7 +13721,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     a spell, and "destroy target player" is not a card. Without it the first printed sentence of
     that shape would compile into something the engine cannot do.
   */
-  const destroyed = /^destroy (target .+)$/i.exec(text);
+  const destroyed = new RegExp(`^destroy (${TARGET_QUANTIFIER_PREFIX}target .+)$`, 'i').exec(text);
   if (destroyed !== null) {
     const spec = targetSpecFrom(destroyed[1]!, false);
     if (spec !== null && pointsAtAPermanent(spec)) {
@@ -13441,7 +13747,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     sentence as what it says — exile, no return — is the faithful reading, and it is what Selesnya
     Charm's second mode and Hidden Dragonslayer's trigger print.
   */
-  const exiled = /^exile (target .+|another target .+)$/i.exec(text);
+  const exiled = new RegExp(`^exile (${TARGET_QUANTIFIER_PREFIX}target .+)$`, 'i').exec(text);
   if (exiled !== null) {
     const spec = targetSpecFrom(exiled[1]!, false);
     if (spec !== null && pointsAtAPermanent(spec)) {
@@ -13458,7 +13764,9 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
-  const bounced = /^return (target .+) to its owner's hand$/i.exec(text);
+  const bounced = new RegExp(
+    `^return (${TARGET_QUANTIFIER_PREFIX}target .+) to its owner's hand$`, 'i',
+  ).exec(text);
   if (bounced !== null) {
     const spec = targetSpecFrom(bounced[1]!, false);
     if (spec !== null && pointsAtAPermanent(spec)) {
@@ -13492,7 +13800,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     the only one there is, so the reading that handles both kinds of object is the one that
     generalises. For a spell target it does exactly what `firstCardTarget` did.
   */
-  const countering = /^counter (target .+)$/i.exec(text);
+  const countering = new RegExp(`^counter (${TARGET_QUANTIFIER_PREFIX}target .+)$`, 'i').exec(text);
   if (countering !== null) {
     const phrase = countering[1]!.trim();
     const spec = targetSpecFrom(
@@ -13531,7 +13839,8 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     reason `friendly` exists: aimed with the bot's default at "the enemy and the enemy's creatures",
     a Healing Salve heals the opponent.
   */
-  const pointedDrain = /^(target player) loses (\d+) life and you gain (\d+) life$/i.exec(text);
+  const pointedDrain = /^(target player|target opponent) loses (\d+) life and you gain (\d+) life$/i
+    .exec(text);
   if (pointedDrain !== null) {
     const lost = Number(pointedDrain[2]);
     const gained = Number(pointedDrain[3]);
@@ -13547,7 +13856,28 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
-  const healed = /^(target player) gains (\d+) life$/i.exec(text);
+  /*
+    "Target opponent loses 2 life" — the bare life loss, which had no reader at all: the only
+    targeted one was Kambal's `loses N life and you gain N life` above, and `you lose N life` is the
+    controller's own. 15 legal cards print `target opponent` as their only unread phrase and several
+    of them are this sentence, which is why it arrives with D469 rather than after it.
+  */
+  const drained = /^(target player|target opponent) loses (\d+) life$/i.exec(text);
+  if (drained !== null) {
+    const spec = targetSpecFrom(drained[1]!, false);
+    const amount = Number(drained[2]);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null ? c.state : loseLife(c.state, seat, amount);
+        },
+      };
+    }
+  }
+
+  const healed = /^(target player|target opponent) gains (\d+) life$/i.exec(text);
   if (healed !== null) {
     const amount = Number(healed[2]);
     const spec = targetSpecFrom(healed[1]!, true);
@@ -13597,7 +13927,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
-  const untapped = /^untap (another target .+|target .+)$/i.exec(text);
+  const untapped = new RegExp(`^untap (${TARGET_QUANTIFIER_PREFIX}target .+)$`, 'i').exec(text);
   if (untapped !== null) {
     const spec = targetSpecFrom(untapped[1]!, true);
     if (spec !== null && pointsAtAPermanent(spec)) {
@@ -13612,7 +13942,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
-  const milled = /^(target player) mills ([\w]+) cards?$/i.exec(text);
+  const milled = /^(target player|target opponent) mills ([\w]+) cards?$/i.exec(text);
   if (milled !== null) {
     const n = countFrom(milled[2]!);
     const spec = targetSpecFrom(milled[1]!, false);
@@ -13642,7 +13972,7 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     its noun — "Discard two cards", "Discard a card" — rather than being built from the number,
     which keeps the singular right and matches the prompt the hand-written card stores.
   */
-  const discarded = /^(target player) discards ([\w]+) (cards?)$/i.exec(text);
+  const discarded = /^(target player|target opponent) discards ([\w]+) (cards?)$/i.exec(text);
   if (discarded !== null) {
     const n = countFrom(discarded[2]!);
     const spec = targetSpecFrom(discarded[1]!, false);

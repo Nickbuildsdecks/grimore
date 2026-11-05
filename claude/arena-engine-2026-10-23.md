@@ -12519,3 +12519,41 @@ fixtures are printed text too, and one of them was it.
 | printed rules lines read | 19,053 / 56,421 (33.8%) | **19,216 / 56,421 (34.1%)** |
 
 Engine suite 2,272 green; eight levers broken one at a time.
+
+## A printed target phrase, parsed rather than enumerated (D469)
+
+The largest family the compiler has had in front of it: target phrases appear on **5,978**
+one-line-short cards and substituting one known to read finishes **299**. `targetSpecFrom` is the
+single door every targeted reader goes through, so one phrase read there lifts damage, destroy, exile,
+bounce, the counters and the discard's `target opponent` form at once.
+
+It also reframed the row above it: `put a counter on <permanent>` finishes 103 cards but over thirty-odd
+shapes with the biggest at **4**, and `put a +1/+1 counter on target creature` appears on 47 and
+finishes **1**. Never a counter problem — this one wearing a counter costume.
+
+The switch of thirty exact phrases could not grow to cover it, because the phrases are combinatorial.
+**The machinery was already there**, checked rather than assumed: `TargetSpec.count` and `optional`
+meant the quantifiers (`up to one`, `up to one other`, `each of up to two`, `two`) needed no engine
+change, and `permanentFilter` gained colours and negations, tapped/untapped, attacking, blocking,
+legendary, basic and a keyword — all read **live** (CR 109.2) except `basic`, which is a supertype and
+goes through the `isBasicLand` Rampant Growth has used since #28.
+
+Refusing is the default (D362: a wrong target is a removal spell pointed at the wrong permanent).
+Subtypes, "defending player controls" and "that was dealt damage this turn" stay unread with reasons.
+
+Two things worth keeping from the build. **The caller regexes were anchored on the word `target`**, so
+the parser never saw a quantifier; five readers now share a prefix built from the quantifier table's own
+keys, and the first version of it gave its trailing space to the last alternative only — `two target
+creatures` read, `another target creature` did not. And **the Aura reader had been asking this function
+what its host could be**, so the parser widened Aura hosts as a side effect and broke two rows of a
+refusal table on the first full-suite run. The Aura's vocabulary is now the switch only, stated as an
+argument; keeping that refusal cost 26 cards with a script and one fully read, measured.
+
+| | D468 | D469 |
+| --- | --- | --- |
+| cards with a compiled script | 9,423 | **9,657** |
+| cards fully read | 5,214 | **5,436** |
+| printed rules lines read | 19,216 / 56,421 (34.1%) | **19,557 / 56,421 (34.7%)** |
+
+Engine suite 2,278 green. Seven levers broken one at a time — and two failed nothing at first, because
+the test leant on a phrase the switch answers rather than the parser.

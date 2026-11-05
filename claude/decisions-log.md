@@ -29924,3 +29924,102 @@ deliberately left out, which is the measurement predicting the increment to with
 Engine suite 2,272 green. Six levers broken one at a time on the reader (who, each-player vs
 each-opponent, the random path, the count, the prompt's noun) plus two on the guard (off, and
 D467's broad version), each failing a test and nothing else.
+
+## D469 — A printed target phrase, parsed rather than enumerated
+
+The largest family this compiler has had in front of it, and the one that lifts every other reader
+with it.
+
+### 299 cards, and why `targetSpecFrom` is the chokepoint
+
+Measured with `phrase-gap.mjs`' method — substitute every printed target phrase in a one-line-short
+card's unread line with one known to read, then ask whether the **whole line** reads. Target phrases
+appear on **5,978** such cards and substituting them finishes **299**. That is more than twice the
+discard, and the reason is structural: `targetSpecFrom` is the single door every targeted reader goes
+through — damage, destroy, exile, bounce, counters, the `target opponent` form of the discard D468
+had to leave out — so one phrase read here lifts all of them at once.
+
+It also reframed the row above it. `put a counter on <permanent>` finishes 103 cards, which looked
+like the next increment until the shapes were counted: thirty-odd distinct phrases with the biggest at
+**4**, and `put a +1/+1 counter on target creature` appearing on 47 one-line-short cards and finishing
+**1**. It was never a counter problem. It was this one wearing a counter costume.
+
+### A parser, because the phrases are combinatorial
+
+The switch was thirty exact phrases and cannot grow to cover this: `another target nonblack creature
+you control` is four independent facts — a quantifier, a run of qualifiers in no fixed order, a noun,
+a controller clause — and a list of whole phrases needs one entry per combination the corpus happens
+to print. That is the same wall `permanentDescribed` hit in D465, and the same answer.
+
+**The machinery was already there, which was checked before the increment was scoped rather than
+assumed.** `TargetSpec.count` is "how many of this spec" and `TargetSpec.optional` is "up to,
+castable with fewer including none" — so every quantifier (`up to one`, `up to one other`, `each of up
+to two`, `two`, `three`) needed **no engine change at all**, only reading. `permanentFilter` already
+composed `another` / `nonland` / `an opponent controls` / `types` / `powerAtLeast` as a live-reading
+filter; it gained colours and their negations, tapped/untapped, attacking, blocking, legendary, basic,
+`you control`, and a keyword.
+
+Everything is read **live** (CR 109.2): an animated Mutavault is a legal "target creature", a creature
+granted flying is a legal "target creature with flying", a white creature turned black by a Painter's
+Servant stops being a legal "target nonblack creature". `basic` is the one deliberate exception, read
+off the printed line because nothing in Magic makes a land basic or unbasic — and read through
+`isBasicLand`, the function Rampant Growth has used since #28, rather than a second one beside it.
+
+**Refusing is the default**, which is D362 where it matters most: a wrong target is not a card that
+does too little, it is a removal spell pointed at the wrong permanent, and the bot will take that
+play. An unrecognised word refuses the whole phrase. Three families stay unread with stated reasons:
+**subtypes** ("target Wall") need the printed capitalisation, which `targetSpecFrom` lower-cases away
+at the top for the description's sake; **"defending player controls"** is a fact about an attack and a
+filter is not told which attack; **"that was dealt damage this turn"** needs a per-turn record of who
+was *dealt* damage rather than how much is marked now.
+
+### The callers had to let the quantifier through, and one bug was the join
+
+`parsedTargetPhrase` only ever sees what a reader hands it, and every reader's regex was anchored on
+the literal word `target` — so `destroy another target creature you control` never reached it. Five
+readers (destroy, exile, return-to-hand, counter, untap) now share `TARGET_QUANTIFIER_PREFIX`, built
+from `TARGET_QUANTIFIERS`' own keys so the two cannot drift.
+
+The first version built it with `keys.join('|')` and one trailing space, which gives the space to the
+**last alternative only**. `two target creatures` read and `another target creature` did not, which is
+how it was found — a probe of twenty phrases where eight failed in a pattern that made no sense until
+the generated regex was read back.
+
+Also added: a bare `target player|target opponent loses N life`, which had no reader at all. The only
+targeted life loss was Kambal's `loses N life and you gain N life`, and 15 legal cards print `target
+opponent` as their only unread phrase with several of them being that sentence.
+
+### The refusal this had to restore, not discover
+
+The Aura reader asked `targetSpecFrom` what its host could be and refused whatever came back `null`.
+That answered "what may an Aura be attached to" with "what may this phrase be pointed at" — fine while
+the switch was a fixed list, wrong the moment the function learned to parse. `Enchant planeswalker` and
+`Enchant land you control` began to read, and two of the five rows in `compile.test.ts`' refusal table
+broke on the first full-suite run after the parser went in.
+
+**Second time in two increments that running the whole suite is what found the reach.** D468's guard
+was the same shape: a reader's effect is wider than the lines it was written for.
+
+The Aura's vocabulary is now the switch's exact phrases only, passed as an argument, so the narrower
+rule is **stated** rather than inherited from how much of Magic the switch happens to cover. Whether
+this engine can carry an Aura on a planeswalker is a question about the attachment machinery and
+CR 704.5m (D305), with its own cards to count. Measured cost of keeping the refusal: **26 cards with a
+script and one fully read.**
+
+### The numbers
+
+| | D468 | D469 |
+| --- | --- | --- |
+| cards with a compiled script | 9,423 | **9,657** |
+| cards with every printed line read | 5,214 | **5,436** |
+| printed rules lines read | 19,216 of 56,421 (34.1%) | **19,557 of 56,421 (34.7%)** |
+
++222 cards fully read against a ceiling of 299, with subtypes, defending-player and dealt-damage
+deliberately out. Engine suite 2,278 green.
+
+Seven levers broken one at a time, and **two of them failed nothing on the first attempt** — which is
+the part worth keeping. `yours-ignored` passed because the test leant on `target creature you control`,
+a phrase the *switch* answers, so the parser's own controller test was never exercised; it needed a
+second friendly creature on the board and the phrase `another target creature you control`, which the
+switch has no case for. A lever that cannot fail is an untested one, and the only way to find out is to
+break it.

@@ -25171,3 +25171,214 @@ describe('the discard, in every person it is printed about (D468)', () => {
     expect(namesIn(s, 0 as SeatIndex, 'battlefield')).toContain('Bazaar Trademage');
   });
 });
+
+describe('a printed target phrase, parsed rather than enumerated (D469)', () => {
+  /*
+    The largest family this compiler has had in front of it. Measured by the `phrase-gap.mjs` method
+    — substitute every printed target phrase with one known to read, then ask whether the whole line
+    reads — target phrases appear on **5,978** one-line-short cards and substituting them finishes
+    **299**. Large because `targetSpecFrom` is the chokepoint for *every* targeted reader at once:
+    damage, destroy, exile, bounce, the counters, and the `target opponent` form of the discard D468
+    had to leave out.
+
+    The switch of thirty exact phrases could not grow to cover it, because printed target phrases are
+    **combinatorial**: a quantifier, a run of qualifiers in no fixed order, a noun, a controller
+    clause. `another target nonblack creature you control` is four independent facts.
+
+    These tests are about the three things that can go wrong with a parser rather than a list: it
+    reads a phrase it should, it **refuses** one it cannot express, and the filter it builds actually
+    discriminates on a board.
+  */
+  const PLUMMET = {
+    name: 'Plummet', type_line: 'Instant', mana_cost: '{1}{G}', cmc: 2, colors: ['G'],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Destroy target creature with flying.',
+  };
+  const ASSASSINATE = {
+    name: 'Assassinate', type_line: 'Sorcery', mana_cost: '{2}{B}', cmc: 3, colors: ['B'],
+    power: null, toughness: null, loyalty: null, layout: 'normal',
+    oracle_text: 'Destroy target tapped creature.',
+  };
+
+  const specOf = (text: string) => {
+    const compiled = compileCard({
+      name: 'Probe Beast', type_line: 'Creature — Human', mana_cost: '{2}{G}', cmc: 3,
+      colors: ['G'], power: '2', toughness: '2', loyalty: null, layout: 'normal',
+      oracle_text: `When Probe Beast enters, ${text}.`,
+    } as never);
+    if (!compiled.ok) return null;
+    return ((compiled.script?.triggers ?? [])[0]?.targets ?? [])[0] ?? null;
+  };
+
+  it('reads the quantifier into count and optional, which TargetSpec already had', () => {
+    /*
+      No engine change was needed for any of these: `count` is "how many of this spec" and `optional`
+      is "up to", castable with fewer including none. That was checked before the increment was
+      scoped rather than assumed, and it is why the quantifiers are a reading job.
+    */
+    expect(specOf('destroy target creature')).toMatchObject({ kind: 'creature' });
+    expect(specOf('destroy up to one target creature')).toMatchObject({ optional: true });
+    expect(specOf('destroy two target creatures')).toMatchObject({ count: 2 });
+    expect(specOf('destroy each of up to two target creatures'))
+      .toMatchObject({ optional: true, count: 2 });
+    expect(specOf('destroy up to three target creatures'))
+      .toMatchObject({ optional: true, count: 3 });
+    // The description is the printed phrase, which is what a player reads in the prompt.
+    expect(specOf('destroy up to one other target creature')?.description)
+      .toBe('up to one other target creature');
+  });
+
+  it('refuses a phrase it cannot express, rather than widening what the card may hit', () => {
+    /*
+      D362 where it matters most. A wrong *target* is not a card that does too little — it is a
+      removal spell pointed at the wrong permanent, and the bot will take that play. So an
+      unrecognised word refuses the whole phrase and the line stays unread and flagged.
+
+      Each of these is a real printed phrase with a stated reason, in `parsedTargetPhrase`'s
+      docblock: a **subtype** needs the printed capitalisation, which `targetSpecFrom` has already
+      lower-cased away; **defending player** is a fact about an attack and a filter is not told which
+      attack; **dealt damage this turn** needs a per-turn record of who was dealt damage rather than
+      how much is marked on them now.
+    */
+    for (const phrase of [
+      'destroy target Wall',
+      'destroy target creature defending player controls',
+      'destroy target creature that was dealt damage this turn',
+      'destroy target squirrel',
+      'destroy target creature with squelching',
+    ]) {
+      expect(specOf(phrase), phrase).toBeNull();
+    }
+  });
+
+  it('builds a filter that discriminates on a real board', () => {
+    /*
+      A spec that reads is worth nothing if its filter admits everything. Each assertion below is a
+      pair: the permanent the phrase names, and one it must refuse — read **live** (CR 109.2), which
+      is the discipline `permanentFilter` keeps and the defect #319 recorded in five hand-written
+      filters that read the printed type line instead.
+    */
+    const s = advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'skyward-writ' },
+      battlefield: {
+        0: ['Mountain', 'Raging Goblin', 'Monastery Swiftspear'],
+        1: ["Healer's Hawk", 'Island'],
+      },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    const flier = find(s, 1 as SeatIndex, 'battlefield', "Healer's Hawk");
+    const ground = find(s, 0 as SeatIndex, 'battlefield', 'Raging Goblin');
+    const land = find(s, 0 as SeatIndex, 'battlefield', 'Mountain');
+    const admits = (phrase: string, id: string) =>
+      specOf(phrase)?.filter?.(s, { kind: 'card', id }, 0 as SeatIndex, ground) ?? null;
+
+    // "with flying" — the keyword, read live, so a granted one would count too.
+    expect(admits('destroy target creature with flying', flier)).toBe(true);
+    expect(admits('destroy target creature with flying', ground)).toBe(false);
+    // A controller clause, both ways round.
+    expect(admits('destroy target creature you control', ground)).toBe(true);
+    expect(admits('destroy target creature you control', flier)).toBe(false);
+    expect(admits('destroy target creature an opponent controls', flier)).toBe(true);
+    expect(admits('destroy target creature an opponent controls', ground)).toBe(false);
+    // "another" excludes the permanent whose ability it is, which is the `source` argument.
+    expect(admits('destroy another target creature', ground)).toBe(false);
+    expect(admits('destroy another target creature', flier)).toBe(true);
+    /*
+      And the two composed, which is the phrase the switch has no case for and so the only one that
+      exercises the parser's own controller test: `another target creature you control` must admit a
+      *second* friendly creature, refuse the source, and refuse the opponent's. Without the second
+      friendly creature on the board this assertion cannot discriminate — the first version of this
+      test leant on `target creature you control`, which the switch answers, and a break run that
+      ignored the parser's `yours` failed nothing.
+    */
+    const mine = find(s, 0 as SeatIndex, 'battlefield', 'Monastery Swiftspear');
+    expect(admits('destroy another target creature you control', mine)).toBe(true);
+    expect(admits('destroy another target creature you control', ground)).toBe(false);
+    expect(admits('destroy another target creature you control', flier)).toBe(false);
+    /*
+      A colour, and its negation: the Raging Goblin is red and Healer's Hawk is white. The negation
+      is checked against the colour each one **is** rather than one neither is — the first version of
+      this assertion said `nonblue` and passed the Hawk, which is correct and proves nothing.
+    */
+    expect(admits('destroy target red creature', ground)).toBe(true);
+    expect(admits('destroy target red creature', flier)).toBe(false);
+    expect(admits('destroy target nonred creature', flier)).toBe(true);
+    expect(admits('destroy target nonred creature', ground)).toBe(false);
+    // A supertype, read off the printed line because nothing makes a land basic or unbasic.
+    expect(admits('destroy target nonbasic land', land)).toBe(false);
+    // And the tapped/untapped pair, which reads the instance rather than its characteristics.
+    expect(admits('destroy target untapped creature', ground)).toBe(true);
+    expect(admits('destroy target tapped creature', ground)).toBe(false);
+  });
+
+  it('points a real card at the creature its phrase names, and only that one', () => {
+    const built = customDeck({
+      id: 'd469-list',
+      name: 'Qualified targets',
+      entries: [
+        { name: 'Plummet', count: 4 },
+        { name: 'Assassinate', count: 4 },
+        { name: 'Forest', count: 52 },
+      ],
+      data: [PLUMMET, ASSASSINATE] as never,
+    });
+    expect(built.unknown).toEqual([]);
+    expect([...built.fromData].sort()).toEqual(['Assassinate', 'Plummet']);
+
+    let s = advanceTo(arena({
+      decks: { 0: 'd469-list', 1: 'skyward-writ' },
+      deckSpecs: { 'd469-list': built.deck },
+      battlefield: { 0: ['Forest', 'Forest'], 1: ["Healer's Hawk", 'Soul Warden'] },
+      hands: { 0: ['Plummet'] },
+      turn: 5,
+      firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    const flier = find(s, 1 as SeatIndex, 'battlefield', "Healer's Hawk");
+    const ground = find(s, 1 as SeatIndex, 'battlefield', 'Soul Warden');
+    const plummet = find(s, 0 as SeatIndex, 'hand', 'Plummet');
+
+    /*
+      The ground creature is not a legal target and the engine says so, which is the half that
+      matters: a spec that read but did not discriminate would let this resolve and kill a Bear with
+      a card that cannot touch one.
+    */
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: plummet, targets: [{ kind: 'card', id: ground }],
+    } as Action)).toBeTruthy();
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: plummet, targets: [{ kind: 'card', id: flier }],
+    } as Action), 40);
+    expect(namesIn(s, 1 as SeatIndex, 'graveyard')).toContain("Healer's Hawk");
+    expect(namesIn(s, 1 as SeatIndex, 'battlefield')).toContain('Soul Warden');
+  });
+
+  /*
+    And the refusal this increment had to **restore** rather than discover.
+
+    The Aura reader asked `targetSpecFrom` what its host could be and refused whatever came back
+    `null`. That answered "what may an Aura be attached to" with "what may this phrase be pointed
+    at" — fine while the switch was a fixed list, wrong the moment this function learned to parse:
+    `Enchant planeswalker` and `Enchant land you control` started to read, and two of the five rows
+    in `compile.test.ts`' refusal table broke on the first full-suite run after the parser went in.
+
+    The Aura's vocabulary is now the switch's exact phrases only, passed as an argument, so the
+    narrower rule is stated rather than inherited. Whether this engine can carry an Aura on a
+    planeswalker is a question about the attachment machinery and CR 704.5m (D305), with its own
+    cards to count — not a side effect of a target-phrase change. It cost 26 cards with a script and
+    one fully read, measured.
+  */
+  it('keeps an Aura host to the exact phrases, not the parsed ones', () => {
+    const aura = compileCard({
+      name: 'Probe Shackles', type_line: 'Enchantment — Aura', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], power: null, toughness: null, loyalty: null, layout: 'normal',
+      oracle_text: 'Enchant planeswalker\nWhen this Aura enters, you gain 2 life.',
+    } as never);
+    expect(aura.ok).toBe(true);
+    expect(aura.ok ? aura.unread.map((u) => u.line) : []).toContain('Enchant planeswalker');
+    // Still read as a target phrase in its own right, which is what makes the flag load-bearing.
+    expect(specOf('destroy target planeswalker')).toMatchObject({ kind: 'permanent' });
+  });
+});
