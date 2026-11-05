@@ -30956,3 +30956,108 @@ foretold row while the refusal row stays green.
 resembles.** No hand-written card in the thirteen decks has a foretell cost that differs from its
 printed cost in whether it carries an {X}; 31,654 real cards do, and one of them turned up in a
 deck built at random on the 32nd seed of a 40-game run.
+
+## D482 — The batched block, and the ten thousandth card
+
+D480 read the three block spellings that carry "a creature" and refused the 92 legal lines that do
+not, for a counting reason: the engine raises `blocks` once per attacker blocked and
+`becomes-blocked` once per blocker, while the bare "Whenever ~ becomes blocked" fires **once**
+however many creatures blocked. `becomes-blocked`'s own docblock had already written down what to do
+about it — *"a card that was would want a separate event rather than this one with a flag"* — and
+this is that event, built the way D443 built `combat-damage-dealt` beside `combat-damage`.
+
+### Two events, named after the rules
+
+| printed | event | raised |
+| --- | --- | --- |
+| Whenever ~ becomes blocked by a creature | `becomes-blocked` | once per blocker |
+| Whenever ~ becomes blocked | **`blocked-creature`** | once, per creature that became blocked |
+| Whenever ~ blocks a creature | `blocks` | once per attacker blocked |
+| Whenever ~ blocks | **`blocking-creature`** | once, per creature that blocked |
+
+The names come from CR 509.1a ("becomes a blocking creature") and CR 509.1h ("becomes a blocked
+creature"), which is also the clearest way to say what distinguishes them from the pair above: those
+are about the *other* creature, these are about this one.
+
+Neither carries a `blocked` field, deliberately. There may be several blockers, and the cards that
+want them say "each creature blocking it" — a question about the board when the ability resolves,
+not a fact about the declaration. A `blocked` field here would invite exactly the per-blocker
+reading the event exists to avoid, and `eventRelativeEffect`'s gate keeps "that creature" to the
+per-creature pair for the same reason.
+
+### Why the yield is high for an event with no new clause readers
+
+The bare forms print, overwhelmingly, **clauses the vocabulary already had**: a corpus scan over the
+92 lines finds "it gets +2/+2 until end of turn" 7 times, "+1/+1" 6, "+0/+2" 3, and a dozen more
+sizes behind them, plus "untap it", "you gain 2 life" and "you may draw a card". Every one of those
+resolves on the card itself, which the self readers have handled since the beginning. So the work
+was the event and the parse; the effects were already there.
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 9,996 | **10,031** |
+| cards with every printed line read | 5,699 | **5,731** |
+| printed rules lines read | 19,972 / 56,421 (35.4%) | **20,010 / 56,421 (35.5%)** |
+
+**Ten thousand cards now compile to a script**, from 9,712 at the start of this session's run of
+increments.
+
+### The tests measure the count, and the first draft did not
+
+Five runtime tests through a real combat, and the assertion that matters is the number of triggers
+the declaration puts on the stack — read before anything resolves. That is a change of method
+forced by a break run: the obvious test, Chub Toad's "+2/+2" against two blockers, **cannot fail**,
+because raising the event twice puts two identical pumps on the stack and a pump from one source
+does not stack with itself. The Toad came out a 3/3 either way.
+
+So the count is asserted three ways instead: the stack holds one trigger for two blockers,
+*Deepwood Tantiv* gains 2 life rather than 4 (a life gain does stack with itself), and *Ashmouth
+Hound* — D480's card, unchanged — puts **two** triggers on the stack in the same position and
+damages both blockers. Break-run: raising the batched event per blocker fails the stack count on
+both bare cards and leaves the per-creature card green.
+
+One more thing the tests learned: two blockers on one attacker can owe a damage-assignment order
+(CR 509.2), and until it is given **nobody holds priority**, so the triggers sit unresolved. The
+first draft drained straight after the block and read zero damage off both Bears — the engine being
+right and the test forgetting to answer it. The order is asked for conditionally, because the engine
+only asks when the answer can matter: a 1/1 Chub Toad cannot kill either 2/2 whatever the order.
+
+### A live bug in a shipping pool card, found by the new event
+
+Two of the gate's standing checks failed on the first run of this change, and both were right.
+
+**`compiled-vs-written` reported a disagreement on Ichorclaw Myr** — a card in the infect deck,
+printed `{2}` for a 1/1 with infect and *"Whenever Ichorclaw Myr becomes blocked, it gets +2/+2
+until end of turn."* That is the **bare** spelling, and its hand-written script was
+`on: { kind: 'becomes-blocked' }`, the per-blocker event. **So the Myr had been getting +4/+4
+against two blockers and +6/+6 against three, for as long as it has been in the pool** — in the one
+deck where every point of power is a point of poison, and against the obvious answer to a 1/1,
+which is to block it with two creatures.
+
+Nothing could have found this before: the compiler had no reading of the bare prologue to disagree
+with, and no test blocked the Myr with two creatures. The card is corrected to `blocked-creature`
+with a test that blocks it with a Grizzly Bears and a Centaur Courser and asserts one trigger on the
+stack and a 3/3, and a break run that puts it back on the per-blocker event and reads two.
+
+**This weakens Blight Vector, and the amount is unmeasured.** The deck's win rate was measured with
+the Myr paying double against two blockers, so the correction takes something real away from it in
+exactly the spot the deck wants it. The honest statement is that the balance figures for that deck
+predate this fix; re-measuring it is its own task rather than a rider on a rules correction, because
+a balance number is only worth having with the seeds and the arms written down (D263).
+
+**`has a card behind every mechanic it declares` reported both new kinds as orphans**, which is
+D229's rule and D442's exemption procedure doing their job. `blocked-creature` needs no exemption
+now — Ichorclaw Myr prints it and is in a deck. `blocking-creature` takes one, with the evidence the
+procedure demands: 24 legal corpus lines, and the runtime test on printed Chub Toad's blocker half.
+
+### What is still refused in this family
+
+ * **A filter on the other creature** — 28 legal lines, "by a non-Wall creature", "by a green or
+   white creature". Still not a field either event has.
+ * **A count of blockers** — "becomes blocked by two or more creatures". Neither event carries how
+   many, and the batched one deliberately carries nothing about them at all.
+ * **"A creature you control becomes blocked"** — 10 legal lines, somebody else's creature rather
+   than this one. The events take `who` and `of` already, so this is a prologue row rather than
+   engine work, and it is the next bite.
+ * **A timing on the effect** — "destroy that creature at end of combat" (3), "return that creature
+   to its owner's hand at end of combat" (2), on the per-creature pair.

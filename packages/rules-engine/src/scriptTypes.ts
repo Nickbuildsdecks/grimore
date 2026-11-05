@@ -506,6 +506,51 @@ export type TriggerEvent =
       readonly blocked?: string;
     }
   /**
+   * "Whenever this creature becomes blocked" — becoming a blocked creature, **once** (CR 509.1h).
+   *
+   * The batched half of `becomes-blocked`, and the same relation `combat-damage-dealt` has to
+   * `combat-damage` (D443): that event is about the *other* creature and is raised once per
+   * blocker, this one is about the creature becoming blocked and is raised once however many
+   * creatures blocked it. **57 legal corpus lines** print it, and the event above says in so many
+   * words that such a card wants its own event rather than that one with a flag — reading them off
+   * `becomes-blocked` would pay an Alley Grifters' discard three times against three blockers,
+   * which is a wrong reading of a real card (D362, D482).
+   *
+   * **Nothing travels on it about the blockers, deliberately.** There may be several, and the cards
+   * that want them say "each creature blocking it", which is a question about the board when the
+   * ability resolves rather than a fact about the declaration. A `blocked` field here would invite
+   * exactly the per-blocker reading this event exists to avoid.
+   */
+  | {
+      readonly kind: 'blocked-creature';
+      readonly who?: 'self' | 'another' | 'any';
+      readonly of?: 'you' | 'opponent' | 'any';
+      /** Set by the engine: the seat that controls the creature that became blocked. */
+      readonly subjectSeat?: SeatIndex;
+      /** Set by the engine: the creature that became blocked. See `subject`. */
+      readonly subject?: string;
+    }
+  /**
+   * "Whenever this creature blocks" — becoming a blocking creature, **once** (CR 509.1a).
+   *
+   * `blocked-creature`'s mirror and `blocks`' batched half: raised once for a creature that blocked
+   * at all, where `blocks` is raised once per attacker it blocked. The two readings agree for every
+   * creature that blocks one attacker, which is nearly all of them — and the exception is a real
+   * card rather than a hypothetical, because a creature that "can block an additional creature"
+   * would otherwise pay this effect twice. **24 legal corpus lines** print it.
+   *
+   * Carries no attacker, for the reason `blocked-creature` carries no blocker.
+   */
+  | {
+      readonly kind: 'blocking-creature';
+      readonly who?: 'self' | 'another' | 'any';
+      readonly of?: 'you' | 'opponent' | 'any';
+      /** Set by the engine: the seat that controls the blocking creature. */
+      readonly subjectSeat?: SeatIndex;
+      /** Set by the engine: the creature that blocked. See `subject`. */
+      readonly subject?: string;
+    }
+  /**
    * "Whenever this creature attacks and isn't blocked" (CR 509.1h).
    *
    * Not a filter on `attacks`, and the difference is the whole of the event: an attack trigger

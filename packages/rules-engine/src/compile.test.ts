@@ -9396,14 +9396,13 @@ describe('the block trigger, read off the prologue', () => {
 
   it.each([
     /*
-      The two **bare** spellings are the whole reason this parse requires "a creature", and they are
-      refused for a counting reason rather than a vocabulary one: the printed line fires once per
-      combat and the engine's events fire once per creature.
+      The bare spellings were on this list until D482 built the batched events, and they are in the
+      mapping table above now. What is still refused is a count the engine does not raise at all:
+      "becomes blocked by two or more creatures" asks how many blocked, and neither event carries
+      it.
     */
-    ['Whenever Blocking Thing becomes blocked',
-      'the batched form: fires once however many creatures blocked'],
-    ['Whenever Blocking Thing blocks', 'the same, from the blocker’s side'],
-    ['Whenever Blocking Thing blocks or becomes blocked', 'both halves batched'],
+    ['Whenever Blocking Thing becomes blocked by two or more creatures',
+      'a count of blockers, which no event carries'],
     // A filter on the other creature, which no field on either event asks.
     ['Whenever Blocking Thing blocks or becomes blocked by a non-Wall creature',
       'Thicket Basilisk’s filter on the other creature'],

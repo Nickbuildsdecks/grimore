@@ -942,6 +942,10 @@ function triggerMatches(
     case 'attacks':
     case 'blocks':
     case 'becomes-blocked':
+    // And their batched halves (D482), which take the same `who` and `of` and carry no other
+    // creature at all — see their docblocks in `scriptTypes`.
+    case 'blocked-creature':
+    case 'blocking-creature':
     case 'attacks-unblocked':
     case 'combat-damage': {
       // `self` is the default, which is why every script written before this one still means what
@@ -1282,6 +1286,7 @@ function fireTrigger(
     ...(subject === undefined
       || !(event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
         || event.kind === 'blocks' || event.kind === 'becomes-blocked'
+        || event.kind === 'blocked-creature' || event.kind === 'blocking-creature'
         || event.kind === 'attacks-unblocked' || event.kind === 'to-graveyard'
         // And the creature that dealt the damage, for "put a +1/+1 counter on **that creature**".
         // Added with `who: 'any'` (D439): while the event was its own permanent's business the
@@ -1345,6 +1350,10 @@ function raise(
   if (subject !== undefined
     && (event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
       || event.kind === 'blocks' || event.kind === 'becomes-blocked'
+      // The batched pair (D482). Their subject is the creature that became blocked or that
+      // blocked, which for the printed lines is the watcher itself — so `c.subject` and `c.source`
+      // agree today, and a line that is added for somebody else's creature gets the right one.
+      || event.kind === 'blocked-creature' || event.kind === 'blocking-creature'
       || event.kind === 'attacks-unblocked' || event.kind === 'to-graveyard'
       || event.kind === 'to-exile')) {
     // Which permanent the event was about, so a trigger can say "that creature" rather than only
@@ -1493,6 +1502,7 @@ function raise(
     : [...new Set([...everyBattlefield, ...attachedWatchers])];
   const watchers = event.kind === 'etb' || event.kind === 'dies' || event.kind === 'attacks'
     || event.kind === 'blocks' || event.kind === 'becomes-blocked'
+    || event.kind === 'blocked-creature' || event.kind === 'blocking-creature'
     || event.kind === 'attacks-unblocked'
     ? everyBattlefieldAndAttached
     : selfOnly.has(event.kind)

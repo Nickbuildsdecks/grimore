@@ -7422,8 +7422,16 @@ describe('deck coverage', () => {
       - `combat-damage-dealt`: 26 legal corpus lines, 8 compilable cards. Driven at runtime by "the
         batched hit, as printed text", on printed Grim Hireling — two Treasures for a two-creature
         swing, and four when the swing splits between two opponents in a pod.
+      - `blocking-creature`: 24 legal corpus lines ("whenever ~ blocks", the bare spelling). Driven
+        at runtime by "the bare block: once, however many creatures", on printed Chub Toad — the
+        blocker half of its line, where a 1/1 blocks a 2/2, becomes a 3/3 and lives. Its twin
+        `blocked-creature` is **not** exempt: Ichorclaw Myr prints it and is in the infect deck,
+        which is how D482 found that the Myr had been scripted on the per-blocker event and pumped
+        twice against two blockers.
     */
-    const compilerOnly = new Set(['trigger attack-declared', 'trigger combat-damage-dealt']);
+    const compilerOnly = new Set([
+      'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
+    ]);
 
     const declared = [
       ...fields.map((f) => `script ${f}`),
@@ -12676,6 +12684,36 @@ describe('infect, and the win condition nothing could reach (CR 702.90)', () => 
     expect(characteristicsOf(s, s.instances[attacker]!).power).toBe(3);
     s = drain(advanceTo(s, 'end-combat'));
     expect(s.instances[bears]!.zone).toBe('graveyard');
+  });
+
+  it('an Ichorclaw Myr blocked by two creatures still gets +2/+2, once (D482)', () => {
+    /*
+      A correction rather than a new feature. The Myr prints the **bare** "whenever ~ becomes
+      blocked", which fires once however many creatures blocked — and it was scripted on
+      `becomes-blocked`, which the engine raises once per blocker. So two blockers made it a 5/5
+      and three a 7/7, in the deck where every point of power is a point of poison.
+
+      Found by the compiler: D482 taught the bare prologue to read, and the standing
+      compiled-vs-written check reported the disagreement on this card.
+    */
+    const { state, attacker } = swing('Ichorclaw Myr', ['Grizzly Bears', 'Centaur Courser']);
+    let s = state;
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = apply(s, {
+      type: 'auto:block',
+      by: 1,
+      blocks: [{ blocker: bears, attacker }, { blocker: courser, attacker }],
+    });
+    const owed = pendingDeclaration(s);
+    if (owed?.kind === 'order') {
+      s = apply(s, { type: 'auto:order', by: 0, orders: [{ attacker, blockers: [bears, courser] }] });
+    }
+    // One trigger for two blockers, where the old reading put two on the stack.
+    expect(s.stackOrder).toHaveLength(1);
+    s = drain(passBoth(s), 40);
+    // 1 + 2, not 1 + 2 + 2.
+    expect(characteristicsOf(s, s.instances[attacker]!).power).toBe(3);
   });
 
   it('a Tainted Strike turns somebody else’s creature into poison', () => {
@@ -26889,5 +26927,154 @@ describe('X comes from the cost being paid, not the printed one (D481)', () => {
       ?.xMax).toBeUndefined();
     expect(refusal(s, { type: 'auto:cast', by: 1, card, x: 1 } as Action))
       .toContain('has no X to choose');
+  });
+});
+
+describe('the bare block: once, however many creatures (D482)', () => {
+  /*
+    The counting half of the family. "Whenever ~ becomes blocked" fires **once** no matter how many
+    creatures blocked, where "becomes blocked by a creature" fires once per blocker — and the whole
+    reason D480 refused these 92 lines is that reading one off the other pays the effect several
+    times.
+
+    So the test that matters is a creature blocked by **two**, and the pair of cards that makes the
+    difference visible in one position: Chub Toad grows once off `blocked-creature`, and Ashmouth
+    Hound (D480, unchanged) burns both blockers off `becomes-blocked`.
+  */
+  const CHUB_TOAD = {
+    name: 'Chub Toad', type_line: 'Creature — Frog', mana_cost: '{2}{G}', cmc: 3,
+    colors: ['G'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: 'Whenever Chub Toad blocks or becomes blocked,'
+      + ' it gets +2/+2 until end of turn.',
+  };
+  const DEEPWOOD_TANTIV = {
+    name: 'Deepwood Tantiv', type_line: 'Creature — Beast', mana_cost: '{4}{G}', cmc: 5,
+    colors: ['G'], layout: 'normal', power: '2', toughness: '4',
+    oracle_text: 'Whenever Deepwood Tantiv becomes blocked, you gain 2 life.',
+  };
+  const ASHMOUTH_HOUND = {
+    name: 'Ashmouth Hound', type_line: 'Creature — Elemental Dog', mana_cost: '{1}{R}', cmc: 2,
+    colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Whenever Ashmouth Hound blocks or becomes blocked by a creature,'
+      + ' Ashmouth Hound deals 1 damage to that creature.',
+  };
+  const DATA = [CHUB_TOAD, DEEPWOOD_TANTIV, ASHMOUTH_HOUND];
+
+  const table = (mine: readonly string[], theirs: readonly string[]) => {
+    const list = customDeck({
+      id: 'bare-block',
+      name: 'Bare Block',
+      entries: [
+        { name: 'Chub Toad', count: 2 },
+        { name: 'Deepwood Tantiv', count: 2 },
+        { name: 'Ashmouth Hound', count: 2 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Forest', count: 50 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort())
+      .toEqual(['Ashmouth Hound', 'Chub Toad', 'Deepwood Tantiv']);
+    return arena({
+      decks: { 0: 'bare-block', 1: 'bare-block' },
+      deckSpecs: { 'bare-block': list.deck },
+      battlefield: { 0: [...mine], 1: [...theirs] },
+      turn: 3,
+      firstSeat: 0,
+    });
+  };
+
+  const power = (s: GameState, id: string) => characteristicsOf(s, s.instances[id]!).power;
+
+  const blockedByBoth = (mine: string, theirs: readonly string[]) => {
+    let s = table([mine], theirs);
+    s = advanceTo(s, 'declare-attackers');
+    const attacker = find(s, 0 as SeatIndex, 'battlefield', mine);
+    const blockers = theirs.map((name, n) => ids(s, 1 as SeatIndex, 'battlefield')
+      .filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === name)[n]!);
+    s = passBoth(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }],
+    } as Action));
+    s = apply(s, {
+      type: 'auto:block',
+      by: 1,
+      blocks: blockers.map((blocker) => ({ blocker, attacker })),
+    } as Action);
+    /*
+      Two blockers on one attacker can owe a damage-assignment order (CR 509.2), and until it is
+      given nobody holds priority — so the triggers sit on the stack unresolved. The first draft of
+      this test drained straight after the block and read zero damage off both Bears, which was the
+      engine being right about the order and the test forgetting to give it.
+
+      Asked for conditionally because the engine only asks when the answer can matter: a 1/1 Chub
+      Toad cannot kill either 2/2 whatever the order, so no order is owed, while the 2/2 Ashmouth
+      Hound can kill one and is asked which.
+    */
+    const owed = pendingDeclaration(s);
+    if (owed?.kind === 'order') {
+      s = apply(s, { type: 'auto:order', by: 0, orders: [{ attacker, blockers }] } as Action);
+    }
+    // How many triggers the declaration put on the stack, read before anything resolves. This is
+    // the count the whole entry is about, and it is the only assertion that measures it directly.
+    const triggers = s.stackOrder.length;
+    return { s: drain(passBoth(s), 40), attacker, blockers, triggers };
+  };
+
+  it('triggers once when two creatures block it, not twice', () => {
+    const { s, attacker, triggers } = blockedByBoth('Chub Toad', ['Grizzly Bears', 'Grizzly Bears']);
+    // One trigger for two blockers, which is the whole of the event's reason to exist.
+    expect(triggers).toBe(1);
+    expect(power(s, attacker)).toBe(3);
+    /*
+      The power is **not** the discriminating assertion and a break run is why: raising the event
+      once per blocker put two identical pumps on the stack and the Toad still came out a 3/3,
+      because a pump from one source does not stack with itself. So the count is read off the stack
+      above, and off Deepwood Tantiv's life below, where two resolutions do show.
+    */
+  });
+
+  it('grows once when one creature blocks it, which is the common case', () => {
+    const { s, attacker, triggers } = blockedByBoth('Chub Toad', ['Grizzly Bears']);
+    expect(triggers).toBe(1);
+    expect(power(s, attacker)).toBe(3);
+  });
+
+  it('is the other count from "by a creature", in the same position', () => {
+    /*
+      The contrast, and the reason two events exist rather than one: the same two blockers, and the
+      per-creature line fires for each of them while the bare line fires once.
+    */
+    const { s, blockers, triggers } = blockedByBoth(
+      'Ashmouth Hound', ['Grizzly Bears', 'Grizzly Bears'],
+    );
+    // Two triggers where the bare line puts one, and a damaged creature each to show it.
+    expect(triggers).toBe(2);
+    expect(blockers.map((id) => s.instances[id]!.damage)).toEqual([1, 1]);
+  });
+
+  it('pays a non-pump clause once as well: Deepwood Tantiv gains 2 life, not 4', () => {
+    const { s, triggers } = blockedByBoth('Deepwood Tantiv', ['Grizzly Bears', 'Grizzly Bears']);
+    expect(triggers).toBe(1);
+    // 20 + 2. Raised per blocker it is 24, which is what the break run read.
+    expect(life(s, 0 as SeatIndex)).toBe(22);
+  });
+
+  it('fires the blocker half for a creature that blocks, once', () => {
+    let s = table(['Grizzly Bears'], ['Chub Toad']);
+    s = advanceTo(s, 'declare-attackers');
+    const bears = find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const toad = find(s, 1 as SeatIndex, 'battlefield', 'Chub Toad');
+    s = passBoth(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 }],
+    } as Action));
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: toad, attacker: bears }],
+    } as Action));
+    // A 1/1 that blocks a 2/2 and becomes a 3/3 lives, which is the whole point of the card.
+    expect(power(s, toad)).toBe(3);
+    s = advanceTo(s, 'postcombat-main', 120);
+    expect(s.instances[toad]!.zone).toBe('battlefield');
+    expect(s.instances[bears]!.zone).toBe('graveyard');
   });
 });

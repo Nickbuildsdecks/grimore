@@ -8505,7 +8505,20 @@ const ICHORCLAW_MYR: CardScript = {
   name: 'Ichorclaw Myr',
   keywords: ['infect'],
   triggers: [{
-    on: { kind: 'becomes-blocked' },
+    /*
+      `blocked-creature` and **not** `becomes-blocked`, which is a correction D482 found rather
+      than a choice (see that entry).
+
+      The printed line is the bare "whenever ~ becomes blocked", which fires **once** however many
+      creatures blocked; `becomes-blocked` is raised once per blocker. So this card had been
+      getting +4/+4 against two blockers and +6/+6 against three, for as long as it has been in the
+      pool — a wrong reading of a real card, in an infect deck where two extra power is two extra
+      poison counters.
+
+      The compiler found it: the bare prologue reads now, and the standing compiled-vs-written
+      check reported a disagreement on this card's `triggers`. The compiler was right.
+    */
+    on: { kind: 'blocked-creature' },
     description: 'it gets +2/+2 until end of turn',
     // Its own +2/+2 rather than the blocker's, which is what the card says and the opposite of a
     // basilisk: the Myr is not punishing the blocker, it is getting through it.
@@ -11772,6 +11785,22 @@ function blockTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][] | n
   if (shape === 'blocks or becomes blocked by a creature') {
     return [{ kind: 'blocks' }, { kind: 'becomes-blocked' }];
   }
+  /*
+    And the **bare** spellings, on the batched events D482 added (`blocked-creature`,
+    `blocking-creature`). Same three sentences with "a creature" taken out, and the difference is
+    the count: these fire once however many creatures are involved, which is why they could not be
+    read off the two events above and why they are read off two of their own.
+
+    "That creature" is deliberately *not* readable under these — there may be several — and the gate
+    in `eventRelativeEffect` is what enforces it: `BLOCK_EVENTS` holds the per-creature pair only.
+    What these cards print instead is "it gets +2/+2", which is the card itself, and the self
+    readers already handle it.
+  */
+  if (shape === 'blocks') return [{ kind: 'blocking-creature' }];
+  if (shape === 'becomes blocked') return [{ kind: 'blocked-creature' }];
+  if (shape === 'blocks or becomes blocked') {
+    return [{ kind: 'blocking-creature' }, { kind: 'blocked-creature' }];
+  }
   return null;
 }
 
@@ -12006,8 +12035,11 @@ const TRIGGER_SHAPES: readonly ({
   */
   {
     prologue: (self) => new RegExp(
-      `^Whenever ${self} (?<shape>blocks a creature|becomes blocked by a creature`
-      + '|blocks or becomes blocked by a creature), (?<clause>.+)$',
+      // The long spellings first: regex alternation is ordered, so a bare `blocks` listed before
+      // `blocks a creature` would claim the longer sentence and lose its filter.
+      `^Whenever ${self} (?<shape>blocks or becomes blocked by a creature`
+      + '|blocks or becomes blocked|blocks a creature|becomes blocked by a creature'
+      + '|becomes blocked|blocks), (?<clause>.+)$',
       'i',
     ),
     from: blockTrigger,

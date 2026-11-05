@@ -2121,6 +2121,43 @@ function declareBlockers(state: GameState, action: AutoBlockAction): Outcome {
     }
   }
   /*
+    And the batched halves, once per creature rather than once per pair (D482).
+
+    "Whenever ~ becomes blocked" fires once however many creatures blocked, and "whenever ~ blocks"
+    once for a creature that blocked at all — which is a different count from the two events above
+    and so a different event (CR 509.1a, CR 509.1h). 92 legal corpus lines are printed this way,
+    and the per-pair events cannot stand in for them: three blockers would pay the effect three
+    times.
+
+    Raised after the per-pair loop and from sets, so a creature that blocked two attackers is one
+    event and an attacker held by two blockers is one event. All of these trigger at the same point
+    in the declaration, so the order between the two kinds is not something a card can observe.
+  */
+  const blockedOnce = new Set<string>();
+  const blockingOnce = new Set<string>();
+  for (const attack of attacks) {
+    if (attack.defender !== action.by) continue;
+    if (attack.blockers.length === 0) continue;
+    blockedOnce.add(attack.attacker);
+    for (const blocker of attack.blockers) blockingOnce.add(blocker);
+  }
+  for (const blocker of blockingOnce) {
+    next = raise(
+      next,
+      { kind: 'blocking-creature', subjectSeat: action.by },
+      action.by,
+      blocker,
+    );
+  }
+  for (const attacker of blockedOnce) {
+    next = raise(
+      next,
+      { kind: 'blocked-creature', subjectSeat: state.activeSeat },
+      action.by,
+      attacker,
+    );
+  }
+  /*
     And "attacks and isn't blocked", which can only be asked once every defender has spoken.
 
     Guarded inside `raiseUnblockedAttacks` rather than here, because this is not the only way a
