@@ -184,13 +184,30 @@ export type TriggerEvent =
        * are asked by different cards. A land entering has always raised this event; until a card
        * asked, nothing could hear it.
        */
-      readonly what?: 'creature' | 'permanent' | 'land';
+      /**
+       * `artifact` and `enchantment` are the two the board-watchers print as often as `creature`
+       * and that nothing could read until D477: *Contraband Kingpin*, *Reckless Fireweaver*,
+       * constellation and eerie. They are answered from `subjectTypes` below rather than from a
+       * boolean of their own.
+       */
+      readonly what?: 'creature' | 'permanent' | 'land' | 'artifact' | 'enchantment';
       /** Set by the engine when it raises the event. */
       readonly subjectSeat?: SeatIndex;
       /** Set by the engine when it raises the event: whether the subject is a creature. */
       readonly subjectIsCreature?: boolean;
       /** Set by the engine when it raises the event: whether the subject is a land. */
       readonly subjectIsLand?: boolean;
+      /**
+       * Set by the engine when it raises the event: the subject's **live** card types, lowercased.
+       *
+       * **Deliberately not merged with the two booleans above**, which look like the same fact and
+       * are not. `isCreature` is the characteristics answer — a crewed Vehicle and an animated land
+       * reach it by routes a type line read at face value does not — and every board-watching
+       * creature trigger in the pool is tested against it. Re-expressing those two filters on the
+       * type line would be a behaviour change on all of them, which D477 is not; this field answers
+       * the type-line questions nothing else asks.
+       */
+      readonly subjectTypes?: readonly string[];
       /** Set by the engine when it raises the event: *which* permanent entered. See `subject`. */
       readonly subject?: string;
     }
@@ -209,7 +226,8 @@ export type TriggerEvent =
        */
       readonly who?: 'self' | 'another' | 'any' | 'attached';
       readonly of?: 'you' | 'opponent' | 'any';
-      readonly what?: 'creature' | 'permanent';
+      /** As `etb`'s, minus `land`: "whenever a land dies" is not a sentence Magic prints. */
+      readonly what?: 'creature' | 'permanent' | 'artifact' | 'enchantment';
       /**
        * Set by the engine when it raises the event: what was attached to the dying permanent as it
        * left the battlefield, which is what `who: 'attached'` is answered from.

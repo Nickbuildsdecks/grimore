@@ -7179,6 +7179,83 @@ describe('the cast trigger, read off the prologue', () => {
 });
 
 /*
+  The board prologue, read off the printed line (D477).
+
+  "Whenever a[nother] <kind> you control enters / dies," as one parse. The mapping is here and the
+  behaviour is in `scripts.test.ts`; the refusals below are the half that can rot, because a parsed
+  row matches a wide sentence and then decides whether it understood the narrow part of it.
+*/
+describe('the board trigger, read off the prologue', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const permanent = (text: string) => compileCard({
+    name: 'Watching Thing', type_line: 'Enchantment', mana_cost: '{2}', cmc: 2,
+    colors: [], layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    ['Whenever a creature you control enters',
+      { kind: 'etb', who: 'any', of: 'you', what: 'creature' }],
+    ['Whenever another creature you control enters',
+      { kind: 'etb', who: 'another', of: 'you', what: 'creature' }],
+    ['Whenever an artifact you control enters',
+      { kind: 'etb', who: 'any', of: 'you', what: 'artifact' }],
+    ['Whenever another artifact you control enters',
+      { kind: 'etb', who: 'another', of: 'you', what: 'artifact' }],
+    ['Whenever an enchantment you control enters',
+      { kind: 'etb', who: 'any', of: 'you', what: 'enchantment' }],
+    ['Whenever a land you control enters',
+      { kind: 'etb', who: 'any', of: 'you', what: 'land' }],
+    ['Whenever a permanent you control enters',
+      { kind: 'etb', who: 'any', of: 'you', what: 'permanent' }],
+    // The long spelling of the same event, which `ENTERS` folds into one row.
+    ['Whenever a creature you control enters the battlefield',
+      { kind: 'etb', who: 'any', of: 'you', what: 'creature' }],
+    // And the death half, which takes the same filters minus `land`.
+    ['Whenever a creature you control dies',
+      { kind: 'dies', who: 'any', of: 'you', what: 'creature' }],
+    ['Whenever another creature you control dies',
+      { kind: 'dies', who: 'another', of: 'you', what: 'creature' }],
+  ])('%s becomes the trigger it prints', (prologue, on) => {
+    const read = permanent(`${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    const triggers = field(read.script, 'triggers') as readonly TriggerDef[];
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]!.on).toEqual(on);
+  });
+
+  it.each([
+    /*
+      Each refused for its own reason, and the reason is what makes the row worth keeping.
+
+      A **subtype** is the one that would do damage if it were read: `what` takes a card type and
+      the event carries no subtypes, so `Dragon` would compile into a filter nothing ever matches —
+      a trigger that never fires, which is a wrong reading and not a missing one (D362).
+    */
+    ['Whenever a Dragon you control enters', 'a subtype, and the event carries no subtypes'],
+    ['Whenever another Zombie you control dies', 'the same, on the death half'],
+    ['Whenever a creature you control with power 3 or greater enters',
+      "a characteristic filter — the event has the subject's id, not its power"],
+    ['Whenever a creature you control with a +1/+1 counter on it dies', 'the same, on counters'],
+    ['Whenever another creature you control leaves the battlefield',
+      'a different event, whose filters this parse did not widen'],
+    ['Whenever an artifact you control is put into a graveyard from the battlefield',
+      '`to-graveyard`, which has no `what` yet'],
+    ['Whenever a land you control dies',
+      'dies is defined for creatures only (CR 700.4), so the parse refuses it'],
+    ['Whenever a creature an opponent controls enters', "a board that is not yours: `of: 'opponent'`"],
+  ])('leaves "%s" unread: %s', (prologue) => {
+    const read = permanent(`${prologue}, you gain 1 life.`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+    expect(field(read.script, 'triggers')).toBeUndefined();
+  });
+});
+
+/*
   The draw-ordinal prologue, as printed text (D436).
 
   Which sentence becomes which trigger, and where the reader stops. The runtime tests in

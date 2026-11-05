@@ -11699,6 +11699,32 @@ export function wholeCardShapeFor(
     ?? soulbondShapeFor(def, lines);
 }
 
+/** One `etb` or `dies` trigger, which is all the parsed board prologue below builds. */
+type BoardEvent = Extract<TriggerDef['on'], { readonly kind: 'etb' | 'dies' }>;
+
+/** The printed article, as the event's `who`. "A creature you control" includes this one. */
+const BOARD_WHO = { a: 'any', an: 'any', another: 'another' } as const;
+
+/**
+ * The parsed board prologue: "Whenever a[nother] <kind> you control enters / dies," (D477).
+ *
+ * Returns `null` for a combination the engine cannot ask — a land dying, a subtype in place of a
+ * card type — which refuses the line rather than reading a narrower trigger as a wider one.
+ */
+function boardTrigger(matched: RegExpExecArray): readonly BoardEvent[] | null {
+  const groups = matched.groups ?? {};
+  const who = BOARD_WHO[(groups.who ?? '').toLowerCase() as keyof typeof BOARD_WHO];
+  const what = (groups.what ?? '').toLowerCase();
+  const dies = /dies$/i.test(groups.event ?? '');
+  if (who === undefined) return null;
+  if (what !== 'creature' && what !== 'artifact' && what !== 'enchantment'
+    && what !== 'land' && what !== 'permanent') return null;
+  // "Whenever a land you control dies" is not printed, and `dies` is defined for creatures only
+  // (CR 700.4), so the land half of the parse exists on the entry and nowhere else.
+  if (dies && what === 'land') return null;
+  return [{ kind: dies ? 'dies' : 'etb', who, of: 'you', what } as BoardEvent];
+}
+
 /** One `spell-cast` trigger, which is the only event the parsed cast prologue below builds. */
 type CastEvent = Extract<TriggerDef['on'], { readonly kind: 'spell-cast' }>;
 
@@ -11965,6 +11991,50 @@ const TRIGGER_SHAPES: readonly ({
        distinction would return the wrong creature to its owner's hand. The reading is worth having
        and wants `blocked` taught to the clause vocabulary first.
   */
+  /*
+    ── The board prologue, parsed ──────────────────────────────────────────────────────────
+
+    "Whenever a[nother] <creature|artifact|enchantment|land|permanent> you control enters / dies,"
+    — one row, the same move D474 made on the cast family (D477).
+
+    **Measured on the re-ranked gap.** With the cast family read, `prologue-gap.mjs` says 600 cards
+    are still finished by a prologue reader, and the board watchers are the biggest cluster left:
+    38 under "whenever a creature you control", 15 "an artifact you control", 13 "another creature
+    you control", 8 "another artifact you control", 8 `Constellation —` and 8 `Eerie —` (both of
+    which are "an enchantment you control enters" once the ability word comes off), plus the
+    one-and-two-card tribes underneath. The table had **no board-watching row at all** before this:
+    every shape in it was the permanent's own arrival or death.
+
+    `artifact` and `enchantment` are new on the event and the engine half is in `scriptTypes.ts`;
+    `creature`, `land` and `permanent` were already askable and had no prologue to ask them.
+
+    **What it refuses, each for its own reason:**
+
+     * **A subtype** — "a Dragon you control", "another Zombie you control", 30-odd shapes with one
+       or two cards each. `what` takes a card type and the event carries no subtypes, so reading
+       `Dragon` as a type would make a filter nothing matches: a trigger that never fires, which is
+       a wrong reading and not a missing one (D362). Same ground as the cast parse's subtype arm,
+       in reverse — there the event *does* carry them.
+     * **A characteristic filter** — "with power 3 or greater", "with a +1/+1 counter on it",
+       "with flying", "with power equal to its toughness". **About 18 cards** between them and the
+       largest thing left in this family, which makes it the obvious next increment: the event
+       carries the subject's id but not its power, its toughness or its keywords, and reading those
+       off the board at resolution is the wrong time (the permanent may have changed or left).
+     * **"leaves the battlefield"** (5 cards) — a different event, whose filter fields this entry
+       did not widen.
+     * **"is put into a graveyard from the battlefield"** on an artifact or an enchantment (5) —
+       `to-graveyard`, which is the right event and has no `what` yet.
+     * **Two events in one line** — "enters **and** whenever you activate a power-up ability",
+       "another creature **or a land**" — where the regex's comma simply does not match.
+  */
+  {
+    prologue: () => new RegExp(
+      `^Whenever (?<who>a|an|another) (?<what>[a-z]+) you control (?<event>${ENTERS}|dies),`
+      + ' (?<clause>.+)$',
+      'i',
+    ),
+    from: boardTrigger,
+  },
   /*
     ── The cast family, parsed rather than enumerated ──────────────────────────────────────
 

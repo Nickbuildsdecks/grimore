@@ -13132,3 +13132,73 @@ Three runtime rows on *Wingsteed Rider*'s own printing — a Giant Growth pointe
 pointed at the Bear Cub beside it, and a creature spell that points at nothing — plus two mapping
 rows for the full name and "this creature". Break-run: answering `targetsSelf` from "the spell
 targeted *something*" rather than from the holder fails the middle row.
+
+## D477 — The board prologue, parsed: the table had no board-watching row at all
+
+With the cast family read, `prologue-gap.mjs` re-ranks: **600** cards one unread line from a finished
+script are still finished by a prologue reader, and the biggest cluster left is the one watching the
+board rather than the stack.
+
+| printed shape | cards |
+| --- | --- |
+| whenever **a creature** you control … | 38 |
+| whenever **an artifact** you control … | 15 |
+| whenever **another creature** you control … | 13 |
+| whenever **another artifact** you control … | 8 |
+| `Constellation —` / `Eerie —` (an enchantment you control enters) | 8 + 8 |
+| an enchantment / a permanent you control, and 30-odd one-and-two-card tribes | ~45 |
+
+And the reason the whole cluster was unread is worth stating plainly: **`TRIGGER_SHAPES` had no
+board-watching row in it.** Every shape in the table was the permanent's own arrival, death,
+attack or tap. The engine has been able to express "another creature you control enters" since
+#29 — three hand-written cards use it — and no printed line could reach it.
+
+### One parsed row
+
+"Whenever a[nother] `<creature|artifact|enchantment|land|permanent>` you control `enters|dies`," —
+who (`a`/`an` → `who: 'any'`, which is what "a creature you control" means about itself; `another` →
+`who: 'another'`) times what times which of the two events.
+
+`creature`, `land` and `permanent` were already askable. **`artifact` and `enchantment` are new on
+the event**, and they are answered from a new `subjectTypes` — the subject's *live* card types — not
+from a boolean of their own. The two existing booleans stay, and the field's docblock says why
+rather than leaving it to look like duplication: `isCreature` is the characteristics answer, which a
+crewed Vehicle and an animated land reach by routes a type line read at face value does not, and
+every board-watching creature trigger in the pool is tested against it. Re-expressing those two
+filters on the type line would be a behaviour change on all of them, which this entry is not.
+
+### What it refuses
+
+ * **A subtype** — "a Dragon you control", "another Zombie you control", 30-odd shapes with one or
+   two cards each. This is the refusal that would do damage if it were taken: `what` holds a card
+   type and the event carries no subtypes, so `Dragon` would compile into a filter nothing matches —
+   a trigger that never fires, which is worse than one that never compiles (D362). The cast parse
+   reads subtypes because *that* event carries them; this one does not, and the asymmetry is the
+   point.
+ * **A characteristic filter** — "with power 3 or greater", "with a +1/+1 counter on it", "with
+   flying", "with power equal to its toughness". **About 18 cards** and the largest thing left in
+   the family, so it is the obvious next increment: the event carries the subject's id but not its
+   power, its toughness or its keywords, and reading those off the board when the trigger resolves
+   is the wrong moment — the permanent may have changed or left (CR 400.7, the same reading D306 and
+   D307 each fixed one way round).
+ * **"leaves the battlefield"** (5) — a different event whose filters this entry did not widen.
+ * **"is put into a graveyard from the battlefield"** on an artifact or enchantment (5) —
+   `to-graveyard` is the right event and has no `what` yet.
+ * **"a land you control dies"** — refused by the parse itself, because `dies` is defined for
+   creatures only (CR 700.4) and nothing prints it.
+ * **Two events in one line** — "enters **and** whenever you activate a power-up ability", "another
+   creature **or a land**" — which the row's comma does not match.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 9,868 | **9,902** |
+| cards with every printed line read | 5,601 | **5,631** |
+| printed rules lines read | 19,816 / 56,421 (35.1%) | **19,852 / 56,421 (35.2%)** |
+
+Three runtime tests on real printings, each chosen for what it can tell apart: *Reckless Fireweaver*
+separates an artifact entering from a creature entering; *Glaze Fiend* is an **artifact creature**
+that watches *another* artifact, so its own arrival must not pump it and a filter answered from the
+type line alone would get that wrong; *Favored of Iroas* is constellation, an ability word in front
+of an enchantment filter. Ten mapping rows and eight refusals in `compile.test.ts`.

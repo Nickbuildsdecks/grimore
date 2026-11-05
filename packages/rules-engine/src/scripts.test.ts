@@ -26319,3 +26319,142 @@ describe('the cast prologue, parsed: colour, subtype, mana value and heroic (D47
     });
   });
 });
+
+/*
+  The board prologue, parsed: "whenever a[nother] <kind> you control enters" (D477).
+
+  `TRIGGER_SHAPES` had no board-watching row at all before this entry — every shape in it was the
+  permanent's own arrival or death — so the whole family was unread however well the engine could
+  express it. Two of the five kinds are new on the event (`artifact`, `enchantment`); `creature`,
+  `land` and `permanent` were askable and had nothing to ask them.
+
+  `compile.test.ts` holds the mapping for every spelling and the refusals. These three are the
+  behaviour, on real printings, and each is chosen for what it can tell apart:
+
+   - **Reckless Fireweaver** separates an artifact entering from a creature entering, which is the
+     filter itself.
+   - **Glaze Fiend** is an **artifact creature** that watches *another* artifact, so it is the row
+     that proves `who: 'another'`: its own arrival must not pump it, and a filter answered from the
+     type line alone would get that wrong whichever way it leaned.
+   - **Favored of Iroas** is constellation, which arrives with an ability word in front of it and an
+     enchantment as its filter.
+*/
+describe('the board prologue, parsed: what entered and whose it was (D477)', () => {
+  const RECKLESS_FIREWEAVER = {
+    name: 'Reckless Fireweaver', type_line: 'Creature — Human Artificer', mana_cost: '{1}{R}',
+    cmc: 2, colors: ['R'], layout: 'normal', power: '1', toughness: '3',
+    oracle_text: 'Whenever an artifact you control enters,'
+      + ' Reckless Fireweaver deals 1 damage to each opponent.',
+  };
+  const GLAZE_FIEND = {
+    name: 'Glaze Fiend', type_line: 'Artifact Creature — Illusion', mana_cost: '{1}{B}',
+    cmc: 2, colors: ['B'], layout: 'normal', power: '0', toughness: '1',
+    oracle_text: 'Flying\nWhenever another artifact you control enters,'
+      + ' Glaze Fiend gets +2/+2 until end of turn.',
+  };
+  const FAVORED_OF_IROAS = {
+    name: 'Favored of Iroas', type_line: 'Creature — Human Soldier', mana_cost: '{2}{W}',
+    cmc: 3, colors: ['W'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Constellation — Whenever an enchantment you control enters,'
+      + ' Favored of Iroas gains double strike until end of turn.',
+  };
+  /** A real enchantment to put on the board, and the only thing here that is one. */
+  const REWARDS_OF_DIVERSITY = {
+    name: 'Rewards of Diversity', type_line: 'Enchantment', mana_cost: '{2}{W}', cmc: 3,
+    colors: ['W'], layout: 'normal', power: null, toughness: null,
+    oracle_text: 'Whenever an opponent casts a multicolored spell, you gain 4 life.',
+  };
+
+  /**
+   * A table around one printed watcher, with the three things that can enter in hand.
+   *
+   * `Bonesplitter` and `Raging Goblin` are pool cards — an artifact and a creature — so the only
+   * fixtures are the watcher and the enchantment, which is what the `fromData` check asserts.
+   */
+  const tableWith = (watcher: Record<string, unknown>, hand: readonly string[]) => {
+    const name = watcher['name'] as string;
+    const list = customDeck({
+      id: 'board-parse',
+      name,
+      entries: [
+        // Two of the watcher, because one test casts a second copy to prove `who: 'another'`.
+        { name, count: 2 },
+        { name: 'Rewards of Diversity', count: 4 },
+        { name: 'Bonesplitter', count: 4 },
+        { name: 'Raging Goblin', count: 4 },
+        { name: 'Mountain', count: 20 },
+        { name: 'Plains', count: 20 },
+        { name: 'Swamp', count: 6 },
+      ],
+      data: [watcher as never, REWARDS_OF_DIVERSITY as never],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual([name, 'Rewards of Diversity'].sort());
+    let s = arena({
+      decks: { 0: 'board-parse', 1: 'board-parse' },
+      deckSpecs: { 'board-parse': list.deck },
+      battlefield: {
+        0: [name, 'Mountain', 'Mountain', 'Plains', 'Plains', 'Swamp'],
+      },
+      hands: { 0: hand },
+      turn: 3,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return tapAllLands(s, 0 as SeatIndex);
+  };
+
+  const play = (s: GameState, spell: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', spell),
+  } as Action)));
+
+  it.each([
+    ['Bonesplitter', 1],
+    ['Raging Goblin', 0],
+  ])('Reckless Fireweaver: %s entering costs each opponent %d life', (spell, lost) => {
+    let s = tableWith(RECKLESS_FIREWEAVER, [spell as string]);
+    const before = life(s, 1 as SeatIndex);
+    s = play(s, spell as string);
+    expect(life(s, 1 as SeatIndex)).toBe(before - (lost as number));
+  });
+
+  it('Glaze Fiend grows on another artifact and not on its own arrival', () => {
+    /*
+      The `who: 'another'` row. Glaze Fiend is itself an artifact creature, so a reading that asked
+      only "did an artifact enter" would pump it for arriving — which is the wrong card, and the
+      kind of wrongness that looks like the right one in a log.
+    */
+    let s = tableWith(GLAZE_FIEND, ['Bonesplitter']);
+    const fiend = find(s, 0 as SeatIndex, 'battlefield', 'Glaze Fiend');
+    expect(power(s, fiend)).toBe(0);
+    s = play(s, 'Bonesplitter');
+    expect(power(s, fiend)).toBe(2);
+
+    // And its own entry, which is the half the filter has to refuse: a second copy cast from hand
+    // pumps the one already out (another artifact entered) and arrives at its own printed 0/1.
+    let own = tableWith(GLAZE_FIEND, []);
+    const first = find(own, 0 as SeatIndex, 'battlefield', 'Glaze Fiend');
+    own = apply(own, {
+      type: 'card:move', by: 0, card: find(own, 0 as SeatIndex, 'library', 'Glaze Fiend'),
+      toZone: 'hand',
+    } as Action);
+    own = play(own, 'Glaze Fiend');
+    const both = ids(own, 0 as SeatIndex, 'battlefield')
+      .filter((id) => nameOf(own, id) === 'Glaze Fiend');
+    expect(both).toHaveLength(2);
+    const second = both.find((id) => id !== first)!;
+    expect(power(own, first)).toBe(2);
+    expect(power(own, second)).toBe(0);
+  });
+
+  it.each([
+    ['Rewards of Diversity', true],
+    ['Bonesplitter', false],
+  ])('Favored of Iroas: %s entering gives double strike: %s', (spell, gained) => {
+    let s = tableWith(FAVORED_OF_IROAS, [spell as string]);
+    s = play(s, spell as string);
+    const soldier = find(s, 0 as SeatIndex, 'battlefield', 'Favored of Iroas');
+    expect(characteristicsOf(s, s.instances[soldier]!).keywords.has('double strike'))
+      .toBe(gained as boolean);
+  });
+});

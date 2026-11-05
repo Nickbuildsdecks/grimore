@@ -958,7 +958,8 @@ function triggerMatches(
       if (who === 'attached' && !isAttachedSubject) return false;
       const e = event as {
         subjectSeat?: SeatIndex; subjectIsCreature?: boolean; subjectIsToken?: boolean;
-        subjectIsLand?: boolean; alone?: boolean; declared?: number;
+        subjectIsLand?: boolean; subjectTypes?: readonly string[];
+        alone?: boolean; declared?: number;
       };
       if (want.kind === 'dies' && want.nontoken === true && e.subjectIsToken === true) return false;
       // "attacks **alone**" — exalted's clause, and a fact about the declaration rather than about
@@ -976,6 +977,17 @@ function triggerMatches(
       // And the landfall half of the same question, asked the same way round: only when the
       // trigger asks for it, so nothing written before this changes meaning.
       if (want.kind === 'etb' && want.what === 'land' && e.subjectIsLand !== true) return false;
+      /*
+        And the two the board prints as often as "creature" (D477): "whenever an **artifact** you
+        control enters", constellation's and eerie's "an **enchantment** you control enters".
+
+        Answered from the subject's live type line rather than from a boolean of its own, because
+        unlike creature and land there is nothing in the characteristics layer that these two mean
+        beyond being on the type line. `subjectTypes` says why the other two keep their booleans.
+      */
+      if ((want.kind === 'etb' || want.kind === 'dies')
+        && (want.what === 'artifact' || want.what === 'enchantment')
+        && !(e.subjectTypes ?? []).includes(want.what)) return false;
       const of = want.of ?? 'any';
       if (of === 'any') return true;
       if (e.subjectSeat === undefined) return false;
@@ -1331,13 +1343,30 @@ function raise(
     */
     const inst = next.vanished[subject] ?? next.instances[subject];
     if (inst !== undefined) {
+      /*
+        One characteristics computation for the three facts below, where there were two for two
+        (D477). It is the expensive call in this function — every continuous effect in play is
+        folded over a permanent's printed card to make it — and `raise` runs on every entry and
+        every death of every game the bot simulates, so a third call for `subjectTypes` would have
+        been a third of that cost for a field read by one filter.
+      */
+      const live = characteristicsOf(next, inst);
       event = {
         ...event,
         subjectSeat: inst.zoneSeat,
-        subjectIsCreature: characteristicsOf(next, inst).isCreature,
+        subjectIsCreature: live.isCreature,
         // And whether it was a land, for the landfall templating. Only on an entry: "whenever a
         // land dies" is not a card, and a field nothing reads is a field that drifts.
-        ...(event.kind === 'etb' ? { subjectIsLand: characteristicsOf(next, inst).isLand } : {}),
+        ...(event.kind === 'etb' ? { subjectIsLand: live.isLand } : {}),
+        /*
+          And its live card types, for the artifact and enchantment board-watchers (D477). Read off
+          the characteristics' type line, so a permanent whose type was changed by an effect is
+          matched on what it *is* rather than on what it was printed as — the same reading the
+          target filters have taken since D419.
+        */
+        ...(event.kind === 'etb' || event.kind === 'dies'
+          ? { subjectTypes: live.typeLine.types.map((t) => t.toLowerCase()) }
+          : {}),
         ...(event.kind === 'dies' ? { subjectIsToken: inst.isToken } : {}),
         // What it had on it, for a trigger that has to count its own counters after they are gone.
         ...(Object.keys(inst.counters).length === 0 ? {} : { subjectCounters: inst.counters }),
