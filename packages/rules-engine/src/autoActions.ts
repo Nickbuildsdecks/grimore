@@ -322,19 +322,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no modes to choose`);
   }
 
-  // X is announced with the spell (CR 601.2b), so it arrives with the action rather than being
-  // asked for on resolution. Refused rather than ignored when the cost has no {X} in it: a client
-  // sending one has misunderstood the card, and silently dropping it would put an x on the stack
-  // object that an effect could read.
+  /*
+    X is announced with the spell (CR 601.2b), so it arrives with the action rather than being
+    asked for on resolution — and it is checked **below**, against the cost being paid rather than
+    against the printed one (D481). See `payingCost`, past the chain that resolves which cost this
+    casting actually pays.
+  */
   const printedCost = parseManaCost(def?.manaCost);
-  if (action.x !== undefined) {
-    if (!printedCost.x) {
-      throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no X to choose`);
-    }
-    if (!Number.isInteger(action.x) || action.x < 0) {
-      throw new EngineError('RULE_NOT_APPLICABLE', 'X must be a whole number, and cannot be negative');
-    }
-  }
 
   // The kicker is announced with the spell (CR 702.32a), so it arrives on the action like X and
   // the modes do. Refused on a card without one rather than ignored: a client sending it has
@@ -579,6 +573,34 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
                       ? `${def?.manaCost ?? ''}${(script?.replicate?.cost ?? '').repeat(replicated)}`
                       : def?.manaCost;
   /*
+    **X, checked against the cost being paid** (CR 601.2b, CR 107.3b, D481).
+
+    It sits here rather than beside the modes because this is the first line that knows which cost
+    this casting pays: foretell, flashback, escape, evoke, dash, bestow, spectacle and overload each
+    *replace* the printed cost above, and a replacement may carry an {X} the printed cost has none
+    of. **Starnheim Unleashed is `{2}{W}{W}` with `Foretell {X}{X}{W}`** — checking the printed cost
+    refused an X the engine's own offer had just promised, because `legalActions` offers `xMax` off
+    the cost being paid, and one pod in 200 died on the disagreement.
+
+    An **offered** cast reads the printed cost instead, which is not an inconsistency: the rule for
+    those is CR 107.3b and it is enforced where the offer is read — X is nought in a cost that is
+    not being paid, and a cascade'd `{X}{R}` is cast for X=0 rather than refused (D460).
+
+    Refused rather than ignored when the cost being paid has no {X} at all: a client sending one has
+    misunderstood the card, and silently dropping it would put an x on the stack object that an
+    effect could read.
+  */
+  const payingCost = offered ? printedCost : parseManaCost(costText);
+  if (action.x !== undefined) {
+    if (!payingCost.x) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no X to choose`);
+    }
+    if (!Number.isInteger(action.x) || action.x < 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'X must be a whole number, and cannot be negative');
+    }
+  }
+
+  /*
     And what the permanents on the table have done to the cost: a Goblin Electromancer, a Thalia.
 
     Through `costChangeFor`, which is the same function `legalActions` used to decide this cast was
@@ -753,7 +775,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     : ` — ${modesOf(script, modes).map((m) => m.description).join('; and ')}`;
   // X is in the description for the same reason the modes are: the player deciding whether to
   // respond has to know how big the Fireball is, and the stack is where both players read it.
-  const xText = printedCost.x ? ` (X=${action.x ?? 0})` : '';
+  // `payingCost`, not the printed cost: a foretold Starnheim Unleashed pays {X}{X}{W} and the stack
+  // has to say how big it is, which the printed {2}{W}{W} would have hidden (D481).
+  const xText = payingCost.x ? ` (X=${action.x ?? 0})` : '';
   // And the kicker, for the same reason again: whether it was paid changes what the spell does,
   // and the player deciding whether to respond reads the stack to find out.
   const kickedText = kicked ? ' (kicked)' : '';

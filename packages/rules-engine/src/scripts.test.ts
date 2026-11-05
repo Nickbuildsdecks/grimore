@@ -26814,3 +26814,80 @@ describe('the block, per creature (D480)', () => {
     ]);
   });
 });
+
+describe('X comes from the cost being paid, not the printed one (D481)', () => {
+  /*
+    Starnheim Unleashed is the card that found this, and it found it in a pod rather than in a test:
+    printed `{2}{W}{W}` with **`Foretell {X}{X}{W}`**, so the cost it is cast for carries an {X} the
+    printed cost has none of. `legalActions` offers `xMax` off the cost being paid (CR 107.3b) and
+    `autoActions` checked the printed one, so the engine refused its own offer and the game threw.
+
+    Both directions are here, on the one card, because that is what makes the rule legible: the
+    foretold cast takes an X and the cast from hand refuses one.
+  */
+  const STARNHEIM_UNLEASHED = {
+    name: 'Starnheim Unleashed', type_line: 'Sorcery', mana_cost: '{2}{W}{W}', cmc: 4,
+    colors: ['W'], layout: 'normal',
+    oracle_text: 'Create a 4/4 white Angel Warrior creature token with flying and vigilance.'
+      + ' If this spell was foretold, create X of those tokens instead.\n'
+      + 'Foretell {X}{X}{W} (During your turn, you may pay {2} and exile this card from your hand'
+      + ' face down. Cast it on a later turn for its foretell cost.)',
+  };
+
+  const holding = () => {
+    const list = customDeck({
+      id: 'foretell-x',
+      name: 'Foretell X',
+      entries: [{ name: 'Starnheim Unleashed', count: 4 }, { name: 'Plains', count: 56 }],
+      data: [STARNHEIM_UNLEASHED as never],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData]).toEqual(['Starnheim Unleashed']);
+    const s = arena({
+      decks: { 0: 'foretell-x', 1: 'foretell-x' },
+      deckSpecs: { 'foretell-x': list.deck },
+      hands: { 1: ['Starnheim Unleashed'] },
+      battlefield: { 1: ['Plains', 'Plains', 'Plains', 'Plains', 'Plains'] },
+      turn: 4,
+      firstSeat: 1,
+    });
+    return tapAllLands(advanceTo(s, 'precombat-main'), 1 as SeatIndex);
+  };
+
+  it('takes an X on a foretold cast whose foretell cost has one', () => {
+    let s = holding();
+    const card = find(s, 1 as SeatIndex, 'hand', 'Starnheim Unleashed');
+    s = apply(s, { type: 'auto:foretell', by: 1, card } as Action);
+    s = tapAllLands(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 1 as SeatIndex);
+
+    // The offer: cast from exile for {X}{X}{W}, with a ceiling on X the five Plains can pay for.
+    const play = legalActions(s, 1 as SeatIndex).plays.find((p) => p.card === card);
+    expect(play?.foretold).toBe(true);
+    expect(play?.manaCost).toBe('{X}{X}{W}');
+    expect(play?.xMax).toBe(2);
+
+    // And the cast the engine used to refuse: {X}{X}{W} at X=2 is five mana, which is all of them.
+    s = apply(s, { type: 'auto:cast', by: 1, card, foretold: true, x: 2 } as Action);
+    expect(s.instances[card]!.zone).toBe('stack');
+    // The stack says how big it is, off the cost being paid rather than the printed one — which is
+    // what the player deciding whether to answer it reads.
+    expect(stackNames(s).join(' ')).toContain('Starnheim Unleashed (X=2)');
+    expect(s.pools['1']?.W ?? 0).toBe(0);
+    s = drain(passBoth(s), 24);
+    expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+
+  it('still refuses an X on the cast from hand, whose printed cost has none', () => {
+    /*
+      The other direction, and the reason this is not simply "trust the client": cast from hand the
+      same card costs `{2}{W}{W}`, an X there is a client that has misread the card, and silently
+      dropping it would put an `x` on the stack object an effect could read.
+    */
+    const s = holding();
+    const card = find(s, 1 as SeatIndex, 'hand', 'Starnheim Unleashed');
+    expect(legalActions(s, 1 as SeatIndex).plays.find((p) => p.card === card && p.kind === 'cast')
+      ?.xMax).toBeUndefined();
+    expect(refusal(s, { type: 'auto:cast', by: 1, card, x: 1 } as Action))
+      .toContain('has no X to choose');
+  });
+});

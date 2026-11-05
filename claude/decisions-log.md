@@ -30890,3 +30890,69 @@ Bears (2, not 3); dropping the event gate from the counter clause makes a `dies`
  * **A timing on the effect** — "destroy that creature **at end of combat**" (3), "return that
    creature to its owner's hand at end of combat" (2). `scheduleDelayed` is the mechanism and the
    clause reader is the only work, so this is the next bite out of the family.
+
+## D481 — X belongs to the cost being paid, and a pod found the one card where that differs
+
+The pod sweep that follows every compiler increment threw for the first time in five runs:
+
+```
+seed 32032: threw — Starnheim Unleashed has no X to choose
+```
+
+An engine throw mid-game is the worst failure this project has, because it ends a table rather than
+mis-reading a card — and this one was the engine refusing **its own offer**.
+
+### The card, which is not the card I remembered
+
+Checked against the printed data rather than recalled (D259), because memory had it wrong:
+
+```
+Starnheim Unleashed — {2}{W}{W} — Sorcery
+Create a 4/4 white Angel Warrior creature token with flying and vigilance.
+If this spell was foretold, create X of those tokens instead.
+Foretell {X}{X}{W}
+```
+
+The **printed** cost has no X. The **foretell** cost has two. And foretell *replaces* the printed
+cost, so a foretold Starnheim Unleashed is an X spell cast off a card whose printed cost is not one.
+
+### The two halves disagreed, in the direction nobody had tested
+
+ * `legalActions` offers `xMax` whenever **the cost being paid** has an {X} in it — correct, and
+   CR 107.3b is why its own comment says so (D460).
+ * `autoActions` validated `action.x` against `parseManaCost(def.manaCost)` — the **printed** cost.
+
+So the offer promised an X the payment then refused. The bot took the offer, as it should, and the
+game ended on `RULE_NOT_APPLICABLE`.
+
+**The structural reason the check was wrong is where it sat.** It ran about 250 lines above the
+chain that resolves which cost this casting actually pays — flashback, escape, foretell, evoke,
+dash, bestow, spectacle and overload each replace the printed cost, and the kicker, buyback and
+replicate add to it — so at that point in the function the answer was not yet knowable. The check
+has moved to just below that chain, where `costText` is the cost being paid, and reads
+`payingCost` instead. Nothing has been spent at that point either, so a refusal still costs the
+caster nothing.
+
+An **offered** cast (cascade, madness, miracle) keeps reading the printed cost, which is not an
+inconsistency: CR 107.3b is enforced where the offer is read, a few hundred lines earlier, and
+D460's reading — a cascade'd `{X}{R}` is cast for X=0 rather than refused — is deliberately
+preserved.
+
+`xText`, the `(X=n)` the stack shows the player deciding whether to answer the spell, had the same
+bug and is fixed in the same place: a foretold Starnheim Unleashed paying five mana used to appear
+on the stack with no X at all.
+
+### Verified
+
+Seed 32032 now finishes: *"Every game reached a finish, with no throw and no stall."*
+
+Two tests on the one card, which is what makes the rule legible — the foretold cast takes `x: 2`
+(five mana, `xMax: 2` off five Plains, `Starnheim Unleashed (X=2)` on the stack) and the cast from
+hand still refuses an X against its printed `{2}{W}{W}`. Break-run: restoring `payingCost =
+printedCost` reproduces the production message, `Starnheim Unleashed has no X to choose`, on the
+foretold row while the refusal row stays green.
+
+**The sweep is the instrument that found this, and it found it on a card nothing in the pool
+resembles.** No hand-written card in the thirteen decks has a foretell cost that differs from its
+printed cost in whether it carries an {X}; 31,654 real cards do, and one of them turned up in a
+deck built at random on the 32nd seed of a 40-game run.
