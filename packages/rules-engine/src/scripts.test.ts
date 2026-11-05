@@ -27326,3 +27326,136 @@ describe('nontoken, on the entry as well as the death (D484)', () => {
     ]);
   });
 });
+
+describe('the counter clause, parsed: how many, which kind, and what it points at (D485)', () => {
+  /*
+    `phrase-gap.mjs` ranks "put a counter on <permanent>" top of the clause queue: **150 cards one
+    line short, across 115 distinct shapes**, where the largest single shape is six cards. A row per
+    shape is not a strategy for that — so the clause asks `targetSpecFrom` the question every other
+    targeted reader asks (D469's parse) instead of listing two phrases of its own, and takes a count
+    off the front.
+
+    Three printed cards, chosen because each exercises a different part of the parse.
+  */
+  const SKINRENDER = {
+    name: 'Skinrender', type_line: 'Creature — Phyrexian Zombie', mana_cost: '{2}{B}{B}', cmc: 4,
+    colors: ['B'], layout: 'normal', power: '3', toughness: '3',
+    oracle_text: 'When Skinrender enters, put three -1/-1 counters on target creature.',
+  };
+  const GAVONY_SILVERSMITH = {
+    name: 'Gavony Silversmith', type_line: 'Creature — Human Soldier', mana_cost: '{3}{W}', cmc: 4,
+    colors: ['W'], layout: 'normal', power: '2', toughness: '3',
+    oracle_text: 'When Gavony Silversmith enters,'
+      + ' put a +1/+1 counter on each of up to two target creatures.',
+  };
+  const PLAGUE_BELCHER = {
+    name: 'Plague Belcher', type_line: 'Creature — Zombie Beast', mana_cost: '{2}{B}', cmc: 3,
+    colors: ['B'], layout: 'normal', power: '5', toughness: '4',
+    oracle_text: 'Menace\nWhen Plague Belcher enters,'
+      + ' put two -1/-1 counters on target creature you control.\n'
+      + 'Whenever another Zombie you control dies, each opponent loses 1 life.',
+  };
+
+  const table = (id: string, spell: string, mine: readonly string[], theirs: readonly string[]) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        { name: 'Skinrender', count: 2 },
+        { name: 'Gavony Silversmith', count: 2 },
+        { name: 'Plague Belcher', count: 2 },
+        { name: 'Grizzly Bears', count: 4 },
+        // Both colours, because the three cards are not one colour: the first draft gave the deck
+        // Swamps only and could not cast the {3}{W} Silversmith.
+        { name: 'Swamp', count: 25 },
+        { name: 'Plains', count: 25 },
+      ],
+      data: [SKINRENDER, GAVONY_SILVERSMITH, PLAGUE_BELCHER] as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    let s = arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: {
+        0: [...mine, ...Array(3).fill('Swamp'), ...Array(3).fill('Plains')],
+        1: [...theirs],
+      },
+      hands: { 0: [spell] },
+      turn: 5,
+      firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    return tapAllLands(s, 0 as SeatIndex);
+  };
+
+  const sizeOf = (s: GameState, id: string) => {
+    const live = characteristicsOf(s, s.instances[id]!);
+    return `${live.power}/${live.toughness}`;
+  };
+
+  /*
+    Each of these is a creature with an **entry trigger**, so the targets belong to the trigger
+    rather than to the cast: the spell resolves, the permanent arrives, the trigger goes on the
+    stack and *then* asks. The first draft of these three handed the targets to `auto:cast` and got
+    "too many targets chosen", which is the engine being right about whose choice it is.
+  */
+  const castThen = (s: GameState, spell: string, targets: readonly string[]) => {
+    let next = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', spell),
+    } as Action));
+    next = apply(next, {
+      type: 'auto:choose', by: 0, targets: targets.map((id) => ({ kind: 'card', id })),
+    } as Action);
+    return drain(passBoth(next), 40);
+  };
+
+  it('puts three counters on, which is the count off the front of the clause', () => {
+    let s = table('counter-three', 'Skinrender', [], ['Grizzly Bears']);
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    s = castThen(s, 'Skinrender', [bears]);
+    /*
+      Three -1/-1 counters on a 2/2 is a -1/-1, which dies to the state-based action — and the
+      counters are **gone** by the time the test looks, because a card leaving the battlefield takes
+      its counters with it (the rule `subjectCounters` exists for). So the death is the assertion,
+      and the zero damage is what says it was counters rather than burn: the first draft of this
+      test asserted the counters and read `undefined` off a card in a graveyard.
+    */
+    expect(s.instances[bears]!.zone).toBe('graveyard');
+    expect(s.instances[bears]!.damage).toBe(0);
+  });
+
+  it('puts one counter on each of two targets', () => {
+    let s = table('counter-two-targets', 'Gavony Silversmith', ['Grizzly Bears', 'Grizzly Bears'], []);
+    const bears = ids(s, 0 as SeatIndex, 'battlefield')
+      .filter((id) => s.cardDefs[s.instances[id]!.defKey]?.name === 'Grizzly Bears');
+    expect(bears).toHaveLength(2);
+    s = castThen(s, 'Gavony Silversmith', bears);
+    // One each, not two on the first — which is what "each of up to two target creatures" says.
+    expect(bears.map((id) => sizeOf(s, id))).toEqual(['3/3', '3/3']);
+  });
+
+  it('puts a harmful counter on your own creature where the card says so', () => {
+    /*
+      Plague Belcher is the case that shows `friendly` is read off the **counter kind** and the
+      target filter off the **phrase**, which are two different questions: `-1/-1` is harmful, and
+      "target creature you control" still restricts the choice to your own board. A reader that
+      took the side from the kind would have refused this card's own printed cost.
+    */
+    // A Skinrender as the host, because it is a 3/3: two -1/-1 counters leave a 1/1 standing, so
+    // the counters can still be read off it. A 2/2 would die and take them with it.
+    let s = table('counter-own', 'Plague Belcher', ['Skinrender'], []);
+    const host = find(s, 0 as SeatIndex, 'battlefield', 'Skinrender');
+    s = castThen(s, 'Plague Belcher', [host]);
+    expect(s.instances[host]!.counters['-1/-1']).toBe(2);
+    expect(sizeOf(s, host)).toBe('1/1');
+  });
+
+  it('reads the three cards whole, and the count and kind onto the clause', () => {
+    for (const card of [SKINRENDER, GAVONY_SILVERSMITH, PLAGUE_BELCHER]) {
+      const read = compileCard(card as never);
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread).toEqual([]);
+    }
+  });
+});

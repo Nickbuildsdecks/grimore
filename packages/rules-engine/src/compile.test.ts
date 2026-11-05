@@ -8828,8 +8828,14 @@ describe('a counter on each permanent a printed scope names (D453)', () => {
     ['an attacking scope', 'put a -1/-1 counter on each attacking creature.'],
     // Charmed Stray: a name, and a name needs a card database to resolve.
     ['a named scope', 'put a +1/+1 counter on each other creature you control named Charmed Stray.'],
-    // The support/bolster shape, which is a targeted clause and belongs to a different reader.
-    ['targets rather than a scope', 'put a +1/+1 counter on each of up to two target creatures.'],
+    /*
+      **The support/bolster shape was here and is read now (D485).** Its row said this clause "is a
+      targeted clause and belongs to a different reader", and that reader arrived: the counter
+      clause asks `targetSpecFrom`, which parses "each of up to two target creatures" into one spec
+      with a count of two. So the line reads, this row would fail, and it is deleted rather than
+      kept — which is what the stale-row rule above is for. The mapping lives in "the counter
+      clause, read off the printed phrase".
+    */
     /*
       **The rest of the printed three-word-and-longer shapes**, and this group is load-bearing
       rather than thorough.
@@ -9550,5 +9556,60 @@ describe('the "or another" prologue, read off the printed subject', () => {
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
     expect(field(read.script, 'triggers')).toBeUndefined();
+  });
+});
+
+/*
+  The counter clause, as printed text (D485).
+
+  Which printed phrase becomes which count, kind and target spec — and the phrases still refused.
+  The runtime tests in `scripts.test.ts` drive three printed cards through a game; these rows say
+  what the parse accepts.
+*/
+describe('the counter clause, read off the printed phrase', () => {
+  const field = (script: unknown, key: string) =>
+    (script as Record<string, unknown> | undefined)?.[key];
+  const sorcery = (text: string) => compileCard({
+    name: 'Counting Thing', type_line: 'Sorcery', mana_cost: '{1}{G}', cmc: 2,
+    colors: ['G'], layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    ['Put a +1/+1 counter on target creature.', 1],
+    ['Put a +1/+1 counter on target creature you control.', 1],
+    ['Put a +1/+1 counter on another target creature you control.', 1],
+    ['Put a +1/+1 counter on up to one target creature.', 1],
+    ['Put a +1/+1 counter on each of up to two target creatures.', 1],
+    ['Put two +1/+1 counters on target creature.', 1],
+    ['Put three -1/-1 counters on target creature.', 1],
+    ['Put a -1/-1 counter on target creature you control.', 1],
+    // The target parse reaches past creatures, and the counter clause comes with it.
+    ['Put a +1/+1 counter on target creature with flying.', 1],
+    ['Put two -1/-1 counters on target creature an opponent controls.', 1],
+  ])('%s reads, and asks for its target', (text, targets) => {
+    const read = sorcery(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    expect((field(read.script, 'targets') as readonly unknown[]).length).toBe(targets);
+  });
+
+  it.each([
+    /*
+      The counts and kinds the parse refuses, each because the number or the word comes from
+      somewhere this clause cannot see (D362).
+    */
+    ['Put X +1/+1 counters on target creature.', 'X names a number from the cost'],
+    ['Put that many +1/+1 counters on target creature.', '"that many" names an earlier count'],
+    ['Put four +1/+1 counters on target creature.', 'a count past what the corpus prints'],
+    ['Put a loyalty counter on target creature.', 'a counter kind with its own rules'],
+    ['Put a +1/+1 counter on target Merfolk you control.',
+      'a subtype target: the target parse lower-cases its phrase before it could tell'],
+    ['Put a +1/+1 counter on enchanted creature.', 'the Aura host, which is a different question'],
+  ])('leaves "%s" unread: %s', (text) => {
+    const read = sorcery(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
   });
 });

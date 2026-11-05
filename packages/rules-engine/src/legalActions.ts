@@ -1897,7 +1897,8 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   let mustChoose: LegalActions['mustChoose'] = null;
   if (choice !== null && choice.seat === seat) {
     const object = state.stackObjects[choice.stackId];
-    const specs = object === undefined ? [] : abilityTargetSpecs(state, object);
+    // `scriptForCard`, so the offer sees a compiled card's trigger targets too (D485).
+    const specs = object === undefined ? [] : abilityTargetSpecs(state, object, scriptForCard);
     mustChoose = {
       description: choice.description,
       specs,

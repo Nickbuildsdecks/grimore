@@ -2364,7 +2364,8 @@ function chooseTargets(state: GameState, action: { by: SeatIndex; targets: reado
   const object = state.stackObjects[pending.stackId];
   if (object === undefined) throw new EngineError('RULE_NOT_APPLICABLE', 'that ability is no longer on the stack');
 
-  const specs = abilityTargetSpecs(state, object);
+  // `scriptForCard`, so a compiled card's trigger can be answered at all (D485).
+  const specs = abilityTargetSpecs(state, object, scriptForCard);
   const check = checkTargets(state, specs, action.targets, action.by, object.source);
   if (!check.ok) throw new EngineError('RULE_NOT_APPLICABLE', check.reason ?? 'illegal targets');
   // And a *trigger* that divides something, refused for the same reason an activated ability is:

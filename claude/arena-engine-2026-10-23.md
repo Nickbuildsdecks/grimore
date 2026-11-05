@@ -13739,3 +13739,87 @@ The subject words that are filters no field expresses: `modified` (a defined con
 counters and attachments, CR 701.x), `historic`, `legendary`, and two types in one subject
 ("artifact creature or Vehicle", "Elf or Berserker"). Seven lines between them, and each would
 compile into a trigger looser than the card (D362).
+
+## D485 — The counter clause, parsed — and the stuck table it found
+
+`phrase-gap.mjs` put "put a counter on &lt;permanent&gt;" at the top of the clause queue: **150 cards one
+line short, across 115 distinct shapes**, where the largest single shape is *six* cards. A row per
+shape is not a strategy for that.
+
+The shapes differ in three places and only three: the **count** ("two +1/+1 counters"), the **kind**
+(`+1/+1`, `-1/-1`) and the **target phrase** — and D469 already built a parse for the third. So the
+clause now asks `targetSpecFrom` the question every other targeted reader asks, instead of listing
+`target creature` and `target creature you control` as the only two subjects it knew. The family
+comes along with it: "another target creature you control", "up to one target creature", "each of up
+to two target creatures", "target creature with flying", "target creature an opponent controls".
+
+The count stops at three, which is what the corpus prints. `X` and "that many" are refused: both name
+a number from elsewhere in the sentence, and a reader that guessed would be wrong rather than silent.
+
+### The defect this found, which matters more than the clause
+
+The first runtime test refused its own target: **"too many targets chosen"**, on a card whose trigger
+had just asked for one.
+
+`abilityTargetSpecs` — the function that tells the validator what an ability on the stack may be
+pointed at — resolved its script with `scriptFor(name)`, the **hand-written registry**. For a
+compiled card that returns nothing, so the spec list was empty, so a chosen target was one too many.
+And because nobody holds priority while a choice is owed, the table does not continue:
+
+> **every compiled card whose trigger targets would have hung the game at the moment it was
+> answered.**
+
+Not a mis-read card — a stuck table, which is the failure this project has ranked worst since #297.
+The engine's own rule for this was already written down in `automation.ts`, two files away:
+`scriptForCard` and not `scriptFor`, *"because a card nobody wrote a script for still has whatever
+the compiler could read"*. `derive.ts` imports `scripts.ts`, so that function cannot be imported
+back; the two callers that matter pass it in, and both already had it to hand.
+
+**One narrow gap is left stated rather than hidden.** `soleTargetSpecOf` keeps the registry lookup,
+so a *compiled* card's ability cannot be redirected by a Spellskite. That is a card doing less than
+it could, not a table that cannot continue, and it is written into the function's docblock.
+
+### And a bug of my own, caught by the second test
+
+The reader applied the counters with `firstCardTarget`, which takes one. "Each of up to two target
+creatures" is **one spec with a count of two**, so Gavony Silversmith put its counter on the first
+creature and nothing on the second — `['3/3', '2/2']` where the card promises one each. It reduces
+over `cardTargets` now, the same list the count let the player choose.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| cards with a compiled script | 10,091 | **10,145** |
+| cards with every printed line read | 5,775 | **5,801** |
+| printed rules lines read | 20,077 / 56,421 (35.6%) | **20,145 / 56,421 (35.7%)** |
+
+Three printed cards drive it, each exercising a different part: **Skinrender** (a count of three, and
+a 2/2 that dies to it — the death is the assertion, because a card leaving the battlefield takes its
+counters with it), **Gavony Silversmith** (two targets, one counter each) and **Plague Belcher**
+(a *harmful* counter on a creature *you control*, which is the case that shows `friendly` is read off
+the kind and the filter off the phrase — two different questions). Ten mapping rows and six refusals.
+
+Break-run, both halves: putting the validator back on the registry refuses all three cards' targets
+with the production message, and putting the effect back on `firstCardTarget` fails exactly the
+two-target row.
+
+### A row that was waiting for this reader
+
+The gate failed once on a **stale refusal**: D453's scope family asserted that "put a +1/+1 counter
+on each of up to two target creatures" stays unread, and its row said why — *"the support/bolster
+shape, which is a targeted clause and belongs to a different reader."* That reader is this one. The
+row is deleted rather than kept, which is the rule that family's own comment states: a stale row
+fails the test, and that is the point of asserting an equality rather than a subset.
+
+### What the parse still refuses
+
+ * **A subtype target** — "target Merfolk you control", "target Wall". `targetSpecFrom` lower-cases
+   its phrase before the parse sees it, so the capital letter that tells a subtype from a qualifier
+   is already gone. That is a change to *that* function's contract and the obvious next increment:
+   it would lift this clause, the pump, the damage and every other targeted reader at once.
+ * **"enchanted creature"** — the Aura's host, which the Aura reader answers with a different
+   question (D469 says so in as many words).
+ * **A counter kind with its own rules** — a loyalty counter, a stun counter. `addCounters` would
+   store the name happily, and the rules attached to it are not implemented, so a card that looked
+   automated would do nothing (D362).

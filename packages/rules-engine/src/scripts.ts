@@ -5673,13 +5673,34 @@ const CLOUDFIN_RAPTOR: CardScript = {
  */
 export function abilityTargetSpecs(
   state: GameState, object: StackObject,
+  /**
+   * How to find the script for a card def — **and the reason this is a parameter** (D485).
+   *
+   * The default is `scriptFor`, the hand-written registry. That was the only lookup here, and for a
+   * **compiled** card it returns nothing: so a compiled card's targeting trigger went on the stack,
+   * asked its controller for a target, and then refused every answer with "too many targets
+   * chosen", because the validator compared the chosen list against an empty spec list. Nobody
+   * holds priority while a choice is owed, so that is not a mis-read card, it is a **stuck table**.
+   *
+   * The engine's own rule for this is already written down in `automation.ts`: `scriptForCard` and
+   * not `scriptFor`, because a card nobody wrote a script for still has whatever the compiler could
+   * read. It cannot be imported here — `derive.ts` imports this module, so the dependency only runs
+   * one way — so the two callers that matter pass it in. They both import it already.
+   *
+   * `soleTargetSpecOf` below keeps the default on purpose, which leaves one narrow gap stated
+   * rather than hidden: a **compiled** card's ability is not redirectable by a Spellskite. That is
+   * a card doing less than it could, not a table that cannot continue.
+   */
+  resolve: (def: CardDef | undefined) => CardScript | undefined = (def) => scriptFor(def?.name),
 ): readonly TargetSpec[] {
   if (object.abilityIndex === undefined) return [];
   if (object.grantedBy !== undefined) {
+    // A granted trigger comes from the card that granted it, by name rather than by def — and only
+    // hand-written cards grant triggers, so the registry is the right lookup here.
     return scriptFor(object.grantedBy.card)?.grantedTriggers?.[object.grantedBy.index]?.targets
       ?? [];
   }
-  const script = scriptFor(state.cardDefs[object.cardKey]?.name);
+  const script = resolve(state.cardDefs[object.cardKey]);
   return (object.kind === 'activated'
     ? script?.abilities?.[object.abilityIndex]?.targets
     : script?.triggers?.[object.abilityIndex]?.targets) ?? [];
@@ -15023,22 +15044,46 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
-    A counter put on a creature. `+1/+1` helps and `-1/-1` harms, which is the clearest case in this
-    file for why `friendly` cannot be read off the target phrase: the two clauses differ by one
-    character and point in opposite directions.
+    A counter put on a target, **parsed** (D485): how many, which kind, and whatever target phrase
+    `targetSpecFrom` can read.
+
+    `+1/+1` helps and `-1/-1` harms, which is the clearest case in this file for why `friendly`
+    cannot be read off the target phrase: the two clauses differ by one character and point in
+    opposite directions.
+
+    ## Why this is a parse and not more rows
+
+    `phrase-gap.mjs` ranks "put a counter on <permanent>" at **150 one-line-short cards and 115
+    distinct shapes**, where the largest single shape is *six* cards. A row per shape is not a
+    strategy for that; the shapes differ in the **count** ("two +1/+1 counters"), the **kind** and
+    the **target phrase** — and D469 already built a parse for the third. So this clause asks
+    `targetSpecFrom` the same question every other targeted reader asks, instead of listing two
+    phrases of its own, and the family comes along with it: "another target creature you control",
+    "up to one target creature", "target Merfolk you control", "target land you control".
+
+    The count stops at three because that is what the corpus prints. `X` and "that many" are
+    refused: both name a number from somewhere else in the sentence, and a reader that guessed one
+    would be wrong rather than silent (D362).
   */
-  const countered = /^put a (\+1\/\+1|-1\/-1) counter on (target creature(?: you control)?)$/i
-    .exec(text);
+  const COUNT_WORDS: Readonly<Record<string, number>> = { a: 1, an: 1, one: 1, two: 2, three: 3 };
+  const countered = /^put (a|an|one|two|three) (\+1\/\+1|-1\/-1) counters? on (.+)$/i.exec(text);
   if (countered !== null) {
-    const kind = countered[1]!.startsWith('+') ? '+1/+1' : '-1/-1';
-    const spec = targetSpecFrom(countered[2]!, kind === '+1/+1');
-    if (spec !== null) {
+    const many = COUNT_WORDS[countered[1]!.toLowerCase()];
+    const kind = countered[2]!.startsWith('+') ? '+1/+1' : '-1/-1';
+    const spec = many === undefined ? null : targetSpecFrom(countered[3]!, kind === '+1/+1');
+    if (spec !== null && many !== undefined) {
       return {
         targets: [spec],
-        effect: (c) => {
-          const id = firstCardTarget(c);
-          return id === null ? c.state : addCounters(c.state, id, kind, 1);
-        },
+        /*
+          **Every target, not the first.** "each of up to two target creatures" is one spec with a
+          `count` of two, so a reader that took `firstCardTarget` put both counters' worth on one
+          creature and nothing on the other — which is what the Gavony Silversmith test read before
+          this: `['3/3', '2/2']` where the card promises one each. `cardTargets` is the same list
+          `count` let the player choose.
+        */
+        effect: (c) => cardTargets(c).reduce(
+          (state, id) => addCounters(state, id, kind, many), c.state,
+        ),
       };
     }
   }
