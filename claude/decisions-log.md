@@ -29253,3 +29253,114 @@ game against 352). It is not attributable to this change: the seeds had never be
 set D460 cleared still clears, and nothing here touches combat, priority or the stack. Left as task
 **#334** rather than waved at, because a pod that cannot finish is the same thing to two people at a
 table as a pod that stalls.
+
+> **Corrected by D462.** "These decks are grindier than the first set in any case (747 moves a game
+> against 352)" was wrong, and wrong *because* of the unfinished game: that one pod spent the whole
+> 20,000-move bound, which is most of the 44,820 moves the sixty games cost between them. On the
+> fixed engine the same sixty read **60/60 at 397 moves a game**. The decks were never grindier; one
+> of them could not end, and the average was reporting the bug as a property of the pool.
+
+## D462 — The pod that could not end, and the two ways an Equipment goes nowhere
+
+Task #334, opened at the end of D461 and the first unfinishable game this project has had. One pod
+of sixty on a fresh seed set — seed 30002, four 100-card Commander decks of arbitrary real cards —
+spent the whole 20,000-move bound and was reported `unfinished`.
+
+**`unfinished` is two different things wearing one word**, which is the same mistake `unfinished.mjs`
+found in thirty-five harnesses (D244) one level down. A pod that needs more moves and a pod that
+cannot end both hit the cap. So the first move was not a fix: it was a re-run at 120,000 moves and a
+`TRACE` arm on `corpus-decks.mjs` that prints, every n moves, the turn and step, each seat's life,
+hand, battlefield and library, and the commonest action and card. The answer came in one screen:
+
+```
+move  1000 turn 44 postcombat-main :: p0 -1life … OUT:life | p1 9life h4 b10 lib82 | …
+       :: auto:activate×854 … cards: Umbral Mantle#0 → Air-Cult Elemental×427, …#0 → Hotshot Mechanic×426
+move 12000 turn 44 postcombat-main :: p0 -1life … OUT:life | p1 9life h4 b10 lib82 | …
+       :: auto:activate×11854 …
+```
+
+Identical. Eleven thousand moves and not one life total, hand, battlefield or library moved. The game
+was not slow; it could not end.
+
+### What it was
+
+**Umbral Mantle**, a real card, printed `Equip {0}`. Seat 2 held it at turn 44 with Air-Cult Elemental
+and Hotshot Mechanic both tapped from attacking, and moved it between them for ever.
+
+`equipMovesSideways` — the seventeenth of the bot's "spent on nothing" family, D35's shell plus
+`wasted-plays.mjs`' 124 equips — reads the **host's** tapped state as a reason to move ("a creature
+lying sideways cannot attack or block with the bonus on it") and never asked the same question of the
+creature the Equipment was moving *to*. That left **two** loops, not one:
+
+* **tapped onto tapped**: both directions read as fair, so the move ping-pongs;
+* **untapped onto tapped**, where the tapped creature is bigger: the power test sends the bonus
+  across and the tapped-host clause sends it straight back.
+
+With an equip cost of nothing, either runs until somebody stops watching.
+
+The fix is an ordering, in `bot.ts`:
+
+```ts
+  if (to.tapped) return true;     // a bonus on a tapped creature buys nothing this turn
+  if (host.tapped) return false;  // and only then is a tapped host a reason to move
+  return characteristicsOf(state, to).power <= characteristicsOf(state, host).power;
+```
+
+### Why nothing already in the project could see it
+
+This is the part worth keeping, because the next one will hide the same way.
+
+* The **engine** did not throw. Every one of those equips is legal; the rules really do allow a free
+  equip as often as you like. D244's hunt was for throws and there was none.
+* The **stall detector** compares consecutive state versions, and an equip bumps one every time. A
+  loop that changes the game and changes nothing about it is invisible to that test.
+* `playout.test.ts`'s standing invariant — the engine never offers a play it then refuses — was
+  green, because this play is offered *and* taken. D460's lesson again: an invariant is only as
+  broad as the decks it is asserted over, and this one is not even about refusal.
+* Only the **move cap** noticed, and a move cap cannot say which of the two things it caught.
+
+So the instrument changed as well as the engine. `corpus-decks.mjs` now fingerprints what a player
+would call progress every move — turn, step, each seat's life and poison, the size of each of their
+five zones — and reports `looping`, with the action and the card that filled the window, after
+`LOOP` (default 2,000) moves that move none of it. A different word for a different bug. Counters,
+tapped state and the stack are deliberately out of the fingerprint, because a loop that only moves
+those is still a loop; that is what makes the bound load-bearing, and 2,000 is a tenth of the pod cap
+and about three pods' worth of moves.
+
+### Verified
+
+2,251 engine tests (2,250 + 1) and the gate. Two break levers against a baseline verified green
+first — the target-tapped clause removed, and the tapped-host escape removed — two failures, each
+naming its own assertion: `expected true to be false` for the decline, and
+`expected 'auto:pass' to be 'auto:activate'` for the escape.
+
+Seed 30002 itself: **finished, turn 62, 347 moves**, where before it spent 20,000 and ended nothing.
+
+**60 corpus duels (SEED0=20000): 60/60 finished**, 20.8 turns and 66 moves — unchanged to the decimal
+from the run before the fix, which is what a rule only a tapped-creature board can reach should do to
+the duel arm.
+
+**The 60-pod set D461 left open (SEED0=30000): 60/60 finished**, no throw and no stall — 59/60
+before. And the pace figure changes with it: **69.4 turns and 397 moves** a game, where D461 recorded
+747 moves and called these decks grindier than the first set. They are not. That average was one
+game spending 20,000 moves on the Mantle; take it out and a four-player pod of arbitrary real cards
+costs about four hundred moves, which is the number to quote.
+
+A **100-pod set on the same build is re-running** (its first attempt was cut off by a background time
+limit, not by a failure); its figure lands in the next commit rather than being assumed from the
+sixty.
+
+
+### What is still open, and it is not small
+
+The loop *class*. Any activated ability the board can pay for free, and whose effect `evaluate`
+scores at zero, can be taken for ever; the "spent on nothing" family answers that one card at a time
+and is now seventeen members long. The structural answer is one rule — a seat does not take an action
+that returns it to a position it has already been at in this step — and it is **task #335** rather
+than a rider here, because it needs a cheap fingerprint of the position, must not catch a Gelectrode
+pinging twice in a step (which changes life, so it is a different position), and has to be priced per
+decision the way D257 priced the castable term.
+
+Worth stating for beta: a loop is worse at a real table than a crash. `apps/realtime` bounds engine
+moves at 25 a write (D325), so a looping bot does not hang the process — it spends all 25 on nothing,
+every write, and the table never advances with no error anywhere for anybody to see.

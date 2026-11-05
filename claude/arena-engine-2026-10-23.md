@@ -12293,3 +12293,54 @@ which ran out of the 20,000-move bound rather than breaking), no throw and no st
 to this change — the seeds had never been run and nothing here touches combat, priority or the stack
 — and left as task #334, because a pod that cannot finish is the same thing to two people at a table
 as a pod that stalls.
+
+> **Corrected by D462:** seed 30002 could not end at all, and that also makes D461's aside wrong —
+> the 60-pod set reads **60/60 at 397 moves a game** on the fixed engine, not the 747 D461 quoted.
+> That average was the one looping game, reported as grindier decks.
+
+## The pod that could not end (D462)
+
+Task #334, the one pod of sixty D461 left open. Seed 30002 spent all 20,000 moves and reported
+`unfinished` — a word that covers two different things, a game that needs more moves and a game that
+cannot end, which is why the first move was an instrument rather than a fix.
+
+A `TRACE` arm on `corpus-decks.mjs` prints, every n moves, the turn and step, each seat's life, hand,
+battlefield and library, and the commonest action and card. Between move 1,000 and move 12,000 of
+seed 30002 **nothing in that line changed**: turn 44, postcombat main, same life totals, same zones,
+and `auto:activate` climbing by a thousand each thousand moves — `Umbral Mantle#0 → Air-Cult
+Elemental` and `→ Hotshot Mechanic`, in alternation.
+
+**Umbral Mantle** is a real card printed `Equip {0}`. Both creatures were tapped from attacking, and
+the bot's `equipMovesSideways` rule read the **host's** tapped state as a reason to move the
+Equipment without ever asking the same question of the creature it was moving *to*. Two loops, not
+one: tapped onto tapped, where both directions read as fair; and untapped onto a bigger tapped
+creature, where the power test sends it across and the tapped-host clause sends it back. A free equip
+cost makes either free.
+
+The fix is an ordering — the target's tapped state first and on its own, because a bonus on a tapped
+creature buys nothing this turn, and only then is a tapped host a reason to move.
+
+**Why nothing in the project caught it**, which is the part that will matter again: the engine never
+threw, because every one of those equips is legal; the stall detector compares consecutive state
+versions and an equip bumps one every time; and `playout.test.ts`' standing "never offers a play it
+then refuses" invariant was green, because this play is offered *and* taken. Only the move cap
+noticed, and a move cap cannot say which of its two meanings applies.
+
+So `corpus-decks.mjs` now answers that itself: it fingerprints what a player would call progress
+every move — turn, step, each seat's life and poison, the size of each of their five zones — and
+reports **`looping`**, naming the action and the card that filled the window, after `LOOP` (2,000)
+moves that move none of it. A different word for a different bug.
+
+The loop *class* is still open and is now task #335: any free activated ability the evaluation scores
+at zero can do this, and the seventeen-member "spent on nothing" family answers it one card at a
+time. The structural answer — a seat does not take an action that returns it to a position it has
+already been at in this step — is its own increment, because it has to be hashed cheaply, must not
+catch a Gelectrode pinging twice, and has to be priced per decision.
+
+
+**Verified**: gate green (rules-engine 2,251, apps/api 325, apps/web 246, apps/realtime 59). Two
+break levers against a baseline verified green first, two failures. Seed 30002 finishes on turn 62 in
+347 moves. 60 duels 60/60 (20.8 turns, 66 moves — unmoved by the fix). The 60-pod set that held the
+failure: **60/60, 69.4 turns, 397 moves** — and that last number corrects D461's 747, which was one
+looping game dragging the average; a real four-player pod costs about four hundred moves. A 100-pod
+set is re-running after its first attempt was cut off by a background time limit.
