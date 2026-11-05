@@ -27767,3 +27767,130 @@ describe('prevent the next N damage, at the table (D488)', () => {
     expect(s.instances[angel]!.zone).toBe('battlefield');
   });
 });
+
+describe('counter unless its controller pays, at the table (D489)', () => {
+  /*
+    Force Spike, from the corpus: one printed line, and the classic of the family — 50 of the 81
+    unread "Counter target … unless …" sentences are its exact shape.
+
+    The three outcomes are the three tests, which is ward's own structure (#97) because this is
+    ward's own machinery: `pendingPayment` was built for a question asked of a seat who is not
+    resolving anything, and the only difference here is **which** seat and **when**. Ward asks the
+    player who did the targeting, from a triggered ability; this asks the player whose spell is
+    being answered, from the counterspell's own resolution.
+  */
+  const FORCE_SPIKE = {
+    name: 'Force Spike', type_line: 'Instant', mana_cost: '{U}', cmc: 1,
+    colors: ['U'], layout: 'normal',
+    oracle_text: 'Counter target spell unless its controller pays {1}.',
+  };
+
+  const table = (id: string, theirForests: number) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        { name: 'Force Spike', count: 4 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Island', count: 26 },
+        { name: 'Forest', count: 26 },
+      ],
+      data: [FORCE_SPIKE] as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData).toContain('Force Spike');
+    /*
+      Seat 1's turn, because seat 1 is the one casting the spell that gets answered — and the number
+      of Forests is the whole variable: Grizzly Bears costs {1}{G}, so two Forests leaves nothing
+      untapped to pay with and three leaves one.
+    */
+    let s = arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: {
+        0: [...Array(2).fill('Island')],
+        1: [...Array(theirForests).fill('Forest')],
+      },
+      hands: { 0: ['Force Spike'], 1: ['Grizzly Bears'] },
+      /*
+        It has to be **seat 1's** turn, because a creature is sorcery-timed and the spell being
+        answered is cast by seat 1. `firstSeat: 1` with turn 4 is seat 1 active — checked against
+        the engine rather than reasoned about, after a draft that flipped it the other way on a
+        guess about turn parity and was wrong.
+      */
+      turn: 4,
+      firstSeat: 1,
+    });
+    /*
+      And **no `tapAllLands`**: activating a mana ability needs priority, so pre-tapping seat 0's
+      Islands on seat 1's turn threw "you do not have priority" in the setup, before anything this
+      increment is about. `auto:cast` taps for its own cost, which is what the ward tests rely on
+      too.
+    */
+    return advanceTo(s, 'precombat-main');
+  };
+
+  const spikeTheBears = (s: GameState) => {
+    let next = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1 as SeatIndex, 'hand', 'Grizzly Bears'),
+    } as Action);
+    const bears = next.stackOrder[next.stackOrder.length - 1]!;
+    // The caster keeps priority after casting (CR 117.3c), so seat 1 has to pass before seat 0 may
+    // respond. The first draft cast straight over the top and got "you do not have priority".
+    next = apply(next, { type: 'auto:pass', by: 1 } as Action);
+    next = apply(next, {
+      type: 'auto:cast', by: 0, card: find(next, 0 as SeatIndex, 'hand', 'Force Spike'),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action);
+    // Force Spike is above the Bears, so it resolves first (CR 608.1).
+    expect(next.stackOrder).toHaveLength(2);
+    return { state: drain(passBoth(next), 40), bears };
+  };
+
+  it('asks the spell\'s controller, not the caster, and lets the spell through when paid', () => {
+    const { state, bears } = spikeTheBears(table('spike-paid', 3));
+    // The question belongs to seat 1 — whose spell it is — while seat 0 cast the counterspell.
+    expect(state.pendingPayment?.seat).toBe(1);
+    expect(state.pendingPayment?.cost).toBe('{1}');
+    expect(state.pendingPayment?.prompt).toContain('Force Spike');
+    // Nobody holds priority while it stands, which is what stops the other table offering a pass.
+    expect(state.priority).toBeNull();
+
+    const paid = drain(apply(state, { type: 'auto:pay', by: 1, pay: true } as Action), 40);
+    expect(paid.pendingPayment).toBeNull();
+    expect(namesIn(paid, 1 as SeatIndex, 'battlefield')).toContain('Grizzly Bears');
+    expect(paid.instances[bears]!.zone).toBe('battlefield');
+  });
+
+  it('counters the spell when the cost is declined', () => {
+    const { state, bears } = spikeTheBears(table('spike-declined', 3));
+    expect(state.pendingPayment).not.toBeNull();
+    const declined = drain(apply(state, { type: 'auto:pay', by: 1, pay: false } as Action), 40);
+    expect(declined.instances[bears]!.zone).toBe('graveyard');
+    expect(namesIn(declined, 1 as SeatIndex, 'battlefield')).not.toContain('Grizzly Bears');
+    expect(declined.stackOrder).toEqual([]);
+  });
+
+  it('counters without asking when the cost cannot be paid, and says so in the card\'s own words', () => {
+    /*
+      Two Forests, both spent on the Bears, so there is nothing to pay {1} with. A prompt with one
+      outcome is a table that has stopped, so `settlePayment` resolves it without asking — and the
+      note it writes is the one this increment generalised. It used to be built in `settlePayment`
+      with the word "ward" hard-coded, which would have had Force Spike announcing a keyword it does
+      not have; the raiser supplies the wording now. That is the assertion below, and it is the
+      reason the field was added rather than a nicety.
+    */
+    const { state, bears } = spikeTheBears(table('spike-broke', 2));
+    expect(state.pendingPayment).toBeNull();
+    expect(state.instances[bears]!.zone).toBe('graveyard');
+    /*
+      Read off the **log**, not off `state.replacements`: `reduceAutoAction` drains the notes onto
+      the message of the action that provoked them, which is where a player is already looking, so
+      the field is empty again by the time a test can look at it. The first draft asserted the field
+      and read an empty string.
+    */
+    const said = state.log.map((entry) => entry.message).join(' | ');
+    expect(said).toContain('Force Spike');
+    expect(said).not.toContain('ward');
+  });
+});

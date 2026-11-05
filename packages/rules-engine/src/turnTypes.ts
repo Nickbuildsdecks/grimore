@@ -965,6 +965,17 @@ export interface AutomationState {
     readonly counters: string;
     /** The warded permanent, for the table to point at. */
     readonly source: string;
+    /**
+     * The log line to write if the cost is simply **unaffordable**, so nobody is asked.
+     *
+     * Supplied by whoever raised the payment rather than built where it is spent, because there is
+     * now more than one kind: ward's wording named ward, and D489's "counter target spell unless
+     * its controller pays {1}" is the same mechanism with a different sentence behind it. Nothing
+     * can change between the raise and the settle — nobody holds priority while a payment is
+     * outstanding — so building the words early costs nothing and keeps `settlePayment` from
+     * having to know which card asked.
+     */
+    readonly unpaidNote: string;
   } | null;
   /**
    * A card somebody may cast **without paying its mana cost**, and the pile it came out of

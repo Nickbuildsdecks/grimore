@@ -1176,7 +1176,11 @@ describe('a seat that has left the game', () => {
     {
       label: 'a ward to pay',
       patch: {
-        pendingPayment: { seat: 2, cost: '{2}', prompt: 'pay ward', counters: '', source: 'gone' },
+        pendingPayment: {
+          seat: 2, cost: '{2}', prompt: 'pay ward', counters: '', source: 'gone',
+          // The log line the raiser supplies (D489); this row only cares that the field is cleared.
+          unpaidNote: 'ward {2} was not paid',
+        },
       },
       read: (s) => s.pendingPayment,
     },

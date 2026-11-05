@@ -2870,11 +2870,18 @@ function settlePayment(state: GameState): GameState {
     vanishes off the stack. "A card the player cannot see working" is the same bug the replacement
     notes exist for, and the same fix.
   */
-  const warded = state.cardDefs[state.instances[pending.source]?.defKey ?? '']?.name ?? 'a ward';
-  const spell = state.stackObjects[pending.counters]?.description ?? 'it';
-  const note = `${warded}: ward ${pending.cost} was not paid — ${spell} is countered`;
+  /*
+    The words come from whoever raised the payment (D489). They were built here while ward was the
+    only raiser, and hard-coding "ward" in a shared path was a latent lie the moment a second kind
+    of payment existed — "Abstruse Interference: ward {1} was not paid" names a keyword the card
+    does not have. See `pendingPayment.unpaidNote`.
+  */
   return counterSpell(
-    { ...state, pendingPayment: null, replacements: [...state.replacements, note] },
+    {
+      ...state,
+      pendingPayment: null,
+      replacements: [...state.replacements, pending.unpaidNote],
+    },
     pending.counters,
   );
 }

@@ -24,7 +24,8 @@ import {
 import { zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
-  addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell, createToken,
+  addCounters, addToPool, battlefield, bounceToHand, cardTargets, chosenCard, chosenCards, counterSpell,
+  counterUnlessPaid, createToken,
   dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, firstCardTarget,
   firstPlayerTarget,
   chosenOption, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
@@ -14764,6 +14765,49 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     the only one there is, so the reading that handles both kinds of object is the one that
     generalises. For a spell target it does exactly what `firstCardTarget` did.
   */
+  /*
+    **"…unless its controller pays {N}"**, read before the plain counter below it because the open
+    phrase there would otherwise swallow the whole tail into the target and refuse it (D489).
+
+    50 of the 81 unread "Counter target … unless …" sentences in the legal corpus are this exact
+    shape with no spell filter (Abstruse Interference), and about a dozen more carry one the target
+    parse already reads: "instant or sorcery", "creature or planeswalker", "artifact or creature",
+    "noncreature", "nonartifact", "creature or battle".
+
+    `counterUnlessPaid` is the effect, and it is ward's mechanism from the other side of the table —
+    `pendingPayment` was built for a question asked of somebody who is not resolving anything. The
+    half that is not a choice, a player who cannot afford it, is `settlePayment`'s and already
+    shared.
+
+    Refused, and all of them are about **where the number comes from**: a cost computed off the
+    board ("{1} for each card in your graveyard", "{1} for each creature you control", "{X}, where
+    X is its mana value", "plus an additional {1} for each…") and a cost that is not mana at all
+    (Perplex's discard, Grip of Amnesia's graveyard exile, Molten Influence's damage). The regex
+    takes a literal mana cost and nothing else, so each of those falls through to the plain counter
+    arm, fails its target phrase, and leaves the line unread.
+  */
+  const unlessPaid = new RegExp(
+    `^counter (${TARGET_QUANTIFIER_PREFIX}target .+?) unless its controller pays (\\{[^}]*\\})$`,
+    'i',
+  ).exec(text);
+  if (unlessPaid !== null) {
+    const spec = targetSpecFrom(unlessPaid[1]!.trim(), false);
+    const cost = unlessPaid[2]!;
+    /*
+      **No `X` in the cost.** Clash of Wills prints "Counter target spell unless its controller pays
+      {X}", and that X is the counterspell's own, chosen as it was cast — a number this clause cannot
+      see, for `xSpellResolution`'s reason. `pendingPayment.cost` is a printed string that
+      `parseManaCost` prices at settle time, so an `{X}` left in it would be priced as one generic
+      and the card would ask for the wrong amount every time. A literal cost only.
+    */
+    if (spec !== null && pointsAtTheStack(spec) && !/[Xx]/.test(cost)) {
+      return {
+        targets: [spec],
+        effect: (c) => counterUnlessPaid(c, cost, name),
+      };
+    }
+  }
+
   const countering = new RegExp(`^counter (${TARGET_QUANTIFIER_PREFIX}target .+)$`, 'i').exec(text);
   if (countering !== null) {
     const phrase = countering[1]!.trim();

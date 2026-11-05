@@ -9854,3 +9854,62 @@ describe('prevent the next N damage (D488)', () => {
     expect(read.unread).toHaveLength(1);
   });
 });
+
+/*
+  "Counter target spell unless its controller pays {N}" (D489).
+
+  Measured from the corpus: 81 unread "Counter target … unless …" sentences on 81 cards, and **50 of
+  them are the bare shape** (Abstruse Interference). `counterUnlessPaid` is ward's mechanism from
+  the other side of the table — `pendingPayment` was built for a question asked of somebody who is
+  not resolving anything — so this is a second raiser of an existing field, not a new pause.
+*/
+describe('counter unless its controller pays (D489)', () => {
+  const instant = (text: string) => compileCard({
+    name: 'Asking Thing', type_line: 'Instant', mana_cost: '{1}{U}', cmc: 2,
+    colors: ['U'], layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    'Counter target spell unless its controller pays {1}.',
+    'Counter target spell unless its controller pays {4}.',
+    // A spell filter the target parse already reads.
+    'Counter target noncreature spell unless its controller pays {2}.',
+    'Counter target creature spell unless its controller pays {2}.',
+  ])('reads "%s"', (text) => {
+    const read = instant(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it.each([
+    /*
+      Every refusal here is about **where the number comes from**, which is the one thing a clause
+      reader must not guess.
+    */
+    ['Counter target spell unless its controller pays {X}.',
+      "Clash of Wills: X is the counterspell's own, chosen as it was cast"],
+    ['Counter target spell unless its controller pays {1} for each card in your graveyard.',
+      'a cost computed off the board (Circular Logic)'],
+    ['Counter target spell unless its controller pays {1} for each creature you control.',
+      'the same (Protect the Negotiators)'],
+    ['Counter target spell unless its controller discards their hand.',
+      "Perplex: a cost that is not mana, which `pendingPayment` cannot price"],
+    ['Counter target spell unless its controller exiles all cards from their graveyard.',
+      'Grip of Amnesia, the same'],
+    /*
+      And two that are refused by their **target phrase** rather than by this arm — a disjunction in
+      the spell-kind position, which does not read in the plain "Counter target instant or sorcery
+      spell" either. Checked both ways before this row was written, so it records a pre-existing gap
+      (about ten lines in the corpus) rather than something this increment introduced.
+    */
+    ['Counter target instant or sorcery spell unless its controller pays {1}.',
+      'a disjunction of spell kinds, which the target parse does not read'],
+    ['Counter target artifact or creature spell unless its controller pays {4}.', 'the same'],
+  ])('leaves "%s" unread: %s', (text) => {
+    const read = instant(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+});

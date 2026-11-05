@@ -1145,6 +1145,51 @@ export function wardAsks(ctx: EffectContext, cost: string, name: string): GameSt
       prompt: `Pay ${cost} or ${object.description} is countered by ${name}'s ward`,
       counters: id,
       source: ctx.source,
+      // The wording `settlePayment` used to build for itself. See `pendingPayment.unpaidNote`.
+      unpaidNote: `${name}: ward ${cost} was not paid — ${object.description} is countered`,
+    },
+  };
+}
+
+/**
+ * "Counter target spell unless its controller pays {N}" (CR 118.8) — the same mechanism as ward,
+ * from the other side of the table.
+ *
+ * Ward asks the player who did the targeting; this asks the player whose spell is being answered.
+ * Both are the same question — pay, or this object leaves the stack — and `pendingPayment` was
+ * built for exactly the shape where the seat being asked is **not** the controller of the thing
+ * resolving, which its own docblock says in as many words. So this is a second raiser of an
+ * existing field rather than a new kind of pause, and the half that is not a choice — a player who
+ * cannot afford it is not asked — is `settlePayment`'s, already shared.
+ *
+ * The one difference from ward is **when**: ward raises its payment from a triggered ability, this
+ * one from the counterspell's own resolution. Nothing in the engine clears a pending payment at the
+ * end of a resolution (the three places that clear one are a seat leaving, the game ending, and a
+ * reset), so the question outlives the spell that asked it — which it has to, because the spell is
+ * gone by the time the answer arrives.
+ *
+ * Takes the object from `ctx.targets` rather than `ctx.answering`: the counterspell *targeted* the
+ * spell, where a ward was told which object had targeted it.
+ */
+export function counterUnlessPaid(ctx: EffectContext, cost: string, name: string): GameState {
+  const { state } = ctx;
+  const target = ctx.targets.find((one) => one.kind === 'card');
+  if (target === undefined || target.kind !== 'card') return state;
+  const object = state.stackObjects[target.id];
+  // Already countered or already resolved: the ordinary "its target is gone" case (CR 608.2b).
+  if (object === undefined) return state;
+  return {
+    ...state,
+    // Nobody holds priority while the question is outstanding — `wardAsks`'s reason, unchanged.
+    priority: null,
+    passed: [],
+    pendingPayment: {
+      seat: object.controller,
+      cost,
+      prompt: `Pay ${cost} or ${object.description} is countered by ${name}`,
+      counters: target.id,
+      source: ctx.source,
+      unpaidNote: `${name}: ${cost} was not paid — ${object.description} is countered`,
     },
   };
 }

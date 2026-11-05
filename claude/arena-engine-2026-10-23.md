@@ -14182,3 +14182,92 @@ principle, and a correction to the queue this loop was working from, which had `
 
 Ranked this way the next three are the library search, the counter-unless-they-pay, and the
 `you may pay {M}` offer, in that order.
+
+## D489 — Counter target spell unless its controller pays {N}
+
+81 unread "Counter target … unless …" sentences on 81 Commander-legal cards, and **50 of them are
+one shape** with no spell filter at all (Force Spike, Convolute, Jwari Disruption, Censor). Measured
+from the corpus before anything was written, with every distinct form listed.
+
+| | ed81b7e | now |
+| --- | --- | --- |
+| cards with a compiled script | 10,412 | **10,438** |
+| cards with every printed line read | 5,976 | **6,003** |
+| printed rules lines read | 20,511 / 56,421 (36.4%) | **20,553 / 56,421 (36.4%)** |
+
+### It is ward, from the other side of the table
+
+The engine already had the whole mechanism and it took one reading of `pendingPayment`'s docblock to
+see it: "`seat` here is never the controller of the ability that set it — which is the whole reason
+it could not be folded into `pendingDecision`". That field was built for a question asked of
+somebody who is **not** resolving anything, which is exactly this card. Ward asks the player who did
+the targeting; this asks the player whose spell is being answered. Both are the same question — pay,
+or this object leaves the stack — and the half that is **not** a choice is already shared:
+`settlePayment` counters without asking when the cost cannot be afforded, because a prompt with one
+outcome is a table that has stopped.
+
+So `counterUnlessPaid` is a second raiser of an existing field rather than a new kind of pause. The
+one difference is **when**: ward raises its payment from a triggered ability, this one from the
+counterspell's own resolution. That was the single design question, and it was checked rather than
+assumed — the three places the engine clears a pending payment are a seat leaving, the game ending
+and a reset, and none of them fires at the end of a resolution. The question has to outlive the
+spell that asked it, because the spell is gone by the time the answer arrives.
+
+### A latent lie in a shared path, which a second raiser exposed
+
+`settlePayment` built its own log line for the unaffordable case, with the word **ward** hard-coded:
+`${warded}: ward ${cost} was not paid — …`. Correct while ward was the only raiser, and a card
+announcing a keyword it does not have the moment there were two — "Force Spike: ward {1} was not
+paid". The wording now comes from whoever raised the payment, as `pendingPayment.unpaidNote`, which
+each raiser builds for itself. Nothing can change between the raise and the settle (nobody holds
+priority while a payment is outstanding), so building the words early costs nothing and keeps the
+shared path from having to know which card asked.
+
+That is asserted, not assumed: the third runtime test checks the log says "Force Spike" and does
+**not** say "ward", and it is the reason the field was added rather than a nicety.
+
+### What it refuses, and all of it is about where the number comes from
+
+* **`{X}`** — Clash of Wills prints "unless its controller pays {X}", and that X is the
+  counterspell's own, chosen as it was cast. `pendingPayment.cost` is a printed string priced by
+  `parseManaCost` at settle time, so an `{X}` left in it would be priced as one generic and the card
+  would ask for the wrong amount every time. `xSpellResolution`'s argument, in a new place. This one
+  was a correction: the first draft's guard was `parseManaCost(cost).generic + 1 > 0`, which is
+  vacuously true, and Clash of Wills went straight through it.
+* **A computed cost** — "{1} for each card in your graveyard" (Circular Logic), "for each creature
+  you control", "plus an additional {1} for each…". The regex takes a literal mana cost and nothing
+  else, so these fall through to the plain counter arm, fail their target phrase, and stay unread.
+* **A cost that is not mana** — Perplex's discard, Grip of Amnesia's graveyard exile, Molten
+  Influence's four damage. `pendingPayment` prices mana.
+
+And two that are refused **by their target phrase** rather than by this arm: "target instant or
+sorcery spell" and "target artifact or creature spell". Checked both ways before the rows were
+written — neither reads in the plain "Counter target instant or sorcery spell" either, so this is a
+pre-existing gap in the *spell*-kind vocabulary, about ten lines in the corpus, and the natural
+sibling of D486's noun position for stack objects. It is the next thing to do in this family.
+
+### Three test mistakes, all mine, all in the harness rather than the card
+
+The runtime tests took four attempts and every failure was a fact about the engine I had assumed:
+
+1. **The caster keeps priority after casting** (CR 117.3c), so seat 1 had to pass before seat 0
+   could respond. The first draft cast straight over the top.
+2. **Turn parity is not what I guessed.** `firstSeat: 1, turn 4` is seat 1 active; I "fixed" a
+   failure by flipping it to `firstSeat: 0` on a guess and made it worse. Printing `activeSeat`
+   settled it in one run — which is what I should have done first.
+3. **`tapAllLands` needs priority**, so pre-tapping seat 0's Islands on seat 1's turn threw in the
+   *setup*, before anything the increment is about. `auto:cast` taps for its own cost.
+4. **`replacements` is drained onto the provoking action's message**, as its own docblock says, so
+   the field is empty again by the time a test looks at it. The note is read off the log.
+
+### `typecheck:tests` again, and why the field stayed required
+
+The first full gate failed there a second increment running: `automation.test.ts` builds a
+`pendingPayment` by hand, in the table that checks a pending question is cleared when its seat
+leaves, and that fixture had no `unpaidNote`.
+
+Worth saying that the answer was to fix the fixture rather than make the field optional. An optional
+`unpaidNote` with a fallback would put the hard-coded "ward" back in `settlePayment` as the default,
+which is the exact lie this change removed — and it would be a default that is right for one raiser
+and wrong for every future one. Required means a new raiser cannot compile without saying what its
+card says, which is the property worth having.
