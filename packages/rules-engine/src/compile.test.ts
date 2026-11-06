@@ -12285,21 +12285,22 @@ describe('a quoted triggered ability an Aura or Equipment grants (D511)', () => 
     expect(read.script?.aura).toBeDefined();
   });
 
-  it('refuses a quoted ability that is not a trigger at all', () => {
+  it('reads a quoted ACTIVATED ability as an ability, not as a trigger (D512)', () => {
     /*
-      Only triggers can be granted: `grants` carries indices into `grantedTriggers` and there is no
-      `grantedAbilities`. So a quoted **activated** ability — 28 distinct texts across 38 legal
-      cards, the next increment in this family — is refused rather than read as a trigger or
-      dropped. The check that refuses it is `grantedTriggerFrom`'s first one: the recursive reading
-      comes back as an ability, so it has no `triggers` at all. (The *exactly* triggers check below
-      that one is a separate guard, against a reading that is triggers plus something else, and no
-      printing in the corpus can reach it — see the break run in the D511 entry.)
+      **This row was a refusal, and D512 turned it into a reading.** It used to assert that a quoted
+      activated ability was refused, because `grants` carried indices into `grantedTriggers` and
+      there was no `grantedAbilities` to put one in — the 28 distinct texts across 38 legal cards
+      this increment's own measurement named as the family's gate. The field exists now, so the card
+      reads; what is still true, and what this row keeps, is that the trigger table stays **empty**:
+      `grantedTriggerFrom` refuses a reading with no `triggers` in it, and the ability lands in the
+      other table rather than being mistaken for a trigger.
     */
     const read = aura('Enchant creature\nEnchanted creature has "{T}: Add one mana of any color."');
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.unread).toHaveLength(1);
+    expect(read.unread.map((u) => u.line)).toEqual([]);
     expect(read.script?.grantedTriggers ?? []).toEqual([]);
+    expect(read.script?.grantedAbilities).toHaveLength(5);
   });
 
   it('refuses a quoted keyword, which would otherwise read as a grant of nothing', () => {
@@ -12315,5 +12316,143 @@ describe('a quoted triggered ability an Aura or Equipment grants (D511)', () => 
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
     expect(read.script?.grantedTriggers ?? []).toEqual([]);
+  });
+});
+
+describe('a quoted activated ability an Aura or Equipment grants (D512)', () => {
+  /*
+    **The bucket D511's measurement named.** Of the 87 distinct quotations the corpus prints inside
+    an `(Enchanted|Equipped) creature has "…"` line, 8 are triggers (D511), 51 the reader refuses,
+    and **28 are activated abilities** across 38 legal cards — and until this increment there was
+    nowhere to put one: `ContinuousEffect.grants` carries indices into `grantedTriggers` and there
+    was no `grantedAbilities` beside it.
+
+    The reader is `grantedTriggerFrom`'s sibling and shares its shape: hand the quotation back to
+    `lineScriptFor`, demand the result be *exactly* abilities, and refuse the whole line otherwise
+    (D487). What is new is the engine behind it — a second index list on the effect, the ability
+    offered on the **host** in `legalActions`, paid for by the host in `autoActions`, and resolved
+    by asking the stack object's kind which of the grantor's two tables to read.
+  */
+  const aura = (text: string, name = 'Fire Whip') => compileCard({
+    name, type_line: 'Enchantment — Aura', mana_cost: '{1}{R}', cmc: 2, colors: ['R'],
+    layout: 'normal', power: null, toughness: null, oracle_text: text,
+  });
+  const equipment = (text: string, name = 'Viridian Longbow') => compileCard({
+    name, type_line: 'Artifact — Equipment', mana_cost: '{1}', cmc: 1, colors: [],
+    layout: 'normal', power: null, toughness: null, oracle_text: text,
+  });
+
+  it('reads Fire Whip: a {T} ability on the host', () => {
+    const read = aura('Enchant creature you control\nEnchanted creature has "{T}: This creature '
+      + 'deals 1 damage to any target."');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.grantedAbilities).toHaveLength(1);
+    expect(read.script?.grantedAbilities?.[0]?.cost.tap).toBe(true);
+    expect(read.script?.grantedAbilities?.[0]?.description)
+      .toBe('{T}: This creature deals 1 damage to any target.');
+    // The effect carries indices, not the ability: see `ContinuousEffect.grantsAbilities`.
+    expect(read.script?.aura?.effect?.grantsAbilities).toEqual([0]);
+    // And not the trigger list, which is the other table (D511).
+    expect(read.script?.grantedTriggers).toBeUndefined();
+  });
+
+  it('reads Viridian Longbow: the same reader on an Equipment', () => {
+    const read = equipment('Equipped creature has "{T}: This creature deals 1 damage to any '
+      + 'target."\nEquip {3}');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.grantedAbilities).toHaveLength(1);
+    expect(read.script?.equipBonus?.grantsAbilities).toEqual([0]);
+  });
+
+  it("reads Karametra's Favor as five abilities, one per colour", () => {
+    /*
+      "Add one mana of any color" is five rows rather than one, which is the shape the hand-written
+      Birds of Paradise has had since #49 and which `manaSources` collapses back into a single
+      source offering a choice. Worth a row of its own because it is the one quotation in the family
+      that reads as *several* abilities, so it is the one that proves the index list is a list.
+    */
+    const read = aura('Enchant creature\nEnchanted creature has "{T}: Add one mana of any color."',
+      "Karametra's Favor");
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.grantedAbilities).toHaveLength(5);
+    expect(read.script?.grantedAbilities?.flatMap((a) => a.produces ?? []))
+      .toEqual(['W', 'U', 'B', 'R', 'G']);
+    expect(read.script?.aura?.effect?.grantsAbilities).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it.each([
+    ['Midnight Covenant', '{B}: This creature gets +1/+1 until end of turn.'],
+    ['Dragon Mantle', '{R}: This creature gets +1/+0 until end of turn.'],
+    ['Sadistic Obsession', '{B}, {T}: Put a -1/-1 counter on target creature.'],
+    ['Presence of Gond', '{T}: Create a 1/1 green Elf Warrior creature token.'],
+    ['Ocular Halo', '{T}: Draw a card.'],
+    ['Sinstriker\'s Will',
+      '{T}: This creature deals damage equal to its power to target attacking or blocking creature.'],
+  ])('reads the quoted ability on printed %s', (name, inner) => {
+    const read = aura(`Enchant creature\nEnchanted creature has "${inner as string}"`, name as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.grantedAbilities).toHaveLength(1);
+    expect(read.script?.aura?.effect?.grantsAbilities).toEqual([0]);
+  });
+
+  it.each([
+    ["Ninja's Kunai", '{1}, {T}, Sacrifice Ninja\'s Kunai: Ninja\'s Kunai deals 3 damage to any target.'],
+    ['Trusty Boomerang',
+      '{1}, {T}: Tap target creature. Return Trusty Boomerang to its owner\'s hand.'],
+  ])('refuses a quotation that names its own grantor: %s', (name, inner) => {
+    /*
+      **The two cards this increment found by probing printings rather than by reading.** Both quote
+      their own name inside the granted ability, and the compiler binds a card's own name to the
+      ability's *source* — which for a granted ability is the host (CR 113.6). So both compiled, and
+      both were wrong in the worst available way: Ninja's Kunai's granted ability would have
+      sacrificed the **creature**, and Trusty Boomerang's would have returned the creature to its
+      owner's hand. There is no "the permanent that granted this" to compile them against, so the
+      line is refused. See `namesItsGrantor`.
+    */
+    const read = equipment(`Equipped creature has "${inner as string}"\nEquip {1}`, name as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+    expect(read.script?.grantedAbilities ?? []).toEqual([]);
+    expect(read.script?.equipBonus?.grantsAbilities).toBeUndefined();
+  });
+
+  it('refuses a quoted ability whose inner text the compiler cannot read', () => {
+    // Leyline Immersion's printing, which is also the keyword-and-quote shape: five mana in any
+    // combination with a spending restriction is not a reading this compiler has, so the line goes
+    // unread rather than compiling to a weaker ability (D487).
+    const read = aura('Enchant legendary creature\nEnchanted creature has ward {2} and "{T}: Add '
+      + 'five mana in any combination of colors. Spend this mana only to cast spells."',
+      'Leyline Immersion');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    // Two unread lines, not one: `Enchant legendary creature` is a restriction this compiler does
+    // not read either, which the row says out loud rather than asserting a count that hides it.
+    expect(read.unread.map((u) => u.line)).toEqual([
+      'Enchant legendary creature',
+      'Enchanted creature has ward {2} and "{T}: Add five mana in any combination of colors. '
+        + 'Spend this mana only to cast spells."',
+    ]);
+    expect(read.script?.grantedAbilities ?? []).toEqual([]);
+  });
+
+  it('still reads a quoted TRIGGER, which is the other table (D511)', () => {
+    // The regression row: one branch reads both kinds now, so the trigger path has to be checked
+    // where the ability path was added rather than only where it was written.
+    const read = aura('Enchant creature\nEnchanted creature has "At the beginning of your upkeep, '
+      + 'create a 1/1 white Human creature token."', "Commander's Authority");
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.grantedTriggers).toHaveLength(1);
+    expect(read.script?.grantedAbilities).toBeUndefined();
+    expect(read.script?.aura?.effect?.grants).toEqual([0]);
+    expect(read.script?.aura?.effect?.grantsAbilities).toBeUndefined();
   });
 });

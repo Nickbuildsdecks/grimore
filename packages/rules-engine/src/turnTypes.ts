@@ -1517,6 +1517,18 @@ export interface AutoActivateAction {
    * back in a hand. A single field would make every reader of this action guess which.
    */
   readonly returned?: string;
+  /**
+   * Which card **defines** the ability, for one a continuous effect handed this permanent
+   * (CR 113.6) — an Aura's `Enchanted creature has "{T}: …"`. Absent for a printed ability, which
+   * is every other activation.
+   *
+   * `abilityIndex` indexes the *grantor's* `grantedAbilities` when this is set, and the permanent's
+   * own `abilities` when it is not, which is why the two travel together. The engine re-derives the
+   * grant from the board before it pays for anything, so a stale reference — the Aura destroyed
+   * since the play was offered — is refused rather than resolved off a card that is no longer
+   * granting it. See `LegalPlay.grantedBy`.
+   */
+  readonly grantedBy?: GrantedTriggerRef;
 }
 export interface AutoPassAction { readonly type: 'auto:pass'; readonly by: SeatIndex }
 export interface AutoAttackAction {

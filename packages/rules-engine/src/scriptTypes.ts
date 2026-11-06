@@ -2646,6 +2646,32 @@ export interface CardScript {
    */
   readonly grantedTriggers?: readonly TriggerDef[];
   /**
+   * **Activated** abilities this card gives to other permanents: `Enchanted creature has "{T}: This
+   * creature deals 1 damage to any target."` — Fire Whip, Lavamancer's Skill, Quicksilver Dagger.
+   *
+   * `grantedTriggers`' sibling, the same two halves for the same reason: an `AbilityDef` holds
+   * functions, so the effect carries `grantsAbilities: [0]` — *indices into this array* — and the
+   * script stays the single definition. Two arrays rather than one tagged list, because the two
+   * are used at different moments and by different code: a trigger is collected when an event
+   * happens, an activated ability is offered in `legalActions` and paid for in `autoActions`, and
+   * a single list would have every reader of it ask which kind each entry was.
+   *
+   * **The ability belongs to the permanent that was given it** (CR 113.6): its cost is paid by
+   * that permanent — `{T}` taps the host, not the Aura — its controller is that permanent's
+   * controller, and "this creature" in its text means the host. The engine gets that by pushing
+   * the ability with the *host* as `StackObject.source` and the grantor only in
+   * `StackObject.grantedBy`, which is what the definition is looked up by.
+   *
+   * ## Why this is not reachable through `abilities`
+   *
+   * A permanent's own `abilities` are indexed by position in its script, and `AutoActivateAction`
+   * carries that index. A granted ability has no position on the host's script, so the action
+   * carries `grantedBy` — the grantor and the index in *this* array — rather than an index into a
+   * list assembled on the fly. An assembled list would renumber itself whenever an Aura arrived or
+   * left, which is to say between a bot composing an action and the engine applying it.
+   */
+  readonly grantedAbilities?: readonly AbilityDef[];
+  /**
    * What this permanent does to the **cost of other people's spells** while it is on the
    * battlefield: a Goblin Electromancer, a Thalia, a Sphere of Resistance.
    *

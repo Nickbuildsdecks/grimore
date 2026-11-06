@@ -20,11 +20,13 @@ import { crewPlan, legalActions, manaSources, type LegalActions, type LegalPlay 
 import { zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
-  bottomOwed, hasAnyLegalTargets, modesOf, pendingDeclaration, pendingRetarget, preferredAmount,
+  bottomOwed, grantedAbilityFor, hasAnyLegalTargets, modesOf, pendingDeclaration, pendingRetarget,
+  preferredAmount,
   preferredCards, preferredOption, stillDeciding,
 } from './automation.js';
 import {
-  characteristicsOf, grantedTriggersOn, hasSubtype, hasType, parseTypeLine, type Keyword,
+  characteristicsOf, grantedTriggersOn, hasSubtype, hasType, parseTypeLine,
+  type GrantedTriggerRef, type Keyword,
 } from './characteristics.js';
 import {
   attackAimIssue, canAttack, canBlock, damageOrdersOwed, forcedAttackers, legalAttackers,
@@ -56,7 +58,9 @@ import { scriptForCard } from './derive.js';
  */
 const playedScript = (state: GameState, id: string | undefined): CardScript | undefined =>
   scriptForCard(state.cardDefs[state.instances[id ?? '']?.defKey ?? '']);
-import { isNumberDecision, type AbilityCost, type CardScript } from './scriptTypes.js';
+import {
+  isNumberDecision, type AbilityCost, type AbilityDef, type CardScript,
+} from './scriptTypes.js';
 import { targetKey, type Target } from './turnTypes.js';
 import type { Action, ActionContext, GameState, SeatIndex } from './types.js';
 
@@ -2467,6 +2471,9 @@ function candidateActions(
         out.push({
           action: {
             type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+            // Which card defines the ability, when this permanent did not print it (CR 113.6) —
+            // copied from the play unchanged, because `abilityIndex` means nothing without it.
+            ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
             returned: smallest,
             ...(targets.length > 0 ? { targets: [...targets] } : {}),
           },
@@ -2489,6 +2496,9 @@ function candidateActions(
         out.push({
           action: {
             type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+            // Which card defines the ability, when this permanent did not print it (CR 113.6) —
+            // copied from the play unchanged, because `abilityIndex` means nothing without it.
+            ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
             sacrifice: spent,
             ...(targets.length > 0 ? { targets: [...targets] } : {}),
           },
@@ -2506,6 +2516,9 @@ function candidateActions(
         out.push({
           action: {
             type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+            // Which card defines the ability, when this permanent did not print it (CR 113.6) —
+            // copied from the play unchanged, because `abilityIndex` means nothing without it.
+            ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
             sacrifice: fodder,
             ...(targets.length > 0 ? { targets: [...targets] } : {}),
           },
@@ -2515,6 +2528,7 @@ function candidateActions(
       out.push({
         action: {
           type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+          ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
           ...(targets.length > 0 ? { targets: [...targets] } : {}),
         },
       });
@@ -3639,7 +3653,7 @@ function aSwapIsComing(state: GameState, seat: SeatIndex): boolean {
 function castsAPrevention(state: GameState, action: Action): boolean {
   if (action.type === 'auto:activate') {
     const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-    const ability = playedScript(state, action.card)?.abilities?.[action.abilityIndex ?? 0];
+    const ability = abilityBehind(state, action.card, action.abilityIndex, action.grantedBy);
     return ability?.preventsDamage === true;
   }
   if (action.type !== 'auto:cast') return false;
@@ -3656,7 +3670,7 @@ function castsAPrevention(state: GameState, action: Action): boolean {
 function animatesSomething(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return playedScript(state, action.card)?.abilities?.[action.abilityIndex ?? 0]?.animates === true;
+  return abilityBehind(state, action.card, action.abilityIndex, action.grantedBy)?.animates === true;
 }
 
 /**
@@ -3722,13 +3736,14 @@ function animationCouldMatter(state: GameState, seat: SeatIndex, action: Action)
 function feedsAnArtifact(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate' || action.sacrifice === undefined) return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return playedScript(state, action.card)?.abilities?.[action.abilityIndex ?? 0]?.cost.sacrifice === 'artifact';
+  return abilityBehind(state, action.card, action.abilityIndex, action.grantedBy)
+    ?.cost.sacrifice === 'artifact';
 }
 
 function pointlessToHandBack(state: GameState, play: LegalPlay): boolean {
   if (play.kind !== 'activate') return false;
   const name = state.cardDefs[state.instances[play.card]?.defKey ?? '']?.name;
-  const ability = playedScript(state, play.card)?.abilities?.[play.abilityIndex ?? 0];
+  const ability = abilityBehind(state, play.card, play.abilityIndex, play.grantedBy);
   return ability?.untapsOnly === true || ability?.produces !== undefined;
 }
 
@@ -3747,7 +3762,7 @@ function pointlessToHandBack(state: GameState, play: LegalPlay): boolean {
 function activationBuysNothing(state: GameState, seat: SeatIndex, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  const ability = playedScript(state, action.card)?.abilities?.[action.abilityIndex ?? 0];
+  const ability = abilityBehind(state, action.card, action.abilityIndex, action.grantedBy);
   return ability?.buysNothingIf !== undefined && ability.buysNothingIf(state, action.card, seat);
 }
 
@@ -3832,7 +3847,7 @@ function equipMovesSideways(state: GameState, seat: SeatIndex, action: Action): 
 function shrinksItselfForNothing(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
   const index = action.abilityIndex ?? 0;
-  const shrink = playedScript(state, action.card)?.abilities?.[index]?.selfShrink;
+  const shrink = abilityBehind(state, action.card, index, action.grantedBy)?.selfShrink;
   if (shrink === undefined) return false;
   const inst = state.instances[action.card];
   if (inst === undefined || inst.zone !== 'battlefield') return false;
@@ -3847,10 +3862,9 @@ function shrinksItselfForNothing(state: GameState, action: Action): boolean {
     the first is already bringing and costs another point of power for it. Same idiom as the
     cost-already-on-the-stack check above.
   */
-  if (state.stackOrder.some((id) => {
-    const object = state.stackObjects[id];
-    return object?.source === action.card && (object.abilityIndex ?? 0) === index;
-  })) return true;
+  if (state.stackOrder.some(
+    (id) => sameActivation(state.stackObjects[id], action.card, index, action.grantedBy),
+  )) return true;
   const ch = characteristicsOf(state, inst);
   return shrink.grants.every((word) => ch.keywords.has(word));
 }
@@ -3887,15 +3901,52 @@ function shrinksItselfForNothing(state: GameState, action: Action): boolean {
  * The first copy is always offered. This refuses the second and every one after it, which is the
  * difference between playing the card and looping on it.
  */
+/**
+ * The ability an activate action or play is about — the permanent's own, or one a continuous effect
+ * handed it (CR 113.6).
+ *
+ * Every rule below that reads an ability goes through here, because `abilityIndex` alone is not
+ * enough to find one: on a granted ability it indexes the *grantor's* `grantedAbilities`, so
+ * reading the host's own list at that index returns a **different ability** — not nothing, which is
+ * the shape that makes this worth a function. #236 is the same bug one table over: three bot
+ * readers of `script.triggers` could not see a granted trigger, and they were found by a card
+ * playing wrongly rather than by a type error.
+ */
+function abilityBehind(
+  state: GameState, card: string, abilityIndex: number | undefined, grantedBy?: GrantedTriggerRef,
+): AbilityDef | undefined {
+  if (grantedBy !== undefined) return grantedAbilityFor(state, grantedBy);
+  return playedScript(state, card)?.abilities?.[abilityIndex ?? 0];
+}
+
+/**
+ * Whether a stack object is *this* activation of *this* ability, which is what the two
+ * already-pending rules below ask.
+ *
+ * The grantor is part of the question (CR 113.6): two Auras on one creature can each grant an
+ * ability at index 0, and a check that compared only the permanent and the index would read one
+ * Aura's pending ability as the other's and refuse a play that is not a repeat at all.
+ */
+function sameActivation(
+  object: { source: string; abilityIndex?: number; grantedBy?: GrantedTriggerRef } | undefined,
+  card: string, index: number, grantedBy?: GrantedTriggerRef,
+): boolean {
+  if (object === undefined) return false;
+  if (object.source !== card || (object.abilityIndex ?? 0) !== index) return false;
+  const left = object.grantedBy === undefined
+    ? undefined : object.grantedBy.defKey ?? object.grantedBy.card;
+  const right = grantedBy === undefined ? undefined : grantedBy.defKey ?? grantedBy.card;
+  return left === right;
+}
+
 function freeActivationAlreadyPending(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
   const index = action.abilityIndex ?? 0;
-  const ability = playedScript(state, action.card)?.abilities?.[index];
+  const ability = abilityBehind(state, action.card, index, action.grantedBy);
   if (ability === undefined || !costIsNothing(ability.cost)) return false;
-  return state.stackOrder.some((id) => {
-    const object = state.stackObjects[id];
-    return object?.source === action.card && (object.abilityIndex ?? 0) === index;
-  });
+  return state.stackOrder.some(
+    (id) => sameActivation(state.stackObjects[id], action.card, index, action.grantedBy),
+  );
 }
 
 /**
@@ -3925,7 +3976,7 @@ function costIsNothing(cost: AbilityCost): boolean {
 function untapsSomething(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return playedScript(state, action.card)?.abilities?.[action.abilityIndex ?? 0]?.untapsOnly === true;
+  return abilityBehind(state, action.card, action.abilityIndex, action.grantedBy)?.untapsOnly === true;
 }
 
 /**
@@ -4300,7 +4351,7 @@ function spendsAnAnswersMana(
 function crewsAVehicle(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
   const name = state.cardDefs[state.instances[action.card]?.defKey ?? '']?.name;
-  return playedScript(state, action.card)?.abilities?.[action.abilityIndex ?? 0]?.cost.crew !== undefined;
+  return abilityBehind(state, action.card, action.abilityIndex, action.grantedBy)?.cost.crew !== undefined;
 }
 
 /**
@@ -4328,7 +4379,7 @@ function crewBuysMoreThanItCosts(state: GameState, seat: SeatIndex, action: Acti
   const inst = state.instances[action.card];
   if (inst === undefined) return false;
   const name = state.cardDefs[inst.defKey]?.name;
-  const need = scriptForCard(state.cardDefs[inst.defKey])?.abilities?.[action.abilityIndex ?? 0]?.cost.crew;
+  const need = abilityBehind(state, action.card, action.abilityIndex, action.grantedBy)?.cost.crew;
   if (need === undefined) return false;
   const plan = crewPlan(state, seat, need, action.card);
   if (plan === null) return false;

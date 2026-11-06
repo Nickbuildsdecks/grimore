@@ -5911,10 +5911,13 @@ export function abilityTargetSpecs(
     const grantorDef = object.grantedBy.defKey === undefined
       ? undefined
       : state.cardDefs[object.grantedBy.defKey];
-    return (grantorDef === undefined ? undefined : resolve(grantorDef))
-      ?.grantedTriggers?.[object.grantedBy.index]?.targets
-      ?? scriptFor(object.grantedBy.card)?.grantedTriggers?.[object.grantedBy.index]?.targets
-      ?? [];
+    const grantor = (grantorDef === undefined ? undefined : resolve(grantorDef))
+      ?? scriptFor(object.grantedBy.card);
+    // The object's kind picks the table, exactly as `abilityOrTrigger` does: a granted **activated**
+    // ability aims from `grantedAbilities` and a granted trigger from `grantedTriggers`.
+    return (object.kind === 'activated'
+      ? grantor?.grantedAbilities?.[object.grantedBy.index]?.targets
+      : grantor?.grantedTriggers?.[object.grantedBy.index]?.targets) ?? [];
   }
   const script = resolve(state.cardDefs[object.cardKey]);
   return (object.kind === 'activated'
@@ -11788,7 +11791,40 @@ function grantedKeywords(phrase: string): readonly Keyword[] | null {
  * printed shape at a time, and not the grant. The D511 entry in `claude/decisions-log.md` has the
  * table.
  */
+/**
+ * Whether a quoted granted ability **names the card granting it** — in which case this reader
+ * refuses the line (D512).
+ *
+ * Found by probing real printings rather than by reading, and it is the one place where granting an
+ * *activated* ability is harder than granting a trigger. Two Equipment quote their own names inside
+ * the ability they hand out:
+ *
+ *     Ninja's Kunai     "{1}, {T}, Sacrifice Ninja's Kunai: Ninja's Kunai deals 3 damage to any target."
+ *     Trusty Boomerang  "{1}, {T}: Tap target creature. Return Trusty Boomerang to its owner's hand."
+ *
+ * The compiler's self-subject machinery binds a card's own name to **the ability's source**, and the
+ * source of a granted ability is the *host* (CR 113.6). So both read, compiled, and were wrong in
+ * the worst available way: activating Ninja's Kunai's granted ability would have sacrificed the
+ * **creature**, and Trusty Boomerang's would have returned the creature to its owner's hand. Two
+ * cards that look read and eat your board.
+ *
+ * There is no field on `AbilityDef` that means "the permanent that granted this", so the honest
+ * answer is to refuse (D362, D487) and leave the two cards for an increment that adds one.
+ *
+ * `shortName` as well as the full name, because a legendary grantor is printed in full inside its
+ * own quotation and referred to by its short name in the next sentence.
+ */
+function namesItsGrantor(quoted: string, name: string): boolean {
+  const text = quoted.toLowerCase();
+  if (name.length > 0 && text.includes(name.toLowerCase())) return true;
+  const short = shortName(name);
+  return short !== null && short.length > 0 && text.includes(short.toLowerCase());
+}
+
 function grantedTriggerFrom(quoted: string, name: string): readonly TriggerDef[] | null {
+  // D511 argued no printed quotation names its grantor; D512 found two that do, among the activated
+  // ones. The guard is applied to both readers rather than to the one where a card turned up.
+  if (namesItsGrantor(quoted, name)) return null;
   const read = lineScriptFor(quoted.trim(), name);
   if (read === null) return null;
   const { triggers, ...rest } = read;
@@ -11800,10 +11836,53 @@ function grantedTriggerFrom(quoted: string, name: string): readonly TriggerDef[]
   return triggers;
 }
 
+/**
+ * A quoted **activated** ability an attachment grants its host, read the same way (D512).
+ *
+ * `grantedTriggerFrom`'s sibling: the quoted text goes back through `lineScriptFor` and the result
+ * has to be *exactly* abilities. Fire Whip's `{T}: This creature deals 1 damage to any target.` is
+ * the shape, and it is 28 distinct texts across 38 legal cards — the bucket D511's measurement
+ * named as the reason that increment finished 6 cards instead of 25.
+ *
+ * ## The costs this refuses, and why refusing beats compiling
+ *
+ * A granted ability is activated from the **battlefield**, by the host. Four of `AbilityCost`'s
+ * members say otherwise — `discardSelf` and `returnsUnblockedAttacker` are paid from a hand,
+ * `fromGraveyard` from a graveyard, `exileSelf` exiles the card paying — and `legalActions` decides
+ * which zone an ability is used from by reading exactly those. So a granted ability carrying one
+ * would compile, install, and then never be offered: the card would look read and do nothing,
+ * which is the one outcome worse than an unread line (D362). A loyalty cost is refused for the
+ * same reason one step further out: CR 606.3 gives it restrictions that are about a planeswalker,
+ * and nothing prints one inside a grant.
+ */
+function grantedAbilityFrom(quoted: string, name: string): readonly AbilityDef[] | null {
+  if (namesItsGrantor(quoted, name)) return null;
+  const read = lineScriptFor(quoted.trim(), name);
+  if (read === null) return null;
+  const { abilities, ...rest } = read;
+  if (abilities === undefined || abilities.length === 0) return null;
+  // Exactly abilities: anything else on the fragment is not something this can grant.
+  if (Object.keys(rest).some((key) => (rest as Record<string, unknown>)[key] !== undefined)) {
+    return null;
+  }
+  const offBattlefield = abilities.some((ability) => ability.cost.discardSelf === true
+    || ability.cost.returnsUnblockedAttacker === true
+    || ability.cost.fromGraveyard === true
+    || ability.cost.exileSelf === true
+    || ability.cost.loyalty !== undefined);
+  if (offBattlefield) return null;
+  return abilities;
+}
+
 /** `Equipped creature gets +2/+0 and has trample.` as the bonus, and whether it harms its host. */
 function attachmentBonus(
   line: string, name: string,
-): { bonus: PumpOptions; harmful: boolean; grantedTriggers?: readonly TriggerDef[] } | null {
+): {
+  bonus: PumpOptions;
+  harmful: boolean;
+  grantedTriggers?: readonly TriggerDef[];
+  grantedAbilities?: readonly AbilityDef[];
+} | null {
   const matched = /^(?:equipped|enchanted) creature (.+?)\.?$/i.exec(plain(line).trim());
   if (matched === null) return null;
   const tail = matched[1]!.trim();
@@ -11819,14 +11898,24 @@ function attachmentBonus(
   */
   const quoted = /^has\s+(?:(.+?)\s+and\s+)?"([^"]+)"$/i.exec(tail);
   if (quoted !== null) {
+    /*
+      A trigger or an activated ability, asked in that order and refused if it is neither (D512).
+
+      Both, rather than one or the other, because the quotation is one sentence and the reader that
+      can read it is decided by what the sentence *is*: "Whenever this creature …" is a trigger and
+      "{T}: …" is an activated ability. Asking triggers first costs nothing — the two readers refuse
+      each other's shapes — and keeps D511's path exactly as it was.
+    */
     const triggers = grantedTriggerFrom(quoted[2]!, name);
-    if (triggers === null) return null;
+    const abilities = triggers !== null ? null : grantedAbilityFrom(quoted[2]!, name);
+    if (triggers === null && abilities === null) return null;
     const keywords = quoted[1] === undefined ? [] : grantedKeywords(quoted[1]);
     if (keywords === null) return null;
     return {
       bonus: keywords.length === 0 ? {} : { keywords },
       harmful: false,
-      grantedTriggers: triggers,
+      ...(triggers === null ? {} : { grantedTriggers: triggers }),
+      ...(abilities === null ? {} : { grantedAbilities: abilities }),
     };
   }
 
@@ -12013,11 +12102,19 @@ export function attachmentScriptFor(
             ...(read?.grantedTriggers === undefined
               ? {}
               : { grants: read.grantedTriggers.map((_, i) => i) }),
+            // And the activated ones, indices into `grantedAbilities` (D512). Two index lists for
+            // two tables — see `ContinuousEffect.grantsAbilities` for why they are not one.
+            ...(read?.grantedAbilities === undefined
+              ? {}
+              : { grantsAbilities: read.grantedAbilities.map((_, i) => i) }),
           },
         },
         ...(read?.grantedTriggers === undefined
           ? {}
           : { grantedTriggers: read.grantedTriggers }),
+        ...(read?.grantedAbilities === undefined
+          ? {}
+          : { grantedAbilities: read.grantedAbilities }),
         ...(read?.harmful === true ? { removesACreature: true as const } : {}),
       },
       // Only a line that was **read** is claimed; an unreadable bonus keeps its badge (D456).
@@ -12040,6 +12137,11 @@ export function attachmentScriptFor(
           ...(read?.grantedTriggers === undefined
             ? {}
             : { grants: read.grantedTriggers.map((_, i) => i) }),
+          // And into `grantedAbilities` (D512), which is how an Equipment hands its bearer a
+          // `{T}:` ability — Fire Whip's shape.
+          ...(read?.grantedAbilities === undefined
+            ? {}
+            : { grantsAbilities: read.grantedAbilities.map((_, i) => i) }),
         },
       /*
         The printed bonus line as the ability's description, lower-cased at the front the way the
@@ -12057,6 +12159,9 @@ export function attachmentScriptFor(
       ...(read?.grantedTriggers === undefined
         ? {}
         : { grantedTriggers: read.grantedTriggers }),
+      ...(read?.grantedAbilities === undefined
+        ? {}
+        : { grantedAbilities: read.grantedAbilities }),
     },
     /*
       Only the lines this actually accounted for: with no bonus line there is nothing to claim but

@@ -12,9 +12,12 @@
 import { defKeyFor, zoneKey, type CardInstance } from './cards.js';
 import { manualCards, manualNote } from './coverage.js';
 import { listAt, relocate, requireInstance, withInstance } from './cardActions.js';
-import { characteristicsOf, hasType } from './characteristics.js';
 import {
-  advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed, attackAimIssue,
+  characteristicsOf, grantedAbilitiesOn, hasType, type GrantedTriggerRef,
+} from './characteristics.js';
+import {
+  abilityUseKey, advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed,
+  attackAimIssue, grantedAbilityFor,
   autoPassFor, bottomOwed,
   canAttack, canBlock, checkTargets, damageOrdersOwed, endTurnCleanup, forcedAttackers, legalAttackers,
   legalBlockers, legalDefenders, menaceSatisfied, payFrom, pendingDeclaration, raiseUnblockedAttacks,
@@ -1324,13 +1327,32 @@ function activate(
   action: {
     by: SeatIndex; card: string; abilityIndex: number;
     targets?: readonly Target[]; sacrifice?: string; returned?: string;
+    grantedBy?: GrantedTriggerRef;
   },
 ): Outcome {
   requireAutomated(state);
   requirePriority(state, action.by);
   const inst = requireInstance(state, action.card);
   const script = scriptOf(state, inst.id);
-  const ability = script?.abilities?.[action.abilityIndex];
+  /*
+    The ability being activated: this permanent's own, or one a continuous effect handed it
+    (CR 113.6).
+
+    A granted one is **re-derived from the board** rather than trusted off the action, which is the
+    same rule every other choice on this action follows — the sacrifice, the ninjutsu return and the
+    crew are all recomputed here. The reason is sharper for a grant: the reference was built when
+    the play was offered, and the Aura that was granting it may have been destroyed since. A
+    reference that no longer matches a live grant is refused below with "no such ability", which is
+    what it is.
+  */
+  const ability = action.grantedBy === undefined
+    ? script?.abilities?.[action.abilityIndex]
+    : grantedAbilitiesOn(state, inst).some((ref) => ref.index === action.grantedBy!.index
+      && (ref.defKey ?? ref.card) === (action.grantedBy!.defKey ?? action.grantedBy!.card))
+      ? grantedAbilityFor(state, action.grantedBy)
+      : undefined;
+  /** The key this activation is recorded under, which differs for a granted ability. */
+  const useKey = abilityUseKey(action.abilityIndex, action.grantedBy);
   /*
     Which zone this ability is used from, decided by its cost.
 
@@ -1369,8 +1391,7 @@ function activate(
     `activateOnlyIf`'s generic sentence — which is the whole reason this is its own declarative
     field and not another predicate. See `AbilityDef.onceEachTurn`.
   */
-  if (ability.onceEachTurn === true
-    && inst.abilityUsedTurn?.[String(action.abilityIndex ?? 0)] === state.turn) {
+  if (ability.onceEachTurn === true && inst.abilityUsedTurn?.[useKey] === state.turn) {
     throw new EngineError('RULE_NOT_APPLICABLE',
       `${ch.name} has already used that ability this turn`);
   }
@@ -1559,10 +1580,9 @@ function activate(
     `CardInstance.abilityUsedTurn`.
   */
   if (ability.onceEachTurn === true) {
-    const index = String(action.abilityIndex ?? 0);
     next = withInstance(next, inst.id, {
       abilityUsedTurn: {
-        ...requireInstance(next, inst.id).abilityUsedTurn, [index]: state.turn,
+        ...requireInstance(next, inst.id).abilityUsedTurn, [useKey]: state.turn,
       },
     });
   }
@@ -1645,9 +1665,17 @@ function activate(
     };
   }
 
+  /*
+    The **host** is the source and the grantor rides in `grantedBy` (CR 113.6): the ability belongs
+    to the permanent it was granted to, so "this creature" is the host, its controller is the
+    host's, and the definition is still looked up on the card that printed it. The same arrangement
+    a granted *trigger* has had since #230, and the reason `abilityOrTrigger` asks the object's kind
+    before it picks which of the two tables to read.
+  */
   next = pushAbility(next, inst.id, action.by, action.abilityIndex, chosen, 'activated',
     `${ch.name}: ${ability.description}`,
-    ninjutsuTarget === null ? {} : { enteringAttack: ninjutsuTarget });
+    ninjutsuTarget === null ? {} : { enteringAttack: ninjutsuTarget },
+    action.grantedBy);
   // Ward triggers off an ability as readily as off a spell (CR 702.21b) — an Icy Manipulator aimed
   // at a warded creature is exactly the case the keyword is printed for. See `raiseTargeted`.
   next = raiseTargeted(next, next.stackOrder[next.stackOrder.length - 1]!);

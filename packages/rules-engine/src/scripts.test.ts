@@ -7478,6 +7478,21 @@ describe('deck coverage', () => {
       of them to satisfy a test is the thing D442's rule above says not to do, and D501 is the
       precedent that says what to do instead.
 
+      - `script grantedAbilities`: **30 legal corpus cards** compile one — 24 Auras and 6 Equipment,
+        25 of them with no unread line left (Fire Whip, Viridian Longbow, Karametra's Favor,
+        Presence of Gond, Midnight Covenant, Sadistic Obsession and 24 more). Not one is in the
+        pool's thirteen measured decks, and no hand-written script grants an activated ability, so
+        there is no card to add here short of putting an Aura into a measured deck — D442's rule
+        again, and D501's answer.
+
+        Driven at runtime by seven tests in "a quoted activated ability, at the table (D512)", on
+        printed Fire Whip, Dragon Mantle, Midnight Covenant and Karametra's Favor cast through the
+        engine's own plays: the ability is offered on the **host** carrying the card that defines
+        it, `{T}` taps the host and not the Aura, it disappears when the Aura leaves, a reference to
+        a departed Aura is refused, **two** Auras on one creature each grant their own index-0
+        ability (the row a grantor-blind index would fail), a granted mana ability reaches
+        `manaSources`, and a creature that arrived this turn cannot use a granted `{T}` ability.
+
       - `script cantBeCountered`: **86 legal corpus lines** print exactly "This spell can't be
         countered" (Abrupt Decay, Carnage Tyrant, Thrun, Blurred Mongoose and 82 more). Driven at
         runtime by "resolves through a Counterspell, and says so where the player is looking", which
@@ -7489,7 +7504,7 @@ describe('deck coverage', () => {
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
       'keyword fear', 'keyword shadow', 'keyword horsemanship', 'keyword wither',
       'keyword changeling',
-      'script cantBeCountered',
+      'script cantBeCountered', 'script grantedAbilities',
     ]);
 
     const declared = [
@@ -30542,5 +30557,287 @@ describe('a quoted triggered ability, at the table (D511)', () => {
     s = drain(advanceTo(s, 'postcombat-main'));
     expect(life(s, 1 as SeatIndex)).toBe(18);
     expect([...ids(s, 0, 'hand')].length).toBe(before);
+  });
+});
+
+describe('a quoted activated ability, at the table (D512)', () => {
+  /*
+    The engine half of the granted-ability field, driven through real plays.
+
+    Four real printings through `customDeck`'s `data`:
+
+      Fire Whip          {1}{R}  Aura — "{T}: This creature deals 1 damage to any target."
+      Dragon Mantle      {R}     Aura — "{R}: This creature gets +1/+0 until end of turn."
+      Midnight Covenant  {1}{B}  Aura — "{B}: This creature gets +1/+1 until end of turn."
+      Karametra's Favor  {1}{G}  Aura — "{T}: Add one mana of any color."
+
+    Every Aura is **cast at its host**, never written onto the instance, which is D511's lesson:
+    `attachedTo` records an attachment and the continuous effect is installed by the resolution
+    path, so a hand-written field is an Aura granting nothing.
+
+    What each printing is here for: Fire Whip because `{T}` has to tap the **host**; Dragon Mantle
+    and Midnight Covenant because two Auras on one creature each grant an ability at index 0, which
+    is the case a grantor-blind index would confuse; Karametra's Favor because a granted **mana**
+    ability has to reach the auto-tapper's source list and not only the activation path.
+  */
+  const DATA = [
+    {
+      name: 'Fire Whip', type_line: 'Enchantment — Aura', mana_cost: '{1}{R}', cmc: 2,
+      colors: ['R'], layout: 'normal', power: null, toughness: null,
+      oracle_text: 'Enchant creature you control\nEnchanted creature has "{T}: This creature deals '
+        + '1 damage to any target."',
+    },
+    {
+      name: 'Dragon Mantle', type_line: 'Enchantment — Aura', mana_cost: '{R}', cmc: 1,
+      colors: ['R'], layout: 'normal', power: null, toughness: null,
+      oracle_text: 'Enchant creature\nEnchanted creature has "{R}: This creature gets +1/+0 until '
+        + 'end of turn."',
+    },
+    {
+      name: 'Midnight Covenant', type_line: 'Enchantment — Aura', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal', power: null, toughness: null,
+      oracle_text: 'Enchant creature\nEnchanted creature has "{B}: This creature gets +1/+1 until '
+        + 'end of turn."',
+    },
+    {
+      name: "Karametra's Favor", type_line: 'Enchantment — Aura', mana_cost: '{1}{G}', cmc: 2,
+      colors: ['G'], layout: 'normal', power: null, toughness: null,
+      oracle_text: 'Enchant creature\nEnchanted creature has "{T}: Add one mana of any color."',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'quoted-abilities',
+      name: 'Quoted Abilities',
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 2 })),
+        { name: 'Grizzly Bears', count: 4 },
+        // A hand-written pool card, for the one rule only an outside effect can ask: CR 613.1f.
+        { name: 'Turn to Frog', count: 2 },
+        { name: 'Mountain', count: 14 },
+        { name: 'Swamp', count: 12 },
+        { name: 'Forest', count: 14 },
+        { name: 'Island', count: 6 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual([
+      'Dragon Mantle', 'Fire Whip', "Karametra's Favor", 'Midnight Covenant',
+    ]);
+    return list.deck;
+  };
+
+  const table = (battlefield: readonly string[], hand: readonly string[] = []) => advanceTo(arena({
+    decks: { 0: 'quoted-abilities', 1: 'quoted-abilities' },
+    deckSpecs: { 'quoted-abilities': deck() },
+    battlefield: { 0: [...battlefield], 1: ['Grizzly Bears'] },
+    hands: { 0: [...hand] },
+    turn: 4, firstSeat: 0,
+  }), 'precombat-main');
+
+  const LANDS = ['Mountain', 'Mountain', 'Swamp', 'Swamp', 'Forest', 'Forest'];
+
+  /** Casts an Aura from hand onto seat 0's Bears, with the mana already floating. */
+  const enchant = (state: GameState, aura: string): GameState => passBoth(apply(state, {
+    type: 'auto:cast', by: 0, card: find(state, 0, 'hand', aura),
+    targets: [{ kind: 'card', id: find(state, 0, 'battlefield', 'Grizzly Bears') }],
+  } as Action));
+
+  const grantedPlays = (state: GameState, card: string) => legalActions(state, 0 as SeatIndex)
+    .plays.filter((play) => play.kind === 'activate' && play.card === card
+      && play.grantedBy !== undefined);
+
+  it('offers the granted ability on the host, carrying the card that defines it', () => {
+    /*
+      The offer is the first half of the mechanic and the one a reader test cannot see: the ability
+      is on the *creature's* row, and the play says which card defines it because `abilityIndex`
+      alone would point into the Bears' own (empty) ability list.
+    */
+    let s = tapAllLands(table(['Grizzly Bears', ...LANDS], ['Fire Whip']), 0);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect(grantedPlays(s, bears)).toEqual([]);
+    s = enchant(s, 'Fire Whip');
+
+    const offered = grantedPlays(s, bears);
+    expect(offered).toHaveLength(1);
+    expect(offered[0]!.description).toBe('{T}: This creature deals 1 damage to any target.');
+    expect(offered[0]!.grantedBy?.card).toBe('Fire Whip');
+    // The defKey is what makes the lookup work for a **compiled** grantor, which is D511's bug.
+    expect(offered[0]!.grantedBy?.defKey).toBeDefined();
+  });
+
+  it('taps the host to pay for it, and the Aura is untouched', () => {
+    /*
+      CR 113.6 in one assertion: the ability belongs to the creature, so `{T}` taps the creature.
+      An engine that tapped the grantor would read as "it worked" on the log and leave the Aura
+      unusable while the creature kept attacking.
+    */
+    let s = tapAllLands(table(['Grizzly Bears', ...LANDS], ['Fire Whip']), 0);
+    s = enchant(s, 'Fire Whip');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const whip = find(s, 0, 'battlefield', 'Fire Whip');
+    const play = grantedPlays(s, bears)[0]!;
+
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: bears, abilityIndex: play.abilityIndex ?? 0,
+      grantedBy: play.grantedBy, targets: [{ kind: 'player', seat: 1 }],
+    } as Action));
+
+    expect(life(s, 1 as SeatIndex)).toBe(19);
+    expect(s.instances[bears]!.tapped).toBe(true);
+    expect(s.instances[whip]!.tapped).toBe(false);
+    // And it is gone from the offers, because the host is now tapped (CR 602.5).
+    expect(grantedPlays(s, bears)).toEqual([]);
+  });
+
+  it('stops being offered the moment the Aura leaves', () => {
+    let s = tapAllLands(table(['Grizzly Bears', ...LANDS], ['Fire Whip']), 0);
+    s = enchant(s, 'Fire Whip');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect(grantedPlays(s, bears)).toHaveLength(1);
+    s = drain(apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Fire Whip'), toZone: 'graveyard',
+    }));
+    expect(grantedPlays(s, bears)).toEqual([]);
+  });
+
+  it('refuses an activation whose grant is no longer on the board', () => {
+    /*
+      The reference travels on the action, so the engine re-derives the grant before it pays for
+      anything: a play offered a moment ago and an Aura destroyed since is a refusal, not a free
+      activation off a card that has left.
+    */
+    let s = tapAllLands(table(['Grizzly Bears', ...LANDS], ['Fire Whip']), 0);
+    s = enchant(s, 'Fire Whip');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const play = grantedPlays(s, bears)[0]!;
+    s = drain(apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Fire Whip'), toZone: 'graveyard',
+    }));
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: bears, abilityIndex: play.abilityIndex ?? 0,
+      grantedBy: play.grantedBy, targets: [{ kind: 'player', seat: 1 }],
+    } as Action)).toMatch(/no such ability/i);
+  });
+
+  it('two Auras on one creature each grant their own ability at index 0', () => {
+    /*
+      **The row a grantor-blind index would fail.** Both grants are `grantedAbilities[0]` of their
+      own card, so an engine that identified a granted ability by its index alone would offer one
+      ability twice — and `+1/+0` twice is a different creature from `+1/+0` and `+1/+1`.
+    */
+    let s = tapAllLands(
+      table(['Grizzly Bears', ...LANDS, 'Mountain', 'Swamp'], ['Dragon Mantle', 'Midnight Covenant']),
+      0,
+    );
+    s = enchant(enchant(s, 'Dragon Mantle'), 'Midnight Covenant');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const offered = grantedPlays(s, bears);
+    expect(offered).toHaveLength(2);
+    expect(offered.map((play) => play.grantedBy?.card).slice().sort())
+      .toEqual(['Dragon Mantle', 'Midnight Covenant']);
+
+    for (const play of offered) {
+      s = drain(apply(s, {
+        type: 'auto:activate', by: 0, card: bears, abilityIndex: play.abilityIndex ?? 0,
+        grantedBy: play.grantedBy,
+      } as Action));
+    }
+    const ch = characteristicsOf(s, s.instances[bears]!);
+    expect([ch.power, ch.toughness]).toEqual([4, 3]);
+  });
+
+  it("a granted mana ability reaches the auto-tapper's sources, not only the activation", () => {
+    /*
+      Karametra's Favor turns its host into a mana source, and `manaSources` is what the engine taps
+      to pay for things. A list that left the grant out would offer the ability to a player and
+      refuse the spell it was paying for in the same breath (D67).
+    */
+    let s = tapAllLands(table(['Grizzly Bears', ...LANDS], ["Karametra's Favor"]), 0);
+    s = enchant(s, "Karametra's Favor");
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+
+    const source = manaSources(s, 0 as SeatIndex).find((entry) => entry.key === bears);
+    expect(source).toBeDefined();
+    expect(source?.grantedBy?.card).toBe("Karametra's Favor");
+    // Five rows, one per colour, collapsed into one source that makes a choice — the Birds shape.
+    expect(source?.produces.slice().sort()).toEqual(['B', 'G', 'R', 'U', 'W']);
+  });
+
+  it('a creature that arrived this turn cannot use a granted {T} ability (CR 302.6)', () => {
+    /*
+      Summoning sickness is about the **permanent**, so it applies to an ability the permanent was
+      given as much as to one it printed — and this is the row that proves the granted path runs the
+      same fifteen checks rather than a second, shorter copy of them.
+    */
+    let s = tapAllLands(table([...LANDS, 'Mountain', 'Mountain'], ['Grizzly Bears', 'Fire Whip']), 0);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grizzly Bears'),
+    } as Action));
+    s = enchant(s, 'Fire Whip');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect(grantedPlays(s, bears)).toEqual([]);
+
+    // Next turn the same creature has it, which is what makes the row above about sickness.
+    const later = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+    expect(grantedPlays(later, find(later, 0, 'battlefield', 'Grizzly Bears'))).toHaveLength(1);
+  });
+
+  it('a host that loses all abilities loses the granted one too (CR 613.1f)', () => {
+    /*
+      Layer 6 takes away what was granted before it, so a Frogged creature loses the Aura's button.
+      Turn to Frog is the pool's own card, so the row is driven by a hand-written effect rather than
+      by writing `losesAllAbilities` onto the state — the same reason the Auras above are cast.
+
+      **What actually enforces it, measured rather than assumed.** The break run deleted
+      `grantedAbilitiesOn`'s own layer-6 clear and this row still passed, because `legalActions`
+      skips a permanent with no abilities left *before* it asks for the granted ones — and so do
+      `manaSources` and `potentialMana`, which are the collector's only other callers. The clear
+      inside the collector is therefore defensive duplication today; it mirrors `grantedTriggersOn`,
+      where it **is** load-bearing (the trigger-collection loop passes `undefined` for the script
+      rather than skipping the permanent, precisely so a grant made *after* the Frog survives it).
+      This row is the end-to-end rule, not a test of that line.
+    */
+    let s = tapAllLands(table(
+      ['Grizzly Bears', ...LANDS, 'Island', 'Island', 'Island'],
+      ['Fire Whip', 'Turn to Frog'],
+    ), 0);
+    s = enchant(s, 'Fire Whip');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    expect(grantedPlays(s, bears)).toHaveLength(1);
+
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Turn to Frog'),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action));
+    // A 1/1 with nothing, which is what the card says — the Aura is still attached and granting,
+    // and layer 6 is what takes the ability away (see `grantedAbilitiesOn`).
+    expect(s.instances[find(s, 0, 'battlefield', 'Fire Whip')]!.attachedTo).toBe(bears);
+    expect(grantedPlays(s, bears)).toEqual([]);
+  });
+
+  it('the dimmed pips read the granted mana too', () => {
+    /*
+      `potential` is the loose, display-side answer to "what could this seat still make", and
+      `manaSources` is the strict one the auto-tapper uses. They are two readers of one board and
+      both docblocks say they must agree about what exists, so the grant has to appear in both — a
+      player looking at a Karametra's Favor already counts its host as a land.
+    */
+    const start = table(['Grizzly Bears', ...LANDS], ["Karametra's Favor"]);
+    /*
+      Read on a **later turn**, with the lands untapped and the pool empty, so the two readings
+      differ by the grant and not by the two mana the Aura cost: the first version of this row
+      compared potential before and after the cast and was measuring the payment.
+    */
+    const fresh = (state: GameState) => legalActions(
+      advanceTo(nextTurn(nextTurn(state)), 'precombat-main'), 0 as SeatIndex,
+    ).potential;
+    const without = fresh(start);
+    const withFavor = fresh(enchant(tapAllLands(start, 0), "Karametra's Favor"));
+    for (const colour of ['W', 'U', 'B', 'R', 'G'] as const) {
+      expect(withFavor[colour] - without[colour]).toBe(1);
+    }
   });
 });

@@ -1069,6 +1069,20 @@ export interface ContinuousEffect {
    */
   readonly grants?: readonly number[];
   /**
+   * **Activated abilities this effect hands the permanents in scope** (CR 113.6) — the indices of
+   * entries in the *source card's* `grantedAbilities`.
+   *
+   * `grants`' sibling, and a second field rather than a second meaning for it, because the two
+   * index different arrays on the script: one holds `TriggerDef`s, the other `AbilityDef`s, and a
+   * shared index list would make every reader guess which array an index belonged to. Everything
+   * `grants`' docblock says about *why indices* applies unchanged — an `AbilityDef` is a bag of
+   * functions and this object has to stay cloneable.
+   *
+   * Collected by `grantedAbilitiesOn`, which is `grantedTriggersOn` with the other field read:
+   * same scope, same duration, same layer-6 erasure.
+   */
+  readonly grantsAbilities?: readonly number[];
+  /**
    * Combat damage involving the permanents in scope does not happen — dealt **by** them and dealt
    * **to** them. A Fog is this with an all-creatures scope; a Maze of Ith is it scoped to one card.
    *
@@ -2050,6 +2064,47 @@ export function grantedTriggersOn(
     const name = state.cardDefs[defKey ?? '']?.name;
     if (name === undefined) continue;
     for (const index of effect.grants ?? []) {
+      (out ??= []).push({ card: name, index, ...(defKey === undefined ? {} : { defKey }) });
+    }
+  }
+  return out ?? [];
+}
+
+/**
+ * The **activated** abilities continuous effects are handing this permanent (CR 113.6).
+ *
+ * `grantedTriggersOn` with `grantsAbilities` read instead of `grants`, and deliberately a copy of
+ * that function rather than a parameterised version of it: the two differ in one field name, and
+ * the shared part — the scope test, the face-down guard, layer 6 clearing everything collected
+ * before it — is four lines. A `which: 'triggers' | 'abilities'` parameter would have put a
+ * discriminator in every caller to save those four.
+ *
+ * Returns `GrantedTriggerRef`s, the same shape, because the question each answers is identical:
+ * *which card defines this, and at what index*. `StackObject.grantedBy` is typed with it and
+ * carries either kind — which of the two arrays to read is decided by the object's `kind`, since
+ * an activated object was pushed by `activate` and a triggered one by `fireTrigger`.
+ */
+export function grantedAbilitiesOn(
+  state: GameState, instance: CardInstance,
+): readonly GrantedTriggerRef[] {
+  if (isFaceDownPermanent(instance)) return [];
+  const def = state.cardDefs[instance.defKey];
+  const line = parseTypeLine(def?.typeLine);
+  const creature = hasType(line, 'creature');
+  let out: GrantedTriggerRef[] | null = null;
+  for (const effect of state.effects ?? []) {
+    if (effect.grantsAbilities === undefined && effect.losesAllAbilities !== true) continue;
+    if (!effectApplies(state, effect, instance, creature, line)) continue;
+    // CR 613.1f: everything granted *before* this effect is gone, and later grants still land.
+    if (effect.losesAllAbilities === true) {
+      out = null;
+      continue;
+    }
+    const grantor = state.instances[effect.source];
+    const defKey = grantor?.defKey;
+    const name = state.cardDefs[defKey ?? '']?.name;
+    if (name === undefined) continue;
+    for (const index of effect.grantsAbilities ?? []) {
       (out ??= []).push({ card: name, index, ...(defKey === undefined ? {} : { defKey }) });
     }
   }

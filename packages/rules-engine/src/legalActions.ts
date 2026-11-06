@@ -12,10 +12,12 @@
  */
 import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef } from './cards.js';
 import { listAt } from './cardActions.js';
-import { allAbilitiesLost, characteristicsOf, hasType } from './characteristics.js';
 import {
-  atActivationTiming, atSorcerySpeed, bottomOwed, modeCombinations, modeTargetSpecs, modesOf, pendingDeclaration,
-  sacrificeOptions, stackTop, unblockedAttackersOf,
+  allAbilitiesLost, characteristicsOf, grantedAbilitiesOn, hasType, type GrantedTriggerRef,
+} from './characteristics.js';
+import {
+  abilityUseKey, atActivationTiming, atSorcerySpeed, bottomOwed, grantedAbilityFor, modeCombinations,
+  modeTargetSpecs, modesOf, pendingDeclaration, sacrificeOptions, stackTop, unblockedAttackersOf,
 } from './automation.js';
 import {
   canBlock, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
@@ -78,6 +80,16 @@ export interface LegalPlay {
    */
   readonly xMax?: number;
   readonly abilityIndex?: number;
+  /**
+   * Which card **defines** this ability, for an ability a continuous effect handed this permanent
+   * (CR 113.6) — and absent on a printed one, which is almost every play.
+   *
+   * It has to travel with the play because `abilityIndex` means something different in the two
+   * cases: the grantor's `grantedAbilities` rather than this card's own `abilities`. A client or
+   * the bot copies it onto the action unchanged; `autoActions` re-derives the grant from the board
+   * and refuses a reference the permanent no longer has.
+   */
+  readonly grantedBy?: GrantedTriggerRef;
   /**
    * Set on an ability used from the hand rather than from the battlefield — cycling, and nothing
    * else so far. The table needs it because a card in hand is drawn in a different row and a play
@@ -498,6 +510,15 @@ interface ManaSourceEntry {
   readonly key: string;
   readonly produces: readonly ManaType[];
   readonly abilityIndex: number;
+  /**
+   * Which card **defines** the ability `abilityIndex` names, for one a continuous effect handed
+   * this permanent (CR 113.6), and absent for a printed one.
+   *
+   * Carried although the auto-tapper never activates the ability — `tapSources` taps the permanent
+   * and adds the mana itself — because without it `abilityIndex` is a number whose meaning depends
+   * on a fact this entry does not state, and the next reader of it would have no way to know.
+   */
+  readonly grantedBy?: GrantedTriggerRef;
   readonly choose?: boolean;
   /** Life the tap costs, for a land that charges you for the colour. */
   readonly life?: number;
@@ -727,12 +748,26 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
     if (allAbilitiesLost(state, inst)) continue;
     const script = scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
-    const abilities = script?.abilities ?? [];
+    /*
+      The permanent's own mana abilities, and the ones an effect handed it (CR 113.6): a
+      Karametra's Favor on a creature makes that creature a mana source, and a list that left it
+      out would be an auto-tapper refusing a spell the player can pay for. Assembled exactly as the
+      activation loop below does, for the same reason — one filter, not two that drift.
+    */
+    const abilities: readonly {
+      readonly ability: AbilityDef; readonly index: number; readonly grantedBy?: GrantedTriggerRef;
+    }[] = [
+      ...(script?.abilities ?? []).map((ability, index) => ({ ability, index })),
+      ...grantedAbilitiesOn(state, inst).flatMap((ref) => {
+        const ability = grantedAbilityFor(state, ref);
+        return ability === undefined ? [] : [{ ability, index: ref.index, grantedBy: ref }];
+      }),
+    ];
     let usable: {
       index: number; produces: readonly ManaType[]; life: number; energy: number; sacrifices: boolean;
+      grantedBy?: GrantedTriggerRef;
     }[] = [];
-    for (let i = 0; i < abilities.length; i++) {
-      const ability = abilities[i]!;
+    for (const { ability, index: i, grantedBy } of abilities) {
       if (ability.produces === undefined || ability.produces.length === 0) continue;
       if (ability.cost.mana !== undefined) continue;
       /*
@@ -771,6 +806,9 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
         life: cost,
         energy: energyCost,
         sacrifices: ability.cost.sacrificeSelf === true,
+        // Which card defines it, so `index` is never an ambiguous number: a granted ability's
+        // index is a position in the grantor's table. See `ManaSourceEntry.grantedBy`.
+        ...(grantedBy === undefined ? {} : { grantedBy }),
       });
     }
     /*
@@ -808,6 +846,7 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
     if (usable.length === 1) {
       bucket.push({
         key: id, produces: usable[0]!.produces, abilityIndex: usable[0]!.index,
+        ...(usable[0]!.grantedBy === undefined ? {} : { grantedBy: usable[0]!.grantedBy }),
         ...(cost > 0 ? { life: cost } : {}),
         ...(eats ? { sacrifices: true } : {}),
       });
@@ -817,6 +856,7 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
       key: id,
       produces: usable.flatMap((u) => u.produces),
       abilityIndex: usable[0]!.index,
+      ...(usable[0]!.grantedBy === undefined ? {} : { grantedBy: usable[0]!.grantedBy }),
       choose: true,
       ...(cost > 0 ? { life: cost } : {}),
       ...(eats ? { sacrifices: true } : {}),
@@ -846,7 +886,15 @@ export function potentialMana(state: GameState, seat: SeatIndex): ManaPool {
     if (allAbilitiesLost(state, inst)) continue;
     const script = scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
-    for (const ability of script?.abilities ?? []) {
+    // The granted ones too, kept in step with `manaSources` above — the dimmed pips and the
+    // auto-tapper answering different questions about the same board is what both docblocks warn
+    // against.
+    for (const ability of [
+      ...(script?.abilities ?? []),
+      ...grantedAbilitiesOn(state, inst)
+        .map((ref) => grantedAbilityFor(state, ref))
+        .filter((ability): ability is AbilityDef => ability !== undefined),
+    ]) {
       if (ability.produces === undefined) continue;
       if (ability.cost.tap) {
         // A creature's tap ability is unavailable while it is summoning sick.
@@ -1618,10 +1666,38 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
     if (zone === 'battlefield' && allAbilitiesLost(state, inst)) continue;
     const script = scriptForCard(state.cardDefs[inst.defKey]);
     const ch = characteristicsOf(state, inst);
-    const abilities: readonly AbilityDef[] = script?.abilities ?? [];
+    /*
+      The permanent's own abilities, and then the ones continuous effects have handed it (CR 113.6).
 
-    for (let i = 0; i < abilities.length; i++) {
-      const ability = abilities[i]!;
+      One list and one loop, because every rule below applies identically to both: a granted `{T}`
+      ability taps the **host**, a granted sorcery-speed one is still sorcery speed, and a granted
+      one on a creature that arrived this turn is still summoning-sick. Offering granted abilities
+      from a second loop would have been a second copy of those fifteen checks, which is how two
+      paths that must agree stop agreeing.
+
+      The index each carries means different things in the two cases, and that is what `grantedBy`
+      is for: for a printed ability it is the position in this card's own `abilities`, and for a
+      granted one the position in the *grantor's* `grantedAbilities`. See `CardScript.grantedAbilities`
+      for why the granted one is not renumbered into a single assembled list.
+
+      Granted abilities only on the battlefield, which is where a continuous effect reaches: this
+      loop also walks the hand and the graveyard, and nothing grants an ability to a card there.
+    */
+    const offered: readonly {
+      readonly ability: AbilityDef;
+      readonly index: number;
+      readonly grantedBy?: GrantedTriggerRef;
+    }[] = [
+      ...(script?.abilities ?? []).map((ability, index) => ({ ability, index })),
+      ...(zone !== 'battlefield' ? [] : grantedAbilitiesOn(state, inst).flatMap((ref) => {
+        const ability = grantedAbilityFor(state, ref);
+        // A reference to a card this build does not script is skipped rather than offered as a
+        // play with no ability behind it — the same answer the granted-trigger collector gives.
+        return ability === undefined ? [] : [{ ability, index: ref.index, grantedBy: ref }];
+      })),
+    ];
+
+    for (const { ability, index: i, grantedBy } of offered) {
       /*
         Which zone this ability is used from, read off its cost.
 
@@ -1649,7 +1725,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       // "Activate only once each turn" (CR 602.5f), the same rule one index deeper than the
       // loyalty check below. See `AbilityDef.onceEachTurn`.
       if (ability.onceEachTurn === true
-        && inst.abilityUsedTurn?.[String(i)] === state.turn) continue;
+        && inst.abilityUsedTurn?.[abilityUseKey(i, grantedBy)] === state.turn) continue;
       // "Activate only during your turn / upkeep / before attackers" (CR 602.5d). Its own
       // predicate rather than `sorcerySpeed`'s — see `atActivationTiming`.
       if (ability.timing !== undefined && !atActivationTiming(state, seat, ability.timing)) continue;
@@ -1726,6 +1802,8 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
           ? ability.description
           : `${ability.description} (tapping ${crew.length})`,
         manaCost: ability.cost.mana ?? '', abilityIndex: i,
+        // Which card defines it, when this permanent did not print it. See `LegalPlay.grantedBy`.
+        ...(grantedBy === undefined ? {} : { grantedBy }),
         ...(zone === 'hand' ? { fromHand: true } : {}),
         ...(zone === 'graveyard' ? { fromGraveyard: true } : {}),
         targetSpecs: specs, candidates, isManaAbility: ability.produces !== undefined,

@@ -17069,3 +17069,126 @@ target` (Fire Whip, 7 cards) and `{T}: Add one mana of any color` (Karametra's F
 *activated* abilities, and `ContinuousEffect` has no `grantedAbilities` to put them in. That is the
 next increment in this family, and it is worth more than the 51 refusals, which are 51 separate
 trigger shapes.
+
+## D512 — Granting an **activated** ability, and the two cards that quote their own name
+
+D511 measured the quoted-attachment family and found the gate was the inner text, not the grant: of
+the 87 distinct quotations the corpus prints inside an `(Enchanted|Equipped) creature has "…"` line,
+8 read as triggers, 51 the reader refused, and **28 were activated abilities** — with nowhere to put
+one. `ContinuousEffect.grants` carries indices into `CardScript.grantedTriggers` and there was no
+`grantedAbilities` beside it. This increment is that field and everything downstream of it.
+
+### The engine side, which is most of the work
+
+| | |
+| --- | --- |
+| `CardScript.grantedAbilities` | the table, beside `grantedTriggers` |
+| `ContinuousEffect.grantsAbilities` | indices into it, beside `grants` |
+| `PumpOptions.grantsAbilities` | carried through `modsFrom`, so all five grant sites reach it for nothing |
+| `grantedAbilitiesOn` | `grantedTriggersOn` with the other field read |
+| `LegalPlay.grantedBy` / `AutoActivateAction.grantedBy` | which card *defines* the ability |
+| `grantedAbilityFor` / `abilityUseKey` | one lookup and one record key, shared by `legalActions`, `autoActions` and the bot |
+
+**Two arrays rather than one tagged list**, because the two are used at different moments: a trigger
+is collected when an event happens, an activated ability is offered in `legalActions` and paid for in
+`autoActions`. A single list would make every reader ask which kind each entry was — and
+`abilityOrTrigger` already has the answer for free, in the stack object's `kind`.
+
+**`grantedBy` on the action rather than an index into an assembled list.** The obvious shortcut was
+to concatenate printed and granted abilities and let `abilityIndex` run past the printed ones. That
+list renumbers itself whenever an Aura arrives or leaves — which is to say, between a bot composing
+an action and the engine applying it. So the action names the grantor and the index in *its* table,
+and `autoActions` re-derives the grant from the board before it pays for anything: a reference to an
+Aura destroyed since the play was offered is refused, not honoured.
+
+**One loop in `legalActions`, not two.** The granted abilities are appended to the printed ones and
+the same fifteen checks run over both — a granted `{T}` taps the host, a granted sorcery-speed one
+is still sorcery speed, a granted one on a creature that arrived this turn is still summoning-sick.
+A second loop would have been a second copy of those checks, which is how two paths that must agree
+stop agreeing.
+
+**And the mana half**, which is easy to forget because the activation path works without it: a
+granted `{T}: Add one mana of any color` has to appear in `manaSources` (what the auto-tapper taps)
+and in `potentialMana` (the dimmed pips). Without it the engine would offer a player the ability and
+refuse the spell it was paying for in the same breath (D67). `tapSources` needed nothing — it taps
+the permanent and adds the mana itself — so the entry carries `grantedBy` only to keep its
+`abilityIndex` unambiguous.
+
+### The two cards that quote their own name
+
+Found by probing real printings rather than by reading, and it is the one place where granting an
+*activated* ability is harder than granting a trigger:
+
+```
+Ninja's Kunai     "{1}, {T}, Sacrifice Ninja's Kunai: Ninja's Kunai deals 3 damage to any target."
+Trusty Boomerang  "{1}, {T}: Tap target creature. Return Trusty Boomerang to its owner's hand."
+```
+
+The compiler binds a card's own name to **the ability's source**, and the source of a granted ability
+is the host (CR 113.6). Both read, both compiled, and both were wrong in the worst available way:
+Ninja's Kunai's granted ability would have sacrificed the **creature**, and Trusty Boomerang's would
+have returned the creature to its owner's hand. Two cards that look read and eat your board.
+
+There is no field meaning "the permanent that granted this", so `namesItsGrantor` refuses the line
+(D362, D487) — and the guard is applied to the *trigger* reader too, whose D511 docblock had argued
+that no printed quotation names its grantor. It was true of the triggers and false of the family.
+
+### The tests
+
+13 compile tests: Fire Whip and Viridian Longbow (the two attachment kinds through one reader),
+Karametra's Favor as **five** abilities one per colour (the Birds of Paradise shape, which is what
+proves the index list is a list), a row each for printed Midnight Covenant, Dragon Mantle, Sadistic
+Obsession, Presence of Gond, Ocular Halo and Sinstriker's Will, the two self-naming refusals,
+Leyline Immersion as a quotation the reader cannot read, and the D511 regression row.
+
+9 runtime tests through `customDeck`, every Aura **cast at its host**: the ability is offered on the
+host carrying the card that defines it; `{T}` taps the host and leaves the Aura untapped; it
+disappears when the Aura leaves; a reference to a departed Aura is refused; **two** Auras on one
+creature each grant their own index-0 ability and both resolve (+1/+0 and +1/+1, which is the row a
+grantor-blind index would fail); a granted mana ability reaches `manaSources`; the dimmed pips agree;
+a creature that arrived this turn cannot use a granted `{T}` ability (CR 302.6); and a Frogged host
+loses the button (CR 613.1f).
+
+One retired row: D511's "refuses a quoted ability that is not a trigger at all" was asserting the
+absence this increment filled in. It now asserts that the ability reads *and* that the trigger table
+stays empty.
+
+### The break run
+
+23 breaks over six files, each verified to apply and to revert against a SHA-256. **14 caught**, and
+the nine that were not were measured rather than argued — across all 87 attachment quotations the
+corpus prints:
+
+| break | why nothing catches it |
+| --- | --- |
+| `namesItsGrantor` ignores the short name | **0** grantors in the family have a comma in their name |
+| `grantedAbilityFrom` drops the exactly-abilities check | **0** quotations read as abilities *plus* another field |
+| the off-battlefield cost guard is dropped | **0** granted abilities carry a discard, exile, graveyard or loyalty cost |
+| `abilityUseKey` keys a granted ability like a printed one | **0** quotations contain "Activate only once each turn" |
+| the bot resolves a granted ability off the host's own list | the two rules that would discriminate are about a **free** ability, and **0** granted abilities cost nothing |
+| `sameActivation` ignores which card granted it | same: it is a rule about a free ability already on the stack |
+| `legalActions` offers granted abilities from hand and graveyard | the collector returns nothing for a card outside the battlefield, so the zone check is a short-circuit, not a rule |
+| `grantedAbilitiesOn` ignores lose-all-abilities | all three callers skip a permanent with no abilities first; its sibling's clear **is** load-bearing, because the trigger loop does not skip |
+| `abilityTargetSpecs` ignores the object kind | 14 granted abilities do carry targets, but an *activated* ability's targets travel on the action — the only route to that site is Spellskite-style redirection, which `soleTargetSpecOf` already leaves out for compiled cards by its own docblock |
+
+The last two are the ones worth keeping in mind. Both are **correct** answers nothing can currently
+ask for, and one of them — the layer-6 clear — had a test that looked like it covered it: the Frogged
+host row passed with the line deleted, because `legalActions` had already skipped the creature. That
+row's docblock now says so, which is the difference between a test and a claim.
+
+### Coverage
+
+| | before D512 | after |
+| --- | --- | --- |
+| printed lines read | 21,738 / 56,421 (38.5%) | **21,768 / 56,421 (38.6%)** |
+| cards with a compiled script | 10,920 | 10,920 |
+| cards with every printed line read | 6,693 | **6,718** |
+| of those, needing no script at all | 1,191 | 1,191 |
+
+**25 cards finished**, exactly the number the probe predicted (30 legal cards compile a granted
+ability — 24 Auras and 6 Equipment — and 25 of them have no unread line left). The script count did
+not move, which is this family's shape: the Auras already compiled their enchant line and left the
+bonus unclaimed.
+
+The remaining 51 refused quotations are the family's whole future: 19 of them name a target, and
+every one is a separate trigger or ability shape rather than a shared mechanism.

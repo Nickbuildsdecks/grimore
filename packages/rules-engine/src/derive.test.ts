@@ -72,17 +72,27 @@ describe('the lookup the engine asks with', () => {
     expect(calls, `${file as string} still asks the hand-written registry by name`).toEqual([]);
   });
 
-  it('automation.ts keeps exactly the two name lookups that have no definition', () => {
+  it('automation.ts asks by name only as a fallback behind a definition (D511, D512)', () => {
     /*
-      A granted ability is recorded on the continuous effect as the granting card's **name** plus an
-      index into its `grantedTriggers`, so there is no definition to ask with — and `grantedTriggers`
-      is the one field the compiler never emits, because granting another permanent a triggered
-      ability has no reader and is a refusal rather than a gap. So the registry is the complete
-      answer at those two sites, not a partial one. Counted rather than left alone, so a third
-      name lookup appearing in this file has to justify itself here.
+      **What this test used to say, and why it was wrong.** It pinned "exactly the two name lookups
+      that have no definition", on the argument that a granted ability is recorded as the granting
+      card's *name* and that `grantedTriggers` "is the one field the compiler never emits". D511
+      made the compiler emit it — an Aura's quoted triggered ability now compiles — and a compiled
+      grantor has no entry in the hand-written registry, so those two name lookups were a grant that
+      was installed and never fired. D512 added the activated sibling and a third site with it.
+
+      So the invariant is not a count of name lookups; it is that **every** one of them is a
+      fallback. `GrantedTriggerRef` carries the grantor's card key, each site asks
+      `scriptForCard(defs[defKey])` first, and the name is what answers for a hand-written grantor
+      (#230's Ophidian Eye and the soulbond pair). A `scriptFor(` that is not preceded by `??` is
+      a site that cannot see a compiled card.
     */
-    const lines = code('automation.ts').split('\n').filter((line) => /\bscriptFor\(/.test(line));
-    expect(lines).toHaveLength(2);
-    for (const line of lines) expect(line).toContain('grantedTriggers');
+    const lines = code('automation.ts').split('\n')
+      .filter((line) => /\bscriptFor\(/.test(line))
+      .map((line) => line.trim());
+    expect(lines).toHaveLength(3);
+    for (const line of lines) expect(line.startsWith('?? scriptFor(')).toBe(true);
+    // One of the three reads the activated table, which is the field D512 added.
+    expect(lines.filter((line) => line.includes('grantedAbilities'))).toHaveLength(1);
   });
 });

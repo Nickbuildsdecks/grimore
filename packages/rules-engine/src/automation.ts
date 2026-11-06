@@ -373,6 +373,45 @@ const scriptOnStack = (state: GameState, object: StackObject): CardScript | unde
 };
 
 /**
+ * An **activated** ability a continuous effect handed a permanent, looked up from the reference
+ * `grantedAbilitiesOn` built (CR 113.6).
+ *
+ * The grantor's card key first and its name as the fallback, which is D511's lesson arriving
+ * before the bug does: `scriptFor` is a lookup in the hand-written registry, so a *compiled*
+ * grantor — which is every card this field exists for — has no entry there, and the three sites
+ * that looked a granted trigger up by name alone were a grant that was installed and never fired.
+ * The name is kept for a hand-written card that grants one, exactly as the trigger sites do.
+ *
+ * One function rather than the lookup inlined at each of the three places that needs it — offering
+ * the ability, paying for it, resolving it — because those three disagreeing is the failure this
+ * engine has already had once.
+ */
+export function grantedAbilityFor(
+  state: GameState, ref: GrantedTriggerRef,
+): AbilityDef | undefined {
+  const def = ref.defKey === undefined ? undefined : state.cardDefs[ref.defKey];
+  return (def === undefined ? undefined : scriptForCard(def))?.grantedAbilities?.[ref.index]
+    ?? scriptFor(ref.card)?.grantedAbilities?.[ref.index];
+}
+
+/**
+ * The key an "Activate only once each turn" record is written under (CR 602.5f).
+ *
+ * `CardInstance.abilityUsedTurn` is keyed by ability, and a *granted* ability has no index on the
+ * host's own script — index 0 of a granted ability and index 0 of a printed one are different
+ * abilities on the same permanent, and sharing a key would make using one lock out the other. So a
+ * granted one is keyed by the grantor as well, and by its card key rather than its name because
+ * two cards may share a name no more than two Auras granting the same ability may share a record.
+ *
+ * Exported because `legalActions` and `autoActions` both read it and a client reads neither: the
+ * two deciding this differently is an ability offered and then refused (D67).
+ */
+export function abilityUseKey(abilityIndex: number, grantedBy?: GrantedTriggerRef): string {
+  if (grantedBy === undefined) return String(abilityIndex);
+  return `g:${grantedBy.defKey ?? grantedBy.card}:${abilityIndex}`;
+}
+
+/**
  * When an activated ability's printed "Activate only during …" clause lets it be activated
  * (CR 602.5d), as the three clauses the corpus actually prints.
  *
@@ -4027,9 +4066,17 @@ function abilityOrTrigger(
     const grantorDef = object.grantedBy.defKey === undefined
       ? undefined
       : defs?.[object.grantedBy.defKey];
-    return (grantorDef === undefined ? undefined : scriptForCard(grantorDef))
-      ?.grantedTriggers?.[object.grantedBy.index]
-      ?? scriptFor(object.grantedBy.card)?.grantedTriggers?.[object.grantedBy.index];
+    const grantor = (grantorDef === undefined ? undefined : scriptForCard(grantorDef))
+      ?? scriptFor(object.grantedBy.card);
+    /*
+      Which of the grantor's two tables to read is the object's **kind**, not a guess: an activated
+      object was put here by `activate` out of `grantedAbilities`, a triggered one by `fireTrigger`
+      out of `grantedTriggers`, and index 1 of one is a different ability from index 1 of the other.
+      Asking the kind is what lets the two share this reference and this lookup.
+    */
+    return object.kind === 'activated'
+      ? grantor?.grantedAbilities?.[object.grantedBy.index]
+      : grantor?.grantedTriggers?.[object.grantedBy.index];
   }
   if (script === undefined) return undefined;
   if (object.kind === 'activated') return script.abilities?.[object.abilityIndex];

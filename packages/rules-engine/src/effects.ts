@@ -1963,6 +1963,12 @@ export interface PumpOptions {
    * separately, which is the bug this function's own docblock is about.
    */
   readonly grants?: readonly number[];
+  /**
+   * See `ContinuousEffect.grantsAbilities`: which of the granting card's `grantedAbilities` the
+   * permanents in scope are handed. Here for the reason `grants` is — one translation, every
+   * builder carries it for nothing.
+   */
+  readonly grantsAbilities?: readonly number[];
   readonly duration?: EffectDuration;
 }
 
@@ -2007,6 +2013,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.definesSize ? { definesSize: opts.definesSize } : {}),
     ...(opts.while ? { while: opts.while } : {}),
     ...(opts.grants ? { grants: [...opts.grants] } : {}),
+    ...(opts.grantsAbilities ? { grantsAbilities: [...opts.grantsAbilities] } : {}),
   };
 }
 
