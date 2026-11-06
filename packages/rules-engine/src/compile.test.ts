@@ -4,7 +4,7 @@ import { STARTER_DECKS } from './starterDecks.js';
 import { CLUE_TOKEN, isKeywordDeclaration, scriptFor } from './scripts.js';
 import { zoneKey, type CardDef } from './cards.js';
 import {
-  characteristicsOf, printedBlockerLimit, printedCombatStatics, printedLandwalk,
+  characteristicsOf, printedBlockerLimit, printedBlocksLimit, printedCombatStatics, printedLandwalk,
 } from './characteristics.js';
 import type { CardDataRow } from './fromCardData.js';
 import { addCounters, pump, tap, type EffectContext } from './effects.js';
@@ -10852,5 +10852,190 @@ describe('the printed-part cache (D499)', () => {
     const [walkA, walkB] = twice(() => printedLandwalk(text));
     expect(walkA).toEqual(['Island']);
     expect(walkB).toEqual(walkA);
+  });
+});
+
+describe('printed restrictions on what this creature may block (D500)', () => {
+  /*
+    D498's mirror, and the row D495 and D498 both named and left: `~ can block only creatures with
+    flying`.
+
+    **Not the same rule, and not the same field.** "Can't be blocked by creatures with flying" keeps
+    fliers from blocking *it*; "can block only creatures with flying" keeps *it* from blocking
+    anything but a flier. A Cloud Pirates is a 1/1 flier with no evasion at all and a very bad
+    blocker. Fold the two directions into one pair of lists and every card in this family silently
+    gains evasion it does not print — the D362 mistake, committed to 29 cards at once.
+
+    The whole family, from 33,847 printings (39 lines, all read):
+
+        ~ can block only creatures with flying.              29 lines, the entire allow-list half
+        ~ can't block creatures with power N or greater.      6
+        ~ can't block creatures with power N or less.         2
+        ~ can't block artifact creatures.                     1   (Hinterland Drake)
+        ~ can't block black creatures.                        1   (Gibbering Hyenas)
+
+    The filter vocabulary is D498's, unchanged — which is why the last two read without a line of
+    new parsing. What is new is the subject-and-verb shape and the two fields it lands in.
+  */
+  const read = (text: string, name = 'Probe Beast') => printedBlocksLimit(text, name);
+
+  it.each([
+    // The allow list, which is 29 of the 39 lines and one sentence.
+    ['Ascending Aven can block only creatures with flying.', 'Ascending Aven',
+      { ban: [], only: [{ kind: 'keyword', keyword: 'flying' }] }],
+    // "This creature", the retemplated second reference — Etherium Pteramander's printing.
+    ['This creature can block only creatures with flying.', 'Etherium Pteramander',
+      { ban: [], only: [{ kind: 'keyword', keyword: 'flying' }] }],
+    // The ban, both comparison directions. Brassclaw Orcs and Sunweb.
+    ["Brassclaw Orcs can't block creatures with power 2 or greater.", 'Brassclaw Orcs',
+      { ban: [{ kind: 'power', cmp: 'at-least', n: 2 }], only: null }],
+    ["Sunweb can't block creatures with power 2 or less.", 'Sunweb',
+      { ban: [{ kind: 'power', cmp: 'at-most', n: 2 }], only: null }],
+    // The two that read for free because the filter vocabulary is shared with D498.
+    ["Hinterland Drake can't block artifact creatures.", 'Hinterland Drake',
+      { ban: [{ kind: 'type', type: 'artifact' }], only: null }],
+    ["Gibbering Hyenas can't block black creatures.", 'Gibbering Hyenas',
+      { ban: [{ kind: 'colour', colour: 'B' }], only: null }],
+    // The short name, as the subject reader already handles for every other printed sentence.
+    ["Bilbo can't block white creatures.", 'Bilbo, Luckwearer',
+      { ban: [{ kind: 'colour', colour: 'W' }], only: null }],
+  ])('reads "%s"', (text, name, expected) => {
+    expect(read(text as string, name as string)).toEqual(expected);
+  });
+
+  it.each([
+    /*
+      Refused for the **subject**, and this is most of what the corpus prints next to these. Every
+      one hands the restriction to somebody else, and handing it to the card printing it would be
+      the D495 mistake: a creature that cannot block because a spell it casts restricts a token.
+    */
+    ['an Aura granting it', 'Enchanted creature can block only creatures with flying.'],
+    ['a class of creatures', 'Creatures with flying can block only creatures with flying.'],
+    ['a token the card creates', 'Draw three cards. Create a 1/1 blue Faerie creature token with'
+      + ' flying and "This token can block only creatures with flying."'],
+    ['somebody else, for a turn', "Target creature can't block this turn."],
+    /*
+      Refused for the **predicate**. The condition is the interesting one: Orgg and Goblin Mutant
+      each print a *readable* ban on one line and an unreadable condition on another, so they are
+      cards this reader half-answers — which is exactly what `unread` is for.
+    */
+    ['a condition', "Branded Brawlers can't block if you control an untapped land."],
+    ['a duration', "Probe Beast can't block creatures with flying this turn."],
+    /*
+      Refused for the **filter**, which is D498's vocabulary and refuses the same phrases here.
+      "Warriors" is Boldwyr Intimidator's line with its subject swapped: a creature type outside
+      the short list, and reading it would be a guess about what a Warrior is.
+    */
+    ['a creature type outside the list', "Probe Beast can't block Warriors."],
+    ['a keyword the engine lacks', "Probe Beast can't block creatures with shadow."],
+    ['a relative power', "Probe Beast can't block creatures with power less than its power."],
+  ])('reads nothing from %s', (_why, text) => {
+    expect(read(text as string)).toEqual({ ban: [], only: null });
+  });
+
+  it('leaves D495\'s two statics to D495', () => {
+    /*
+      `~ can't block` and `~ can't block and can't be blocked` are combat statics, read by
+      `printedCombatStatics` and set on `cantBlock`/`cantBeBlocked`. Four real printings carry the
+      joined form (Changeling Outcast, Inkfathom Infiltrator, Marang River Prowler, and one more),
+      and a ban reader that claimed either would overwrite a flat prohibition with a filter — a
+      creature that may block after all.
+
+      `printedParts` asks the combat reader first, so this is belt and braces; asserted because the
+      ban regex here is `can't block (.+)` and "and can't be blocked" is a `.+`.
+    */
+    expect(read("Probe Beast can't block.")).toEqual({ ban: [], only: null });
+    expect(read("Probe Beast can't block and can't be blocked."))
+      .toEqual({ ban: [], only: null });
+    expect(printedCombatStatics("Probe Beast can't block and can't be blocked.", 'Probe Beast'))
+      .toEqual({ cantBlock: true, cantBeBlocked: true, mustAttack: false });
+  });
+
+  it('refuses a card printing both a ban and an allow list rather than merging them', () => {
+    // D498's rule, for the same reason: the merge is a judgement the printed text does not settle,
+    // and no card in 33,847 asks for one.
+    expect(read("Probe Beast can't block white creatures.\n"
+      + 'Probe Beast can block only creatures with flying.')).toEqual({ ban: [], only: null });
+  });
+
+  it('counts both of Cloud Pirates\' lines compiled, and emits no script', () => {
+    /*
+      Cloud Pirates is the whole family in one card: a printed keyword and a printed block
+      restriction, and nothing else. Both lines are read off the card definition (D424), so the
+      compiler owes exactly one thing — to count them read and emit nothing.
+    */
+    const compiled = compileCard({
+      name: 'Cloud Pirates', type_line: 'Creature — Human Pirate', mana_cost: '{U}', cmc: 1,
+      colors: ['U'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Flying\nCloud Pirates can block only creatures with flying.',
+    });
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    expect(compiled.unread.map((u) => u.line)).toEqual([]);
+    expect(compiled.script?.abilities ?? []).toEqual([]);
+    expect(compiled.script?.triggers ?? []).toEqual([]);
+  });
+
+  it('reads Orgg\'s ban and leaves its condition unread', () => {
+    /*
+      The half-answered card, and the reason the whole-line rule is per line rather than per card.
+      Orgg prints trample, a ban this reads, and an attack condition nothing does — so two lines
+      compile and one is reported, which is a more useful card than all-or-nothing in either
+      direction.
+    */
+    const compiled = compileCard({
+      name: 'Orgg', type_line: 'Creature — Orgg', mana_cost: '{3}{R}{R}', cmc: 5,
+      colors: ['R'], layout: 'normal', power: '6', toughness: '6',
+      oracle_text: 'Trample\n'
+        + "Orgg can't attack if defending player controls an untapped creature with power 3 or greater.\n"
+        + "Orgg can't block creatures with power 3 or greater.",
+    });
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    expect(compiled.unread.map((u) => u.line)).toEqual([
+      "Orgg can't attack if defending player controls an untapped creature with power 3 or greater.",
+    ]);
+  });
+
+  it('is a base characteristic, so "loses all abilities" takes it away (CR 613.1f)', () => {
+    // Same argument as D495's statics and D498's lists: a printed sentence is an ability, so it is
+    // seeded in `characteristicsOf` and cleared there rather than layered on `state.effects`.
+    const def = {
+      name: 'Cloud Pirates', typeLine: 'Creature — Human Pirate', manaCost: '{U}', cmc: 1,
+      colors: ['U'], power: '1', toughness: '1',
+      oracleText: 'Flying\nCloud Pirates can block only creatures with flying.',
+    } as unknown as CardDef;
+    const state = {
+      cardDefs: { k: def },
+      instances: { i: { id: 'i', defKey: 'k', zone: 'battlefield', owner: 0, controller: 0, tapped: false, counters: {} } },
+      effects: [],
+      seats: [],
+    } as unknown as GameState;
+    const inst = state.instances['i']!;
+    expect(characteristicsOf(state, inst).blocksOnly).toHaveLength(1);
+    const frogged = {
+      ...state,
+      effects: [{
+        id: 'fx1', source: 'i', controller: 0, createdTurn: 1, duration: 'end-of-turn',
+        scope: { kind: 'cards', ids: ['i'] }, losesAllAbilities: true,
+      }],
+    } as unknown as GameState;
+    expect(characteristicsOf(frogged, inst).blocksOnly).toBeNull();
+    expect(characteristicsOf(frogged, inst).cantBlockThese).toEqual([]);
+  });
+
+  it('does not put the restriction on the other side of the block', () => {
+    /*
+      The assertion this whole increment is about. Cloud Pirates may only block fliers; that says
+      nothing about who may block Cloud Pirates. If D500 had reused D498's two fields, this card
+      would read as "can't be blocked except by creatures with flying" — unblockable by the ground,
+      which it is not — so both of D498's fields have to stay empty.
+    */
+    expect(printedBlockerLimit('Flying\nCloud Pirates can block only creatures with flying.',
+      'Cloud Pirates')).toEqual({ ban: [], only: null });
+    // The ban half too: Gibbering Hyenas may not block a black creature, and every black creature
+    // may still block the Hyenas.
+    expect(printedBlockerLimit("Gibbering Hyenas can't block black creatures.", 'Gibbering Hyenas'))
+      .toEqual({ ban: [], only: null });
   });
 });

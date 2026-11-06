@@ -208,7 +208,9 @@ type PrintedPart =
   | { readonly kind: 'protection'; readonly colours: readonly Color[] }
   | { readonly kind: 'combat-static'; readonly statics: readonly CombatStatic[] }
   | { readonly kind: 'blocker-ban'; readonly clauses: readonly BlockerClause[] }
-  | { readonly kind: 'blocker-only'; readonly clauses: readonly BlockerClause[] };
+  | { readonly kind: 'blocker-only'; readonly clauses: readonly BlockerClause[] }
+  | { readonly kind: 'blocks-ban'; readonly clauses: readonly BlockerClause[] }
+  | { readonly kind: 'blocks-only'; readonly clauses: readonly BlockerClause[] };
 
 /**
  * One part of a printed ability line, or `null` if this engine has nothing for it.
@@ -336,6 +338,8 @@ function printedParts(
     if (combat !== null) { found.push(combat); continue; }
     const blockers = printedBlockerLine(line, name);
     if (blockers !== null) { found.push(blockers); continue; }
+    const blocks = printedBlocksLine(line, name);
+    if (blocks !== null) { found.push(blocks); continue; }
     const parts = line.split(/,\s*/).map((part) => part.trim()).filter(Boolean)
       .map((part) => printedPart(part));
     if (parts.length === 0 || !parts.every((part) => part !== null)) continue;
@@ -411,12 +415,17 @@ export function printedCombatStatics(
 }
 
 /**
- * One thing a printed blocker restriction says about a would-be blocker.
+ * One thing a printed combat restriction says about a creature.
  *
  * Declarative rather than a closure, because `Characteristics` is data that the view packs, the bot
  * copies and the tests compare — a predicate in it would be a function crossing every one of those
- * boundaries. Each clause is a question about the *blocking* creature, and the vocabulary is the one
- * the corpus actually prints (D498).
+ * boundaries. The vocabulary is the one the corpus actually prints (D498).
+ *
+ * **Asked about either side of a block.** D498 asks it about the would-be *blocker* ("~ can't be
+ * blocked by white creatures"); D500 asks the identical question about the *attacker* ("~ can block
+ * only creatures with flying"). The clause does not know or care which — it is a filter on a
+ * creature — which is why one vocabulary and one matcher serve both directions and the name says
+ * `clause` rather than `blocker`.
  */
 export type BlockerClause =
   | { readonly kind: 'power'; readonly cmp: 'at-most' | 'at-least'; readonly n: number }
@@ -425,15 +434,20 @@ export type BlockerClause =
   | { readonly kind: 'subtype'; readonly subtype: string }
   | { readonly kind: 'keyword'; readonly keyword: Keyword };
 
-/** Whether a would-be blocker answers to this clause. */
-export function blockerMatches(clause: BlockerClause, blocker: Characteristics): boolean {
+/**
+ * Whether a creature answers to this clause.
+ *
+ * The creature is the would-be blocker for D498's two lists and the attacker for D500's two. It
+ * reads only the characteristics handed to it, which is what lets one matcher serve both ends.
+ */
+export function clauseMatches(clause: BlockerClause, creature: Characteristics): boolean {
   switch (clause.kind) {
     case 'power':
-      return clause.cmp === 'at-most' ? blocker.power <= clause.n : blocker.power >= clause.n;
-    case 'colour': return blocker.colors.includes(clause.colour);
-    case 'type': return hasType(blocker.typeLine, clause.type);
-    case 'subtype': return hasSubtype(blocker.typeLine, clause.subtype);
-    case 'keyword': return blocker.keywords.has(clause.keyword);
+      return clause.cmp === 'at-most' ? creature.power <= clause.n : creature.power >= clause.n;
+    case 'colour': return creature.colors.includes(clause.colour);
+    case 'type': return hasType(creature.typeLine, clause.type);
+    case 'subtype': return hasSubtype(creature.typeLine, clause.subtype);
+    case 'keyword': return creature.keywords.has(clause.keyword);
     default: return false;
   }
 }
@@ -574,6 +588,71 @@ export function printedBlockerLimit(
   for (const part of printedParts(oracleText, name)) {
     if (part.kind === 'blocker-ban') ban.push(...part.clauses);
     else if (part.kind === 'blocker-only') {
+      if (only !== null) twoAllowLists = true;
+      only = part.clauses;
+    }
+  }
+  if (twoAllowLists || (ban.length > 0 && only !== null)) return { ban: [], only: null };
+  return { ban, only };
+}
+
+/**
+ * One printed line about what **this creature may block**, or `null`.
+ *
+ * D498's mirror, and a separate pair of fields rather than a reuse of its two. The distinction is
+ * not pedantry: `~ can't be blocked by creatures with flying` keeps fliers from blocking *it*,
+ * `~ can block only creatures with flying` keeps *it* from blocking anything else, and a creature
+ * carrying the second is a ground blocker that happens to hit fliers — read either as the other and
+ * the engine either lets a block through that the card forbids or forbids one it allows. Both are
+ * wrong readings of a line it could simply have left unread (D362).
+ *
+ * The family, from 33,847 printings:
+ *
+ *     ~ can block only creatures with flying.              (29 lines, the whole allow-list half)
+ *     ~ can't block creatures with power 3 or greater.      (6)
+ *     ~ can't block creatures with power 2 or less.         (2)
+ *
+ * Every other `can block only` printing hands the restriction to **somebody else** — an Aura's
+ * "Enchanted creature", Chaosphere's "Creatures with flying", or a token-making spell quoting the
+ * sentence onto the token it creates — so the whole-line subject rule refuses them all, as it does
+ * for D495's statics and D498's lists.
+ *
+ * `~ can't block` and `~ can't block and can't be blocked` are **D495's** statics and are read
+ * there: `printedParts` asks `printedCombatLine` first, and in any case the ban regex here needs a
+ * filter phrase after "block" and finds none. `~ can't block if you control an untapped land` is
+ * refused for its filter, which is a condition and not a creature.
+ */
+function printedBlocksLine(line: string, name: string | undefined): PrintedPart | null {
+  const low = line.toLowerCase().replace(/\.$/, '').trim();
+  const subject = selfSubjects(name).find((self) => low.startsWith(`${self} can`));
+  if (subject === undefined) return null;
+  const rest = low.slice(subject.length).trim();
+  const allow = /^can block only (.+)$/.exec(rest);
+  const deny = allow === null ? /^can't block (.+)$/.exec(rest) : null;
+  const phrase = (allow ?? deny)?.[1];
+  if (phrase === undefined) return null;
+  const clauses = blockerFilter(phrase);
+  if (clauses === null) return null;
+  return { kind: allow !== null ? 'blocks-only' : 'blocks-ban', clauses };
+}
+
+/**
+ * What a card prints about what **it** may block: a ban list, an allow list, or neither.
+ *
+ * `printedBlockerLimit`'s mirror, with the same refusal when a card prints both — the merge rule
+ * would be a judgement nothing in the corpus asks for, and a guessed merge is a creature that
+ * blocks when it may not, or refuses a block it may make (D362, D498).
+ */
+export function printedBlocksLimit(
+  oracleText: string | null | undefined,
+  name?: string,
+): { readonly ban: readonly BlockerClause[]; readonly only: readonly BlockerClause[] | null } {
+  const ban: BlockerClause[] = [];
+  let only: readonly BlockerClause[] | null = null;
+  let twoAllowLists = false;
+  for (const part of printedParts(oracleText, name)) {
+    if (part.kind === 'blocks-ban') ban.push(...part.clauses);
+    else if (part.kind === 'blocks-only') {
       if (only !== null) twoAllowLists = true;
       only = part.clauses;
     }
@@ -1023,6 +1102,25 @@ export interface Characteristics {
    * may block it, and that is `cantBeBlocked`'s job.
    */
   readonly blockableOnlyBy: readonly BlockerClause[] | null;
+  /**
+   * Printed bans on what this creature may block: it may not block an attacker answering **any**
+   * of these.
+   *
+   * "~ can't block creatures with power 3 or greater". The mirror of `cantBeBlockedBy` above and
+   * deliberately not the same field — one is about who may block *it*, this is about what *it* may
+   * block, and `canBlock` reads the first off the attacker and this off the blocker. See
+   * `printedBlocksLimit` (D500).
+   */
+  readonly cantBlockThese: readonly BlockerClause[];
+  /**
+   * A printed allow list on what this creature may block: the attacker must answer **at least one**
+   * of these.
+   *
+   * "~ can block only creatures with flying", which is most of this family. `null` when the card
+   * prints no such sentence; an empty list would mean it may block nothing at all, and that is
+   * `cantBlock`'s job.
+   */
+  readonly blocksOnly: readonly BlockerClause[] | null;
   /** Landwalk subtypes, checked against the *defending* player's lands (CR 702.14). */
   readonly landwalk: readonly string[];
   /** Protection from these colours (CR 702.16). Empty for almost everything. */
@@ -1407,6 +1505,14 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   let cantBeBlockedBy: readonly BlockerClause[] = printedBlockers.ban;
   let blockableOnlyBy: readonly BlockerClause[] | null = printedBlockers.only;
   /*
+    And the mirror: what this creature may block. Same argument for seeding it here, same clearing
+    below — a printed sentence is an ability, so it is a base characteristic (CR 613.1f). See
+    `printedBlocksLimit` for why these are their own two fields rather than the two above (D500).
+  */
+  const printedBlocks = printedBlocksLimit(def?.oracleText, def?.name);
+  let cantBlockThese: readonly BlockerClause[] = printedBlocks.ban;
+  let blocksOnly: readonly BlockerClause[] | null = printedBlocks.only;
+  /*
     Printed landwalk, which is a *base* characteristic exactly as a printed keyword is — so it is
     read here rather than left to the effects loop, and "loses all abilities" clears it below just
     as it clears the printed keywords (CR 613.1f). See `printedLandwalk` for why it was missing.
@@ -1456,6 +1562,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       cantBeBlocked = false;
       cantBeBlockedBy = [];
       blockableOnlyBy = null;
+      cantBlockThese = [];
+      blocksOnly = null;
       landwalk = null;
       goadedBy = null;
       protectionFrom = null;
@@ -1533,6 +1641,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     cantBeBlocked,
     cantBeBlockedBy,
     blockableOnlyBy,
+    cantBlockThese,
+    blocksOnly,
     landwalk: landwalk ?? NO_SUBTYPES,
     goadedBy: goadedBy ?? NO_SEATS,
     protectionFrom: protectionFrom ?? NO_COLORS,

@@ -12,7 +12,7 @@
  * survive combat damage if it is pumped in response.
  */
 import {
-  blockerMatches, characteristicsOf, combatDamagePrevented, hasSubtype, protectionApplies,
+  clauseMatches, characteristicsOf, combatDamagePrevented, hasSubtype, protectionApplies,
   type BlockerClause, type Characteristics,
 } from './characteristics.js';
 import { listAt } from './cardActions.js';
@@ -233,7 +233,7 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
     the more specific sentence.
   */
   const banned = attacker.ch.cantBeBlockedBy
-    .find((clause) => blockerMatches(clause, blocker.ch));
+    .find((clause) => clauseMatches(clause, blocker.ch));
   if (banned !== undefined) {
     return {
       card: blockerId,
@@ -241,11 +241,38 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
     };
   }
   const allowed = attacker.ch.blockableOnlyBy;
-  if (allowed !== null && !allowed.some((clause) => blockerMatches(clause, blocker.ch))) {
+  if (allowed !== null && !allowed.some((clause) => clauseMatches(clause, blocker.ch))) {
     return {
       card: blockerId,
       reason: `${attacker.ch.name} can't be blocked except by `
         + allowed.map(blockerClauseText).join(' or '),
+    };
+  }
+  /*
+    And the same question from the other end: what this *blocker* may block (D500).
+
+    Read off the **blocker** and asked about the attacker, which is the whole reason these are two
+    more fields rather than a reuse of the two above. A Percher with "can block only creatures with
+    flying" is not unblockable and does not stop fliers blocking it; it is a ground body that may
+    only be put in front of a flier. Fold the two directions into one pair of lists and every card
+    in this family gains evasion it does not print.
+
+    Checked after the attacker's own restrictions for the same reason that ordering is: all of them
+    refuse the block, and the player sees whichever reason comes first. The attacker's are the ones
+    a player is more likely to have forgotten, so they speak first.
+  */
+  const cannot = blocker.ch.cantBlockThese.find((clause) => clauseMatches(clause, attacker.ch));
+  if (cannot !== undefined) {
+    return {
+      card: blockerId,
+      reason: `${blocker.ch.name} can't block ${blockerClauseText(cannot)}`,
+    };
+  }
+  const only = blocker.ch.blocksOnly;
+  if (only !== null && !only.some((clause) => clauseMatches(clause, attacker.ch))) {
+    return {
+      card: blockerId,
+      reason: `${blocker.ch.name} can block only ${only.map(blockerClauseText).join(' or ')}`,
     };
   }
   // "Can't be blocked", with nothing after it. Nothing on the blocker's side can answer it, which

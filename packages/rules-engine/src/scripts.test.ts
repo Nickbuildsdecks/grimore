@@ -28879,3 +28879,146 @@ describe('printed blocker restrictions, at the table (D498)', () => {
     expect(canBlock(pumped, bears, kithkin, 1 as SeatIndex)?.reason).toContain('power 3 or greater');
   });
 });
+
+describe('printed restrictions on what a creature may block, at the table (D500)', () => {
+  /*
+    D498's half a reader test cannot reach, from the other end: these clauses have to stop a block
+    read off the **blocker** and asked about the attacker. Three real printings through
+    `customDeck`'s `data`, which is the path an imported card takes.
+
+      Cloud Pirates      {U}    1/1  "Flying / ~ can block only creatures with flying."
+      Sunweb             {3}{W} 5/6  "Defender / Flying / ~ can't block creatures with power 2 or less."
+      Gibbering Hyenas   {2}{G} 3/2  "~ can't block black creatures."
+
+    The attackers come from the shipping pool, not from `data`: Serra Angel (4/4 flier), Grizzly
+    Bears (2/2 green) and Gravedigger (2/2 black). Seat 0 attacks throughout, so the restricted
+    creature sits on seat 1 and `canBlock` is asked as seat 1 — the reverse of D498's layout,
+    which is the point.
+  */
+  const DATA = [
+    {
+      name: 'Cloud Pirates', type_line: 'Creature — Human Pirate', mana_cost: '{U}', cmc: 1,
+      colors: ['U'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Flying\nCloud Pirates can block only creatures with flying.',
+    },
+    {
+      name: 'Sunweb', type_line: 'Creature — Wall', mana_cost: '{3}{W}', cmc: 4,
+      colors: ['W'], layout: 'normal', power: '5', toughness: '6',
+      oracle_text: "Defender (This creature can't attack.)\nFlying\n"
+        + "Sunweb can't block creatures with power 2 or less.",
+    },
+    {
+      name: 'Gibbering Hyenas', type_line: 'Creature — Hyena', mana_cost: '{2}{G}', cmc: 3,
+      colors: ['G'], layout: 'normal', power: '3', toughness: '2',
+      oracle_text: "Gibbering Hyenas can't block black creatures.",
+    },
+  ];
+
+  const table = (id: string, attackers: readonly string[], blockers: readonly string[]) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 2 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Serra Angel', count: 2 },
+        { name: 'Gravedigger', count: 2 },
+        { name: 'Plains', count: 22 },
+        { name: 'Swamp', count: 22 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Cloud Pirates', 'Gibbering Hyenas', 'Sunweb']);
+    return advanceTo(arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: { 0: ['Plains', ...attackers], 1: ['Swamp', ...blockers] },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+  };
+
+  it('an allow list lets the flier be blocked and refuses the ground creature', () => {
+    /*
+      Both halves, because a reader that refused *every* block would pass the first assertion alone
+      — which is the mistake D495's Inkfathom row made and the reason every row in this family
+      asserts the permitted case too.
+    */
+    const s = table('d500-only', ['Serra Angel', 'Grizzly Bears'], ['Cloud Pirates']);
+    const pirates = find(s, 1 as SeatIndex, 'battlefield', 'Cloud Pirates');
+    const angel = find(s, 0 as SeatIndex, 'battlefield', 'Serra Angel');
+    const bears = find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    expect(canBlock(s, pirates, angel, 1 as SeatIndex)).toBeNull();
+    expect(canBlock(s, pirates, bears, 1 as SeatIndex)?.reason)
+      .toContain('can block only creatures with flying');
+  });
+
+  it('a power ban refuses the small attacker and admits the big one', () => {
+    // Sunweb's printing, and the only ban in this family pointing at *small* creatures: a 2/2 is
+    // beneath it and a 4/4 is not.
+    const s = table('d500-power', ['Serra Angel', 'Grizzly Bears'], ['Sunweb']);
+    const web = find(s, 1 as SeatIndex, 'battlefield', 'Sunweb');
+    expect(canBlock(s, web, find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears'), 1 as SeatIndex)?.reason)
+      .toContain('power 2 or less');
+    expect(canBlock(s, web, find(s, 0 as SeatIndex, 'battlefield', 'Serra Angel'), 1 as SeatIndex))
+      .toBeNull();
+  });
+
+  it('a colour ban reads the attacker\'s colour', () => {
+    // Gravedigger is black and the Hyenas may not block it; the green Bears they may.
+    const s = table('d500-colour', ['Gravedigger', 'Grizzly Bears'], ['Gibbering Hyenas']);
+    const hyenas = find(s, 1 as SeatIndex, 'battlefield', 'Gibbering Hyenas');
+    expect(canBlock(s, hyenas, find(s, 0 as SeatIndex, 'battlefield', 'Gravedigger'), 1 as SeatIndex)?.reason)
+      .toContain('black creatures');
+    expect(canBlock(s, hyenas, find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears'), 1 as SeatIndex))
+      .toBeNull();
+  });
+
+  it('reads the attacker as it is now, not as it was printed', () => {
+    /*
+      What makes this a rule rather than a lookup. Sunweb will not block a 2/2; pump the same
+      Grizzly Bears to 3/3 and it will. A reader that cached the attacker's printed power would
+      pass every other test in this block and fail this one.
+    */
+    const s = table('d500-live', ['Grizzly Bears'], ['Sunweb']);
+    const web = find(s, 1 as SeatIndex, 'battlefield', 'Sunweb');
+    const bears = find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    expect(canBlock(s, web, bears, 1 as SeatIndex)?.reason).toContain('power 2 or less');
+    const pumped = pump(s, [bears], bears, 0 as SeatIndex, { power: 1, toughness: 1 });
+    expect(canBlock(pumped, web, bears, 1 as SeatIndex)).toBeNull();
+  });
+
+  it('does not make the restricted creature harder to block', () => {
+    /*
+      The assertion this increment exists for, at the table rather than in the reader. Had D500
+      reused D498's two fields, every card in this family would have gained evasion it does not
+      print — which is worse than leaving the line unread (D362).
+
+      **Gibbering Hyenas is the card that can prove it**, and the first attempt at this test used
+      Cloud Pirates and failed for a reason worth recording: nearly all 29 allow-list printings are
+      *fliers*, so an ordinary Grizzly Bears cannot block one anyway and the test passed or failed
+      on the flying rule rather than on anything D500 does. The Hyenas have no evasion at all, so a
+      black Gravedigger blocking them is refused only if the ban leaked onto the wrong side.
+    */
+    const s = table('d500-mirror', ['Gibbering Hyenas'], ['Gravedigger']);
+    const hyenas = find(s, 0 as SeatIndex, 'battlefield', 'Gibbering Hyenas');
+    const digger = find(s, 1 as SeatIndex, 'battlefield', 'Gravedigger');
+    expect(canBlock(s, digger, hyenas, 1 as SeatIndex)).toBeNull();
+  });
+
+  it('refuses a ground block on Cloud Pirates for its flying, not for its own sentence', () => {
+    /*
+      The allow-list half of the same point, and all the flying rule leaves room to assert. Both
+      readings refuse this block, so the discriminator is *which rule* refused it: "can't block a
+      flier" is CR 509.1b doing its job, where "can't be blocked except by" would be D498's field
+      carrying a sentence that was never about who may block Cloud Pirates.
+    */
+    const s = table('d500-mirror-only', ['Cloud Pirates'], ['Grizzly Bears']);
+    const pirates = find(s, 0 as SeatIndex, 'battlefield', 'Cloud Pirates');
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const issue = canBlock(s, bears, pirates, 1 as SeatIndex);
+    expect(issue?.reason).toContain("can't block a flier");
+    expect(issue?.reason).not.toContain('except by');
+  });
+});

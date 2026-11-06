@@ -32971,3 +32971,117 @@ thing here to a measurement of the engine rather than of one test — but it is 
 not a table with people at it. The honest claim is: five readers were re-parsing the same strings,
 they have stopped, and everything that calls `characteristicsOf` in a loop got cheaper by roughly
 that factor. The number to compare against is the next gate's.
+
+## D500 — The mirror: what a creature may block
+
+D495 refused `~ can block only creatures with flying` and said so; D498 refused it again, named the
+count, and left it for its own increment. This is that increment. **#344 closed.**
+
+### Why it is two more fields and not a reuse of D498's two
+
+This is the whole decision, and getting it wrong would have been expensive:
+
+| sentence | who it restricts | field |
+| --- | --- | --- |
+| `~ can't be blocked by creatures with flying` | fliers may not block **it** | `cantBeBlockedBy` (D498) |
+| `~ can block only creatures with flying` | **it** may not block a non-flier | `blocksOnly` (D500) |
+
+A Cloud Pirates is a 1/1 flier with no evasion whatsoever and a very bad blocker. Fold the two
+directions into one pair of lists and all 29 cards in the allow-list half silently become
+unblockable from the ground — evasion they do not print, on cards a player would then lose games
+to. That is the D362 mistake committed 29 times over, and worse than leaving the line unread.
+
+So `Characteristics` gains `cantBlockThese` and `blocksOnly` beside D498's pair, seeded in
+`characteristicsOf` with the other printed characteristics and cleared by "loses all abilities"
+(CR 613.1f), and `canBlock` reads D498's two off the **attacker** and these two off the
+**blocker**. One test asserts the separation from the reader's end and one from the table's.
+
+### The family, and what read for free
+
+39 printed lines, all of them read:
+
+```
+~ can block only creatures with flying.              29 lines — the entire allow-list half
+~ can't block creatures with power N or greater.      6
+~ can't block creatures with power N or less.         2
+~ can't block artifact creatures.                     1   Hinterland Drake
+~ can't block black creatures.                        1   Gibbering Hyenas
+```
+
+The last two cost **no new parsing**. The filter vocabulary is D498's `blockerFilter`, unchanged, so
+the moment the subject-and-verb shape read, every clause D498 could already parse read with it. That
+is the argument for having built D498's filters as a vocabulary rather than as one sentence's regex,
+and it is the first time that has paid.
+
+`blockerMatches` is now `clauseMatches`, because it is asked about the attacker here and its
+parameter was called `blocker`. Same body, honest name.
+
+### What stays refused, and the one that is only half-read
+
+Every other `can block only` printing hands the restriction to somebody else — an Aura's "Enchanted
+creature", Chaosphere's "Creatures with flying", or a spell quoting the sentence onto a token it
+creates — and the whole-line subject rule refuses all of them, as it does for D495 and D498.
+
+`~ can't block` and `~ can't block and can't be blocked` are **D495's** statics and stay there:
+`printedParts` asks the combat reader first, and a test pins that this reader claims neither, since
+the ban regex is `can't block (.+)` and "and can't be blocked" is a `.+`.
+
+**Orgg and Goblin Mutant are read in half and that is the right answer.** Each prints trample, a ban
+this reads, and `~ can't attack if defending player controls an untapped creature with power 3 or
+greater` — a condition nothing reads. Two lines compile, one is reported unread. The whole-line rule
+is per line precisely so that a card like this is more useful than all-or-nothing in either
+direction.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed rules lines read | 21,187 / 56,421 (37.6%) | **21,224 / 56,421 (37.6%)** |
+| cards with every printed line read | 6,382 | **6,411** |
+| of those, needing no script at all | 1,111 | **1,135** |
+
++37 lines and +29 cards. The reader answers 39 lines across the whole corpus; 37 of those are on
+cards inside the sanctioned-format filter, which is the number that counts here.
+
+### The break run
+
+Nine breaks, each verified to apply and to revert, the revert checked against a SHA-256 of the
+backup:
+
+| break | compile.test | scripts.test |
+| --- | --- | --- |
+| the subject check: any sentence about blocking counts | 2 fail | pass |
+| the allow list and the ban swapped | 8 fail | 4 fail |
+| the both-ban-and-allow refusal | 1 fail | pass |
+| the lose-all-abilities reset for the new two fields | 1 fail | pass |
+| the reader is never wired into `printedParts` | 10 fail | 4 fail |
+| the ban is never enforced | pass | 3 fail |
+| the allow list is never enforced | pass | 1 fail |
+| both lists asked about the blocker instead of the attacker | pass | 3 fail |
+| the restriction written into D498's fields as well (the mirror collapse) | pass | 1 fail |
+
+The last row is worth reading twice: the compile-level mirror test asks `printedBlockerLimit`
+directly, so a break at the *seeding* site leaves it green and only the table-level test catches it.
+Two tests for one claim, at two different levels, and only together do they cover it.
+
+### A test that passed for the wrong reason, caught before it shipped
+
+The first version of the table-level mirror test attacked with Cloud Pirates and blocked with
+Grizzly Bears, expecting the block to be legal. It is not — Cloud Pirates has flying. **Nearly every
+card in the allow-list half is a flier**, which is the point of the sentence, so a test built on one
+is decided by the flying rule rather than by anything D500 does.
+
+Gibbering Hyenas is the card that can prove it: no evasion at all, so a black Gravedigger blocking
+the Hyenas is refused only if the ban leaked onto the wrong side. The Cloud Pirates case is kept as
+a second test asserting *which rule* refused the block — "can't block a flier", not "can't be
+blocked except by" — which is all the flying rule leaves room to say. Third increment running in
+which a break run or a failing assertion exposed a test that would have passed on half the
+behaviour.
+
+### Named and left
+
+`Creatures with power less than ~'s power can't block it` — **9 cards** (Aura Gnarlid, Battering
+Wurm, Den Protector and six more). D498's direction, not this one, but it needs a clause kind whose
+answer depends on *both* creatures, and `clauseMatches` deliberately sees only one. That is a
+signature change to a matcher two field pairs now depend on, so it is its own increment rather than
+a rider here.
