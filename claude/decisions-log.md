@@ -34851,3 +34851,59 @@ anybody's turn and `payFrom` taps the caster's own lands, so the row passes prio
 **10 breaks over `scripts.ts`, 10 of 10 caught** — including both halves of each `by` (the
 unrestricted row taking the default, and the restricted row taking `any`), the missing zone guard,
 the wrong permanent sacrificed, and the mill reading the wrong number or the wrong player.
+
+## D515 — Devoid, and 132 cards the engine was playing the wrong colour
+
+`Devoid (This card has no color.)` — CR 702.114a, and **132 legal printings** say it. Every one of
+them arrives from card data with a *non-empty* colours array, because that field is derived from the
+mana cost: Abstruse Interference costs `{2}{U}` and the row says blue.
+
+So this was not an unread line. It was **132 cards played as the wrong colour**: a Counterspell for
+blue could counter one, protection from black turned aside a devoid Eldrazi, and every colour filter
+counted them. The line sat in the unread column, which is what made it look like a gap rather than a
+defect — the queue measures what is unread, and a wrong reading that comes from *data* rather than
+from a reader is invisible to it.
+
+### One place, because that is where the question is asked
+
+The reading is two lines: a `devoid` member of `PrintedPart` so the word is recognised, and one check
+at the top of `printedColors`. That function is the single place this engine asks what colour a card
+is — `characteristicsOf` calls it for every permanent and every spell on the stack, and `copySpell`
+calls it for a copy's characteristics (CR 707.2).
+
+Two places it deliberately does **not** go:
+
+- **`printedDef`.** Setting `colors: []` there would leave anything holding a def built another way
+  still wrong, and doing both would be two sources for one fact.
+- **`Characteristics.keywords`.** Devoid says nothing about how a permanent behaves on the
+  battlefield, which is what that vocabulary is for; a `devoid` entry there would be a word no rule
+  reads (D57). It is a fact about the *card*, in every zone.
+
+Colour **identity** is untouched (CR 903.4): a devoid card's identity still comes from the mana
+symbols on it, which is why a Commander deck may not run one outside its colours. Nothing in this
+package computes identity, and the field this reads is not it.
+
+### The tests
+
+3 runtime tests through `customDeck`, and the pair is the point: **Blinding Drone and a control
+creature with the same `{1}{U}` cost**, one printing the word and one not. The Drone is colourless
+and the control is blue; a Bears with protection from blue is protected from the control and **not**
+from the Drone; and `isPrintedAbilityLine` reads the word as a line (so `compile.ts` counts it and
+emits nothing) while refusing it inside a sentence.
+
+**4 breaks, 4 caught.** Worth naming the third: *devoid strips every card's colours* fails **31**
+tests, which is the measure of how much of this engine runs on colour — and the fourth, *the word is
+matched anywhere rather than as a whole part*, is caught by exactly one assertion, the whole-line
+rule's.
+
+### Coverage
+
+| | before D515 | after |
+| --- | --- | --- |
+| printed lines read | 21,901 / 56,421 (38.8%) | **21,998 / 56,421 (39.0%)** |
+| cards with a compiled script | 11,033 | 11,033 |
+| cards with every printed line read | 6,791 | **6,802** |
+| of those, needing no script at all | 1,191 | **1,192** |
+
+97 printed lines and **11 cards finished** — and the number that matters is not in the table: 132
+legal printings now have the colour their own card gives them.

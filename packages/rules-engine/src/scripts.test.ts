@@ -31187,3 +31187,86 @@ describe('the Illusion drawback, at the table (D514)', () => {
     expect(namesIn(s, 0, 'graveyard')).not.toContain('Frost Walker');
   });
 });
+
+describe('Devoid: a card with a coloured mana cost and no colour (D515)', () => {
+  /*
+    `Devoid (This card has no color.)` — CR 702.114a, and **132 legal printings** say it. Every one
+    of them arrives from card data with a *non-empty* colours array, because that field is derived
+    from the mana cost: Abstruse Interference costs `{2}{U}` and the row says blue. So the engine was
+    playing all 132 as coloured cards — a protection from blue turned one aside, a colour filter
+    counted it, and nothing anywhere said so.
+
+    The reading is one line in `printedColors`, which is the single place this engine asks what
+    colour a card is, and the rows below are the pair that makes it a reading rather than a guess:
+    the **same creature** with and without the printed word.
+  */
+  const DATA = [
+    {
+      name: 'Blinding Drone', type_line: 'Creature — Eldrazi Drone', mana_cost: '{1}{U}', cmc: 2,
+      colors: ['U'], layout: 'normal', power: '1', toughness: '3',
+      oracle_text: 'Devoid (This card has no color.)',
+    },
+    {
+      // The control, and deliberately the same cost: one printed word is the whole difference.
+      name: 'Coastal Drake', type_line: 'Creature — Drake', mana_cost: '{1}{U}', cmc: 2,
+      colors: ['U'], layout: 'normal', power: '1', toughness: '3',
+      oracle_text: 'Flying',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'devoid',
+      name: 'Devoid',
+      entries: [
+        ...DATA.map((c) => ({ name: c.name, count: 4 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Island', count: 26 },
+        { name: 'Forest', count: 26 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Blinding Drone', 'Coastal Drake']);
+    return list.deck;
+  };
+
+  const table = () => advanceTo(arena({
+    decks: { 0: 'devoid', 1: 'devoid' },
+    deckSpecs: { devoid: deck() },
+    battlefield: { 0: ['Blinding Drone', 'Coastal Drake'], 1: ['Grizzly Bears'] },
+    turn: 4, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('is colourless on the battlefield, and the control beside it is blue', () => {
+    const s = table();
+    const drone = find(s, 0, 'battlefield', 'Blinding Drone');
+    const drake = find(s, 0, 'battlefield', 'Coastal Drake');
+    expect(characteristicsOf(s, s.instances[drone]!).colors).toEqual([]);
+    expect(characteristicsOf(s, s.instances[drake]!).colors).toEqual(['U']);
+  });
+
+  it('protection from blue does not turn it aside (CR 702.16b), which is the rule that matters', () => {
+    /*
+      The reason the colour is worth reading at all: **protection**, target legality and every other
+      colour-matters rule run off `characteristicsOf(...).colors`. A Bears with protection from blue
+      is protected from the Drake and **not** from the Drone, and before this increment it was
+      protected from both — the Drone's own card says it has no colour.
+    */
+    let s = table();
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = pump(s, [bears], bears, 1 as SeatIndex, { protectionFrom: ['U'] });
+    expect(protectedFrom(s, bears, find(s, 0, 'battlefield', 'Coastal Drake'))).toBe(true);
+    expect(protectedFrom(s, bears, find(s, 0, 'battlefield', 'Blinding Drone'))).toBe(false);
+  });
+
+  it('reads the line off the card, so nothing is left unread', () => {
+    // The compile side in one assertion: the word is a printed ability line, so `compile.ts` counts
+    // it read and emits nothing — the same arrangement printed keywords, landwalk and protection
+    // have. A script restating it would be a second source for one fact.
+    expect(isPrintedAbilityLine('Devoid')).toBe(true);
+    expect(isPrintedAbilityLine('Devoid (This card has no color.)')).toBe(true);
+    // And the whole-line rule: the word inside a sentence is not a declaration of it.
+    expect(isPrintedAbilityLine('Target creature becomes devoid until end of turn')).toBe(false);
+  });
+});

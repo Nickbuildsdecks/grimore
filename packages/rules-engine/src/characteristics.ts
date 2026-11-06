@@ -251,6 +251,8 @@ const COMBAT_STATICS: Readonly<Record<string, CombatStatic>> = Object.freeze({
 /** One comma-part of a printed ability line, once it is known to be something the engine has. */
 type PrintedPart =
   | { readonly kind: 'keyword'; readonly keyword: Keyword }
+  /** `Devoid` — the card has no colour (CR 702.114a). See `printedColors` (D515). */
+  | { readonly kind: 'devoid' }
   | { readonly kind: 'landwalk'; readonly type: string }
   | { readonly kind: 'protection'; readonly colours: readonly Color[] }
   | { readonly kind: 'combat-static'; readonly statics: readonly CombatStatic[] }
@@ -284,6 +286,13 @@ type PrintedPart =
 function printedPart(part: string): PrintedPart | null {
   const text = part.trim().toLowerCase();
   if (KEYWORD_SET.has(text)) return { kind: 'keyword', keyword: text as Keyword };
+  /*
+    **Devoid** (CR 702.114a) — a part rather than a `Keyword`, because it says nothing about how the
+    permanent behaves on the battlefield and everything about what the *card* is: it has no colour,
+    in every zone. `Characteristics.keywords` is the battlefield vocabulary, so a devoid entry there
+    would be a word no rule reads; `printedColors` is where the fact belongs (D515).
+  */
+  if (text === 'devoid') return { kind: 'devoid' };
   const walk = LAND_TYPES.find((type) => `${type.toLowerCase()}walk` === text);
   if (walk !== undefined) return { kind: 'landwalk', type: walk };
   const protection = /^protection from (.+)$/.exec(text);
@@ -873,8 +882,30 @@ export function printedLandwalk(oracleText: string | null | undefined): string[]
   return [...found];
 }
 
-/** Colours a card is, from its mana cost's colour requirements plus any colour indicator. */
+/**
+ * Colours a card is, from its mana cost's colour requirements plus any colour indicator — **unless
+ * it prints Devoid, in which case it has none** (CR 702.114a).
+ *
+ * ## Why devoid is read here and nowhere else
+ *
+ * 132 legal printings say `Devoid`, and every one of them arrives from card data with a non-empty
+ * `colors` array, because that field is derived from the mana cost: Abstruse Interference is
+ * `{2}{U}` and the row says blue. The card is **colorless**, and the engine was playing all 132 as
+ * coloured — a Counterspell-for-blue could counter one, protection from black turned aside a devoid
+ * Eldrazi, and the colour filters counted them.
+ *
+ * This function is the one place the engine asks what colour a card is: `characteristicsOf` calls it
+ * for every permanent and every spell on the stack, and `copySpell` calls it for a copy's own
+ * characteristics. So the reading goes here rather than in `printedDef`, which would leave anything
+ * holding a def built another way still wrong, and rather than in both, which is two sources for one
+ * fact — the thing this file keeps removing.
+ *
+ * Colour **identity** is deliberately untouched (CR 903.4): a devoid card's identity still comes
+ * from the mana symbols on it, which is why a Commander deck may not run one outside its colours.
+ * Nothing in this package computes identity, and the field this reads is not it.
+ */
 export function printedColors(def: CardDef | undefined): Color[] {
+  if (printedParts(def?.oracleText).some((part) => part.kind === 'devoid')) return [];
   const declared = (def?.colors ?? []).map((c) => String(c).toUpperCase());
   return (['W', 'U', 'B', 'R', 'G'] as Color[]).filter((c) => declared.includes(c));
 }
