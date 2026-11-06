@@ -16159,6 +16159,42 @@ function animateSelf(clause: string, name: string): ReadEffect | null {
   };
 }
 
+/**
+ * The trailing "Activate only …" sentence of an activated-ability line, split off from the effect.
+ *
+ * Returns the rest of the line and the flags the restriction sets, or `null` when the sentence is
+ * there and this cannot read all of it — because a restriction read in half is an ability the table
+ * offers at a moment the card forbids, which is worse than an unread line (D362, D487).
+ *
+ * **Two clauses, joined by "and only".** The printings combine them freely:
+ *
+ *     Activate only as a sorcery.                              (213 cards — D445's reading)
+ *     Activate only once each turn.                            (38 cards — D508's)
+ *     Activate only as a sorcery and only once each turn.
+ *     Activate only once each turn and only as a sorcery.
+ *
+ * So the sentence is taken as a list rather than matched whole, which is what makes the four shapes
+ * above three regexes instead of four. Everything else the corpus prints here — "only during your
+ * turn", "only before attackers are declared", "only if there are seven or more cards in your
+ * graveyard" — refuses the line, and the measurement that ranks them is in `claude/decisions-log.md`
+ * under D508: 143 cards are one line away on nothing but a restriction, and these two clauses are
+ * 38 and 213 of them.
+ */
+function activationRestriction(
+  text: string,
+): { readonly rest: string; readonly flags: { sorcerySpeed?: true; onceEachTurn?: true } } | null {
+  const found = /^(.*?)\.?\s*Activate only\s+(.+?)\.?\s*$/i.exec(text);
+  if (found === null) return { rest: text, flags: {} };
+  const flags: { sorcerySpeed?: true; onceEachTurn?: true } = {};
+  for (const part of found[2]!.split(/\s+and\s+only\s+/i)) {
+    const clause = part.trim().toLowerCase();
+    if (clause === 'as a sorcery') flags.sorcerySpeed = true;
+    else if (clause === 'once each turn') flags.onceEachTurn = true;
+    else return null;
+  }
+  return { rest: found[1]!, flags };
+}
+
 function abilityFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim();
   /*
@@ -16187,11 +16223,11 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     *when* the ability may be activated, and the clause vocabulary below is about what it does. A
     line whose restriction were left in would fail to read at all, which is what has been happening.
   */
-  const restricted = /^(.*?)\.?\s*Activate only as a sorcery\.?\s*$/i.exec(split[2]!.trim());
-  const clause = (restricted === null ? split[2]! : restricted[1]!)
-    .replace(/\.\s*$/, '').trim();
-  /** The flag the restriction sets, spread into whichever branch below reads the rest of the line. */
-  const timing = restricted === null ? {} : { sorcerySpeed: true as const };
+  const restricted = activationRestriction(split[2]!.trim());
+  if (restricted === null) return null;
+  const clause = restricted.rest.replace(/\.\s*$/, '').trim();
+  /** The flags the restriction sets, spread into whichever branch below reads the rest of the line. */
+  const timing = restricted.flags;
 
   /*
     A loyalty cost, which is the one cost that is a number rather than a list of components.

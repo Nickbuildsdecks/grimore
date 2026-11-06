@@ -29897,3 +29897,144 @@ describe('changeling at the table: every creature type, in every rule that reads
       .toContain('except by');
   });
 });
+
+describe('"Activate only once each turn", at the table (D508)', () => {
+  /*
+    CR 602.5f, and the half a reader test cannot reach: the restriction has to actually stop the
+    second activation, be offered for the first, and come back next turn.
+
+    Two real printings through `customDeck`'s `data`, both the same shape so the pair proves the
+    rule is per *instance* rather than per card:
+
+      Darkthicket Wolf   {1}{G} 2/2  "{2}{G}: ~ gets +2/+2 until end of turn. Activate only once each turn."
+      Azimaet Drake      {2}{U} 1/3  "Flying / {U}: ~ gets +1/+0 until end of turn. Activate only once each turn."
+
+    The Drake is the cheap one — {U} a shot — which is what makes it the card to measure the refusal
+    with: a board with three Islands could otherwise afford the second activation, so a test that
+    passed because the mana ran out would prove nothing.
+  */
+  const DATA = [
+    {
+      name: 'Darkthicket Wolf', type_line: 'Creature — Wolf', mana_cost: '{1}{G}', cmc: 2,
+      colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: '{2}{G}: Darkthicket Wolf gets +2/+2 until end of turn. Activate only once each turn.',
+    },
+    {
+      name: 'Azimaet Drake', type_line: 'Creature — Drake', mana_cost: '{2}{U}', cmc: 3,
+      colors: ['U'], layout: 'normal', power: '1', toughness: '3',
+      oracle_text: 'Flying\n{U}: Azimaet Drake gets +1/+0 until end of turn. Activate only once each turn.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'once-each-turn',
+      name: 'Once Each Turn',
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 4 })),
+        { name: 'Forest', count: 26 },
+        { name: 'Island', count: 26 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Azimaet Drake', 'Darkthicket Wolf']);
+    return list.deck;
+  };
+
+  /** Seat 0 in its own main phase with `battlefield` out and every land tapped for mana. */
+  const table = (battlefield: readonly string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'once-each-turn', 1: 'tidal-mind' },
+      deckSpecs: { 'once-each-turn': deck() },
+      battlefield: { 0: [...battlefield], 1: [] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    return s;
+  };
+
+  it('the first activation works and the second is refused, with the rule named', () => {
+    /*
+      Both halves in one test, because a restriction that refused *everything* would pass the
+      second assertion on its own. Five Islands, so the {U} is affordable twice over and the mana
+      is not what stops it.
+    */
+    let s = table(['Azimaet Drake', 'Island', 'Island', 'Island', 'Island', 'Island']);
+    const drake = find(s, 0, 'battlefield', 'Azimaet Drake');
+    const activate = { type: 'auto:activate' as const, by: 0 as SeatIndex, card: drake, abilityIndex: 0 };
+    expect(refusal(s, activate)).toBeNull();
+    s = passBoth(apply(s, activate));
+    expect(characteristicsOf(s, s.instances[drake]!).power).toBe(2);
+
+    expect(refusal(s, activate)).toContain('already used that ability this turn');
+    // And the refusal is not a side effect of the pump: the Drake is still a 2/3, not a 3/3.
+    expect(characteristicsOf(s, s.instances[drake]!).power).toBe(2);
+  });
+
+  it('is not offered a second time either, which is where a player looks', () => {
+    /*
+      D67 and D89's rule: an option offered and then refused is worse than an option that was
+      never there. So `legalActions` has to drop it as well — the two places every ability
+      restriction in this engine is checked in.
+    */
+    let s = table(['Azimaet Drake', 'Island', 'Island', 'Island', 'Island', 'Island']);
+    const drake = find(s, 0, 'battlefield', 'Azimaet Drake');
+    const offers = (state: GameState) => legalActions(state, 0 as SeatIndex).plays
+      .filter((p) => p.kind === 'activate' && p.card === drake).length;
+    expect(offers(s)).toBe(1);
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: drake, abilityIndex: 0 }));
+    expect(offers(s)).toBe(0);
+  });
+
+  it('comes back next turn, which is what "each turn" means', () => {
+    /*
+      The reset, and the reason the instance records a *turn number* rather than a boolean: nothing
+      clears it, so there is no cleanup step that could forget to. See
+      `CardInstance.abilityUsedTurn`.
+    */
+    let s = table(['Azimaet Drake', 'Island', 'Island']);
+    const drake = find(s, 0, 'battlefield', 'Azimaet Drake');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: drake, abilityIndex: 0 }));
+    expect(s.instances[drake]!.abilityUsedTurn?.['0']).toBe(s.turn);
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: drake, abilityIndex: 0 }))
+      .toContain('already used that ability this turn');
+
+    // Round to seat 0's next turn, and tap the lands again.
+    s = tapAllLands(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 0);
+    expect(s.instances[drake]!.abilityUsedTurn?.['0']).not.toBe(s.turn);
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: drake, abilityIndex: 0 })).toBeNull();
+  });
+
+  it('is per permanent, not per card: a second copy still has its activation', () => {
+    /*
+      What the record being on the **instance** buys, and the mistake a `GameState` map keyed by
+      card name would have made. Two Drakes on the same battlefield are two abilities a turn.
+    */
+    let s = table(['Azimaet Drake', 'Azimaet Drake', 'Island', 'Island', 'Island']);
+    const drakes = [...ids(s, 0, 'battlefield')].filter((i) => nameOf(s, i) === 'Azimaet Drake');
+    expect(drakes).toHaveLength(2);
+    s = passBoth(apply(s, { type: 'auto:activate', by: 0, card: drakes[0]!, abilityIndex: 0 }));
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: drakes[0]!, abilityIndex: 0 }))
+      .toContain('already used that ability this turn');
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: drakes[1]!, abilityIndex: 0 })).toBeNull();
+  });
+
+  it('does not restrict an ability that does not print it', () => {
+    /*
+      The control for the engine half, as the compile block has one for the reader half: a Llanowar
+      Elves from the shipping pool taps for mana as often as it is untapped, and a check wired to
+      every ability rather than to the flag would have broken the whole game rather than this card.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'rot-harvest' },
+      battlefield: { 0: ['Llanowar Elves', 'Forest'] }, turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const elves = find(s, 0, 'battlefield', 'Llanowar Elves');
+    s = apply(s, { type: 'auto:activate', by: 0, card: elves, abilityIndex: 0 });
+    expect(s.instances[elves]!.abilityUsedTurn).toBeUndefined();
+    // Untapped by hand, because the restriction under test is not the tap.
+    s = apply(s, { type: 'card:tap', by: 0, card: elves, tapped: false });
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: elves, abilityIndex: 0 })).toBeNull();
+  });
+});

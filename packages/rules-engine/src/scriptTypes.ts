@@ -1697,6 +1697,25 @@ export interface AbilityDef {
   /** Only activatable when you could cast a sorcery. */
   readonly sorcerySpeed?: boolean;
   /**
+   * "Activate only once each turn." — CR 602.5f, and **38 legal corpus cards are one printed line
+   * away on nothing but this sentence** (measured by `scripts/measure/one-away.mjs`, broken down in
+   * `claude/decisions-log.md` under D508).
+   *
+   * Declarative rather than another `activateOnlyIf` predicate, and the choice is load-bearing in
+   * three ways. The predicate is handed `(state, source, controller)` and **not the ability index**,
+   * so it could not tell which of a card's abilities it is guarding — Basking Rootwalla's pump and
+   * its madness cost are different questions. The engine also has to *record* the activation, which
+   * only something that knows the restriction exists can do. And the refusal can name the rule
+   * ("already used that ability this turn") instead of the generic "cannot be activated right now",
+   * which is what D67 asks of every refusal.
+   *
+   * Checked in `legalActions` so the table never offers it, and again in the activation path so an
+   * action arriving from anywhere is refused — the two places every ability restriction here is
+   * checked in, for the reason D67 and D89 share. Recorded onto
+   * `CardInstance.abilityUsedTurn` as the cost is paid.
+   */
+  readonly onceEachTurn?: true;
+  /**
    * "Activate only if …" — a restriction on the ability itself, asked where the ability is
    * *offered* rather than where it resolves.
    *

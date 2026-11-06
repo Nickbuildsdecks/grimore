@@ -1363,6 +1363,16 @@ function activate(
     && !ability.activateOnlyIf(state, action.card, action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that ability cannot be activated right now');
   }
+  /*
+    "Activate only once each turn" (CR 602.5f), refused with the rule named rather than with
+    `activateOnlyIf`'s generic sentence — which is the whole reason this is its own declarative
+    field and not another predicate. See `AbilityDef.onceEachTurn`.
+  */
+  if (ability.onceEachTurn === true
+    && inst.abilityUsedTurn?.[String(action.abilityIndex ?? 0)] === state.turn) {
+    throw new EngineError('RULE_NOT_APPLICABLE',
+      `${ch.name} has already used that ability this turn`);
+  }
   // A loyalty ability carries three restrictions with it, all from CR 606: sorcery speed, one
   // per planeswalker per turn, and a minus you can actually pay for. Checked here as well as in
   // `legalActions` because an action can arrive from anywhere, and the third one is the rule that
@@ -1529,6 +1539,20 @@ function activate(
       ability.cost.removeCounter.counter, -ability.cost.removeCounter.amount);
   }
   if (ability.cost.tap) next = withInstance(next, inst.id, { tapped: true });
+  /*
+    And the once-each-turn record, written beside the tap and the loyalty for the same reason: it
+    is part of activating the ability, not part of resolving it, so an ability countered on the
+    stack has still been used this turn (CR 602.5f). The turn number *is* the reset — see
+    `CardInstance.abilityUsedTurn`.
+  */
+  if (ability.onceEachTurn === true) {
+    const index = String(action.abilityIndex ?? 0);
+    next = withInstance(next, inst.id, {
+      abilityUsedTurn: {
+        ...requireInstance(next, inst.id).abilityUsedTurn, [index]: state.turn,
+      },
+    });
+  }
   if (ability.cost.loyalty !== undefined) {
     // Paid as the ability is activated (CR 606.2), so the counters move before it is on the
     // stack: a planeswalker that goes to zero this way is already dying while its own ability

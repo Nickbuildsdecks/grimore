@@ -10512,11 +10512,18 @@ describe('tap target, and a self-pump that shrinks (D496)', () => {
     ['Amber Prison: a second clause after the tap',
       "{4}, {T}: Tap target artifact, creature, or land. That permanent doesn't untap during its controller's untap step."],
     /*
-      And the pump refused for its own tail, which is the next shape in D494's queue rather than
-      anything about the sign: 13 cards print "Activate only once each turn."
+      **The Basking Rootwalla row was here and is retired: D508 reads it.** It said "13 cards print
+      'Activate only once each turn'", which was this family's own count rather than the queue's —
+      re-measured for D508, **38 legal cards are one printed line away on nothing but that
+      sentence**, and 519 carry some "Activate only …" clause. The reading is in
+      `activationRestriction`, the engine half in `AbilityDef.onceEachTurn`, and the assertions that
+      replace this row are in the D508 block below.
+
+      Eighth stale refusal row in this series, and the pattern is now worth naming: a row that says
+      "this is the next increment" becomes a lie the moment that increment ships, and the suite is
+      where it is caught. That is the row doing its job, not a defect — but it is why each one names
+      what would retire it.
     */
-    ['Basking Rootwalla: an activation limit',
-      '{1}{G}: Probe Beast gets +2/+2 until end of turn. Activate only once each turn.'],
     // +0/+0 is still refused, which `sizeBonus` has always done: a pump that changes nothing.
     ['a pump of nothing', '{G}: Probe Beast gets +0/+0 until end of turn.'],
   ])('leaves a line unread: %s', (_why, text) => {
@@ -11833,5 +11840,112 @@ describe('Changeling: every creature type (D506)', () => {
     if (!read.ok) return;
     expect(read.unread.map((u) => u.line)).toEqual([]);
     expect(read.script?.triggers?.map((t) => t.on.kind)).toEqual(['etb']);
+  });
+});
+
+describe('"Activate only once each turn" (D508)', () => {
+  /*
+    The queue's real head, and it took a measurement to see it. The printed head of
+    `one-away.mjs` was "Threshold — As long as there are seven or more cards in your graveyard,"
+    at 19 cards — but 17 of those 19 are the quoted-ability tail (`has "When ~ enters, …"`), which
+    needs the compiler to turn arbitrary quoted text into a `TriggerDef`.
+
+    Measured instead (`scratchpad/actonly.mjs`, recorded under D508 in `claude/decisions-log.md`):
+    **519 legal cards are one line away on a line carrying "Activate only …", and for 143 of them
+    the restriction is the only thing unread** — strip the trailing sentence and the line compiles
+    whole. The biggest single clause is this one, at **38 cards**, twice the printed head.
+
+    D445 already reads "Activate only as a sorcery" (213 cards) by taking the sentence off the end
+    before the effect is read. This generalises that one regex into a list, because the printings
+    combine the two clauses freely — see `activationRestriction`.
+  */
+  const once = (text: string, name = 'Darkthicket Wolf') => compileCard({
+    name, type_line: 'Creature — Wolf', mana_cost: '{1}{G}', cmc: 2, colors: ['G'],
+    layout: 'normal', power: '2', toughness: '2', oracle_text: text,
+  });
+
+  it('reads Darkthicket Wolf, whose whole card is the ability and the restriction', () => {
+    const read = once('{2}{G}: Darkthicket Wolf gets +2/+2 until end of turn. Activate only once each turn.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.abilities?.[0]?.onceEachTurn).toBe(true);
+    // And the cost and the effect still read, which is the half a restriction reader can break.
+    expect(read.script?.abilities?.[0]?.cost).toEqual({ mana: '{2}{G}' });
+  });
+
+  it.each([
+    ['Azimaet Drake', 'Flying\n{U}: Azimaet Drake gets +1/+0 until end of turn. Activate only once each turn.', '{U}'],
+    ['Frilled Oculus', '{1}{G}: Frilled Oculus gets +2/+2 until end of turn. Activate only once each turn.', '{1}{G}'],
+    ['Basking Rootwalla', '{1}{G}: Basking Rootwalla gets +2/+2 until end of turn. Activate only once each turn.', '{1}{G}'],
+  ])('reads it on printed %s', (name, text, cost) => {
+    const read = once(text as string, name as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.abilities?.[0]?.onceEachTurn).toBe(true);
+    expect(read.script?.abilities?.[0]?.cost).toEqual({ mana: cost as string });
+  });
+
+  it('does not set the flag on an ability that does not print it', () => {
+    /*
+      The control, and the one that would catch a reader that set the flag unconditionally — which
+      is the failure mode that costs a player a second activation their card allows. Same card,
+      same cost, same effect, the sentence removed.
+    */
+    const read = once('{2}{G}: Darkthicket Wolf gets +2/+2 until end of turn.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.abilities?.[0]?.onceEachTurn).toBeUndefined();
+  });
+
+  it('reads the two clauses together, in either printed order', () => {
+    /*
+      Why `activationRestriction` splits on "and only" rather than matching the sentence whole:
+      four shapes, three regexes. D445's reading is the `sorcerySpeed` half.
+    */
+    for (const tail of [
+      'Activate only as a sorcery and only once each turn.',
+      'Activate only once each turn and only as a sorcery.',
+    ]) {
+      const read = once(`{2}{G}: Darkthicket Wolf gets +2/+2 until end of turn. ${tail}`);
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread.map((u) => u.line)).toEqual([]);
+      expect(read.script?.abilities?.[0]?.onceEachTurn).toBe(true);
+      expect(read.script?.abilities?.[0]?.sorcerySpeed).toBe(true);
+    }
+  });
+
+  it('still reads "Activate only as a sorcery" on its own, which D445 shipped', () => {
+    const read = once('{2}{G}: Darkthicket Wolf gets +2/+2 until end of turn. Activate only as a sorcery.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.abilities?.[0]?.sorcerySpeed).toBe(true);
+    expect(read.script?.abilities?.[0]?.onceEachTurn).toBeUndefined();
+  });
+
+  it.each([
+    ['during your turn', 'Activate only during your turn.'],
+    ['during your upkeep', 'Activate only during your upkeep.'],
+    ['before attackers are declared', 'Activate only during your turn, before attackers are declared.'],
+    ['a board condition', 'Activate only if there are seven or more cards in your graveyard.'],
+  ])('refuses the whole line for a restriction it cannot read: %s', (_label, tail) => {
+    /*
+      D487's whole-or-nothing rule, where it matters most. A restriction read in half is an ability
+      the table offers at a moment the card forbids — worse than an unread line (D362) — so a
+      clause this does not know refuses the line rather than dropping the sentence.
+
+      These four are the next four clauses in the queue by cards finished (18, 8, 6 and the
+      threshold family), and they are deliberately left: "when" is a different question from
+      "how often", and bundling them would double the surface of this increment.
+    */
+    const read = once(`{2}{G}: Darkthicket Wolf gets +2/+2 until end of turn. ${tail as string}`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+    expect(read.script?.abilities ?? []).toEqual([]);
   });
 });

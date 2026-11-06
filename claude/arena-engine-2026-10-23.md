@@ -16533,3 +16533,151 @@ free or mana-neutral repeatable ability the evaluation scores at zero or better,
 arrived with the increment that first made its card readable. **Running the sweep on a fresh seed
 after every increment is what keeps catching them**, and advancing the seed is why: 34001 through
 36201 would never have found either of these two cards.
+
+## D508 — "Activate only once each turn", and the queue head that was not one
+
+### The measurement that moved the queue
+
+`one-away.mjs` printed its head as **Threshold — As long as there are seven or more cards in your
+graveyard,** at 19 cards. Breaking that shape down card by card (`scratchpad/thresh.mjs`) showed it
+is not one shape at all:
+
+| cards | sub-shape |
+| --- | --- |
+| 17 | `has "<quoted ability>"` — needs the compiler to turn arbitrary quoted text into a `TriggerDef` |
+| 16 | `Activate only if there are N or more cards in your graveyard` |
+| 14 | assorted one-offs (an attack trigger, a cast restriction, an Aura's "all creatures able to block") |
+| 3 | `Enchanted creature …` — an Aura subject rather than a self one |
+
+So **the printed head was 17 cards behind the hardest job in the family**, and the queue's own
+normalisation had hidden a cheaper neighbour inside the same bucket. That is the second time a shape
+count has needed to be re-cut by hand before it meant anything (D434 is the first), and the lesson
+is the same: a shape is only as good as its normaliser.
+
+Re-measured the whole restriction family instead (`scratchpad/actonly.mjs`), by taking the trailing
+sentence off and asking whether the line then compiles whole:
+
+    519 legal cards are one line away on a line carrying "Activate only …"
+    143 of those, the restriction is the ONLY thing unread
+
+| cards finished | clause |
+| --- | --- |
+| **38** | **Activate only once each turn.** |
+| 18 | Activate only during your turn, before attackers are declared. |
+| 8 | Activate only during your turn. |
+| 6 | Activate only during your upkeep. |
+| 5 | Activate only if this land entered this turn or if you control a basic land. |
+| 4 | Activate only if you control a Swamp. |
+
+**38 is twice the printed head**, and it is the clause this increment reads. The four timing clauses
+below it are deliberately left: "when" is a different question from "how often", and bundling them
+would double the surface for no shared mechanism.
+
+### Three clauses, one sentence, a list rather than a regex
+
+D445 already read `Activate only as a sorcery` (213 cards) by stripping the sentence off the end
+before the effect is read. The printings combine the two clauses freely:
+
+    Activate only as a sorcery.
+    Activate only once each turn.
+    Activate only as a sorcery and only once each turn.
+    Activate only once each turn and only as a sorcery.
+
+So `activationRestriction` splits on "and only" and reads the parts as a list — four shapes in three
+regexes rather than four patterns — and **a clause it does not know refuses the whole line**, which
+is D487's rule where it matters most: a restriction read in half is an ability the table offers at a
+moment the card forbids, which is worse than an unread line (D362).
+
+### Declarative, not another predicate
+
+`AbilityDef` already had `activateOnlyIf?: (state, source, controller) => boolean` — monstrosity's
+field, checked in `legalActions` and again in the activation path. It could not carry this, for three
+reasons, and the third is the one that decided it:
+
+1. The predicate is handed `(state, source, controller)` and **not the ability index**, so it could
+   not tell which of a card's abilities it is guarding. Basking Rootwalla's pump and its madness
+   cost are different questions.
+2. The engine has to **record** the activation, and only something that knows the restriction exists
+   can do that.
+3. The refusal can **name the rule** — "Azimaet Drake has already used that ability this turn" —
+   instead of `activateOnlyIf`'s generic "cannot be activated right now", which is what D67 asks of
+   every refusal.
+
+So `AbilityDef.onceEachTurn?: true`, checked beside `activateOnlyIf` in both places and recorded as
+the cost is paid.
+
+### The state, and why nothing resets it
+
+`CardInstance.abilityUsedTurn?: Readonly<Record<string, number>>` — the **turn number** each ability
+index was last used on. `=== state.turn` is the whole question, so there is no cleanup-step reset to
+write and none to forget: exactly the shape `loyaltyUsedTurn` has had since #43, one index deeper.
+`spellsCastThisTurnBy`, `lifeLostThisTurn` and `cardsDrawnThisTurn` all need clearing in the cleanup
+step; this does not, and that is worth preferring.
+
+A separate field rather than a generalisation of `loyaltyUsedTurn`, because the two rules differ:
+CR 606.3's restriction is per **planeswalker** (two different loyalty abilities on one card are still
+one activation a turn), where CR 602.5f's is per **ability** (two "once each turn" abilities are one
+each).
+
+On the instance rather than in `GameState`, which makes CR 400.7 fall out: a permanent that leaves
+and comes back is a new object with a new id and its ability back — the rule a blink is about (#283).
+
+### The tests
+
+Eleven compile tests, including Darkthicket Wolf's whole card, three more real printings, both
+combined orders, D445's clause still read on its own, a control asserting the flag is **not** set on
+an ability that does not print it, and four refusal rows naming the next four clauses in the queue.
+
+Five runtime tests through `customDeck`'s `data` on printed Azimaet Drake and Darkthicket Wolf. The
+Drake is the card to measure with precisely because its ability costs `{U}`: on a board with five
+Islands the mana is not what stops the second activation, so a test that passed because the mana ran
+out would have proved nothing.
+
+| | |
+| --- | --- |
+| the first works and the second is refused, with the rule named | both halves, because a restriction that refused everything would pass the second alone |
+| it is not offered a second time either | D67/D89 — an option offered and then refused is worse than one that was never there |
+| it comes back next turn | the reset, which is the turn number doing its job |
+| per permanent, not per card | two Drakes are two abilities a turn; the mistake a map keyed by card name would have made |
+| does not restrict an ability that does not print it | a pool Llanowar Elves taps as often as it is untapped |
+
+### The break run
+
+Eight breaks, each verified to apply and to revert against a SHA-256 of all three source files:
+
+| break | caught by |
+| --- | --- |
+| the reader never sets `onceEachTurn` | 9 tests |
+| an unreadable restriction clause is dropped instead of refusing the line | 5 tests |
+| the reader sets the flag on every ability | 2 tests |
+| the activation path does not refuse the second | 3 tests |
+| the activation is never recorded | 4 tests |
+| the record is a boolean rather than the turn, so it never comes back | 4 tests |
+| `legalActions` still offers it | 1 test |
+| the record is keyed by nothing, so one ability spends them all | 4 tests |
+
+Every one caught. The harness now treats an unapplied break as a hard failure rather than a printed
+note — D507's lesson, applied the first time it could be.
+
+### A stale refusal row, the eighth
+
+`compile.test.ts` carried a row asserting that Basking Rootwalla's line stays unread, with a comment
+calling it "the next shape in D494's queue" and putting it at **13 cards**. D508 reads it, so the row
+is retired — and its figure was this family's own count rather than the queue's: re-measured, it is
+**38 cards finished** and 519 lines carrying some restriction.
+
+Eighth stale refusal row in this series, and the pattern is now named in the file: a row that says
+"this is the next increment" becomes a lie the moment that increment ships. That is the row doing its
+job, and it is why each one names what would retire it.
+
+### Coverage
+
+| | before D508 | after |
+| --- | --- | --- |
+| printed lines read | 21,615 / 56,421 (38.3%) | **21,661 / 56,421 (38.4%)** |
+| cards with a compiled script | 10,821 | **10,859** |
+| cards with every printed line read | 6,598 | **6,637** |
+| of those, needing no script at all | 1,191 | 1,191 |
+
+**39 cards finished**, against the 38 the measurement predicted — the extra one prints both clauses,
+which only the combined reading finishes.

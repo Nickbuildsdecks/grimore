@@ -1646,6 +1646,10 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       // "Activate only if …" — monstrosity's one-shot clause, and the reason the Lion's ability
       // disappears from the table once it has been paid for. See `AbilityDef.activateOnlyIf`.
       if (ability.activateOnlyIf !== undefined && !ability.activateOnlyIf(state, id, seat)) continue;
+      // "Activate only once each turn" (CR 602.5f), the same rule one index deeper than the
+      // loyalty check below. See `AbilityDef.onceEachTurn`.
+      if (ability.onceEachTurn === true
+        && inst.abilityUsedTurn?.[String(i)] === state.turn) continue;
       /*
         A loyalty ability: sorcery speed, one per planeswalker per turn (CR 606.3), and a minus
         that cannot be paid for is not an option at all. All three are implied by the cost being

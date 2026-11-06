@@ -305,6 +305,24 @@ export interface CardInstance {
    */
   readonly loyaltyUsedTurn?: number;
   /**
+   * The turn each of this permanent's activated abilities was last used, by ability index — for
+   * the abilities that print "Activate only once each turn" (CR 602.5f). Absent for never.
+   *
+   * **A turn number rather than a boolean, which is what makes the reset free.** `=== state.turn`
+   * is the whole question, so nothing has to clear this in the cleanup step the way
+   * `spellsCastThisTurnBy` and `cardsDrawnThisTurn` are cleared. Exactly the shape
+   * `loyaltyUsedTurn` already is, one index deeper — and it is a separate field rather than a
+   * generalisation of that one because CR 606.3's restriction is per *planeswalker*, not per
+   * ability: two different loyalty abilities on one card are still one activation a turn, where
+   * two "once each turn" abilities on one card are one each.
+   *
+   * Keyed by ability index as a string, because that is what a `Record` serialises to and the view
+   * crosses a wire. On the instance rather than in `GameState` so CR 400.7 falls out: a permanent
+   * that leaves and comes back is a new object with a new id and its ability back, which is the
+   * rule a blink is about (#283).
+   */
+  readonly abilityUsedTurn?: Readonly<Record<string, number>>;
+  /**
    * This permanent does not untap during its controller's next untap step (CR 502.2).
    *
    * A flag on the instance rather than a continuous effect, because it is not one: nothing about
