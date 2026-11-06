@@ -32632,3 +32632,105 @@ because the bot plays its land first and that is right.
 
 Re-run on the same seed set: **40 of 40 finished, no throw and no stall**, 57.1 turns and 301 moves
 on average.
+
+## D497 — A mana ability that deals you damage, and eleven lands that tapped for nothing
+
+The pain lands: `{T}: Add {W} or {U}. Adarkar Wastes deals 1 damage to you.` — 34 printed lines on
+37 legal cards, the top unread shape in D494's queue after the two D496 closed.
+
+### Three rules wear almost the same words, and the pool already had two of them
+
+`scripts.ts` has carried the distinction in a comment since #69, and it decided how this was built:
+
+| | |
+| --- | --- |
+| **City of Brass** | **triggers.** "Whenever City of Brass becomes tapped, it deals 1 damage to you." The damage uses the stack and the table gets a window. |
+| **Mana Confluence** | **costs.** `{T}, Pay 1 life`. A player on one life is never offered the mana, because a cost you cannot pay is not a cost you may choose to pay (CR 118.4). |
+| **a pain land** | **effect.** One mana ability whose effect is both halves. It resolves immediately without the stack (CR 605.3a), nobody gets a window, and a player on one life may tap it and die. |
+
+Building it as either of the other two would be a card that plays differently from its text (D362):
+as a cost it would refuse the player who wants to kill themselves for the mana; as a trigger it would
+hand the table a response window Magic does not give them. All three are now pinned by a runtime
+test each.
+
+That needed an engine change: `autoActions`'s mana branch added the mana and **returned**, so an
+`effect` beside `produces` was silently dropped. Nothing in the pool had one, which is why it went
+unnoticed — the pain lands are the first cards to need it. The effect runs before `settle`, so the
+state-based action that kills a player on one life fires in the same breath.
+
+### The damage is a fact about the line, not about the card
+
+Adarkar Wastes prints two lines:
+
+```
+{T}: Add {C}.
+{T}: Add {W} or {U}. Adarkar Wastes deals 1 damage to you.
+```
+
+Tapping for `{C}` costs nothing and tapping for `{W}` costs a damage. `foldManaLines` flattened both
+lines into one cost and one set of colours, so whichever line came first decided for all of them —
+**the first version of this reader gave every pain land's colours no damage at all**, which is a card
+that plays better than it reads. The colours are grouped by their own line's damage now, and a colour
+printed on two lines with different damage is refused rather than guessed.
+
+### What the refusal rows found, which is worse than what the increment set out to fix
+
+Two synthetic refusal rows came back **read**: `{T}: Add {R}. ~ deals 1 damage to any target.` and
+`{T}: Add {R}. ~ deals 0 damage to you.` Following that to real cards found the real thing.
+
+`cardFromData` only answers when it can read the *whole* card, so a pain land with a second ability
+falls through to `compile.ts`'s line-by-line path — and **that path had no mana reader at all.** The
+general activated-ability reader claimed the line, built an ability out of the damage clause, and
+dropped the `Add {U}` entirely:
+
+```
+Cephalid Coliseum  abilities: [{"d":"{T}: Add {U}. Cephalid Coliseum deals 1 damage to you."}]
+                                                                        produces: undefined
+```
+
+**The compiled Coliseum tapped for nothing.** Eleven legal lands were in that state — Cephalid
+Coliseum, Barbarian Ring, Cabal Pit, Centaur Garden and the rest of the Odyssey threshold cycle —
+and it is strictly worse than an unread line, because the bot plays a land that makes no mana and
+then cannot use it. This predates D497; what D497 added was the machinery to notice and to fix it.
+
+Two changes, and the second is the general rule the first implies:
+
+- `manaAbilitiesFromLine` is exported for the per-line path, asked **before** the general reader.
+  Order is the whole fix: asked after, the general reader wins and the mana is lost again.
+- A line that `isManaAbilityLine` says promises mana and that the mana reader cannot read is
+  reported **unread**, full stop. It never reaches the general reader. That costs 4 lines and 3
+  cards against the honest count — lines that were "read" while losing their mana — and it is the
+  right trade.
+
+### The break run
+
+Six breaks, each verified to apply and to revert:
+
+| break | compile.test | scripts.test |
+| --- | --- | --- |
+| the damage sentence is never read | 6 fail | 3 fail |
+| the subject check: any "deals N damage to you" counts | 1 fail | pass |
+| one damage for the whole card, as the fold used to | 3 fail | 3 fail |
+| the engine never runs a mana ability's effect | pass | 3 fail |
+| the per-line mana reader, removed | 1 fail | pass |
+| an unreadable mana line falls through to the general reader | 2 fail | pass |
+
+**The fifth break is why the Coliseum test exists.** Removing the per-line reader left every other
+row green, because they are all single-line cards `cardFromData` reads whole — the same weak-coverage
+lesson as D495's Inkfathom row and D496's legality assertion, three increments in a row.
+
+A **sixth stale refusal row** was retired: `compile.test.ts` had Adarkar Wastes listed as a line that
+"stays whole" because "the damage is not read". True of the reader as it stood, wrong now; moved to
+a mapping row with its history kept, the third such row I wrote myself.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed rules lines read | 21,079 / 56,421 (37.4%) | **21,102 / 56,421 (37.4%)** |
+| cards with every printed line read | 6,316 | **6,340** |
+| cards with a compiled script | 10,673 | 10,672 |
+
++23 lines and +24 cards from the reading, less the 4 lines and 3 cards the honest refusal gives back,
+and one card short on the script count for the same reason. The number that matters here is not in
+the table: **eleven real lands now produce the mana they print.**

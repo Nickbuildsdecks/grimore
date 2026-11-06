@@ -82,8 +82,10 @@
  *   silent approximation.
  */
 import type { CardDef } from './cards.js';
-import { parseTypeLine, hasType, printedKeywords } from './characteristics.js';
-import { drawLater } from './effects.js';
+import {
+  parseTypeLine, hasType, printedKeywords, shortName, SELF_TYPE_WORDS,
+} from './characteristics.js';
+import { dealDamage, drawLater } from './effects.js';
 import type { AbilityDef, CardScript } from './scriptTypes.js';
 import type { ManaType } from './mana.js';
 
@@ -221,6 +223,27 @@ interface ManaLine {
    * printed, on different printings of the same card.
    */
   readonly printed: string;
+  /**
+   * The damage the ability deals its own controller as it resolves — a pain land's second sentence.
+   *
+   * **Three different rules wear almost the same words, and this is the third.** The pool has the
+   * other two and its own comment draws the line: *City of Brass* **triggers** ("Whenever City of
+   * Brass becomes tapped, it deals 1 damage to you"), so the damage uses the stack and can be
+   * responded to; *Mana Confluence* **costs** ("{T}, Pay 1 life"), so a player on one life is never
+   * offered the mana at all, because a cost you cannot pay is not a cost you may choose to pay
+   * (CR 118.4).
+   *
+   * A pain land does neither. `{T}: Add {W} or {U}. Adarkar Wastes deals 1 damage to you.` is one
+   * mana ability whose **effect** includes the damage, so it resolves immediately without using the
+   * stack (CR 605.3a), nobody gets a window, and a player on one life may tap it and die. Reading
+   * it as either of the other two would be a card that plays differently from its text (D362): as a
+   * cost it would refuse the player who wants to kill themselves for the mana, and as a trigger it
+   * would hand the table a response window Magic does not give them.
+   *
+   * 34 printed lines on 37 legal cards — the painlands, the Tempest filter lands, Ancient Tomb and
+   * Grim Monolith's family (D497).
+   */
+  readonly damage?: number;
 }
 
 /** A mana ability's cost, in the fields the engine's `AbilityCost` already has for them. */
@@ -319,11 +342,50 @@ function sameCost(a: ManaAbilityCost, b: ManaAbilityCost): boolean {
  * to be suspicious of a parse that guessed, and the merge rule it would need at the call site is
  * the kind of thing that is wrong in one direction without anybody noticing.
  */
+/**
+ * `Adarkar Wastes deals 1 damage to you` — the number, or `undefined` for anything else.
+ *
+ * The subject must be the card itself, in the spellings printed text uses: its full name, its short
+ * name, or "this land". Anything else is a different sentence and refuses the whole line: a pain
+ * land deals the damage to **you**, and a reader loose about the subject would be one that read
+ * somebody else's damage as its controller's.
+ */
+function selfDamageSentence(sentence: string, name: string): number | undefined {
+  const match = /^(.+?) deals (\d+) damage to you\.?$/i.exec(sentence.trim());
+  if (match === null) return undefined;
+  const subject = match[1]!.trim().toLowerCase();
+  const selves = [
+    name.toLowerCase(),
+    shortName(name)?.toLowerCase(),
+    ...SELF_TYPE_WORDS.map((word) => `this ${word.toLowerCase()}`),
+  ];
+  if (!selves.includes(subject)) return undefined;
+  const amount = Number(match[2]);
+  return amount > 0 ? amount : undefined;
+}
+
 function parseManaLine(line: string, name: string): ManaLine | null {
-  const match = /^(\{T\}(?:,\s*[^:]+)?):\s*Add\s+(.+?)\.?$/i.exec(line);
+  /*
+    The body is matched as "anything up to the first full stop", which is safe because a mana
+    symbol contains none, and it is what lets a **second sentence** be read rather than refusing the
+    whole line. `rest` is empty for the ordinary `{T}: Add {G}.` and holds the pain land's damage
+    clause otherwise; anything else in it still refuses the line, which is the half that matters —
+    "Spend this mana only to cast a creature spell" and "~ doesn't untap during your next untap
+    step" are 30 more lines in this shape and neither is read (D497).
+
+    **`[^.]+` is greedy on purpose.** Written lazily — `([^.]+?)\s*\.?\s*(.*)` — it matched one
+    character and handed the rest of the line to the tail, so `Add {W} or {U}.` parsed as a body of
+    `{` and a tail of `W} or {U}. Adarkar Wastes deals 1 damage to you.`, which is not a damage
+    sentence, so every pain land was still refused and the reader looked like it had not been
+    written. Greedy, the class stops at the first full stop because it cannot contain one.
+  */
+  const match = /^(\{T\}(?:,\s*[^:]+)?):\s*Add\s+([^.]+)(?:\.\s*(.*))?$/i.exec(line);
   if (match === null) return null;
   const printed = match[1]!.trim();
   const body = match[2]!.trim();
+  const rest = (match[3] ?? '').trim();
+  const damage = rest === '' ? undefined : selfDamageSentence(rest, name);
+  if (rest !== '' && damage === undefined) return null;
 
   const clauses = printed.split(/\s*,\s*/).slice(1).map((c) => c.trim()).filter((c) => c !== '');
   if (clauses.length > 1) return null;
@@ -335,7 +397,7 @@ function parseManaLine(line: string, name: string): ManaLine | null {
   }
 
   // `one mana of any color` — checked first, because it contains none of the symbols below.
-  if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed };
+  if (ANY_COLOUR.test(body)) return { mode: 'choice', produces: COLOURS, cost, printed, damage };
 
   /*
     A choice of one of several. The separators are tried longest-first, because the printed list is
@@ -358,10 +420,10 @@ function parseManaLine(line: string, name: string): ManaLine | null {
   */
   if (runs.length === 1) {
     const only = runs[0]!;
-    return { mode: only.length > 1 ? 'sum' : 'choice', produces: only, cost, printed };
+    return { mode: only.length > 1 ? 'sum' : 'choice', produces: only, cost, printed, damage };
   }
   if (runs.some((r) => r.length !== 1)) return null;
-  return { mode: 'choice', produces: runs.map((r) => r[0]!), cost, printed };
+  return { mode: 'choice', produces: runs.map((r) => r[0]!), cost, printed, damage };
 }
 
 /** A run of mana symbols with nothing else in it: `{C}{C}`, `{G}`. Null for anything else. */
@@ -379,22 +441,52 @@ function parseSymbolRun(part: string): ManaType[] | null {
  * colours. A single ability listing both colours would be two mana off one land, and the engine
  * would start offering two-drops that cannot be cast.
  */
-function tapAbilities(produces: readonly ManaType[], line?: ManaLine): AbilityDef[] {
+function tapAbilities(
+  produces: readonly ManaType[],
+  line?: ManaLine,
+  damageFor?: ReadonlyMap<ManaType, number | undefined>,
+): AbilityDef[] {
   const cost = line?.cost ?? { tap: true as const };
   const printed = line?.printed ?? '{T}';
-  return produces.map((type) => ({
-    cost,
-    description: `${printed}: Add {${type}}.`,
-    produces: [type],
-  }));
+  return produces.map((type) => {
+    const damage = damageFor === undefined ? line?.damage : damageFor.get(type);
+    return {
+      cost,
+      description: `${printed}: Add {${type}}.${hurtsYou(damage)}`,
+      produces: [type],
+      ...painEffect(damage),
+    };
+  });
 }
+
+/** The pain land's second sentence, for the ability's own `description`. */
+const hurtsYou = (damage?: number): string =>
+  damage === undefined ? '' : ` It deals ${damage} damage to you.`;
+
+/**
+ * The damage, as the mana ability's **effect**.
+ *
+ * `autoActions` runs this inside the mana branch, after the mana is added and before state-based
+ * actions are checked, which is the rule: one ability, resolving immediately, whose effect is both
+ * halves (CR 605.3a). See `ManaLine.damage` for why it is neither a cost nor a trigger.
+ */
+const painEffect = (damage?: number): Pick<AbilityDef, 'effect'> => (
+  damage === undefined
+    ? {}
+    : {
+      effect: (c) => dealDamage(
+        c.state, { kind: 'player', seat: c.controller }, damage, { source: c.source },
+      ),
+    }
+);
 
 /** The one ability a sum line buys: one tap, several mana, exactly as the hand-written Sol Ring. */
 function sumAbility(line: ManaLine): AbilityDef {
   return {
     cost: line.cost,
-    description: `${line.printed}: Add ${line.produces.map((t) => `{${t}}`).join('')}.`,
+    description: `${line.printed}: Add ${line.produces.map((t) => `{${t}}`).join('')}.${hurtsYou(line.damage)}`,
     produces: [...line.produces],
+    ...painEffect(line.damage),
   };
 }
 
@@ -437,11 +529,76 @@ function foldManaLines(
   if (first !== undefined && intrinsic.length > 0 && !sameCost(first.cost, { tap: true })) {
     return { why: `${name}: a basic land type is free and its printed ability is not` };
   }
-  const produces = [...new Set<ManaType>([
-    ...intrinsic,
-    ...parsed.flatMap((p) => [...p.produces]),
-  ])];
-  return { abilities: tapAbilities(produces, first), produces };
+  /*
+    **The damage is a fact about the line, not about the card**, and that is the one thing the fold
+    could not express before D497. Adarkar Wastes prints two lines:
+
+        {T}: Add {C}.
+        {T}: Add {W} or {U}. Adarkar Wastes deals 1 damage to you.
+
+    Tapping it for {C} costs nothing and tapping it for {W} costs a damage. The fold used to
+    flatten both lines into one cost and one set of colours, so whichever line came first decided
+    for all of them — the first version of this reader gave every pain land's colours no damage at
+    all, which is a card that plays better than it reads (D362). The colours are grouped by their
+    own line's damage instead.
+
+    A colour printed on two lines with **different** damage is refused rather than guessed. Nothing
+    prints it; it is named so that the day something does, it is an unread line and not a wrong one.
+  */
+  const damageFor = new Map<ManaType, number | undefined>();
+  for (const type of intrinsic) damageFor.set(type, undefined);
+  for (const line of parsed) {
+    for (const type of line.produces) {
+      if (damageFor.has(type) && damageFor.get(type) !== line.damage) {
+        return { why: `${name}: it prints {${type}} both with and without damage` };
+      }
+      damageFor.set(type, line.damage);
+    }
+  }
+  const produces = [...damageFor.keys()];
+  return { abilities: tapAbilities(produces, first, damageFor), produces };
+}
+
+/**
+ * One `{T}: Add …` line's abilities, for the **per-line** compiler path.
+ *
+ * `cardFromData` reads a card only when it can read *all* of it, so a pain land with a second
+ * ability — Cephalid Coliseum, Barbarian Ring, Cabal Pit, Centaur Garden and the rest of the
+ * Odyssey threshold cycle — falls through to `compile.ts`'s line-by-line path. **And that path had
+ * no mana reader at all.** The generic activated-ability reader claimed the line instead, built an
+ * ability out of the damage clause, and dropped the `Add {U}`: the compiled Coliseum tapped for
+ * nothing. Strictly worse than refusing it, because a land that produces no mana is a land the bot
+ * plays and then cannot use (D497).
+ *
+ * Found while writing the refusal rows for the damage reader, not by looking for it: two synthetic
+ * rows that should have been turned down came back read, and following that answer to a real card
+ * found eleven legal lands tapping for nothing.
+ *
+ * One line, so there is no fold and no cross-line merge: every colour on the line shares the line's
+ * own damage, and `compile.ts` accumulates the abilities as it does any other fragment's. `null`
+ * for a line this module cannot read, which leaves it exactly where it was.
+ */
+/**
+ * Whether this line is a `{T}: Add …` mana ability at all, whatever follows it.
+ *
+ * The companion to `manaAbilitiesFromLine`, and the reason the pair exists rather than one
+ * function: a line this says yes to and that one cannot read must be reported **unread**, not
+ * handed to the general line reader. That reader will happily build an ability out of whatever
+ * follows the mana and drop the mana itself, which is how Cephalid Coliseum came to tap for
+ * nothing — and a land that produces no mana is worse than a land nobody read, because the bot
+ * plays it and then cannot use it (D497).
+ *
+ * So: deliberately loose. It asks only "does this line promise mana?", and every line that does
+ * either produces it or is refused out loud.
+ */
+export function isManaAbilityLine(line: string): boolean {
+  return /^\{T\}(?:,\s*[^:]+)?:\s*Add\s/i.test(line.trim());
+}
+
+export function manaAbilitiesFromLine(line: string, name: string): readonly AbilityDef[] | null {
+  const parsed = parseManaLine(line, name);
+  if (parsed === null) return null;
+  return parsed.mode === 'sum' ? [sumAbility(parsed)] : tapAbilities(parsed.produces, parsed);
 }
 
 /**

@@ -28657,3 +28657,117 @@ describe('tap target, and a self-pump that shrinks, at the table (D496)', () => 
     expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Breathstealer');
   });
 });
+
+describe('a mana ability that deals you damage, at the table (D497)', () => {
+  /*
+    The three-way distinction, played out. The pool has two of the three already:
+
+      City of Brass    triggers  — the damage goes on the stack, after the tap
+      Mana Confluence  costs     — the life is paid to activate, and cannot be declined
+      Adarkar Wastes   effect    — one ability, resolving at once, that adds mana and deals damage
+
+    What this block pins is the third, because it is the one that could be quietly built as either
+    of the others and pass a compile test either way.
+  */
+  const DATA = [
+    {
+      name: 'Adarkar Wastes', type_line: 'Land', mana_cost: '', cmc: 0, colors: [],
+      layout: 'normal',
+      oracle_text: '{T}: Add {C}.\n{T}: Add {W} or {U}. Adarkar Wastes deals 1 damage to you.',
+    },
+  ];
+
+  const table = (id: string, life?: number) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        { name: 'Adarkar Wastes', count: 4 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Plains', count: 26 },
+        { name: 'Forest', count: 26 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData).toEqual(['Adarkar Wastes']);
+    let s = arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: { 0: ['Adarkar Wastes'], 1: [] },
+      turn: 4, firstSeat: 0,
+    });
+    s = advanceTo(s, 'precombat-main');
+    if (life !== undefined) {
+      s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life } : seat)) };
+    }
+    return s;
+  };
+
+  /*
+    The three abilities a pain land carries, in the order the compiler builds them: `{C}` free,
+    then `{W}` and `{U}` at a damage each. The order is pinned by name in `compile.test.ts`'s D497
+    block, which is where it belongs — indexing by position here and asserting the names there
+    keeps one fact in one place.
+  */
+  const COLOURLESS = 0;
+  const WHITE = 1;
+  const BLUE = 2;
+
+  it('deals the damage for a coloured tap and none for the colourless one', () => {
+    let s = table('d497-pain');
+    const land = find(s, 0 as SeatIndex, 'battlefield', 'Adarkar Wastes');
+    const before = life(s, 0 as SeatIndex);
+
+    // {C} is the first ability and the free one.
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: land, abilityIndex: COLOURLESS,
+    } as Action);
+    expect(life(s, 0 as SeatIndex)).toBe(before);
+
+    // A fresh table, because the land is tapped now. {W} is the second, and it hurts.
+    let t = table('d497-pain');
+    const other = find(t, 0 as SeatIndex, 'battlefield', 'Adarkar Wastes');
+    t = apply(t, {
+      type: 'auto:activate', by: 0, card: other, abilityIndex: WHITE,
+    } as Action);
+    expect(life(t, 0 as SeatIndex)).toBe(before - 1);
+  });
+
+  it('resolves at once, with nothing on the stack for anyone to answer', () => {
+    /*
+      What makes it an effect rather than a trigger. City of Brass puts its damage on the stack and
+      the table gets a window; a pain land's damage has already happened by the time the activation
+      returns, and the mana is in the pool.
+    */
+    let s = table('d497-stack');
+    const land = find(s, 0 as SeatIndex, 'battlefield', 'Adarkar Wastes');
+    const before = life(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: land, abilityIndex: BLUE,
+    } as Action);
+    expect(s.stackOrder).toEqual([]);
+    expect(life(s, 0 as SeatIndex)).toBe(before - 1);
+    // And the mana really arrived: the damage is beside the mana, not instead of it.
+    expect(Object.values(s.pools).some((pool) => Object.values(pool).some((n) => n > 0))).toBe(true);
+  });
+
+  it('may be tapped by a player on one life, who then dies', () => {
+    /*
+      What makes it an effect rather than a cost. `Mana Confluence` pays life, so a player on one
+      life is not offered the mana at all (CR 118.4). A pain land is offered, taken, and lethal —
+      and the state-based action that kills them runs in the same breath, which is why the effect is
+      applied before `settle`.
+    */
+    let s = table('d497-lethal', 1);
+    const land = find(s, 0 as SeatIndex, 'battlefield', 'Adarkar Wastes');
+    const activation = {
+      type: 'auto:activate', by: 0, card: land, abilityIndex: WHITE,
+    } as Action;
+    // Offered, not refused: this is the half a life cost would have failed.
+    expect(refusal(s, activation)).toBeNull();
+    s = apply(s, activation);
+    expect(life(s, 0 as SeatIndex)).toBe(0);
+    expect(s.seats[0]!.eliminated).toBe(true);
+  });
+});

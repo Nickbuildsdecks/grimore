@@ -7986,9 +7986,14 @@ describe('a mana ability that is a choice of colours', () => {
     ['Colour Thing', 'Land', '{T}: Add one mana of the chosen color.'],
     // 10 legal lines: two mana, not one, and the combination is a choice per symbol.
     ['Combination Thing', 'Artifact', '{T}: Add two mana in any combination of colors.'],
-    // A second sentence, which is Adarkar Wastes' painland clause — the choice is right and the
-    // damage is not read, so the line stays whole.
-    ['Adarkar Wastes', 'Land', '{T}: Add {W} or {U}. Adarkar Wastes deals 1 damage to you.'],
+    /*
+      **Adarkar Wastes was here and is read (D497).** The row said "a second sentence, which is
+      Adarkar Wastes' painland clause — the choice is right and the damage is not read, so the line
+      stays whole", and that was true of the reader as it stood. The second sentence is read now:
+      the damage is the mana ability's own effect, grouped per line so `{T}: Add {C}` stays free.
+      Its assertions live in this file's D497 block — the sixth stale refusal row in this series,
+      and the third I wrote myself.
+    */
   ])('leaves %s\'s narrower mana ability unread', (name, typeLine, text) => {
     const read = compileCard({
       name, type_line: typeLine, mana_cost: '', cmc: 0, colors: [], layout: 'normal',
@@ -10509,5 +10514,139 @@ describe('tap target, and a self-pump that shrinks (D496)', () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
+  });
+});
+
+describe('a mana ability that deals you damage (D497)', () => {
+  /*
+    **Three different rules wear almost the same words, and the pool already had two of them.**
+    `scripts.ts`'s own comment draws the line: *City of Brass* **triggers**, so its damage uses the
+    stack and can be responded to; *Mana Confluence* **costs** life, so a player on one life is
+    never offered the mana at all (CR 118.4).
+
+    A pain land is the third. `{T}: Add {W} or {U}. Adarkar Wastes deals 1 damage to you.` is one
+    mana ability whose *effect* includes the damage: it resolves immediately without the stack
+    (CR 605.3a), nobody gets a window, and a player on one life may tap it and die. 34 printed lines
+    on 37 legal cards.
+  */
+  const land = (name: string, text: string) => compileCard({
+    name, type_line: 'Land', mana_cost: '', cmc: 0, colors: [], layout: 'normal', oracle_text: text,
+  });
+  const abilitiesOf = (name: string, text: string) => {
+    const read = land(name, text);
+    expect(read.ok).toBe(true);
+    expect(read.ok && read.unread.map((u) => u.line)).toEqual([]);
+    return read.ok ? (read.script?.abilities ?? []) : [];
+  };
+
+  it('gives the damage to the colours that print it and to no others', () => {
+    /*
+      The reading that matters most, and the one the first version of this got wrong. Adarkar Wastes
+      prints **two** lines — `{T}: Add {C}.` and `{T}: Add {W} or {U}. … 1 damage to you.` — and the
+      damage belongs to the second. The fold used to flatten both into one cost, so whichever line
+      came first decided for every colour: every pain land made its coloured mana for free, which is
+      a card that plays better than it reads (D362).
+    */
+    const abilities = abilitiesOf(
+      'Adarkar Wastes',
+      '{T}: Add {C}.\n{T}: Add {W} or {U}. Adarkar Wastes deals 1 damage to you.',
+    );
+    expect(abilities.map((a) => a.description)).toEqual([
+      '{T}: Add {C}.',
+      '{T}: Add {W}. It deals 1 damage to you.',
+      '{T}: Add {U}. It deals 1 damage to you.',
+    ]);
+    // The colourless one has no effect at all; the two coloured ones do.
+    expect(abilities[0]?.effect).toBeUndefined();
+    expect(abilities[1]?.effect).toBeDefined();
+    expect(abilities[2]?.effect).toBeDefined();
+  });
+
+  it.each([
+    // The six single-colour pain lands and the two-colour family, each a real printing.
+    ['Caves of Koilos', '{T}: Add {C}.\n{T}: Add {W} or {B}. Caves of Koilos deals 1 damage to you.', 3],
+    ['Llanowar Wastes', '{T}: Add {C}.\n{T}: Add {B} or {G}. Llanowar Wastes deals 1 damage to you.', 3],
+    // A sum rather than a choice: Ancient Tomb taps for two and deals two.
+    ['Ancient Tomb', '{T}: Add {C}{C}. Ancient Tomb deals 2 damage to you.', 1],
+    // One colour only, and the short-name spelling a titled card would use.
+    ['Probe Spring', '{T}: Add {R}. Probe Spring deals 1 damage to you.', 1],
+    // "This land", the retemplated second reference.
+    ['Probe Reef', '{T}: Add {U}. This land deals 1 damage to you.', 1],
+  ])('reads %s', (name, text, count) => {
+    const abilities = abilitiesOf(name as string, text as string);
+    expect(abilities).toHaveLength(count as number);
+    expect(abilities.some((a) => a.effect !== undefined)).toBe(true);
+  });
+
+  it('keeps the mana on a land whose other ability it cannot read', () => {
+    /*
+      **Found while writing the refusal rows below, and worse than what D497 set out to fix.**
+      `cardFromData` only answers when it can read the *whole* card, so a pain land with a second
+      ability falls through to `compile.ts`'s line-by-line path — and that path had no mana reader at
+      all. The general activated-ability reader claimed the line, built an ability out of the damage
+      clause and dropped the `Add {U}`: **the compiled Cephalid Coliseum tapped for nothing.**
+
+      Eleven legal lands were in that state — Cephalid Coliseum, Barbarian Ring, Cabal Pit, Centaur
+      Garden and the rest of the Odyssey threshold cycle — and it is strictly worse than an unread
+      line, because the bot plays a land that produces no mana and then cannot use it. Two synthetic
+      refusal rows that should have been turned down came back read, and following that answer to a
+      real card is what found it.
+
+      The break run insisted this test exist: removing the per-line mana reader left every other row
+      in this block green, because they are all single-line cards that `cardFromData` reads whole.
+    */
+    const read = compileCard({
+      name: 'Cephalid Coliseum', type_line: 'Land', mana_cost: '', cmc: 0, colors: [],
+      layout: 'normal',
+      oracle_text: '{T}: Add {U}. Cephalid Coliseum deals 1 damage to you.\n'
+        + 'Threshold — {U}, {T}, Sacrifice Cephalid Coliseum: Target player draws three cards, then'
+        + ' discards three cards. Activate only if there are seven or more cards in your graveyard.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    // The threshold ability is honestly unread; the mana line is read, and it makes mana.
+    expect(read.unread).toHaveLength(1);
+    expect(read.unread[0]?.line).toContain('Threshold');
+    expect(read.script?.abilities ?? []).toHaveLength(1);
+    expect(read.script?.abilities?.[0]?.produces).toEqual(['U']);
+    expect(read.script?.abilities?.[0]?.effect).toBeDefined();
+  });
+
+  it.each([
+    /*
+      Refused for the **tail**, which is the half that keeps this reader honest. 30 more printed
+      lines are this exact shape with a different second sentence, and none of them is damage: a
+      restriction on what the mana may pay for, a land that stays tapped, a depletion counter, an
+      activation condition. Reading any of them as nothing at all would be a land that does strictly
+      more than it prints.
+    */
+    ['spend-only restriction', '{T}: Add {C}. Spend this mana only to cast a creature spell.'],
+    ["doesn't untap", "{T}: Add {U} or {B}. Probe Land doesn't untap during your next untap step."],
+    ['a depletion counter', '{T}: Add {W} or {U}. Put a depletion counter on Probe Land.'],
+    ['an activation condition', '{T}: Add {R} or {G}. Activate only if you control a Swamp.'],
+    // And for the **subject**: the damage has to be this land's own.
+    ['somebody else deals it', '{T}: Add {R}. Shivan Dragon deals 1 damage to you.'],
+    ['dealt to someone else', '{T}: Add {R}. Probe Land deals 1 damage to any target.'],
+    // Zero is not damage worth modelling, and no card prints it.
+    ['nought damage', '{T}: Add {R}. Probe Land deals 0 damage to you.'],
+  ])('leaves a mana line unread: %s', (_why, text) => {
+    const read = land('Probe Land', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('still reads the ordinary mana lines it always read', () => {
+    // The half a change to this regex could break without any new row failing.
+    expect(abilitiesOf('Probe Waste', '{T}: Add {C}.').map((a) => a.description))
+      .toEqual(['{T}: Add {C}.']);
+    expect(abilitiesOf('Probe Gate', '{T}: Add {W} or {U}.').map((a) => a.description))
+      .toEqual(['{T}: Add {W}.', '{T}: Add {U}.']);
+    expect(abilitiesOf('Probe Tower', '{T}: Add one mana of any color.')).toHaveLength(5);
+    expect(abilitiesOf('Probe Ring', '{T}: Add {C}{C}.').map((a) => a.description))
+      .toEqual(['{T}: Add {C}{C}.']);
+    for (const a of abilitiesOf('Probe Gate', '{T}: Add {W} or {U}.')) {
+      expect(a.effect).toBeUndefined();
+    }
   });
 });

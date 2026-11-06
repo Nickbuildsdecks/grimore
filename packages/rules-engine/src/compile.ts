@@ -41,7 +41,8 @@
 import type { CardDef } from './cards.js';
 import { hasType, isPrintedAbilityLine, parseTypeLine } from './characteristics.js';
 import {
-  cardFromData, printedBody, printedDef, printedLoyalty, printedRulesLines,
+  cardFromData, isManaAbilityLine, manaAbilitiesFromLine, printedBody, printedDef,
+  printedLoyalty, printedRulesLines,
   type CardDataRow, type DerivedKind,
 } from './fromCardData.js';
 import {
@@ -372,6 +373,33 @@ function compileUncached(row: CardDataRow): Compilation {
       protection as unread lines on cards the engine was already playing correctly.
     */
     if (isPrintedAbilityLine(line, def.name)) { compiled.push(line); continue; }
+
+    /*
+      A mana ability, asked **before** the general line reader and not after.
+
+      `cardFromData` only answers when it can read the whole card, so a pain land with a second
+      ability lands here — and until D497 this loop had no mana reader, so `lineScriptFor` claimed
+      the line, built an ability out of its damage clause and dropped the `Add {U}` entirely.
+      Cephalid Coliseum and ten other legal lands compiled to a land that taps for nothing, which
+      is worse than an unread line: the bot plays it and then cannot use it.
+
+      Order is the whole fix. Asked after, the general reader wins and the mana is lost again.
+    */
+    const mana = manaAbilitiesFromLine(line, def.name);
+    if (mana !== null) {
+      if (merge(built, { abilities: [...mana] }) === 'conflict') {
+        unread.push({ line, why: 'field-conflict' });
+        continue;
+      }
+      compiled.push(line);
+      continue;
+    }
+    /*
+      A line that promises mana and could not be read is **unread**, full stop. It does not go on to
+      the general reader, which would build an ability out of whatever follows the `Add` and leave
+      the card producing nothing — the Coliseum failure, generalised. See `isManaAbilityLine`.
+    */
+    if (isManaAbilityLine(line)) { unread.push({ line, why: 'no-reader' }); continue; }
 
     const fragment = lineScriptFor(line, def.name);
     if (fragment === null) { unread.push({ line, why: reasonFor(line) }); continue; }

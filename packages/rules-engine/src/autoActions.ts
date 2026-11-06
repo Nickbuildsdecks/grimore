@@ -1574,6 +1574,23 @@ function activate(
     // A mana ability resolves immediately and never uses the stack (CR 605.3a) — which is what
     // makes tapping a land in response to something work at all.
     for (const type of ability.produces) next = addToPool(next, action.by, type, 1);
+    /*
+      **A mana ability may do more than make mana** (CR 605.1a), and until D497 this branch ran the
+      mana and returned, so an `effect` beside `produces` was silently dropped. Nothing in the pool
+      had one, which is why it went unnoticed: the pain lands are the first cards to need it, and
+      their second sentence — `Adarkar Wastes deals 1 damage to you.` — is part of this ability's
+      effect rather than a trigger or a cost. See `ManaLine.damage` in `fromCardData.ts` for the
+      three-way distinction, which the pool's own City of Brass and Mana Confluence are the other
+      two thirds of.
+
+      Before `settle`, so a player who taps a pain land on one life dies to the state-based action
+      in the same breath — which is the rule, and the thing a cost would have refused to let them do.
+    */
+    if (ability.effect !== undefined) {
+      next = ability.effect({
+        state: next, source: inst.id, controller: action.by, targets: [], x: 0, decisions: [], kicked: false,
+      });
+    }
     next = settle(next, state);
     return {
       state: next,
