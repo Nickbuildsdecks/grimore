@@ -1666,6 +1666,33 @@ function levelBandOf(def: CardDef | undefined, instance: CardInstance): LevelBan
   return best;
 }
 
+/**
+ * Whether a **card** — not a permanent — has a creature subtype, changeling included.
+ *
+ * The printed-card twin of `hasSubtype`, and the thing D506 named and left. A card in a graveyard,
+ * a hand or a library has no continuous effects applied to it, so its printed type line *is* what
+ * it is (which is why `TargetSpec`'s `graveyard-*` kinds exist at all) — but changeling is not a
+ * continuous effect. It is a characteristic-defining ability (CR 604.3), so it works in **every**
+ * zone, and a Woodland Changeling card in a graveyard is a Spirit for soulshift.
+ *
+ * D506 extended the *live* type line inside layer 4 and recorded this hole in the same breath: at
+ * the time nothing asked the question of a printed card, so the omission was correct only by
+ * accident. Soulshift is the first thing that asks.
+ *
+ * **The general reader still cannot.** `cardWordMatch` in `scripts.ts` builds filters of the shape
+ * `(line: TypeLine) => boolean` from a printed word, and a bare type line cannot carry a keyword —
+ * so every compiled "target Spirit card" filter that goes through *that* path is still blind to a
+ * changeling. Widening it means widening the signature at nineteen call sites, which is its own
+ * change; this function is where that change will land, and the filters that can call it today do.
+ */
+export function cardHasSubtype(def: CardDef | undefined, subtype: string): boolean {
+  const line = parseTypeLine(def?.typeLine);
+  if (hasSubtype(line, subtype)) return true;
+  return hasType(line, 'creature')
+    && printedKeywords(def?.oracleText).includes('changeling')
+    && isCreatureType(subtype);
+}
+
 export function characteristicsOf(state: GameState, instance: CardInstance): Characteristics {
   /*
     Face down matters on the battlefield and on the stack, and nowhere else. A card face down in

@@ -4,7 +4,7 @@ import { STARTER_DECKS } from './starterDecks.js';
 import { CLUE_TOKEN, isKeywordDeclaration, scriptFor } from './scripts.js';
 import { zoneKey, type CardDef } from './cards.js';
 import {
-  CREATURE_TYPES, KEYWORD_BLOCK_RULES, characteristicsOf, hasSubtype, isCreatureType,
+  CREATURE_TYPES, KEYWORD_BLOCK_RULES, cardHasSubtype, characteristicsOf, hasSubtype, isCreatureType,
   keywordBlockRules, printedBlockerLimit, printedBlocksLimit, printedCombatStatics, printedKeywords,
   printedLandwalk,
 } from './characteristics.js';
@@ -12055,5 +12055,123 @@ describe('"Activate only during …", the three timing clauses (D509)', () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
+  });
+});
+
+describe('Soulshift N (D510)', () => {
+  /*
+    CR 702.46a: "When this creature dies, you may return target Spirit card with mana value N or
+    less from your graveyard to your hand." **25 legal corpus cards print the bare line and 17 of
+    them are one printed line from a finished script** — the queue head once D508 and D509 cleared
+    the restriction family.
+
+    A counted keyword like Bushido N (D503), and like it mostly a pair of mechanisms the engine
+    already had: a self-subject `dies` trigger (#157), a graveyard target (#23) and `bounceToHand`.
+    What is new is a graveyard filter that reads **two** things about a card — a subtype and a
+    mana-value ceiling — and that it is the first thing in the engine to ask whether a *card* has a
+    creature type. See `soulshiftTriggers` and `cardHasSubtype`.
+  */
+  const spirit = (text: string, name = 'Crawling Filth', cost = '{5}{B}', cmc = 6) => compileCard({
+    name, type_line: 'Creature — Spirit', mana_cost: cost, cmc, colors: ['B'],
+    layout: 'normal', power: '2', toughness: '2', oracle_text: text,
+  });
+
+  const REMINDER = (n: number) => `Soulshift ${n} (When this creature dies, you may return target `
+    + `Spirit card with mana value ${n} or less from your graveyard to your hand.)`;
+
+  it.each([3, 5, 8])('reads Soulshift %i, count and all', (n) => {
+    const read = spirit(REMINDER(n as number));
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers).toHaveLength(1);
+    expect(read.script?.triggers?.[0]?.on).toEqual({ kind: 'dies' });
+    // The count reaches the description, which is what a player reads on the stack.
+    expect(read.script?.triggers?.[0]?.description).toContain(`mana value ${n} or less`);
+    expect(read.script?.triggers?.[0]?.targets?.[0]?.kind).toBe('graveyard-card');
+    /*
+      **Mandatory, which is the thing a reader test can pin and the first version got wrong.**
+      `optional: true` looked like the right home for the printed "you may" and meant the engine
+      declined every soulshift in the game — nothing was ever returned. See `soulshiftTriggers`
+      for the whole story and for what is left out instead (#328's family).
+    */
+    expect(read.script?.triggers?.[0]?.targets?.[0]?.optional).toBeUndefined();
+  });
+
+  it('reads it beside another keyword on the same card', () => {
+    // Crawling Filth's actual printing: fear (D501) on one line, soulshift on the next.
+    const read = spirit("Fear (This creature can't be blocked except by artifact creatures "
+      + 'and/or black creatures.)\n' + REMINDER(5));
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers).toHaveLength(1);
+    expect(printedKeywords('Fear')).toEqual(['fear']);
+  });
+
+  it('reads Body of Jukai, whose other line is trample', () => {
+    const read = spirit('Trample\n' + REMINDER(8), 'Body of Jukai', '{7}{G}{G}', 9);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers?.[0]?.description).toContain('mana value 8 or less');
+  });
+
+  it('refuses Forked-Branch Garami\'s doubled printing', () => {
+    /*
+      "Soulshift 4, soulshift 4" with reminder text that merges the two into **one ability with two
+      targets** — which is a different rule from two copies of this one, so it is refused rather
+      than read as either (D487). The only card in the corpus that prints it.
+    */
+    const read = spirit('Soulshift 4, soulshift 4 (When this creature dies, you may return up to '
+      + 'two target Spirit cards with mana value 4 or less from your graveyard to your hand.)',
+    'Forked-Branch Garami', '{3}{G}{G}', 5);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual(['Soulshift 4, soulshift 4']);
+    expect(read.script?.triggers ?? []).toEqual([]);
+  });
+
+  it('refuses a soulshift with no number, which no card prints', () => {
+    // The anchored `\d+` is what does this, and the row is here because a reader that defaulted the
+    // count to zero or one would be a card that returns the wrong half of a graveyard.
+    const read = spirit('Soulshift (When this creature dies, …)');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('knows a changeling card is a Spirit, and an ordinary creature card is not', () => {
+    /*
+      **D506's named-and-left, closed.** `cardHasSubtype` is the printed-card twin of `hasSubtype`:
+      changeling is a characteristic-defining ability, so it works in a graveyard too, and a
+      Woodland Changeling card there is a legal soulshift target. Asserted on the helper directly
+      as well as at the table, because the helper is what a future `cardWordMatch` fix will call.
+    */
+    const changeling = {
+      name: 'Woodland Changeling', typeLine: 'Creature — Shapeshifter', manaCost: '{1}{G}',
+      oracleText: 'Changeling (This card is every creature type.)',
+    };
+    expect(cardHasSubtype(changeling as never, 'Spirit')).toBe(true);
+    expect(cardHasSubtype(changeling as never, 'Goblin')).toBe(true);
+    // Not a creature type, so not even a changeling has it.
+    expect(cardHasSubtype(changeling as never, 'Equipment')).toBe(false);
+    // And the control: an ordinary Wolf card is a Wolf and nothing else.
+    const wolf = {
+      name: 'Darkthicket Wolf', typeLine: 'Creature — Wolf', manaCost: '{1}{G}', oracleText: '',
+    };
+    expect(cardHasSubtype(wolf as never, 'Wolf')).toBe(true);
+    expect(cardHasSubtype(wolf as never, 'Spirit')).toBe(false);
+  });
+
+  it('does not extend a noncreature card that happens to print the word', () => {
+    // The guard that keeps `cardHasSubtype` honest: changeling is a creature-type ability, so an
+    // artifact whose text mentioned it would still not be a Spirit.
+    const relic = {
+      name: 'Not A Creature', typeLine: 'Artifact — Equipment', manaCost: '{2}',
+      oracleText: 'Changeling (This card is every creature type.)',
+    };
+    expect(cardHasSubtype(relic as never, 'Spirit')).toBe(false);
+    expect(cardHasSubtype(relic as never, 'Equipment')).toBe(true);
   });
 });

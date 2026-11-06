@@ -30230,3 +30230,164 @@ describe('"Activate only during …", at the table (D509)', () => {
     expect(offers(table('precombat-main'), 'Dwarven Weaponsmith')).toBe(0);
   });
 });
+
+describe('Soulshift N, at the table (D510)', () => {
+  /*
+    The half a reader test cannot reach: the trigger has to fire on death, aim itself at a legal
+    Spirit card in the graveyard, refuse one above its limit, be declinable, and see a changeling
+    card as a Spirit.
+
+    Three real printings through `customDeck`'s `data`:
+
+      Crawling Filth        {5}{B} 2/2  Soulshift 5
+      Burr Grafter          {3}{G} 2/2  Soulshift 3  — the lower limit, which is the discriminator
+      Kami of the Painted Road  {4}{W} 3/3  a Spirit with no soulshift, to be returned
+
+    plus printed **Woodland Changeling** `{1}{G}`, which is a Shapeshifter on its type line and a
+    Spirit by CR 702.73a — the card that closes D506's named-and-left.
+  */
+  const DATA = [
+    {
+      name: 'Crawling Filth', type_line: 'Creature — Spirit', mana_cost: '{5}{B}', cmc: 6,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Soulshift 5 (When this creature dies, you may return target Spirit card with '
+        + 'mana value 5 or less from your graveyard to your hand.)',
+    },
+    {
+      name: 'Burr Grafter', type_line: 'Creature — Spirit', mana_cost: '{3}{G}', cmc: 4,
+      colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Soulshift 3 (When this creature dies, you may return target Spirit card with '
+        + 'mana value 3 or less from your graveyard to your hand.)',
+    },
+    {
+      name: 'Kami of the Painted Road', type_line: 'Creature — Spirit', mana_cost: '{4}{W}', cmc: 5,
+      colors: ['W'], layout: 'normal', power: '3', toughness: '3', oracle_text: '',
+    },
+    {
+      name: 'Woodland Changeling', type_line: 'Creature — Shapeshifter', mana_cost: '{1}{G}',
+      cmc: 2, colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Changeling (This card is every creature type.)',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'soulshift',
+      name: 'Soulshift',
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 3 })),
+        { name: 'Grizzly Bears', count: 3 },
+        { name: 'Forest', count: 23 },
+        { name: 'Swamp', count: 22 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual([
+      'Burr Grafter', 'Crawling Filth', 'Kami of the Painted Road', 'Woodland Changeling',
+    ]);
+    return list.deck;
+  };
+
+  /** `dying` on the battlefield and `buried` already in seat 0's graveyard. */
+  const table = (dying: string, buried: readonly string[]) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'soulshift', 1: 'soulshift' },
+      deckSpecs: { soulshift: deck() },
+      battlefield: { 0: [dying, 'Forest'], 1: [] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    for (const name of buried) {
+      s = apply(s, {
+        type: 'card:move', by: 0, card: find(s, 0, 'library', name), toZone: 'graveyard',
+      });
+    }
+    return s;
+  };
+
+  const kill = (s: GameState, name: string) => drain(apply(s, {
+    type: 'card:move', by: 0, card: find(s, 0, 'battlefield', name), toZone: 'graveyard',
+  }));
+
+  it('returns a Spirit card inside its limit when the creature dies', () => {
+    /*
+      The whole mechanic in one move. Crawling Filth's soulshift is 5 and Kami of the Painted Road
+      is a {4}{W} Spirit, so it comes back — and the Filth itself is in the graveyard by the time
+      its own trigger resolves, which is the shape a `dies` trigger always has here.
+    */
+    let s = table('Crawling Filth', ['Kami of the Painted Road']);
+    const kami = find(s, 0, 'graveyard', 'Kami of the Painted Road');
+    s = kill(s, 'Crawling Filth');
+    expect(s.instances[kami]!.zone).toBe('hand');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Crawling Filth');
+  });
+
+  it('will not return one above its limit, which is the count doing its job', () => {
+    /*
+      **The discriminator**, and the reason Burr Grafter is in the deck. Soulshift 3 against the
+      same {4}{W} Kami: mana value 5 is above the ceiling, so there is no legal target and the Kami
+      stays where it is. A reader that dropped the number would pass the test above and fail this.
+    */
+    let s = table('Burr Grafter', ['Kami of the Painted Road']);
+    const kami = find(s, 0, 'graveyard', 'Kami of the Painted Road');
+    s = kill(s, 'Burr Grafter');
+    expect(s.instances[kami]!.zone).toBe('graveyard');
+  });
+
+  it('will not return a card that is not a Spirit', () => {
+    // The other half of the filter: Grizzly Bears is a {1}{G} Bear, inside any limit and the wrong
+    // type. A filter that read only the mana value would pass the first test and fail this.
+    let s = table('Crawling Filth', ['Grizzly Bears']);
+    const bears = find(s, 0, 'graveyard', 'Grizzly Bears');
+    s = kill(s, 'Crawling Filth');
+    expect(s.instances[bears]!.zone).toBe('graveyard');
+  });
+
+  it('returns a changeling card, which closes what D506 named and left', () => {
+    /*
+      **The assertion this increment was chosen for.** Woodland Changeling's type line says
+      Shapeshifter; CR 702.73a makes the card every creature type in every zone, graveyard
+      included. Before `cardHasSubtype` this engine read a printed card's type line and nothing
+      else, so a changeling in a graveyard was not a Spirit — correct only because nothing asked
+      until now.
+
+      Paired with the Grizzly Bears row above, which is the same mana value and the same zone and
+      is **not** returned: so this passes because of the keyword, not because the filter is loose.
+    */
+    let s = table('Crawling Filth', ['Woodland Changeling']);
+    const shifter = find(s, 0, 'graveyard', 'Woodland Changeling');
+    s = kill(s, 'Crawling Filth');
+    expect(s.instances[shifter]!.zone).toBe('hand');
+  });
+
+  it('does not fire for an opponent\'s graveyard', () => {
+    // "From your graveyard": seat 1's Spirit is not a legal target, so nothing moves.
+    let s = advanceTo(arena({
+      decks: { 0: 'soulshift', 1: 'soulshift' },
+      deckSpecs: { soulshift: deck() },
+      battlefield: { 0: ['Crawling Filth', 'Forest'], 1: [] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, {
+      type: 'card:move', by: 1, card: find(s, 1, 'library', 'Kami of the Painted Road'),
+      toZone: 'graveyard',
+    });
+    const theirs = find(s, 1, 'graveyard', 'Kami of the Painted Road');
+    s = kill(s, 'Crawling Filth');
+    expect(s.instances[theirs]!.zone).toBe('graveyard');
+  });
+
+  it('is declinable, so an empty graveyard is not a stuck trigger', () => {
+    /*
+      `optional: true` is the engine's "up to", and the half that matters for a game that has to
+      keep moving: with no legal Spirit the trigger resolves and does nothing rather than waiting
+      for an answer that cannot be given (CR 603.3c). See `soulshiftTriggers` for the one
+      simplification `optional` is here and what it costs.
+    */
+    let s = table('Crawling Filth', []);
+    s = kill(s, 'Crawling Filth');
+    expect(s.pendingDecision).toBeNull();
+    expect(s.pendingChoice).toBeNull();
+    expect(namesIn(s, 0, 'graveyard')).toContain('Crawling Filth');
+  });
+});

@@ -34266,3 +34266,119 @@ to hurt.
 
 Across D508 and D509 together the restriction family has gone from 0 of its 143 one-away cards read
 to **72**, for two fields, one predicate and one list of five clauses.
+
+## D510 — Soulshift N, and the version that compiled and did nothing
+
+CR 702.46a: "When this creature dies, you may return target Spirit card with mana value N or less
+from your graveyard to your hand." **25 legal corpus cards print the bare line and 17 of them were
+one printed line from a finished script** — the queue head once D508 and D509 cleared the restriction
+family.
+
+Chosen over the printed queue head (the 19-card threshold bucket, 17 of which are the much larger
+quoted-ability-to-`TriggerDef` job) for a second reason: **it is the first thing in the engine that
+asks whether a *card* has a creature type**, which is exactly what D506 named and left.
+
+### Mostly parts that already existed
+
+A counted keyword like Bushido N (D503): one regex, and `soulshiftTriggers` assembling a
+self-subject `dies` trigger (#157), a graveyard target (#23) and `bounceToHand`. What is new is a
+graveyard filter that reads **two** things about a card — the subtype and a mana-value ceiling —
+where every graveyard filter before it read one.
+
+`Soulshift 4, soulshift 4` — Forked-Branch Garami, the only card that prints it — is refused. Its
+reminder text merges the two into **one ability with two targets**, which is a different rule from
+two copies of this one, so reading it as either would be a guess (D487). The anchored `\d+$` is what
+does that, and a break run row confirms an unanchored version reads the line.
+
+### The version that compiled and did nothing
+
+The first implementation put `optional: true` on the target. The reasoning was tidy: the printed
+"you may" is a choice, `optional` is the engine's "up to", every other declinable target here is
+written that way. **The runtime tests said no in the clearest possible way — nothing was ever
+returned.**
+
+An optional target with nobody to ask is a target the engine declines, so every soulshift in the
+game silently did nothing. And **no reader test could have caught it**: the script compiled, the
+trigger was there, the count reached the description, the filter was correct. The compile block even
+asserted `optional: true` and passed. It took putting a creature on a battlefield and killing it.
+
+That is the sharpest instance so far of the rule this project keeps relearning — a reading that
+*looks* right in the script is not a reading that works at the table — and it is why every increment
+in this series pairs a compile block with a runtime block driven through `customDeck`.
+
+The target is mandatory now, which is also what the rules say: the Spirit is chosen as the trigger
+goes on the stack, and CR 603.3c removes the trigger entirely when there is no legal choice — which
+the engine already does, so an empty graveyard is not a stuck table (asserted).
+
+**What is left out, stated plainly:** the resolution-time decline. A player who would rather leave
+the card in the graveyard cannot say so, and it always comes back. That is a choice the controller
+loses and never an illegal play; it is the same gap the seven pool cards in **#328** have; and
+`decisions` is where the fix for all of them belongs. The docblock says so at the point somebody
+would otherwise reach for `optional` again.
+
+### D506's note, closed
+
+`cardHasSubtype(def, subtype)` is the printed-card twin of `hasSubtype`. A card in a graveyard has no
+continuous effects applied to it — which is why `TargetSpec`'s `graveyard-*` kinds exist — but
+changeling is not a continuous effect. It is a characteristic-defining ability (CR 604.3), so it
+works in every zone, and a **Woodland Changeling card in a graveyard is a Spirit for soulshift**.
+
+D506 extended the live type line inside layer 4 and recorded this hole in the same breath: nothing
+asked the question of a printed card, so the omission was correct only by accident. Soulshift asks.
+
+**The general reader still cannot**, and that is named rather than fixed: `cardWordMatch` builds
+filters of the shape `(line: TypeLine) => boolean` from a printed word, and a bare type line cannot
+carry a keyword, so every *compiled* "target Spirit card" filter that goes through that path is still
+blind to a changeling. Widening it means widening the signature at nineteen call sites. This function
+is where that change will land, and the filters that can call it today do.
+
+### The tests
+
+Nine compile tests: the count read at 3, 5 and 8 and reaching the description; beside fear and
+beside trample on real printings; the doubled printing refused; a numberless soulshift refused; and
+four assertions on `cardHasSubtype` directly — a changeling card is a Spirit and a Goblin but not an
+Equipment, an ordinary Wolf card is a Wolf and not a Spirit, and a noncreature card that prints the
+word is still not a Spirit.
+
+Six runtime tests through `customDeck`'s `data` on printed Crawling Filth, Burr Grafter, Kami of the
+Painted Road and Woodland Changeling:
+
+| | |
+| --- | --- |
+| returns a Spirit inside the limit | the mechanic, end to end |
+| will not return one above it | **the discriminator** — Burr Grafter's soulshift 3 against the same {4}{W} Kami, so a reader that dropped the number fails here and passes everything else |
+| will not return a non-Spirit | the other half of the filter: Grizzly Bears is inside every limit and the wrong type |
+| returns a changeling card | D506's note, paired with the Bears row so it passes because of the keyword and not because the filter is loose |
+| does not reach an opponent's graveyard | "from *your* graveyard" |
+| an empty graveyard is not a stuck trigger | CR 603.3c |
+
+### The break run
+
+Nine breaks, each verified to apply and to revert against a SHA-256 of both source files:
+
+| break | caught by |
+| --- | --- |
+| the keyword is not read at all | 7 tests |
+| the regex is unanchored, so the doubled printing reads as one | 1 test |
+| the target is optional again, so the engine declines every time | 5 tests |
+| the mana-value ceiling is dropped | 3 tests |
+| the subtype is dropped, so any card inside the limit comes back | 1 test |
+| the ceiling is strict, so a Spirit at exactly N is refused | 1 test |
+| the filter forgets whose graveyard it is | 1 test |
+| a printed card's changeling is ignored | 2 tests |
+| changeling extends a noncreature card too | 1 test |
+
+Every one caught. Two are worth naming: *the target is optional again* is the bug this increment
+actually had, kept as a permanent guard; and *the ceiling is strict* is the off-by-one that would
+make Soulshift 5 refuse a five-drop, which only the Kami-at-exactly-N row can see.
+
+### Coverage
+
+| | before D510 | after |
+| --- | --- | --- |
+| printed lines read | 21,705 / 56,421 (38.5%) | **21,730 / 56,421 (38.5%)** |
+| cards with a compiled script | 10,899 | **10,920** |
+| cards with every printed line read | 6,670 | **6,687** |
+| of those, needing no script at all | 1,191 | 1,191 |
+
+**17 cards finished**, exactly the measurement's prediction.

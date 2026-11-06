@@ -18,7 +18,8 @@
  * unscripted and resolved by hand rather than approximated.
  */
 import {
-  characteristicsOf, hasSubtype, hasType, isKeyword, isLegendary, parseTypeLine, printedKeywords,
+  cardHasSubtype, characteristicsOf, hasSubtype, hasType, isKeyword, isLegendary, parseTypeLine,
+  printedKeywords,
   printedLandwalk, shortName, SELF_TYPE_WORDS, type Characteristics, type TypeLine,
 } from './characteristics.js';
 import { zoneKey, type CardDef } from './cards.js';
@@ -2557,6 +2558,69 @@ const battleCryTrigger = (): TriggerDef => ({
  *   here, not a number on the card. Reading it would mean inventing a field to answer a question
  *   one card asks (D57).
  */
+/**
+ * Soulshift N (CR 702.46a): "When this creature dies, you may return target Spirit card with mana
+ * value N or less from your graveyard to your hand."
+ *
+ * **25 legal corpus cards print the bare line and 17 of them are one printed line from a finished
+ * script** — the queue head once D508 and D509 cleared the restriction family. A counted keyword
+ * like Bushido N (D503), and like it a pair of mechanisms the engine already has: a self-subject
+ * `dies` trigger (#157), a graveyard target (#23) and `bounceToHand`. What is new is a graveyard
+ * filter that reads **two** things about a card — a subtype and a mana-value ceiling.
+ *
+ * It is also the first thing in the engine that asks whether a *card* has a creature type, which is
+ * what D506 named and left: see `cardHasSubtype` for why a changeling card in a graveyard is a
+ * Spirit, and for the general filter path that still cannot say so.
+ *
+ * **The target is mandatory, and the printed "you may" is not modelled.** The first version of this
+ * put `optional: true` on the target, reasoning that the engine's "up to" was the natural home for
+ * a "you may" — and the runtime tests said no in the clearest possible way: *nothing was ever
+ * returned*. An optional target with nobody to ask is a target the engine declines, so every
+ * soulshift in the game silently did nothing. Which is worse than an unread line and exactly what
+ * D362 is about, and the reader test could not have caught it: the script compiled, the trigger was
+ * there, the filter was right.
+ *
+ * So the target is mandatory, which is also what CR 702.46a says: the Spirit is chosen as the
+ * trigger goes on the stack, and CR 603.3c removes the trigger entirely when there is no legal
+ * choice — which the engine already does, so an empty graveyard is not a stuck table.
+ *
+ * What is left out is the **resolution-time decline**: a player who would rather leave the card in
+ * the graveyard cannot say so, and it always comes back. That is a choice the controller loses and
+ * never an illegal play, it is the same gap the seven pool cards in **#328** have, and `decisions`
+ * is where the fix for all of them belongs. Recorded here rather than guessed at, because the
+ * alternative — the version that compiled and did nothing — is the one this paragraph exists to
+ * stop somebody rediscovering.
+ *
+ * `up to two target Spirit cards` — Forked-Branch Garami's doubled printing — is **not** this. It
+ * prints "Soulshift 4, soulshift 4" and the reminder text merges them into one two-target ability,
+ * which is a different rule from two copies of this one; it refuses the line (D487).
+ */
+function soulshiftTriggers(limit: number): TriggerDef[] {
+  return [{
+    on: { kind: 'dies' },
+    targets: [{
+      kind: 'graveyard-card',
+      description: `target Spirit card with mana value ${limit} or less in your graveyard`,
+      filter: (state, candidate, controller) => {
+        if (candidate.kind !== 'card') return false;
+        const inst = state.instances[candidate.id];
+        if (inst === undefined || inst.zone !== 'graveyard' || inst.zoneSeat !== controller) {
+          return false;
+        }
+        const def = state.cardDefs[inst.defKey];
+        return cardHasSubtype(def, 'Spirit')
+          && costValue(parseManaCost(def?.manaCost)) <= limit;
+      },
+    }],
+    description:
+      `you may return target Spirit card with mana value ${limit} or less from your graveyard to your hand`,
+    effect: (c) => {
+      const id = firstCardTarget(c);
+      return id === null ? c.state : bounceToHand(c.state, id);
+    },
+  }];
+}
+
 function bushidoTriggers(count: number): TriggerDef[] {
   const grow = (c: EffectContext): GameState =>
     pump(c.state, [c.source], c.source, c.controller, { power: count, toughness: count });
@@ -9919,6 +9983,13 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   */
   const bushido = /^bushido\s+(\d+)$/i.exec(text);
   if (bushido !== null) return { triggers: bushidoTriggers(Number(bushido[1])) };
+
+  /*
+    Soulshift N, the same counted-keyword shape one zone over. See `soulshiftTriggers`, and note
+    that the anchored `$` is what refuses Forked-Branch Garami's "Soulshift 4, soulshift 4".
+  */
+  const soulshift = /^soulshift\s+(\d+)$/i.exec(text);
+  if (soulshift !== null) return { triggers: soulshiftTriggers(Number(soulshift[1])) };
 
   const counted = /^(modular|vanishing|fading)\s+(\d+)$/i.exec(text);
   if (counted !== null) {
