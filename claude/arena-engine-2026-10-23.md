@@ -14705,3 +14705,104 @@ Written correctly it failed three tests.
 
 *A break that silently fails to apply is indistinguishable from a test that does not discriminate.*
 Check the edit landed before concluding anything about the suite. This nearly cost two good tests.
+
+## D494 — An instrument for which shape to read next, and two things it corrected
+
+Twice in two increments I ranked work by **lines printed** and was wrong. The graveyard mana-value
+block prints about 91 lines and finishes **one card** (D492). D434 already said to rank by cards
+finished; the earlier attempt at that ranking over-counted, because it replaced whole clauses
+including their destinations. So this is the instrument, built properly.
+
+### How it works, and why it cannot over-count
+
+`scripts/measure/one-away.mjs`. A card with **exactly one** unread line is one shape away from
+compiling completely, so that line is what blocks it. Normalise the line into a shape — the card's
+own name, numbers and mana costs generalised — and count the cards per shape. No per-family
+substitution logic, so there is nothing to get wrong in the swap; the only judgement is how wide the
+shape is.
+
+Over the legal corpus: **30,710 cards compile, 16,101 of them have exactly one unread line**, in
+13,140 distinct shapes.
+
+### The instrument's own first answer was wrong, and probing caught it
+
+The first version truncated each line to seven words. Its top row read "204 cards —
+`Whenever ~ deals combat damage to a`", which looked like the biggest family ever measured here.
+It is not a family. The trigger *event* already reads:
+
+```
+READS   Whenever ~ deals combat damage to a player, draw a card.
+READS   Whenever ~ deals combat damage to a player, you gain 2 life.
+unread  Whenever ~ deals combat damage to a player, that player discards a card.
+unread  Whenever ~ deals combat damage to a creature, destroy that creature.
+```
+
+What is unread is the **effect clause after** the trigger, and it differs card by card. A seven-word
+shape grouped cards by shared *prefix* — which is the line-count error again, wearing a better
+disguise. An instrument built to stop me mis-ranking was mis-ranking.
+
+Fixed by widening the shape to fourteen words, which splits the prefix buckets into real families.
+Recorded rather than quietly corrected, because the lesson is about instruments and not about this
+one: **a grouping is a claim, and a claim about what blocks a card has to be checked against a card.**
+
+### The queue it gives, which is the useful output
+
+| cards | the one line that blocks them |
+| --- | --- |
+| 29 | `~ can't block.` |
+| 29 | `~ attacks each combat if able.` |
+| 29 | Threshold — as long as there are seven or more cards in your graveyard, … |
+| 25 | `{M}: Add {M} or {M}. ~ deals N damage to you.` (the painlands) |
+| 25 | `~ can't be blocked.` |
+| 23 | `{M}: ~ gets +N/-N until end of turn.` |
+| 22 | `{M}, {M}: Tap target creature.` |
+| 22 | `~ can block only creatures with flying.` |
+| 21 | Changeling |
+| 18 | Bushido N |
+| 16 | Fear / Soulshift N / enter as a copy |
+
+The top of that list is a cluster worth **105 cards**: four one-line combat statics, all four already
+modelled in `Characteristics` as `cantBlock`, `mustAttack`, `cantBeBlocked` and
+`cantBeBlockedByWalls`. And the reason they are unread is precise: `characteristicsOf` initialises
+all four to `false` and only ever sets them from `state.effects`, while printed **landwalk** and
+printed **protection** are seeded from the oracle text a few lines above, because they are *base*
+characteristics that "loses all abilities" should clear (CR 613.1f). The four combat statics belong
+in exactly that place and are not there. Two precedents, one new reader.
+
+### Also measured and deliberately not built
+
+A **colour word** and a **`non` negation** in a library-search card filter — the last two rows of
+D449's refusal table. **5 cards, 6 lines** between them (1 and 3 alone). It would need
+`cardWordMatch` widened from a type-line predicate to a whole-card-definition one, across both of
+its call sites, because a colour is not on the type line. Against D490's 38 cards, D491's 25,
+D492's 23 and D493's 77, it does not earn that. The rows stay as refusals.
+
+### Addendum: a guard I did not know about, pointing at every number in this session
+
+The gate failed before a single test ran, on `scripts/guards.js`:
+
+```
+[guards] 1 script(s) import the engine's dist directly:
+[guards]   scripts/measure/one-away.mjs
+[guards] Import from scripts/lib/engine.mjs instead. It re-exports the same
+[guards] module and warns on stderr when dist is older than the engine source.
+```
+
+The reason is the one this instrument needed most. `scripts/lib/engine.mjs` compares `dist`'s mtime
+against the newest engine source on import and warns if it is stale, because a harness run after a
+source change but before a rebuild "measures the previous build — and prints a number that is not
+wrong, merely about code that is no longer there". D338 is the precedent: a measure printed the
+pre-change share **to a tenth of a percent** off a stale `dist`. The guard exists because
+`provenanceLine` was opt-in and 45 of 52 scripts never called it — "a warning you have to remember
+to ask for is a warning that is missing from exactly the script nobody was thinking carefully
+about".
+
+This lands on more than the one file. Every number in this session came from a scratchpad probe
+importing `dist` directly, outside the guard's reach. I rebuilt `dist` before each measurement and
+the re-run through the wrapper gives **identical** figures — 30,710 compiling, 16,101 one-away,
+13,140 shapes — so the numbers stand. But they stood by habit rather than by check, and the habit is
+exactly what D338 says is not enough.
+
+Fixed by routing the instrument through `../lib/engine.mjs`, with the reason in its own docblock:
+this harness reports *which shape to build next*, so a number about the previous build would send the
+next increment at the wrong family.
