@@ -11594,6 +11594,38 @@ function selfEffect(
   }
 
   /*
+    "Sacrifice it" — the card eating itself, which is the Illusion drawback (D514).
+
+    **15 legal cards** print `When ~ becomes the target of a spell or ability, sacrifice it`, 13 of
+    them with no other unread line: Frost Walker, Gossamer Phantasm, Illusionary Servant and the
+    rest of the Illusion family, plus Boneshard Slasher's threshold quotation. The trigger half has
+    been readable since D461 and the tail had nowhere to go — `sacrifice <permanent>` a few hundred
+    lines below is the sacrifice the **controller chooses** from their battlefield, and a reader that
+    sent this clause there would have asked a player which of their creatures to sacrifice when the
+    card names one.
+
+    `moveToGraveyard` rather than a destruction: a sacrifice is not destruction (CR 701.17a), so
+    indestructible does not save it and nothing is "destroyed" for a replacement to care about. The
+    same helper the sweeping sacrifice uses.
+
+    The zone guard is `picksItselfUp`'s, for its reason (CR 400.7): a trigger whose permanent has
+    already left does as much as it can, which is nothing. That is not a hypothetical here — these
+    cards are sacrificed *in response to* a spell, and the spell may well have killed them first.
+  */
+  const eatsItself = new RegExp(`^sacrifice (?:(${self})|it)$`, 'i').exec(text);
+  if (eatsItself !== null && where !== null) {
+    const named = eatsItself[1];
+    return {
+      effect: (c) => {
+        const id = itMeans(named, c);
+        return c.state.instances[id]?.zone === where
+          ? moveToGraveyard(c.state, [id])
+          : c.state;
+      },
+    };
+  }
+
+  /*
     **The sign, for the second time.** This pattern demanded a `+` on both halves, which is the
     exact oversight D252 found in the *targeted* pump a few hundred lines below — where "265 legal
     cards print the second [sign] … unread because the pattern above it demanded a `+`".
@@ -12782,10 +12814,33 @@ const TRIGGER_SHAPES: readonly ({
     another.
   */
   {
+    /*
+      **"When" as well as "Whenever" (D514).** The two words are the same rule — CR 603.1 makes no
+      distinction, and a trigger that fires once is still a triggered ability — and the split is
+      historical: the Illusion drawback is printed "When ~ becomes the target of a spell or ability,
+      sacrifice it" on **15 legal cards**, 13 of them with no other unread line, while the modern
+      upside printings say "Whenever". One word was read and the other was not, which is 13 cards
+      held up by a regex rather than by a rule.
+    */
     prologue: (self) => new RegExp(
-      `^Whenever ${self} becomes the target of a spell or ability, (.+)$`, 'i',
+      `^When(?:ever)? ${self} becomes the target of a spell or ability, (.+)$`, 'i',
     ),
     on: [{ kind: 'targeted', by: 'any' }],
+  },
+  /*
+    And the same event **restricted to an opponent's** spell, which is the default the event was
+    built with for ward and the printing the modern upside cards use: "Whenever this creature becomes
+    the target of a spell or ability an opponent controls, draw a card" (Old Fat Spider, Battle
+    Mammoth, Surrak). Written as its own row rather than an optional group in the one above, because
+    the two differ in `by` — and a card that fired off its own controller's Giant Growth would be a
+    different card from the one printed.
+  */
+  {
+    prologue: (self) => new RegExp(
+      `^When(?:ever)? ${self} becomes the target of a spell or ability an opponent controls, (.+)$`,
+      'i',
+    ),
+    on: [{ kind: 'targeted', by: 'opponent' }],
   },
   /*
     **The block family: the per-creature half is read (D480), the batched half is not.**
@@ -15670,6 +15725,21 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
+  /*
+    "Mill two cards" with nobody named, which means **you** (CR 701.13a) — Cephalid Aristocrat's
+    tail and Cephalid Illusionist's. Its own branch rather than an optional group on the targeted
+    reader below, because the two differ in who does it and in whether anything is targeted: a
+    reader that defaulted the target to the controller would make `target player mills two cards`
+    unable to point at an opponent.
+  */
+  const selfMill = /^mill ([\w]+) cards?$/i.exec(text);
+  if (selfMill !== null) {
+    const n = countFrom(selfMill[1]!);
+    if (n !== null && n > 0) {
+      return { effect: (c) => mill(c.state, c.controller, n) };
+    }
+  }
+
   const milled = /^(target player|target opponent) mills ([\w]+) cards?$/i.exec(text);
   if (milled !== null) {
     const n = countFrom(milled[2]!);
@@ -16948,14 +17018,28 @@ function definesSizeFromLine(line: string, name: string): Partial<CardScript> | 
  */
 function sacrificeAtEndOfTurnFromLine(line: string, name: string): Partial<CardScript> | null {
   const self = selfRef(name);
+  /*
+    **"your end step" as well as "the end step" (D514).** 25 legal cards print the second and **11**
+    the first, and until D514's `sacrifice it` clause existed the difference did not matter: neither
+    read, and a test pinned the "your" form as refused on the argument that emitting the trigger
+    without `leavesAtEndOfTurn` would be the badly played card this reader exists to avoid.
+
+    The clause reads now, so the choice is between this reader — which carries the bot hint — and the
+    generic trigger path, which does not. So the form is read here, with `of` taken from the printed
+    word rather than defaulted: `of: 'you'` and `of: 'any'` are different cards, and a creature that
+    dies only on its controller's turn survives being cast on somebody else's. The flag is right
+    either way, because it answers "will this creature still be here at end of turn" for the seat
+    that is about to attack with it, which is its controller.
+  */
   const matched = new RegExp(
-    `^At the beginning of the end step, sacrifice (?:${self}|it)$`, 'i',
+    `^At the beginning of (the|your) end step, sacrifice (?:${self}|it)$`, 'i',
   ).exec(plain(line).trim().replace(/\.\s*$/, ''));
   if (matched === null) return null;
+  const whose = matched[1]!.toLowerCase() === 'your' ? 'you' as const : 'any' as const;
   return {
     leavesAtEndOfTurn: true,
     triggers: [{
-      on: { kind: 'step', step: 'end', of: 'any' },
+      on: { kind: 'step', step: 'end', of: whose },
       description: `sacrifice ${name}`,
       effect: sacrificeSelf,
     }],

@@ -4149,13 +4149,19 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(ids(mine, 0 as SeatIndex, 'graveyard')).toContain(bolt);
     });
 
-    it('does not read the same sacrifice behind a different prologue', () => {
+    it('reads the same sacrifice behind a different prologue WITHOUT the flag (D514)', () => {
       /*
-        The restriction the flag forces. "Sacrifice ~" is not a clause this module reads on its
-        own, because behind another prologue it does not mean the permanent leaves at *end of
-        turn* — and emitting the trigger there with the flag would be a lie about the card, while
-        emitting it without the flag would be the badly played card above. So the pair is read and
-        anything else is refused.
+        **This row was a refusal until D514.** "Sacrifice ~" had no clause reader, so behind any
+        other prologue the line went unread — and the argument for leaving it that way was that
+        emitting the trigger *with* `leavesAtEndOfTurn` would be a lie about the card while emitting
+        it without the flag would be the badly played creature this pair reader exists to avoid.
+
+        The clause reads now (**15 legal cards** print `When ~ becomes the target of a spell or
+        ability, sacrifice it` alone), so the line reads too. What has to stay true is the half that
+        was never about the clause: a sacrifice behind another prologue does **not** mean the
+        permanent leaves at end of turn, so the flag is absent. 28 legal cards print
+        `Whenever ~ attacks, sacrifice …`, and a bot that held one back to protect a creature it was
+        about to sacrifice anyway would be reading a flag the card does not have.
       */
       const other = compileCard({
         name: 'Doomed Hound', type_line: 'Creature — Dog', mana_cost: '{R}', cmc: 1, colors: ['R'],
@@ -4163,19 +4169,32 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         oracle_text: 'Whenever Doomed Hound attacks, sacrifice Doomed Hound.',
       });
       expect(other.ok).toBe(true);
-      if (other.ok) expect(other.script).toBeUndefined();
+      if (!other.ok) return;
+      expect(other.unread.map((u) => u.line)).toEqual([]);
+      expect(field(other.script, 'leavesAtEndOfTurn')).toBeUndefined();
+      const trigger = triggerOf(other.script);
+      expect(trigger?.on.kind).toBe('attacks');
     });
 
-    it('does not read "your end step" as "the end step"', () => {
-      // `of: 'you'` and `of: 'any'` are different cards: a creature that dies only on your own
-      // turn survives being cast on somebody else's, which is not what Ball Lightning does.
+    it('reads "your end step" as its own turn, with the flag (D514)', () => {
+      /*
+        Also a refusal until D514, and for the same reason — and once the clause read, the choice was
+        between this reader, which carries the bot hint, and the generic trigger path, which does
+        not. **11 legal cards** print the "your" form against 25 for "the", and the two are different
+        cards: `of: 'you'` survives being cast on somebody else's turn and `of: 'any'` does not. So
+        the word is read rather than defaulted.
+      */
       const mine = compileCard({
         name: 'Polite Lightning', type_line: 'Creature — Elemental', mana_cost: '{R}', cmc: 1,
         colors: ['R'], power: '6', toughness: '1',
         oracle_text: 'At the beginning of your end step, sacrifice Polite Lightning.',
       });
       expect(mine.ok).toBe(true);
-      if (mine.ok) expect(mine.script).toBeUndefined();
+      if (!mine.ok) return;
+      expect(mine.unread.map((u) => u.line)).toEqual([]);
+      expect(field(mine.script, 'leavesAtEndOfTurn')).toBe(true);
+      expect(JSON.stringify(triggerOf(mine.script)?.on))
+        .toEqual(JSON.stringify({ kind: 'step', step: 'end', of: 'you' }));
     });
   });
 
@@ -12573,12 +12592,34 @@ describe('the threshold quoted tail: a card that grants itself an ability (D513)
     expect(read.script?.grantedTriggers).toHaveLength(1);
   });
 
+  it('reads Boneshard Slasher, which D513 could not and D514 could', () => {
+    /*
+      **A refusal row that became a reading one increment later**, and worth keeping as the pair.
+      D513 shipped with this card unread because its quotation — "When ~ becomes the target of a
+      spell or ability, sacrifice it" — had no reader; D514 read that trigger and its tail for the
+      15 cards that print it bare, and the quoted copy came with them for nothing. The whole-line
+      rule is why it works at all: the pump in front of the quote was always readable, and refusing
+      the line rather than keeping the half it understood is what left the card correct to finish
+      rather than wrong and finished.
+    */
+    const read = card('Boneshard Slasher', 'Flying\nThreshold — As long as there are seven or more '
+      + 'cards in your graveyard, Boneshard Slasher gets +2/+2 and has "When Boneshard Slasher '
+      + 'becomes the target of a spell or ability, sacrifice it."');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.grantedTriggers).toHaveLength(1);
+    const threshold = thresholdOf(read);
+    expect(threshold?.effect.grants).toEqual([0]);
+    expect([threshold?.effect.power, threshold?.effect.toughness]).toEqual([2, 2]);
+  });
+
   it.each([
-    ['Boneshard Slasher: a "becomes the target" trigger, which no reader has yet',
-      'Boneshard Slasher gets +2/+2 and has "When Boneshard Slasher becomes the target of a spell '
-      + 'or ability, sacrifice it."'],
     ['Gloomdrifter: an ETB that pumps a colour-defined group',
       'Gloomdrifter has "When Gloomdrifter enters, nonblack creatures get -2/-2 until end of turn."'],
+    ['Hunting Grounds: a trigger on an opponent casting a spell',
+      'Hunting Grounds has "Whenever an opponent casts a spell, you may put a creature card from '
+      + 'your hand onto the battlefield."'],
   ])('refuses the whole line when the quoted text does not read: %s', (_why, tail) => {
     /*
       D487 again, and the reason it matters more on this shape than on most: the pump in front of the
@@ -12610,5 +12651,92 @@ describe('the threshold quoted tail: a card that grants itself an ability (D513)
     expect(threshold?.effect.keywords).toEqual(['flying']);
     expect(threshold?.effect.grants).toBeUndefined();
     expect(threshold?.effect.grantsAbilities).toBeUndefined();
+  });
+});
+
+describe('the Illusion drawback and the bare mill (D514)', () => {
+  /*
+    `When ~ becomes the target of a spell or ability, sacrifice it.` — **15 legal cards**, 13 of them
+    with no other unread line, and three small things in the way of all of them:
+
+      1. the prologue read `Whenever` and not `When`. CR 603.1 makes no distinction; the split is
+         historical, the old Illusion drawback saying "When" and the modern upside "Whenever";
+      2. the **opponent-restricted** printing had no row at all — `… an opponent controls`, which is
+         what Old Fat Spider, Battle Mammoth and Ruric Thar print, and which differs in `by`;
+      3. the tail `sacrifice it` had nowhere to go. `sacrifice <permanent>` elsewhere in this file is
+         the sacrifice the controller *chooses*, so sending this clause there would ask a player
+         which of their creatures to sacrifice when the card names one.
+
+    Both additions are **clauses rather than lines**, which is why the coverage jump was five times
+    the bucket: `sacrifice it` and `mill N cards` turn up in ETB triggers, activated abilities and
+    spells as readily as in this trigger.
+  */
+  const creature = (
+    name: string, text: string, typeLine = 'Creature — Illusion', cost = '{1}{U}',
+    power = '2', toughness = '1',
+  ) => compileCard({
+    name, type_line: typeLine, mana_cost: cost, cmc: 2, colors: ['U'],
+    layout: 'normal', power, toughness, oracle_text: text,
+  });
+
+  it.each([
+    ['Frost Walker', 'When Frost Walker becomes the target of a spell or ability, sacrifice it.'],
+    ['Gossamer Phantasm',
+      'Flying\nWhen Gossamer Phantasm becomes the target of a spell or ability, sacrifice it.'],
+    ['Illusionary Servant',
+      'Flying\nWhen Illusionary Servant becomes the target of a spell or ability, sacrifice it.'],
+  ])('reads printed %s whole', (name, text) => {
+    const read = creature(name as string, text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    const trigger = read.script?.triggers?.find((t) => t.on.kind === 'targeted');
+    expect(trigger).toBeDefined();
+    /*
+      **`by: 'any'`, which is the whole of the card.** The event's default is `opponent`, because
+      ward was the only thing that used it — and an Illusion that survived its own controller's
+      Giant Growth would be a strictly better creature than the one printed.
+    */
+    expect(trigger?.on.kind === 'targeted' ? trigger.on.by : null).toBe('any');
+  });
+
+  it('reads the opponent-restricted printing, which is a different trigger', () => {
+    const read = creature('Old Fat Spider', 'Reach\nThis creature can\'t be blocked by creatures '
+      + 'with power 2 or less.\nWhenever this creature becomes the target of a spell or ability an '
+      + 'opponent controls, draw a card.', 'Creature — Spider', '{4}{G}{G}', '6', '7');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    const trigger = read.script?.triggers?.find((t) => t.on.kind === 'targeted');
+    expect(trigger?.on.kind === 'targeted' ? trigger.on.by : null).toBe('opponent');
+  });
+
+  it('reads a bare mill as the controller milling (CR 701.13a)', () => {
+    const read = creature('Cephalid Aristocrat', 'Whenever Cephalid Aristocrat becomes the target '
+      + 'of a spell or ability, mill two cards.', 'Creature — Octopus Noble', '{4}{U}', '3', '3');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers).toHaveLength(1);
+  });
+
+  it.each([
+    ['an optional draw, which needs a "you may" gate (#337)',
+      'Whenever Battle Mammoth becomes the target of a spell or ability an opponent controls, you '
+      + 'may draw a card.'],
+    ['a sacrifice with a price attached, which is echo\'s shape (#196)',
+      'Whenever Cursed Monstrosity becomes the target of a spell or ability, sacrifice it unless '
+      + 'you discard a land card.'],
+  ])('leaves the neighbour unread: %s', (_why, text) => {
+    /*
+      The two tails beside the one this increment read, pinned so the next person measuring the
+      family sees where the line is. Neither is a reading this compiler has: the first needs the
+      optional gate #337 is about, the second a cost vocabulary (the 44-card `unless you <cost>`
+      family the sacrifice docblock counts).
+    */
+    const read = creature('Cursed Monstrosity', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
   });
 });

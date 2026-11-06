@@ -34764,3 +34764,90 @@ The bucket is down from 17 quoted tails to 7, and the seven name their own next 
 "becomes the target of a spell or ability" trigger (Boneshard Slasher, and the 13-card Frost Walker
 bucket is the same shape), an ETB that pumps a colour-defined group (Gloomdrifter), an opponent-cast
 trigger (Hunting Grounds), and an optional counter (Chlorophant).
+
+## D514 — The Illusion drawback, and what a clause is worth next to a line
+
+`When Frost Walker becomes the target of a spell or ability, sacrifice it.` — **15 legal cards**, 13
+of them with no other unread line, and the whole family was held up by three small things.
+
+### Three small things
+
+1. **The prologue read `Whenever` and not `When`.** CR 603.1 makes no distinction; the split is
+   historical — the old Illusion drawback says "When", the modern upside printings say "Whenever".
+   One word was read and the other was not.
+2. **The opponent-restricted printing had no row at all.** `… becomes the target of a spell or
+   ability an opponent controls` is what Old Fat Spider, Battle Mammoth and Ruric Thar print, and it
+   differs in `by` — written as its own row rather than an optional group, because a card that fired
+   off its own controller's Giant Growth would be a different card.
+3. **The tail `sacrifice it` had nowhere to go.** `sacrifice <permanent>` elsewhere in the file is
+   the sacrifice the **controller chooses** from their battlefield; sending this clause there would
+   ask a player which of their creatures to sacrifice when the card names one.
+
+Also read: `mill N cards` with nobody named, which means the controller (CR 701.13a) — Cephalid
+Aristocrat and Cephalid Illusionist.
+
+### `by: 'any'` is the whole of the card
+
+The event's default is `by: 'opponent'`, because **ward** was the only thing that used it and ward
+never triggers off its controller's own spells. The Illusion drawback has no "an opponent casts" in
+it: you cannot pump your own Illusion, and that is the card. So the unrestricted row says `any` out
+loud, and the two runtime rows are each other's discriminator — the Illusion dies to its own
+controller's Giant Growth, and Old Fat Spider draws **nothing** off its controller's.
+
+### What a clause is worth next to a line
+
+| | before D514 | after |
+| --- | --- | --- |
+| printed lines read | 21,780 / 56,421 (38.6%) | **21,901 / 56,421 (38.8%)** |
+| cards with a compiled script | 10,932 | **11,033** |
+| cards with every printed line read | 6,728 | **6,791** |
+| of those, needing no script at all | 1,191 | 1,191 |
+
+**63 cards finished and 101 new scripts** — four times the bucket this increment set out to read,
+because `sacrifice it` and `mill N cards` are **clauses rather than lines**: they turn up in ETB
+triggers, activated abilities and spells as readily as in the trigger that led here. The last few
+increments finished cards without adding scripts; this one did both, and the difference is the level
+the reading sits at.
+
+### Two tests that were refusals, and one from the increment before
+
+The clause's arrival changed three standing rows, and each one is worth more as a pair than as a
+quiet edit:
+
+- **`does not read the same sacrifice behind a different prologue`** asserted that `Whenever ~
+  attacks, sacrifice ~` went unread. It reads now (28 legal cards print that shape), and what had to
+  stay true is the other half: the trigger carries **no** `leavesAtEndOfTurn`, because a sacrifice
+  behind another prologue is not a creature that leaves at end of turn, and a bot holding one back
+  to protect a creature it is about to sacrifice would be reading a flag the card does not have.
+- **`does not read "your end step" as "the end step"`** was a refusal for the same reason, and once
+  the clause read, the choice was between the pair reader that carries the bot hint and the generic
+  trigger path that does not. So `At the beginning of your end step, sacrifice ~` is read **here**,
+  with `of: 'you'` taken from the printed word rather than defaulted — 11 legal cards print it
+  against 25 for "the", and the two are different cards. Coverage did not move for this one: the
+  generic path already read those lines. What moved is the hint.
+- **D513's Boneshard Slasher refusal** became a reading one increment later: its threshold
+  quotation is this exact trigger, so it came along for nothing. The row is kept as a positive
+  assertion, with the pair recorded — refusing the whole line in D513 is what left the card correct
+  to finish rather than wrong and finished (D487).
+
+### The tests, and the break run
+
+7 compile tests (the three Illusion printings through one `it.each` with the `by: 'any'` assertion,
+the opponent-restricted row, the bare mill, and two refusal rows for the neighbours that stay
+unread: an optional draw, which needs #337's "you may" gate, and `sacrifice it unless you discard a
+land card`, which needs the 44-card cost vocabulary).
+
+6 runtime tests through `customDeck`: the Walker sacrificed by its own controller's spell and by an
+opponent's; a spell that targets nothing leaving it alone (the control that makes those two about
+*targeting* rather than about a spell resolving); the Spider's opposite restriction in both
+directions; the bare mill milling its controller with the Octopus still standing; and the CR 400.7
+guard — a permanent already gone when the trigger resolves does nothing rather than being dragged
+back out of exile.
+
+One test-writing correction, and the engine was right: the first version called `tapAllLands` for
+seat 1 on seat 0's turn and was refused for want of priority. An instant is castable with priority on
+anybody's turn and `payFrom` taps the caster's own lands, so the row passes priority and casts.
+
+**10 breaks over `scripts.ts`, 10 of 10 caught** — including both halves of each `by` (the
+unrestricted row taking the default, and the restricted row taking `any`), the missing zone guard,
+the wrong permanent sacrificed, and the mill reading the wrong number or the wrong player.

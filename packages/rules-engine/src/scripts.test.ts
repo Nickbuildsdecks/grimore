@@ -31021,3 +31021,169 @@ describe('the threshold quoted tail, at the table (D513)', () => {
     expect(quiet.pendingDecision).toBeNull();
   });
 });
+
+describe('the Illusion drawback, at the table (D514)', () => {
+  /*
+    Three real printings through `customDeck`'s `data`, and the rule the reader test cannot ask:
+    **whose** spell sets it off.
+
+      Frost Walker         {1}{U}   4/1  When ~ becomes the target of a spell or ability, sacrifice it.
+      Old Fat Spider       {4}{G}{G} 6/7 Whenever ~ … an opponent controls, draw a card.
+      Cephalid Aristocrat  {4}{U}   3/3  Whenever ~ becomes the target …, mill two cards.
+
+    The two halves are deliberately opposite: the Illusion fires off **either** player's spell
+    (`by: 'any'`) and the Spider only off an opponent's (`by: 'opponent'`), so each is the other's
+    discriminator — a reader that took the event's default would make one of them a different card.
+  */
+  const DATA = [
+    {
+      name: 'Frost Walker', type_line: 'Creature — Elemental', mana_cost: '{1}{U}', cmc: 2,
+      colors: ['U'], layout: 'normal', power: '4', toughness: '1',
+      oracle_text: 'When Frost Walker becomes the target of a spell or ability, sacrifice it.',
+    },
+    {
+      name: 'Old Fat Spider', type_line: 'Creature — Spider', mana_cost: '{4}{G}{G}', cmc: 6,
+      colors: ['G'], layout: 'normal', power: '6', toughness: '7',
+      oracle_text: 'Reach\nWhenever this creature becomes the target of a spell or ability an '
+        + 'opponent controls, draw a card.',
+    },
+    {
+      name: 'Cephalid Aristocrat', type_line: 'Creature — Octopus Noble', mana_cost: '{4}{U}',
+      cmc: 5, colors: ['U'], layout: 'normal', power: '3', toughness: '3',
+      oracle_text: 'Whenever Cephalid Aristocrat becomes the target of a spell or ability, mill '
+        + 'two cards.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'illusions',
+      name: 'Illusions',
+      entries: [
+        ...DATA.map((c) => ({ name: c.name, count: 3 })),
+        // Two pool cards: a spell that points at a creature, and one that does not.
+        { name: 'Giant Growth', count: 4 },
+        { name: 'Harmonize', count: 2 },
+        { name: 'Island', count: 20 },
+        { name: 'Forest', count: 25 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Cephalid Aristocrat', 'Frost Walker', 'Old Fat Spider']);
+    return list.deck;
+  };
+
+  const table = (
+    mine: readonly string[], theirs: readonly string[] = [],
+    myHand: readonly string[] = [], theirHand: readonly string[] = [],
+  ) => advanceTo(arena({
+    decks: { 0: 'illusions', 1: 'illusions' },
+    deckSpecs: { illusions: deck() },
+    battlefield: { 0: [...mine], 1: [...theirs] },
+    hands: { 0: [...myHand], 1: [...theirHand] },
+    turn: 4, firstSeat: 0,
+  }), 'precombat-main');
+
+  const LANDS = ['Island', 'Island', 'Forest', 'Forest', 'Forest'];
+
+  it('sacrifices itself when its own controller points a spell at it', () => {
+    /*
+      **The `by: 'any'` row.** This is the one a reader that took the event's default would fail,
+      and it is the whole point of the card: you cannot pump an Illusion.
+    */
+    let s = tapAllLands(table(['Frost Walker', ...LANDS], [], ['Giant Growth']), 0);
+    const walker = find(s, 0, 'battlefield', 'Frost Walker');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: walker }],
+    } as Action)));
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Frost Walker');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Frost Walker');
+  });
+
+  it('and when an opponent points one at it', () => {
+    /*
+      Seat 1 casts on seat 0's turn, so priority has to get there first — an instant is castable with
+      priority on anybody's turn (CR 117.1a) and `payFrom` taps seat 1's own lands for it, which is
+      why there is no `tapAllLands` here: the first version of this row called it for seat 1 and was
+      refused for want of priority, which is the engine being right.
+    */
+    let s = table(['Frost Walker', ...LANDS], [...LANDS], [], ['Giant Growth']);
+    const walker = find(s, 0, 'battlefield', 'Frost Walker');
+    s = apply(s, { type: 'auto:pass', by: 0 } as Action);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: walker }],
+    } as Action)));
+    expect(namesIn(s, 0, 'graveyard')).toContain('Frost Walker');
+  });
+
+  it('a spell that points at nothing leaves it alone, which is the control', () => {
+    // Harmonize draws three and targets nothing, so the Walker is still there afterwards: the rows
+    // above are about being *targeted* rather than about a spell resolving.
+    let s = tapAllLands(table(['Frost Walker', ...LANDS, 'Forest', 'Forest'], [], ['Harmonize']), 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Harmonize'),
+    } as Action)));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Frost Walker');
+  });
+
+  it("the Spider's opponent-only version ignores its controller's own spell", () => {
+    /*
+      The other direction, and the reason the two printings are separate rows: the Spider draws off
+      an opponent's spell and draws **nothing** off its controller's. A single reader with the
+      default `by` would have made one of these two cards wrong whichever default it took.
+    */
+    let mine = tapAllLands(table(['Old Fat Spider', ...LANDS], [], ['Giant Growth']), 0);
+    const spider = find(mine, 0, 'battlefield', 'Old Fat Spider');
+    const before = [...ids(mine, 0, 'hand')].length;
+    mine = drain(passBoth(apply(mine, {
+      type: 'auto:cast', by: 0, card: find(mine, 0, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: spider }],
+    } as Action)));
+    // One card left the hand and nothing was drawn.
+    expect([...ids(mine, 0, 'hand')].length).toBe(before - 1);
+
+    let theirs = table(['Old Fat Spider', ...LANDS], [...LANDS], [], ['Giant Growth']);
+    const held = [...ids(theirs, 0, 'hand')].length;
+    theirs = apply(theirs, { type: 'auto:pass', by: 0 } as Action);
+    theirs = drain(passBoth(apply(theirs, {
+      type: 'auto:cast', by: 1, card: find(theirs, 1, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: find(theirs, 0, 'battlefield', 'Old Fat Spider') }],
+    } as Action)));
+    expect([...ids(theirs, 0, 'hand')].length).toBe(held + 1);
+  });
+
+  it('a bare mill mills its own controller', () => {
+    let s = tapAllLands(table(['Cephalid Aristocrat', ...LANDS], [], ['Giant Growth']), 0);
+    const before = [...ids(s, 0, 'graveyard')].length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Cephalid Aristocrat') }],
+    } as Action)));
+    // Two milled plus the Growth itself, and the Octopus is still standing: it is not an Illusion.
+    expect([...ids(s, 0, 'graveyard')].length).toBe(before + 3);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Cephalid Aristocrat');
+  });
+
+  it('does nothing when the permanent has already left (CR 400.7)', () => {
+    /*
+      The zone guard, which is not hypothetical on this card: these creatures are sacrificed in
+      response to a spell, and the spell may have killed them first. The trigger is on the stack and
+      the Walker is moved out from under it by hand — the ability does as much as it can, which is
+      nothing, rather than dragging the card out of the graveyard or throwing.
+    */
+    let s = tapAllLands(table(['Frost Walker', ...LANDS], [], ['Giant Growth']), 0);
+    const walker = find(s, 0, 'battlefield', 'Frost Walker');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: walker }],
+    } as Action);
+    s = apply(s, { type: 'card:move', by: 0, card: walker, toZone: 'exile' });
+    s = drain(passBoth(s));
+    expect(namesIn(s, 0, 'exile')).toContain('Frost Walker');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Frost Walker');
+  });
+});
