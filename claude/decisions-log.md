@@ -32455,3 +32455,25 @@ The part worth keeping is in both files' comments now: **"long enough to matter"
 list.** It grows with the suite, so the response when this error reappears is to read the per-test
 durations in the failing run and give the yield to whichever long body lacks one — not to re-run, and
 not to read 2637 passing tests as a pass.
+
+### Verified at the table
+
+Gate green on the third run: `GATE_RC=0`, no unhandled errors, every suite passing.
+
+Pod sweep on a fresh seed set, run on the pushed commit (`0f01863 clean`, `dist` built from it):
+
+```
+GAMES=40 SEED0=34601
+Games: 40    finished 40
+Of the games that finished: 57.0 turns and 283 moves on average
+Per deck of 100 (160 decks built):
+  distinct cards the engine was given a script for: 23.5
+  cards with at least one line nothing could read:  50.3
+  cards playable only because of the printed data:  61.9
+  cardboard — nothing could make them playable:     0.5
+Every game reached a finish, with no throw and no stall.
+```
+
+40 of 40, as the three previous sweeps (34001, 34201, 34401) were. These statics are restrictions
+rather than new actions, so the thing they could have broken is a stall — a board where every
+creature must attack and none may block is one a naive implementation can wedge. It did not.
