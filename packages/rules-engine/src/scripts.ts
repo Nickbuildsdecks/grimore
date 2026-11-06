@@ -11821,10 +11821,20 @@ function namesItsGrantor(quoted: string, name: string): boolean {
   return short !== null && short.length > 0 && text.includes(short.toLowerCase());
 }
 
-function grantedTriggerFrom(quoted: string, name: string): readonly TriggerDef[] | null {
-  // D511 argued no printed quotation names its grantor; D512 found two that do, among the activated
-  // ones. The guard is applied to both readers rather than to the one where a card turned up.
-  if (namesItsGrantor(quoted, name)) return null;
+function grantedTriggerFrom(
+  quoted: string, name: string, selfGrant = false,
+): readonly TriggerDef[] | null {
+  /*
+    D511 argued no printed quotation names its grantor; D512 found two that do, among the activated
+    ones. The guard is applied to both readers rather than to the one where a card turned up.
+
+    **`selfGrant` turns it off, and the asymmetry is the point (D513).** The guard exists because the
+    compiler binds a card's own name to the ability's *source*, and for an attachment the source is
+    the host rather than the Aura. For a card granting **itself** an ability — threshold's "~ has
+    'When ~ becomes the target of a spell or ability, sacrifice it'" — the source *is* the card, so
+    the binding is exactly right and refusing would throw away 8 of those 17 printings.
+  */
+  if (!selfGrant && namesItsGrantor(quoted, name)) return null;
   const read = lineScriptFor(quoted.trim(), name);
   if (read === null) return null;
   const { triggers, ...rest } = read;
@@ -11855,8 +11865,11 @@ function grantedTriggerFrom(quoted: string, name: string): readonly TriggerDef[]
  * same reason one step further out: CR 606.3 gives it restrictions that are about a planeswalker,
  * and nothing prints one inside a grant.
  */
-function grantedAbilityFrom(quoted: string, name: string): readonly AbilityDef[] | null {
-  if (namesItsGrantor(quoted, name)) return null;
+function grantedAbilityFrom(
+  quoted: string, name: string, selfGrant = false,
+): readonly AbilityDef[] | null {
+  // See `grantedTriggerFrom` for why a self grant may name itself and an attachment may not (D513).
+  if (!selfGrant && namesItsGrantor(quoted, name)) return null;
   const read = lineScriptFor(quoted.trim(), name);
   if (read === null) return null;
   const { abilities, ...rest } = read;
@@ -16998,7 +17011,12 @@ function sacrificeAtEndOfTurnFromLine(line: string, name: string): Partial<CardS
  * `grantedKeywordList` already handles, reached here one word at a time.
  */
 function thresholdPredicate(predicate: string): PumpOptions | null {
-  const parts = predicate.trim().split(/\s+and\s+/).map((part) => part.trim())
+  /*
+    Commas as well as "and", because the three-or-more-part printings use both: the Possessed cycle
+    prints "gets +1/+1, is black, and has …" and Wayward Angel prints four parts. A trailing comma
+    is left behind by the quote split in `thresholdEffect`, which the empty filter below drops.
+  */
+  const parts = predicate.trim().split(/,\s*|\s+and\s+/).map((part) => part.trim())
     .filter((part) => part !== '');
   if (parts.length === 0) return null;
   let out: PumpOptions = {};
@@ -17010,6 +17028,19 @@ function thresholdPredicate(predicate: string): PumpOptions | null {
       const bonus = sizeBonus(Number(pump[1]), Number(pump[2]));
       if (bonus === null) return null;
       out = { ...out, ...bonus };
+      continue;
+    }
+    /*
+      "is black" — a colour change, which is layer 5 and the one part of this grammar that is not
+      about size or keywords (D513). Five legal cards print it, all of them the Possessed cycle and
+      Wayward Angel, and every one pairs it with a quoted ability: a creature that got the pump and
+      the ability but stayed its printed colour would be a different card against its own removal.
+    */
+    const becomes = /^is (\w+)$/.exec(low);
+    if (becomes !== null) {
+      const colour = COLOUR_WORDS[becomes[1]!];
+      if (colour === undefined) return null;
+      out = { ...out, setColors: [colour] };
       continue;
     }
     const protection = /^has protection from (\w+)$/.exec(low);
@@ -17030,6 +17061,64 @@ function thresholdPredicate(predicate: string): PumpOptions | null {
   }
   if (keywords.length > 0) out = { ...out, keywords };
   return Object.keys(out).length === 0 ? null : out;
+}
+
+/**
+ * A threshold predicate **and the ability it may quote** (D513).
+ *
+ * `thresholdPredicate`'s wrapper, and the reason it is a wrapper rather than another part of that
+ * splitter: the quotation contains commas and "and", and the splitter would shred it — the same
+ * lesson `attachmentBonus` learned in D511. So the quote comes off the end first and whatever is
+ * left goes through the splitter exactly as before.
+ *
+ * ## The queue head, and what it actually was
+ *
+ * `Threshold — As long as there are seven or more cards in your graveyard, …` is the top bucket of
+ * `one-away.mjs`: 40 legal cards print it, **22 are exactly one line short, and 17 of those have a
+ * quoted tail**. Three printed shapes, all of them a card granting *itself* an ability:
+ *
+ *     Cephalid Sage       ~ has "When ~ enters, draw three cards, then discard two cards."
+ *     Fledgling Dragon    ~ gets +3/+3 and has "{R}: ~ gets +1/+0 until end of turn."
+ *     Boneshard Slasher   ~ gets +2/+2 and has "When ~ becomes the target of a spell or ability, sacrifice it."
+ *
+ * Nothing new is needed below this function: D511 built the recursive quoted reader, D512 added the
+ * activated table beside it, and `ContinuousEffect.while` has carried the threshold condition since
+ * D502. This is those three parts meeting — which is why the grant rides on the **static's** effect
+ * here rather than on an attachment's bonus, and why the scope stays `self`.
+ *
+ * ## `selfGrant`, which is the one thing that could not be copied
+ *
+ * Both quoted readers refuse a quotation that names the card granting it, because the compiler binds
+ * a card's own name to the ability's source and for an attachment that is the host (D512). Here the
+ * grantor *is* the source, so the flag turns the guard off — and 8 of the 17 printings name
+ * themselves inside the quote, so a copy of the attachment branch would have refused half the bucket
+ * and looked like a reading decision.
+ */
+function thresholdEffect(predicate: string, name: string): {
+  readonly effect: PumpOptions;
+  readonly grantedTriggers?: readonly TriggerDef[];
+  readonly grantedAbilities?: readonly AbilityDef[];
+} | null {
+  const quoted = /^(?:(.*?)\s+and\s+)?has\s+"([^"]+)"$/i.exec(predicate.trim());
+  if (quoted === null) {
+    const effect = thresholdPredicate(predicate);
+    return effect === null ? null : { effect };
+  }
+  const triggers = grantedTriggerFrom(quoted[2]!, name, true);
+  const abilities = triggers !== null ? null : grantedAbilityFrom(quoted[2]!, name, true);
+  if (triggers === null && abilities === null) return null;
+  /*
+    The head of the sentence, when there is one: "gets +3/+3 and has …" is a pump *and* a grant, and
+    both halves have to read or the line does not (D487). With no head the effect is empty, which is
+    a real reading — Cephalid Sage's threshold does nothing but hand over an ability.
+  */
+  const head = quoted[1] === undefined ? null : thresholdPredicate(quoted[1]);
+  if (quoted[1] !== undefined && head === null) return null;
+  return {
+    effect: head ?? {},
+    ...(triggers === null ? {} : { grantedTriggers: triggers }),
+    ...(abilities === null ? {} : { grantedAbilities: abilities }),
+  };
 }
 
 function conditionalStaticFromLine(line: string, name: string): Partial<CardScript> | null {
@@ -17092,13 +17181,24 @@ function conditionalStaticFromLine(line: string, name: string): Partial<CardScri
     const amount = countFrom(thresholdLead !== null ? thresholdLead[1]! : thresholdTrail![2]!);
     const predicate = thresholdLead !== null ? thresholdLead[2]! : thresholdTrail![1]!;
     if (amount === null || amount <= 0) return null;
-    const effect = thresholdPredicate(predicate);
-    if (effect === null) return null;
+    const read = thresholdEffect(predicate, name);
+    if (read === null) return null;
     return {
       statics: [{
         scope: 'self',
-        effect: { ...effect, while: { kind: 'controller-graveyard', atLeast: amount } },
+        effect: {
+          ...read.effect,
+          while: { kind: 'controller-graveyard', atLeast: amount },
+          ...(read.grantedTriggers === undefined
+            ? {}
+            : { grants: read.grantedTriggers.map((_, i) => i) }),
+          ...(read.grantedAbilities === undefined
+            ? {}
+            : { grantsAbilities: read.grantedAbilities.map((_, i) => i) }),
+        },
       }],
+      ...(read.grantedTriggers === undefined ? {} : { grantedTriggers: read.grantedTriggers }),
+      ...(read.grantedAbilities === undefined ? {} : { grantedAbilities: read.grantedAbilities }),
     };
   }
 

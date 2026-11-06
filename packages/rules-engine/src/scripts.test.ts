@@ -30841,3 +30841,183 @@ describe('a quoted activated ability, at the table (D512)', () => {
     }
   });
 });
+
+describe('the threshold quoted tail, at the table (D513)', () => {
+  /*
+    Three real printings through `customDeck`'s `data`, and the half a reader test cannot reach: the
+    ability has to **come and go with the condition**. A static installed once as the creature
+    entered would pass every compile test in the block above and be a different card.
+
+      Fledgling Dragon  {2}{R}{R}  gets +3/+3 and has "{R}: Fledgling Dragon gets +1/+0 until end of turn."
+      Possessed Aven    {2}{U}{U}  gets +1/+1, is black, and has "{2}{B}, {T}: Destroy target blue creature."
+      Cephalid Sage     {3}{U}     has "When Cephalid Sage enters, draw three cards, then discard two cards."
+
+    Seven cards in the graveyard is the condition, so each row is run twice — at six and at seven —
+    because "it works at seven" and "it is always on" are the same reading of one board.
+  */
+  const DATA = [
+    {
+      name: 'Fledgling Dragon', type_line: 'Creature — Dragon', mana_cost: '{2}{R}{R}', cmc: 4,
+      colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Flying\nThreshold — As long as there are seven or more cards in your '
+        + 'graveyard, Fledgling Dragon gets +3/+3 and has "{R}: Fledgling Dragon gets +1/+0 until '
+        + 'end of turn."',
+    },
+    {
+      name: 'Possessed Aven', type_line: 'Creature — Bird Soldier Horror', mana_cost: '{2}{U}{U}',
+      cmc: 4, colors: ['U'], layout: 'normal', power: '3', toughness: '3',
+      oracle_text: 'Flying\nThreshold — As long as there are seven or more cards in your '
+        + 'graveyard, Possessed Aven gets +1/+1, is black, and has "{2}{B}, {T}: Destroy target '
+        + 'blue creature."',
+    },
+    {
+      name: 'Cephalid Sage', type_line: 'Creature — Octopus', mana_cost: '{3}{U}', cmc: 4,
+      colors: ['U'], layout: 'normal', power: '2', toughness: '3',
+      oracle_text: 'Threshold — As long as there are seven or more cards in your graveyard, '
+        + 'Cephalid Sage has "When Cephalid Sage enters, draw three cards, then discard two cards."',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'threshold-grants',
+      name: 'Threshold Grants',
+      entries: [
+        ...DATA.map((c) => ({ name: c.name, count: 3 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Mountain', count: 16 },
+        { name: 'Island', count: 16 },
+        { name: 'Swamp', count: 15 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Cephalid Sage', 'Fledgling Dragon', 'Possessed Aven']);
+    return list.deck;
+  };
+
+  /** A board with `fill` cards in seat 0's graveyard — six is below threshold, seven is at it. */
+  const table = (
+    battlefield: readonly string[], fill: number, hand: readonly string[] = [],
+    opponent: readonly string[] = ['Grizzly Bears'],
+  ) => advanceTo(arena({
+    decks: { 0: 'threshold-grants', 1: 'threshold-grants' },
+    deckSpecs: { 'threshold-grants': deck() },
+    battlefield: { 0: [...battlefield], 1: [...opponent] },
+    graveyard: { 0: Array.from({ length: fill }, () => 'Island') },
+    hands: { 0: [...hand] },
+    turn: 4, firstSeat: 0,
+  }), 'precombat-main');
+
+  const granted = (state: GameState, card: string) => legalActions(state, 0 as SeatIndex)
+    .plays.filter((play) => play.kind === 'activate' && play.card === card
+      && play.grantedBy !== undefined);
+
+  const LANDS = ['Mountain', 'Mountain', 'Swamp', 'Swamp', 'Island', 'Island'];
+
+  it("the Dragon's granted ability is offered at seven cards and not at six", () => {
+    const below = table(['Fledgling Dragon', ...LANDS], 6);
+    const dragonBelow = find(below, 0, 'battlefield', 'Fledgling Dragon');
+    expect(granted(below, dragonBelow)).toEqual([]);
+    // The control: the pump is off too, so the row above is about the condition and not the reader.
+    expect(characteristicsOf(below, below.instances[dragonBelow]!).power).toBe(2);
+
+    const at = table(['Fledgling Dragon', ...LANDS], 7);
+    const dragon = find(at, 0, 'battlefield', 'Fledgling Dragon');
+    const offered = granted(at, dragon);
+    expect(offered).toHaveLength(1);
+    expect(offered[0]!.grantedBy?.card).toBe('Fledgling Dragon');
+    expect(characteristicsOf(at, at.instances[dragon]!).power).toBe(5);
+  });
+
+  it('and activating it pumps the Dragon, which is the ability doing its own work', () => {
+    let s = tapAllLands(table(['Fledgling Dragon', ...LANDS], 7), 0);
+    const dragon = find(s, 0, 'battlefield', 'Fledgling Dragon');
+    const play = granted(s, dragon)[0]!;
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: dragon, abilityIndex: play.abilityIndex ?? 0,
+      grantedBy: play.grantedBy,
+    } as Action));
+    const ch = characteristicsOf(s, s.instances[dragon]!);
+    expect([ch.power, ch.toughness]).toEqual([6, 5]);
+  });
+
+  it('the ability goes away when the graveyard shrinks below the condition', () => {
+    /*
+      **The row a static installed at entry would fail.** The grant rides on a continuous effect with
+      a `while` clause, so the engine re-asks the condition every time it reads the board — and a
+      card leaving the graveyard takes the ability with it, mid-turn, with nothing to undo.
+    */
+    let s = table(['Fledgling Dragon', ...LANDS], 7);
+    const dragon = find(s, 0, 'battlefield', 'Fledgling Dragon');
+    expect(granted(s, dragon)).toHaveLength(1);
+    s = drain(apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'graveyard', 'Island'), toZone: 'library',
+      position: 'bottom',
+    }));
+    expect(granted(s, dragon)).toEqual([]);
+    expect(characteristicsOf(s, s.instances[dragon]!).power).toBe(2);
+  });
+
+  it('the Aven turns black at threshold, which its own ability depends on', () => {
+    /*
+      Layer 5 and the grant arrive on one effect, so a reader that dropped the colour would leave a
+      blue creature holding "destroy target blue creature". Both halves are asserted on one board
+      for that reason.
+    */
+    const below = table(['Possessed Aven', ...LANDS], 6);
+    const avenBelow = find(below, 0, 'battlefield', 'Possessed Aven');
+    expect(characteristicsOf(below, below.instances[avenBelow]!).colors).toEqual(['U']);
+
+    /*
+      A **blue** creature across the table, which the first version of this row left out: the ability
+      destroys a blue creature and `legalActions` does not offer a play whose target cannot be
+      filled, so with nothing blue on the board the row failed for a reason that had nothing to do
+      with the grant. Seat 1's Cephalid Sage is the target, and its own threshold is off because its
+      controller's graveyard is empty.
+    */
+    const at = table(['Possessed Aven', ...LANDS], 7, [], ['Grizzly Bears', 'Cephalid Sage']);
+    const aven = find(at, 0, 'battlefield', 'Possessed Aven');
+    expect(characteristicsOf(at, at.instances[aven]!).colors).toEqual(['B']);
+    expect(granted(at, aven)).toHaveLength(1);
+    expect(granted(at, aven)[0]!.description).toBe('{2}{B}, {T}: Destroy target blue creature.');
+  });
+
+  it('a granted ETB trigger fires for a creature that enters while the condition holds', () => {
+    /*
+      Cephalid Sage, and the one piece of ordering this family needs: the grant is a continuous
+      effect of the creature *itself*, so it has to be installed before its own enters-event is
+      collected or the card would never draw. Asserted rather than assumed — this is the row that
+      says the engine applies statics before raising the arrival.
+    */
+    let s = tapAllLands(table([...LANDS, 'Island', 'Island'], 7, ['Cephalid Sage']), 0);
+    const before = [...ids(s, 0, 'hand')].length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Cephalid Sage'),
+    } as Action)));
+    /*
+      Three drawn and the Sage itself gone from the hand — and the **discard is owed rather than
+      done**, which is how this engine handles "then discard two cards": the cards are a choice and
+      the seat is asked. That is a fact about the card's own text, not about the grant, and the row
+      says it out loud instead of asserting a net hand size that would hide it.
+    */
+    expect([...ids(s, 0, 'hand')].length).toBe(before - 1 + 3);
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.prompt).toBe('Discard two cards');
+
+    // Answered, because a question left owed is a table nobody can move at (D67).
+    const picks = (s.pendingDecision?.candidates ?? []).slice(0, 2);
+    expect(picks).toHaveLength(2);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [...picks] } as Action));
+    expect([...ids(s, 0, 'hand')].length).toBe(before - 1 + 3 - 2);
+
+    // And the control: no threshold, no trigger, no draw — the same cast on a six-card graveyard.
+    let quiet = tapAllLands(table([...LANDS, 'Island', 'Island'], 6, ['Cephalid Sage']), 0);
+    const quietBefore = [...ids(quiet, 0, 'hand')].length;
+    quiet = drain(passBoth(apply(quiet, {
+      type: 'auto:cast', by: 0, card: find(quiet, 0, 'hand', 'Cephalid Sage'),
+    } as Action)));
+    expect([...ids(quiet, 0, 'hand')].length).toBe(quietBefore - 1);
+    expect(quiet.pendingDecision).toBeNull();
+  });
+});

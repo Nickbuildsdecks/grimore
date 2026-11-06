@@ -17192,3 +17192,109 @@ bonus unclaimed.
 
 The remaining 51 refused quotations are the family's whole future: 19 of them name a target, and
 every one is a separate trigger or ability shape rather than a shared mechanism.
+
+## D513 — The threshold quoted tail, and the guard that had to be turned off
+
+`Threshold — As long as there are seven or more cards in your graveyard, Fledgling Dragon gets
++3/+3 and has "{R}: Fledgling Dragon gets +1/+0 until end of turn."` — the head of the one-away
+queue, and the increment that spends what the last two built.
+
+40 legal cards print the threshold line. **22 are exactly one line short, and 17 of those have a
+quoted tail**: the card handing *itself* an ability for as long as the condition holds. Three printed
+shapes, all of them a self grant:
+
+```
+Cephalid Sage       ~ has "When ~ enters, draw three cards, then discard two cards."
+Fledgling Dragon    ~ gets +3/+3 and has "{R}: ~ gets +1/+0 until end of turn."
+Possessed Aven      ~ gets +1/+1, is black, and has "{2}{B}, {T}: Destroy target blue creature."
+```
+
+### Nothing new under the reader
+
+D511 built the recursive quoted reader, D512 added the activated table beside it, and
+`ContinuousEffect.while` has carried the threshold condition since D502. This is those three parts
+meeting on a `scope: 'self'` static: `thresholdEffect` takes the quote off the front of the part
+splitter, reads it with the same two readers, and hangs `grants` / `grantsAbilities` on the static's
+own effect instead of on an attachment's bonus.
+
+Two things *were* new, and both are small:
+
+- **The quote comes off before the splitter runs.** A quotation contains commas and the word "and",
+  and `thresholdPredicate` splits on exactly those — the same lesson `attachmentBonus` learned in
+  D511, arriving in the one other place that splits a predicate.
+- **`is black` is a part.** Five legal cards print `gets +1/+1, is black, and has "…"` (the Possessed
+  cycle and Wayward Angel), so the splitter now splits on commas too and a colour change is a
+  readable part. It is not decoration: Possessed Aven's own granted ability destroys a **blue**
+  creature, and a reader that kept the printed colour would leave a blue creature pointing a gun at
+  itself.
+
+### The guard that had to be turned off
+
+D512 taught both quoted readers to refuse a quotation that **names the card granting it**, because
+the compiler binds a card's own name to the ability's *source* and for an attachment that is the host
+rather than the Aura — Ninja's Kunai's granted ability would otherwise have sacrificed the creature.
+
+Here the grantor **is** the source, so the same sentence that was a bug on an Aura is exactly right
+on a self grant: Fledgling Dragon's "{R}: Fledgling Dragon gets +1/+0" means the Dragon. So the
+readers take a `selfGrant` flag, and **8 of the 17 printings name themselves inside the quote** — a
+copy of the attachment branch would have refused half the bucket and looked like a reading decision
+rather than a mistake. The break run's second row is that flag, and it fails 8 tests without it.
+
+### The tests
+
+9 compile tests on real printings: Cephalid Sage (the quote as the whole predicate, with no pump at
+all — an empty bonus is a real reading), Fledgling Dragon (pump plus a self-naming activated ability
+— the `selfGrant` row), Possessed Aven (three parts including the colour change), Wayward Angel (four
+parts, the longest printing in the family), Centaur Chieftain and Pardic Arsonist as quoted triggers,
+two refusals whose inner text is unread, and the D502 regression row for a threshold line with no
+quote.
+
+5 runtime tests through `customDeck`, each run **twice — at six cards and at seven**, because "it
+works at seven" and "it is always on" are the same reading of one board: the Dragon's ability is
+offered at threshold and not below it (with the pump as the control); activating it pumps the Dragon;
+the ability **goes away mid-turn when a card leaves the graveyard**, which is the row a static
+installed at entry would fail; the Aven turns black and its ability is offered against a blue
+creature across the table; and a granted **enters** trigger fires for a creature that arrives while
+the condition holds, which says the engine applies statics before it raises the arrival.
+
+Two rows elsewhere were retired rather than left to rot: D502's "leaves a line unread: a granted
+ability" asserted the absence this increment filled, and the comment in its place records what
+replaced it.
+
+Three test-writing corrections, each worth the line it costs:
+
+- the Aven's ability was *not* offered at first, and the grant was not why — `legalActions` will not
+  offer a play whose target cannot be filled, and the board had nothing blue on it. The row now puts
+  a Cephalid Sage across the table and says why.
+- Cephalid Sage's discard is **asked, not done**: "then discard two cards" compiles to a decision, so
+  the hand is three up and a question is owed. The row answers it rather than asserting a net hand
+  size that would have hidden either half.
+- the first version asserted `pendingDiscard`, which is a different mechanism (the cleanup-step
+  discard) from `pendingDecision`.
+
+### The break run
+
+13 breaks over `scripts.ts`, each verified to apply and to revert against a SHA-256. **13 of 13
+caught** — the first clean sweep in this series, which is what a reader built out of parts that
+already have tests looks like. The ones worth naming: *selfGrant is not passed* (8 tests), *the
+quoted branch drops the threshold condition* (26 tests, because a permanent grant breaks every
+board), *the colour change uses the wrong colour* (4), and *an unreadable head no longer refuses the
+line* (1 — the Boneshard Slasher row, which is the whole-line rule doing its job on a card whose
+pump reads and whose drawback does not).
+
+### Coverage
+
+| | before D513 | after |
+| --- | --- | --- |
+| printed lines read | 21,768 / 56,421 (38.6%) | **21,780 / 56,421 (38.6%)** |
+| cards with a compiled script | 10,920 | **10,932** |
+| cards with every printed line read | 6,718 | **6,728** |
+| of those, needing no script at all | 1,191 | 1,191 |
+
+**10 cards finished** and 12 new scripts — the first increment in a while to add scripts rather than
+only finish cards, because a threshold line is sometimes the whole of a creature's text box.
+
+The bucket is down from 17 quoted tails to 7, and the seven name their own next increments: a
+"becomes the target of a spell or ability" trigger (Boneshard Slasher, and the 13-card Frost Walker
+bucket is the same shape), an ETB that pumps a colour-defined group (Gloomdrifter), an opponent-cast
+trigger (Hunting Grounds), and an optional counter (Chlorophant).

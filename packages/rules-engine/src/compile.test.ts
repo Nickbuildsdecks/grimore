@@ -11333,8 +11333,15 @@ describe('the threshold condition: a static that is on while your graveyard is b
     */
     ['an unreadable part beside a readable one', 'Probe Beast gets +1/+1 and has banding as long as'
       + ' there are seven or more cards in your graveyard.'],
-    ['a granted ability', 'As long as there are seven or more cards in your graveyard, Probe Beast'
-      + ' has "When Probe Beast enters, draw a card."'],
+    /*
+      **A row that used to be here, and what replaced it.** `'a granted ability'` asserted that
+      `As long as … Probe Beast has "When Probe Beast enters, draw a card."` went unread, which was
+      true of this reader for as long as a quoted ability had nowhere to go. D511 built the quoted
+      reader, D512 added the activated table, and D513 wired both into this branch — 17 of the
+      queue's top bucket were that exact shape. The positive assertions live in "the threshold
+      quoted tail" below; the refusals that survive are the ones about an inner text this compiler
+      still cannot read, which is a different claim.
+    */
     /*
       Refused for the **subject**: the whole-line rule again. Aboshan's Desire is an Aura and the
       restriction is its host's, so handing it to the Aura would be the D495 mistake.
@@ -12454,5 +12461,154 @@ describe('a quoted activated ability an Aura or Equipment grants (D512)', () => 
     expect(read.script?.grantedAbilities).toBeUndefined();
     expect(read.script?.aura?.effect?.grants).toEqual([0]);
     expect(read.script?.aura?.effect?.grantsAbilities).toBeUndefined();
+  });
+});
+
+describe('the threshold quoted tail: a card that grants itself an ability (D513)', () => {
+  /*
+    **The head of the one-away queue, and what the measurement said it was.** 40 legal cards print
+    `Threshold — As long as there are seven or more cards in your graveyard, …`; 22 are exactly one
+    line short, and **17 of those have a quoted tail** — the card handing *itself* an ability for as
+    long as the condition holds.
+
+    Nothing new is needed under this reader. D511 built the recursive quoted reader, D512 added the
+    activated table beside it, and `ContinuousEffect.while` has carried the threshold condition since
+    D502: this is those three meeting on a `scope: 'self'` static. The two things that *were* new are
+    both in `thresholdEffect` — the quote comes off before the part splitter runs (a quotation
+    contains commas and "and"), and `selfGrant` turns off the self-naming guard, because here the
+    card naming itself inside the quote is binding to the right permanent.
+  */
+  const card = (
+    name: string, text: string, typeLine = 'Creature — Horror', cost = '{2}{B}',
+    power = '2', toughness = '2',
+  ) => compileCard({
+    name, type_line: typeLine, mana_cost: cost, cmc: 4, colors: ['B'],
+    layout: 'normal', power, toughness, oracle_text: text,
+  });
+
+  const thresholdOf = (read: ReturnType<typeof compileCard>) =>
+    (read.ok ? read.script?.statics ?? [] : []).find((s) => s.effect.while !== undefined);
+
+  it('reads Cephalid Sage: the quote is the whole predicate', () => {
+    const read = card('Cephalid Sage', 'Threshold — As long as there are seven or more cards in '
+      + 'your graveyard, Cephalid Sage has "When Cephalid Sage enters, draw three cards, then '
+      + 'discard two cards."', 'Creature — Octopus', '{3}{U}', '2', '3');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.grantedTriggers).toHaveLength(1);
+    const threshold = thresholdOf(read);
+    expect(threshold?.effect.grants).toEqual([0]);
+    expect(threshold?.effect.while).toEqual({ kind: 'controller-graveyard', atLeast: 7 });
+    // No pump: the whole of this card's threshold is the ability, and an empty bonus is a real
+    // reading rather than a failure to find one.
+    expect(threshold?.effect.power).toBeUndefined();
+  });
+
+  it('reads Fledgling Dragon: a pump AND a granted activated ability that names itself', () => {
+    /*
+      **The `selfGrant` row.** The quotation says "Fledgling Dragon gets +1/+0", which names the card
+      granting it — and D512's guard refuses exactly that on an attachment, because an Aura's
+      quotation binds its own name to the host. Here the grantor *is* the host, so the guard is off
+      and the card reads. Without the flag this row fails and ten of the seventeen stay unread.
+    */
+    const read = card('Fledgling Dragon', 'Flying\nThreshold — As long as there are seven or more '
+      + 'cards in your graveyard, Fledgling Dragon gets +3/+3 and has "{R}: Fledgling Dragon gets '
+      + '+1/+0 until end of turn."', 'Creature — Dragon', '{2}{R}{R}');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.grantedAbilities).toHaveLength(1);
+    expect(read.script?.grantedAbilities?.[0]?.cost.mana).toBe('{R}');
+    const threshold = thresholdOf(read);
+    expect(threshold?.effect.grantsAbilities).toEqual([0]);
+    expect([threshold?.effect.power, threshold?.effect.toughness]).toEqual([3, 3]);
+  });
+
+  it('reads Possessed Aven: three parts, one of them a colour change', () => {
+    /*
+      `gets +1/+1, is black, and has "…"` — which is why the part splitter now splits on commas as
+      well as "and", and why `is black` is a part at all. The colour is not decoration: the Aven's
+      own ability destroys a **blue** creature, and a reader that kept the printed colour would have
+      a blue creature holding a gun pointed at itself.
+    */
+    const read = card('Possessed Aven', 'Flying\nThreshold — As long as there are seven or more '
+      + 'cards in your graveyard, Possessed Aven gets +1/+1, is black, and has "{2}{B}, {T}: '
+      + 'Destroy target blue creature."', 'Creature — Bird Soldier Horror', '{2}{U}{U}', '3', '3');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    const threshold = thresholdOf(read);
+    expect(threshold?.effect.setColors).toEqual(['B']);
+    expect([threshold?.effect.power, threshold?.effect.toughness]).toEqual([1, 1]);
+    expect(threshold?.effect.grantsAbilities).toEqual([0]);
+    expect(read.script?.grantedAbilities?.[0]?.cost.mana).toBe('{2}{B}');
+    expect(read.script?.grantedAbilities?.[0]?.cost.tap).toBe(true);
+  });
+
+  it('reads Wayward Angel: four parts, the longest printing in the family', () => {
+    const read = card('Wayward Angel', 'Flying, vigilance\nThreshold — As long as there are seven '
+      + 'or more cards in your graveyard, Wayward Angel gets +3/+3, is black, has trample, and has '
+      + '"At the beginning of your upkeep, sacrifice a creature."', 'Creature — Angel Horror',
+      '{4}{W}{W}', '4', '4');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    const threshold = thresholdOf(read);
+    expect(threshold?.effect.keywords).toEqual(['trample']);
+    expect(threshold?.effect.setColors).toEqual(['B']);
+    expect(threshold?.effect.grants).toEqual([0]);
+  });
+
+  it.each([
+    ['Centaur Chieftain',
+      'When Centaur Chieftain enters, creatures you control get +1/+1 and gain trample until end of turn.'],
+    ['Pardic Arsonist', 'When Pardic Arsonist enters, it deals 3 damage to any target.'],
+  ])('reads the quoted trigger on printed %s', (name, inner) => {
+    const read = card(name as string, 'Threshold — As long as there are seven or more cards in your '
+      + `graveyard, ${name as string} has "${inner as string}"`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.grantedTriggers).toHaveLength(1);
+  });
+
+  it.each([
+    ['Boneshard Slasher: a "becomes the target" trigger, which no reader has yet',
+      'Boneshard Slasher gets +2/+2 and has "When Boneshard Slasher becomes the target of a spell '
+      + 'or ability, sacrifice it."'],
+    ['Gloomdrifter: an ETB that pumps a colour-defined group',
+      'Gloomdrifter has "When Gloomdrifter enters, nonblack creatures get -2/-2 until end of turn."'],
+  ])('refuses the whole line when the quoted text does not read: %s', (_why, tail) => {
+    /*
+      D487 again, and the reason it matters more on this shape than on most: the pump in front of the
+      quote *does* read. A reader that kept the half it understood would give Boneshard Slasher
+      +2/+2 at threshold and silently drop the drawback that is the rest of the card — a strictly
+      better creature than the one printed.
+    */
+    const read = card('Boneshard Slasher', 'Threshold — As long as there are seven or more cards in '
+      + `your graveyard, ${tail as string}`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+    expect(read.script?.grantedTriggers ?? []).toEqual([]);
+    expect(read.script?.grantedAbilities ?? []).toEqual([]);
+    expect(thresholdOf(read)).toBeUndefined();
+  });
+
+  it('still reads a threshold line with no quote at all (D502)', () => {
+    // The regression row: this branch now goes through a wrapper, so the plain shape is checked
+    // where the wrapper was added rather than only where it was written.
+    const read = card('Mystic Enforcer', 'Threshold — As long as there are seven or more cards in '
+      + 'your graveyard, Mystic Enforcer gets +3/+3 and has flying.',
+      'Creature — Human Nomad Mystic', '{1}{G}{W}', '3', '3');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    const threshold = thresholdOf(read);
+    expect([threshold?.effect.power, threshold?.effect.toughness]).toEqual([3, 3]);
+    expect(threshold?.effect.keywords).toEqual(['flying']);
+    expect(threshold?.effect.grants).toBeUndefined();
+    expect(threshold?.effect.grantsAbilities).toBeUndefined();
   });
 });
