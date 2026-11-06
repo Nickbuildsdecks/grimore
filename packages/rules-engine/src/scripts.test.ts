@@ -29460,3 +29460,137 @@ describe('a spell that can\'t be countered, at the table (D493)', () => {
     expect(namesIn(state, 1 as SeatIndex, 'battlefield')).not.toContain('Grizzly Bears');
   });
 });
+
+describe('Bushido N at the table (D503)', () => {
+  /*
+    The half a reader test cannot reach: **both** events have to fire, and each has to fire
+    **once**. Jade Avenger is the card for it — a printed 2/2 whose entire text is `Bushido 2`, so
+    nothing else on the card can be mistaken for the bonus.
+
+    Four tests, and the third is the one Ichorclaw Myr's block never had: the Myr is read on
+    `blocked-creature` alone, so the `blocking-creature` half of this family has no precedent in
+    the suite at all.
+  */
+  const DATA = [
+    {
+      name: 'Jade Avenger', type_line: 'Creature — Frog Samurai', mana_cost: '{1}{G}', cmc: 2,
+      colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: 'Bushido 2',
+    },
+  ];
+
+  const table = (id: string, mine: readonly string[], theirs: readonly string[]) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        { name: 'Jade Avenger', count: 4 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Centaur Courser', count: 4 },
+        { name: 'Forest', count: 24 },
+        { name: 'Plains', count: 24 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData).toEqual(['Jade Avenger']);
+    return advanceTo(arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: { 0: ['Forest', ...mine], 1: ['Plains', ...theirs] },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+  };
+
+  const powerOf = (state: GameState, seat: SeatIndex, name: string): number =>
+    characteristicsOf(state, state.instances[find(state, seat, 'battlefield', name)]!).power;
+
+  it('grows when it becomes blocked', () => {
+    let s = table('d503-blocked', ['Jade Avenger'], ['Grizzly Bears']);
+    const avenger = find(s, 0 as SeatIndex, 'battlefield', 'Jade Avenger');
+    s = apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: avenger, defender: 1 as SeatIndex }],
+    } as Action);
+    s = advanceTo(s, 'declare-blockers');
+    expect(powerOf(s, 0 as SeatIndex, 'Jade Avenger')).toBe(2);
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1,
+      blocks: [{ blocker: find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears'), attacker: avenger }],
+    } as Action), 40);
+    // 2 + 2, and it kills the Bears it would otherwise have traded with.
+    expect(powerOf(s, 0 as SeatIndex, 'Jade Avenger')).toBe(4);
+  });
+
+  it('grows once however many creatures block it (D482)', () => {
+    /*
+      The reading this family had to get right, and the reason `bushidoTriggers` uses the batched
+      events. `becomes-blocked` is raised once per blocker, so a Samurai read on it would be a 6/6
+      against two blockers — which is exactly what D482 found Ichorclaw Myr doing, shipping, in the
+      infect deck.
+
+      Asserted on the stack *and* on the board: one trigger, and 2 + 2 rather than 2 + 2 + 2.
+    */
+    let s = table('d503-two', ['Jade Avenger'], ['Grizzly Bears', 'Centaur Courser']);
+    const avenger = find(s, 0 as SeatIndex, 'battlefield', 'Jade Avenger');
+    s = apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: avenger, defender: 1 as SeatIndex }],
+    } as Action);
+    s = advanceTo(s, 'declare-blockers');
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const courser = find(s, 1 as SeatIndex, 'battlefield', 'Centaur Courser');
+    s = apply(s, {
+      type: 'auto:block', by: 1,
+      blocks: [{ blocker: bears, attacker: avenger }, { blocker: courser, attacker: avenger }],
+    } as Action);
+    const owed = pendingDeclaration(s);
+    if (owed?.kind === 'order') {
+      s = apply(s, {
+        type: 'auto:order', by: 0, orders: [{ attacker: avenger, blockers: [bears, courser] }],
+      } as Action);
+    }
+    expect(s.stackOrder).toHaveLength(1);
+    s = drain(passBoth(s), 40);
+    expect(powerOf(s, 0 as SeatIndex, 'Jade Avenger')).toBe(4);
+  });
+
+  it('grows when it blocks, which is the other half of the sentence', () => {
+    /*
+      `blocking-creature`, and nothing in this suite exercised it on a compiled card before: the
+      pool's only reader of the family is Ichorclaw Myr, which prints the becoming-blocked half
+      alone. A reader that wired bushido to one event would pass the two tests above and fail here.
+    */
+    let s = table('d503-blocking', ['Grizzly Bears'], ['Jade Avenger']);
+    const bears = find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    s = apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 as SeatIndex }],
+    } as Action);
+    s = advanceTo(s, 'declare-blockers');
+    expect(powerOf(s, 1 as SeatIndex, 'Jade Avenger')).toBe(2);
+    const avenger = find(s, 1 as SeatIndex, 'battlefield', 'Jade Avenger');
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: avenger, attacker: bears }],
+    } as Action), 40);
+    // A 2/2 blocking a 2/2 is a trade; a bushido 2 blocking it is a 4/4 that lives.
+    expect(powerOf(s, 1 as SeatIndex, 'Jade Avenger')).toBe(4);
+    s = drain(advanceTo(s, 'end-combat'), 60);
+    expect(s.instances[bears]!.zone).toBe('graveyard');
+    expect(s.instances[avenger]!.zone).toBe('battlefield');
+  });
+
+  it('does not grow on an attack nobody blocks', () => {
+    /*
+      The control, and it is not redundant: bushido is **not** "whenever this creature attacks",
+      and a reader that wired it to `attacks` would pass the becoming-blocked test by accident —
+      the attack trigger fires first and the board would read 4/4 either way.
+    */
+    let s = table('d503-unblocked', ['Jade Avenger'], []);
+    const avenger = find(s, 0 as SeatIndex, 'battlefield', 'Jade Avenger');
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: avenger, defender: 1 as SeatIndex }],
+    } as Action), 40);
+    expect(s.stackOrder).toEqual([]);
+    expect(powerOf(s, 0 as SeatIndex, 'Jade Avenger')).toBe(2);
+    s = drain(advanceTo(s, 'end-combat'), 60);
+    // Two damage through, not four.
+    expect(life(s, 1 as SeatIndex)).toBe(18);
+  });
+});

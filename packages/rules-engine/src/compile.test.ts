@@ -11425,3 +11425,101 @@ describe('"This spell can\'t be countered" (D493)', () => {
     expect(read.unread).toHaveLength(1);
   });
 });
+
+describe('Bushido N (D503)', () => {
+  /*
+    The queue head after D502: **35 legal printed lines**, 20 cards whose only unread line it is.
+    CR 702.44a — "Whenever this creature blocks or becomes blocked, it gets +N/+N until end of
+    turn" — one printed sentence and **two** events, because blocking and becoming blocked are
+    different things that happen at different moments.
+
+    Everything it needs was already here, which is what makes it a cheap 20 cards: both halves of
+    the event exist, and D482's correction is why the *batched* pair is the right one. See
+    `bushidoTriggers`.
+  */
+  const samurai = (text: string, name = 'Araba Mothrider') => compileCard({
+    name, type_line: 'Creature — Human Samurai', mana_cost: '{3}{W}', cmc: 4,
+    colors: ['W'], layout: 'normal', power: '2', toughness: '2', oracle_text: text,
+  });
+
+  it.each([
+    ['Bushido 1', 1],
+    ['Bushido 2', 2],
+    ['Bushido 3', 3],
+  ])('reads "%s" as two triggers and no field', (text, count) => {
+    const read = samurai(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    /*
+      Both events, in this order, and **no** `bushido` field on the script: the keyword is the pair
+      of abilities and nothing else, where modular and vanishing each carry a number the engine
+      reads elsewhere.
+    */
+    expect(read.script?.triggers?.map((t) => t.on.kind))
+      .toEqual(['blocking-creature', 'blocked-creature']);
+    expect(read.script?.triggers?.map((t) => t.description))
+      .toEqual([`it gets +${count}/+${count} until end of turn`,
+        `it gets +${count}/+${count} until end of turn`]);
+  });
+
+  it('is the batched pair of events, not the per-object one', () => {
+    /*
+      The assertion that matters most, and it is about two words. `blocks` fires once per attacker
+      blocked and `becomes-blocked` once per blocker; `blocking-creature` and `blocked-creature`
+      fire once each. A Samurai on the per-object pair would get +2N/+2N against two blockers —
+      which is the reading D482 found *shipping* on Ichorclaw Myr, so this row exists because the
+      mistake has been made here before.
+    */
+    const read = samurai('Bushido 2');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const kinds = read.script?.triggers?.map((t) => t.on.kind) ?? [];
+    expect(kinds).not.toContain('blocks');
+    expect(kinds).not.toContain('becomes-blocked');
+  });
+
+  it('gives the two triggers separate objects', () => {
+    // The engine puts a resolved trigger on the stack by identity, so two abilities that were one
+    // object would be one ability firing twice at best.
+    const read = samurai('Bushido 1');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const [first, second] = read.script?.triggers ?? [];
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(first).not.toBe(second);
+  });
+
+  it('reads it beside the rest of a real card', () => {
+    // Battle-Mad Ronin's whole printing: bushido and a second line, both read. The name has to be
+    // the card's own, which is the point of the second line — a self-subject sentence is read
+    // against the name it is printed on, and the first draft of this row passed the wrong one.
+    const read = samurai('Bushido 2\nBattle-Mad Ronin attacks each combat if able.',
+      'Battle-Mad Ronin');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers?.map((t) => t.on.kind))
+      .toEqual(['blocking-creature', 'blocked-creature']);
+  });
+
+  it.each([
+    /*
+      The three printings in the corpus that wear the word and are a different mechanic. Each is
+      named here rather than dropped quietly, which is what `bushidoTriggers`' docblock argues.
+    */
+    ['a count instead of a number', 'Fumiko the Lowblood has bushido X, where X is the number of'
+      + ' attacking creatures.'],
+    ['bushido granted to somebody else', 'Each other Samurai creature you control has bushido 1.'],
+    ['a payoff that reads how much bushido a creature has', 'Each other Samurai creature you'
+      + ' control gets +1/+1 for each point of bushido it has.'],
+    // And a number this reader will not invent: no printing says "bushido" with no number at all.
+    ['no number', 'Bushido'],
+  ])('leaves a line unread: %s', (_why, text) => {
+    const read = samurai(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+});

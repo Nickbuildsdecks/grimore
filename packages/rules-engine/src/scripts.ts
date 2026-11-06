@@ -2518,6 +2518,55 @@ const battleCryTrigger = (): TriggerDef => ({
   },
 });
 
+/**
+ * Bushido N, written out as the two triggered abilities the keyword abbreviates (CR 702.44a).
+ *
+ * "Whenever this creature blocks or becomes blocked, it gets +N/+N until end of turn" — one printed
+ * sentence, **two** events, because blocking and becoming blocked are different things that happen
+ * at different moments to different creatures. 35 legal lines print it.
+ *
+ * ## Both events are the batched ones, and D482 is why that is not a detail
+ *
+ * `blocking-creature` fires once for a creature that blocked at all, and `blocked-creature` once
+ * however many creatures blocked it. Their per-object twins — `blocks` and `becomes-blocked` — fire
+ * once *per* attacker blocked and once *per* blocker, and a Samurai using those would get +2N/+2N
+ * against two blockers. That is exactly the reading D482 found shipping on Ichorclaw Myr, on a card
+ * that had been in the pool for weeks, so it is a mistake with a precedent rather than a
+ * hypothetical.
+ *
+ * Both default to `who: 'self'`, so neither needs a subject: the creature in question is the one
+ * whose script this is, and the pump points at `c.source`.
+ *
+ * ## One function, two triggers, and no shared effect object
+ *
+ * The effect is written once and used twice, which is safe because a `TriggerDef`'s effect is a
+ * pure function of its context — but the two `TriggerDef`s are separate objects, because the engine
+ * puts a resolved trigger on the stack by identity and two abilities that are the same object would
+ * be one ability that fires twice at best.
+ *
+ * ## The three printings this does not cover
+ *
+ * Named rather than silently dropped, and all three are a different mechanic wearing the word:
+ *
+ * - **Fumiko the Lowblood** has "bushido X, where X is the number of attacking creatures" — a
+ *   count read when the trigger resolves, not a printed number.
+ * - **Sensei Golden-Tail** *grants* bushido 1 with a counter, which is handing another permanent a
+ *   triggered ability (#230).
+ * - **Takeno, Samurai General** gives other Samurai "+1/+1 for each point of bushido it has", and
+ *   this engine has no notion of *how much* bushido a creature has — the keyword is two triggers
+ *   here, not a number on the card. Reading it would mean inventing a field to answer a question
+ *   one card asks (D57).
+ */
+function bushidoTriggers(count: number): TriggerDef[] {
+  const grow = (c: EffectContext): GameState =>
+    pump(c.state, [c.source], c.source, c.controller, { power: count, toughness: count });
+  const description = `it gets +${count}/+${count} until end of turn`;
+  return [
+    { on: { kind: 'blocking-creature' }, description, effect: grow },
+    { on: { kind: 'blocked-creature' }, description, effect: grow },
+  ];
+}
+
 const GOBLIN_WARDRIVER: CardScript = {
   name: 'Goblin Wardriver',
   triggers: [battleCryTrigger()],
@@ -9863,6 +9912,14 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
     All three set a declaration, an `entersWith` and a trigger, and all three are useless without
     all three. See this function's docblock for the Calciderm that never dies.
   */
+  /*
+    Bushido N, which is the same shape as the three below — a keyword and a number — and differs in
+    having no counter and no field: it is purely the pair of triggers `bushidoTriggers` writes out.
+    See that function for the two events and for why the batched ones are the right pair (D482).
+  */
+  const bushido = /^bushido\s+(\d+)$/i.exec(text);
+  if (bushido !== null) return { triggers: bushidoTriggers(Number(bushido[1])) };
+
   const counted = /^(modular|vanishing|fading)\s+(\d+)$/i.exec(text);
   if (counted !== null) {
     const count = Number(counted[2]);

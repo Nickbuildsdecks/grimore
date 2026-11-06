@@ -33434,3 +33434,106 @@ that read perfectly, on a card that did not compile.
 
 Measured two days ago as +77 cards as well, on a tree five increments younger. The same number from
 the same family, re-measured rather than carried over — which is the point of re-measuring.
+
+## D503 — Bushido N, which cost one regex and the right pair of events
+
+Queue head after D502: **35 legal printed lines**, 20 cards whose only unread line is `Bushido N`.
+**#348 closed.**
+
+CR 702.44a: "Whenever this creature blocks or becomes blocked, it gets +N/+N until end of turn."
+One printed sentence, **two** events, because blocking and becoming blocked are different things
+that happen at different moments to different creatures.
+
+### Everything it needed was already here, and D482 is why the right pair exists
+
+| event | fires |
+| --- | --- |
+| `blocking-creature` | once for a creature that blocked at all |
+| `blocked-creature` | once however many creatures blocked it |
+| `blocks` | once **per attacker** it blocked |
+| `becomes-blocked` | once **per blocker** |
+
+A Samurai wired to the second pair would get **+2N/+2N against two blockers**. That is not a
+hypothetical: it is precisely what D482 found shipping on Ichorclaw Myr, in the infect deck, where
+every extra point of power is an extra poison counter. So the batched pair is the correct one, and a
+compile row asserts the kinds by name rather than trusting the choice.
+
+Both events default to `who: 'self'`, so neither trigger needs a subject and the pump points at
+`c.source`. The two `TriggerDef`s are separate objects on purpose: the engine puts a resolved
+trigger on the stack by identity, and two abilities that were one object would be one ability firing
+once. A break proves it — sharing the object fails three runtime tests.
+
+No script field. Modular, vanishing and fading each carry their number into a field the engine reads
+elsewhere; bushido is the pair of abilities and nothing else, which is why the reader sits beside
+that branch rather than in it.
+
+### The test the suite did not have
+
+Ichorclaw Myr is the pool's only reader of this family and it prints the becoming-blocked half
+alone, so **`blocking-creature` had never been exercised on a compiled card.** A reader wired to one
+event would have passed two of the three runtime tests here. Jade Avenger — a printed 2/2 whose
+entire text is `Bushido 2` — blocks a Grizzly Bears, becomes a 4/4, and lives through a trade it
+would otherwise have died in.
+
+The fourth runtime test is the control and is not redundant: bushido is **not** "whenever this
+creature attacks", and a reader wired to `attacks` would pass the becoming-blocked test by accident,
+because the attack trigger fires first and the board would read 4/4 either way. So an unblocked swing
+has to leave it a 2/2 and put two damage through, not four.
+
+### The three printings left unread, named
+
+All three are a different mechanic wearing the word:
+
+- **Fumiko the Lowblood** — "bushido X, where X is the number of attacking creatures": a count read
+  on resolution, not a printed number.
+- **Sensei Golden-Tail** — *grants* bushido 1 with a counter, which is handing another permanent a
+  triggered ability (#230, which the engine cannot do at all).
+- **Takeno, Samurai General** — "+1/+1 for each point of bushido it has". This engine has no notion
+  of *how much* bushido a creature has; the keyword is two triggers, not a number on the card.
+  Reading it would mean inventing a field to answer a question one card asks (D57).
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed rules lines read | 21,494 / 56,421 (38.1%) | **21,529 / 56,421 (38.2%)** |
+| cards with a compiled script | 10,789 | **10,817** |
+| cards with every printed line read | 6,539 | **6,559** |
+
++35 lines — the family exactly, one line per card — and **+20 cards finished**, which is what the
+queue predicted. The first increment in this stretch where the prediction and the measurement agree
+to the card, because the shape is one line on one card with nothing else to unlock.
+
+### Not priced for the bot, and said rather than left
+
+`KEYWORD_VALUE` in `bot.ts` has no entry for this, because bushido is not a keyword in
+`KEYWORDS` at all — it is two triggers, and the bot's three readers of `script.triggers` see them
+like any other. What the evaluation does *not* do is value a creature more highly for having them,
+and that is the same gap D501 named for fear and shadow: a weight nobody measured is a guess wearing
+a number, and this file has retracted two of those (D258, D263).
+
+### The break run
+
+Seven breaks, each verified to apply and to revert against a SHA-256 of the backup:
+
+| break | compile.test | scripts.test |
+| --- | --- | --- |
+| the blocking half is dropped | 5 fail | 1 fail |
+| the becoming-blocked half is dropped | 5 fail | 2 fail |
+| the per-object events instead of the batched ones | 5 fail | 1 fail |
+| the two triggers share one object | 5 fail | 3 fail |
+| the bonus is hard-coded to one | pass | 3 fail |
+| the pump points at nothing instead of the creature itself | pass | 3 fail |
+| the number is optional, so a bare "Bushido" reads | 1 fail | pass |
+
+The fifth row is worth reading: the break changed the pump and left the trigger's `description`
+alone, so the compile rows — which assert the description — correctly saw nothing. Only the board
+can tell a +1/+1 from a +2/+2, which is the division of labour these two files are supposed to have.
+
+### A test that passed the wrong card's name
+
+The first draft of "reads it beside the rest of a real card" gave the card the name
+`Araba Mothrider` and the second line Battle-Mad Ronin's sentence, so the self-subject did not match
+its own card and the line read as unread. The test caught it immediately, which is the point — a
+self-subject sentence is read against the name it is printed on, and a fixture that mixes two cards
+is testing nothing.
