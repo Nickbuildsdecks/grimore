@@ -7450,6 +7450,12 @@ describe('deck coverage', () => {
       - `keyword horsemanship`: 25 legal corpus lines. Driven at runtime by "horsemanship restricts
         only one direction, and the asymmetry is the assertion", on printed Barbarian General —
         including the block it *may* make, which is what a symmetric rules table would have refused.
+      - `keyword wither`: 26 bare legal corpus lines, and a dozen more printings that grant it.
+        Driven at runtime by "deals its combat damage to a creature as -1/-1 counters, permanently"
+        on printed Boggart Ram-Gang, and — the test that matters — by "deals its damage to a player
+        as LIFE, not poison, which is where it is not infect", because putting the word in
+        `dealDamage`'s player branch as well would turn all 26 cards into infect creatures and pass
+        every other test in the block (D504).
 
       **And one `script` field, which is what finally unblocked D493.** That increment was built in
       full and then held back for two days for exactly this check: it declares a flag no pool card
@@ -7466,7 +7472,7 @@ describe('deck coverage', () => {
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
-      'keyword fear', 'keyword shadow', 'keyword horsemanship',
+      'keyword fear', 'keyword shadow', 'keyword horsemanship', 'keyword wither',
       'script cantBeCountered',
     ]);
 
@@ -29592,5 +29598,156 @@ describe('Bushido N at the table (D503)', () => {
     s = drain(advanceTo(s, 'end-combat'), 60);
     // Two damage through, not four.
     expect(life(s, 1 as SeatIndex)).toBe(18);
+  });
+});
+
+describe('wither at the table, and where it parts company with infect (D504)', () => {
+  /*
+    The whole of this increment is one word in `KEYWORDS` and one `||` in `dealDamage`'s creature
+    branch — so the tests that matter are the ones that would pass if the `||` had been put in the
+    *player* branch as well, which is the easy mistake and makes a Boggart Ram-Gang into a
+    Glistener Elf.
+
+    Two real printings through `customDeck`'s `data`:
+
+      Harvest Gwyllion    {2}{W}{B} 2/4  — whole card is the word
+      Boggart Ram-Gang    {R}{G}{G} 3/3  — haste and wither
+  */
+  const DATA = [
+    {
+      name: 'Harvest Gwyllion', type_line: 'Creature — Hag', mana_cost: '{2}{W}{B}', cmc: 4,
+      colors: ['W', 'B'], layout: 'normal', power: '2', toughness: '4',
+      oracle_text: 'Wither (This deals damage to creatures in the form of -1/-1 counters.)',
+    },
+    {
+      name: 'Boggart Ram-Gang', type_line: 'Creature — Goblin Warrior', mana_cost: '{R}{G}{G}',
+      cmc: 3, colors: ['R', 'G'], layout: 'normal', power: '3', toughness: '3',
+      oracle_text: 'Haste\nWither (This deals damage to creatures in the form of -1/-1 counters.)',
+    },
+  ];
+
+  const table = (id: string, mine: readonly string[], theirs: readonly string[]) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 2 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Centaur Courser', count: 4 },
+        { name: 'Forest', count: 24 },
+        { name: 'Plains', count: 24 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Boggart Ram-Gang', 'Harvest Gwyllion']);
+    return advanceTo(arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: { 0: ['Forest', ...mine], 1: ['Plains', ...theirs] },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+  };
+
+  it('deals its combat damage to a creature as -1/-1 counters, permanently', () => {
+    /*
+      CR 702.78a, and the half that is identical to infect. A 3/3 hits a 3/3 blocker: without wither
+      the Courser is a 3/3 with three damage marked and the cleanup step wipes it; with wither it is
+      a 0/0 and dies to the state-based action, and the counters would still be there next turn if
+      it had survived.
+    */
+    let s = table('d504-creature', ['Boggart Ram-Gang'], ['Harvest Gwyllion']);
+    const ram = find(s, 0 as SeatIndex, 'battlefield', 'Boggart Ram-Gang');
+    s = apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: ram, defender: 1 as SeatIndex }],
+    } as Action);
+    s = advanceTo(s, 'declare-blockers');
+    const gwyllion = find(s, 1 as SeatIndex, 'battlefield', 'Harvest Gwyllion');
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: gwyllion, attacker: ram }],
+    } as Action), 40);
+    s = drain(advanceTo(s, 'end-combat'), 60);
+    /*
+      A 2/4 blocker rather than a 2/3, and that is the whole reason this test reads the way it does.
+      The first draft used a Centaur Courser, which **died** — and a permanent that leaves the
+      battlefield takes its counters with it (CR 400.7), so the assertion read `undefined` and
+      proved nothing about where the damage went. A survivor is the only board on which the
+      difference between a counter and marked damage is visible.
+    */
+    expect(s.instances[gwyllion]!.zone).toBe('battlefield');
+    expect(s.instances[gwyllion]!.counters['-1/-1']).toBe(3);
+    expect(characteristicsOf(s, s.instances[gwyllion]!).toughness).toBe(1);
+    // And the counters are permanent where marked damage is not: a turn later it is still a 1.
+    s = nextTurn(s);
+    expect(s.instances[gwyllion]!.counters['-1/-1']).toBe(3);
+    expect(characteristicsOf(s, s.instances[gwyllion]!).toughness).toBe(1);
+  });
+
+  it('deals its damage to a player as LIFE, not poison, which is where it is not infect', () => {
+    /*
+      **The assertion this increment exists for.** Wither is CR 702.78a and infect is CR 702.90b;
+      the first is the creature half alone. Putting the keyword into `dealDamage`'s player branch as
+      well would have made every one of these 26 cards an infect creature, in a format where ten
+      poison ends the game — and it would have passed the creature test above without a murmur.
+    */
+    let s = table('d504-player', ['Boggart Ram-Gang'], []);
+    const ram = find(s, 0 as SeatIndex, 'battlefield', 'Boggart Ram-Gang');
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: ram, defender: 1 as SeatIndex }],
+    } as Action), 40);
+    s = drain(advanceTo(s, 'end-combat'), 60);
+    expect(life(s, 1 as SeatIndex)).toBe(17);
+    expect(s.seats[1]!.poison).toBe(0);
+  });
+
+  it('is a fact about the source, so the damage coming back is ordinary', () => {
+    /*
+      Wither says what *this* source's damage becomes, not what damage to this creature becomes.
+      A Harvest Gwyllion is a 2/4 blocking a 3/3 Courser: the Courser takes two counters and the
+      Gwyllion takes three **marked damage**, which the cleanup step wipes — so it is a 2/4 again
+      next turn rather than a 2/1 for ever.
+    */
+    let s = table('d504-source', ['Centaur Courser'], ['Harvest Gwyllion']);
+    const courser = find(s, 0 as SeatIndex, 'battlefield', 'Centaur Courser');
+    s = apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: courser, defender: 1 as SeatIndex }],
+    } as Action);
+    s = advanceTo(s, 'declare-blockers');
+    const gwyllion = find(s, 1 as SeatIndex, 'battlefield', 'Harvest Gwyllion');
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: gwyllion, attacker: courser }],
+    } as Action), 40);
+    s = drain(advanceTo(s, 'end-combat'), 60);
+    // The attacker took two as counters; the wither creature took three as marked damage.
+    expect(s.instances[courser]!.counters['-1/-1']).toBe(2);
+    expect(s.instances[gwyllion]!.counters['-1/-1'] ?? 0).toBe(0);
+    expect(s.instances[gwyllion]!.zone).toBe('battlefield');
+    // And the marked damage goes away, where the counters do not.
+    s = nextTurn(s);
+    expect(characteristicsOf(s, s.instances[gwyllion]!).toughness).toBe(4);
+    expect(characteristicsOf(s, s.instances[courser]!).toughness).toBe(1);
+  });
+
+  it('grants, and the granted word does the same thing', () => {
+    /*
+      `isKeyword` is the gate on every grant reader, so wither travels through `pump` like any other
+      word — and it has to *work* when it arrives, not merely be stored. A plain Grizzly Bears
+      granted wither leaves counters on what it hits.
+    */
+    let s = table('d504-granted', ['Grizzly Bears'], ['Centaur Courser']);
+    const bears = find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    s = pump(s, [bears], bears, 0 as SeatIndex, { keywords: ['wither'] });
+    s = apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 as SeatIndex }],
+    } as Action);
+    s = advanceTo(s, 'declare-blockers');
+    const courser = find(s, 1 as SeatIndex, 'battlefield', 'Centaur Courser');
+    s = drain(apply(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: courser, attacker: bears }],
+    } as Action), 40);
+    s = drain(advanceTo(s, 'end-combat'), 60);
+    expect(s.instances[courser]!.counters['-1/-1']).toBe(2);
+    // And the Bears itself is untouched by its own keyword: it took three marked damage and died.
+    expect(s.instances[bears]!.zone).toBe('graveyard');
   });
 });

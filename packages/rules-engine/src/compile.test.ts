@@ -11523,3 +11523,91 @@ describe('Bushido N (D503)', () => {
     expect(read.unread).toHaveLength(1);
   });
 });
+
+describe('wither, which is infect\'s creature half (D504)', () => {
+  /*
+    **26 bare `Wither` lines** in the legal corpus, and a dozen more printings that grant it.
+    CR 702.78a: "Damage this source would deal to a creature is dealt in the form of -1/-1
+    counters" — word for word what infect does to a creature. What infect adds is the *player*
+    half, where its damage is poison rather than life (CR 702.90b).
+
+    So the whole of this increment is one word in `KEYWORDS` and one `||` in `dealDamage`'s creature
+    branch, with the player branch deliberately left alone. A Boggart Ram-Gang hits you for three
+    **life**; a Glistener Elf for three poison, and the difference decides games in a format where
+    ten poison ends one.
+  */
+  const creature = (text: string, name = 'Harvest Gwyllion') => compileCard({
+    name, type_line: 'Creature — Hag', mana_cost: '{2}{W}{B}', cmc: 4,
+    colors: ['W', 'B'], layout: 'normal', power: '2', toughness: '4', oracle_text: text,
+  });
+
+  it('reads the bare keyword, which is Harvest Gwyllion\'s whole card', () => {
+    /*
+      Two assertions, because the line is counted compiled and emits **no script** (D424):
+      `characteristicsOf` reads a printed keyword straight off the card, so a `keywords` entry here
+      would be a second source for one fact. What the compiler owes is the count; what the reader
+      owes is the word.
+    */
+    const read = creature('Wither (This deals damage to creatures in the form of -1/-1 counters.)');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(printedKeywords('Wither')).toEqual(['wither']);
+  });
+
+  it('reads it beside another keyword, as Boggart Ram-Gang prints it', () => {
+    const read = creature('Haste\nWither (This deals damage to creatures in the form of -1/-1'
+      + ' counters.)', 'Boggart Ram-Gang');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('grants for free, because every grant reader asks isKeyword', () => {
+    /*
+      The moment the word is in `KEYWORDS`, every reader that hands a keyword to something accepts
+      it — the same free ride D501's three keywords got. Tower Above's shape is the one the pump
+      reader answers.
+
+      **Not asserted: "Equipped creature gets +1/+0 and has wither."** That line is unread, and
+      checked just below that it is unread for a reason that has nothing to do with wither: the same
+      sentence with *flying* in it is unread too, because no reader handles a bonus and a grant in
+      one equip line. Writing the row as a wither test would have claimed a gap that is somewhere
+      else entirely.
+    */
+    const pumped = compileCard({
+      name: 'Tower Above', type_line: 'Instant', mana_cost: '{2}{G}', cmc: 3, colors: ['G'],
+      layout: 'normal',
+      oracle_text: 'Target creature gets +1/+1 and gains wither until end of turn.',
+    });
+    expect(pumped.ok).toBe(true);
+    if (!pumped.ok) return;
+    expect(pumped.unread.map((u) => u.line)).toEqual([]);
+
+    const equipped = (word: string) => compileCard({
+      name: 'Blight Sickle', type_line: 'Artifact — Equipment', mana_cost: '{2}', cmc: 2,
+      colors: [], layout: 'normal', oracle_text: `Equipped creature gets +1/+0 and has ${word}.`,
+    });
+    for (const word of ['wither', 'flying']) {
+      const read = equipped(word);
+      expect(read.ok).toBe(true);
+      if (read.ok) expect(read.unread).toHaveLength(1);
+    }
+  });
+
+  it.each([
+    /*
+      Refused, and the first is the interesting one: Everlasting Torment hands wither to **every
+      damage source in the game**, which is a global replacement and not a keyword on a permanent.
+      Reading it as the enchantment having wither would give an enchantment an ability that does
+      nothing and leave the rule it prints unenforced — wrong twice over (D362).
+    */
+    ['a global replacement', 'All damage is dealt as though its source had wither.'],
+    ['a static about other creatures by colour', 'Black creatures you control have wither.'],
+  ])('leaves a line unread: %s', (_why, text) => {
+    const read = creature(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+});

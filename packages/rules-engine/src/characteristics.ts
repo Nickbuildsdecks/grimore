@@ -76,6 +76,19 @@ export const KEYWORDS = [
     nine relative-power printings.
   */
   'fear', 'shadow', 'horsemanship',
+  /*
+    Wither (CR 702.78a), which is **infect's creature half and nothing else** (D504).
+
+    "Damage this source would deal to a creature is dealt in the form of -1/-1 counters" is word for
+    word what infect does to a creature; what infect adds is the player half, where its damage is
+    poison instead of life (CR 702.90b). So `dealDamage` reads this keyword in the creature branch
+    beside `infect` and *not* in the player branch — a Boggart Ram-Gang hits you for three life, and
+    a Glistener Elf for three poison.
+
+    26 bare `Wither` lines in the legal corpus, and a dozen more printings that grant it, which read
+    for free because every grant reader asks `isKeyword`.
+  */
+  'wither',
 ] as const;
 export type Keyword = (typeof KEYWORDS)[number];
 

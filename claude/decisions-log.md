@@ -33537,3 +33537,102 @@ The first draft of "reads it beside the rest of a real card" gave the card the n
 its own card and the line read as unread. The test caught it immediately, which is the point — a
 self-subject sentence is read against the name it is printed on, and a fixture that mixes two cards
 is testing nothing.
+
+## D504 — Wither, which is infect's creature half and nothing else
+
+**26 bare `Wither` lines** in the legal corpus (Boggart Ram-Gang, Cinderbones, Duergar Cave-Guard,
+Harvest Gwyllion and 22 more), plus a dozen printings that grant it. **#349 closed.**
+
+CR 702.78a: "Damage this source would deal to a creature is dealt in the form of -1/-1 counters."
+That is **word for word** what infect already does to a creature in this engine. What infect adds is
+the *player* half, where its damage is poison rather than life (CR 702.90b).
+
+So the whole increment is **one word in `KEYWORDS` and one `||`**:
+
+```
+const infect  = sourceKeywords?.has('infect');
+const withers = sourceKeywords?.has('wither');   // new
+…
+next = infect || withers ? -1/-1 counters : marked damage;   // creature branch
+…
+next = infect ? poison : life;                               // player branch, untouched
+```
+
+Two locals rather than one, because the two part company in that second branch — and that
+separation is the entire risk in this increment.
+
+### The test that decides it
+
+A Boggart Ram-Gang hits you for **three life**. A Glistener Elf hits you for three **poison**, and
+ten poison ends the game. Putting the keyword into the player branch as well would have turned all
+26 of these cards into infect creatures, and would have passed **every other test in the block
+without a murmur** — the creature behaviour is identical by definition.
+
+So "deals its damage to a player as LIFE, not poison" is the assertion this is really about, and the
+break run confirms it discriminates alone: the player-branch break fails exactly one test.
+
+### A test that proved nothing, and what fixed it
+
+The first draft of the creature test attacked a 3/3 Centaur Courser with a 3/3 Boggart Ram-Gang and
+read the blocker's counters afterwards. The Courser **died**, and a permanent that leaves the
+battlefield takes its counters with it (CR 400.7) — so the assertion read `undefined` and said
+nothing at all about where the damage went.
+
+A 2/4 Harvest Gwyllion is the board that works: three counters leave it a 0/1, alive, and still a
+0/1 a turn later, which is the only way to *see* the difference between a counter and marked damage.
+Marked damage is wiped in the cleanup step; a counter is not.
+
+### Read off the source, and the third test says so
+
+Wither is a fact about the creature **dealing** the damage, not about the one taking it — the same
+shape as deathtouch and protection. A 2/4 Gwyllion blocking a 3/3 Courser leaves the Courser with
+two permanent counters and takes three *marked* damage itself, so it is a 2/4 again next turn. A
+break that reads the keyword off the target fails two tests.
+
+### What came free, and what did not
+
+Every reader that hands a keyword to something asks `isKeyword`, so `Target creature gets +1/+1 and
+gains wither until end of turn` read the moment the word was in the list — the same free ride D501's
+three keywords got, and a runtime test checks the granted word actually *works* rather than merely
+being stored.
+
+**`Equipped creature gets +1/+0 and has wither` does not read, and the test says why it is not
+wither's fault**: the same sentence with *flying* in it is unread too, because no reader handles a
+size bonus and a grant in one equip line. Writing that row as a wither test would have claimed a gap
+that is somewhere else entirely.
+
+Refused on purpose: **Everlasting Torment** ("All damage is dealt as though its source had wither")
+hands the ability to every damage source in the game, which is a global replacement and not a
+keyword on a permanent. Reading it as the enchantment *having* wither would give an enchantment an
+ability that does nothing and leave the rule it prints unenforced — wrong twice over (D362).
+"Black creatures you control have wither" is refused for the same reason D500's class subjects are.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed rules lines read | 21,529 / 56,421 (38.2%) | **21,555 / 56,421 (38.2%)** |
+| cards with a compiled script | 10,817 | 10,817 |
+| cards with every printed line read | 6,559 | **6,573** |
+| of those, needing no script at all | 1,170 | **1,179** |
+
++26 lines — the bare family exactly — and **+14 cards finished**. The "compiled script" row does not
+move at all, and should not: a printed keyword emits no script (D424), so every one of these cards
+is played off its own card definition. Nine of the fourteen need no script whatsoever.
+
+### The break run
+
+Four breaks, each verified to apply and to revert against a SHA-256 of the backup:
+
+| break | compile.test | scripts.test |
+| --- | --- | --- |
+| the word is not in `KEYWORDS` | 3 fail | 2 fail |
+| the creature branch does not read it | pass | 3 fail |
+| the **player** branch reads it too, so wither becomes infect | pass | 1 fail |
+| it is read off the target instead of the source | pass | 2 fail |
+
+### The pool has no wither, so the mechanic-coverage check gets a fifth exemption
+
+Same road as D501's three keywords and D493's one script field: the entry names its corpus count and
+the runtime test that drives a real printing through `customDeck`. Adding a wither creature to one of
+the thirteen measured decks to satisfy a test is what D442's own docblock says not to do.

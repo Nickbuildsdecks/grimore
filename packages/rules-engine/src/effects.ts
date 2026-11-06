@@ -403,9 +403,20 @@ export function dealDamage(
     after the shields have taken their share, because prevented damage is damage that was never
     dealt and poison is no different from life in that regard.
   */
-  const infect = opts.source !== null
-    && next.instances[opts.source] !== undefined
-    && characteristicsOf(next, next.instances[opts.source]!).keywords.has('infect');
+  const sourceKeywords = opts.source !== null && next.instances[opts.source] !== undefined
+    ? characteristicsOf(next, next.instances[opts.source]!).keywords
+    : null;
+  const infect = sourceKeywords !== null && sourceKeywords.has('infect');
+  /*
+    Wither (CR 702.78a), which is infect's creature half and **only** that half (D504).
+
+    Read here beside infect because it is the same fact about the same source, and kept as a second
+    local rather than folded into the first because the two part company in the player branch below:
+    infect's damage to a player is poison, wither's is life. A Boggart Ram-Gang hits you for three
+    life and leaves three -1/-1 counters on whatever blocks it; collapsing the two would make it an
+    infect creature, which is a different card in a format where ten poison ends the game.
+  */
+  const withers = sourceKeywords !== null && sourceKeywords.has('wither');
   if (target.kind === 'player') {
     const seat = next.seats[target.seat];
     if (seat === undefined) return next;
@@ -493,13 +504,14 @@ export function dealDamage(
       return next;
     }
     /*
-      And to a creature, infect is `-1/-1` counters instead of marked damage (CR 702.90b).
+      And to a creature, infect is `-1/-1` counters instead of marked damage (CR 702.90b) — as is
+      **wither**, which is this half of infect and no other (CR 702.78a, D504).
 
       The difference is permanent: marked damage is wiped in the cleanup step and a counter is not,
       so a 3/3 that took two infect damage is a 1/1 for the rest of the game. Deathtouch still
       applies on top, because damage *was* dealt and that is all deathtouch asks (CR 702.2b).
     */
-    next = infect
+    next = infect || withers
       ? withInstance(next, inst.id, {
         counters: {
           ...inst.counters,
