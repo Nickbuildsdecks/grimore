@@ -69,6 +69,7 @@ import {
 } from './targeting.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, NO_PRIORITY_STEPS, STEPS, STEP_LABELS, targetKey,
+  type ActivationTiming,
   type AttackedTarget, type DecisionAnswer, type StackObject, type Step, type Target,
 } from './turnTypes.js';
 
@@ -370,6 +371,38 @@ const scriptOnStack = (state: GameState, object: StackObject): CardScript | unde
   */
   return scriptForCard(state.cardDefs[object.cardKey]);
 };
+
+/**
+ * When an activated ability's printed "Activate only during …" clause lets it be activated
+ * (CR 602.5d), as the three clauses the corpus actually prints.
+ *
+ * **Not `atSorcerySpeed`, and the difference is the whole reason this exists.** Sorcery timing is
+ * four conditions — your turn, your main phase, an empty stack and priority — and a card that says
+ * only "during your turn" means *one* of them. Reusing the sorcery check would have refused an
+ * Apprentice Sorcerer in its own upkeep and in response to anything, which the card allows.
+ *
+ * Priority is not asked here either, because it is not this clause's business: the generic
+ * machinery around every activated ability already requires it, and folding it in would make the
+ * same mistake one layer down.
+ *
+ *  - `'your-turn'` — the active seat is yours, and nothing else (8 cards).
+ *  - `'your-upkeep'` — that, in the upkeep step (6 cards).
+ *  - `'before-attackers'` — that, in any step strictly earlier than declare-attackers (18 cards).
+ *
+ * **The step boundary is the right line for the last one** rather than an approximation of it: CR
+ * 508.1 gives nobody priority in the declare-attackers step until attackers have been declared, so
+ * "before attackers are declared" and "before the declare-attackers step" are the same window for
+ * anybody who could act. The index comparison reads `STEPS`, which is in turn order, so a step
+ * inserted later lands on the correct side of it without this changing.
+ */
+export function atActivationTiming(
+  state: GameState, seat: SeatIndex, timing: ActivationTiming,
+): boolean {
+  if (state.activeSeat !== seat) return false;
+  if (timing === 'your-turn') return true;
+  if (timing === 'your-upkeep') return state.step === 'upkeep';
+  return STEPS.indexOf(state.step) < STEPS.indexOf('declare-attackers');
+}
 
 /** Sorcery timing: your own main phase, empty stack, and you hold priority. */
 export function atSorcerySpeed(state: GameState, seat: SeatIndex): boolean {

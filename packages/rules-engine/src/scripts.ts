@@ -64,7 +64,7 @@ import type { Color, ManaType } from './mana.js';
 import type { Keyword } from './characteristics.js';
 import type { GameState, SeatIndex } from './types.js';
 import { legalTargets, retarget } from './targeting.js';
-import { targetKey, type StackObject, type Target } from './turnTypes.js';
+import { targetKey, type ActivationTiming, type StackObject, type Target } from './turnTypes.js';
 
 /**
  * The biggest toughness on the battlefield, which is where a sweeper's useful range stops.
@@ -16180,17 +16180,43 @@ function animateSelf(clause: string, name: string): ReadEffect | null {
  * under D508: 143 cards are one line away on nothing but a restriction, and these two clauses are
  * 38 and 213 of them.
  */
+interface ActivationFlags {
+  sorcerySpeed?: true;
+  onceEachTurn?: true;
+  timing?: ActivationTiming;
+}
+
 function activationRestriction(
   text: string,
-): { readonly rest: string; readonly flags: { sorcerySpeed?: true; onceEachTurn?: true } } | null {
+): { readonly rest: string; readonly flags: ActivationFlags } | null {
   const found = /^(.*?)\.?\s*Activate only\s+(.+?)\.?\s*$/i.exec(text);
   if (found === null) return { rest: text, flags: {} };
-  const flags: { sorcerySpeed?: true; onceEachTurn?: true } = {};
+  const flags: ActivationFlags = {};
   for (const part of found[2]!.split(/\s+and\s+only\s+/i)) {
     const clause = part.trim().toLowerCase();
     if (clause === 'as a sorcery') flags.sorcerySpeed = true;
     else if (clause === 'once each turn') flags.onceEachTurn = true;
-    else return null;
+    /*
+      The three timing clauses (D509). **Order matters inside this chain**: the longest reading is
+      tried first, because "during your turn, before attackers are declared" starts with "during
+      your turn" and a card restricted to the first half of its own turn must not come out as one
+      restricted to the whole of it.
+
+      A second timing clause on the same ability refuses the line rather than overwriting the
+      first, because no printing says two and a silent overwrite is the half-read restriction this
+      whole function exists to avoid (D487).
+    */
+    else if (clause === 'during your turn, before attackers are declared'
+      || clause === 'during your turn before attackers are declared') {
+      if (flags.timing !== undefined) return null;
+      flags.timing = 'before-attackers';
+    } else if (clause === 'during your upkeep') {
+      if (flags.timing !== undefined) return null;
+      flags.timing = 'your-upkeep';
+    } else if (clause === 'during your turn') {
+      if (flags.timing !== undefined) return null;
+      flags.timing = 'your-turn';
+    } else return null;
   }
   return { rest: found[1]!, flags };
 }

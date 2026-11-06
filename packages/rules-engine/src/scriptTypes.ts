@@ -19,7 +19,7 @@ import type { Keyword } from './characteristics.js';
 import type { EffectFn, PumpOptions } from './effects.js';
 import type { Color, ManaType } from './mana.js';
 import type { GameState, SeatIndex } from './types.js';
-import type { AttackedTarget, DecisionZone, Step, Target } from './turnTypes.js';
+import type { ActivationTiming, AttackedTarget, DecisionZone, Step, Target } from './turnTypes.js';
 
 /** What a spell or ability needs pointed at it before it can be put on the stack. */
 export interface TargetSpec {
@@ -1715,6 +1715,20 @@ export interface AbilityDef {
    * `CardInstance.abilityUsedTurn` as the cost is paid.
    */
   readonly onceEachTurn?: true;
+  /**
+   * "Activate only during your turn / your upkeep / your turn, before attackers are declared."
+   * — CR 602.5d, and **32 legal corpus cards across the three clauses** (18, 8 and 6), measured
+   * the same way D508's 38 were and recorded under D509 in `claude/decisions-log.md`.
+   *
+   * One field with three values rather than three booleans, because the clauses are mutually
+   * exclusive readings of the same question — *when* — and a card prints exactly one of them. Three
+   * flags would have let a script say "during your upkeep" and "before attackers are declared" at
+   * once, which no printing says and which the engine would then have had to decide about.
+   *
+   * Beside `sorcerySpeed` rather than folded into it: see `atActivationTiming` for why reusing the
+   * sorcery check would refuse plays these cards allow.
+   */
+  readonly timing?: ActivationTiming;
   /**
    * "Activate only if …" — a restriction on the ability itself, asked where the ability is
    * *offered* rather than where it resolves.

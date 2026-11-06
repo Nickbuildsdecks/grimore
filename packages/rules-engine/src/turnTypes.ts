@@ -35,6 +35,13 @@ export const STEPS = [
 ] as const;
 export type Step = (typeof STEPS)[number];
 
+/**
+ * When a printed "Activate only during …" clause lets an activated ability be activated
+ * (CR 602.5d, D509). See `atActivationTiming` for what each one asks and why none of them is
+ * `atSorcerySpeed`, and `AbilityDef.timing` for why it is one field rather than three flags.
+ */
+export type ActivationTiming = 'your-turn' | 'your-upkeep' | 'before-attackers';
+
 export const STEP_LABELS: Readonly<Record<Step, string>> = Object.freeze({
   untap: 'Untap',
   upkeep: 'Upkeep',

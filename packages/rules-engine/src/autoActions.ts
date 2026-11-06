@@ -14,7 +14,8 @@ import { manualCards, manualNote } from './coverage.js';
 import { listAt, relocate, requireInstance, withInstance } from './cardActions.js';
 import { characteristicsOf, hasType } from './characteristics.js';
 import {
-  advanceStep, aliveSeats, applyStatics, atSorcerySpeed, attackAimIssue, autoPassFor, bottomOwed,
+  advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed, attackAimIssue,
+  autoPassFor, bottomOwed,
   canAttack, canBlock, checkTargets, damageOrdersOwed, endTurnCleanup, forcedAttackers, legalAttackers,
   legalBlockers, legalDefenders, menaceSatisfied, payFrom, pendingDeclaration, raiseUnblockedAttacks,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
@@ -1372,6 +1373,18 @@ function activate(
     && inst.abilityUsedTurn?.[String(action.abilityIndex ?? 0)] === state.turn) {
     throw new EngineError('RULE_NOT_APPLICABLE',
       `${ch.name} has already used that ability this turn`);
+  }
+  /*
+    "Activate only during your turn / your upkeep / your turn, before attackers are declared"
+    (CR 602.5d). Refused with the clause named, for the reason `onceEachTurn` is a field above:
+    a refusal a player can act on beats one they have to guess at (D67).
+  */
+  if (ability.timing !== undefined && !atActivationTiming(state, action.by, ability.timing)) {
+    throw new EngineError('RULE_NOT_APPLICABLE', ability.timing === 'your-upkeep'
+      ? 'that ability can only be activated during your upkeep'
+      : ability.timing === 'before-attackers'
+        ? 'that ability can only be activated before attackers are declared'
+        : 'that ability can only be activated during your turn');
   }
   // A loyalty ability carries three restrictions with it, all from CR 606: sorcery speed, one
   // per planeswalker per turn, and a minus you can actually pay for. Checked here as well as in

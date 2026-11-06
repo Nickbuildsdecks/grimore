@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
-  KEYWORDS,
+  KEYWORDS, STEPS,
   SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, botAction, canAttack, canBlock,
   destroy, forcedAttackers,
   characteristicsOf, customDeck,
@@ -30036,5 +30036,197 @@ describe('"Activate only once each turn", at the table (D508)', () => {
     // Untapped by hand, because the restriction under test is not the tap.
     s = apply(s, { type: 'card:tap', by: 0, card: elves, tapped: false });
     expect(refusal(s, { type: 'auto:activate', by: 0, card: elves, abilityIndex: 0 })).toBeNull();
+  });
+});
+
+describe('"Activate only during …", at the table (D509)', () => {
+  /*
+    The half a reader test cannot reach: each clause has to permit its own moment and refuse the
+    next one along. Three real printings through `customDeck`'s `data`, one per clause:
+
+      Cinderhaze Wretch    {4}{B}   "{T}: Target player discards a card. Activate only during your turn."
+      Alaborn Veteran      {2}{W}   "{T}: Target creature gets +2/+2 … Activate only during your turn, before attackers are declared."
+      Dwarven Weaponsmith  {1}{R}   "{T}, Sacrifice an artifact: Put a +1/+1 counter … Activate only during your upkeep."
+
+    **All three abilities are mana-free**, and that is a deliberate choice rather than a convenience:
+    a `{3}` cost would mean every refusal below could be the mana running out, or the seat not
+    holding priority to tap a land in that step, rather than the clause under test. A tap is paid
+    from the permanent itself, so the only thing that can refuse these is the restriction.
+    Disrupting Scepter is on the battlefield anyway, as the artifact the Weaponsmith sacrifices.
+
+    **The Wretch is the discriminator for all three**, because its clause is the weakest: a board
+    where the Wretch may be activated and the Veteran may not is a board where the engine is reading
+    two different clauses rather than one. A single-card test would pass with every clause collapsed
+    into "your turn".
+  */
+  const DATA = [
+    {
+      name: 'Cinderhaze Wretch', type_line: 'Creature — Elemental Shaman', mana_cost: '{4}{B}',
+      cmc: 5, colors: ['B'], layout: 'normal', power: '3', toughness: '2',
+      oracle_text: '{T}: Target player discards a card. Activate only during your turn.',
+    },
+    {
+      name: 'Alaborn Veteran', type_line: 'Creature — Human Knight', mana_cost: '{2}{W}', cmc: 3,
+      colors: ['W'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: '{T}: Target creature gets +2/+2 until end of turn. '
+        + 'Activate only during your turn, before attackers are declared.',
+    },
+    {
+      name: 'Dwarven Weaponsmith', type_line: 'Creature — Dwarf Artificer', mana_cost: '{1}{R}',
+      cmc: 2, colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: '{T}, Sacrifice an artifact: Put a +1/+1 counter on target creature. '
+        + 'Activate only during your upkeep.',
+    },
+    {
+      name: 'Disrupting Scepter', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [],
+      layout: 'normal', power: null, toughness: null,
+      oracle_text: '{3}, {T}: Target player discards a card. Activate only during your turn.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'timed-abilities',
+      name: 'Timed Abilities',
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 3 })),
+        { name: 'Grizzly Bears', count: 3 },
+        { name: 'Plains', count: 23 },
+        { name: 'Mountain', count: 22 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual([
+      'Alaborn Veteran', 'Cinderhaze Wretch', 'Disrupting Scepter', 'Dwarven Weaponsmith',
+    ]);
+    return list.deck;
+  };
+
+  /*
+    Everything on the battlefield, seat `first` taking the turn, stopped at `step`.
+
+    **An empty attack declaration is made on the way through combat**, and finding out why is worth
+    recording: in the declare-attackers step `state.priority` is `null` until attackers have been
+    declared, so *every* activation there is refused for want of priority, whatever its clause. That
+    is CR 508.1 and the engine already had it right — which is exactly what makes the step-index
+    reading in `atActivationTiming` exact rather than an approximation: the only reachable moment
+    inside declare-attackers is after the declaration, and "before attackers are declared" has
+    already passed. Without the declaration the tests below would have passed on the priority
+    refusal instead of the clause, which is a test that proves nothing.
+  */
+  const table = (step: Parameters<typeof advanceTo>[1], first: SeatIndex = 0 as SeatIndex) => {
+    const s = advanceTo(arena({
+      decks: { 0: 'timed-abilities', 1: 'timed-abilities' },
+      deckSpecs: { 'timed-abilities': deck() },
+      battlefield: { 0: [...DATA.map((c) => c.name), 'Grizzly Bears', 'Plains'], 1: ['Plains'] },
+      turn: 4, firstSeat: first,
+    }), STEPS.indexOf(step) >= STEPS.indexOf('declare-attackers') ? 'declare-attackers' : step);
+    if (STEPS.indexOf(step) < STEPS.indexOf('declare-attackers')) return s;
+    const declared = apply(s, { type: 'auto:attack', by: first, attackers: [] } as Action);
+    return step === 'declare-attackers' ? declared : advanceTo(declared, step);
+  };
+
+  const wretchAt = (step: Parameters<typeof advanceTo>[1], first: SeatIndex = 0 as SeatIndex) => {
+    const s = table(step, first);
+    return refusal(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Cinderhaze Wretch'),
+      abilityIndex: 0, targets: [{ kind: 'player', seat: 1 as SeatIndex }],
+    } as Action);
+  };
+
+  const veteranAt = (step: Parameters<typeof advanceTo>[1]) => {
+    const s = table(step);
+    return refusal(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Alaborn Veteran'),
+      abilityIndex: 0, targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Grizzly Bears') }],
+    } as Action);
+  };
+
+  const smithAt = (step: Parameters<typeof advanceTo>[1]) => {
+    const s = table(step);
+    return refusal(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Dwarven Weaponsmith'),
+      abilityIndex: 0, sacrifice: find(s, 0, 'battlefield', 'Disrupting Scepter'),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Grizzly Bears') }],
+    } as Action);
+  };
+
+  it('"during your turn" permits the first main phase and the second', () => {
+    expect(wretchAt('precombat-main')).toBeNull();
+    expect(wretchAt('postcombat-main')).toBeNull();
+  });
+
+  it('"during your turn" is not sorcery timing: it works in the upkeep and in combat', () => {
+    /*
+      **The assertion that says this is its own predicate.** `atSorcerySpeed` asks for a main phase
+      as well as your turn, so reusing it here — the obvious shortcut — would refuse the Wretch in
+      its own upkeep and during its own combat, both of which the card allows.
+      See `atActivationTiming`.
+    */
+    expect(wretchAt('upkeep')).toBeNull();
+    expect(wretchAt('declare-attackers')).toBeNull();
+  });
+
+  it('"during your turn" refuses an opponent\'s turn, with the clause named', () => {
+    /*
+      **Seat 1 has to pass priority first**, and the first version of this test did not do that:
+      the active player gets priority before anybody else, so seat 0's activation came back "you do
+      not have priority" — a refusal that would have been there with no clause at all. Passing once
+      hands seat 0 priority *inside* seat 1's main phase, which is the only board on which the
+      clause is the thing being asked.
+    */
+    const s = apply(table('precombat-main', 1 as SeatIndex),
+      { type: 'auto:pass', by: 1 } as Action);
+    expect(s.priority).toBe(0);
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Cinderhaze Wretch'),
+      abilityIndex: 0, targets: [{ kind: 'player', seat: 1 as SeatIndex }],
+    } as Action)).toContain('only be activated during your turn');
+  });
+
+  it('"before attackers are declared" stops at the declare-attackers step', () => {
+    /*
+      The step boundary, asserted in both directions on consecutive steps — which is the whole
+      content of the clause. Beginning of combat is the last moment it works; the declare-attackers
+      step is already too late, because CR 508.1 gives nobody priority there until attackers have
+      been declared, so "before attackers are declared" and "before that step" are one window.
+    */
+    expect(veteranAt('upkeep')).toBeNull();
+    expect(veteranAt('begin-combat')).toBeNull();
+    expect(veteranAt('declare-attackers')).toContain('before attackers are declared');
+    expect(veteranAt('postcombat-main')).toContain('before attackers are declared');
+  });
+
+  it('and the Wretch still works at both of those moments, which is the pair', () => {
+    /*
+      **The discriminator.** Every assertion above would also pass with all three clauses collapsed
+      into one; this is the row that says they are three. Same board, same step, two abilities,
+      opposite answers.
+    */
+    expect(wretchAt('declare-attackers')).toBeNull();
+    expect(veteranAt('declare-attackers')).toContain('before attackers are declared');
+    expect(wretchAt('postcombat-main')).toBeNull();
+    expect(veteranAt('postcombat-main')).toContain('before attackers are declared');
+  });
+
+  it('"during your upkeep" is the one step, and neither main phase is it', () => {
+    expect(smithAt('upkeep')).toBeNull();
+    expect(smithAt('precombat-main')).toContain('only be activated during your upkeep');
+    expect(smithAt('postcombat-main')).toContain('only be activated during your upkeep');
+    // And the Wretch is fine in both, which is the same pair one clause along.
+    expect(wretchAt('precombat-main')).toBeNull();
+  });
+
+  it('is not offered outside its window either, which is where a player looks', () => {
+    // D67/D89 again: `legalActions` has to drop it as well as the activation path refusing it.
+    const offers = (s: GameState, name: string) => legalActions(s, 0 as SeatIndex).plays
+      .filter((p) => p.kind === 'activate' && p.card === find(s, 0, 'battlefield', name)).length;
+    const combat = table('declare-attackers');
+    expect(offers(combat, 'Cinderhaze Wretch')).toBe(1);
+    expect(offers(combat, 'Alaborn Veteran')).toBe(0);
+    const upkeep = table('upkeep');
+    expect(offers(upkeep, 'Dwarven Weaponsmith')).toBe(1);
+    expect(offers(table('precombat-main'), 'Dwarven Weaponsmith')).toBe(0);
   });
 });

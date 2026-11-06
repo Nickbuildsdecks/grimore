@@ -16681,3 +16681,122 @@ job, and it is why each one names what would retire it.
 
 **39 cards finished**, against the 38 the measurement predicted — the extra one prints both clauses,
 which only the combined reading finishes.
+
+## D509 — The three "Activate only during …" clauses, and what the declare-attackers step taught
+
+D508's sibling, and the rest of the restriction family. After that increment the family re-measures
+at **480 cards one line away** on a line carrying "Activate only …", **104** of them with the
+restriction as the only unread thing, and these three clauses are 32 of those:
+
+| cards finished | clause |
+| --- | --- |
+| 18 | Activate only during your turn, before attackers are declared. |
+| 8 | Activate only during your turn. |
+| 6 | Activate only during your upkeep. |
+
+Thirty-two beats every shape in the printed queue, whose head is still the 19-card threshold bucket
+— 17 of which are the quoted-ability job D508 records as the reason that bucket misleads.
+
+### One field, three values
+
+`AbilityDef.timing?: 'your-turn' | 'your-upkeep' | 'before-attackers'`. One field rather than three
+booleans, because the clauses are mutually exclusive readings of the same question — *when* — and a
+card prints exactly one. Three flags would have let a script say "during your upkeep" **and** "before
+attackers are declared" at once, which no printing says and which the engine would then have had to
+decide about.
+
+The reader is three more clauses in `activationRestriction`'s list, and **the order inside that chain
+is load-bearest**: the long clause starts with the short one, so a chain that tried "during your
+turn" first would read Alaborn Veteran as restricted to the whole of its turn — a card that can tap
+in its second main phase, which it cannot. A second timing clause on one ability refuses the line
+rather than overwriting the first, because a silent overwrite would take the *second* clause, which
+is the one a reader would least expect.
+
+### Not `atSorcerySpeed`, which was the shortcut on offer
+
+Sorcery timing is four conditions: your turn, your main phase, an empty stack, and priority. A card
+that says only "during your turn" means **one** of them. Reusing the sorcery check — the obvious
+thing, and it already existed — would have refused a Cinderhaze Wretch in its own upkeep and during
+its own combat, both of which the card allows. `atActivationTiming` asks the active seat and then
+the clause, and asks nothing about priority, because the generic machinery around every activated
+ability already requires it and folding it in would make the same mistake one layer down.
+
+### What the declare-attackers step taught, and why the step index is exact
+
+The first version of the runtime tests failed for a reason worth keeping. In the declare-attackers
+step **`state.priority` is `null` until attackers have been declared**, so *every* activation there
+is refused for want of priority, whatever its clause — the tests would have passed on the priority
+refusal rather than on anything this increment does, which is a test that proves nothing.
+
+The engine already had that right: it is CR 508.1, and nobody gets priority in that step before the
+declaration. Which is what makes the step-index reading **exact rather than an approximation**: the
+only reachable moment inside declare-attackers is *after* the declaration, by which point "before
+attackers are declared" has passed. So `STEPS.indexOf(step) < STEPS.indexOf('declare-attackers')`
+and the printed clause are the same window for anybody who could act, and the comparison reads
+`STEPS` — which is in turn order — so a step inserted later lands on the correct side of it with
+nothing here changing.
+
+The tests now declare an empty attack on the way through combat, and the helper's docblock says why.
+
+A second test failed the same way from the other end: on an opponent's turn the active player gets
+priority first, so seat 0's activation came back "you do not have priority" — again a refusal that
+would have been there with no clause at all. Seat 1 passes once, which hands seat 0 priority *inside*
+seat 1's main phase, and that is the only board on which the clause is the thing being asked.
+
+**Both are the same mistake:** a refusal that arrives for the right reason by accident. The fix in
+both cases was to reach the state where the clause is the only thing left that could refuse.
+
+### The tests
+
+Ten compile tests, including all three printings, the long-versus-short ordering asserted directly,
+a control that an unrestricted ability gets no timing, the combination with D508's once-each-turn,
+the two-timing-clauses refusal, and three rows for clauses still unread.
+
+Seven runtime tests through `customDeck`'s `data` on printed **Cinderhaze Wretch**, **Alaborn
+Veteran** and **Dwarven Weaponsmith**. All three abilities are mana-free, which is deliberate: a
+`{3}` cost would mean every refusal could be the mana running out, or the seat not holding priority
+to tap a land in that step, rather than the clause under test. A tap is paid from the permanent
+itself, so the only thing that can refuse these is the restriction. (Disrupting Scepter is on the
+battlefield anyway, as the artifact the Weaponsmith sacrifices.)
+
+**The Wretch is the discriminator for all three clauses.** Every other assertion would also pass
+with the three collapsed into one; the rows that pair it against the Veteran on the same board, in
+the same step, with opposite answers are what say they are three.
+
+### The break run
+
+Eight breaks, each verified to apply and to revert against a SHA-256 of all four source files:
+
+| break | caught by |
+| --- | --- |
+| the short clause is tried before the long one | 5 tests |
+| a second timing clause overwrites the first instead of refusing | 1 test (after a rewrite — see below) |
+| the timing is reused as sorcery speed | 3 tests |
+| the upkeep clause reads the wrong step | 2 tests |
+| `before-attackers` includes the declare-attackers step | 3 tests |
+| the active-seat check is dropped, so an opponent's turn passes | 1 test |
+| the activation path does not refuse an out-of-window activation | 4 tests |
+| `legalActions` still offers it outside its window | 1 test |
+
+**One break had to be rewritten, and the miss is instructive.** "A second timing clause overwrites
+the first" stripped the guard from the *upkeep* branch only; the test's clause order is "upkeep and
+only during your turn", so the second clause hit the `your-turn` branch, whose guard was still there,
+and the line was still refused. The break applied, changed real code, and discriminated nothing.
+Stripping all three guards — which is what "the guard is gone" actually means — fails the test.
+Third time in this series that a break has been aimed at the wrong branch of the right function
+(D505 twice, now this), and the tell is the same every time: zero failures from a break you expected
+to hurt.
+
+### Coverage
+
+| | before D509 | after |
+| --- | --- | --- |
+| printed lines read | 21,661 / 56,421 (38.4%) | **21,705 / 56,421 (38.5%)** |
+| cards with a compiled script | 10,859 | **10,899** |
+| cards with every printed line read | 6,637 | **6,670** |
+| of those, needing no script at all | 1,191 | 1,191 |
+
+**33 cards finished**, against the 32 the measurement predicted.
+
+Across D508 and D509 together the restriction family has gone from 0 of its 143 one-away cards read
+to **72**, for two fields, one predicate and one list of five clauses.

@@ -14,7 +14,7 @@ import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef } from './cards.j
 import { listAt } from './cardActions.js';
 import { allAbilitiesLost, characteristicsOf, hasType } from './characteristics.js';
 import {
-  atSorcerySpeed, bottomOwed, modeCombinations, modeTargetSpecs, modesOf, pendingDeclaration,
+  atActivationTiming, atSorcerySpeed, bottomOwed, modeCombinations, modeTargetSpecs, modesOf, pendingDeclaration,
   sacrificeOptions, stackTop, unblockedAttackersOf,
 } from './automation.js';
 import {
@@ -1650,6 +1650,9 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
       // loyalty check below. See `AbilityDef.onceEachTurn`.
       if (ability.onceEachTurn === true
         && inst.abilityUsedTurn?.[String(i)] === state.turn) continue;
+      // "Activate only during your turn / upkeep / before attackers" (CR 602.5d). Its own
+      // predicate rather than `sorcerySpeed`'s — see `atActivationTiming`.
+      if (ability.timing !== undefined && !atActivationTiming(state, seat, ability.timing)) continue;
       /*
         A loyalty ability: sorcery speed, one per planeswalker per turn (CR 606.3), and a minus
         that cannot be paid for is not an option at all. All three are implied by the cost being

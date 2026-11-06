@@ -11928,24 +11928,132 @@ describe('"Activate only once each turn" (D508)', () => {
   });
 
   it.each([
-    ['during your turn', 'Activate only during your turn.'],
-    ['during your upkeep', 'Activate only during your upkeep.'],
-    ['before attackers are declared', 'Activate only during your turn, before attackers are declared.'],
+    /*
+      **Three rows were here and are retired: D509 reads them.** They named
+      "Activate only during your turn", "… during your upkeep" and "… during your turn, before
+      attackers are declared" as the next three clauses in the queue at 18, 8 and 6 cards, and as
+      deliberately left because "when" is a different question from "how often". They were the next
+      increment, and the D509 block below is it — so these rows did their job, and this note is what
+      they leave behind. (Ninth, tenth and eleventh stale refusal rows in the series; the first
+      three whose increment shipped the same day.)
+
+      What is left here is the clause still unread, and the reason the row exists at all: D487's
+      whole-or-nothing rule, where it matters most. A restriction read in half is an ability the
+      table offers at a moment the card forbids — worse than an unread line (D362) — so a clause
+      this does not know refuses the line rather than dropping the sentence.
+    */
     ['a board condition', 'Activate only if there are seven or more cards in your graveyard.'],
   ])('refuses the whole line for a restriction it cannot read: %s', (_label, tail) => {
-    /*
-      D487's whole-or-nothing rule, where it matters most. A restriction read in half is an ability
-      the table offers at a moment the card forbids — worse than an unread line (D362) — so a
-      clause this does not know refuses the line rather than dropping the sentence.
-
-      These four are the next four clauses in the queue by cards finished (18, 8, 6 and the
-      threshold family), and they are deliberately left: "when" is a different question from
-      "how often", and bundling them would double the surface of this increment.
-    */
     const read = once(`{2}{G}: Darkthicket Wolf gets +2/+2 until end of turn. ${tail as string}`);
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
     expect(read.script?.abilities ?? []).toEqual([]);
+  });
+});
+
+describe('"Activate only during …", the three timing clauses (D509)', () => {
+  /*
+    D508's sibling and the rest of the restriction family. After that increment the family
+    re-measures at **480 cards one line away** on a line carrying "Activate only …", **104** of them
+    with the restriction as the only unread thing, and these three clauses are 32 of those:
+
+      18  Activate only during your turn, before attackers are declared.
+       8  Activate only during your turn.
+       6  Activate only during your upkeep.
+
+    Thirty-two beats every shape in the printed queue, whose head is still the 19-card threshold
+    bucket — 17 of which are the quoted-ability job (D508 records why that bucket is misleading).
+
+    One field with three values rather than three flags, because the clauses are mutually exclusive
+    readings of *when*. See `AbilityDef.timing` and `atActivationTiming`.
+  */
+  const timed = (
+    text: string,
+    name = 'Disrupting Scepter',
+    type = 'Artifact',
+  ) => compileCard({
+    name, type_line: type, mana_cost: '{3}', cmc: 3, colors: [],
+    layout: 'normal', power: null, toughness: null, oracle_text: text,
+  });
+
+  it.each([
+    ['Disrupting Scepter', '{3}, {T}: Target player discards a card. Activate only during your turn.',
+      'your-turn'],
+    ['Alaborn Veteran',
+      '{T}: Target creature gets +2/+2 until end of turn. '
+      + 'Activate only during your turn, before attackers are declared.', 'before-attackers'],
+    ['Dwarven Weaponsmith',
+      '{T}, Sacrifice an artifact: Put a +1/+1 counter on target creature. '
+      + 'Activate only during your upkeep.', 'your-upkeep'],
+  ])('reads printed %s', (_name, text, timing) => {
+    const read = timed(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.abilities?.[0]?.timing).toBe(timing);
+  });
+
+  it('reads "before attackers are declared" as its own clause, not as "during your turn"', () => {
+    /*
+      **The assertion this increment can get wrong silently.** The long clause *starts with* the
+      short one, so a chain that tried "during your turn" first would read Alaborn Veteran as
+      restricted to the whole of its turn — a card that can tap in its second main phase, which it
+      cannot. The order inside `activationRestriction` is what makes this pass, and this row is
+      what would fail if the order were swapped.
+    */
+    const short = timed('{3}, {T}: Target player discards a card. Activate only during your turn.');
+    const long = timed('{3}, {T}: Target player discards a card. '
+      + 'Activate only during your turn, before attackers are declared.');
+    expect(short.ok && long.ok).toBe(true);
+    if (!short.ok || !long.ok) return;
+    expect(short.script?.abilities?.[0]?.timing).toBe('your-turn');
+    expect(long.script?.abilities?.[0]?.timing).toBe('before-attackers');
+  });
+
+  it('does not set a timing on an ability that does not print one', () => {
+    // The control, for the same reason D508's block has one: a reader that set a timing
+    // unconditionally would take instant speed away from every activated ability in the corpus.
+    const read = timed('{3}, {T}: Target player discards a card.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.abilities?.[0]?.timing).toBeUndefined();
+  });
+
+  it('combines a timing with D508\'s once-each-turn and D445\'s sorcery speed', () => {
+    const read = timed('{3}, {T}: Target player discards a card. '
+      + 'Activate only during your turn and only once each turn.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.abilities?.[0]?.timing).toBe('your-turn');
+    expect(read.script?.abilities?.[0]?.onceEachTurn).toBe(true);
+  });
+
+  it('refuses two timing clauses on one ability rather than letting one win', () => {
+    /*
+      No printing says two, so the engine is not owed an answer about which. A silent overwrite
+      would be the half-read restriction the whole function exists to avoid (D487) — and it would
+      read as the *second* clause, which is the one a reader would least expect.
+    */
+    const read = timed('{3}, {T}: Target player discards a card. '
+      + 'Activate only during your upkeep and only during your turn.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+    expect(read.script?.abilities ?? []).toEqual([]);
+  });
+
+  it.each([
+    ['a board condition', 'Activate only if there are seven or more cards in your graveyard.'],
+    ['an opponent\'s turn', 'Activate only during an opponent\'s turn.'],
+    ['a narrower combat window', 'Activate only during combat after blockers are declared.'],
+  ])('still refuses the whole line for a clause it cannot read: %s', (_label, tail) => {
+    // The next clauses in the family, each a real printing and each left on purpose.
+    const read = timed(`{3}, {T}: Target player discards a card. ${tail as string}`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
   });
 });
