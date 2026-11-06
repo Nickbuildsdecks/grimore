@@ -7457,6 +7457,21 @@ describe('deck coverage', () => {
         `dealDamage`'s player branch as well would turn all 26 cards into infect creatures and pass
         every other test in the block (D504).
 
+      - `keyword changeling`: **61 legal corpus cards** print the bare line, and three of them
+        (Woodland Changeling, Impostor of the Sixth Pride, Universal Automaton) have nothing else
+        in the text box at all. Not one is in the pool's thirteen decks, and no printing in the
+        corpus grants the keyword to another creature — so there is no card to add here short of
+        adding a changeling to a measured deck.
+
+        Driven at runtime by four tests in "changeling at the table: every creature type, in every
+        rule that reads one", on printed Woodland Changeling, each asking a rule that *already*
+        reads a creature type and each with a Grizzly Bears beside it as the discriminator: it is a
+        Wall a Juggernaut cannot be blocked by, an Elf an Imperious Perfect pumps to 3/3, a Wall on
+        D498's printed ban list (Bog Rats) and a Wall on D498's printed *allow* list (Elven Riders,
+        which is the direction a filter that merely refused everything would fail). The lord test
+        is the one that earned its place: it failed on the first implementation and is what moved
+        the extension into layer 4.
+
       **And one `script` field, which is what finally unblocked D493.** That increment was built in
       full and then held back for two days for exactly this check: it declares a flag no pool card
       carries, and the pool's thirteen decks are measured. Adding an uncounterable creature to one
@@ -7473,6 +7488,7 @@ describe('deck coverage', () => {
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
       'keyword fear', 'keyword shadow', 'keyword horsemanship', 'keyword wither',
+      'keyword changeling',
       'script cantBeCountered',
     ]);
 
@@ -29749,5 +29765,135 @@ describe('wither at the table, and where it parts company with infect (D504)', (
     expect(s.instances[courser]!.counters['-1/-1']).toBe(2);
     // And the Bears itself is untouched by its own keyword: it took three marked damage and died.
     expect(s.instances[bears]!.zone).toBe('graveyard');
+  });
+});
+
+describe('changeling at the table: every creature type, in every rule that reads one (D506)', () => {
+  /*
+    Changeling (CR 702.73a) is one word in `KEYWORDS` and one type-line extension in
+    `characteristicsOf`, and the whole value of the increment is in what *other* rules then see.
+    So the tests here are the ones a mere keyword read would fail: four rules that already ask
+    "is this creature a Wall / an Elf", each asked of a creature whose printed type line says
+    Shapeshifter and nothing else.
+
+    One real printing through `customDeck`'s `data`, chosen because its whole text is the word and
+    so nothing else can account for an assertion:
+
+      Woodland Changeling   {1}{G} 2/2  Creature — Shapeshifter
+      "Changeling (This card is every creature type.)"
+
+    Everything it is measured against is a shipping pool card:
+
+      Juggernaut          `cantBeBlockedByWalls`, D495's static             — it is a Wall
+      Imperious Perfect   `scope: { subtype: 'Elf', other: true }`          — it is an Elf
+      Bog Rats            "can't be blocked by Walls", D498's ban list      — it is a Wall
+      Elven Riders        "… except by Walls and/or creatures with flying"  — it is a Wall
+
+    **Grizzly Bears is the discriminator in every one of them.** It is a 2/2 green creature with no
+    keywords sitting on the same battlefield, so a changeling that gained nothing and a board where
+    the rule fires for everybody both fail: the changeling and the Bears have to come out
+    *different*.
+  */
+  const CHANGELING = {
+    name: 'Woodland Changeling', type_line: 'Creature — Shapeshifter', mana_cost: '{1}{G}', cmc: 2,
+    colors: ['G'], layout: 'normal', power: '2', toughness: '2',
+    oracle_text: 'Changeling (This card is every creature type.)',
+  };
+  const BOG_RATS = {
+    name: 'Bog Rats', type_line: 'Creature — Rat', mana_cost: '{B}', cmc: 1,
+    colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+    oracle_text: "Bog Rats can't be blocked by Walls.",
+  };
+  const ELVEN_RIDERS = {
+    name: 'Elven Riders', type_line: 'Creature — Elf', mana_cost: '{3}{G}{G}', cmc: 5,
+    colors: ['G'], layout: 'normal', power: '3', toughness: '3',
+    oracle_text: "Elven Riders can't be blocked except by Walls and/or creatures with flying.",
+  };
+  const DATA = [CHANGELING, BOG_RATS, ELVEN_RIDERS];
+
+  /** Seat 0 attacks with `attackers`, seat 1 holds `blockers`; both seats play the same list. */
+  const table = (id: string, attackers: readonly string[], blockers: readonly string[]) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 2 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Juggernaut', count: 2 },
+        { name: 'Imperious Perfect', count: 2 },
+        { name: 'Forest', count: 22 },
+        { name: 'Swamp', count: 22 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Bog Rats', 'Elven Riders', 'Woodland Changeling']);
+    return advanceTo(arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: { 0: ['Forest', ...attackers], 1: ['Swamp', ...blockers] },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+  };
+
+  it('is a Wall, so a Juggernaut cannot be blocked by it', () => {
+    /*
+      D495's `cantBeBlockedByWalls` static, which asks `hasSubtype(blocker.ch.typeLine, 'wall')`.
+      That is the field the changeling has to be inside, and the Grizzly Bears beside it is the
+      half that proves the Juggernaut has not simply become unblockable.
+    */
+    const s = table('d506-wall', ['Juggernaut'], ['Woodland Changeling', 'Grizzly Bears']);
+    const juggernaut = find(s, 0 as SeatIndex, 'battlefield', 'Juggernaut');
+    const changeling = find(s, 1 as SeatIndex, 'battlefield', 'Woodland Changeling');
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    expect(canBlock(s, changeling, juggernaut, 1 as SeatIndex)?.reason).toContain('Wall');
+    expect(canBlock(s, bears, juggernaut, 1 as SeatIndex)).toBeNull();
+  });
+
+  it('is an Elf, so a tribal lord pumps it', () => {
+    /*
+      CR 613.1d before 613.1f, the ordering #109's own test built a hand-made effect to reach
+      because no pool card added a creature type. Changeling is the first printed card that does,
+      and the layer order falls out: the type line `characteristicsOf` hands the lord's scope
+      already carries Elf, so the changeling is a 3/3 and the Bears is still a 2/2.
+    */
+    const s = table('d506-lord', ['Imperious Perfect', 'Woodland Changeling', 'Grizzly Bears'], []);
+    const changeling = find(s, 0 as SeatIndex, 'battlefield', 'Woodland Changeling');
+    const bears = find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const perfect = find(s, 0 as SeatIndex, 'battlefield', 'Imperious Perfect');
+    expect([power(s, changeling), toughness(s, changeling)]).toEqual([3, 3]);
+    expect([power(s, bears), toughness(s, bears)]).toEqual([2, 2]);
+    // `other: true`, so the lord is not an Elf pumping itself twice over for being every type.
+    expect([power(s, perfect), toughness(s, perfect)]).toEqual([2, 2]);
+  });
+
+  it('is a Wall for D498\'s printed ban list', () => {
+    /*
+      The same question asked by a *printed* clause rather than by a script: Bog Rats' whole card
+      is "can't be blocked by Walls", read into `cantBeBlockedBy` as a subtype clause and answered
+      by `clauseMatches` against the blocker's live type line.
+    */
+    const s = table('d506-ban', ['Bog Rats'], ['Woodland Changeling', 'Grizzly Bears']);
+    const rats = find(s, 0 as SeatIndex, 'battlefield', 'Bog Rats');
+    expect(canBlock(s, find(s, 1 as SeatIndex, 'battlefield', 'Woodland Changeling'), rats, 1 as SeatIndex)?.reason)
+      .toContain('Walls');
+    expect(canBlock(s, find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears'), rats, 1 as SeatIndex))
+      .toBeNull();
+  });
+
+  it('is a Wall for D498\'s printed allow list, which points the other way', () => {
+    /*
+      The direction that cannot be faked by a filter that refuses everything: Elven Riders admits
+      only Walls and fliers, so being every creature type is what *lets* the changeling block — and
+      the Grizzly Bears, which is neither, may not. A changeling that gained no types would be
+      refused here and permitted in the ban test above, so the pair pins the sign.
+    */
+    const s = table('d506-only', ['Elven Riders'], ['Woodland Changeling', 'Grizzly Bears']);
+    const riders = find(s, 0 as SeatIndex, 'battlefield', 'Elven Riders');
+    expect(canBlock(s, find(s, 1 as SeatIndex, 'battlefield', 'Woodland Changeling'), riders, 1 as SeatIndex))
+      .toBeNull();
+    expect(canBlock(s, find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears'), riders, 1 as SeatIndex)?.reason)
+      .toContain('except by');
   });
 });

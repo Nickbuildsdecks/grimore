@@ -33742,3 +33742,139 @@ mana-neutral repeatable ability the evaluation scores at zero — and all three 
 increment that first made the card readable. **The sweep is the instrument for this class, and
 running it on a fresh seed after every increment is what keeps catching them.** It is also why the
 seed is advanced rather than reused: 34001 through 36001 would never have found this card.
+
+## D506 — Changeling, and the layer it has to be applied in
+
+Changeling (CR 702.73a) is "this card is every creature type", and the queue ranked it first by
+cards finished: **61 legal corpus cards** print the bare line, three of them (Woodland Changeling,
+Impostor of the Sixth Pride, Universal Automaton) with nothing else in the text box at all.
+
+### One place, which is the whole design
+
+Subtype matching is spread across eighteen call sites in the engine — `clauseMatches`'s Wall and
+Wizard clauses (D498, D500), the `controller-subtype` effect scope every tribal lord uses,
+`canBlock`'s Wall clause, three counts in `scripts.ts`, two filter builders that receive only a
+`TypeLine` and could never see a flag. Changeling is therefore **not a flag**: it extends the
+subtype list that all eighteen already read, and none of them changed.
+
+That needed a vocabulary the engine did not have, and **the derivation was wrong twice before it
+was right**:
+
+| attempt | rule | result |
+| --- | --- | --- |
+| 1 | every word in the subtype section of a Creature-headed line | 325 — polluted with Equipment, Saga, Food, Treasure, Clue, Background, Book, Forest, Shrine, Aura |
+| 2 | attempt 1, minus every word seen on a noncreature line | 298 — but **dropped eighteen real tribes** |
+| 3 | heads containing Creature, Tribal **or Kindred**, minus noncreature subtypes | **316**, correct in spot-checks |
+
+Attempt 2's eighteen casualties were Goblin, Elf, Wizard, Demon, Elemental, Soldier, Warrior,
+Merfolk, Kithkin, Faerie, Giant, Shaman, Shapeshifter, Rebel, Rogue, Treefolk, Eldrazi and
+Lhurgoyf — every one of them a word that also appears on a *Tribal* or *Kindred* line (Tribal
+Instant — Goblin, Kindred Sorcery — Elf), which the second rule read as evidence that it was not a
+creature type. `Kindred` is the rename Tribal got in 2024 and the word that fixed it.
+
+**This was caught by checking the output against expected names, not by trusting the count.** A
+list of 298 looks just as plausible as a list of 316, and a changeling that is not a Goblin is the
+bug nobody would have found at the table for weeks. `Time` and `Lord` are in the list as the two
+halves of the two-word "Time Lord", which is the one known imprecision and costs nothing: no card
+asks whether something is a Time.
+
+### The layer, and the test that found it
+
+The first implementation extended the subtype list **after the effects loop**, on the final keyword
+set — which reads as obviously right (lose-all-abilities has already cleared the keyword, so a
+frogged changeling is a Shapeshifter again) and is wrong for a reason the reader cannot see:
+
+> *Every later layer's scope is judged against the layer-4 type line.*
+
+Written after the loop, the extended line was handed to callers and invisible to the one reader
+that matters most. **An Imperious Perfect did not pump a changeling**, because the lord's
+`controller-subtype` scope had already been matched against a bare Shapeshifter. Nine compile
+tests passed; `hasSubtype` answered Goblin, Elf, Wall, Wizard, Spirit, Dragon and Zombie correctly;
+the whole increment looked finished. The *runtime* test for the lord is what said otherwise.
+
+The fix is `withChangeling`, called inside layer 4 beside `withAddedTypes` (CR 613.1d — changeling
+is a characteristic-defining ability, CR 604.3). It reads the keyword off the printed text and
+pre-scans for a "loses all abilities" effect, which is CR 613.8 **dependency** rather than plain
+layer order: layer 6 is after layer 4, so the type-changing application is dependent on the ability
+still being there and is applied after the removal. Judging that scan against the pre-changeling
+line is the same simplification `withAddedTypes` already documents for its own scopes, and it costs
+nothing in practice — **no printing in the corpus grants changeling to another creature.** The two
+that come close (Moritte of the Frost, Omni-Changeling) copy a permanent and add the keyword to the
+copy, which is layer 1 and arrives as a printed keyword on the thing being read.
+
+Only creatures are extended. A changeling card is every creature type in every zone (CR 702.73a),
+but the only question this engine asks of a noncreature object is about artifact and enchantment
+subtypes, and those are not creature types. `def.typeLine` is untouched, so a player still sees
+"Creature — Shapeshifter", and the printed subtypes stay at the front of the live list.
+
+### The tests
+
+Nine compile tests, including: the bare keyword read; Avian Changeling, Changeling Sentinel and
+Changeling Outcast compiling whole; `hasSubtype` true for seven tribes and false for Equipment,
+Aura, Saga, Vehicle, Food and Forest; `subtypes[0] === 'Shapeshifter'`; `def.typeLine` unchanged;
+lose-all-abilities clearing it; a noncreature permanent unaffected; and `CREATURE_TYPES` pinned at
+316 names.
+
+Two of those nine were rewritten. **Mistform Ultimus** ("is every creature type") is a *refusal*
+row, not a second reading: its sentence is a list of words rather than a keyword, so the line stays
+unread and inventing a reader for it would be D259. And a row asserting that "create a 2/2
+colorless Shapeshifter creature token with changeling" refuses turned out to be false — the token
+reader asks `isKeyword` for the words after "with", so the keyword made it compile. That row is now
+the positive assertion it should always have been: **Irregular Cohort** compiles whole.
+
+Four runtime tests through `customDeck`'s `data`, on printed **Woodland Changeling** — chosen
+because its whole text is the word, so nothing else can account for an assertion. Each asks a rule
+that *already* reads a creature type, and **each has a Grizzly Bears beside it as the
+discriminator**: a 2/2 green creature with no keywords on the same battlefield, so a changeling
+that gained nothing and a board where the rule fires for everybody both fail.
+
+| rule | the changeling | the Bears |
+| --- | --- | --- |
+| Juggernaut's `cantBeBlockedByWalls` (D495) | may not block it — it is a Wall | may block it |
+| Imperious Perfect's `subtype: 'Elf', other: true` | **3/3** | 2/2 |
+| Bog Rats, "can't be blocked by Walls" (D498 ban) | may not block it | may block it |
+| Elven Riders, "… except by Walls and/or fliers" (D498 allow) | **may** block it | may not |
+
+The last row is the one a filter that merely refused everything would fail, and the Imperious
+Perfect row is the one that earned its place: it failed on the first implementation and is what
+moved the extension into layer 4.
+
+`keyword changeling` joins the `compilerOnly` exemption set, with its evidence named per D442: 61
+legal corpus cards, not one in the pool's thirteen measured decks, the keyword not grantable, and
+the four runtime tests above.
+
+### The break run
+
+Six breaks, each verified to apply and to revert against a SHA-256 of the original:
+
+| break | caught by |
+| --- | --- |
+| the keyword is not in `KEYWORDS` | 10 tests + `tsc` |
+| the subtype list is never extended | 5 tests |
+| the creature guard is dropped, so a noncreature is every creature type | 1 test |
+| the lose-all-abilities pre-scan is dropped | 1 test |
+| the extended line reaches callers but is hidden from every later layer's scope | 1 test |
+| `CREATURE_TYPES` carries an artifact subtype | 2 tests |
+
+The fifth break is the original bug, isolated: the line is correct everywhere a caller looks and
+wrong in every scope. **One test catches it, and it is the lord.**
+
+### Coverage
+
+| | before D506 | after |
+| --- | --- | --- |
+| printed lines read | 21,555 / 56,421 (38.2%) | **21,615 / 56,421 (38.3%)** |
+| cards with a compiled script | 10,817 | **10,821** |
+| cards with every printed line read | 6,573 | **6,598** |
+| of those, needing no script at all | 1,179 | **1,191** |
+
+**25 cards finished** — the whole point of ranking the queue this way (D434).
+
+### Named and left: a changeling in a graveyard
+
+`cardWordMatch`, which reads a *printed* card rather than a battlefield permanent, does not consult
+`characteristicsOf` and so does not see the extension. A changeling card in a graveyard is not a
+Spirit for soulshift. That is correct today only by accident — soulshift's "return target Spirit
+card with mana value N or less from your graveyard" is **not read yet** (it is 17 cards in the
+queue), so nothing asks the question. When it is read, the printed-card path needs the same
+extension, and this paragraph is the note that says so.

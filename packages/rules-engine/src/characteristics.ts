@@ -89,6 +89,17 @@ export const KEYWORDS = [
     for free because every grant reader asks `isKeyword`.
   */
   'wither',
+  /*
+    Changeling (CR 702.73a), the one keyword here that changes what a creature **is** rather than
+    what it does: "This object is every creature type." 23 cards print nothing else at all (D506).
+
+    A keyword in this list rather than a field of its own, which is also the rule: it is a
+    characteristic-defining ability, so "loses all abilities" takes it away and a frogged changeling
+    is a Shapeshifter again. `characteristicsOf` reads it off `keywords` and extends the subtype
+    list, so every question the engine asks about a creature type answers correctly without a single
+    call site changing. See `CREATURE_TYPES`.
+  */
+  'changeling',
 ] as const;
 export type Keyword = (typeof KEYWORDS)[number];
 
@@ -460,6 +471,74 @@ export function printedCombatStatics(
   }
   return found;
 }
+
+/**
+ * Every creature type, which is the vocabulary changeling needs (CR 702.73a, D506).
+ *
+ * **Derived from the corpus, not written from memory** (D57, D259). The rule that produced it: a
+ * word in the subtype section of a type line whose head says Creature, Tribal or **Kindred** is a
+ * creature type; a word that also appears in the subtype section of a line with none of those is
+ * not. That second clause is what keeps `Equipment`, `Saga`, `Shrine`, `Aura`, `Clue`, `Food`,
+ * `Treasure`, `Background`, `Book` and `Forest` out — all ten appear on creature type lines
+ * (Gingerbrute is an "Artifact Creature — Food Golem") and all ten are artifact, enchantment or
+ * land subtypes rather than creature types. A changeling that was an Equipment would be a creature
+ * the engine could equip something to.
+ *
+ * `Kindred` is the whole of why the first two derivations were wrong. Tribal cards print a creature
+ * type on a noncreature card ("Kindred Sorcery — Goblin"), and Scryfall now renders that word as
+ * Kindred rather than Tribal — so the first pass classified **Goblin, Elf, Wizard, Demon,
+ * Elemental, Soldier, Warrior, Merfolk, Kithkin, Faerie, Giant, Shaman, Shapeshifter, Rebel, Rogue,
+ * Treefolk, Eldrazi and Lhurgoyf** as noncreature subtypes and dropped eighteen of the most-played
+ * tribes in the game. Caught by spot-checking the output against names I expected rather than by
+ * trusting the count.
+ *
+ * **316 types**, and two of them are not types: `Time` and `Lord` are the halves of "Time Lord",
+ * the one creature type in Magic that is two words, split by a derivation that works a word at a
+ * time. Nothing asks for either, so they are left in rather than special-cased — named here so
+ * the next reader knows they were seen.
+ */
+export const CREATURE_TYPES: readonly string[] = [
+  'Advisor', 'Aetherborn', 'Alien', 'Ally', 'Andorian', 'Angel', 'Antelope', 'Ape', 'Archer', 'Archon',
+  'Armadillo', 'Artificer', 'Assassin', 'Assembly-Worker', 'Astartes', 'Atog', 'Aurochs', 'Avatar',
+  'Azra', 'Badger', 'Barbarian', 'Bard', 'Basilisk', 'Bat', 'Bear', 'Beast', 'Beaver', 'Beeble',
+  'Beholder', 'Berserker', 'Bird', 'Bison', 'Boar', 'Borg', 'Bringer', 'Brushwagg', "C'tan", 'Caitian',
+  'Camel', 'Capybara', 'Carrier', 'Cat', 'Centaur', 'Chimera', 'Citizen', 'Cleric', 'Clown', 'Cockatrice',
+  'Construct', 'Coward', 'Coyote', 'Crab', 'Crocodile', 'Custodes', 'Cyberman', 'Cyclops', 'Dalek',
+  'Dauthi', 'Demigod', 'Demon', 'Detective', 'Devil', 'Dinosaur', 'Djinn', 'Doctor', 'Dog', 'Dragon',
+  'Drake', 'Dreadnought', 'Drix', 'Drone', 'Druid', 'Dryad', 'Dwarf', 'Echidna', 'Efreet', 'Egg',
+  'Elder', 'Eldrazi', 'Elemental', 'Elephant', 'Elf', 'Elk', 'Eternal', 'Eye', 'Faerie', 'Ferret',
+  'Fish', 'Flagbearer', 'Fox', 'Fractal', 'Frog', 'Fungus', 'Gamma', 'Gargoyle', 'Giant', 'Giraffe',
+  'Gith', 'Glimmer', 'Gnoll', 'Gnome', 'Goat', 'Goblin', 'God', 'Golem', 'Gorgon', 'Gorn', 'Gremlin',
+  'Griffin', 'Hag', 'Halfling', 'Hamster', 'Harpy', 'Hedgehog', 'Hellion', 'Hero', 'Hippo', 'Hippogriff',
+  'Homarid', 'Homunculus', 'Horror', 'Horse', 'Human', 'Hydra', 'Hyena', 'Illusion', 'Imp', 'Incarnation',
+  'Inhuman', 'Inkling', 'Inquisitor', 'Insect', 'Jackal', 'Jellyfish', 'Juggernaut', 'Kangaroo',
+  'Kavu', 'Kelpien', 'Kirin', 'Kithkin', 'Klingon', 'Knight', 'Kobold', 'Kor', 'Kraken', 'Kree',
+  'Lamia', 'Lammasu', 'Lanthanite', 'Leech', 'Lemur', 'Leviathan', 'Lhurgoyf', 'Licid', 'Lizard',
+  'Lobster', 'Lord', 'Manticore', 'Masticore', 'Mercenary', 'Merfolk', 'Metathran', 'Minion', 'Minotaur',
+  'Mite', 'Mole', 'Monger', 'Mongoose', 'Monk', 'Monkey', 'Moogle', 'Moonfolk', 'Mount', 'Mouse',
+  'Mutant', 'Myr', 'Mystic', 'Nautilus', 'Necron', 'Nephilim', 'Nightmare', 'Nightstalker', 'Ninja',
+  'Noble', 'Noggle', 'Nomad', 'Nymph', 'Octopus', 'Officer', 'Ogre', 'Ooze', 'Orc', 'Orgg', 'Orion',
+  'Otter', 'Ouphe', 'Ox', 'Oyster', 'Pangolin', 'Peasant', 'Pegasus', 'Performer', 'Pest', 'Phelddagrif',
+  'Phoenix', 'Phyrexian', 'Pilot', 'Pirate', 'Plant', 'Platypus', 'Porcupine', 'Possum', 'Praetor',
+  'Primarch', 'Processor', 'Q', 'Qu', 'Rabbit', 'Raccoon', 'Ranger', 'Rat', 'Rebel', 'Rhino', 'Rigger',
+  'Robot', 'Rogue', 'Sable', 'Salamander', 'Samurai', 'Sand', 'Saproling', 'Satyr', 'Scarecrow',
+  'Scientist', 'Scorpion', 'Scout', 'Seal', 'Serpent', 'Shade', 'Shaman', 'Shapeshifter', 'Shark',
+  'Sheep', "Shi'ar", 'Siren', 'Skeleton', 'Skrull', 'Skunk', 'Slith', 'Sliver', 'Sloth', 'Slug',
+  'Snail', 'Snake', 'Soldier', 'Soltari', 'Sorcerer', 'Spawn', 'Specter', 'Spellshaper', 'Sphinx',
+  'Spider', 'Spike', 'Spirit', 'Sponge', 'Spy', 'Squid', 'Squirrel', 'Starfish', 'Surrakar', 'Survivor',
+  'Symbiote', 'Synth', 'Talosian', 'Tellarite', 'Thalakos', 'Tholian', 'Thopter', 'Thrull', 'Tiefling',
+  'Time', 'Tosk', 'Toy', 'Treefolk', 'Trilobite', 'Troll', 'Turtle', 'Tyranid', 'Unicorn', 'Utrom',
+  'Vampire', 'Varmint', 'Vedalken', 'Villain', 'Volver', 'Vorta', 'Vulcan', 'Wall', 'Walrus', 'Warlock',
+  'Warrior', 'Weasel', 'Weird', 'Werewolf', 'Whale', 'Wizard', 'Wolf', 'Wolverine', 'Wombat', 'Worm',
+  'Wraith', 'Wurm', 'Xindi', 'Yeti', 'Zombie', 'Zubera',
+];
+
+const CREATURE_TYPE_SET = new Set(CREATURE_TYPES.map((type) => type.toLowerCase()));
+
+/** Whether a printed word names a creature type. */
+export const isCreatureType = (word: string): boolean => (
+  CREATURE_TYPE_SET.has(word.trim().toLowerCase())
+);
 
 /**
  * One thing a printed combat restriction says about a creature.
@@ -1477,6 +1556,63 @@ function silenced(state: GameState, source: string | undefined): boolean {
 }
 
 /**
+ * Changeling, applied as part of layer 4: every creature type, written into the subtype list
+ * rather than carried as a flag (CR 702.73a, CR 604.3, D506).
+ *
+ * **One place, and that is the whole design.** Subtype matching is spread over eighteen call sites
+ * — `clauseMatches`'s Wall and Wizard clauses, the `controller-subtype` effect scope that every
+ * tribal lord uses, `canBlock`'s Wall clause, three counts in `scripts.ts`, two filter builders
+ * that receive only a `TypeLine` and could never see a flag. Extending the list here answers all
+ * of them at once and changes none of them.
+ *
+ * **Inside layer 4, not after the effects loop**, and the first attempt had it in the wrong place
+ * for a reason worth keeping: changeling is a characteristic-defining ability, so it is applied
+ * with the other type-changing effects (CR 613.1d) — and *every later layer's scope is judged
+ * against the result*. Written after the loop instead, the extended line was handed to callers and
+ * invisible to the one reader that matters most: an Imperious Perfect did not pump a changeling,
+ * because the lord's scope had already been matched against a bare Shapeshifter. The runtime test
+ * for the lord is what said so; nothing in the reader could have.
+ *
+ * **Read off the printed text, with a "loses all abilities" pre-scan**, because a frogged
+ * changeling is a Shapeshifter again. Layer 6 is *after* layer 4, so that is CR 613.8 dependency
+ * rather than plain layer order: the type-changing application depends on the ability still being
+ * there, so it is applied after the removal and sees it. Judging the scan against the
+ * pre-changeling line is the same simplification `withAddedTypes` already documents for its own
+ * scopes, and it costs nothing in practice — no printing in the corpus *grants* changeling to
+ * another creature. The two that come close (Moritte of the Frost, Omni-Changeling) copy a
+ * permanent and add it to the copy, which is layer 1 and arrives here as a printed keyword.
+ *
+ * **Only when the object is a creature.** A changeling card is every creature type in every zone
+ * (CR 702.73a), but the only question this engine asks of a noncreature object is about artifact
+ * and enchantment subtypes, and those are not creature types. See `CREATURE_TYPES` for what is in
+ * the list and what is deliberately out.
+ *
+ * The printed subtypes stay at the front, so a Woodland Changeling still reads as a Shapeshifter
+ * first; and `def.typeLine` is untouched, which is what the view sends to a player.
+ */
+function withChangeling(
+  state: GameState, instance: CardInstance, line: TypeLine, def: CardDef | undefined,
+): TypeLine {
+  if (!hasType(line, 'creature')) return line;
+  if (!printedKeywords(def?.oracleText).includes('changeling')) return line;
+  const frogged = (state.effects ?? []).some(
+    (effect) => effect.losesAllAbilities === true
+      && !silenced(state, effect.source)
+      && effectApplies(state, effect, instance, true, line),
+  );
+  if (frogged) return line;
+  return {
+    ...line,
+    subtypes: [
+      ...line.subtypes,
+      ...CREATURE_TYPES.filter((type) => !line.subtypes.some(
+        (printed) => printed.toLowerCase() === type.toLowerCase(),
+      )),
+    ],
+  };
+}
+
+/**
  * What this permanent currently is.
  *
  * **The layers, in the order CR 613 runs them**, for the four this engine has cards for:
@@ -1575,7 +1711,10 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     left in here — a card that animates something another effect animated first would need this pass
     to iterate, and nothing in the pool asks for it.
   */
-  const typeLine = withAddedTypes(state, instance, printed, hasType(printed, 'creature'));
+  const layered = withAddedTypes(state, instance, printed, hasType(printed, 'creature'));
+  // Changeling is part of the same layer, and `typeLine` is what every later layer's scope
+  // is judged against — see `withChangeling` for why that sentence is the whole increment.
+  const typeLine = withChangeling(state, instance, layered, def);
   const creature = hasType(typeLine, 'creature');
 
   // Layer 7b and 7c are collected separately, because the first replaces the base and the second
@@ -1742,6 +1881,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   const toughness = baseToughness + modToughness + plus - minus;
 
   if (hasType(typeLine, 'creature') && keywords.has('defender')) cantAttack = true;
+
 
   return {
     name: def?.name ?? 'a card',

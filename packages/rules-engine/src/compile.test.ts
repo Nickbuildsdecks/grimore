@@ -4,8 +4,9 @@ import { STARTER_DECKS } from './starterDecks.js';
 import { CLUE_TOKEN, isKeywordDeclaration, scriptFor } from './scripts.js';
 import { zoneKey, type CardDef } from './cards.js';
 import {
-  KEYWORD_BLOCK_RULES, characteristicsOf, keywordBlockRules, printedBlockerLimit, printedBlocksLimit,
-  printedCombatStatics, printedKeywords, printedLandwalk,
+  CREATURE_TYPES, KEYWORD_BLOCK_RULES, characteristicsOf, hasSubtype, isCreatureType,
+  keywordBlockRules, printedBlockerLimit, printedBlocksLimit, printedCombatStatics, printedKeywords,
+  printedLandwalk,
 } from './characteristics.js';
 import type { CardDataRow } from './fromCardData.js';
 import { addCounters, pump, tap, type EffectContext } from './effects.js';
@@ -11673,5 +11674,164 @@ describe('a self-untap carries untapsOnly (D505)', () => {
     expect(tapper.ok).toBe(true);
     if (!tapper.ok) return;
     expect(tapper.script?.abilities?.[0]?.untapsOnly).toBeUndefined();
+  });
+});
+
+describe('Changeling: every creature type (D506)', () => {
+  /*
+    The queue head after D505: **23 cards** whose only unread line is `Changeling`. CR 702.73a —
+    "This card is every creature type" — and it is a *characteristic-defining* ability, so it works
+    in every zone and "loses all abilities" takes it away.
+
+    **Read as a keyword and enforced in one place.** Subtype matching is spread over eighteen call
+    sites in this engine; `characteristicsOf` extends the subtype list once, after the keywords are
+    final, and every one of them answers correctly without changing. See `CREATURE_TYPES` for the
+    vocabulary and how it was derived.
+  */
+  const changeling = (text: string, name = 'Woodland Changeling') => compileCard({
+    name, type_line: 'Creature — Shapeshifter', mana_cost: '{1}{G}', cmc: 2, colors: ['G'],
+    layout: 'normal', power: '2', toughness: '2', oracle_text: text,
+  });
+
+  it('reads the bare keyword, which is Woodland Changeling\'s whole card', () => {
+    const read = changeling('Changeling (This card is every creature type.)');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(printedKeywords('Changeling')).toEqual(['changeling']);
+  });
+
+  it.each([
+    ['Avian Changeling', 'Changeling (This card is every creature type.)\nFlying'],
+    ['Changeling Sentinel', 'Changeling (This card is every creature type.)\nVigilance'],
+    ['Changeling Outcast', 'Changeling (This card is every creature type.)\n'
+      + "Changeling Outcast can't block and can't be blocked."],
+  ])('reads it beside the rest of %s', (name, text) => {
+    const read = changeling(text as string, name as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('is every creature type on the battlefield, and the printed line still reads first', () => {
+    /*
+      The assertion the whole design rests on: the subtypes are extended rather than a flag being
+      carried, so `hasSubtype` — which eighteen call sites use — answers for any tribe.
+    */
+    const def = {
+      name: 'Woodland Changeling', typeLine: 'Creature — Shapeshifter', manaCost: '{1}{G}', cmc: 2,
+      colors: ['G'], power: '2', toughness: '2',
+      oracleText: 'Changeling (This card is every creature type.)',
+    } as unknown as CardDef;
+    const state = {
+      cardDefs: { k: def },
+      instances: { i: { id: 'i', defKey: 'k', zone: 'battlefield', owner: 0, controller: 0, tapped: false, counters: {} } },
+      effects: [],
+      seats: [],
+    } as unknown as GameState;
+    const inst = state.instances['i']!;
+    const ch = characteristicsOf(state, inst);
+    for (const tribe of ['Goblin', 'Elf', 'Wall', 'Wizard', 'Spirit', 'Dragon', 'Zombie']) {
+      expect(hasSubtype(ch.typeLine, tribe)).toBe(true);
+    }
+    // Shapeshifter is still first, so anything that reads the list in order sees the printed one.
+    expect(ch.typeLine.subtypes[0]).toBe('Shapeshifter');
+    // And it is NOT an artifact, enchantment or land subtype: those are not creature types.
+    for (const notATribe of ['Equipment', 'Aura', 'Saga', 'Vehicle', 'Food', 'Forest']) {
+      expect(hasSubtype(ch.typeLine, notATribe)).toBe(false);
+    }
+
+    /*
+      **The printed definition is untouched**, which is what the view sends to a player. A
+      316-entry subtype list on the wire would be a real regression, and this is the assertion that
+      says it cannot happen rather than the assumption that it does not.
+    */
+    expect(def.typeLine).toBe('Creature — Shapeshifter');
+
+    // And "loses all abilities" takes it away, because it is a printed ability (CR 613).
+    const frogged = {
+      ...state,
+      effects: [{
+        id: 'fx1', source: 'i', controller: 0, createdTurn: 1, duration: 'end-of-turn',
+        scope: { kind: 'cards', ids: ['i'] }, losesAllAbilities: true,
+      }],
+    } as unknown as GameState;
+    const plain = characteristicsOf(frogged, inst);
+    expect(hasSubtype(plain.typeLine, 'Goblin')).toBe(false);
+    expect(hasSubtype(plain.typeLine, 'Shapeshifter')).toBe(true);
+  });
+
+  it('does not make a noncreature permanent every creature type', () => {
+    /*
+      A changeling card is every creature type in every zone, but the only subtype question this
+      engine asks of a noncreature *permanent* is about artifact and enchantment subtypes — and
+      those are not creature types. Extending the list for one would be a Vehicle that is also a
+      Goblin, which is not a thing the rules describe.
+    */
+    const def = {
+      name: 'Probe Relic', typeLine: 'Artifact', manaCost: '{2}', cmc: 2, colors: [],
+      oracleText: 'Changeling (This card is every creature type.)',
+    } as unknown as CardDef;
+    const state = {
+      cardDefs: { k: def },
+      instances: { i: { id: 'i', defKey: 'k', zone: 'battlefield', owner: 0, controller: 0, tapped: false, counters: {} } },
+      effects: [],
+      seats: [],
+    } as unknown as GameState;
+    const ch = characteristicsOf(state, state.instances['i']!);
+    expect(hasSubtype(ch.typeLine, 'Goblin')).toBe(false);
+  });
+
+  it('has a creature-type vocabulary that was derived rather than remembered', () => {
+    /*
+      The list is 316 names pulled out of the corpus, and the spot-check is what caught the
+      derivation being wrong twice (see `CREATURE_TYPES`). These are the eighteen tribes the first
+      pass dropped, plus the ten artifact/enchantment/land subtypes it wrongly kept.
+    */
+    expect(CREATURE_TYPES).toHaveLength(316);
+    for (const tribe of ['Goblin', 'Elf', 'Wizard', 'Demon', 'Elemental', 'Soldier', 'Warrior',
+      'Merfolk', 'Kithkin', 'Faerie', 'Giant', 'Shaman', 'Shapeshifter', 'Rebel', 'Rogue',
+      'Treefolk', 'Eldrazi', 'Lhurgoyf', 'Wall', 'Spirit']) {
+      expect(isCreatureType(tribe)).toBe(true);
+    }
+    for (const notATribe of ['Equipment', 'Saga', 'Shrine', 'Aura', 'Clue', 'Food', 'Treasure',
+      'Background', 'Book', 'Forest', 'Vehicle', 'Island']) {
+      expect(isCreatureType(notATribe)).toBe(false);
+    }
+  });
+
+  it.each([
+    /*
+      Refused: Mistform Ultimus spells the ability out in words rather than printing the keyword,
+      and the sentence is a self-subject static this reader does not answer. One card, named rather
+      than read by widening the keyword into a sentence matcher.
+    */
+    ['the ability written out in words', "Mistform Ultimus is every creature type (even if this"
+      + " card isn't on the battlefield)."],
+  ])('leaves a line unread: %s', (_why, text) => {
+    const read = changeling(text as string, 'Mistform Ultimus');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('finishes Irregular Cohort, whose token carries the keyword too', () => {
+    /*
+      **This row was written as a refusal and the test said otherwise**, which is why it is here as
+      an assertion. The token reader builds a token from a printed description and asks `isKeyword`
+      for each word after "with" — so the moment `changeling` joined the list, "create a 2/2
+      colorless Shapeshifter creature token with changeling" read as well, and a card that prints
+      the keyword *and* grants it compiles whole.
+
+      Worth the row rather than a comment: it is the second card this increment finishes without
+      being aimed at, and the first evidence that the vocabulary change reaches the token path.
+    */
+    const read = changeling('Changeling (This card is every creature type.)\n'
+      + 'When Irregular Cohort enters, create a 2/2 colorless Shapeshifter creature token with'
+      + ' changeling.', 'Irregular Cohort');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers?.map((t) => t.on.kind)).toEqual(['etb']);
   });
 });
