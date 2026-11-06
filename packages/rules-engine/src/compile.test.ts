@@ -3,7 +3,9 @@ import { compileCard, fullyCompiled } from './compile.js';
 import { STARTER_DECKS } from './starterDecks.js';
 import { CLUE_TOKEN, isKeywordDeclaration, scriptFor } from './scripts.js';
 import { zoneKey, type CardDef } from './cards.js';
-import { characteristicsOf, printedCombatStatics, printedLandwalk } from './characteristics.js';
+import {
+  characteristicsOf, printedBlockerLimit, printedCombatStatics, printedLandwalk,
+} from './characteristics.js';
 import type { CardDataRow } from './fromCardData.js';
 import { addCounters, pump, tap, type EffectContext } from './effects.js';
 import type { AbilityDef, TargetSpec, TriggerDef } from './scriptTypes.js';
@@ -10329,10 +10331,16 @@ describe('the three one-line combat statics (D495)', () => {
     ['Blue creatures', "Blue creatures you control can't be blocked."],
     /*
       Refused for the **predicate**: the subject is right and the sentence is not one of the three.
-      Baneslayer Angel's exception clause, a pump welded onto the static, and a static behind a
-      condition the engine would have to keep re-reading.
+      A pump welded onto the static, and a static behind a condition the engine would have to keep
+      re-reading.
+
+      **The exception clause was here and is read (D498).** The row said Baneslayer Angel's
+      "~ can't be blocked except by creatures with flying" was refused for the predicate, which was
+      true of D495's reader: an allow-list is not one of the three statics and `Characteristics` had
+      no field for it. D498 gave it one, so this line now compiles — the restriction lands in
+      `blockableOnlyBy` and `canBlock` enforces it. Its assertion lives in this file's D498 block,
+      the seventh stale refusal row in this series.
     */
-    ['an exception clause', "Aesthir Glider can't be blocked except by creatures with flying."],
     ['a pump on the same line', "Aesthir Glider gets +2/+2 and can't block."],
     ['a condition', "As long as you control a Forest, Aesthir Glider can't block."],
     ['an ability word', "Wraith Form — Aesthir Glider can't be blocked."],
@@ -10648,5 +10656,201 @@ describe('a mana ability that deals you damage (D497)', () => {
     for (const a of abilitiesOf('Probe Gate', '{T}: Add {W} or {U}.')) {
       expect(a.effect).toBeUndefined();
     }
+  });
+});
+
+describe('printed restrictions on who may block (D498)', () => {
+  /*
+    The fifth printed-characteristic reader, after keywords, landwalk, protection and D495's combat
+    statics. **244 printed lines in 126 shapes** say something about who may block this creature;
+    these two sentences are most of them:
+
+        ~ can't be blocked by creatures with power 2 or less.      (31 lines)
+        ~ can't be blocked except by creatures with flying.        (the allow-list half)
+
+    A **ban** and an **allow** are not the same rule and do not share a list: a ban refuses a
+    blocker matching any clause, an allow refuses one matching none. A card printing both is
+    refused rather than merged — the merge rule would be a judgement nothing in the corpus asks
+    for, and a guessed merge is a creature that blocks when it may not (D362).
+  */
+  const read = (text: string, name = 'Probe Beast') => printedBlockerLimit(text, name);
+
+  it.each([
+    // The power family, both directions. Amrou Kithkin and the 31-line "or less" half.
+    ["Amrou Kithkin can't be blocked by creatures with power 3 or greater.", 'Amrou Kithkin',
+      { ban: [{ kind: 'power', cmp: 'at-least', n: 3 }], only: null }],
+    ["Probe Beast can't be blocked by creatures with power 2 or less.", 'Probe Beast',
+      { ban: [{ kind: 'power', cmp: 'at-most', n: 2 }], only: null }],
+    // A colour. Dauthi Horror's printing.
+    ["Dauthi Horror can't be blocked by white creatures.", 'Dauthi Horror',
+      { ban: [{ kind: 'colour', colour: 'W' }], only: null }],
+    // A card type, a creature type, and a keyword.
+    ["Probe Beast can't be blocked by artifact creatures.", 'Probe Beast',
+      { ban: [{ kind: 'type', type: 'artifact' }], only: null }],
+    ["Probe Beast can't be blocked by Walls.", 'Probe Beast',
+      { ban: [{ kind: 'subtype', subtype: 'Wall' }], only: null }],
+    ["Probe Beast can't be blocked by creatures with flying.", 'Probe Beast',
+      { ban: [{ kind: 'keyword', keyword: 'flying' }], only: null }],
+    // Two bans on one line, joined as cards print them.
+    ["Probe Beast can't be blocked by artifact creatures and/or white creatures.", 'Probe Beast',
+      { ban: [{ kind: 'type', type: 'artifact' }, { kind: 'colour', colour: 'W' }], only: null }],
+    // The allow list.
+    ["Probe Beast can't be blocked except by black creatures.", 'Probe Beast',
+      { ban: [], only: [{ kind: 'colour', colour: 'B' }] }],
+    ["Probe Beast can't be blocked except by creatures with flying or reach.", 'Probe Beast',
+      { ban: [], only: [{ kind: 'keyword', keyword: 'flying' }, { kind: 'keyword', keyword: 'reach' }] }],
+    /*
+      D495 refused this exact line for its predicate and said so in a row of its own; this is the
+      assertion that row now points at. Keeping the precise sentence, Aesthir Glider's name and all,
+      so that the retirement is checkable rather than a claim in a comment.
+    */
+    ["Aesthir Glider can't be blocked except by creatures with flying.", 'Aesthir Glider',
+      { ban: [], only: [{ kind: 'keyword', keyword: 'flying' }] }],
+    // "This creature", the retemplated second reference; and the short name.
+    ["This creature can't be blocked by creatures with power 2 or less.", 'Probe Beast',
+      { ban: [{ kind: 'power', cmp: 'at-most', n: 2 }], only: null }],
+    ["Bilbo can't be blocked by red creatures.", 'Bilbo, Luckwearer',
+      { ban: [{ kind: 'colour', colour: 'R' }], only: null }],
+  ])('reads "%s"', (text, name, expected) => {
+    expect(read(text as string, name as string)).toEqual(expected);
+  });
+
+  it.each([
+    /*
+      **Counts are deliberately out**, and these are the two shapes that make the point. They are
+      about how *many* creatures block rather than which — a fact about the whole declaration, not
+      about one blocker — so they belong with `menaceSatisfied` and not here. 23 printed lines
+      between them, named rather than silently dropped.
+    */
+    ['more than one creature', "Probe Beast can't be blocked by more than one creature."],
+    ['three or more creatures', "Probe Beast can't be blocked except by three or more creatures."],
+    /*
+      Refused for the **filter**: a noun this reader has no clause for. "Creatures you control" is a
+      fact about who controls them; shadow is a keyword this engine does not have, and a creature
+      that ignored it would be blocked by things that cannot block it.
+    */
+    ['creatures you control', "Probe Beast can't be blocked by creatures you control."],
+    ['a keyword the engine lacks', "Probe Beast can't be blocked by creatures with shadow."],
+    ['a subtype outside the list', "Probe Beast can't be blocked by Goblins."],
+    /*
+      And for the **subject**, which is the whole-line rule again: "Enchanted creature" is an Aura
+      granting the restriction to its host, and handing it to the Aura would be the D495 mistake.
+    */
+    ['an Aura granting it', "Enchanted creature can't be blocked by white creatures."],
+    ['Equipment granting it', "Equipped creature can't be blocked by red creatures."],
+  ])('reads nothing from %s', (_why, text) => {
+    expect(read(text as string)).toEqual({ ban: [], only: null });
+  });
+
+  it('refuses a card that prints both a ban and an allow list rather than merging them', () => {
+    /*
+      No card in 33,847 prints both, and the merge rule would be a judgement: does the ban narrow
+      the allow list, or does either one alone let a blocker through? Refusing leaves the card to a
+      human, which is the only honest answer to a question the printed text does not settle.
+    */
+    expect(read("Probe Beast can't be blocked by white creatures.\n"
+      + "Probe Beast can't be blocked except by black creatures.")).toEqual({ ban: [], only: null });
+  });
+
+  it('counts the line compiled, and emits no script for it', () => {
+    /*
+      The same bargain as every other printed-characteristic line (D424): `characteristicsOf` reads
+      it straight off the card definition, so restating it in a script would be a second source for
+      one fact. What the compiler owes is to count it read.
+    */
+    const compiled = compileCard({
+      name: 'Amrou Kithkin', type_line: 'Creature — Kithkin', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: "Amrou Kithkin can't be blocked by creatures with power 3 or greater.",
+    });
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    expect(compiled.unread.map((u) => u.line)).toEqual([]);
+    expect(compiled.script?.abilities ?? []).toEqual([]);
+    expect(compiled.script?.triggers ?? []).toEqual([]);
+  });
+
+  it('is a base characteristic, so "loses all abilities" takes it away (CR 613.1f)', () => {
+    // The reason it is seeded in `characteristicsOf` beside printed landwalk rather than layered
+    // on top of `state.effects`. Same shape as D495's statics.
+    const def = {
+      name: 'Amrou Kithkin', typeLine: 'Creature — Kithkin', manaCost: '{1}{W}', cmc: 2,
+      colors: ['W'], power: '1', toughness: '1',
+      oracleText: "Amrou Kithkin can't be blocked by creatures with power 3 or greater.",
+    } as unknown as CardDef;
+    const state = {
+      cardDefs: { k: def },
+      instances: { i: { id: 'i', defKey: 'k', zone: 'battlefield', owner: 0, controller: 0, tapped: false, counters: {} } },
+      effects: [],
+      seats: [],
+    } as unknown as GameState;
+    const inst = state.instances['i']!;
+    expect(characteristicsOf(state, inst).cantBeBlockedBy).toHaveLength(1);
+    const frogged = {
+      ...state,
+      effects: [{
+        id: 'fx1', source: 'i', controller: 0, createdTurn: 1, duration: 'end-of-turn',
+        scope: { kind: 'cards', ids: ['i'] }, losesAllAbilities: true,
+      }],
+    } as unknown as GameState;
+    expect(characteristicsOf(frogged, inst).cantBeBlockedBy).toEqual([]);
+  });
+});
+
+describe('the printed-part cache (D499)', () => {
+  /*
+    `printedParts` is memoised, and these are the two ways a memoised pure function goes wrong.
+
+    The cache exists because D498's gate caught a timeout, not because anybody guessed at a hot
+    path: `characteristicsOf` reads the printed statics, the blocker limits and the landwalk on
+    every call, and the bot calls it thousands of times a move, so each of the five readers in
+    `characteristics.ts` was re-splitting and re-regexing the same unchanged string. One playout
+    test went 42.8s -> over 60s when the fifth arrived; with the cache it is 18.2s, which is less
+    than half what it cost before D498 existed.
+  */
+
+  it('keys on the name as well as the text, so one sentence does not leak between two cards', () => {
+    /*
+      The failure this would have been: key on the text alone and the *first* card to ask decides
+      the answer for every card printing the same sentence. The sentence below is a self-subject
+      restriction for Aesthir Glider and somebody else's restriction for Probe Beast, which is the
+      whole-line subject rule (D495, D362) — exactly the pair that a text-only key would collapse.
+
+      Asked in both orders, because a one-way check passes on a cache that never stores anything.
+    */
+    const line = "Aesthir Glider can't be blocked by white creatures.";
+    const mine = { ban: [{ kind: 'colour', colour: 'W' }], only: null };
+    const theirs = { ban: [], only: null };
+
+    expect(printedBlockerLimit(line, 'Aesthir Glider')).toEqual(mine);
+    expect(printedBlockerLimit(line, 'Probe Beast')).toEqual(theirs);
+    expect(printedBlockerLimit(line, 'Aesthir Glider')).toEqual(mine);
+    expect(printedBlockerLimit(line, 'Probe Beast')).toEqual(theirs);
+  });
+
+  it('gives every caller the same answer, so nothing has mutated the shared value', () => {
+    /*
+      The other failure: the cached array is shared, so a caller that spliced or sorted it would
+      change what the next reader sees. Each of these readers builds its own result from it, and a
+      card carrying one of each is the cheapest way to prove all three still agree on the fourth
+      pass as they did on the first.
+    */
+    const name = 'Shared Reader Beast';
+    const text = "Flying\nIslandwalk\n"
+      + `${name} can't block.\n`
+      + `${name} can't be blocked by creatures with power 2 or less.`;
+    const twice = <T>(read: () => T): [T, T] => [read(), read()];
+
+    const [blockersA, blockersB] = twice(() => printedBlockerLimit(text, name));
+    expect(blockersA).toEqual({ ban: [{ kind: 'power', cmp: 'at-most', n: 2 }], only: null });
+    expect(blockersB).toEqual(blockersA);
+
+    const [staticsA, staticsB] = twice(() => printedCombatStatics(text, name));
+    expect(staticsA.cantBlock).toBe(true);
+    expect(staticsB).toEqual(staticsA);
+
+    const [walkA, walkB] = twice(() => printedLandwalk(text));
+    expect(walkA).toEqual(['Island']);
+    expect(walkB).toEqual(walkA);
   });
 });

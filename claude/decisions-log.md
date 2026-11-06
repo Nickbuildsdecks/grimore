@@ -32751,3 +32751,223 @@ previous sweep, and that is **not** a result: it is a different seed set, which 
 decks. A pain land's damage would be expected to shorten games rather than lengthen them, so if the
 difference were real it would point the wrong way — which is exactly why it is left as a number
 about one seed set and not reported as a change.
+
+## D498 — Printed restrictions on who may block, and a measured negative before it
+
+### First, the increment that was not worth building
+
+D494's queue put `Threshold — As long as there are seven or more cards in your graveyard,` at the
+top, 29 cards, and the obvious cheap move was to **peel the ability word**: CR 207.2c says an
+ability word has no rules meaning, so `Word — ` ought to come off the front of a line and leave
+something readable. Measured before building, across every unread line in the legal corpus:
+
+```
+unread lines with an "<Word> — " prefix: 2006
+of those, the remainder alone reads:       92
+  21 Channel      17 Exhaust      11 Boast      9 Max speed      1 each: 14 others
+```
+
+**92 of 2006, and almost all of them are not ability words at all.** Channel, Exhaust, Boast and
+Max speed are *keyword abilities* with real rules meaning — Channel is activatable from your hand,
+Exhaust is once only, Boast needs the creature to have attacked, Max speed needs the speed counter.
+Peeling them would read each card as doing strictly more than it prints, which is the wrong-reading
+failure D362 is about. The genuine ability words in the list are about five one-off cards.
+
+So: **not built**, and the reason is in the numbers rather than in a judgement. The `Threshold`
+family needs the *condition* read, not the prefix dropped; the prefix is the cheap half and the
+cheap half buys nothing.
+
+### What was built instead
+
+244 printed lines in 126 shapes say something about who may block this creature. The two sentences
+that carry most of it:
+
+```
+~ can't be blocked by creatures with power 2 or less.      31 printed lines
+~ can't be blocked except by creatures with flying.        the allow-list half
+```
+
+The fifth printed-characteristic reader, after keywords, landwalk, protection and D495's combat
+statics, and the first that needs a **vocabulary** rather than a flag. `BlockerClause` is
+declarative — power with a comparison, a colour, a card type, a creature type, a keyword — because
+`Characteristics` is data that the view packs, the bot copies and the tests compare; a predicate in
+it would be a closure crossing every one of those boundaries.
+
+Two fields, not one:
+
+- `cantBeBlockedBy` — a **ban**: a blocker answering any clause may not block.
+- `blockableOnlyBy` — an **allow list**: a blocker must answer at least one, or it may not block.
+
+They are opposite quantifiers over the same vocabulary, so a card printing both is **refused rather
+than merged**. Nothing in 33,847 prints both, and the merge rule would be a judgement the printed
+text does not settle — does the ban narrow the allow list, or does either alone let a blocker
+through? Refusing leaves it to a human.
+
+Enforced in `canBlock` off the **attacker**, where protection and the Wall clause already live: a
+sentence about who may block this creature is a fact about the creature printing it. The refusal
+message says the clause back in printed words, because "can't be blocked" alone is the least useful
+thing the engine could say about an Amrou Kithkin.
+
+**Counts are deliberately out.** "Can't be blocked by more than one creature" (17 lines) and "can't
+be blocked except by three or more creatures" (6) are about how *many* creatures block, not which —
+a fact about the whole declaration rather than about one blocker, which is `menaceSatisfied`'s
+family. Named as refusal rows so the next reader knows they were seen.
+
+### One reading was wrong twice before it was right
+
+`creatures with power 3 or greater` read as nothing, because `blockerFilter` split the phrase on
+"or" before trying it whole: `creatures with power 3` and a bare `greater`. The comparison words are
+part of one clause. **Amrou Kithkin and the whole 40-line power family were refused for it**, and
+the fix is to try the phrase whole first and treat only a phrase that is not itself a clause as a
+list.
+
+Then `creatures with flying or reach` was refused for the mirror reason: one noun carrying a list
+*inside* it, which naive splitting turns into `creatures with flying` and a bare `reach`. That is its
+own branch now, gated on every word being a keyword the engine actually has — which is why
+`creatures with shadow` is still refused, shadow not being in `KEYWORDS`.
+
+### The break run
+
+Eight breaks, each verified to apply and to revert:
+
+| break | compile.test | scripts.test |
+| --- | --- | --- |
+| the whole-phrase attempt, so "power 3 or greater" splits on "or" | 5 fail | 2 fail |
+| the keyword-list branch inside one noun phrase | 1 fail | pass |
+| the ban/allow conflict rule: merge instead of refusing | 1 fail | pass |
+| the subject check: any sentence about blocking counts | 2 fail | pass |
+| the lose-all-abilities reset | 1 fail | pass |
+| the ban is never enforced | pass | 3 fail |
+| the allow list is never enforced | pass | 1 fail |
+| `blockerMatches` reads power the wrong way round | pass | 2 fail |
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed rules lines read | 21,102 / 56,421 (37.4%) | **21,187 / 56,421 (37.6%)** |
+| cards with every printed line read | 6,340 | **6,382** |
+| of those, needing no script at all | 1,077 | **1,111** |
+
++85 lines and +42 cards. The "needing no script" row moving by 34 is the shape of this family: these
+are creatures whose whole text is one sentence about blocking, and the engine now plays them off the
+card definition with nothing to run.
+
+**These three numbers are corrected.** The first reading of this table said 21,184 / 6,379 / 1,109,
+and it was taken off a `dist` built before the last of D498's own edits went in — the ones a python
+script dropped on the floor when it asserted after writing, and which had to be re-applied by hand.
+D338 is the standing precedent for exactly this and `scripts/lib/engine.mjs` warns about it; the
+warning is only as good as the rebuild that follows it. The figures above are the ones the committed
+tree produces, re-measured twice (D499).
+
+### Addendum: D495's exception-clause refusal row is retired
+
+D495 refused `~ can't be blocked except by creatures with flying` for its **predicate** — an
+allow-list is not one of the three statics and `Characteristics` had no field for it — and wrote
+that refusal down as a row of its own. D498 gave it the field, so the line compiles now and the row
+asserted an empty `unread` where there is nothing left unread. The gate caught it, which is the
+whole reason the refusal rows are tests rather than comments.
+
+It is retired the way the five before it were: the row leaves the refusal list, a paragraph in its
+place says what it claimed and why that stopped being true, and the sentence itself — Aesthir
+Glider's name and all — becomes an assertion in this file's D498 block. **The seventh stale refusal
+row in this series, and the fourth I wrote myself.** The sixth was Adarkar Wastes, three increments
+ago; a refusal row going stale is what progress through this queue looks like from inside the test
+file, so the count is worth keeping rather than quietly resetting.
+
+The row below it stays refused and is a different question: `Ascending Aven can block only
+creatures with flying` is the *other* direction — a restriction on what this creature may block
+rather than on who may block it — and it needs its own field and its own `canBlock` branch (#344).
+
+## D499 — Five readers re-parsing the same string a few thousand times a move
+
+D498's gate failed on a timeout, not an assertion: `playout.test.ts > answers the questions cards ask
+mid-resolution` ran past 60s. It is the longest playout body in the file and it had been at 42.8s,
+so the obvious reading was the one D495 already dealt with — a test body grown long enough that the
+worker stops answering the reporter, fixed with `breathe()`.
+
+**That reading was wrong, and the measurement is what said so.** The same test, alone, on the tree
+with D498's two source files reverted:
+
+| tree | that one test |
+| --- | --- |
+| before D498 | 42.8s |
+| with D498 | over 60s, timed out |
+| with D498 and this cache | **18.2s** |
+
+A 40% jump from one reader is not a test that needs more room. `characteristicsOf` calls
+`printedParts` three times on every read — once each for the combat statics, the blocker limits and
+the landwalk — and the bot calls `characteristicsOf` thousands of times per decision, because every
+position the search looks at re-reads every creature on the board. So each reader added to
+`characteristics.ts` re-splits and re-regexes the same unchanged oracle text a few thousand times a
+move, and **the cost lands on the whole engine rather than on the reader that added it**. D498 was
+the fifth reader and the one that crossed the line; the four before it had been charging the same
+rent unnoticed since each shipped.
+
+### The fix is the one a pure function allows
+
+`printedParts(oracleText, name)` is a pure function of two strings. It is memoised on them, keyed
+name-then-text with a NUL between — either string may contain any other character, so a separator
+that cannot appear in a card name or in oracle text is the only one that cannot collide.
+
+**The key must carry the name**, and that is the one real hazard here rather than a precaution.
+`~ can't be blocked by white creatures` is a self-subject restriction when the subject is the
+card's own name and somebody else's restriction otherwise (the whole-line subject rule, D495,
+D362). Key on the text alone and the first card to ask decides the answer for every card printing
+that sentence — a creature that blocks when it may not, which is exactly what D362 says is worse
+than not reading the line. A test asks it in both orders, since a one-way check passes on a cache
+that never stores anything.
+
+The value is shared, so nothing may mutate it: `printedParts` returns `readonly PrintedPart[]` and
+every reader below builds its own result from it. A second test reads one card through all three
+readers twice and checks they still agree.
+
+The cap (200k entries, cleared rather than evicted) is a long-running server's bound, not a tuning
+knob. The key space is the distinct (name, text) pairs a process sees — about 34k for the whole
+corpus, plus one entry per distinct line from `isPrintedAbilityLine` during a compile sweep — so the
+map cannot grow without end. Clearing is correct at any moment, which is the merit of memoising a
+pure function and the reason no invalidation rule is needed.
+
+### The break run
+
+| break | caught by |
+| --- | --- |
+| the name dropped from the cache key | the collision test, both orders |
+| a reader consumes the array it was handed (`parts.length = 0`) | the shared-value test |
+
+Both verified to apply and to revert, the revert checked against a SHA-256 of the backup — the
+habit D495 earned.
+
+### Proved behaviour-neutral, not assumed
+
+A cache that changes an answer is a bug wearing a speed-up, so the check is the coverage sweep with
+the cache's *read* disabled — every call recomputes, every call still stores — and the two runs
+compared:
+
+| | with the cache | cache read disabled |
+| --- | --- | --- |
+| cards with a compiled script | 10,672 | 10,672 |
+| cards with every printed line read | 6,382 | 6,382 |
+| of those, needing no script at all | 1,111 | 1,111 |
+
+Identical on all three, across 30,710 legal cards. That is also what caught D498's stale `dist`:
+running the sweep twice on purpose is what made the three-line discrepancy visible at all.
+
+### What this does not claim
+
+It does not claim the engine is 2.3x faster in play. It claims one playout body is, and that body
+is bot-search heavy, which is where `characteristicsOf` is hot — a position the bot never looks at
+twice pays the parse once either way.
+
+What the gate's own clock says, though, is larger than the one test:
+
+| rules-engine suite | |
+| --- | --- |
+| the failing D498 tree | 540.23s, 2 failed of 2705 |
+| with this cache | **137.71s, 2707 passed** |
+
+**3.9x, on the same 15 test files.** The suite is mostly engine simulation, so that is the closest
+thing here to a measurement of the engine rather than of one test — but it is still a test suite,
+not a table with people at it. The honest claim is: five readers were re-parsing the same strings,
+they have stopped, and everything that calls `characteristicsOf` in a loop got cheaper by roughly
+that factor. The number to compare against is the next gate's.

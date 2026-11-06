@@ -28771,3 +28771,111 @@ describe('a mana ability that deals you damage, at the table (D497)', () => {
     expect(s.seats[0]!.eliminated).toBe(true);
   });
 });
+
+describe('printed blocker restrictions, at the table (D498)', () => {
+  /*
+    The half a reader test cannot reach: the clauses have to actually stop a block, read off the
+    **attacker** the way protection and the Wall clause already are. Four real printings through
+    `customDeck`'s `data`, which is the path an imported card takes.
+
+      Amrou Kithkin   {1}{W} 1/1  "… can't be blocked by creatures with power 3 or greater."
+      Dauthi Horror   {1}{B} 2/1  "… can't be blocked by white creatures."
+      Probe Shade     {1}{B} 2/2  "… can't be blocked except by black creatures."   (allow list)
+  */
+  const DATA = [
+    {
+      name: 'Amrou Kithkin', type_line: 'Creature — Kithkin', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: "Amrou Kithkin can't be blocked by creatures with power 3 or greater.",
+    },
+    {
+      name: 'Dauthi Horror', type_line: 'Creature — Dauthi Horror', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '1',
+      oracle_text: "Dauthi Horror can't be blocked by white creatures.",
+    },
+    {
+      name: 'Probe Shade', type_line: 'Creature — Shade', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: "Probe Shade can't be blocked except by black creatures.",
+    },
+  ];
+
+  const table = (id: string, mine: readonly string[], theirs: readonly string[]) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 2 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Serra Angel', count: 2 },
+        { name: 'Plains', count: 24 },
+        { name: 'Swamp', count: 24 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Amrou Kithkin', 'Dauthi Horror', 'Probe Shade']);
+    return advanceTo(arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: { 0: ['Plains', ...mine], 1: ['Swamp', ...theirs] },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+  };
+
+  it('a power ban stops the big blocker and lets the small one through', () => {
+    /*
+      Both halves in one test, because a filter that refused *everything* would pass the first
+      assertion on its own. Serra Angel is a 4/4 and may not block; Grizzly Bears is a 2/2 and may.
+    */
+    const s = table('d498-power', ['Amrou Kithkin'], ['Grizzly Bears', 'Serra Angel']);
+    const kithkin = find(s, 0 as SeatIndex, 'battlefield', 'Amrou Kithkin');
+    const angel = find(s, 1 as SeatIndex, 'battlefield', 'Serra Angel');
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    expect(canBlock(s, angel, kithkin, 1 as SeatIndex)?.reason)
+      .toContain('power 3 or greater');
+    expect(canBlock(s, bears, kithkin, 1 as SeatIndex)).toBeNull();
+  });
+
+  it('a colour ban reads the blocker\'s colour, not its name', () => {
+    // Serra Angel is white and may not block the Horror; the green Bears may.
+    const s = table('d498-colour', ['Dauthi Horror'], ['Grizzly Bears', 'Serra Angel']);
+    const horror = find(s, 0 as SeatIndex, 'battlefield', 'Dauthi Horror');
+    expect(canBlock(s, find(s, 1 as SeatIndex, 'battlefield', 'Serra Angel'), horror, 1 as SeatIndex)?.reason)
+      .toContain('white creatures');
+    expect(canBlock(s, find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears'), horror, 1 as SeatIndex))
+      .toBeNull();
+  });
+
+  it('an allow list refuses everything outside it, and admits what is on it', () => {
+    /*
+      The opposite direction, and the reason the ban and the allow list are two fields. A blocker
+      must match at least one clause here, where a ban refuses one that matches any — which is why
+      merging them would have been a guess.
+    */
+    const s = table('d498-only', ['Probe Shade'], ['Grizzly Bears', 'Dauthi Horror']);
+    const shade = find(s, 0 as SeatIndex, 'battlefield', 'Probe Shade');
+    expect(canBlock(s, find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears'), shade, 1 as SeatIndex)?.reason)
+      .toContain('except by black creatures');
+    // The Horror is black, so it is on the list.
+    expect(canBlock(s, find(s, 1 as SeatIndex, 'battlefield', 'Dauthi Horror'), shade, 1 as SeatIndex))
+      .toBeNull();
+  });
+
+  it('reads the blocker as it is now, not as it was printed', () => {
+    /*
+      The restriction is evaluated against live characteristics, which is what makes it a rule
+      rather than a lookup: a Grizzly Bears pumped to 4/4 may no longer block the Kithkin, and the
+      same Bears is a legal blocker the moment the pump expires. `canBlock` asks
+      `characteristicsOf`, so this falls out — asserted because a reader that cached the printed
+      power would pass every other test in this block.
+    */
+    const s = table('d498-live', ['Amrou Kithkin'], ['Grizzly Bears']);
+    const kithkin = find(s, 0 as SeatIndex, 'battlefield', 'Amrou Kithkin');
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    expect(canBlock(s, bears, kithkin, 1 as SeatIndex)).toBeNull();
+    const pumped = pump(s, [bears], bears, 1 as SeatIndex, { power: 2, toughness: 2 });
+    expect(canBlock(pumped, bears, kithkin, 1 as SeatIndex)?.reason).toContain('power 3 or greater');
+  });
+});

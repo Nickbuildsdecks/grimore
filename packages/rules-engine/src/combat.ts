@@ -12,8 +12,8 @@
  * survive combat damage if it is pumped in response.
  */
 import {
-  characteristicsOf, combatDamagePrevented, hasSubtype, protectionApplies,
-  type Characteristics,
+  blockerMatches, characteristicsOf, combatDamagePrevented, hasSubtype, protectionApplies,
+  type BlockerClause, type Characteristics,
 } from './characteristics.js';
 import { listAt } from './cardActions.js';
 import { dealDamage, gainLife } from './effects.js';
@@ -172,6 +172,30 @@ export function damageOrdersOwed(
  * by flying or reach, and menace needs two blockers (checked separately, since it is about the
  * whole block rather than one blocker).
  */
+/**
+ * One printed blocker clause, as the words a player reads in the refusal.
+ *
+ * The message is the only place a player finds out *why* a block was turned down, and "can't be
+ * blocked" on its own is the least useful thing this engine could say about a Thorn Elemental. So
+ * each clause says itself back in the printed phrasing (D498).
+ */
+function blockerClauseText(clause: BlockerClause): string {
+  switch (clause.kind) {
+    case 'power':
+      return `creatures with power ${clause.n} or ${clause.cmp === 'at-most' ? 'less' : 'greater'}`;
+    case 'colour': return `${COLOUR_NAMES[clause.colour] ?? clause.colour} creatures`;
+    case 'type': return `${clause.type} creatures`;
+    case 'subtype': return `${clause.subtype}s`;
+    case 'keyword': return `creatures with ${clause.keyword}`;
+    default: return 'those creatures';
+  }
+}
+
+/** The colour words a refusal message uses, which are the words the cards print. */
+const COLOUR_NAMES: Readonly<Record<string, string>> = Object.freeze({
+  W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green',
+});
+
 export function canBlock(state: GameState, blockerId: string, attackerId: string, seat: SeatIndex): CombatIssue | null {
   const blocker = creatureOf(state, blockerId, seat);
   if (blocker === null) return { card: blockerId, reason: 'not a creature you control' };
@@ -194,6 +218,35 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
   }
   if (attacker.ch.cantBeBlockedByWalls && hasSubtype(blocker.ch.typeLine, 'wall')) {
     return { card: blockerId, reason: `${attacker.ch.name} can't be blocked by Walls` };
+  }
+  /*
+    Printed blocker restrictions — the ban list and the allow list (D498).
+
+    Read off the **attacker**, like the Wall clause above and protection before it: a sentence about
+    who may block this creature is a fact about the creature that prints it. Both are checked here
+    because both are the same question asked from opposite ends, and both are a *list*: a ban
+    refuses a blocker matching any clause, an allow list refuses one matching none.
+
+    After the Wall clause and before the bare "can't be blocked", which is only an ordering of
+    reasons rather than of rules — every one of these refuses the block, and the player reads
+    whichever message comes first. Put together so a card printing both a ban and the keyword gets
+    the more specific sentence.
+  */
+  const banned = attacker.ch.cantBeBlockedBy
+    .find((clause) => blockerMatches(clause, blocker.ch));
+  if (banned !== undefined) {
+    return {
+      card: blockerId,
+      reason: `${attacker.ch.name} can't be blocked by ${blockerClauseText(banned)}`,
+    };
+  }
+  const allowed = attacker.ch.blockableOnlyBy;
+  if (allowed !== null && !allowed.some((clause) => blockerMatches(clause, blocker.ch))) {
+    return {
+      card: blockerId,
+      reason: `${attacker.ch.name} can't be blocked except by `
+        + allowed.map(blockerClauseText).join(' or '),
+    };
   }
   // "Can't be blocked", with nothing after it. Nothing on the blocker's side can answer it, which
   // is why it is read here and not compared against anything.
