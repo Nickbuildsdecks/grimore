@@ -14633,3 +14633,75 @@ rationale untrue — the test fails and names the half that moved. A suite that 
 does not read" would have gone on passing while its explanation rotted.
 
 The row moved to D492's mapping table; the note stays where the row was.
+
+## D493 — "This spell can't be countered": built, measured, and held back for a pool card
+
+Written, tested, gated — and **reset off the branch**, because the gate found a real gap rather than
+a defect. Recorded here in full so the work is not lost with the session that did it.
+
+### What it was worth
+
+`This spell can't be countered.` was an unread line, and a spell needs every printed line read or
+declared, so it refused the **whole card**. Abrupt Decay's resolution line reads perfectly on its
+own and the card still did not compile.
+
+Measured first: 85 legal cards touched, 95 lines, 24 cards finished outright. Delivered, with the
+suite green: **10,527 → 10,604 cards with a compiled script, 6,085 → 6,110 fully read, 20,665 →
+20,767 of 56,421 lines (36.8%)**. The +77 against a predicted 24 is because the probe counted only
+cards where *everything* became readable.
+
+### The design, in four pieces
+
+1. `CardScript.cantBeCountered?: true`.
+2. `spellStaticFromLine()` in `scripts.ts`, wired into **both** line loops — `spellScriptFor` and
+   `lineScriptFor`. Both are needed and the first draft had only the first: Abrupt Decay and Dovin's
+   Veto are spells, while Carnage Tyrant, Thrun, Blurred Mongoose and Great Sable Stag print the
+   same line on a **permanent**, which goes through the other loop. Probing real printings is what
+   caught that; an assumption would have shipped half the family.
+3. `StackObject.cantBeCountered?: true`, copied off `scriptForCard` at the cast site. It has to
+   travel on the object: `counterSpell` is in `effects.ts`, which cannot import `derive.ts` —
+   `derive → compile → scripts → effects` is a cycle. It is also the honest shape, since it is a
+   fact about *this casting*.
+4. A guard at the top of `counterSpell`, the single chokepoint for ward's unpaid settle, the bot and
+   every scripted counter.
+
+Not a skipped line, on principle: a spell that can be countered when its text says it cannot is
+**worse than printed**, and a reading that errs generously is still wrong (D259, D362). Refused with
+test rows: `Spells your opponents cast can't be countered` (a permanent's static about *other*
+objects — collapsing it in would be wrong in both directions at once) and the narrower
+`can't be countered by spells or abilities your opponents control`.
+
+### Why it is not on the branch
+
+The gate failed one check: **`deck coverage > has a card behind every mechanic it declares`**.
+
+That check is right, and it is the only thing in the suite that could have caught this. It enforces
+D229's rule — *a mechanic needs a card in a deck to exist in the pool* — and reads the declared
+surface straight out of `scriptTypes.ts` so that a field added for an engine change whose cards
+never arrive cannot slip through. No card in the thirteen built-in decks prints the line, so the
+mechanic would have shipped unexercised at a real table.
+
+**The field was not added to that test's `plumbing` exemption set**, and that is the decision worth
+recording. The exemption would have made the gate green in one line. The test's own docblock argues
+against it — a list there is "a second place to forget the next mechanic" — and weakening a check to
+pass a change is the one move that makes every future green meaningless.
+
+### What finishing it costs, and why that is its own change
+
+A real card that prints the line, hand-written, with a deck slot. **Dovin's Veto** is the candidate:
+`{W}{U}`, "Counter target noncreature spell. This spell can't be countered", both halves already
+supported (`isNoncreatureSpell` is what hand-written Negate uses), and the white-blue answers deck is
+the obvious home.
+
+That is a **balance change**, and this project measures those (#96, #139, #231). Doing it in passing
+would have meant an unmeasured deck swap riding along inside a compiler increment — which is the
+thing the increment loop exists to prevent. So it is split out rather than smuggled in.
+
+### One lesson from its break run
+
+Four breaks, four caught — but only after fixing one of the breaks. Break 3 looked uncaught, and the
+real explanation was that the `sed` anchor did not match the file, so **nothing had been broken**.
+Written correctly it failed three tests.
+
+*A break that silently fails to apply is indistinguishable from a test that does not discriminate.*
+Check the edit landed before concluding anything about the suite. This nearly cost two good tests.
