@@ -11433,11 +11433,23 @@ function selfEffect(
     'i',
   ).exec(text);
   if (grown !== null) {
-    const bonus = pumpAndGrant(Number(grown[2]), Number(grown[3]), grown[4]);
+    const power = Number(grown[2]);
+    const toughness = Number(grown[3]);
+    const bonus = pumpAndGrant(power, toughness, grown[4]);
     if (bonus !== null) {
       const named = grown[1];
+      /*
+        A pump that makes the creature no bigger is declared for the bot as `selfShrink`, with the
+        words it grants in exchange. This is the one place that knows the sign, and an activated
+        ability that only costs its own creature power is a loop the bot will walk for ever
+        otherwise — Hyalopterous Lemure, `{0}: ~ gets -1/-0 and gains flying until end of turn`,
+        found by a pod sweep on the same run that read it for the first time. See
+        `AbilityDef.selfShrink`.
+      */
+      const shrinks = power <= 0 && toughness <= 0;
       return {
         effect: (c) => pump(c.state, [itMeans(named, c)], c.source, c.controller, bonus),
+        ...(shrinks ? { abilityFlags: { selfShrink: { grants: bonus.keywords ?? [] } } } : {}),
       };
     }
   }

@@ -1758,6 +1758,38 @@ export interface AbilityDef {
    * both have a payoff the question below would miss. See `untapBoughtSomething`.
    */
   readonly untapsOnly?: boolean;
+  /**
+   * "{0}: ~ gets -1/-0 and gains flying until end of turn" — an ability whose whole effect is a
+   * self-pump that does **not** make the creature bigger, and the keywords it grants in exchange.
+   *
+   * Declared for the bot, and the fourteenth member of the "spent on nothing" family. The second
+   * about a loop rather than a card, after `untapsOnly`.
+   *
+   * **Found by `corpus-decks.mjs` on the very run that measured the increment that caused it.**
+   * D496 taught the compiler to read a self-pump whose halves may be negative, and one pod in forty
+   * then stopped finishing: *seed 34819 — 2000 moves with no progress in precombat-main of turn 94,
+   * 2000 of them `auto:activate` (Hyalopterous Lemure#0)*. The card is real and free and
+   * repeatable, and before D496 its line was unread, so the loop could not exist. It is #334's
+   * Umbral Mantle shape with the sign reversed: every activation is legal and changes the board, so
+   * no stall detector that compares states can see it — the power simply walks down for ever inside
+   * one step, the step never passes, and the game cannot end.
+   *
+   * **`grants` is why this is a field and not a boolean.** The rule is not "never shrink yourself":
+   * Hyalopterous Lemure's *first* activation buys flying, and that is the card. What the bot asks is
+   * whether the creature **already has** every word this would grant it — and after the first
+   * activation it does, so the second buys nothing and the loop dies at one.
+   *
+   * It is read off the script rather than measured before and after, which was the first attempt and
+   * does not work: an activated ability goes on the stack, so `simulate` returns a board where the
+   * pump has not happened yet. An instrument said so in one run — `[shrink] no: stack`, 2001 times —
+   * rather than being reasoned about (the D489 lesson). The sign is a fact the compiler knows while
+   * it is reading the clause, which is where this is set.
+   *
+   * Only for an ability that does nothing else, like `untapsOnly` beside it. A shrink with a target
+   * is somebody else's creature and `TargetSpec` carries that; a shrink that also drains a life is a
+   * real play.
+   */
+  readonly selfShrink?: { readonly grants: readonly Keyword[] };
 }
 
 /** An Aura: what it may enchant, and what it does to the thing it is attached to. */

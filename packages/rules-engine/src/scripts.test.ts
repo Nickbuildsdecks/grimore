@@ -28505,6 +28505,11 @@ describe('tap target, and a self-pump that shrinks, at the table (D496)', () => 
       oracle_text: '{W}, {T}: Tap target creature.',
     },
     {
+      name: 'Hyalopterous Lemure', type_line: 'Creature — Spirit', mana_cost: '{4}{B}', cmc: 5,
+      colors: ['B'], layout: 'normal', power: '4', toughness: '3',
+      oracle_text: '{0}: Hyalopterous Lemure gets -1/-0 and gains flying until end of turn.',
+    },
+    {
       name: 'Breathstealer', type_line: 'Creature — Nightstalker', mana_cost: '{2}{B}', cmc: 3,
       colors: ['B'], layout: 'normal', power: '2', toughness: '2',
       oracle_text: '{B}: Breathstealer gets +1/-1 until end of turn.',
@@ -28524,7 +28529,8 @@ describe('tap target, and a self-pump that shrinks, at the table (D496)', () => 
       data: DATA as never[],
     });
     expect(list.unknown).toEqual([]);
-    expect(list.fromData.slice().sort()).toEqual(['Benalish Trapper', 'Breathstealer']);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Benalish Trapper', 'Breathstealer', 'Hyalopterous Lemure']);
     const s = arena({
       decks: { 0: id, 1: id },
       deckSpecs: { [id]: list.deck },
@@ -28536,6 +28542,62 @@ describe('tap target, and a self-pump that shrinks, at the table (D496)', () => 
     });
     return advanceTo(s, step as never);
   };
+
+  /*
+    The loop this increment created, and the rule that closed it.
+
+    `corpus-decks.mjs` found it on the very run that measured the reading: seed 34819, *2000 moves
+    with no progress in precombat-main of turn 94, 2000 of them `auto:activate` (Hyalopterous
+    Lemure#0)*. The card is `{0}: Hyalopterous Lemure gets -1/-0 and gains flying until end of
+    turn.` — free, repeatable, and unread until D496, so the loop could not have existed before.
+
+    `AbilityDef.selfShrink` carries the whole story, including the two versions that did not work.
+  */
+  it('activates a free self-shrink for the flying, and not while one is already on the stack', () => {
+    let s = table('d496-loop', ['Hyalopterous Lemure'], ['Grizzly Bears'], 'precombat-main');
+    const lemure = find(s, 0 as SeatIndex, 'battlefield', 'Hyalopterous Lemure');
+    const mine = (state: GameState) => botAction(state, 0 as SeatIndex, {});
+
+    /*
+      With nothing on the stack and no flying yet, the **bot** chooses it — walked forward a few
+      moves, because it plays its land first and that is right.
+
+      Asserted on the bot's own choice rather than on the engine's legality, which the break run
+      insisted on: refusing every self-shrink, the first one included, left a legality assertion
+      perfectly happy.
+    */
+    let chose = false;
+    for (let i = 0; i < 8 && !chose; i += 1) {
+      const next = mine(s);
+      if (next === null) break;
+      if (next.type === 'auto:activate' && next.card === lemure) { chose = true; break; }
+      s = apply(s, next);
+    }
+    expect(chose).toBe(true);
+    const activation = {
+      type: 'auto:activate', by: 0, card: lemure, abilityIndex: 0,
+    } as Action;
+    s = apply(s, activation);
+
+    /*
+      Now one is on the stack. The flying has NOT arrived — that is the whole trap — so a rule that
+      only asked "does it already have flying" would offer a second, and a third, for ever. The bot
+      must decline this one.
+    */
+    expect(s.stackOrder).toHaveLength(1);
+    const next = mine(s);
+    expect(next?.type === 'auto:activate' && next.card === lemure).toBe(false);
+
+    /*
+      And once it has resolved and the creature has flying, a second activation is nothing but
+      another point of power gone, so that is declined too.
+    */
+    s = drain(passBoth(s), 20);
+    expect(s.stackOrder).toHaveLength(0);
+    expect(characteristicsOf(s, s.instances[lemure]!).keywords.has('flying')).toBe(true);
+    const after = mine(s);
+    expect(after?.type === 'auto:activate' && after.card === lemure).toBe(false);
+  });
 
   it('taps an opposing creature, and that creature then cannot attack', () => {
     let s = table('d496-tap', ['Benalish Trapper'], ['Grizzly Bears'], 'precombat-main');

@@ -3813,6 +3813,48 @@ function equipMovesSideways(state: GameState, seat: SeatIndex, action: Action): 
   return characteristicsOf(state, to).power <= characteristicsOf(state, host).power;
 }
 
+/**
+ * Whether this activation would only make its own creature smaller — the fourteenth of the "spent
+ * on nothing" family, and the second about a loop rather than a card.
+ *
+ * The flag is set by the compiler, which is the only place that knows the sign of the pump while it
+ * is reading the clause; `AbilityDef.selfShrink` carries the whole story of the pod seed that found
+ * it and of the before-and-after version that could not work. What is left to ask here is the one
+ * thing only the board can answer: **does this creature already have every word the ability would
+ * grant it?**
+ *
+ * Hyalopterous Lemure is the case. `{0}: ~ gets -1/-0 and gains flying until end of turn` is worth
+ * activating once — a 4/3 that cannot be blocked by the ground for a 3/3 that can — and worth
+ * nothing ever after, because the second activation grants a flying the creature already has and
+ * takes another point of power for it. So the first is offered and the rest are not, which is the
+ * difference between playing the card and looping on it.
+ */
+function shrinksItselfForNothing(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:activate') return false;
+  const index = action.abilityIndex ?? 0;
+  const shrink = playedScript(state, action.card)?.abilities?.[index]?.selfShrink;
+  if (shrink === undefined) return false;
+  const inst = state.instances[action.card];
+  if (inst === undefined || inst.zone !== 'battlefield') return false;
+  /*
+    **One of these already waiting to resolve is the loop itself**, and finding that out took a
+    second instrument. The first version asked only the question below, and the pod seed still
+    looped 2000 times with the flag read correctly every time — because the bot never passes
+    priority, so none of the abilities ever resolves, so the flying never arrives and "does it
+    already have it" is permanently false. The stack was 2000 copies deep.
+
+    Stacking two "gets -1/-0 and gains flying" is never right in any case: the second grants a word
+    the first is already bringing and costs another point of power for it. Same idiom as the
+    cost-already-on-the-stack check above.
+  */
+  if (state.stackOrder.some((id) => {
+    const object = state.stackObjects[id];
+    return object?.source === action.card && (object.abilityIndex ?? 0) === index;
+  })) return true;
+  const ch = characteristicsOf(state, inst);
+  return shrink.grants.every((word) => ch.keywords.has(word));
+}
+
 /** Whether this action activates an ability whose whole effect is untapping something. */
 function untapsSomething(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
@@ -5098,6 +5140,15 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
     */
     if (filtersOn && untapsSomething(state, option.action)
       && !untapBoughtSomething(state, after, seat, option.action)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And a free self-pump that only makes its own creature worse, which is the fourteenth of the
+      family and the second about a loop rather than a card. See `shrinksItselfForNothing` for the
+      pod seed that found it.
+    */
+    if (filtersOn && shrinksItselfForNothing(state, option.action)) {
       dropped += 1;
       continue;
     }

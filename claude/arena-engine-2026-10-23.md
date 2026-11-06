@@ -15117,3 +15117,52 @@ Prison's second clause, and `Activate only once each turn.` — 13 cards, the ne
 with `ENOENT: open '--file'`. It takes both now, with a usage line and exit 2 rather than a stack
 trace. A harness whose calling convention differs from its neighbours' is a harness that gets called
 wrongly.
+
+### Addendum: the increment's own sweep found the loop it created
+
+The pod sweep on `SEED0=34801` came back **39 of 40**:
+
+```
+  seed 34819: looping — 2000 moves with no progress in precombat-main of turn 94,
+              2000 of them auto:activate (Hyalopterous Lemure#0)
+```
+
+`{0}: Hyalopterous Lemure gets -1/-0 and gains flying until end of turn.` A real card, free and
+repeatable, whose line was **unread until this increment** — so the loop could not have existed
+before and is mine. It is #334's Umbral Mantle shape with the sign reversed: every activation is
+legal and changes the board, so no stall detector that compares states can see it; the power simply
+walks down for ever inside one step, the step never passes, and the game cannot end.
+
+The fix is the **fourteenth member of the "spent on nothing" family**, and the second about a loop
+rather than a card: `AbilityDef.selfShrink`, set by the compiler because it is the only thing that
+knows the sign while it is reading the clause, carrying the keywords the ability grants in exchange.
+
+**It took three attempts, and two of them are worth more than the fix.**
+
+1. **Before and after.** The first version measured the board either side of the activation —
+   `untapBoughtSomething`'s shape — and did nothing. An instrument said why in one run:
+   `[shrink] no: stack`, **2001 times**. An activated ability goes on the stack, so `simulate`
+   returns a board where the pump has not happened. The before/after approach cannot see an
+   activation's effect at all. That is a fact about the whole family worth knowing.
+2. **"Does it already have the word?"** The flag-reading version asked exactly the right question
+   and the seed still looped, with the flag read correctly 2000 times. The reason is the first
+   version's finding again from the other side: **the bot never passes priority**, so none of the
+   abilities ever resolves, so the flying never arrives, so "does it already have flying" is
+   permanently false and the stack goes 2000 deep. The rule needs the stack clause: one of these
+   already waiting to resolve *is* the loop.
+3. Both clauses, and seed 34819 finishes.
+
+Neither was reasoned out. Both came from printing what the predicate actually saw (D489): the first
+from a line of `no:` reasons, the second from the flag being read correctly while nothing changed.
+
+**The rule is not "never shrink yourself."** Hyalopterous Lemure's first activation buys flying — a
+4/3 the ground cannot block for a 3/3 it can — and that is the card. The bot takes the first and
+declines the rest.
+
+One of the three breaks exposed a weak assertion, as in D495. "Refuse every self-shrink, the first
+one included" passed, because the test asked the **engine** whether the activation was legal, and a
+bot filter does not change legality. It asks the bot's own choice now, walked forward a few moves
+because the bot plays its land first and that is right.
+
+Re-run on the same seed set: **40 of 40 finished, no throw and no stall**, 57.1 turns and 301 moves
+on average.
