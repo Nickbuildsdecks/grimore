@@ -12,7 +12,8 @@
  * survive combat damage if it is pumped in response.
  */
 import {
-  clauseMatches, characteristicsOf, combatDamagePrevented, hasSubtype, protectionApplies,
+  clauseMatches, characteristicsOf, combatDamagePrevented, hasSubtype, keywordBlockRules,
+  protectionApplies,
   type BlockerClause, type Characteristics,
 } from './characteristics.js';
 import { listAt } from './cardActions.js';
@@ -274,6 +275,38 @@ export function canBlock(state: GameState, blockerId: string, attackerId: string
       card: blockerId,
       reason: `${blocker.ch.name} can block only ${only.map(blockerClauseText).join(' or ')}`,
     };
+  }
+  // Shadow's second half (CR 702.28c), and the only keyword rule in this engine that restricts what
+  // the creature carrying it may block. Read off the blocker, like the printed pair above.
+  for (const rule of keywordBlockRules(blocker.ch)) {
+    const clauses = rule.blocksOnly;
+    if (clauses === undefined) continue;
+    if (!clauses.some((clause) => clauseMatches(clause, attacker.ch))) {
+      return {
+        card: blockerId,
+        reason: `${blocker.ch.name} has ${rule.keyword}, so it can block only `
+          + clauses.map(blockerClauseText).join(' or '),
+      };
+    }
+  }
+  /*
+    Keyword evasion whose rule is a list: fear, shadow and horsemanship (D501).
+
+    Applied **alongside** the printed lists above rather than merged into them, which is the point
+    of keeping `KEYWORD_BLOCK_RULES` separate — see its docblock, and Dauthi Horror, which prints
+    shadow and a printed ban and is entitled to both. Every rule the attacker carries has to be
+    answered, and the clauses inside one rule are alternatives.
+  */
+  for (const rule of keywordBlockRules(attacker.ch)) {
+    const clauses = rule.blockedOnlyBy;
+    if (clauses === undefined) continue;
+    if (!clauses.some((clause) => clauseMatches(clause, blocker.ch))) {
+      return {
+        card: blockerId,
+        reason: `${attacker.ch.name} has ${rule.keyword}, so it can't be blocked except by `
+          + clauses.map(blockerClauseText).join(' or '),
+      };
+    }
   }
   // "Can't be blocked", with nothing after it. Nothing on the blocker's side can answer it, which
   // is why it is read here and not compared against anything.

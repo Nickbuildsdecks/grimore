@@ -7432,9 +7432,28 @@ describe('deck coverage', () => {
         `blocked-creature` is **not** exempt: Ichorclaw Myr prints it and is in the infect deck,
         which is how D482 found that the Myr had been scripted on the per-blocker event and pumped
         twice against two blockers.
+
+      **And the first three keywords to join that list (D501).** The pool's thirteen decks are
+      measured — #96 and #231 both moved win rates by a single slot — and the rule above applies to
+      a keyword exactly as it does to a trigger: adding a card to a measured deck to satisfy a test
+      is the thing not to do.
+
+      - `keyword fear`: 37 legal corpus lines, 6 cards whose entire text is the word. Driven at
+        runtime by "fear admits an artifact creature and a black creature, and refuses the rest", on
+        printed Severed Legion — both clauses of CR 702.36a, against a colourless artifact creature
+        and a black one, so neither clause alone would pass it.
+      - `keyword shadow`: 39 legal corpus lines. Driven at runtime by two tests, one per direction
+        of CR 702.28b-c ("shadow restricts who may block it" and "shadow also restricts what it may
+        block"), on printed Dauthi Marauder — and by "Dauthi Horror applies its keyword and its
+        printed ban independently", which is the card the whole `KEYWORD_BLOCK_RULES` design exists
+        for.
+      - `keyword horsemanship`: 25 legal corpus lines. Driven at runtime by "horsemanship restricts
+        only one direction, and the asymmetry is the assertion", on printed Barbarian General —
+        including the block it *may* make, which is what a symmetric rules table would have refused.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
+      'keyword fear', 'keyword shadow', 'keyword horsemanship',
     ]);
 
     const declared = [
@@ -29020,5 +29039,162 @@ describe('printed restrictions on what a creature may block, at the table (D500)
     const issue = canBlock(s, bears, pirates, 1 as SeatIndex);
     expect(issue?.reason).toContain("can't block a flier");
     expect(issue?.reason).not.toContain('except by');
+  });
+});
+
+describe('fear, shadow and horsemanship, at the table (D501)', () => {
+  /*
+    The three keyword rules enforced, through `customDeck`'s `data` on four real printings. The
+    blockers and attackers they are measured against come from the shipping pool: Grizzly Bears
+    (2/2 green, no evasion), Gravedigger (2/2 **black**), Chrome Steed (2/2 **colourless artifact**)
+    and Serra Angel (4/4 white flier).
+
+    Chrome Steed earns its place: fear's rule is artifact *or* black, and a black artifact creature
+    would satisfy it twice over and prove only one of the two clauses.
+  */
+  const DATA = [
+    {
+      name: 'Severed Legion', type_line: 'Creature — Zombie', mana_cost: '{1}{B}{B}', cmc: 3,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: "Fear (This creature can't be blocked except by artifact creatures and/or black creatures.)",
+    },
+    {
+      name: 'Dauthi Marauder', type_line: 'Creature — Dauthi Minion', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], layout: 'normal', power: '3', toughness: '1',
+      oracle_text: 'Shadow (This creature can block or be blocked by only creatures with shadow.)',
+    },
+    {
+      name: 'Barbarian General', type_line: 'Creature — Human Barbarian Soldier',
+      mana_cost: '{4}{R}', cmc: 5, colors: ['R'], layout: 'normal', power: '3', toughness: '2',
+      oracle_text: "Horsemanship (This creature can't be blocked except by creatures with horsemanship.)",
+    },
+    {
+      name: 'Dauthi Horror', type_line: 'Creature — Dauthi Horror', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '1',
+      oracle_text: 'Shadow (This creature can block or be blocked by only creatures with shadow.)\n'
+        + "Dauthi Horror can't be blocked by white creatures.",
+    },
+  ];
+
+  const table = (id: string, attackers: readonly string[], blockers: readonly string[]) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 2 })),
+        { name: 'Grizzly Bears', count: 3 },
+        { name: 'Gravedigger', count: 2 },
+        { name: 'Chrome Steed', count: 2 },
+        { name: 'Serra Angel', count: 2 },
+        { name: 'Plains', count: 21 },
+        { name: 'Swamp', count: 22 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Barbarian General', 'Dauthi Horror', 'Dauthi Marauder', 'Severed Legion']);
+    return advanceTo(arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: { 0: ['Plains', ...attackers], 1: ['Swamp', ...blockers] },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+  };
+
+  it('fear admits an artifact creature and a black creature, and refuses the rest', () => {
+    /*
+      Both clauses of the one rule, and the refusal. A reader that returned only the colour clause
+      would pass the Gravedigger row and fail Chrome Steed; one that returned only the type clause
+      would do the reverse.
+    */
+    const s = table('d501-fear', ['Severed Legion'],
+      ['Grizzly Bears', 'Gravedigger', 'Chrome Steed']);
+    const legion = find(s, 0 as SeatIndex, 'battlefield', 'Severed Legion');
+    const ask = (blocker: string) =>
+      canBlock(s, find(s, 1 as SeatIndex, 'battlefield', blocker), legion, 1 as SeatIndex);
+    expect(ask('Grizzly Bears')?.reason).toContain('fear');
+    expect(ask('Gravedigger')).toBeNull();
+    expect(ask('Chrome Steed')).toBeNull();
+  });
+
+  it('shadow restricts who may block it', () => {
+    // CR 702.28b. The half D498 could already have expressed.
+    const s = table('d501-shadow-in', ['Dauthi Marauder'], ['Grizzly Bears', 'Dauthi Horror']);
+    const marauder = find(s, 0 as SeatIndex, 'battlefield', 'Dauthi Marauder');
+    expect(canBlock(s, find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears'), marauder, 1 as SeatIndex)?.reason)
+      .toContain("can't be blocked except by creatures with shadow");
+    // Dauthi Horror has shadow, so it is on the list.
+    expect(canBlock(s, find(s, 1 as SeatIndex, 'battlefield', 'Dauthi Horror'), marauder, 1 as SeatIndex))
+      .toBeNull();
+  });
+
+  it('shadow also restricts what it may block, which is the half that needed D500', () => {
+    /*
+      CR 702.28c, and the reason this increment follows that one. Before D500 there was no field for
+      "this creature may block only X", so shadow could have been read in one direction and would
+      have been half a rule — a Dauthi Marauder that blocks a Grizzly Bears, which it may not.
+    */
+    const ground = table('d501-shadow-out-no', ['Grizzly Bears'], ['Dauthi Marauder']);
+    expect(canBlock(
+      ground,
+      find(ground, 1 as SeatIndex, 'battlefield', 'Dauthi Marauder'),
+      find(ground, 0 as SeatIndex, 'battlefield', 'Grizzly Bears'),
+      1 as SeatIndex,
+    )?.reason).toContain('can block only creatures with shadow');
+    const shadowed = table('d501-shadow-out-yes', ['Dauthi Horror'], ['Dauthi Marauder']);
+    expect(canBlock(
+      shadowed,
+      find(shadowed, 1 as SeatIndex, 'battlefield', 'Dauthi Marauder'),
+      find(shadowed, 0 as SeatIndex, 'battlefield', 'Dauthi Horror'),
+      1 as SeatIndex,
+    )).toBeNull();
+  });
+
+  it('horsemanship restricts only one direction, and the asymmetry is the assertion', () => {
+    /*
+      CR 702.5b says who may block it and nothing about what it may block, so a Barbarian General
+      is free to block a Grizzly Bears. A rules table that applied every entry symmetrically — the
+      obvious shape, and the one shadow invites — would refuse that block and invent a rule.
+    */
+    const attacking = table('d501-horse-in', ['Barbarian General'], ['Grizzly Bears']);
+    expect(canBlock(
+      attacking,
+      find(attacking, 1 as SeatIndex, 'battlefield', 'Grizzly Bears'),
+      find(attacking, 0 as SeatIndex, 'battlefield', 'Barbarian General'),
+      1 as SeatIndex,
+    )?.reason).toContain('horsemanship');
+    const blocking = table('d501-horse-out', ['Grizzly Bears'], ['Barbarian General']);
+    expect(canBlock(
+      blocking,
+      find(blocking, 1 as SeatIndex, 'battlefield', 'Barbarian General'),
+      find(blocking, 0 as SeatIndex, 'battlefield', 'Grizzly Bears'),
+      1 as SeatIndex,
+    )).toBeNull();
+  });
+
+  it('Dauthi Horror applies its keyword and its printed ban independently', () => {
+    /*
+      The card `KEYWORD_BLOCK_RULES` is a separate table for, settled at the table rather than in
+      the reader. Two restrictions, two reasons, and the discriminator is a creature that answers
+      one and not the other.
+
+      **No white creature with shadow has ever been printed**, so the test grants shadow to a Serra
+      Angel with the engine's own machinery. It now satisfies the keyword's allow list and is still
+      refused — by the printed ban, which a merged implementation would have thrown away along with
+      the keyword rule when D498's both-a-ban-and-an-allow-list refusal fired.
+    */
+    const s = table('d501-both', ['Dauthi Horror'], ['Grizzly Bears', 'Serra Angel']);
+    const horror = find(s, 0 as SeatIndex, 'battlefield', 'Dauthi Horror');
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const angel = find(s, 1 as SeatIndex, 'battlefield', 'Serra Angel');
+    // No shadow: refused by the keyword.
+    expect(canBlock(s, bears, horror, 1 as SeatIndex)?.reason)
+      .toContain('creatures with shadow');
+    // Shadow, but white: refused by the printed ban instead, and named as such.
+    const shaded = pump(s, [angel], angel, 1 as SeatIndex, { keywords: ['shadow'] });
+    const issue = canBlock(shaded, angel, horror, 1 as SeatIndex);
+    expect(issue?.reason).toContain('white creatures');
+    expect(issue?.reason).not.toContain('shadow');
   });
 });

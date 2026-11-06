@@ -53,6 +53,29 @@ export const KEYWORDS = [
     declaration and `declareAttackers` is the implementation.
   */
   'myriad',
+  /*
+    Three evasion keywords whose rules text **is** a `BlockerClause` list (D501).
+
+      fear          CR 702.36a  can't be blocked except by artifact creatures and/or black creatures
+      shadow        CR 702.28b  can block or be blocked by only creatures with shadow
+      horsemanship  CR 702.5b   can't be blocked except by creatures with horsemanship
+
+    They are here rather than in a card's script because they are printed on 101 legal lines and a
+    keyword is what the cards print — but a word in this list is a word `printedKeywords` returns and
+    `compile.ts` therefore counts **read**, so each one has to be enforced or the count is a lie
+    (D362 ranks a wrong reading below an unread line). `KEYWORD_BLOCK_RULES` below is the
+    enforcement, and `canBlock` consults it.
+
+    Shadow is the one that needed D500: it restricts **both** directions, so it is the first rule in
+    this engine that is an allow list on who may block the creature *and* an allow list on what the
+    creature may block.
+
+    Intimidate (21 lines) and skulk (14) are deliberately absent. Each needs a clause whose answer
+    depends on both creatures — "creatures that share a color with it", "creatures with greater
+    power" — and `clauseMatches` sees one creature on purpose. They are #345's problem, with the
+    nine relative-power printings.
+  */
+  'fear', 'shadow', 'horsemanship',
 ] as const;
 export type Keyword = (typeof KEYWORDS)[number];
 
@@ -340,7 +363,18 @@ function printedParts(
     if (blockers !== null) { found.push(blockers); continue; }
     const blocks = printedBlocksLine(line, name);
     if (blocks !== null) { found.push(blocks); continue; }
-    const parts = line.split(/,\s*/).map((part) => part.trim()).filter(Boolean)
+    /*
+      A semicolon separates keywords exactly as a comma does, and 33 legal lines use one:
+      `Vigilance; horsemanship`, `Flying; fear`, `Defender; reach`, `First strike; banding`. Before
+      D501 the split was on commas alone, so every one of those lines came out as a single part that
+      is not a keyword and the whole line was refused — including five printings of the three
+      keywords D501 adds, which is how it was noticed.
+
+      Safe because the whole-line rule is unchanged: **every** part still has to be a part, so a
+      line carrying a semicolon and anything unreadable (the banding lines, which this engine has no
+      keyword for) is refused exactly as before.
+    */
+    const parts = line.split(/[,;]\s*/).map((part) => part.trim()).filter(Boolean)
       .map((part) => printedPart(part));
     if (parts.length === 0 || !parts.every((part) => part !== null)) continue;
     for (const part of parts) found.push(part!);
@@ -450,6 +484,53 @@ export function clauseMatches(clause: BlockerClause, creature: Characteristics):
     case 'keyword': return creature.keywords.has(clause.keyword);
     default: return false;
   }
+}
+
+/**
+ * One evasion keyword whose rule is a restriction on blocking, expressed in the clause vocabulary.
+ *
+ * **Separate from the printed-list fields, and Dauthi Horror is why.** Its text is
+ * `Shadow` + `Dauthi Horror can't be blocked by white creatures` — a keyword allow list and a
+ * printed ban on one card. D498 refuses a card that prints both a ban and an allow list, because
+ * merging them is a judgement; stuffing shadow's rule into `blockableOnlyBy` would trip that
+ * refusal and the card would lose *both* restrictions. They are not in conflict: a white shadow
+ * creature may not block it, for two independent reasons. So the keyword rules live here and
+ * `canBlock` applies them **alongside** whatever the card prints, each list satisfied on its own.
+ *
+ * That is also the correct rule for a creature carrying two of these at once: every list must be
+ * answered, and the clauses *within* one list are alternatives.
+ */
+export interface KeywordBlockRule {
+  readonly keyword: Keyword;
+  /** A would-be blocker must answer one of these, or it may not block this creature. */
+  readonly blockedOnlyBy?: readonly BlockerClause[];
+  /** This creature may block only an attacker answering one of these. */
+  readonly blocksOnly?: readonly BlockerClause[];
+}
+
+/** The keyword block restrictions this engine knows, each straight from its rule (D501). */
+export const KEYWORD_BLOCK_RULES: readonly KeywordBlockRule[] = [
+  // CR 702.36a. Artifact *or* black, which is why a clause list is a list of alternatives.
+  {
+    keyword: 'fear',
+    blockedOnlyBy: [{ kind: 'type', type: 'artifact' }, { kind: 'colour', colour: 'B' }],
+  },
+  // CR 702.28b-c, and the only rule here that restricts both directions at once.
+  {
+    keyword: 'shadow',
+    blockedOnlyBy: [{ kind: 'keyword', keyword: 'shadow' }],
+    blocksOnly: [{ kind: 'keyword', keyword: 'shadow' }],
+  },
+  // CR 702.5b. One direction: a creature with horsemanship may block anything it likes.
+  {
+    keyword: 'horsemanship',
+    blockedOnlyBy: [{ kind: 'keyword', keyword: 'horsemanship' }],
+  },
+];
+
+/** The keyword block rules this creature's keywords impose, in `KEYWORD_BLOCK_RULES` order. */
+export function keywordBlockRules(ch: Characteristics): readonly KeywordBlockRule[] {
+  return KEYWORD_BLOCK_RULES.filter((rule) => ch.keywords.has(rule.keyword));
 }
 
 /** The creature types a printed blocker filter may name, capitalised as cards print them. */

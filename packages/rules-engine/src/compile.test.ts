@@ -4,7 +4,8 @@ import { STARTER_DECKS } from './starterDecks.js';
 import { CLUE_TOKEN, isKeywordDeclaration, scriptFor } from './scripts.js';
 import { zoneKey, type CardDef } from './cards.js';
 import {
-  characteristicsOf, printedBlockerLimit, printedBlocksLimit, printedCombatStatics, printedLandwalk,
+  KEYWORD_BLOCK_RULES, characteristicsOf, keywordBlockRules, printedBlockerLimit, printedBlocksLimit,
+  printedCombatStatics, printedKeywords, printedLandwalk,
 } from './characteristics.js';
 import type { CardDataRow } from './fromCardData.js';
 import { addCounters, pump, tap, type EffectContext } from './effects.js';
@@ -10730,7 +10731,14 @@ describe('printed restrictions on who may block (D498)', () => {
       that ignored it would be blocked by things that cannot block it.
     */
     ['creatures you control', "Probe Beast can't be blocked by creatures you control."],
-    ['a keyword the engine lacks', "Probe Beast can't be blocked by creatures with shadow."],
+    /*
+      **Shadow was this row's example and the engine has it now (D501).** The row read "a keyword the
+      engine lacks" and named shadow, which was true until shadow became a `KEYWORDS` entry with its
+      own rule. The point it was making is unchanged, so the row keeps it with a word the engine
+      genuinely does not have: banding, which is the most tempting wrong read in the game, being a
+      keyword about blocking. The eighth stale refusal row in this series.
+    */
+    ['a keyword the engine lacks', "Probe Beast can't be blocked by creatures with banding."],
     ['a subtype outside the list', "Probe Beast can't be blocked by Goblins."],
     /*
       And for the **subject**, which is the whole-line rule again: "Enchanted creature" is an Aura
@@ -10927,7 +10935,8 @@ describe('printed restrictions on what this creature may block (D500)', () => {
       the short list, and reading it would be a guess about what a Warrior is.
     */
     ['a creature type outside the list', "Probe Beast can't block Warriors."],
-    ['a keyword the engine lacks', "Probe Beast can't block creatures with shadow."],
+    // Shadow was here too, and went the same way as D498's row above (D501). The ninth.
+    ['a keyword the engine lacks', "Probe Beast can't block creatures with banding."],
     ['a relative power', "Probe Beast can't block creatures with power less than its power."],
   ])('reads nothing from %s', (_why, text) => {
     expect(read(text as string)).toEqual({ ban: [], only: null });
@@ -11037,5 +11046,153 @@ describe('printed restrictions on what this creature may block (D500)', () => {
     // may still block the Hyenas.
     expect(printedBlockerLimit("Gibbering Hyenas can't block black creatures.", 'Gibbering Hyenas'))
       .toEqual({ ban: [], only: null });
+  });
+});
+
+describe('fear, shadow and horsemanship, whose rules text is a clause list (D501)', () => {
+  /*
+    Three evasion keywords on **101 legal printed lines**, none of which this engine had, and every
+    one of whose rules is exactly the `BlockerClause` vocabulary D498 and D500 built:
+
+        fear          37 lines   CR 702.36a   except by artifact creatures and/or black creatures
+        shadow        39 lines   CR 702.28b   can block or be blocked by only creatures with shadow
+        horsemanship  25 lines   CR 702.5b    except by creatures with horsemanship
+
+    **Shadow is the card that makes D500 pay twice**: it is the first rule in this engine that is an
+    allow list on who may block the creature *and* an allow list on what the creature may block, and
+    until D500 there was no field for the second half.
+
+    The rules live in `KEYWORD_BLOCK_RULES` rather than in the printed-list fields, and Dauthi
+    Horror is why — see the interface's docblock. Its text is `Shadow` plus `Dauthi Horror can't be
+    blocked by white creatures`, and D498 refuses a card printing both a ban and an allow list, so
+    merging shadow into `blockableOnlyBy` would have cost that card *both* restrictions.
+  */
+
+  it('reads the bare keyword line off six real printings', () => {
+    /*
+      The reminder text in brackets comes off first, which is the whole reason a bare `Fear` is what
+      the reader sees: every modern printing of these three carries its rule as reminder text, and
+      the reader must not read the reminder as a sentence of its own.
+    */
+    expect(printedKeywords('Fear (This creature can\'t be blocked except by artifact creatures'
+      + ' and/or black creatures.)')).toEqual(['fear']);
+    expect(printedKeywords('Shadow (This creature can block or be blocked by only creatures with'
+      + ' shadow.)')).toEqual(['shadow']);
+    expect(printedKeywords('Horsemanship (This creature can\'t be blocked except by creatures with'
+      + ' horsemanship.)')).toEqual(['horsemanship']);
+  });
+
+  it.each([
+    ['fear', { blockedOnlyBy: [{ kind: 'type', type: 'artifact' }, { kind: 'colour', colour: 'B' }] }],
+    ['shadow', {
+      blockedOnlyBy: [{ kind: 'keyword', keyword: 'shadow' }],
+      blocksOnly: [{ kind: 'keyword', keyword: 'shadow' }],
+    }],
+    ['horsemanship', { blockedOnlyBy: [{ kind: 'keyword', keyword: 'horsemanship' }] }],
+  ])('states %s\'s rule as clauses, and only the halves the rule has', (keyword, expected) => {
+    /*
+      The table is the rule, so it is asserted as data rather than only through its effects. The
+      "only the halves the rule has" half matters: horsemanship restricts who may block the
+      creature and says nothing about what it may block, so a `blocksOnly` on it would be invented
+      rules — and symmetry is exactly the kind of thing a table like this invites.
+    */
+    const rule = KEYWORD_BLOCK_RULES.find((r) => r.keyword === keyword);
+    expect(rule).toBeDefined();
+    expect({ ...rule, keyword: undefined }).toEqual({ ...expected, keyword: undefined });
+  });
+
+  it('reads Severed Legion, whose whole text is one word', () => {
+    // Six legal cards print nothing but `Fear`, so the keyword alone finishes them.
+    const compiled = compileCard({
+      name: 'Severed Legion', type_line: 'Creature — Zombie', mana_cost: '{1}{B}{B}', cmc: 3,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: "Fear (This creature can't be blocked except by artifact creatures and/or black creatures.)",
+    });
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    expect(compiled.unread.map((u) => u.line)).toEqual([]);
+    expect(compiled.script?.abilities ?? []).toEqual([]);
+  });
+
+  it('keeps Dauthi Horror\'s printed ban and its keyword, which a merge would have lost both of', () => {
+    /*
+      The card the separate table exists for. Both restrictions are real and independent: a white
+      creature with shadow may not block it, for two different reasons. Asserted as two reads rather
+      than one, because a merged implementation would have returned an empty printed list *and* no
+      keyword rule, and an empty-vs-empty comparison is the easiest kind of test to fool.
+    */
+    const text = 'Shadow (This creature can block or be blocked by only creatures with shadow.)\n'
+      + "Dauthi Horror can't be blocked by white creatures.";
+    expect(printedKeywords(text)).toEqual(['shadow']);
+    expect(printedBlockerLimit(text, 'Dauthi Horror'))
+      .toEqual({ ban: [{ kind: 'colour', colour: 'W' }], only: null });
+  });
+
+  it('reads a semicolon-separated keyword line, which was refused whole before', () => {
+    /*
+      33 legal lines separate keywords with a semicolon, and the comma-only split refused every one.
+      Zhang Fei is the card that showed it: `Vigilance; horsemanship` came out as a single part that
+      is not a keyword, so a card whose entire text is two keywords read as nothing.
+    */
+    expect(printedKeywords('Vigilance; horsemanship (This creature can\'t be blocked except by'
+      + ' creatures with horsemanship.)').slice().sort()).toEqual(['horsemanship', 'vigilance']);
+    expect(printedKeywords('Flying; fear').slice().sort()).toEqual(['fear', 'flying']);
+    expect(printedKeywords('Defender; reach').slice().sort()).toEqual(['defender', 'reach']);
+  });
+
+  it('still refuses a semicolon line carrying a word it has no keyword for', () => {
+    /*
+      The whole-line rule, unchanged by the split: every part has to be a part. Banding is on 10 of
+      those 33 lines and this engine has no banding, so `First strike; banding` must read as nothing
+      rather than hand over the half it understood (D487) — a creature with first strike and no
+      banding is a creature whose printed text the engine is quietly disagreeing with.
+    */
+    expect(printedKeywords('First strike; banding')).toEqual([]);
+    expect(printedKeywords('Flying; first strike; banding')).toEqual([]);
+  });
+
+  it('is a base characteristic, so "loses all abilities" takes the rule away too', () => {
+    /*
+      The rules come off `keywords`, which "loses all abilities" already clears — so this is not a
+      fourth thing to remember to reset, and that is the argument for deriving the rules from the
+      keyword rather than copying them into fields of their own.
+    */
+    const def = {
+      name: 'Dauthi Marauder', typeLine: 'Creature — Dauthi Minion', manaCost: '{2}{B}', cmc: 3,
+      colors: ['B'], power: '3', toughness: '1',
+      oracleText: 'Shadow (This creature can block or be blocked by only creatures with shadow.)',
+    } as unknown as CardDef;
+    const state = {
+      cardDefs: { k: def },
+      instances: { i: { id: 'i', defKey: 'k', zone: 'battlefield', owner: 0, controller: 0, tapped: false, counters: {} } },
+      effects: [],
+      seats: [],
+    } as unknown as GameState;
+    const inst = state.instances['i']!;
+    expect(keywordBlockRules(characteristicsOf(state, inst)).map((r) => r.keyword)).toEqual(['shadow']);
+    const frogged = {
+      ...state,
+      effects: [{
+        id: 'fx1', source: 'i', controller: 0, createdTurn: 1, duration: 'end-of-turn',
+        scope: { kind: 'cards', ids: ['i'] }, losesAllAbilities: true,
+      }],
+    } as unknown as GameState;
+    expect(keywordBlockRules(characteristicsOf(frogged, inst))).toEqual([]);
+  });
+
+  it('gives a creature with no such keyword no rules at all', () => {
+    // The control. An empty result above has to mean "this creature has none", not "this helper
+    // returns nothing" — so a plain body is put through the same call.
+    const def = {
+      name: 'Plain Bear', typeLine: 'Creature — Bear', manaCost: '{1}{G}', cmc: 2,
+      colors: ['G'], power: '2', toughness: '2', oracleText: '',
+    } as unknown as CardDef;
+    const state = {
+      cardDefs: { k: def },
+      instances: { i: { id: 'i', defKey: 'k', zone: 'battlefield', owner: 0, controller: 0, tapped: false, counters: {} } },
+      effects: [],
+      seats: [],
+    } as unknown as GameState;
+    expect(keywordBlockRules(characteristicsOf(state, state.instances['i']!))).toEqual([]);
   });
 });

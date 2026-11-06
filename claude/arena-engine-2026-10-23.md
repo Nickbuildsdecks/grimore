@@ -15619,3 +15619,136 @@ Wurm, Den Protector and six more). D498's direction, not this one, but it needs 
 answer depends on *both* creatures, and `clauseMatches` deliberately sees only one. That is a
 signature change to a matcher two field pairs now depend on, so it is its own increment rather than
 a rider here.
+
+## D501 — Three keywords whose rules text is the list D498 and D500 just built
+
+The payoff increment. **#346 closed.**
+
+```
+fear          37 printed lines   CR 702.36a   except by artifact creatures and/or black creatures
+shadow        39                 CR 702.28b   can block or be blocked by only creatures with shadow
+horsemanship  25                 CR 702.5b    except by creatures with horsemanship
+```
+
+101 legal lines, and not one of the three was in `KEYWORDS`, so `printedKeywords` could never return
+one and a card whose entire text is the word `Fear` — six of them — read as nothing.
+
+**Every one of these rules is already expressible.** Fear is an allow list of
+`{type:'artifact'}` and `{colour:'B'}`; horsemanship is an allow list of one keyword; shadow is an
+allow list in **both** directions at once, which is exactly the half D500 added three hours ago and
+the first rule in this engine to need it. Shadow is where D500 pays for itself a second time: read
+it in one direction only and a Dauthi Marauder blocks a Grizzly Bears, which it may not.
+
+### Why the rules are a separate table, and the card that decided it
+
+The obvious implementation is to seed `blockableOnlyBy` from the keyword. **Dauthi Horror says no.**
+Its text is
+
+```
+Shadow
+Dauthi Horror can't be blocked by white creatures.
+```
+
+— a keyword allow list and a printed ban on one card. D498 *refuses* a card printing both a ban and
+an allow list, because merging them is a judgement nothing in the corpus asks for. Seed shadow into
+`blockableOnlyBy` and that refusal fires on Dauthi Horror, and the card loses **both** restrictions:
+no shadow, no white ban, a 2/1 anyone can block.
+
+And the two are not in conflict. A white creature with shadow may not block it, for two independent
+reasons. So `KEYWORD_BLOCK_RULES` is its own table, `canBlock` applies it **alongside** whatever the
+card prints, and each list is satisfied on its own terms. That is also the right rule for a creature
+carrying two of these at once: every list must be answered, and the clauses inside one list are
+alternatives.
+
+The rules derive from `keywords`, which "loses all abilities" already clears, so this adds no fourth
+thing to remember to reset — the argument for deriving them rather than copying them into fields.
+
+No white creature with shadow has ever been printed, so the test that proves the independence grants
+shadow to a Serra Angel with the engine's own `pump`. It then answers the keyword's list and is still
+refused, by name, by the printed ban.
+
+### Horsemanship is asymmetric, and a test says so
+
+CR 702.5b restricts who may block the creature and says nothing about what it may block, so a
+Barbarian General may block whatever it likes. A rules table invites symmetry — shadow is symmetric,
+and two of three entries having both halves would make the third look like an omission — so the
+asymmetry has a test of its own: the block horsemanship *permits*. The break run confirms it,
+because adding `blocksOnly` to horsemanship fails exactly that test and nothing else.
+
+### The semicolon that was hiding five printings
+
+`Vigilance; horsemanship` is how Zhang Fei prints two keywords, and `printedParts` split keyword
+lines on commas alone — so the line came out as one part that is not a keyword and **a card whose
+entire text is two keywords read as nothing.** 33 legal lines use a semicolon.
+
+Found while reading the horsemanship printings, fixed by splitting on `[,;]`, and safe because the
+whole-line rule is untouched: every part still has to be a part, so `First strike; banding` is still
+refused whole (10 of the 33 lines name banding, which this engine has no keyword for). A test pins
+both halves — the lines that now read, and the banding lines that must not.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed rules lines read | 21,224 / 56,421 (37.6%) | **21,364 / 56,421 (37.9%)** |
+| cards with a compiled script | 10,672 | **10,689** |
+| cards with every printed line read | 6,411 | **6,490** |
+| of those, needing no script at all | 1,135 | **1,170** |
+
+**+140 lines and +79 cards**, split by running the sweep again with the semicolon disabled:
+
+| | lines | cards finished |
+| --- | --- | --- |
+| the three keywords | +128 | +70 |
+| the semicolon split | +12 | +9 |
+
+The keywords beat their own 101-line family count because a word in `KEYWORDS` also reads inside a
+comma list (`Flying, fear`) and in a granting effect, not only on a line of its own.
+
+### The bot is not told what these are worth, on purpose
+
+`KEYWORD_VALUE` in `bot.ts` prices flying at 1.5, deathtouch at 1.5, reach at 0.25 — every one of
+those numbers measured on the paired bot-against-bot instrument. Fear, shadow and horsemanship are
+left unpriced (the lookup is `Partial` and defaults to 0), because **a weight nobody measured is a
+guess wearing a number**, and this file has retracted two of those already (D258, D263).
+
+They are not invisible to the bot regardless: `canBlock` refuses the blocks they forbid, so the
+search sees the consequence in every position it looks at. What is missing is the bot *valuing*
+evasion it cannot be blocked through, and D144's contextual-evasion term is the shape that question
+needs. Named here rather than answered.
+
+### The break run
+
+Ten breaks, each verified to apply and to revert against a SHA-256 of the backup:
+
+| break | compile.test | scripts.test |
+| --- | --- | --- |
+| fear's artifact clause dropped | 1 fail | 1 fail |
+| fear's colour clause dropped | 1 fail | 1 fail |
+| shadow's `blocksOnly` half removed | 1 fail | 1 fail |
+| shadow's `blockedOnlyBy` half removed | 1 fail | 2 fail |
+| horsemanship made symmetric, which no rule says | 1 fail | 1 fail |
+| the attacker-side keyword loop never runs | pass | 4 fail |
+| the blocker-side keyword loop never runs | pass | 1 fail |
+| the printed list wins over the keyword (the Dauthi Horror merge) | pass | 1 fail |
+| the semicolon split reverted to commas only | 1 fail | pass |
+| the whole-line rule made lenient, so an unreadable part is dropped | 1 fail | pass |
+
+### Two more stale refusal rows, and a standing check that had to be answered rather than edited
+
+D498 and D500 each carried a row reading "a keyword the engine lacks" and naming **shadow**. True
+when written; not any more. Both are retired to `banding`, which this engine genuinely does not have
+and which is the most tempting wrong read in the game, being a keyword about blocking. **The eighth
+and ninth stale refusal rows in this series.**
+
+The harder one was `deck coverage > has a card behind every mechanic it declares`, which went red
+the moment the three words joined `KEYWORDS`: it requires a card in the thirteen built-in decks for
+every declared mechanic. The pool has no fear, no shadow, no horsemanship.
+
+D442 already settled the shape of the answer and its own docblock says what not to do — "the honest
+answer is not to add a card to a measured deck to satisfy a test", and #96 and #231 both moved win
+rates by a single slot. So the three keywords join `compilerOnly`, and the bar that entry carries is
+the one it has always carried: each **names its corpus count and the runtime test that drives a real
+printing through `customDeck`**. The test's own control still runs — the exemptions must *still* be
+orphans in the pool — so one of these left behind after a card carrying it arrives in a deck is
+reported rather than quietly carried for ever.
