@@ -56,7 +56,7 @@ import { scriptForCard } from './derive.js';
  */
 const playedScript = (state: GameState, id: string | undefined): CardScript | undefined =>
   scriptForCard(state.cardDefs[state.instances[id ?? '']?.defKey ?? '']);
-import { isNumberDecision, type CardScript } from './scriptTypes.js';
+import { isNumberDecision, type AbilityCost, type CardScript } from './scriptTypes.js';
 import { targetKey, type Target } from './turnTypes.js';
 import type { Action, ActionContext, GameState, SeatIndex } from './types.js';
 
@@ -3855,6 +3855,72 @@ function shrinksItselfForNothing(state: GameState, action: Action): boolean {
   return shrink.grants.every((word) => ch.keywords.has(word));
 }
 
+/**
+ * Whether this free activation already has a copy of itself waiting on the stack — the fifteenth of
+ * the "spent on nothing" family, and the third about a loop rather than a card.
+ *
+ * **The idiom is not new; having it in one place is.** `animationCouldMatter` and
+ * `shrinksItselfForNothing` both refuse an action whose own copy (same source, same ability) is
+ * already on the stack, and both docblocks say the same thing: it is the honest version of "has
+ * this already been done", because the bot does not pass priority, so the first copy never resolves
+ * and the board the second is judged against is the board the first was. Two families had the check
+ * and every other free ability in the engine did not.
+ *
+ * Found by `corpus-decks.mjs` on `SEED0=36401`, two games of forty, each 2000 moves of
+ * `auto:activate` in one precombat main phase:
+ *
+ *     Blinking Spirit     {0}: Return Blinking Spirit to its owner's hand.
+ *     Flowstone Hellion   {0}: Flowstone Hellion gets +1/-1 until end of turn.
+ *
+ * **Both effects are right**, which is what makes this a bot rule rather than an engine fix: probed
+ * one activation at a time, the Spirit reaches its owner's hand and the Hellion dies on the third
+ * activation with its toughness at nought. Neither card could loop if anything ever resolved. The
+ * stack simply ended 2000 copies deep, and the harness's stall detector could not see it because
+ * every one of those moves was legal and bumped the state version.
+ *
+ * **Free, specifically**, because a cost is what bounds the repetition: a {1} ability runs out of
+ * mana and a {T} ability runs out of permanent, so neither can spin. Only a cost of nothing can,
+ * which is also why this is narrow enough to be safe — 41 legal corpus cards print a `{0}:`
+ * activated ability, and a Gelectrode pinging twice in a step (the shape `untapBoughtSomething`'s
+ * docblock defends) has a tap in its cost and is untouched.
+ *
+ * The first copy is always offered. This refuses the second and every one after it, which is the
+ * difference between playing the card and looping on it.
+ */
+function freeActivationAlreadyPending(state: GameState, action: Action): boolean {
+  if (action.type !== 'auto:activate') return false;
+  const index = action.abilityIndex ?? 0;
+  const ability = playedScript(state, action.card)?.abilities?.[index];
+  if (ability === undefined || !costIsNothing(ability.cost)) return false;
+  return state.stackOrder.some((id) => {
+    const object = state.stackObjects[id];
+    return object?.source === action.card && (object.abilityIndex ?? 0) === index;
+  });
+}
+
+/**
+ * Whether an activated ability's cost is nothing at all.
+ *
+ * Every member of `AbilityCost` asked by name rather than by counting the object's keys, so a cost
+ * component added later is **not** silently free: a new field this does not mention makes the
+ * ability look paid, which is the direction that costs the bot a play rather than hanging a game.
+ */
+function costIsNothing(cost: AbilityCost): boolean {
+  return costValue(parseManaCost(cost.mana)) === 0
+    && cost.tap !== true
+    && cost.sacrificeSelf !== true
+    && cost.sacrifice === undefined
+    && (cost.life ?? 0) === 0
+    && (cost.loyalty ?? 0) === 0
+    && cost.discardSelf !== true
+    && cost.exileSelf !== true
+    && cost.returnsUnblockedAttacker !== true
+    && cost.removeCounter === undefined
+    && (cost.energy ?? 0) === 0
+    && cost.fromGraveyard !== true
+    && (cost.crew ?? 0) === 0;
+}
+
 /** Whether this action activates an ability whose whole effect is untapping something. */
 function untapsSomething(state: GameState, action: Action): boolean {
   if (action.type !== 'auto:activate') return false;
@@ -5163,6 +5229,15 @@ export function botAction(state: GameState, seat: SeatIndex, opts: BotOptions = 
       pod seed that found it.
     */
     if (filtersOn && shrinksItselfForNothing(state, option.action)) {
+      dropped += 1;
+      continue;
+    }
+    /*
+      And a free activation whose own first copy is still on the stack, which is the fifteenth of
+      the family and the third about a loop. See `freeActivationAlreadyPending` for the two pod
+      seeds that found it and for why only a cost of nothing can spin.
+    */
+    if (filtersOn && freeActivationAlreadyPending(state, option.action)) {
       dropped += 1;
       continue;
     }

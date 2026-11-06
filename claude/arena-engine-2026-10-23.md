@@ -16412,3 +16412,124 @@ Spirit for soulshift. That is correct today only by accident — soulshift's "re
 card with mana value N or less from your graveyard" is **not read yet** (it is 17 cards in the
 queue), so nothing asks the question. When it is read, the printed-card path needs the same
 extension, and this paragraph is the note that says so.
+
+## D507 — The free ability the bot pressed two thousand times
+
+The pod sweep on `SEED0=36401`, run straight after D506, came back 38 of 40. Two games looped, and
+neither card has anything to do with changeling:
+
+    seed 36402  2000 moves, precombat-main of turn 33, all auto:activate (Blinking Spirit)
+    seed 36406  2000 moves, precombat-main of turn 29, all auto:activate (Flowstone Hellion)
+
+| | printing |
+| --- | --- |
+| Blinking Spirit | `{3}{W}` 2/2 — "{0}: Return Blinking Spirit to its owner's hand." |
+| Flowstone Hellion | `{4}{R}` 3/3 — "Haste / {0}: Flowstone Hellion gets +1/-1 until end of turn." |
+
+### Both cards work, which is what makes this a bot rule
+
+The first guess was a no-op effect, and it was wrong. Probed one activation at a time through
+`customDeck`:
+
+- the Spirit's ability resolves and the card is in its owner's **hand**;
+- the Hellion goes 3/3 → 4/2 → 5/1 → **graveyard**, dying on the third activation with its toughness
+  at nought (CR 704.5f).
+
+Neither card could spin if anything ever resolved. **The bot does not pass priority.** So the first
+activation sits on the stack, the board the second activation is judged against is the board the
+first was judged against, and the question "is this worth doing" gets the same answer for ever. The
+stack ended two thousand copies deep. The harness's stall detector could not see it either, because
+every one of those moves was legal and bumped the state version — the same blindness D462 recorded
+for Umbral Mantle.
+
+### The idiom already existed twice, scoped to one family each
+
+`animationCouldMatter` (D242's Mutavault) and `shrinksItselfForNothing` (D496's Hyalopterous Lemure)
+both refuse an action whose own copy — same source, same ability index — is already on the stack, and
+both docblocks say the same thing in their own words: it is the honest version of "has this already
+been done". Two families had the check. Every other free ability in the engine did not.
+
+So it is hoisted into a rule of its own, the **fifteenth** of the "spent on nothing" family and the
+third about a loop rather than a card: `freeActivationAlreadyPending`.
+
+**Free, specifically**, and that is the whole scope decision. A cost is what bounds the repetition: a
+`{1}` ability runs out of mana, a `{T}` ability runs out of permanent. Only a cost of nothing can
+spin. Written wider — "never repeat an activation already on the stack" — the rule would refuse a
+Gelectrode pinging twice in a step, which `untapBoughtSomething`'s own docblock defends as entirely
+right. **41 legal corpus cards print a `{0}:` activated ability**, which is the whole blast radius.
+
+`costIsNothing` asks all fourteen members of `AbilityCost` by name rather than counting the object's
+keys, so a cost component added later makes an ability look **paid** rather than free — the direction
+that costs the bot a play instead of hanging a game.
+
+### The tests, and the one that pins the scope
+
+Five, through `customDeck`'s `data` on all three real printings:
+
+| | |
+| --- | --- |
+| presses the Hellion once | the control — `+1/-1` is real material to `evaluate`, and the search should have it |
+| and not twice | the loop, in the position it loops from |
+| presses the Spirit once | a different effect entirely: this one leaves the battlefield |
+| and not twice | the sharper half — a second "return this to its owner's hand" is not merely worth nothing, it is meaningless |
+| **but presses a Merfolk Coralsmith twice** | the too-wide direction |
+
+**Merfolk Coralsmith is the test that decides the rule's shape.** `{2}{U}` 2/3, printing the
+Hellion's clause word for word at `{1}` instead of `{0}`. Three Islands is three activations and then
+the question stops being asked, which is what a cost is for — so a rule that refused it would be
+wrong, and this row is what says so.
+
+### The break run
+
+Five breaks, each verified to apply and to revert against a SHA-256 of the original:
+
+| break | caught by |
+| --- | --- |
+| the rule is never asked in the options loop | 3 tests |
+| an explicitly printed `{0}` counts as a paid cost | 3 tests |
+| the free gate is dropped, so a paid activation is refused too | 1 test (the Coralsmith) |
+| a tap counts as no cost | **nothing** — see below |
+| the stack is asked about any pending object, not this ability's own copy | 1 test |
+
+**The fifth break was not caught by the first run**, and the sixth test exists because of it. Widened
+to "refuse a free activation whenever anything at all is pending", every test still passed — in each
+of them the only thing on the stack *was* the ability in question. So a row was added: the Hellion's
+pump waiting and the Spirit's own button still worth pressing, because nothing about *it* has been
+done. A break nothing catches is a suite that does not pin the shape it is meant to pin.
+
+**The fourth break genuinely cannot be caught, and that is recorded rather than patched around.**
+Dropping `cost.tap` from `costIsNothing` makes a `{T}` ability look free, so the rule would refuse
+re-activating one while its first copy waits — but the engine refuses that anyway, because the
+permanent is tapped. No board can distinguish the two, so there is no test to write. The member
+stays, because `costIsNothing` has to be a true statement about costs rather than a true statement
+about the boards that happen to be reachable today. Same shape as D505's `!inst.tapped` guard.
+
+The `src/bot.test.ts` mistake is worth recording: the first version of the harness ran
+`vitest run src/playout.test.ts src/bot.test.ts`, and **there is no `bot.test.ts`**. Vitest exits
+non-zero on a path that matches nothing, so every break would have reported "caught" without a single
+assertion failing — a break run that passes when it should fail, which is the thing a break run exists
+to prevent. Caught by checking the file list before trusting the result, and the run was stopped and
+redone.
+
+### The sweep
+
+| | before | after |
+| --- | --- | --- |
+| seed 36402 | looping, 2000 moves in one main phase | **finished**, 47 turns, 189 moves |
+| seed 36406 | looping, 2000 moves in one main phase | **finished**, 55 turns, 222 moves |
+| the whole sweep, `SEED0=36401 GAMES=40` | 38 finished, 2 looping, 396 moves a game | **40/40**, no throw and no stall, 301 moves a game |
+
+The moves-per-game figure is worth keeping: it fell by a quarter across forty games, so the rule is
+trimming free button-presses the sweep never flagged as loops, not only the two that hung.
+
+Re-run on the **same** seed set rather than a fresh one, which is the only run that proves anything
+about this fix.
+
+### Four loops, one shape
+
+The pod sweep has now found four loops no test could have: #334's Umbral Mantle equip, D496's
+Hyalopterous Lemure self-shrink, D505's Basalt Monolith self-untap, and this pair. Every one is a
+free or mana-neutral repeatable ability the evaluation scores at zero or better, and every one
+arrived with the increment that first made its card readable. **Running the sweep on a fresh seed
+after every increment is what keeps catching them**, and advancing the seed is why: 34001 through
+36201 would never have found either of these two cards.

@@ -3474,3 +3474,165 @@ describe('an offered cast of an {X} spell (D460)', () => {
     expect(play?.xMax).toBe(7);
   });
 });
+
+describe('the free ability activated again while its first copy is still on the stack', () => {
+  /*
+    The fifteenth "spent on nothing" rule, and the third about a loop rather than a card. See
+    `freeActivationAlreadyPending`.
+
+    Found by `corpus-decks.mjs` on `SEED0=36401`, two games of forty, each 2000 moves of
+    `auto:activate` in one precombat main phase:
+
+      Blinking Spirit     {3}{W} 2/2  "{0}: Return Blinking Spirit to its owner's hand."
+      Flowstone Hellion   {4}{R} 3/3  "Haste / {0}: Flowstone Hellion gets +1/-1 until end of turn."
+
+    **Both effects are right**, which is what makes this a bot rule and not an engine fix. Probed
+    one activation at a time, the Spirit reaches its owner's hand and the Hellion dies on the third
+    activation with its toughness at nought — neither card could spin if anything ever resolved.
+    The bot does not pass priority, so nothing resolves, so the board the second activation is
+    judged against is the board the first was judged against, and the stack ends 2000 deep.
+
+    Two tests per card, and the pair is the whole point: the first activation has to survive, or the
+    rule is "never press a free button" and the cards stop working.
+  */
+  const freeButtons = customDeck({
+    id: 'free-buttons',
+    name: 'Free Buttons',
+    entries: [
+      { name: 'Blinking Spirit', count: 2 },
+      { name: 'Flowstone Hellion', count: 2 },
+      { name: 'Merfolk Coralsmith', count: 2 },
+      { name: 'Plains', count: 18 },
+      { name: 'Mountain', count: 18 },
+      { name: 'Island', count: 18 },
+    ],
+    data: [
+      {
+        name: 'Blinking Spirit', type_line: 'Creature — Spirit', mana_cost: '{3}{W}', cmc: 4,
+        colors: ['W'], layout: 'normal', power: '2', toughness: '2',
+        oracle_text: "{0}: Return Blinking Spirit to its owner's hand.",
+      },
+      {
+        name: 'Flowstone Hellion', type_line: 'Creature — Hellion Beast', mana_cost: '{4}{R}',
+        cmc: 5, colors: ['R'], layout: 'normal', power: '3', toughness: '3',
+        oracle_text: 'Haste\n{0}: Flowstone Hellion gets +1/-1 until end of turn.',
+      },
+      {
+        name: 'Merfolk Coralsmith', type_line: 'Creature — Merfolk', mana_cost: '{2}{U}', cmc: 3,
+        colors: ['U'], layout: 'normal', power: '2', toughness: '3',
+        oracle_text: '{1}: Merfolk Coralsmith gets +1/-1 until end of turn.\n'
+          + 'When Merfolk Coralsmith dies, scry 2.',
+      },
+    ] as never[],
+  }).deck;
+
+  /** Seat 0 in its own main phase with `names` on the battlefield and an empty hand. */
+  const board = (
+    names: string | readonly string[],
+    lands: readonly string[] = ['Plains', 'Mountain'],
+  ): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'free-buttons', 1: 'tidal-mind' },
+      deckSpecs: { 'free-buttons': freeButtons },
+      battlefield: { 0: [...(typeof names === 'string' ? [names] : names), ...lands], 1: [] },
+      turn: 4, firstSeat: 0, autoPass: true,
+    }), 'precombat-main');
+    // Emptied, so no cast can be what the search prefers and the free button is the play on offer.
+    for (const id of [...ids(s, 0, 'hand')]) {
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    return s;
+  };
+
+  /** The same board with one copy of `card`'s ability already waiting to resolve. */
+  const withOnePending = (s: GameState, card: string): GameState =>
+    apply(s, { type: 'auto:activate', by: 0, card, abilityIndex: 0 });
+
+  it('presses the Hellion once', () => {
+    /*
+      The control. +1/-1 is a real pump to `evaluate` — power is material and the toughness it
+      costs is not — so this is the activation the search wants, and it should have it. A rule that
+      refused every free activation would pass the next test and fail this one.
+    */
+    const s = board('Flowstone Hellion');
+    const hellion = find(s, 0, 'battlefield', 'Flowstone Hellion');
+    const action = botAction(s, 0);
+    expect(action?.type).toBe('auto:activate');
+    expect(action?.type === 'auto:activate' ? action.card : null).toBe(hellion);
+  });
+
+  it('and not twice, because the first +1/-1 has not resolved yet', () => {
+    /*
+      The loop, in the position it loops from. Nothing about the board has changed — the Hellion is
+      still a 3/3, because layer 7 cannot see an ability on the stack — so the rule above says yes
+      again and would go on saying it. Asking the stack is what makes the second answer different
+      from the first.
+    */
+    const s = board('Flowstone Hellion');
+    const hellion = find(s, 0, 'battlefield', 'Flowstone Hellion');
+    const pending = withOnePending(s, hellion);
+    const action = botAction(pending, 0);
+    expect(action?.type === 'auto:activate' ? action.card : null).not.toBe(hellion);
+  });
+
+  it('and still presses a different creature\'s free button while that one waits', () => {
+    /*
+      **The rule has to ask about this ability's own copy, not about the stack being busy.** The
+      first break run found that out: widened to "refuse a free activation whenever anything at all
+      is pending", every test above still passed, because in each of them the only thing on the
+      stack *was* the ability in question. So this row exists — the Hellion's pump waiting, and the
+      Spirit's own button still worth pressing, because nothing about it has been done yet.
+
+      Recorded rather than quietly patched, because a break that nothing catches is a test suite
+      that does not pin the shape it is supposed to pin.
+    */
+    const s = board(['Flowstone Hellion', 'Blinking Spirit']);
+    const hellion = find(s, 0, 'battlefield', 'Flowstone Hellion');
+    const spirit = find(s, 0, 'battlefield', 'Blinking Spirit');
+    const action = botAction(withOnePending(s, hellion), 0);
+    expect(action?.type).toBe('auto:activate');
+    expect(action?.type === 'auto:activate' ? action.card : null).toBe(spirit);
+  });
+
+  it('but presses a Merfolk Coralsmith twice, because {1} is a cost and bounds it', () => {
+    /*
+      **The too-wide direction, and the reason the rule asks whether the cost is nothing.** The
+      Coralsmith prints the Hellion's clause word for word at {1} instead of {0}, so if the rule
+      were "never repeat an activation already on the stack" this would be refused too — and the
+      refusal would be wrong, because the mana runs out on its own. Three Islands is three
+      activations and then the question stops being asked, which is what a cost is for.
+
+      `untapBoughtSomething`'s docblock makes the same point about a Gelectrode pinging twice in a
+      step: repeating yourself is not the defect.
+    */
+    const s = board('Merfolk Coralsmith', ['Island', 'Island', 'Island']);
+    const smith = find(s, 0, 'battlefield', 'Merfolk Coralsmith');
+    const first = botAction(s, 0);
+    expect(first?.type === 'auto:activate' ? first.card : null).toBe(smith);
+    const second = botAction(withOnePending(s, smith), 0);
+    expect(second?.type === 'auto:activate' ? second.card : null).toBe(smith);
+  });
+
+  it('presses the Spirit once', () => {
+    // The second card's control, and a different effect entirely: this one leaves the battlefield.
+    const s = board('Blinking Spirit');
+    const spirit = find(s, 0, 'battlefield', 'Blinking Spirit');
+    const action = botAction(s, 0);
+    expect(action?.type).toBe('auto:activate');
+    expect(action?.type === 'auto:activate' ? action.card : null).toBe(spirit);
+  });
+
+  it('and not twice, because the first return has not resolved yet', () => {
+    /*
+      The sharper half of the pair: a second "return this to its owner's hand" is not merely worth
+      nothing, it is meaningless — the card can only be in one place. The permanent is still on the
+      battlefield while the first copy waits, so every board-reading rule in the family says the
+      activation is available, and only the stack says it has already been made.
+    */
+    const s = board('Blinking Spirit');
+    const spirit = find(s, 0, 'battlefield', 'Blinking Spirit');
+    const pending = withOnePending(s, spirit);
+    const action = botAction(pending, 0);
+    expect(action?.type === 'auto:activate' ? action.card : null).not.toBe(spirit);
+  });
+});
