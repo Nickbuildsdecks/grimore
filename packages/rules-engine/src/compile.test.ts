@@ -11611,3 +11611,67 @@ describe('wither, which is infect\'s creature half (D504)', () => {
     expect(read.unread).toHaveLength(1);
   });
 });
+
+describe('a self-untap carries untapsOnly (D505)', () => {
+  /*
+    The reader half of the loop fix. `untapsOnly` is the bot's warning that an ability can put the
+    board back exactly where it found it (#124), and until D505 only the **targeted** untap readers
+    set it — so `{3}: Untap this artifact` compiled without it and the eleventh "spent on nothing"
+    rule was never asked about Basalt Monolith. Two pods in forty then ran to the harness's
+    2000-move limit inside one main phase.
+
+    Dropping that flag is not a missing hint but a hang, which is why this is a compile test of its
+    own rather than a line in the untap block above.
+  */
+  const monolith = compileCard({
+    name: 'Basalt Monolith', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [],
+    layout: 'normal',
+    oracle_text: "This artifact doesn't untap during your untap step.\n{T}: Add {C}{C}{C}.\n"
+      + '{3}: Untap this artifact.',
+  });
+
+  it('on the real card, beside its mana ability', () => {
+    expect(monolith.ok).toBe(true);
+    if (!monolith.ok) return;
+    const abilities = monolith.script?.abilities ?? [];
+    expect(abilities).toHaveLength(2);
+    // The mana ability must NOT carry it: tapping for mana is not a cycle, and the flag would tell
+    // the bot the one thing this card is for buys nothing.
+    expect(abilities[0]?.untapsOnly).toBeUndefined();
+    expect(abilities[1]?.untapsOnly).toBe(true);
+    // And the line that is still unread is the untap-step static, not either ability.
+    expect(monolith.unread.map((u) => u.line))
+      .toEqual(["This artifact doesn't untap during your untap step."]);
+  });
+
+  it('and on a creature that untaps itself by name', () => {
+    // Horseshoe Crab's whole card, which is the self-untap worth making rather than the one that
+    // loops — see the two bot tests in `playout.test.ts`.
+    const crab = compileCard({
+      name: 'Horseshoe Crab', type_line: 'Creature — Crab', mana_cost: '{2}{U}', cmc: 3,
+      colors: ['U'], layout: 'normal', power: '1', toughness: '3',
+      oracle_text: '{U}: Untap Horseshoe Crab.',
+    });
+    expect(crab.ok).toBe(true);
+    if (!crab.ok) return;
+    expect(crab.unread.map((u) => u.line)).toEqual([]);
+    expect(crab.script?.abilities?.[0]?.untapsOnly).toBe(true);
+  });
+
+  it('and a tap is still not an untap', () => {
+    /*
+      The control the tap reader's own docblock argues for: a tap changes the board in one
+      direction, so carrying the flag there would be wrong rather than redundant. Asserted here
+      because D505 widened where the flag is set, and widening it one card too far is the mistake
+      that costs the bot a real play.
+    */
+    const tapper = compileCard({
+      name: 'Benalish Trapper', type_line: 'Creature — Human Soldier', mana_cost: '{2}{W}', cmc: 3,
+      colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: '{W}, {T}: Tap target creature.',
+    });
+    expect(tapper.ok).toBe(true);
+    if (!tapper.ok) return;
+    expect(tapper.script?.abilities?.[0]?.untapsOnly).toBeUndefined();
+  });
+});

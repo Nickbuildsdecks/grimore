@@ -16170,3 +16170,109 @@ Four breaks, each verified to apply and to revert against a SHA-256 of the backu
 Same road as D501's three keywords and D493's one script field: the entry names its corpus count and
 the runtime test that drives a real printing through `customDeck`. Adding a wither creature to one of
 the thirteen measured decks to satisfy a test is what D442's own docblock says not to do.
+
+## D505 — Two pods in forty looped for ever on Basalt Monolith
+
+Found by the pod sweep that verified D503, not by a test:
+
+```
+seed 36210: looping — 2000 moves with no progress in precombat-main of turn 36,
+            2000 of them auto:activate (Basalt Monolith#1)
+seed 36221: looping — 2000 moves with no progress in precombat-main of turn 81,
+            1002 of them auto:activate (Basalt Monolith#1)
+```
+
+**#350 closed.** Not a D503 regression: bushido adds two combat triggers, Basalt Monolith is an
+artifact with no combat role, the loop is in precombat-main, and seeds 34001 through 36001 were all
+40/40. These are simply the first seeds that built a deck containing the card. Pre-existing, and
+reproducible to the move.
+
+The card taps for {C}{C}{C} and spends {3} to untap itself, for ever. Every step is legal, and the
+board after each pair of activations is the board before — the Kiora's Follower cycle with both
+halves on one permanent.
+
+### The engine already had the rule, and two things kept it away
+
+#124's eleventh "spent on nothing" rule is written for exactly this shape: `untapsSomething` asks
+whether the ability's whole effect is an untap, and `untapBoughtSomething` asks what the untap
+bought. Neither could see the Monolith:
+
+1. **`untapsOnly` was set by the two *targeted* untap readers and not by the self-untap one.** The
+   flag lived beside `Untap target permanent` and `Untap two target lands`; `Untap ~` — the same
+   clause pointed at the card printing it — returned a bare effect. So `untapsSomething` said no and
+   the rule was never asked. Confirmed by compiling the real card rather than reading the code:
+   `ability[1] = {"cost":{"mana":"{3}"},"description":"{3}: Untap this artifact."}`, no flag, where
+   Kiora's Follower's carries one.
+2. **`untapBoughtSomething` found the untapped permanent through `action.targets[0]`**, which a
+   self-untap does not have. With the flag set and this fallback missing it would have refused
+   **every** self-untap outright — Horseshoe Crab's included, which is a different wrong answer and
+   the reason both halves had to change together.
+
+### Nothing else was needed, and that is the part worth stating
+
+With the flag set and the fallback in place, the question already answers this card correctly:
+
+- **mana**: tapping for {C}{C}{C} and spending {3} to untap leaves the same three mana available, so
+  no cast becomes affordable;
+- **a body in a combat**: it is not a creature;
+- **an ability handed back**: the only one is its own **mana** ability, and `pointlessToHandBack`
+  excludes mana abilities precisely so that a cycle cannot be its own justification.
+
+Grim Monolith is the same card at {4} and is fixed by the same change. So are Retrofitter Foundry,
+Staff of Domination and Staff of Compleation, which print the same self-untap.
+
+| | before | after |
+| --- | --- | --- |
+| seed 36210 | looping, 2000 moves in one main phase | **finished**, 55 turns |
+| seed 36221 | looping, 2000 moves in one main phase | **finished**, 110 turns |
+| the whole sweep, `SEED0=36201 GAMES=40` | 38 finished, 2 looping | **40/40**, no throw and no stall |
+
+Re-run on the same seed set rather than a fresh one, which is the only run that proves anything
+about this fix.
+
+### Two tests, because the fix is two halves
+
+- *does not untap a Basalt Monolith it has just tapped for mana* — the loop, in the position it
+  loops from, with the hand emptied so the mana cannot be for anything else.
+- *but untaps a Horseshoe Crab to block an attack already on the table* — the control, and the
+  reason the fallback exists: a tapped 1/3 is not a blocker, one mana makes it one, and that is
+  `untapBoughtSomething`'s third clause asked of a permanent with no target.
+
+Both use real printings through `customDeck`'s `data`. A compile test pins the flag on the untap
+ability, its **absence** on the mana ability beside it, and its absence on a tap — because D505
+widened where the flag is set, and widening it one card too far costs the bot a real play.
+
+### The break run, and two breaks that did not discriminate
+
+Four breaks, each verified to apply and to revert against a SHA-256:
+
+| break | compile.test | playout.test |
+| --- | --- | --- |
+| the self-untap reader does not set the flag | 2 fail | 1 fail |
+| the bot has no source fallback, so every self-untap is refused | pass | 1 fail |
+| the mana ability carries the flag too | 1 fail | pass |
+| a `tapped` check is dropped, so untapping an untapped permanent counts | pass | pass |
+
+**The third break had to be rewritten twice, and both misses are the same mistake**: I patched a
+builder the card does not go through. First `selfEffect`'s untap branch (mana abilities do not reach
+it), then `tapAbilities` (Basalt Monolith's `{T}: Add {C}{C}{C}` is three of one type, so it is
+`sumAbility`). The test was right each time; the break was aimed at the wrong code. That is the
+D493 lesson again — *a break that silently fails to apply is indistinguishable from a test that does
+not discriminate* — wearing a new hat: a break that applies to the wrong function is the same thing.
+
+**The fourth break genuinely does not discriminate, and it should be recorded rather than patched
+around.** Removing `!inst.tapped` leaves every test green, because the guard is a fast path rather
+than a correctness gate: untapping an already-untapped permanent buys no mana, no body and no
+ability, so the four questions below it answer "no" anyway. The guard stays — the rule's own
+docblock says 36 of 57 surviving activations were this case, which is about how often the bot
+*presses the button*, not about whether the answer is right — and this paragraph is why there is no
+test for it.
+
+### What this says about the sweep
+
+The pod sweep has now found three loops that no test could have: #334's Umbral Mantle equip,
+D496's Hyalopterous Lemure self-shrink, and this one. All three are the same shape — a free or
+mana-neutral repeatable ability the evaluation scores at zero — and all three arrived with the
+increment that first made the card readable. **The sweep is the instrument for this class, and
+running it on a fresh seed after every increment is what keeps catching them.** It is also why the
+seed is advanced rather than reused: 34001 through 36001 would never have found this card.

@@ -2092,6 +2092,102 @@ describe('the untap that puts the board back where it found it', () => {
     expect(action?.type === 'auto:activate' ? action.card : null).not.toBe(first);
   });
 
+  /*
+    **And the same cycle on one card, which the rule could not see at all (D505).**
+
+    Two pods in forty stopped finishing on the D503 sweep: *seed 36210 — 2000 moves with no
+    progress in precombat-main of turn 36, 2000 of them `auto:activate` (Basalt Monolith#1)*. The
+    card taps for {C}{C}{C} and spends {3} to untap itself, for ever, and every step of it is
+    legal — the Kiora's Follower cycle with both halves on one permanent.
+
+    Two things kept the eleventh rule away from it, and either alone would have been a different
+    wrong answer:
+
+    1. `untapsOnly` was set by the two **targeted** untap readers and not by the self-untap one, so
+       `untapsSomething` said no and the rule was never asked.
+    2. `untapBoughtSomething` found the untapped permanent through `action.targets[0]`, which a
+       self-untap does not have — so with the flag set and no fallback it would have refused
+       **every** self-untap, Horseshoe Crab's included.
+
+    Both fixed, and both tests below exist because of that pair: the first is the loop, the second
+    is the self-untap that is worth making.
+  */
+  const selfUntappers = customDeck({
+    id: 'self-untappers',
+    name: 'Self Untappers',
+    entries: [
+      { name: 'Basalt Monolith', count: 2 },
+      { name: 'Horseshoe Crab', count: 2 },
+      { name: 'Island', count: 56 },
+    ],
+    data: [
+      {
+        name: 'Basalt Monolith', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [],
+        layout: 'normal',
+        oracle_text: "This artifact doesn't untap during your untap step.\n{T}: Add {C}{C}{C}.\n"
+          + '{3}: Untap this artifact.',
+      },
+      {
+        name: 'Horseshoe Crab', type_line: 'Creature — Crab', mana_cost: '{2}{U}', cmc: 3,
+        colors: ['U'], layout: 'normal', power: '1', toughness: '3',
+        oracle_text: '{U}: Untap Horseshoe Crab.',
+      },
+    ] as never[],
+  }).deck;
+
+  it('does not untap a Basalt Monolith it has just tapped for mana', () => {
+    /*
+      The loop, in the position it loops from: the Monolith tapped and three Islands up. Untapping
+      it costs exactly what it produces, so the mana available afterwards is the same three — no
+      cast becomes affordable, it is not a creature so no body enters a combat, and the one ability
+      the untap hands back is its own **mana** ability, which `pointlessToHandBack` excludes so
+      that a cycle cannot be its own justification.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'self-untappers', 1: 'tidal-mind' },
+      deckSpecs: { 'self-untappers': selfUntappers },
+      battlefield: { 0: ['Basalt Monolith', 'Island', 'Island', 'Island'], 1: [] },
+      turn: 3, firstSeat: 0, autoPass: true,
+    }), 'precombat-main');
+    // Nothing in hand, so the only play the mana could be for is the one this test is about.
+    for (const id of [...ids(s, 0, 'hand')]) {
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    const monolith = find(s, 0, 'battlefield', 'Basalt Monolith');
+    s = apply(s, { type: 'card:tap', by: 0, card: monolith, tapped: true });
+
+    const action = botAction(s, 0);
+    expect(action?.type === 'auto:activate' ? action.card : null).not.toBe(monolith);
+  });
+
+  it('but untaps a Horseshoe Crab to block an attack already on the table', () => {
+    /*
+      The control, and the reason the fallback had to be added rather than the flag alone: a
+      self-untap is often exactly the right play. A tapped 1/3 is not a blocker; one mana untaps it
+      and it is, against an attack that has already been declared — which is
+      `untapBoughtSomething`'s third clause asked of a permanent with no target.
+    */
+    let s = arena({
+      decks: { 0: 'self-untappers', 1: 'ember-rush' },
+      deckSpecs: { 'self-untappers': selfUntappers },
+      battlefield: { 0: ['Horseshoe Crab', 'Island'], 1: ['Raging Goblin'] },
+      turn: 4, firstSeat: 1, autoPass: true,
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    s = apply(s, {
+      type: 'auto:attack', by: 1, attackers: [{ attacker: goblin, defender: 0 as SeatIndex }],
+    } as Action);
+    const crab = find(s, 0, 'battlefield', 'Horseshoe Crab');
+    s = apply(s, { type: 'card:tap', by: 0, card: crab, tapped: true });
+    for (const id of [...ids(s, 0, 'hand')]) {
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    const action = botAction(s, 0);
+    expect(action?.type).toBe('auto:activate');
+    expect(action?.type === 'auto:activate' ? action.card : null).toBe(crab);
+  });
+
   it('and does not untap something that is not tapped, which does nothing at all', () => {
     // 36 of the first version's 57 surviving activations were this: untap, aimed at a permanent
     // that was already untapped.

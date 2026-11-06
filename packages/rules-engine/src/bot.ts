@@ -3908,8 +3908,22 @@ function untapsSomething(state: GameState, action: Action): boolean {
 function untapBoughtSomething(
   before: GameState, after: GameState, seat: SeatIndex, action: Action,
 ): boolean {
+  /*
+    What the untap pointed at, which is the **source itself** when the clause has no target (D505).
+
+    This function was written for Kiora's Follower and read `targets[0]` alone, so a self-untap —
+    `{3}: Untap Basalt Monolith`, `{4}: Untap Grim Monolith` — fell out here with `aimed`
+    undefined. That is only reachable now because the self-untap reader did not set `untapsOnly`
+    either, so the rule was never asked; with the flag set and this fallback missing, the rule would
+    refuse **every** self-untap outright, which is a different wrong answer. Both halves or neither.
+
+    Safe to read `action.card` as the untapped permanent because `untapsSomething` has already said
+    this ability's whole effect is an untap: there is nothing else it could be aimed at.
+  */
   const aimed = action.type === 'auto:activate' ? action.targets?.[0] : undefined;
-  const inst = aimed?.kind === 'card' ? before.instances[aimed.id] : undefined;
+  const untapped = aimed?.kind === 'card' ? aimed.id
+    : action.type === 'auto:activate' ? action.card : undefined;
+  const inst = untapped === undefined ? undefined : before.instances[untapped];
   if (inst === undefined || inst.zone !== 'battlefield' || !inst.tapped) return false;
   if (after.step !== before.step || after.turn !== before.turn) return false;
   if (before.stackOrder.length > 0) return false;

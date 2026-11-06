@@ -11433,8 +11433,22 @@ function selfEffect(
   const text = clause.trim();
   const self = selfRef(name);
 
+  /*
+    "Untap ~", and the flag is the whole of what D505 fixed.
+
+    `untapsOnly` is the bot's warning that an ability can put the board back exactly where it found
+    it (#124), and the *targeted* untap readers have carried it since they were written. This one —
+    the same clause pointed at the card printing it — did not, and the consequence was a hang rather
+    than a missed hint: **two pods in forty stopped finishing**, 2000 `auto:activate` of a Basalt
+    Monolith inside one main phase, tapping for {C}{C}{C} and spending {3} to untap, for ever.
+
+    The flag is enough on its own because the question behind it already answers this card
+    correctly: no cast becomes affordable (the mana is the same either way), it is not a creature so
+    no body enters a combat, and the one ability the untap hands back is its own **mana** ability,
+    which `pointlessToHandBack` excludes precisely so a cycle cannot be its own justification.
+  */
   if (new RegExp(`^untap ${self}$`, 'i').test(text)) {
-    return { effect: (c) => tap(c.state, c.source, false) };
+    return { abilityFlags: { untapsOnly: true }, effect: (c) => tap(c.state, c.source, false) };
   }
 
   /*
