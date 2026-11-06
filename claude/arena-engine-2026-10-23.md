@@ -15752,3 +15752,116 @@ the one it has always carried: each **names its corpus count and the runtime tes
 printing through `customDeck`**. The test's own control still runs — the exemptions must *still* be
 orphans in the pool — so one of these left behind after a card carrying it arrives in a deck is
 reported rather than quietly carried for ever.
+
+## D502 — Threshold: a static that is on while your graveyard is big
+
+The queue head by cards finished (D434), re-measured after D501 moved everything: **31 cards** whose
+only unread line says "there are seven or more cards in your graveyard". **#347 closed.**
+
+108 legal lines print that phrase. **33 of them are a static about the card itself**; the rest are
+activated abilities ("Activate only if there are seven or more…"), abilities the card grants itself
+in quotes, and one-shot spell effects ("If there are seven or more…, instead…"), each of which
+belongs to another reader or to nobody.
+
+### Nothing new in the effect machinery, which is the point
+
+#142 built the conditional continuous effect for metalcraft: `ContinuousEffect.while`, asked in
+`effectApplies` every time a creature's size is computed rather than stored, because — as its
+docblock says — **there is no moment at which it turns on.** Threshold is a third `while` kind
+beside the artifact count and monstrosity's counter, and it is the cheapest of the three to answer
+honestly:
+
+| kind | what it reads | the caveat |
+| --- | --- | --- |
+| `controller-artifacts` | the battlefield's **printed** type lines | a permanent *made* an artifact does not count (CR 702.105a) |
+| `source-has-counter` | the source's own counters | none |
+| `controller-graveyard` | the length of one zone list | **none** |
+
+The artifact count has to read printed types because it runs inside `characteristicsOf` and asking
+for a live type line would re-enter the whole computation — two conditional effects reading each
+other's types would not terminate. A graveyard count reads a list of ids, so none of that reaches
+it and the number it gives is simply correct.
+
+### Two things the reader had to learn
+
+**The condition is printed on either side of the predicate.** Nine lines put it last, as metalcraft
+does (`~ gets +2/+2 as long as there are seven or more cards in your graveyard`); fifteen put it
+first (`As long as there are seven or more cards in your graveyard, ~ gets +1/+1 and has flying`).
+Same sentence, same rule, and a reader handling one position would read a third of the family.
+
+**The predicate is a list**, where metalcraft's is a single thing. So it is split on "and" and each
+part read on its own, which is `thresholdPredicate`. Five kinds of part, every one a real printing:
+
+```
+gets +N/+N                       Krosan Beast, +7/+7, whose whole card is the one line
+has <keyword>                    Mystic Visionary — flying and no pump at all
+has protection from <colour>     Mystic Familiar
+can't block                      Childhood Horror, Dirty Wererat, Frightcrawler, Putrid Imp
+can't be blocked                 Cephalid Inkmage
+attacks each combat if able      Otarian Juggernaut
+```
+
+One object, not one per part: the print is one ability, and two continuous effects would be two
+things to expire.
+
+`countFrom` reads the number, so "seven" and a digit are the same thing. Every threshold card prints
+"seven" and the constant would have worked — until the first card printing any other count read as a
+threshold card. A test pins three and ten.
+
+### Masked Gorgon is the card the whole-line rule is for
+
+"has protection from green and from white" splits into a part this reader understands and a bare
+"from white", which it does not. So the Gorgon stays unread (D487): **a Gorgon with protection from
+one of the two colours its card names is worse than a Gorgon a human plays by hand** (D362).
+Nantuko Blightcutter refuses for the same reason — "+1/+1 for each black permanent your opponents
+control" is a count, and `sizeBonus` takes numbers.
+
+The condition refuses too, and that is what keeps this reader from eating its neighbours: `if there
+are seven or more` is a one-shot spell effect (Cabal Ritual, Cleansing Meditation, Demoralize — some
+twenty lines), `unless` is Deep-Sea Terror's attack restriction, and a graveyard that is not yours is
+somebody else's count.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed rules lines read | 21,364 / 56,421 (37.9%) | **21,392 / 56,421 (37.9%)** |
+| cards with a compiled script | 10,689 | **10,712** |
+| cards with every printed line read | 6,490 | **6,512** |
+| of those, needing no script at all | 1,170 | 1,170 |
+
++28 lines and **+22 cards finished**, against the queue's 31. The gap is honest and worth naming:
+the instrument buckets by the line's first fourteen words, so `Threshold — As long as there are
+seven or more cards in your graveyard,` collects the cards whose *tails* are a quoted ability
+(Bloodcurdler, Boneshard Slasher, Centaur Chieftain, Cephalid Sage, Chlorophant, Decaying Soil,
+Hunting Grounds) alongside the ones read here. Those need the engine to grant a permanent an ability
+written in quotes, which it cannot do at all — #230's note says so — so they are a different
+increment and not a shortfall in this one.
+
+The "needing no script" row does not move, and should not: every card in this family emits a
+`statics` entry, so none of them is a card the engine plays off the card definition alone.
+
+### The break run
+
+Ten breaks, each verified to apply and to revert against a SHA-256 of the backup:
+
+| break | compile.test | scripts.test |
+| --- | --- | --- |
+| the leading-condition form (fifteen lines) | 4 fail | 2 fail |
+| the trailing-condition form (nine lines) | 8 fail | 2 fail |
+| the count is hard-coded to seven | 1 fail | pass |
+| the predicate list is read as one part | 5 fail | 2 fail |
+| an unreadable part is dropped instead of refusing the line | 1 fail | pass |
+| `can't block` is not read | 1 fail | 1 fail |
+| protection takes every colour instead of the named one | 1 fail | pass |
+| the condition is never evaluated, so the static is always on | pass | 5 fail |
+| the boundary is off by one | pass | 4 fail |
+| the count reads every graveyard, not the controller's | pass | 1 fail |
+
+**One break came back green and found a hole in the tests**, which is the fifth increment running
+in which that has happened and the reason every break gets run rather than reasoned about. Dropping
+an unreadable part instead of refusing the line left both suites passing: the two refusal rows that
+should have caught it happen to refuse for *other* reasons — Masked Gorgon's bad part never reaches
+that line, and a bare "has banding" ends with an empty result either way. The row that discriminates
+is `gets +1/+1 and has banding`: a readable part beside an unreadable one, which is the only shape
+leniency actually changes. Added, and the break now fails.

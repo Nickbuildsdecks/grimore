@@ -1112,6 +1112,24 @@ export interface ContinuousEffect {
         readonly kind: 'source-has-counter';
         readonly counter: string;
         readonly atLeast: number;
+      }
+    | {
+        /**
+         * "As long as there are seven or more cards in your graveyard" — threshold (D502).
+         *
+         * The third kind, and the first that counts a **zone** rather than a battlefield or a
+         * permanent's counters. That makes it the cheapest of the three to answer honestly: the
+         * metalcraft count above has to read the *printed* type line, because it runs inside
+         * `characteristicsOf` and asking for a live type line would re-enter the whole computation.
+         * A graveyard count reads a list of ids and nothing else, so it has no such gap and the
+         * number it gives is simply correct.
+         *
+         * "Your" is the effect's own `controller`, as everywhere else here — a threshold creature
+         * stolen by its opponent counts *their* graveyard, which is what the card says.
+         */
+        readonly kind: 'controller-graveyard';
+        /** "seven or more", which is what every threshold card printed says. */
+        readonly atLeast: number;
       };
   readonly definesSize?: {
     /**
@@ -1270,6 +1288,14 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   if (cond.kind === 'source-has-counter') {
     const source = state.instances[effect.source];
     return source !== undefined && (source.counters[cond.counter] ?? 0) >= cond.atLeast;
+  }
+  /*
+    Threshold, and the one condition here that is a plain length (D502). No face-down rule to apply
+    and no type line to read, so none of the caveat above about printed types reaches it: a card in
+    a graveyard is a card in a graveyard.
+  */
+  if (cond.kind === 'controller-graveyard') {
+    return (state.zones[zoneKey(effect.controller, 'graveyard')] ?? []).length >= cond.atLeast;
   }
   let count = 0;
   for (const id of state.zones[zoneKey(effect.controller, 'battlefield')] ?? []) {

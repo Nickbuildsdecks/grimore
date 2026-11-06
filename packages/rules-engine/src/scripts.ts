@@ -16512,6 +16512,65 @@ function sacrificeAtEndOfTurnFromLine(line: string, name: string): Partial<CardS
  * static granting a word the engine ignores is a creature that looks protected and is not, which is
  * the same argument the grant family makes for a pump.
  */
+/**
+ * What a conditional static says about the permanent itself, as one `PumpOptions`.
+ *
+ * The predicate of a threshold line, which is a **list** where metalcraft's is a single thing:
+ * `gets +1/+1`, `gets +2/+2 and has flying`, `gets +2/+2 and can't block`, `can't be blocked`,
+ * `gets +3/+0 and attacks each combat if able`. Split on "and", each part read on its own, and the
+ * parts merged into one object — one continuous effect, because the print is one ability and two
+ * effects would be two things to expire.
+ *
+ * ## Every part has to be a part (D487)
+ *
+ * One unreadable part refuses the whole line rather than handing over the half understood, and the
+ * corpus has the card that makes the rule concrete: **Masked Gorgon** prints "has protection from
+ * green and from white", which splits into `has protection from green` and a bare `from white`. The
+ * second is not a part, so the Gorgon stays unread — a creature with protection from one of the two
+ * colours its card names is worse than a creature a human plays by hand.
+ *
+ * Nantuko Blightcutter ("gets +1/+1 for each black permanent your opponents control") and Otarian
+ * Juggernaut's sibling shapes refuse for the same reason: a count is not a fixed bonus, and
+ * `sizeBonus` takes numbers.
+ *
+ * A bare keyword is allowed as a part, so "has flying and vigilance" reads — the list form
+ * `grantedKeywordList` already handles, reached here one word at a time.
+ */
+function thresholdPredicate(predicate: string): PumpOptions | null {
+  const parts = predicate.trim().split(/\s+and\s+/).map((part) => part.trim())
+    .filter((part) => part !== '');
+  if (parts.length === 0) return null;
+  let out: PumpOptions = {};
+  const keywords: Keyword[] = [];
+  for (const part of parts) {
+    const low = part.toLowerCase();
+    const pump = /^gets ([+-]\d+)\/([+-]\d+)$/.exec(low);
+    if (pump !== null) {
+      const bonus = sizeBonus(Number(pump[1]), Number(pump[2]));
+      if (bonus === null) return null;
+      out = { ...out, ...bonus };
+      continue;
+    }
+    const protection = /^has protection from (\w+)$/.exec(low);
+    if (protection !== null) {
+      const colour = COLOUR_WORDS[protection[1]!];
+      if (colour === undefined) return null;
+      out = { ...out, protectionFrom: [colour] };
+      continue;
+    }
+    const has = /^has (.+)$/.exec(low);
+    const word = has !== null ? has[1]!.trim() : low;
+    if (isKeyword(word)) { keywords.push(word); continue; }
+    if (has !== null) return null;
+    if (low === "can't block") { out = { ...out, cantBlock: true }; continue; }
+    if (low === "can't be blocked") { out = { ...out, cantBeBlocked: true }; continue; }
+    if (low === 'attacks each combat if able') { out = { ...out, mustAttack: true }; continue; }
+    return null;
+  }
+  if (keywords.length > 0) out = { ...out, keywords };
+  return Object.keys(out).length === 0 ? null : out;
+}
+
 function conditionalStaticFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = withoutAbilityWord(plain(line).trim().replace(/\.\s*$/, ''));
   const self = selfRef(name);
@@ -16537,6 +16596,47 @@ function conditionalStaticFromLine(line: string, name: string): Partial<CardScri
       statics: [{
         scope: 'self',
         effect: { protectionFrom: ['W', 'U', 'B', 'R', 'G'], while: condition },
+      }],
+    };
+  }
+
+  /*
+    **Threshold** (D502), and the family the condition machinery was always going to meet: 108 legal
+    lines print "there are seven or more cards in your graveyard", of which **33 are a static about
+    the card itself** and the rest are activated abilities, quoted abilities and one-shot spell
+    effects that belong to other readers or to nobody.
+
+    Two differences from metalcraft above, and both are why this is a branch rather than a row:
+
+    1. **The condition is printed on either side.** Nine lines put it last, as metalcraft does
+       ("~ gets +2/+2 as long as there are seven or more cards in your graveyard"); fifteen put it
+       first ("As long as there are seven or more cards in your graveyard, ~ gets +1/+1 and has
+       flying"). Same sentence, same rule, and a reader that handled one position would read two
+       thirds of the family.
+    2. **The predicate is a list.** Metalcraft prints one thing; threshold prints a pump, or a
+       keyword, or a pump *and* a keyword, or a pump and "can't block". So the predicate is split on
+       "and" and each part read on its own, which is `thresholdPredicate`.
+
+    `countFrom` reads the number, so "seven" and a digit are the same thing — the corpus prints only
+    "seven", but the condition is a count and storing one is no harder than storing the constant.
+  */
+  const COND = 'there are (\\S+) or more cards in your graveyard';
+  const thresholdLead = new RegExp(
+    `^as long as ${COND}, (?:${self}|it) (.+)$`, 'i',
+  ).exec(text);
+  const thresholdTrail = thresholdLead !== null ? null : new RegExp(
+    `^(?:${self}|it) (.+?) as long as ${COND}$`, 'i',
+  ).exec(text);
+  if (thresholdLead !== null || thresholdTrail !== null) {
+    const amount = countFrom(thresholdLead !== null ? thresholdLead[1]! : thresholdTrail![2]!);
+    const predicate = thresholdLead !== null ? thresholdLead[2]! : thresholdTrail![1]!;
+    if (amount === null || amount <= 0) return null;
+    const effect = thresholdPredicate(predicate);
+    if (effect === null) return null;
+    return {
+      statics: [{
+        scope: 'self',
+        effect: { ...effect, while: { kind: 'controller-graveyard', atLeast: amount } },
       }],
     };
   }

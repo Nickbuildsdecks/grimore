@@ -11196,3 +11196,175 @@ describe('fear, shadow and horsemanship, whose rules text is a clause list (D501
     expect(keywordBlockRules(characteristicsOf(state, state.instances['i']!))).toEqual([]);
   });
 });
+
+describe('the threshold condition: a static that is on while your graveyard is big (D502)', () => {
+  /*
+    The queue head by cards finished (D434): **31 cards** whose only unread line says
+    "there are seven or more cards in your graveyard". 108 legal lines print that phrase, of which
+    **33 are a static about the card itself** — the rest are activated abilities ("Activate only
+    if…"), quoted abilities the card grants itself, and one-shot spell effects ("If there are seven
+    or more…, instead…"), each of which belongs to another reader or to nobody.
+
+    **Nothing new was needed in the effect machinery.** #142 built the conditional continuous effect
+    for metalcraft — `ContinuousEffect.while`, asked in `effectApplies` rather than stored, because
+    there is no moment at which it turns on — and this is a third `while` kind beside the artifact
+    count and monstrosity's counter. It is also the cheapest of the three to answer honestly: the
+    artifact count reads the *printed* type line, since it runs inside `characteristicsOf` and a
+    live type line would re-enter the whole computation; a graveyard count reads a list of ids.
+
+    Two things the reader had to learn, and they are what made it a branch rather than a row:
+
+    1. **The condition is printed on either side of the predicate.** Nine lines put it last, as
+       metalcraft does; fifteen put it first. A reader handling one position would read a third of
+       the family.
+    2. **The predicate is a list**: a pump, a keyword, a pump and a keyword, a pump and "can't
+       block". `thresholdPredicate` splits on "and" and reads each part.
+  */
+  const creature = (name: string, text: string, power = '1', toughness = '1') => compileCard({
+    name, type_line: 'Creature — Human', mana_cost: '{1}{G}', cmc: 2, colors: ['G'],
+    layout: 'normal', power, toughness, oracle_text: text,
+  });
+  const staticOf = (name: string, text: string) => {
+    const read = creature(name, text);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return undefined;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    return read.script?.statics?.[0];
+  };
+  const WHILE = { kind: 'controller-graveyard', atLeast: 7 } as const;
+
+  it.each([
+    /*
+      Both positions of the condition, on the printings that put it there. Krosan Beast's whole
+      card is the trailing form; Mystic Penitent's is the leading one.
+    */
+    ['Krosan Beast',
+      'Threshold — Krosan Beast gets +7/+7 as long as there are seven or more cards in your graveyard.',
+      { power: 7, toughness: 7 }],
+    ['Mystic Penitent',
+      'Threshold — As long as there are seven or more cards in your graveyard, Mystic Penitent gets'
+      + ' +1/+1 and has flying.',
+      { power: 1, toughness: 1, keywords: ['flying'] }],
+    // "This creature", the retemplated second reference, in both positions.
+    ['Billowing Shriekmass',
+      'Threshold — This creature gets +2/+1 as long as there are seven or more cards in your graveyard.',
+      { power: 2, toughness: 1 }],
+    ['Dreadwing Scavenger',
+      'Threshold — This creature gets +1/+1 and has deathtouch as long as there are seven or more'
+      + ' cards in your graveyard.',
+      { power: 1, toughness: 1, keywords: ['deathtouch'] }],
+    // A keyword with no pump at all (Mystic Visionary), and a pump with no keyword.
+    ['Mystic Visionary',
+      'Threshold — Mystic Visionary has flying as long as there are seven or more cards in your graveyard.',
+      { keywords: ['flying'] }],
+    ['Nimble Mongoose',
+      'Threshold — Nimble Mongoose gets +2/+2 as long as there are seven or more cards in your graveyard.',
+      { power: 2, toughness: 2 }],
+    // The three predicates that are not a pump or a keyword, each a real printing.
+    ['Childhood Horror',
+      "Threshold — As long as there are seven or more cards in your graveyard, Childhood Horror gets"
+      + " +2/+2 and can't block.",
+      { power: 2, toughness: 2, cantBlock: true }],
+    ['Cephalid Inkmage',
+      "Threshold — This creature can't be blocked as long as there are seven or more cards in your"
+      + ' graveyard.',
+      { cantBeBlocked: true }],
+    ['Otarian Juggernaut',
+      'Threshold — As long as there are seven or more cards in your graveyard, Otarian Juggernaut'
+      + ' gets +3/+0 and attacks each combat if able.',
+      { power: 3, mustAttack: true }],
+    // Protection from one colour, which is Mystic Familiar's printing and `protectionFrom`'s list
+    // with one entry in it (D83).
+    ['Mystic Familiar',
+      'Threshold — As long as there are seven or more cards in your graveyard, Mystic Familiar gets'
+      + ' +1/+1 and has protection from black.',
+      { power: 1, toughness: 1, protectionFrom: ['B'] }],
+  ])('reads %s', (name, text, expected) => {
+    expect(staticOf(name as string, text as string))
+      .toEqual({ scope: 'self', effect: { ...(expected as object), while: WHILE } });
+  });
+
+  it('stores the count rather than the constant seven', () => {
+    /*
+      Every threshold card prints "seven", so the number could have been hard-coded — and then the
+      first card printing any other count would read as a threshold card. `countFrom` reads the word
+      or a digit, which is the same helper every other printed count in this file goes through.
+    */
+    expect(staticOf('Probe Beast',
+      'Probe Beast gets +1/+1 as long as there are three or more cards in your graveyard.'))
+      .toEqual({ scope: 'self',
+        effect: { power: 1, toughness: 1, while: { kind: 'controller-graveyard', atLeast: 3 } } });
+    expect(staticOf('Probe Beast',
+      'Probe Beast gets +1/+1 as long as there are 10 or more cards in your graveyard.'))
+      .toEqual({ scope: 'self',
+        effect: { power: 1, toughness: 1, while: { kind: 'controller-graveyard', atLeast: 10 } } });
+  });
+
+  it.each([
+    /*
+      Refused for the **predicate**, and both of these are real cards the corpus prints next to the
+      ones above.
+
+      Masked Gorgon is the one that makes the whole-line rule concrete (D487): "has protection from
+      green and from white" splits into a readable part and a bare "from white", so the card stays
+      unread. A Gorgon with protection from one of the two colours its card names is worse than a
+      Gorgon a human plays by hand.
+    */
+    ['two colours of protection', 'Masked Gorgon has protection from green and from white as long as'
+      + ' there are seven or more cards in your graveyard.'],
+    ['a bonus that is a count', 'Nantuko Blightcutter gets +1/+1 for each black permanent your'
+      + ' opponents control as long as there are seven or more cards in your graveyard.'],
+    ['a keyword the engine lacks', 'Probe Beast has banding as long as there are seven or more cards'
+      + ' in your graveyard.'],
+    /*
+      And the same word **beside a readable part**, which is a different test from the row above and
+      the one a break run said was missing. "gets +1/+1 and has banding" splits into a pump this
+      reader understands and a keyword it does not, so the whole-line rule has to refuse — where
+      the row above refuses for having nothing readable at all and would pass on a lenient reader
+      that simply dropped the part it could not read.
+    */
+    ['an unreadable part beside a readable one', 'Probe Beast gets +1/+1 and has banding as long as'
+      + ' there are seven or more cards in your graveyard.'],
+    ['a granted ability', 'As long as there are seven or more cards in your graveyard, Probe Beast'
+      + ' has "When Probe Beast enters, draw a card."'],
+    /*
+      Refused for the **subject**: the whole-line rule again. Aboshan's Desire is an Aura and the
+      restriction is its host's, so handing it to the Aura would be the D495 mistake.
+    */
+    ['an Aura granting it', 'Enchanted creature has shroud as long as there are seven or more cards'
+      + ' in your graveyard.'],
+    ['a class of creatures', 'White creatures get an additional +1/+1 as long as there are seven or'
+      + ' more cards in your graveyard.'],
+    /*
+      Refused for the **condition**, which is the half that keeps this reader from eating its
+      neighbours. "If there are …" is a one-shot spell effect (Cleansing Meditation, Demoralize,
+      Cabal Ritual — 20-odd lines), "unless" is Deep-Sea Terror's attack restriction, and a
+      graveyard that is not yours is somebody else's count.
+    */
+    ['a one-shot "if" instead of "as long as"', 'If there are seven or more cards in your graveyard,'
+      + ' Probe Beast gets +1/+1.'],
+    ['an "unless" restriction', "Probe Beast can't attack unless there are seven or more cards in"
+      + ' your graveyard.'],
+    ['somebody else\'s graveyard', 'Probe Beast gets +1/+1 as long as there are seven or more cards'
+      + " in an opponent's graveyard."],
+    ['a count of a kind of card', 'Probe Beast gets +1/+1 as long as there are seven or more creature'
+      + ' cards in your graveyard.'],
+  ])('leaves a line unread: %s', (_why, text) => {
+    const read = creature('Probe Beast', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('finishes Krosan Beast, whose whole card is the one line', () => {
+    // The cheapest demonstration that this is a card finished rather than a line read: a 1/1 for
+    // four mana that is an 8/8 once the graveyard fills, and nothing else printed on it.
+    const read = creature('Krosan Beast',
+      'Threshold — Krosan Beast gets +7/+7 as long as there are seven or more cards in your graveyard.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    expect(read.script?.abilities ?? []).toEqual([]);
+    expect(read.script?.triggers ?? []).toEqual([]);
+  });
+});

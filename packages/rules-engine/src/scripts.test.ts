@@ -29198,3 +29198,168 @@ describe('fear, shadow and horsemanship, at the table (D501)', () => {
     expect(issue?.reason).not.toContain('shadow');
   });
 });
+
+describe('threshold at the table: a static that comes and goes with the graveyard (D502)', () => {
+  /*
+    The half a reader test cannot reach: the condition has to be asked **live**, every time the
+    creature's size is computed. Krosan Beast is the card that shows it plainly — a 1/1 whose whole
+    printed text is the one threshold line, and an 8/8 once the seventh card lands in the graveyard.
+
+    Three real printings through `customDeck`'s `data`, which is the path an imported card takes.
+  */
+  const DATA = [
+    {
+      name: 'Krosan Beast', type_line: 'Creature — Squirrel Beast', mana_cost: '{3}{G}', cmc: 4,
+      colors: ['G'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Threshold — Krosan Beast gets +7/+7 as long as there are seven or more cards in'
+        + ' your graveyard.',
+    },
+    {
+      name: 'Mystic Penitent', type_line: 'Creature — Human Nomad Mystic', mana_cost: '{W}', cmc: 1,
+      colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Vigilance\nThreshold — As long as there are seven or more cards in your'
+        + ' graveyard, Mystic Penitent gets +1/+1 and has flying.',
+    },
+    {
+      name: 'Childhood Horror', type_line: 'Creature — Horror', mana_cost: '{3}{B}', cmc: 4,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: "Flying\nThreshold — As long as there are seven or more cards in your graveyard,"
+        + " Childhood Horror gets +2/+2 and can't block.",
+    },
+  ];
+
+  /** `buried` cards in seat 0's graveyard, and the three printings on its battlefield. */
+  const table = (id: string, buried: number) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 2 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Forest', count: 25 },
+        { name: 'Swamp', count: 25 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Childhood Horror', 'Krosan Beast', 'Mystic Penitent']);
+    return advanceTo(arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: { 0: ['Krosan Beast', 'Mystic Penitent', 'Childhood Horror'], 1: ['Grizzly Bears'] },
+      graveyard: { 0: Array.from({ length: buried }, () => 'Forest') },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+  };
+
+  const sizeOf = (state: GameState, name: string): string => {
+    const inst = state.instances[find(state, 0 as SeatIndex, 'battlefield', name)]!;
+    const ch = characteristicsOf(state, inst);
+    return `${ch.power}/${ch.toughness}`;
+  };
+
+  it('is off at six cards and on at seven', () => {
+    /*
+      Both sides of the boundary, on the same board, because a condition that was always true would
+      pass the second assertion alone — and the off-by-one is the only thing the number in
+      `atLeast` can get wrong.
+    */
+    const six = table('d502-six', 6);
+    expect(ids(six, 0 as SeatIndex, 'graveyard')).toHaveLength(6);
+    expect(sizeOf(six, 'Krosan Beast')).toBe('1/1');
+
+    const seven = table('d502-seven', 7);
+    expect(ids(seven, 0 as SeatIndex, 'graveyard')).toHaveLength(7);
+    expect(sizeOf(seven, 'Krosan Beast')).toBe('8/8');
+  });
+
+  it('turns on as the seventh card arrives and off again when the graveyard shrinks', () => {
+    /*
+      What makes it a condition rather than a lookup, and what #142's docblock says is the whole
+      shape of `while`: **there is no moment at which it turns on.** Nothing announces it, no
+      trigger sees it, and a reader that cached the answer when the permanent arrived would pass
+      every other test in this block.
+
+      So the graveyard is grown and then shrunk on one board, and the same creature is read three
+      times.
+    */
+    let s = table('d502-live', 6);
+    const beast = find(s, 0 as SeatIndex, 'battlefield', 'Krosan Beast');
+    expect(characteristicsOf(s, s.instances[beast]!).power).toBe(1);
+
+    const seventh = ids(s, 0 as SeatIndex, 'library')[0]!;
+    s = apply(s, { type: 'card:move', by: 0 as SeatIndex, card: seventh, toZone: 'graveyard' });
+    expect(ids(s, 0 as SeatIndex, 'graveyard')).toHaveLength(7);
+    expect(characteristicsOf(s, s.instances[beast]!).power).toBe(8);
+
+    s = apply(s, { type: 'card:move', by: 0 as SeatIndex, card: seventh, toZone: 'library' });
+    expect(ids(s, 0 as SeatIndex, 'graveyard')).toHaveLength(6);
+    expect(characteristicsOf(s, s.instances[beast]!).power).toBe(1);
+  });
+
+  it('grants the keyword too, not only the size', () => {
+    // Mystic Penitent's printing: a pump and flying from one line, which is one continuous effect
+    // rather than two — the print is one ability and two effects would be two things to expire.
+    const six = table('d502-kw-off', 6);
+    const off = six.instances[find(six, 0 as SeatIndex, 'battlefield', 'Mystic Penitent')]!;
+    expect(characteristicsOf(six, off).keywords.has('flying')).toBe(false);
+    // Vigilance is printed unconditionally, so it is there either way — the control that says the
+    // keyword set is being read at all.
+    expect(characteristicsOf(six, off).keywords.has('vigilance')).toBe(true);
+
+    const seven = table('d502-kw-on', 7);
+    const on = seven.instances[find(seven, 0 as SeatIndex, 'battlefield', 'Mystic Penitent')]!;
+    expect(characteristicsOf(seven, on).keywords.has('flying')).toBe(true);
+    expect(sizeOf(seven, 'Mystic Penitent')).toBe('2/2');
+  });
+
+  it('takes the block away, which is a rule and not a number', () => {
+    /*
+      Childhood Horror's printing, and the one predicate in this family whose effect `canBlock`
+      rather than `characteristicsOf` has to honour. A 2/2 flier that becomes a 4/4 and stops being
+      able to block at all — asserted through `canBlock` against a real attacker, because
+      `cantBlock` on a characteristics object proves only that a field was set.
+    */
+    const six = table('d502-block-off', 6);
+    const horrorOff = find(six, 0 as SeatIndex, 'battlefield', 'Childhood Horror');
+    const bearsOff = find(six, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    expect(canBlock(six, horrorOff, bearsOff, 0 as SeatIndex)).toBeNull();
+
+    const seven = table('d502-block-on', 7);
+    const horrorOn = find(seven, 0 as SeatIndex, 'battlefield', 'Childhood Horror');
+    const bearsOn = find(seven, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    expect(sizeOf(seven, 'Childhood Horror')).toBe('4/4');
+    expect(canBlock(seven, horrorOn, bearsOn, 0 as SeatIndex)?.reason).toContain("can't block");
+  });
+
+  it('counts the controller\'s graveyard, not the table\'s', () => {
+    /*
+      "Your graveyard" is the effect's own `controller`, as everywhere else in `conditionMet`. Seven
+      cards in the *opponent's* graveyard must leave a Krosan Beast a 1/1 — which is the reading a
+      count over `state.zones` as a whole would have got wrong, and the kind of mistake that makes a
+      creature bigger on somebody else's turn.
+    */
+    const list = customDeck({
+      id: 'd502-theirs',
+      name: 'd502-theirs',
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 2 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Forest', count: 25 },
+        { name: 'Swamp', count: 25 },
+      ],
+      data: DATA as never[],
+    });
+    const s = advanceTo(arena({
+      decks: { 0: 'd502-theirs', 1: 'd502-theirs' },
+      deckSpecs: { 'd502-theirs': list.deck },
+      battlefield: { 0: ['Krosan Beast'], 1: ['Grizzly Bears'] },
+      graveyard: { 1: Array.from({ length: 8 }, () => 'Forest') },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+    expect(ids(s, 0 as SeatIndex, 'graveyard')).toHaveLength(0);
+    expect(ids(s, 1 as SeatIndex, 'graveyard')).toHaveLength(8);
+    expect(sizeOf(s, 'Krosan Beast')).toBe('1/1');
+  });
+});
