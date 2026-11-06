@@ -5,6 +5,7 @@ import { CLUE_TOKEN, isKeywordDeclaration, scriptFor } from './scripts.js';
 import { zoneKey, type CardDef } from './cards.js';
 import {
   CREATURE_TYPES, KEYWORD_BLOCK_RULES, cardHasSubtype, characteristicsOf, hasSubtype, isCreatureType,
+  isDevoidLine,
   keywordBlockRules, printedBlockerLimit, printedBlocksLimit, printedCombatStatics, printedKeywords,
   printedLandwalk,
 } from './characteristics.js';
@@ -12738,5 +12739,180 @@ describe('the Illusion drawback and the bare mill (D514)', () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
+  });
+});
+
+describe('the Act of Treason sentence, read as one group (D516)', () => {
+  /*
+    `Gain control of target creature until end of turn. Untap that creature. It gains haste until
+    end of turn.` — **15 legal cards** had it as their only unread line, and 38 printings print the
+    first sentence of it.
+
+    Read as a group rather than clause by clause, and the reason is D362 rather than convenience.
+    "That creature" and "it" are the *target* here, and this compiler's referent machinery would
+    read them as something else: `it gains haste` through `selfEffect` hands the **spell** haste and
+    does nothing at all, which is a card that resolves and silently buys nothing. The three parts
+    also cannot be allowed to drift apart — without the untap a stolen tapped creature does nothing,
+    without the haste it is summoning-sick for its new controller (CR 302.6), and without the
+    duration it never goes home — so `stealUntilEndOfTurn` is the one function all of it lives in,
+    and the pool's hand-written Act of Treason was rewritten onto the same function.
+  */
+  const sorcery = (name: string, text: string, cost = '{2}{R}', cmc = 3) => compileCard({
+    name, type_line: 'Sorcery', mana_cost: cost, cmc, colors: ['R'],
+    layout: 'normal', oracle_text: text,
+  });
+
+  const STEAL = 'Gain control of target creature until end of turn. Untap that creature. '
+    + 'It gains haste until end of turn.';
+
+  it('reads Act of Treason, reminder text and all', () => {
+    const read = sorcery('Act of Treason', `${STEAL} (It can attack and {T} this turn.)`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.targets).toHaveLength(1);
+  });
+
+  it('reads the bare printing, which is the commonest shape', () => {
+    // Song-Mad Treachery's front face, Tentative Connection's and Take for a Ride's second line.
+    const read = sorcery('Portent of Betrayal', `${STEAL} Scry 1.`, '{3}{R}', 4);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('reads the pump that rides with the haste (Malevolent Whispers)', () => {
+    const read = sorcery('Malevolent Whispers', 'Gain control of target creature until end of turn.'
+      + ' Untap that creature. It gets +2/+0 and gains haste until end of turn.', '{3}{R}', 4);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('reads the same pump with the duration at the front (Traitorous Instinct)', () => {
+    /*
+      One card, and the reason it is worth a row rather than a widened regex with no test: the
+      duration is printed at *either* end of the clause and this reader accepts both, so a later
+      change that drops one form has a row that says so.
+    */
+    const read = sorcery('Traitorous Instinct', 'Gain control of target creature until end of turn.'
+      + ' Untap that creature. Until end of turn, it gets +2/+0 and gains haste.', '{3}{R}', 4);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it.each([
+    ['menace, printed after the haste (Lose Calm)',
+      'Gain control of target creature until end of turn. Untap that creature. It gains haste and '
+      + 'menace until end of turn.'],
+    ['trample, printed before it (Traitorous Blood)',
+      'Gain control of target creature until end of turn. Untap it. It gains trample and haste '
+      + 'until end of turn.'],
+  ])('reads a second granted keyword: %s', (_why, text) => {
+    /*
+      The keyword list goes through `grantedKeywords`, which validates it against
+      `printedKeywords` — the function the engine uses to read a keyword line back. So a word the
+      engine could not apply refuses the line instead of granting nothing.
+    */
+    const read = sorcery('Lose Calm', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('reads the tail after the group, by handing it back to the ordinary composer', () => {
+    // Bond of Passion. The steal is three clauses; the damage is the fourth and is read as itself.
+    const read = sorcery('Bond of Passion',
+      `${STEAL} Bond of Passion deals 2 damage to any other target.`, '{4}{R}{R}', 6);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    // Two independent target choices cannot share one `targets` list, so the line refuses (D487).
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it.each([
+    ['a quoted ability granted to a creature you do not own (Furnace Reins)',
+      'Gain control of target creature until end of turn. Untap that creature. Until end of turn, '
+      + 'it gains haste and "Whenever this creature deals combat damage to a player or battle, '
+      + 'create a Treasure token."'],
+    ['a Blood token this compiler has no reader for (Bloody Betrayal)',
+      'Gain control of target creature until end of turn. Untap that creature. It gains haste '
+      + 'until end of turn. Create a Blood token.'],
+    ['a counter put on before the untap (Mark of Mutiny)',
+      'Gain control of target creature until end of turn. Put a +1/+1 counter on it and untap it. '
+      + 'That creature gains haste until end of turn.'],
+  ])('refuses the whole line rather than half of it: %s', (_why, text) => {
+    /*
+      D487 in three variants. Each of these *starts* with a sentence this reader knows, and reading
+      the steal while dropping the rest would be a card that resolves and silently does part of what
+      it prints. The first is refused by `grantedKeywords` (the quotation splits into fragments
+      `printedKeywords` does not recognise), the second and third by the clauses around the group.
+    */
+    const read = sorcery('Bloody Betrayal', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('refuses a steal whose tail grants no haste at all', () => {
+    /*
+      No legal card prints this; it is the guard rather than a card. `stealUntilEndOfTurn` adds
+      haste itself, so a tail that does not ask for it is a clause this reader has no business
+      answering for, and letting it through would hand a creature haste its card never promised.
+    */
+    const read = sorcery('Not A Card', 'Gain control of target creature until end of turn. Untap '
+      + 'that creature. It gains flying until end of turn.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+});
+
+describe('Devoid on a spell counts as read (D516)', () => {
+  /*
+    D515 made devoid real — `printedColors` returns no colours for a card that prints it — but only
+    the permanent compile path said so. A spell's keyword declarations go through `spellScriptFor`,
+    where a keyword nothing can *build* lands in `declared` and is reported unread, and devoid was
+    going there. The same printed word was therefore compiled on a devoid creature and unread on a
+    devoid instant, while the engine played both colourless.
+
+    **Five legal spells** had `Devoid` as their only unread line: Turn Against, Consuming Sinkhole,
+    Oblivion Strike, Reality Hemorrhage and Unnatural Endurance.
+  */
+  it('reads Turn Against, whose only unread line was Devoid', () => {
+    const read = compileCard({
+      name: 'Turn Against', type_line: 'Instant', mana_cost: '{4}{R}', cmc: 5, colors: ['R'],
+      layout: 'normal',
+      oracle_text: 'Devoid (This card has no color.)\nGain control of target creature until end of '
+        + 'turn. Untap that creature. It gains haste until end of turn.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('still reports a keyword nothing reads as unread', () => {
+    /*
+      The complement, so the row above cannot be met by counting every keyword declaration on a
+      spell compiled. Entwine is a cast-time choice this compiler has no reader for, and a spell
+      that printed it would be played without it.
+    */
+    const read = compileCard({
+      name: 'Not A Card', type_line: 'Instant', mana_cost: '{1}{R}', cmc: 2, colors: ['R'],
+      layout: 'normal', oracle_text: 'Entwine {2}\nNot A Card deals 2 damage to any target.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual(['Entwine {2}']);
+  });
+
+  it('is the only part of its family a spell can print', () => {
+    // See `isDevoidLine`: landwalk, protection and the combat statics are battlefield facts.
+    expect(isDevoidLine('Devoid')).toBe(true);
+    expect(isDevoidLine('Devoid (This card has no color.)')).toBe(true);
+    expect(isDevoidLine('Islandwalk')).toBe(false);
+    expect(isDevoidLine('Protection from red')).toBe(false);
+    expect(isDevoidLine('Target creature becomes devoid until end of turn')).toBe(false);
   });
 });

@@ -910,6 +910,27 @@ export function printedColors(def: CardDef | undefined): Color[] {
   return (['W', 'U', 'B', 'R', 'G'] as Color[]).filter((c) => declared.includes(c));
 }
 
+/**
+ * Whether a printed line is **devoid** — the one keyword declaration whose entire effect is a fact
+ * about the `CardDef` rather than anything a script could carry (D516).
+ *
+ * Exists because the two compile paths disagreed about it. A permanent's lines go through
+ * `isPrintedAbilityLine`, which counts `Devoid` compiled and emits nothing, exactly right: the
+ * reading lives in `printedColors` above. A spell's lines go through `spellScriptFor`, where a
+ * keyword declaration nothing can *build* lands in `declared` and is reported unread — which was
+ * right until D515, when `printedColors` started reading it. After that the same printed word was
+ * compiled on Turn Against's Eldrazi cousins and unread on Turn Against, while the engine played
+ * both colourlessly. Five legal spells had this as their only unread line.
+ *
+ * Narrow on purpose. The other members of `PrintedPart` — landwalk, protection, the combat statics,
+ * the blocker bans — are facts about a permanent on the battlefield and cannot appear on an instant
+ * or a sorcery, so widening this to "any part read off the def" would buy nothing and would let a
+ * genuinely unread battlefield line through on a card type that cannot have one.
+ */
+export function isDevoidLine(line: string): boolean {
+  return printedParts(line).some((part) => part.kind === 'devoid');
+}
+
 export type EffectDuration =
   | 'end-of-turn'
   | 'end-of-combat'

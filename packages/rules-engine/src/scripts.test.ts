@@ -262,12 +262,25 @@ describe('red creatures', () => {
     expect(s.instances[courser]!.owner).toBe(1);
   });
 
-  it('Act of Treason cannot target a creature you already control', () => {
+  /**
+   * This row was a refusal until D516. The hand-written card filtered its target to
+   * `creatureYouDontControl`, which the printed text does not say: it says `target
+   * creature`, and untapping your own tapped blocker and giving it haste is a real
+   * play. D362 makes a shipping card that refuses a legal target a defect rather than
+   * a style choice, so the filter went and this row asserts what the play buys.
+   */
+  it('Act of Treason may target a creature you already control (D516)', () => {
     let s = withMana(0, ['Act of Treason'], 3, ['Hill Giant']);
-    expect(refusal(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Act of Treason'),
-      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Hill Giant') }],
-    })).toBeTruthy();
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = { ...s, instances: { ...s.instances, [giant]: { ...s.instances[giant]!, tapped: true } } };
+    s = cast(s, 0, 'Act of Treason', [{ kind: 'card', id: giant }]);
+    expect(s.instances[giant]!.tapped).toBe(false);
+    expect(characteristicsOf(s, s.instances[giant]!).keywords.has('haste')).toBe(true);
+    // It was already yours, so the control change is a no-op in both directions.
+    expect(s.instances[giant]!.zoneSeat).toBe(0);
+    s = nextTurn(s);
+    expect(s.instances[giant]!.zoneSeat).toBe(0);
+    expect(s.instances[giant]!.owner).toBe(0);
   });
 
   it('Krenko makes one Goblin per Goblin, counting himself', () => {
@@ -31268,5 +31281,179 @@ describe('Devoid: a card with a coloured mana cost and no colour (D515)', () => 
     expect(isPrintedAbilityLine('Devoid (This card has no color.)')).toBe(true);
     // And the whole-line rule: the word inside a sentence is not a declaration of it.
     expect(isPrintedAbilityLine('Target creature becomes devoid until end of turn')).toBe(false);
+  });
+});
+
+describe('the Act of Treason sentence, played off printed text (D516)', () => {
+  /*
+    The compile side of this reader is in `compile.test.ts`; these rows are the other half — a
+    *compiled* steal driven through the engine, so the three sentences are checked against what the
+    board actually does rather than against the shape of a fragment.
+
+    Four facts make the card, and dropping any one of them leaves a spell that resolves and buys
+    nothing: it changes sides, it untaps, it has haste (CR 302.6 would otherwise make it
+    summoning-sick for its new controller, so the whole point of the card is gone), and it **goes
+    home at end of turn** rather than staying stolen or dying in the thief's graveyard.
+  */
+  const DATA = [
+    {
+      name: 'Borrowed Fury', type_line: 'Sorcery', mana_cost: '{2}{R}', cmc: 3, colors: ['R'],
+      layout: 'normal',
+      oracle_text: 'Gain control of target creature until end of turn. Untap that creature. '
+        + 'It gains haste until end of turn.',
+    },
+    {
+      // The pump variant, so the size rides and expires with the same effect (Malevolent Whispers).
+      name: 'Borrowed Rage', type_line: 'Sorcery', mana_cost: '{3}{R}', cmc: 4, colors: ['R'],
+      layout: 'normal',
+      oracle_text: 'Gain control of target creature until end of turn. Untap that creature. '
+        + 'It gets +2/+0 and gains haste until end of turn.',
+    },
+    {
+      // And the second-keyword variant (Lose Calm), whose list goes through `grantedKeywords`.
+      name: 'Borrowed Menace', type_line: 'Sorcery', mana_cost: '{2}{R}', cmc: 3, colors: ['R'],
+      layout: 'normal',
+      oracle_text: 'Gain control of target creature until end of turn. Untap that creature. '
+        + 'It gains haste and menace until end of turn.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'treason',
+      name: 'Treason',
+      entries: [
+        ...DATA.map((c) => ({ name: c.name, count: 4 })),
+        { name: 'Centaur Courser', count: 4 },
+        { name: 'Mountain', count: 48 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Borrowed Fury', 'Borrowed Menace', 'Borrowed Rage']);
+    return list.deck;
+  };
+
+  const LANDS = ['Mountain', 'Mountain', 'Mountain', 'Mountain'];
+
+  const table = (myHand: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'treason', 1: 'treason' },
+    deckSpecs: { treason: deck() },
+    battlefield: { 0: [...LANDS], 1: ['Centaur Courser'] },
+    hands: { 0: [...myHand] },
+    turn: 4, firstSeat: 0,
+  }), 'precombat-main');
+
+  /** Their Courser, tapped — the state the untap clause is for. */
+  const tappedCourser = (s: GameState) => {
+    const id = find(s, 1, 'battlefield', 'Centaur Courser');
+    return {
+      state: {
+        ...s, instances: { ...s.instances, [id]: { ...s.instances[id]!, tapped: true } },
+      } as GameState,
+      id,
+    };
+  };
+
+  const steal = (name: string) => {
+    const { state, id } = tappedCourser(tapAllLands(table([name]), 0));
+    return {
+      after: drain(passBoth(apply(state, {
+        type: 'auto:cast', by: 0, card: find(state, 0, 'hand', name),
+        targets: [{ kind: 'card', id }],
+      } as Action))),
+      id,
+    };
+  };
+
+  it('changes sides, untaps, and gains haste', () => {
+    const { after, id } = steal('Borrowed Fury');
+    expect(after.instances[id]!.zoneSeat).toBe(0);
+    expect(after.instances[id]!.tapped).toBe(false);
+    expect(characteristicsOf(after, after.instances[id]!).keywords.has('haste')).toBe(true);
+    // Ownership never moves, which is what sends it home below (CR 110.2).
+    expect(after.instances[id]!.owner).toBe(1);
+  });
+
+  it('attacks the turn it is stolen, which is what the haste is for', () => {
+    let s = steal('Borrowed Fury').after;
+    const id = find(s, 0, 'battlefield', 'Centaur Courser');
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: id, defender: 1 }] });
+    expect(s.combat.attacks.map((a) => a.attacker)).toEqual([id]);
+  });
+
+  it('goes home at end of turn, not to the thief\'s graveyard', () => {
+    /*
+      The duration, and the row that would catch a reader that gained control for ever. It is also
+      why `stealUntilEndOfTurn` writes a `controlRevertTo` effect rather than relying on the pump's
+      expiry: a pump going away takes the haste, not the control.
+    */
+    let s = steal('Borrowed Fury').after;
+    const id = find(s, 0, 'battlefield', 'Centaur Courser');
+    s = nextTurn(s);
+    expect(s.instances[id]!.zoneSeat).toBe(1);
+    expect(namesIn(s, 1, 'battlefield')).toContain('Centaur Courser');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Centaur Courser');
+  });
+
+  it('carries the pump with the haste, and both expire together', () => {
+    const { after, id } = steal('Borrowed Rage');
+    // The Courser is a 3/3, so +2/+0 reads 5/3.
+    expect([power(after, id), toughness(after, id)]).toEqual([5, 3]);
+    const home = nextTurn(after);
+    expect([power(home, id), toughness(home, id)]).toEqual([3, 3]);
+    expect(characteristicsOf(home, home.instances[id]!).keywords.has('haste')).toBe(false);
+    expect(home.instances[id]!.zoneSeat).toBe(1);
+  });
+
+  it('grants the second printed keyword beside the haste', () => {
+    const { after, id } = steal('Borrowed Menace');
+    const keywords = characteristicsOf(after, after.instances[id]!).keywords;
+    expect(keywords.has('haste')).toBe(true);
+    expect(keywords.has('menace')).toBe(true);
+  });
+
+  it('may point at a creature its caster already controls', () => {
+    /*
+      The printed text says `target creature`, and this is the play it buys: your own tapped
+      blocker untaps and can swing. The pool's hand-written Act of Treason filtered this out until
+      D516, which made a shipping card refuse a legal target (D362).
+    */
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'treason', 1: 'treason' },
+      deckSpecs: { treason: deck() },
+      battlefield: { 0: [...LANDS, 'Centaur Courser'], 1: [] },
+      hands: { 0: ['Borrowed Fury'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const mine = find(s, 0, 'battlefield', 'Centaur Courser');
+    s = { ...s, instances: { ...s.instances, [mine]: { ...s.instances[mine]!, tapped: true } } };
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Borrowed Fury'),
+      targets: [{ kind: 'card', id: mine }],
+    } as Action)));
+    expect(s.instances[mine]!.tapped).toBe(false);
+    expect(characteristicsOf(s, s.instances[mine]!).keywords.has('haste')).toBe(true);
+    // Still yours after the duration ends: the control change was a no-op in both directions.
+    expect(nextTurn(s).instances[mine]!.zoneSeat).toBe(0);
+  });
+
+  it('resolves to nothing when its target has already left (CR 608.2b)', () => {
+    /*
+      The guard every targeted reading needs. The Courser is moved out from under the spell by hand
+      while it is on the stack, and the resolution does as much as it can, which is nothing — rather
+      than reviving the card or throwing.
+    */
+    const { state, id } = tappedCourser(tapAllLands(table(['Borrowed Fury']), 0));
+    let s = apply(state, {
+      type: 'auto:cast', by: 0, card: find(state, 0, 'hand', 'Borrowed Fury'),
+      targets: [{ kind: 'card', id }],
+    } as Action);
+    s = apply(s, { type: 'card:move', by: 1, card: id, toZone: 'graveyard' });
+    s = drain(passBoth(s));
+    expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Centaur Courser');
   });
 });

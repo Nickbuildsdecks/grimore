@@ -17441,3 +17441,134 @@ rule's.
 
 97 printed lines and **11 cards finished** — and the number that matters is not in the table: 132
 legal printings now have the colour their own card gives them.
+
+---
+
+## D516 — The Act of Treason sentence, read as one group; and devoid on a spell
+
+`Gain control of target creature until end of turn. Untap that creature. It gains haste until end
+of turn.` — the queue head after D515, with **15 legal cards** one printed line away on it and
+**38 printings** carrying the first sentence.
+
+### Why it is read as a group and not clause by clause
+
+Every other reading in this compiler splits a resolution on its full stops and reads each clause on
+its own. That is exactly what must not happen here, and the reason is D362 rather than tidiness:
+
+- `Untap that creature` and `It gains haste until end of turn` both refer to the **target**, and
+  this file's referent machinery reads those words as something else. "That creature" is the other
+  creature in a combat (D480); "it" through `selfEffect` is the card itself — so `it gains haste`
+  compiled clause-wise hands the **spell** haste and does nothing at all. A card that resolves and
+  silently buys nothing is worse than an unread line.
+- The three parts cannot be allowed to drift apart. Without the untap a stolen tapped creature does
+  nothing; without the haste it is summoning-sick for its new controller (CR 302.6), which is the
+  entire point of the card; without the duration it never goes home.
+
+So `stealPrefix` matches all three sentences or none, and one function — `stealUntilEndOfTurn` in
+`effects.ts` — owns the whole mechanism: `gainControl`, `tap(..., false)`, a single `end-of-turn`
+pump carrying haste and anything else the tail grants, and a separate `controlRevertTo` effect that
+sends the creature home. The pool's own hand-written Act of Treason was rewritten onto the same
+function, so there is one implementation rather than two free to disagree.
+
+### The grammar, measured rather than guessed
+
+Over the 38 printings the third sentence comes in three shapes and no others:
+
+```
+It gains haste until end of turn.                   Act of Treason, 20 printings
+It gains haste and menace until end of turn.        Lose Calm; Traitorous Blood's "trample and haste"
+It gets +2/+0 and gains haste until end of turn.    Malevolent Whispers, Mascot Interception
+Until end of turn, it gets +2/+0 and gains haste.   Traitorous Instinct
+```
+
+The keyword list therefore goes through `grantedKeywords`, which validates it against
+`printedKeywords` — the function the engine uses to read a keyword line back — rather than matching
+the literal word *haste*. The duration is accepted at either end of the clause. And the list must
+*contain* haste: `stealUntilEndOfTurn` adds haste itself, so a tail that does not ask for it is a
+clause this reader has no business answering for, and letting one through would hand a creature
+haste its card never promised.
+
+`grantedKeywords` is also what refuses the two printings whose tail is a quoted ability — Furnace
+Reins and Shackles of Treachery, `it gains haste and "Whenever this creature deals combat damage to
+a player or battle, create a Treasure token."` Granting a quoted ability to a creature you do not
+own needs a `grants` index this function cannot build, and the quotation splits into fragments
+`printedKeywords` does not recognise, so the **line** refuses (D487) rather than the steal
+compiling and the grant disappearing.
+
+Anything after the third sentence goes back to the ordinary composer, which is why Bond of Passion
+(a second, independent target) and Bloody Betrayal (a Blood token) still refuse the line rather than
+shipping half of what they print.
+
+### The hand-written card was refusing a legal target
+
+`ACT_OF_TREASON` filtered its target to `creatureYouDontControl`. The printed text says `target
+creature`, and the narrowing bought nothing: `TargetSpec.friendly`'s own docblock says the bot
+already prefers the enemy and the enemy's creatures, and untapping your own tapped blocker and
+giving it haste is a real play. A shipping card that refuses a legal target is a defect, not a style
+choice (D362), so the filter went and the standing test row that asserted the refusal was retargeted
+to assert the play — the Hill Giant untaps, gains haste, and stays on its own side.
+
+### Devoid on a spell was reported unread, having become read
+
+Found while probing the family: Turn Against is one of these cards, and its only unread line was
+`Devoid`. D515 made devoid real — `printedColors` returns no colours for a card that prints it — but
+only the **permanent** compile path said so. A permanent's lines go through `isPrintedAbilityLine`,
+which counts the word compiled and emits nothing. A spell's lines go through `spellScriptFor`, where
+a keyword declaration nothing can *build* lands in `declared` and is reported unread. After D515 the
+same printed word was compiled on a devoid creature and unread on a devoid instant, while the engine
+played both colourless.
+
+`isDevoidLine` in `characteristics.ts` closes that, and is deliberately narrow: the other members of
+`PrintedPart` — landwalk, protection, the combat statics, the blocker bans — are facts about a
+permanent on the battlefield and cannot appear on an instant or a sorcery, so widening it to "any
+part read off the def" would buy nothing and would let a genuinely unread battlefield line through
+on a card type that cannot have one. **Five legal spells** had `Devoid` as their only unread line:
+Turn Against, Consuming Sinkhole, Oblivion Strike, Reality Hemorrhage and Unnatural Endurance.
+
+### The tests
+
+**14 compile tests** and **8 runtime tests through `customDeck`**. Worth naming three:
+
+- the runtime rows check the four facts the card is made of separately — it changes sides, it
+  untaps, it has haste, and it **goes home at end of turn** rather than dying in the thief's
+  graveyard — plus the pump riding and expiring with the same effect;
+- a refusal row for a steal whose tail grants *flying* rather than haste. No legal card prints it;
+  it is the guard, not a card;
+- three refusal rows for D487 in its three variants (the quoted grant, the Blood token, the counter
+  before the untap), each of which *starts* with a sentence this reader knows.
+
+### The break run
+
+**15 breaks, 13 caught — and the two that were not are recorded here because the *breaks* were
+vacuous, not the tests:**
+
+- *isDevoidLine answers for every printed keyword* widened the predicate to `part.kind === 'keyword'`.
+  But `Islandwalk` reads as a `landwalk` part and `Protection from red` as a `protection` part, so
+  the widening left both of those answers false and nothing could notice. Re-run as
+  `|| part.kind === 'landwalk'` and again as `printedParts(line).length > 0`: **both caught.**
+- *the pump has no duration* deleted the explicit `duration: 'end-of-turn'` from
+  `stealUntilEndOfTurn`. `pump` defaults `opts.duration` to `'end-of-turn'`, so that line restates
+  the default and deleting it changes nothing. Re-run as `duration: 'permanent'`: **caught.**
+
+So **16 real breaks, 16 caught.** The ones worth naming: *the tail after the group is thrown away*
+(`rest: []`) is caught by the three D487 refusal rows, and *the hand-written Act of Treason does
+nothing* is caught by the pool-card rows — which is the check that the hand-written card and the
+compiled reading are still the same mechanism.
+
+### Coverage
+
+| | before D516 | after |
+| --- | --- | --- |
+| printed lines read | 21,998 / 56,421 (39.0%) | **22,044 / 56,421 (39.1%)** |
+| cards with a compiled script | 11,033 | **11,043** |
+| cards with every printed line read | 6,802 | **6,817** |
+| of those, needing no script at all | 1,192 | 1,192 |
+
+46 printed lines and **15 cards finished.** Fourteen of them are named and verified by probe:
+nine on the steal reader alone (Act of Treason, Involuntary Employment, Limits of Solidarity, Lose
+Calm, Malevolent Whispers, Portent of Betrayal, Sarkhan Vol, Traitorous Blood, Traitorous Instinct),
+Turn Against on both halves of the increment, and four on the devoid correction alone (Consuming
+Sinkhole, Oblivion Strike, Reality Hemorrhage, Unnatural Endurance). The fifteenth is not attributed:
+`grantedKeywords` and the clause readers are not scoped to this family, so a card outside it can
+finish on them, and guessing which one would be a number with nothing behind it. Measured on a
+freshly built `dist` with no stale-engine warning, `LEGAL=1` over the 31,654-row corpus.

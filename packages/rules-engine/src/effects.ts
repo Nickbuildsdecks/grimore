@@ -1884,6 +1884,53 @@ export function gainControl(state: GameState, id: string, seat: SeatIndex): Game
   return withInstance(relocate(state, inst, 'battlefield', seat, 'bottom'), id, { echoDue: true });
 }
 
+/**
+ * "Gain control of target creature until end of turn. Untap that creature. It gains haste until end
+ * of turn." — the Act of Treason sentence, as one function (D516).
+ *
+ * All three printed clauses, because all three are one play: without the untap a tapped creature is
+ * stolen and does nothing, and without the haste it is summoning-sick for its new controller
+ * (CR 302.6) — the whole point of the card is attacking with it this turn. The control change is
+ * `duration: 'end-of-turn'` with `controlRevertTo` recording whose it was, which `endTurnCleanup`
+ * reads on expiry.
+ *
+ * **One function because there are two callers.** The pool's hand-written Act of Treason did this
+ * inline, and the compiler now reads the same sentence off 15 legal printings — Limits of Solidarity,
+ * Malevolent Whispers, Bloody Betrayal and the rest. Two copies of a control change that has to
+ * revert is the shape this engine keeps removing (D441, D438, D465): the one that reverts correctly
+ * and the one somebody will edit.
+ *
+ * `extra` is the pump the variants add on top — Malevolent Whispers prints "+2/+0 and gains haste",
+ * so the haste and the size arrive as one continuous effect rather than two.
+ */
+export function stealUntilEndOfTurn(
+  state: GameState, id: string, controller: SeatIndex, source: string, extra: PumpOptions = {},
+): GameState {
+  const original = state.instances[id]?.zoneSeat;
+  if (original === undefined) return state;
+  let next = gainControl(state, id, controller);
+  next = tap(next, id, false);
+  next = pump(next, [id], source, controller, {
+    ...extra,
+    keywords: [...new Set(['haste' as const, ...(extra.keywords ?? [])])],
+    duration: 'end-of-turn',
+  });
+  const seq = next.autoSeq + 1;
+  return {
+    ...next,
+    autoSeq: seq,
+    effects: [...next.effects, {
+      id: `fx${seq}`,
+      source,
+      controller,
+      scope: { kind: 'cards', ids: [id] },
+      duration: 'end-of-turn',
+      createdTurn: next.turn,
+      controlRevertTo: original,
+    }],
+  };
+}
+
 export function attachTo(state: GameState, auraId: string, hostId: string): GameState {
   const aura = state.instances[auraId];
   const host = state.instances[hostId];

@@ -18,7 +18,8 @@
  * unscripted and resolved by hand rather than approximated.
  */
 import {
-  cardHasSubtype, characteristicsOf, hasSubtype, hasType, isKeyword, isLegendary, parseTypeLine,
+  cardHasSubtype, characteristicsOf, hasSubtype, hasType, isDevoidLine, isKeyword, isLegendary,
+  parseTypeLine,
   printedKeywords,
   printedLandwalk, shortName, SELF_TYPE_WORDS, type Characteristics, type TypeLine,
 } from './characteristics.js';
@@ -32,6 +33,7 @@ import {
   chosenOption, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
+  stealUntilEndOfTurn,
   pumpTeam,
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageToSide,
@@ -475,30 +477,26 @@ const FLAME_SLASH: CardScript = {
   },
 };
 
+/*
+  **Two changes here, both made by reading the card against this script (D516).**
+
+  The filter was `creatureYouDontControl`, and the printed text says `target creature`. Stealing
+  your own creature is a legal and sometimes useful play — the untap and the haste are the rest of
+  the card, so pointing it at your own tapped blocker is a real line — so the narrowing was a
+  shipping card refusing a target its own text allows (D362). The compiler reads the printed words,
+  and a hand-written script that disagreed would have shown up as a disagreement rather than a bug;
+  this way neither is true.
+
+  And the body is `stealUntilEndOfTurn`, which is the same three clauses this card's sentence prints
+  and which the compiler now calls for the other 14 printings of it. Two copies of a control change
+  that has to revert is the shape this file keeps removing.
+*/
 const ACT_OF_TREASON: CardScript = {
   name: 'Act of Treason',
-  targets: [{ ...TARGET_CREATURE, filter: creatureYouDontControl }],
+  targets: [TARGET_CREATURE],
   onResolve: (c) => {
     const id = firstCardTarget(c);
-    if (id === null) return c.state;
-    const original = c.state.instances[id]?.zoneSeat;
-    if (original === undefined) return c.state;
-    let next = gainControl(c.state, id, c.controller);
-    next = tap(next, id, false);
-    // Haste matters: the whole point is attacking with it this turn, and it has just changed
-    // control, so without this it would be summoning sick.
-    next = pump(next, [id], c.source, c.controller, { keywords: ['haste'], duration: 'end-of-turn' });
-    // The control change itself is temporary; the turn logic reads `controlRevertTo` on expiry.
-    const seq = next.autoSeq + 1;
-    return {
-      ...next,
-      autoSeq: seq,
-      effects: [...next.effects, {
-        id: `fx${seq}`, source: c.source, controller: c.controller,
-        scope: { kind: 'cards', ids: [id] }, duration: 'end-of-turn',
-        createdTurn: next.turn, controlRevertTo: original,
-      }],
-    };
+    return id === null ? c.state : stealUntilEndOfTurn(c.state, id, c.controller, c.source);
   },
 };
 
@@ -16336,16 +16334,99 @@ function clausesOf(line: string): readonly string[] {
  * control" — and composing them here would silently hand both the *same* target. That is a wrong
  * card rather than an unread one, so it is refused.
  */
+/**
+ * The Act of Treason sentence, taken off the front of a resolution's clauses (D516).
+ *
+ * **15 legal cards** print it: Act of Treason itself (which the pool also carries hand-written),
+ * Limits of Solidarity, Malevolent Whispers, Bloody Betrayal, Awaken the Sleeper, Bond of Passion,
+ * Caught Red-Handed and more. Measured over the 38 printings that print the first sentence, the
+ * third one comes in three shapes and no others:
+ *
+ *     It gains haste until end of turn.                        (Act of Treason, 20 printings)
+ *     It gains haste and menace until end of turn.             (Lose Calm; Traitorous Blood's
+ *                                                               "trample and haste" is this too)
+ *     It gets +2/+0 and gains haste until end of turn.         (Malevolent Whispers)
+ *     Until end of turn, it gets +2/+0 and gains haste.        (Traitorous Instinct)
+ *
+ * So the keyword list is read by `grantedKeywords` rather than matched as the literal word, and the
+ * duration is allowed at either end of the clause. The list must *contain* haste: this reader is
+ * the Act of Treason idiom and nothing else, and `stealUntilEndOfTurn` adds haste itself, so a list
+ * without it would be a clause this function has no business answering for.
+ *
+ * `grantedKeywords` is also what refuses the two printings whose tail is a **quoted ability** —
+ * Furnace Reins and Shackles of Treachery, `it gains haste and "Whenever this creature deals
+ * combat damage to a player or battle, create a Treasure token."` Granting a quoted ability to a
+ * creature you do not own needs a `grants` index this function cannot build, and `printedKeywords`
+ * does not recognise the fragments that sentence splits into, so the whole line refuses.
+ *
+ * The pump rides into `stealUntilEndOfTurn` as one continuous effect rather than a second one, so a
+ * single `end-of-turn` expiry takes the size, the keywords and the haste away together.
+ *
+ * Anything after the third clause is left to the ordinary composer — Bloody Betrayal's Blood token,
+ * Bond of Passion's two damage — so a variant whose tail this compiler cannot read refuses the
+ * **line** rather than compiling the steal and dropping the rest (D487).
+ */
+function stealPrefix(
+  clauses: readonly string[],
+): { readonly read: ReadEffect; readonly rest: readonly string[] } | null {
+  if (clauses.length < 3) return null;
+  const control = /^gain control of target creature until end of turn$/i
+    .test(clauses[0]!.trim());
+  const untap = /^untap (?:that creature|it)$/i.test(clauses[1]!.trim());
+  const tail = clauses[2]!.trim();
+  const gains = /^it (?:gets ([+-]\d+)\/([+-]\d+) and )?gains (.+) until end of turn$/i.exec(tail)
+    ?? /^until end of turn, it (?:gets ([+-]\d+)\/([+-]\d+) and )?gains (.+)$/i.exec(tail);
+  if (!control || !untap || gains === null) return null;
+  const keywords = grantedKeywords(gains[3]!);
+  if (keywords === null || !keywords.includes('haste')) return null;
+  const bonus = gains[1] === undefined
+    ? {}
+    : sizeBonus(Number(gains[1]), Number(gains[2]));
+  if (bonus === null) return null;
+  return {
+    read: {
+      targets: [TARGET_CREATURE],
+      effect: (c) => {
+        const id = firstCardTarget(c);
+        return id === null
+          ? c.state
+          : stealUntilEndOfTurn(c.state, id, c.controller, c.source, { ...bonus, keywords });
+      },
+    },
+    rest: clauses.slice(3),
+  };
+}
+
 function composeEffects(
   clauses: readonly string[], name: string, where: SubjectZone | null,
 ): ReadEffect | null {
   if (clauses.length === 0) return null;
-  const parts: ReadEffect[] = [];
-  for (const clause of clauses) {
+  /*
+    **One idiom read as a group, before the clause loop** (D516) — the Act of Treason sentence:
+
+        Gain control of target creature until end of turn. Untap that creature. It gains haste
+        until end of turn.
+
+    Three printed sentences and one play, which is why it is read whole rather than clause by
+    clause. "That creature" and "it" are the *target* here, and this file's referent machinery
+    reads them as the other creature in a combat (D480) or as the card itself (`selfEffect`) —
+    both of which would be a wrong reading rather than an unread line: `it gains haste` taken as
+    `selfEffect` would hand the **spell** haste and do nothing at all.
+
+    Reading the group also means the three parts cannot drift apart. Without the untap a stolen
+    tapped creature does nothing; without the haste it is summoning-sick for its new controller
+    (CR 302.6); without the duration it never goes home. `stealUntilEndOfTurn` is the one function
+    all of that lives in, and the pool's own hand-written Act of Treason calls it too.
+  */
+  const stolen = stealPrefix(clauses);
+  const rest = stolen === null ? clauses : stolen.rest;
+  const parts: ReadEffect[] = stolen === null ? [] : [stolen.read];
+  for (const clause of rest) {
     const read = readEffect(clause, name, where);
     if (read === null) return null;
     parts.push(read);
   }
+  if (parts.length === 0) return null;
   if (parts.length === 1) return parts[0]!;
 
   const targeted = parts.filter((part) => part.targets !== undefined);
@@ -17675,6 +17756,14 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
         well; `isKeywordDeclaration` has the argument for why skipping it is safe where skipping a
         sentence is not.
       */
+      /*
+        Devoid first, and into `compiled` rather than `declared` (D516). It is a keyword
+        declaration nothing here can build a script for, so the test below would send it to
+        `declared` and report it unread — but it is not unread: `printedColors` reads it off the
+        `CardDef` and the engine plays the spell colourless. See `isDevoidLine` for why this is the
+        only member of that family a spell can print.
+      */
+      if (isDevoidLine(line)) { compiled.push(line); continue; }
       if (isKeywordDeclaration(line)) { declared.push(line); continue; }
       // And the lines that are not the spell's resolution at all (D487) — same rule, same reason.
       if (notPartOfTheResolution(line) !== null) { declared.push(line); continue; }
