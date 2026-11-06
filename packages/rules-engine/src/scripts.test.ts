@@ -28485,3 +28485,113 @@ describe('the three printed combat statics, at the table (D495)', () => {
     expect(canBlock(frogged, knight, attacker, 1 as SeatIndex)).toBeNull();
   });
 });
+
+describe('tap target, and a self-pump that shrinks, at the table (D496)', () => {
+  /*
+    Both readers through `customDeck`'s `data` — the path an imported card takes, with no script
+    and no hand-written spec behind it.
+
+      Benalish Trapper  {1}{W} 1/2  "{W}, {T}: Tap target creature."
+      Breathstealer     {2}{B} 2/2  "{B}: Breathstealer gets +1/-1 until end of turn."
+
+    The Trapper is the one that could not be faked by the compile test alone: a tap is only worth
+    reading if the creature it taps then cannot attack, and that is a fact about the combat rules
+    rather than about the script.
+  */
+  const DATA = [
+    {
+      name: 'Benalish Trapper', type_line: 'Creature — Human Soldier', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], layout: 'normal', power: '1', toughness: '2',
+      oracle_text: '{W}, {T}: Tap target creature.',
+    },
+    {
+      name: 'Breathstealer', type_line: 'Creature — Nightstalker', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: '{B}: Breathstealer gets +1/-1 until end of turn.',
+    },
+  ];
+
+  const table = (id: string, mine: readonly string[], theirs: readonly string[], step: string) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 2 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Plains', count: 26 },
+        { name: 'Swamp', count: 26 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Benalish Trapper', 'Breathstealer']);
+    const s = arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: {
+        0: [...Array(4).fill('Plains'), ...Array(3).fill('Swamp'), ...mine],
+        1: [...Array(4).fill('Plains'), ...theirs],
+      },
+      turn: 4, firstSeat: 0,
+    });
+    return advanceTo(s, step as never);
+  };
+
+  it('taps an opposing creature, and that creature then cannot attack', () => {
+    let s = table('d496-tap', ['Benalish Trapper'], ['Grizzly Bears'], 'precombat-main');
+    const trapper = find(s, 0 as SeatIndex, 'battlefield', 'Benalish Trapper');
+    const bears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    expect(s.instances[bears]!.tapped).not.toBe(true);
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: trapper, abilityIndex: 0,
+      targets: [{ kind: 'card', id: bears }],
+    } as Action);
+    s = drain(passBoth(s), 20);
+    expect(s.instances[bears]!.tapped).toBe(true);
+    // The whole point of a tapper: the thing it tapped is off the table this turn.
+    expect(canAttack(s, bears, 1 as SeatIndex)).not.toBeNull();
+    // And it paid for itself: the Trapper's own cost taps it.
+    expect(s.instances[trapper]!.tapped).toBe(true);
+  });
+
+  it('points at a creature and nothing else, at the table', () => {
+    /*
+      The filter, enforced by the engine rather than inspected on the spec. `compile.test.ts` pins
+      `friendly` and the kind; what this asks is whether the engine actually refuses a target the
+      printed phrase does not allow, which is the half a spec with a filter that admits everything
+      would pass.
+    */
+    let s = table('d496-aim', ['Benalish Trapper'], ['Grizzly Bears'], 'precombat-main');
+    s = tapAllLands(s, 0 as SeatIndex);
+    const trapper = find(s, 0 as SeatIndex, 'battlefield', 'Benalish Trapper');
+    const theirs = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const theirLand = find(s, 1 as SeatIndex, 'battlefield', 'Plains');
+    const aim = (id: string) => refusal(s, {
+      type: 'auto:activate', by: 0, card: trapper, abilityIndex: 0,
+      targets: [{ kind: 'card', id }],
+    } as Action);
+    expect(aim(theirs)).toBeNull();
+    expect(aim(theirLand)).not.toBeNull();
+  });
+
+  it('a self-pump that trades toughness for power can kill the creature paying for it', () => {
+    /*
+      The reason the sign matters rather than being cosmetic. Breathstealer is a 2/2: one
+      activation makes it a 3/1, two make it a 4/0, and a 0-toughness creature dies to a
+      state-based action (CR 704.5a). A reader that dropped the negative half would leave a 4/2.
+    */
+    let s = table('d496-shrink', ['Breathstealer'], [], 'precombat-main');
+    const beast = find(s, 0 as SeatIndex, 'battlefield', 'Breathstealer');
+    s = tapAllLands(s, 0 as SeatIndex);
+    s = apply(s, { type: 'auto:activate', by: 0, card: beast, abilityIndex: 0 } as Action);
+    s = drain(passBoth(s), 20);
+    const ch = characteristicsOf(s, s.instances[beast]!);
+    expect([ch.power, ch.toughness]).toEqual([3, 1]);
+    s = apply(s, { type: 'auto:activate', by: 0, card: beast, abilityIndex: 0 } as Action);
+    s = drain(passBoth(s), 20);
+    // 4/0, so it is gone rather than standing there as a 4/2.
+    expect(namesIn(s, 0 as SeatIndex, 'battlefield')).not.toContain('Breathstealer');
+    expect(namesIn(s, 0 as SeatIndex, 'graveyard')).toContain('Breathstealer');
+  });
+});

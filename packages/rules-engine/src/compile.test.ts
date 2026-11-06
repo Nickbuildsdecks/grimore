@@ -10372,3 +10372,142 @@ describe('the three one-line combat statics (D495)', () => {
       .toEqual({ cantBlock: false, cantBeBlocked: false, mustAttack: false });
   });
 });
+
+describe('tap target, and a self-pump that shrinks (D496)', () => {
+  /*
+    Two readers whose absence was the same thing: the sibling nobody wrote.
+
+    `Untap target creature` read and `Tap target creature` did not, though `tap` is one primitive
+    with its boolean either way round. And the self-subject pump demanded a `+` on both halves,
+    which is **exactly** the oversight D252 found in the targeted pump — "265 legal cards print the
+    second [sign] … unread because the pattern above it demanded a `+`" — one reader later.
+
+    Neither was found by reading the code. A probe asked the compiler about the top shapes in
+    D494's queue and printed which read, and the asymmetry was in the output:
+
+        READ    {G}, {T}: Untap target creature.
+        unread  {G}, {T}: Tap target creature.
+        READ    {G}: Probe Beast gets +1/+1 until end of turn.
+        unread  {G}: Probe Beast gets +1/-1 until end of turn.
+  */
+  const creature = (name: string, text: string, cost = '{1}{W}') => compileCard({
+    name, type_line: 'Creature — Human Soldier', mana_cost: cost, cmc: 2,
+    colors: ['W'], layout: 'normal', power: '1', toughness: '2', oracle_text: text,
+  });
+
+  it.each([
+    // The tapper family, each a real printing. 26 legal cards print the first line exactly.
+    ['Benalish Trapper', '{W}, {T}: Tap target creature.'],
+    ['Ballynock Trapper', '{T}: Tap target creature.'],
+    ['Akroan Mastiff', '{W}, {T}: Tap target creature.'],
+    // Mana alone, no tap in the cost: the cost and the effect are read separately.
+    ['Homarid Shaman', '{U}: Tap target green creature.'],
+    // Not only creatures. Auriok Transfixer, Ali Baba, and Icy Manipulator's own three-way phrase.
+    ['Auriok Transfixer', '{W}, {T}: Tap target artifact.'],
+    ['Ali Baba', '{R}: Tap target Wall.'],
+    ['Icy Manipulator', '{1}, {T}: Tap target artifact, creature, or land.'],
+    // The self-pump with a negative half. Breathstealer and Darklit Gargoyle's printings.
+    ['Breathstealer', '{B}: Breathstealer gets +1/-1 until end of turn.'],
+    ['Darklit Gargoyle', '{B}: Darklit Gargoyle gets +2/-1 until end of turn.'],
+    ['Cavern Crawler', '{R}: Cavern Crawler gets +1/-1 until end of turn.'],
+    // Still reads the positive it always read, which is the half a sign change can break.
+    ['Probe Beast', '{G}: Probe Beast gets +1/+1 until end of turn.'],
+    // And the shapes the regex now admits that no legal card happens to print, read for the same
+    // reason `sizeBonus` accepts them: the sign is data, not a second rule.
+    ['Probe Beast', '{G}: Probe Beast gets -1/-1 until end of turn.'],
+    ['Probe Beast', '{G}: Probe Beast gets +0/-1 until end of turn.'],
+    // "it", which this reader has always accepted beside the name.
+    ['Probe Beast', '{G}: It gets +2/-2 until end of turn.'],
+  ])('reads %s: "%s"', (name, text) => {
+    const read = creature(name as string, text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.abilities ?? []).toHaveLength(1);
+  });
+
+  it('carries the count on a counted tap, which I expected it to refuse', () => {
+    /*
+      **A refusal row I wrote and the test deleted.** I expected `Tap two target creatures` to be
+      turned down, because the untap beside it needs a *separate* `untappedMany` reader to set
+      `TargetSpec.count`, so I assumed the single-target path dropped the number. It does not:
+      `TARGET_QUANTIFIER_PREFIX` carries "two" into `parsedTargetPhrase`, the count lands on the
+      spec, and `foldCardTargets` folds the effect over every target the engine filled in. The
+      untap's extra reader predates that and is now redundant for this.
+
+      Asserted rather than deleted, because "it reads" was not the question — a count silently
+      dropped would tap one creature out of two and look like a working card (D362). Nomad Decoy's
+      printing is the real one.
+    */
+    const decoy = creature('Nomad Decoy', '{W}{W}, {T}: Tap two target creatures.', '{2}{W}');
+    expect(decoy.ok).toBe(true);
+    if (!decoy.ok) return;
+    expect(decoy.unread.map((u) => u.line)).toEqual([]);
+    expect(decoy.script?.abilities?.[0]?.targets?.[0]?.count).toBe(2);
+  });
+
+  it('aims a tap at the other side of the table, and an untap at its own', () => {
+    /*
+      The one thing that differs between the two readers, and the reason they are not one function
+      with a flag. Untapping your own land is the point of a Kiora's Follower; tapping your own
+      creature throws the card away. `TargetSpec.friendly` is where the bot reads that.
+    */
+    const tapper = creature('Benalish Trapper', '{W}, {T}: Tap target creature.');
+    expect(tapper.ok).toBe(true);
+    if (!tapper.ok) return;
+    expect(tapper.script?.abilities?.[0]?.targets?.[0]?.friendly).not.toBe(true);
+
+    const untapper = creature('Kiora Probe', '{W}, {T}: Untap target creature.');
+    expect(untapper.ok).toBe(true);
+    if (!untapper.ok) return;
+    expect(untapper.script?.abilities?.[0]?.targets?.[0]?.friendly).toBe(true);
+  });
+
+  it('does not tell the bot a tap buys nothing', () => {
+    /*
+      `untapsOnly` exists because an untap can put the board back exactly as it was found, so the
+      bot can tap and untap for ever (#124). A tap moves the board one way, so carrying the flag
+      here would be wrong rather than redundant — it would mark a real play as a no-op.
+    */
+    const tapper = creature('Benalish Trapper', '{W}, {T}: Tap target creature.');
+    expect(tapper.ok).toBe(true);
+    if (!tapper.ok) return;
+    expect(tapper.script?.abilities?.[0]?.untapsOnly).toBeUndefined();
+
+    const untapper = creature('Kiora Probe', '{W}, {T}: Untap target creature.');
+    expect(untapper.ok).toBe(true);
+    if (!untapper.ok) return;
+    expect(untapper.script?.abilities?.[0]?.untapsOnly).toBe(true);
+  });
+
+  it.each([
+    /*
+      Refused for the **phrase**, not the verb: each is a real printing whose noun this compiler
+      cannot read yet, so the tap has nothing to point at. Rows rather than silence, because these
+      are the next increment in this family and not oversights.
+    */
+    ['Avacynian Priest: `non` in front of a capitalised creature type',
+      '{1}, {T}: Tap target non-Human creature.'],
+    ['Blinkmoth Well: `noncreature artifact`', '{2}, {T}: Tap target noncreature artifact.'],
+    /*
+      Refused for the **sentence**. Amber Prison's tap carries a second clause that outlives the
+      ability, and reading only the first half would be a card that does strictly less than it
+      prints — the whole-line rule (D487).
+    */
+    ['Amber Prison: a second clause after the tap',
+      "{4}, {T}: Tap target artifact, creature, or land. That permanent doesn't untap during its controller's untap step."],
+    /*
+      And the pump refused for its own tail, which is the next shape in D494's queue rather than
+      anything about the sign: 13 cards print "Activate only once each turn."
+    */
+    ['Basking Rootwalla: an activation limit',
+      '{1}{G}: Probe Beast gets +2/+2 until end of turn. Activate only once each turn.'],
+    // +0/+0 is still refused, which `sizeBonus` has always done: a pump that changes nothing.
+    ['a pump of nothing', '{G}: Probe Beast gets +0/+0 until end of turn.'],
+  ])('leaves a line unread: %s', (_why, text) => {
+    const read = creature('Probe Beast', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+});

@@ -18,7 +18,21 @@
 import { readFileSync } from 'node:fs';
 import { compileCard } from '../lib/engine.mjs';
 import { isLegal } from '../lib/legal.mjs';
-const rows = JSON.parse(readFileSync(process.argv[2], 'utf8')).filter(isLegal);
+/*
+  `--file <path>`, or the path as a bare argument.
+
+  It took `process.argv[2]` alone, which every sibling in this directory does not: `compilable.mjs`
+  and `corpus-decks.mjs` both read `--file`. Running this with the flag the others take gave
+  `ENOENT: open '--file'` — a harness whose calling convention differs from its neighbours' is a
+  harness that gets called wrongly, so it takes both.
+*/
+const flag = process.argv.indexOf('--file');
+const file = flag === -1 ? process.argv[2] : process.argv[flag + 1];
+if (file === undefined || file.startsWith('--')) {
+  console.error('usage: node scripts/measure/one-away.mjs [--file] <corpus.json>');
+  process.exit(2);
+}
+const rows = JSON.parse(readFileSync(file, 'utf8')).filter(isLegal);
 
 /** A printed line as a comparable shape: the card's own name, numbers and costs generalised. */
 const shapeOf = (line, name) => line

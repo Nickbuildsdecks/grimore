@@ -15011,3 +15011,109 @@ Every game reached a finish, with no throw and no stall.
 40 of 40, as the three previous sweeps (34001, 34201, 34401) were. These statics are restrictions
 rather than new actions, so the thing they could have broken is a stall — a board where every
 creature must attack and none may block is one a naive implementation can wedge. It did not.
+
+## D496 — Tap target, and a self-pump that shrinks: two siblings nobody wrote
+
+Both readings were found by **asking the compiler** rather than reading it. D494's queue named its top
+shapes; a probe compiled a synthetic card for each and printed which read. The answer had the two
+findings sitting next to each other in the output:
+
+```
+READ    {G}, {T}: Untap target creature.
+unread  {G}, {T}: Tap target creature.
+READ    {G}: Probe Beast gets +1/+1 until end of turn.
+unread  {G}: Probe Beast gets +1/-1 until end of turn.
+```
+
+Neither is a missing mechanism. `tap` is one primitive with its boolean either way round, and
+`sizeBonus` has always accepted negatives — it refuses only `+0/+0`. In both cases every piece behind
+the reader worked and the reader itself asked for too little, which is exactly why neither was
+noticed: nothing failed, nothing threw, the cards simply came out unread.
+
+### Tap target
+
+`Untap target …` had two readers — a counted one and a single-target one — and `Tap target …` had
+none, while **26 legal cards print `{W}, {T}: Tap target creature.` exactly** and 24 more print it
+against an artifact, a Wall, or Icy Manipulator's three-way phrase.
+
+The pool has carried a hand-written version of this clause since #52. **Icy Manipulator** —
+`{1}, {T}: Tap target artifact, creature, or land.` — now compiles completely, and the standing
+`compiled-vs-written` check says the compiled reading **agrees with the hand-written script field for
+field**. That is the strongest confirmation available here: the ground truth was written by a person
+reading the printed text, months before the reader existed.
+
+Two things differ from the untap beside it, and both are deliberate:
+
+- **`friendly` is `false`.** Untapping your own land is the point of a Kiora's Follower, and the
+  untap's own comment says so; tapping your own creature throws the card away. Icy Manipulator's
+  hand-written filter draws the same line.
+- **No `untapsOnly`.** That flag exists because an untap can put the board back exactly as it was
+  found, so the bot can loop for ever (#124). A tap moves the board one way. Carrying the flag would
+  be *wrong* rather than redundant — it would mark a real play as a no-op.
+
+### A self-pump that shrinks
+
+The self-subject pump demanded a `+` on both halves. That is the **same oversight D252 found in the
+targeted pump**, a few hundred lines further down, where its own comment still reads: *"265 legal
+cards print the second \[sign\] … unread because the pattern above it demanded a `+`."* One reader
+later, the same character.
+
+The family it refused is `{B}: ~ gets +1/-1 until end of turn.` — Breathstealer, Darklit Gargoyle,
+Cavern Crawler: 23 legal cards trading toughness for power. Unlike D252's reader the sign changes
+nothing else, because the subject is the card itself: no `friendly` to flip, no second branch. The
+regex was the whole of it.
+
+The runtime test is the one that matters: Breathstealer is a 2/2, so two activations make it a 4/0
+and it dies to a state-based action (CR 704.5a). A reader that dropped the negative half would leave
+a 4/2 standing there.
+
+### A refusal row I wrote and the test deleted
+
+I expected `Tap two target creatures` to be turned down, reasoning that the untap needs a *separate*
+`untappedMany` reader to set `TargetSpec.count`, so the single-target path must drop the number. It
+does not: `TARGET_QUANTIFIER_PREFIX` carries "two" into `parsedTargetPhrase`, the count lands on the
+spec, and `foldCardTargets` folds the effect over every target the engine filled in. **The untap's
+extra reader predates that and is redundant for this.**
+
+The row became an assertion rather than a deletion, because "it reads" was never the question: a
+count silently dropped would tap one creature out of two and look like a working card (D362). Nomad
+Decoy's printing is now pinned at `count: 2`.
+
+### The break run
+
+Five breaks, each verified both to **apply** and to **revert** (the harness registers its revert with
+`atexit` and ends by comparing a SHA-256 against its backup — the D495 lesson):
+
+| break | compile.test | scripts.test |
+| --- | --- | --- |
+| the tap reader, deleted | 8 fail | 2 fail |
+| `friendly: true`, aiming the tap at its own side | 1 fail | pass |
+| `untapsOnly: true`, telling the bot the tap buys nothing | 1 fail | pass |
+| the boolean: untap instead of tap | pass | 1 fail |
+| the pump sign: back to a plus on both halves | 6 fail | 1 fail |
+
+`typecheck:tests` (#246) caught two things again — the fifth increment running, and `tsc -p
+tsconfig.json` was clean on both: the action field is `abilityIndex`, not `ability`, and
+`LegalActions` has no `activations` list, so a test that inspected the bot's offered aims could not
+exist in that shape. The second became a test that asks the **engine** to refuse an illegal aim
+instead, which is a better question anyway.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed rules lines read | 20,870 / 56,421 (37.0%) | **21,079 / 56,421 (37.4%)** |
+| cards with a compiled script | 10,527 | **10,673** |
+| cards with every printed line read | 6,171 | **6,316** |
+
+Two regexes, 209 lines and 145 cards finished. Still unread in this family and named as refusal rows:
+`non-Human creature` and `noncreature artifact` (a `non` in front of a capitalised type), Amber
+Prison's second clause, and `Activate only once each turn.` — 13 cards, the next shape in the queue.
+
+### The instrument's own interface
+
+`one-away.mjs` read `process.argv[2]` alone, which no sibling in `scripts/measure/` does:
+`compilable.mjs` and `corpus-decks.mjs` both take `--file`. Called the way the others are, it failed
+with `ENOENT: open '--file'`. It takes both now, with a usage line and exit 2 rather than a stack
+trace. A harness whose calling convention differs from its neighbours' is a harness that gets called
+wrongly.

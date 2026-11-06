@@ -11414,8 +11414,22 @@ function selfEffect(
     };
   }
 
+  /*
+    **The sign, for the second time.** This pattern demanded a `+` on both halves, which is the
+    exact oversight D252 found in the *targeted* pump a few hundred lines below — where "265 legal
+    cards print the second [sign] … unread because the pattern above it demanded a `+`".
+
+    Here it is the self-subject pump, and the family it was refusing is `{B}: ~ gets +1/-1 until end
+    of turn.` — 23 legal cards, the Breathstealer and Darklit Gargoyle family, each trading
+    toughness for power. `{G}: ~ gets -1/-1 until end of turn` and `+0/-1` were refused too (D496).
+
+    Unlike D252's reader the sign changes nothing else: the subject is the card itself, so there is
+    no `friendly` to flip and no second branch. `sizeBonus` already took negatives — it refuses only
+    `+0/+0` — so the regex was the whole of it, which is why this went unnoticed: every piece behind
+    it worked.
+  */
   const grown = new RegExp(
-    `^(?:(${self})|it) gets \\+(\\d+)/\\+(\\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,
+    `^(?:(${self})|it) gets ([+-]\\d+)/([+-]\\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,
     'i',
   ).exec(text);
   if (grown !== null) {
@@ -15195,6 +15209,39 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
         targets: [spec],
         abilityFlags: { untapsOnly: true },
         effect: (c) => foldCardTargets(c, (state, id) => tap(state, id, false)),
+      };
+    }
+  }
+
+  /*
+    The untap's sibling, and it was simply never written.
+
+    `tap` is the same primitive with its boolean the other way round, the pool has carried a
+    hand-written version of this exact clause since #52 — Icy Manipulator, `{1}, {T}: Tap target
+    artifact, creature, or land.` — and 22 legal cards print "Tap target creature." as their whole
+    ability, the Benalish Trapper and Blinding Mage family. A probe found the asymmetry rather than
+    a reading of the code: `{G}, {T}: Untap target creature.` read and `{G}, {T}: Tap target
+    creature.` did not (D496).
+
+    Two things differ from the untap above, and both are deliberate.
+
+    **`friendly` is `false`.** Untapping your own land is the whole point of a Kiora's Follower, and
+    the untap's own comment says so; tapping your own creature is a card thrown away, so the bot's
+    default aim is the other side of the table. Icy Manipulator's hand-written filter draws the same
+    line.
+
+    **No `untapsOnly`.** That flag exists because an untap can return the board to exactly the state
+    it was found in, so the bot can tap and untap for ever (#124). A tap cannot: it changes the
+    board in one direction. Carrying the flag here would be wrong rather than merely redundant — it
+    would tell the bot this ability buys nothing.
+  */
+  const tapClause = new RegExp(`^tap (${TARGET_QUANTIFIER_PREFIX}target .+)$`, 'i').exec(text);
+  if (tapClause !== null) {
+    const spec = targetSpecFrom(tapClause[1]!, false);
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [spec],
+        effect: (c) => foldCardTargets(c, (state, id) => tap(state, id, true)),
       };
     }
   }
