@@ -32734,3 +32734,20 @@ a mapping row with its history kept, the third such row I wrote myself.
 +23 lines and +24 cards from the reading, less the 4 lines and 3 cards the honest refusal gives back,
 and one card short on the script count for the same reason. The number that matters here is not in
 the table: **eleven real lands now produce the mana they print.**
+
+### Verified at the table
+
+Gate green (`GATE_RC=0`, no unhandled errors). Pod sweep on a fresh seed set, on the pushed commit:
+
+```
+GAMES=40 SEED0=35001
+Games: 40    finished 40
+Of the games that finished: 67.2 turns and 346 moves on average
+Every game reached a finish, with no throw and no stall.
+```
+
+40 of 40, as every sweep this stretch has been. The turn count reads higher than the 57.1 of the
+previous sweep, and that is **not** a result: it is a different seed set, which is a different 160
+decks. A pain land's damage would be expected to shorten games rather than lengthen them, so if the
+difference were real it would point the wrong way — which is exactly why it is left as a number
+about one seed set and not reported as a change.
