@@ -2184,6 +2184,20 @@ export interface CardScript {
   };
   readonly splitSecond?: true;
   /**
+   * "This spell can't be countered." (CR 701.5a, and the "can't" of CR 101.2.)
+   *
+   * Declared on the **script** and copied onto the stack object as the spell is cast, which is the
+   * only arrangement that works: `counterSpell` lives in `effects.ts`, and `effects.ts` cannot
+   * reach `scriptForCard` — `derive.ts` imports `compile.ts`, which imports `scripts.ts`, which
+   * imports `effects.ts`. So the flag travels the way `x`, `flashback` and `answering` already do,
+   * on `StackObject`, read at the moment the caster has the script in hand.
+   *
+   * It is a flag rather than a dropped line because dropping it makes the card **worse** than
+   * printed — answerable when it should not be — and a reading that is wrong in the generous
+   * direction is still wrong (D259, D362).
+   */
+  readonly cantBeCountered?: true;
+  /**
    * Vanishing N: this permanent arrives with N time counters and spends one each of your upkeeps,
    * and when the **last one is removed** it is sacrificed (CR 702.63).
    *

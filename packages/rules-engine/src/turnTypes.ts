@@ -248,6 +248,16 @@ export interface StackObject {
    * the pair broken, while the trigger waits, and it still has to resolve. See `GrantedTriggerRef`.
    */
   readonly grantedBy?: GrantedTriggerRef;
+  /**
+   * "This spell can't be countered", copied off the script as the spell was cast (CR 701.5a).
+   *
+   * On the object rather than looked up at counter time for an import reason that is worth stating
+   * once: `counterSpell` is in `effects.ts`, and the script lookup lives behind `derive.ts`, which
+   * imports the compiler, which imports `scripts.ts`, which imports `effects.ts`. Carrying the
+   * answer on the object is also the right shape — it is a fact about *this* casting, settled when
+   * the spell went on the stack.
+   */
+  readonly cantBeCountered?: true;
   readonly targets: readonly Target[];
   /**
    * The stack object this triggered ability is *about*, for a trigger that watched something

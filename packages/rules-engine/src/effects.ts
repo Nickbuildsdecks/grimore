@@ -930,6 +930,25 @@ export function manaValueOnStack(state: GameState, id: string): number {
 export function counterSpell(state: GameState, id: string): GameState {
   const object = state.stackObjects[id];
   if (object === undefined) return state;
+  /*
+    "This spell can't be countered" (CR 701.5a). A "can't" beats a "does" (CR 101.2), so the spell
+    stays on the stack and resolves — the counterspell itself still resolved and is still spent,
+    which is the whole point of the card that printed this.
+
+    Guarded here rather than at each caller because this is the single chokepoint: ward's unpaid
+    settle, the bot, and every scripted counter go through this function.
+  */
+  if (object.cantBeCountered === true) {
+    return {
+      ...state,
+      // The note channel the engine already uses for "something happened that produced no event":
+      // `reduceAutoAction` drains it onto the message of the action that provoked it, which is the
+      // counterspell's own resolution — exactly where the player is looking. No log entry is
+      // written here because nothing else in this module writes one directly.
+      replacements: [...state.replacements,
+        `${state.cardDefs[object.cardKey]?.name ?? 'that spell'} can't be countered`],
+    };
+  }
   const objects = { ...state.stackObjects };
   delete objects[id];
   const next: GameState = {

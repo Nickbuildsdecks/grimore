@@ -10041,6 +10041,29 @@ function notPartOfTheResolution(line: string): string | null {
   return null;
 }
 
+/**
+ * A printed line that is a **static about the spell itself**, rather than its resolution (D493).
+ *
+ * The fourth category beside the three `notPartOfTheResolution` names, and the difference matters:
+ * those three are lines this compiler *skips*, while this one is a line it **reads**, into a flag
+ * the engine acts on. "This spell can't be countered" is not a thing that happens when the spell
+ * resolves; it is true from the moment it is cast until it leaves the stack (CR 701.5a, CR 101.2).
+ *
+ * Returned as a script fragment so the whole-card loop merges it like a keyword and counts the line
+ * as compiled. Skipping it instead would be the easy change and the wrong one: a spell that can be
+ * countered when its text says it cannot is **worse** than printed, and a reading that errs in the
+ * generous direction is still a wrong reading (D259, D362).
+ *
+ * Only the spell's own form is read. "Spells your opponents cast can't be countered" is a
+ * *permanent's* static about other objects, which is a different reader with a different scope, and
+ * it stays unread rather than being collapsed into this flag.
+ */
+function spellStaticFromLine(line: string): Record<string, unknown> | null {
+  const text = plain(line).trim();
+  if (/^This spell can't be countered\.?$/i.test(text)) return { cantBeCountered: true };
+  return null;
+}
+
 export function isKeywordDeclaration(line: string): boolean {
   const text = plain(line).trim();
   if (text === '') return false;
@@ -16802,6 +16825,14 @@ function entersTappedFromLine(line: string, name: string): Partial<CardScript> |
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
   return keywordScriptFor(line, name)
     ?? additionalCostFromLine(line)
+    /*
+      A static about the **spell**, which a permanent card prints too: Carnage Tyrant, Thrun and
+      Blurred Mongoose all say "This spell can't be countered", and the line is about the object on
+      the stack before the permanent ever arrives. It belongs in both loops for that reason, and
+      probing real printings is what found it — the spell path alone read Abrupt Decay and left
+      every creature in the family unread (D493).
+    */
+    ?? spellStaticFromLine(line)
     // Before the statics: "enters tapped" is a fact about arriving, not a continuous effect.
     ?? entersTappedFromLine(line, name)
     ?? staticFromLine(line)
@@ -17013,7 +17044,8 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
       sentence about casting handed to the clause readers refuses the card at best and runs the
       sacrifice on resolution at worst.
     */
-    const keyword = keywordScriptFor(line, name) ?? additionalCostFromLine(line);
+    const keyword = keywordScriptFor(line, name) ?? additionalCostFromLine(line)
+      ?? spellStaticFromLine(line);
     if (keyword === null) {
       /*
         A keyword nothing here can build is still not part of the resolution. Putting it there is

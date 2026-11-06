@@ -15865,3 +15865,106 @@ should have caught it happen to refuse for *other* reasons — Masked Gorgon's b
 that line, and a bare "has banding" ends with an empty result either way. The row that discriminates
 is `gets +1/+1 and has banding`: a readable part beside an unreadable one, which is the only shape
 leniency actually changes. Added, and the break now fails.
+
+## D493 — "This spell can't be countered", as a flag the engine acts on
+
+**Built two days ago, held back, and shipped now.** The work was finished then: the flag, the stack
+object, `counterSpell`'s guard, four compile rows and two runtime tests. What blocked it was the
+standing mechanic-coverage check — `deck coverage > has a card behind every mechanic it declares`
+requires a card in the thirteen built-in decks for every `script` field, and no pool card is
+uncounterable. The note left at the time said the increment needed a hand-written pool card and a
+deck slot.
+
+**D501 is what unblocked it, and the answer was already in the file.** D442's rule allows an
+exemption for a mechanic the *compiler* reads that the hand-written pool does not print, provided
+the entry names its evidence: the corpus count, and the runtime test that drives a real printing
+through `customDeck`. D501 used it for three keywords an hour ago. This increment has both, so it
+takes the same road — and the pool's decks, which #96 and #231 each moved by a single slot, are left
+alone.
+
+### Why it is a flag and not a skipped line
+
+Skipping the line is a two-character change and the wrong one. A spell that can be countered when
+its text says it cannot is **worse than printed**, and a reading that errs in the generous direction
+is still a wrong reading (D259, D362). Every other member of the family this compiler skips — cost
+modification, a graveyard trigger, an activated ability (D487) — is skipped because running it would
+change the *resolution*; this one changes what happens to the spell **on the stack**, which is a
+thing the engine can actually enforce.
+
+So it is read into `CardScript.cantBeCountered`, copied onto the `StackObject` as the spell is cast,
+and honoured by `counterSpell`.
+
+### Where it lives, and the import cycle that decided it
+
+`counterSpell` is in `effects.ts`, and the script lookup is `scriptForCard` in `derive.ts`. Effects
+cannot import derive: `derive → compile → scripts → effects`. So the flag travels on the stack
+object, the way `x`, `flashback`, `answering` and `castNumber` already do — settled at the moment the
+caster has the script in hand, which is also the honest shape, because it is a fact about *this
+casting*. The face-down cast deliberately does not copy it: a face-down spell has no text at all
+(CR 707.2).
+
+`counterSpell` is the single chokepoint: ward's unpaid settle, the bot, and every scripted counter go
+through it, so one guard covers them all. A "can't" beats a "does" (CR 101.2), so the spell stays on
+the stack and resolves — and the counterspell is still spent, which is the whole point of the card
+that printed this. The guard writes to `state.replacements`, the channel the engine already drains
+onto the provoking action's message, rather than a log entry, because nothing else in `effects.ts`
+logs directly.
+
+### Probing real printings found a gap an assumption would have shipped
+
+The first draft wired it into the **spell** line loop only, and the probe showed exactly half the
+family reading:
+
+| | |
+| --- | --- |
+| Abrupt Decay, Dovin's Veto | read |
+| Carnage Tyrant, Thrun, Blurred Mongoose, Great Sable Stag | **still unread** |
+
+A permanent card goes through `lineScriptFor`, a different loop — and the line is about the spell on
+the stack *before* the permanent ever arrives, so it belongs in both. D259's rule ("probe the real
+printings, never work from memory") is what caught it; the four compile rows for a creature exist so
+it cannot regress.
+
+### What stays unread, on purpose
+
+A permanent's static about **other** objects — "Spells your opponents cast can't be countered",
+"Creature spells you cast can't be countered" — is a different reader with a different scope.
+Collapsing it into this flag would be wrong in both directions at once: the permanent itself would
+become uncounterable, and the spells it exists to protect would not be. Also refused: "can't be
+countered **by spells or abilities your opponents control**", which is a narrower "can't" than the
+flag can express. 35 legal lines in that group, against 86 that print the plain sentence.
+
+### The break run, and a lesson about break runs
+
+Six breaks on today's tree, each verified to apply and to revert against a SHA-256 of the backup:
+
+| break | compile.test | scripts.test |
+| --- | --- | --- |
+| `counterSpell` ignores the flag | pass | 1 fail |
+| the flag is never copied onto the stack object | pass | 1 fail |
+| the line is not read on a permanent card | 2 fail | 1 fail |
+| the line is not read on an instant or sorcery | 3 fail | pass |
+| the reader also claims a permanent's static about other spells | 3 fail | pass |
+| the note is never written, so nothing says why it resolved | pass | 1 fail |
+
+The original run, two days ago, is the reason this file now checks that every break *applied*: one
+break looked uncaught and the real explanation was that its anchor did not match, so **nothing was
+broken at all**. *A break that silently fails to apply is indistinguishable from a test that does
+not discriminate.* That near-miss is why the harness in use since D495 registers its revert with
+`atexit` and compares a SHA-256 before it exits.
+
+### What it bought
+
+| | before | after |
+| --- | --- | --- |
+| printed rules lines read | 21,392 / 56,421 (37.9%) | **21,494 / 56,421 (38.1%)** |
+| cards with a compiled script | 10,712 | **10,789** |
+| cards with every printed line read | 6,512 | **6,539** |
+
+**+102 lines and +77 cards with a script**, against a family of 86 printed lines — because an
+instant or sorcery needs *every* line read or declared before it compiles at all, so reading one
+static unlocks the whole card's lines. Abrupt Decay is the card that showed it: a resolution line
+that read perfectly, on a card that did not compile.
+
+Measured two days ago as +77 cards as well, on a tree five increments younger. The same number from
+the same family, re-measured rather than carried over — which is the point of re-measuring.

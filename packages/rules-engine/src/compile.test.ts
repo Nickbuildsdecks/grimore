@@ -11368,3 +11368,60 @@ describe('the threshold condition: a static that is on while your graveyard is b
     expect(read.script?.triggers ?? []).toEqual([]);
   });
 });
+
+
+describe('"This spell can\'t be countered" (D493)', () => {
+  const of = (type_line: string, text: string, mana_cost = '{1}{G}') => compileCard({
+    name: 'Asking Thing', type_line, mana_cost, cmc: 2, colors: ['G'], layout: 'normal',
+    oracle_text: text, ...(type_line.startsWith('Creature') ? { power: '4', toughness: '4' } : {}),
+  });
+
+  it.each([
+    // The spell path: an instant or sorcery whose only other line is its resolution.
+    ['Instant', 'This spell can\'t be countered.\nDestroy target creature.'],
+    ['Sorcery', 'This spell can\'t be countered.\nDraw a card.'],
+    // The permanent path, which is a SEPARATE line loop and was missed by the first draft.
+    // Carnage Tyrant, Thrun and Blurred Mongoose all print it on a creature.
+    ['Creature — Dinosaur', 'This spell can\'t be countered.\nTrample'],
+    ['Creature — Troll Shaman', 'This spell can\'t be countered.'],
+  ])('reads it on a %s', (typeLine, text) => {
+    const read = of(typeLine as string, text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.cantBeCountered).toBe(true);
+  });
+
+  it('is what makes the rest of the card readable at all', () => {
+    /*
+      Abrupt Decay's shape, and the reason this was worth doing: the resolution line reads
+      perfectly on its own, and the card did not compile, because a spell needs **every** printed
+      line read or declared. One unread static cost the whole card.
+    */
+    const whole = of('Instant', 'This spell can\'t be countered.\n'
+      + 'Destroy target nonland permanent with mana value 3 or less.');
+    expect(whole.ok).toBe(true);
+    if (!whole.ok) return;
+    expect(whole.unread.map((u) => u.line)).toEqual([]);
+    expect(whole.script?.targets?.[0]?.description)
+      .toBe('target nonland permanent with mana value 3 or less');
+  });
+
+  it.each([
+    /*
+      A permanent's static about **other** objects is a different reader with a different scope,
+      and collapsing it into this flag would make the card wrong in both directions at once: the
+      permanent itself would become uncounterable, and the spells it is supposed to protect would
+      not be. Left unread rather than guessed.
+    */
+    ['Spells your opponents cast can\'t be countered.', 'a permanent protecting other spells'],
+    ['Creature spells you cast can\'t be countered.', 'the same, scoped to a type'],
+    ['This spell can\'t be countered by spells or abilities your opponents control.',
+      'a narrower "can\'t" than the flag expresses'],
+  ])('leaves "%s" unread: %s', (text) => {
+    const read = of('Creature — Troll Shaman', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+});

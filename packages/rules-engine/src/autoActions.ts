@@ -843,6 +843,15 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // read now rather than when the trigger resolves. See `StackObject.castNumber`.
     castNumber: state.spellsCastThisTurn,
     ...(action.x === undefined ? {} : { x: action.x }),
+    /*
+      "This spell can't be countered", settled now rather than when something tries to counter it.
+      `counterSpell` is in `effects.ts` and cannot reach `scriptForCard` without an import cycle,
+      and this is the right moment anyway: it is a fact about this casting, and the caster has the
+      script in hand. The face-down cast below deliberately does not copy it — a face-down spell has
+      no text at all (CR 707.2).
+    */
+    ...(scriptForCard(state.cardDefs[faceKey ?? inst.defKey])?.cantBeCountered === true
+      ? { cantBeCountered: true as const } : {}),
     ...(action.division === undefined ? {} : { division: [...action.division] }),
     ...(modes === undefined ? {} : { modes: [...modes] }),
     ...(kicked ? { kicked: true } : {}),

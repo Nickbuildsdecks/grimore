@@ -7450,10 +7450,24 @@ describe('deck coverage', () => {
       - `keyword horsemanship`: 25 legal corpus lines. Driven at runtime by "horsemanship restricts
         only one direction, and the asymmetry is the assertion", on printed Barbarian General —
         including the block it *may* make, which is what a symmetric rules table would have refused.
+
+      **And one `script` field, which is what finally unblocked D493.** That increment was built in
+      full and then held back for two days for exactly this check: it declares a flag no pool card
+      carries, and the pool's thirteen decks are measured. Adding an uncounterable creature to one
+      of them to satisfy a test is the thing D442's rule above says not to do, and D501 is the
+      precedent that says what to do instead.
+
+      - `script cantBeCountered`: **86 legal corpus lines** print exactly "This spell can't be
+        countered" (Abrupt Decay, Carnage Tyrant, Thrun, Blurred Mongoose and 82 more). Driven at
+        runtime by "resolves through a Counterspell, and says so where the player is looking", which
+        casts a printed uncounterable creature into a real Counterspell and checks it reaches the
+        battlefield — with its own control in the next test, an ordinary creature from the same deck
+        that *is* countered, because this increment edits `counterSpell` itself.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
       'keyword fear', 'keyword shadow', 'keyword horsemanship',
+      'script cantBeCountered',
     ]);
 
     const declared = [
@@ -29361,5 +29375,88 @@ describe('threshold at the table: a static that comes and goes with the graveyar
     expect(ids(s, 0 as SeatIndex, 'graveyard')).toHaveLength(0);
     expect(ids(s, 1 as SeatIndex, 'graveyard')).toHaveLength(8);
     expect(sizeOf(s, 'Krosan Beast')).toBe('1/1');
+  });
+});
+
+
+describe('a spell that can\'t be countered, at the table (D493)', () => {
+  /*
+    The flag only matters if `counterSpell` honours it, and that is a different claim from "the
+    compiler read the line". This drives a real Counterspell into a spell carrying the static and
+    checks the spell **resolves anyway** — which is the only assertion that would fail if the flag
+    were read, stored, and then ignored.
+  */
+  const UNCOUNTERABLE = {
+    name: 'Probe Tyrant', type_line: 'Creature — Dinosaur', mana_cost: '{2}{G}{G}', cmc: 4,
+    colors: ['G'], layout: 'normal', power: '4', toughness: '4',
+    oracle_text: 'This spell can\'t be countered.',
+  };
+
+  const table = (id: string) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        { name: 'Probe Tyrant', count: 2 },
+        { name: 'Grizzly Bears', count: 2 },
+        { name: 'Counterspell', count: 4 },
+        { name: 'Island', count: 26 },
+        { name: 'Forest', count: 26 },
+      ],
+      data: [UNCOUNTERABLE] as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData).toContain('Probe Tyrant');
+    const s = arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: {
+        0: [...Array(4).fill('Island')],
+        1: [...Array(4).fill('Forest')],
+      },
+      hands: { 0: ['Counterspell'], 1: ['Probe Tyrant', 'Grizzly Bears'] },
+      turn: 4,
+      firstSeat: 1,
+    });
+    return advanceTo(s, 'precombat-main');
+  };
+
+  /** Seat 1 casts `spell`, passes, seat 0 answers it with Counterspell, both pass. */
+  const answered = (s: GameState, spell: string) => {
+    let next = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1 as SeatIndex, 'hand', spell),
+    } as Action);
+    const id = next.stackOrder[next.stackOrder.length - 1]!;
+    next = apply(next, { type: 'auto:pass', by: 1 } as Action);
+    next = apply(next, {
+      type: 'auto:cast', by: 0, card: find(next, 0 as SeatIndex, 'hand', 'Counterspell'),
+      targets: [{ kind: 'card', id }],
+    } as Action);
+    expect(next.stackOrder).toHaveLength(2);
+    return { state: drain(passBoth(next), 40), id };
+  };
+
+  it('resolves through a Counterspell, and says so where the player is looking', () => {
+    const { state, id } = answered(table('d493-uncounterable'), 'Probe Tyrant');
+    // It is on the battlefield, not in the graveyard.
+    expect(state.instances[id]!.zone).toBe('battlefield');
+    expect(namesIn(state, 1 as SeatIndex, 'battlefield')).toContain('Probe Tyrant');
+    expect(state.stackOrder).toEqual([]);
+    /*
+      And the note reaches the log. `replacements` is drained onto the provoking action's message
+      (D489 learned that the hard way), so the assertion is on the log rather than on the field.
+    */
+    expect(state.log.map((e) => e.message).join(' | ')).toContain("can't be countered");
+  });
+
+  it('and an ordinary creature spell in the same deck is still countered', () => {
+    /*
+      The control. Without it the test above passes for an engine whose Counterspell is simply
+      broken — which is a failure mode worth ruling out explicitly, because this increment edits
+      `counterSpell` itself.
+    */
+    const { state, id } = answered(table('d493-counterable'), 'Grizzly Bears');
+    expect(state.instances[id]!.zone).toBe('graveyard');
+    expect(namesIn(state, 1 as SeatIndex, 'battlefield')).not.toContain('Grizzly Bears');
   });
 });
