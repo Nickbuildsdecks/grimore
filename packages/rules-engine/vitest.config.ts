@@ -59,6 +59,14 @@ export default defineConfig({
       the reporter inside its RPC timeout, and the fix costs a few microseconds a game. The four
       mitigations above are left written down because they are the four things not to try again.
 
+      **It came back once, and the same fix closed it again.** D495 added 35 tests to two other
+      files in this package and the gate failed with `onTaskUpdate` beside 2637 passing tests —
+      twice in a row, the second time with nothing else running on the machine, which is what ruled
+      out the box a second time. Seven more test bodies had grown past the point of mattering, the
+      longest at 44 seconds without a yield. So the set of tests needing `breathe` grows with the
+      suite: when this error returns, read the durations in the failing run and give the yield to
+      the long body that lacks one.
+
       The cap stays because it is marginally *faster* and leaves the main thread a core, not
       because it was shown to fix anything.
     */

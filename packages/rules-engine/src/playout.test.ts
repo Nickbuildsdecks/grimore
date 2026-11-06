@@ -125,6 +125,16 @@ const BREADTH = { lookahead: false } as const;
  * mitigations, none of which worked — and names the yield as the remaining candidate. So: awaited
  * once per seed in the handful of tests long enough to matter, which costs a few microseconds a
  * game and gives the worker somewhere to answer from.
+ *
+ * **"Long enough to matter" is not a fixed list, and that is the maintenance cost.** It started at
+ * five tests. The suite then grew by 35 tests in two other files and the error came back — on
+ * *every* run, twice in a row with nothing else on the machine, which is what distinguished it from
+ * the flake it resembles. The longest body without a yield was 44 seconds of synchronous
+ * game-playing ("answers the questions cards ask mid-resolution"), and six others were over five
+ * seconds. All seven have it now, which is **twelve** call sites (D495). When this error reappears,
+ * the thing to do is read the per-test durations in the run that failed and give the yield to
+ * whichever long body lacks one — not to retry, and not to read a full set of passing tests as a
+ * pass.
  */
 const breathe = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve); });
 
@@ -309,7 +319,7 @@ describe('a whole automated game', () => {
     expect(tokens + reanimated).toBeGreaterThan(0);
   });
 
-  it('fires death triggers in real games, whatever did the killing', () => {
+  it('fires death triggers in real games, whatever did the killing', async () => {
     // The bug this guards was silent for the whole life of the engine: "dies" meant "noticed by
     // state-based actions", so lethal damage triggered and a destroy spell did not. A playout
     // test is the right place for it because the question is not whether one card works — it is
@@ -351,6 +361,8 @@ describe('a whole automated game', () => {
         expect(s.entered).toEqual([]);
       }
       expect(s.finished).toBe(true);
+      // For the runner, not the game. See `breathe`.
+      await breathe();
     }
     expect(deaths).toBeGreaterThan(0);
     expect(spirits).toBe(deaths);
@@ -481,7 +493,7 @@ describe('a whole automated game', () => {
     expect(aimed).toBeGreaterThanOrEqual(0);
   });
 
-  it('casts spells with {X} in the cost, and for more than nothing', () => {
+  it('casts spells with {X} in the cost, and for more than nothing', async () => {
     // An X spell is the one card shape that can be cast *wrongly* while every other test passes:
     // X=0 is a legal cast, so a bot that never chose an X would cast Fireball for no damage and
     // Mind Spring for no cards, and the game would still finish. So what is watched is the value
@@ -502,6 +514,8 @@ describe('a whole automated game', () => {
         if (s.stateVersion === before) break;
       }
       expect(s.finished).toBe(true);
+      // For the runner, not the game. See `breathe`.
+      await breathe();
     }
     expect(sizes.length).toBeGreaterThan(0);
     // Greater than one, not greater than zero: X=0 is a legal cast, so a bot that always chose
@@ -543,7 +557,7 @@ describe('a whole automated game', () => {
     expect(taken.size).toBeGreaterThan(1);
   });
 
-  it('answers the questions cards ask mid-resolution, and answers them the right way round', () => {
+  it('answers the questions cards ask mid-resolution, and answers them the right way round', async () => {
     // Every one of these cards could sit in a deck and never be drawn, cast or answered while
     // every other test in this file passed, so the behaviour is asserted from real games: the
     // questions get asked, they get answered, and the bot answers them in the direction that
@@ -600,6 +614,8 @@ describe('a whole automated game', () => {
       // A resolution that stopped to ask is never left outstanding.
       expect(s.pendingDecision).toBeNull();
       games += 1;
+      // For the runner, not the game. See `breathe`.
+      await breathe();
     }
     expect(games).toBe(24);
     expect(asked.filter((p) => /Search your library/.test(p)).length).toBeGreaterThan(0);
@@ -1114,7 +1130,7 @@ describe('what looking a move ahead buys', () => {
 });
 
 describe('a four-player Commander pod', () => {
-  it('plays four seats down to one survivor', () => {
+  it('plays four seats down to one survivor', async () => {
     // The format this project is built around, and nobody had sat at one: four seats, forty life,
     // a command zone, and a turn order that has to skip the seats that are out.
     for (let seed = 1; seed <= 6; seed++) {
@@ -1125,6 +1141,8 @@ describe('a four-player Commander pod', () => {
       expect(result.state.seats.filter((s) => s.eliminated).length).toBe(3);
       expect(result.turns).toBeGreaterThan(5);
       expect(result.turns).toBeLessThan(200);
+      // For the runner, not the game. See `breathe`.
+      await breathe();
     }
   });
 
@@ -1177,7 +1195,7 @@ describe('a four-player Commander pod', () => {
     });
   }
 
-  it('casts commanders, taxes them, and tracks the damage they deal', () => {
+  it('casts commanders, taxes them, and tracks the damage they deal', async () => {
     // Every one of these was impossible a commit ago: `legalActions` only looked at the hand, so
     // the engine never offered a commander at all, the tax was a number only a human could move,
     // and combat never recorded commander damage. In a Commander-first product.
@@ -1208,6 +1226,8 @@ describe('a four-player Commander pod', () => {
         }
       }
       expect(s.finished).toBe(true);
+      // For the runner, not the game. See `breathe`.
+      await breathe();
     }
     expect(casts).toBeGreaterThan(0);
     // Cast more than once, which only happens if it came back and the tax went up.
@@ -1217,11 +1237,13 @@ describe('a four-player Commander pod', () => {
     expect(maxCommanderDamage).toBeGreaterThan(0);
   });
 
-  it('keeps a four-seat view inside the realtime payload budget', () => {
+  it('keeps a four-seat view inside the realtime payload budget', async () => {
     // Four seats is three opponents' boards and graveyards, which is the largest a view gets.
     let worst = 0;
     let s = pod(31337);
     for (let i = 0; i < 20000 && !s.finished; i++) {
+      // Once a turn or so, for the runner's sake rather than the game's. See `breathe`.
+      if (i % 400 === 0) await breathe();
       const seat = seatToAct(s);
       if (seat === null) break;
       const before = s.stateVersion;
@@ -2597,7 +2619,7 @@ describe('the opponent cannot read your hand', () => {
     return { ...state, instances };
   };
 
-  it('chooses the same move when every card it cannot see is a different card', () => {
+  it('chooses the same move when every card it cannot see is a different card', async () => {
     /*
       Every deck at least once, which three fixed pairings did not manage.
 
@@ -2664,6 +2686,8 @@ describe('the opponent cannot read your hand', () => {
         s = applyAction(s, chosen, HOST);
         if (s.stateVersion === before) break;
       }
+      // For the runner, not the game. See `breathe`.
+      await breathe();
     }
 
     expect(differences).toEqual([]);

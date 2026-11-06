@@ -32272,3 +32272,186 @@ exactly what D338 says is not enough.
 Fixed by routing the instrument through `../lib/engine.mjs`, with the reason in its own docblock:
 this harness reports *which shape to build next*, so a number about the previous build would send the
 next increment at the wrong family.
+
+## D495 — The three one-line combat statics, which the engine already knew and could not see
+
+D494's queue put this at the top of the list: four one-line combat statics worth 105 cards. The
+reason they were unread is the sharpest kind there is — **the engine already implemented all of it.**
+`Characteristics` has had `cantBlock`, `cantBeBlocked` and `mustAttack` since #76, the pool's
+hand-written cards set them through `statics`, `canBlock` and `forcedAttackers` enforce them, and a
+dozen tests cover the rules. What was missing was the only path an **imported** card has: its
+printed text. `characteristicsOf` initialised the three to `false` and set them from `state.effects`
+alone, while printed landwalk and printed protection are seeded from oracle text a few lines above,
+because they are *base* characteristics that "loses all abilities" must clear (CR 613.1f).
+
+So Aesthir Glider blocked, Aether Figment was blocked and Akoum Firebird sat at home — each in flat
+contradiction of its own card, on a board where the rule it needed was running for somebody else.
+
+### A scope cut found by reading, before writing anything
+
+The queue's 105 cards are **four** shapes, not three:
+
+```
+  88  ~ can't block.                                  [Aesthir Glider]
+  59  ~ attacks each combat if able.                  [Akoum Firebird]
+  58  ~ can't be blocked.                             [Aether Figment]
+  28  ~ can block only creatures with flying.         [Ascending Aven]
+```
+
+`Characteristics` has a field for the first three and **none** for the fourth. "Can block only
+creatures with flying" is not `cantBlock` narrowed, it is a new restriction with its own predicate
+inside `canBlock`, and reading it onto any existing field would be a wrong reading rather than an
+unread line (D362). It is 22 cards and a separate increment; a refusal row in `compile.test.ts` names
+it so the next reader knows it was seen and left.
+
+Scope: the **three** the engine already models — 83 cards by the queue, 205 printed lines.
+
+### The reading, and the one thing about it that is not obvious
+
+`printedCombatLine` runs on the **whole line, before the comma split**, and that is not a stylistic
+choice. The subject of these lines is the card's own name, and **11 of the 192 cards have a comma in
+theirs**: "Etrata, the Silencer can't be blocked." comma-split is "Etrata" and "the Silencer can't be
+blocked", and neither half is anything at all. The other three printed-ability readers (keywords,
+landwalk, protection) are comma-part readers because their lines are comma-separated *lists*; this
+one is a sentence.
+
+The subject must be the card itself, in the three spellings printed text uses:
+
+- its **full name** — "Aesthir Glider can't block."
+- its **short name** — "Bilbo can't be blocked.", on *Bilbo, Luckwearer*. 9 of the 192 print only
+  this, and the corpus confirmed the convention rather than my memory of it: *Ares, God of War*,
+  *Hulk, Always Angry* and *Hulk, Brutal Brawler* all use the short name in **every** line they
+  print, not just this one.
+- **"this creature"** — the 2024 retemplate's second reference. 9 cards, plus one *"This land can't
+  be blocked"* on a land that becomes a creature.
+
+`shortName` already existed, in `scripts.ts`, where `selfRef` builds the engine's one self-reference
+pattern out of it. It **moved to `characteristics.ts`** rather than being copied, because the import
+between the two modules only runs one way — `scripts.ts` imports `characteristics.ts`, never the
+reverse — and the vocabulary of "this ..." words moved with it as `SELF_TYPE_WORDS`, which `selfRef`
+is now built from. Two lists would have been two places to forget a word; D433's thousands-separator
+rule (*70,000 Light-Years from Home* must not offer "70" as a name for itself) now has exactly one
+home.
+
+Everything else is refused, and the refusals are the reading:
+
+| printed | why it is refused |
+| --- | --- |
+| `Enchanted creature can't block.` | an Aura **granting** the restriction to its host |
+| `Equipped creature can't be blocked.` | the same, for Equipment |
+| `Creatures can't block.` | a one-sided Fog |
+| `Blue creatures you control can't be blocked.` | a team-wide static |
+| `~ can't be blocked except by creatures with flying.` | the predicate is not one of the three |
+| `~ gets +2/+2 and can't block.` | a pump welded on — read the clause alone and the creature gets the restriction without the compensation printed beside it |
+| `Threshold — As long as ..., ~ gets +2/+2 and can't block.` | behind a condition |
+| `Wraith Form — ~ can't be blocked.` | an ability word prefix, unpeeled |
+
+Handing an Aura the restriction it only grants is the exact mistake the whole-line rule exists to
+prevent (D487): strictly worse for the player than leaving the line to a human.
+
+### The break run, and a break that applied and still proved nothing
+
+Five breaks, each **verified to have changed the file** before the tests ran — D493's lesson, where a
+`sed` anchor silently failed to match and the tests "passed" against unbroken code.
+
+The table is in the addendum below, because the first run of it had a defect of its own.
+
+**The first break was wrong twice before it discriminated.** My first version made the subject
+optional — accept any subject at all — and **every test still passed.** The reason is worth keeping:
+for "Enchanted creature can't block.", the *predicate* lookup refuses it anyway, because the leftover
+clause is "enchanted creature can't block" and that is not one of the three phrases. The subject check
+is not what refuses an Aura's line; the predicate is. What the subject check actually buys is refusing
+a **loose prefix strip** — a reader that threw away everything before the first "can't" would read
+"Enchanted creature can't block" as a restriction on the Aura. Rewritten that way the break fails 12
+rows.
+
+Which sharpens D493's rule rather than repeating it: a break that *applies* can still be a no-op,
+and a passing break run is only evidence once each break has been shown to move a specific row for a
+reason you can state.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed rules lines read | 20,665 / 56,421 (36.6%) | **20,870 / 56,421 (37.0%)** |
+| cards with every printed line read | 6,085 | **6,171** |
+| of those, needing no script at all | (not taken) | **1,077** |
+| cards with a compiled script | 10,527 | 10,527 |
+
+The last row does not move, and it should not: these lines are counted **compiled and emit nothing**,
+exactly as a printed keyword is, so a card whose only line is one of them needs no script at all —
+which is what the fourth row counts. 86 cards finished rather than the queue's 83, the difference
+being short-name cards with other lines that were already read.
+
+### Addendum: the gate caught a break that never got reverted
+
+The gate failed with 3 of the 5 runtime tests red — the `cantBlock` and `mustAttack` ones, with
+`cantBeBlocked` passing — on a tree where those same tests had passed in isolation an hour earlier.
+
+The cause was not in the engine. I had run the break harness as
+`python3 break495.py 2>&1 | head -8`. `head` closes the pipe after eight lines, Python raised
+`BrokenPipeError` on its next `print`, and the process died **mid-run, with break 4 applied** — the
+one that removes the seeding. The revert never ran. So the candidate tree counted all 209 lines
+compiled and set none of the three fields: the compile half green, the table half broken, and the
+coverage numbers unchanged because they do not depend on the seeding.
+
+This is D493's lesson arriving from the other side. There, a break silently failed to **apply**, so a
+passing run proved nothing. Here, a break silently failed to **revert**, so a passing run was measured
+against code that was still broken. Both read identically from the outside: tests that pass.
+
+Three things changed as a result:
+
+- The harness registers its revert with `atexit` and ends by comparing a SHA-256 of the file against
+  its backup, printing the verdict. It now reads `final sha matches backup: True`. A stateful script
+  does not get piped into `head` again.
+- **One assertion was too weak, and break 4 is what exposed it.** The Inkfathom Infiltrator test
+  pointed their Infiltrator at mine, which is refused by *either* half of "can't block and can't be
+  blocked" — so it passed on the evasion alone while `cantBlock` was dead. It reads against an
+  ordinary Grizzly Bears now, and the seeding break fails **4** tests rather than 3.
+- The coverage figures were re-measured after the restore: **identical** — 20,870 lines (37.0%), 6,171
+  cards fully read, 1,077 needing no script. They are a function of `compileCard` alone, and the
+  seeding is not on that path. Expected, and now checked rather than assumed (D494).
+
+The re-run break table, with every break verified both to apply and to revert:
+
+| break | compile.test | scripts.test |
+| --- | --- | --- |
+| strip everything before the predicate instead of naming the card | 12 fail | 1 fail |
+| keep only the first clause, dropping the `and` | 1 fail | 1 fail |
+| full name and "this X" only, no short name | 3 fail | pass |
+| count the line compiled but seed nothing | pass | 4 fail |
+| don't strip the trailing period | 17 fail | 5 fail |
+
+### Addendum: the gate then failed twice on a runner error, and it was not a flake
+
+With the seeding restored, the gate failed again — this time with **2637 tests passing, 15 of 15
+files green, and one unhandled error**:
+
+```
+Error: [vitest-worker]: Timeout calling "onTaskUpdate"
+Test Files  15 passed (15)
+     Tests  2637 passed (2637)
+    Errors  1 error
+```
+
+vitest exits non-zero on a run error, so the gate is red on a suite where nothing failed. It
+reproduced **identically on a second run with nothing else on the machine**, which is what separates
+this from the flake it looks like.
+
+It is not a new problem and it is not mine, but the trigger was. `vitest.config.ts` carries the
+measurement that chased this down once already: four mitigations that did not work (a worker cap, the
+`dot` reporter, `--concurrency=3`, `singleFork`), and then the cause — **a worker that spends ten
+seconds inside one synchronous test body cannot answer the reporter's RPC inside its timeout.** The
+fix was `breathe()`, one `await` that defers to the event loop once per game, applied to "the five
+tests long enough to matter".
+
+Adding 35 tests to this package is what brought it back, and the durations say why: seven more test
+bodies had grown past the point of mattering, the longest being **44 seconds** of uninterrupted
+game-playing in "answers the questions cards ask mid-resolution". `breathe` is now in twelve places
+rather than five — once per seed in six of those tests, and every 400 moves in the one that is a
+single 20,000-move pod. The gate is green: `GATE_RC=0`, no unhandled errors.
+
+The part worth keeping is in both files' comments now: **"long enough to matter" is not a fixed
+list.** It grows with the suite, so the response when this error reappears is to read the per-test
+durations in the failing run and give the yield to whichever long body lacks one — not to re-run, and
+not to read 2637 passing tests as a pass.

@@ -16,7 +16,7 @@ import { describe, it, expect } from 'vitest';
 import {
   KEYWORDS,
   SOLDIER_TOKEN, STARTER_DECKS, TOKEN_DEFS, addCounters, botAction, canAttack, canBlock,
-  destroy,
+  destroy, forcedAttackers,
   characteristicsOf, customDeck,
   hasType,
   lastLogEntry,
@@ -7275,12 +7275,16 @@ describe('what a card says reaches the effect', () => {
  *
  * A line it refuses still means the card needs a script, so "Flying\nWhenever this attacks, draw a
  * card" is not vanilla.
+ *
+ * The card's **name** goes with the text for the same reason: D495's printed combat statics name
+ * their own subject ("Aesthir Glider can't block"), so the predicate cannot answer without it, and
+ * passing only the text here would have reintroduced exactly the two-spellings defect above.
  */
-const keywordsOnly = (card: { readonly oracleText?: string }): boolean => {
+const keywordsOnly = (card: { readonly name?: string; readonly oracleText?: string }): boolean => {
   const text = (card.oracleText ?? '').trim();
   if (text === '') return true;
   return text.split('\n').map((line) => line.trim()).filter(Boolean)
-    .every((line) => isPrintedAbilityLine(line));
+    .every((line) => isPrintedAbilityLine(line, card.name));
 };
 
 describe('deck coverage', () => {
@@ -28351,5 +28355,133 @@ describe('a mana-value clause on a target phrase, at the table (D492)', () => {
       type: 'auto:cast', by: 0, card: find(s, 0 as SeatIndex, 'hand', 'Probe Stroke'),
       targets: [{ kind: 'card', id: onStack }],
     } as Action)).not.toBeNull();
+  });
+});
+
+describe('the three printed combat statics, at the table (D495)', () => {
+  /*
+    Four **real** cards, each chosen because its whole printed text is the one line under test, so
+    nothing else about it can account for what the engine does (D259). All four arrive through
+    `customDeck`'s `data`, which is the path an imported card takes: no script, no `statics` entry,
+    nothing but the text.
+
+      Craven Knight          {1}{B} 2/2  "Craven Knight can't block."
+      Phantom Warrior     {1}{U}{U} 2/2  "Phantom Warrior can't be blocked."
+      Crazed Goblin             {R} 1/1  "Crazed Goblin attacks each combat if able."
+      Inkfathom Infiltrator {U/B}{U/B} 2/1  "… can't block and can't be blocked."
+
+    The Infiltrator is the one that cannot be faked: it is the only card here whose single line
+    carries **two** statics, so a reader that stopped at the first "and" would give it one of them.
+  */
+  const DATA = [
+    {
+      name: 'Craven Knight', type_line: 'Creature — Human Knight', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: "Craven Knight can't block.",
+    },
+    {
+      name: 'Phantom Warrior', type_line: 'Creature — Illusion Warrior', mana_cost: '{1}{U}{U}',
+      cmc: 3, colors: ['U'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: "Phantom Warrior can't be blocked.",
+    },
+    {
+      name: 'Crazed Goblin', type_line: 'Creature — Goblin Warrior', mana_cost: '{R}', cmc: 1,
+      colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Crazed Goblin attacks each combat if able.',
+    },
+    {
+      name: 'Inkfathom Infiltrator', type_line: 'Creature — Merfolk Rogue',
+      mana_cost: '{U/B}{U/B}', cmc: 2, colors: ['U', 'B'], layout: 'normal',
+      power: '2', toughness: '1',
+      oracle_text: "Inkfathom Infiltrator can't block and can't be blocked.",
+    },
+  ];
+
+  const table = (id: string, mine: readonly string[], theirs: readonly string[]) => {
+    const list = customDeck({
+      id,
+      name: id,
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 2 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Island', count: 26 },
+        { name: 'Swamp', count: 26 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    // None of the four is in the pool, so all four must have come from the printed rows.
+    expect(list.fromData.slice().sort()).toEqual([
+      'Craven Knight', 'Crazed Goblin', 'Inkfathom Infiltrator', 'Phantom Warrior',
+    ]);
+    return advanceTo(arena({
+      decks: { 0: id, 1: id },
+      deckSpecs: { [id]: list.deck },
+      battlefield: { 0: ['Island', ...mine], 1: ['Swamp', ...theirs] },
+      turn: 4, firstSeat: 0,
+    }), 'declare-attackers');
+  };
+
+  it('a Craven Knight may not block, straight off its printed line', () => {
+    const s = table('d495-block', ['Grizzly Bears'], ['Craven Knight', 'Grizzly Bears']);
+    const attacker = find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const knight = find(s, 1 as SeatIndex, 'battlefield', 'Craven Knight');
+    expect(canBlock(s, knight, attacker, 1 as SeatIndex)?.reason).toContain("can't block");
+    // The Bears beside it is the control: nothing about this board stops an ordinary blocker.
+    expect(canBlock(s, find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears'), attacker, 1 as SeatIndex))
+      .toBeNull();
+  });
+
+  it('a Phantom Warrior cannot be blocked by anything', () => {
+    const s = table('d495-evasion', ['Phantom Warrior', 'Grizzly Bears'], ['Grizzly Bears']);
+    const blocker = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    const warrior = find(s, 0 as SeatIndex, 'battlefield', 'Phantom Warrior');
+    expect(canBlock(s, blocker, warrior, 1 as SeatIndex)?.reason).toContain("can't be blocked");
+    // And the same blocker against the same board's ordinary attacker, which it may block.
+    expect(canBlock(s, blocker, find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears'), 1 as SeatIndex))
+      .toBeNull();
+  });
+
+  it('a Crazed Goblin is a forced attacker, and the Bears beside it is not', () => {
+    const s = table('d495-forced', ['Crazed Goblin', 'Grizzly Bears'], []);
+    expect(forcedAttackers(s, 0 as SeatIndex))
+      .toEqual([find(s, 0 as SeatIndex, 'battlefield', 'Crazed Goblin')]);
+  });
+
+  it('an Inkfathom Infiltrator gets both halves of its one line', () => {
+    const s = table(
+      'd495-both',
+      ['Inkfathom Infiltrator', 'Grizzly Bears'],
+      ['Inkfathom Infiltrator', 'Grizzly Bears'],
+    );
+    const mine = find(s, 0 as SeatIndex, 'battlefield', 'Inkfathom Infiltrator');
+    const theirs = find(s, 1 as SeatIndex, 'battlefield', 'Inkfathom Infiltrator');
+    /*
+      Its own restriction, read against an **ordinary** attacker. Pointing their Infiltrator at mine
+      would be satisfied by either half of the line, and that is not a hypothetical: the break run's
+      seeding break left this assertion passing on the evasion alone, which is the whole reason the
+      attacker here is a Grizzly Bears.
+    */
+    const myBears = find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    expect(canBlock(s, theirs, myBears, 1 as SeatIndex)?.reason).toContain("can't block");
+    // And its evasion: an ordinary creature may not block it either.
+    const theirBears = find(s, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    expect(canBlock(s, theirBears, mine, 1 as SeatIndex)?.reason).toContain("can't be blocked");
+    // Neither of which makes it attack, which is the third static and not on this card.
+    expect(forcedAttackers(s, 0 as SeatIndex)).toEqual([]);
+  });
+
+  it('and "loses all abilities" takes a printed static away (CR 613.1f)', () => {
+    /*
+      The reason the reading is seeded as a *base* characteristic rather than layered on top of
+      `state.effects`. A printed static is an ability, so Turn to Frog clears it exactly as it
+      clears a printed keyword — and that only works if it starts in the same place.
+    */
+    const s = table('d495-frog', ['Grizzly Bears'], ['Craven Knight']);
+    const knight = find(s, 1 as SeatIndex, 'battlefield', 'Craven Knight');
+    const attacker = find(s, 0 as SeatIndex, 'battlefield', 'Grizzly Bears');
+    expect(canBlock(s, knight, attacker, 1 as SeatIndex)).not.toBeNull();
+    const frogged = pump(s, [knight], knight, 1 as SeatIndex, { losesAllAbilities: true });
+    expect(canBlock(frogged, knight, attacker, 1 as SeatIndex)).toBeNull();
   });
 });

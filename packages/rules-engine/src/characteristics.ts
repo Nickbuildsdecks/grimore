@@ -131,11 +131,82 @@ const COLOUR_WORDS: Readonly<Record<string, Color>> = Object.freeze({
   white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G',
 });
 
+/**
+ * The words printed text uses to refer back to the card it is printed on, after naming it once.
+ *
+ * "This creature can't block", on a card whose first line already said its name. The 2024
+ * retemplate made this the normal second reference, and the list is the engine's one vocabulary for
+ * it: `scripts.ts` builds its `selfRef` pattern from this same array, so a word added here is a
+ * word every reader in both modules accepts. Two lists would be two places to forget one.
+ */
+export const SELF_TYPE_WORDS = [
+  'creature', 'artifact', 'enchantment', 'permanent', 'land', 'planeswalker', 'battle',
+  'Vehicle', 'Equipment', 'Aura', 'token', 'card', 'spell',
+] as const;
+
+/**
+ * The name a card with a title calls itself by: "Bilbo", for "Bilbo, Retired Burglar".
+ *
+ * Oracle text names a legendary permanent in full the first time and by its short name after —
+ * "Whenever Bilbo deals combat damage to a player", on a card called *Bilbo, Retired Burglar*.
+ * Neither the full name nor "this creature" matches that, so the line went unread: 924 legal cards
+ * use their short name in their own text, and reading it finishes 71 more lines on 70 cards, 11 of
+ * which had nothing else left unread (D438).
+ *
+ * The comma must be followed by a space, which is what separates a title from a thousands
+ * separator: *70,000 Light-Years from Home* would otherwise have offered "70" as a name for itself,
+ * and so would *Borrowing 100,000 Arrows* ("Borrowing 100") and *Guan Yu's 1,000-Li March*
+ * ("Guan Yu's 1") — which is why the space and not "does it contain a letter" is the test. Those
+ * three are the only names in 33,847 whose comma is not a title's, and no name with ", " in it has
+ * a part before the comma without a letter, so the second check would be a redundant statement of
+ * the first: two levers no single break could move (D433).
+ *
+ * **The alias is matched case-insensitively, like every other reader, and that is a known
+ * imprecision rather than an oversight.** Two legal cards in 33,847 print their own short name as
+ * an ordinary lowercase word — *Eleven, the Mage* ("your maximum hand size is eleven") and *Storm,
+ * Force of Nature* ("has storm") — and both are pinned by a test, because the alias is harmless
+ * only as long as no reader matches the clause the collision sits in. JavaScript has no way to
+ * switch case-sensitivity off for part of a pattern (`(?-i:…)` is not in V8), so a test that fails
+ * the day it starts to matter is the guard available.
+ *
+ * It lives here rather than in `scripts.ts` because both modules need it and the import only runs
+ * one way: `scripts.ts` imports this file, never the reverse (D494).
+ */
+export function shortName(name: string): string | null {
+  const comma = name.indexOf(', ');
+  return comma <= 0 ? null : name.slice(0, comma);
+}
+
+/** A combat restriction or requirement a creature can have printed on it as a bare statement. */
+type CombatStatic = 'cantBlock' | 'cantBeBlocked' | 'mustAttack';
+
+/**
+ * The three one-line combat statics, each spelled exactly as cards print it.
+ *
+ * `Characteristics` has had `cantBlock`, `cantBeBlocked` and `mustAttack` since #76, and the pool's
+ * hand-written cards set them through `statics` — but `characteristicsOf` only ever read them off
+ * `state.effects`, so a card that simply *prints* one had none of it. That is 209 printed lines on
+ * 192 legal cards, among them Aesthir Glider, Aether Figment, Akoum Firebird and Changeling
+ * Outcast: the engine already knew how to play all three rules and could not see any of them
+ * (D495).
+ *
+ * The map is the whole reading. Anything else that ends in these words is a different sentence —
+ * "can't be blocked except by creatures with flying", "gets +2/+2 and can't block" behind a
+ * threshold clause, "Enchanted creature can't block" — and is refused rather than approximated,
+ * because a wrong reading is worse than an unread line (D362).
+ */
+const COMBAT_STATICS: Readonly<Record<string, CombatStatic>> = Object.freeze({
+  "can't block": 'cantBlock',
+  "can't be blocked": 'cantBeBlocked',
+  'attacks each combat if able': 'mustAttack',
+});
+
 /** One comma-part of a printed ability line, once it is known to be something the engine has. */
 type PrintedPart =
   | { readonly kind: 'keyword'; readonly keyword: Keyword }
   | { readonly kind: 'landwalk'; readonly type: string }
-  | { readonly kind: 'protection'; readonly colours: readonly Color[] };
+  | { readonly kind: 'protection'; readonly colours: readonly Color[] }
+  | { readonly kind: 'combat-static'; readonly statics: readonly CombatStatic[] };
 
 /**
  * One part of a printed ability line, or `null` if this engine has nothing for it.
@@ -177,16 +248,56 @@ function printedPart(part: string): PrintedPart | null {
 }
 
 /**
+ * A whole printed line that is one or more of the three combat statics about the card itself.
+ *
+ * Read **before** the comma split rather than as one of its parts, and that is not a stylistic
+ * choice: the subject is the card's own name, and 11 of the 192 cards have a comma in theirs.
+ * "Etrata, the Silencer can't be blocked." split on commas is "Etrata" and "the Silencer can't be
+ * blocked", and neither half is anything at all.
+ *
+ * The subject must be the card itself — its full name, its short name (*Bilbo*, for *Bilbo,
+ * Luckwearer*: 9 of the 192 print only that), or "this creature" — and the predicate must be one
+ * of the three statics, or several joined by "and" ("Changeling Outcast can't block and can't be
+ * blocked", 4 cards). Every other subject is somebody else's: "Enchanted creature can't block" is
+ * an Aura granting the restriction to its host, "Creatures can't block" is a one-sided Fog, and
+ * both belong to machinery this reader has no part in. Accepting them would hand the Aura itself a
+ * restriction it only grants — exactly the mistake the whole-line rule above exists to prevent.
+ */
+function printedCombatLine(line: string, name: string | undefined): PrintedPart | null {
+  const low = line.toLowerCase().replace(/\.$/, '').trim();
+  const subjects = [
+    ...(name === undefined ? [] : [name.toLowerCase(), shortName(name)?.toLowerCase()]),
+    ...SELF_TYPE_WORDS.map((word) => `this ${word.toLowerCase()}`),
+  ];
+  const subject = subjects.find(
+    (candidate) => candidate !== undefined && candidate !== '' && low.startsWith(`${candidate} `),
+  );
+  if (subject === undefined) return null;
+  const clauses = low.slice(subject.length + 1).trim().split(/\s+and\s+/)
+    .map((clause) => clause.trim()).filter((clause) => clause !== '');
+  if (clauses.length === 0) return null;
+  const statics: CombatStatic[] = [];
+  for (const clause of clauses) {
+    const found = COMBAT_STATICS[clause];
+    if (found === undefined) return null;
+    statics.push(found);
+  }
+  return { kind: 'combat-static', statics };
+}
+
+/**
  * Every printed ability line of a card, classified — lines with anything unreadable in them left
  * out entirely.
  *
  * Reminder text in brackets describes an ability rather than granting one, so it comes off first.
  */
-function printedParts(oracleText: string | null | undefined): PrintedPart[] {
+function printedParts(oracleText: string | null | undefined, name?: string): PrintedPart[] {
   const found: PrintedPart[] = [];
   for (const rawLine of (oracleText ?? '').split('\n')) {
     const line = rawLine.replace(/\([^)]*\)/g, '').trim();
     if (!line) continue;
+    const combat = printedCombatLine(line, name);
+    if (combat !== null) { found.push(combat); continue; }
     const parts = line.split(/,\s*/).map((part) => part.trim()).filter(Boolean)
       .map((part) => printedPart(part));
     if (parts.length === 0 || !parts.every((part) => part !== null)) continue;
@@ -203,8 +314,8 @@ function printedParts(oracleText: string | null | undefined): PrintedPart[] {
  * `printedKeywords` alone, so River Boa's `Islandwalk` and Paladin en-Vec's protection were
  * reported as unread lines on cards the engine was already playing correctly.
  */
-export function isPrintedAbilityLine(line: string): boolean {
-  return printedParts(line).length > 0;
+export function isPrintedAbilityLine(line: string, name?: string): boolean {
+  return printedParts(line, name).length > 0;
 }
 
 export function printedKeywords(oracleText: string | null | undefined): Keyword[] {
@@ -232,6 +343,29 @@ export function printedProtection(oracleText: string | null | undefined): Color[
   for (const part of printedParts(oracleText)) {
     if (part.kind !== 'protection') continue;
     for (const colour of part.colours) if (!found.includes(colour)) found.push(colour);
+  }
+  return found;
+}
+
+/**
+ * The one-line combat statics printed on a card, read from its oracle text (CR 506.3, CR 509.1b).
+ *
+ * `printedKeywords`, `printedLandwalk` and `printedProtection`'s fourth sibling, and the one whose
+ * absence was hardest to see: the three fields it fills already existed, the pool's hand-written
+ * cards already set them, and a dozen tests already covered the rules. What was missing was the
+ * only path an **imported** card has — its printed text. Aesthir Glider blocked, Aether Figment was
+ * blocked and Akoum Firebird sat home, each in flat contradiction of its own card (D495).
+ *
+ * It needs the card's name because, unlike the other three, these lines name their own subject.
+ */
+export function printedCombatStatics(
+  oracleText: string | null | undefined,
+  name?: string,
+): { cantBlock: boolean; cantBeBlocked: boolean; mustAttack: boolean } {
+  const found = { cantBlock: false, cantBeBlocked: false, mustAttack: false };
+  for (const part of printedParts(oracleText, name)) {
+    if (part.kind !== 'combat-static') continue;
+    for (const one of part.statics) found[one] = true;
   }
   return found;
 }
@@ -1013,10 +1147,18 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     ...(band?.keywords ?? []).filter(isKeyword),
   ]);
   let cantAttack = false;
-  let cantBlock = false;
-  let mustAttack = false;
+  /*
+    Printed combat statics, seeded exactly as printed landwalk and printed protection are below and
+    for the same reason: a line that simply states "this creature can't block" is a *base*
+    characteristic, so it starts here and is cleared by "loses all abilities" in the loop below
+    rather than being layered on top of it (CR 613.1f). See `printedCombatStatics` for the hole this
+    closes — the three fields existed and nothing but a script could ever set them.
+  */
+  const printedCombat = printedCombatStatics(def?.oracleText, def?.name);
+  let cantBlock = printedCombat.cantBlock;
+  let mustAttack = printedCombat.mustAttack;
   let cantBeBlockedByWalls = false;
-  let cantBeBlocked = false;
+  let cantBeBlocked = printedCombat.cantBeBlocked;
   /*
     Printed landwalk, which is a *base* characteristic exactly as a printed keyword is — so it is
     read here rather than left to the effects loop, and "loses all abilities" clears it below just

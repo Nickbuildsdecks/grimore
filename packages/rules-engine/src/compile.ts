@@ -371,7 +371,7 @@ function compileUncached(row: CardDataRow): Compilation {
       — and asking only about keywords reported River Boa's `Islandwalk` and Paladin en-Vec's
       protection as unread lines on cards the engine was already playing correctly.
     */
-    if (isPrintedAbilityLine(line)) { compiled.push(line); continue; }
+    if (isPrintedAbilityLine(line, def.name)) { compiled.push(line); continue; }
 
     const fragment = lineScriptFor(line, def.name);
     if (fragment === null) { unread.push({ line, why: reasonFor(line) }); continue; }

@@ -3,7 +3,7 @@ import { compileCard, fullyCompiled } from './compile.js';
 import { STARTER_DECKS } from './starterDecks.js';
 import { CLUE_TOKEN, isKeywordDeclaration, scriptFor } from './scripts.js';
 import { zoneKey, type CardDef } from './cards.js';
-import { characteristicsOf, printedLandwalk } from './characteristics.js';
+import { characteristicsOf, printedCombatStatics, printedLandwalk } from './characteristics.js';
 import type { CardDataRow } from './fromCardData.js';
 import { addCounters, pump, tap, type EffectContext } from './effects.js';
 import type { AbilityDef, TargetSpec, TriggerDef } from './scriptTypes.js';
@@ -10269,5 +10269,106 @@ describe('a mana-value clause on a target phrase (D492)', () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
+  });
+});
+
+describe('the three one-line combat statics (D495)', () => {
+  /*
+    `compileCard` is the right instrument for the **first** half of this reading even though the
+    reading emits no script: `isPrintedAbilityLine` is what counts a line compiled-and-silent, so
+    an empty `unread` on a card whose whole text is one of these lines is the compiler agreeing
+    that the engine already knows the rule. The second half — that it actually does — is the
+    `printedCombatStatics` block below and the runtime tests in `scripts.test.ts`.
+  */
+  const creature = (name: string, text: string) => compileCard({
+    name, type_line: 'Creature — Human Soldier', mana_cost: '{2}', cmc: 2,
+    colors: ['W'], layout: 'normal', power: '2', toughness: '2', oracle_text: text,
+  });
+
+  it.each([
+    // The three bare forms, each with the real card the corpus found them on.
+    ['Aesthir Glider', "Aesthir Glider can't block."],
+    ['Akoum Firebird', 'Akoum Firebird attacks each combat if able.'],
+    ['Aether Figment', "Aether Figment can't be blocked."],
+    // Two of them on one line, joined by "and". Changeling Outcast's printing.
+    ['Changeling Outcast', "Changeling Outcast can't block and can't be blocked."],
+    // "This creature", the 2024 retemplate's second reference. 9 cards print it.
+    ['Cantor of the Refrain', "This creature can't block."],
+    ['Cogwork Tracker', 'This creature attacks each combat if able.'],
+    // A short name, on a card whose title has one: 9 of the 192 print only this.
+    ['Bilbo, Luckwearer', "Bilbo can't be blocked."],
+    ['Hulk, Brutal Brawler', 'Hulk attacks each combat if able.'],
+    // The name matched case-insensitively, like every other reader in the engine.
+    ['Aesthir Glider', "AESTHIR GLIDER can't block."],
+    // Mixed with the other printed-ability readers on the same card, one line each.
+    ['Aesthir Glider', "Flying\nAesthir Glider can't block."],
+    ['Akoum Firebird', 'Flying, haste\nAkoum Firebird attacks each combat if able.'],
+  ])('reads %s: "%s"', (name, text) => {
+    const read = creature(name as string, text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it.each([
+    /*
+      Refused for the **subject**, which is the whole reason this reader runs on the line rather
+      than on a comma-part. Each of these grants the restriction to somebody else, and handing it
+      to the card printing it would be a card that cannot block because it says other creatures
+      cannot — the exact mistake the whole-line rule exists to prevent (D362).
+    */
+    ['Enchanted creature', "Enchanted creature can't block."],
+    ['Equipped creature', "Equipped creature can't be blocked."],
+    ['Creatures', "Creatures can't block."],
+    ['Goaded creatures', "Goaded creatures your opponents control can't block."],
+    ['Blue creatures', "Blue creatures you control can't be blocked."],
+    /*
+      Refused for the **predicate**: the subject is right and the sentence is not one of the three.
+      Baneslayer Angel's exception clause, a pump welded onto the static, and a static behind a
+      condition the engine would have to keep re-reading.
+    */
+    ['an exception clause', "Aesthir Glider can't be blocked except by creatures with flying."],
+    ['a pump on the same line', "Aesthir Glider gets +2/+2 and can't block."],
+    ['a condition', "As long as you control a Forest, Aesthir Glider can't block."],
+    ['an ability word', "Wraith Form — Aesthir Glider can't be blocked."],
+    /*
+      And the fourth shape the corpus printed next to these three, refused because
+      `Characteristics` has no field for it: 22 cards print "can block only creatures with flying"
+      and the engine's `canBlock` has no way to express it. A separate increment, named here so the
+      next reader of this file knows it was seen and left (D259, D362).
+    */
+    ['can block only creatures with flying', 'Ascending Aven can block only creatures with flying.'],
+  ])('leaves a line unread: %s', (_why, text) => {
+    const read = creature('Aesthir Glider', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it.each([
+    ["Aesthir Glider can't block.", 'Aesthir Glider', { cantBlock: true, cantBeBlocked: false, mustAttack: false }],
+    ["Aether Figment can't be blocked.", 'Aether Figment', { cantBlock: false, cantBeBlocked: true, mustAttack: false }],
+    ['Akoum Firebird attacks each combat if able.', 'Akoum Firebird', { cantBlock: false, cantBeBlocked: false, mustAttack: true }],
+    ["Changeling Outcast can't block and can't be blocked.", 'Changeling Outcast',
+      { cantBlock: true, cantBeBlocked: true, mustAttack: false }],
+    ["This creature can't block.", 'Cantor of the Refrain', { cantBlock: true, cantBeBlocked: false, mustAttack: false }],
+    ["Bilbo can't be blocked.", 'Bilbo, Luckwearer', { cantBlock: false, cantBeBlocked: true, mustAttack: false }],
+    // Nothing at all for a line that is somebody else's, read with the Aura's own name.
+    ["Enchanted creature can't block.", 'Bloodshed Fever', { cantBlock: false, cantBeBlocked: false, mustAttack: false }],
+    // And nothing for a card with no name to match against.
+    ["Aesthir Glider can't block.", undefined, { cantBlock: false, cantBeBlocked: false, mustAttack: false }],
+  ])('reads "%s" on %s as its flags', (text, name, flags) => {
+    expect(printedCombatStatics(text as string, name as string | undefined)).toEqual(flags);
+  });
+
+  it('refuses the whole line, not the part it understood', () => {
+    /*
+      The half of the whole-line rule that matters (D487). "Aesthir Glider gets +2/+2 and can't
+      block" has a readable clause in it, and reading only that clause would give the creature a
+      restriction with none of the compensation printed beside it — strictly worse for the player
+      than leaving the line to a human.
+    */
+    expect(printedCombatStatics("Aesthir Glider gets +2/+2 and can't block.", 'Aesthir Glider'))
+      .toEqual({ cantBlock: false, cantBeBlocked: false, mustAttack: false });
   });
 });
