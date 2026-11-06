@@ -5900,9 +5900,20 @@ export function abilityTargetSpecs(
 ): readonly TargetSpec[] {
   if (object.abilityIndex === undefined) return [];
   if (object.grantedBy !== undefined) {
-    // A granted trigger comes from the card that granted it, by name rather than by def — and only
-    // hand-written cards grant triggers, so the registry is the right lookup here.
-    return scriptFor(object.grantedBy.card)?.grantedTriggers?.[object.grantedBy.index]?.targets
+    /*
+      **The grantor's card key through the injected resolver, its name as the fallback (D511).**
+
+      The comment here used to read "only hand-written cards grant triggers, so the registry is the
+      right lookup". That stopped being true the moment an Aura's quoted triggered ability
+      compiled, and this is the second of the three sites that said it — see `abilityOrTrigger` for
+      the third and for why that one was the silent failure.
+    */
+    const grantorDef = object.grantedBy.defKey === undefined
+      ? undefined
+      : state.cardDefs[object.grantedBy.defKey];
+    return (grantorDef === undefined ? undefined : resolve(grantorDef))
+      ?.grantedTriggers?.[object.grantedBy.index]?.targets
+      ?? scriptFor(object.grantedBy.card)?.grantedTriggers?.[object.grantedBy.index]?.targets
       ?? [];
   }
   const script = resolve(state.cardDefs[object.cardKey]);
@@ -11719,11 +11730,105 @@ function grantedKeywords(phrase: string): readonly Keyword[] | null {
   return read.length === names.length ? read : null;
 }
 
+/**
+ * A quoted triggered ability an attachment grants its host, compiled by **feeding the quoted text
+ * back through the compiler's own line readers** (D511).
+ *
+ * ## The biggest family in the one-away queue, and the gate in front of it
+ *
+ * **583 legal cards are one printed line away on a line carrying quoted text** — four times
+ * anything else in `one-away.mjs`. Grouped by the *outer* sentence, because the subject is what
+ * decides the mechanism:
+ *
+ *     35  Enchanted creature has "X"      (an activated or static ability)
+ *     32  Enchanted land has "X"          (ditto)
+ *     22  Enchanted creature has "X"      (a TRIGGERED ability)  ← this
+ *     20  Equipped creature has "X"       (an activated or static ability)
+ *     24  All Slivers have "X"
+ *     24  Commander creatures you own have "X"
+ *     17  the threshold quoted tails
+ *      3  Equipped creature has "X"       (a TRIGGERED ability)  ← this
+ *      1  Enchanted land has "X"          (a TRIGGERED ability)
+ *
+ * This reads the **25 whose quoted text is a triggered ability and whose subject is a creature**,
+ * and it reads them with **no new engine field**, which is why it is the one to do first: #230
+ * already shipped `CardScript.grantedTriggers` plus `ContinuousEffect.grants` holding indices into
+ * it — split in two halves precisely so the effect stays serialisable while the ability holds
+ * functions — and CR 113.6 is already right there too, so the granted trigger fires off the
+ * *host's* events with the host as its `c.source`.
+ *
+ * The 87 activated and static grants are **not** in scope and cannot be: there is no
+ * granted-activated-ability mechanism at all. `grants` carries trigger indices and nothing else,
+ * and there is no `grantedAbilities`. They need a new field and their own increment.
+ *
+ * `Enchanted land has "…"` is left with them, although it is a trigger: widening the subject is
+ * that increment's job anyway (it owns the 32 land grants), and Farmstead is one card.
+ *
+ * ## What it accepts
+ *
+ * `lineScriptFor` is the compiler's per-line reader, and the quoted text *is* a line — so this is
+ * recursion rather than a second grammar, and every trigger shape the compiler learns from now on
+ * arrives here for free. What comes back has to be **exactly triggers and nothing else**: a quoted
+ * text that read as a keyword, a static or an activated ability is refused, because only triggers
+ * can be granted and anything else would be an Aura that silently grants half of what it prints
+ * (D362). A quoted text the compiler cannot read refuses the whole line (D487).
+ *
+ * The Aura's own name is passed down for self-subject matching, which is safe because the quoted
+ * text never names the Aura — it says "this creature", which `SELF_TYPE_WORDS` already covers, and
+ * Animal Friend's "other than Animal Friend" is inside a clause this reader refuses anyway.
+ *
+ * ## What it finished, against the 25 above
+ *
+ * **6, not 25**, and the counts above are why the prediction was wrong: they group by the *outer*
+ * sentence, which is the part this reader handles, and say nothing about the **inner** text, which
+ * is the part that decides. Measured across all 87 distinct quotations the corpus prints inside an
+ * `(Enchanted|Equipped) creature has "…"` line: 8 read as triggers, 28 read as something else (all
+ * of them activated abilities, the next increment's 38 legal cards), and 51 the reader refuses
+ * outright — 19 of those naming a target. So the family's gate is the trigger vocabulary, one
+ * printed shape at a time, and not the grant. The D511 entry in `claude/decisions-log.md` has the
+ * table.
+ */
+function grantedTriggerFrom(quoted: string, name: string): readonly TriggerDef[] | null {
+  const read = lineScriptFor(quoted.trim(), name);
+  if (read === null) return null;
+  const { triggers, ...rest } = read;
+  if (triggers === undefined || triggers.length === 0) return null;
+  // Exactly triggers: anything else on the fragment is an ability this cannot grant.
+  if (Object.keys(rest).some((key) => (rest as Record<string, unknown>)[key] !== undefined)) {
+    return null;
+  }
+  return triggers;
+}
+
 /** `Equipped creature gets +2/+0 and has trample.` as the bonus, and whether it harms its host. */
-function attachmentBonus(line: string): { bonus: PumpOptions; harmful: boolean } | null {
+function attachmentBonus(
+  line: string, name: string,
+): { bonus: PumpOptions; harmful: boolean; grantedTriggers?: readonly TriggerDef[] } | null {
   const matched = /^(?:equipped|enchanted) creature (.+?)\.?$/i.exec(plain(line).trim());
   if (matched === null) return null;
   const tail = matched[1]!.trim();
+
+  /*
+    **The quoted granted ability, taken off the front of the keyword grammar (D511).**
+
+    `has "X"` and `has <keyword> and "X"` are the two printings — Commander's Authority is the
+    first, Cathar's Call and Power Fist the second — so the quote is split off and the remainder,
+    if any, goes through `grantedKeywords` exactly as it did before. Done here rather than inside
+    the `has` branch below because the quoted text contains commas and the keyword splitter would
+    shred it; the docblock on that branch records that this is what used to refuse these cards.
+  */
+  const quoted = /^has\s+(?:(.+?)\s+and\s+)?"([^"]+)"$/i.exec(tail);
+  if (quoted !== null) {
+    const triggers = grantedTriggerFrom(quoted[2]!, name);
+    if (triggers === null) return null;
+    const keywords = quoted[1] === undefined ? [] : grantedKeywords(quoted[1]);
+    if (keywords === null) return null;
+    return {
+      bonus: keywords.length === 0 ? {} : { keywords },
+      harmful: false,
+      grantedTriggers: triggers,
+    };
+  }
 
   if (/^can't attack or block$/i.test(tail)) {
     return { bonus: { cantAttack: true, cantBlock: true }, harmful: true };
@@ -11790,7 +11895,7 @@ export function attachmentScriptFor(
 
   const subject = isAura ? /^enchanted creature/i : /^equipped creature/i;
   const staticLine = lines.find((line) => subject.test(plain(line).trim()));
-  const read = staticLine === undefined ? null : attachmentBonus(staticLine);
+  const read = staticLine === undefined ? null : attachmentBonus(staticLine, def.name);
   /*
     **A bonus line this module cannot read no longer refuses the attachment (D456).**
 
@@ -11898,8 +12003,21 @@ export function attachmentScriptFor(
             hint.
           */
           target: { ...host, description: `enchant ${thing}` },
-          effect: read?.bonus ?? {},
+          /*
+            `grants` holds **indices into `grantedTriggers`** below, which is #230's two-halves
+            design: the effect stays serialisable and the abilities keep their functions. So the
+            Aura's bonus carries the indices and the fragment carries the table (D511).
+          */
+          effect: {
+            ...(read?.bonus ?? {}),
+            ...(read?.grantedTriggers === undefined
+              ? {}
+              : { grants: read.grantedTriggers.map((_, i) => i) }),
+          },
         },
+        ...(read?.grantedTriggers === undefined
+          ? {}
+          : { grantedTriggers: read.grantedTriggers }),
         ...(read?.harmful === true ? { removesACreature: true as const } : {}),
       },
       // Only a line that was **read** is claimed; an unreadable bonus keeps its badge (D456).
@@ -11912,23 +12030,34 @@ export function attachmentScriptFor(
     .find((m) => m !== null);
   if (equip === undefined || equip === null) return null;
   return {
-    fragment: equipFragment(
-      equip[1]!,
-      // No bonus line means no bonus, which is a real Equipment and not a failure to read one.
-      read?.bonus ?? {},
+    fragment: {
+      ...equipFragment(
+        equip[1]!,
+        // No bonus line means no bonus, which is a real Equipment and not a failure to read one.
+        {
+          ...(read?.bonus ?? {}),
+          // See the Aura branch above and #230: indices into `grantedTriggers` (D511).
+          ...(read?.grantedTriggers === undefined
+            ? {}
+            : { grants: read.grantedTriggers.map((_, i) => i) }),
+        },
       /*
         The printed bonus line as the ability's description, lower-cased at the front the way the
         hand-written Equipment spell theirs — and, with no bonus line, what the equip ability
         actually does instead. Not the bonus phrase with the bonus missing, which would describe a
         card that does not exist.
       */
-      read === null
-        ? 'attach it to a creature you control'
-        : (() => {
-          const text = plain(staticLine!).trim().replace(/\.$/, '');
-          return text.charAt(0).toLowerCase() + text.slice(1);
-        })(),
-    ),
+        read === null
+          ? 'attach it to a creature you control'
+          : (() => {
+            const text = plain(staticLine!).trim().replace(/\.$/, '');
+            return text.charAt(0).toLowerCase() + text.slice(1);
+          })(),
+      ),
+      ...(read?.grantedTriggers === undefined
+        ? {}
+        : { grantedTriggers: read.grantedTriggers }),
+    },
     /*
       Only the lines this actually accounted for: with no bonus line there is nothing to claim but
       the equip itself, and claiming one that does not exist would hide a line from the per-line

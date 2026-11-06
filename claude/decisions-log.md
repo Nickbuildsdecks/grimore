@@ -34382,3 +34382,156 @@ make Soulshift 5 refuse a five-drop, which only the Kami-at-exactly-N row can se
 | of those, needing no script at all | 1,191 | 1,191 |
 
 **17 cards finished**, exactly the measurement's prediction.
+
+## D511 — A quoted triggered ability an Aura or Equipment grants, and the three sites that looked it up by name
+
+`Enchanted creature has "At the beginning of your upkeep, create a 1/1 white Human creature token."`
+— Commander's Authority. The grant is a quotation: the host gains an ability whose text is printed
+on the Aura, and CR 113.6 says that ability is the **host's**, not the Aura's. The engine has had the
+machinery since #230 (`CardScript.grantedTriggers` holding the table, `ContinuousEffect.grants`
+holding indices into it so the effect stays serialisable), and the compiler has never been able to
+reach it. It can now.
+
+### The reader is `lineScriptFor` called on the quotation
+
+`grantedTriggerFrom(quoted, name)` hands the inner text straight back to `lineScriptFor` — the same
+per-line reader the card's own lines go through — and then demands the result be **exactly
+triggers**:
+
+```ts
+const { triggers, ...rest } = read;
+if (triggers === undefined || triggers.length === 0) return null;
+if (Object.keys(rest).some((key) => (rest as Record<string, unknown>)[key] !== undefined)) {
+  return null;
+}
+```
+
+Recursion rather than a second grammar is the whole point: every trigger shape the compiler learns
+anywhere becomes a grantable ability for free, and a quotation the compiler cannot read refuses the
+**line** rather than compiling a weaker version of the card (D487). The `rest` check is what keeps
+that honest — a reading that is triggers *plus* a flag would otherwise be installed with the flag
+silently dropped, which is the failure D362 names.
+
+In `attachmentBonus`, the quote is split off the front of the keyword grammar:
+
+```ts
+const quoted = /^has\s+(?:(.+?)\s+and\s+)?"([^"]+)"$/i.exec(tail);
+```
+
+Two printings exist and both are read: `has "X"` (Commander's Authority) and
+`has <keyword> and "X"` (Cathar's Call, Power Fist). It is done before the `has` branch because the
+quoted text contains commas and that branch's splitter would shred it — which is exactly why these
+cards were refused before.
+
+The Aura's effect and the Equipment's equip ability then carry `grants: [0, 1, …]` and the fragment
+carries the `grantedTriggers` table, so **one** reader serves both attachment kinds.
+
+### The bug the runtime test found: three lookups by card name, the third silent
+
+Writing the runtime test turned up a real engine bug that had nothing to do with this increment's
+new code. `grantedTriggers` was looked up in three places by the grantor's **card name**, through
+`scriptFor` — a lookup in the hand-written registry — and all three carried a docblock explaining
+that this was deliberate because "it is also the one field the oracle-text compiler never emits".
+
+That sentence stopped being true the moment an Aura's quoted ability compiled. A compiled card has
+no registry entry, so all three lookups returned `undefined`:
+
+| site | what it decides | how it failed |
+| --- | --- | --- |
+| `automation.ts` collection (~1637) | whether the trigger fires at all | the grant was installed and never fired |
+| `scripts.ts` targets (~5910) | what the trigger may point at | an empty target list |
+| `automation.ts` `abilityOrTrigger` (~4009) | **what the trigger does** | the trigger went on the stack, was announced, "resolved" in the log, and did nothing |
+
+The third is the one that matters: it is a silent failure wearing the appearance of a working card.
+Fixing one or two of three would have been worse than fixing none, because it buys a grant that
+works everywhere except where it counts. The fix is a `defKey` on `GrantedTriggerRef` — populated in
+`grantedTriggersOn`, where the grantor instance is in hand — and `scriptForCard(defs[defKey])`
+preferred at all three sites with the name kept as the fallback, so #230's hand-written grantors
+(Ophidian Eye, the soulbond pair) keep working unchanged. `abilityOrTrigger` gained an optional
+`defs` parameter, passed at all five of its call sites.
+
+This is #322's bug — "the bot reads the hand-written registry, so every compiled card is played
+blind" — surviving in the one corner that change did not reach, a month later, found by a test that
+played the card rather than inspected it.
+
+### The tests
+
+13 compile tests on real printings. Commander's Authority and Cathar's Call for the two quote
+shapes; Combat Research for the same reader on an Equipment; Sixth Sense, Sticky Fingers,
+Necrosynthesis, Pillory of the Sleepless and Nurturing Presence as a row each. Then five refusals:
+Power Fist ("that many", which the reader cannot carry forward), Withercrown (an "unless" on a step
+trigger), Idolized (an X that counts the board), a quotation that is an **activated** ability
+(`{T}: Add one mana of any color.`, Karametra's Favor's text) and a quotation that is a bare keyword
+(`Flying`). The last two are both refused by the same check — the recursive reading has no triggers
+at all — and the "exactly triggers" check below them is a different, unreachable guard.
+
+4 runtime tests through `customDeck`, all driven by **real plays** — `auto:cast` with a card target
+for the Aura, `auto:activate` with a card target for the equip — because the first version wrote
+`attachedTo` by hand and every assertion failed: the field records the attachment, the continuous
+effect is installed by the resolution path. They prove the host fires the granted trigger, that it
+stops when the Aura leaves, and that the trigger's **source is the host and not the Aura** (CR
+113.6) — the assertion a name-keyed grant fails.
+
+### The break run
+
+Eleven breaks over three files, each verified to apply and to revert against a SHA-256:
+
+| break | caught by |
+| --- | --- |
+| the quote branch removed | 10 tests |
+| the Aura effect stops carrying the `grants` indices | 8 tests |
+| the Aura fragment stops carrying the `grantedTriggers` table | 8 tests |
+| the Equipment ability stops carrying the indices | 2 tests |
+| the Equipment fragment stops carrying the table | 2 tests |
+| `grantedTriggersOn` stops recording the grantor's `defKey` | 2 tests |
+| the collection site back to the name-only lookup | 2 tests |
+| `abilityOrTrigger` back to the name-only lookup (the silent one) | 2 tests |
+| `grantedTriggerFrom` stops requiring *exactly* triggers | **nothing** |
+| `grantedTriggerFrom` accepts an empty trigger table | **nothing** |
+| the targets site back to the name-only lookup | **nothing** |
+
+Three uncaught, and rather than argue about them they were measured. Across all 87 distinct
+quotations the corpus prints inside an attachment line:
+
+- **0** read as triggers *plus* another field, so nothing printed can reach the `rest` check;
+- **0** read as an empty trigger table, so nothing printed can reach the length check;
+- **0** of the 8 readable ones carry targets, so a compiled grant never reaches the targets site.
+
+All three stay. The first two are guards against a silently half-read grant and cost three lines;
+the third is the same fix as its two siblings and becomes live the moment an inner text with a
+target reads — 19 of the 51 refused quotations name one ("tap target permanent", Ghostly Touch).
+This is D507's precedent, now with a corpus count behind each instead of an argument: a break that
+applies, reverts, and that nothing printed can reach is recorded, not patched around.
+
+### Coverage
+
+| | before D511 | after |
+| --- | --- | --- |
+| printed lines read | 21,730 / 56,421 (38.5%) | **21,738 / 56,421 (38.5%)** |
+| cards with a compiled script | 10,920 | 10,920 |
+| cards with every printed line read | 6,687 | **6,693** |
+| of those, needing no script at all | 1,191 | 1,191 |
+
+**6 cards finished**, against a prediction of 25 — and the gap is the useful part. The script count
+did not move at all, which is the shape of this family: these Auras and Equipment already compiled
+(enchant, equip), they just left the bonus line unclaimed, so the increment finishes cards rather
+than starting them.
+
+### What the family actually needs next, measured instead of guessed
+
+The prediction was wrong because the grant was never the bottleneck — the **inner** vocabulary is.
+Every quotation the corpus prints inside an attachment line, by what `lineScriptFor` makes of it:
+
+| | distinct texts | legal cards |
+| --- | --- | --- |
+| reads as triggers (ships now) | 8 | 8 |
+| reads as something other than triggers — all of them activated abilities | 28 | 38 |
+| the reader refuses outright | 51 | 50 |
+
+So the quoted-attachment family is 96 legal cards, not the 583 the earlier count suggested (that
+number was every quoted grant, including the creature and Sliver grants this increment does not
+touch). The 28 are one engine gap, not 28 reading gaps: `{T}: This creature deals 1 damage to any
+target` (Fire Whip, 7 cards) and `{T}: Add one mana of any color` (Karametra's Favor, 4 cards) are
+*activated* abilities, and `ContinuousEffect` has no `grantedAbilities` to put them in. That is the
+next increment in this family, and it is worth more than the 51 refusals, which are 51 separate
+trigger shapes.

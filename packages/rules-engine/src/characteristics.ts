@@ -1994,6 +1994,22 @@ export function allAbilitiesLost(state: GameState, instance: CardInstance): bool
 export interface GrantedTriggerRef {
   readonly card: string;
   readonly index: number;
+  /**
+   * The grantor's **card key** as well as its name, so a *compiled* grantor can be looked up.
+   *
+   * The name was enough while `grantedTriggers` was a hand-written field only, and the collection
+   * site's docblock said so in as many words — "the one field the oracle-text compiler never
+   * emits". **D511 made that false**: an Aura or Equipment whose printed line grants a quoted
+   * triggered ability now compiles, and `scriptFor(name)` is a lookup in the hand-written registry,
+   * which has no entry for it. The grant was built, installed and then silently never fired, which
+   * is #322's bug surviving in the one place that change did not reach.
+   *
+   * A key rather than the grantor's instance id, for the reason the name was chosen over one:
+   * `state.cardDefs[key]` outlives the grantor, so a trigger already on the stack still resolves
+   * after the Aura has gone. The name is kept beside it as the fallback for a hand-written card
+   * whose key is not in `cardDefs`.
+   */
+  readonly defKey?: string;
 }
 
 /**
@@ -2030,9 +2046,12 @@ export function grantedTriggersOn(
       continue;
     }
     const grantor = state.instances[effect.source];
-    const name = state.cardDefs[grantor?.defKey ?? '']?.name;
+    const defKey = grantor?.defKey;
+    const name = state.cardDefs[defKey ?? '']?.name;
     if (name === undefined) continue;
-    for (const index of effect.grants ?? []) (out ??= []).push({ card: name, index });
+    for (const index of effect.grants ?? []) {
+      (out ??= []).push({ card: name, index, ...(defKey === undefined ? {} : { defKey }) });
+    }
   }
   return out ?? [];
 }

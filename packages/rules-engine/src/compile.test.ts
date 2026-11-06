@@ -12175,3 +12175,145 @@ describe('Soulshift N (D510)', () => {
     expect(cardHasSubtype(relic as never, 'Equipment')).toBe(true);
   });
 });
+
+describe('a quoted triggered ability an Aura or Equipment grants (D511)', () => {
+  /*
+    **The biggest family in the one-away queue, and the first increment into it.** 583 legal cards
+    are one printed line away on a line carrying quoted text — four times anything else. Grouped by
+    the *outer* sentence, because the subject decides the mechanism: 87 are an Aura or Equipment
+    granting an **activated or static** ability (no engine field exists for that), 37 are one
+    granting a **triggered** ability, 48 are Sliver and Commander-background team grants, 17 are the
+    threshold tails.
+
+    This reads the triggered attachment grants, and the whole implementation is **recursion**:
+    `grantedTriggerFrom` hands the quoted text to `lineScriptFor`, the compiler's own per-line
+    reader, because the quoted text *is* a line. No new engine field — #230 already shipped
+    `grantedTriggers` plus `grants` holding indices into it. See `grantedTriggerFrom`.
+  */
+  const aura = (text: string, name = "Commander's Authority") => compileCard({
+    name, type_line: 'Enchantment — Aura', mana_cost: '{4}{W}', cmc: 5, colors: ['W'],
+    layout: 'normal', power: null, toughness: null, oracle_text: text,
+  });
+  const equipment = (text: string, name = 'Combat Research') => compileCard({
+    name, type_line: 'Artifact — Equipment', mana_cost: '{1}', cmc: 1, colors: [],
+    layout: 'normal', power: null, toughness: null, oracle_text: text,
+  });
+
+  it('reads Commander\'s Authority: the quote alone', () => {
+    const read = aura('Enchant creature\nEnchanted creature has "At the beginning of your upkeep, '
+      + 'create a 1/1 white Human creature token."');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.grantedTriggers).toHaveLength(1);
+    expect(read.script?.grantedTriggers?.[0]?.on).toEqual({ kind: 'step', step: 'upkeep', of: 'you' });
+    // The two halves of #230's design: the table on the card, the indices on the effect.
+    expect(read.script?.aura?.effect?.grants).toEqual([0]);
+  });
+
+  it('reads Cathar\'s Call: a keyword and the quote on one line', () => {
+    /*
+      The second printing shape, and the one that says why the quote is split off **before**
+      `grantedKeywords` rather than inside it: the quoted sentence contains commas, and the keyword
+      splitter would shred it. That is precisely what used to refuse this whole family.
+    */
+    const read = aura('Enchant creature\nEnchanted creature has vigilance and "At the beginning of '
+      + 'your end step, create a 1/1 white Human creature token."', "Cathar's Call");
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.aura?.effect?.keywords).toEqual(['vigilance']);
+    expect(read.script?.aura?.effect?.grants).toEqual([0]);
+    expect(read.script?.grantedTriggers?.[0]?.on).toEqual({ kind: 'step', step: 'end', of: 'you' });
+  });
+
+  it('reads it on an Equipment too, through the same bonus', () => {
+    // Combat Research's printing. The grant reaches an Equipment's bonus because `modsFrom` is one
+    // function for all five grant sites — an Aura's effect, a bestowed one, an Equipment's bonus,
+    // a statics entry and soulbond's pair (#230).
+    const read = equipment('Equipped creature has "Whenever this creature deals combat damage to a '
+      + 'player, draw a card."\nEquip {1}');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.grantedTriggers).toHaveLength(1);
+    expect(read.script?.equipBonus?.grants).toEqual([0]);
+  });
+
+  it.each([
+    ['Sixth Sense', 'Whenever this creature deals combat damage to a player, you may draw a card.'],
+    ['Sticky Fingers', 'Whenever this creature deals combat damage to a player, create a Treasure token.'],
+    ['Necrosynthesis', 'Whenever another creature dies, put a +1/+1 counter on this creature.'],
+    ['Pillory of the Sleepless', 'At the beginning of your upkeep, you lose 1 life.'],
+    ['Nurturing Presence', 'Whenever a creature you control enters, this creature gets +1/+1 until end of turn.'],
+  ])('reads the quote on printed %s', (name, inner) => {
+    const read = aura(`Enchant creature\nEnchanted creature has "${inner as string}"`, name as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.grantedTriggers).toHaveLength(1);
+    expect(read.script?.aura?.effect?.grants).toEqual([0]);
+  });
+
+  it.each([
+    ['Power Fist: "that many", which refers to damage the reader cannot carry forward',
+      'Whenever this creature deals combat damage to a player, put that many +1/+1 counters on it.'],
+    ['Withercrown: an "unless" clause on a step trigger',
+      'At the beginning of your upkeep, you lose 1 life unless you sacrifice this creature.'],
+    ['Idolized: a bonus whose X is a count of the board',
+      'Whenever this creature attacks alone, it gets +X/+X until end of turn, where X is the number of nonland permanents you control.'],
+  ])('refuses the whole line when the quoted text does not read: %s', (_why, inner) => {
+    /*
+      **This is where the real bottleneck turned out to be, and the measurement corrected my own
+      prediction.** I scoped this increment at 25 cards from the *outer* shape and it finished 6,
+      because of the 87 distinct quotations the corpus prints inside an attachment line only 8 read
+      as triggers: 28 are activated abilities and 51 the reader refuses outright — see the D511
+      entry in `claude/decisions-log.md` for the table and what it says to do next. The grant
+      mechanism was never the gate.
+
+      Refusing the whole line is D487, and it matters more here than usual: a reader that dropped an
+      unreadable quote would be an Aura that attaches, grants a keyword it also prints, and silently
+      withholds the ability that is most of the card.
+    */
+    const read = aura(`Enchant creature\nEnchanted creature has "${inner as string}"`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+    expect(read.script?.grantedTriggers ?? []).toEqual([]);
+    // The Aura still attaches, which is D456: an unreadable bonus line keeps its badge and the
+    // card stays playable rather than compiling to nothing at all.
+    expect(read.script?.aura).toBeDefined();
+  });
+
+  it('refuses a quoted ability that is not a trigger at all', () => {
+    /*
+      Only triggers can be granted: `grants` carries indices into `grantedTriggers` and there is no
+      `grantedAbilities`. So a quoted **activated** ability — 28 distinct texts across 38 legal
+      cards, the next increment in this family — is refused rather than read as a trigger or
+      dropped. The check that refuses it is `grantedTriggerFrom`'s first one: the recursive reading
+      comes back as an ability, so it has no `triggers` at all. (The *exactly* triggers check below
+      that one is a separate guard, against a reading that is triggers plus something else, and no
+      printing in the corpus can reach it — see the break run in the D511 entry.)
+    */
+    const read = aura('Enchant creature\nEnchanted creature has "{T}: Add one mana of any color."');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+    expect(read.script?.grantedTriggers ?? []).toEqual([]);
+  });
+
+  it('refuses a quoted keyword, which would otherwise read as a grant of nothing', () => {
+    /*
+      A quoted text that compiles to keywords rather than triggers. No printing says it this way;
+      the row is here because it is the one refusal whose reading is a *successful* line reading —
+      `lineScriptFor` returns `{ keywords: ['flying'] }` — so it proves the refusal is about the
+      shape of what came back and not about the reader having failed. Like the activated-ability row
+      above, it is the `triggers === undefined` check that refuses it.
+    */
+    const read = aura('Enchant creature\nEnchanted creature has "Flying"');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+    expect(read.script?.grantedTriggers ?? []).toEqual([]);
+  });
+});

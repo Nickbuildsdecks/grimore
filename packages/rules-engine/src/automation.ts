@@ -1636,14 +1636,19 @@ function raise(
     */
     for (const ref of grantedTriggersOn(next, inst)) {
       /*
-        `scriptFor` by **name** and deliberately not `scriptForCard`: a granted ability is recorded
-        on the continuous effect as the granting card's *name* plus an index into its
-        `grantedTriggers`, and there is no definition in hand to look up. It is also the one field
-        the oracle-text compiler never emits — granting another permanent a triggered ability has no
-        reader and, per `soulbondShapeFor`, is a refusal rather than a gap — so the hand-written
-        registry is the complete answer here rather than a partial one.
+        **The grantor's card key first, its name as the fallback** — and the comment that used to
+        sit here said the opposite, for a reason that stopped being true. It read: "`scriptFor` by
+        name and deliberately not `scriptForCard` … it is also the one field the oracle-text
+        compiler never emits". D511 made the compiler emit it: an Aura or Equipment whose printed
+        line grants a quoted triggered ability now compiles, and `scriptFor` is a lookup in the
+        hand-written registry, which has no entry for a compiled card. The grant was built,
+        installed, and then silently never fired — #322's bug surviving in the one place that change
+        did not reach, found by a runtime test on Commander's Authority.
       */
-      const granted = scriptFor(ref.card)?.grantedTriggers?.[ref.index];
+      const grantorDef = ref.defKey === undefined ? undefined : state.cardDefs[ref.defKey];
+      const granted = (grantorDef === undefined ? undefined : scriptForCard(grantorDef))
+        ?.grantedTriggers?.[ref.index]
+        ?? scriptFor(ref.card)?.grantedTriggers?.[ref.index];
       if (granted === undefined) continue;
       next = fireTrigger(next, granted, id, inst, ref.index, event, actor, subject, fromStack, ref);
     }
@@ -3094,7 +3099,7 @@ function decisionSpecsFor(state: GameState, object: StackObject): readonly Decis
   const asked = (specs: readonly DecisionSpecOf[]): readonly DecisionSpec[] =>
     specs.map((spec) => (typeof spec === 'function' ? spec(state, object.source) : spec));
   const script = scriptOnStack(state, object);
-  if (object.kind !== 'spell') return asked(abilityOrTrigger(script, object)?.decisions ?? []);
+  if (object.kind !== 'spell') return asked(abilityOrTrigger(script, object, state.cardDefs)?.decisions ?? []);
   const modes = modesOf(script, object.modes);
   if (modes.length > 0) return asked(modes.flatMap((mode) => [...(mode.decisions ?? [])]));
   return asked(script?.decisions ?? []);
@@ -3104,7 +3109,7 @@ function decisionSpecsFor(state: GameState, object: StackObject): readonly Decis
 function beforeDecisionsFor(state: GameState, object: StackObject): EffectFn | undefined {
   const script = scriptOnStack(state, object);
   if (object.kind === 'spell') return script?.beforeDecisions;
-  return abilityOrTrigger(script, object)?.beforeDecisions;
+  return abilityOrTrigger(script, object, state.cardDefs)?.beforeDecisions;
 }
 
 /**
@@ -3631,7 +3636,7 @@ function popStack(state: GameState, id: string): GameState {
 export function targetSpecsFor(
   state: GameState, script: CardScript | undefined, object: StackObject,
 ): readonly TargetSpec[] {
-  if (object.kind !== 'spell') return abilityOrTrigger(script, object)?.targets ?? [];
+  if (object.kind !== 'spell') return abilityOrTrigger(script, object, state.cardDefs)?.targets ?? [];
   const modes = modesOf(script, object.modes);
   if (modes.length > 0) return modeTargetSpecs(modes);
   return script?.targets ?? (script?.aura ? [script.aura.target] : []);
@@ -3660,7 +3665,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
     is exactly the window an opponent gets, so this is the half of the rule that makes killing the
     creature an evolve trigger measured a real answer rather than a tempo loss.
   */
-  const trigger = object.kind === 'triggered' ? abilityOrTrigger(script, object) : undefined;
+  const trigger = object.kind === 'triggered' ? abilityOrTrigger(script, object, state.cardDefs) : undefined;
   if (trigger?.condition !== undefined && !trigger.condition({
     state,
     source: object.source,
@@ -3985,7 +3990,7 @@ function completeResolution(
     return { state: next, message: script ? `${name} resolves` : `${name} resolves (not automated — resolve it by hand)` };
   }
 
-  const ability = abilityOrTrigger(script, object);
+  const ability = abilityOrTrigger(script, object, state.cardDefs);
   if (ability?.effect) next = ability.effect({ ...ctx, state: next });
   const label = object.description || 'an ability';
   return { state: next, message: `${label} resolves` };
@@ -4001,16 +4006,30 @@ interface Resolvable {
   readonly effect?: EffectFn;
 }
 
-function abilityOrTrigger(script: CardScript | undefined, object: StackObject): Resolvable | undefined {
+function abilityOrTrigger(
+  script: CardScript | undefined, object: StackObject, defs?: GameState['cardDefs'],
+): Resolvable | undefined {
   if (object.abilityIndex === undefined) return undefined;
   /*
     A granted ability is defined on somebody else's card, so the holder's script is the wrong book
     to look it up in (CR 113.6). Asked before the `script === undefined` guard rather than after,
     because the holder may have no script at all — a vanilla Grizzly Bears handed a draw trigger
     by a Tandem Lookout is the normal case, not the exotic one.
+
+    **The grantor's card key first, its name as the fallback (D511)** — the third of the three
+    sites that looked this up by name only, and the one that made the bug silent rather than loud.
+    The other two decide whether the ability fires and what it may point at; this one decides what
+    it *does*, so with a compiled grantor the trigger went on the stack, was announced, "resolved"
+    in the log, and did nothing. One `scriptFor` left unchanged out of three is a grant that works
+    everywhere except where it matters.
   */
   if (object.grantedBy !== undefined) {
-    return scriptFor(object.grantedBy.card)?.grantedTriggers?.[object.grantedBy.index];
+    const grantorDef = object.grantedBy.defKey === undefined
+      ? undefined
+      : defs?.[object.grantedBy.defKey];
+    return (grantorDef === undefined ? undefined : scriptForCard(grantorDef))
+      ?.grantedTriggers?.[object.grantedBy.index]
+      ?? scriptFor(object.grantedBy.card)?.grantedTriggers?.[object.grantedBy.index];
   }
   if (script === undefined) return undefined;
   if (object.kind === 'activated') return script.abilities?.[object.abilityIndex];

@@ -30391,3 +30391,156 @@ describe('Soulshift N, at the table (D510)', () => {
     expect(namesIn(s, 0, 'graveyard')).toContain('Crawling Filth');
   });
 });
+
+describe('a quoted triggered ability, at the table (D511)', () => {
+  /*
+    The half a reader test cannot reach, and for a grant it is the half that matters most: the
+    **host** has to fire the ability, with the host as its source (CR 113.6), and has to stop the
+    moment the grantor leaves.
+
+    Two real printings through `customDeck`'s `data`:
+
+      Commander's Authority  {4}{W}  Aura       — "At the beginning of your upkeep, create a 1/1 white Human creature token."
+      Combat Research        {1}     Equipment  — "Whenever this creature deals combat damage to a player, draw a card."
+
+    **Both are attached through the engine's own plays** — the Aura cast at a target, the Equipment
+    equipped with its ability — and the first version of this block was not. It wrote `attachedTo`
+    onto the instance by hand, and every assertion failed: the field is where the attachment is
+    *recorded*, and the Aura's continuous effect is installed by the resolution path that writes it.
+    Setting the field alone is an Aura sitting on a creature granting nothing, which is exactly the
+    "works and does nothing" shape the attachment reader exists to avoid — reproduced, by accident,
+    in the test.
+
+    The Equipment is the one that proves the source, because its trigger fires off **combat damage
+    dealt by the creature** — an event an Equipment can never raise, since it does not attack. If
+    the granted trigger belonged to the grantor rather than the holder it would simply never fire.
+  */
+  const DATA = [
+    {
+      name: "Commander's Authority", type_line: 'Enchantment — Aura', mana_cost: '{4}{W}', cmc: 5,
+      colors: ['W'], layout: 'normal', power: null, toughness: null,
+      oracle_text: 'Enchant creature\nEnchanted creature has "At the beginning of your upkeep, '
+        + 'create a 1/1 white Human creature token."',
+    },
+    {
+      name: 'Combat Research', type_line: 'Artifact — Equipment', mana_cost: '{1}', cmc: 1,
+      colors: [], layout: 'normal', power: null, toughness: null,
+      oracle_text: 'Equipped creature has "Whenever this creature deals combat damage to a player, '
+        + 'draw a card."\nEquip {1}',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'quoted-grants',
+      name: 'Quoted Grants',
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 3 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Plains', count: 50 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Combat Research', "Commander's Authority"]);
+    return list.deck;
+  };
+
+  const table = (
+    battlefield: readonly string[],
+    hand: readonly string[] = [],
+    step: Parameters<typeof advanceTo>[1] = 'precombat-main',
+  ) => advanceTo(arena({
+    decks: { 0: 'quoted-grants', 1: 'quoted-grants' },
+    deckSpecs: { 'quoted-grants': deck() },
+    battlefield: { 0: [...battlefield], 1: [] },
+    hands: { 0: [...hand] },
+    turn: 4, firstSeat: 0,
+  }), step);
+
+  it('the host fires the granted upkeep trigger once the Aura is cast on it', () => {
+    /*
+      Both halves, because a test that only checked the token would pass with the trigger belonging
+      to the Aura, to the seat, or to anything else that sees an upkeep. The un-enchanted board is
+      the control: same creature, same round, no Aura, no Human.
+    */
+    const bare = table(['Grizzly Bears', 'Plains', 'Plains', 'Plains', 'Plains', 'Plains']);
+    const quiet = drain(advanceTo(nextTurn(nextTurn(bare)), 'upkeep'));
+    expect(countOf(quiet, 0 as SeatIndex, 'battlefield', 'Human')).toBe(0);
+
+    let s = tapAllLands(table(
+      ['Grizzly Bears', 'Plains', 'Plains', 'Plains', 'Plains', 'Plains'],
+      ["Commander's Authority"],
+    ), 0);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', "Commander's Authority"),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action));
+    expect(s.instances[find(s, 0, 'battlefield', "Commander's Authority")]!.attachedTo).toBe(bears);
+
+    const granted = drain(advanceTo(nextTurn(nextTurn(s)), 'upkeep'));
+    expect(countOf(granted, 0 as SeatIndex, 'battlefield', 'Human')).toBe(1);
+  });
+
+  it('stops the moment the Aura leaves, which is what makes it a grant', () => {
+    /*
+      `duration: 'permanent'` means "while the source is on the battlefield", so nothing has to undo
+      the grant — and this is the row that proves the grant is an effect rather than something
+      written onto the creature.
+    */
+    let s = tapAllLands(table(
+      ['Grizzly Bears', 'Plains', 'Plains', 'Plains', 'Plains', 'Plains'],
+      ["Commander's Authority"],
+    ), 0);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', "Commander's Authority"),
+      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Grizzly Bears') }],
+    } as Action));
+    s = drain(apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', "Commander's Authority"),
+      toZone: 'graveyard',
+    }));
+    const after = drain(advanceTo(nextTurn(nextTurn(s)), 'upkeep'));
+    expect(countOf(after, 0 as SeatIndex, 'battlefield', 'Human')).toBe(0);
+  });
+
+  it('the granted trigger belongs to the HOST, not to the grantor (CR 113.6)', () => {
+    /*
+      **The assertion a grantor-keyed grant would fail.** Combat Research grants "whenever *this
+      creature* deals combat damage to a player, draw a card" — and an Equipment never attacks, so
+      the event can only ever be raised by the creature holding it. The card is drawn because the
+      trigger is collected as though the holder had printed it, which is what #230's docblock
+      promises and what this checks.
+    */
+    let s = tapAllLands(table(['Grizzly Bears', 'Combat Research', 'Plains', 'Plains']), 0);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Combat Research'),
+      abilityIndex: 0, targets: [{ kind: 'card', id: bears }],
+    } as Action));
+    expect(s.instances[find(s, 0, 'battlefield', 'Combat Research')]!.attachedTo).toBe(bears);
+
+    s = advanceTo(s, 'declare-attackers');
+    const before = [...ids(s, 0, 'hand')].length;
+    s = apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: bears, defender: 1 as SeatIndex }],
+    } as Action);
+    s = drain(advanceTo(s, 'postcombat-main'));
+    expect(life(s, 1 as SeatIndex)).toBe(18);
+    expect([...ids(s, 0, 'hand')].length).toBeGreaterThan(before);
+  });
+
+  it('and an unequipped creature draws nothing, which is the control', () => {
+    // Same board, same swing, the Equipment never equipped: two damage and no card.
+    let s = advanceTo(table(['Grizzly Bears', 'Combat Research', 'Plains', 'Plains']), 'declare-attackers');
+    const before = [...ids(s, 0, 'hand')].length;
+    s = apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: find(s, 0, 'battlefield', 'Grizzly Bears'), defender: 1 as SeatIndex }],
+    } as Action);
+    s = drain(advanceTo(s, 'postcombat-main'));
+    expect(life(s, 1 as SeatIndex)).toBe(18);
+    expect([...ids(s, 0, 'hand')].length).toBe(before);
+  });
+});
