@@ -37540,3 +37540,98 @@ The sweep is doing two jobs here. One is the usual check that 18 new readings do
 is the deletion: `blinkResolution` was on the spell-casting path of every game, and a sweep that
 finished every table is the evidence that the general rule which replaced it reads the same sentence
 the same way in play, not only in the compile table.
+
+## D544 — The single-target pump, opened up, with the aim read off the numbers
+
+**70 cards finished**, the biggest single-reader increment since D540, and it is mostly a refusal
+being retired with the reason that was missing rather than a new mechanic.
+
+### Three branches and a refusal become one rule
+
+The reader was `+`/`+` in one branch, `-`/`-` in another, and the **mixed** sign refused. The
+refusal's own words were the whole problem and also the whole answer:
+
+> what cannot be read off the sentence is which creature it is for, because a card that gives +4/-4
+> is removal pointed at them and a trick pointed at your own 1/1 depending on the rest of the card.
+
+Right that the aim must be *read* rather than guessed. Wrong that the sentence is silent.
+**Toughness is what kills a creature**, so a size that lowers it is a creature being killed and a
+size that raises it is one being saved; when toughness does not move, power decides. One rule, four
+quadrants, and it sorts all ten printed mixed sizes correctly — Auger Spree's +4/-4 and Spatial
+Contortion's +3/-3 as removal, Alpha Kavu's -1/+1 as a creature of yours being saved.
+
+It also *subsumes* the two branches it replaces: `+`/`+` raises toughness and `-`/`-` lowers it, so
+the old friendly/hostile split falls out of the same arithmetic instead of being asserted twice. The
+same conclusion D542 and D543 reached from the other direction — read the aim off the printed words,
+never from the family — arrived at here by taking the refusal's reason seriously.
+
+### And the subject opened up, which is where the 70 cards came from
+
+The subject was a **fixed list of three phrases** (`target creature`, plus `you control`, `an
+opponent controls`, `you don't control`) while `targetSpecFrom` had been parsing a far wider
+vocabulary for several increments. It is an open phrase now, guarded by `pointsAtAPermanent` like
+destroy and exile, with the quantifier prefix read like every other reader's. That is the same gap
+D540 closed on the graveyard return, and it paid about as well: "target creature with flying",
+"target creature or Vehicle you control", "another target creature you control", "up to one other
+target creature you control".
+
+`(spec.count ?? 1) === 1` rides along because the effect is `firstCardTarget` — D469's pair, a reader
+that asks for two and pumps one is worse than the unread line it replaced. No printed plural reaches
+it (the plural is "two target creatures **get**", and this reader demands "gets"), so that guard has
+a probe row rather than a card.
+
+**The grant refusal is kept, and scoped.** No printed `-`/`-` carries an `and gains` tail, so reading
+one would be inventing the only card it could apply to (D259) — but a *mixed* size does print one,
+Flowstone Strike's "+1/-1 and gains trample", so the refusal now applies to the sign pair it was
+measured on instead of to everything that is not a pump. `helpsInCombat` is set only when the size
+helps too: a penalty that grants haste is Flowstone Strike pointed across the table, and the flag
+there would aim a removal spell at the bot's own board.
+
+### "Another" costs nothing, and that is a fact about the engine
+
+The old table refused `Another target creature gets -2/-2` with the reason *"another means not the
+other target, and a script has one target list"*. The first half is right and the second does not
+follow. `permanentFilter`'s `another` excludes the **source**, which for a spell is never on the
+battlefield — but `checkTargets` keeps one `seen` set across **every** spec of a resolution and
+refuses "the same target cannot be chosen twice". So the engine already forces Leeching Bite's two
+creatures apart. The same finding D542 recorded for Pit Fight, now load-bearing.
+
+What is still unread is the *line* Consume Strength prints, and for a different reason:
+`composeEffects` refuses two targeting parts in one chain, because a resolution has one `targets`
+list. The one-blocker instrument attributed that card's blocker to the clause, which the clause now
+reads — the line still does not. Worth stating, because it means **a one-blocker row can name a
+clause and be answered without the card moving.** The retargeted test asserts both halves: the clause
+reads, the pair does not.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,253 / 56,421 (41.2%) | **23,347 / 56,421 (41.4%)** |
+| cards with a compiled script | 11,891 | **11,962** |
+| cards with every printed line read | 7,638 | **7,708** |
+
+70 newly fully read and **none lost**, checked by diffing the whole list. `one-blocker.mjs` predicted
+10 for the two rows aimed at; it was under by 60, for D540's reason exactly — the change went one
+layer down into the subject phrase and lifted every family that shares it.
+
+### The break run: 8 of 10, then 10 of 10, and the miss was the harness
+
+The first pass came back **8/10**, with "the grant refusal is dropped" and "the aim is not read off
+the words at all" uncaught. Neither was a hole in the tests. Every break harness since D530 has run
+`vitest -t 'D5'` to keep the loop quick, and the describe this increment **retargeted** is named
+`(D454)` — which that filter excludes. Two breaks read as uncaught for a reason that had nothing to
+do with the code or the tests.
+
+Re-run with no `-t` filter at all: **10/10**. The harness keeps it that way, with the reason written
+into it. **A filter that scopes the suite can hide the very tests an increment changed**, and an
+increment that retargets an old table is exactly when that happens — so the quick filter is wrong
+precisely when the run matters most.
+
+### Four stale refusals retargeted rather than deleted (D516)
+
+The `(D454)` table asserted that the mixed sign, the mixed sign with a grant, the pumped-toughness
+shrink and `another target creature` all stay unread. All four now read. Each row asserts what is
+true, states the aim it must carry, and keeps the old reason above it so the change is legible rather
+than silent. Two refusals stay and are unchanged: a grant on a true shrink, and a subtype phrase
+(#341).

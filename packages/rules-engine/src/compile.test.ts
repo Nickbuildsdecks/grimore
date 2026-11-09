@@ -9067,31 +9067,75 @@ describe('the shrink, which is the pump with one character changed (D454)', () =
 
   it.each([
     /*
-      **The mixed sign is refused, and the refusal is about the bot rather than the effect.**
-      Auger Spree prints "+4/-4" and 14 legal cards print a mixed size. `pump` would apply it
-      correctly; what the sentence does not say is whose creature it is for, because +4/-4 is
-      removal pointed across the table and a trick pointed at your own 1/1 depending on the rest of
-      the card. A `friendly` flag guessed wrong is a bot that aims the spell at the wrong half of
-      the table every time — a silent degradation, which is what D362 says to flag instead.
+      **The mixed sign reads now, and the aim comes off the toughness** (D544). These three rows
+      asserted a refusal, and the refusal's own reason was that the aim "cannot be read off the
+      sentence": a +4/-4 is removal across the table and a trick on your own 1/1 depending on the
+      rest of the card.
+
+      That was right that the aim must be read rather than guessed and wrong that the sentence is
+      silent. **Toughness is what kills a creature**, so a size that lowers it is a creature being
+      killed and a size that raises it is one being saved — which sorts all ten printed mixed sizes
+      correctly, Auger Spree's +4/-4 one way and Alpha Kavu's -1/+1 the other. Retargeted rather
+      than deleted, with the old reason kept above so the change is legible (D516).
     */
-    ['a pump with a shrunk toughness', 'Target creature gets +4/-4 until end of turn.'],
-    ['a shrink with a pumped toughness', 'Target creature gets -1/+1 until end of turn.'],
-    ['a mixed size with a grant', 'Target creature gets +1/-1 and gains haste until end of turn.'],
+    ['a pump with a shrunk toughness is hostile',
+      'Target creature gets +4/-4 until end of turn.', undefined],
+    ['a shrink with a pumped toughness is friendly',
+      'Target creature gets -1/+1 until end of turn.', true],
+    ['a mixed size may grant a keyword, which the corpus prints',
+      'Target creature gets +1/-1 and gains haste until end of turn.', undefined],
+    // And the two unmixed signs, so the rule is asserted across all four quadrants in one table.
+    ['a pump is friendly', 'Target creature gets +2/+2 until end of turn.', true],
+    ['a shrink is hostile', 'Target creature gets -2/-2 until end of turn.', undefined],
     /*
-      And a **grant on a shrink**, which no printed card has: across the corpus the `and gains …`
+      Power decides when toughness does not move, which is the fourth case the rule needs and the
+      one no printing of a *bare* target forced: +2/+0 is a creature being helped and -2/-0 is one
+      being made harmless.
+    */
+    ['a power-only bonus is friendly', 'Target creature gets +2/+0 until end of turn.', true],
+    ['a power-only penalty is hostile', 'Target creature gets -2/-0 until end of turn.', undefined],
+  ])('reads %s', (_label, text, friendly) => {
+    const read = spell(text as string);
+    expect(unreadLines(read)).toEqual([]);
+    expect(target(read)?.['friendly']).toBe(friendly);
+  });
+
+  it.each([
+    /*
+      A **grant on a true shrink**, which no printed card has: across the corpus the `and gains …`
       tail appears only on `+`/`+` and `+`/`-` sizes, so reading one would be inventing the only
-      card it could apply to (D259).
+      card it could apply to (D259). Scoped to the sign pair it was measured on — the mixed size
+      above does print a grant and now reads one.
     */
     ['a shrink that grants a keyword', 'Target creature gets -2/-2 and gains menace until end of turn.'],
     // No duration at all, which would be a permanent effect rather than a trick.
     ['a shrink with no duration', 'Target creature gets -2/-2.'],
-    // "Another" means "not the other target", and a script has one target list — the same refusal
-    // that keeps "target creature fights target creature" honest.
-    ['a second target', 'Another target creature gets -2/-2 until end of turn.'],
-    // A type-restricted phrase `targetSpecFrom` cannot build.
+    // A type-restricted phrase `targetSpecFrom` cannot build (#341).
     ['a subtype phrase', 'Target Kavu creature gets -1/-1 until end of turn.'],
   ])('refuses %s', (_label, text) => {
     expect(unreadLines(spell(text as string))).toEqual([text]);
+  });
+
+  it('reads "another target creature", and the engine is what keeps the two apart', () => {
+    /*
+      This row asserted a refusal too, and its reason was "\"another\" means not the other target,
+      and a script has one target list". The first half is right and the second does not follow:
+      `permanentFilter`'s `another` excludes the **source**, which for a spell is never on the
+      battlefield — but `checkTargets` carries one `seen` set across every spec of a resolution and
+      refuses "the same target cannot be chosen twice". So the engine already forces Leeching Bite's
+      two creatures apart, which is the same finding D542 recorded for Pit Fight.
+
+      The clause reads; the *line* Consume Strength prints is still unread, because two targeting
+      parts cannot share one `targets` list — `composeEffects`' rule, asserted in the second half
+      here so the limit is recorded where someone will look for it.
+    */
+    const clause = spell('Another target creature gets -2/-2 until end of turn.');
+    expect(unreadLines(clause)).toEqual([]);
+    expect(target(clause)?.['friendly']).toBeUndefined();
+
+    const pair = spell('Target creature gets +2/+2 until end of turn. Another target creature gets '
+      + '-2/-2 until end of turn.');
+    expect(unreadLines(pair).length).toBe(1);
   });
 
   it('wears off at end of turn, which on a shrink is what kills the creature', () => {
@@ -15904,5 +15948,82 @@ describe("the blink's second half, read as a clause (D543)", () => {
     const read = row('Probe Rite', 'Instant', text as string);
     expect(read.ok).toBe(true);
     if (read.ok) expect(read.unread.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the single-target pump, opened up (D544)', () => {
+  /*
+    The reader's subject was a fixed list of three phrases while `targetSpecFrom` had been parsing a
+    far wider vocabulary for several increments — the same gap D540 closed on the graveyard return,
+    and worth the same. These rows are the vocabulary, not the arithmetic: the sizes and the aim are
+    asserted in the D454 table above, across all four sign quadrants.
+  */
+  const row = (text: string, type = 'Instant'): ReturnType<typeof compileCard> => compileCard({
+    name: 'Probe Rite', type_line: type, mana_cost: '{G}', cmc: 1, colors: ['G'], layout: 'normal',
+    oracle_text: text,
+  });
+
+  it.each([
+    ['a filter on the creature (Gallantry)',
+      'Target creature with flying gets +2/+2 until end of turn.'],
+    ['a type run (Fang Guardian\'s trigger)',
+      'Target creature or Vehicle you control gets +2/+2 until end of turn.'],
+    ['the "another" quantifier (Imperial Aerosaur)',
+      'Another target creature you control gets +1/+1 until end of turn.'],
+    ['"up to one other" (Mabel\'s Mettle)',
+      'Up to one other target creature you control gets +1/+1 until end of turn.'],
+    ['a grant on a mixed size (Flowstone Strike)',
+      'Target creature gets +1/-1 and gains trample until end of turn.'],
+  ])('reads %s', (_what, text) => {
+    const read = row(text as string);
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('refuses a phrase that does not point at a permanent', () => {
+    /*
+      `pointsAtAPermanent` is the guard that lets the subject be an open phrase, and it is the same
+      guard destroy and exile use. `targetSpecFrom` can build a player, and `pump` writes power and
+      toughness — "target player gets +2/+2" is not a card, and without the guard it would be the
+      first printed sentence of that shape compiling into something the engine cannot apply.
+
+      A probe row: no printing says this, which is exactly why the guard needs one (D538's pattern).
+    */
+    const read = row('Target player gets +2/+2 until end of turn.');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+
+  it('refuses a quantifier that asks for more than one, because the effect pumps one', () => {
+    /*
+      D469's pair: the effect is `firstCardTarget`, so a spec asking for two would pump one of them
+      and silently do half of what it says. No printed plural reaches here — the plural is spelled
+      "two target creatures **get**" and this reader demands "gets" — so this is a probe for the day
+      a quantifier admits one that does.
+    */
+    const read = row('Two target creatures gets +1/+1 until end of turn.');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+
+  it('tells the bot a keyword helps in combat only when the size helps too', () => {
+    /*
+      `helpsInCombat` means "the whole value of this is in the attack" — Tainted Strike and Crimson
+      Wisps, the two hand-written specs that carry it. A *penalty* that grants haste is Flowstone
+      Strike pointed at somebody else's creature, and the flag there would tell the bot to aim a
+      removal spell at its own board.
+
+      The discriminating pair: the same granted keyword, one size helping and one not.
+    */
+    const helping = row('Target creature gets +1/+1 and gains haste until end of turn.');
+    expect(helping.ok).toBe(true);
+    if (helping.ok) expect(helping.script?.targets?.[0]?.helpsInCombat).toBe(true);
+
+    const hurting = row('Target creature gets +1/-1 and gains haste until end of turn.');
+    expect(hurting.ok).toBe(true);
+    if (hurting.ok) {
+      expect(hurting.unread.map((u) => u.line)).toEqual([]);
+      expect(hurting.script?.targets?.[0]?.helpsInCombat).toBeUndefined();
+    }
   });
 });

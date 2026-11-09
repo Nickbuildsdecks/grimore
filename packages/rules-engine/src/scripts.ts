@@ -17896,115 +17896,133 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     }
   }
 
-  const sized = /^(target creature(?: you control| an opponent controls| you don't control)?) gets ([-+]\d+)\/([-+]\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$/i
-    .exec(text);
   /*
-    **The sign decides whose creature it is**, and that is the whole reason one regex reads both
-    halves of this family.
+    **One clause, one reader, and the aim read off the printed numbers** (D544).
 
-    "Target creature gets +2/+2 until end of turn" and "Target creature gets -2/-2 until end of
-    turn" are the same sentence with one character changed, and 265 legal cards print the second —
-    the largest single clause family left unread when this was written, and unread because the
-    pattern above it demanded a `+`. What they do differs only in the number passed to `pump`; what
-    they *mean* differs completely, and `TargetSpec.friendly` is where that lands (D252). So the
-    size is read first and the sign picks the branch, rather than two readers that could drift.
+    "Target creature gets +2/+2 until end of turn", "… gets -2/-2 …", "… gets +4/-4 …" and "another
+    target creature gets -2/-2 …" are one sentence with the numbers and the quantifier changed. What
+    they do differs only in what is passed to `pump`; what they *mean* differs completely, and
+    `TargetSpec.friendly` is where that lands (D252).
 
-    A **mixed** sign — Auger Spree's "+4/-4", and 14 cards print one — is refused, and the refusal
-    is about the bot rather than the effect. `pump` would apply it correctly either way; what cannot
-    be read off the sentence is which creature it is for, because a card that gives +4/-4 is
-    removal pointed at them and a trick pointed at your own 1/1 depending on the rest of the card.
-    `friendly` guessed wrong is a bot that aims the spell at the wrong half of the table every time,
-    which is a silent degradation rather than a refusal — the thing D362 says to flag instead.
+    ## The aim follows the toughness
+
+    This replaces three branches — `+`/`+`, `-`/`-`, and a **refusal** of the mixed sign — with one
+    rule: a bonus that raises toughness is a creature being helped, a penalty that lowers it is a
+    creature being killed, and that is what decides the bot's aim. When toughness does not move,
+    power decides.
+
+    The mixed sign is what forced the rule, and the refusal it replaces said exactly why it was a
+    refusal: "what cannot be read off the sentence is which creature it is for, because a card that
+    gives +4/-4 is removal pointed at them and a trick pointed at your own 1/1 depending on the rest
+    of the card." That was right that the aim must be read rather than guessed, and wrong that the
+    sentence does not say: **toughness is what kills a creature**, so Auger Spree's +4/-4 is removal
+    and Alpha Kavu's -1/+1 is a creature of yours being saved. Ten legal printings carry a mixed
+    size and the toughness sign sorts every one of them correctly. The same answer D542 and D543
+    reached from the other direction: read the aim off the printed words, never from the family.
+
+    ## Opened up, like the graveyard return was (D540)
+
+    The subject was a fixed list of three phrases — `target creature`, plus `you control`, `an
+    opponent controls`, `you don't control` — while `targetSpecFrom` has been parsing a much wider
+    vocabulary for several increments. It is an open phrase now, with `pointsAtAPermanent` as the
+    guard that keeps it honest, and the quantifier prefix is read like every other reader's: "another
+    target creature", "up to one other target creature", "target Kavu creature", "target creature or
+    Vehicle you control".
+
+    `(spec.count ?? 1) === 1` because the effect is `firstCardTarget`, which is D469's pair: a reader
+    that asks for two targets and pumps one is worse than the unread line it replaced. The plural is
+    spelled "two target creatures **get**" rather than "gets", so no printed plural reaches here
+    anyway — the guard is for the day a quantifier admits one that does.
+
+    **"Another" costs nothing here and that is a fact about the engine, not a shortcut.**
+    `permanentFilter`'s `another` excludes the *source*, which for a spell is never on the
+    battlefield — but `checkTargets` keeps one `seen` set across **all** of a resolution's specs and
+    refuses "the same target cannot be chosen twice", so Leeching Bite's two creatures are already
+    forced apart by the engine. The same finding D542 recorded for Pit Fight.
   */
-  const pumped = sized === null ? null
-    : Number(sized[2]) >= 0 && Number(sized[3]) >= 0 ? sized : null;
-  const shrunk = sized === null || pumped !== null ? null
-    : Number(sized[2]) <= 0 && Number(sized[3]) <= 0 ? sized : null;
-  if (shrunk !== null) {
+  const sized = new RegExp(
+    `^(${TARGET_QUANTIFIER_PREFIX}target .+?)`
+    + ` gets ([-+]\\d+)\\/([-+]\\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,
+    'i',
+  ).exec(text);
+  if (sized !== null) {
+    const power = Number(sized[2]);
+    const toughness = Number(sized[3]);
+    const helping = toughness !== 0 ? toughness > 0 : power > 0;
     /*
-      The shrink, and **Darkblast is the ground truth for every field of it**: the pool's one
-      hand-written card of this shape points at `TARGET_CREATURE` — the hostile default, not the
-      helped one — and sets `expiresAtEndOfTurn`, with a comment saying why that flag is right on a
-      shrink: wearing off at end of turn is what kills the creature before the shrink expires.
-
-      `removesACreature` is deliberately **not** set, for the same reason the pump branch refuses to
-      guess a hint for `indestructible`: nothing hand-written pairs that flag with a shrink, and
-      -1/-1 kills a Glistener Elf while -1/-1 on a 5/5 is a wasted card. Which it is depends on the
-      board, which is what the bot's search sees by playing it out.
-
-      A granted keyword is refused here although the pump branch reads one: no printed shrink has a
-      grant (checked across the corpus — the `and gains` tail appears only on `+`/`+` and `+`/`-`
-      sizes), so reading one would be inventing the only card it could apply to.
+      A granted keyword on a **true shrink** stays refused, which is the one piece of the old
+      three-branch reader kept verbatim: no printed `-`/`-` has an `and gains` tail (checked across
+      the corpus), so reading one would be inventing the only card it could apply to (D259). A
+      *mixed* size does print one — Flowstone Strike's "+1/-1 and gains trample", Flowstone
+      Channeler's — so the refusal is scoped to the sign pair it was measured on rather than to
+      "anything that is not a pump".
     */
-    if (shrunk[4] === undefined) {
-      const bonus = sizeBonus(Number(shrunk[2]), Number(shrunk[3]));
-      const spec = targetSpecFrom(shrunk[1]!, false);
-      if (spec !== null && bonus !== null) {
+    const trueShrink = power <= 0 && toughness <= 0;
+    if (!(trueShrink && sized[4] !== undefined)) {
+      const bonus = pumpAndGrant(power, toughness, sized[4]);
+      const spec = targetSpecFrom(sized[1]!, helping);
+      if (spec !== null && bonus !== null
+        && pointsAtAPermanent(spec) && (spec.count ?? 1) === 1) {
+        /*
+          Which bot hint the spell carries depends on **what the grant is for**, and the pool draws
+          that line itself. `protectFromRemoval` — Blossoming Defense and Dive Down — sets
+          `protectsACreature` and deliberately *not* `expiresAtEndOfTurn`: the two say different
+          things to the bot, "hold this until something threatens one of your creatures" against
+          "hold this for the combat", and the measurement behind the first (64 cast, 60 of them with
+          nothing on the stack and no combat) is the reason it exists. A hexproof trick told to wait
+          for combat is still a card thrown away.
+
+          So hexproof and shroud — the two keywords `targeting.ts` refuses a spell for — make this a
+          protection trick, and everything else is the pump hint. `indestructible` is deliberately
+          not in the set: nothing hand-written pairs it with this flag, and guessing which hint it
+          wants is exactly the invention D259 rules out.
+        */
+        const protective = (bonus.keywords ?? [])
+          .some((word) => word === 'hexproof' || word === 'shroud');
+        /*
+          And which creature to aim at, which is a second thing the granted keyword decides.
+
+          `helpsInCombat`'s own docblock draws this line and names the cards: it is "only for a bonus
+          whose *whole* value is in the attack", and a Giant Growth deliberately does not carry it
+          because pumping a blocker to win a fight is half of what that card is for. Of the four
+          hand-written specs that do carry it, the two that are keyword grants are Tainted Strike
+          (infect) and Crimson Wisps (haste) — a creature that cannot attack gains nothing from
+          either. So those two words set it and no others; trample and hexproof are as useful on a
+          blocker.
+
+          Only on a bonus that helps: a penalty that grants a keyword is Flowstone Strike pointed at
+          somebody else's creature, and telling the bot it "helps in combat" there would aim it at
+          its own board.
+        */
+        const forTheAttack = helping && (bonus.keywords ?? [])
+          .some((word) => word === 'infect' || word === 'haste');
         return {
-          targets: [spec],
+          targets: [forTheAttack ? { ...spec, helpsInCombat: true } : spec],
           effect: (c) => {
             const id = firstCardTarget(c);
             return id === null
               ? c.state
               : pump(c.state, [id], c.source, c.controller, bonus);
           },
-          spellFlags: { expiresAtEndOfTurn: true },
+          /*
+            Three cases, and the middle one is D412's correction, for the reason written out beside
+            the grant-only branch: a bonus whose whole value is in the attack carries **no** spell
+            flag, because `expiresAtEndOfTurn` tells the bot an instant may wait for blockers and a
+            creature that was going to attack with infect cannot. Tainted Strike is the card, and it
+            carries no flag by hand.
+
+            A bonus that does not help gets the flag unconditionally, which is Darkblast's
+            hand-written reading and the reason given there: wearing off at end of turn is what kills
+            the creature before the shrink expires. `removesACreature` is still deliberately **not**
+            set — nothing hand-written pairs that flag with a shrink, and -1/-1 kills a Glistener Elf
+            while -1/-1 on a 5/5 is a wasted card, which is what the bot's search sees by playing it
+            out.
+          */
+          ...(protective
+            ? { spellFlags: { protectsACreature: true } }
+            : forTheAttack ? {} : { spellFlags: { expiresAtEndOfTurn: true } }),
         };
       }
-    }
-  }
-  if (pumped !== null) {
-    const bonus = pumpAndGrant(Number(pumped[2]), Number(pumped[3]), pumped[4]);
-    const spec = targetSpecFrom(pumped[1]!, true);
-    if (spec !== null && bonus !== null) {
-      /*
-        Which bot hint the spell carries depends on **what the grant is for**, and the pool draws
-        that line itself. `protectFromRemoval` — Blossoming Defense and Dive Down — sets
-        `protectsACreature` and deliberately *not* `expiresAtEndOfTurn`: the two say different
-        things to the bot, "hold this until something threatens one of your creatures" against
-        "hold this for the combat", and the measurement behind the first (64 cast, 60 of them with
-        nothing on the stack and no combat) is the reason it exists. A hexproof trick told to wait
-        for combat is still a card thrown away.
-
-        So hexproof and shroud — the two keywords `targeting.ts` refuses a spell for — make this a
-        protection trick, and everything else is the pump hint. `indestructible` is deliberately
-        not in the set: nothing hand-written pairs it with this flag, and guessing which hint it
-        wants is exactly the invention D259 rules out.
-      */
-      const protective = (bonus.keywords ?? [])
-        .some((word) => word === 'hexproof' || word === 'shroud');
-      /*
-        And which creature to aim at, which is a second thing the granted keyword decides.
-
-        `helpsInCombat`'s own docblock draws this line and names the cards: it is "only for a bonus
-        whose *whole* value is in the attack", and a Giant Growth deliberately does not carry it
-        because pumping a blocker to win a fight is half of what that card is for. Of the four
-        hand-written specs that do carry it, the two that are keyword grants are Tainted Strike
-        (infect) and Crimson Wisps (haste) — a creature that cannot attack gains nothing from
-        either. So those two words set it and no others; trample and hexproof are as useful on a
-        blocker.
-      */
-      const forTheAttack = (bonus.keywords ?? [])
-        .some((word) => word === 'infect' || word === 'haste');
-      return {
-        targets: [forTheAttack ? { ...spec, helpsInCombat: true } : spec],
-        effect: (c) => {
-          const id = firstCardTarget(c);
-          return id === null
-            ? c.state
-            : pump(c.state, [id], c.source, c.controller, bonus);
-        },
-        /*
-          Three cases, and the middle one is D412's correction, for the reason written out beside
-          the grant-only branch: a bonus whose whole value is in the attack carries **no** spell
-          flag, because `expiresAtEndOfTurn` tells the bot an instant may wait for blockers and a
-          creature that was going to attack with infect cannot. Tainted Strike is the card, and it
-          carries no flag by hand.
-        */
-        ...(protective
-          ? { spellFlags: { protectsACreature: true } }
-          : forTheAttack ? {} : { spellFlags: { expiresAtEndOfTurn: true } }),
-      };
     }
   }
 

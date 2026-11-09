@@ -34588,3 +34588,75 @@ describe("the blink's second half, at the table (D543)", () => {
     expect(s.instances[theirs]?.zoneSeat).toBe(0);
   });
 });
+
+describe('the mixed-sign pump, at the table (D544)', () => {
+  /*
+    One runtime fact the compile table cannot see: a mixed size is **applied**, both halves, in one
+    continuous effect. A reader that dropped the negative half would compile Auger Spree into a
+    Giant Growth, which is a card that works and is strictly better than the one printed.
+
+    Auger Spree itself, through `customDeck`'s `data` — +4/-4 on a 2/2 is lethal, and on a 5/5 is a
+    9/1 that survives, which is the pair that proves both halves landed rather than one.
+  */
+  const DATA = [
+    {
+      name: 'Auger Spree', type_line: 'Instant', mana_cost: '{2}{B}{R}', cmc: 4,
+      colors: ['B', 'R'], layout: 'normal',
+      oracle_text: 'Target creature gets +4/-4 until end of turn.',
+    },
+    {
+      name: 'Hill Troll', type_line: 'Creature — Troll', mana_cost: '{3}{G}', cmc: 4,
+      colors: ['G'], layout: 'normal', power: '5', toughness: '5',
+      oracle_text: '',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'auger',
+      name: 'Auger',
+      entries: [
+        { name: 'Auger Spree', count: 4 }, { name: 'Hill Troll', count: 4 },
+        { name: 'Grizzly Bears', count: 8 },
+        { name: 'Swamp', count: 20 }, { name: 'Mountain', count: 20 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Auger Spree', 'Hill Troll'].sort());
+    return list.deck;
+  };
+
+  const table = (mine: readonly string[]): GameState => tapAllLands(advanceTo(arena({
+    decks: { 0: 'auger', 1: 'auger' },
+    deckSpecs: { auger: deck() },
+    hands: { 0: ['Auger Spree'] },
+    battlefield: {
+      0: ['Swamp', 'Swamp', 'Mountain', 'Mountain', ...mine],
+      1: ['Grizzly Bears', 'Hill Troll'],
+    },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+
+  it('kills a 2/2, because the toughness half is applied', () => {
+    let s = table([]);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Auger Spree'),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action), 60);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+  });
+
+  it('leaves a 5/5 alive as a 9/1, because the power half is applied too', () => {
+    let s = table([]);
+    const troll = find(s, 1, 'battlefield', 'Hill Troll');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Auger Spree'),
+      targets: [{ kind: 'card', id: troll }],
+    } as Action), 60);
+    expect(s.instances[troll]?.zone).toBe('battlefield');
+    expect(power(s, troll)).toBe(9);
+    expect(toughness(s, troll)).toBe(1);
+  });
+});
