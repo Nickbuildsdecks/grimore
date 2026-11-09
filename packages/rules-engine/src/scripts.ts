@@ -15649,12 +15649,29 @@ const GRAVEYARD_CARD_TYPES: readonly string[] = [
  * for every `graveyard-*` kind, so a second test would be a second place to forget one.
  */
 function graveyardCardPhrase(printed: string): Omit<TargetSpec, 'description'> | null {
-  const matched = /^(?:another )?target (.*?)cards? in (your|a|an opponent's) graveyard$/i
-    .exec(printed.trim());
+  const matched = new RegExp(
+    `^(?:another )?(${TARGET_QUANTIFIER_PREFIX})target (.*?)cards? `
+    + `in (your|a|an opponent's) graveyard$`,
+    'i',
+  ).exec(printed.trim());
   if (matched === null) return null;
-  const test = graveyardTypeTest(matched[1]!);
+  /*
+    **The counting quantifier** — "up to two target creature cards in your graveyard" (D540).
+
+    Read here rather than in each clause reader, for `graveyardTypeTest`'s reason one line down:
+    one statement of one rule (D441), and the three graveyard clause families get it at once. The
+    quantifier table is the same one `parsedTargetPhrase` reads, so `up to two` means
+    `{ optional: true, count: 2 }` in both places and cannot drift between them.
+
+    `another` keeps its old shape — matched and dropped — because this function's callers point at a
+    graveyard, where "another" has no source permanent to exclude. Widening it would be a different
+    change with its own cards to count.
+  */
+  const quantifier = TARGET_QUANTIFIERS[(matched[1] ?? '').trim().toLowerCase()];
+  if (quantifier === undefined) return null;
+  const test = graveyardTypeTest(matched[2]!);
   if (test === null) return null;
-  const whose = matched[2]!.toLowerCase();
+  const whose = matched[3]!.toLowerCase();
   const scope: 'yours' | 'any' | 'opponents' = whose === 'your' ? 'yours'
     : whose === 'a' ? 'any' : 'opponents';
   return {
@@ -15667,6 +15684,8 @@ function graveyardCardPhrase(printed: string): Omit<TargetSpec, 'description'> |
       if (scope === 'opponents' && inst.zoneSeat === controller) return false;
       return test(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine));
     },
+    ...(quantifier.count === undefined ? {} : { count: quantifier.count }),
+    ...(quantifier.optional === true ? { optional: true } : {}),
   };
 }
 
@@ -16347,6 +16366,32 @@ function parsedTargetPhrase(printed: string): Omit<TargetSpec, 'description'> | 
 /** Whether a spec points at something `destroy`, `bounceToHand` and the like can be given. */
 const pointsAtAPermanent = (spec: TargetSpec): boolean =>
   spec.kind === 'creature' || spec.kind === 'permanent';
+
+/**
+ * The spec kinds that point at a **card in a graveyard** (D540).
+ *
+ * `pointsAtAPermanent`'s sibling, and needed for the same reason: the graveyard clause readers take
+ * an **open** target phrase now, so "what came back from `targetSpecFrom`" has to be checked rather
+ * than assumed. Three kinds, because the exact-phrase switch keeps `graveyard-creature` and
+ * `graveyard-land` with their hand-written filters while everything else parses to
+ * `graveyard-card`.
+ *
+ * **It is unreachable today, and that is said rather than discovered.** A break run deleted it and
+ * the whole suite stayed green, so the next question was whether it can ever be false. The callers
+ * rebuild the phrase with ` in your graveyard` on the end, and `targetSpecFrom`'s last resort,
+ * `parsedTargetPhrase`, has **no noun for `graveyard`** — its own docblock says so — so a phrase
+ * `graveyardCardPhrase` turns down is refused outright rather than read as something else. The
+ * guard therefore cannot fire while that stays true.
+ *
+ * Kept rather than deleted, which is the opposite of what D536 did with its unfalsifiable guard,
+ * and the difference is what makes it unreachable: there, the second half of a condition could not
+ * be satisfied by anything the function itself could produce; here it is a fact about a *different*
+ * function, one noun away from changing. The day `parsedTargetPhrase` learns the word, this is what
+ * stops `bounceToHand` being handed a permanent off the battlefield.
+ */
+const POINTS_AT_A_GRAVEYARD_CARD: ReadonlySet<TargetSpec['kind']> = new Set([
+  'graveyard-card', 'graveyard-creature', 'graveyard-land',
+]);
 
 /**
  * Whether a removal clause can be pointed at a **creature**, which is what `removesACreature` says.
@@ -17280,27 +17325,43 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     The first family whose target phrase is **not** a substring of its own sentence: the card says
     "target creature card … from your graveyard", with the zone in the verb phrase, while the spec
     that points at it is described "target creature card in your graveyard". So the phrase is
-    supplied rather than captured, and the string supplied is the one Raise Dead and Gravedigger
-    both already store — which is what the ground-truth tests compare.
+    **rebuilt** rather than captured whole — the captured phrase with " in your graveyard" put back
+    on the end — and for the plain creature printing that rebuilds exactly the string Raise Dead and
+    Gravedigger store, which is what the ground-truth tests compare.
 
-    Two types, because Grim Discovery prints both halves of the same sentence and the only thing
-    that changes is the word: a creature card or a land card, each a different `TargetSpec.kind`
-    because a graveyard-land is a different object from a graveyard-creature. The type is captured
-    and lower-cased into the supplied phrase rather than written out twice.
+    ## Open, where it used to be `creature|land` (D540)
+
+    The reader was two words, because Grim Discovery prints both halves of one sentence. The corpus
+    prints **nine more**: `card` with no type at all (12 printings), `permanent` (14 across three
+    quantifiers), `instant or sorcery` (8), `artifact` (6), `enchantment` (3), `sorcery` (2),
+    `artifact or creature` (2), `artifact or enchantment` (2) and `historic` (1). Every one of them
+    is a phrase `graveyardCardPhrase` has read since D527 — the type run, the disjunction, the
+    `permanent` list, `nonland` composed with a second word — so widening this reader to an open
+    phrase costs one regex and inherits all of it. `POINTS_AT_A_GRAVEYARD_CARD` is the guard that
+    keeps the open phrase honest: a spec that does not point into a graveyard is turned down rather
+    than handed to `bounceToHand`.
+
+    **And a count.** "Return up to two target creature cards from your graveyard to your hand" is 17
+    printings and the biggest single row left in the family. The quantifier is read by
+    `graveyardCardPhrase` rather than here, and the effect is `foldCardTargets` rather than
+    `firstCardTarget` — the pair D469 made inseparable: a reader that asks for two targets and
+    returns one of them is a card that works and does half of what it says, which is worse than the
+    unread line it replaced (D259, D362).
+
+    What stays refused: `two target creature cards **that share a creature type**` (3 printings — a
+    relation between the two choices, which `TargetSpec` cannot express) and `X target cards` (5 — a
+    target *count* that is X, where the engine's X is a cost).
   */
-  const raised = /^return target (creature|land) card from your graveyard to your hand$/i
-    .exec(text);
+  const raised = new RegExp(
+    `^return (${TARGET_QUANTIFIER_PREFIX}target .*?cards?) from your graveyard to your hand$`,
+    'i',
+  ).exec(text);
   if (raised !== null) {
-    const spec = targetSpecFrom(
-      `target ${raised[1]!.toLowerCase()} card in your graveyard`, false,
-    );
-    if (spec !== null) {
+    const spec = targetSpecFrom(`${raised[1]!} in your graveyard`, false);
+    if (spec !== null && POINTS_AT_A_GRAVEYARD_CARD.has(spec.kind)) {
       return {
         targets: [spec],
-        effect: (c) => {
-          const id = firstCardTarget(c);
-          return id === null ? c.state : bounceToHand(c.state, id);
-        },
+        effect: (c) => foldCardTargets(c, bounceToHand),
       };
     }
   }

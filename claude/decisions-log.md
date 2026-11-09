@@ -37154,3 +37154,72 @@ wide pass runs first.
 stalled table, 66.8 turns and 381 moves a game. Per 100-card deck across 160 decks: 25.9 cards with
 a hand-written script, 47.4 with at least one unread line, 61.9 playable only from printed data, 0.5
 cardboard.
+
+## D540 — The graveyard return, opened up and counted
+
+**The reader was two words wide and the corpus prints eleven.** "Return target `creature|land` card
+from your graveyard to your hand" was written for Raise Dead and for Grim Discovery, which prints
+both halves of one sentence, and the literal alternation is what every other printing ran into.
+
+|  | before | after |
+| --- | --- | --- |
+| printed legal lines read | 22,989 / 56,421 (40.7%) | **23,121 / 56,421 (41.0%)** |
+| cards with a compiled script | 11,705 | **11,802** |
+| cards with every printed line read | 7,463 | **7,551** |
+
+**+88 cards with every printed line read**, which is **5.5x** what the queue predicted for the two
+rows it could see (11 + 5 = 16). This is the instrument's sixth calibration and by far its largest
+miss, and the reason is worth more than the number: the counting quantifier went into
+**`graveyardCardPhrase`** rather than into this one reader, so the exile-from-graveyard and
+reanimation families got it at the same time. A probe that measures one clause cannot see a change
+made one layer down.
+
+Running record of `one-blocker.mjs`: exact at 8 (D532), then under by 3, 2, 9, 2 and **72**.
+
+### None of it needed new vocabulary
+
+`graveyardCardPhrase` has read the type run, the disjunction, the `permanent` list and `nonland`
+composed with a second word since D527. The reader simply was not asking it. Opening the phrase is
+one regex, and it inherits all of that: `card` with no type at all (12 printings), `permanent` (14
+across three quantifiers), `instant or sorcery` (8), `artifact` (6), `enchantment` (3), `sorcery`
+(2), `artifact or creature` (2), `artifact or enchantment` (2), `historic` (1).
+
+The count is the other half. "Return **up to two** target creature cards from your graveyard to your
+hand" is 17 printings, read with `foldCardTargets` rather than `firstCardTarget` — the pair D469 made
+inseparable, because a reader that asks for two targets and moves one of them is a card that resolves
+and does half of what it says. The table test asserts **both** cards come back, and the break run
+confirms that is the row which catches it.
+
+`up to two` is also two facts and both are load-bearing: `count: 2` and `optional: true`. Dropping
+the second makes the spell uncastable with one creature in the graveyard, which is a different and
+worse card — its own break, and its own test row.
+
+### What stays refused
+
+- **"two target creature cards that share a creature type"** (3 printings). `TargetSpec.filter` is
+  asked about one candidate at a time, so there is nowhere to say "and the same type as the other
+  one". A reader that dropped the clause would let a player take any two, which is strictly better
+  than the card printed (D259).
+- **"X target creature cards"** (5). The engine's X is announced as a cost is paid; `count` is a
+  number read when targets are asked for. A count of X is a third thing.
+
+### The break run: 6 of 7, and the seventh is provably unreachable
+
+`POINTS_AT_A_GRAVEYARD_CARD` — the guard that keeps the open phrase honest — can be deleted with the
+suite staying green. Rather than leave that as "unfalsifiable", the question was pushed one step:
+the callers rebuild the phrase with ` in your graveyard` on the end, and `targetSpecFrom`'s last
+resort has **no noun for `graveyard`**, which its own docblock states. So a phrase
+`graveyardCardPhrase` turns down is refused outright rather than read as something else, and the
+guard cannot fire while that holds.
+
+It is kept, which is the opposite of what D536 did with its unfalsifiable guard, and the difference
+is written into the code: there, the unsatisfiable half was a fact about the function's own output;
+here it is a fact about a *different* function, one noun away from changing. The day
+`parsedTargetPhrase` learns the word, this is what stops `bounceToHand` being handed a permanent off
+the battlefield.
+
+The regression that mattered most has its own row: `targetSpecFrom`'s exact-phrase switch keeps
+`target creature card in your graveyard` with a hand-written `filter` by reference, which
+`compiled-vs-written.test.ts` compares against Raise Dead character for character. Rebuilding the
+phrase reproduces exactly that string for the plain printing, and the test asserts the kind, the
+description and the absence of a count rather than trusting the other file.

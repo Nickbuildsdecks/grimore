@@ -34106,3 +34106,90 @@ describe('"exile it instead", at the table (D539)', () => {
     expect(s.instances[named!]?.zone).toBe('graveyard');
   });
 });
+
+describe('the counted graveyard return, at the table (D540)', () => {
+  /*
+    One assertion that only a game can make: **both** cards come back.
+
+    `TargetSpec.count` makes the engine ask for two targets, and a reader that then moved
+    `firstCardTarget` would leave the second one in the graveyard — the card resolves, the log says
+    it resolved, and a player who chose two cards gets one. That is the failure `foldCardTargets`
+    was extracted for (D469) and the reason this row exists rather than trusting the count in a
+    compile test.
+
+    Dead Revels, the real printing, through `customDeck`'s `data`.
+  */
+  const DATA = [
+    {
+      name: 'Dead Revels', type_line: 'Sorcery', mana_cost: '{3}{B}', cmc: 4,
+      colors: ['B'], layout: 'normal',
+      oracle_text: 'Spectacle {1}{B} (You may cast this spell for its spectacle cost rather than '
+        + 'its mana cost if an opponent lost life this turn.)\n'
+        + 'Return up to two target creature cards from your graveyard to your hand.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'dead-revels',
+      name: 'Dead Revels',
+      entries: [
+        { name: 'Dead Revels', count: 4 }, { name: 'Grizzly Bears', count: 8 },
+        { name: 'Swamp', count: 24 }, { name: 'Forest', count: 24 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData).toEqual(['Dead Revels']);
+    return list.deck;
+  };
+
+  it('brings back BOTH creature cards, not just the first one chosen', () => {
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'dead-revels', 1: 'dead-revels' },
+      deckSpecs: { 'dead-revels': deck() },
+      hands: { 0: ['Dead Revels'] },
+      graveyard: { 0: ['Grizzly Bears', 'Grizzly Bears'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+
+    const buried = ids(s, 0, 'graveyard').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+    expect(buried.length).toBe(2);
+    const handBefore = ids(s, 0, 'hand').length;
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Dead Revels'),
+      targets: buried.map((id) => ({ kind: 'card', id })),
+    } as Action), 60);
+
+    expect(namesIn(s, 0, 'graveyard').filter((n) => n === 'Grizzly Bears')).toEqual([]);
+    for (const id of buried) expect(s.instances[id]?.zone).toBe('hand');
+    // The Revels itself went to the graveyard, so the hand is +2 cards and −1.
+    expect(ids(s, 0, 'hand').length).toBe(handBefore + 1);
+  });
+
+  it('is happy with one, because "up to two" allows fewer', () => {
+    /*
+      The other half of `optional: true`. A player with one creature in the graveyard — or who
+      simply wants one — gets a legal cast, and the card does not demand a second target it cannot
+      have. A reader that set `count: 2` without `optional` would make the spell uncastable on a
+      one-creature graveyard, which is a different and worse card.
+    */
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'dead-revels', 1: 'dead-revels' },
+      deckSpecs: { 'dead-revels': deck() },
+      hands: { 0: ['Dead Revels'] },
+      graveyard: { 0: ['Grizzly Bears'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const one = find(s, 0, 'graveyard', 'Grizzly Bears');
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Dead Revels'),
+      targets: [{ kind: 'card', id: one }],
+    } as Action), 60);
+    expect(s.instances[one]?.zone).toBe('hand');
+  });
+});

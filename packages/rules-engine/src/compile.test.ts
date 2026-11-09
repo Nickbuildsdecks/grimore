@@ -15342,3 +15342,111 @@ describe('"If that creature would die this turn, exile it instead" (D539)', () =
     ]);
   });
 });
+
+describe('the graveyard return, opened up and counted (D540)', () => {
+  /*
+    **The reader was two words wide and the corpus prints eleven.** "Return target `creature|land`
+    card from your graveyard to your hand" was written for Raise Dead and Grim Discovery, which
+    print both halves of one sentence, and every other type ran into the literal alternation: `card`
+    with no type at all (12 printings), `permanent` (14), `instant or sorcery` (8), `artifact` (6),
+    `enchantment` (3), `sorcery` (2), `artifact or creature` (2), `artifact or enchantment` (2),
+    `historic` (1).
+
+    None of those needed new vocabulary. `graveyardCardPhrase` has read the type run, the
+    disjunction, the `permanent` list and `nonland` composed with a second word since D527 — the
+    reader simply was not asking it. Opening the phrase is one regex, and the measured result is
+    **+88 cards with every printed line read**, which is 5.5x what the queue predicted for the two
+    rows it could see. The reason it is so much more is that the counting quantifier went into
+    `graveyardCardPhrase` rather than into this reader, so the exile-from-graveyard and reanimation
+    families got it at the same time.
+
+    And a count: "Return **up to two** target creature cards from your graveyard to your hand" is 17
+    printings, read with `foldCardTargets` rather than `firstCardTarget` — the pair D469 made
+    inseparable, because a reader that asks for two targets and moves one of them is a card that
+    does half of what it says.
+  */
+  const row = (
+    name: string, type: string, text: string, extra: Partial<CardDataRow> = {},
+  ): ReturnType<typeof compileCard> => compileCard({
+    name, type_line: type, mana_cost: '{3}{B}', cmc: 4, colors: ['B'], layout: 'normal',
+    oracle_text: text, ...extra,
+  });
+
+  it('reads Dead Revels, and asks for both cards', () => {
+    const read = row('Dead Revels', 'Sorcery',
+      'Spectacle {1}{B} (You may cast this spell for its spectacle cost rather than its mana cost '
+      + 'if an opponent lost life this turn.)\n'
+      + 'Return up to two target creature cards from your graveyard to your hand.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.targets?.length).toBe(1);
+    // "up to two" is both halves: two of them, and none is a legal answer.
+    expect(read.script?.targets?.[0]?.count).toBe(2);
+    expect(read.script?.targets?.[0]?.optional).toBe(true);
+  });
+
+  it.each([
+    ['no type at all', 'Return target card from your graveyard to your hand.'],
+    ['a permanent card', 'Return target permanent card from your graveyard to your hand.'],
+    ['a disjunction', 'Return target instant or sorcery card from your graveyard to your hand.'],
+    ['an artifact', 'Return target artifact card from your graveyard to your hand.'],
+    ['up to one', 'Return up to one target creature card from your graveyard to your hand.'],
+    ['two of them', 'Return up to two target permanent cards from your graveyard to your hand.'],
+  ])('reads %s', (_what, text) => {
+    const read = row('Probe Rite', 'Sorcery', text as string);
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('still gives Raise Dead the hand-written spec, which a ground-truth test compares', () => {
+    /*
+      The regression guard that matters most. `targetSpecFrom`'s exact-phrase switch keeps
+      `target creature card in your graveyard` with a hand-written `filter` by reference, and
+      `compiled-vs-written.test.ts` compares the compiled spec against Raise Dead's character for
+      character. Opening the phrase rebuilds exactly that string for the plain printing — asserted
+      here rather than left to the other file, because this is the reader that rebuilds it.
+    */
+    const read = row('Raise Dead', 'Sorcery',
+      'Return target creature card from your graveyard to your hand.',
+      { mana_cost: '{B}', cmc: 1 });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.targets?.[0]?.kind).toBe('graveyard-creature');
+    expect(read.script?.targets?.[0]?.description)
+      .toBe('target creature card in your graveyard');
+    expect(read.script?.targets?.[0]?.count).toBeUndefined();
+  });
+
+  it('refuses a relation between the two choices', () => {
+    /*
+      "Return **two target creature cards that share a creature type** from your graveyard to your
+      hand" (3 printings). `TargetSpec.filter` is asked about one candidate at a time, so there is
+      nowhere to say "and the same type as the other one" — a reader that dropped the clause would
+      let a player take any two creatures, which is a strictly better card than the one printed
+      (D259).
+    */
+    const read = row('Probe Rite', 'Sorcery',
+      'Return two target creature cards that share a creature type from your graveyard '
+      + 'to your hand.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.length).toBe(1);
+  });
+
+  it('refuses a target count that is X', () => {
+    /*
+      "Return **X** target creature cards from your graveyard to your hand" (5 printings). The
+      engine's X is announced as a cost is paid and `TargetSpec.count` is a number read when the
+      targets are asked for; a count of X is a third thing, and reading it as one or as two would
+      be a different card either way.
+    */
+    const read = row('Probe Rite', 'Sorcery',
+      'Return X target creature cards from your graveyard to your hand.',
+      { mana_cost: '{X}{B}', cmc: 1 });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.length).toBe(1);
+  });
+});
