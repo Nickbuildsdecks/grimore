@@ -35587,3 +35587,64 @@ between the halves and D523 crossed it; the D474 magecraft row listed Storm-Kiln
 reason recorded in place — D516's rule, that a row recording *when* a shape started reading is worth
 more than one that quietly disappears, and that a stale refusal is how a suite starts asserting the
 past.
+
+## D524 — The `you may` combinator is worth 33 cards, not 591. A correction to D519's queue
+
+D519 asked the corpus which **clause combinators** recur across the 16,823 cards that are one unread
+line from finished, ranked them, and set the plan: `for each` 950, `where X is` 713,
+`you may <verb>. If you do, <effect>` 591. D520-D523 spent four increments on the first two and
+delivered 123 finished cards against a combined bound of 1,663. That ratio was the warning.
+
+So before building the third, the same question was asked of its **parts** rather than of the line.
+A combinator is only worth what its halves are worth: `you may sacrifice a creature. If you do, draw
+two cards` needs the may-clause read, the if-you-do clause read, *and* the gating between them. Each
+half was compiled on its own, as the whole text of a synthetic sorcery, and counted.
+
+| | cards |
+| --- | --- |
+| one-away cards whose single unread line says `you may` | **2,216** |
+| of those, the `. If you do,` shape | **510** |
+| …with **neither** half readable | 350 |
+| …with only the **tail** readable | 83 |
+| …with only the **head** readable | 44 |
+| …with **both** halves readable — the reachable number | **33** |
+
+**So the combinator is worth 33 cards.** D519's 591 counted cards whose line *contains* the shape,
+and that figure was published with the words "upper bounds rather than promises" — this is the bound
+measured against reality, and it is **18 times** the deliverable.
+
+### What the number says to do instead
+
+The halves are the lever, and they divide cleanly by role: every **head** is a cost and every
+**tail** is an effect.
+
+- **The heads that do not read are costs**: `pay {2}{U}`, `exile two cards from your graveyard`,
+  `discard your hand`, `exile an enchantment card from your graveyard`. Reading that vocabulary
+  turns 83 cards' tails into whole cards *and* makes the combinator worth 116 rather than 33.
+- **The tails that do not read are effects** the compiler has no reader for yet, 44 of them.
+- **350 cards have neither half**, and no combinator will ever touch them. They are clause work.
+
+The queue therefore inverts: **read the cost vocabulary first, the combinator second.** A combinator
+over two unread clauses finishes nothing, which is obvious in hindsight and was not in the ranking.
+
+### The other `you may` shapes, which are a different story again
+
+Only 510 of the 2,216 use `. If you do,` at all. The rest are ranked by shape, and the heads of that
+list are mostly blocked by **mechanics rather than grammar**:
+
+| cards | shape | what actually blocks it |
+| --- | --- | --- |
+| 58 | `Whenever ~ deals combat damage to a player,` | the prologue reads; the tails want energy `{E}` and ticket `{TK}` counters |
+| 44 | `When ~ enters, you may search your library` | a library search with a choice |
+| 37 | `You may have ~ enter as a copy` | copy-on-arrival, which is #94's machinery |
+| 29 | `At the beginning of your upkeep, you may` | a mixed bag |
+| 20 | `You may exert ~ as it attacks. When you do,` | exert, a keyword the engine does not have |
+
+### The standing lesson, now twice confirmed
+
+D434 said: rank the queue by cards finished, not lines printed. D519 obeyed that for *lines* and
+then broke it for *combinators* — it ranked by how many cards contain a shape, which is the same
+mistake one level up. The rule generalises: **count what a reader would finish, by compiling the
+parts, before believing a bound.** Every increment since D520 has had its ceiling overstated by a
+factor of two to eighteen, and in each case the honest number came from compiling rather than
+pattern-matching.
