@@ -28,7 +28,7 @@ import {
   printedLandwalk, printedProtection, proliferate,
   proliferateCandidates, protectedFrom,
   preventDamage,
-  pump, pumpAll, pumpTeam, gainControl, scriptFor,
+  pump, pumpAll, pumpTeam, gainControl, regenerate, scriptFor,
   scriptedCardNames,
   staticEffect, timesCost, transformPermanent, unpackView, viewFor,
   type ContinuousEffect, type PumpOptions,
@@ -33460,5 +33460,144 @@ describe('the pronoun "it", played off printed text (D533)', () => {
     expect(life(s, 0)).toBe(20);
     // And the Scamp paid for it: "you may sacrifice it" means itself, not the creature it hit.
     expect(namesIn(s, 0, 'graveyard')).toContain('Furnace Scamp');
+  });
+});
+
+describe('"It can\'t be regenerated", at the table (D535)', () => {
+  /*
+    The runtime half, and the only thing that can see it: a compile test cannot tell a destroy that
+    ignores a regeneration shield from one that spends it. Both readings compile; one of them is a
+    different card.
+
+    **A paired board, with the pool's own cards as the control.** River Boa ("{G}: Regenerate River
+    Boa") carries the shield; Doom Blade ("Destroy target nonblack creature") is the pool's
+    unmodified destroy, and Dark Banishing is the same sentence with the printed rider. Same
+    creature, same shield, same destroy — the rider is the only difference, which is what makes the
+    pair a measurement rather than two assertions.
+  */
+  const DATA = [
+    {
+      name: 'Dark Banishing', type_line: 'Instant', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], layout: 'normal',
+      oracle_text: 'Destroy target nonblack creature. It can\'t be regenerated.',
+    },
+    /*
+      The sweeper half. The rider reaches `destroy all creatures` through the same context flag, and
+      that call site is a second place in the compiler that has to read it — a guard written on one
+      of the two would leave the other silently spending shields. Day of Judgment, the pool's own
+      rider-less sweeper, is the control.
+    */
+    {
+      name: 'Wrath of God', type_line: 'Sorcery', mana_cost: '{2}{W}{W}', cmc: 4,
+      colors: ['W'], layout: 'normal',
+      oracle_text: 'Destroy all creatures. They can\'t be regenerated.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'no-regen',
+      name: 'No Regeneration',
+      entries: [
+        { name: 'Dark Banishing', count: 4 }, { name: 'Doom Blade', count: 4 },
+        { name: 'Wrath of God', count: 4 }, { name: 'Day of Judgment', count: 4 },
+        { name: 'River Boa', count: 4 },
+        { name: 'Plains', count: 20 }, { name: 'Swamp', count: 20 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    // Only the Banishing comes from `data`; the Boa and the Blade are the pool's own scripts, which
+    // is what makes them a control on this increment rather than on itself.
+    expect(list.fromData.slice().sort()).toEqual(['Dark Banishing', 'Wrath of God']);
+    return list.deck;
+  };
+
+  /** Seat 0 with `spell` in hand and three Swamps up; seat 1 holding a shielded River Boa. */
+  const shielded = (spell: string) => {
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'no-regen', 1: 'no-regen' },
+      deckSpecs: { 'no-regen': deck() },
+      hands: { 0: [spell] },
+      battlefield: {
+        0: ['Swamp', 'Swamp', 'Plains', 'Plains'], 1: ['River Boa'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const boa = find(s, 1, 'battlefield', 'River Boa');
+    /*
+      The shield put on through the engine's own `regenerate` rather than by writing a counter: it
+      is the function River Boa's ability calls, so the test exercises the same object the card
+      does. Set here rather than by activating the Boa because the ability is seat 1's and seat 0
+      holds priority in its own main phase — the shield is the precondition, not the thing measured.
+    */
+    s = regenerate(s, boa);
+    expect(s.instances[boa]!.counters['regeneration']).toBe(1);
+    return { s, boa };
+  };
+
+  it('Doom Blade is regenerated away: the Boa survives, tapped, and spends its shield', () => {
+    const start = shielded('Doom Blade');
+    const s = drain(apply(start.s, {
+      type: 'auto:cast', by: 0, card: find(start.s, 0, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: start.boa }],
+    } as Action), 40);
+    // Alive, and all three parts of the replacement happened.
+    expect(namesIn(s, 1, 'battlefield')).toContain('River Boa');
+    expect(s.instances[start.boa]!.tapped).toBe(true);
+    expect(s.instances[start.boa]!.counters['regeneration']).toBeUndefined();
+    expect(namesIn(s, 1, 'graveyard')).not.toContain('River Boa');
+  });
+
+  it('Dark Banishing kills it through the shield, which is what the rider says', () => {
+    const start = shielded('Dark Banishing');
+    const s = drain(apply(start.s, {
+      type: 'auto:cast', by: 0, card: find(start.s, 0, 'hand', 'Dark Banishing'),
+      targets: [{ kind: 'card', id: start.boa }],
+    } as Action), 40);
+    expect(namesIn(s, 1, 'graveyard')).toContain('River Boa');
+    expect(namesIn(s, 1, 'battlefield')).not.toContain('River Boa');
+  });
+
+  it('Day of Judgment is regenerated away, where Wrath of God is not', () => {
+    /*
+      The same pair one destroy shape over. `destroy all creatures` is the compiler's **second**
+      `destroy` call site, so a flag read in one place and not the other would leave half the
+      printed family spending shields — and the two sweepers differ by nothing but the rider.
+    */
+    const kept = shielded('Day of Judgment');
+    const after = drain(apply(kept.s, {
+      type: 'auto:cast', by: 0, card: find(kept.s, 0, 'hand', 'Day of Judgment'),
+    } as Action), 40);
+    expect(namesIn(after, 1, 'battlefield')).toContain('River Boa');
+    expect(after.instances[kept.boa]!.counters['regeneration']).toBeUndefined();
+
+    const swept = shielded('Wrath of God');
+    const dead = drain(apply(swept.s, {
+      type: 'auto:cast', by: 0, card: find(swept.s, 0, 'hand', 'Wrath of God'),
+    } as Action), 40);
+    expect(namesIn(dead, 1, 'graveyard')).toContain('River Boa');
+    expect(namesIn(dead, 1, 'battlefield')).not.toContain('River Boa');
+  });
+
+  it('does not spend the shield when the destroy does nothing anyway', () => {
+    /*
+      Why `destroy` takes a parameter instead of the rider stripping the counters first.
+      `destroy` returns early for an indestructible creature, so a creature the card never touched
+      keeps the shield it had. A strip-then-destroy reading would take it off, and the next thing to
+      kill the Boa that turn would find it unshielded — a wrong card, in a narrow case nothing else
+      would have caught.
+    */
+    const start = shielded('Dark Banishing');
+    let s = start.s;
+    s = staticEffect(s, start.boa, 1, { kind: 'cards', ids: [start.boa] },
+      { keywords: ['indestructible'] });
+    expect(characteristicsOf(s, s.instances[start.boa]!).keywords.has('indestructible')).toBe(true);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Dark Banishing'),
+      targets: [{ kind: 'card', id: start.boa }],
+    } as Action), 40);
+    expect(namesIn(s, 1, 'battlefield')).toContain('River Boa');
+    expect(s.instances[start.boa]!.counters['regeneration']).toBe(1);
   });
 });

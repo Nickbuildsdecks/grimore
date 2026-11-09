@@ -45,6 +45,21 @@ export interface EffectContext {
   /** Whether this spell's kicker was paid (CR 702.32a). False for everything without one. */
   readonly kicked: boolean;
   /**
+   * "It can't be regenerated." — set for the whole of **one resolution**, and read by every destroy
+   * that resolution performs (D535).
+   *
+   * On the context rather than on the clause, because the sentence is not about a clause: it is a
+   * modifier on its sibling. "Destroy target nonblack creature. It can't be regenerated." is one
+   * effect with a rider, and 134 legal cards print the rider on eleven different destroy shapes —
+   * a targeted destroy, four sweepers, an activated ability, an upkeep trigger, a combat-damage
+   * trigger. A reader per shape is the long tail D530 exists to avoid; a flag the destroys read is
+   * one change that covers every shape the vocabulary can already read, and every shape it learns.
+   *
+   * Absent means "regeneration applies", which is the rule (CR 701.15). Only `true` is ever set, so
+   * a context built without the field behaves exactly as it did before this existed.
+   */
+  readonly noRegeneration?: true;
+  /**
    * What the attack that caused this trigger was aimed at, for an attack trigger that has to say
    * "the player or planeswalker it's attacking". Undefined for everything else.
    */
@@ -804,14 +819,26 @@ export function enterAttacking(
   };
 }
 
-export function destroy(state: GameState, id: string): GameState {
+export function destroy(
+  state: GameState, id: string,
+  opts: { readonly regenerates?: boolean } = {},
+): GameState {
   const inst = state.instances[id];
   if (inst === undefined || inst.zone !== 'battlefield') return state;
   if (characteristicsOf(state, inst).keywords.has('indestructible')) return state;
-  // Regeneration replaces the destruction rather than following it, so it is checked here — the
-  // one place a card is destroyed on purpose — and again where lethal damage is noticed.
-  const saved = spendRegeneration(state, id);
-  if (saved !== null) return saved;
+  /*
+    Regeneration replaces the destruction rather than following it, so it is checked here — the one
+    place a card is destroyed on purpose — and again where lethal damage is noticed.
+
+    `regenerates: false` is "It can't be regenerated" (CR 701.15, D535), and it is a parameter rather
+    than a strip of the shield beforehand **because the indestructible line above it returns**. A
+    creature that cannot be destroyed keeps the shield it had; removing the counters first and then
+    finding the destruction does nothing would take a shield off a creature the card never touched.
+  */
+  if (opts.regenerates !== false) {
+    const saved = spendRegeneration(state, id);
+    if (saved !== null) return saved;
+  }
   return relocate(state, inst, 'graveyard', inst.owner, 'bottom');
 }
 

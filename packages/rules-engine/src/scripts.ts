@@ -11423,7 +11423,9 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
           const inst = state.instances[cardId];
           return inst !== undefined && characteristicsOf(state, inst).isCreature;
         })) {
-          state = destroy(state, id);
+          // "They can't be regenerated" (D535): eight of the 134 printings put the rider on a
+          // sweeper rather than on a targeted destroy.
+          state = destroy(state, id, { regenerates: c.noRegeneration !== true });
         }
         return state;
       },
@@ -16721,7 +16723,11 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     if (spec !== null && pointsAtAPermanent(spec)) {
       return {
         targets: [spec],
-        effect: (c) => foldCardTargets(c, destroy),
+        // `c.noRegeneration` is the printed rider on a sibling clause (D535), carried on the
+        // context because it belongs to the resolution rather than to this sentence.
+        effect: (c) => foldCardTargets(
+          c, (state, id) => destroy(state, id, { regenerates: c.noRegeneration !== true }),
+        ),
         // Only when the target really is a creature. A Disenchant that claimed to remove one would
         // have the bot holding it for a board it cannot answer.
         ...(mayRemoveACreature(spec, destroyed[1]!) ? { spellFlags: { removesACreature: true } } : {}),
@@ -17980,10 +17986,68 @@ function chosenDiscardPrefix(
   };
 }
 
+/**
+ * "It can't be regenerated." — the printed rider, in all four spellings the corpus uses.
+ *
+ * Singular and plural, and the noun as well as the pronoun, because the four are one sentence:
+ * "It" after a targeted destroy, "They" after a sweeper, and "that creature" / "those creatures"
+ * where the printing spells the referent out. 134 legal cards print one of them.
+ */
+const NO_REGENERATION = /^(?:it|they|that creature|those creatures) can['’]t be regenerated$/i;
+
+/**
+ * A composition whose last sentence is "It can't be regenerated", read as the rider it is (D535).
+ *
+ * **A clause that modifies its sibling rather than doing anything itself**, which is a shape this
+ * file had no way to express: `composeEffects` runs the parts in order and each one gets the state
+ * the one before produced, so a part cannot reach back and change how an earlier part behaves.
+ * `EffectContext.noRegeneration` is the answer — the rider is a fact about the *resolution*, every
+ * destroy in it reads the flag, and the composition is wrapped once to set it.
+ *
+ * That is also why it covers eleven printed destroy shapes for the price of one reader: a targeted
+ * destroy, four sweepers, an activated ability, an upkeep trigger and a combat-damage trigger all
+ * go through the same two `destroy` call sites in this file, and both read the flag.
+ *
+ * **The rider is only read onto a sentence that says "destroy".** Without that test, "Draw a card.
+ * It can't be regenerated." would compile as a draw with a sentence silently dropped, which is the
+ * half-read line D487 is about. And it is a test on the *printed text* rather than on the composed
+ * reading, deliberately: the two printings that pair the rider with **damage** — "~ deals 2 damage
+ * to target creature. It can't be regenerated." — are refused by it, and should be. Regeneration
+ * there is spent where lethal damage is noticed rather than in `destroy`, and the suppression lasts
+ * until end of turn on the creature, which is a continuous effect this engine has no field for.
+ * Reading those two as though the flag covered them would be a wrong card (D362).
+ */
+function noRegenerationRider(
+  clauses: readonly string[], name: string, where: SubjectZone | null,
+): ReadEffect | null {
+  const last = clauses[clauses.length - 1];
+  if (last === undefined || !NO_REGENERATION.test(plain(last).trim().replace(/\.\s*$/, ''))) {
+    return null;
+  }
+  const before = clauses.slice(0, -1);
+  if (before.length === 0) return null;
+  if (!before.some((clause) => /\bdestroy\b/i.test(clause))) return null;
+  const read = composeEffects(before, name, where);
+  if (read === null) return null;
+  // `beforeDecisions` stays refused, for `optionalEffect`'s and `referentEffect`'s reason: a half
+  // the wrapper cannot see through is a draw moved in front of somebody else's question.
+  if (read.beforeDecisions !== undefined) return null;
+  const suppressed = (fn: EffectFn): EffectFn => (c) => fn({ ...c, noRegeneration: true });
+  return {
+    ...read,
+    effect: suppressed(read.effect),
+    ...(read.immediate === undefined ? {} : { immediate: suppressed(read.immediate) }),
+  };
+}
+
 function composeEffects(
   clauses: readonly string[], name: string, where: SubjectZone | null,
 ): ReadEffect | null {
   if (clauses.length === 0) return null;
+  // The rider first, because it is a reading of the whole list that the clause loop below would
+  // refuse: nothing reads "It can't be regenerated" as a clause, and nothing should.
+  const rider = noRegenerationRider(clauses, name, where);
+  if (rider !== null) return rider;
   /*
     **One idiom read as a group, before the clause loop** (D516) — the Act of Treason sentence:
 

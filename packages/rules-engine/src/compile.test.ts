@@ -14611,3 +14611,88 @@ describe('a trigger that divides a quantity is not emitted (D534)', () => {
     expect(read.script?.triggers?.[0]?.targets?.[0]?.divided).toBeUndefined();
   });
 });
+
+describe('"It can\'t be regenerated", read as a rider on its sibling (D535)', () => {
+  /*
+    The head of the corrected queue (`scripts/measure/one-blocker.mjs`) at 17 cards, and **134 legal
+    cards print the sentence** across eleven different destroy shapes — a targeted destroy, four
+    sweepers, an activated ability, an upkeep trigger, a combat-damage trigger.
+
+    It is the first clause this compiler reads that **modifies its sibling rather than doing anything
+    itself**, and `composeEffects` had no way to say that: the parts run in order, each handed the
+    state the one before produced, so a part cannot reach back and change how an earlier part
+    behaves. `EffectContext.noRegeneration` is the answer. The rider is a fact about the
+    *resolution*, every destroy in it reads the flag, and the composition is wrapped once to set it —
+    so the eleven printed shapes cost one reader instead of eleven.
+  */
+  const spell = (text: string, name = 'Dark Banishing', type = 'Instant') => compileCard({
+    name, type_line: type, mana_cost: '{2}{B}', cmc: 3, colors: ['B'], layout: 'normal',
+    oracle_text: text,
+  });
+
+  it.each([
+    ['Dark Banishing', 'Destroy target nonblack creature. It can\'t be regenerated.'],
+    ['Wrath of God', 'Destroy all creatures. They can\'t be regenerated.'],
+    ['Probe Shatter', 'Destroy target artifact. It can\'t be regenerated.'],
+  ])('reads printed %s', (name, text) => {
+    const read = spell(text as string, name as string, 'Sorcery');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('reads all four printed spellings of the rider', () => {
+    /*
+      Singular and plural, pronoun and spelled-out noun. The corpus prints all four, and they are
+      one sentence rather than four readings.
+    */
+    for (const tail of [
+      'Destroy target creature. It can\'t be regenerated.',
+      'Destroy all creatures. They can\'t be regenerated.',
+      'Destroy target creature. That creature can\'t be regenerated.',
+      'Destroy all creatures. Those creatures can\'t be regenerated.',
+    ]) {
+      const read = spell(tail, 'Probe Card', 'Sorcery');
+      expect(read.ok).toBe(true);
+      if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+    }
+  });
+
+  it('refuses the rider on a sentence that does not destroy anything', () => {
+    /*
+      Without this the line would compile as a draw with a printed sentence silently dropped, which
+      is the half-read line D487 is about.
+    */
+    const read = spell('Draw a card. It can\'t be regenerated.');
+    expect(read.ok).toBe(true);
+    if (read.ok) {
+      expect(read.unread.map((u) => u.line)).toEqual(['Draw a card. It can\'t be regenerated.']);
+    }
+  });
+
+  it('refuses the rider on DAMAGE, which is a different rule', () => {
+    /*
+      Two legal printings pair the rider with damage — "~ deals 2 damage to target creature. It
+      can't be regenerated." — and the flag does not cover them. Regeneration there is spent where
+      lethal damage is noticed rather than in `destroy`, and the suppression lasts until end of turn
+      on the creature, which is a continuous effect this engine has no field for. Reading those two
+      as though the flag reached them would be a wrong card (D362), so they stay unread.
+    */
+    const read = spell('Dark Banishing deals 2 damage to target creature. It can\'t be regenerated.');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+
+  it('refuses the rider standing alone, with nothing to modify', () => {
+    const read = spell('It can\'t be regenerated.');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+
+  it('leaves a destroy with no rider alone', () => {
+    // The control: the flag is only set by the rider, so an ordinary destroy is unchanged.
+    const read = spell('Destroy target creature.');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+});

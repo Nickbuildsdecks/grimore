@@ -19255,3 +19255,69 @@ unread line, 61.9 playable only from printed data, 0.4 cardboard.
 
 D533's own sweep is therefore recorded as **39/40 with one throw, re-run clean at 40/40 after D534** —
 not as a clean sweep. The first number is the honest one for that commit.
+
+## D535 — "It can't be regenerated", read as a rider on its sibling clause
+
+The head of the corrected queue at 17 cards, and **134 legal cards print the sentence** across eleven
+different destroy shapes: a targeted destroy, four sweepers, an activated ability, an upkeep trigger,
+a combat-damage trigger.
+
+### The shape that was missing
+
+It is the first clause this compiler reads that **modifies its sibling rather than doing anything
+itself**, and `composeEffects` had no way to say that. The parts run in order and each is handed the
+state the one before produced, so a part cannot reach back and change how an earlier part *behaves* —
+only what it acts on.
+
+`EffectContext.noRegeneration` is the answer, and the reason it is on the context is the reason the
+increment is one reader instead of eleven: the rider is a fact about the **resolution**, not about a
+sentence. Every destroy in that resolution reads the flag; the composition is wrapped once to set it.
+The two `destroy` call sites in the compiler — the targeted one and `destroy all creatures` — both
+read it, so the targeted printings and the sweeper printings come in together.
+
+`destroy` takes `{ regenerates: false }` rather than the rider stripping the shield beforehand, and
+the **indestructible early return is why**. A creature that cannot be destroyed keeps the shield it
+had; strip-then-destroy would take a shield off a creature the card never touched, and the next thing
+to kill it that turn would find it unshielded. A wrong card, in a narrow case nothing else would have
+caught — so there is a test for exactly it.
+
+### Two refusals, both deliberate
+
+- **The rider is only read onto a sentence that says "destroy".** Without that, "Draw a card. It
+  can't be regenerated." would compile as a draw with a printed sentence silently dropped (D487).
+- **The two printings that pair the rider with damage are refused.** "~ deals 2 damage to target
+  creature. It can't be regenerated." does not go through `destroy` at all — regeneration there is
+  spent where lethal damage is noticed, and the suppression lasts until end of turn on the creature,
+  which is a continuous effect this engine has no field for. Reading those two as though the flag
+  reached them would be a wrong card (D362). The test for this is a refusal row, and the guard that
+  produces it is a test on the *printed text* rather than on the composed reading, deliberately.
+
+### What it moved
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 22,848 | **22,873 / 56,421 (40.5%)** |
+| cards with a compiled script | 11,595 | **11,614** |
+| cards with every printed line read | 7,355 | **7,375** |
+
+**20 cards finished against a prediction of 17** — the instrument under-counted this time, where
+p549 over-counted by 4.9x. `one-blocker.mjs` only attributes a card when *exactly one* clause of its
+line is the blocker, so a card whose line the rider unblocks alongside something else is invisible to
+it. Under-counting is the direction that instrument's own docblock says it errs in, and this is the
+first measurement that confirms it rather than asserting it.
+
+### The break run: 11 breaks, 9 caught, both misses predicted in advance
+
+Each verified to apply against an anchor matching exactly once and to revert against a SHA-256, over
+both files. Scored against `-t D53` — D530 through D535 together — because this increment changes
+`composeEffects` and `destroy`, which all of them sit on.
+
+The nine: the rider never read; the rider read onto anything rather than only a destroy; the rider
+not setting the flag; only "it" read of the four spellings; the targeted destroy ignoring the flag;
+the sweeper ignoring the flag; `destroy` accepting the option and ignoring it; `destroy`'s sense
+inverted; and the indestructible return moved below the shield.
+
+The two misses were **written into the harness as expected-vacuous before the run**, and the run
+confirmed both: `before.length === 0` is unfalsifiable because `composeEffects([])` already returns
+null, and the `beforeDecisions` refusal is defence in depth that nothing in the corpus reaches. That
+is the first run this stretch where every miss was predicted rather than explained afterwards.
