@@ -36878,3 +36878,10 @@ real printed values it reads. Third distinct probe artifact this session, after 
 one (D532) and the clause-compiled-standalone one (D530) — the pattern is the same each time: a probe
 that constructs a card instead of using a printed one, and a conclusion about the reader drawn from a
 fact about the probe.
+
+### The pod sweep
+
+**40/40 pods finished** at a fresh seed (SEED0=40801) on the clean commit, no engine throw and no
+stalled table, 63.2 turns and 334 moves a game. Per 100-card deck across 160 decks: 25.4 cards with
+a hand-written script, 48.1 with at least one unread line, 62.0 playable only from printed data, 0.3
+cardboard.
