@@ -17817,3 +17817,101 @@ hopeless, eight combinators is not.
 The top two share their machinery. `for each <countable>` and `where X is <count>` are both **a
 number read off the board**, which is what `countFrom` already is. So they are one increment, not
 two, and it is the next one.
+
+## D520 — Read a quantity off the board
+
+`countOfThing` has been able to count a board since D444. Until this increment exactly **one** caller
+asked it: `tokenEffect`, for "create a 1/1 Goblin for each Mountain you control". The count was the
+hard part and it was already written; what was missing was every other clause that spends one.
+
+D519 put `for each <thing>` (950 one-away cards) and `where X is …` (713) at the head of the
+combinator queue and said they were one increment because they are one number. They are, and the
+increment turned out to be three things rather than one.
+
+### 1. The clauses that spend a count
+
+Measured over the legal corpus, the grammars that put a board count in a clause:
+
+| cards | clause |
+| --- | --- |
+| 140 | `draw N cards for each <T>` |
+| 122 | `you gain N life for each <T>` |
+| 114 | `deals X damage to <dest>, where X is the number of <T>` |
+| 112 | `deals damage to <dest> equal to the number of <T>` |
+| 76 | `Add {M} for each <T>` |
+| 26 | `you lose life equal to the number of <T>` |
+| 25 | `draw cards equal to the number of <T>` |
+| 22 | `you gain life equal to the number of <T>` |
+| 13 | `you lose N life for each <T>` |
+| 11 | `deals N damage to <dest> for each <T>` |
+| 8 | `each opponent loses N life for each <T>` |
+
+Magic writes the same number three ways and the difference is not only word order: `, where X is the
+number of <T>` announces it and the body's slot is the letter X; ` for each <T>` makes the body's
+printed number a **rate**, so "2 life for each card" is two per card; `equal to the number of <T>`
+has no slot in the body at all. All three are read in `countScaledEffect`, which is a table of
+bodies over one count — the same multiplying shape the trigger prologue table and `composeEffects`
+were. Nothing new in the effect vocabulary: `gainLife`, `loseLife`, `draw`, `drawLater` and
+`addToPool` are the calls the printed-number readers beside them already make, and the only
+difference is that the number is a function of `EffectContext` rather than a constant.
+
+Because a count is read in the **clause**, every prologue that already composes picks it up for
+free. Ancestor's Chosen — "When Ancestor's Chosen enters, you gain 1 life for each card in your
+graveyard" — reads with no trigger reader changed.
+
+### 2. The damage word order, which was the sharpest statement of the gap
+
+`damageEffect` has read "deals damage equal to the number of `<T>` **to** `<dest>`" since D444, and
+**no printed card says that**. All 226 cards that print a counted damage clause put the destination
+first. So the machinery was reachable from a grammar nothing printed and unreachable from the two
+everything printed. `countedDamageFrom` reads all three orders and hands the destination back
+unread, so `damageDestination` stays the single place a destination is understood.
+
+### 3. The vocabulary, and the wrong reading that was waiting inside it
+
+`countOfThing` knew five countables. Widened against the phrases the corpus actually names:
+`creature(s) you control` (112 mentions), `card(s) in your hand` (84), the five basic land types (87
+between them), `attacking creature(s)` (30), `instant and sorcery card(s) in your graveyard` (29),
+`other creature(s) you control` (15), `card(s) in your graveyard` (15), `creature card(s) in all
+graveyards` (9). Refused, each for a stated reason: `basic land type among lands you control`
+(domain, a distinct-type count), `creature in your party`, `the greatest power among …`, `the amount
+of life you gained this turn`, `card exiled this way` — different kinds of fact, and D57's rule says
+a count with no reading beats a guessed one.
+
+**The defect this had to fix first.** "Swamps you control" and "Goblins you control" are the same
+five printed words and two different counts, and the tribal branch asks `ch.isCreature`. Until now
+no card reached that branch with a land type, because Corrupt and Cabal Coffers print their counts in
+word orders nothing read — so the bug was latent, and an earlier probe of three synthetic cards
+(Swamp, Goblin, Island) recorded that the path was unreachable. Widening the reach makes it
+reachable. Reading those orders without `landsOfSubtype` would have made Cabal Coffers tap, resolve
+cleanly and add nothing: a card that works and is wrong, which is worse than an unread line because
+an unread line is flagged for a human (D362). **"Plains" is the same trap one layer down** — its own
+plural (CR 205.3i), so the `-s` rule reads it as "Plain", which is not a land type at all.
+
+### What it moved
+
+| | before D520 | after |
+| --- | --- | --- |
+| printed lines read | 22,096 / 56,421 (39.2%) | **22,226 / 56,421 (39.4%)** |
+| cards with a compiled script | 11,076 | **11,171** |
+| cards with every printed line read | 6,842 | **6,938** |
+
+**96 cards finished**, the largest single increment since D514, and from one count rather than one
+shape — which is D519's prediction holding.
+
+Lotleth Giant is the ground truth for the drain row and is hand-written in the pool, so
+`compiled-vs-written.test.ts` reads its printed line through this path and compares it against the
+script a human wrote. Cabal Coffers, Battle Hymn, Ground Assault, Feedback Bolt, Ancestral Tribute,
+Ancestor's Chosen and Cosmic Epiphany now read end to end. Corrupt still does not, and correctly: its
+printed line is two sentences and the second counts "the damage dealt this way", so the line is
+refused whole (D487).
+
+**16 of 16 breaks caught**, every one verified to apply against a unique anchor and to revert to a
+SHA-256 match. Two were uncaught on the first pass and both were **weak tests rather than vacuous
+breaks**, so both were answered with a test rather than counted as a miss:
+
+- removing the Plains case still *read* — it falls through to a creature count of zero — so a compile
+  row asserting the line is read passes either way. The discrimination had to be a life total, and
+  is now a runtime row with two Plains on the battlefield.
+- widening the scaled-mana regex to any symbol admitted `{2}`, generic mana a pool cannot hold, and
+  nothing printed it in a test. Answered with a refusal row.

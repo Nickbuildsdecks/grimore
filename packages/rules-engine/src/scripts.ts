@@ -3531,6 +3531,110 @@ function landsControlled(state: GameState, seat: SeatIndex): number {
   return n;
 }
 
+/**
+ * The seven counts D520 added, each a phrase the corpus prints and a reading this engine already had.
+ *
+ * `countOfThing` knew five countables, and the measurement that justified widening it is in D520:
+ * over the legal pool, the phrases a `for each` or a `where X is` tail actually names are headed by
+ * `creature(s) you control` (112 mentions), `card(s) in your hand` (84), the five basic land types
+ * (87 between them), `attacking creature(s)` (30), `instant and sorcery card(s) in your graveyard`
+ * (29), `other creature(s) you control` (15), `card(s) in your graveyard` (15) and
+ * `creature card(s) in all graveyards` (9).
+ *
+ * Every one of them is read **live** off the state the clause is resolving against, which is the
+ * rule for all of these (CR 613 for the characteristics, and a count has no moment at which it is
+ * decided other than the one it is asked in). None of them is a new fact the engine has to track.
+ */
+
+/** Cards in a seat's hand: "for each card in your hand". */
+function cardsInHand(state: GameState, seat: SeatIndex): number {
+  return listAt(state, zoneKey(seat, 'hand')).length;
+}
+
+/** Cards in a seat's own graveyard, counted as cards rather than filtered by type. */
+function cardsInGraveyard(state: GameState, seat: SeatIndex): number {
+  return listAt(state, zoneKey(seat, 'graveyard')).length;
+}
+
+/**
+ * Instants and sorceries in a seat's own graveyard.
+ *
+ * The same count `definesSize` names as `instant-and-sorcery-cards-in-your-graveyard` and reads in
+ * `cdaCount` — two readings of one phrase, which is the shape #319 is a task about. They are not
+ * shared because `cdaCount` runs inside `characteristicsOf` and this runs while an effect resolves,
+ * so the call this one makes (`parseTypeLine` on the printed line) is deliberately the **same** one:
+ * a card's type in a graveyard cannot be changed by a continuous effect, so the printed line is the
+ * right answer in both places and the two agree by construction.
+ */
+function instantsAndSorceriesInGraveyard(state: GameState, seat: SeatIndex): number {
+  let n = 0;
+  for (const id of listAt(state, zoneKey(seat, 'graveyard'))) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const line = parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+    if (hasType(line, 'instant') || hasType(line, 'sorcery')) n += 1;
+  }
+  return n;
+}
+
+/** Creature cards in **every** graveyard — Lhurgoyf's count, asked as a clause rather than a CDA. */
+function creatureCardsInAllGraveyards(state: GameState): number {
+  return state.seats.reduce(
+    (total, seat) => total + creatureCardsInGraveyard(state, seat.index), 0,
+  );
+}
+
+/**
+ * Attacking creatures, across the whole table.
+ *
+ * `state.combat.attacks` is the declaration rather than the battlefield, which is what the phrase
+ * means: a creature removed from combat is no longer attacking however it is tapped, and
+ * `removeFromCombat` takes it out of this list. Outside a combat the list is empty and the count is
+ * zero, which is the right answer for a clause asked in a main phase.
+ */
+function attackingCreatures(state: GameState): number {
+  return state.combat.attacks.length;
+}
+
+/** Creatures a seat controls other than one of them — "for each other creature you control". */
+function otherCreaturesControlled(state: GameState, seat: SeatIndex, except: string): number {
+  return creaturesControlledBy(state, seat).filter((id) => id !== except).length;
+}
+
+/**
+ * Lands of one subtype a seat controls, read **live** — "the number of Swamps you control".
+ *
+ * The count `creaturesOfSubtype` would have got wrong, and the reason the basic land types are a
+ * branch of their own in `countOfThing`. "Swamps you control" and "Goblins you control" are the same
+ * five printed words and two different counts: the tribal branch asks `ch.isCreature`, so a Cabal
+ * Coffers read through it would count the *creatures* named Swamp, find none, and add no mana. A
+ * card that resolves and does nothing is worse than an unread line, because an unread line is
+ * flagged for a human (D362) — so the land types are read here instead of falling through.
+ *
+ * Live rather than printed, for `landsControlled`'s reason: an animated land is still a land, and a
+ * Dryad Arbor is a Forest.
+ */
+function landsOfSubtype(state: GameState, seat: SeatIndex, subtype: string): number {
+  let n = 0;
+  for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
+    const inst = state.instances[id];
+    if (inst === undefined) continue;
+    const ch = characteristicsOf(state, inst);
+    if (ch.isLand && hasSubtype(ch.typeLine, subtype.toLowerCase())) n += 1;
+  }
+  return n;
+}
+
+/**
+ * The five basic land types, as the only subtypes `countOfThing` reads as lands.
+ *
+ * Only the five, and not every land subtype the game has, for D57's reason: these are the ones the
+ * corpus counts (87 mentions between them, headed by Swamp at 23 and Forest at 23), and a
+ * "Gates you control" with no card behind it would be a count nothing has ever run. The list grows
+ * when a measurement says it should.
+ */
+const BASIC_LAND_TYPES: readonly string[] = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
+
 // ── Eight that needed nothing new ────────────────────────────────────────────────────────────────
 
 /**
@@ -10549,6 +10653,158 @@ const permanentDescribed = (
  *
  * `clause` arrives with its trailing full stop removed and trimmed.
  */
+/**
+ * A clause whose amount is a count of the board, for the four verbs that spend one.
+ *
+ * See the call site in `untargetedEffect` for the measurement and for the three grammars. This
+ * function is the reading; everything it returns is built from calls the fixed-amount readers
+ * already make.
+ *
+ * ## What it refuses, each for a stated reason
+ *
+ * - **a count `countOfThing` cannot read** — "for each Bird on the battlefield", "where X is the
+ *   amount of life you gained this turn", "for each creature in your party". Refused whole (D487):
+ *   a clause whose amount cannot be computed is not a clause that does nothing, it is a clause with
+ *   no reading, and the line goes to a human (D362).
+ * - **a body whose number slot is neither `X` nor a printed number** — "where X is" demands the
+ *   literal letter, because a body that says "2" while the tail announces X is a sentence this
+ *   reader has not understood.
+ * - **any verb not in the table** — the four below are the ones measured. A fifth is a row, not a
+ *   redesign, and it waits for a card (D57).
+ */
+function countScaledEffect(clause: string, name: string): ReadEffect | null {
+  const flat = clause.trim().replace(/\.\s*$/, '');
+
+  /*
+    The third grammar first, because it has no number in the body for the other two to find: "draw
+    cards equal to the number of instant and sorcery cards in your graveyard". `boardCount` takes
+    the plural, which is what this grammar prints.
+  */
+  const drawEqual = /^(?:you )?draw cards equal to (the number of .+)$/i.exec(flat);
+  if (drawEqual !== null) {
+    const counted = boardCount(drawEqual[1]!, name);
+    if (counted === null) return null;
+    return {
+      effect: (c) => drawLater(c.state, c.controller, counted(c)),
+      immediate: (c) => draw(c.state, c.controller, counted(c)),
+    };
+  }
+  const lifeEqual = /^you (gain|lose) life equal to (the number of .+)$/i.exec(flat);
+  if (lifeEqual !== null) {
+    const counted = boardCount(lifeEqual[2]!, name);
+    if (counted === null) return null;
+    const up = lifeEqual[1]!.toLowerCase() === 'gain';
+    return {
+      effect: (c) => (up
+        ? gainLife(c.state, c.controller, counted(c))
+        : loseLife(c.state, c.controller, counted(c))),
+    };
+  }
+
+  // The two grammars that do have a number in the body, and the count that supplies or multiplies it.
+  const announced = /^(.*?),\s*where X is (the number of .+)$/i.exec(flat);
+  const perThing = announced !== null ? null : /^(.*?) for each (.+)$/i.exec(flat);
+  if (announced === null && perThing === null) return null;
+  const counted = announced !== null
+    ? boardCount(announced[2]!, name)
+    : forEachCount(perThing![2]!, name);
+  if (counted === null) return null;
+  const body = (announced?.[1] ?? perThing![1]!).trim();
+
+  /*
+    The printed word in the body's number slot, turned into the amount the clause spends.
+
+    Under "where X is" the slot must be the letter X and the amount is the count itself. Under "for
+    each" the slot is a printed number and the count multiplies it — `countFrom` reads both digits
+    and words, so "two life for each" is 2 per thing.
+  */
+  const amountFrom = (printed: string): ((c: EffectContext) => number) | null => {
+    if (announced !== null) return /^x$/i.test(printed) ? counted : null;
+    const n = countFrom(printed);
+    return n === null ? null : (c) => n * counted(c);
+  };
+
+  /*
+    Mana scaled by a count: "Add {B} for each Swamp you control" (Cabal Coffers), "Add {R} for each
+    creature you control" (Battle Hymn). **76 corpus cards**, the largest single body in this table.
+
+    Only the `for each` grammar, and deliberately: the other spelling the pool prints is "Add X mana
+    of any one color, where X is …", which needs a colour chosen as the ability resolves and is a
+    different reader, not a different number. Refusing it here leaves that line unread rather than
+    read as a fixed colour, which is D362's rule.
+
+    The regex is the validation, as it is for the fixed-amount reader twenty lines below: only the
+    six symbols `addToPool` can hold, so `{2}` — generic mana, which a pool cannot hold — refuses the
+    clause rather than being read as something.
+
+    `makesMana` for the fixed reader's reason: a spell whose whole effect is mana looks like nothing
+    to a search that scores the position after the cast, and Battle Hymn is exactly Dark Ritual's
+    shape. It is `spellFlags`, so an *ability* that prints this clause — Cabal Coffers — drops it.
+  */
+  const mana = /^add ((?:\{[WUBRGC]\})+)$/i.exec(body);
+  if (mana !== null && announced === null) {
+    const symbols = [...mana[1]!.toUpperCase().matchAll(/\{([WUBRGC])\}/g)].map((m) => m[1]!);
+    return {
+      effect: (c) => {
+        const n = counted(c);
+        return n <= 0 ? c.state : symbols.reduce(
+          (state, symbol) => addToPool(state, c.controller, symbol as Parameters<typeof addToPool>[2], n),
+          c.state,
+        );
+      },
+      spellFlags: { makesMana: true },
+    };
+  }
+
+  const gained = /^you gain ([\w]+) life$/i.exec(body);
+  if (gained !== null) {
+    const amount = amountFrom(gained[1]!);
+    if (amount !== null) return { effect: (c) => gainLife(c.state, c.controller, amount(c)) };
+  }
+
+  const lost = /^you lose ([\w]+) life$/i.exec(body);
+  if (lost !== null) {
+    const amount = amountFrom(lost[1]!);
+    if (amount !== null) return { effect: (c) => loseLife(c.state, c.controller, amount(c)) };
+  }
+
+  /*
+    Lotleth Giant's clause, and the one in this table that reaches somebody else's life total.
+    Eliminated seats are not in `opponentsOf`, so a drain in a pod that is down to two players
+    drains the one player left, which is the rule.
+  */
+  const drained = /^each opponent loses ([\w]+) life$/i.exec(body);
+  if (drained !== null) {
+    const amount = amountFrom(drained[1]!);
+    if (amount !== null) {
+      return {
+        effect: (c) => opponentsOf(c.state, c.controller).reduce(
+          (state, seat) => loseLife(state, seat, amount(c)), c.state,
+        ),
+      };
+    }
+  }
+
+  /*
+    "You draw" and "draw" are the same sentence, as they are for the printed-number reader below.
+    `drawLater` with an `immediate` beside it is that reader's shape and for its reason: a draw owed
+    inside a resolution is taken at the right moment, and the immediate form is what a cost or a
+    replacement needs.
+  */
+  const drawn = /^(?:you )?draw ([\w]+) cards?$/i.exec(body);
+  if (drawn !== null) {
+    const amount = amountFrom(drawn[1]!);
+    if (amount !== null) {
+      return {
+        effect: (c) => drawLater(c.state, c.controller, amount(c)),
+        immediate: (c) => draw(c.state, c.controller, amount(c)),
+      };
+    }
+  }
+
+  return null;
+}
+
 function untargetedEffect(clause: string, name: string): ReadEffect | null {
   const text = clause.trim();
 
@@ -10592,6 +10848,47 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
       spellFlags: { makesMana: true },
     };
   }
+
+  /*
+    The same four clauses with their number read off the **board** instead of printed (D520).
+
+    `countOfThing` has been able to count a board since D444, and until now exactly one caller asked
+    it: `tokenEffect`, for "create a 1/1 Goblin for each Mountain you control". The count was the
+    hard part and it was already written; what was missing was every other clause that spends one.
+    Over the legal corpus the grammars that spend it are headed by `draw N cards for each <T>` (140
+    cards), `you gain N life for each <T>` (122), `deals damage to <dest> equal to the number of <T>`
+    (112, read in `damageEffect`), `you lose life equal to the number of <T>` (26), `draw cards equal
+    to the number of <T>` (25), `you gain life equal to the number of <T>` (22), `you lose N life for
+    each <T>` (13) and `each opponent loses N life for each <T>` (8).
+
+    ## Three grammars, one count
+
+    Magic writes the same number three ways, and the difference is not only word order:
+
+    - **`<body>, where X is the number of <T>`** — the count is announced and the body's number is
+      the letter X, so the amount *is* the count.
+    - **`<body> for each <T>`** — the body's number is printed and the count multiplies it, so "2
+      life for each card in your graveyard" is two per card. The noun arrives **singular** here and
+      plural in the other two, which is why `forEachCount` exists beside `boardCount`.
+    - **`<verb> equal to the number of <T>`** — no number in the body at all; the count is the
+      amount. Spelled out as its own pair of readers below rather than folded in, because the body
+      has no slot to put an amount in.
+
+    ## Why this is not a second mechanism
+
+    Nothing here is new engine vocabulary: `gainLife`, `loseLife`, `draw` and `drawLater` are the
+    same calls the printed-number readers twenty lines below make, and the only difference is that
+    the number is a function of `EffectContext` rather than a constant. The count is read **as the
+    clause resolves**, which is the rule: there is no moment before resolution at which the number is
+    decided, so a Lotleth Giant whose controller's graveyard grows between the trigger going on the
+    stack and resolving drains for the larger number.
+
+    Lotleth Giant is the ground truth for the last of those grammars and is hand-written above, which
+    is what makes the reading checkable rather than argued: `compiled-vs-written.test.ts` reads the
+    printed line through this path and compares it against the script a human wrote.
+  */
+  const scaled = countScaledEffect(text, name);
+  if (scaled !== null) return scaled;
 
   const gain = /^you gain ([\w]+) life$/i.exec(text);
   if (gain !== null) {
@@ -13639,6 +13936,32 @@ function countOfThing(
   if (/^creature cards? in your graveyard$/i.test(text)) {
     return (c) => creatureCardsInGraveyard(c.state, c.controller);
   }
+  if (/^creature cards? in all graveyards$/i.test(text)) {
+    return (c) => creatureCardsInAllGraveyards(c.state);
+  }
+  if (/^instant and sorcery cards? in your graveyard$/i.test(text)) {
+    return (c) => instantsAndSorceriesInGraveyard(c.state, c.controller);
+  }
+  if (/^cards? in your graveyard$/i.test(text)) {
+    return (c) => cardsInGraveyard(c.state, c.controller);
+  }
+  if (/^cards? in your hand$/i.test(text)) {
+    return (c) => cardsInHand(c.state, c.controller);
+  }
+  if (/^creatures? you control$/i.test(text)) {
+    return (c) => creaturesControlledBy(c.state, c.controller).length;
+  }
+  /*
+    "Other" is read off the effect's own **source**, which is what makes it correct on the two cards
+    that print it: a Boneclub Berserker counting "each other Goblin you control" must not count
+    itself, and the id it excludes is the permanent the ability is on rather than a name.
+  */
+  if (/^other creatures? you control$/i.test(text)) {
+    return (c) => otherCreaturesControlled(c.state, c.controller, c.source);
+  }
+  if (/^attacking creatures?$/i.test(text)) {
+    return (c) => attackingCreatures(c.state);
+  }
   if (new RegExp(`^\\+1/\\+1 counters? on (?:${self}|it)$`, 'i').test(text)) {
     return (c) => {
       const snapshot = c.subjectCounters?.['+1/+1'];
@@ -13648,16 +13971,43 @@ function countOfThing(
   }
   const tribe = /^([A-Z][A-Za-z'-]*) you control$/.exec(text);
   if (tribe !== null) {
-    const word = tribe[1]!;
-    if (number === 'singular') {
-      return (c) => creaturesOfSubtype(c.state, c.controller, word);
+    const subtype = subtypeFromTribalPhrase(tribe[1]!, number);
+    if (subtype === null) return null;
+    /*
+      The branch D520 added, and the one place in this function where a wrong reading was waiting
+      rather than missing. See `landsOfSubtype`: "Swamps you control" and "Goblins you control" are
+      the same five printed words, and until the reach of this function widened, no card asked it
+      for a land type — Corrupt prints its count in a word order nothing read. Reading that order
+      without this branch would have made Cabal Coffers add no mana and resolve cleanly.
+    */
+    if (BASIC_LAND_TYPES.some((type) => type.toLowerCase() === subtype.toLowerCase())) {
+      return (c) => landsOfSubtype(c.state, c.controller, subtype);
     }
-    if (!word.endsWith('s')) return null;
-    const singular = word.endsWith('ves') ? `${word.slice(0, -3)}f` : word.slice(0, -1);
-    if (singular.length < 3) return null;
-    return (c) => creaturesOfSubtype(c.state, c.controller, singular);
+    return (c) => creaturesOfSubtype(c.state, c.controller, subtype);
   }
   return null;
+}
+
+/**
+ * The subtype a tribal count phrase names, with the plural undone where the grammar needs it.
+ *
+ * Lifted out of `countOfThing` by D520 so the land branch and the creature branch read the same word
+ * rather than deriving it twice. The two grammars are unchanged from the rules that function's
+ * docblock argues for — a plural derives its singular (`-ves` to `-f`, otherwise drop the `s`, and
+ * refuse a word that does not end in `s` so Fungi and Homunculi stay out), and a singular is taken
+ * as printed because stripping a letter would turn "Homunculus" into "Homunculu".
+ *
+ * **"Plains" is its own plural** (CR 205.3i), and it is taken first in both grammars for that
+ * reason: the `-s` rule would read it as "Plain", which is not a land type at all, so a card
+ * counting Plains would have counted nothing. The length floor stays on the derived path only, where
+ * it was: a two-letter *printed* singular is a real creature type ("for each Ox you control").
+ */
+function subtypeFromTribalPhrase(word: string, number: 'plural' | 'singular'): string | null {
+  if (/^plains$/i.test(word)) return 'Plains';
+  if (number === 'singular') return word;
+  if (!word.endsWith('s')) return null;
+  const singular = word.endsWith('ves') ? `${word.slice(0, -3)}f` : word.slice(0, -1);
+  return singular.length < 3 ? null : singular;
 }
 
 /**
@@ -15326,6 +15676,39 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
     };
   }
 
+  /*
+    The **other word order**, which is the one most printed cards use (D520).
+
+    The reader below has read "deals damage equal to the number of <T> to <dest>" since D444, and no
+    card prints that: 112 legal cards print the destination first — "Ground Assault deals damage to
+    target creature equal to the number of lands you control", "Corrupt deals damage to any target
+    equal to the number of Swamps you control", "Feedback Bolt deals damage to target player or
+    planeswalker equal to the number of artifacts you control". So the count machinery was reachable
+    from a grammar nothing printed and unreachable from the one everything printed.
+
+    A separate reader rather than a widened alternation, because the destination is `(.+?)` and the
+    count is `(.+)` and one pattern holding both would have to decide where "equal to" belongs. Two
+    anchored patterns cannot disagree about that; one lazy group and one greedy group in the same
+    pattern can.
+
+    It shares `damageDestination` and `boardCount` with the reader below, so the destination's
+    targets, its bot hint and the count's vocabulary are read in exactly one place each. Falling
+    through on a refusal is safe and is the D487 answer either way: this shape cannot match the
+    pattern below, so a count the vocabulary does not know leaves the clause unread rather than
+    half-read.
+  */
+  const offBoard = countedDamageFrom(clause, name, self);
+  if (offBoard !== null) {
+    const offBoardDest = damageDestination(offBoard.where);
+    if (offBoardDest !== null) {
+      return {
+        ...(offBoardDest.targets === undefined ? {} : { targets: offBoardDest.targets }),
+        ...(offBoardDest.spellFlags === undefined ? {} : { spellFlags: offBoardDest.spellFlags }),
+        effect: (c) => offBoardDest.apply(c, offBoard.amount(c)),
+      };
+    }
+  }
+
   const dealt = new RegExp(
     `^(?:${self}|it) deals (\\d+|damage equal to (?:its power|the number of [^.]+?)) damage to (.+)$`
       .replace(' damage to ', '(?: damage)? to '),
@@ -15386,6 +15769,64 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
  * can see (established by a break run, D423). They are kept because they were here, and the sweep
  * added below deliberately has none.
  */
+/**
+ * The three grammars that put a board count in a damage clause, and the amount each one means.
+ *
+ * All three print the **destination before the number**, which is the word order the reader in
+ * `damageEffect` could not see: it has read "deals damage equal to the number of <T> to <dest>"
+ * since D444, and no printed card says that. Measured over the legal corpus:
+ *
+ * - `deals X damage to <dest>, where X is the number of <T>` — **114 cards**, the largest of the
+ *   three, and the amount *is* the count.
+ * - `deals damage to <dest> equal to the number of <T>` — **112 cards** (Ground Assault, Corrupt,
+ *   Feedback Bolt). Also the count itself.
+ * - `deals N damage to <dest> for each <T>` — **11 cards**, where the printed number is **per
+ *   thing** and the count multiplies it. The noun arrives singular here, so `forEachCount`.
+ *
+ * Three anchored patterns rather than one alternation, for the reason the destination group forces:
+ * `(.+?)` for the destination and `(.+)` for the count in one pattern would have to decide where
+ * "equal to" belongs, and two patterns cannot disagree about that.
+ *
+ * The destination is returned **unread**, as the phrase the card printed, so `damageDestination`
+ * stays the single place a destination is understood — its targets, its bot hint and who the damage
+ * is credited to are not re-decided here.
+ */
+function countedDamageFrom(
+  clause: string,
+  name: string,
+  self: string,
+): { readonly where: string; readonly amount: (c: EffectContext) => number } | null {
+  const flat = clause.trim().replace(/\.\s*$/, '');
+
+  const announced = new RegExp(
+    `^(?:${self}|it) deals X damage to (.+?),\\s*where X is (the number of .+)$`, 'i',
+  ).exec(flat);
+  if (announced !== null) {
+    const amount = boardCount(announced[2]!, name);
+    return amount === null ? null : { where: announced[1]!, amount };
+  }
+
+  const equalTo = new RegExp(
+    `^(?:${self}|it) deals damage to (.+?) equal to (the number of .+)$`, 'i',
+  ).exec(flat);
+  if (equalTo !== null) {
+    const amount = boardCount(equalTo[2]!, name);
+    return amount === null ? null : { where: equalTo[1]!, amount };
+  }
+
+  const perThing = new RegExp(
+    `^(?:${self}|it) deals (\\d+) damage to (.+?) for each (.+)$`, 'i',
+  ).exec(flat);
+  if (perThing !== null) {
+    const each = forEachCount(perThing[3]!, name);
+    if (each === null) return null;
+    const per = Number(perThing[1]);
+    return { where: perThing[2]!, amount: (c) => per * each(c) };
+  }
+
+  return null;
+}
+
 function damageDestination(where: string): {
   readonly apply: (c: EffectContext, amount: number) => GameState;
   readonly targets?: readonly TargetSpec[];

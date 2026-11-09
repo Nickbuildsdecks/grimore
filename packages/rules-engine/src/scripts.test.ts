@@ -31614,3 +31614,228 @@ describe('unearth, played off printed text (D517)', () => {
     expect(legalActions(s, 0).plays.some((play) => play.card === id)).toBe(false);
   });
 });
+
+describe('a quantity read off the board, played off printed text (D520)', () => {
+  /*
+    The runtime half of D520. `compile.test.ts` says these lines are read; these rows say the number
+    that lands on the table is the right one, which is the half a reader can get wrong silently.
+
+    Every card here exists only because its printed line was read — there is no hand-written twin —
+    and each row is built to discriminate against the specific wrong count that was available:
+
+    | row                          | the wrong answer it rules out                       |
+    | ---------------------------- | --------------------------------------------------- |
+    | the tribute                  | counting **both** graveyards instead of the controller's |
+    | the reckoning                | counting every card rather than the creature cards  |
+    | the assault, twice           | a fixed amount rather than one read off the board   |
+    | the hymn                     | counting **lands** (4) or **creatures** (0) instead of Swamps (3) |
+    | the chorus                   | counting itself among "other creatures you control" |
+  */
+  const DATA = [
+    {
+      name: 'Ashen Tribute', type_line: 'Sorcery', mana_cost: '{2}{B}', cmc: 3, colors: ['B'],
+      layout: 'normal', oracle_text: 'You gain 2 life for each card in your graveyard.',
+    },
+    {
+      name: 'Ashen Reckoning', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal',
+      oracle_text: 'Each opponent loses 1 life for each creature card in your graveyard.',
+    },
+    {
+      name: 'Ashen Assault', type_line: 'Instant', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal',
+      oracle_text: 'Ashen Assault deals damage to target creature equal to the number of lands '
+        + 'you control.',
+    },
+    {
+      name: 'Ashen Hymn', type_line: 'Sorcery', mana_cost: '{B}', cmc: 1, colors: ['B'],
+      layout: 'normal', oracle_text: 'Add {B} for each Swamp you control.',
+    },
+    {
+      name: 'Ashen Chorus', type_line: 'Creature — Zombie', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'When Ashen Chorus enters, you gain 1 life for each other creature you control.',
+    },
+    {
+      name: 'Ashen Volley', type_line: 'Instant', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal',
+      oracle_text: 'Ashen Volley deals 2 damage to target creature for each Mountain you control.',
+    },
+    {
+      name: 'Ashen Toll', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal',
+      oracle_text: 'You lose life equal to the number of creature cards in your graveyard.',
+    },
+    {
+      // The PLURAL grammar on the one subtype whose plural is itself (CR 205.3i).
+      name: 'Ashen Pilgrimage', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal',
+      oracle_text: 'You gain X life, where X is the number of Plains you control.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'counted',
+      name: 'Counted',
+      entries: [
+        ...DATA.map((c) => ({ name: c.name, count: 4 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Serra Angel', count: 4 },
+        { name: 'Mountain', count: 4 },
+        { name: 'Plains', count: 4 },
+        { name: 'Swamp', count: 12 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual([
+      'Ashen Assault', 'Ashen Chorus', 'Ashen Hymn', 'Ashen Pilgrimage', 'Ashen Reckoning',
+      'Ashen Toll', 'Ashen Tribute', 'Ashen Volley',
+    ]);
+    return list.deck;
+  };
+
+  type Setup = {
+    readonly hand: readonly string[];
+    readonly mine?: readonly string[];
+    readonly theirs?: readonly string[];
+    readonly dead?: readonly string[];
+    readonly theirDead?: readonly string[];
+  };
+
+  const table = (setup: Setup) => tapAllLands(advanceTo(arena({
+    decks: { 0: 'counted', 1: 'counted' },
+    deckSpecs: { counted: deck() },
+    hands: { 0: [...setup.hand] },
+    battlefield: {
+      0: [...(setup.mine ?? ['Swamp', 'Swamp', 'Swamp'])],
+      1: [...(setup.theirs ?? [])],
+    },
+    graveyard: { 0: [...(setup.dead ?? [])], 1: [...(setup.theirDead ?? [])] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+
+  const cast = (s: GameState, name: string, target?: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name),
+    ...(target === undefined ? {} : { targets: [{ kind: 'card', id: target }] }),
+  } as Action)), 40);
+
+  it('gains two life per card in YOUR graveyard, and ignores the other one', () => {
+    /*
+      The controller reading, which is the one a shared count would get wrong in a way no life total
+      makes obvious: two cards here and five across the table, so the right answer is 4 and the
+      answer a both-graveyards count gives is 14.
+    */
+    const s = table({
+      hand: ['Ashen Tribute'],
+      dead: ['Swamp', 'Grizzly Bears'],
+      theirDead: ['Swamp', 'Swamp', 'Swamp', 'Grizzly Bears', 'Grizzly Bears'],
+    });
+    const before = life(s, 0);
+    expect(life(cast(s, 'Ashen Tribute'), 0)).toBe(before + 4);
+  });
+
+  it('drains each opponent for the CREATURE cards only', () => {
+    // Four cards in the graveyard and two of them creatures: the answer is 2, and the answer a
+    // card count gives is 4.
+    const s = table({
+      hand: ['Ashen Reckoning'],
+      dead: ['Swamp', 'Grizzly Bears', 'Ashen Tribute', 'Ashen Chorus'],
+    });
+    const before = life(s, 1);
+    expect(life(cast(s, 'Ashen Reckoning'), 1)).toBe(before - 2);
+  });
+
+  it.each([
+    ['kills a 4/4 off four lands', ['Swamp', 'Swamp', 'Swamp', 'Swamp'], false],
+    ['leaves the same 4/4 alive off three', ['Swamp', 'Swamp', 'Swamp'], true],
+  ])('deals damage equal to the lands you control: %s', (_why, lands, survives) => {
+    /*
+      The same spell and the same 4/4, twice, with one land moved. A reader that landed on a fixed
+      number would pass one of these rows and fail the other, which is what makes the pair worth
+      more than either — and the spell costs {1}{B}, so three lands is enough to cast it either way.
+    */
+    let s = table({
+      hand: ['Ashen Assault'], mine: lands as string[], theirs: ['Serra Angel'],
+    });
+    s = cast(s, 'Ashen Assault', find(s, 1, 'battlefield', 'Serra Angel'));
+    expect(namesIn(s, 1, 'battlefield').includes('Serra Angel')).toBe(survives);
+  });
+
+  it('adds one black per SWAMP, not per land and not per creature', () => {
+    /*
+      The row the latent defect in `countOfThing` turns on. Three Swamps and a Mountain, so:
+
+      - the right answer is **3** — the Swamps;
+      - a land count would say 4;
+      - the tribal branch this phrase used to fall through to asks `ch.isCreature` and would say
+        **0**, which is a Cabal Coffers that taps, resolves cleanly and adds nothing.
+
+      The arithmetic: four lands tapped is `{B}{B}{B}{R}`, the Hymn's own {B} is paid from one of
+      them, and three more black arrive as it resolves.
+    */
+    const s = table({
+      hand: ['Ashen Hymn'], mine: ['Swamp', 'Swamp', 'Swamp', 'Mountain'],
+    });
+    expect(s.pools['0']).toMatchObject({ B: 3, R: 1 });
+    expect(cast(s, 'Ashen Hymn').pools['0']).toMatchObject({ B: 5, R: 1 });
+  });
+
+  it('does not count itself among the other creatures you control', () => {
+    // Two other creatures on the battlefield when the Chorus arrives: the answer is 2, and the
+    // answer a plain creature count gives is 3, because by then the Chorus is one of them.
+    const s = table({
+      hand: ['Ashen Chorus'],
+      mine: ['Swamp', 'Swamp', 'Swamp', 'Grizzly Bears', 'Grizzly Bears'],
+    });
+    const before = life(s, 0);
+    expect(life(cast(s, 'Ashen Chorus'), 0)).toBe(before + 2);
+  });
+
+  it.each([
+    ['kills a 4/4 off two Mountains', ['Swamp', 'Swamp', 'Mountain', 'Mountain'], false],
+    ['leaves it alive off one', ['Swamp', 'Swamp', 'Swamp', 'Mountain'], true],
+  ])('deals TWO damage per Mountain: %s', (_why, lands, survives) => {
+    /*
+      The per-thing grammar, where the printed number is a rate rather than an amount: two damage
+      for each Mountain, so two Mountains is 4 and one is 2, against the same 4/4. The pair rules out
+      both the reader that forgets to multiply (always 2) and the one that counts lands rather than
+      Mountains (always 4, from four lands either way).
+    */
+    let s = table({
+      hand: ['Ashen Volley'], mine: lands as string[], theirs: ['Serra Angel'],
+    });
+    s = cast(s, 'Ashen Volley', find(s, 1, 'battlefield', 'Serra Angel'));
+    expect(namesIn(s, 1, 'battlefield').includes('Serra Angel')).toBe(survives);
+  });
+
+  it('counts Plains through the plural grammar, whose plural is itself', () => {
+    /*
+      CR 205.3i, and the row the compile tests cannot carry. "The number of Plains you control"
+      arrives in the **plural** grammar, where every other subtype has its singular derived — drop
+      the `-s` and "Plains" becomes "Plain", which is not a land type at all. That reading still
+      *reads*: it falls through to the creature count, finds no creature named Plain, and the card
+      resolves having gained nothing. A compile row asserting the line is read passes either way, so
+      the discrimination has to be a life total.
+
+      Two Plains and two Swamps, so the right answer is 2 and the wrong one is 0.
+    */
+    const s = table({
+      hand: ['Ashen Pilgrimage'], mine: ['Swamp', 'Swamp', 'Plains', 'Plains'],
+    });
+    const before = life(s, 0);
+    expect(life(cast(s, 'Ashen Pilgrimage'), 0)).toBe(before + 2);
+  });
+
+  it('pays life equal to the count, and pays it the right way round', () => {
+    // Two creature cards among four in the graveyard: the toll is 2, it comes OFF the life total,
+    // and a card count would make it 4.
+    const s = table({
+      hand: ['Ashen Toll'],
+      dead: ['Swamp', 'Grizzly Bears', 'Ashen Tribute', 'Ashen Chorus'],
+    });
+    const before = life(s, 0);
+    expect(life(cast(s, 'Ashen Toll'), 0)).toBe(before - 2);
+  });
+});

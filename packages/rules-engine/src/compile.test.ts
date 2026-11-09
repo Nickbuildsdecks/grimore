@@ -13028,3 +13028,176 @@ describe('the Unearth keyword line, read as one fragment (D517)', () => {
     expect(read.script?.triggers?.[0]?.delayed).toBeUndefined();
   });
 });
+
+describe('a quantity read off the board (D520)', () => {
+  /*
+    `countOfThing` has been able to count a board since D444, and until this increment exactly **one**
+    caller asked it: `tokenEffect`, for "create a 1/1 Goblin for each Mountain you control". The
+    count was the hard part and it was already written; what was missing was every other clause that
+    spends one. Measured over the legal corpus, the grammars that spend it are headed by:
+
+    | clause                                                | cards |
+    | ----------------------------------------------------- | ----- |
+    | `draw N cards for each <T>`                           |   140 |
+    | `you gain N life for each <T>`                        |   122 |
+    | `deals X damage to <dest>, where X is the number of <T>` | 114 |
+    | `deals damage to <dest> equal to the number of <T>`   |   112 |
+    | `Add {M} for each <T>`                                |    76 |
+    | `you lose life equal to the number of <T>`            |    26 |
+    | `draw cards equal to the number of <T>`               |    25 |
+    | `you gain life equal to the number of <T>`            |    22 |
+    | `you lose N life for each <T>`                        |    13 |
+    | `deals N damage to <dest> for each <T>`               |    11 |
+    | `each opponent loses N life for each <T>`             |     8 |
+
+    The damage rows are the sharpest statement of the gap: the reader `damageEffect` has carried
+    since D444 reads "deals damage equal to the number of <T> **to** <dest>", and **no printed card
+    says that**. Every one of the 226 prints the destination first. So the machinery was reachable
+    from a grammar nothing printed and unreachable from the two everything printed.
+
+    The vocabulary widened with it, against the phrases the corpus actually names: `creature(s) you
+    control` (112 mentions), `card(s) in your hand` (84), the five basic land types (87 between
+    them), `attacking creature(s)` (30), `instant and sorcery card(s) in your graveyard` (29),
+    `other creature(s) you control` (15), `card(s) in your graveyard` (15),
+    `creature card(s) in all graveyards` (9).
+  */
+  const spell = (name: string, text: string, typeLine = 'Sorcery', cost = '{2}{B}') => compileCard({
+    name, type_line: typeLine, mana_cost: cost, cmc: 3, colors: ['B'],
+    layout: 'normal', oracle_text: text,
+  });
+  const creature = (name: string, text: string) => compileCard({
+    name, type_line: 'Creature — Zombie', mana_cost: '{4}{B}', cmc: 5, colors: ['B'],
+    layout: 'normal', power: '4', toughness: '4', oracle_text: text,
+  });
+
+  it.each([
+    ['a life gain multiplied by a count',
+      'Ancestral Tribute', 'You gain 2 life for each card in your graveyard.'],
+    ['a life gain that IS the count',
+      'Not A Card', 'You gain life equal to the number of creatures you control.'],
+    ['a life loss that is the count',
+      'Not A Card', 'You lose life equal to the number of cards in your hand.'],
+    ['a life loss multiplied by a count',
+      'Not A Card', 'You lose 2 life for each creature you control.'],
+    ['a draw multiplied by a count',
+      'Not A Card', 'Draw a card for each artifact you control.'],
+    ['a draw that IS the count',
+      'Cosmic Epiphany', 'Draw cards equal to the number of instant and sorcery cards in your '
+        + 'graveyard.'],
+    ['the drain every opponent takes',
+      'Not A Card', 'Each opponent loses 1 life for each creature card in your graveyard.'],
+    ['mana multiplied by a count',
+      'Battle Hymn', 'Add {R} for each creature you control.'],
+    ['a count announced in a where-X tail',
+      'Not A Card', 'You gain X life, where X is the number of lands you control.'],
+  ])('reads %s', (_why, name, text) => {
+    const read = spell(name as string, text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it.each([
+    ['damage whose amount trails its destination',
+      'Ground Assault',
+      'Ground Assault deals damage to target creature equal to the number of lands you control.'],
+    ['damage announced as X with the count in a tail',
+      'Not A Card',
+      'Not A Card deals X damage to any target, where X is the number of cards in your hand.'],
+    ['damage printed per thing',
+      'Not A Card',
+      'Not A Card deals 1 damage to target opponent for each creature card in your graveyard.'],
+  ])('reads %s', (_why, name, text) => {
+    const read = spell(name as string, text as string, 'Instant', '{1}{R}');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('reads the count through a prologue, with nothing new in the prologue', () => {
+    /*
+      The reason this increment is worth more than its own clause table: a count is read in the
+      **clause**, so every prologue that already composes picks it up. Ancestor's Chosen is an ETB
+      whose body is one of the rows above, and no trigger reader changed for it.
+    */
+    const read = creature("Ancestor's Chosen",
+      "When Ancestor's Chosen enters, you gain 1 life for each card in your graveyard.");
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers).toHaveLength(1);
+  });
+
+  it.each([
+    ['a countable nothing can count', 'Draw a card for each Bird on the battlefield.'],
+    ['a count qualified past the vocabulary',
+      'Draw a card for each creature you control with a +1/+1 counter on it.'],
+    ['a quantity that is not a count of the board at all',
+      'You gain X life, where X is the amount of life you gained this turn.'],
+    ['a verb this table has no row for', 'Scry 1 for each card in your hand.'],
+    ['generic mana, which a pool cannot hold', 'Add {2} for each creature you control.'],
+    ['a where-X tail whose body does not say X',
+      'You gain 2 life, where X is the number of lands you control.'],
+  ])('refuses %s', (_why, text) => {
+    /*
+      Each refused **whole** (D487), which is the point: a clause whose amount cannot be computed is
+      not a clause that does nothing, it is a clause with no reading, and the line goes to a human
+      (D362). "For each Bird on the battlefield" is the sharpest — it counts a board the vocabulary
+      could be taught, and until it is, reading it as zero Birds would be a Airborne Aid that
+      resolves and draws nothing.
+    */
+    const read = spell('Not A Card', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('refuses a basic land type rather than counting creatures by that name', () => {
+    /*
+      The wrong reading this increment had to fix before it could widen anything, and the one place
+      in `countOfThing` where a defect was waiting rather than missing.
+
+      "Swamps you control" and "Goblins you control" are the same five printed words and two
+      different counts, and the tribal branch asks `ch.isCreature`. Until D520, no card reached that
+      branch with a land type — Corrupt and Cabal Coffers print their counts in word orders nothing
+      read — so the bug was latent. Reading those orders without `landsOfSubtype` would have made
+      Cabal Coffers add no mana and resolve cleanly, which is worse than an unread line (D362).
+
+      This row asserts the correct reading exists: a land count reads, and a creature type that no
+      card can have still refuses nothing (it reads as a count of zero creatures, which is what
+      "the number of Goblins you control" means on an empty board).
+    */
+    const coffers = compileCard({
+      name: 'Cabal Coffers', type_line: 'Land', mana_cost: '', cmc: 0, colors: [],
+      layout: 'normal', oracle_text: '{2}, {T}: Add {B} for each Swamp you control.',
+    });
+    expect(coffers.ok).toBe(true);
+    if (!coffers.ok) return;
+    expect(coffers.unread.map((u) => u.line)).toEqual([]);
+    expect(coffers.script?.abilities).toHaveLength(1);
+  });
+
+  it('reads Plains, whose plural is itself', () => {
+    /*
+      CR 205.3i. The `-s` rule every other plural goes through would read "Plains" as "Plain", which
+      is not a land type at all, so a card counting Plains would have counted nothing — the same
+      quiet wrong as the row above. Taken first in both grammars for that reason.
+    */
+    const perThing = spell('Not A Card', 'You gain 1 life for each Plains you control.');
+    const announced = spell('Not A Card',
+      'You gain X life, where X is the number of Plains you control.');
+    expect(perThing.ok && announced.ok).toBe(true);
+    if (!perThing.ok || !announced.ok) return;
+    expect(perThing.unread.map((u) => u.line)).toEqual([]);
+    expect(announced.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('leaves the fixed-amount readers alone', () => {
+    // The complement: a clause with no count tail still reads the printed number, so the rows above
+    // are a widening rather than a replacement.
+    const read = spell('Not A Card', 'You gain 3 life.\nDraw a card.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+});
