@@ -15450,3 +15450,133 @@ describe('the graveyard return, opened up and counted (D540)', () => {
     expect(read.unread.length).toBe(1);
   });
 });
+
+describe('the mass pump, read by its subject (D541)', () => {
+  /*
+    **Two regexes with one shape between them, and five scopes that had neither.** The compiler read
+    `creatures you control get +N/+N until end of turn` — plus only — and `all creatures get ±N/±N`.
+    The corpus prints **492 sentences** in this family and the subject is where they differ:
+    `creatures your opponents control` (22 printings), `attacking creatures` (10), `other creatures
+    you control` (7), `blocking creatures` (3), `creatures target player controls` (3). The first
+    reader also refused a minus sign, so a penalty on your own team was unread.
+
+    One reader now, with the subject looked up in `massPumpSubject`, and **+39 cards finished**.
+
+    Every scope returns a **list** of ids, which `pump` freezes into the effect (CR 611.2c, #280) —
+    which is what `pumpTeam` and `pumpAll` already did for an until-end-of-turn duration, so the two
+    phrases this replaces behave identically. It is also the only way the two combat scopes are
+    expressible at all: "the creatures attacking right now" is a fact about `state.combat` when the
+    spell resolves, not a scope a continuous effect could keep asking.
+  */
+  const row = (
+    name: string, type: string, text: string, extra: Partial<CardDataRow> = {},
+  ): ReturnType<typeof compileCard> => compileCard({
+    name, type_line: type, mana_cost: '{2}{W}', cmc: 3, colors: ['W'], layout: 'normal',
+    oracle_text: text, ...extra,
+  });
+
+  it.each([
+    ['the opponents\' board (Bewildering Blizzard)',
+      'Draw three cards. Creatures your opponents control get -3/-0 until end of turn.'],
+    ['the attackers (Army of Allah)', 'Attacking creatures get +2/+0 until end of turn.'],
+    ['the blockers (Hold the Line)', 'Blocking creatures get +7/+7 until end of turn.'],
+    ['one player\'s board (Arms of Hadar)',
+      'Creatures target player controls get -2/-2 until end of turn.'],
+    ['the rest of your team', 'Other creatures you control get +1/+1 until end of turn.'],
+    ['a penalty on your own team', 'Creatures you control get -1/-1 until end of turn.'],
+  ])('reads %s', (_what, text) => {
+    const read = row('Probe Rite', 'Instant', text as string);
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('asks for the player, and only for that scope', () => {
+    /*
+      "Creatures target player controls" is the one subject here that is a question. Asserted
+      alongside a scope that is **not**, because a reader that declared a target for every phrase
+      would make Inspired Charge ask who to pump.
+    */
+    const aimed = row('Arms of Hadar', 'Sorcery',
+      'Creatures target player controls get -2/-2 until end of turn.',
+      { mana_cost: '{3}{B}', colors: ['B'] });
+    expect(aimed.ok).toBe(true);
+    if (aimed.ok) {
+      expect(aimed.unread.map((u) => u.line)).toEqual([]);
+      expect(aimed.script?.targets?.length).toBe(1);
+      expect(aimed.script?.targets?.[0]?.kind).toBe('player');
+    }
+
+    const team = row('Inspired Charge', 'Instant',
+      'Creatures you control get +2/+1 until end of turn.', { mana_cost: '{2}{W}{W}', cmc: 4 });
+    expect(team.ok).toBe(true);
+    if (team.ok) expect(team.script?.targets).toBeUndefined();
+  });
+
+  it('keeps the two readings it replaced exactly as they were', () => {
+    /*
+      The regression guard. `expiresAtEndOfTurn` is the bot's "hold this for the combat" hint, and
+      the two readers this one replaced disagreed about it: the team pump set it (D364, where a
+      compiled Inspired Charge otherwise gets cast in a main phase with nothing to attack with) and
+      the sweeper did not. Both are preserved rather than unified, and the test says which is which
+      so a future change has to decide on purpose.
+    */
+    const team = row('Inspired Charge', 'Instant',
+      'Creatures you control get +2/+1 until end of turn.', { mana_cost: '{2}{W}{W}', cmc: 4 });
+    expect(team.ok).toBe(true);
+    if (team.ok) expect(team.script?.expiresAtEndOfTurn).toBe(true);
+
+    const sweep = row('Golgari Charm', 'Instant',
+      'All creatures get -1/-1 until end of turn.', { mana_cost: '{B}{G}', cmc: 2, colors: ['B', 'G'] });
+    expect(sweep.ok).toBe(true);
+    if (sweep.ok) {
+      expect(sweep.unread.map((u) => u.line)).toEqual([]);
+      expect(sweep.script?.expiresAtEndOfTurn).toBeUndefined();
+    }
+
+    /*
+      And with a plus, which is the row that makes the preservation falsifiable: the sweeper reader
+      set no hint whatever the sign, so a symmetric bonus gets none either. Without this row a
+      change that flagged every bonus would pass, because both negative rows above are silent about
+      a flag they were never going to have.
+    */
+    const bothWays = row('Probe Rite', 'Instant', 'All creatures get +1/+1 until end of turn.');
+    expect(bothWays.ok).toBe(true);
+    if (bothWays.ok) {
+      expect(bothWays.unread.map((u) => u.line)).toEqual([]);
+      expect(bothWays.script?.expiresAtEndOfTurn).toBeUndefined();
+    }
+  });
+
+  it('tells the bot to hold a combat-only pump', () => {
+    /*
+      "Attacking creatures get +2/+0" does **nothing at all** outside combat, so it wants the hint
+      more than anything else in the family — and it is the row that proves `holdForCombat` is read
+      per subject rather than set for every bonus.
+    */
+    const attackers = row('Army of Allah', 'Instant',
+      'Attacking creatures get +2/+0 until end of turn.', { mana_cost: '{1}{W}{W}' });
+    expect(attackers.ok).toBe(true);
+    if (attackers.ok) expect(attackers.script?.expiresAtEndOfTurn).toBe(true);
+
+    // And off for the opponents' board, which is a sweep in one light and a trick in the other.
+    const theirs = row('Bewildering Blizzard', 'Instant',
+      'Creatures your opponents control get -3/-0 until end of turn.',
+      { mana_cost: '{4}{U}{U}', cmc: 6, colors: ['U'] });
+    expect(theirs.ok).toBe(true);
+    if (theirs.ok) expect(theirs.script?.expiresAtEndOfTurn).toBeUndefined();
+  });
+
+  it('refuses a subject it has no scope for', () => {
+    /*
+      Tribal Unity's "creatures of the creature type of your choice" is a scope whose membership is
+      chosen as the spell resolves, and `massPumpSubject` has no entry for it — so the line is
+      unread rather than pumped as something else. The discriminating half is every row above: the
+      refusal is about this subject, not about the sentence.
+    */
+    const read = row('Tribal Unity', 'Instant',
+      'Creatures of the creature type of your choice get +2/+2 until end of turn.',
+      { mana_cost: '{X}{2}{G}', colors: ['G'] });
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+});

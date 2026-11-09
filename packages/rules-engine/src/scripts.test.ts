@@ -34193,3 +34193,139 @@ describe('the counted graveyard return, at the table (D540)', () => {
     expect(s.instances[one]?.zone).toBe('hand');
   });
 });
+
+describe('the mass pump, at the table (D541)', () => {
+  /*
+    The runtime half, and it is the whole point of reading the subject: **which creatures are in the
+    set**. A compile test shows the line reads; whether "creatures your opponents control" reaches
+    the opponents' board and not the caster's, and whether "attacking creatures" reaches the ones
+    actually attacking, are facts only a game has.
+
+    Bewildering Blizzard and Army of Allah, the real printings, through `customDeck`'s `data`.
+  */
+  const DATA = [
+    {
+      name: 'Bewildering Blizzard', type_line: 'Instant', mana_cost: '{4}{U}{U}', cmc: 6,
+      colors: ['U'], layout: 'normal',
+      oracle_text: 'Draw three cards. '
+        + 'Creatures your opponents control get -3/-0 until end of turn.',
+    },
+    {
+      name: 'Army of Allah', type_line: 'Instant', mana_cost: '{1}{W}{W}', cmc: 3,
+      colors: ['W'], layout: 'normal',
+      oracle_text: 'Attacking creatures get +2/+0 until end of turn.',
+    },
+    {
+      name: 'Bolt Hound', type_line: 'Creature — Elemental Dog', mana_cost: '{2}{R}', cmc: 3,
+      colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Haste (This creature can attack and {T} as soon as it comes under your '
+        + 'control.)\n'
+        + 'Whenever Bolt Hound attacks, other creatures you control get +1/+0 until end of turn.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'mass-pump',
+      name: 'Mass Pump',
+      entries: [
+        { name: 'Bewildering Blizzard', count: 4 }, { name: 'Army of Allah', count: 4 },
+        { name: 'Bolt Hound', count: 4 }, { name: 'Grizzly Bears', count: 8 },
+        { name: 'Island', count: 20 }, { name: 'Plains', count: 20 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Army of Allah', 'Bewildering Blizzard', 'Bolt Hound'].sort());
+    return list.deck;
+  };
+
+  it("shrinks the opponents' board and leaves the caster's alone", () => {
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'mass-pump', 1: 'mass-pump' },
+      deckSpecs: { 'mass-pump': deck() },
+      hands: { 0: ['Bewildering Blizzard'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Island', 'Island', 'Island', 'Island', 'Grizzly Bears'],
+        1: ['Grizzly Bears'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const mine = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Bewildering Blizzard'),
+    } as Action), 60);
+
+    // -3/-0: the power falls on their side and nowhere else, and no toughness moves.
+    expect(power(s, theirs)).toBe(-1);
+    expect(toughness(s, theirs)).toBe(2);
+    expect(power(s, mine)).toBe(2);
+    expect(toughness(s, mine)).toBe(2);
+  });
+
+  it('pumps the creatures that are attacking, and not the ones at home', () => {
+    /*
+      The combat scope read off `state.combat`, which is why the ids are a snapshot rather than a
+      `ContinuousEffect.scope`: there is no scope member for "attacking right now", and a live one
+      would keep pumping a creature taken out of combat.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'mass-pump', 1: 'mass-pump' },
+      deckSpecs: { 'mass-pump': deck() },
+      hands: { 0: ['Army of Allah'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Plains', 'Grizzly Bears', 'Grizzly Bears'],
+        1: [],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'declare-attackers');
+    const [swinging, home] = ids(s, 0, 'battlefield')
+      .filter((id) => nameOf(s, id) === 'Grizzly Bears');
+    expect(swinging).toBeDefined();
+    expect(home).toBeDefined();
+
+    s = apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: swinging!, defender: 1 }],
+    } as Action);
+    s = tapAllLands(s, 0);
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Army of Allah'),
+    } as Action), 60);
+
+    expect(power(s, swinging!)).toBe(4);
+    expect(power(s, home!)).toBe(2);
+  });
+
+  it('leaves the source out of "other creatures you control"', () => {
+    /*
+      Bolt Hound, the real printing, and the row a break run asked for: with the exclusion deleted
+      the whole suite stayed green, because every other scope here is about somebody's whole board.
+      The Hound's own trigger is the only place the word "other" does any work, and a Hound that
+      pumped itself would be a 3/2 attacking where the card says 2/2.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'mass-pump', 1: 'mass-pump' },
+      deckSpecs: { 'mass-pump': deck() },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Bolt Hound', 'Grizzly Bears'],
+        1: [],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'declare-attackers');
+    const hound = find(s, 0, 'battlefield', 'Bolt Hound');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+
+    s = drain(apply(s, {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: hound, defender: 1 }, { attacker: bears, defender: 1 }],
+    } as Action), 60);
+
+    expect(power(s, bears)).toBe(3);
+    expect(power(s, hound)).toBe(2);
+  });
+});

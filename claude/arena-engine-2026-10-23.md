@@ -19764,3 +19764,67 @@ description and the absence of a count rather than trusting the other file.
 stalled table, 63.1 turns and 339 moves a game. Per 100-card deck across 160 decks: 25.8 cards with
 a hand-written script, 47.5 with at least one unread line, 61.8 playable only from printed data, 0.5
 cardboard.
+
+## D541 — The mass pump, read by its subject
+
+**Two regexes with one shape between them, and five subjects that had neither.** The compiler read
+`creatures you control get +N/+N until end of turn` — plus only — and `all creatures get ±N/±N`.
+The corpus prints **492 sentences** in this family and the subject is where they differ.
+
+|  | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,121 / 56,421 (41.0%) | **23,180 / 56,421 (41.1%)** |
+| cards with a compiled script | 11,802 | **11,844** |
+| cards with every printed line read | 7,551 | **7,590** |
+
+**+39 cards finished**, against 45 printings measured across the five missing subjects —
+`creatures your opponents control` (22), `attacking creatures` (10), `other creatures you control`
+(7), `blocking creatures` (3), `creatures target player controls` (3) — plus the team penalty the
+first reader's `\+` had been refusing. The closest the queue has come to its own prediction in six
+calibrations.
+
+### The ids are a snapshot, and that is what makes two of the scopes possible at all
+
+Every subject resolves to a **list**, which `pump` freezes into the effect (CR 611.2c, #280): a
+creature that arrives later in the turn is not pumped and one that leaves does not take the bonus
+with it. `pumpTeam` and `pumpAll` already did exactly that for an until-end-of-turn duration — they
+keep a live scope only when the duration is `permanent` — so this reader calls `pump` directly with
+the same lists and is behaviour-identical on the two phrases it replaces.
+
+It is also the only way `attacking creatures` and `blocking creatures` can be expressed.
+`ContinuousEffect.scope` has no member for "the creatures attacking right now", and it should not:
+that set is a fact about `state.combat` at the moment the spell resolves, and a live scope would keep
+pumping a creature that had been removed from combat.
+
+### The bot hint, kept where it was calibrated
+
+`expiresAtEndOfTurn` is "hold this for the combat". It is set for a bonus to your own creatures —
+D364's trap, where a compiled Inspired Charge otherwise gets cast in a main phase with nothing to
+attack with — and for the two combat scopes, which do **nothing at all** outside combat and so want
+it more than anything else in the family.
+
+It stays off for `all creatures`, which keeps the sweeper this reader replaced exactly as it was, and
+off for the opponents' board: a penalty on their creatures is a combat trick in one light and a sweep
+you cast the moment it kills something in another, and which of those the bot should believe is
+unmeasured. A hint that points the wrong way plays worse than none, so that waits for a measurement.
+
+Both halves of that preservation are now falsifiable, which took a third row: the two negative
+printings are silent about a flag they were never going to have, so a change that flagged every bonus
+passed until "All creatures get +1/+1" was asserted to carry none.
+
+### The break run: 9 of 9, and the ninth was a test the suite did not have
+
+The first pass caught **8 of 9**. The miss was the word **other**: deleting the `!== c.source`
+exclusion left the whole suite green, because every other subject here is about somebody's entire
+board and nothing was asserting the one place the word does work. Bolt Hound — "Whenever Bolt Hound
+attacks, other creatures you control get +1/+0 until end of turn" — is that place, and the row now
+attacks with the Hound and a Grizzly Bears and asserts the Bears is a 3/2 while the Hound is still a
+2/2. Re-run: **9/9**.
+
+That is the seventh break run in eight where what broke was a test rather than the code.
+
+### Refused
+
+`Creatures of the creature type of your choice get +X/+X until end of turn` (Tribal Unity) — a scope
+whose membership is chosen as the spell resolves. `massPumpSubject` has no entry for it, so the line
+is unread rather than pumped as something else, and the discriminating half is every reading above.

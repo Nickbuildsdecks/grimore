@@ -11383,24 +11383,6 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
-    The sweep that shrinks instead of destroying: "All creatures get -1/-1 until end of turn".
-
-    `pumpAll` and not `pumpTeam`, because "all creatures" includes the caster's own — which is what
-    makes Golgari Charm's first mode a decision rather than a free sweep, and its own comment says
-    so. The sign is read rather than assumed: the same sentence with a plus is a mass pump, and
-    `sizeBonus` handles either, refusing only `0/0`.
-  */
-  const shrunk = /^all creatures get (-|\+)(\d+)\/(-|\+)(\d+) until end of turn$/i.exec(text);
-  if (shrunk !== null) {
-    const bonus = sizeBonus(
-      Number(`${shrunk[1]}${shrunk[2]}`), Number(`${shrunk[3]}${shrunk[4]}`),
-    );
-    if (bonus !== null) {
-      return { effect: (c) => pumpAll(c.state, c.source, c.controller, bonus) };
-    }
-  }
-
-  /*
     Destroy all creatures: the sweeper, and the first clause here that answers a board rather than a
     permanent.
 
@@ -11557,14 +11539,36 @@ function untargetedEffect(clause: string, name: string): ReadEffect | null {
     same reason: Overrun's trample and its +3/+3 are one continuous effect, and two would expire
     independently.
   */
-  const team = /^creatures you control get \+(\d+)\/\+(\d+)(?: and gain ([a-z][a-z' ]*?))? until end of turn$/i
-    .exec(text);
+  const team = new RegExp(
+    `^(${MASS_PUMP_SUBJECTS})`
+    + ` get (-|\\+)(\\d+)\\/(-|\\+)(\\d+)`
+    + `(?: and gain ([a-z][a-z' ]*?))? until end of turn$`,
+    'i',
+  ).exec(text);
   if (team !== null) {
-    const bonus = pumpAndGrant(Number(team[1]), Number(team[2]), team[3]);
-    if (bonus !== null) {
+    const subject = massPumpSubject(team[1]!);
+    const bonus = pumpAndGrant(
+      Number(`${team[2]}${team[3]}`), Number(`${team[4]}${team[5]}`), team[6],
+    );
+    if (subject !== null && bonus !== null) {
       return {
-        effect: (c) => pumpTeam(c.state, c.source, c.controller, bonus),
-        spellFlags: { expiresAtEndOfTurn: true },
+        ...(subject.targets === undefined ? {} : { targets: subject.targets }),
+        effect: (c) => pump(c.state, subject.ids(c), c.source, c.controller, bonus),
+        /*
+          **The bot hint, and only where it was calibrated.** `expiresAtEndOfTurn` is "hold this for
+          the combat", and it has been set on a bonus to your own team since the hand-written
+          Inspired Charge and Overrun — D364's trap, where a compiled card that *works* gets cast in
+          a main phase with nothing to attack with.
+
+          It is left off everywhere else, which keeps the two readings this one replaced exactly as
+          they were. A penalty on the opponents' board is a combat trick too — you hold it for their
+          attack — but a sweep is also cast the moment it kills something, and which of those the bot
+          should believe is unmeasured. A hint that points the wrong way plays worse than none, so
+          this waits for a measurement rather than a guess.
+        */
+        ...(subject.holdForCombat && ((bonus.power ?? 0) > 0 || (bonus.toughness ?? 0) > 0)
+          ? { spellFlags: { expiresAtEndOfTurn: true } }
+          : {}),
       };
     }
   }
@@ -11895,6 +11899,119 @@ function boardScope(phrase: string): {
 function sizeBonus(power: number, toughness: number): PumpOptions | null {
   if (power === 0 && toughness === 0) return null;
   return { ...(power === 0 ? {} : { power }), ...(toughness === 0 ? {} : { toughness }) };
+}
+
+/**
+ * The subject phrases a **mass pump** can name, as a regex alternation for its one caller (D541).
+ *
+ * Longest first where one phrase opens another, which costs nothing and means the table can be read
+ * top to bottom without working out that `^` already decides it.
+ */
+const MASS_PUMP_SUBJECTS: string = [
+  'other creatures you control',
+  'creatures your opponents control',
+  'creatures target player controls',
+  'creatures you control',
+  'attacking creatures',
+  'blocking creatures',
+  'all creatures',
+].join('|');
+
+/**
+ * What a mass-pump subject phrase names when the clause resolves, and whether to tell the bot to
+ * hold the card for combat.
+ *
+ * ## One reader where there were two, and five scopes that had none
+ *
+ * The compiler had `creatures you control get +N/+N` (plus only) and `all creatures get ±N/±N`, two
+ * regexes with one shape between them. The corpus prints **492 sentences** in this family and the
+ * subject is where they differ: `creatures your opponents control` (22 printings),
+ * `attacking creatures` (10), `other creatures you control` (7), `blocking creatures` (3),
+ * `creatures target player controls` (3) — and the first reader refused a minus sign, so a team
+ * penalty was unread too.
+ *
+ * ## The ids are a snapshot, and that is the rule rather than a shortcut
+ *
+ * Every scope here returns a **list**, which `pump` freezes into the effect (CR 611.2c, #280): a
+ * creature that arrives later in the turn is not pumped and one that leaves does not take the bonus
+ * with it. `pumpTeam` and `pumpAll` already do exactly this for an until-end-of-turn duration — they
+ * only keep a live scope when the duration is `permanent` — so this reader calls `pump` directly
+ * with the same lists and is behaviour-identical on the two phrases it replaces.
+ *
+ * It also makes the two combat scopes expressible at all. `ContinuousEffect.scope` has no member for
+ * "the creatures attacking right now", and it should not: the set is a fact about `state.combat` at
+ * the moment the spell resolves, and a live scope would keep pumping a creature removed from combat.
+ *
+ * ## `holdForCombat`
+ *
+ * `expiresAtEndOfTurn` is the bot's "hold this for the combat" hint, and it is set where it was
+ * calibrated: a bonus to your own creatures (D364's trap, where a compiled Inspired Charge gets cast
+ * in a main phase with nothing to attack with), and the two combat scopes, which do **nothing at all**
+ * outside combat and so want it more than anything else here.
+ *
+ * It stays off for `all creatures` — which keeps the sweeper this reader replaced exactly as it was —
+ * and off for the opponents' board. A penalty on their creatures is a combat trick in one light and a
+ * sweep you cast the moment it kills something in another, and which of those the bot should believe
+ * is unmeasured. A hint that points the wrong way plays worse than none.
+ */
+function massPumpSubject(phrase: string): {
+  readonly ids: (c: EffectContext) => readonly string[];
+  readonly targets?: readonly TargetSpec[];
+  readonly holdForCombat: boolean;
+} | null {
+  const everyCreature = (c: EffectContext): readonly string[] =>
+    c.state.seats.flatMap((seat) => creaturesControlledBy(c.state, seat.index));
+  switch (phrase.trim().toLowerCase()) {
+    case 'creatures you control':
+      return { ids: (c) => creaturesControlledBy(c.state, c.controller), holdForCombat: true };
+    /*
+      "**Other** creatures you control" — the source excluded, which is the templating on a creature
+      that pumps its team and not itself. `c.source` is the right exclusion even when the source is
+      a spell rather than a permanent: a spell is not on the battlefield, so the filter removes
+      nothing and the phrase reads as the whole team, which is what "other creatures you control"
+      means on an instant.
+    */
+    case 'other creatures you control':
+      return {
+        ids: (c) => creaturesControlledBy(c.state, c.controller).filter((id) => id !== c.source),
+        holdForCombat: true,
+      };
+    case 'creatures your opponents control':
+      return {
+        ids: (c) => c.state.seats
+          .filter((seat) => seat.index !== c.controller)
+          .flatMap((seat) => creaturesControlledBy(c.state, seat.index)),
+        holdForCombat: false,
+      };
+    case 'all creatures':
+      return { ids: everyCreature, holdForCombat: false };
+    case 'attacking creatures':
+      return {
+        ids: (c) => c.state.combat.attacks.map((attack) => attack.attacker),
+        holdForCombat: true,
+      };
+    case 'blocking creatures':
+      return {
+        ids: (c) => c.state.combat.attacks.flatMap((attack) => [...attack.blockers]),
+        holdForCombat: true,
+      };
+    /*
+      "Creatures target player controls" — the one scope here that asks a question. `TARGET_PLAYER`
+      rather than `TARGET_PLAYER_HELPED`, because every printing of this phrase in the corpus is a
+      penalty: the bot's default aim is the other side of the table.
+    */
+    case 'creatures target player controls':
+      return {
+        ids: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null ? [] : creaturesControlledBy(c.state, seat);
+        },
+        targets: [TARGET_PLAYER],
+        holdForCombat: false,
+      };
+    default:
+      return null;
+  }
 }
 
 /**
