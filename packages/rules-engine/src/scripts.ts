@@ -10573,6 +10573,21 @@ interface ReadEffect {
    * identity: said here rather than left as a surprise.
    */
   readonly appliesNothing?: true;
+  /**
+   * "Put the object I was handed back onto the battlefield" — the second half of a **blink** (D543).
+   *
+   * Set by one clause reader and read by one assembly rule, and it exists because the two halves of
+   * a blink are read by different readers and only the assembly can see both. The exile clause
+   * before it is ordinary removal as far as its own reader can tell — `exile another target
+   * permanent you control` is the same sentence Hidden Dragonslayer prints — so it declares
+   * `removesACreature` and a hostile aim. Put the return after it and the card is the opposite:
+   * nothing is removed and the target is one of yours, chosen to be helped.
+   *
+   * Carrying the fact outwards on the *clause* rather than deciding it in the reader is what makes
+   * it a composition rule instead of a guess. See `composeEffects`, which rewrites the borrowed
+   * spec when a part of the chain carries this.
+   */
+  readonly returnsTheObject?: true;
 }
 
 /**
@@ -14633,7 +14648,7 @@ function tokenEffect(clause: string, name: string, granted?: string): ReadEffect
  * kinds.
  */
 type ReferentPronoun =
-  | 'that creature' | 'that player' | 'it'
+  | 'that creature' | 'that player' | 'it' | 'that card'
   /**
    * The **possessive** forms, which name a player by naming the object that player controls (D537).
    *
@@ -14671,6 +14686,21 @@ readonly (readonly [ReferentPronoun, ReferentKind, ReferentSupply])[] = [
   ['that player', 'player', 'object'],
   ['it', 'creature', 'object'],
   ['it', 'permanent', 'object'],
+  /*
+    **"That card"** (D543), which is "it" for an object that is no longer a permanent.
+
+    A card the sentence before it exiled is a card in exile, not a creature on the battlefield, and
+    the printings say so: Cloudshift and Acrobatic Maneuver print "that card" where Ephemerate and
+    Felidar Guardian print "it" for the same move. So it swaps for the same two kinds — the kind is
+    about what the **earlier** clause pointed at, which was a permanent then — and takes the same
+    supply.
+
+    It is the fourth spelling of one idea rather than a new mechanism, and that is the whole reason
+    it costs two lines: `relocate` keeps the instance id across a zone change, so the object the
+    earlier clause chose and the card now sitting in exile are the same `c.targets[0]`.
+  */
+  ['that card', 'creature', 'object'],
+  ['that card', 'permanent', 'object'],
   /*
     The possessive forms (D537). Each swaps for "target player" — the clause is about a player — and
     takes its supply from the *controller* of whatever the earlier clause pointed at. Four printed
@@ -14821,6 +14851,14 @@ function referentEffect(
     ...(read.immediate === undefined ? {} : { immediate: aimed(read.immediate) }),
     ...(decisions.length === 0 ? {} : { decisions }),
     ...(read.appliesNothing === undefined ? {} : { appliesNothing: read.appliesNothing }),
+    /*
+      Carried outwards, because the borrow is the only form this clause is ever read in (D543) and
+      the rule that reads it lives one layer up. The borrow deliberately drops `targets` — the whole
+      point is that the object comes from the clause before — so a fact about the clause that the
+      assembly needs has to travel on the part itself. It was left off the first time and the
+      symptom was a blink that read perfectly and was still priced as removal.
+    */
+    ...(read.returnsTheObject === undefined ? {} : { returnsTheObject: read.returnsTheObject }),
   };
 }
 
@@ -17622,6 +17660,65 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
+    **The blink's second half** (D543): "… then return it to the battlefield under its owner's
+    control."
+
+    ## Reachable only through the referent swap, and that is the point
+
+    No printed card says "return target creature to the battlefield" — a creature on the battlefield
+    is already there. Every printing of this clause names a **pronoun**: "return **it**", "return
+    **that card**", after a sentence that exiled something. So this reader exists to be handed the
+    swapped phrase `referentEffect` builds, and `composeEffects` is what licenses the borrow.
+
+    That is why it is a clause reader rather than a widening of `blinkResolution`. That reader takes
+    the **whole spell line** and reads Cloudshift; the 11 cards at the head of the queue are a
+    trigger (Felidar Guardian), two activated abilities (Distinguished Conjurer, Abuelo) and a mode
+    (Against All Odds), and a line-shaped reader cannot reach any of them. Read as a clause it works
+    on every path at once, because `composeEffects` runs on the clause chain of a spell, a trigger
+    and an ability alike.
+
+    ## Whose control, read off the words
+
+    `its owner's control` is the owner's seat and `your control` is the caster's, and the difference
+    is a different card: Aminatou's "-1: Exile another target permanent you **own**, then return it
+    to the battlefield under **your** control" is a way to re-enter your own permanents, while
+    Angel of Condemnation's owner's-control wording gives an opponent's creature back to them.
+    Reading either as the other would be a Mind Control or a gift (CR 701.17a).
+
+    The owner is read off the instance **before** the move, which is the only time it can be: the
+    card is in exile when this clause runs, and `relocate` keeps `owner` across the zone change, so
+    this reads it rather than assuming the controller.
+
+    ## Refused
+
+    `transformed`, `tapped`, `with a +1/+1 counter on it` and `attached to ~` are riders this does
+    not read, and each refuses the **line** (D487): a Long Road Home that silently dropped its
+    counter would be a strictly worse card than the one printed, and an Aclazotz that came back
+    un-transformed would be the wrong card entirely. The plural ("return **those cards**", Displace)
+    waits on the plural referent, which `referentEffect` cannot supply — see D538's deferral.
+  */
+  const restored = /^return target (creature|permanent) to the battlefield under (its owner's|your) control$/i
+    .exec(text);
+  if (restored !== null) {
+    const spec = targetSpecFrom(`target ${restored[1]!.toLowerCase()}`, true);
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      const toOwner = restored[2]!.toLowerCase().startsWith('its');
+      return {
+        targets: [{ ...spec, blinks: true }],
+        returnsTheObject: true,
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          if (id === null) return c.state;
+          const inst = c.state.instances[id];
+          return inst === undefined
+            ? c.state
+            : putOntoBattlefield(c.state, id, toOwner ? inst.owner : c.controller);
+        },
+      };
+    }
+  }
+
+  /*
     **Graveyard hate** (D527): "Exile target card from a graveyard."
 
     70 printings and eleven wordings, of which this reads ten — the scope and the type run both come
@@ -18782,6 +18879,51 @@ function composeEffects(
   */
   if (parts.length > 1) delete (flags as { makesMana?: boolean }).makesMana;
   /*
+    **A chain that gives the object back is a blink, not removal** (D543).
+
+    The two halves of a blink are read by two readers and neither one can see the card. "Exile
+    another target permanent you control" is removal to the clause reader that reads it — the same
+    sentence Hidden Dragonslayer prints — so it declares `removesACreature` and leaves the spec's
+    aim hostile. Put "then return it to the battlefield" after it and every one of those is wrong:
+    nothing is removed, the target is one of yours, and the reason to cast it is to blink it.
+
+    This is the only layer that can tell, because it is the only one holding both parts. So a part
+    carrying `returnsTheObject` rewrites the borrowed spec — `blinks` for what the bot is being
+    asked to price (see `TargetSpec.blinks`, which is #209's whole subject), `friendly` for the aim
+    — and drops the removal flag the exile clause asked for.
+
+    **Not a guess about which clause came first.** The borrow licence above has already established
+    that there is exactly one targeting part and that this part borrowed its object from it, so the
+    object being returned *is* the object that part chose. Every printing of the pair exiles it
+    first, which is what makes "give it back" the right reading; a sentence that destroyed it and
+    then returned it would be unreadable for a different reason — `destroy` moves a card to a
+    graveyard and `putOntoBattlefield` would reanimate it, which no printing asks for and which this
+    rule is careful not to claim.
+  */
+  const blinked = parts.some((part) => part.returnsTheObject === true);
+  if (blinked) delete (flags as { removesACreature?: boolean }).removesACreature;
+  /*
+    `blinks` unconditionally and `friendly` **only if the printed phrase says so**, which is the
+    discipline D542 settled for the bite and which this rule needed for the same reason. `blinks` is
+    a fact about the effect — the permanent leaves and comes back, losing its counters, its Auras and
+    its marked damage — and is true wherever it lands. The *aim* is not: Flicker of Fate's "exile
+    target creature or enchantment" names no controller, and blinking an opponent's creature to strip
+    the Aura off it is a real line. Aiming the bot at its own board there would be a hint pointing the
+    wrong way, which plays worse than none (D362).
+
+    Read off the spec's own description rather than off a flag, because the exile readers hand
+    `targetSpecFrom` a hard `false` and so no spec in this family arrives carrying an aim.
+  */
+  const ownSide = /\byou (?:control|own)\b/i;
+  const specsOut = targeted[0]?.targets === undefined ? undefined
+    : blinked
+      ? targeted[0]!.targets!.map((spec) => ({
+        ...spec,
+        blinks: true as const,
+        ...(ownSide.test(spec.description) ? { friendly: true as const } : {}),
+      }))
+      : targeted[0]!.targets;
+  /*
     Each part is handed the state the one before it produced, which is what a printed sequence
     means. Everything else about the context — the targets, the answering object — is unchanged.
 
@@ -18854,7 +18996,7 @@ function composeEffects(
     // Carried outwards, so a composition that is itself followed by something runs every part in
     // its immediate reading.
     ...(parts.some((part) => part.immediate !== undefined) ? { immediate: run(parts, false) } : {}),
-    ...(targeted[0]?.targets === undefined ? {} : { targets: targeted[0]!.targets }),
+    ...(specsOut === undefined ? {} : { targets: specsOut }),
     ...(decisions.length === 0 ? {} : { decisions }),
     ...(Object.keys(flags).length === 0 ? {} : { spellFlags: flags }),
   };
@@ -20484,74 +20626,39 @@ function lootResolution(lines: readonly string[], name: string): ReadEffect | nu
   };
 }
 
-/**
- * A **blink**: exile a permanent you control and bring it straight back — Cloudshift.
- *
- * ## Why this is a spell-shape reader too
- *
- * The same reason as `lootResolution`, arrived at from the other direction. `clausesOf` splits on
- * ", then ", so the sentence arrives as "Exile target creature you control" and "return that card
- * to the battlefield under your control" — and the **second clause is about the first clause's
- * object**. "That card" is not a target and not the source; it is whatever the exile just moved,
- * and no clause reader can be handed that, because a clause is given a context and a target list
- * and nothing about what the clause before it did.
- *
- * Reading the first half alone would be worse than refusing both: the exile clause already has a
- * reader (D404), so a compiler that took it and dropped the rest would turn a blink into
- * **unconditional removal of your own creature** — a card that works, plays, and is the opposite of
- * what it prints. That is the strongest version of the argument for reading the whole shape or none
- * of it.
- *
- * ## `blinks` is the point of the spec
- *
- * `TargetSpec.blinks` is not a restriction and its docblock is long about why: a blink is a help or
- * a hit depending on whose permanent it lands on, because what the permanent loses by leaving is
- * what decides — a token ceases to exist (CR 111.7), counters, Auras and marked damage all go. The
- * bot cannot work that out from a candidate list, so the flag is how it is told, and a compiled
- * blink without it is a card the bot plays blind. Cloudshift's hand-written spec carries it and so
- * does this.
- *
- * ## Deliberately only "under your control"
- *
- * Flickerwisp returns the permanent **under its owner's control** and at the beginning of the next
- * end step, which is a different card in two ways: a different controller and a delayed trigger.
- * Reading it as this shape would be a blink of somebody else's creature that hands it back to you
- * immediately. So the phrase is matched exactly and the other wording is left unread (D362).
- *
- * The trigger form of the same pair — Soulherder's end step — is still hand-written. Reading it
- * needs `triggerFromLine` to gain a clause-pair path of its own, which is its own change rather
- * than a rider on this one.
- */
-function blinkResolution(lines: readonly string[], name: string): ReadEffect | null {
-  if (lines.length !== 1) return null;
-  const blink = /^exile (another target creature you control|target creature you control), then return (?:that card|it) to the battlefield under your control\.?$/i
-    .exec(plain(lines[0]!).trim());
-  if (blink === null) return null;
-  /*
-    "Another" is dropped for the spec, because the phrase it excludes is the source and a **spell**
-    is never on the battlefield to be excluded. It is kept in the regex so the sentence is matched
-    as printed rather than approximately, and so the word is not silently ignored on a card where
-    it would matter.
-  */
-  const spec = targetSpecFrom('target creature you control', true);
-  if (spec === null) return null;
-  return {
-    targets: [{ ...spec, blinks: true }],
-    effect: (c) => {
-      const id = firstCardTarget(c);
-      return id === null ? c.state : putOntoBattlefield(exileCard(c.state, id), id, c.controller);
-    },
-  };
-}
+/*
+  `blinkResolution` lived here, and D543 deleted it.
+
+  It was a **spell-shape** reader for one printed sentence — "Exile target creature you control, then
+  return that card to the battlefield under your control" — written when the compiler had no way to
+  express a clause that acts on the object the clause before it moved. The whole of its argument was
+  that identity: "that card" is not a target and not the source, so no clause reader could be handed
+  it, and reading the exile half alone would have turned a blink into unconditional removal of your
+  own creature.
+
+  The clause path answers that now (D543): "that card" is a referent pronoun, `composeEffects`
+  licenses the borrow, and a `returnsTheObject` part makes the chain a blink rather than removal. So
+  the sentence had two readers, and the test suite could not tell which one read Cloudshift — a break
+  run disabled this one and **every** compile row and the whole of `compiled-vs-written` stayed
+  green, including the rows that assert the compiled Cloudshift is character-for-character the
+  hand-written card.
+
+  Two readers for one sentence is the shape this file keeps collapsing (D441): the one that is
+  correct and the one somebody will edit. The general rule reads strictly more — the same sentence
+  on a trigger, an activated ability, a mode, or with a third sentence after it — so the narrow one
+  goes, and this note stays so the next reader knows the shape is covered rather than forgotten.
+*/
 
 /**
  * **Exile a creature and pay its controller for it** — Swords to Plowshares.
  *
  * ## The dependency, which is a reading rather than an identity
  *
- * The fourth spell-shape reader and the third kind of internal dependency a composition cannot
- * express. `lootResolution`'s was an **order** (draw before the question); `blinkResolution`'s was
- * an **identity** ("that card" is the object the clause before moved). This one is a **reading**:
+ * The third spell-shape reader and the third kind of internal dependency a composition cannot
+ * express. `lootResolution`'s was an **order** (draw before the question); the blink's was an
+ * **identity** ("that card" is the object the clause before moved) — which is no longer a
+ * spell-shape reader at all, because D543 made that identity a clause the chain can express. This
+ * one is a **reading**:
  * "its power" is a characteristic of the creature the sentence before exiled, and no clause reader
  * is handed the object another clause moved. So the two sentences are read together or not at all.
  *
@@ -20662,7 +20769,6 @@ function readResolution(lines: readonly string[], name: string): ReadEffect | nu
   */
   return xSpellResolution(lines, name)
     ?? lootResolution(lines, name)
-    ?? blinkResolution(lines, name)
     ?? exileForLifeResolution(lines, name)
     // A spell's "itself" is a card on the stack, not a permanent: see `SubjectZone`.
     ?? composeEffects(lines.flatMap(clausesOf), name, null)

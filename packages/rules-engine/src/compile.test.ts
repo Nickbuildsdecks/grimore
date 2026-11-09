@@ -5157,30 +5157,50 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(specs[0]?.blinks).toBe(written[0]?.blinks);
     });
 
-    it("will not read a return under its owner's control", () => {
+    it("reads a return under its owner's control, which this reader used to refuse (D543)", () => {
       /*
-        Flickerwisp's wording, and a different card twice over: the permanent comes back under its
-        **owner's** control and at the beginning of the next end step. Read as this shape it would
-        be a blink of somebody else's creature handed straight back to you, so the phrase is matched
-        as printed and the other wording stays unread (D362).
+        **Retargeted, not deleted.** This row asserted that the owner's-control wording stays unread,
+        and the reason it gave was Flickerwisp: "a different card twice over — the permanent comes
+        back under its **owner's** control and at the beginning of the next end step", so reading it
+        as this shape would hand somebody else's creature straight to you.
+
+        Half of that is still true and is still refused — the delayed return is Flickerwisp's own
+        row below. The other half stopped being true the moment a clause reader learnt to read the
+        owner's seat off the instance (D543): the return goes to `inst.owner`, so an opponent's
+        creature goes back to the opponent. Keeping the refusal here would be the suite asserting the
+        past (D516).
+
+        Read by the **clause** path rather than by this spell-shape reader, which is why the describe
+        it sits in is about `blinkResolution` and the assertion is about the card.
       */
       const card = compileCard({
         name: 'Borrowed Shift', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'],
         oracle_text: "Exile target creature you control, then return that card to the battlefield under its owner's control.",
       });
       expect(card.ok).toBe(true);
-      if (card.ok) expect(card.script).toBeUndefined();
+      if (!card.ok) return;
+      expect(card.unread.map((u) => u.line)).toEqual([]);
+      expect(card.script?.targets?.[0]).toMatchObject({ blinks: true, friendly: true });
     });
 
-    it('will not read the shape as part of a longer resolution', () => {
-      // Whole resolution or none of it, as with the loot sentence: a second line means the reader
-      // has not seen everything the spell does.
+    it('reads the shape as part of a longer resolution, which this reader cannot (D543)', () => {
+      /*
+        Also retargeted. The refusal was right about **this** reader — `blinkResolution` takes the
+        whole spell line and a second line means it has not seen everything the spell does — and
+        wrong about the compiler, once the pair became two clauses in a chain. "Exile … then return
+        it" and "You gain 2 life" are two parts `composeEffects` runs in order, which is what the
+        printed sentence means.
+
+        That is the whole argument for having read this as a clause: Justiciar's Portal, Personify
+        and Scrollshift all print a third sentence after the blink, and a line-shaped reader can
+        reach none of them.
+      */
       const card = compileCard({
         name: 'Busy Shift', type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'],
         oracle_text: 'Exile target creature you control, then return that card to the battlefield under your control.\nYou gain 2 life.',
       });
       expect(card.ok).toBe(true);
-      if (card.ok) expect(card.script).toBeUndefined();
+      if (card.ok) expect(card.unread.map((u) => u.line)).toEqual([]);
     });
   });
 
@@ -15732,5 +15752,157 @@ describe('the bite and the fight: two targets pointed at each other (D542)', () 
       'Target land you control deals damage equal to its power to target creature you don\'t control.');
     expect(read.ok).toBe(true);
     if (read.ok) expect(read.unread.length).toBe(1);
+  });
+});
+
+describe("the blink's second half, read as a clause (D543)", () => {
+  /*
+    **The pair the compiler could read half of.** "Exile another target permanent you control" has
+    had a reader since D404; "then return it to the battlefield under its owner's control" had none,
+    and D487's rule meant the whole line went unread rather than compiling into removal of your own
+    permanent.
+
+    `blinkResolution` has read Cloudshift since it was written, but it takes the **whole spell line**
+    — so the 18 cards this increment finishes were out of its reach by construction: a trigger
+    (Felidar Guardian, Wispweaver Angel), activated abilities (Distinguished Conjurer, Nephalia
+    Smuggler, Ruin Ghost), an end-step trigger (Conjurer's Closet, Teleportation Circle), a mode
+    (Settle Beyond Reality) and four spells with a third sentence after the blink (Justiciar's
+    Portal, Personify, Scrollshift, Momentary Blink's flashback). Read as a clause it works on every
+    path at once, because `composeEffects` runs on the clause chain of a spell, a trigger and an
+    ability alike.
+  */
+  const row = (
+    name: string, type: string, text: string, extra: Partial<CardDataRow> = {},
+  ): ReturnType<typeof compileCard> => compileCard({
+    name, type_line: type, mana_cost: '{1}{W}', cmc: 2, colors: ['W'], layout: 'normal',
+    oracle_text: text, ...extra,
+  });
+
+  it.each([
+    ['the spell, with "it" (Ephemerate)', 'Instant',
+      "Exile target creature you control, then return it to the battlefield under its owner's control.",
+      {}],
+    ['the spell, with "that card" (Acrobatic Maneuver)', 'Instant',
+      "Exile target creature you control, then return that card to the battlefield under its owner's"
+      + ' control.', {}],
+    ['under your control (Nephalia Smuggler\'s wording)', 'Instant',
+      'Exile another target creature you control, then return that card to the battlefield under '
+      + 'your control.', {}],
+    ['a permanent rather than a creature (Felidar Guardian)', 'Creature — Cat Beast',
+      'When this creature enters, you may exile another target permanent you control, then return '
+      + "that card to the battlefield under its owner's control.", { power: '3', toughness: '4' }],
+    ['a land (Ruin Ghost)', 'Creature — Spirit',
+      '{W}, {T}: Exile target land you control, then return it to the battlefield under your '
+      + 'control.', { power: '1', toughness: '1' }],
+    ['one that may point anywhere (Flicker of Fate)', 'Instant',
+      "Exile target creature or enchantment, then return it to the battlefield under its owner's"
+      + ' control.', {}],
+    ['one with a sentence after it (Justiciar\'s Portal)', 'Instant',
+      "Exile target creature you control, then return that card to the battlefield under its owner's"
+      + ' control. It gains first strike until end of turn.', {}],
+  ])('reads %s', (_what, type, text, extra) => {
+    const read = row(
+      'Probe Rite', type as string, text as string, (extra ?? {}) as Partial<CardDataRow>,
+    );
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('carries the blink hint, which is the whole reason this is a composition rule', () => {
+    /*
+      `TargetSpec.blinks` is #209's subject: what a permanent loses by leaving is what decides
+      whether a blink helps or hurts, a token ceases to exist (CR 111.7), and the bot cannot read any
+      of that off a candidate list. The exile clause cannot set it — "exile another target permanent
+      you control" is the same sentence Hidden Dragonslayer prints — so `composeEffects` is the only
+      layer that can, and it does it by finding a part that returns the object.
+    */
+    const read = row('Probe Rite', 'Instant',
+      "Exile target creature you control, then return it to the battlefield under its owner's control.");
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.script?.targets?.[0]).toMatchObject({ blinks: true });
+  });
+
+  it('aims at your own side only when the printed phrase says so', () => {
+    /*
+      D542's discipline, and this family needs it for a real printing rather than a probe. Flicker of
+      Fate says "exile target creature **or enchantment**" and names no controller: blinking an
+      opponent's creature to strip the Aura off it, or to reset a creature they have just pumped, is
+      a line a player takes. `friendly` there would aim the bot at its own board for a card the print
+      lets point anywhere, and a hint pointing the wrong way plays worse than none (D362).
+
+      `blinks` is on both, because that one is a fact about the effect rather than about the aim.
+    */
+    const ours = row('Probe Rite', 'Instant',
+      "Exile target creature you control, then return it to the battlefield under its owner's control.");
+    expect(ours.ok).toBe(true);
+    if (ours.ok) expect(ours.script?.targets?.[0]).toMatchObject({ blinks: true, friendly: true });
+
+    const either = row('Flicker of Fate', 'Instant',
+      "Exile target creature or enchantment, then return it to the battlefield under its owner's"
+      + ' control.');
+    expect(either.ok).toBe(true);
+    if (either.ok) {
+      expect(either.script?.targets?.[0]?.blinks).toBe(true);
+      expect(either.script?.targets?.[0]?.friendly).toBeUndefined();
+    }
+  });
+
+  it('stops claiming to remove a creature, which the exile clause asked for on its own', () => {
+    /*
+      **The falsifying card, and it is a real printing.** `removesACreature` tells the bot to hold a
+      card for a board it can answer, and the exile reader sets it off the printed phrase: Flicker of
+      Fate's "target creature or enchantment" mentions a creature, so its exile half declares it.
+      With the return clause after it the flag is a lie — nothing is removed — and a bot holding
+      Flicker of Fate as its answer to a threat is a bot that never answers the threat.
+
+      Asserted on the card rather than on a probe, so a change that stopped dropping the flag fails
+      here. Ephemerate cannot catch it: its phrase is "target creature you control", which the exile
+      reader flags too, but `removesACreature` on a card that can only point at your own board is
+      wrong for a second reason and this row is about the first.
+    */
+    const read = row('Flicker of Fate', 'Instant',
+      "Exile target creature or enchantment, then return it to the battlefield under its owner's"
+      + ' control.');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.script?.removesACreature).toBeUndefined();
+
+    // And the flag really is what the exile clause alone produces, so the row above is not vacuous.
+    const exileOnly = row('Probe Rite', 'Instant', 'Exile target creature or enchantment.');
+    expect(exileOnly.ok).toBe(true);
+    if (exileOnly.ok) expect(exileOnly.script?.removesACreature).toBe(true);
+  });
+
+  it.each([
+    ['the delayed return (Flickerwisp, 8 printings)',
+      'When this creature enters, exile another target permanent. Return that card to the '
+      + "battlefield under its owner's control at the beginning of the next end step."],
+    ['a counter on the way back (Long Road Home)',
+      'Exile target creature. At the beginning of the next end step, return that card to the '
+      + "battlefield under its owner's control with a +1/+1 counter on it."],
+    ['tapped (Feign Death\'s granted ability)',
+      "Exile target creature you control, then return it to the battlefield tapped under its owner's"
+      + ' control.'],
+    ['transformed (Aclazotz\'s wording)',
+      'Exile target creature you control, then return it to the battlefield tapped and transformed '
+      + "under its owner's control."],
+    ['the plural (Displace)',
+      'Exile up to two target creatures you control, then return those cards to the battlefield '
+      + "under their owner's control."],
+  ])('refuses %s', (_what, text) => {
+    /*
+      Each refuses the **line** (D487), and each for its own reason rather than for a shared one.
+      The delayed return needs a delayed trigger (CR 603.7) and a different card: Flickerwisp exiles
+      a permanent its controller does not own and gives it back a step later, which is removal for a
+      turn rather than a blink. `tapped`, `transformed` and the counter are riders this reader does
+      not read, and silently dropping any of them makes a strictly different card — an Aclazotz that
+      came back un-transformed is the wrong card entirely.
+
+      The plural waits on the plural referent, which `referentEffect` cannot supply: it hands the
+      clause exactly one object, and "those cards" is two. That is the same deferral D538 recorded
+      and it is now the biggest single row left in this family.
+    */
+    const read = row('Probe Rite', 'Instant', text as string);
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBeGreaterThan(0);
   });
 });

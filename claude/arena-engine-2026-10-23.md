@@ -19956,3 +19956,109 @@ The deathtouch fix is the part of this increment a pod sweep is actually measuri
 and lifelink off the source turns both on for every non-combat damage effect in the pool at once —
 pings, triggers, bites — so a sweep that finished every game with no throw is the evidence that
 widening them did not break the damage path the bot searches through hundreds of times a game.
+
+## D543 — The blink's second half, read as a clause
+
+**18 cards finished**, and a 60-line reader deleted as redundant on the way.
+
+The pair is "Exile another target permanent you control, **then return it to the battlefield under
+its owner's control**." The exile half has had a reader since D404. The return half had none, and
+because a line is read whole or not at all (D487) the whole line went unread — which was the right
+refusal: a compiler that took the exile and stopped would have turned a blink into **unconditional
+removal of your own permanent**, a card that works, plays and is the opposite of what it prints.
+
+### Why a clause reader and not a wider `blinkResolution`
+
+`blinkResolution` has read Cloudshift since it was written, and it takes the **whole spell line**. The
+cards at the head of the queue are not spells of one line: Felidar Guardian and Wispweaver Angel are
+triggers, Distinguished Conjurer and Nephalia Smuggler and Ruin Ghost are activated abilities,
+Conjurer's Closet and Teleportation Circle are end-step triggers, Settle Beyond Reality is a mode,
+and Justiciar's Portal, Personify and Scrollshift print a third sentence after the blink. A
+line-shaped reader can reach none of them.
+
+Read as a clause it reaches all of them at once, because `composeEffects` runs on the clause chain of
+a spell, a trigger and an ability alike. Three pieces:
+
+1. **A clause reader** for `return target (creature|permanent) to the battlefield under (its
+   owner's|your) control`, which is reachable **only** through the referent swap — no printed card
+   says "return target creature to the battlefield", because a creature on the battlefield is already
+   there. Every printing names a pronoun.
+2. **`that card` as a referent pronoun**, swapping for the same two kinds as "it" and taking the same
+   supply. A card the sentence before exiled is a card in exile rather than a permanent, and the
+   printings use the two words interchangeably for the same move — Cloudshift and Acrobatic Maneuver
+   say "that card" where Ephemerate and Felidar Guardian say "it". It costs two lines because
+   `relocate` keeps the instance id across a zone change, so the object the earlier clause chose and
+   the card now in exile are the same `c.targets[0]`.
+3. **A composition rule**: a chain with a part that `returnsTheObject` is a **blink, not removal**.
+
+### The third piece is the one that matters, and it is a bot fix
+
+The two halves are read by two readers and neither can see the card. To the exile clause's reader,
+"exile another target permanent you control" is removal — it is the same sentence Hidden Dragonslayer
+prints — so it declares `removesACreature` and leaves the spec's aim hostile. Put the return after it
+and every one of those is wrong: nothing is removed, and the reason to cast it is to blink.
+
+`composeEffects` is the only layer holding both parts, so it rewrites the borrowed spec: `blinks` for
+what the bot is being asked to price (`TargetSpec.blinks` is #209's whole subject — a token ceases to
+exist, counters and Auras and marked damage all go), `friendly` **only when the printed phrase says
+"you control"**, and `removesACreature` deleted. Without that last deletion the bot holds Flicker of
+Fate as its answer to a threat and then never answers the threat.
+
+The `friendly` condition is D542's discipline applied again, and this family needs it for a real
+printing rather than a probe: **Flicker of Fate** says "exile target creature **or enchantment**" and
+names no controller. Blinking an opponent's creature to strip the Aura off it is a line a player
+takes, so an aim pointing at your own board would be a hint pointing the wrong way (D362). `blinks`
+goes on both, because that one is a fact about the effect rather than about the aim.
+
+### `blinkResolution` is deleted, because the general rule subsumes it
+
+Once the clause path read the sentence, the sentence had **two** readers and the suite could not say
+which one read Cloudshift. So that was measured rather than argued: the call site was disabled and
+**every** compile row and the whole of `compiled-vs-written` stayed green — including the rows that
+assert the compiled Cloudshift is character-for-character the hand-written card and carries `blinks`.
+
+Two readers for one sentence is the shape this file keeps collapsing (D441): the one that is correct
+and the one somebody will edit. The general rule reads strictly more, so the narrow one goes, and a
+note stays in its place saying what it was and why the shape is now covered.
+
+**And the duplicate was masking a test.** The break run's "the return always goes to the owner" break
+came back **uncaught** on the first pass, because the probe asserting the your-control wording was a
+one-line spell — which `blinkResolution` read, so the clause reader never ran and breaking it changed
+nothing. Deleting the duplicate made the same test discriminating with no change to the test. That is
+a second argument for the deletion that no amount of reading the code would have produced.
+
+### Refused
+
+The **delayed** return (Flickerwisp, Angel of Condemnation, Abuelo, Aetherling, Long Road Home — 8
+cards) needs a delayed trigger (CR 603.7) and is a different card: it exiles a permanent its
+controller does not own and gives it back a step later, which is removal for a turn. `tapped`,
+`transformed` and `with a +1/+1 counter on it` are riders this does not read, each refusing the line
+(D487) — an Aclazotz that came back un-transformed is the wrong card entirely. The **plural**
+("return those cards", Displace) waits on the plural referent, which `referentEffect` cannot supply:
+it hands the clause exactly one object. That is D538's deferral and it is now the biggest single row
+left in this family.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,228 / 56,421 (41.2%) | **23,253 / 56,421 (41.2%)** |
+| cards with a compiled script | 11,875 | **11,891** |
+| cards with every printed line read | 7,620 | **7,638** |
+
+18 newly fully read and **none lost**, checked by diffing the whole list rather than by trusting the
+totals: Acrobatic Maneuver, Conjurer's Closet, Distinguished Conjurer, Ephemerate, Felidar Guardian,
+Flicker of Fate, Flickering Hound, Justiciar's Portal, Momentary Blink, Nephalia Smuggler, Oji the
+Exquisite Blade, Personify, Photon Lady of Light, Ruin Ghost, Scrollshift, Settle Beyond Reality,
+Teleportation Circle, Wispweaver Angel.
+
+`one-blocker.mjs` predicted 11 for the two rows aimed at; the extra 7 are cards the "that card"
+pronoun opened in passing. **Break harness 9/9** on the second pass, 8/9 on the first — the miss and
+its cause are above. Gate green.
+
+### Two stale refusals retargeted rather than deleted
+
+`compile.test.ts` asserted that the owner's-control wording stays unread and that the shape is
+refused inside a longer resolution. Both were true of `blinkResolution` and are no longer true of the
+compiler, so both rows now assert what is true and say in their own comment what they used to assert
+and why it changed (D516: a stale refusal is how a suite starts asserting the past).

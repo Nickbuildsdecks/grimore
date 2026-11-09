@@ -34462,3 +34462,129 @@ describe('the bite and the fight, at the table (D542)', () => {
     expect(s.instances[rats]?.zone).toBe('battlefield');
   });
 });
+
+describe("the blink's second half, at the table (D543)", () => {
+  /*
+    Three runtime facts the compile table cannot see, and each is a different wrong card.
+
+    **The permanent comes back.** A reader that took the exile clause and stopped would compile
+    unconditional removal of your own creature — the hazard `blinkResolution`'s docblock has named
+    since it was written, now reachable from a trigger and an ability as well as a spell.
+
+    **It comes back as a new object** (CR 400.7). That is what a blink is *for*: the counters, the
+    Auras and the marked damage go, and a pump cast on it earlier in the turn stops applying (#283).
+    So the test pumps first and asserts the bonus is gone afterwards, which is the strongest
+    available evidence that the card really left the battlefield rather than being left alone.
+
+    **"Its owner's control" is not "your control."** Two printings differ by those words and nothing
+    else, and reading either as the other is a Mind Control in one direction and a gift in the other.
+    `gainControl` sets up the only board that can tell them apart: a creature seat 1 owns, under
+    seat 0's control.
+  */
+  const DATA = [
+    {
+      name: 'Ephemerate', type_line: 'Instant', mana_cost: '{W}', cmc: 1,
+      colors: ['W'], layout: 'normal',
+      oracle_text: 'Exile target creature you control, then return it to the battlefield under its '
+        + "owner's control.",
+    },
+    {
+      name: 'Keeper of Shifts', type_line: 'Instant', mana_cost: '{W}', cmc: 1,
+      colors: ['W'], layout: 'normal',
+      /*
+        Nephalia Smuggler's and Ruin Ghost's wording — "under **your** control" — on a spell, so the
+        pair differs by those two words alone. Named rather than taken from a printing because every
+        your-control printing in the corpus is an activated ability with a cost and a tap, and the
+        cost is not what this row is about; the oracle sentence is the printed one.
+      */
+      oracle_text: 'Exile target creature you control, then return it to the battlefield under '
+        + 'your control.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'blink-clause',
+      name: 'Blink Clause',
+      entries: [
+        { name: 'Ephemerate', count: 4 }, { name: 'Keeper of Shifts', count: 4 },
+        { name: 'Grizzly Bears', count: 8 }, { name: 'Giant Growth', count: 4 },
+        { name: 'Plains', count: 20 }, { name: 'Forest', count: 20 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Ephemerate', 'Keeper of Shifts'].sort());
+    return list.deck;
+  };
+
+  const table = (hand: readonly string[]): GameState => tapAllLands(advanceTo(arena({
+    decks: { 0: 'blink-clause', 1: 'blink-clause' },
+    deckSpecs: { 'blink-clause': deck() },
+    hands: { 0: [...hand] },
+    battlefield: {
+      0: ['Plains', 'Plains', 'Forest', 'Forest', 'Grizzly Bears'],
+      1: ['Grizzly Bears'],
+    },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+
+  it('gives the creature back, and the pump on it does not come back with it', () => {
+    let s = table(['Ephemerate', 'Giant Growth']);
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Giant Growth'),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action), 60);
+    expect(power(s, bears)).toBe(5);
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ephemerate'),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action), 60);
+
+    // Back on the battlefield, under the seat that owns it, and no longer in exile.
+    expect(s.instances[bears]?.zone).toBe('battlefield');
+    expect(s.instances[bears]?.zoneSeat).toBe(0);
+    expect(ids(s, 0, 'exile')).not.toContain(bears);
+    // A 2/2 again: the Giant Growth was cast on an object that no longer exists (CR 400.7).
+    expect(power(s, bears)).toBe(2);
+  });
+
+  it("returns a stolen creature to its owner, not to the player who controls it", () => {
+    /*
+      The discriminating board: seat 1 owns the Bears and seat 0 controls them, which only
+      `gainControl` can produce. Ephemerate's printed words send it to its **owner**, so blinking a
+      creature you have borrowed hands it straight back — the drawback the wording exists to express.
+    */
+    let s = table(['Ephemerate']);
+    const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(gainControl(s, theirs, 0), 20);
+    expect(s.instances[theirs]?.zoneSeat).toBe(0);
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ephemerate'),
+      targets: [{ kind: 'card', id: theirs }],
+    } as Action), 60);
+
+    expect(s.instances[theirs]?.zone).toBe('battlefield');
+    expect(s.instances[theirs]?.zoneSeat).toBe(1);
+  });
+
+  it('keeps it, when the printed words say "under your control"', () => {
+    // The same board and the same move, two words apart. This is the half that would be a Mind
+    // Control if the owner's-control wording were read as this one.
+    let s = table(['Keeper of Shifts']);
+    const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(gainControl(s, theirs, 0), 20);
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Keeper of Shifts'),
+      targets: [{ kind: 'card', id: theirs }],
+    } as Action), 60);
+
+    expect(s.instances[theirs]?.zone).toBe('battlefield');
+    expect(s.instances[theirs]?.zoneSeat).toBe(0);
+  });
+});
