@@ -36794,3 +36794,87 @@ is the first run this stretch where every miss was predicted rather than explain
 stalled table, 61.3 turns and 299 moves a game. Per 100-card deck across 160 decks: 25.1 cards with
 a hand-written script, 48.2 with at least one unread line, 61.8 playable only from printed data, 0.4
 cardboard.
+
+## D536 — The ability a token arrives with
+
+The biggest single row of the corrected queue: 22 legal cards across two spellings, which is the
+Eldrazi Spawn family —
+
+> At the beginning of your upkeep, create a 0/1 colorless Eldrazi Spawn creature token.
+> It has "Sacrifice this creature: Add {C}."
+
+The second clause this file reads as a **rider on its sibling** (D535 was the first), and the second
+new combinator in two increments — which is what the queue has been saying for a while: the lever is
+clause combinators (D519), not more sentences.
+
+### Why it is almost free
+
+A token is a `CardDef` like any other card, and `scriptForCard` hands a def with no hand-written
+script to the compiler. So **writing the quoted sentence into the token's `oracleText` is the whole
+implementation**: the compiler reads it back out when the ability is offered, and the player gets a
+real activated ability on a real permanent. The chain is compiler → token def → compiler again, and
+only a game can see the second half, which is what the runtime tests are for.
+
+That also explains the shape of the yield. 36 of the 57 legal printings of this shape are the Eldrazi
+Spawn sentence; the rest are a tail of quoted triggers ("When this token dies, you gain 1 life"), mana
+abilities ("{T}: Add {G}") and one regeneration. They all come for free, because the mechanism is
+"write it down and let the compiler read it" rather than a reader per printing.
+
+### The read-back check, and the guard that could not fail
+
+`tokenFrom` already refuses a token whose printed **keyword** list the engine cannot read back —
+"a token whose text lies" is its own docblock's phrase. The quoted sentence gets the same treatment:
+`lineScriptFor` must produce *something* from it, or the line is refused.
+
+The first draft demanded more than that — an ability or a trigger — and the break run showed it to be
+**both untestable and wrong**. Untestable because the refusal row that covers this guard ("Fly over
+the moon") is refused by the `null` test one line above, so the second half was never reached. Wrong
+because a quoted keyword or static is something the engine applies to a token too. Measured: of the
+57 legal printings, **0 put a bare keyword in this position**, and re-measuring the whole corpus after
+the widening moved nothing — so the stricter version cost nothing, and was a guard that could not
+fail, which is the thing this project does not keep.
+
+Two refusals stand, both measured:
+
+- **A named token cannot take a quoted ability.** "Create a Treasure token" looks the token up in
+  `TOKEN_DEFS`, which is shared and fixed; writing text onto one would either mutate the definition
+  every other Treasure uses or drop the sentence silently.
+- **Exactly two clauses, the token and the rider.** Every legal printing of this shape puts the rider
+  immediately after the token sentence with nothing else on the line, because the line is a trigger
+  whose prologue has already come off. A longer list would need the token part sequenced after a
+  prefix, which `composeEffects` can only do for parts it read itself.
+
+### What it moved
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 22,873 | **22,899 / 56,421 (40.6%)** |
+| cards with a compiled script | 11,614 | **11,635** |
+| cards with every printed line read | 7,375 | **7,399** |
+
+24 cards finished against a prediction of 22 — `one-blocker.mjs` under-counting again, in the
+direction it says it does.
+
+### The break run: 7 breaks, 7 caught — after it found two things wrong with itself
+
+The first pass was 6 of 8, and **neither miss was a hole in the tests**:
+
+- One break deleted the over-strict half of the read-back guard, which proved the guard
+  unfalsifiable. That half is gone, and the docblock now records why.
+- The other break was **mis-written**: it loosened the two-clause test but still handed
+  `clauses[0]` to the token reader, so the hazard it was meant to produce — reading the last two
+  clauses and dropping the prefix — never happened. Rewritten as the real thing (`clauses.length - 2`
+  with a trailing `last`), it is caught by the existing three-clause refusal row, which was verified
+  by patching it in by hand and watching "Draw a card. Create … It has …" compile.
+
+Re-run after both: **7/7**. Scored against `-t D53`, which is D530 through D536 together.
+
+### A third kind of probe artifact, recorded
+
+A smoke test reported Brood Monitor unread while Awakening Zone read, which looked like a plural bug
+in the new reader. It was neither: the probe card had `type_line: 'Creature — …'` and **no power or
+toughness**, so the card itself was malformed and refused before any line was read. Compiled with its
+real printed values it reads. Third distinct probe artifact this session, after the placeholder-name
+one (D532) and the clause-compiled-standalone one (D530) — the pattern is the same each time: a probe
+that constructs a card instead of using a printed one, and a conclusion about the reader drawn from a
+fact about the probe.

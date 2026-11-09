@@ -33601,3 +33601,88 @@ describe('"It can\'t be regenerated", at the table (D535)', () => {
     expect(s.instances[start.boa]!.counters['regeneration']).toBe(1);
   });
 });
+
+describe('the ability a token arrives with, at the table (D536)', () => {
+  /*
+    The runtime half, and the only thing that can prove the mechanism: the compile test shows the
+    sentence is written onto the token's definition, and this shows a player can press it. A token
+    is a `CardDef`, `scriptForCard` hands a def with no hand-written script to the compiler, and the
+    ability comes back out — so the chain is compiler → token def → compiler again, and nothing but
+    a game can see the second half.
+
+    Awakening Zone, the real printing, through `customDeck`'s `data`.
+  */
+  const DATA = [
+    {
+      name: 'Awakening Zone', type_line: 'Enchantment', mana_cost: '{2}{G}', cmc: 3,
+      colors: ['G'], layout: 'normal',
+      oracle_text: 'At the beginning of your upkeep, create a 0/1 colorless Eldrazi Spawn '
+        + 'creature token. It has "Sacrifice this creature: Add {C}."',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'spawn',
+      name: 'Spawn',
+      entries: [
+        { name: 'Awakening Zone', count: 4 }, { name: 'Grizzly Bears', count: 4 },
+        { name: 'Forest', count: 26 }, { name: 'Plains', count: 26 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData).toEqual(['Awakening Zone']);
+    return list.deck;
+  };
+
+  const table = () => arena({
+    decks: { 0: 'spawn', 1: 'spawn' },
+    deckSpecs: { spawn: deck() },
+    battlefield: { 0: ['Awakening Zone', 'Forest'] },
+    turn: 5, firstSeat: 0,
+  });
+
+  it('makes the token on upkeep, and the token can be sacrificed for mana', () => {
+    let s = drain(advanceTo(table(), 'upkeep', 60), 60);
+    const spawn = [...ids(s, 0, 'battlefield')].filter((id) => nameOf(s, id) === 'Eldrazi Spawn');
+    expect(spawn).toHaveLength(1);
+    const token = spawn[0]!;
+    // 0/1, colourless, and a creature — the characteristics the printed sentence names.
+    expect(power(s, token)).toBe(0);
+    expect(toughness(s, token)).toBe(1);
+
+    /*
+      The ability is **offered**, which is the half D67 cares about: a token whose text promised an
+      ability the table never shows is the same failure as one that is offered and refused.
+    */
+    const offers = legalActions(s, 0 as SeatIndex).plays
+      .filter((p) => p.kind === 'activate' && p.card === token);
+    expect(offers).toHaveLength(1);
+
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: token, abilityIndex: 0,
+    } as Action), 40);
+    // One colourless mana in the pool, and the token has paid for it with itself.
+    expect(s.pools['0']?.['C']).toBe(1);
+    expect([...ids(s, 0, 'battlefield')].filter((id) => nameOf(s, id) === 'Eldrazi Spawn'))
+      .toHaveLength(0);
+  });
+
+  it('makes a second token next turn, each with its own ability', () => {
+    /*
+      Two tokens from one enchantment, and the second one's ability is its own — which is what
+      checks that the definition is shared and the *instances* are not. A token def cached under one
+      key with per-instance state is the shape `addTokens` already uses; this row is what would catch
+      an ability that worked once and then could not be found.
+    */
+    let s = drain(advanceTo(table(), 'upkeep', 60), 60);
+    s = drain(advanceTo(nextTurn(nextTurn(s)), 'upkeep', 120), 60);
+    const spawn = [...ids(s, 0, 'battlefield')].filter((id) => nameOf(s, id) === 'Eldrazi Spawn');
+    expect(spawn.length).toBe(2);
+    for (const token of spawn) {
+      expect(legalActions(s, 0 as SeatIndex).plays
+        .filter((p) => p.kind === 'activate' && p.card === token)).toHaveLength(1);
+    }
+  });
+});

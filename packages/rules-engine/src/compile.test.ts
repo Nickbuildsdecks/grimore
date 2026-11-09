@@ -14696,3 +14696,144 @@ describe('"It can\'t be regenerated", read as a rider on its sibling (D535)', ()
     if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
   });
 });
+
+describe('the ability a token arrives with (D536)', () => {
+  /*
+    The biggest single row of the corrected queue: 22 legal cards across two spellings, which is the
+    Eldrazi Spawn family —
+
+        At the beginning of your upkeep, create a 0/1 colorless Eldrazi Spawn creature token.
+        It has "Sacrifice this creature: Add {C}."
+
+    The second clause this file reads as a **rider on its sibling** (D535 was the first), and the
+    mechanism is worth stating because it is almost free: a token is a `CardDef` like any other card,
+    and `scriptForCard` hands a def with no hand-written script to the compiler. So writing the
+    quoted sentence into the token's `oracleText` *is* the implementation — the compiler reads it
+    back out when the ability is offered.
+
+    What makes that safe is the read-back check `tokenFrom` already applies to a token's keyword
+    list, extended to the quoted sentence: `lineScriptFor` has to produce an ability or a trigger
+    from it, or the line is refused. A token whose printed text the engine cannot read is a token
+    whose text lies, and the player is told it has an ability that does nothing.
+  */
+  const card = (text: string, name = 'Awakening Zone', type = 'Enchantment') => compileCard({
+    name, type_line: type, mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal',
+    power: '3', toughness: '3', oracle_text: text,
+  });
+
+  it('reads Awakening Zone, the singular printing', () => {
+    const read = card(
+      'At the beginning of your upkeep, create a 0/1 colorless Eldrazi Spawn creature token. '
+      + 'It has "Sacrifice this creature: Add {C}."',
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect((read.script?.triggers ?? []).length).toBe(1);
+  });
+
+  it('reads Brood Monitor, the plural printing', () => {
+    const read = card(
+      'When Brood Monitor enters, create three 0/1 colorless Eldrazi Spawn creature tokens. '
+      + 'They have "Sacrifice this creature: Add {C}."',
+      'Brood Monitor', 'Creature — Eldrazi Drone',
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('writes the quoted ability onto the token, where the engine will read it back', () => {
+    /*
+      The assertion that makes the rest mean something. Compiling the token's own definition — the
+      `CardDef` the effect will hand `createToken` — has to produce the activated ability, because
+      that is exactly what `scriptForCard` does at the table.
+    */
+    const token = compileCard({
+      name: 'Eldrazi Spawn', type_line: 'Token Creature — Eldrazi Spawn', mana_cost: '', cmc: 0,
+      colors: [], layout: 'normal', power: '0', toughness: '1',
+      oracle_text: 'Sacrifice this creature: Add {C}.',
+    });
+    expect(token.ok).toBe(true);
+    if (!token.ok) return;
+    expect(token.unread.map((u) => u.line)).toEqual([]);
+    expect((token.script?.abilities ?? []).length).toBe(1);
+    expect(token.script?.abilities?.[0]?.cost.sacrificeSelf).toBe(true);
+  });
+
+  it.each([
+    ['a quoted triggered ability', 'When this token dies, you gain 1 life.'],
+    ['a quoted mana ability', '{T}: Add {G}.'],
+    ['a quoted regeneration', '{B}: Regenerate this creature.'],
+  ])('reads %s, which is the tail of the 57 printings', (_what, quoted) => {
+    /*
+      36 of the 57 legal printings of this shape are the Eldrazi Spawn sentence; the rest are a tail
+      of triggers, mana abilities and one regeneration. They come for free because the mechanism is
+      "write it down and let the compiler read it", not a reader per sentence — which is the
+      argument for doing it this way rather than as a row per printing.
+    */
+    const read = card(`Create a 1/1 green Saproling creature token. It has "${quoted as string}"`,
+      'Probe Card', 'Sorcery');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('refuses a quoted ability the engine cannot read back', () => {
+    /*
+      The read-back check, and the row that would catch it being dropped. "Fly over the moon" is not
+      an ability, so writing it onto the token would promise the player something the compiler
+      cannot produce — the token would arrive with a line of text and no ability (D362).
+
+      The check is `lineScriptFor(...) !== null` and nothing more. The first draft also demanded an
+      ability or a trigger, and the break run showed that to be **both untestable and wrong**:
+      untestable because this row is refused by the `null` one line above it, so the second half was
+      never reached, and wrong because a quoted keyword or static is something the engine applies to
+      a token too. Measured: of the 57 legal printings of this shape, **0 put a bare keyword in this
+      position**, so the stricter version cost nothing — but it was a guard that could not fail,
+      which is the thing this project does not keep.
+    */
+    const read = card('Create a 1/1 white Spirit creature token. It has "Fly over the moon."',
+      'Probe Card', 'Sorcery');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+
+  it('refuses the rider on a NAMED token, whose characteristics are a fixed table', () => {
+    /*
+      "Create a Treasure token" looks the token up in `TOKEN_DEFS`, which is shared and fixed.
+      Writing text onto one would either mutate the definition every other Treasure uses or drop the
+      sentence silently, so the line is refused instead.
+    */
+    const read = card('Create a Treasure token. It has "Sacrifice this creature: Add {C}."',
+      'Probe Card', 'Sorcery');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+
+  it('refuses a third clause rather than dropping a sentence', () => {
+    /*
+      The measured restriction: every legal printing of this shape is the token sentence and the
+      rider with nothing else on the line, because the line is a trigger whose prologue has already
+      come off. A longer list would need the token part sequenced after a prefix, which
+      `composeEffects` can only do for parts it read itself — so it refuses (D487).
+    */
+    const read = card(
+      'Draw a card. Create a 1/1 white Spirit creature token. It has "Sacrifice this creature: Add {W}."',
+      'Probe Card', 'Sorcery',
+    );
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+
+  it('still reads a token with no rider, and one with printed keywords', () => {
+    // The controls: the rider is the only thing new, so both older shapes are unchanged.
+    for (const text of [
+      'Create a 1/1 white Spirit creature token.',
+      'Create a 1/1 white Spirit creature token with flying.',
+    ]) {
+      const read = card(text, 'Probe Card', 'Sorcery');
+      expect(read.ok).toBe(true);
+      if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+    }
+  });
+});

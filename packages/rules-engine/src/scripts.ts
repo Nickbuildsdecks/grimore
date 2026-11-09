@@ -14162,7 +14162,9 @@ function forEachCount(phrase: string, name: string): ((c: EffectContext) => numb
  * differently. So the definition is parsed once here and the count is returned unread, as the word
  * the card printed, for the caller to make sense of.
  */
-function tokenFrom(body: string): { token: CardDef; printed: string } | null {
+function tokenFrom(
+  body: string, granted?: string,
+): { token: CardDef; printed: string } | null {
   const made = /^create ([\w]+) (\d+)\/(\d+) (.+?) creature tokens?(?: with (.+))?$/i
     .exec(body.trim());
   if (made === null) return null;
@@ -14237,9 +14239,37 @@ function tokenFrom(body: string): { token: CardDef; printed: string } | null {
     cmc: 0,
     power: made[2]!,
     toughness: made[3]!,
-    oracleText,
+    oracleText: granted === undefined || granted === ''
+      ? oracleText
+      : [oracleText, granted].filter((line) => line !== '').join('\n'),
     colors,
   };
+  /*
+    **The same read-back the keyword list gets, applied to the quoted ability** (D536).
+
+    A token's abilities come from its own `CardDef` through `scriptForCard`, which compiles
+    `oracleText` — so writing a sentence into that field is a promise that the compiler can read it.
+    Checked here rather than trusted, for the reason the keyword count above is checked: a token
+    whose printed text the engine cannot read is a token whose text lies, and the player is told it
+    has an ability that does nothing.
+
+    `lineScriptFor` is the same per-line reader a permanent's own text goes through, and the token's
+    `name` is handed to it because the quoted ability may name the token ("Sacrifice Eldrazi
+    Spawn: Add {C}") rather than say "this creature".
+  */
+  if (granted !== undefined && granted !== '') {
+    /*
+      **`lineScriptFor` returning anything at all is the whole test**, and the first draft asked for
+      more than that — an ability or a trigger — which the break run showed to be both untestable and
+      wrong. Untestable because the refusal row that covers this guard ("Fly over the moon") is
+      refused by the `null` above it, so nothing reached the second half. Wrong because a quoted
+      **keyword** ("It has \"Flying\"") and a quoted **static** ("It has \"Other Spirits you control
+      get +1/+1\"") are both things the engine applies to a token — the keyword through
+      `printedKeywords` on the def, the static through the same compiled script — and refusing them
+      would have cost printings for a caution that bought nothing.
+    */
+    if (lineScriptFor(granted, subtype) === null) return null;
+  }
   return { token, printed: made[1]! };
 }
 
@@ -14393,7 +14423,7 @@ function namedTokenFrom(body: string): { token: CardDef; printed: string } | nul
   return { token, printed: made[1]! };
 }
 
-function tokenEffect(clause: string, name: string): ReadEffect | null {
+function tokenEffect(clause: string, name: string, granted?: string): ReadEffect | null {
   /*
     The count's tail is taken off **before** the token itself is read, because `with (.+)` is greedy
     and would otherwise swallow it as a list of keywords. What is left is the same sentence a
@@ -14424,7 +14454,14 @@ function tokenEffect(clause: string, name: string): ReadEffect | null {
     a named one carries none of them and is looked up. Either way what comes back is a definition
     and the printed count word, which is all the rest of this function reads.
   */
-  const made = tokenFrom(body.trim()) ?? namedTokenFrom(body.trim());
+  const made = tokenFrom(body.trim(), granted) ?? (granted === undefined
+    ? namedTokenFrom(body.trim())
+    /*
+      A **named** token — "create a Treasure token" — cannot take a quoted ability (D536): its
+      characteristics come from `TOKEN_DEFS`, which is a fixed table, so writing text onto one would
+      either mutate the shared definition or silently drop the sentence. Refused rather than either.
+    */
+    : null);
   if (made === null) return null;
 
   // Either a printed number, or a board count to supply it — never both and never neither.
@@ -18040,6 +18077,36 @@ function noRegenerationRider(
   };
 }
 
+/**
+ * `It has "<ability>"` / `They have "<ability>"` — the ability a token arrives with (D536).
+ *
+ * The second clause this file reads as a **rider on its sibling** rather than as an effect of its
+ * own, and the printed shape the Eldrazi Spawn family takes: "create a 0/1 colorless Eldrazi Spawn
+ * creature token. It has "Sacrifice this creature: Add {C}."" — 22 legal cards across the two
+ * spellings, which is the biggest single row of the corrected queue.
+ *
+ * **Where the ability actually comes from**: a token is a `CardDef` like any other card, and
+ * `scriptForCard` gives a def with no hand-written script to the compiler. So putting the quoted
+ * sentence into the token's `oracleText` is the whole mechanism — the compiler reads it back out
+ * when the ability is offered, and the player gets a real activated ability on a real permanent.
+ * `tokenFrom` checks that it can be read back before writing it down, for the reason its keyword
+ * list is checked: a token whose text the engine cannot read is a token whose text lies.
+ *
+ * **Exactly two clauses, the token and the rider**, and that restriction is measured rather than
+ * assumed: every legal printing of this shape puts the rider immediately after the token sentence
+ * with nothing else on the line, because the line is a trigger whose prologue has already come off.
+ * A longer list would need the token part sequenced after a prefix, which `composeEffects` can do
+ * only for parts it read itself — so a third clause refuses the line rather than dropping a
+ * sentence (D487).
+ */
+function tokenAbilityRider(clauses: readonly string[], name: string): ReadEffect | null {
+  if (clauses.length !== 2) return null;
+  const last = plain(clauses[1]!).trim().replace(/\.\s*$/, '');
+  const quoted = /^(?:it|they) ha(?:s|ve) "(.+)"$/i.exec(last);
+  if (quoted === null) return null;
+  return tokenEffect(clauses[0]!, name, quoted[1]!.trim());
+}
+
 function composeEffects(
   clauses: readonly string[], name: string, where: SubjectZone | null,
 ): ReadEffect | null {
@@ -18048,6 +18115,9 @@ function composeEffects(
   // refuse: nothing reads "It can't be regenerated" as a clause, and nothing should.
   const rider = noRegenerationRider(clauses, name, where);
   if (rider !== null) return rider;
+  // The same shape, one sentence over: the ability a token arrives with (D536).
+  const granted = tokenAbilityRider(clauses, name);
+  if (granted !== null) return granted;
   /*
     **One idiom read as a group, before the clause loop** (D516) — the Act of Treason sentence:
 
