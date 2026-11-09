@@ -73,7 +73,8 @@
  */
 import { readFileSync } from 'node:fs';
 import {
-  applyAction, botAction, createGame, customDeck, scriptForCard, seatsToAct, unreadLines,
+  applyAction, botAction, compileCard, createGame, customDeck, scriptForCard, seatsToAct,
+  unreadLines,
 } from '../lib/engine.mjs';
 import { provenanceLine } from '../lib/provenance.mjs';
 import { isLegal, legalLine } from '../lib/legal.mjs';
@@ -108,6 +109,28 @@ const MAXCMC = Number(process.env.MAXCMC ?? 6);
 // both. Measured rather than guessed — see the pod figures in D460.
 const MOVES = Number(process.env.MOVES ?? (POD ? 20000 : 6000));
 const VERBOSE = process.env.VERBOSE === '1';
+/*
+  **The work queue, ranked by what a player actually meets** (D518).
+
+  `one-line-short.mjs` ranks the unread shapes by how many cards each would finish, which is the
+  right question for coverage and the wrong one for a beta. 15,887 legal cards are one line short
+  and those lines come in 13,245 distinct shapes, 8,159 printed by a single card — so a queue
+  ordered by cards-finished says the next hundred increments are worth a few hundred cards each and
+  never says which of them a person sitting at a table would ever notice.
+
+  This asks the other question. A card only costs a player anything if they **see** it, and costs
+  them more if they try to **play** it. So with UNREAD=1 each game records the distinct cards that
+  left the library at all (hand, battlefield, graveyard, exile, stack, command — everything but the
+  library is a card somebody looked at) and the distinct cards a seat actually cast or activated,
+  and crosses both with `unreadLines`. The shapes are then ranked by **encounters in play** rather
+  than by printings in the corpus.
+
+  Two numbers come out of it that nothing else here reports: how often a hand holds a card the
+  engine cannot fully run, and how often one of those is played anyway. The first is the beta
+  question; the second is the queue.
+*/
+const UNREAD = process.env.UNREAD === '1';
+const TOP_UNREAD = Number(process.env.TOP_UNREAD ?? 20);
 /*
   TRACE=<n> prints where the game has got to every n moves, and is the only arm that can answer
   the question an `unfinished` verdict raises: a game that neither throws nor stalls has been
@@ -309,6 +332,40 @@ const traceLine = (s, moves, counts, whats) => {
 };
 
 /** One game to a finish, or to the first thing that stops it. */
+/**
+ * The shape of an unread line, with the card's own name, its mana symbols and its numbers taken
+ * out — the same grouping `compilable.mjs` and `one-line-short.mjs` use, so a row here can be
+ * matched against a row there by eye.
+ */
+function shapeOf(line, name) {
+  const words = line
+    .replaceAll(name, '~')
+    .replace(/\{[^}]*\}/g, '{M}')
+    .replace(/\b\d+\b/g, 'N')
+    .replace(/[,.:;"'()]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word !== '');
+  return words.slice(0, 7).join(' ');
+}
+
+/**
+ * Every card a seat could have looked at, by name: everything that is not still in a library.
+ *
+ * Read once at the end of a game rather than sampled per move, because the question is "did this
+ * player ever hold it", and a card that reached the battlefield was held first. A card still in the
+ * library cost nobody anything, however unreadable it is — which is the whole point of ranking by
+ * encounter.
+ */
+function namesSeen(st) {
+  const seen = new Set();
+  for (const inst of Object.values(st.instances ?? {})) {
+    if (inst === undefined || inst.zone === 'library') continue;
+    const name = st.cardDefs[inst.defKey]?.name;
+    if (name !== undefined) seen.add(name);
+  }
+  return seen;
+}
+
 function play(seed) {
   const built = SEAT_IDS.map((id, seat) => buildDeck(id, seed * SEATS + seat));
   const decks = Object.fromEntries(SEAT_IDS.map((id, seat) => [id, built[seat].deck]));
@@ -333,6 +390,14 @@ function play(seed) {
     the same ability of the same permanent taken ten thousand times names the bug.
   */
   const whats = new Map();
+  /** Card name → how many casts and activations of it this game, for the UNREAD=1 report. */
+  const played = new Map();
+  /*
+    Every exit from this function goes through here, so the two UNREAD=1 collections are attached to
+    a lost game exactly as they are to a finished one. A game that stalled still showed its players
+    cards, and leaving those out would quietly measure only the games that went well.
+  */
+  const done = (result) => (UNREAD ? { ...result, seen: namesSeen(s), played } : result);
   let sinceProgress = 0;
   const inWindow = new Map();
   let lastWhat = '';
@@ -340,7 +405,7 @@ function play(seed) {
     if (TRACE > 0 && moves % TRACE === 0) console.log(traceLine(s, moves, counts, whats));
     const seat = seatsToAct(s)[0];
     if (seat === undefined) {
-      return { verdict: 'nobody-to-act', seed, moves, turn: s.turn, decks: built };
+      return done({ verdict: 'nobody-to-act', seed, moves, turn: s.turn, decks: built });
     }
     const action = botAction(s, seat, {});
     if (action !== null) {
@@ -349,13 +414,17 @@ function play(seed) {
         const aimed = action.targets?.[0];
         const at = aimed?.kind === 'card' ? ` → ${nameOf(s, aimed.id)}`
           : aimed?.kind === 'player' ? ` → p${aimed.seat}` : '';
-        lastWhat = `${nameOf(s, action.card)}`
+        const playedName = nameOf(s, action.card);
+        if (UNREAD && (action.type === 'auto:cast' || action.type === 'auto:activate')) {
+          played.set(playedName, (played.get(playedName) ?? 0) + 1);
+        }
+        lastWhat = `${playedName}`
           + `${action.abilityIndex === undefined ? '' : `#${action.abilityIndex}`}${at}`;
         if (TRACE > 0) whats.set(lastWhat, (whats.get(lastWhat) ?? 0) + 1);
       }
     }
     if (action === null) {
-      return { verdict: 'no-move', seed, moves, turn: s.turn, decks: built };
+      return done({ verdict: 'no-move', seed, moves, turn: s.turn, decks: built });
     }
     const before = s.stateVersion;
     const movedBefore = LOOP > 0 ? progressOf(s) : '';
@@ -366,10 +435,10 @@ function play(seed) {
     */
     s = applyAction(s, action);
     if (s.stateVersion === before) {
-      return {
+      return done({
         verdict: 'stalled', seed, moves, turn: s.turn, decks: built,
         detail: `${action.type} by seat ${seat} changed nothing`,
-      };
+      });
     }
     if (LOOP > 0) {
       if (progressOf(s) === movedBefore) {
@@ -377,12 +446,12 @@ function play(seed) {
         inWindow.set(action.type, (inWindow.get(action.type) ?? 0) + 1);
         if (sinceProgress >= LOOP) {
           const top = [...inWindow.entries()].sort((a, b) => b[1] - a[1])[0];
-          return {
+          return done({
             verdict: 'looping', seed, moves, turn: s.turn, decks: built,
             detail: `${LOOP} moves with no progress in ${s.step} of turn ${s.turn}`
               + `${top === undefined ? '' : `, ${top[1]} of them ${top[0]}`}`
               + `${lastWhat === '' ? '' : ` (${lastWhat})`}`,
-          };
+          });
         }
       } else {
         sinceProgress = 0;
@@ -392,9 +461,9 @@ function play(seed) {
   }
   if (!s.finished) {
     if (TRACE > 0) console.log(traceLine(s, moves, counts, whats));
-    return { verdict: 'unfinished', seed, moves, turn: s.turn, decks: built };
+    return done({ verdict: 'unfinished', seed, moves, turn: s.turn, decks: built });
   }
-  return { verdict: 'finished', seed, moves, turn: s.turn, winner: s.winnerSeat, decks: built };
+  return done({ verdict: 'finished', seed, moves, turn: s.turn, winner: s.winnerSeat, decks: built });
 }
 
 const tally = new Map();
@@ -406,6 +475,10 @@ let partial = 0;
 let cardboard = 0;
 let fromData = 0;
 let decksBuilt = 0;
+/* UNREAD=1: card name → games in which somebody saw it / played it, and whether it reads whole. */
+const sawCard = new Map();
+const playedCard = new Map();
+let gamesCounted = 0;
 
 for (let i = 0; i < GAMES; i++) {
   const seed = SEED0 + i;
@@ -427,6 +500,13 @@ for (let i = 0; i < GAMES; i++) {
     partial += deck.partial;
     cardboard += deck.unknown.length;
     fromData += deck.fromData.length;
+  }
+  if (UNREAD && result.seen !== undefined && result.seen !== null) {
+    gamesCounted += 1;
+    for (const name of result.seen) sawCard.set(name, (sawCard.get(name) ?? 0) + 1);
+    for (const [name, times] of result.played ?? []) {
+      playedCard.set(name, (playedCard.get(name) ?? 0) + times);
+    }
   }
   if (VERBOSE) {
     const shape = result.decks === undefined
@@ -453,6 +533,59 @@ if (decksBuilt > 0) {
   console.log(`  cards with at least one line nothing could read:  ${per(partial)}`);
   console.log(`  cards playable only because of the printed data:  ${per(fromData)}`);
   console.log(`  cardboard — nothing could make them playable:     ${per(cardboard)}`);
+}
+if (UNREAD && gamesCounted > 0) {
+  /*
+    The cards a person met, and what of them the engine could not read. `defOf` goes through the
+    same `compileCard` path the engine itself uses, so a row here is the reading that shipped rather
+    than a second opinion about it.
+  */
+  const defOf = new Map();
+  for (const row of rows) {
+    if (defOf.has(row.name)) continue;
+    const read = compileCard(row);
+    if (read.ok) defOf.set(row.name, read);
+  }
+  let seenTotal = 0;
+  let seenPartial = 0;
+  let playedTotal = 0;
+  let playedPartial = 0;
+  /** Shape → how many times a card carrying it was played, and which cards those were. */
+  const shapes = new Map();
+  for (const [name, games] of sawCard) {
+    const read = defOf.get(name);
+    if (read === undefined) continue;
+    seenTotal += games;
+    if (read.unread.length > 0) seenPartial += games;
+  }
+  for (const [name, times] of playedCard) {
+    const read = defOf.get(name);
+    if (read === undefined) continue;
+    playedTotal += times;
+    if (read.unread.length === 0) continue;
+    playedPartial += times;
+    for (const { line } of read.unread) {
+      const key = shapeOf(line, name);
+      const row = shapes.get(key) ?? { plays: 0, cards: new Set() };
+      row.plays += times;
+      row.cards.add(name);
+      shapes.set(key, row);
+    }
+  }
+  const pct = (part, whole) => (whole === 0 ? '0.0' : ((part / whole) * 100).toFixed(1));
+  console.log(`\nWhat a player actually met, over ${gamesCounted} game(s):`);
+  console.log(`  card sightings (a card that left a library):      ${seenTotal}`);
+  console.log(`  of those, cards with an unread line:              ${seenPartial}`
+    + ` (${pct(seenPartial, seenTotal)}%)`);
+  console.log(`  casts and activations:                            ${playedTotal}`);
+  console.log(`  of those, of a card with an unread line:          ${playedPartial}`
+    + ` (${pct(playedPartial, playedTotal)}%)`);
+  console.log(`\nThe queue, ranked by plays of a card carrying the shape (not by printings):`);
+  const ranked = [...shapes.entries()].sort((a, b) => b[1].plays - a[1].plays).slice(0, TOP_UNREAD);
+  for (const [shape, row] of ranked) {
+    console.log(`  ${String(row.plays).padStart(5)}  ${shape}`);
+    console.log(`         ${row.cards.size} card(s), e.g. ${[...row.cards].slice(0, 3).join(' / ')}`);
+  }
 }
 if (problems.length > 0) {
   console.log(`\n${problems.length} game(s) did not reach a finish:`);
