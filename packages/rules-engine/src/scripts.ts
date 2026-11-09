@@ -12050,6 +12050,83 @@ function selfEffect(
   }
 
   /*
+    **"Sacrifice ~ unless you pay {M}"** — the upkeep tax, and echo's question on a card that does
+    not print the keyword (D529).
+
+    137 legal lines print this sentence and **116 of them sit on two prologues this compiler already
+    reads**: "At the beginning of your upkeep," (74) and "When ~ enters," (42). The price is a mana
+    run on **52** of them — Binding Grasp, Archway Commons, Arcades Sabboth, Dragon Tyrant — and
+    energy on one more family, Lathnu Hellion's `{E}{E}`.
+
+    It is echo (#196, CR 702.29) with the keyword taken off, and every piece was already built:
+
+     - `ChoiceDecisionSpec.payIfChosen` is the price on an answer, paid by the engine before the
+       effect runs, and it carries the rule nobody has to write — **a cost the seat cannot afford is
+       not offered**, so a player tapped out in their own upkeep is not shown a question with one
+       button. The permanent goes and the engine says so.
+     - `payIfChosen.energy` is the same price in the other currency (D451).
+     - `moveToGraveyard` is what echo does on a decline, and a sacrifice is a move to a graveyard
+       that cannot be regenerated or replaced — which is what `echoTrigger` already reads it as.
+
+    **`'Sacrifice it'` is first**, for echo's reason: `options[0]` is what the engine falls back on
+    when there is no real question, and that fallback has to be the outcome the rules impose when
+    the price goes unpaid.
+
+    **`best` is written here, and it is the one place a compiled card gets one.** D448 deliberately
+    left it off a compiled priced "you may" because the compiler cannot know what declining costs —
+    that same shape covers paying {1} to draw a card and paying {4} to untap a Mana Vault. Here the
+    clause says what declining costs: **the permanent**. A permanent already on the battlefield is
+    worth more than mana in an upkeep nobody else is using, which is echo's own rule and D214's
+    measurement, and the sentence makes it knowable without knowing the card.
+
+    ## What is refused, with its count
+
+    A price `payIfChosen` cannot express, which is 21 of the 137: `discard a card` (5),
+    `sacrifice a land` (4), `discard a card at random` (3), `discard a land card` (3),
+    `return a non-Lair land you control to its owner's hand` (5), `exile the top creature card of
+    your graveyard` (2), and Anurid Scavenger's `put a card from your graveyard on the bottom of
+    your library`. Each is a **cost**, and a cost read as nothing would be a permanent that stays
+    for free — the worst direction to be wrong in (D362). `parseManaCost` is what refuses the rest:
+    it records an unrecognised symbol rather than reading it as generic mana, the same guard D446's
+    ability costs lean on.
+  */
+  const taxed = new RegExp(
+    `^sacrifice (?:${self}|it) unless you pay ((?:\\{[^}]+\\})+)$`, 'i',
+  ).exec(text);
+  if (taxed !== null) {
+    const printed = taxed[1]!;
+    const energy = /^(?:\{E\})+$/i.test(printed)
+      ? (printed.match(/\{E\}/gi) ?? []).length
+      : null;
+    /*
+      Energy first, and the order is load-bearing for D451's reason: `{E}` matches `\{[^}]+\}`, so
+      a mana parse of an energy run reaches `parseManaCost` and is refused — and the whole line
+      reads as nothing. A run of nothing but `{E}` is unambiguously energy.
+    */
+    const parsed = energy === null ? parseManaCost(printed) : null;
+    const payable = energy !== null
+      || (parsed !== null && parsed.unsupported === undefined && !parsed.x);
+    if (payable) {
+      const pay = `Pay ${printed}`;
+      return {
+        decisions: [{
+          who: 'controller',
+          prompt: `${pay}, or sacrifice this permanent?`,
+          options: ['Sacrifice it', pay],
+          payIfChosen: energy === null
+            ? { option: pay, cost: printed }
+            : { option: pay, energy },
+          // See the docblock: the clause says what declining costs, so the hint is knowable.
+          best: () => pay,
+        }],
+        effect: (c) => (chosenOption(c) === pay
+          ? c.state
+          : moveToGraveyard(c.state, [c.source])),
+      };
+    }
+  }
+
+  /*
     **"Regenerate ~" is NOT read here, and the break run is why** (D528).
 
     This increment wrote it, and disabling it changed no test: `eventRelativeEffect` has read

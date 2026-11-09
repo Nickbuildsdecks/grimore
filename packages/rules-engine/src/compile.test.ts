@@ -13909,3 +13909,76 @@ describe('four clauses naming mechanics the engine already had (D528)', () => {
       .toBe(true);
   });
 });
+
+describe('the upkeep tax: sacrifice unless you pay (D529)', () => {
+  /*
+    D526's ranking put this shape at the top with 33 cards, and the measurement behind it is
+    unusually concentrated: **137 legal lines** print the sentence, **116 of them on two prologues
+    this compiler already reads** — "At the beginning of your upkeep," (74) and "When ~ enters,"
+    (42) — and the price is a mana run on **52**.
+
+    It is echo (#196, CR 702.29) with the keyword taken off, and nothing new was built.
+    `payIfChosen` is the price on an answer and carries the rule nobody has to write: a cost the
+    seat cannot afford is **not offered**, so a tapped-out player is not shown a question with one
+    button — the permanent goes and the engine says so. `payIfChosen.energy` is the same price in
+    the other currency (D451), which is Lathnu Hellion.
+
+    `'Sacrifice it'` is first because `options[0]` is the engine's fallback and that fallback has to
+    be the outcome the rules impose. `best` is written, and this is the **one** place a compiled
+    card gets one: D448 left it off a compiled priced "may" because the compiler cannot know what
+    declining costs, and here the clause says — the permanent.
+  */
+  const permanent = (text: string, name = 'Not A Card') => compileCard({
+    name, type_line: 'Creature — Elemental', mana_cost: '{3}{B}', cmc: 4, colors: ['B'],
+    layout: 'normal', power: '4', toughness: '4', oracle_text: text,
+  });
+
+  it.each([
+    ['the upkeep form', 'At the beginning of your upkeep, sacrifice Not A Card unless you pay {1}{U}.'],
+    ['the enters form, saying "it"', 'When Not A Card enters, sacrifice it unless you pay {1}.'],
+    ['the end-step form with an energy price',
+      'At the beginning of your end step, sacrifice Not A Card unless you pay {E}{E}.'],
+    ['a hybrid price', 'At the beginning of your upkeep, sacrifice Not A Card unless you pay {R/W}.'],
+  ])('reads %s', (_why, text) => {
+    const read = permanent(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    const trigger = (read.script?.triggers ?? [])[0];
+    const spec = (trigger?.decisions ?? [])[0];
+    expect(typeof spec === 'object' && spec !== null && 'options' in spec ? spec.options : null)
+      .toEqual(['Sacrifice it', expect.stringContaining('Pay ')]);
+  });
+
+  it('puts the forced outcome first and the price second, with a bot hint to pay', () => {
+    const read = permanent(
+      'At the beginning of your upkeep, sacrifice Not A Card unless you pay {2}.',
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const spec = ((read.script?.triggers ?? [])[0]?.decisions ?? [])[0];
+    expect(typeof spec).toBe('object');
+    if (typeof spec !== 'object' || spec === null) return;
+    expect('options' in spec ? spec.options : null).toEqual(['Sacrifice it', 'Pay {2}']);
+    expect('payIfChosen' in spec ? spec.payIfChosen : null)
+      .toEqual({ option: 'Pay {2}', cost: '{2}' });
+    // The one `best` a compiled card carries, and the clause is what makes it knowable.
+    expect('best' in spec && typeof spec.best === 'function').toBe(true);
+  });
+
+  it.each([
+    ['a discard price, which payIfChosen cannot express',
+      'At the beginning of your upkeep, sacrifice Not A Card unless you discard a card.'],
+    ['a sacrifice price',
+      'At the beginning of your upkeep, sacrifice Not A Card unless you sacrifice a land.'],
+    ['a price this engine cannot parse',
+      'At the beginning of your upkeep, sacrifice Not A Card unless you pay {X}.'],
+    ['a price of life, which is a cost and not mana',
+      'At the beginning of your upkeep, sacrifice Not A Card unless you pay 3 life.'],
+  ])('refuses %s', (_why, text) => {
+    const read = permanent(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+});

@@ -18563,3 +18563,79 @@ The other eleven: each of the three remaining readers not dispatched, proliferat
 answer it asked for, the shield not applied, the two restrictions swapped, the unblockable target
 not marked as the caster's own, its combat hint dropped, only the first of several targets
 restricted, and the duration made optional so a printed static would read as a one-shot.
+
+## D529 — The upkeep tax: echo's question on a card that does not print the keyword
+
+D526's re-ranked queue put this shape at the top with 33 cards, and the measurement behind it is
+unusually concentrated for this corpus:
+
+| | |
+| --- | --- |
+| legal lines printing `… sacrifice ~ unless you …` | **137** |
+| …on `At the beginning of your upkeep,` | 74 |
+| …on `When ~ enters,` | 42 |
+| …whose price is a **mana run** | 52 |
+
+Both prologues already read. The price is the only new reading, and it is **echo** (#196, CR 702.29)
+with the keyword taken off.
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 22,669 / 56,421 (40.2%) | **22,719 / 56,421 (40.3%)** |
+| cards with a compiled script | 11,472 | **11,504** |
+| cards with every printed line read | 7,230 | **7,255** |
+
+**25 cards finished.** Fewer than the 33 D526 predicted, and the gap is the usual one: a card whose
+tax now reads may still print something else unread — Binding Grasp's tax reads and "You control
+enchanted creature." does not.
+
+### Nothing new was built
+
+- `ChoiceDecisionSpec.payIfChosen` is the price on an answer, paid by the engine between the answer
+  and the effect. It carries the rule nobody has to write: **a cost the seat cannot afford is not
+  offered**, so one option is left and the engine answers it itself. A player tapped out in their
+  own upkeep is never shown a question with a single button; the permanent goes, and the table is
+  not stopped. That is the difference between a question and a stuck game, and it is a test row.
+- `payIfChosen.energy` is the same price in the other currency (D451), which is Lathnu Hellion's
+  `{E}{E}`. It is read **before** the mana parse, for D451's reason: `{E}` matches `\{[^}]+\}`, so a
+  mana parse of an energy run reaches `parseManaCost`, is refused, and the whole line reads as
+  nothing. That exact mistake cost D448 a whole increment's coverage.
+- `moveToGraveyard` is what `echoTrigger` already does on a decline, and a sacrifice is a move to a
+  graveyard that cannot be regenerated or replaced.
+
+`'Sacrifice it'` is first for echo's reason: `options[0]` is the engine's fallback, and that fallback
+has to be the outcome the rules impose when the price goes unpaid.
+
+### The one `best` a compiled card carries
+
+D448 deliberately wrote **no** `best` for a compiled priced "you may", and the argument was that the
+compiler cannot know what declining costs — the same shape covers paying {1} to draw a card and
+paying {4} to untap a Mana Vault.
+
+Here the clause says what declining costs: **the permanent**. A permanent already on the battlefield
+is worth more than mana in an upkeep nobody else is using, which is echo's own rule and D214's
+measurement, and the sentence makes it knowable without knowing the card. So this reader carries
+`best: () => pay`, and it is the only compiled hint of its kind. The break that removes it fails:
+without it every taxed permanent is sacrificed the first time it is asked.
+
+### What is refused, with its count
+
+21 of the 137 name a price `payIfChosen` cannot express, and each is a **cost**:
+`discard a card` (5), `return a non-Lair land you control to its owner's hand` (5),
+`sacrifice a land` (4), `discard a card at random` (3), `discard a land card` (3),
+`exile the top creature card of your graveyard` (2), and Anurid Scavenger's `put a card from your
+graveyard on the bottom of your library`. A cost read as nothing would be a permanent that stays for
+free — the worst direction to be wrong in (D362) — so the line stays unread. `parseManaCost` refuses
+the rest by recording an unrecognised symbol rather than reading it as generic mana, the same guard
+D446's ability costs lean on.
+
+### The break run
+
+**10 breaks, 10 caught**, each verified to apply against a unique anchor and to revert against a
+SHA-256. Four of them are about the question rather than the clause, and they are the ones worth
+naming: the forced outcome not being `options[0]` (so a question the engine answers itself pays
+instead of sacrificing, against the rules), the price not charged at all (the permanent kept for
+free **and** a tapped-out seat stopped with a one-button question), the priced answer and the
+payment disagreeing about the word (so the engine charges nobody and the effect reads an answer that
+was never priced), and `best` removed — without it every taxed permanent is sacrificed the first
+time it is asked.

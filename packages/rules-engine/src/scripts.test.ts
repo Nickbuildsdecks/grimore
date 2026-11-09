@@ -32726,3 +32726,111 @@ describe('four clauses naming mechanics the engine already had, played (D528)', 
     expect(canBlock(s, theirs, mine, 1)).toBeNull();
   });
 });
+
+describe('the upkeep tax, played off printed text (D529)', () => {
+  /*
+    The runtime half, and the rows that matter are the two the price decides: a seat who can pay is
+    asked and may keep the permanent, and a seat who **cannot** is not asked at all — `payIfChosen`
+    filters an unaffordable answer out, one option is left, and the engine answers it itself rather
+    than stopping the table with a single button. That is echo's rule inherited whole (#196), and it
+    is the difference between a question and a stuck game.
+  */
+  const DATA = [
+    {
+      name: 'Ashen Tenant', type_line: 'Creature — Elemental', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal', power: '4', toughness: '4',
+      oracle_text: 'At the beginning of your upkeep, sacrifice Ashen Tenant unless you pay {2}.',
+    },
+    {
+      name: 'Ashen Toll', type_line: 'Creature — Elemental', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal', power: '3', toughness: '3',
+      oracle_text: 'When Ashen Toll enters, sacrifice it unless you pay {1}.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'taxed',
+      name: 'Taxed',
+      entries: [...DATA.map((c) => ({ name: c.name, count: 4 })), { name: 'Swamp', count: 52 }],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Ashen Tenant', 'Ashen Toll']);
+    return list.deck;
+  };
+
+  /** Turn 5, `lands` Swamps on the board, `mine` already out and `hand` in hand. */
+  const seated = (lands: number, mine: readonly string[], hand: readonly string[] = []) =>
+    arena({
+      decks: { 0: 'taxed', 1: 'taxed' },
+      deckSpecs: { taxed: deck() },
+      hands: { 0: [...hand] },
+      battlefield: { 0: [...Array.from({ length: lands }, () => 'Swamp'), ...mine] },
+      turn: 5, firstSeat: 0,
+    });
+
+  /*
+    Stopped **on the question**, in the seat's own upkeep. `advanceTo` reaches the step before the
+    trigger has resolved; `drain` then resolves it and the table stops on the price, which is where
+    every row below starts. Going any further is what `nextTurn` would do, and it answers pending
+    questions itself with the first option — which here is "Sacrifice it", so a row that let it
+    would be testing the helper rather than the card.
+  */
+  const toTheTax = (lands: number, mine: readonly string[]) =>
+    drain(advanceTo(seated(lands, mine), 'upkeep'), 40);
+
+  it('asks in the controller\u2019s own upkeep, and the permanent stays when the tax is paid', () => {
+    let s = toTheTax(3, ['Ashen Tenant']);
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.options).toEqual(['Sacrifice it', 'Pay {2}']);
+    s = drain(apply(s, {
+      type: 'auto:decide', by: 0, cards: [], option: 'Pay {2}',
+    } as Action), 60);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Ashen Tenant');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Ashen Tenant');
+    // The price was really charged: two of the three Swamps are tapped for it.
+    const swamps = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Swamp');
+    expect(swamps.filter((id) => s.instances[id]?.tapped === true)).toHaveLength(2);
+  });
+
+  it('sacrifices it when the tax is declined, with the mana still on the table', () => {
+    let s = toTheTax(3, ['Ashen Tenant']);
+    s = drain(apply(s, {
+      type: 'auto:decide', by: 0, cards: [], option: 'Sacrifice it',
+    } as Action), 60);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Ashen Tenant');
+    // Nothing was spent: a decline is free, which is why the question is worth asking.
+    const swamps = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Swamp');
+    expect(swamps.every((id) => s.instances[id]?.tapped !== true)).toBe(true);
+  });
+
+  it('is never asked when the seat cannot pay, and the permanent goes', () => {
+    /*
+      No lands at all, so "Pay {2}" is an answer `canPayForAnswer` refuses and the question has one
+      option left. The engine answers it itself: the table is not stopped and the creature is
+      sacrificed, which is what the card says.
+    */
+    const s = toTheTax(0, ['Ashen Tenant']);
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Ashen Tenant');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Ashen Tenant');
+  });
+
+  it('asks on arrival too, which is the other prologue the shape prints on', () => {
+    let s = advanceTo(seated(3, [], ['Ashen Toll']), 'precombat-main');
+    for (const id of ids(s, 0, 'battlefield')) {
+      if (nameOf(s, id) === 'Swamp') {
+        s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action);
+      }
+    }
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ashen Toll'),
+    } as Action)), 40);
+    expect(s.pendingDecision?.options).toEqual(['Sacrifice it', 'Pay {1}']);
+    s = drain(apply(s, {
+      type: 'auto:decide', by: 0, cards: [], option: 'Pay {1}',
+    } as Action), 40);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Ashen Toll');
+  });
+});
