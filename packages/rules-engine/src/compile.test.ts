@@ -4745,7 +4745,7 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       if (spell.ok) expect(spell.script).toBeUndefined();
     });
 
-    it('is read only where the event names the player the sentence means', () => {
+    it('reads each event as the player that event is about, which is not always the actor', () => {
       /*
         The gate D475 added, and the reason the test above can be as blunt as it is.
 
@@ -4755,10 +4755,13 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         and a death, where the sentence means somebody else entirely: Furnace Scamp's "deals 3
         damage to that player" means the player it hit, which lives in `c.attacked.defender`.
 
-        So the cast and the upkeep read, and the combat-damage line is refused and left for a human
-        rather than read as the wrong player (D362). **Discriminating, not vacuous**: nothing else
-        in this compiler reads "deals N damage to that player", so without the gate the third row
-        would compile — and before D475 it did, firing and hitting nobody.
+        **This row used to assert that the combat-damage line was refused, and that refusal is now
+        retired.** It was true of D475, which had only the actor to offer; D530 gave the hit player
+        its own supply (`c.attacked.defender`, asked as `hit-player`), and D533 let the pronoun be
+        matched in object position — which is where Furnace Scamp prints it. So all three rows read,
+        and the third reads the *hit* player rather than the actor. Keeping the old assertion would
+        have been the suite asserting the past (D516); what replaces it is the reading being right,
+        which a compile test cannot see on its own and `scripts.test.ts` checks at the table.
       */
       const card = (text: string) => compileCard({
         name: 'Vague Clock', type_line: 'Enchantment', mana_cost: '{B}', cmc: 1, colors: ['B'],
@@ -4777,7 +4780,18 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         + ' Vague Clock deals 1 damage to that player.',
       );
       expect(combat.ok).toBe(true);
-      if (combat.ok) expect(combat.unread).toHaveLength(1);
+      if (!combat.ok) return;
+      expect(combat.unread).toEqual([]);
+      expect(combat.script?.triggers?.[0]?.on.kind).toBe('combat-damage');
+      /*
+        And the gate it replaces is still doing its job: an ENTRY trigger has no player the sentence
+        could mean — `raise` passes the watcher's own side and there is no defender — so the same
+        clause on the same card is still refused rather than read as the controller. That is the
+        discriminating half of this row, and it is the half D475 was about.
+      */
+      const entry = card('Whenever another creature enters, Vague Clock deals 1 damage to that player.');
+      expect(entry.ok).toBe(true);
+      if (entry.ok) expect(entry.unread).toHaveLength(1);
     });
 
     it('keeps both halves of the printed event', () => {
@@ -14376,5 +14390,164 @@ describe('"This ability triggers only once each turn" (D532)', () => {
     expect(read.unread.map((u) => u.line)).toEqual([]);
     expect(read.script?.triggers?.[0]?.onceEachTurn).toBe(true);
     expect(read.script?.abilities?.[0]?.onceEachTurn).toBe(true);
+  });
+});
+
+describe('the pronoun "it", and a referent anywhere in its clause (D533)', () => {
+  /*
+    D530 read a referent in **subject** position — "that player discards a card" — by swapping the
+    first two words for a target phrase and borrowing the reader that already understands the result.
+    The anchor was the limitation, and it was costing the head of the family: printed text puts a
+    pronoun in **object** position at least as often, and "Untap it" was the top row of the corrected
+    queue at 19 cards (`scripts/measure/one-blocker.mjs`).
+
+    Three changes, all of them in service of that one:
+
+     1. The pronoun is matched wherever it stands, and must stand exactly once.
+     2. "it" joins the table as a third pronoun, tried as a creature and as a permanent — so the
+        pronoun and the target kind are no longer one parameter.
+     3. **The targeting clause has to come EARLIER in the chain.** D530 had no such rule and its
+        licence cannot supply one, so a trigger whose own subject is "it" and whose later clause
+        targets something would have bound the pronoun forwards onto the wrong object.
+
+    Measured: 7,316 to 7,356 cards fully read, 22,803 to 22,849 lines.
+  */
+  const spell = (text: string, name = 'Probe Card') => compileCard({
+    name, type_line: 'Instant', mana_cost: '{W}', cmc: 1, colors: ['W'],
+    layout: 'normal', oracle_text: text,
+  });
+
+  it('reads Acrobatic Leap, the printing at the head of the queue', () => {
+    const read = spell(
+      'Target creature gets +1/+3 and gains flying until end of turn. Untap it.',
+      'Acrobatic Leap',
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    // One target between the two clauses, which is the whole point of a borrow.
+    expect(read.script?.targets?.length).toBe(1);
+    expect(read.script?.targets?.[0]?.kind).toBe('creature');
+  });
+
+  it.each([
+    ['Abyssal Hunter', 'Creature — Human Assassin', '{B}, {T}: Tap target creature. This creature deals damage equal to its power to that creature.'],
+    ['Aether Sting', 'Enchantment', 'Whenever an opponent casts a creature spell, Aether Sting deals 1 damage to that player.'],
+    ['Furnace Scamp', 'Creature — Phyrexian Beast', 'Whenever Furnace Scamp deals combat damage to a player, you may sacrifice it. If you do, Furnace Scamp deals 3 damage to that player.'],
+  ])('reads printed %s, whose pronoun is the object of its clause', (name, line, text) => {
+    /*
+      Three different paths to the same pronoun. The Hunter borrows from its own earlier clause
+      (`composeEffects`); the Sting takes the **actor** of a cast; the Scamp takes the player it
+      **hit**, which is a different seat from the actor and the reason D475's gate exists. All three
+      print the pronoun after a verb rather than in front of one, which is what D530 could not read.
+    */
+    const read = compileCard({
+      name: name as string, type_line: line as string, mana_cost: '{3}{B}', cmc: 4,
+      colors: ['B'], layout: 'normal', power: '1', toughness: '1', oracle_text: text as string,
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('refuses a pronoun with nothing before it to refer to', () => {
+    /*
+      The licence D530 already had, reached through the new pronoun: no targeting clause means
+      `c.targets[0]` is `undefined` and the clause would resolve and do nothing (D362).
+    */
+    const read = spell('Draw a card. Untap it.');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.map((u) => u.line)).toEqual(['Draw a card. Untap it.']);
+  });
+
+  it('refuses a pronoun that refers FORWARD to a later target', () => {
+    /*
+      D533's own rule, and the one that is not a refinement of D530's licence but a gap in it.
+      "Whenever ~ attacks, untap it. Tap target creature." satisfies every count D530 checks — one
+      targeting part, one creature, the pronoun names a creature — and the card means the attacker,
+      not the creature being tapped. Bound forwards, the untap would land on the opponent's
+      creature: a wrong card, not an unread one.
+
+      Note which printing this had to be. The first draft used "it gets +1/+0 until end of turn",
+      and that line **reads** — the clause vocabulary has a self-reference reader for a pump whose
+      subject is "it", so nothing is borrowed and the composition is correct. A refusal row whose
+      line reads for an unrelated reason is not a check on anything, which is the shape of error
+      D531's break run found three of. "Untap it" has no self-reading, so the borrow is the only way
+      this line could compile and the refusal is the rule's.
+    */
+    const read = compileCard({
+      name: 'Probe Card', type_line: 'Creature — Human', mana_cost: '{1}{R}', cmc: 2,
+      colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Whenever Probe Card attacks, untap it. Tap target creature.',
+    });
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+
+  it('matches the pronoun to the kind the earlier clause really points at', () => {
+    /*
+      "it" is two swaps, and the clause vocabulary reads both "untap target creature" and "untap
+      target permanent" — so the loop must not race. Both printings below have a correct reading and
+      both get it; before the kind filter the permanent one was refused, because the creature swap
+      read first and the licence then compared `creature` against a `permanent` spec.
+    */
+    for (const text of ['Tap target creature. Untap it.', 'Tap target permanent. Untap it.']) {
+      const read = spell(text);
+      expect(read.ok).toBe(true);
+      if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+    }
+  });
+
+  it('refuses a pronoun whose kind the earlier target cannot guarantee', () => {
+    /*
+      D530's reason for refusing `any`, restated through the new pronoun: "any target" *can* hold a
+      creature, but whether it does is a fact about the game rather than about the text. A reading
+      that assumed it would be right most of the time and silently wrong the rest, which is the
+      trade D362 settles the other way.
+    */
+    const read = spell('Probe Card deals 3 damage to any target. That creature gets -1/-1 until end of turn.');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+
+  it('refuses a clause with two pronouns, which cannot say which one was swapped', () => {
+    const read = spell('Tap target creature. It deals damage equal to its power to it.');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+
+  it('does not take "it" out of a word that merely contains those letters', () => {
+    /*
+      The word boundary. "until" contains the letters and that line still reads, which it would not
+      if the match were a bare substring — "unt*target creature*l end of turn" is not a sentence.
+    */
+    const fine = spell('Target creature gets +2/+2 until end of turn.');
+    expect(fine.ok).toBe(true);
+    if (fine.ok) expect(fine.unread.map((u) => u.line)).toEqual([]);
+    /*
+      And "its" is a different word, so this line is still **unread** — which is the honest
+      outcome and not a gap this increment left: "its controller" is a possessive naming a third
+      object, and reading it as "target creature controller" would be a sentence nobody printed.
+      It waits for its own reader; `one-blocker.mjs` has it at 11 cards under
+      "its controller loses N life".
+    */
+    const possessive = spell('Destroy target creature. Its controller loses 2 life.');
+    expect(possessive.ok).toBe(true);
+    if (possessive.ok) {
+      expect(possessive.unread.map((u) => u.line))
+        .toEqual(['Destroy target creature. Its controller loses 2 life.']);
+    }
+  });
+
+  it('still reads D530\'s subject-position printings', () => {
+    // The regression guard: widening the match must not have cost the rows it was built from.
+    for (const text of [
+      'Put a +1/+1 counter on target creature. That creature gains reach until end of turn.',
+      'Target player discards a card. That player loses 2 life.',
+    ]) {
+      const read = spell(text);
+      expect(read.ok).toBe(true);
+      if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+    }
   });
 });

@@ -33320,3 +33320,145 @@ describe('"This ability triggers only once each turn", at the table (D532)', () 
     expect(s.instances[watson]!.abilityUsedTurn).toEqual({ 't:0': s.turn });
   });
 });
+
+describe('the pronoun "it", played off printed text (D533)', () => {
+  /*
+    The runtime half, and the row that matters is **which object the pronoun lands on**. A compile
+    test can see that the clause read and that the line declares one target; whether the untap
+    reaches the creature the earlier clause pointed at is a fact about the `aimed()` wrapper, and
+    getting it wrong is silent — Acrobatic Leap would pump a creature and leave it tapped, with the
+    log saying the spell resolved.
+
+    Two real printings, both of which print the pronoun as the OBJECT of their clause, which is the
+    position D530 could not read:
+
+      Abyssal Hunter  {3}{B} 1/1  "{B}, {T}: Tap target creature. This creature deals damage equal
+                                   to its power to that creature."
+      Acrobatic Leap  {W}         "Target creature gets +1/+3 and gains flying until end of turn.
+                                   Untap it."
+      Furnace Scamp   {R}   1/1   "Whenever Furnace Scamp deals combat damage to a player, you may
+                                   sacrifice it. If you do, Furnace Scamp deals 3 damage to that
+                                   player."
+
+    The Hunter and the Leap are two halves of one board: the Hunter taps a creature and the Leap
+    untaps the same one, so the pair reads the pronoun twice in opposite directions.
+  */
+  const DATA = [
+    {
+      name: 'Abyssal Hunter', type_line: 'Creature — Human Assassin', mana_cost: '{3}{B}', cmc: 4,
+      colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: '{B}, {T}: Tap target creature. '
+        + 'This creature deals damage equal to its power to that creature.',
+    },
+    {
+      name: 'Acrobatic Leap', type_line: 'Instant', mana_cost: '{W}', cmc: 1,
+      colors: ['W'], layout: 'normal',
+      oracle_text: 'Target creature gets +1/+3 and gains flying until end of turn. Untap it.',
+    },
+    {
+      name: 'Furnace Scamp', type_line: 'Creature — Phyrexian Beast', mana_cost: '{R}', cmc: 1,
+      colors: ['R'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Whenever Furnace Scamp deals combat damage to a player, you may sacrifice it. '
+        + 'If you do, Furnace Scamp deals 3 damage to that player.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'pronouns',
+      name: 'Pronouns',
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 4 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Swamp', count: 22 }, { name: 'Plains', count: 22 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Abyssal Hunter', 'Acrobatic Leap', 'Furnace Scamp']);
+    return list.deck;
+  };
+
+  const table = (over: Record<string, unknown>) => arena({
+    decks: { 0: 'pronouns', 1: 'pronouns' },
+    deckSpecs: { pronouns: deck() },
+    turn: 5, firstSeat: 0,
+    ...over,
+  });
+
+  it('taps the creature it pointed at, and damages THAT creature (Abyssal Hunter)', () => {
+    let s = tapAllLands(advanceTo(table({
+      battlefield: { 0: ['Abyssal Hunter', 'Grizzly Bears', 'Swamp', 'Plains'] },
+    }), 'precombat-main'), 0);
+    const hunter = find(s, 0, 'battlefield', 'Abyssal Hunter');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: hunter, abilityIndex: 0,
+      targets: [{ kind: 'card', id: bears }],
+    } as Action), 40);
+    expect(s.instances[bears]!.tapped).toBe(true);
+    /*
+      1 damage, from a 1/1's power, on the creature that was tapped — and the Hunter itself
+      untouched. A reading that handed the second clause nothing would deal no damage at all, and
+      one that aimed at the source would kill the Hunter, so both totals are asserted.
+    */
+    expect(damageOn(s, bears)).toBe(1);
+    expect(damageOn(s, hunter)).toBe(0);
+  });
+
+  it('untaps the creature it pumped, not something else (Acrobatic Leap)', () => {
+    /*
+      The pronoun in the other direction, on a creature the board has already tapped. The untap is
+      the discriminating half: +1/+3 and flying would land either way, and a borrow handed an empty
+      `targets` would leave the creature tapped while the log said the spell resolved (D362).
+    */
+    let s = tapAllLands(advanceTo(table({
+      battlefield: { 0: ['Abyssal Hunter', 'Grizzly Bears', 'Swamp', 'Plains'] },
+      hands: { 0: ['Acrobatic Leap'] },
+    }), 'precombat-main'), 0);
+    const hunter = find(s, 0, 'battlefield', 'Abyssal Hunter');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: hunter, abilityIndex: 0,
+      targets: [{ kind: 'card', id: bears }],
+    } as Action), 40);
+    expect(s.instances[bears]!.tapped).toBe(true);
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Acrobatic Leap'),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action), 40);
+    expect(s.instances[bears]!.tapped).toBe(false);
+    expect(power(s, bears)).toBe(3);
+    expect(toughness(s, bears)).toBe(5);
+    expect(characteristicsOf(s, s.instances[bears]!).keywords.has('flying')).toBe(true);
+    // And the Hunter, which paid {T} for its own ability, is still tapped: one untap, aimed.
+    expect(s.instances[hunter]!.tapped).toBe(true);
+  });
+
+  it('deals the extra damage to the player it HIT, not to its own controller (Furnace Scamp)', () => {
+    /*
+      The hit-player supply reached through an object-position pronoun, which is the combination
+      D475's gate used to refuse and D530 could not read. Both life totals are asserted: a reading
+      that took the actor would show seat 0 at 17 and seat 1 at 19, and nothing else in this file
+      could tell.
+    */
+    let s = advanceTo(table({ battlefield: { 0: ['Furnace Scamp'] } }), 'declare-attackers');
+    const scamp = find(s, 0, 'battlefield', 'Furnace Scamp');
+    s = apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: scamp, defender: 1 }],
+    } as Action);
+    s = apply(s, { type: 'auto:pass', by: 0 } as Action);
+    // Stopped on the "you may sacrifice it" question, in the combat damage step.
+    s = drain(advanceTo(s, 'combat-damage', 120), 60);
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.options).toEqual(['Yes', 'No']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Yes' } as Action), 60);
+    // 1 from the body and 3 from the trigger, and the attacker's own total untouched.
+    expect(life(s, 1)).toBe(16);
+    expect(life(s, 0)).toBe(20);
+    // And the Scamp paid for it: "you may sacrifice it" means itself, not the creature it hit.
+    expect(namesIn(s, 0, 'graveyard')).toContain('Furnace Scamp');
+  });
+});

@@ -36575,3 +36575,88 @@ single spelling, which is the shape of the queue now that the inflation is gone:
 and no stalled table, 68.4 turns and 413 moves a game. Per 100-card deck across 160 decks: 25.0
 cards with a hand-written script, 48.2 with at least one unread line, 62.0 playable only from printed
 data, 0.4 cardboard.
+
+## D533 — The pronoun "it", and a referent anywhere in its clause
+
+D530 read a referent in **subject** position by swapping the first two words of the clause for a
+target phrase and borrowing the reader that already understands the result. The anchor was the
+limitation, and it was costing the head of the family: printed text puts a pronoun in **object**
+position at least as often, and `Untap it` was the top row of the corrected queue
+(`scripts/measure/one-blocker.mjs`) at 19 cards.
+
+Three changes, all in service of that one:
+
+1. **The pronoun is matched wherever it stands, and must stand exactly once.** Exactly once because
+   the swap has to say which occurrence it replaced — "it deals damage equal to its power to it" has
+   two referents and nothing here can tell them apart. That count also does the work of a "contains
+   no target of its own" test for free: a clause already naming a target ends up with two specs after
+   the swap, which D530's guard refuses.
+2. **"it" joins the table as a third pronoun**, tried as a creature and as a permanent — so the
+   pronoun and the target kind stopped being one parameter. They were one only because D530's two
+   pronouns happened to name their own kinds.
+3. **The targeting clause has to come earlier in the chain.** D530 shipped without this and its
+   licence cannot supply it: that licence counts the targeting parts of the whole line and says
+   nothing about where they are. So "Whenever ~ attacks, untap it. Tap target creature." satisfied
+   every count it checks — one targeting part, one creature, pronoun names a creature — and means
+   the attacker. Bound forwards, the untap lands on the opponent's creature. A wrong card, not an
+   unread one, found by writing the test rather than by a break run.
+
+A fourth change came out of the break run's shape rather than from the printings: the loop **filters
+the pronoun table by the kind the earlier clause actually points at** instead of taking the first
+swap that reads. "Tap target permanent. Untap it." has a correct reading, and without the filter the
+creature swap read first, broke out of the loop, and handed the licence a `creature` borrow against a
+`permanent` spec — refusing a line that reads perfectly well the other way round.
+
+### What it moved
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 22,803 / 56,421 (40.4%) | **22,849 / 56,421 (40.5%)** |
+| cards with a compiled script | 11,559 | **11,596** |
+| cards with every printed line read | 7,316 | **7,356** |
+
+40 cards finished — twice the 19 the queue predicted for `untap it` alone, because generalising the
+position reads every row in the family at once rather than that one spelling. Four real printings are
+in the tests: **Acrobatic Leap** ("Target creature gets +1/+3 and gains flying until end of turn.
+Untap it."), **Abyssal Hunter** (borrowing from its own earlier clause inside an activated ability),
+**Aether Sting** (the **actor** of a cast, in object position) and **Furnace Scamp** (the player it
+**hit**, in object position).
+
+### A stale refusal retired
+
+`compile.test.ts` had a row asserting that "Whenever ~ deals combat damage to a player, ~ deals 1
+damage to that player" was **refused**. That was true of D475, which had only the actor to offer, and
+the docblock beside it named Furnace Scamp as the card it was protecting. D530 gave the hit player its
+own supply and D533 let the pronoun be matched in object position, so the card now reads — correctly,
+as the hit player. Keeping the assertion would have been the suite asserting the past (D516). What
+replaces it asserts the reading, and keeps the discriminating half: the same clause on an **entry**
+trigger, where no player the sentence could mean exists, is still refused.
+
+### The break run: 11 breaks, 7 caught, and all four misses are vacuous
+
+Each verified to apply against an anchor matching exactly once and to revert against a SHA-256.
+Scored against `-t D53`, which is D530, D531, D532 and D533 together, because this increment changes
+machinery all four are built on.
+
+Caught: "it" removed from the table; the pronoun re-anchored to the start; the pronoun allowed to
+refer forward; the kind filter dropped; the swap hard-coded to a creature; the pronoun left in the
+swapped text; and the referent not supplied to the effect at all (caught by D530's hit-player rows).
+
+The four misses, each with its reason measured rather than asserted:
+
+- **A clause with two pronouns takes the first.** Provably vacuous: a first-occurrence-only rule
+  leaves the *other* pronoun standing in the swapped text, and nothing in the clause vocabulary reads
+  a sentence with a bare pronoun in it. Four plausible outputs were compiled directly — "target
+  creature deals 2 damage to it", "Untap target creature and it gains flying until end of turn", and
+  two more — and all four are unread. The `!== 1` guard is defence in depth that today cannot be
+  observed.
+- **The word boundary dropped.** The same mechanism: the boundary only matters inside a clause that
+  already failed to read, and the swap then produces text no reader takes. Nothing printed
+  distinguishes the two.
+- **The licence's kind check deleted.** Implied by the new kind filter — the filter only offers a
+  pronoun whose kind already equals the spec's, so the licence line cannot fail. It stays, with a
+  comment recording it as unfalsifiable rather than presenting it as a live guard.
+- **The pronoun table reversed.** Expected to be vacuous and stated as such in its own docblock: the
+  filter means at most one entry per pronoun is reachable, so order is immaterial. The first draft of
+  that docblock explained an order that had stopped mattering, and the break run is what retired the
+  explanation.

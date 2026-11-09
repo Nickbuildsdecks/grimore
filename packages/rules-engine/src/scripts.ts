@@ -14457,8 +14457,39 @@ function tokenEffect(clause: string, name: string): ReadEffect | null {
 }
 
 /**
- * A clause whose **subject is a referent** — "that player", "that creature" — read by borrowing the
- * reader that already understands the same sentence with a *target* in that position (D530).
+ * The pronouns a printed clause can use for an object the resolution already has, and the target
+ * kind each is swapped for. See `referentEffect` and `REFERENT_PRONOUNS`.
+ *
+ * Separate types because **"it" is both** — it names whatever the sentence last mentioned, which may
+ * be a creature or may be any permanent — so that one pronoun is tried as two swaps and the licence
+ * in `composeEffects` decides which the line really meant. D530 shipped with the pronoun and the
+ * kind as one parameter, and they were one only because its two pronouns happened to name their own
+ * kinds.
+ */
+type ReferentPronoun = 'that creature' | 'that player' | 'it';
+type ReferentKind = 'creature' | 'player' | 'permanent';
+
+/**
+ * The swaps tried on a clause whose own reading failed (D530, D533).
+ *
+ * **The order is immaterial, and saying so is the honest version.** The first draft ordered this
+ * list and explained why — "it" tried as a creature before a permanent — and that explanation
+ * stopped being true the moment `composeEffects` started filtering the list by the kind the earlier
+ * clause actually points at. With the filter, at most one entry per pronoun can be reached, so
+ * nothing races and nothing depends on position. A break run confirmed it: reversing the list fails
+ * no test. It stays a list rather than a map because one pronoun has two entries.
+ */
+const REFERENT_PRONOUNS: readonly (readonly [ReferentPronoun, ReferentKind])[] = [
+  ['that creature', 'creature'],
+  ['that player', 'player'],
+  ['it', 'creature'],
+  ['it', 'permanent'],
+];
+
+/**
+ * A clause whose **subject is a referent** — "that player", "that creature", "it" — read by
+ * borrowing the reader that already understands the same sentence with a *target* in that position
+ * (D530, and the third pronoun in D533).
  *
  * ## Why a borrow rather than a reader per clause
  *
@@ -14525,15 +14556,32 @@ function tokenEffect(clause: string, name: string): ReadEffect | null {
  */
 function referentEffect(
   clause: string,
-  kind: 'player' | 'creature',
+  pronoun: ReferentPronoun,
+  kind: ReferentKind,
   supply: (c: EffectContext) => Target | null,
   reader: (text: string) => ReadEffect | null,
   asks: 'target-player' | 'hit-player' | 'acting-player' = 'target-player',
 ): ReadEffect | null {
-  const word = kind === 'player' ? /^that player\b/i : /^that creature\b/i;
   const text = clause.trim();
-  if (!word.test(text)) return null;
-  const read = reader(text.replace(word, kind === 'player' ? 'target player' : 'target creature'));
+  /*
+    **The pronoun is matched wherever it stands, and must stand exactly once.**
+
+    D530 anchored this to the start of the clause, which reads a pronoun in SUBJECT position — "that
+    player discards a card" — and misses it in object position. "Untap it" is the 19-card row at the
+    head of the corrected queue and the pronoun is its object, so the anchor was costing the biggest
+    row in the family (D533).
+
+    Exactly once, because the swap has to say which occurrence it replaced: "it deals damage to it"
+    has two referents and nothing here can tell them apart. That count also does the work of a
+    "contains no target of its own" test for free — a clause already naming a target ends up with two
+    specs after the swap, which the guard below refuses.
+  */
+  const found = [...text.matchAll(new RegExp(`\\b${pronoun}\\b`, 'gi'))];
+  if (found.length !== 1) return null;
+  const at = found[0]!.index;
+  const read = reader(
+    `${text.slice(0, at)}target ${kind}${text.slice(at + found[0]![0].length)}`,
+  );
   if (read === null) return null;
   const specs = read.targets ?? [];
   if (specs.length !== 1 || specs[0]!.kind !== kind || (specs[0]!.count ?? 1) !== 1) return null;
@@ -14555,7 +14603,7 @@ function referentEffect(
       ? { ...spec, who: asks }
       : spec),
   ) as readonly DecisionSpecOf[];
-  if (kind === 'creature' && decisions.some((spec) => 'who' in spec && spec.who === 'target-player')) {
+  if (kind !== 'player' && decisions.some((spec) => 'who' in spec && spec.who === 'target-player')) {
     return null;
   }
   const aimed = (fn: EffectFn): EffectFn => (c) => {
@@ -14691,7 +14739,7 @@ function eventRelativeEffect(
   */
   if (aboutTheHitPlayer) {
     const hit = referentEffect(
-      text, 'player',
+      text, 'that player', 'player',
       (c) => (c.attacked === undefined ? null : { kind: 'player', seat: c.attacked.defender }),
       (swapped) => readEffect(swapped, name, null),
       'hit-player',
@@ -14700,7 +14748,7 @@ function eventRelativeEffect(
   }
   if (aboutAPlayer) {
     const acted = referentEffect(
-      text, 'player',
+      text, 'that player', 'player',
       (c) => ({ kind: 'player', seat: c.actor ?? c.controller }),
       (swapped) => readEffect(swapped, name, null),
       'acting-player',
@@ -17945,7 +17993,7 @@ function composeEffects(
   const parts: ReadEffect[] = grouped === null ? [] : [grouped.read];
   // Which referent kinds the loop below borrowed an earlier clause's target for (D530); the
   // licence for each is checked once `parts` is complete.
-  const borrows: ('creature' | 'player')[] = [];
+  const borrows: ReferentKind[] = [];
   for (const clause of rest) {
     /*
       **A clause may refer back to the target an earlier clause in this same resolution chose**
@@ -17966,9 +18014,37 @@ function composeEffects(
     const read = readEffect(clause, name, where);
     if (read !== null) { parts.push(read); continue; }
     let borrowed: ReadEffect | null = null;
-    for (const kind of ['creature', 'player'] as const) {
+    /*
+      **A pronoun refers BACK**, so something before it has to point at the object (D533).
+
+      D530 shipped without this rule and the licence below cannot supply it: that licence counts the
+      targeting parts of the whole line and says nothing about where they are. So
+      "Whenever ~ attacks, it gets +1/+0 until end of turn. Tap target creature." would bind "it" to
+      the tapped creature — one targeting part, one creature, licence satisfied — where the card
+      means the attacker, and the pump would land on the opponent's creature. A wrong card, not an
+      unread one. The rule arrives with "it" because "it" is the pronoun printings put in FRONT of
+      their targets.
+
+      `parts` holds the clauses read so far in printed order, so this is exactly the question "did
+      anything earlier in this chain point at something".
+    */
+    const aimed = parts.find((part) => part.targets !== undefined)?.targets?.[0] ?? null;
+    /*
+      **Only the kind the earlier clause really points at is tried**, and that is not the same as
+      letting the licence below sort it out afterwards.
+
+      "it" is two swaps — creature and permanent — and the loop takes the first that reads. "Tap
+      target permanent. Untap it." reads perfectly well as the permanent swap, but the creature swap
+      reads too (the clause vocabulary has both "untap target creature" and "untap target
+      permanent"), so the loop would take the creature one, break, and hand the licence a `creature`
+      borrow against a `permanent` spec — refusing a line that has a correct reading. Filtering here
+      is what makes the pronoun's two swaps a choice rather than a race.
+    */
+    for (const [pronoun, kind] of aimed === null
+      ? []
+      : REFERENT_PRONOUNS.filter(([, one]) => one === aimed.kind)) {
       const one = referentEffect(
-        clause, kind, (c) => c.targets[0] ?? null,
+        clause, pronoun, kind, (c) => c.targets[0] ?? null,
         (swapped) => readEffect(swapped, name, where),
       );
       if (one === null) continue;
@@ -18007,6 +18083,13 @@ function composeEffects(
     if (targeted.length !== 1) return null;
     const specs = targeted[0]!.targets ?? [];
     if (specs.length !== 1 || (specs[0]!.count ?? 1) !== 1) return null;
+    /*
+      **Implied by the kind filter in the loop above, and kept anyway.** That filter only offers a
+      pronoun whose kind already equals this spec's, so as of D533 this line cannot fail: the break
+      run deleted it and no test moved. It stays because the filter is a fact about *this* caller
+      and this is a fact about the licence — a second caller that borrowed without filtering would
+      need it — but it is recorded as unfalsifiable rather than presented as a live guard.
+    */
     if (!borrows.every((kind) => specs[0]!.kind === kind)) return null;
   }
   if (parts.length === 1) return parts[0]!;
