@@ -37147,3 +37147,10 @@ the engine's behaviour rather than my own regex.
 The one break still uncaught is recorded in the reader's docblock: `on === 'dies'` rather than the
 wider `to-graveyard` wording cannot be falsified, because a dying creature is in both lists and the
 wide pass runs first.
+
+### The pod sweep
+
+**40/40 pods finished** at a fresh seed (SEED0=41101) on the clean commit, no engine throw and no
+stalled table, 66.8 turns and 381 moves a game. Per 100-card deck across 160 decks: 25.9 cards with
+a hand-written script, 47.4 with at least one unread line, 61.9 playable only from printed data, 0.5
+cardboard.
