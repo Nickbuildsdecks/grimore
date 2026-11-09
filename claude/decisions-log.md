@@ -36958,3 +36958,10 @@ Breaking `referentSeat` left every discard row green.
 
 Added the life-loss row (Bitter Downfall, the real printing, with both life totals asserted). Re-run:
 **8/8**. Scored against `-t D53`, which is D530 through D537 together.
+
+### The pod sweep
+
+**40/40 pods finished** at a fresh seed (SEED0=40901) on the clean commit, no engine throw and no
+stalled table, 56.6 turns and 310 moves a game. Per 100-card deck across 160 decks: 25.1 cards with
+a hand-written script, 47.6 with at least one unread line, 61.9 playable only from printed data, 0.5
+cardboard.
