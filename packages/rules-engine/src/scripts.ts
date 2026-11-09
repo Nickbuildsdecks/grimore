@@ -15304,6 +15304,28 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     */
     const read = reader(clause) ?? optionalEffect(clause, reader);
     if (read === null) return null;
+    /*
+      **A trigger that divides a quantity is not emitted at all**, the third call site of
+      `dividesAQuantity` and for the reason the first two have (D463): `auto:choose` carries no
+      division, so `chooseTargets` throws rather than dealing the whole amount to one target. Before
+      this, the compiler emitted such a trigger and the game ended with an engine error the moment it
+      fired — which is strictly worse than an unread line, because the line a human resolves is a
+      line a human can resolve (D362).
+
+      Found by a pod sweep, not by a reader test: seed 40607 of D533's sweep threw on **Gang of
+      Devils**, "When Gang of Devils dies, it deals 3 damage divided as you choose among one, two, or
+      three targets". It is the only legal card in the corpus whose compiled trigger divides
+      anything, so this costs exactly that one card its script line — and that line did not work.
+
+      Not D533's doing, and the distinction is worth the sentence: that clause is the only one on its
+      line, so `composeEffects` has nothing aimed before it and the pronoun table is never consulted.
+      The reading comes from the plain clause vocabulary, which has been there since #119. The sweep
+      is what surfaced it.
+
+      Division on a *trigger* is a real feature and this is not it — tracked separately. Spells
+      divide correctly (#119); it is the choose path that has no machinery.
+    */
+    if (dividesAQuantity(read)) return null;
     // `spellFlags` is deliberately not spread: it is advice about casting a spell, and a triggered
     // ability is not cast. See `targetedEffect`.
     return {

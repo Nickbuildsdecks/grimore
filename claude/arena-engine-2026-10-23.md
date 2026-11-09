@@ -19194,3 +19194,53 @@ The four misses, each with its reason measured rather than asserted:
   filter means at most one entry per pronoun is reachable, so order is immaterial. The first draft of
   that docblock explained an order that had stopped mattering, and the break run is what retired the
   explanation.
+
+## D534 — A triggered ability that divides a quantity is not emitted
+
+D533's pod sweep threw. Seed 40607 of 40 ended with `the engine cannot divide a triggered ability
+yet`, and the standing rule is that a throw in a sweep is work now rather than a line in a table.
+
+### What it was
+
+**Gang of Devils** — "When Gang of Devils dies, it deals 3 damage divided as you choose among one,
+two, or three targets." `AutoChooseAction` carries no division, so `chooseTargets`
+(`autoActions.ts:2465`) throws rather than dealing the whole 3 to the first target. The compiler was
+emitting the trigger anyway, so the card went on the battlefield, died, and ended the game with an
+engine error.
+
+This is **D463's rule one ability kind over**. That decision stopped the compiler emitting a *divided
+activated ability* for exactly this reason, and `dividesAQuantity` has been sitting there with two
+call sites since. `triggerFromLine` is the third.
+
+### It is not D533's doing, and the distinction is worth stating
+
+The tempting attribution is that the pronoun work read a line that used to be unread. It did not.
+That clause is the only one on its line, so `composeEffects` has nothing aimed before it,
+`alreadyAimed` is false and the pronoun table is never consulted — the reading comes from the clause
+vocabulary #119 added, and has been there since. What D533's sweep did was **surface** it: the throw
+needed Gang of Devils to be in a deck, reach the battlefield and die, which is a seed away rather
+than a commit away.
+
+### The cost, measured
+
+Measured over all 31,654 legal rows, **Gang of Devils is the only legal card whose compiled trigger
+divided anything.** So the refusal costs exactly one card its script line, and that line did not
+work:
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 22,849 | **22,848** (40.5%) |
+| cards with a compiled script | 11,596 | **11,595** |
+| cards with every printed line read | 7,356 | **7,355** |
+
+Seed 40607 re-run after the change: **finished**, 96 turns, no throw.
+
+### What is not done
+
+Division on a triggered ability is a real feature and this is not it — refusing is the honest
+placeholder, the same trade D463 made. It is task #375: give the choose action a division the way the
+cast action has one, validate it against the budget, and store it on the stack object so
+`dividedAmong` reads it on resolution. The same field would let D463's activated-ability refusal be
+lifted. The engine's `chooseTargets` throw stays as defence in depth either way: a trigger arriving
+from anywhere with a division is still refused rather than resolved wrongly, which is the two-places
+rule D67 and D89 share.

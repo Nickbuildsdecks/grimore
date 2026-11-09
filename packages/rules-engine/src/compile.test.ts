@@ -14551,3 +14551,63 @@ describe('the pronoun "it", and a referent anywhere in its clause (D533)', () =>
     }
   });
 });
+
+describe('a trigger that divides a quantity is not emitted (D534)', () => {
+  /*
+    D463's rule, one ability kind over, and found by a pod rather than by a reader test: seed 40607
+    of D533's sweep ended with `the engine cannot divide a triggered ability yet`. `auto:choose`
+    carries no division, so `chooseTargets` throws rather than dealing the whole amount to one
+    target — and a compiler that emits such a trigger has turned an unread line into a game that
+    ends with an engine error. An unread line is one a human resolves; an error is not (D362).
+
+    **Gang of Devils is the only legal card in the corpus whose compiled trigger divided anything**,
+    measured over all 31,654 legal rows, so this costs exactly that card its script line — a line
+    that did not work. It is also not D533's doing: that clause is the only one on its line, so
+    `composeEffects` has nothing aimed before it, the pronoun table is never consulted, and the
+    reading comes from the clause vocabulary #119 added.
+  */
+  it('leaves Gang of Devils\' line unread rather than emitting a trigger that throws', () => {
+    const read = compileCard({
+      name: 'Gang of Devils', type_line: 'Creature — Devil', mana_cost: '{5}{R}', cmc: 6,
+      colors: ['R'], layout: 'normal', power: '3', toughness: '3',
+      oracle_text: 'When Gang of Devils dies, it deals 3 damage divided as you choose '
+        + 'among one, two, or three targets.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.length).toBe(1);
+    expect(read.script?.triggers ?? []).toEqual([]);
+  });
+
+  it('still divides on a SPELL, which the engine implements', () => {
+    /*
+      The discriminating half. A guard written one layer too high — on the shared clause reader
+      rather than on `triggerFromLine` — would take Arc Lightning's whole family with it, and #119
+      built the cast-time division that makes those cards work.
+    */
+    const read = compileCard({
+      name: 'Arc Lightning', type_line: 'Sorcery', mana_cost: '{2}{R}', cmc: 3, colors: ['R'],
+      layout: 'normal',
+      oracle_text: 'Arc Lightning deals 3 damage divided as you choose among one, two, '
+        + 'or three targets.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.targets?.[0]?.divided).toBe(3);
+  });
+
+  it('still emits an ordinary trigger that deals damage to one target', () => {
+    // The other side of the guard: only `divided` is refused, not damage from a trigger.
+    const read = compileCard({
+      name: 'Probe Devil', type_line: 'Creature — Devil', mana_cost: '{3}{R}', cmc: 4,
+      colors: ['R'], layout: 'normal', power: '3', toughness: '3',
+      oracle_text: 'When Probe Devil dies, it deals 3 damage to any target.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect((read.script?.triggers ?? []).length).toBe(1);
+    expect(read.script?.triggers?.[0]?.targets?.[0]?.divided).toBeUndefined();
+  });
+});
