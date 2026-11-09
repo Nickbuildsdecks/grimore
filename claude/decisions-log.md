@@ -36568,3 +36568,10 @@ The 22-card row is the biggest real one and is two printings of the same thing â
 family's quoted mana ability, singular and plural. Nothing in the corrected ranking is above 19 for a
 single spelling, which is the shape of the queue now that the inflation is gone: the honest head of a
 40%-read compiler is a row in the high teens, not the high thirties.
+
+### The pod sweep
+
+**40/40 pods finished** at a fresh seed (SEED0=40501) on the clean commit `f83129e`, no engine throw
+and no stalled table, 68.4 turns and 413 moves a game. Per 100-card deck across 160 decks: 25.0
+cards with a hand-written script, 48.2 with at least one unread line, 62.0 playable only from printed
+data, 0.4 cardboard.
