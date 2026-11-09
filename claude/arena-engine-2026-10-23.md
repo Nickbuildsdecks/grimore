@@ -19757,3 +19757,10 @@ The regression that mattered most has its own row: `targetSpecFrom`'s exact-phra
 `compiled-vs-written.test.ts` compares against Raise Dead character for character. Rebuilding the
 phrase reproduces exactly that string for the plain printing, and the test asserts the kind, the
 description and the absence of a count rather than trusting the other file.
+
+### The pod sweep
+
+**40/40 pods finished** at a fresh seed (SEED0=41201) on the clean commit, no engine throw and no
+stalled table, 63.1 turns and 339 moves a game. Per 100-card deck across 160 decks: 25.8 cards with
+a hand-written script, 47.5 with at least one unread line, 61.8 playable only from printed data, 0.5
+cardboard.
