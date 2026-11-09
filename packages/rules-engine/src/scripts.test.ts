@@ -14122,9 +14122,13 @@ describe('unearth: the body bought back out of the graveyard for one turn', () =
 
     Escape and delve put the card on the stack, where it can be countered and where "whenever a
     player casts a spell" sees it. Unearth is an **activated ability**: the creature goes straight
-    onto the battlefield with haste, and a delayed trigger exiles it at the beginning of the next
-    end step. So the tests are about the three things that make it different from a cast — the zone
-    the ability is offered from, the haste, and the end of the turn.
+    onto the battlefield with haste, and it is exiled at the beginning of the next end step. So the
+    tests are about the three things that make it different from a cast — the zone the ability is
+    offered from, the haste, and the end of the turn.
+
+    **The exile was a scheduled delayed trigger until D517** and is now an ordinary end-step trigger
+    gated on the body's `UNEARTHED` counter — see `unearthExile` for why, and the D517 describe below
+    for the row that proves the gate: a Dregscape Zombie that was *cast* is not exiled.
   */
   const graveyard = (deck: string, basic: string, lands: number, dead: readonly string[]): GameState => {
     const s = advanceTo(arena({
@@ -31455,5 +31459,158 @@ describe('the Act of Treason sentence, played off printed text (D516)', () => {
     s = drain(passBoth(s));
     expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
     expect(namesIn(s, 0, 'battlefield')).not.toContain('Centaur Courser');
+  });
+});
+
+describe('unearth, played off printed text (D517)', () => {
+  /*
+    The compiled half of the keyword. The describe above drives the pool's two hand-written unearth
+    cards; these rows drive a creature whose unearth exists **only** because the printed line was
+    read, and they include the row the D517 change makes load-bearing.
+
+    That row is the control: a body that was **cast** must not be exiled at end of turn. The exile
+    stopped being a one-shot scheduled by the ability and became an ordinary end-step trigger on the
+    card, so the only thing standing between a cast Dregscape Zombie and the exile is the
+    `UNEARTHED` counter. Nothing else in this suite would notice if that gate went.
+  */
+  const DATA = [
+    {
+      name: 'Ashen Revenant', type_line: 'Creature — Zombie Warrior', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '1',
+      oracle_text: 'Unearth {B}',
+    },
+    {
+      // The control, and deliberately the same body: one printed line is the whole difference.
+      name: 'Ashen Footsoldier', type_line: 'Creature — Zombie Warrior', mana_cost: '{1}{B}',
+      cmc: 2, colors: ['B'], layout: 'normal', power: '2', toughness: '1',
+      oracle_text: '',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'unearthed',
+      name: 'Unearthed',
+      entries: [
+        ...DATA.map((c) => ({ name: c.name, count: 4 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Swamp', count: 48 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Ashen Footsoldier', 'Ashen Revenant']);
+    return list.deck;
+  };
+
+  const table = (dead: readonly string[], mine: readonly string[] = []) => tapAllLands(advanceTo(arena({
+    decks: { 0: 'unearthed', 1: 'unearthed' },
+    deckSpecs: { unearthed: deck() },
+    graveyard: { 0: [...dead] },
+    battlefield: { 0: ['Swamp', 'Swamp', ...mine] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+
+  it('is offered from the graveyard and brings the body back with haste', () => {
+    let s = table(['Ashen Revenant']);
+    const id = find(s, 0, 'graveyard', 'Ashen Revenant');
+    const offer = legalActions(s, 0).plays.find((play) => play.card === id);
+    expect(offer?.kind).toBe('activate');
+    expect(offer?.fromGraveyard).toBe(true);
+    expect(offer?.manaCost).toBe('{B}');
+
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action), 40);
+    expect(s.instances[id]!.zone).toBe('battlefield');
+    expect(characteristicsOf(s, s.instances[id]!).keywords.has('haste')).toBe(true);
+    // Not a cast: the ability never uses the stack, so nothing can counter it.
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('attacks the turn it comes back, and is exiled at the end of that turn', () => {
+    let s = table(['Ashen Revenant']);
+    const id = find(s, 0, 'graveyard', 'Ashen Revenant');
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action), 40);
+
+    s = advanceTo(s, 'declare-attackers');
+    expect(legalActions(s, 0).attackers).toContain(id);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [] } as Action);
+    s = drain(advanceTo(s, 'end'), 40);
+    // Exile rather than the graveyard, which is what stops it being bought a second time.
+    expect(s.instances[id]!.zone).toBe('exile');
+  });
+
+  it('leaves a CAST body alone at end of turn, which is the gate the exile reads', () => {
+    /*
+      **The row this increment turns on.** The exile is an ordinary end-step trigger now, so a
+      creature with unearth carries it from the moment it reaches the battlefield however it got
+      there. The `UNEARTHED` counter is the only thing that keeps it from firing on a body that was
+      cast — and a Dregscape Zombie exiled at the end of the turn you cast it is a far worse card
+      than the printed one.
+    */
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'unearthed', 1: 'unearthed' },
+      deckSpecs: { unearthed: deck() },
+      hands: { 0: ['Ashen Revenant'] },
+      battlefield: { 0: ['Swamp', 'Swamp'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const id = find(s, 0, 'hand', 'Ashen Revenant');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: id } as Action)), 40);
+    expect(s.instances[id]!.zone).toBe('battlefield');
+    // No counter, because nothing unearthed it.
+    expect(s.instances[id]!.counters['unearthed'] ?? 0).toBe(0);
+
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [] } as Action);
+    s = drain(advanceTo(s, 'end'), 40);
+    expect(s.instances[id]!.zone).toBe('battlefield');
+    // And it is still there on the next turn, which a scheduled one-shot would also have allowed.
+    expect(namesIn(nextTurn(s), 0, 'battlefield')).toContain('Ashen Revenant');
+  });
+
+  it('is exiled rather than handed back when an opponent bounces it', () => {
+    /*
+      The leave-the-battlefield replacement, which the fragment carries as well. D185 measured the
+      gap this closes on the hand-written card: without it, an unearthed body that left the
+      battlefield before the end step reached a graveyard it could be unearthed from again.
+    */
+    let s = table(['Ashen Revenant']);
+    const id = find(s, 0, 'graveyard', 'Ashen Revenant');
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action), 40);
+    expect(s.instances[id]!.zone).toBe('battlefield');
+
+    // Moved out by hand, which is every bounce and every blink at once.
+    s = drain(apply(s, { type: 'card:move', by: 1, card: id, toZone: 'hand' } as Action), 40);
+    expect(s.instances[id]!.zone).toBe('exile');
+    expect(namesIn(s, 0, 'hand')).not.toContain('Ashen Revenant');
+  });
+
+  it('cannot be unearthed twice, because the first time exiles it', () => {
+    let s = table(['Ashen Revenant']);
+    const id = find(s, 0, 'graveyard', 'Ashen Revenant');
+    s = drain(apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action), 40);
+    s = advanceTo(s, 'declare-attackers');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [] } as Action);
+    s = drain(advanceTo(s, 'end'), 40);
+    expect(s.instances[id]!.zone).toBe('exile');
+
+    // Two turns on, with mana up, there is no play on it at all: exile is not a zone it is offered
+    // from, and the card is not in the graveyard any more.
+    let later = tapAllLands(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 0);
+    expect(legalActions(later, 0).plays.some((play) => play.card === id)).toBe(false);
+  });
+
+  it('is a sorcery-speed ability, so it is not offered on an opponent\'s turn', () => {
+    const theirs = advanceTo(nextTurn(table(['Ashen Revenant'])), 'precombat-main');
+    const id = find(theirs, 0, 'graveyard', 'Ashen Revenant');
+    expect(legalActions(theirs, 0).plays.some((play) => play.card === id)).toBe(false);
+  });
+
+  it('the control creature has no unearth at all', () => {
+    // The pair, which is what makes the rows above about the printed line rather than about the
+    // harness: the same body with the keyword line removed is offered nothing from the graveyard.
+    const s = table(['Ashen Footsoldier']);
+    const id = find(s, 0, 'graveyard', 'Ashen Footsoldier');
+    expect(legalActions(s, 0).plays.some((play) => play.card === id)).toBe(false);
   });
 });

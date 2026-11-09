@@ -17572,3 +17572,115 @@ Sinkhole, Oblivion Strike, Reality Hemorrhage, Unnatural Endurance). The fifteen
 `grantedKeywords` and the clause readers are not scoped to this family, so a card outside it can
 finish on them, and guessing which one would be a number with nothing behind it. Measured on a
 freshly built `dist` with no stale-engine warning, `LEGAL=1` over the 31,654-row corpus.
+
+---
+
+## D517 — The Unearth keyword line, and the index that was in the way
+
+`Unearth {cost}` (CR 702.84). **56 distinct legal names print it; 25 had it as their only unread
+line** — Dregscape Zombie, Hellspark Elemental, Corpse Connoisseur, First-Sphere Gargantua, Grixis
+Slavedriver, Hell's Thunder, Shambling Remains, Viscera Dragger, Vithian Stinger, the three
+Scrapworks, Simian Simulacrum, Tocasia's Onulet and the rest.
+
+### The mechanic was never the gap
+
+This engine has played unearth since D183 and the pool carries two hand-written unearth cards. The
+ability, the haste, the end-step exile and the leave-the-battlefield replacement all existed and all
+had tests. What stood in the way was the **shape**.
+
+The printed card schedules a one-shot: "exile it at the beginning of the next end step". D183 built
+that as a delayed trigger (CR 603.7) — `delayed: true`, which `raiseTrigger` uses to keep the
+ordinary event path from firing it — scheduled by `scheduleDelayed` with the trigger's own **index**
+into the card's `triggers` list. An index is only knowable once that list is finished, so the ability
+builder took a `() => CardScript` thunk and read the index back off the completed script:
+
+```ts
+const unearth = (cost: string, script: () => CardScript): AbilityDef => ({ … })
+// DREGSCAPE_ZOMBIE: abilities: [unearth('{B}', () => DREGSCAPE_ZOMBIE)]
+```
+
+A compiled card has no such thunk. `compile.ts` assembles its `triggers` from *every* line of the
+card, so while this line is being read the index it would need does not exist yet. That is precisely
+what the standing note in `keywordScriptFor` said — "written out as an ability plus `unearthExile()`
+per card rather than as a field, so there is no one fragment to emit" — and it is why 25 cards sat
+behind a mechanic the engine already had.
+
+### The exile is read off the body instead of scheduled onto it
+
+`unearthExile` is now an **ordinary** end-step trigger gated on the `UNEARTHED` counter the ability
+already puts on the body — the same counter the leave-replacement has read since D183. No index, no
+thunk, so `unearthFragment(cost)` is one builder, and the pool's two hand-written cards are built
+from it alongside the new `keywordScriptFor` row. There is no second implementation to drift, which
+is what `compiled-vs-written.test.ts` would otherwise eventually catch.
+
+**Why it is the same card and not an approximation.** A one-shot and a repeating-but-conditional
+trigger differ only if the condition can survive the first firing, and it cannot: the first end step
+exiles the body and the counter goes with it. The one way to tell them apart would be removing the
+counter from a living unearthed creature, and nothing in this engine does that — `addCounters` is the
+only writer of `UNEARTHED` and no card removes a counter by that name. Stated rather than hidden,
+because it is the one real difference: a future card that stripped counters would leave the body
+where the printed one exiles it.
+
+Two things it fixes on the way:
+
+- `of: 'any'` is now what the trigger **is** rather than what the scheduling asked for, so a body
+  that reached the battlefield on another seat's turn is exiled at the end of *that* turn without the
+  scheduling having had to predict it.
+- The trigger carries no `subject`, so it cannot act on an object that has since been replaced
+  (CR 400.7). The body it exiles is the body it is on.
+
+`delayedIndexOf` stays, because Thicket Basilisk and Flickerwisp still schedule by index; unearth is
+simply no longer one of its callers.
+
+### What the fragment deliberately does not set
+
+`leavesAtEndOfTurn` — the bot's hint that a creature will not be there next turn. For a card with
+unearth that depends on **how the body arrived**: a Dregscape Zombie cast from hand stays. Setting it
+from the keyword would tell the bot every unearth creature is a Ball Lightning. Hellspark Elemental
+still sets it, for its own printed reason: it sacrifices itself at the end of every turn however it
+got there.
+
+### The tests
+
+**8 compile rows and 7 runtime rows through `customDeck`.** The runtime describe is built on a
+**pair** — Ashen Revenant and Ashen Footsoldier, the same 2/1 body, one printed line apart — and the
+row that matters most is the control:
+
+> a body that was **cast** must not be exiled at end of turn.
+
+That row is what the change makes load-bearing. The exile now rides on the card from the moment it
+reaches the battlefield however it got there, so the `UNEARTHED` counter is the only thing between a
+cast Dregscape Zombie and an exile it never earned. Nothing else in the suite would have noticed if
+that gate went.
+
+Three refusal rows, and the third is a real card: **Dregscape Sliver** prints *"Each Sliver creature
+card in your graveyard has unearth {2}"*, which grants the keyword to **other cards in a zone this
+fragment says nothing about**. Reading it as the Sliver's own unearth would be a wrong card rather
+than an unread line (D362), which is why the reader matches a whole line and not the word.
+
+### The break run
+
+**12 breaks, 12 caught.** The two worth naming are the pair the refactor created:
+
+- *the exile is not gated on the UNEARTHED counter* — caught by the control row, which is the whole
+  reason that row exists.
+- *the exile is delayed again, so the event path never fires it* — restoring `delayed: true` makes
+  the trigger unreachable, because nothing schedules it any more. Caught by the end-of-turn row.
+
+And two about the reader rather than the mechanic: accepting a bare `Unearth` with no cost, and
+matching the word anywhere in the line rather than as a whole declaration (which is Dregscape
+Sliver).
+
+### Coverage
+
+| | before D517 | after |
+| --- | --- | --- |
+| printed lines read | 22,044 / 56,421 (39.1%) | **22,096 / 56,421 (39.2%)** |
+| cards with a compiled script | 11,043 | **11,076** |
+| cards with every printed line read | 6,817 | **6,842** |
+| of those, needing no script at all | 1,192 | 1,192 |
+
+52 printed lines and **25 cards finished** — exactly the 25 the probe predicted, which is what a
+keyword family should look like when the mechanic was already there and only the shape was in the
+way. Measured on a freshly built `dist` with no stale-engine warning, `LEGAL=1` over the 31,654-row
+corpus.

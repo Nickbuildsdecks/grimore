@@ -12916,3 +12916,115 @@ describe('Devoid on a spell counts as read (D516)', () => {
     expect(isDevoidLine('Target creature becomes devoid until end of turn')).toBe(false);
   });
 });
+
+describe('the Unearth keyword line, read as one fragment (D517)', () => {
+  /*
+    `Unearth {cost}` (CR 702.84). **56 distinct legal names print it and 25 had it as their only
+    unread line** — Dregscape Zombie, Hellspark Elemental, Corpse Connoisseur, First-Sphere
+    Gargantua, Grixis Slavedriver, Hell's Thunder, Shambling Remains, Viscera Dragger and the rest.
+
+    The mechanic was not the gap. The engine has played unearth since D183, and the pool carries two
+    hand-written unearth cards. What stood in the way was the **shape**: the exile was a delayed
+    trigger (CR 603.7) scheduled by its own *index* into the card's `triggers` list, so the ability
+    builder took a `() => CardScript` thunk and read the index back off the finished script. A
+    compiled card has no finished script while a line is being read — `compile.ts` assembles the
+    trigger list from every line — so there was no fragment to emit, which is what the standing note
+    in `keywordScriptFor` said.
+
+    D517 reads the exile off the body's `UNEARTHED` counter instead. See `unearthExile` for why that
+    is the same card and for the one difference worth stating; the point here is that it removes the
+    index, so `unearthFragment` is one builder the pool's hand-written cards and this line share.
+  */
+  const creature = (
+    name: string, text: string, typeLine = 'Creature — Zombie Warrior', cost = '{1}{B}',
+    power = '2', toughness = '1',
+  ) => compileCard({
+    name, type_line: typeLine, mana_cost: cost, cmc: 2, colors: ['B'],
+    layout: 'normal', power, toughness, oracle_text: text,
+  });
+
+  it('reads Dregscape Zombie, whose whole text is the keyword', () => {
+    const read = creature('Dregscape Zombie', 'Unearth {B}');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    // All three halves, because any subset is a card better than the printed one.
+    expect(read.script?.abilities).toHaveLength(1);
+    expect(read.script?.triggers).toHaveLength(1);
+    expect(read.script?.replaces).toHaveLength(1);
+  });
+
+  it('emits the ability as a graveyard cost at sorcery speed, not a cast', () => {
+    const read = creature('Dregscape Zombie', 'Unearth {B}');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const ability = read.script?.abilities?.[0];
+    expect(ability?.cost.mana).toBe('{B}');
+    expect(ability?.cost.fromGraveyard).toBe(true);
+    expect(ability?.sorcerySpeed).toBe(true);
+  });
+
+  it('does NOT claim the body leaves at end of turn', () => {
+    /*
+      The bot hint, and the one field the fragment deliberately leaves alone. `leavesAtEndOfTurn`
+      answers "will this creature still be here next turn", and for a card with unearth the answer
+      depends on *how it arrived*: a Dregscape Zombie cast from hand stays. Setting it from the
+      keyword would tell the bot every unearth creature is a Ball Lightning.
+    */
+    const read = creature('Dregscape Zombie', 'Unearth {B}');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.leavesAtEndOfTurn).toBeUndefined();
+  });
+
+  it('reads the keyword beside another line, and keeps both triggers', () => {
+    // Corpse Connoisseur's shape: an ETB of its own plus the keyword. The merged script carries the
+    // ETB *and* the exile, which is the case the old index-based scheduling could not survive.
+    const read = creature('Corpse Connoisseur', 'When Corpse Connoisseur enters, mill three cards.'
+      + '\nUnearth {3}{B}', 'Creature — Zombie Wizard', '{4}{B}', '3', '3');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers).toHaveLength(2);
+    expect(read.script?.abilities).toHaveLength(1);
+  });
+
+  it.each([
+    ['the bare word, which names no cost', 'Unearth'],
+    ['a cost that is not mana symbols', 'Unearth three life'],
+    ['the word inside a sentence rather than as a declaration',
+      'Each Sliver creature card in your graveyard has unearth {2}.'],
+  ])('refuses %s', (_why, text) => {
+    /*
+      The third of these is a real card — Dregscape Sliver — and the reason the reader matches a
+      whole line rather than the word: it grants unearth to *other cards in the graveyard*, which is
+      a continuous effect over a zone this fragment says nothing about. Reading it as the Sliver's
+      own unearth would be a wrong card, not an unread line (D362).
+    */
+    const read = creature('Not A Card', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('is the same fragment the pool\'s hand-written card is built from', () => {
+    /*
+      Not a shape comparison — `compiled-vs-written.test.ts` already holds the pool against its
+      compiled twins card by card, and Dregscape Zombie is in it. This row says the thing that test
+      cannot: the hand-written script and the compiled one come from **one builder**, so there is no
+      second implementation to drift. If `unearthFragment` stopped being shared, the two would start
+      differing and that suite would say so.
+    */
+    const written = scriptFor('Dregscape Zombie');
+    const read = creature('Dregscape Zombie', 'Unearth {B}');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(written?.abilities?.[0]?.cost).toEqual(read.script?.abilities?.[0]?.cost);
+    expect(written?.abilities?.[0]?.description).toBe(read.script?.abilities?.[0]?.description);
+    expect(written?.triggers?.[0]?.on).toEqual(read.script?.triggers?.[0]?.on);
+    expect(written?.replaces?.[0]?.on).toBe(read.script?.replaces?.[0]?.on);
+    // And the exile is no longer a delayed trigger on either side, which is the D517 change.
+    expect(written?.triggers?.[0]?.delayed).toBeUndefined();
+    expect(read.script?.triggers?.[0]?.delayed).toBeUndefined();
+  });
+});

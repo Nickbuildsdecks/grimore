@@ -7277,7 +7277,7 @@ const nameOfCard = (state: GameState, id: string | undefined): string => {
  * dies this turn goes to the graveyard and can be unearthed again next turn, where the printed card
  * exiles it.
  */
-const unearth = (cost: string, script: () => CardScript): AbilityDef => ({
+const unearthAbility = (cost: string): AbilityDef => ({
   cost: { mana: cost, fromGraveyard: true },
   // Sorcery speed, which the keyword says in its own words: "activate only as a sorcery".
   sorcerySpeed: true,
@@ -7286,21 +7286,12 @@ const unearth = (cost: string, script: () => CardScript): AbilityDef => ({
   effect: (c) => {
     let next = putOntoBattlefield(c.state, c.source, c.controller);
     next = pump(next, [c.source], c.source, c.controller, { keywords: ['haste'] });
-    // The marker the exile half reads: this body was unearthed, so leaving the battlefield means
-    // exile rather than a graveyard it could be unearthed from again. See `UNEARTHED`.
-    next = addCounters(next, c.source, UNEARTHED, 1);
-    return scheduleDelayed(next, {
-      source: c.source,
-      controller: c.controller,
-      abilityIndex: delayedIndexOf(script()),
-      step: 'end',
-      // `any` rather than `you`: unearth is a sorcery-speed ability, so the next end step is this
-      // turn's — but a card that somehow reached the battlefield on somebody else's turn should
-      // still go at the end of *that* one, which is what the printed card says.
-      of: 'any',
-      subject: c.source,
-      description: `exile ${nameOfCard(next, c.source)}`,
-    });
+    /*
+      The `UNEARTHED` counter is the whole of what this body carries away from the ability, and both
+      halves of the exile read it: the end-step trigger below, and the leave-the-battlefield
+      replacement. See `UNEARTHED`, and `unearthExile` for why the exile is no longer scheduled.
+    */
+    return addCounters(next, c.source, UNEARTHED, 1);
   },
 });
 
@@ -7338,14 +7329,72 @@ const unearthExileOnLeaving = (): NonNullable<CardScript['replaces']>[number] =>
   instead: (c) => exileCard(c.state, c.subject),
 });
 
-/** The exile half of unearth, as the delayed trigger every unearth card carries. */
+/**
+ * The exile half of unearth: an ordinary end-step trigger, gated on the `UNEARTHED` counter.
+ *
+ * ## It was a scheduled delayed trigger until D517, and the change is what let the compiler read
+ * the keyword at all
+ *
+ * The printed card schedules a one-shot: "exile it at the beginning of the next end step". D183
+ * built that as a **delayed** trigger (D135) — `delayed: true`, which `raiseTrigger` uses to keep
+ * the ordinary event path from firing it (CR 603.7) — scheduled by `scheduleDelayed` with the
+ * trigger's own **index** into the card's `triggers` list. An index is only knowable once the list
+ * is finished, so `unearth` took a `() => CardScript` thunk and called `delayedIndexOf` on it.
+ *
+ * A compiled card has no such thunk. Its `triggers` list is assembled in `compile.ts` from every
+ * line of the card, so the index this line's ability would need does not exist while this line is
+ * being read — which is exactly why the standing note in `keywordScriptFor` said unearth had "no
+ * one fragment to emit", and why **25 legal cards** sat behind it.
+ *
+ * So the exile is read off the body instead of scheduled onto it. The condition is the same
+ * `UNEARTHED` counter the leave-replacement below already reads, which means the trigger is
+ * harmless on a body that was **cast**: a Dregscape Zombie played from hand has no counter, so the
+ * trigger does nothing at every end step for as long as it lives, which is the printed card.
+ *
+ * ## Why this is the same card and not an approximation
+ *
+ * A one-shot and a repeating-but-conditional trigger differ only if the condition can survive the
+ * first firing. It cannot: the first end step exiles the body, and the counter goes with it. The
+ * one way to tell them apart would be removing the counter from a living unearthed creature, which
+ * nothing in this engine does — `addCounters` is the only writer of `UNEARTHED`, and no card
+ * removes a counter by that name. Worth stating rather than hiding, because it is the one
+ * difference: a future card that stripped counters would leave the body behind where the printed
+ * one exiles it.
+ *
+ * Two things it fixes on the way. `of: 'any'` is now what the trigger *is* rather than what the
+ * scheduling asked for, so a body that reached the battlefield on another seat's turn is exiled at
+ * the end of **that** turn without the scheduling having had to predict it. And the trigger no
+ * longer needs a `subject`, so it cannot be scheduled against an object that has since been
+ * replaced (CR 400.7) — the body it exiles is the body it is on.
+ */
 const unearthExile = (): TriggerDef => ({
   on: { kind: 'step', step: 'end', of: 'any' },
-  delayed: true,
   description: 'exile it',
-  // No guard beyond the one `exileCard` already is: a creature that has left the battlefield in the
-  // meantime is not there to exile, and the ability does as much as it can (CR 608.2).
-  effect: (c) => (c.subject === undefined ? c.state : exileCard(c.state, c.subject)),
+  // No guard beyond the counter and the one `exileCard` already is: a creature that has left the
+  // battlefield in the meantime is not there to exile (CR 608.2).
+  effect: (c) => ((c.state.instances[c.source]?.counters[UNEARTHED] ?? 0) > 0
+    ? exileCard(c.state, c.source)
+    : c.state),
+});
+
+/**
+ * Unearth as **one fragment**: the ability, the end-step exile and the leave-replacement together.
+ *
+ * The unit the keyword is, and the thing D517 added. Every one of the three is load-bearing — the
+ * ability alone is a creature that comes back and stays, the ability plus the trigger is a creature
+ * that can be bought twice by dying first (the Hellspark measurement in `unearthExileOnLeaving`) —
+ * so emitting any subset would be a card strictly better than the printed one. One builder, called
+ * by the pool's hand-written cards and by `keywordScriptFor` alike, so the two cannot drift.
+ *
+ * `leavesAtEndOfTurn` is deliberately **not** here. It is the bot's hint that the body will not be
+ * on the battlefield next turn, and that is only true of a body that was unearthed: a Dregscape
+ * Zombie cast from hand stays. Hellspark Elemental sets it for its own printed reason — it
+ * sacrifices itself at the end of every turn however it arrived.
+ */
+const unearthFragment = (cost: string): Partial<CardScript> => ({
+  abilities: [unearthAbility(cost)],
+  triggers: [unearthExile()],
+  replaces: [unearthExileOnLeaving()],
 });
 
 /**
@@ -7358,9 +7407,8 @@ const unearthExile = (): TriggerDef => ({
  */
 const DREGSCAPE_ZOMBIE: CardScript = {
   name: 'Dregscape Zombie',
-  abilities: [unearth('{B}', () => DREGSCAPE_ZOMBIE)],
-  triggers: [unearthExile()],
-  replaces: [unearthExileOnLeaving()],
+  // The whole card, and the same fragment the compiler emits for the printed line (D517).
+  ...unearthFragment('{B}'),
 };
 
 /**
@@ -7377,7 +7425,7 @@ const HELLSPARK_ELEMENTAL: CardScript = {
   keywords: ['trample', 'haste'],
   // As on Ball Lightning: the end-step sacrifice below is the rule, this is the bot's warning.
   leavesAtEndOfTurn: true,
-  abilities: [unearth('{1}{R}', () => HELLSPARK_ELEMENTAL)],
+  abilities: [unearthAbility('{1}{R}')],
   triggers: [
     {
       on: { kind: 'step', step: 'end', of: 'any' },
@@ -9802,8 +9850,11 @@ export { cardTargets, destroy };
  * - **Embalm, eternalize and bestow.** Each needs characteristics the keyword line does not carry:
  *   the token's type and colour, its base power and toughness, the Aura's bonus. Reading the
  *   reminder text for them would be inventing a card out of a parenthesis.
- * - **Unearth.** Written out as an ability plus `unearthExile()` per card rather than as a field,
- *   so there is no one fragment to emit.
+ * Unearth *was* in this list, for the same reason: it was "an ability plus `unearthExile()` per
+ * card rather than a field, so there is no one fragment to emit". What made that true was the
+ * exile being a **delayed** trigger scheduled by its own index into a list the line could not see.
+ * D517 reads the exile off the body's `UNEARTHED` counter instead, so `unearthFragment` is that one
+ * fragment and the pool's two hand-written unearth cards are built from it.
  *
  * Morph and echo *were* in this list, because `keywordWithCost` in `fromCardData.ts` already read
  * them and two readers of one line is two places for them to disagree. They are read here now
@@ -9836,6 +9887,16 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   */
   const cycling = /^cycling\s+((?:\{[^}]*\})+)$/i.exec(text);
   if (cycling !== null) return { abilities: [cyclingAbility(cycling[1]!)] };
+
+  /*
+    Unearth, the same arrangement one zone along (D517): a declaration that *is* an ability, so the
+    line reads as the ability and the two halves of its exile together. **25 legal cards** had this
+    line as their only unread one. `unearthFragment` is the unit, and the note below this function's
+    list of what is deliberately unread used to name unearth as having "no one fragment to emit" —
+    which was true until the exile stopped being scheduled by index. See `unearthExile`.
+  */
+  const unearth = /^unearth\s+((?:\{[^}]*\})+)$/i.exec(text);
+  if (unearth !== null) return unearthFragment(unearth[1]!);
 
   const cost = /^(ward|replicate|cumulative upkeep)\s*[—-]?\s*(\{[^\n]+\})$/i.exec(text);
   if (cost !== null) {
