@@ -390,14 +390,30 @@ function play(seed) {
     the same ability of the same permanent taken ten thousand times names the bug.
   */
   const whats = new Map();
-  /** Card name → how many casts and activations of it this game, for the UNREAD=1 report. */
+  /*
+    Card name → how many casts and activations of it this game, and the distinct set of names.
+
+    **Both, because the raw count is not the ranking** (D518). The first 40-pod run put Icatian
+    Infantry's `{1}: ~ gains banding until end of turn` at the top of the queue with 360 plays, and
+    Orzhov Guildmage next with 103 — one card each. That is not what a table meets; it is the bot
+    activating one free repeatable ability over and over, which a person would not do. Ranking by
+    raw plays therefore measures how *repeatable* a shape is, not how often it is encountered.
+
+    So the queue is ranked by **games in which a card carrying the shape was played at least once**,
+    which is one vote per card per game and cannot be run up by a loop. The raw count is still
+    reported as a total, because "how much of the engine's work is on partly-read cards" is a fair
+    question for it to answer.
+  */
   const played = new Map();
+  const playedNames = new Set();
   /*
     Every exit from this function goes through here, so the two UNREAD=1 collections are attached to
     a lost game exactly as they are to a finished one. A game that stalled still showed its players
     cards, and leaving those out would quietly measure only the games that went well.
   */
-  const done = (result) => (UNREAD ? { ...result, seen: namesSeen(s), played } : result);
+  const done = (result) => (UNREAD
+    ? { ...result, seen: namesSeen(s), played, playedNames }
+    : result);
   let sinceProgress = 0;
   const inWindow = new Map();
   let lastWhat = '';
@@ -417,6 +433,7 @@ function play(seed) {
         const playedName = nameOf(s, action.card);
         if (UNREAD && (action.type === 'auto:cast' || action.type === 'auto:activate')) {
           played.set(playedName, (played.get(playedName) ?? 0) + 1);
+          playedNames.add(playedName);
         }
         lastWhat = `${playedName}`
           + `${action.abilityIndex === undefined ? '' : `#${action.abilityIndex}`}${at}`;
@@ -478,6 +495,8 @@ let decksBuilt = 0;
 /* UNREAD=1: card name → games in which somebody saw it / played it, and whether it reads whole. */
 const sawCard = new Map();
 const playedCard = new Map();
+/** Card name → games in which it was played at least once. One vote per card per game. */
+const playedGames = new Map();
 let gamesCounted = 0;
 
 for (let i = 0; i < GAMES; i++) {
@@ -506,6 +525,9 @@ for (let i = 0; i < GAMES; i++) {
     for (const name of result.seen) sawCard.set(name, (sawCard.get(name) ?? 0) + 1);
     for (const [name, times] of result.played ?? []) {
       playedCard.set(name, (playedCard.get(name) ?? 0) + times);
+    }
+    for (const name of result.playedNames ?? []) {
+      playedGames.set(name, (playedGames.get(name) ?? 0) + 1);
     }
   }
   if (VERBOSE) {
@@ -550,7 +572,7 @@ if (UNREAD && gamesCounted > 0) {
   let seenPartial = 0;
   let playedTotal = 0;
   let playedPartial = 0;
-  /** Shape → how many times a card carrying it was played, and which cards those were. */
+  /** Shape → games in which a card carrying it was played, the raw plays, and which cards. */
   const shapes = new Map();
   for (const [name, games] of sawCard) {
     const read = defOf.get(name);
@@ -564,9 +586,11 @@ if (UNREAD && gamesCounted > 0) {
     playedTotal += times;
     if (read.unread.length === 0) continue;
     playedPartial += times;
+    const games = playedGames.get(name) ?? 0;
     for (const { line } of read.unread) {
       const key = shapeOf(line, name);
-      const row = shapes.get(key) ?? { plays: 0, cards: new Set() };
+      const row = shapes.get(key) ?? { games: 0, plays: 0, cards: new Set() };
+      row.games += games;
       row.plays += times;
       row.cards.add(name);
       shapes.set(key, row);
@@ -580,11 +604,15 @@ if (UNREAD && gamesCounted > 0) {
   console.log(`  casts and activations:                            ${playedTotal}`);
   console.log(`  of those, of a card with an unread line:          ${playedPartial}`
     + ` (${pct(playedPartial, playedTotal)}%)`);
-  console.log(`\nThe queue, ranked by plays of a card carrying the shape (not by printings):`);
-  const ranked = [...shapes.entries()].sort((a, b) => b[1].plays - a[1].plays).slice(0, TOP_UNREAD);
+  console.log(`\nThe queue, ranked by games in which a card carrying the shape was played:`);
+  console.log('  (one vote per card per game, so a repeatable ability cannot run the count up)');
+  const ranked = [...shapes.entries()]
+    .sort((a, b) => (b[1].games - a[1].games) || (b[1].cards.size - a[1].cards.size))
+    .slice(0, TOP_UNREAD);
   for (const [shape, row] of ranked) {
-    console.log(`  ${String(row.plays).padStart(5)}  ${shape}`);
-    console.log(`         ${row.cards.size} card(s), e.g. ${[...row.cards].slice(0, 3).join(' / ')}`);
+    console.log(`  ${String(row.games).padStart(4)} games  ${shape}`);
+    console.log(`              ${row.cards.size} card(s), ${row.plays} play(s) in all`
+      + `, e.g. ${[...row.cards].slice(0, 3).join(' / ')}`);
   }
 }
 if (problems.length > 0) {
