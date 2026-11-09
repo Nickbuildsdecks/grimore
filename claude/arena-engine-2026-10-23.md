@@ -19499,3 +19499,98 @@ Added the life-loss row (Bitter Downfall, the real printing, with both life tota
 stalled table, 56.6 turns and 310 moves a game. Per 100-card deck across 160 decks: 25.1 cards with
 a hand-written script, 47.6 with at least one unread line, 61.9 playable only from printed data, 0.5
 cardboard.
+
+## D538 — The freeze: "doesn't untap during its controller's next untap step"
+
+**The primitive has been in the engine since #52 and nothing could reach it.** `freezeNextUntap`
+was written for Wall of Frost — a hand-written card — and the clause never got a reader, so all
+**73 legal printings** of the sentence compiled with that line unread. This increment is one regex
+onto a primitive whose own tests have held since #52, and it is the cheapest kind
+of reader there is: no new state, no new rule, nothing to get wrong at the table.
+
+What makes it worth more than one row is that **the referent borrow does the rest**. The printed
+sentence almost never names its subject — it says "That creature" (15 printings) or "It" (17) — and
+D530 and D533 built the swap for exactly this. The swap had nothing to hand its result to.
+
+|  | before | after |
+| --- | --- | --- |
+| printed legal lines read | 22,928 / 56,421 (40.6%) | **22,966 / 56,421 (40.7%)** |
+| cards with a compiled script | 11,661 | **11,686** |
+| cards with every printed line read | 7,423 | **7,445** |
+
+**22 cards finished**, all of them: Barl's Cage, Chillbringer, Crippling Chill, Elvish Hunter,
+Frost Lynx, Frost Trickster, Glacial Grasp, House Guildmage, Kor Hookmaster, Niblis of Frost,
+Ojutai's Breath, Press for Answers, Quiet Contemplation, Skyline Cascade, Sleep of the Dead,
+Sleeper Dart, Spire Patrol, Stitched Mangler, Take into Custody, Watertrap Weaver, Wavecrash Triton,
+White Dragon.
+
+### The instrument's fourth calibration, and its largest miss
+
+`one-blocker.mjs` ranked this family at **13** across its two pronoun rows. The real figure is
+**22**. Running total: exact at 8 (D532), under by 3 (D535), under by 2 (D536), **under by 9** here.
+The reason is the same every time and is in the instrument's own docblock — it counts only a card
+that is *exactly one* no-reader line short whose line has *exactly one* blocking clause. Skyline
+Cascade names its own target, so its line has no pronoun row to be counted under; Glacial Grasp has
+three clauses; and every card two lines short is outside what the probe can see at all. The
+instrument under-reads and is still the right instrument: it has never over-read, and a queue that
+understates its own head is a queue you can act on.
+
+### What is refused, and why each refusal is a different thing
+
+- **The Aura static, 48 printings** — "Enchanted creature doesn't untap during its controller's
+  untap step". Drop the "next" and the sentence stops being a one-shot and becomes a continuous
+  effect that holds the creature down for ever. Reading them alike would make Claustrophobia a
+  one-turn Frost Lynx: a card that works and is wrong (D259).
+- **Dungeon Geists, 2** — the same words with "for as long as you control this creature".
+- **The plural referent, 18** — "Those creatures don't untap during their controller's next untap
+  step" (11), "...their controllers' next untap steps" (4), "They don't untap..." (3).
+  `referentEffect` supplies exactly one borrowed object, so accepting the plural would tap two
+  creatures and freeze one. That is the half-read card `foldCardTargets`' docblock calls worse than
+  an unread line, because an unread line is badged for a human and a half-read one is not.
+- **A pronoun with no antecedent, 3** — Apes of Rath, Lead Golem, Stitcher's Graft: "Whenever ~
+  attacks, **it** doesn't untap". The "it" is the attacker itself, so there is no earlier clause to
+  borrow from and the pronoun table is never consulted.
+- **The blocks-relative referent, 4** — Wall of Frost, Labyrinth Minotaur, Cleric of Chill Depths,
+  Shield of the Righteous: "that creature" is the creature this block was *against*, which travels
+  on the event as `blocked` and not as a target.
+- **"tap that creature and it doesn't untap", 7** — the Kashi-Tribe family: an event-relative
+  referent and a conjunction at once.
+
+Those six are the family's own queue, measured by compiling rather than by pattern-matching (D524),
+and the plural is the biggest at 18.
+
+### The break run: 7 of 9, and two of my own comments were wrong
+
+The first pass caught **5 of 9** and the two surprises were both coverage holes rather than vacuous
+breaks:
+
+- Making `next` optional in the pattern left the suite green. The Claustrophobia row refuses for a
+  **different reason than its comment claimed** — "Enchanted creature" is not a target phrase, so
+  `targetSpecFrom` turns it down before the "next" is ever consulted. Added a probe row that asserts
+  the reader demands the word, with the one-word-different control in the same `it`.
+- Removing `pointsAtAPermanent` left the suite green. Added a probe aiming the sentence at a player,
+  where without the guard the clause reads and then silently applies nothing.
+
+Both probes are probes on purpose: no card in the corpus prints either sentence, so a real printing
+could not have made the guard falsifiable. That is the fourth refusal-for-the-wrong-reason this
+stretch has caught (three in D533, one here), and the pattern is always the same — a refusal
+asserted as `unread.length === 1` passes whichever line was refused. Two rows were retightened to
+name the line instead of counting it.
+
+Re-run: **7/9**. The two that stay uncaught are recorded in the reader's docblock rather than
+papered over:
+
+- The literal `target` in the pattern is **redundant with `targetSpecFrom`**. Replacing it with
+  `^(.+?)` changes nothing, because every subject the corpus puts here that is not a target phrase
+  is refused one line down. It stays because it makes the pattern say what it means.
+- `foldCardTargets` rather than the first target is **unfalsifiable today**, for the same reason the
+  plural is refused: no printing of this sentence names more than one target. It is the shared fold
+  the five open-phrase families use (D469), and it is already right for the day one arrives.
+
+### The possessive is dropped on purpose
+
+"its controller's next untap step" names no new subject — it is English for "the next untap step
+that would untap it". `untapAll` runs per seat over that seat's own battlefield, so the controller is
+read **at the step** (CR 502.2), which is both what the rules want and what D537's possessive supply
+could not have given: a permanent that changes hands between the freeze and the step answers to
+whoever controls it then.

@@ -33822,3 +33822,140 @@ describe('the possessive referent, at the table (D537)', () => {
     expect(s.instances[bears]!.zoneSeat).toBe(0);
   });
 });
+
+describe('the freeze, at the table (D538)', () => {
+  /*
+    The runtime half, and there are two facts here that no compile test can reach.
+
+    **It wears off after exactly one untap step.** The clause says "next", and a flag that were
+    never cleared would hold the creature down for the rest of the game — a compiled card that
+    reads and is wrong, which is worse than the unread line it replaced (D259). Only a game that
+    rolls through two of its controller's turns can tell the difference.
+
+    **The clause does not tap.** `freezeNextUntap`'s own docblock says so and has said so since #52,
+    but nothing had ever put it behind a *reader*: Wall of Frost's printing always runs after a
+    block, where the creature is tapped anyway. Barl's Cage is the printing where the two come
+    apart — an untapped creature, frozen, and still untapped.
+
+    Frost Lynx and Barl's Cage, the real printings, through `customDeck`'s `data`.
+  */
+  const DATA = [
+    {
+      name: 'Frost Lynx', type_line: 'Creature — Elemental Cat', mana_cost: '{2}{U}', cmc: 3,
+      colors: ['U'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'When Frost Lynx enters, tap target creature an opponent controls. '
+        + "That creature doesn't untap during its controller's next untap step.",
+    },
+    {
+      name: "Barl's Cage", type_line: 'Artifact', mana_cost: '{4}', cmc: 4,
+      colors: [], layout: 'normal',
+      oracle_text: "{3}: Target creature doesn't untap during its controller's next untap step.",
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'deep-freeze',
+      name: 'Deep Freeze',
+      entries: [
+        { name: 'Frost Lynx', count: 4 }, { name: "Barl's Cage", count: 4 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Island', count: 26 }, { name: 'Forest', count: 26 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(["Barl's Cage", 'Frost Lynx'].sort());
+    return list.deck;
+  };
+
+  /** Runs whole turns until `seat` is the one taking one. */
+  const rollTo = (s: GameState, seat: SeatIndex): GameState => {
+    let next = s;
+    for (let i = 0; i < 4; i++) {
+      next = nextTurn(next);
+      if (next.activeSeat === seat) return next;
+    }
+    throw new Error(`never reached a turn for seat ${seat}`);
+  };
+
+  const bearsOf = (s: GameState): readonly string[] =>
+    ids(s, 1 as SeatIndex, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+
+  it('taps the one it points at, holds it through one untap step, and lets it go', () => {
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'deep-freeze', 1: 'deep-freeze' },
+      deckSpecs: { 'deep-freeze': deck() },
+      hands: { 0: ['Frost Lynx'] },
+      battlefield: {
+        0: ['Island', 'Island', 'Island'],
+        1: ['Grizzly Bears', 'Grizzly Bears'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const [frozen, spare] = bearsOf(s);
+    expect(frozen).toBeDefined();
+    expect(spare).toBeDefined();
+
+    /*
+      The spell itself points at nothing — the *trigger* asks, once the Lynx is on the table, which
+      is why the cast carries no targets and the choice is answered afterwards.
+    */
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Frost Lynx'),
+    } as Action), 60);
+    expect(s.pendingChoice).not.toBeNull();
+    s = drain(apply(s, {
+      type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: frozen! }],
+    } as Action), 60);
+
+    // The tap landed on the chosen one and nowhere else.
+    expect(s.instances[frozen!]!.tapped).toBe(true);
+    expect(s.instances[spare!]!.tapped).toBe(false);
+
+    // Seat 1's untap step comes and goes, and the frozen one is still lying down.
+    s = rollTo(s, 1 as SeatIndex);
+    expect(s.instances[frozen!]!.tapped).toBe(true);
+    expect(s.instances[spare!]!.tapped).toBe(false);
+
+    /*
+      One step is the whole duration. The next time seat 1 untaps, it untaps — and this is the
+      assertion a flag nobody cleared would fail, which is the only reason the test rolls two turns
+      instead of one.
+    */
+    s = rollTo(s, 1 as SeatIndex);
+    expect(s.instances[frozen!]!.tapped).toBe(false);
+  });
+
+  it("does not tap, and is spent by the step rather than by an untap (Barl's Cage)", () => {
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'deep-freeze', 1: 'deep-freeze' },
+      deckSpecs: { 'deep-freeze': deck() },
+      battlefield: {
+        0: ['Island', 'Island', 'Island', "Barl's Cage"],
+        1: ['Grizzly Bears'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    expect(s.instances[bears]!.tapped).toBe(false);
+
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', "Barl's Cage"),
+      abilityIndex: 0, targets: [{ kind: 'card', id: bears }],
+    } as Action), 60);
+
+    // Still standing: the clause freezes and the printed card says nothing about tapping.
+    expect(s.instances[bears]!.tapped).toBe(false);
+    expect(s.instances[bears]!.frozen).toBe(true);
+
+    /*
+      CR 502.2, and the half `untapAll`'s comment argues for: the effect is used up by the step
+      *happening*, not by an untap being prevented. A creature frozen while untapped has spent it,
+      and a flag left on would hold it down through the turn after as well.
+    */
+    s = rollTo(s, 1 as SeatIndex);
+    expect(s.instances[bears]!.tapped).toBe(false);
+    expect(s.instances[bears]!.frozen ?? false).toBe(false);
+  });
+});

@@ -17088,6 +17088,69 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
+    "That creature doesn't untap during its controller's next untap step" (CR 502.2).
+
+    The **primitive has been here since #52** — `freezeNextUntap`, written for Wall of Frost, whose
+    own docblock spells out the two things that make it right: it does not tap, and it does not
+    care whether its subject is tapped. What was never written is a reader, so the only card that
+    could ever reach it was the hand-written one. 32 legal printings say this sentence and none of
+    them compiled.
+
+    **The possessive is not a referent and is deliberately dropped.** "its controller's next untap
+    step" names no new subject: it is English for "the next untap step that would untap it", and
+    `untapAll` already runs per seat over that seat's own battlefield, so the seat is a fact about
+    where the permanent sits rather than something this clause has to carry. Reading it through
+    D537's possessive supply would be a second, redundant answer to a question the board already
+    answers — and a wrong one the moment a permanent changes controller between the freeze and the
+    step, where CR 502.2 wants the controller *at the untap step*, which is exactly who `untapAll`
+    asks.
+
+    **Nothing here taps.** Every printing is the second of two sentences — Frost Lynx's "tap target
+    creature an opponent controls" comes first — and the sibling does the tapping. A reader that
+    tapped as well would double a Frost Lynx and, worse, would tap the creature on the cards where
+    the first sentence is a *blocker* declaration rather than a tap.
+
+    `friendly` is `false` and there is no `untapsOnly`, for the two reasons the tap above gives:
+    holding your own permanent down is a card thrown away, and the flag that warns the bot off a
+    repeatable no-op is about an untap putting the board back, which a freeze cannot do.
+
+    **The plural is refused**, and it is the biggest thing left here: "Those creatures don't untap
+    during their controller's next untap step" (11 printings), "...their controllers' next untap
+    steps" (4) and "They don't untap..." (3). All three are referents to *every* target of the
+    sibling clause, and `referentEffect` supplies exactly one — so the swap would silently freeze
+    the first of two creatures, which is the half-read card `foldCardTargets`' own docblock calls
+    worse than an unread line. The plural referent is a combinator, not a row, and is its own
+    increment.
+
+    ## Two parts of this pattern the break run could not falsify
+
+    The literal `target` in the pattern is **redundant with `targetSpecFrom`**: replacing it with
+    `^(.+?)` left the whole suite green, because every subject the corpus puts here that is not a
+    target phrase — "Those creatures", "it", "Enchanted creature" — is refused by the spec reader
+    one line down. It stays because it makes the pattern say what it means and costs nothing, not
+    because anything tests it.
+
+    `foldCardTargets` rather than the first target is **unfalsifiable here today**, and for the
+    same reason the plural referent is refused: no printing of this sentence names more than one
+    target, so freezing only the first would pass every test. It is the shared fold the five
+    open-phrase families use (D469), and the day a counted printing arrives it is already right.
+  */
+  const frozenClause = new RegExp(
+    `^(${TARGET_QUANTIFIER_PREFIX}target .+?) doesn['\u2019]t untap during `
+    + `its controller['\u2019]s next untap step$`,
+    'i',
+  ).exec(text);
+  if (frozenClause !== null) {
+    const spec = targetSpecFrom(frozenClause[1]!, false);
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [spec],
+        effect: (c) => foldCardTargets(c, freezeNextUntap),
+      };
+    }
+  }
+
+  /*
     "Mill two cards" with nobody named, which means **you** (CR 701.13a) — Cephalid Aristocrat's
     tail and Cephalid Illusionist's. Its own branch rather than an optional group on the targeted
     reader below, because the two differ in who does it and in whether anything is targeted: a

@@ -14943,3 +14943,264 @@ describe('the possessive referent: "its controller" (D537)', () => {
     }
   });
 });
+
+describe('the freeze: "doesn\'t untap during its controller\'s next untap step" (D538)', () => {
+  /*
+    **The primitive has been in the engine since #52 and nothing could reach it.**
+    `freezeNextUntap` was written for Wall of Frost, a hand-written card; the clause had no reader,
+    so all 73 legal printings of the sentence compiled with that line unread. This is the reader,
+    and it is the cheapest kind of increment there is — no new state, no new rule, one regex onto a
+    primitive whose own tests have held since #52.
+
+    What makes it worth more than one row is that the referent borrow does the rest. The printed
+    sentence almost never names its subject: it says "That creature", or "It", or (Skyline Cascade)
+    spells out a target of its own. D530 and D533 built the swap; this reader is what the swap had
+    nothing to hand its result to.
+
+    `one-blocker.mjs` ranked the family at 13 across its two pronoun rows and the real figure is
+    **22 cards finished** — the instrument's fourth calibration and its largest under-read (exact
+    at 8 in D532, under by 3 in D535, under by 2 in D536, under by 9 here). The reason is the same
+    each time and is in its docblock: it only counts a card that is **exactly one** no-reader line
+    short whose line has **exactly one** blocking clause, so Skyline Cascade's own-target form and
+    every card two lines short are outside what it can see.
+
+    The possessive is dropped on purpose. "its controller's next untap step" names no new subject —
+    it is English for "the next untap step that would untap it" — and `untapAll` runs per seat over
+    that seat's own battlefield, so the controller is read **at the step** (CR 502.2), which is both
+    what the rules want and what D537's supply could not have given.
+  */
+  const row = (
+    name: string, type: string, text: string,
+    extra: Partial<CardDataRow> = {},
+  ): ReturnType<typeof compileCard> => compileCard({
+    name, type_line: type, mana_cost: '{2}{U}', cmc: 3, colors: ['U'], layout: 'normal',
+    oracle_text: text, ...extra,
+  });
+
+  it('reads Frost Lynx, the printing this was built for', () => {
+    const read = row('Frost Lynx', 'Creature — Elemental Cat',
+      'When Frost Lynx enters, tap target creature an opponent controls. '
+      + "That creature doesn't untap during its controller's next untap step.",
+      { power: '2', toughness: '2' });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    /*
+      One target between the two sentences. The freeze borrows the tap's creature rather than
+      asking for a second one, which is the whole of CR 608.2h for this card: a player who had to
+      choose twice could freeze a creature the tap never touched.
+    */
+    expect(read.script?.triggers?.[0]?.targets?.length).toBe(1);
+    expect(read.script?.triggers?.[0]?.targets?.[0]?.kind).toBe('creature');
+  });
+
+  it.each([
+    ['the "It" pronoun, after a tap (Chillbringer)',
+      'Flying\nWhen Chillbringer enters, tap target creature an opponent controls. '
+      + "It doesn't untap during its controller's next untap step.",
+      'Chillbringer', 'Creature — Elemental'],
+    ['a spell whose second line is a draw (Crippling Chill)',
+      "Tap target creature. It doesn't untap during its controller's next untap step.\n"
+      + 'Draw a card.',
+      'Crippling Chill', 'Instant'],
+    ['a conjunction inside a "you may pay" (Quiet Contemplation)',
+      'Whenever you cast a noncreature spell, you may pay {1}. If you do, tap target creature '
+      + "an opponent controls and it doesn't untap during its controller's next untap step.",
+      'Quiet Contemplation', 'Enchantment'],
+  ])('reads %s', (_what, text, name, type) => {
+    const read = row(name as string, type as string, text as string,
+      (type as string).startsWith('Creature') ? { power: '3', toughness: '3' } : {});
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('reads the clause with no pronoun at all, where the borrow never runs', () => {
+    /*
+      Skyline Cascade names its own target — "target creature an opponent controls doesn't untap
+      during its controller's next untap step" — so this is the reader working with the referent
+      machinery switched off, and it is the row `one-blocker.mjs` could not see.
+    */
+    const read = row('Skyline Cascade', 'Land',
+      'Skyline Cascade enters tapped.\n'
+      + 'When Skyline Cascade enters, target creature an opponent controls '
+      + "doesn't untap during its controller's next untap step.\n"
+      + '{T}: Add {U}.',
+      { mana_cost: '', cmc: 0, colors: [] });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers?.[0]?.targets?.[0]?.kind).toBe('creature');
+  });
+
+  it("reads Barl's Cage, where the clause is a whole activated ability", () => {
+    const read = row("Barl's Cage", 'Artifact',
+      "{3}: Target creature doesn't untap during its controller's next untap step.",
+      { mana_cost: '{4}', cmc: 4, colors: [] });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect((read.script?.abilities ?? []).length).toBe(1);
+    /*
+      Not `friendly`. Holding your own creature down is a card thrown away, so the bot's default
+      aim is the other side of the table — the same line the tap reader draws and Icy Manipulator's
+      hand-written filter draws. Asserted because `friendly` is a *hint* nothing else can see: a
+      reader that passed `true` would compile a card that works and plays badly, which nothing
+      flags (D362).
+    */
+    expect(read.script?.abilities?.[0]?.targets?.[0]?.friendly).toBeUndefined();
+  });
+
+  it("reads Glacial Grasp, where D537's possessive and this clause share one target", () => {
+    /*
+      Three clauses off one target phrase: the tap, "Its controller mills two cards" (D537) and the
+      freeze. The card is the first printing in the corpus that needs both referent supplies at
+      once, and it is worth a row of its own because an increment that re-asked for a target would
+      still pass every single-clause test above.
+    */
+    const read = row('Glacial Grasp', 'Instant',
+      'Tap target creature. Its controller mills two cards. '
+      + "That creature doesn't untap during its controller's next untap step. "
+      + '(They put the top two cards of their library into their graveyard.)\n'
+      + 'Draw a card.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.targets?.length).toBe(1);
+  });
+
+  it('refuses the Aura static, which is the same words and a different effect', () => {
+    /*
+      The biggest row in the whole family — 48 printings of "Enchanted creature doesn't untap
+      during its controller's **untap step**" — and it is deliberately not read. Without the
+      "next" the sentence is a continuous effect that holds the creature down for ever, and a
+      reader that treated the two alike would make Claustrophobia a one-turn Frost Lynx: a card
+      that works and is wrong (D259).
+
+      **What refuses this printing is the subject, not the missing "next".** The break run proved
+      it: making "next" optional in the pattern left this row green, because "Enchanted creature"
+      is not a target phrase and `targetSpecFrom` turns it down first. The row below is the one
+      that holds the "next", and it is a probe rather than a printing because no card in the corpus
+      spells this sentence with a *target* and without the word.
+    */
+    const read = row('Claustrophobia', 'Enchantment — Aura',
+      'Enchant creature\n'
+      + 'When Claustrophobia enters, tap enchanted creature.\n'
+      + "Enchanted creature doesn't untap during its controller's untap step.",
+      { mana_cost: '{1}{U}{U}' });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line))
+      .toContain("Enchanted creature doesn't untap during its controller's untap step.");
+  });
+
+  it('refuses Dungeon Geists, whose freeze lasts as long as it is on the table', () => {
+    // The same discrimination one card over, and with a referent: no "next", so no reading.
+    const read = row('Dungeon Geists', 'Creature — Spirit',
+      'Flying\n'
+      + 'When this creature enters, tap target creature an opponent controls. That creature '
+      + "doesn't untap during its controller's untap step for as long as you control this creature.",
+      { mana_cost: '{2}{U}{U}', cmc: 4, power: '3', toughness: '3' });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    /*
+      Named rather than counted, because a refusal asserted as `length === 1` passes whichever line
+      was refused — and this card prints three. Three of this stretch's rows refused for the wrong
+      reason before being caught, so the line itself is the assertion.
+    */
+    expect(read.unread.map((u) => u.line)).toEqual([
+      'When this creature enters, tap target creature an opponent controls. That creature '
+      + "doesn't untap during its controller's untap step for as long as you control this creature.",
+    ]);
+  });
+
+  it('refuses the plural referent, rather than freezing the first of two creatures', () => {
+    /*
+      Frost Breath taps **up to two** and then says "Those creatures". `referentEffect` supplies
+      exactly one borrowed object, so a reader that accepted the plural would tap both and freeze
+      one — the half-read card `foldCardTargets`' docblock calls worse than an unread line, because
+      an unread line is badged for a human and a half-read one is not (D259, D362).
+
+      18 printings wait on this: "Those creatures don't untap during their controller's next untap
+      step" (11), "...their controllers' next untap steps" (4) and "They don't untap..." (3). The
+      plural referent is a combinator rather than a row, and is its own increment.
+    */
+    const read = row('Frost Breath', 'Instant',
+      'Tap up to two target creatures. '
+      + "Those creatures don't untap during their controller's next untap step.");
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([
+      'Tap up to two target creatures. '
+      + "Those creatures don't untap during their controller's next untap step.",
+    ]);
+
+    /*
+      The discriminating half: "up to two target creatures" is a phrase the tap reader has read
+      since D469, so the refusal above is about the plural **referent** and not about the count.
+      Without this row the test would also pass on a compiler that had never learnt to tap two.
+    */
+    const counted = row('Probe Breath', 'Instant', 'Tap up to two target creatures.');
+    expect(counted.ok).toBe(true);
+    if (counted.ok) expect(counted.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('requires the word "next", which is the whole duration', () => {
+    /*
+      A probe, and deliberately so: the corpus has no printing of "target creature doesn't untap
+      during its controller's untap step" — every static spelling names its subject some other way
+      — so this is the only way to assert that the reader demands the word. The break run is why
+      the row exists: the Claustrophobia row above passes with or without it.
+
+      The discriminating half is in the same `it`, because the two sentences differ by one word and
+      a reader that had stopped matching either would pass half of this test alone.
+    */
+    const forever = row('Probe Cage', 'Artifact',
+      "{3}: Target creature doesn't untap during its controller's untap step.",
+      { mana_cost: '{4}', cmc: 4, colors: [] });
+    expect(forever.ok).toBe(true);
+    if (forever.ok) expect(forever.unread.length).toBe(1);
+
+    const oneStep = row('Probe Cage', 'Artifact',
+      "{3}: Target creature doesn't untap during its controller's next untap step.",
+      { mana_cost: '{4}', cmc: 4, colors: [] });
+    expect(oneStep.ok).toBe(true);
+    if (oneStep.ok) expect(oneStep.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('refuses a subject that is not a permanent', () => {
+    /*
+      `pointsAtAPermanent` is the same guard the tap reader carries, and a probe again: no card
+      aims this sentence at a player. Without the guard the clause would read and then quietly
+      apply nothing, because `cardTargets` filters a player out — the silent half-card D362 is
+      about. Asserted here so the guard is falsifiable rather than decorative; the break run found
+      it was not.
+    */
+    const atAPlayer = row('Probe Cage', 'Artifact',
+      "{3}: Target player doesn't untap during its controller's next untap step.",
+      { mana_cost: '{4}', cmc: 4, colors: [] });
+    expect(atAPlayer.ok).toBe(true);
+    if (atAPlayer.ok) expect(atAPlayer.unread.length).toBe(1);
+  });
+
+  it('refuses a pronoun with nothing in front of it to borrow', () => {
+    /*
+      Apes of Rath's "it" is the attacker itself, not a target — there is no earlier clause, so
+      `composeEffects` has nothing aimed and the pronoun table is never consulted. The honest
+      reading is that the line is unread, and the discriminating half is the row above it: the same
+      sentence after a tap reads, so this refusal is about the missing antecedent and not about the
+      clause.
+    */
+    const alone = row('Apes of Rath', 'Creature — Ape',
+      "Whenever Apes of Rath attacks, it doesn't untap during its controller's next untap step.",
+      { mana_cost: '{2}{G}{G}', cmc: 4, colors: ['G'], power: '5', toughness: '4' });
+    expect(alone.ok).toBe(true);
+    if (alone.ok) expect(alone.unread.length).toBe(1);
+
+    const borrowed = row('Probe Ape', 'Creature — Ape',
+      'Whenever Probe Ape attacks, tap target creature an opponent controls. '
+      + "It doesn't untap during its controller's next untap step.",
+      { mana_cost: '{2}{G}{G}', cmc: 4, colors: ['G'], power: '5', toughness: '4' });
+    expect(borrowed.ok).toBe(true);
+    if (borrowed.ok) expect(borrowed.unread.map((u) => u.line)).toEqual([]);
+  });
+});
