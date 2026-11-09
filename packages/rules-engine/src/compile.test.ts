@@ -14205,6 +14205,17 @@ describe('the chosen discard, read as one group of three sentences (D531)', () =
       'You choose a nonland card from it. That player discards that card.'],
     ['the discard missing, so a hand is revealed for nothing',
       'Target opponent reveals their hand. You choose a nonland card from it.'],
+    /*
+      These two exist because the break run found them missing. The rows above refuse for the
+      *wrong reason* — the first sentence has no player in it, and the second has only two clauses
+      — so loosening either regex left them green. A refusal row that would still refuse with the
+      guard gone is not a check on the guard.
+    */
+    ['a first sentence that names a player but is not a reveal',
+      'Target opponent loses 2 life. You choose a nonland card from it. '
+      + 'That player discards that card.'],
+    ['a third sentence that is not the discard, with all three clauses present',
+      'Target opponent reveals their hand. You choose a nonland card from it. You gain 2 life.'],
   ])('refuses %s', (_why, text) => {
     const read = sorcery(text as string);
     expect(read.ok).toBe(true);

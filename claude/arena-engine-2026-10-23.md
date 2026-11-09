@@ -18921,3 +18921,37 @@ widened *accidentally*. The checks that actually cover the new path are the thre
 should not, and nothing was widened by accident. What that run does **not** do is exercise the new
 permission, for the reason above, and the three redaction rows in `scripts.test.ts` exist because of
 it.
+
+### The break run: 14 breaks, 14 caught — after it found three holes in these tests
+
+Each verified to apply against an anchor matching exactly once and to revert against a SHA-256,
+across all three files this increment touched. The first run caught **11 of 14**, and all three
+misses were holes in my own tests rather than defensive guards — which is the run paying for itself
+a third time in this session:
+
+- **The reveal sentence not required.** The refusal row for "the reveal missing" began
+  "You choose a nonland card from it" — no player in that sentence, so loosening the regex to accept
+  any first sentence naming a player left the row green. **A refusal row that would still refuse
+  with the guard gone is not a check on the guard.** Replaced with "Target opponent loses 2 life.
+  You choose … That player discards that card." — a first sentence that does name a player and is
+  not a reveal.
+- **The discard sentence not required.** That row had only two clauses, so `clauses.length < 3`
+  refused it first and the third-sentence regex was never reached. Replaced with a three-clause
+  version whose third sentence is "You gain 2 life."
+- **`nonland` composed with a qualifier, with the `nonland` half dropped.** Nothing printed
+  "a nonland permanent card", and only a card that does can tell `!land && permanent` from
+  `permanent` — a land *is* a permanent, so the broken reading would offer every land. A second
+  compiled card (Probing Edict) and a runtime row asserting the Swamp stays out of the pool.
+
+Re-run after those three: **14/14**. The two engine breaks that matter most are among them —
+`fromSeat` ignored when the candidates are gathered, and `decisionCandidates` reading the chooser
+instead of the pool seat — and so are all three on the permission: the chooser unable to read at all,
+the permission not limited to the candidate list, and the permission not limited to the viewer being
+asked.
+
+### The pod sweep
+
+**40/40 pods finished** at a fresh seed (SEED0=40401) on the clean commit, no engine throw and no
+stalled table, 61.2 turns and 394 moves a game. Per 100-card deck across 160 decks: 25.3 cards with
+a hand-written script, 47.9 with at least one unread line, 61.9 playable only from printed data, 0.5
+cardboard.

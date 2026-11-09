@@ -33024,6 +33024,17 @@ describe('the chosen discard, played off printed text (D531)', () => {
       oracle_text: 'Target opponent reveals their hand. You choose a nonland card from it. '
         + 'That player discards that card.',
     },
+    /*
+      The **composed** qualifier, which the break run showed nothing exercised: "nonland permanent"
+      is `!land && permanent`, and dropping the `!land` half would accept every land — a land is a
+      permanent. Only a card printing both words can tell the two readings apart.
+    */
+    {
+      name: 'Probing Edict', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal',
+      oracle_text: 'Target opponent reveals their hand. '
+        + 'You choose a nonland permanent card from it. That player discards that card.',
+    },
   ];
 
   const deck = () => {
@@ -33031,13 +33042,14 @@ describe('the chosen discard, played off printed text (D531)', () => {
       id: 'inquiry',
       name: 'Inquiry',
       entries: [
-        { name: 'Probing Whisper', count: 4 }, { name: 'Grizzly Bears', count: 4 },
-        { name: 'Swamp', count: 46 }, { name: 'Forest', count: 46 },
+        { name: 'Probing Whisper', count: 4 }, { name: 'Probing Edict', count: 4 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Swamp', count: 44 }, { name: 'Forest', count: 44 },
       ],
       data: DATA as never[],
     });
     expect(list.unknown).toEqual([]);
-    expect(list.fromData).toEqual(['Probing Whisper']);
+    expect(list.fromData.slice().sort()).toEqual(['Probing Edict', 'Probing Whisper']);
     return list.deck;
   };
 
@@ -33046,7 +33058,7 @@ describe('the chosen discard, played off printed text (D531)', () => {
     decks: { 0: 'inquiry', 1: 'inquiry' },
     deckSpecs: { inquiry: deck() },
     hands: {
-      0: ['Probing Whisper'],
+      0: ['Probing Whisper', 'Probing Edict'],
       1: ['Grizzly Bears', 'Grizzly Bears', 'Swamp'],
     },
     battlefield: { 0: ['Swamp', 'Swamp'] },
@@ -33077,6 +33089,24 @@ describe('the chosen discard, played off printed text (D531)', () => {
       And the printed filter is applied: the two Bears are on offer and the Swamp is not. A reading
       that dropped the qualifier would be a strictly better card than the one printed.
     */
+    expect(offered.map((id) => nameOf(s, id)).sort()).toEqual(['Grizzly Bears', 'Grizzly Bears']);
+  });
+
+  it('keeps a land out of a "nonland permanent card" pool, which needs both halves', () => {
+    /*
+      A Swamp is a permanent, so a reading that dropped the `nonland` half would offer it. The two
+      Bears are nonland permanents and are offered; the Swamp is not. Added because the break run
+      showed nothing else could see the difference.
+    */
+    let s = advanceTo(seated(), 'precombat-main');
+    for (const id of ids(s, 0, 'battlefield')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action);
+    }
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Probing Edict'),
+      targets: [{ kind: 'player', seat: 1 }],
+    } as Action)), 60);
+    const offered = [...(s.pendingDecision?.candidates ?? [])];
     expect(offered.map((id) => nameOf(s, id)).sort()).toEqual(['Grizzly Bears', 'Grizzly Bears']);
   });
 
