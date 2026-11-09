@@ -17684,3 +17684,77 @@ Sliver).
 keyword family should look like when the mechanic was already there and only the shape was in the
 way. Measured on a freshly built `dist` with no stale-engine warning, `LEGAL=1` over the 31,654-row
 corpus.
+
+---
+
+## D518 — Rank the queue by what a player meets, and the artifact that ranking found
+
+### Why a second queue
+
+`one-line-short.mjs` ranks the unread shapes by how many cards each would finish. That is the right
+question for coverage and the wrong one for a beta. **15,887 legal cards are one line short**, and
+those lines come in **13,245 distinct shapes with 8,159 printed by exactly one card**. A queue
+ordered by cards-finished says the next hundred increments are worth a few hundred cards each and
+never says which of them a person at a table would notice.
+
+So `corpus-decks.mjs` gained `UNREAD=1`, which asks the other question. A card only costs a player
+anything if they **see** it, and costs more if they try to **play** it. Each game records the
+distinct cards that left a library — hand, battlefield, graveyard, exile, stack, command; everything
+but the library is a card somebody looked at — and the casts and activations a seat actually took,
+crosses both with `unreadLines`, and ranks the shapes by encounters.
+
+Every exit from `play()` goes through one collector, so a stalled game's sightings are counted
+exactly as a finished game's are. A game that went badly still showed its players cards, and leaving
+those out would measure only the games that went well.
+
+### The beta number
+
+Over **40 four-player pods** of singleton 100-card decks drawn from 28,542 real cards:
+
+| | |
+| --- | --- |
+| card sightings (a card that left a library) | 1,680 |
+| of those, cards with an unread line | **1,180 (70.2%)** |
+| casts and activations | 3,119 |
+| of those, of a card with an unread line | 2,036 (65.3%) |
+
+So at 39.2% of printed lines read, **about seven in ten cards a player actually picks up** are ones
+the engine runs only partly. Games still finish — 40 of 40, no throw, no stall, 0.4 cardboard cards
+per 100-card deck — so the table works and the tabletop mode is unaffected. What is not yet true is
+the Arena-like promise for the majority of cards in hand.
+
+### The artifact, and the correction
+
+The first run's ranking was wrong, and worth recording rather than quietly fixing. It put Icatian
+Infantry's `{1}: ~ gains banding until end of turn` at the top with **360 plays** and Orzhov
+Guildmage next with **103** — one card each. That is not what a table meets; it is the bot
+activating one free repeatable ability over and over, which a person would not do. **Ranking by raw
+plays measures how repeatable a shape is, not how often it is encountered.**
+
+The queue now ranks by **games in which a card carrying the shape was played at least once** — one
+vote per card per game, which a loop cannot run up. The raw play count is still printed beside each
+row, because "how much of the engine's work is spent on partly-read cards" is a fair question for it
+to answer; it is just not the queue.
+
+The sighting figure needed no correction and is the one that matters: it was already one vote per
+card per game.
+
+### What the corrected queue says
+
+| games of 40 | shape | cards |
+| --- | --- | --- |
+| 18 | `At the beginning of combat on your …` | 18 |
+| 15 | `Whenever ~ deals combat damage to a …` | 15 |
+| 14 | `At the beginning of your end step` | 14 |
+| 14 | `Choose one —` | 14 |
+| 12 | `Draw a card` | 12 |
+| 10 | `As an additional cost to cast this` | 9 |
+| 9 | `At the beginning of your upkeep if` | 8 |
+
+**Trigger prologues, not exotic mechanics** — and the same families the printings queue ranks
+highest (`At the beginning of your …` is 946 printings, `Whenever ~ deals combat damage` 298, `At
+the beginning of combat on your` 202). The two rankings converging is the useful result: the big
+shapes are also the ones players meet, so breadth and experience point the same way for now.
+
+One row is a question rather than an answer: **`Draw a card` on 12 cards**. A bare draw is read, so
+that row is a clause the composer refused *in context* — the next probe, not the next reader.
