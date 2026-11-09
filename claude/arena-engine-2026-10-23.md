@@ -19321,3 +19321,10 @@ The two misses were **written into the harness as expected-vacuous before the ru
 confirmed both: `before.length === 0` is unfalsifiable because `composeEffects([])` already returns
 null, and the `beforeDecisions` refusal is defence in depth that nothing in the corpus reaches. That
 is the first run this stretch where every miss was predicted rather than explained afterwards.
+
+### The pod sweep
+
+**40/40 pods finished** at a fresh seed (SEED0=40701) on the clean commit, no engine throw and no
+stalled table, 61.3 turns and 299 moves a game. Per 100-card deck across 160 decks: 25.1 cards with
+a hand-written script, 48.2 with at least one unread line, 61.8 playable only from printed data, 0.4
+cardboard.
