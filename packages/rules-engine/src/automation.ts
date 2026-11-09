@@ -3236,6 +3236,32 @@ function decisionPlan(
       plan.push({ seat: object.actor ?? object.controller, specIndex: i });
       continue;
     }
+    /*
+      **The controller of the object this resolution points at** — "Its controller discards a card"
+      (D537). Resolved from the stack object's own first card target, because that is the only place
+      a plan can look: `decisionPlan` runs before the resolution, off the object, and the derived
+      seat the effects use (`EffectContext.referentSeat`) does not exist yet.
+
+      The instance is read **whatever zone it is in**, deliberately. The composition's D418 split
+      puts the parts before the first question into `beforeDecisions`, so by the time this plan is
+      made "Destroy target creature" has already run and the creature is in a graveyard. Insisting
+      on the battlefield would ask nobody, which is the silent failure D530's docblock is about.
+
+      For a card in a graveyard `zoneSeat` is its **owner**, which is its controller for everything
+      but a permanent that was under another player's control when it left. That difference is a
+      known limitation rather than a hidden one: it needs the controller recorded as the object
+      leaves, which nothing in this engine does yet.
+
+      No card target means nobody is asked, as `hit-player` does with no defender.
+    */
+    if (spec.who === 'referent-player') {
+      const object0 = object.targets.find((t) => t.kind === 'card');
+      const inst = object0 === undefined || object0.kind !== 'card'
+        ? undefined
+        : state.instances[object0.id];
+      if (inst !== undefined) plan.push({ seat: inst.zoneSeat, specIndex: i });
+      continue;
+    }
     for (const seat of turnOrder(state)) {
       if (spec.who === 'each-opponent' && seat === object.controller) continue;
       plan.push({ seat, specIndex: i });

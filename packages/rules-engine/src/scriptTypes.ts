@@ -1129,7 +1129,7 @@ export interface CardsDecisionSpec {
    * controller to discard.
    */
   readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
-  | 'hit-player' | 'acting-player';
+  | 'hit-player' | 'acting-player' | 'referent-player';
   /**
    * Which zone. From the chooser's own side unless `fromSeat` says otherwise. `library` is a
    * search: the chooser may look through the whole library while deciding, as they would at a
@@ -1261,7 +1261,7 @@ export interface ChoiceDecisionSpec {
    */
   readonly askOnlyIfChosen?: string;
   readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
-  | 'hit-player' | 'acting-player';
+  | 'hit-player' | 'acting-player' | 'referent-player';
   readonly prompt: string;
   /** The words, in the order the table shows them. The first is the default a bot falls back on. */
   readonly options: readonly string[];
@@ -1362,7 +1362,7 @@ export interface NumberDecisionSpec {
    */
   readonly askOnlyIfChosen?: string;
   readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
-  | 'hit-player' | 'acting-player';
+  | 'hit-player' | 'acting-player' | 'referent-player';
   readonly prompt: string;
   /** The numbers on offer, inclusive, read off the board when the question is asked. */
   readonly range: (state: GameState, chooser: SeatIndex) => { readonly min: number; readonly max: number };

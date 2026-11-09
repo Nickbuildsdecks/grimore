@@ -36885,3 +36885,76 @@ fact about the probe.
 stalled table, 63.2 turns and 334 moves a game. Per 100-card deck across 160 decks: 25.4 cards with
 a hand-written script, 48.1 with at least one unread line, 62.0 playable only from printed data, 0.3
 cardboard.
+
+## D537 — The possessive referent: "its controller"
+
+The joint head of the corrected queue, and the **third new combinator in three increments** — which
+is what the queue has been saying since D519: the lever is clause combinators, not more sentences.
+
+"Destroy target creature. Its controller loses 2 life." is one target and two subjects. The first
+clause points at a creature; the second is about a player the board *derives* from that creature.
+D530's borrow could only ever hand a clause the object itself, so every possessive printing was
+unread — and **139 legal cards put a possessive-controller clause after another sentence**, the
+biggest row being this one at 11.
+
+### Three pieces, each forced by something that broke
+
+**`ReferentSupply`.** The pronoun table grew a third column: `'object'` is every pronoun D530 and
+D533 read, `'controller'` derives a player. That also split the kind filter in two — matching a
+*player* pronoun against a *creature* spec refuses every possessive, so a controller supply is
+filtered on whether the earlier clause pointed at something a controller can be read off
+(`CONTROLLABLE_KINDS`), and `any` and `player` are excluded for D530's reason.
+
+**`EffectContext.referentSeat`, computed before any part runs.** The first draft looked the
+controller up when the clause ran, and the runtime test failed immediately: the printed sentence
+**destroys the creature first**, so by then the object has left the battlefield. The game has to use
+last known information for it (CR 608.2h), and the only place that can read the board before any
+part has changed it is `composeEffects` — the same wrapper shape D535 and D536 use. A supply that
+looked it up late would either refuse (the clause silently doing nothing, on the biggest shape in the
+family) or read the graveyard's seat, which is the card's *owner*.
+
+**`CardsDecisionSpec.who: 'referent-player'`.** The second draft still failed, and this is **the
+D530 hazard arriving in a new place**: `decisionPlan` resolves `who: 'target-player'` off the stack
+object's *targets*, and a possessive resolution's target is the creature. "Its controller discards a
+card" asked nobody and resolved to nothing. `referentEffect`'s `asks` parameter already existed for
+exactly this, and the new word resolves from the stack object's own first card target — read in
+**whatever zone it is in**, because the D418 split has already run the destroy by plan time.
+
+### A known limitation, stated
+
+For a card in a graveyard `zoneSeat` is its **owner**, which is its controller for everything but a
+permanent that was under another player's control when it left. Closing that needs the controller
+recorded as the object leaves, which nothing in this engine does yet. Named in the code and here
+rather than left for somebody to find.
+
+Also refused and measured: **the counter path**. "Counter target noncreature spell. Its controller
+loses 2 life" — Countersquall and eight legal cards of that shape — has no instance to read, because
+a spell's controller lives on the stack object. It wants its own supply; guessing a seat would be a
+wrong card (D362).
+
+### What it moved
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 22,899 | **22,928 / 56,421 (40.6%)** |
+| cards with a compiled script | 11,635 | **11,661** |
+| cards with every printed line read | 7,399 | **7,423** |
+
+### A second stale refusal retired, one increment old
+
+D533's own test asserted that "Destroy target creature. Its controller loses 2 life." stays unread,
+with a comment saying it "waits for its own reader". D537 is that reader, one increment later, and
+the test now asserts it reads with one target. That is the second stale refusal this stretch after
+the Furnace Scamp row — both were true when written, both were notes about a gap, and D516's rule is
+that such a note has to be re-read when the gap closes or the suite starts asserting the past.
+
+### The break run: 8 breaks, 8 caught — after it found the hole D530 had already named
+
+The first pass was 7 of 8, and the miss was **the aiming of the effect itself**: every runtime row
+was a *discard*, which `CardsDecisionSpec.who` routes, so the engine applies the answer and an effect
+handed the wrong seat still produces the right discard. D530's own docblock records this exact hole
+and says life loss is the only row that can see the aiming — and I did not carry that forward.
+Breaking `referentSeat` left every discard row green.
+
+Added the life-loss row (Bitter Downfall, the real printing, with both life totals asserted). Re-run:
+**8/8**. Scored against `-t D53`, which is D530 through D537 together.

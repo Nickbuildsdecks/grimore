@@ -14525,17 +14525,24 @@ describe('the pronoun "it", and a referent anywhere in its clause (D533)', () =>
     expect(fine.ok).toBe(true);
     if (fine.ok) expect(fine.unread.map((u) => u.line)).toEqual([]);
     /*
-      And "its" is a different word, so this line is still **unread** — which is the honest
-      outcome and not a gap this increment left: "its controller" is a possessive naming a third
-      object, and reading it as "target creature controller" would be a sentence nobody printed.
-      It waits for its own reader; `one-blocker.mjs` has it at 11 cards under
-      "its controller loses N life".
+      And "its" is a different word, which is still the rule here: `\bit\b` does not match it, so
+      D533's pronoun table never offered a reading of this line.
+
+      **The refusal this row used to assert is retired, one increment later.** It said the line
+      "waits for its own reader", and D537 is that reader: "its controller" is a *possessive*
+      referent with its own supply, and the line reads now. What the boundary still buys is which
+      reader gets it — the possessive's, not the bare pronoun's — so the assertion is that it reads
+      and declares one target rather than two.
+
+      Second stale refusal retired this stretch, after the Furnace Scamp row in D533. Both were
+      true when written and both were a note about a gap; D516's rule is that such a note has to be
+      re-read when the gap closes, or the suite starts asserting the past.
     */
     const possessive = spell('Destroy target creature. Its controller loses 2 life.');
     expect(possessive.ok).toBe(true);
     if (possessive.ok) {
-      expect(possessive.unread.map((u) => u.line))
-        .toEqual(['Destroy target creature. Its controller loses 2 life.']);
+      expect(possessive.unread.map((u) => u.line)).toEqual([]);
+      expect(possessive.script?.targets?.length).toBe(1);
     }
   });
 
@@ -14832,6 +14839,105 @@ describe('the ability a token arrives with (D536)', () => {
       'Create a 1/1 white Spirit creature token with flying.',
     ]) {
       const read = card(text, 'Probe Card', 'Sorcery');
+      expect(read.ok).toBe(true);
+      if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+    }
+  });
+});
+
+describe('the possessive referent: "its controller" (D537)', () => {
+  /*
+    The joint head of the corrected queue, and the third combinator in three increments: a referent
+    that is not the borrowed object but **a player derived from it**.
+
+    "Destroy target creature. Its controller loses 2 life." is one target and two subjects — the
+    first clause points at a creature, the second is about whoever controls it. D530's borrow could
+    only hand a clause the object itself, so every possessive printing was unread; 139 legal cards
+    put a possessive-controller clause after another sentence, and the biggest row is this one at 11.
+
+    `ReferentSupply` is what the table grew: `'object'` is every pronoun D530 and D533 read, and
+    `'controller'` reads the controller off the borrowed object's instance. The controller is read
+    **live** (CR 109.4), so a permanent that changed hands between the two clauses is controlled by
+    whoever controls it now.
+  */
+  const spell = (text: string, name = 'Probe Card', type = 'Sorcery') => compileCard({
+    name, type_line: type, mana_cost: '{4}{B}{B}', cmc: 6, colors: ['B'], layout: 'normal',
+    oracle_text: text,
+  });
+
+  it("reads Assassin's Strike, the printing this was built for", () => {
+    const read = spell('Destroy target creature. Its controller discards a card.',
+      "Assassin's Strike");
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    // One target between the two clauses: the possessive borrows rather than asking again.
+    expect(read.script?.targets?.length).toBe(1);
+    expect(read.script?.targets?.[0]?.kind).toBe('creature');
+  });
+
+  it.each([
+    ['the bare possessive', 'Destroy target creature. Its controller loses 2 life.'],
+    ['the creature spelled out', "Destroy target creature. That creature's controller loses 2 life."],
+    ['a permanent target', "Destroy target permanent. That permanent's controller loses 2 life."],
+    ['a compound clause', 'Destroy target creature. Its controller loses 2 life and you gain 2 life.'],
+  ])('reads %s', (_what, text) => {
+    const read = spell(text as string);
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it("reads Bitter Downfall's removal line, and leaves its cost line unread", () => {
+    /*
+      An honest partial: the card is not finished, because "This spell costs {3} less to cast if it
+      targets a creature that was dealt damage this turn" is its own unread row (10 cards in the
+      queue). What this increment bought is the second line, and the test says exactly that rather
+      than claiming the card.
+    */
+    const read = spell(
+      'This spell costs {3} less to cast if it targets a creature that was dealt damage this turn.\n'
+      + 'Destroy target creature. Its controller loses 2 life.',
+      'Bitter Downfall', 'Instant',
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([
+      'This spell costs {3} less to cast if it targets a creature that was dealt damage this turn.',
+    ]);
+  });
+
+  it('refuses the possessive on a SPELL target, which has no instance to read', () => {
+    /*
+      Countersquall — "Counter target noncreature spell. Its controller loses 2 life." — and eight
+      legal cards of that shape. A spell's controller lives on the stack object, not on an instance
+      on the battlefield, so `'controller'` has nothing to read and the licence does not offer it.
+      Stated as a measured negative rather than hidden: the counter path wants its own supply, and
+      guessing a seat would be a wrong card (D362).
+    */
+    const read = spell('Counter target noncreature spell. Its controller loses 2 life.',
+      'Countersquall', 'Instant');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+
+  it('refuses the possessive with nothing before it, and on an "any target"', () => {
+    for (const text of [
+      'Draw a card. Its controller loses 2 life.',
+      'Probe Card deals 3 damage to any target. Its controller loses 2 life.',
+    ]) {
+      const read = spell(text);
+      expect(read.ok).toBe(true);
+      if (read.ok) expect(read.unread.length).toBe(1);
+    }
+  });
+
+  it("still reads D530's and D533's pronouns, which share the table", () => {
+    for (const text of [
+      'Put a +1/+1 counter on target creature. That creature gains reach until end of turn.',
+      'Target player discards a card. That player loses 2 life.',
+      'Tap target creature. Untap it.',
+    ]) {
+      const read = spell(text);
       expect(read.ok).toBe(true);
       if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
     }

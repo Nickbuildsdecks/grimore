@@ -60,6 +60,23 @@ export interface EffectContext {
    */
   readonly noRegeneration?: true;
   /**
+   * The seat a **possessive referent** names — "Its controller loses 2 life" — computed once, as
+   * the resolution begins (D537).
+   *
+   * On the context, and computed up front, because of the order the printed sentence puts things
+   * in: "Destroy target creature. Its controller loses 2 life" destroys the creature *first*, so by
+   * the time the second clause runs the object has left the battlefield and the game has to use
+   * last known information for it (CR 608.2h). A supply that looked the controller up when the
+   * clause ran would find a card in a graveyard and either refuse — the clause silently doing
+   * nothing, which is the biggest printed shape in the family — or read the graveyard's seat, which
+   * is the card's **owner** and not its controller for anything that had been stolen.
+   *
+   * Set by `composeEffects` around the whole composition, for the same reason `noRegeneration` is:
+   * the fact belongs to the resolution rather than to a clause, and a wrapper is the only place
+   * that can see the board before any part has changed it.
+   */
+  readonly referentSeat?: SeatIndex;
+  /**
    * What the attack that caused this trigger was aimed at, for an attack trigger that has to say
    * "the player or planeswalker it's attacking". Undefined for everything else.
    */

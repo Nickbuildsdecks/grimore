@@ -14505,8 +14505,28 @@ function tokenEffect(clause: string, name: string, granted?: string): ReadEffect
  * kind as one parameter, and they were one only because its two pronouns happened to name their own
  * kinds.
  */
-type ReferentPronoun = 'that creature' | 'that player' | 'it';
+type ReferentPronoun =
+  | 'that creature' | 'that player' | 'it'
+  /**
+   * The **possessive** forms, which name a player by naming the object that player controls (D537).
+   *
+   * "Destroy target creature. Its controller loses 2 life." is one target and two subjects: the
+   * clause before it points at a creature, and this one is about somebody the board derives from
+   * that creature. So the pronoun is a player phrase whose *supply* is a lookup rather than the
+   * borrowed object itself — see `ReferentSupply`.
+   */
+  | 'its controller' | "that creature's controller" | "that permanent's controller"
+  | "that land's controller" | "that spell's controller";
 type ReferentKind = 'creature' | 'player' | 'permanent';
+/**
+ * How the borrowed object becomes the thing the clause is about.
+ *
+ * `'object'` hands the clause the object the earlier clause pointed at, which is every pronoun D530
+ * and D533 read. `'controller'` hands it **that object's controller** — a player derived from a
+ * permanent, which is what the possessive forms name and the first referent in this file that is
+ * not the borrowed object.
+ */
+type ReferentSupply = 'object' | 'controller';
 
 /**
  * The swaps tried on a clause whose own reading failed (D530, D533).
@@ -14518,12 +14538,32 @@ type ReferentKind = 'creature' | 'player' | 'permanent';
  * nothing races and nothing depends on position. A break run confirmed it: reversing the list fails
  * no test. It stays a list rather than a map because one pronoun has two entries.
  */
-const REFERENT_PRONOUNS: readonly (readonly [ReferentPronoun, ReferentKind])[] = [
-  ['that creature', 'creature'],
-  ['that player', 'player'],
-  ['it', 'creature'],
-  ['it', 'permanent'],
+const REFERENT_PRONOUNS:
+readonly (readonly [ReferentPronoun, ReferentKind, ReferentSupply])[] = [
+  ['that creature', 'creature', 'object'],
+  ['that player', 'player', 'object'],
+  ['it', 'creature', 'object'],
+  ['it', 'permanent', 'object'],
+  /*
+    The possessive forms (D537). Each swaps for "target player" — the clause is about a player — and
+    takes its supply from the *controller* of whatever the earlier clause pointed at. Four printed
+    spellings of one idea: the bare possessive, and the three nouns the corpus spells out.
+
+    `that spell's controller` is here for completeness of the printed forms and is refused in
+    practice, because a spell is not a permanent and `controllerOf` reads an instance on the
+    battlefield — the licence below only offers these for an object kind, and a `spell` spec is not
+    one. Listed rather than omitted so the next reader of this table can see which four spellings
+    exist and which one has no supply.
+  */
+  ['its controller', 'player', 'controller'],
+  ["that creature's controller", 'player', 'controller'],
+  ["that permanent's controller", 'player', 'controller'],
+  ["that land's controller", 'player', 'controller'],
+  ["that spell's controller", 'player', 'controller'],
 ];
+
+/** The kinds a `'controller'` supply can read a controller off: an object on the battlefield. */
+const CONTROLLABLE_KINDS: ReadonlySet<string> = new Set(['creature', 'permanent']);
 
 /**
  * A clause whose **subject is a referent** — "that player", "that creature", "it" — read by
@@ -14599,7 +14639,7 @@ function referentEffect(
   kind: ReferentKind,
   supply: (c: EffectContext) => Target | null,
   reader: (text: string) => ReadEffect | null,
-  asks: 'target-player' | 'hit-player' | 'acting-player' = 'target-player',
+  asks: 'target-player' | 'hit-player' | 'acting-player' | 'referent-player' = 'target-player',
 ): ReadEffect | null {
   const text = clause.trim();
   /*
@@ -18150,6 +18190,9 @@ function composeEffects(
   // Which referent kinds the loop below borrowed an earlier clause's target for (D530); the
   // licence for each is checked once `parts` is complete.
   const borrows: ReferentKind[] = [];
+  // Whether any clause borrowed a **possessive** referent, which needs the derived seat computed
+  // before the parts run. See `EffectContext.referentSeat`.
+  let possessive = false;
   for (const clause of rest) {
     /*
       **A clause may refer back to the target an earlier clause in this same resolution chose**
@@ -18196,16 +18239,50 @@ function composeEffects(
       borrow against a `permanent` spec — refusing a line that has a correct reading. Filtering here
       is what makes the pronoun's two swaps a choice rather than a race.
     */
-    for (const [pronoun, kind] of aimed === null
-      ? []
-      : REFERENT_PRONOUNS.filter(([, one]) => one === aimed.kind)) {
+    /*
+      A `'controller'` supply is filtered differently, and the difference is the whole of D537: the
+      pronoun is a **player** phrase, so matching its kind against the earlier spec would refuse
+      every possessive form against the creature spec it is meant to read. What has to be true
+      instead is that the earlier clause pointed at something a controller can be read off — an
+      object on the battlefield. `any` and `player` are excluded for the reason D530 excludes `any`:
+      whether such a target holds a permanent is a fact about the game, not about the text.
+    */
+    const offered = aimed === null ? [] : REFERENT_PRONOUNS.filter(
+      ([, kind, supply]) => (supply === 'controller'
+        ? CONTROLLABLE_KINDS.has(aimed.kind)
+        : kind === aimed.kind),
+    );
+    for (const [pronoun, kind, supply] of offered) {
       const one = referentEffect(
-        clause, pronoun, kind, (c) => c.targets[0] ?? null,
+        clause, pronoun, kind,
+        supply === 'object'
+          ? (c) => c.targets[0] ?? null
+          /*
+            The controller of the borrowed object, taken from `EffectContext.referentSeat` — which
+            `composeEffects` computes **before any part runs**, because the printed sentence destroys
+            the creature first and the game then has to use last known information for it (CR
+            608.2h). See that field for what looking it up here instead would get wrong.
+          */
+          : (c) => (c.referentSeat === undefined
+            ? null
+            : { kind: 'player', seat: c.referentSeat }),
         (swapped) => readEffect(swapped, name, where),
+        /*
+          A question inside a possessive clause has to be **re-aimed** (D537), for the reason D530
+          gave `hit-player` and `acting-player`: `decisionPlan` resolves `who: 'target-player'` off
+          the stack object's *targets*, and a possessive resolution's target is the creature, not
+          the player. Left alone it would ask nobody and the clause would silently do nothing —
+          "Its controller discards a card" is the second-biggest row in this family, and a discard
+          is a question.
+        */
+        ...(supply === 'controller' ? ['referent-player' as const] : []),
       );
       if (one === null) continue;
       borrowed = one;
-      borrows.push(kind);
+      // A possessive borrow has nothing to say about the earlier spec's kind — the licence below
+      // checks kinds, and `aimed.kind` was already checked against `CONTROLLABLE_KINDS` above.
+      if (supply === 'object') borrows.push(kind);
+      else possessive = true;
       break;
     }
     if (borrowed === null) return null;
@@ -18317,14 +18394,36 @@ function composeEffects(
     only family that offers two is the draw, and the choice is about whether anything comes after it
     that could need to see the card.
   */
+  /*
+    The possessive referent's seat, worked out **before any part runs** (D537).
+
+    `composeEffects` is the only place that can: it is the layer that knows the parts are about to
+    run in order, and the printed sentence that needs this destroys its target in the first one.
+    Reading the controller off the board here is reading it while the object is still on the board,
+    which is what last known information means for this shape (CR 608.2h).
+
+    `undefined` when there is nothing to derive from, which the supply reads as "do nothing" rather
+    than guessing a seat — the same refusal every borrow makes when its object is missing.
+  */
+  const withReferent = (c: EffectContext): EffectContext => {
+    if (!possessive || c.referentSeat !== undefined) return c;
+    const object = c.targets[0];
+    if (object === undefined || object.kind !== 'card') return c;
+    const inst = c.state.instances[object.id];
+    return inst === undefined ? c : { ...c, referentSeat: inst.zoneSeat };
+  };
+
   const run = (slice: readonly ReadEffect[], asFinal: boolean) =>
-    (c: EffectContext): GameState => slice.reduce(
-      (state, part, i) => {
-        const final = asFinal && i === slice.length - 1;
-        return (final ? part.effect : part.immediate ?? part.effect)({ ...c, state });
-      },
-      c.state,
-    );
+    (c0: EffectContext): GameState => {
+      const c = withReferent(c0);
+      return slice.reduce(
+        (state, part, i) => {
+          const final = asFinal && i === slice.length - 1;
+          return (final ? part.effect : part.immediate ?? part.effect)({ ...c, state });
+        },
+        c.state,
+      );
+    };
 
   /*
     **The split at the first question** (D418).

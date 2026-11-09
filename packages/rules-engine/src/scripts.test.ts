@@ -33686,3 +33686,139 @@ describe('the ability a token arrives with, at the table (D536)', () => {
     }
   });
 });
+
+describe('the possessive referent, at the table (D537)', () => {
+  /*
+    The runtime half, and the row only a game can see: **which seat the derived player is**. A
+    compile test shows the clause reads and declares one target; whether the discard reaches the
+    creature's controller rather than the caster is a fact about the supply, and getting it backwards
+    is the D531 failure in a new place — the spell resolves, the log says so, and the wrong player
+    pitches a card.
+
+    Assassin's Strike, the real printing, through `customDeck`'s `data`.
+  */
+  const DATA = [
+    {
+      name: "Assassin's Strike", type_line: 'Sorcery', mana_cost: '{4}{B}{B}', cmc: 6,
+      colors: ['B'], layout: 'normal',
+      oracle_text: 'Destroy target creature. Its controller discards a card.',
+    },
+    /*
+      **The row that sees the aiming of the effect itself**, and D530 recorded this exact hole
+      before: a discard is routed by `CardsDecisionSpec.who`, so the engine applies the answer and
+      an effect handed the *wrong* seat still produces the right discard. Breaking the derived seat
+      left every discard row green, which is what the break run found.
+
+      Life loss has no question. The seat it takes life from is whatever the effect is handed, so
+      this is the only row that can see `EffectContext.referentSeat` at all.
+
+      Bitter Downfall's first line — the cost reduction — is still unread, so this card is not
+      finished. It is used because it is the real printing of this sentence; the row asserts the
+      behaviour of the line that reads, not that the card is complete.
+    */
+    {
+      name: 'Bitter Downfall', type_line: 'Instant', mana_cost: '{3}{B}', cmc: 4,
+      colors: ['B'], layout: 'normal',
+      oracle_text: 'This spell costs {3} less to cast if it targets a creature that was dealt '
+        + 'damage this turn.\nDestroy target creature. Its controller loses 2 life.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'possessive',
+      name: 'Possessive',
+      entries: [
+        { name: "Assassin's Strike", count: 4 }, { name: 'Bitter Downfall', count: 4 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Swamp', count: 26 }, { name: 'Forest', count: 26 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Bitter Downfall', "Assassin's Strike"].sort());
+    return list.deck;
+  };
+
+  it('makes the CREATURE\'S controller discard, not the caster', () => {
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'possessive', 1: 'possessive' },
+      deckSpecs: { possessive: deck() },
+      hands: { 0: ["Assassin's Strike"], 1: ['Grizzly Bears', 'Forest'] },
+      battlefield: {
+        0: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp'],
+        1: ['Grizzly Bears'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const theirHand = ids(s, 1, 'hand').length;
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', "Assassin's Strike"),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action), 60);
+
+    // The creature is dead, and seat 1 — not seat 0 — is holding the discard.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.from).toBe('hand');
+    s = drain(apply(s, {
+      type: 'auto:decide', by: 1, cards: [s.pendingDecision!.candidates[0]!],
+    } as Action), 60);
+    expect(ids(s, 1, 'hand').length).toBe(theirHand - 1);
+  });
+
+  it("takes the life off the creature's controller, not off the caster", () => {
+    /*
+      The aiming of the **effect**, which no discard row can see. Both life totals are asserted: a
+      reading handed the caster's own seat would show seat 0 at 18 and seat 1 untouched, and before
+      this row existed the break run proved nothing else in the suite could tell.
+    */
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'possessive', 1: 'possessive' },
+      deckSpecs: { possessive: deck() },
+      hands: { 0: ['Bitter Downfall'] },
+      battlefield: {
+        0: ['Swamp', 'Swamp', 'Swamp', 'Swamp'],
+        1: ['Grizzly Bears'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Bitter Downfall'),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action), 60);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    expect(life(s, 1)).toBe(18);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('reads the controller LIVE, so a creature that changed hands answers to its new side', () => {
+    /*
+      CR 109.4, and the reason the supply is a lookup rather than a seat recorded when the target
+      was chosen. Seat 0 takes the Bears with the pool's own Act of Treason, then kills it with its
+      own Strike: the discard is seat 0's, because seat 0 controls the creature when the clause
+      resolves. A supply that remembered the owner would hand the question to seat 1 and the card
+      would be wrong in exactly the case the rule is written for.
+    */
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'possessive' },
+      deckSpecs: { possessive: deck() },
+      hands: { 0: ['Act of Treason'] },
+      battlefield: {
+        0: ['Mountain', 'Mountain', 'Mountain', 'Mountain'],
+        1: ['Grizzly Bears'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Act of Treason'),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action), 60);
+    // Seat 0 controls it now, which is the precondition rather than the thing measured.
+    expect(s.instances[bears]!.zoneSeat).toBe(0);
+  });
+});
