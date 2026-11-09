@@ -18309,3 +18309,163 @@ the parts, before believing a bound.**
 What makes this increment worth shipping is not the card. It is that the compiler no longer reads one
 clause two ways, and that the next reader in the may family — a cost vocabulary, which is what D524
 says to build — lands on four paths instead of one the moment it exists.
+
+## D526 — The queue, ranked by cards finished per reader. Three earlier tops were probe artifacts
+
+D434 said rank the queue by cards finished, not lines printed. D519 broke that one level up by ranking
+how many cards *contain* a shape, and D524 corrected it for one family. This is the same correction
+applied to the whole pool, and it is the first ranking that answers the question directly: **if one
+new clause reader existed, how many legal cards would become fully read?**
+
+`probe536.mjs` asks it by taking every legal card that is exactly one `no-reader` line short,
+stripping what the compiler itself strips before the clause vocabulary runs (the activation cost
+prefix and the `Activate only …` tail), splitting the rest the way `clausesOf` does, and compiling
+each clause on its own **under the card's own name**.
+
+| | cards |
+| --- | --- |
+| legal cards exactly one `no-reader` line short | **16,022** |
+| …whose line's clauses all read on their own — the **line shape** blocks it | 499 |
+| …short by exactly **one** clause | **10,849** |
+| …short by two or more (several readers away) | 4,674 |
+
+### Three artifacts the first run put at the top, and what each one was
+
+Worth writing down because each is a different way a measurement lies.
+
+1. **`Activate only as a sorcery` at 194 cards.** Tested as a standalone clause it refuses; in
+   context `activationRestriction` strips it before the clause vocabulary ever sees it, and
+   `{2}, {T}: Draw a card. Activate only as a sorcery.` compiles today. The fix is to strip in the
+   probe what the compiler strips. (The *older* wording, `Activate this ability only any time you
+   could cast a sorcery`, genuinely does not read — a separate, smaller row.)
+2. **Three self-naming shapes** — `Exile <self>` at 56, `<self> deals N damage to target creature`
+   at 50, `<self> gets +N/+N as long as …` at 38. All artifacts of compiling each clause under a
+   placeholder name: `selfRef` matches a card naming **itself**, so "Blastfire Bolt deals 5 damage
+   to target creature" refuses under the name "Not A Card" and reads under its own.
+3. **`Put the rest on the bottom of your library in a random order` at 129.** Real, but it is one of
+   *several* failing clauses on almost every card that prints it — the line is "look at the top five
+   … you may reveal … put the rest on the bottom", and reading the last sentence alone finishes
+   nothing. Counting a clause once per card rather than once per sighting is what separates the two.
+
+### The ranking, with the top rows verified by hand against the shipping compiler
+
+    25  Return <self> from your graveyard to your hand
+    21  Return target creature card from your graveyard to the battlefield
+    16  Put target card from your graveyard on the bottom of your library
+    13  Return this card from your graveyard to your hand
+    13  Exile target card from a graveyard
+    ------------------------------------------------------- 88, one zone family  → D527
+    33  At the beginning of your upkeep, sacrifice <self> unless you <cost>
+    30  You may have <self> enter as a copy of any creature card in a graveyard
+    28  Whenever <self> deals combat damage to a player, that player <does something>
+    25  This spell costs {M} less to cast if it targets …
+    20  This spell costs {M} less to cast if you control …
+    17  This spell costs {M} less to cast for each …
+    ------------------------------------------------------- 62, conditional cost reduction
+    19  Proliferate                       (the engine has had it since #195)
+    18  Untap it
+    18  Target creature you control deals damage equal to its power to …
+    18  Target creature can't be blocked this turn
+    16  Regenerate target creature        (the engine has had it since #37)
+    16  The next time a source of your choice would deal damage …
+    15  It can't be regenerated
+    14  Target creature can't block this turn
+
+Two things stand out and both are about **reach rather than novelty**. The graveyard family needs no
+new primitive — `relocate`, `exileCard`, `bottomPile` and `putOntoBattlefield` have all been in
+`effects.ts` from the start, and graveyard targeting has been in the engine since #23. And three of
+the cheap single clauses name mechanics the engine already implements and the *compiler* cannot say:
+proliferate (#195), regenerate (#37) and the blocking restrictions (#133).
+
+## D527 — The graveyard clause family: 94 cards finished, and the scope word that decides the card
+
+D526's ranking put one zone family at the top, and this is it. Five printed clauses, all moves
+between a graveyard and another zone, **88 cards predicted and 94 finished**:
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 22,317 / 56,421 (39.6%) | **22,472 / 56,421 (39.8%)** |
+| cards with a compiled script | 11,231 | **11,336** |
+| cards with every printed line read | 6,994 | **7,088** |
+
+The six over the prediction come from the shared half: `graveyardCardPhrase` is a **target-phrase**
+parser, so it lifts every reader that points at a graveyard at once, which is `targetSpecFrom`'s
+whole job (D469).
+
+### What was built
+
+**One parser and four readers.** `targetSpecFrom`'s switch had two graveyard phrases written out by
+hand (`target creature card in your graveyard`, `target land card in your graveyard`) because each
+carries a hand-written `filter` by reference that `compiled-vs-written.test.ts` compares character
+for character. Those stay. Everything else goes through `graveyardCardPhrase`, which is a parser for
+D469's reason: the printed phrase is **combinatorial** — a run of type words crossed with whose
+graveyard it is — and the exile clause alone prints eleven combinations of it.
+
+| reader | printings | wordings read |
+| --- | --- | --- |
+| reanimation — `… to the battlefield`, with or without `tapped` | 82 | 47 |
+| graveyard hate — `exile target … card from (a\|your\|an opponent's) graveyard` | 70 | 69 |
+| the self-return — `return <this card> from your graveyard to your hand` | 50 | 50 |
+| under its own library — `put target … on the bottom of … library` | 20 | 19 |
+
+### The scope word, which is where a wrong card would come from
+
+Not a detail: `your graveyard` is yours, `a graveyard` is **anybody's**, `an opponent's graveyard` is
+theirs, and reading one as another changes what the card does rather than whether it reads.
+Barkform Harvester read as "a graveyard" would be graveyard hate that puts an opponent's card in
+your deck; every graveyard-hate card in the pool read as "your graveyard" could only eat its own.
+The hand-written `anyGraveyardCard` already said so in as many words — "'a graveyard' is not 'your
+graveyard' and the Ooze is at its best eating somebody else's" — and both directions are now rows.
+
+**One pairing is refused because nobody prints it.** A card in a graveyard is owned by the player
+whose graveyard it is (CR 404.3), so `your graveyard … your library` and `a graveyard … its owner's
+library` name the same destination — but `a graveyard … your library` would take an opponent's card
+and put it in **your** deck. That is a card this compiler would have invented (D259), so the pairing
+is checked rather than assumed.
+
+### The one inference, and its bound
+
+`{4}{G}: Return Bestial Bloodline from your graveyard to your hand.` is an ability **activated from
+the graveyard**, which the printed line says only by saying "from your graveyard". So the clause
+decides something about the *cost*: `AbilityCost.fromGraveyard`, unearth's field, honoured by
+`legalActions` since #161 — the engine already knew how to offer an ability to a card in a graveyard
+and how to refuse one to a card on the battlefield.
+
+The inference is **one printed shape wide on purpose**, and the bound is a test row rather than a
+sentence: Hanna and Scavenging Ooze both say "graveyard" and both are activated from the
+battlefield, because there the word is about their *target*. A wider inference would move those
+abilities off the board, where they would compile, install and never be offered — which is the
+failure `grantedAbilityFrom` already refuses four cost fields to avoid.
+
+It also has to be read **before** the clause vocabulary, not after, and the break run proved that
+rather than the docblock asserting it.
+
+### What is refused, with its count
+
+35 of the 82 reanimation printings add a rider the move does not carry — `with a finality counter on
+it` (3), `with two additional +1/+1 counters` (1), `attached to ~` (1, Hakim) — or a type run this
+vocabulary turns down: `creature or Vehicle` (3, a type mixed with a subtype), `white or black
+creature` (1, a colour run), `Pirate` and `Rebel` (subtypes alone; #341 is open about what an
+unvalidated subtype target costs — a phrase that compiles and matches nothing). Each refuses the
+**line** rather than the rider, which is D487: a reanimation that silently dropped its finality
+counter would be a strictly better card than the one printed.
+
+One exile printing is refused for a different reason: Spelltwine exiles **two** cards from two
+different graveyards, and two independent target choices cannot share one `targets` list — the same
+refusal `composeEffects` gives a two-target fight clause.
+
+### The break run
+
+**12 breaks, 12 caught**, each verified to apply against a unique anchor and to revert against a
+SHA-256. Two are worth naming because they are about reading rather than wiring:
+
+- **The self-return read after the clause vocabulary instead of before it** fails, which settles the
+  order as a measurement rather than an assertion. The clause vocabulary gets `where` set to
+  `'battlefield'` on an ability line, so `selfEffect` answers for a card that is not there.
+- **The type run left unvalidated** fails, which is #341's hazard caught in advance: `target Rebel
+  card in a graveyard` would compile into a spec that matches nothing, and a card that compiles and
+  cannot be aimed is worse than one left unread.
+
+The other ten are each of the four readers not dispatched, `tapped` dropped, the cost flag dropped,
+both scope words inverted, the library pairing unchecked, and the card sent to hand instead of under
+the library.

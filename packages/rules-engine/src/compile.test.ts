@@ -13653,3 +13653,125 @@ describe('"you may" outside a trigger (D525)', () => {
     }
   });
 });
+
+describe('the graveyard clause family (D527)', () => {
+  /*
+    The queue, re-ranked by **cards finished per new reader** rather than by how many cards contain
+    a shape (D434's rule, which D519 and D524 each broke one level up). Of 16,022 legal cards
+    exactly one no-reader line short, 10,849 are short by exactly ONE clause — and the top of that
+    ranking is one zone family:
+
+    | cards | the clause |
+    | --- | --- |
+    | 25 | `Return <this card> from your graveyard to your hand` |
+    | 21 | `Return target creature card from your graveyard to the battlefield` |
+    | 16 | `Put target card from your graveyard on the bottom of your library` |
+    | 13 | `Return this card from your graveyard to your hand` (the second wording) |
+    | 13 | `Exile target card from a graveyard` |
+
+    All five are moves between a graveyard and another zone, every primitive they need has been in
+    `effects.ts` since the start, and graveyard targeting has been in the engine since #23 — so the
+    work is a **target-phrase parser** (`graveyardCardPhrase`) plus four clause readers.
+
+    The scope word is the half that would be a wrong card rather than an unread line: `your
+    graveyard` is yours, `a graveyard` is anybody's, `an opponent's graveyard` is theirs, and the
+    rows below pin all three.
+  */
+  const sorcery = (text: string, name = 'Not A Card') => compileCard({
+    name, type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+    layout: 'normal', oracle_text: text,
+  });
+  const creature = (text: string, name = 'Not A Card') => compileCard({
+    name, type_line: 'Creature — Human Cleric', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+    layout: 'normal', power: '2', toughness: '2', oracle_text: text,
+  });
+
+  it.each([
+    ['reanimation, the plain wording',
+      'Return target creature card from your graveyard to the battlefield.'],
+    ['reanimation of an artifact', 'Return target artifact card from your graveyard to the battlefield.'],
+    ['reanimation of a permanent card',
+      'Return target permanent card from your graveyard to the battlefield.'],
+    ['reanimation tapped', 'Return target creature card from your graveyard to the battlefield tapped.'],
+    ['graveyard hate, any graveyard', 'Exile target card from a graveyard.'],
+    ['graveyard hate with a type', 'Exile target creature card from a graveyard.'],
+    ['graveyard hate with a type run and a scope',
+      "Exile target instant or sorcery card from an opponent’s graveyard."],
+    ['graveyard hate with a negated type', 'Exile target nonland card from your graveyard.'],
+    ['a card under your own library',
+      'Put target card from your graveyard on the bottom of your library.'],
+    ['a card under its owner’s library',
+      "Put target card from a graveyard on the bottom of its owner’s library."],
+  ])('reads %s', (_why, text) => {
+    const read = sorcery(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.targets ?? []).toHaveLength(1);
+  });
+
+  it.each([
+    ['a rider the move does not carry',
+      'Return target creature card from your graveyard to the battlefield with a finality counter on it.'],
+    ['a type run mixing a type with a subtype',
+      'Return target creature or Vehicle card from your graveyard to the battlefield.'],
+    ['a colour run this vocabulary does not read',
+      'Return target white or black creature card from your graveyard to the battlefield.'],
+    ['a subtype alone, which would match nothing (#341)',
+      'Exile target Rebel card from a graveyard.'],
+    ['two graveyards in one clause, which cannot share one targets list',
+      "Exile target instant or sorcery card from your graveyard and target instant or sorcery card"
+      + " from an opponent’s graveyard."],
+  ])('refuses %s', (_why, text) => {
+    const read = sorcery(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('refuses a card out of ANY graveyard put under YOUR library, which nobody prints', () => {
+    /*
+      The one pairing that would be a card this compiler invented (D259). A card in a graveyard is
+      owned by the player whose graveyard it is (CR 404.3), so "your graveyard … your library" and
+      "a graveyard … its owner's library" name the same destination — but "a graveyard … your
+      library" would take an opponent's card and put it in **your** deck.
+    */
+    const read = sorcery('Put target card from a graveyard on the bottom of your library.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('reads the self-return as an ability activated FROM the graveyard', () => {
+    /*
+      The clause decides something about the **cost**, which is why it is read on the ability path
+      and not in the clause vocabulary: a card that returns itself from your graveyard is an
+      ability used from there, and `AbilityCost.fromGraveyard` is the field `legalActions` reads to
+      decide which zone an ability is offered in.
+    */
+    for (const [name, text] of [
+      ['Not A Card', '{2}{B}: Return Not A Card from your graveyard to your hand.'],
+      ['Not A Card', '{2}{B}: Return this card from your graveyard to your hand.'],
+    ] as const) {
+      const read = creature(text, name);
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread.map((u) => u.line)).toEqual([]);
+      const ability = (read.script?.abilities ?? [])[0];
+      expect(ability?.cost).toEqual({ mana: '{2}{B}', fromGraveyard: true });
+    }
+  });
+
+  it('leaves an ability that merely MENTIONS a graveyard on the battlefield', () => {
+    /*
+      The bound on that inference, stated as a row. Hanna and Scavenging Ooze both say "graveyard"
+      and both are activated from the battlefield — the word is about their *target*. An inference
+      wider than the one printed shape would take those abilities off the board, where they would
+      compile, install, and never be offered.
+    */
+    const read = creature('{2}: Exile target card from a graveyard.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect((read.script?.abilities ?? [])[0]?.cost).toEqual({ mana: '{2}' });
+  });
+});

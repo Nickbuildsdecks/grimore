@@ -15082,6 +15082,85 @@ const permanentFilter = (
  * Mortars ask, and its docblock there argues the case; this reads them the same way for the same
  * reason rather than inventing a second answer.
  */
+/**
+ * The card types a **card in a graveyard** can be tested for, as one test on its printed type line.
+ *
+ * Printed as a run of words in the noun position — "target creature card", "target instant or
+ * sorcery card", "target nonland card" — and read against the **printed** type line, which
+ * `TargetSpec.kind`'s docblock requires: a card in a graveyard has no continuous effects on it, so
+ * its printed type is what it is.
+ *
+ * `null` for anything outside the vocabulary, which refuses the phrase it is in rather than reading
+ * a wider card than the one printed (D259). Three of the corpus's wordings are refused here on
+ * purpose and each is a different reason: `creature or Vehicle` mixes a type with a **subtype**,
+ * `white or black creature` adds a colour run this does not read, and `Rebel` is a subtype alone —
+ * and #341 is open about exactly what an unvalidated subtype target costs (a phrase that compiles
+ * and matches nothing).
+ */
+function graveyardTypeTest(words: string): ((line: TypeLine) => boolean) | null {
+  const text = words.trim().toLowerCase();
+  if (text === '') return () => true;
+  if (text === 'nonland') return (line) => !hasType(line, 'land');
+  /*
+    "Target permanent card in your graveyard" (Invoke Justice). `PERMANENT_TYPES` is the list
+    already in this file for what the word means — one answer, three callers now — and it is a list
+    rather than the absence of `instant` and `sorcery` because the two are not complements: a
+    future card type would have to be classified rather than assumed to be a permanent.
+  */
+  if (text === 'permanent') return (line) => PERMANENT_TYPES.some((type) => hasType(line, type));
+  const parts = text.split(/\s+or\s+/);
+  if (!parts.every((part) => GRAVEYARD_CARD_TYPES.includes(part))) return null;
+  return (line) => parts.some((part) => hasType(line, part));
+}
+
+/**
+ * The card types a card in a graveyard can have.
+ *
+ * Every type, unlike `SPELL_TYPES`: a graveyard holds lands, and "target land card in your
+ * graveyard" is a phrase the pool prints (Deathrite Shaman, and the switch above has it by hand).
+ * The absence of `land` from the spell list is a rule about casting, not about this zone.
+ */
+const GRAVEYARD_CARD_TYPES: readonly string[] = [
+  'artifact', 'battle', 'creature', 'enchantment', 'instant', 'land', 'planeswalker', 'sorcery',
+];
+
+/**
+ * A printed phrase pointing at a card in a graveyard, as a `TargetSpec` without its description.
+ *
+ * ## Whose graveyard is printed, and getting it wrong is a different card
+ *
+ *  - `your graveyard` — yours only. Barkform Harvester puts a card of **yours** on the bottom of
+ *    **your** library, and reading it as any graveyard would make it graveyard hate.
+ *  - `a graveyard` — anybody's, which is the whole point of Scavenging Ooze and of every
+ *    graveyard-hate card in the pool. The hand-written `anyGraveyardCard` says so in as many words:
+ *    "'a graveyard' is not 'your graveyard' and the Ooze is at its best eating somebody else's".
+ *  - `an opponent's graveyard` — theirs only, narrower than either.
+ *
+ * The zone itself is not tested here: `satisfies` already refuses a candidate outside a graveyard
+ * for every `graveyard-*` kind, so a second test would be a second place to forget one.
+ */
+function graveyardCardPhrase(printed: string): Omit<TargetSpec, 'description'> | null {
+  const matched = /^(?:another )?target (.*?)cards? in (your|a|an opponent's) graveyard$/i
+    .exec(printed.trim());
+  if (matched === null) return null;
+  const test = graveyardTypeTest(matched[1]!);
+  if (test === null) return null;
+  const whose = matched[2]!.toLowerCase();
+  const scope: 'yours' | 'any' | 'opponents' = whose === 'your' ? 'yours'
+    : whose === 'a' ? 'any' : 'opponents';
+  return {
+    kind: 'graveyard-card',
+    filter: (state, candidate, controller) => {
+      if (candidate.kind !== 'card') return false;
+      const inst = state.instances[candidate.id];
+      if (inst === undefined) return false;
+      if (scope === 'yours' && inst.zoneSeat !== controller) return false;
+      if (scope === 'opponents' && inst.zoneSeat === controller) return false;
+      return test(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine));
+    },
+  };
+}
+
 function targetSpecFrom(
   phrase: string,
   friendly: boolean,
@@ -15321,6 +15400,22 @@ function targetSpecFrom(
   */
   const onTheStack = spellTargetPhrase(trimmed);
   if (onTheStack !== null) return spec(onTheStack);
+  /*
+    A phrase pointing at a **card in a graveyard**, parsed (D527).
+
+    The switch above writes two of these out — `target creature card in your graveyard` and `target
+    land card in your graveyard` — because each carries a hand-written `filter` by reference that
+    `compiled-vs-written.test.ts` compares character for character. This is the rest of the family,
+    and it is a parser for D469's reason: the printed phrase is **combinatorial**. On the exile
+    clause alone the corpus prints eleven combinations of a type run crossed with whose graveyard it
+    is, and a list of whole phrases would need one entry each.
+
+    Order: after the switch, so the two exact phrases keep their hand-written filters; before
+    `parsedTargetPhrase`, which has no noun for `graveyard` and would refuse the phrase anyway —
+    said here so the order is a rule rather than a coincidence.
+  */
+  const inAGraveyard = graveyardCardPhrase(trimmed);
+  if (inAGraveyard !== null) return spec(inAGraveyard);
   /*
     `trimmed`, not `printed`: the parse is handed the phrase with its **printed capitalisation**
     intact, because that is the only signal that separates a subtype from a qualifier (D486). Magic
@@ -16575,6 +16670,117 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
+    **Reanimation** (D527): "Return target creature card from your graveyard to the battlefield."
+
+    The queue's biggest single clause reader measured by cards finished — **21 legal cards** are one
+    line short of this and nothing else, and 47 printings print it with the plain wording or with
+    `tapped` on the end. It is also the headline graveyard mechanic of the format this engine is
+    for, so it is worth more than its count: a Commander table without reanimation is missing a
+    colour.
+
+    `putOntoBattlefield` under **`c.controller`**, which is the printed card: "to the battlefield"
+    with no owner named means under your control (CR 701.17a), so a Bonecaller Cleric aimed at
+    somebody else's graveyard — which no printing of this wording allows, but the scope parser does
+    — would still hand you the creature. The arrival raises `etb` through `relocate`/`settle`
+    exactly as a cast does, and the creature is summoning-sick, both of which come free.
+
+    **What is refused, and all of it is a rider rather than the move.** 35 of the 82 printings add
+    something: `with a finality counter on it` (3), `with two additional +1/+1 counters` (1),
+    `attached to ~` (1, Hakim), and a type run this reader's vocabulary turns down — `creature or
+    Vehicle` (3, a type mixed with a subtype), `white or black creature` (1, a colour run), `Pirate`
+    and `Rebel` (subtypes alone; see #341 for what an unvalidated subtype target costs). Each
+    refuses the **line**, which keeps D487: a reanimation that silently dropped its finality counter
+    would be a strictly better card than the one printed.
+  */
+  const reanimated =
+    /^return target (.*?)card from (your|a|an opponent's) graveyard to the battlefield( tapped)?$/i
+      .exec(text);
+  if (reanimated !== null) {
+    const spec = targetSpecFrom(
+      `target ${reanimated[1]!}card in ${reanimated[2]!.toLowerCase()} graveyard`, false,
+    );
+    if (spec !== null) {
+      const tapped = reanimated[3] !== undefined;
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null
+            ? c.state
+            : putOntoBattlefield(c.state, id, c.controller, tapped ? { tapped: true } : {});
+        },
+      };
+    }
+  }
+
+  /*
+    **Graveyard hate** (D527): "Exile target card from a graveyard."
+
+    70 printings and eleven wordings, of which this reads ten — the scope and the type run both come
+    off `graveyardCardPhrase`, so `exile target instant or sorcery card from an opponent's
+    graveyard` costs nothing extra. The one it refuses is Spelltwine's, which exiles **two** cards
+    from two different graveyards: two independent target choices cannot share one `targets` list,
+    which is `composeEffects`' rule and the same refusal a two-target fight clause gets.
+
+    Scavenging Ooze already has this clause by hand with the same spec description, which is what
+    `compiled-vs-written.test.ts` compares the compiled form against.
+  */
+  const exiledFromGraveyard =
+    /^exile target (.*?)card from (your|a|an opponent's) graveyard$/i.exec(text);
+  if (exiledFromGraveyard !== null) {
+    const spec = targetSpecFrom(
+      `target ${exiledFromGraveyard[1]!}card in ${exiledFromGraveyard[2]!.toLowerCase()} graveyard`,
+      false,
+    );
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : exileCard(c.state, id);
+        },
+      };
+    }
+  }
+
+  /*
+    **A card out of a graveyard and under its own library** (D527): Barkform Harvester's "{2}: Put
+    target card from your graveyard on the bottom of your library."
+
+    19 of the 20 printings, in two pairings — `your graveyard` with `your library`, and `a graveyard`
+    with `its owner's library`. **The pairing is checked rather than assumed**, and that is the one
+    thing here that could be a wrong card: a card in a graveyard is owned by the player whose
+    graveyard it is (CR 404.3), so the two pairings name the same destination — but `a graveyard` with
+    `your library` would be taking somebody else's card and putting it in **your** deck, which is a
+    card nobody has printed and which this must not invent (D259).
+
+    `bottomPile` takes a list and shuffles it, which for one card is the card. It is used rather
+    than a second one-card helper because it is the function that already knows what "the bottom of
+    its owner's library" means, including that the owner is read off the instance.
+  */
+  const underTheLibrary =
+    /^put target (.*?)card from (your|a) graveyard on the bottom of (your|its owner's) library$/i
+      .exec(text);
+  if (underTheLibrary !== null) {
+    const whose = underTheLibrary[2]!.toLowerCase();
+    const library = underTheLibrary[3]!.toLowerCase();
+    const paired = (whose === 'your' && library === 'your')
+      || (whose === 'a' && library === "its owner's");
+    const spec = paired
+      ? targetSpecFrom(`target ${underTheLibrary[1]!}card in ${whose} graveyard`, false)
+      : null;
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const id = firstCardTarget(c);
+          return id === null ? c.state : bottomPile(c.state, [id]);
+        },
+      };
+    }
+  }
+
+  /*
     A pump, and the one family here that **helps** what it points at.
 
     The keyword grant is read with it rather than after it: "gets +0/+3 and gains hexproof" is one
@@ -17490,6 +17696,25 @@ function activationRestriction(
   return { rest: found[1]!, flags };
 }
 
+/**
+ * "Return <this card> from your graveyard to your hand." — the card fetching itself back (D527).
+ *
+ * Two printed wordings and no others in the corpus: the card's own name (41 printings) and "this
+ * card" (9). `selfRef` carries the name and the "this <type>" forms; `this card` is added beside it
+ * here rather than in `selfRef`, because `selfRef`'s docblock is about a card naming itself **as a
+ * permanent** — "this creature", "this artifact" — and a card in a graveyard is not one.
+ *
+ * `c.source` is the card paying for the ability, which is the card in the graveyard: the same
+ * identity unearth's cost spends. So the effect needs nothing from the clause beyond having matched.
+ */
+function graveyardSelfReturn(clause: string, name: string): ReadEffect | null {
+  const matched = new RegExp(
+    `^return (?:${selfRef(name)}|this card) from your graveyard to your hand$`, 'i',
+  ).exec(plain(clause).trim());
+  if (matched === null) return null;
+  return { effect: (c) => bounceToHand(c.state, c.source) };
+}
+
 function abilityFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim();
   /*
@@ -17725,8 +17950,31 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     the loyalty branch above — a planeswalker animating itself is a sentence no card in the pool
     prints, and a reader with nothing to check against is a reader written ahead of need.
   */
+  /*
+    **An ability activated from the card's own graveyard** (D527): "{4}{G}: Return Bestial Bloodline
+    from your graveyard to your hand."
+
+    50 printings in two wordings, the card's own name and "this card", and **38 legal cards** are one
+    line short of exactly this. It is read here rather than in the clause vocabulary because the
+    clause decides something about the **cost**: a card that returns itself *from your graveyard* is
+    an ability used from there, which is `AbilityCost.fromGraveyard` — unearth's field, honoured by
+    `legalActions` since #161, so the engine already knows how to offer an ability to a card in a
+    graveyard and how to refuse one to a card on the battlefield.
+
+    That inference is one printed shape wide on purpose. "From your graveyard" in the clause is the
+    only evidence there is, and widening it — to any clause mentioning a graveyard, say — would move
+    abilities off the battlefield on the strength of a word that is about the *target* on Hanna and
+    on Scavenging Ooze. One shape, measured, with the rest left where they are.
+
+    It also must come before `composeEffects`, not after: the clause vocabulary reads this line as a
+    **bounce of the card itself** through `selfEffect` with `where` set to `'battlefield'`, which is
+    an ability on the battlefield returning a card that is not there. That reads, and reads wrongly,
+    which is the one thing worse than not reading (D362).
+  */
+  const outOfTheGraveyard = graveyardSelfReturn(clause, name);
   // An activated ability on a permanent is activated from the battlefield (see `SubjectZone`).
-  const read = animateSelf(clause, name)
+  const read = outOfTheGraveyard
+    ?? animateSelf(clause, name)
     ?? composeEffects(clausesOf(clause), name, 'battlefield')
     /*
       **A "you may" an activated ability offers** (D525) — "{T}: You may put a creature card from
@@ -17767,7 +18015,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   return {
     abilities: [{
       ...timing,
-      cost,
+      // See `graveyardSelfReturn`: the clause is what says which zone the ability is used from.
+      cost: outOfTheGraveyard === null ? cost : { ...cost, fromGraveyard: true },
       // The printed line, which is what every hand-written ability stores.
       description: text,
       ...(read.targets === undefined ? {} : { targets: read.targets }),

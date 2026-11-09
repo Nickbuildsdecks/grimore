@@ -32389,3 +32389,189 @@ describe('"you may" outside a trigger, played off printed text (D525)', () => {
     expect(namesIn(s, 0, 'hand')).toHaveLength(before + 1);
   });
 });
+
+describe('the graveyard clause family, played off printed text (D527)', () => {
+  /*
+    The runtime half. The compile rows say the five clauses read; these say the cards do what they
+    print — a creature comes back onto the battlefield under the caster's control, a tapped one
+    comes back tapped, graveyard hate reaches an opponent's graveyard and the "your graveyard"
+    wording does not, a card goes under its own library rather than anybody's, and the self-return
+    is offered to a card in a graveyard and not to one on the battlefield.
+
+    That last pair is the one worth having. `AbilityCost.fromGraveyard` is inferred from the clause
+    rather than printed as a keyword, so the row that matters is the **negative** one: an ability
+    the engine offers from the wrong zone is a card that looks read and cannot be used.
+  */
+  const DATA = [
+    {
+      name: 'Ashen Rite', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal',
+      oracle_text: 'Return target creature card from your graveyard to the battlefield.',
+    },
+    {
+      name: 'Ashen Call', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal',
+      oracle_text: 'Return target creature card from your graveyard to the battlefield tapped.',
+    },
+    {
+      name: 'Ashen Purge', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal', oracle_text: 'Exile target card from a graveyard.',
+    },
+    {
+      name: 'Ashen Sift', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal',
+      oracle_text: 'Put target card from your graveyard on the bottom of your library.',
+    },
+    {
+      name: 'Ashen Revenant', type_line: 'Creature — Zombie', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: '{2}{B}: Return Ashen Revenant from your graveyard to your hand.',
+    },
+    {
+      name: 'Ashen Grunt', type_line: 'Creature — Zombie', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal', power: '3', toughness: '3', oracle_text: '',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'crypt',
+      name: 'Crypt',
+      entries: [...DATA.map((c) => ({ name: c.name, count: 4 })), { name: 'Swamp', count: 36 }],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual([
+      'Ashen Call', 'Ashen Grunt', 'Ashen Purge', 'Ashen Revenant', 'Ashen Rite', 'Ashen Sift',
+    ]);
+    return list.deck;
+  };
+
+  const table = (opts: {
+    hand?: readonly string[];
+    mine?: readonly string[];
+    myGraveyard?: readonly string[];
+    theirGraveyard?: readonly string[];
+    lands?: number;
+  }) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'crypt', 1: 'crypt' },
+      deckSpecs: { crypt: deck() },
+      hands: { 0: [...(opts.hand ?? [])] },
+      battlefield: {
+        0: [...Array.from({ length: opts.lands ?? 2 }, () => 'Swamp'), ...(opts.mine ?? [])],
+      },
+      graveyard: { 0: [...(opts.myGraveyard ?? [])], 1: [...(opts.theirGraveyard ?? [])] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    for (const id of ids(s, 0, 'battlefield')) {
+      if (nameOf(s, id) === 'Swamp') {
+        s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action);
+      }
+    }
+    return s;
+  };
+
+  it('returns a creature card from the graveyard onto the battlefield, untapped', () => {
+    let s = table({ hand: ['Ashen Rite'], myGraveyard: ['Ashen Grunt'] });
+    const grunt = find(s, 0, 'graveyard', 'Ashen Grunt');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ashen Rite'),
+      targets: [{ kind: 'card', id: grunt }],
+    } as Action)), 40);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Ashen Grunt');
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Ashen Rite']);
+    // Under the caster's control, and untapped: "to the battlefield" names no owner (CR 701.17a).
+    const back = find(s, 0, 'battlefield', 'Ashen Grunt');
+    expect(s.instances[back]?.tapped ?? false).toBe(false);
+    expect(power(s, back)).toBe(3);
+  });
+
+  it('returns it tapped when the clause says tapped', () => {
+    let s = table({ hand: ['Ashen Call'], myGraveyard: ['Ashen Grunt'] });
+    const grunt = find(s, 0, 'graveyard', 'Ashen Grunt');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ashen Call'),
+      targets: [{ kind: 'card', id: grunt }],
+    } as Action)), 40);
+    expect(s.instances[find(s, 0, 'battlefield', 'Ashen Grunt')]?.tapped).toBe(true);
+  });
+
+  it('"a graveyard" reaches an opponent’s, which is what graveyard hate is for', () => {
+    let s = table({ hand: ['Ashen Purge'], theirGraveyard: ['Ashen Grunt'] });
+    const theirs = find(s, 1, 'graveyard', 'Ashen Grunt');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ashen Purge'),
+      targets: [{ kind: 'card', id: theirs }],
+    } as Action)), 40);
+    expect(namesIn(s, 1, 'graveyard')).toEqual([]);
+    expect(s.instances[theirs]?.zone).toBe('exile');
+  });
+
+  it('refuses a cast aimed at the wrong graveyard, which is the scope word doing its job', () => {
+    /*
+      Both scopes on one board: `Ashen Purge` says "a graveyard" and may be aimed at either pile,
+      `Ashen Sift` says "your graveyard" and may be aimed only at mine. The question is asked the
+      way a table asks it — by trying the cast — so the row fails if the engine would let the play
+      through rather than only if a spec reads differently.
+    */
+    const s = table({
+      hand: ['Ashen Purge', 'Ashen Sift'],
+      myGraveyard: ['Ashen Grunt'],
+      theirGraveyard: ['Ashen Grunt'],
+    });
+    const mine = find(s, 0, 'graveyard', 'Ashen Grunt');
+    const theirs = find(s, 1, 'graveyard', 'Ashen Grunt');
+    const aim = (card: string, id: string) => refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card),
+      targets: [{ kind: 'card', id }],
+    } as Action);
+    expect(aim('Ashen Purge', mine)).toBeNull();
+    expect(aim('Ashen Purge', theirs)).toBeNull();
+    expect(aim('Ashen Sift', mine)).toBeNull();
+    expect(aim('Ashen Sift', theirs)).toBeTruthy();
+  });
+
+  it('puts the card under its own library, so the library grows and the graveyard shrinks', () => {
+    let s = table({ hand: ['Ashen Sift'], myGraveyard: ['Ashen Grunt'] });
+    const before = ids(s, 0, 'library').length;
+    const grunt = find(s, 0, 'graveyard', 'Ashen Grunt');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ashen Sift'),
+      targets: [{ kind: 'card', id: grunt }],
+    } as Action)), 40);
+    expect(ids(s, 0, 'library')).toHaveLength(before + 1);
+    // Last in the library, which is what "the bottom" means in this engine's ordering.
+    expect(nameOf(s, ids(s, 0, 'library').at(-1)!)).toBe('Ashen Grunt');
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Ashen Sift']);
+  });
+
+  it('offers the self-return to a card in the graveyard and not to one on the battlefield', () => {
+    /*
+      The inference `graveyardSelfReturn` makes, checked from both sides. `fromGraveyard` is what
+      `legalActions` reads to decide the zone, so a wrong reading here is an ability on the table
+      that the engine would refuse — the failure `playout.test.ts`' standing invariant is about.
+    */
+    const inGraveyard = table({ myGraveyard: ['Ashen Revenant'], lands: 3 });
+    const revenant = find(inGraveyard, 0, 'graveyard', 'Ashen Revenant');
+    const offered = legalActions(inGraveyard, 0).plays
+      .filter((play) => play.kind === 'activate' && play.card === revenant);
+    expect(offered).toHaveLength(1);
+    expect(offered[0]?.fromGraveyard).toBe(true);
+
+    const onBoard = table({ mine: ['Ashen Revenant'], lands: 3 });
+    const onTheBoard = find(onBoard, 0, 'battlefield', 'Ashen Revenant');
+    expect(legalActions(onBoard, 0).plays
+      .filter((play) => play.kind === 'activate' && play.card === onTheBoard)).toEqual([]);
+  });
+
+  it('brings itself back to hand when that ability resolves', () => {
+    let s = table({ myGraveyard: ['Ashen Revenant'], lands: 3 });
+    const revenant = find(s, 0, 'graveyard', 'Ashen Revenant');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: revenant, abilityIndex: 0,
+    } as Action)), 40);
+    expect(namesIn(s, 0, 'hand')).toContain('Ashen Revenant');
+    expect(namesIn(s, 0, 'graveyard')).toEqual([]);
+  });
+});
