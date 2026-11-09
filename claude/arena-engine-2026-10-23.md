@@ -19851,3 +19851,96 @@ reader, and the only thing D541 changed about it is nothing.
 What this costs, said plainly: there is **no 40/40 reading for seed set 41301**, because the run was
 killed rather than left to spend an hour of CPU on one table. The clean reading above is a different
 seed set, and the honest summary is "40/40 at 41401, and 41319 is a pre-existing long game".
+
+## D542 — The bite and the fight: two targets pointed at each other
+
+**415 legal printings**, in two shapes that look like one and are not.
+
+The **bite** is one-way: "Target creature you control deals damage equal to its power to target
+creature you don't control" (Rabid Bite, Bite Down, Quarrel, Clear Shot, Ram Through). The **fight**
+is both ways: "Target creature you control fights target creature you don't control" (Prey Upon, Go
+for Blood, Pit Fight, Mutant's Prey), which is a keyword action with a rule of its own (CR 701.12a).
+
+`fight` has been in the engine since Prey Upon and gets right the one thing that matters: both powers
+are read **before** either damage is dealt, so a creature that dies to the first half still deals its
+own. The bite cannot reuse it — one-way is one-way — but the two readers sit side by side in
+`targetedEffect` so the pair stays legible, and the compile table reads them in one describe.
+
+### The damage comes from the creature, not from the spell
+
+This is the whole of the bite's correctness. CR 702.2b and CR 702.15b hang deathtouch and lifelink on
+the *source* of the damage, and so do infect and wither. A reader that passed the spell as the source
+would compile a card that works — the right creature takes the right number — and silently turn off
+four keywords on every printing. So the effect passes `source: mine`, and a row asks a 1/1 Typhoid
+Rats to bite a 2/2 and expects the 2/2 dead.
+
+**That row failed, and what it found was not in the reader.** `dealDamage` took `deathtouch` and
+`lifelink` as *caller options*, beside `infect` and `wither`, which it read off the source's own
+keywords. Of its **41 call sites, exactly one passed them** — `combat.ts` — so deathtouch worked in
+combat and nowhere else: not on a bite, not on a ping, not on a trigger, not on anything a card had
+ever pointed anywhere. Both are now read from `sourceKeywords` beside `infect`/`withers`, and the two
+options are **deleted** rather than kept as an override: an override is a second place for the answer
+to live, and the source's keywords are the only place CR puts it. `combat.ts`'s three call sites lost
+the arguments, its unused `const lifelink` went, and its `const deathtouch` stays with a note that it
+is now read only for the lethal-damage arithmetic (CR 702.2c) while whether the damage is *deadly* is
+`dealDamage`'s business.
+
+An increment whose own test finds a four-keyword hole one layer down is the argument for the row
+being about behaviour rather than about the compile.
+
+### `friendly` is read off the printed words, and nowhere else
+
+`friendly` is the bot's aim, not a restriction: the printed phrase's own filter already decides what
+is legal to target. Almost every bite and every fight names your creature first, so the hint belongs
+on the first spec — but the corpus also prints the shape **inverted**: Mutiny and Breaking of the
+Fellowship both read "Target creature an opponent controls deals damage equal to its power to another
+target creature that player controls", where the same hint would point the bot at a board it may not
+choose from. So it is taken from `/\byou control\b/` on the subject phrase and from nothing else.
+
+Prey Upon's hand-written script did not carry `friendly`, which made this a new `compiled-vs-written`
+disagreement the moment the reader landed. Settled the way **D419** settled it: `friendly` beside a
+filter that already restricts to your side is the aim, not a second restriction, so the flag was
+written onto `PREY_UPON` and the standing check's table is empty again.
+
+### Refused: the referent forms
+
+The bigger half of the family is refused on purpose. "It fights target creature you don't control"
+(Epic Confrontation, Mage Duel, Savage Smash, Wild Instincts, Chelonian Tackle, ~22 printings) borrows
+its first target from the clause before it, and `referentEffect` turns down any reading that declares
+more than one target, because it supplies exactly **one** object. Supplying one of two is a real
+extension to the borrow, not a wording tweak, so these wait for it rather than being half-read now —
+D469, a reader that asks for N targets and moves one is worse than an unread line. The compile row
+shows Epic Confrontation with its pump read and its fight unread, side by side.
+
+### The break run: 8 of 9, then 9 of 9, and the ninth needed a probe
+
+The first pass caught 8. The two misses, and what each one was:
+
+- **"the damage comes from the spell, not the creature"** (break 6) — uncaught because nothing
+  asserted a keyword on the damage. Answered by **fixing the engine**: see above. The Typhoid Rats row
+  is what catches it now.
+- **"the first target is always aimed at your own side"** (break 9) — uncaught twice. The first
+  answer was a row on "Target creature fights another target creature" (Pit Fight, 2 printings), which
+  is real, reads, and carries no aim — but it exercises the **fight** reader, so it stays green while
+  the **bite** reader hardcodes the hint. And there is no real printing that can tell them apart:
+  every bite in the corpus that reads today says "you control" in its subject, and the two that do not
+  (Mutiny, Breaking of the Fellowship) are unread for the phrase after the verb. So this one gets a
+  **probe row** — a placeholder name over text no card carries, asserting what a real printing would
+  need the day its other phrase reads. Re-run of break 9 alone: **CAUGHT**, 9/9.
+
+Adding a test can only widen what the earlier breaks catch, so breaks 1-8 were not re-run; break 9
+was re-verified on its own with the same apply/revert discipline (unique anchor, SHA-256 revert check).
+
+That is the eighth break run in nine where what broke was a test rather than the code.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,180 / 56,421 (41.1%) | **23,228 / 56,421 (41.2%)** |
+| cards with a compiled script | 11,844 | **11,875** |
+| cards with every printed line read | 7,590 | **7,620** |
+
+31 more cards finished. The ratio is the usual one for a two-reader increment on a family whose
+bigger half is a referent form: the 415 printings split roughly 1 in 3 readable now, 2 in 3 waiting on
+a combinator.

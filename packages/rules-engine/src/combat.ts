@@ -506,14 +506,20 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
 
     if (attacker !== null && dealsInStep(attacker.ch, firstStrike) && attacker.ch.power > 0
       && !prevented(attack.attacker)) {
+      /*
+        Deathtouch is still read here, and only for the **arithmetic**: how much of an attacker's
+        power one blocker soaks up before trample lets the rest through is a question about lethal
+        damage (CR 702.2c), not about what the damage does when it lands. Whether the damage itself
+        is deadly is `dealDamage`'s own business now, read off the source beside infect and wither —
+        so lifelink, which has no arithmetic, is no longer read here at all.
+      */
       const deathtouch = attacker.ch.keywords.has('deathtouch');
-      const lifelink = attacker.ch.keywords.has('lifelink');
       const controller = attacker.inst.zoneSeat;
 
       if (attack.blockers.length === 0) {
         // `combatFrom` is what makes commander damage accumulate; see `dealDamage`.
         next = hit(next, defenderTarget(next, attack), attacker.ch.power, {
-          deathtouch, lifelink, controller, combatFrom: attack.attacker, source: attack.attacker,
+          controller, combatFrom: attack.attacker, source: attack.attacker,
         }, attack.attacker);
       } else {
         let remaining = attacker.ch.power;
@@ -536,7 +542,7 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
           const lethal = deathtouch ? 1 : Math.max(1, blocker.ch.toughness - blocker.inst.damage);
           const assigned = Math.min(remaining, lethal);
           next = dealDamage(next, { kind: 'card', id: blockerId }, assigned, {
-            deathtouch, lifelink, controller, source: attack.attacker,
+            controller, source: attack.attacker,
           });
           remaining -= assigned;
         }
@@ -545,7 +551,7 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
           // commander counts towards twenty-one just as an unblocked one does. Trampling over a
           // blocker in front of a planeswalker hits the planeswalker, for the same reason.
           next = hit(next, defenderTarget(next, attack), remaining, {
-            deathtouch, lifelink, controller, combatFrom: attack.attacker, source: attack.attacker,
+            controller, combatFrom: attack.attacker, source: attack.attacker,
           }, attack.attacker);
         }
       }
@@ -559,8 +565,6 @@ export function dealCombatDamage(state: GameState, firstStrike: boolean): GameSt
       if (attacker === null || creatureOf(next, attack.attacker) === null) continue;
       if (prevented(blockerId) || prevented(attack.attacker)) continue;
       next = dealDamage(next, { kind: 'card', id: attack.attacker }, blocker.ch.power, {
-        deathtouch: blocker.ch.keywords.has('deathtouch'),
-        lifelink: blocker.ch.keywords.has('lifelink'),
         controller: blocker.inst.zoneSeat,
         source: blockerId,
       });

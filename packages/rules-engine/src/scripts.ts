@@ -5048,6 +5048,16 @@ const PREY_UPON: CardScript = {
     {
       kind: 'creature',
       description: 'target creature you control',
+      /*
+        `friendly` beside a filter that already restricts to your own side: redundant as a
+        restriction and written anyway, which is the shape D419 settled for Cloudshift, Blossoming
+        Defense and Dive Down. The compiled reading sets it from the printed words ("you control"),
+        and `compiled-vs-written.test.ts` compares the two specs character for character — so the
+        choice is to write it here or to carry a disagreement row for ever. It is also the better
+        reading: the hint is the bot's *aim*, and the first half of a fight is a creature you want
+        to pick well rather than one you are allowed to pick.
+      */
+      friendly: true,
       filter: (state, candidate, controller) => creatureYouControl(state, candidate, controller),
     },
     {
@@ -17368,6 +17378,90 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
       return {
         targets: [spec],
         effect: (c) => foldCardTargets(c, freezeNextUntap),
+      };
+    }
+  }
+
+  /*
+    **The bite and the fight**: two targets pointed at each other (CR 701.12a, D542).
+
+    415 legal printings are in this family and it splits two ways. The **bite** is one-way —
+    "Target creature you control deals damage equal to its power to target creature you don't
+    control" — and the **fight** is both ways, with the keyword action doing the work: "Target
+    creature you control fights target creature you don't control".
+
+    `fight` has been in this file since Prey Upon and gets the simultaneity right, which is the
+    whole of why the two shapes share one function: both powers are read **before** either damage
+    is dealt, so a creature that dies to the first half still deals its own (CR 701.12a). The bite
+    cannot reuse it — one-way is one-way — but it is read beside it so the pair stays legible.
+
+    ## The subject's `friendly` is read off the phrase, not assumed
+
+    Almost every printing has you biting with your own creature, so the bot should aim the first
+    target at its own side. But the corpus also prints "Target creature an opponent controls deals
+    damage equal to its power to another target creature that player controls", where the same hint
+    would point the bot at a board it is not allowed to choose from. The phrase already carries the
+    controller clause as a *filter*; `friendly` is only the bot's aim, so it is set from the words —
+    `you control` and nothing else.
+
+    **Damage from the creature, not from the spell.** `dealDamage`'s `source` is the biting creature,
+    so deathtouch, lifelink, infect and wither all apply as the rules say. A reader that passed the
+    spell as the source would compile a card that works and quietly turns off three keywords.
+
+    ## What is refused, and it is the bigger half
+
+    Every **referent** form — "**it** deals damage equal to its power to target creature you don't
+    control" (3), "**it** fights target creature an opponent controls" (3), "Then **that creature**
+    deals damage equal to its power to ..." (3 + 3), and a dozen more spellings — stays unread.
+    `referentEffect` refuses a reading that declares more than one target (its guard is
+    `specs.length !== 1`), and these declare two: the borrowed object *and* the one still being
+    chosen. Supplying one of two is a real extension to the borrow rather than a phrase to match, so
+    it is the next increment and not a rider on this one.
+  */
+  const bite = new RegExp(
+    `^(${TARGET_QUANTIFIER_PREFIX}target .+?) deals damage equal to its power to `
+    + `(${TARGET_QUANTIFIER_PREFIX}target .+?)$`,
+    'i',
+  ).exec(text);
+  if (bite !== null) {
+    const biter = targetSpecFrom(bite[1]!, /\byou control\b/i.test(bite[1]!));
+    const bitten = targetSpecFrom(bite[2]!, false);
+    if (biter !== null && bitten !== null
+      && biter.kind === 'creature' && pointsAtAPermanent(bitten)
+      && (biter.count ?? 1) === 1 && (bitten.count ?? 1) === 1) {
+      return {
+        targets: [biter, bitten],
+        effect: (c) => {
+          const [mine, theirs] = cardTargets(c);
+          if (mine === undefined || theirs === undefined) return c.state;
+          const inst = c.state.instances[mine];
+          if (inst === undefined) return c.state;
+          const power = characteristicsOf(c.state, inst).power;
+          return power > 0
+            ? dealDamage(c.state, { kind: 'card', id: theirs }, power,
+              { controller: c.controller, source: mine })
+            : c.state;
+        },
+      };
+    }
+  }
+
+  const fought = new RegExp(
+    `^(${TARGET_QUANTIFIER_PREFIX}target .+?) fights (${TARGET_QUANTIFIER_PREFIX}target .+?)$`,
+    'i',
+  ).exec(text);
+  if (fought !== null) {
+    const mine = targetSpecFrom(fought[1]!, /\byou control\b/i.test(fought[1]!));
+    const theirs = targetSpecFrom(fought[2]!, false);
+    if (mine !== null && theirs !== null
+      && mine.kind === 'creature' && theirs.kind === 'creature'
+      && (mine.count ?? 1) === 1 && (theirs.count ?? 1) === 1) {
+      return {
+        targets: [mine, theirs],
+        effect: (c) => {
+          const [a, b] = cardTargets(c);
+          return a === undefined || b === undefined ? c.state : fight(c.state, a, b, c.controller);
+        },
       };
     }
   }

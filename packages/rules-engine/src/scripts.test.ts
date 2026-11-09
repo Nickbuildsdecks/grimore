@@ -34329,3 +34329,136 @@ describe('the mass pump, at the table (D541)', () => {
     expect(power(s, hound)).toBe(2);
   });
 });
+
+describe('the bite and the fight, at the table (D542)', () => {
+  /*
+    Two runtime facts, and each is a thing the reader could get wrong while still compiling.
+
+    **The bite is one-way.** A reader that reached for `fight` because the family looks alike would
+    kill the attacker's own creature on every Rabid Bite.
+
+    **The fight is simultaneous** (CR 701.12a). Both powers are read before either damage is dealt,
+    so two 2/2s trade. A reader that dealt the first half and then looked up the second creature's
+    power would find it already destroyed, deal nothing back, and leave its own creature alive —
+    which is the bug `fight` was extracted to prevent, now reachable from printed text as well.
+
+    Rabid Bite and Pounce, the real printings, through `customDeck`'s `data` — Pounce rather than
+    Prey Upon because Prey Upon is in the pool, so a deck naming it would be testing the
+    hand-written script instead of the compiled one.
+  */
+  const DATA = [
+    {
+      name: 'Rabid Bite', type_line: 'Sorcery', mana_cost: '{1}{G}', cmc: 2,
+      colors: ['G'], layout: 'normal',
+      oracle_text: 'Target creature you control deals damage equal to its power to target '
+        + "creature you don't control.",
+    },
+    {
+      name: 'Pounce', type_line: 'Instant', mana_cost: '{1}{G}', cmc: 2,
+      colors: ['G'], layout: 'normal',
+      oracle_text: "Target creature you control fights target creature you don't control. "
+        + '(Each deals damage equal to its power to the other.)',
+    },
+    {
+      name: 'Typhoid Rats', type_line: 'Creature — Rat', mana_cost: '{B}', cmc: 1,
+      colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Deathtouch (Any amount of damage this deals to a creature is enough to '
+        + 'destroy it.)',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'bite-and-fight',
+      name: 'Bite and Fight',
+      entries: [
+        { name: 'Rabid Bite', count: 4 }, { name: 'Pounce', count: 4 },
+        { name: 'Typhoid Rats', count: 4 }, { name: 'Grizzly Bears', count: 8 },
+        { name: 'Forest', count: 20 }, { name: 'Swamp', count: 20 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Pounce', 'Rabid Bite', 'Typhoid Rats'].sort());
+    return list.deck;
+  };
+
+  const table = (hand: readonly string[]): GameState => tapAllLands(advanceTo(arena({
+    decks: { 0: 'bite-and-fight', 1: 'bite-and-fight' },
+    deckSpecs: { 'bite-and-fight': deck() },
+    hands: { 0: [...hand] },
+    battlefield: {
+      0: ['Forest', 'Forest', 'Forest', 'Grizzly Bears'],
+      1: ['Grizzly Bears'],
+    },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+
+  /** The same table with a 1/1 deathtouch biter of seat 0's instead of the Bears. */
+  const withRats = (hand: readonly string[]): GameState => tapAllLands(advanceTo(arena({
+    decks: { 0: 'bite-and-fight', 1: 'bite-and-fight' },
+    deckSpecs: { 'bite-and-fight': deck() },
+    hands: { 0: [...hand] },
+    battlefield: {
+      0: ['Forest', 'Forest', 'Forest', 'Typhoid Rats'],
+      1: ['Grizzly Bears'],
+    },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+
+  it('bites one way: theirs dies, mine is untouched', () => {
+    let s = table(['Rabid Bite']);
+    const mine = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Rabid Bite'),
+      targets: [{ kind: 'card', id: mine }, { kind: 'card', id: theirs }],
+    } as Action), 60);
+
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    expect(s.instances[mine]?.zone).toBe('battlefield');
+    expect(damageOn(s, mine)).toBe(0);
+  });
+
+  it('fights both ways, and both 2/2s trade', () => {
+    let s = table(['Pounce']);
+    const mine = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Pounce'),
+      targets: [{ kind: 'card', id: mine }, { kind: 'card', id: theirs }],
+    } as Action), 60);
+
+    /*
+      Both, which is the assertion. One dead creature would mean the second power was read after
+      the first damage had already destroyed it.
+    */
+    expect(s.instances[mine]?.zone).toBe('graveyard');
+    expect(s.instances[theirs]?.zone).toBe('graveyard');
+  });
+
+  it('deals the damage from the CREATURE, so deathtouch applies', () => {
+    /*
+      The row a break run asked for. Nothing else here can tell the damage's source apart: a bite
+      whose source was the *spell* deals the same number to the same creature, and every assertion
+      above would still pass. Deathtouch is the cheapest keyword that reads the source — one damage
+      from a 1/1 Typhoid Rats destroys a 2/2 (CR 702.2b) — so this row fails the moment the source
+      stops being the biter, and with it go lifelink, infect and wither.
+    */
+    let s = withRats(['Rabid Bite']);
+    const rats = find(s, 0, 'battlefield', 'Typhoid Rats');
+    const theirs = find(s, 1, 'battlefield', 'Grizzly Bears');
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Rabid Bite'),
+      targets: [{ kind: 'card', id: rats }, { kind: 'card', id: theirs }],
+    } as Action), 60);
+
+    // One damage, and a 2/2 is dead: only deathtouch does that, and only if the Rats dealt it.
+    expect(s.instances[theirs]?.zone).toBe('graveyard');
+    expect(s.instances[rats]?.zone).toBe('battlefield');
+  });
+});

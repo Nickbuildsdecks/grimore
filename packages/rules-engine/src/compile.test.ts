@@ -15580,3 +15580,157 @@ describe('the mass pump, read by its subject (D541)', () => {
     if (read.ok) expect(read.unread.length).toBe(1);
   });
 });
+
+describe('the bite and the fight: two targets pointed at each other (D542)', () => {
+  /*
+    **415 legal printings, split two ways.** The **bite** is one-way — "Target creature you control
+    deals damage equal to its power to target creature you don't control" — and the **fight** is both
+    ways, which is a keyword action with its own rule (CR 701.12a).
+
+    `fight` has been in the compiler since Prey Upon and gets the one thing right that matters: both
+    powers are read **before** either damage is dealt, so a creature that dies to the first half
+    still deals its own. The bite cannot reuse it — one-way is one-way — but the two are read side by
+    side so the pair stays legible.
+
+    Damage comes from the **creature**, not from the spell, so deathtouch, lifelink, infect and
+    wither all apply. A reader that passed the spell as the source would compile a card that works
+    and silently turns off four keywords.
+  */
+  const row = (
+    name: string, type: string, text: string, extra: Partial<CardDataRow> = {},
+  ): ReturnType<typeof compileCard> => compileCard({
+    name, type_line: type, mana_cost: '{1}{G}', cmc: 2, colors: ['G'], layout: 'normal',
+    oracle_text: text, ...extra,
+  });
+
+  it.each([
+    ['the bite (Rabid Bite)',
+      "Target creature you control deals damage equal to its power to target creature you don't control."],
+    ['a bite that may hit a planeswalker (Bite Down)',
+      'Target creature you control deals damage equal to its power to target creature or '
+      + "planeswalker you don't control."],
+    ['the bite aimed at an opponent\'s board',
+      'Target creature you control deals damage equal to its power to target creature an '
+      + 'opponent controls.'],
+    ['the fight (Prey Upon)',
+      "Target creature you control fights target creature you don't control. "
+      + '(Each deals damage equal to its power to the other.)'],
+    ['a fight against another target (Pit Fight)',
+      'Target creature you control fights another target creature. '
+      + '(Each deals damage equal to its power to the other.)'],
+  ])('reads %s', (_what, text) => {
+    const read = row('Probe Rite', 'Sorcery', text as string);
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('declares both targets, in the order the sentence names them', () => {
+    /*
+      The order is the card: `cardTargets` hands them back in spec order, and a reader that swapped
+      them would have the opponent's creature biting yours. Asserted by description rather than by
+      kind, because both are creatures and the kind cannot tell them apart.
+    */
+    const read = row('Rabid Bite', 'Sorcery',
+      "Target creature you control deals damage equal to its power to target creature you don't control.");
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.targets?.map((t) => t.description))
+      .toEqual(['target creature you control', "target creature you don't control"]);
+  });
+
+  it('aims the first target at your own side, and reads that off the words', () => {
+    /*
+      `friendly` is the bot's aim, not a restriction — the phrase's own filter already decides what
+      is legal. Almost every printing bites with your creature, so the hint belongs there; but the
+      corpus also prints a bite whose *subject* is an opponent's creature, and the same hint there
+      would point the bot at a board it may not choose from. So it is read from the printed words and
+      nowhere else, which is what the second half of this row asserts.
+    */
+    const mine = row('Rabid Bite', 'Sorcery',
+      "Target creature you control deals damage equal to its power to target creature you don't control.");
+    expect(mine.ok).toBe(true);
+    if (mine.ok) {
+      expect(mine.script?.targets?.[0]?.friendly).toBe(true);
+      expect(mine.script?.targets?.[1]?.friendly).toBeUndefined();
+    }
+
+    const theirs = row('Probe Rite', 'Sorcery',
+      'Target creature an opponent controls deals damage equal to its power to another target '
+      + 'creature that player controls.');
+    expect(theirs.ok).toBe(true);
+    // Unread for its own reason — "that player controls" is a phrase nothing reads — but if it ever
+    // reads, the hint must not be friendly. Asserted as the refusal it is today.
+    if (theirs.ok) expect(theirs.unread.length).toBe(1);
+
+    /*
+      **The rows that make "read it off the words" falsifiable**, which two break runs asked for in
+      turn. The refusal above is silent about a flag it was never going to carry, and the fight row
+      below exercises the *fight* reader — so neither one fails when the *bite* reader hardcodes the
+      hint. Every bite printing in the corpus that reads today says "you control" in its subject
+      (Mutiny and Breaking of the Fellowship are the two that do not, and both are unread for the
+      phrase after the verb), so there is no real card that can tell the two readers apart here.
+
+      That is what a probe row is for: a placeholder name over text no printing carries, asserting
+      the behaviour a real card would need the day its other phrase reads. The subject names no
+      controller, so the compiled spec must carry no aim.
+    */
+    const bareBite = row('Probe Rite', 'Sorcery',
+      "Target creature deals damage equal to its power to target creature you don't control.");
+    expect(bareBite.ok).toBe(true);
+    if (bareBite.ok) {
+      expect(bareBite.unread.map((u) => u.line)).toEqual([]);
+      expect(bareBite.script?.targets?.[0]?.friendly).toBeUndefined();
+    }
+
+    /*
+      The fight's own version of the same row (Pit Fight, 2 printings) — a real printing that names
+      no controller on its second target, so a fight reader that aimed both halves at your side
+      fails here.
+    */
+    const unowned = row('Pit Fight', 'Instant',
+      'Target creature you control fights another target creature. '
+      + '(Each deals damage equal to its power to the other.)');
+    expect(unowned.ok).toBe(true);
+    if (unowned.ok) expect(unowned.script?.targets?.[1]?.friendly).toBeUndefined();
+
+    const neither = row('Probe Rite', 'Instant', 'Target creature fights another target creature.');
+    expect(neither.ok).toBe(true);
+    if (neither.ok) {
+      expect(neither.unread.map((u) => u.line)).toEqual([]);
+      expect(neither.script?.targets?.[0]?.friendly).toBeUndefined();
+    }
+  });
+
+  it('refuses the referent forms, which declare two targets and borrow one', () => {
+    /*
+      The bigger half of the family, and refused on purpose. "It fights target creature you don't
+      control" (Epic Confrontation's second sentence) borrows its first target from the clause
+      before it — and `referentEffect` turns down any reading that declares more than one target,
+      because it supplies exactly one object. Supplying one of two is a real extension to the
+      borrow, so these wait for it rather than being half-read now.
+
+      Asserted on the real printing, with the sentence that reads shown beside the one that does
+      not: Epic Confrontation's pump is read and its fight is not.
+    */
+    const read = row('Epic Confrontation', 'Sorcery',
+      'Target creature you control gets +1/+2 until end of turn. '
+      + "It fights target creature you don't control. "
+      + '(Each deals damage equal to its power to the other.)');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.length).toBe(1);
+  });
+
+  it('refuses a bite whose subject is not a creature', () => {
+    /*
+      A probe, and the guard that keeps the open phrase honest: `kind === 'creature'` on the biter,
+      because "equal to its power" is a question only a creature can answer. Without it a land or a
+      player target would reach `characteristicsOf` and read a power of zero, which is a card that
+      resolves and does nothing.
+    */
+    const read = row('Probe Rite', 'Sorcery',
+      'Target land you control deals damage equal to its power to target creature you don\'t control.');
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBe(1);
+  });
+});

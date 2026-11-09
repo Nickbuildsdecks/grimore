@@ -355,8 +355,6 @@ export function dealDamage(
   target: Target,
   amount: number,
   opts: {
-    readonly deathtouch?: boolean;
-    readonly lifelink?: boolean;
     readonly controller?: SeatIndex;
     /**
      * The attacking creature, when this is **combat** damage. Only combat damage from a commander
@@ -449,6 +447,28 @@ export function dealDamage(
     infect creature, which is a different card in a format where ten poison ends the game.
   */
   const withers = sourceKeywords !== null && sourceKeywords.has('wither');
+  /*
+    **Deathtouch and lifelink, read off the source — like infect and wither, and unlike before.**
+
+    These two were `opts` the caller had to pass, and of the **41 call sites of this function
+    exactly one passed them**: `dealCombatDamage`, from the fighting creature's own keywords. So
+    deathtouch worked in combat and nowhere else, which is not what the rules say — CR 702.2b is
+    "any nonzero damage", in combat or out — and lifelink was the same (CR 702.15b). A Basilisk
+    Collar on a pinger, a Prey Upon with a deathtoucher, a "deals damage equal to its power to any
+    target" trigger: all of them dealt ordinary damage.
+
+    Found by a test that asked. D542's bite reader wanted a row proving the damage comes from the
+    **creature** rather than from the spell, deathtouch is the cheapest keyword that can tell, and
+    the row failed: a 1/1 Typhoid Rats bit a 2/2 and the 2/2 lived.
+
+    Read here rather than left to the callers for the reason `infect` is: it is a fact about the
+    source, the source is already in hand, and a rule that forty callers have to remember is a rule
+    thirty-nine of them get wrong. The two `opts` are **deleted** rather than kept as an override,
+    so there is one answer and no way to disagree with it; combat's own call sites passed exactly
+    what this computes, so nothing about combat changes.
+  */
+  const deadly = sourceKeywords !== null && sourceKeywords.has('deathtouch');
+  const lifelinked = sourceKeywords !== null && sourceKeywords.has('lifelink');
   if (target.kind === 'player') {
     const seat = next.seats[target.seat];
     if (seat === undefined) return next;
@@ -532,7 +552,7 @@ export function dealDamage(
       const loyalty = inst.counters['loyalty'] ?? 0;
       const counters = { ...inst.counters, loyalty: Math.max(0, loyalty - left) };
       next = withInstance(next, inst.id, { counters });
-      if (opts.lifelink && opts.controller !== undefined) next = gainLife(next, opts.controller, left);
+      if (lifelinked && opts.controller !== undefined) next = gainLife(next, opts.controller, left);
       return next;
     }
     /*
@@ -548,17 +568,17 @@ export function dealDamage(
         counters: {
           ...inst.counters,
           '-1/-1': clampValue((inst.counters['-1/-1'] ?? 0) + left),
-          ...(opts.deathtouch ? { deathtouched: 1 } : {}),
+          ...(deadly ? { deathtouched: 1 } : {}),
         },
       })
       : withInstance(next, inst.id, {
         damage: clampValue(inst.damage + left),
         // Any damage from a deathtouch source destroys the creature (CR 702.2b). Marking it keeps
         // state-based actions the only place something actually dies.
-        ...(opts.deathtouch ? { counters: { ...inst.counters, deathtouched: 1 } } : {}),
+        ...(deadly ? { counters: { ...inst.counters, deathtouched: 1 } } : {}),
       });
   }
-  if (opts.lifelink && opts.controller !== undefined) next = gainLife(next, opts.controller, left);
+  if (lifelinked && opts.controller !== undefined) next = gainLife(next, opts.controller, left);
   return next;
 }
 
