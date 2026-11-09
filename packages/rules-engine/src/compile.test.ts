@@ -13321,17 +13321,154 @@ describe('a size read off the board (D521, D522)', () => {
     expect(read.unread).toHaveLength(1);
   });
 
-  it('leaves a static counted size unread, which is the half this increment did not do', () => {
+  it('left the static counted size to D523, which has since read it', () => {
     /*
-      Stated as a row rather than left implicit, because "it compiles" and "it is read" are
-      different claims and this is the line between the two halves. A static counted size has no
-      moment of creation to read a count at, so reading it as a fixed number would be a Blanchwood
-      Armor that stops growing — the quiet wrong this family exists to refuse.
+      **This row asserted a refusal when D522 shipped, and D523 turned it into a reading.**
+
+      It was the line between the two halves: a static counted size has no moment of creation to
+      read a count at, so reading it as a fixed number would have been a Blanchwood Armor that
+      stops growing — the quiet wrong this family exists to refuse. D523 did not read it as a fixed
+      number; it gave `ContinuousEffect` a `sizePerCount` that carries the count as data and is
+      re-read on every look, which is the only honest way to do it.
+
+      Retargeted rather than deleted, for the reason D516's Act of Treason row was: a row that
+      records *when* a shape started reading is worth more than one that quietly disappears, and a
+      stale refusal is how a suite starts asserting the past.
     */
     const read = creature('Not A Card', 'Not A Card gets +1/+1 for each Forest you control.');
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.unread.map((u) => u.line))
-      .toEqual(['Not A Card gets +1/+1 for each Forest you control.']);
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+});
+
+describe('a STATIC size read off the board (D523)', () => {
+  /*
+    The other half of the counted size, and a different job from D522's. A static counted size is a
+    continuous effect whose amount is a **live** count: there is no moment of creation to read a
+    number at, so the effect carries the count as DATA and `characteristicsOf` reads it on every
+    look. `state.effects` is serialised to Redis, which is why a closure cannot do it.
+
+    133 one-away cards print one. 40 name a count that can be answered, and the split is not about
+    the corpus but about where the count runs:
+
+    | | cards | |
+    | --- | --- | --- |
+    | a ZONE count | 13 | free: `cardDefs` is printed data, and a card in a hand or a graveyard has no continuous effects on it |
+    | a BATTLEFIELD count | 27 | possible only against the **printed** type line |
+    | outside the vocabulary | 93 | `its power`, `creature blocking it`, `that card's mana value`, … |
+
+    ## The constraint, and the cost it is paid with
+
+    `staticCount` runs inside `characteristicsOf`, so it may not ask a permanent for its live
+    characteristics: a live read re-enters the whole computation for every other conditional effect
+    on the board, and two effects that read each other's types would not terminate. The engine says
+    so in three places, and metalcraft already pays the same price with its own docblock recording
+    the rules gap (CR 702.105a).
+
+    So the cost here is the same and is stated rather than hidden: **a permanent whose type or
+    subtype comes from a continuous effect is not counted.** A changeling is not seen by a tribal
+    count and a crewed Vehicle is not seen as a creature. The row below pins that, because a limit
+    nothing tests is a limit nobody will remember.
+
+    It also means `countOfThing` and `staticCountOf` are deliberately *different* vocabularies:
+    `creatures you control` is read in a one-shot clause (D520) and refused here, because a count of
+    creatures cannot be answered without asking what is a creature. That is the constraint showing
+    through, not an inconsistency — Pennon Blade and Bravado are refused for exactly this reason.
+  */
+  const creature = (name: string, text: string) => compileCard({
+    name, type_line: 'Creature — Human Soldier', mana_cost: '{2}{W}', cmc: 3, colors: ['W'],
+    layout: 'normal', power: '3', toughness: '3', oracle_text: text,
+  });
+
+  it.each([
+    ['a rate on the card itself',
+      'Not A Card gets +1/+1 for each Equipment you control.'],
+    ['the same with "this creature" as the subject',
+      'This creature gets +1/+1 for each Equipment you control.'],
+    ['an announced X', 'Not A Card gets +X/+X, where X is the number of cards in your hand.'],
+    ['a shrink', 'Not A Card gets -1/-1 for each card in your hand.'],
+    ['a zone count', 'Not A Card gets +1/+0 for each creature card in your graveyard.'],
+    ['a count of its own counters',
+      'Not A Card gets +1/+1 for each +1/+1 counter on it.'],
+    ['an artifact count', 'Not A Card gets +1/+1 for each artifact you control.'],
+  ])('reads %s', (_why, text) => {
+    const read = creature('Not A Card', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('adds to the printed size rather than replacing it (layer 7c, not 7a)', () => {
+    /*
+      The one thing that would be wrong in a way no refusal catches. `definesSize` is layer 7a and
+      SETS a base — a Lhurgoyf *is* the creature cards in all graveyards — while this ADDS to
+      whatever the base turns out to be (CR 613.4c). Read through `definesSize`, Adelbert Steiner
+      would be a 1/1 whose printed 3/3 had been thrown away.
+    */
+    const read = creature('Not A Card', 'Not A Card gets +1/+1 for each Equipment you control.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const effect = read.script?.statics?.[0]?.effect as
+      { sizePerCount?: unknown; definesSize?: unknown } | undefined;
+    expect(effect?.sizePerCount).toEqual({
+      of: { kind: 'permanents-of-subtype', subtype: 'Equipment' }, power: 1, toughness: 1,
+    });
+    expect(effect?.definesSize).toBeUndefined();
+  });
+
+  it.each([
+    ['Enchanted creature gets +1/+1 for each Forest you control.'],
+    ['Equipped creature gets +1/+1 for each artifact you control.'],
+  ])('reads a counted size on an attachment: %s', (text) => {
+    // An attachment's bonus is already a `PumpOptions`, so `sizePerCount` rides in it to
+    // `staticEffect` and out to `characteristicsOf` the way `power` does — three lines, not a
+    // second mechanism. 41 of the corpus's static counted sizes are printed on an attachment.
+    const aura = compileCard({
+      name: 'Not An Aura', type_line: /Equipped/i.test(text) ? 'Artifact — Equipment' : 'Enchantment — Aura',
+      mana_cost: '{2}{G}', cmc: 3, colors: ['G'], layout: 'normal',
+      oracle_text: /Equipped/i.test(text)
+        ? `${text}\nEquip {2}`
+        : `Enchant creature\n${text}`,
+    });
+    expect(aura.ok).toBe(true);
+    if (!aura.ok) return;
+    expect(aura.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it.each([
+    ['a count of creatures, which cannot be answered without asking what is a creature',
+      'Not A Card gets +1/+1 for each creature you control.'],
+    ['a count of OTHER creatures, for the same reason',
+      'Not A Card gets +1/+1 for each other creature you control.'],
+    ['attacking creatures, which is a fact about combat rather than printed data',
+      'Not A Card gets +1/+1 for each attacking creature.'],
+    ['a quantity that is not a count of the board at all',
+      'Not A Card gets +X/+X, where X is the number of its power.'],
+    ['a mixed sign', 'Not A Card gets +1/-1 for each card in your hand.'],
+    ['a size that is nought however big the count',
+      'Not A Card gets +0/+0 for each card in your hand.'],
+  ])('refuses %s', (_why, text) => {
+    const read = creature('Not A Card', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('refuses the three creature counts HERE that D520 reads in a one-shot clause', () => {
+    /*
+      Stated as its own row because it looks like an inconsistency and is not. The same printed
+      phrase is answerable live (while an effect resolves) and unanswerable printed (inside
+      `characteristicsOf`), so the same words are read in one place and refused in the other.
+    */
+    const oneShot = compileCard({
+      name: 'Not A Spell', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal', oracle_text: 'You gain 1 life for each creature you control.',
+    });
+    const asStatic = creature('Not A Card', 'Not A Card gets +1/+1 for each creature you control.');
+    expect(oneShot.ok && asStatic.ok).toBe(true);
+    if (!oneShot.ok || !asStatic.ok) return;
+    expect(oneShot.unread.map((u) => u.line)).toEqual([]);
+    expect(asStatic.unread).toHaveLength(1);
   });
 });

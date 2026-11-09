@@ -35495,3 +35495,95 @@ which is why they were handled differently:
   because `boardCount` re-checks that prefix itself and returns null without it. The narrower regex
   documents the grammar at the point of the split and costs nothing, so it stays — but it is not
   load-bearing, and the break was replaced with a real one rather than counted as a miss.
+
+## D523 — A static size read off the board, and the constraint that shaped it
+
+D522 shipped the temporary half of the counted size and left the static half, on the stated ground
+that a static size needs the count as **data** rather than a function, because `state.effects` is
+serialised to Redis. That was true and it was not the hard part.
+
+### The constraint, found before any code was written
+
+`cdaCount` — the function that reads a `definesSize` count — runs **inside** `characteristicsOf`,
+so it cannot ask a permanent for its live characteristics. The engine already says so in three
+places: *"asking for a permanent's live type line here would re-enter the whole computation for
+every other conditional effect on the board, and two conditional effects that read each other's
+types would not terminate."* Metalcraft counts **printed** artifacts for exactly this reason and its
+docblock records the rules gap that costs (CR 702.105a).
+
+That matters because most of D520's vocabulary is live: `permanentsOfSubtype`,
+`creaturesControlledBy`, `otherCreaturesControlled` and `attackingCreatures` all go through
+`characteristicsOf`. **None of them can be reused for a static size as they stand.** Had this been
+discovered halfway through the implementation it would have meant unpicking the design.
+
+### What the measurement said, and where it corrected me
+
+Of the **133** one-away cards with a static counted size:
+
+| | cards | |
+| --- | --- | --- |
+| a ZONE count | 13 | free — `cardDefs` is printed data, and a card in a hand or graveyard has no continuous effects on it |
+| a BATTLEFIELD count | 27 | possible only against the **printed** type line |
+| outside the vocabulary | 93 | `its power` 9, `creature blocking it` 8, `that card's mana value` 6, then nothing above 4 |
+
+One row in my own first bucketing was misfiled: `+1/+1 counters on it` reads
+`state.instances[id].counters`, which is instance data rather than a characteristic, so it needs no
+re-entry at all.
+
+**A probe I wrote and then refused to act on.** To decide whether a subtype count could be answered
+from the printed line I classified each counted subtype by namespace, reading the corpus's own type
+lines. It put `Forest`, `Mountain` and `Equipment` in the *creature-type* bucket — because one
+dual-typed card poisons a word, and Dryad Arbor's printed line is `Land Creature — Forest Dryad`.
+The classification was too crude to carry the decision, so it was discarded rather than used. The
+answer came from the precedent instead: metalcraft already pays this price in this exact place, and
+following it is consistent and testable where inventing a finer rule from an unreliable probe is not.
+
+### What shipped
+
+`ContinuousEffect.sizePerCount` — `{ of: StaticCountable, power, toughness }`, all data — applied in
+**layer 7c** beside the fixed modifiers rather than with `definesSize` in 7a. That distinction is the
+whole of the design: 7a *sets* a base, 7c *adds* to one, and Adelbert Steiner read through
+`definesSize` would be a 1/1 with his printed 3/3 thrown away. A compile row and a runtime row each
+pin it.
+
+`PumpOptions` carries the field too, and that is why the attachment half is three lines rather than a
+second mechanism: an Aura's or Equipment's bonus is already a `PumpOptions`, so `sizePerCount` rides
+it to `staticEffect` and out to `characteristicsOf` the way `power` does. 41 of the corpus's static
+counted sizes are printed on an attachment.
+
+`staticCountOf` is deliberately a **narrower** vocabulary than `countOfThing`, and the asymmetry is
+the constraint showing through rather than an inconsistency: `creatures you control` is read in a
+one-shot clause (D520) and refused in a static size, because a count of creatures cannot be answered
+without asking what is a creature. A test asserts both halves of that sentence on the same phrase.
+
+### The cost, stated and asserted
+
+A permanent whose type or subtype comes from a continuous effect is **not counted**. A changeling
+(D506) is not seen by a tribal count; a crewed Vehicle is not seen as a creature. The runtime row
+that pins this first asserts the Mimic really *is* a Goblin by the live rules, so it fails for the
+right reason — a limit nothing tests is a limit nobody will remember.
+
+### What it moved
+
+| | before | after |
+| --- | --- | --- |
+| printed lines read | 22,264 / 56,421 (39.5%) | **22,312 / 56,421 (39.5%)** |
+| cards with a compiled script | 11,204 | **11,228** |
+| cards with every printed line read | 6,965 | **6,993** |
+
+Adelbert Steiner, Blanchwood Armor, Deadeye Plunderers, Dread Slag, Quag Sickness, Exoskeletal
+Armor and Runechanter's Pike's sibling shapes now read. Pennon Blade and Bravado are refused, and
+correctly: they count creatures.
+
+**10 of 10 breaks caught**, each verified to apply against a unique anchor and revert to a SHA-256
+match. One came back uncaught and was a **weak test** rather than a vacuous break: the controller
+scoping of `cards in your hand` is real, but the row gave the opponent an empty hand, so a count of
+every hand gave the same answer. Fixed by dealing seat 1 a bigger hand, and the row now says in a
+comment that this is what the break run found.
+
+**Two stale rows retargeted**, both mine. D522's "leaves a static counted size unread" was the line
+between the halves and D523 crossed it; the D474 magecraft row listed Storm-Kiln Artist's
+`gets +1/+0 for each artifact you control` as expected-unread. Both now assert the reading, with the
+reason recorded in place — D516's rule, that a row recording *when* a shape started reading is worth
+more than one that quietly disappears, and that a stale refusal is how a suite starts asserting the
+past.

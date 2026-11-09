@@ -1289,6 +1289,40 @@ export interface ContinuousEffect {
         /** "seven or more", which is what every threshold card printed says. */
         readonly atLeast: number;
       };
+  /**
+   * A size that is a **count times a rate**: layer 7c, `~ gets +1/+1 for each Equipment you
+   * control` (D523).
+   *
+   * The sibling of `definesSize` and deliberately not a case of it. `definesSize` is layer 7a and
+   * *sets* a base — a Lhurgoyf **is** the creature cards in all graveyards — while this *adds* to
+   * whatever the base turns out to be, which is layer 7c (CR 613.4c). Folding the two together
+   * would make Adelbert Steiner a 1/1 whose printed 3/3 had been thrown away.
+   *
+   * **Data rather than a function**, for `while`'s reason one field above: `state.effects` is part
+   * of the game state and the state is serialised to Redis, so a closure here would not survive
+   * the trip. That is the whole reason the temporary half of this family (D522) is reader work and
+   * this half is engine work — a pump computes its number once, as the effect is created
+   * (CR 611.2c), and has nothing to serialise.
+   *
+   * ## What it may count, and the constraint that decides the list
+   *
+   * `staticCount` answers these **without** asking any permanent for its live characteristics, and
+   * that is not a style choice: this is read from inside `characteristicsOf`, so a live read would
+   * re-enter the whole computation for every other conditional effect on the board, and two
+   * effects that read each other's types would not terminate. The same constraint shapes
+   * metalcraft's count one field above, and the cost is the same one, stated rather than hidden: a
+   * permanent whose type or subtype comes from a continuous effect is not counted. A changeling
+   * (D506) is not seen by a tribal count here, and a crewed Vehicle is not seen as a creature.
+   * `countOfThing` in `scripts.ts` has no such limit, because it runs while an effect resolves —
+   * so the *same printed phrase* is counted live in a one-shot clause and printed in a static one.
+   * That difference is real and is tested, not argued.
+   */
+  readonly sizePerCount?: {
+    readonly of: StaticCountable;
+    /** Added to power per thing counted. `+1/+1 for each` is 1 and 1; `+2/+0` is 2 and 0. */
+    readonly power: number;
+    readonly toughness: number;
+  };
   readonly definesSize?: {
     /**
      * One count, because one card needs one count. "Cards in your hand", "lands you control" and
@@ -1519,6 +1553,97 @@ function effectApplies(
  * Counted on every read, which is what makes it a CDA rather than an effect: there is no moment at
  * which the number is decided, so there is nothing to store and nothing to invalidate.
  */
+/**
+ * What a static counted size may count, as data.
+ *
+ * Named rather than written as a vocabulary, which is `definesSize`'s discipline and D57's rule: a
+ * count with no card behind it is a count nothing has ever run. Every row here is a phrase the
+ * corpus prints on a static size, measured over the legal pool — zone counts first (13 cards), then
+ * the battlefield counts that a printed type line can answer (27).
+ */
+export type StaticCountable =
+  | { readonly kind: 'cards-in-hand' }
+  | { readonly kind: 'cards-in-graveyard' }
+  | { readonly kind: 'creature-cards-in-graveyard' }
+  | { readonly kind: 'creature-cards-in-all-graveyards' }
+  | { readonly kind: 'instants-and-sorceries-in-graveyard' }
+  | { readonly kind: 'artifacts-you-control' }
+  | { readonly kind: 'counters-on-self'; readonly counter: string }
+  | { readonly kind: 'permanents-of-subtype'; readonly subtype: string };
+
+/**
+ * A static counted size's count, answered without reading any permanent's live characteristics.
+ *
+ * See `ContinuousEffect.sizePerCount` for why that restriction exists and what it costs. Each row
+ * reads one of three things, and none of them re-enters `characteristicsOf`:
+ *
+ * - a **zone's** cards, through `cardDefs`, which is printed data. A card in a hand or a graveyard
+ *   has no continuous effects on it, so its printed type line *is* what it is.
+ * - the source's own **counters**, which are instance data rather than a characteristic.
+ * - a battlefield permanent's **printed** type line, which is metalcraft's compromise.
+ */
+function staticCount(
+  state: GameState,
+  of: StaticCountable,
+  controller: SeatIndex,
+  source: string,
+): number {
+  const inZone = (seat: SeatIndex, zone: 'hand' | 'graveyard') =>
+    state.zones[zoneKey(seat, zone)] ?? [];
+  const typed = (seat: SeatIndex, zone: 'hand' | 'graveyard', wanted: readonly string[]) => {
+    let n = 0;
+    for (const id of inZone(seat, zone)) {
+      const inst = state.instances[id];
+      if (inst === undefined) continue;
+      const line = parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+      if (wanted.some((type) => hasType(line, type))) n += 1;
+    }
+    return n;
+  };
+
+  switch (of.kind) {
+    case 'cards-in-hand':
+      return inZone(controller, 'hand').length;
+    case 'cards-in-graveyard':
+      return inZone(controller, 'graveyard').length;
+    case 'creature-cards-in-graveyard':
+      return typed(controller, 'graveyard', ['creature']);
+    case 'creature-cards-in-all-graveyards':
+      return state.seats.reduce(
+        (total, seat) => total + typed(seat.index, 'graveyard', ['creature']), 0,
+      );
+    case 'instants-and-sorceries-in-graveyard':
+      return typed(controller, 'graveyard', ['instant', 'sorcery']);
+    case 'counters-on-self':
+      return state.instances[source]?.counters[of.counter] ?? 0;
+    /*
+      The two that read the battlefield, and the two that pay metalcraft's price. `parseTypeLine` on
+      the **printed** line, never `characteristicsOf` — see `sizePerCount`.
+    */
+    case 'artifacts-you-control': {
+      let n = 0;
+      for (const id of state.zones[zoneKey(controller, 'battlefield')] ?? []) {
+        const inst = state.instances[id];
+        if (inst === undefined) continue;
+        if (hasType(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'artifact')) n += 1;
+      }
+      return n;
+    }
+    case 'permanents-of-subtype': {
+      let n = 0;
+      const wanted = of.subtype.toLowerCase();
+      for (const id of state.zones[zoneKey(controller, 'battlefield')] ?? []) {
+        const inst = state.instances[id];
+        if (inst === undefined) continue;
+        if (hasSubtype(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), wanted)) n += 1;
+      }
+      return n;
+    }
+    default:
+      return 0;
+  }
+}
+
 function cdaCount(
   state: GameState,
   kind: NonNullable<ContinuousEffect['definesSize']>['count'],
@@ -1933,6 +2058,16 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     if (effect.setToughness !== undefined) setToughness = effect.setToughness;
     modPower += effect.power ?? 0;
     modToughness += effect.toughness ?? 0;
+    /*
+      Layer 7c with a live count (D523). A rate times a count, added to whatever the base turns out
+      to be — which is why it sits here beside the fixed modifiers and not with `definesSize` above,
+      where it would replace a printed size instead of lifting it.
+    */
+    if (effect.sizePerCount !== undefined) {
+      const per = staticCount(state, effect.sizePerCount.of, effect.controller, effect.source);
+      modPower += per * effect.sizePerCount.power;
+      modToughness += per * effect.sizePerCount.toughness;
+    }
     for (const k of effect.keywords ?? []) keywords.add(k);
     for (const k of effect.removeKeywords ?? []) keywords.delete(k);
     if (effect.cantAttack) cantAttack = true;

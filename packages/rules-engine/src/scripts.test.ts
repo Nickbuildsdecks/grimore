@@ -26444,9 +26444,14 @@ describe('the cast prologue, parsed: colour, subtype, mana value and heroic (D47
 
   it('reads magecraft\'s "cast or copy" as the one filter that counts a copy', () => {
     /*
-      Storm-Kiln Artist, printed text out of the corpus. Its first line — a power that counts
-      artifacts — stays unread, which is D362's hybrid working: the magecraft trigger is compiled
-      and flagged beside the line that is not.
+      Storm-Kiln Artist, printed text out of the corpus.
+
+      **This row asserted the first line was unread until D523**, and it was: "gets +1/+0 for each
+      artifact you control" is a static size that is a live count, which needed `sizePerCount` in
+      `ContinuousEffect` before it could be read at all. D523 built that, so the card now reads end
+      to end and the expectation is an empty list. Kept rather than deleted, because what it is
+      really about is the magecraft prologue below — and the change of the line above it is a
+      record of the hybrid closing on this exact card (D362).
 
       A shape assertion rather than a game, and the reason is that the copy half already has one:
       the pool's two hand-written magecraft cards drive `how: 'any'` through a real Twincast
@@ -26460,8 +26465,7 @@ describe('the cast prologue, parsed: colour, subtype, mana value and heroic (D47
     });
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.unread.map((u) => u.line))
-      .toEqual(['Storm-Kiln Artist gets +1/+0 for each artifact you control.']);
+    expect(read.unread.map((u) => u.line)).toEqual([]);
     const triggers = (read.script as { triggers?: readonly { readonly on: unknown }[] })
       .triggers ?? [];
     expect(triggers).toHaveLength(1);
@@ -32088,5 +32092,145 @@ describe('a size read off the board, played off printed text (D522)', () => {
     const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
     expect(power(s, bears)).toBe(2);
     expect(toughness(s, bears)).toBe(2);
+  });
+});
+
+describe('a STATIC size read off the board, played off printed text (D523)', () => {
+  /*
+    The runtime half, and the row that matters most is the one a temporary pump cannot fake: a
+    static counted size is **live**, so the creature's power changes when the board changes with no
+    new effect created and nothing resolving. D522's pumps compute their number once (CR 611.2c);
+    this is read on every look.
+
+    The last row pins the cost of how it is read. `staticCount` runs inside `characteristicsOf` and
+    may not ask a permanent for its live characteristics — a live read there re-enters the whole
+    computation and two effects that read each other's types would not terminate — so it reads the
+    **printed** type line, as metalcraft has since D142. That means a changeling, which has every
+    creature type from a continuous effect (D506), is NOT counted. A limit nothing tests is a limit
+    nobody will remember, so it is asserted rather than described.
+  */
+  const DATA = [
+    {
+      name: 'Ashen Marshal', type_line: 'Creature — Human Soldier', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], layout: 'normal', power: '3', toughness: '3',
+      oracle_text: 'Ashen Marshal gets +1/+1 for each Swamp you control.',
+    },
+    {
+      name: 'Ashen Hoard', type_line: 'Creature — Zombie', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Ashen Hoard gets +1/+0 for each card in your hand.',
+    },
+    {
+      name: 'Ashen Chief', type_line: 'Creature — Goblin', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Ashen Chief gets +1/+1 for each Goblin you control.',
+    },
+    {
+      name: 'Ashen Mimic', type_line: 'Creature — Shapeshifter', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Changeling',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'statics',
+      name: 'Statics',
+      entries: [
+        ...DATA.map((c) => ({ name: c.name, count: 4 })),
+        { name: 'Swamp', count: 44 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Ashen Chief', 'Ashen Hoard', 'Ashen Marshal', 'Ashen Mimic']);
+    return list.deck;
+  };
+
+  const table = (hand: readonly string[], mine: readonly string[]) => advanceTo(arena({
+    decks: { 0: 'statics', 1: 'statics' },
+    deckSpecs: { statics: deck() },
+    hands: { 0: [...hand] },
+    battlefield: { 0: [...mine] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('is LIVE: playing a land grows the creature, with no new effect created', () => {
+    /*
+      The row a fixed number cannot pass. Two Swamps make the Marshal a 5/5; playing a third from
+      hand makes it a 6/6, and `state.effects` is the same length before and after — nothing
+      resolved, nothing was created, the count simply reads one higher.
+    */
+    let s = table(['Swamp'], ['Swamp', 'Swamp', 'Ashen Marshal']);
+    const marshal = find(s, 0, 'battlefield', 'Ashen Marshal');
+    expect(power(s, marshal)).toBe(5);
+    expect(toughness(s, marshal)).toBe(5);
+    const effectsBefore = s.effects.length;
+
+    s = drain(apply(s, {
+      type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Swamp'),
+    } as Action), 40);
+    expect(power(s, marshal)).toBe(6);
+    expect(toughness(s, marshal)).toBe(6);
+    expect(s.effects.length).toBe(effectsBefore);
+  });
+
+  it('adds to the printed size rather than replacing it', () => {
+    // Layer 7c, not 7a. A printed 3/3 with one Swamp is a 4/4; read through `definesSize` it would
+    // have been a 1/1, with the printed size thrown away.
+    const s = table([], ['Swamp', 'Ashen Marshal']);
+    const marshal = find(s, 0, 'battlefield', 'Ashen Marshal');
+    expect(power(s, marshal)).toBe(4);
+  });
+
+  it('counts a zone, and the count is the hand the seat actually holds', () => {
+    /*
+      The Hoard is a printed 2/2 and gets +1/+0 per card in hand, so its power is 2 plus the hand.
+      Read off the state rather than written as a literal: `arena` deals the turn's draw on top of
+      the hand the harness names, and a literal here would be asserting the harness rather than the
+      count. The toughness half is a printed +0, so it is untouched however big the count.
+    */
+    const s = advanceTo(arena({
+      decks: { 0: 'statics', 1: 'statics' },
+      deckSpecs: { statics: deck() },
+      /*
+        The opponent holds cards too, and that is the point of the row rather than set dressing:
+        "cards in YOUR hand" is scoped to the effect's controller, and with an empty hand across the
+        table a count of every hand would give the same answer. A break run found exactly that —
+        the guard was real and the row did not discriminate until seat 1 held something.
+      */
+      hands: { 0: ['Swamp', 'Swamp', 'Swamp'], 1: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp'] },
+      battlefield: { 0: ['Swamp', 'Ashen Hoard'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const hoard = find(s, 0, 'battlefield', 'Ashen Hoard');
+    const mine = [...ids(s, 0, 'hand')].length;
+    const theirs = [...ids(s, 1, 'hand')].length;
+    expect(mine).toBeGreaterThan(2);
+    expect(theirs).toBeGreaterThan(mine);
+    expect(power(s, hoard)).toBe(2 + mine);
+    expect(toughness(s, hoard)).toBe(2);
+  });
+
+  it('does NOT count a changeling, which is the cost of reading the printed type line', () => {
+    /*
+      **The stated limit, asserted.** A changeling is every creature type (CR 702.73a), so the rules
+      say Ashen Chief should count the Mimic and be a 4/4. It is a 3/3, because `staticCount` reads
+      the printed type line — `Creature — Shapeshifter` — and cannot ask for the live one without
+      re-entering `characteristicsOf`. The same gap metalcraft has carried since D142, in the same
+      place and for the same reason.
+
+      The Chief counts ITSELF, which is correct and is why the answer is 3/3 rather than 2/2: it is a
+      printed Goblin, so one Goblin is on the board as far as a printed count can see.
+    */
+    const s = table([], ['Swamp', 'Ashen Chief', 'Ashen Mimic']);
+    const chief = find(s, 0, 'battlefield', 'Ashen Chief');
+    const mimic = find(s, 0, 'battlefield', 'Ashen Mimic');
+    // The Mimic really is a Goblin as far as the rules are concerned — so the miss is the count's,
+    // not the changeling reader's, and this row would pass for the wrong reason without it.
+    expect(characteristicsOf(s, s.instances[mimic]!).typeLine.subtypes).toContain('Goblin');
+    expect(power(s, chief)).toBe(3);
+    expect(toughness(s, chief)).toBe(3);
   });
 });

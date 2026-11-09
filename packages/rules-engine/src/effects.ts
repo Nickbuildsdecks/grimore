@@ -1996,6 +1996,8 @@ export interface PumpOptions {
   readonly setColors?: readonly Color[];
   /** See `ContinuousEffect.definesSize` — layer 7a, a size that is a count of the board. */
   readonly definesSize?: ContinuousEffect['definesSize'];
+  /** See `ContinuousEffect.sizePerCount` — layer 7c, a rate times a live count of the board. */
+  readonly sizePerCount?: ContinuousEffect['sizePerCount'];
   /** See `ContinuousEffect.while` — metalcraft, and any other "as long as" clause. */
   readonly while?: ContinuousEffect['while'];
   /**
@@ -2058,6 +2060,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.addSubtypes ? { addSubtypes: opts.addSubtypes } : {}),
     ...(opts.setColors ? { setColors: opts.setColors } : {}),
     ...(opts.definesSize ? { definesSize: opts.definesSize } : {}),
+    ...(opts.sizePerCount ? { sizePerCount: opts.sizePerCount } : {}),
     ...(opts.while ? { while: opts.while } : {}),
     ...(opts.grants ? { grants: [...opts.grants] } : {}),
     ...(opts.grantsAbilities ? { grantsAbilities: [...opts.grantsAbilities] } : {}),

@@ -21,6 +21,7 @@ import {
   cardHasSubtype, characteristicsOf, hasSubtype, hasType, isDevoidLine, isKeyword, isLegendary,
   parseTypeLine,
   printedKeywords,
+  type StaticCountable,
   printedLandwalk, shortName, SELF_TYPE_WORDS, type Characteristics, type TypeLine,
 } from './characteristics.js';
 import { zoneKey, type CardDef } from './cards.js';
@@ -12461,6 +12462,37 @@ function attachmentBonus(
   const tail = matched[1]!.trim();
 
   /*
+    **A counted size on the attached creature** (D523): `Enchanted creature gets +1/+1 for each
+    Forest you control` (Blanchwood Armor), `Equipped creature gets +1/+1 for each artifact you
+    control` (Pennon Blade). 41 of the corpus's static counted sizes are printed on an attachment —
+    26 Auras and 15 Equipment — which is the second largest block in the family after the card's own
+    size.
+
+    Nothing new is needed below this line: an attachment's bonus is already a `PumpOptions`, and
+    `sizePerCount` rides in it to `staticEffect` and out to `characteristicsOf` the same way `power`
+    does. That is the whole reason this is three lines rather than a second mechanism.
+
+    `harmful` is read off the sign, as it is for a printed size: a shrink on the host is removal and
+    a bot that does not know that holds the Aura for nothing (see this function's docblock).
+  */
+  const countedTail = /^gets ([+-](?:X|\d+))\/([+-](?:X|\d+)) for each (.+)$/i.exec(tail)
+    ?? /^gets ([+-](?:X|\d+))\/([+-](?:X|\d+)), where X is the number of (.+)$/i.exec(tail);
+  if (countedTail !== null) {
+    const grammar = / for each /i.test(tail) ? 'per-thing' as const : 'announced' as const;
+    const of = staticCountOf(countedTail[3]!, name);
+    const rate = of === null
+      ? null
+      : countedSizeRate(countedTail[1]!, countedTail[2]!, grammar);
+    if (of !== null && rate !== null) {
+      return {
+        bonus: { sizePerCount: { of, ...rate } },
+        harmful: rate.power < 0 || rate.toughness < 0,
+      };
+    }
+    return null;
+  }
+
+  /*
     **The quoted granted ability, taken off the front of the keyword grammar (D511).**
 
     `has "X"` and `has <keyword> and "X"` are the two printings — Commander's Authority is the
@@ -17769,6 +17801,121 @@ const CDA_COUNTS: Readonly<Record<string, 'creature-cards-in-graveyards' | 'inst
   'instant and sorcery cards in your graveyard': 'instant-and-sorcery-cards-in-your-graveyard',
 };
 
+/**
+ * The same count as `countOfThing`, asked for as **data** instead of as a function (D523).
+ *
+ * A static counted size is a continuous effect, `state.effects` is serialised to Redis, and a
+ * closure does not make that trip — so a static size names its count rather than holding one. See
+ * `ContinuousEffect.sizePerCount`.
+ *
+ * ## Why this is a second vocabulary and not a shared one
+ *
+ * It is deliberately **narrower** than `countOfThing`, and the line is drawn by where each one
+ * runs. `countOfThing`'s readings execute while an effect resolves, so they may read a permanent's
+ * live characteristics; `staticCount` executes inside `characteristicsOf`, so it may not — a live
+ * read there re-enters the whole computation and two effects that read each other's types would not
+ * terminate. So `creatures you control`, `other creatures you control` and `attacking creatures`
+ * are **refused here and read there**, which is not an inconsistency but the constraint showing
+ * through: a count of creatures cannot be answered without asking what is a creature.
+ *
+ * The rows that remain are the ones answerable from printed data or instance data, and they are
+ * what the corpus prints on a static size: 13 cards name a zone count and 27 a battlefield count
+ * that a printed type line can answer.
+ */
+function staticCountOf(thing: string, name: string): StaticCountable | null {
+  const text = plain(thing).trim().replace(/\.$/, '');
+  const self = selfRef(name);
+
+  if (/^cards? in your hand$/i.test(text)) return { kind: 'cards-in-hand' };
+  if (/^cards? in your graveyard$/i.test(text)) return { kind: 'cards-in-graveyard' };
+  if (/^creature cards? in your graveyard$/i.test(text)) {
+    return { kind: 'creature-cards-in-graveyard' };
+  }
+  if (/^creature cards? in all graveyards$/i.test(text)) {
+    return { kind: 'creature-cards-in-all-graveyards' };
+  }
+  if (/^instant and sorcery cards? in your graveyard$/i.test(text)) {
+    return { kind: 'instants-and-sorceries-in-graveyard' };
+  }
+  if (/^artifacts? you control$/i.test(text)) return { kind: 'artifacts-you-control' };
+  if (new RegExp(`^\\+1/\\+1 counters? on (?:${self}|it|this creature)$`, 'i').test(text)) {
+    return { kind: 'counters-on-self', counter: '+1/+1' };
+  }
+  const tribe = /^([A-Z][A-Za-z'-]*) you control$/.exec(text);
+  if (tribe !== null) {
+    const subtype = subtypeFromTribalPhrase(tribe[1]!, 'singular');
+    return subtype === null ? null : { kind: 'permanents-of-subtype', subtype };
+  }
+  return null;
+}
+
+/**
+ * `~ gets +1/+1 for each Equipment you control` — a static size that is a rate times a count.
+ *
+ * The 133-card half of the counted-size family D522 deliberately left out, of which 40 name a count
+ * this vocabulary can answer. Unlike D522's pumps there is no moment of creation to read a number
+ * at: the effect is permanent and the count changes under it, so the effect carries the count as
+ * data and `characteristicsOf` reads it on every look. That is `definesSize`'s shape, which is why
+ * this sits beside it — but it is layer **7c** rather than 7a, because it adds to the printed size
+ * instead of replacing it. Reading Adelbert Steiner through `definesSize` would throw his printed
+ * 3/3 away.
+ *
+ * Both grammars, as everywhere in this family: `for each <T>` makes the printed number a rate, and
+ * `, where X is the number of <T>` makes the half the count itself. A mixed sign is refused for
+ * D252's reason, and a size that is nought however big the count is refused as `sizeBonus` refuses
+ * `+0/+0`.
+ */
+function staticCountedSizeFromLine(line: string, name: string): Partial<CardScript> | null {
+  const self = selfRef(name);
+  const flat = plain(line).trim().replace(/\.\s*$/, '');
+
+  const perThing = /^(.*?) for each (.+)$/i.exec(flat);
+  const announced = perThing !== null ? null
+    : /^(.*?),\s*where X is the number of (.+)$/i.exec(flat);
+  if (perThing === null && announced === null) return null;
+  const counted = staticCountOf((perThing ?? announced)![2]!, name);
+  if (counted === null) return null;
+  const body = (perThing ?? announced)![1]!.trim();
+  const grammar = perThing !== null ? 'per-thing' as const : 'announced' as const;
+
+  const sized = new RegExp(
+    `^(?:${self}|this creature) gets ([+-](?:X|\\d+))/([+-](?:X|\\d+))$`, 'i',
+  ).exec(body);
+  if (sized === null) return null;
+
+  const rate = countedSizeRate(sized[1]!, sized[2]!, grammar);
+  if (rate === null) return null;
+  return { statics: [{ scope: 'self', effect: { sizePerCount: { of: counted, ...rate } } }] };
+}
+
+/**
+ * Two printed halves and a grammar, as the per-thing rate a static counted size carries.
+ *
+ * The data twin of `countedPumpOptions`, and it refuses the same two things for the same reasons: a
+ * **mixed sign** cannot say whether the card helps or harms, and two printed zeroes is a size that
+ * is nought however big the count. Under `announced` a half of `X` is the count itself, which is a
+ * rate of one; under `per-thing` a printed `X` is the cast-time X and is refused.
+ */
+function countedSizeRate(
+  power: string,
+  toughness: string,
+  grammar: 'announced' | 'per-thing',
+): { readonly power: number; readonly toughness: number } | null {
+  const half = (word: string): number | null => {
+    const matched = /^([+-])(X|\d+)$/i.exec(word.trim());
+    if (matched === null) return null;
+    const sign = matched[1] === '-' ? -1 : 1;
+    if (/^x$/i.test(matched[2]!)) return grammar === 'announced' ? sign : null;
+    return sign * Number(matched[2]);
+  };
+  const p = half(power);
+  const t = half(toughness);
+  if (p === null || t === null) return null;
+  if (p === 0 && t === 0) return null;
+  if (p * t < 0) return null;
+  return { power: p, toughness: t };
+}
+
 function definesSizeFromLine(line: string, name: string): Partial<CardScript> | null {
   const self = selfRef(name);
   const matched = new RegExp(
@@ -18256,6 +18403,12 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
     ?? entersTappedFromLine(line, name)
     ?? staticFromLine(line)
     ?? conditionalStaticFromLine(line, name)
+    /*
+      Before `definesSizeFromLine`, which would not match it anyway — but the order says which is
+      which: 7a sets a base and 7c adds to one, and a counted size that replaced Adelbert Steiner's
+      printed 3/3 would be a worse card than the one printed.
+    */
+    ?? staticCountedSizeFromLine(line, name)
     ?? definesSizeFromLine(line, name)
     ?? entersWithFromLine(line, name)
     /*
