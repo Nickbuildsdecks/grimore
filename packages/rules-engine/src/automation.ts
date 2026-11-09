@@ -3174,6 +3174,26 @@ function decisionPlan(
       if (target !== undefined && target.kind === 'player') plan.push({ seat: target.seat, specIndex: i });
       continue;
     }
+    /*
+      **The player the trigger's event was about** (D530) — the two words `CardsDecisionSpec.who`
+      documents in full. "Whenever ~ deals combat damage to a player, that player discards a card"
+      is a question asked of a player nobody targeted, and `target-player` above would find no
+      target and ask nobody while the ability resolved.
+
+      `hit-player` asks nobody when the object carries no attack, for the same reason and with the
+      same comment as `target-player` with no player target: the ability simply has nothing to ask,
+      which is not an error. `acting-player` has no such case — an absent `actor` *means* the
+      controller (D474), so the fallback is the value and not a guess.
+    */
+    if (spec.who === 'hit-player') {
+      const seat = object.attacked?.defender;
+      if (seat !== undefined) plan.push({ seat, specIndex: i });
+      continue;
+    }
+    if (spec.who === 'acting-player') {
+      plan.push({ seat: object.actor ?? object.controller, specIndex: i });
+      continue;
+    }
     for (const seat of turnOrder(state)) {
       if (spec.who === 'each-opponent' && seat === object.controller) continue;
       plan.push({ seat, specIndex: i });

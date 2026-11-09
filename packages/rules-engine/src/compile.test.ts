@@ -13982,3 +13982,130 @@ describe('the upkeep tax: sacrifice unless you pay (D529)', () => {
     expect(read.unread).toHaveLength(1);
   });
 });
+
+describe('a referent subject, read by borrowing the targeted reader (D530)', () => {
+  /*
+    The measurement that chose this shape, and the two probes it took to get it right.
+
+    D526's queue pointed at "that player" and the first probe answered **8 cards**, which was wrong
+    twice over: it counted clauses rather than cards (D434), and it split each unread line with
+    `clausesOf` and then tested only clauses *starting* with the pronoun — so a combat-damage tail
+    sharing its sentence with the trigger prologue was never tested at all. The corrected probe
+    strips the prologue the way `triggerFromLine` does and asks whether the CARD finishes:
+
+      the event referent ("that player" named by the trigger's own event)      27 cards
+        of which the player who was HIT     (`c.attacked.defender`)            18
+        of which the player who ACTED       (`c.actor`, the D475 gate)          9
+      the intra-resolution referent (the target an earlier clause chose)         9 cards
+
+    The rows under the first are a long tail — `discards a card` 16, `discards two cards` 4,
+    `mills two cards` 2, `loses N life` 2, then singletons — which is the whole argument for a
+    borrow instead of a seventh hand-written sentence. See `referentEffect`.
+
+    A third probe compiled each clause standalone and answered **4 cards**; it is recorded here as
+    wrong because the failure is instructive. Standalone compilation breaks every clause whose
+    reading depends on where it sits — the Equipment family refuses on "attach it to target creature
+    you control", which only reads inside an ETB trigger — so the probe measured the probe.
+  */
+  const creature = (text: string, name = 'Not A Card') => compileCard({
+    name, type_line: 'Creature — Specter', mana_cost: '{2}{B}{B}', cmc: 4, colors: ['B'],
+    layout: 'normal', power: '2', toughness: '2', oracle_text: text,
+  });
+  const spell = (text: string, name = 'Not A Card') => compileCard({
+    name, type_line: 'Instant', mana_cost: '{1}{G}', cmc: 2, colors: ['G'],
+    layout: 'normal', oracle_text: text,
+  });
+
+  describe('the player the event names', () => {
+    it.each([
+      ['Abyssal Specter, the 16-card row',
+        'Whenever Not A Card deals combat damage to a player, that player discards a card.'],
+      ['Okiba-Gang Shinobi, two cards',
+        'Whenever Not A Card deals combat damage to a player, that player discards two cards.'],
+      ['Shriekgeist, a mill',
+        'Whenever Not A Card deals combat damage to a player, that player mills two cards.'],
+      ['Dimir Cutpurse, a second clause after the referent one',
+        'Whenever Not A Card deals combat damage to a player, that player discards a card '
+        + 'and you draw a card.'],
+    ])('reads %s', (_why, text) => {
+      const read = creature(text as string);
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread.map((u) => u.line)).toEqual([]);
+      const trigger = (read.script?.triggers ?? [])[0];
+      expect(trigger?.on).toEqual({ kind: 'combat-damage' });
+      /*
+        And it asks for **nothing**. That is the point of the borrow rather than a side effect of
+        it: the sentence reads through a reader written for a target, and if the spec survived, the
+        table would stop and ask which player to discard — on a card that already knows.
+      */
+      expect(trigger?.targets ?? []).toEqual([]);
+    });
+
+    it('reads the actor where the event is about an action, not a hit (the D475 gate)', () => {
+      const read = compileCard({
+        name: 'Not A Card', type_line: 'Enchantment', mana_cost: '{3}{B}', cmc: 4, colors: ['B'],
+        layout: 'normal',
+        oracle_text: "At the beginning of each player's upkeep, that player discards a card.",
+      });
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread.map((u) => u.line)).toEqual([]);
+      expect((read.script?.triggers ?? [])[0]?.targets ?? []).toEqual([]);
+    });
+
+    /*
+      The refusal that matters most, and it is D475's rule unchanged rather than a new one: an
+      `etb` passes the watcher's own side, so "that player" after one is a player this sentence
+      cannot name. Reading it would compile a card that fires and does the wrong thing, which is
+      worse than the unread line (D362).
+    */
+    it('refuses a referent after an event that names no player', () => {
+      const read = creature(
+        'Whenever another creature enters, that player discards a card.',
+      );
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread).toHaveLength(1);
+    });
+  });
+
+  describe('the target an earlier clause in the same resolution chose', () => {
+    it.each([
+      ['Arbor Armament',
+        'Put a +1/+1 counter on target creature. That creature gains reach until end of turn.'],
+      ['Stealth Mission',
+        'Put two +1/+1 counters on target creature you control. '
+        + "That creature can't be blocked this turn."],
+      ['Battlefield Promotion, with a third clause after the borrow',
+        'Put a +1/+1 counter on target creature. That creature gains first strike until end of '
+        + 'turn. You gain 2 life.'],
+    ])('reads %s', (_why, text) => {
+      const read = spell(text as string);
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread.map((u) => u.line)).toEqual([]);
+      // One spec for the whole resolution — the borrow adds none, which is what makes the
+      // composition legal at all (see the `targeted.length > 1` rule it sits beside).
+      expect(read.script?.targets ?? []).toHaveLength(1);
+      expect((read.script?.targets ?? [])[0]?.kind).toBe('creature');
+    });
+
+    it.each([
+      ['no earlier clause pointed at anything',
+        'You gain 2 life. That creature gains reach until end of turn.'],
+      ['the earlier spec is "any target", which may hold a player',
+        'Not A Card deals 3 damage to any target. That creature gains reach until end of turn.'],
+      ['the pronoun names a kind the earlier spec is not',
+        'Destroy target artifact. That creature gains reach until end of turn.'],
+      ['two clauses would each want their own target',
+        'Destroy target creature. Target player draws a card. '
+        + 'That creature gains reach until end of turn.'],
+    ])('refuses when %s', (_why, text) => {
+      const read = spell(text as string);
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread).toHaveLength(1);
+    });
+  });
+});

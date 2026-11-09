@@ -14457,6 +14457,120 @@ function tokenEffect(clause: string, name: string): ReadEffect | null {
 }
 
 /**
+ * A clause whose **subject is a referent** — "that player", "that creature" — read by borrowing the
+ * reader that already understands the same sentence with a *target* in that position (D530).
+ *
+ * ## Why a borrow rather than a reader per clause
+ *
+ * The referent readers below this one were written one printed sentence at a time: "that player
+ * loses 2 life and you gain 2 life" (D407), "~ deals 1 damage to that player" (D407), four more for
+ * the creature on the other side of a block (D480). Each is three lines of regex and six of effect,
+ * and each only ever answers for its own wording. Asked how much that style had left on the table,
+ * the corpus said: **27 legal cards** are one clause short on a "that player" sentence whose only
+ * problem is the first two words, and the rows are a long tail — `discards a card` 16, `discards two
+ * cards` 4, `mills two cards` 2, `loses N life` 2, then singletons. Writing the next seven readers
+ * would buy seven rows of a tail that does not end.
+ *
+ * The observation that replaces them: **"that player discards a card" and "target player discards a
+ * card" are the same effect aimed differently.** The clause vocabulary already reads the second one.
+ * So the subject is swapped for the target phrase, the existing reader is asked, and the referent is
+ * supplied in place of the chosen target by rewriting `EffectContext.targets` on the way in. One
+ * mechanism, and every sentence the vocabulary learns to target it learns to refer to for free.
+ *
+ * ## What `supply` is, and why the caller provides it
+ *
+ * The referent is a different object for every event, and only the caller knows which: the player
+ * who was **hit** travels as `c.attacked.defender`, the player who **acted** as `c.actor`, the
+ * creature on the other side of a block as `c.blocked`, and an earlier clause's target as
+ * `c.targets[0]`. Each of those is gated on the event or the composition carrying it — that gate is
+ * D475's whole argument and it stays with the caller, because a referent read off an event that does
+ * not carry it is a wrong reading, not an unread line (D362).
+ *
+ * `supply` returning `null` is "the object is not there", and the clause then does nothing — the
+ * same `c.attacked === undefined ? c.state : …` guard every hand-written referent reader already
+ * has, in one place.
+ *
+ * ## The four guards, and the found reason for each
+ *
+ * - **Exactly one spec, of the kind that was inserted.** A clause whose swapped reading declares two
+ *   targets, or one of some other kind, did not read the phrase this function put there — it found a
+ *   target of its own, and handing that one the referent would aim the card at the wrong object.
+ * - **A question aimed at the referent is re-aimed, not allowed through.** `decisionPlan` resolves
+ *   `who: 'target-player'` off the **stack object's** targets, not off the context an effect is
+ *   handed, so a borrowed target never reaches the question: it would ask nobody and the clause
+ *   would silently do nothing. That is the D362 failure in its worst form, because the log still
+ *   says the card resolved — and it is not hypothetical. "That player discards a card" is the
+ *   **16-card row** at the head of this whole family, and a discard *is* a question asked of the
+ *   player discarding (Mind Rot's, chosen by them and not by the caster). So the first version of
+ *   this function, which refused any clause carrying a question, refused the biggest row it was
+ *   written for. `asks` is what fixes it: the caller names the word that `target-player` becomes,
+ *   and `CardsDecisionSpec.who` grew `hit-player` and `acting-player` to be those words.
+ * - **A question aimed at a player, on a clause whose pronoun names a creature, is refused.** Not
+ *   re-aimed: "that creature" and "the player this question is for" are different objects and
+ *   nothing here can bridge them.
+ * - **No `beforeDecisions`.** `optionalEffect`'s reason: a pre-question half that the wrapper cannot
+ *   see through is a draw moved in front of somebody else's question.
+ * - **`immediate` is wrapped too, not refused.** A clause offering two readings is a deferred draw
+ *   (`ReadEffect.immediate`) and a composition picks between them by position. Wrapping only one
+ *   would hide that choice and leave the deferred reading in a non-final slot — the exact dependency
+ *   the field exists to prevent — so both are wrapped and the choice survives. The first version
+ *   refused the clause instead and lost Dimir Cutpurse, "that player discards a card **and you draw
+ *   a card**", whose second half is that very draw. Refusing a reading because the wrapper was too
+ *   narrow is the wrapper's bug, not the card's.
+ *
+ * `spellFlags` and `abilityFlags` are dropped rather than passed on, and that is not an oversight
+ * either: they describe **a spell of this family** — `targetsSelf`, `removesACreature` — and a
+ * clause that points at nothing is not a member of it. A composition takes its flags from the parts
+ * that really do target something.
+ */
+function referentEffect(
+  clause: string,
+  kind: 'player' | 'creature',
+  supply: (c: EffectContext) => Target | null,
+  reader: (text: string) => ReadEffect | null,
+  asks: 'target-player' | 'hit-player' | 'acting-player' = 'target-player',
+): ReadEffect | null {
+  const word = kind === 'player' ? /^that player\b/i : /^that creature\b/i;
+  const text = clause.trim();
+  if (!word.test(text)) return null;
+  const read = reader(text.replace(word, kind === 'player' ? 'target player' : 'target creature'));
+  if (read === null) return null;
+  const specs = read.targets ?? [];
+  if (specs.length !== 1 || specs[0]!.kind !== kind || (specs[0]!.count ?? 1) !== 1) return null;
+  /*
+    `beforeDecisions` stays refused, for `optionalEffect`'s reason: it runs before the questions are
+    planned, `composeEffects` deliberately does not propagate it, and a half carried through a
+    wrapper that cannot see it is a draw moved in front of somebody else's question. Nothing in the
+    corpus reaches this — only the whole-resolution shape readers set the field — so it is refused
+    rather than reasoned about.
+  */
+  if (read.beforeDecisions !== undefined) return null;
+  /*
+    Re-aim the questions, or refuse. `asks` defaults to `target-player`, which is "leave them
+    alone" — the compose-time caller borrows a target that really is on the stack object, so
+    `decisionPlan` already resolves the word correctly and rewriting it would break it.
+  */
+  const decisions = (read.decisions ?? []).map(
+    (spec) => ('who' in spec && spec.who === 'target-player' && asks !== 'target-player'
+      ? { ...spec, who: asks }
+      : spec),
+  ) as readonly DecisionSpecOf[];
+  if (kind === 'creature' && decisions.some((spec) => 'who' in spec && spec.who === 'target-player')) {
+    return null;
+  }
+  const aimed = (fn: EffectFn): EffectFn => (c) => {
+    const object = supply(c);
+    return object === null ? c.state : fn({ ...c, targets: [object] });
+  };
+  return {
+    effect: aimed(read.effect),
+    ...(read.immediate === undefined ? {} : { immediate: aimed(read.immediate) }),
+    ...(decisions.length === 0 ? {} : { decisions }),
+    ...(read.appliesNothing === undefined ? {} : { appliesNothing: read.appliesNothing }),
+  };
+}
+
+/**
  * A clause about **the player the event was about** — "that player".
  *
  * Trigger-only, and by construction rather than by a rule somebody has to remember. "That player"
@@ -14510,6 +14624,30 @@ function eventRelativeEffect(
   const PLAYER_ACTIONS = new Set(['spell-cast', 'draws', 'life-gained', 'step']);
   const aboutAPlayer = events.length > 0 && events.every((one) => PLAYER_ACTIONS.has(one.kind));
 
+  /*
+    **And the other half of the same gate: the events that pass the player who was HIT** (D530).
+
+    The paragraph above names `combat-damage` as a shape it refuses, and it was right to while the
+    only readers here were two hand-written sentences — but the reason it gave is about where the
+    seat lives, not about whether the seat is reachable. It is reachable. `automation.ts` derives
+    `attacked = { defender: event.defender }` for `combat-damage` and `combat-damage-dealt` before it
+    dispatches the trigger, for exactly this purpose, and its comment says so: "An attack trigger
+    says who was attacked; a combat-damage trigger says who was hit. They are the same question."
+    Hellrider's reader below has been reading `c.attacked` off an attack since D480.
+
+    So these events get their own referent, pulled from `c.attacked.defender` rather than `c.actor`,
+    and the two groups are kept apart rather than merged into one list: a line whose events span both
+    groups has **two** candidate answers for one pronoun and is refused, which is the same discipline
+    `aboutAPlayer` keeps and the reason it is `every` rather than `some`.
+
+    Measured worth: **18 legal cards** are finished by this group alone — Abyssal Specter, Blazing
+    Specter, Dimir Cutpurse, Okiba-Gang Shinobi, Shriekgeist, Silent Specter and the rest of the
+    Specters, whose printed line is "whenever ~ deals combat damage to a player, that player discards
+    a card".
+  */
+  const HIT_EVENTS = new Set(['combat-damage', 'combat-damage-dealt']);
+  const aboutTheHitPlayer = events.length > 0 && events.every((one) => HIT_EVENTS.has(one.kind));
+
   // Kambal: "that player loses 2 life and you gain 2 life".
   const drained = /^that player loses (\d+) life and you gain (\d+) life$/i.exec(text);
   if (drained !== null && aboutAPlayer) {
@@ -14536,6 +14674,38 @@ function eventRelativeEffect(
         });
       },
     };
+  }
+
+  /*
+    **The general referent reading, offered before the hand-written sentences below** (D530).
+
+    Two sources, each with the gate that licenses it: the player who was hit, and the player who
+    acted. `?? c.controller` on the actor is the value and not a fallback — see this function's own
+    docblock, which is about the entry that got that wrong.
+
+    Offered *first* because a sentence the clause vocabulary can read with a target is read the same
+    way wherever the subject came from, and the readers after this one are the sentences that
+    predate it. Where both answer, they answer identically; where only the general one does, the card
+    is finished instead of refused. The order is stated here rather than left to be inferred because
+    the reverse order would make every new sentence the vocabulary learns invisible to this path.
+  */
+  if (aboutTheHitPlayer) {
+    const hit = referentEffect(
+      text, 'player',
+      (c) => (c.attacked === undefined ? null : { kind: 'player', seat: c.attacked.defender }),
+      (swapped) => readEffect(swapped, name, null),
+      'hit-player',
+    );
+    if (hit !== null) return hit;
+  }
+  if (aboutAPlayer) {
+    const acted = referentEffect(
+      text, 'player',
+      (c) => ({ kind: 'player', seat: c.actor ?? c.controller }),
+      (swapped) => readEffect(swapped, name, null),
+      'acting-player',
+    );
+    if (acted !== null) return acted;
   }
 
   /*
@@ -17621,15 +17791,74 @@ function composeEffects(
   const stolen = stealPrefix(clauses);
   const rest = stolen === null ? clauses : stolen.rest;
   const parts: ReadEffect[] = stolen === null ? [] : [stolen.read];
+  // Which referent kinds the loop below borrowed an earlier clause's target for (D530); the
+  // licence for each is checked once `parts` is complete.
+  const borrows: ('creature' | 'player')[] = [];
   for (const clause of rest) {
+    /*
+      **A clause may refer back to the target an earlier clause in this same resolution chose**
+      (D530) — "Put a +1/+1 counter on target creature. That creature gains reach until end of
+      turn." (Arbor Armament), and nine legal cards of that shape.
+
+      Read here and not in the clause vocabulary because the licence is a fact about the *sequence*,
+      not about the clause: "that creature" means something only if something before it pointed at a
+      creature, and a reader handed one clause cannot know. That is the same reason the two rules
+      below this loop live here — a resolution's `targets` is one list and this is the only place
+      that can see all of it.
+
+      `c.targets[0]` is the right index by construction rather than by luck: the rule below refuses a
+      composition with more than one targeting part, so if the borrow is licensed at all there is
+      exactly one spec in the list and it is the one being referred to. The licence is checked after
+      the loop, where `parts` is complete; a clause read this way is tagged so that check can find it.
+    */
     const read = readEffect(clause, name, where);
-    if (read === null) return null;
-    parts.push(read);
+    if (read !== null) { parts.push(read); continue; }
+    let borrowed: ReadEffect | null = null;
+    for (const kind of ['creature', 'player'] as const) {
+      const one = referentEffect(
+        clause, kind, (c) => c.targets[0] ?? null,
+        (swapped) => readEffect(swapped, name, where),
+      );
+      if (one === null) continue;
+      borrowed = one;
+      borrows.push(kind);
+      break;
+    }
+    if (borrowed === null) return null;
+    parts.push(borrowed);
   }
   if (parts.length === 0) return null;
-  if (parts.length === 1) return parts[0]!;
 
   const targeted = parts.filter((part) => part.targets !== undefined);
+  /*
+    **The licence for a borrowed referent** (D530): there must be exactly one targeting part for it
+    to borrow from, that part must ask for exactly one object, and the object must be of the kind the
+    pronoun names.
+
+    All three are refusals of a *wrong card* rather than of an unread one. With no targeting part
+    `c.targets[0]` is `undefined` and the clause would quietly do nothing. With a spec asking for two
+    creatures, "that creature" names one of them and this cannot say which. With a spec of another
+    kind — "~ deals 3 damage to any target. That creature gets -1/-1" — the pronoun would be handed a
+    player.
+
+    `any` is refused for that last reason even though it *can* hold a creature: whether it does is a
+    fact about the game, not about the text, so a reading that assumed it would be right most of the
+    time and silently wrong the rest. That is the trade D362 settles the other way.
+
+    **Checked before the one-part shortcut below**, and that order is the whole of a defect this
+    increment's own test caught: a line that is *only* a referent clause borrows from nothing at all,
+    and with the shortcut first it was returned unchecked — "Whenever another creature enters, that
+    player discards a card" compiled, with `c.targets[0]` undefined, and did nothing. A licence
+    checked after an early return is not a licence.
+  */
+  if (borrows.length > 0) {
+    if (targeted.length !== 1) return null;
+    const specs = targeted[0]!.targets ?? [];
+    if (specs.length !== 1 || (specs[0]!.count ?? 1) !== 1) return null;
+    if (!borrows.every((kind) => specs[0]!.kind === kind)) return null;
+  }
+  if (parts.length === 1) return parts[0]!;
+
   // See the docblock: two target choices cannot share one `targets` list.
   if (targeted.length > 1) return null;
 

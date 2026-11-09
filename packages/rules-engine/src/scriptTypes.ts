@@ -1104,8 +1104,32 @@ export interface CardsDecisionSpec {
    * `each-opponent` expand into one question each, asked in turn order starting from the active
    * player (CR 101.4), because who answers first is sometimes the whole card: the second player to
    * sacrifice has seen what the first gave up.
+   *
+   * ## `hit-player` and `acting-player`: the player a TRIGGER'S EVENT was about (D530)
+   *
+   * "Whenever ~ deals combat damage to a player, that player discards a card" is Abyssal Specter,
+   * and the question it asks is the same one Mind Rot asks — chosen by the player discarding — but
+   * aimed at a player nobody targeted. `target-player` cannot express it: `decisionPlan` resolves
+   * that word off the stack object's **targets**, a trigger has none, and the question would be
+   * asked of nobody while the ability resolved and said so in the log. That is the D362 failure in
+   * its worst form, so the word is the fix rather than a target nobody chose.
+   *
+   * Two words and not one, matching the two gates in `eventRelativeEffect` exactly:
+   *
+   * - **`hit-player`** is `StackObject.attacked.defender`, the seat a combat-damage or
+   *   combat-damage-dealt event says was hit. Asks nobody if the object carries no attack.
+   * - **`acting-player`** is `StackObject.actor`, the seat whose action raised the event, falling
+   *   back to the **controller** — and that fallback is the value rather than a guess: `fireTrigger`
+   *   leaves `actor` off when the actor *is* the watcher's own controller, so an absent actor on
+   *   such a trigger means "me" (D474, and `EffectContext.actor` says so too).
+   *
+   * They are kept apart rather than merged into one "the event's player", because merging them
+   * needs a fallback between them and that fallback is where a wrong player would hide: a
+   * combat-damage object with no `attacked` would quietly ask the attacking creature's own
+   * controller to discard.
    */
-  readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent';
+  readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
+  | 'hit-player' | 'acting-player';
   /**
    * Which zone, from the chooser's own side. `library` is a search: the chooser may look through
    * the whole library while deciding, as they would at a table, and it is shuffled afterwards
@@ -1211,7 +1235,8 @@ export interface ChoiceDecisionSpec {
    * zone with nothing in it — so nothing downstream needed teaching.
    */
   readonly askOnlyIfChosen?: string;
-  readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent';
+  readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
+  | 'hit-player' | 'acting-player';
   readonly prompt: string;
   /** The words, in the order the table shows them. The first is the default a bot falls back on. */
   readonly options: readonly string[];
@@ -1311,7 +1336,8 @@ export interface NumberDecisionSpec {
    * zone with nothing in it — so nothing downstream needed teaching.
    */
   readonly askOnlyIfChosen?: string;
-  readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent';
+  readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
+  | 'hit-player' | 'acting-player';
   readonly prompt: string;
   /** The numbers on offer, inclusive, read off the board when the question is asked. */
   readonly range: (state: GameState, chooser: SeatIndex) => { readonly min: number; readonly max: number };

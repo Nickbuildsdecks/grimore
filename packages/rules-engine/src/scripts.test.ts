@@ -32834,3 +32834,173 @@ describe('the upkeep tax, played off printed text (D529)', () => {
     expect(namesIn(s, 0, 'battlefield')).toContain('Ashen Toll');
   });
 });
+
+describe('a referent subject, played off printed text (D530)', () => {
+  /*
+    The runtime half, and the row that matters is **which seat is asked**. The compile test can only
+    see that the question exists and carries no target spec; whether it reaches the player who was
+    *hit* rather than the attacker's own controller is a fact about `decisionPlan`, and getting it
+    backwards is the failure the whole increment is built to avoid — Abyssal Specter would resolve,
+    log that it resolved, and make its own controller discard.
+
+    `hit-player` is also the first `CardsDecisionSpec.who` that reads the stack object's event rather
+    than its targets, so the two paths below are the only proof that the new word is wired at all.
+  */
+  const DATA = [
+    {
+      name: 'Shadowed Herald', type_line: 'Creature — Specter', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Flying\nWhenever Shadowed Herald deals combat damage to a player, '
+        + 'that player discards a card.',
+    },
+    {
+      name: 'Tithe of Ash', type_line: 'Enchantment', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], layout: 'normal',
+      oracle_text: "At the beginning of each player's upkeep, that player discards a card.",
+    },
+    /*
+      A referent clause whose **own effect** reads the referent, which the two discards above do
+      not — and that difference is a coverage hole the break run found rather than one anybody
+      predicted. A discard carries a `CardsDecisionSpec`, and `who: 'hit-player'` is what routes
+      it: the engine applies the answer itself, so an effect handed the *wrong* object still
+      produces the right discard and the mis-aiming is invisible. Breaking the aiming left every
+      row above green.
+
+      Life loss has no question. The seat it takes life from is whatever the effect is handed, so
+      this is the only row that can see the aiming at all.
+    */
+    {
+      name: 'Grim Toll Rider', type_line: 'Creature — Specter', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Flying\nWhenever Grim Toll Rider deals combat damage to a player, '
+        + 'that player loses 2 life.',
+    },
+    {
+      name: 'Bracing Vines', type_line: 'Instant', mana_cost: '{G}', cmc: 1,
+      colors: ['G'], layout: 'normal',
+      oracle_text: 'Put a +1/+1 counter on target creature. '
+        + 'That creature gains reach until end of turn.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'referents',
+      name: 'Referents',
+      entries: [
+        { name: 'Shadowed Herald', count: 4 }, { name: 'Tithe of Ash', count: 4 },
+        { name: 'Bracing Vines', count: 4 }, { name: 'Grizzly Bears', count: 4 },
+        { name: 'Grim Toll Rider', count: 4 },
+        { name: 'Forest', count: 20 }, { name: 'Swamp', count: 20 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Bracing Vines', 'Grim Toll Rider', 'Shadowed Herald', 'Tithe of Ash']);
+    return list.deck;
+  };
+
+  const table = (over: Record<string, unknown>) => arena({
+    decks: { 0: 'referents', 1: 'referents' },
+    deckSpecs: { referents: deck() },
+    turn: 5, firstSeat: 0,
+    ...over,
+  });
+
+  it('asks the player who was HIT to discard, not the attacker (hit-player)', () => {
+    let s = table({
+      battlefield: { 0: ['Shadowed Herald'] },
+      hands: { 0: ['Grizzly Bears'], 1: ['Grizzly Bears', 'Forest'] },
+    });
+    s = advanceTo(s, 'declare-attackers');
+    const herald = find(s, 0, 'battlefield', 'Shadowed Herald');
+    const theirHand = ids(s, 1, 'hand').length;
+    const myHand = ids(s, 0, 'hand').length;
+    s = apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: herald, defender: 1 }],
+    } as Action);
+    s = apply(s, { type: 'auto:pass', by: 0 } as Action);
+    /*
+      Stopped **on the question**, in the combat damage step — `advanceTo` refuses to walk past a
+      pending decision, which is itself the first proof that the trigger asks somebody something.
+      `drain` then resolves the trigger and the table stops on the discard.
+    */
+    s = drain(advanceTo(s, 'combat-damage', 120), 60);
+    /*
+      Seat 1 is holding the question. Asserting the SEAT and not just the discard is the point: a
+      reading that aimed at `c.actor` would stop here too, with seat 0 on the clock.
+    */
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.from).toBe('hand');
+    s = drain(apply(s, {
+      type: 'auto:decide', by: 1, cards: [s.pendingDecision!.candidates[0]!],
+    } as Action), 60);
+    expect(ids(s, 1, 'hand').length).toBe(theirHand - 1);
+    // And the attacker's own hand is untouched, which is the half a wrong seat would have broken.
+    expect(ids(s, 0, 'hand').length).toBe(myHand);
+    expect(ids(s, 1, 'graveyard').length).toBeGreaterThan(0);
+  });
+
+  it('takes the life off the player who was hit, not off the attacker', () => {
+    /*
+      The row that sees the **aiming**, as the card's own comment says. Both life totals are
+      asserted: a reading that handed the effect the attacker's own side would show up here as
+      seat 0 at 18 and seat 1 untouched, and nothing else in this file could tell.
+    */
+    let s = table({ battlefield: { 0: ['Grim Toll Rider'] } });
+    s = advanceTo(s, 'declare-attackers');
+    const rider = find(s, 0, 'battlefield', 'Grim Toll Rider');
+    s = apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: rider, defender: 1 }],
+    } as Action);
+    s = apply(s, { type: 'auto:pass', by: 0 } as Action);
+    s = drain(advanceTo(s, 'postcombat-main', 120), 60);
+    // 2 from the body plus 2 from the trigger, and the attacker's own total untouched.
+    expect(life(s, 1)).toBe(16);
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('asks the player whose upkeep it is (acting-player)', () => {
+    /*
+      **Two** cards in the asked seat's hand, not one. A discard with exactly one legal answer is
+      answered by the engine itself — "a prompt with one possible answer is noise" — so a one-card
+      hand would leave `pendingDecision` null and the row could not see which seat was asked. That
+      is correct engine behaviour and it is why this hand is padded.
+    */
+    let s = table({
+      battlefield: { 0: ['Tithe of Ash'] },
+      hands: { 0: ['Grizzly Bears', 'Forest'], 1: ['Grizzly Bears', 'Forest'] },
+    });
+    // Seat 0 is the active player on turn 5, so its own upkeep is the one that comes first.
+    s = drain(advanceTo(s, 'upkeep'), 40);
+    expect(s.pendingDecision?.seat).toBe(0);
+    s = drain(apply(s, {
+      type: 'auto:decide', by: 0, cards: [s.pendingDecision!.candidates[0]!],
+    } as Action), 60);
+    expect(ids(s, 0, 'graveyard').length).toBeGreaterThan(0);
+  });
+
+  it('gives the keyword to the creature the earlier clause targeted, and to no other', () => {
+    let s = table({
+      hands: { 0: ['Bracing Vines'] },
+      battlefield: { 0: ['Grizzly Bears', 'Grizzly Bears', 'Forest'] },
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Forest'), abilityIndex: 0,
+    } as Action);
+    const bears = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+    expect(bears).toHaveLength(2);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Bracing Vines'),
+      targets: [{ kind: 'card', id: bears[0]! }],
+    } as Action)), 60);
+    // The counter and the keyword landed on the SAME creature, which is what "that creature" means.
+    expect(power(s, bears[0]!)).toBe(3);
+    expect(characteristicsOf(s, s.instances[bears[0]!]!).keywords.has('reach')).toBe(true);
+    // And the other Bears got neither, so the borrow did not become "each creature".
+    expect(power(s, bears[1]!)).toBe(2);
+    expect(characteristicsOf(s, s.instances[bears[1]!]!).keywords.has('reach')).toBe(false);
+  });
+});

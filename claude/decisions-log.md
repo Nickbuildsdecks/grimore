@@ -36105,3 +36105,177 @@ free **and** a tapped-out seat stopped with a one-button question), the priced a
 payment disagreeing about the word (so the engine charges nobody and the effect reads an answer that
 was never priced), and `best` removed — without it every taxed permanent is sacrificed the first
 time it is asked.
+
+## D530 — A referent subject, read by borrowing the reader that already targets (36 cards)
+
+"That player", "that creature". Before this, the compiler had **six** readers for referent clauses,
+each written for one printed sentence: `that player loses N life and you gain N life`,
+`~ deals N damage to that player` (both D407), and four for the creature on the other side of a block
+(D480). Each is three lines of regex and six of effect, and each only ever answers for its own
+wording.
+
+### The measurement, and the two wrong probes before it
+
+Asked how much that style had left on the table, the corpus answered a **long tail**: of the legal
+cards one clause short on a "that player" sentence, the rows are `discards a card` 16,
+`discards two cards` 4, `mills two cards` 2, `loses N life` 2, then singletons. Writing the next six
+readers would buy six rows of a tail that does not end.
+
+Two earlier probes were wrong and both are recorded, because the errors are the instructive part:
+
+- **probe542 answered 8 cards.** It counted clauses rather than cards (against D434), and it split
+  each unread line with `clausesOf` and then tested only clauses *starting* with the pronoun — so a
+  combat-damage tail sharing its sentence with the trigger prologue was never tested at all.
+- **probe545 answered 4 cards.** It compiled each clause standalone, which breaks every clause whose
+  reading depends on where it sits: the whole Equipment family refuses on "attach it to target
+  creature you control", which only reads inside an ETB trigger. It measured the probe.
+
+The corrected probes strip the prologue the way `triggerFromLine` does, delete the referent clause
+from the real card, recompile, and ask whether the **card** finishes:
+
+| referent source | cards finished |
+| --- | --- |
+| the player the event says was **hit** (`c.attacked.defender`) | 18 |
+| the player who **acted** (`c.actor`, the D475 gate) | 9 |
+| the target an **earlier clause in the same resolution** chose (`c.targets[0]`) | 9 |
+
+### The mechanism: one borrow, not a seventh reader
+
+"That player discards a card" and "target player discards a card" are **the same effect aimed
+differently**, and the clause vocabulary already reads the second. So `referentEffect` swaps the
+pronoun for the target phrase, asks the existing reader, and supplies the referent in place of the
+chosen target by rewriting `EffectContext.targets` on the way in. Every sentence the vocabulary
+learns to target, it now refers to for free.
+
+The gate stays with the caller, because that is D475's whole argument: a referent read off an event
+that does not carry it is a *wrong* reading, not an unread line (D362). Three callers, three gates.
+
+### The engine needed one new thing, and the first version of this reader hid it
+
+A discard is a **question asked of the player discarding** — Mind Rot's, chosen by them and not by
+the caster. `decisionPlan` resolves `who: 'target-player'` off the **stack object's targets**, and a
+trigger has none: the question would be asked of nobody while the ability resolved and said so in
+the log. So the first version of `referentEffect` refused any clause carrying a question — and in
+doing so refused `that player discards a card`, **the 16-card row at the head of the family it was
+written for.**
+
+`CardsDecisionSpec.who` therefore grew two words, matching the compiler's two gates one-to-one:
+`hit-player` (`StackObject.attacked.defender`, asking nobody if the object carries no attack) and
+`acting-player` (`StackObject.actor`, falling back to the controller — the value and not a guess,
+per D474). They are kept **apart** rather than merged into one "the event's player", because merging
+needs a fallback between them and that fallback is where a wrong player would hide: a combat-damage
+object with no `attacked` would quietly ask the attacking creature's own controller to discard.
+
+### Two defects this increment's own tests caught
+
+- **The licence was checked after an early return.** `composeEffects` returns a one-part composition
+  before the borrow licence runs, so a line that is *only* a referent clause borrowed from nothing
+  at all: "Whenever another creature enters, that player discards a card" compiled, with
+  `c.targets[0]` undefined, and did nothing. A licence checked after an early return is not a
+  licence. The check now runs first.
+- **`immediate` was refused instead of wrapped.** A clause offering two readings is a deferred draw,
+  and a composition picks between them by position. Refusing such a clause lost Dimir Cutpurse,
+  "that player discards a card **and you draw a card**", whose second half is that very draw. Both
+  readings are now wrapped and the choice survives. Refusing a reading because the wrapper was too
+  narrow is the wrapper's bug, not the card's.
+
+`beforeDecisions` stays refused, for `optionalEffect`'s reason, and nothing in the corpus reaches it.
+
+### Not done: the correction that was offered and refused
+
+`eventRelativeEffect`'s docblock named `combat-damage` as a shape it refuses because the event
+"passes the watcher's own side". That reason is about where the seat lives, not about whether it is
+reachable — and it **is** reachable: `automation.ts` derives `attacked = { defender: event.defender }`
+for `combat-damage` before dispatch, for exactly this purpose, and Hellrider's reader has been
+reading `c.attacked` off an attack since D480. Chasing the same docblock turned up what looked like a
+live defect in a shipped starter-deck card (Mirko Vosk, Mind Drinker reads `c.attacked.defender` and
+the raise site at `automation.ts:2567` passes only `defender`), and it is **not** one: the derivation
+at `automation.ts:1345` fills `attacked` in before the trigger is dispatched. Recorded as a
+non-defect so the next reader of that docblock does not chase it again.
+
+### What it actually bought, against what the probe predicted
+
+| | before D530 | after |
+| --- | --- | --- |
+| cards with every printed line read | 7,255 | **7,287** (+32) |
+| cards with a compiled script | 11,504 | **11,528** (+24) |
+| printed legal lines read | 22,719 / 56,421 (40.3%) | **22,759 / 56,421 (40.3%)** (+40) |
+
+The probes predicted **36** finished cards (27 + 9) and the compiler delivered **32**, so the
+measurement over-predicted by four. That is the expected direction and the reason is the probe's
+own shortcut: it deletes the referent clause from the card and asks whether the *rest* reads, which
+is a weaker condition than the real composer's, since the composer also has to accept the clause
+*in place* — under the licence, the question re-aiming, and the one-targeting-part rule. A probe that
+over-predicts by 11% is worth keeping; one that under-predicted would have hidden the increment
+(probe545 did exactly that, at 4 cards of 36).
+
+### The break run: 18 breaks, 13 caught, and the five that are vacuous
+
+Each break was verified to **apply** against an anchor matching exactly once and to **revert** against
+a SHA-256 of the file. Two files are in scope, because this increment changed both the compiler and
+the engine: all six engine breaks are caught, including `hit-player` resolving to the controller
+(the attacking creature's own side asked to discard) and `acting-player` losing its controller
+fallback (D474's absent actor never asked at all).
+
+**One break found a coverage hole in these very tests, and it is the useful result of the run.**
+Break 2 removes the aiming — the effect is handed the context unchanged instead of the referent —
+and the first run left it **green**. The reason is specific and worth keeping: a discard carries a
+`CardsDecisionSpec`, and `who: 'hit-player'` is what routes it, so the engine applies the answer
+itself and an effect handed the *wrong* object still produces the right discard. Every row in the
+runtime describe was a discard, so none of them could see the aiming at all. A life-loss row
+(`that player loses 2 life`, no question, so the seat it takes life from is whatever the effect is
+handed) was added, and it catches break 2 and break 9 — the one that aims at the actor instead of the
+defender, which is the exact failure this increment exists to prevent.
+
+The five that stay uncaught are **vacuous against the shape table and the corpus**, not untested
+behaviour, and each is recorded with what makes it so rather than left as a gap:
+
+- **3 — a null referent treated as present.** `supply` is typed `Target | null` and the guard stops
+  a null reaching the effect, but no event this reader is gated on ever produces one:
+  `automation.ts:1345` fills `attacked` in for every combat-damage dispatch. The guard is
+  type-driven, and nothing in the engine can exercise it.
+- **5 — the spec kind not checked inside the borrow.** It would matter for a clause whose swapped
+  reading declares a target of some *other* kind, and no printed clause in the corpus does: the
+  inserted phrase is what every one of them reads.
+- **6 — `immediate` unwrapped.** The field is present on Dimir Cutpurse's reading (that is what made
+  refusing it a bug), but a composition only *uses* `immediate` in a non-final position, and no
+  printed referent clause sits non-final with a deferred draw inside it. Wrapping is strictly
+  better and costs nothing, so it stays.
+- **8 — `some` instead of `every` on the hit gate.** This one is **provably** vacuous rather than
+  merely unexercised, and the check is cheap: `TRIGGER_SHAPES` has exactly two multi-event shapes,
+  `[etb, dies]` and `[etb, to-graveyard]`, and neither mixes a hit event with a player action. The
+  two quantifiers agree on every shape that exists. `every` stays because it is the correct form the
+  day a mixed shape is added.
+- **18 — a player question riding a creature pronoun.** No clause beginning "that creature" has a
+  swapped reading that carries a `target-player` question.
+
+Inventing text to exercise the five would be worse than leaving them vacuous (D259), so they are
+written down instead. This is the same outcome D525 recorded for three of its order-breaks.
+
+### What this increment did NOT read, said plainly
+
+The referent must be the clause's **subject**. An *object*-position referent is untouched: "Whenever
+~ deals combat damage to a player, ~ deals 3 damage to **that player**" (Furnace Scamp) is still
+refused on a combat-damage trigger, because the swap only rewrites a leading pronoun. That family is
+the one `eventRelativeEffect`'s old `dealt` reader covers, and only under the actor gate. Reading
+object position needs the phrase replaced mid-clause and the spec check re-derived, which is a
+separate increment and not a line this one can claim.
+
+The six hand-written referent readers were therefore **kept**, not deleted — and the deletion the
+task brief called for was *attempted and measured*, not reasoned about. Compiling the swapped
+sentences directly answers it:
+
+    Whenever an opponent casts a creature spell, that player loses 2 life and you gain 2 life.  READS
+    Target player loses 2 life and you gain 2 life.                                             unread
+    Whenever an opponent draws a card, ~ deals 1 damage to that player.                          READS
+    ~ deals 1 damage to target player.                                                          unread
+
+So neither `drained` nor `dealt` is redundant, for a reason sharper than "they read object position"
+(which is true of `dealt` only — `drained` is subject position like the borrow): **the targeted form
+of their sentences does not read at all**, so there is nothing for the borrow to borrow. A borrow can
+only reach a sentence the clause vocabulary already understands with a target in that slot, and these
+two are exactly the sentences it does not. The four block readers are untouched for a different
+reason: they read `c.blocked`, a referent source this increment never wired.
+
+D441 deletes a duplicate statement of one rule. These are not duplicates, and the probe is what
+establishes that rather than an argument about it.
