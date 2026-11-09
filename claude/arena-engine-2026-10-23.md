@@ -20169,3 +20169,16 @@ shrink and `another target creature` all stay unread. All four now read. Each ro
 true, states the aim it must carry, and keeps the old reason above it so the change is legible rather
 than silent. Two refusals stay and are unchanged: a grant on a true shrink, and a subtype phrase
 (#341).
+
+### D544's pod sweep
+
+**40/40 pods finished** at SEED0=41701 on the clean commit (7f14b15), no engine throw and no stalled
+table, 66.7 turns and 324 moves a game. Per 100-card deck across 160 decks: 26.2 cards with a
+hand-written script, 46.8 with at least one unread line, 61.8 playable only from printed data, 0.5
+cardboard.
+
+This is the sweep that most needed running of the last four. The other three added readers; this one
+**replaced** the branch structure of a reader that fires on a large share of every deck's tricks, and
+a sign error in it would have had the bot aiming its pumps at the wrong half of the table for 40
+games without throwing anything. Finishing every table with the usual turn and move counts is the
+evidence that the one rule plays like the three branches it replaced.
