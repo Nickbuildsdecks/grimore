@@ -19828,3 +19828,26 @@ That is the seventh break run in eight where what broke was a test rather than t
 `Creatures of the creature type of your choice get +X/+X until end of turn` (Tribal Unity) — a scope
 whose membership is chosen as the spell resolves. `massPumpSubject` has no entry for it, so the line
 is unread rather than pumped as something else, and the discriminating half is every reading above.
+
+### The pod sweep, and the seed that had to be ruled out first
+
+**40/40 pods finished** at SEED0=41401 on the clean commit, no engine throw and no stalled table,
+59.8 turns and 320 moves a game. Per 100-card deck across 160 decks: 25.9 cards with a hand-written
+script, 47.7 with at least one unread line, 61.8 playable only from printed data, 0.5 cardboard.
+
+**That is the second seed set, and the first one is the finding.** The sweep at SEED0=41301 sat at
+100% CPU for twenty-two minutes with nothing printed. A trace found it: game 19 — seed **41319** —
+was at **turn 176** on move 2,000, with 39, 49 and 32 permanents on three boards and one seat already
+dead, and the moves after that were taking minutes each. Not a loop: the harness's `LOOP` detector
+could not fire because life totals, boards and libraries were all still moving. It is the
+`unfinished` verdict the harness has a word for, in the #71 / #250 family — a board nobody can break
+through, where the bot's lookahead grows with the board it is searching.
+
+**It is not D541's doing, and that was settled by experiment rather than by argument.** The same
+seed was run at `MOVES=2000` on the engine built from the **previous** commit's sources (c36f6df)
+and on this one: both report `unfinished`, identically. So the long game predates the mass-pump
+reader, and the only thing D541 changed about it is nothing.
+
+What this costs, said plainly: there is **no 40/40 reading for seed set 41301**, because the run was
+killed rather than left to spend an hour of CPU on one table. The clean reading above is a different
+seed set, and the honest summary is "40/40 at 41401, and 41319 is a pre-existing long game".
