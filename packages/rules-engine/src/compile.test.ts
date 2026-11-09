@@ -33,16 +33,23 @@ for (const deck of Object.values(STARTER_DECKS)) {
 /**
  * A pool card that is **partly** read: some lines compile and at least one does not.
  *
- * Named rather than searched for, so the test below says which card it is about. Contagion Clasp
- * prints two lines — an enters trigger this compiler reads, and "{4}, {T}: Proliferate.", which it
- * does not — and the pair is what hybrid automation (D362) is for.
+ * Named rather than searched for, so the test below says which card it is about. Obelisk of Urd
+ * prints three lines — "Convoke", which this compiler reads into a cost, and two it does not: "As
+ * Obelisk of Urd enters the battlefield, choose a creature type." and "Creatures you control of the
+ * chosen type get +2/+2." The pair is what hybrid automation (D362) is for, and the card needs
+ * **two** readers rather than one, which is part of why it was chosen.
  *
- * **It is expected to stop being true.** When proliferate joins the clause vocabulary this card
- * becomes fully read and the test fails loudly, which is the right failure: whoever reads that
- * line moves this constant to another partly-read card and says so, the way D447 moved it off
- * Mystic Remora.
+ * **It is expected to stop being true**, and it has twice. D447 moved it off Mystic Remora, whose
+ * sentence that increment learned to read; D528 moved it off **Contagion Clasp**, whose only unread
+ * line was "{4}, {T}: Proliferate." until proliferate joined the clause vocabulary. Each time the
+ * test failed loudly, which is the right failure: whoever reads the line moves this constant to
+ * another partly-read card and says so.
+ *
+ * The next candidates, measured rather than guessed — 12 pool cards satisfy this test's four
+ * assertions, and the most durable after this one are Willbender (a retarget on a turned-face-up
+ * trigger) and Thing in the Ice (a two-sentence line ending in a transform).
  */
-const PARTLY_READ_CARD = 'Contagion Clasp';
+const PARTLY_READ_CARD = 'Obelisk of Urd';
 
 /** A card's own printed data, as the row an importer would hand over. */
 function rowFor(name: string): CardDataRow {
@@ -13580,12 +13587,13 @@ describe('"you may" outside a trigger (D525)', () => {
     */
     const read = compileCard({
       name: 'Not A Card', type_line: 'Sorcery', mana_cost: '{1}{R}', cmc: 2, colors: ['R'],
-      layout: 'normal', oracle_text: 'You may draw a card.\nProliferate.',
+      layout: 'normal', oracle_text: 'You may draw a card.\nClash with an opponent.',
     });
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.script?.onResolve).toBeUndefined();
-    expect(read.unread.map((u) => u.line)).toEqual(['You may draw a card.', 'Proliferate.']);
+    expect(read.unread.map((u) => u.line))
+      .toEqual(['You may draw a card.', 'Clash with an opponent.']);
   });
 
   it('refuses a clause that is not a "may" at all, rather than reaching for a match it has not got', () => {
@@ -13593,14 +13601,19 @@ describe('"you may" outside a trigger (D525)', () => {
       The cheapest row here and the one that pins the function's own gate. Every spell whose
       resolution does not read reaches `optionalEffect`, most of them saying nothing about a "may",
       so the bare match is tested before anything is read off it.
+
+      The unreadable line was `Proliferate.` for exactly one increment: D528 read it, and this row
+      failed the moment it did. That is the right failure — a refusal row whose example has started
+      reading is a test asserting the past (D516) — so the example moved to `Clash with an
+      opponent.`, which is a keyword the engine does not have at all. Expect this to happen again.
     */
     const read = compileCard({
       name: 'Not A Card', type_line: 'Sorcery', mana_cost: '{1}{R}', cmc: 2, colors: ['R'],
-      layout: 'normal', oracle_text: 'Proliferate.',
+      layout: 'normal', oracle_text: 'Clash with an opponent.',
     });
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.unread.map((u) => u.line)).toEqual(['Proliferate.']);
+    expect(read.unread.map((u) => u.line)).toEqual(['Clash with an opponent.']);
   });
 
   it('refuses a modal bullet, which is the one place this was measured and left out', () => {
@@ -13773,5 +13786,126 @@ describe('the graveyard clause family (D527)', () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect((read.script?.abilities ?? [])[0]?.cost).toEqual({ mana: '{2}' });
+  });
+});
+
+describe('four clauses naming mechanics the engine already had (D528)', () => {
+  /*
+    D526's ranking is full of these: a printed clause whose rule the engine has implemented for
+    dozens of increments and the **compiler** has no reading for. Four of them, with the increment
+    that built the rule:
+
+    | cards | clause | the rule |
+    | --- | --- | --- |
+    | 19 | `Proliferate` | #195, with two hand-written cards using it |
+    | 16 | `Regenerate target creature` | #37, CR 701.15 |
+    | 18 | `Target creature can't be blocked this turn` | D495 read it as a *printed* static |
+    | 14 | `Target creature can't block this turn` | the same |
+
+    The two blocking restrictions are a `PumpOptions` with no size: `cantBeBlocked` and `cantBlock`
+    have been `ContinuousEffect` fields since D495 read them off printed type lines, so granting
+    either until end of turn is `pump` with one flag and nothing else.
+
+    **The two point at opposite halves of the table and the printed word says which.** "Can't be
+    blocked" is for your attacker (so the spec is `friendly` and carries `helpsInCombat`); "can't
+    block" is aimed at somebody else's creature. Guessing that round the wrong way is D252's
+    failure, and here — unlike a mixed-sign pump — the sentence settles it.
+  */
+  const sorcery = (text: string) => compileCard({
+    name: 'Not A Card', type_line: 'Sorcery', mana_cost: '{1}{R}', cmc: 2, colors: ['R'],
+    layout: 'normal', oracle_text: text,
+  });
+  const creature = (text: string) => compileCard({
+    name: 'Not A Card', type_line: 'Creature — Human Soldier', mana_cost: '{1}{G}', cmc: 2,
+    colors: ['G'], layout: 'normal', power: '2', toughness: '2', oracle_text: text,
+  });
+
+  it.each([
+    ['proliferate on its own', 'Proliferate.'],
+    ['a regeneration shield on a target', 'Regenerate target creature.'],
+    ['a shield on an artifact', 'Regenerate target artifact.'],
+    ['a shield on a subtype', 'Regenerate target Zombie.'],
+    ['an unblockable target', "Target creature can't be blocked this turn."],
+    ['an unblockable target of your own',
+      "Target creature you control can't be blocked this turn."],
+    ['a creature kept out of blocks', "Target creature can't block this turn."],
+    ['two creatures kept out of blocks', "Up to two target creatures can't block this turn."],
+    ['three creatures kept out of blocks', "Up to three target creatures can't block this turn."],
+  ])('reads %s', (_why, text) => {
+    const read = sorcery(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  /*
+    The self forms. `Regenerate ~` is **not** D528's reader: this increment wrote one and the break
+    run found that disabling it changed nothing, because `eventRelativeEffect` has read
+    `^regenerate (?:~|it)$` since the referent machinery was built — and reads "it" too, which the
+    new one did not. The duplicate is gone (D441, D438) and the row stays, because what it asserts
+    is that the card reads, not which function reads it.
+  */
+  it.each([
+    ['a shield on the card itself', '{G}: Regenerate Not A Card.'],
+    ['the card making itself unblockable', "{U}: Not A Card can't be blocked this turn."],
+    ['the same with "this creature" as the subject',
+      "{U}: This creature can't be blocked this turn."],
+  ])('reads %s', (_why, text) => {
+    const read = creature(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.abilities ?? []).toHaveLength(1);
+  });
+
+  it('points the two restrictions at opposite halves of the table', () => {
+    const unblockable = sorcery("Target creature can't be blocked this turn.");
+    const held = sorcery("Target creature can't block this turn.");
+    expect(unblockable.ok && held.ok).toBe(true);
+    if (!unblockable.ok || !held.ok) return;
+    const specOf = (read: typeof unblockable) =>
+      (read.ok ? read.script?.targets ?? [] : [])[0];
+    // "Can't be blocked" helps your attacker: both hints say aim it at one of yours that can swing.
+    expect(specOf(unblockable)?.friendly).toBe(true);
+    expect(specOf(unblockable)?.helpsInCombat).toBe(true);
+    // "Can't block" is aimed at theirs, so it carries neither.
+    expect(specOf(held)?.friendly).toBeUndefined();
+    expect(specOf(held)?.helpsInCombat).toBeUndefined();
+  });
+
+  it.each([
+    ['"it", whose referent no clause reader is handed', "It can't be blocked this turn."],
+    ['an untargeted board scope', "Creatures without flying can't block this turn."],
+    ['a power clause in the target phrase',
+      "Target creature with power 2 or less can't be blocked this turn."],
+    ['a pump and a restriction in one sentence',
+      "Target creature gets +1/+0 and can’t be blocked this turn."],
+    /*
+      Without "this turn" it is not a one-shot at all: "can't be blocked" with no duration is a
+      **printed static**, which `printedCombatStatics` reads off a creature's own type line (D495).
+      Nothing prints it as a spell's resolution, and reading it as one would be a permanent effect
+      where the card says nothing of the kind.
+    */
+    ['the same restriction with no duration, which is a printed static instead',
+      "Target creature can't be blocked."],
+  ])('refuses %s', (_why, text) => {
+    const read = sorcery(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('asks proliferate’s question with the spec the pool’s own two cards ask', () => {
+    /*
+      By reference, not by resemblance: Contagion Clasp and Steady Progress both carry `PROLIFERATE`
+      and `compiled-vs-written.test.ts` compares the compiled form against theirs, so the compiled
+      question has to be the same object rather than one that looks like it.
+    */
+    const read = sorcery('Proliferate.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const spec = (read.script?.decisions ?? [])[0];
+    expect(typeof spec === 'object' && spec !== null && 'counters' in spec && spec.counters)
+      .toBe(true);
   });
 });

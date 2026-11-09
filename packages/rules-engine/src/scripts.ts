@@ -8006,6 +8006,16 @@ const RIFT_BOLT: CardScript = {
  * engine rather than filtered here, because what qualifies is a rule rather than a card's
  * preference: everything already carrying a counter, on either side, plus the players.
  */
+/**
+ * The two blocking restrictions as `PumpOptions`, named once because three readers grant them
+ * (D528): the card itself, a target, and — through `attachmentBonus` — an Aura's host.
+ *
+ * Neither carries a size. `pump` with only a flag is a continuous effect that changes one fact
+ * about combat and expires with the turn, which is exactly what "this turn" prints.
+ */
+const UNBLOCKABLE: PumpOptions = { cantBeBlocked: true };
+const CANNOT_BLOCK: PumpOptions = { cantBlock: true };
+
 const PROLIFERATE: CountersDecisionSpec = {
   who: 'controller',
   counters: true,
@@ -10933,6 +10943,26 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
 }
 
 function untargetedEffect(clause: string, name: string): ReadEffect | null {
+  /*
+    **Proliferate** (D528) — one printed word, 37 legal sightings, and the engine has had it since
+    #195. The gap was never the mechanic: `proliferate` and the `counters: true` question have been
+    in `effects.ts` and in two hand-written cards (Contagion Clasp, Steady Progress) all along, and
+    the *compiler* simply had no reading for the word. D526's ranking is full of these — a clause
+    naming something the engine already does is the cheapest card there is.
+
+    `PROLIFERATE` is the hand-written spec by reference, so the compiled question is the same object
+    the pool's own two cards ask and `compiled-vs-written.test.ts` compares it as one.
+
+    This is an **answer-reading** clause: the effect reads `chosenCards`, so `composeEffects`'
+    one-answer-reader rule applies to it and a composition with a second one refuses — which is
+    right, since two proliferates in one sentence would both read the first answer.
+  */
+  if (/^proliferate$/i.test(clause.trim())) {
+    return {
+      decisions: [PROLIFERATE],
+      effect: (c) => proliferate(c.state, chosenCards(c)),
+    };
+  }
   const text = clause.trim();
 
   /*
@@ -12017,6 +12047,35 @@ function selfEffect(
   */
   if (new RegExp(`^untap ${self}$`, 'i').test(text)) {
     return { abilityFlags: { untapsOnly: true }, effect: (c) => tap(c.state, c.source, false) };
+  }
+
+  /*
+    **"Regenerate ~" is NOT read here, and the break run is why** (D528).
+
+    This increment wrote it, and disabling it changed no test: `eventRelativeEffect` has read
+    `^regenerate (?:~|it)$` since the referent machinery was built, and that reader is strictly
+    better than the one written here — it takes "it" as well as the name, through `itMeans`. Two
+    statements of one rule is the shape this file keeps removing (D441, D438), so the newer one is
+    gone and this note is what is left of it.
+
+    The sibling clause below *is* read here, because nothing else reads it. That asymmetry is the
+    whole finding: a reader is worth writing when a break can fail, and a break that cannot fail
+    means somebody has already written it.
+  */
+
+  /*
+    **"~ can't be blocked this turn"** (D528) — 20 legal sightings of the name form and two of
+    "this creature". A `PumpOptions` with no size: `cantBeBlocked` has been a `ContinuousEffect`
+    field since D495 read it as a *printed* static, and this is the same fact granted until end of
+    turn, which is what `pump` is for.
+
+    No `expiresAtEndOfTurn` spell flag, for the reason D412 gives about haste and infect: the flag
+    tells a bot's search it may hold the spell for blockers, and a creature that cannot be blocked
+    has to be unblockable *before* blockers are declared. The flag would say wait, and waiting is
+    the one thing that makes the card do nothing.
+  */
+  if (new RegExp(`^${self} can'?t be blocked this turn$`, 'i').test(text)) {
+    return { effect: (c) => pump(c.state, [c.source], c.source, c.controller, UNBLOCKABLE) };
   }
 
   /*
@@ -16776,6 +16835,64 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
           const id = firstCardTarget(c);
           return id === null ? c.state : bottomPile(c.state, [id]);
         },
+      };
+    }
+  }
+
+  /*
+    **"Regenerate target creature"** (D528) — 24 legal sightings of this wording, plus `target
+    artifact` (4), `target Zombie` (2), `target artifact creature` (2) and a tail of subtypes, all
+    of which come off `targetSpecFrom` rather than being listed here.
+
+    `regenerate` refuses anything not on the battlefield, so the spec's zone does the rest. The
+    target is `friendly`: a regeneration shield is a gift, and the bot hint that says so is the same
+    one every protective pump carries.
+  */
+  const shielded = /^regenerate ((?:another )?(?:up to \w+ )?target .+)$/i.exec(text);
+  if (shielded !== null) {
+    const spec = targetSpecFrom(shielded[1]!, true);
+    if (spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => cardTargets(c).reduce((state, id) => regenerate(state, id), c.state),
+        spellFlags: { protectsACreature: true },
+      };
+    }
+  }
+
+  /*
+    **The two blocking restrictions, until end of turn** (D528).
+
+    `target creature can't be blocked this turn` (27 legal sightings) and `target creature can't
+    block this turn` (22), plus the quantified forms `up to two target creatures` (3) and `up to
+    three target creatures` (5) that `targetSpecFrom` reads already. Both are a `PumpOptions` with
+    no size, carrying a field `ContinuousEffect` has had since D495 read the same facts as *printed*
+    statics — the engine could play both rules and the compiler could not say either.
+
+    **The two point at opposite halves of the table, and the printed word is what says so.** "Can't
+    be blocked" is for your attacker, so the spec is `friendly` and carries `helpsInCombat` ("aim it
+    at something that can attack"); "can't block" is aimed at a creature of somebody else's, so it
+    carries neither. Guessing that round the wrong way is D252's failure — a bot aiming at the wrong
+    creature every single time — and here, unlike a mixed-sign pump, the printed sentence settles it.
+
+    Neither carries `expiresAtEndOfTurn`, and the reason is D412's: that flag tells the search it may
+    hold the spell until blockers are declared, and **both** of these have to resolve before blockers
+    to do anything at all.
+
+    `cardTargets` rather than `firstCardTarget`, because the quantified forms point at several and a
+    Blow Your House Down that unblocked one of three creatures would be a card doing a third of what
+    it prints.
+  */
+  const blocking =
+    /^((?:another )?(?:up to \w+ )?target [^.]+?) can'?t (be blocked|block) this turn$/i.exec(text);
+  if (blocking !== null) {
+    const unblockable = blocking[2]!.toLowerCase() === 'be blocked';
+    const spec = targetSpecFrom(blocking[1]!, unblockable);
+    if (spec !== null) {
+      const options = unblockable ? UNBLOCKABLE : CANNOT_BLOCK;
+      return {
+        targets: [unblockable ? { ...spec, helpsInCombat: true } : spec],
+        effect: (c) => pump(c.state, cardTargets(c), c.source, c.controller, options),
       };
     }
   }

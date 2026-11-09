@@ -18469,3 +18469,97 @@ SHA-256. Two are worth naming because they are about reading rather than wiring:
 The other ten are each of the four readers not dispatched, `tapped` dropped, the cost flag dropped,
 both scope words inverted, the library pairing unchecked, and the card sent to hand instead of under
 the library.
+
+## D528 — Four clauses naming mechanics the engine already had: 142 cards finished
+
+D526's ranking is full of a particular kind of row: a printed clause whose **rule** the engine
+implemented dozens of increments ago and whose **words** the compiler has no reading for. Four of
+them, each with the increment that built the rule:
+
+| cards predicted | clause | the rule, and when it landed |
+| --- | --- | --- |
+| 19 | `Proliferate` | #195, with two hand-written cards already calling it |
+| 16 | `Regenerate target creature` | #37, CR 701.15 |
+| 18 | `Target creature can't be blocked this turn` | D495, which read it as a *printed* static |
+| 14 | `Target creature can't block this turn` | the same |
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 22,472 / 56,421 (39.8%) | **22,669 / 56,421 (40.2%)** |
+| cards with a compiled script | 11,336 | **11,472** |
+| cards with every printed line read | 7,088 | **7,230** |
+
+**67 cards predicted, 142 finished** — more than double, and for the same reason D527 overshot: two
+of the four readings go through `targetSpecFrom`, so every target phrase it already parses comes
+free. `up to two target creatures`, `target Merfolk`, `another target creature` and `target
+artifact` were never counted in the prediction because the prediction counted one wording each.
+
+### Why these are the cheapest cards there are
+
+Nothing new was built. The two blocking restrictions are a `PumpOptions` with **no size**:
+`cantBeBlocked` and `cantBlock` have been `ContinuousEffect` fields since D495 read them off printed
+type lines, so granting either until end of turn is `pump` with one flag. `regenerate` is CR 701.15
+and refuses a card that is not on the battlefield itself, which is why the readers do not check
+`where` — the primitive is the one place that rule lives. `PROLIFERATE` is the hand-written decision
+spec **by reference**, so the compiled question is the same object Contagion Clasp and Steady
+Progress ask.
+
+### The one place a wrong card could come from
+
+The two blocking restrictions point at **opposite halves of the table**, and the printed word is
+what says which: "can't be blocked" is for your attacker (so the spec is `friendly` and carries
+`helpsInCombat` — aim it at something that can attack), "can't block" is aimed at a creature of
+somebody else's. Guessing that round the wrong way is D252's failure, a bot aiming at the wrong
+creature every single time; unlike a mixed-sign pump, here the sentence settles it. Both directions
+are rows and both breaks fail.
+
+Neither carries `expiresAtEndOfTurn`, for D412's reason: that flag tells the bot's search it may
+hold the spell until blockers are declared, and **both** of these have to resolve before blockers to
+do anything at all.
+
+### What is refused
+
+`It can't be blocked this turn` (7 sightings) — "it" is a referent no clause reader is handed, and
+in a composition it is the previous clause's subject on some cards and the card itself on others.
+`Creatures without flying can't block this turn` (5, Falter) — an untargeted board scope, which is a
+different reader. `Target creature with power 2 or less can't be blocked this turn` (10) — the power
+clause in the target phrase, which `targetSpecFrom` does not read (the mana-value clause is there,
+power is not). And `Target creature gets +1/+0 and can't be blocked this turn` (Distortion Strike) —
+a pump and a restriction in one sentence, which is the conjunction reader's business.
+
+Also refused, and this one is about duration rather than vocabulary: **the same words with no "this
+turn"**. `Target creature can't be blocked` is a *printed static* (`printedCombatStatics`, D495), not
+a one-shot, and reading it here would make a permanent effect out of a sentence that says nothing of
+the kind. There is a break for it and it fails.
+
+### Two tests retired themselves, exactly as written
+
+Both had a docblock predicting it, which is the point of writing them down.
+
+- `PARTLY_READ_CARD` was **Contagion Clasp**, whose only unread line was "{4}, {T}: Proliferate." —
+  and its constant said in as many words: "When proliferate joins the clause vocabulary this card
+  becomes fully read and the test fails loudly, which is the right failure." It did. The constant
+  moved to **Obelisk of Urd** (three printed lines: convoke reads, the chosen-type pair does not),
+  chosen from the 12 pool cards that satisfy the test's four assertions, with the next two
+  candidates named so the move is cheaper next time.
+- D525's refusal row used `Proliferate.` as its example of a clause that is not a "may". That
+  example started reading one increment after it was written. It moved to `Clash with an opponent.`,
+  a keyword the engine does not have at all, with the history in the comment.
+
+### The break run, and the reader it deleted
+
+**12 breaks, 11 caught.** The one that did not fail is the finding: disabling the new
+`Regenerate ~` reader changed no test, because `eventRelativeEffect` has read
+`^regenerate (?:~|it)$` since the referent machinery was built — and reads "it" as well, which the
+new one did not. So this increment **wrote a duplicate and the break run found it**: the newer
+reader is gone and a note in its place says why (D441, D438 — one statement of one rule).
+
+That asymmetry is worth stating as a rule. A reader is worth writing when a break on it can fail; a
+break that cannot fail means somebody has already written it. The sibling clause two lines below —
+`~ can't be blocked this turn` on the card itself — *is* read by this increment, and its break does
+fail.
+
+The other eleven: each of the three remaining readers not dispatched, proliferate ignoring the
+answer it asked for, the shield not applied, the two restrictions swapped, the unblockable target
+not marked as the caster's own, its combat hint dropped, only the first of several targets
+restricted, and the duration made optional so a printed static would read as a one-shot.

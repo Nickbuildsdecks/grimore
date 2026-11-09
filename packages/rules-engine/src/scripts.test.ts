@@ -32575,3 +32575,154 @@ describe('the graveyard clause family, played off printed text (D527)', () => {
     expect(namesIn(s, 0, 'graveyard')).toEqual([]);
   });
 });
+
+describe('four clauses naming mechanics the engine already had, played (D528)', () => {
+  /*
+    The runtime half. Each of these four rules has been in the engine for dozens of increments and
+    the compiler had no reading for it, so the rows ask the engine's own questions: does the counter
+    grow, does the shield save the creature, and does `canBlock` refuse the block.
+
+    `canBlock` rather than a full declaration, because it is the function the engine asks before it
+    lets a block through — a row that drove the whole combat would be testing `declareBlockers`
+    instead of the clause.
+  */
+  const DATA = [
+    {
+      name: 'Ashen Spread', type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: [],
+      layout: 'normal', oracle_text: 'Proliferate.',
+    },
+    {
+      name: 'Ashen Ward', type_line: 'Instant', mana_cost: '{1}', cmc: 1, colors: [],
+      layout: 'normal', oracle_text: 'Regenerate target creature.',
+    },
+    {
+      name: 'Ashen Slip', type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: [],
+      layout: 'normal', oracle_text: "Target creature can't be blocked this turn.",
+    },
+    {
+      name: 'Ashen Taunt', type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: [],
+      layout: 'normal', oracle_text: "Target creature can't block this turn.",
+    },
+    {
+      name: 'Ashen Rout', type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: [],
+      layout: 'normal', oracle_text: "Up to two target creatures can't block this turn.",
+    },
+    {
+      name: 'Ashen Grunt', type_line: 'Creature — Zombie', mana_cost: '{1}', cmc: 1, colors: [],
+      layout: 'normal', power: '3', toughness: '3', oracle_text: '',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'already',
+      name: 'Already',
+      entries: [...DATA.map((c) => ({ name: c.name, count: 4 })), { name: 'Swamp', count: 38 }],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual([
+      'Ashen Grunt', 'Ashen Rout', 'Ashen Slip', 'Ashen Spread', 'Ashen Taunt', 'Ashen Ward',
+    ]);
+    return list.deck;
+  };
+
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[] = []) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'already', 1: 'already' },
+      deckSpecs: { already: deck() },
+      hands: { 0: [...hand] },
+      battlefield: { 0: ['Swamp', 'Swamp', ...mine], 1: [...theirs] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    for (const id of ids(s, 0, 'battlefield')) {
+      if (nameOf(s, id) === 'Swamp') {
+        s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action);
+      }
+    }
+    return s;
+  };
+
+  const cast = (s: GameState, name: string, target?: string) => passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name),
+    ...(target === undefined ? {} : { targets: [{ kind: 'card', id: target }] }),
+  } as Action));
+
+  it('proliferates a counter the player chooses', () => {
+    let s = table(['Ashen Spread'], ['Ashen Grunt']);
+    const grunt = find(s, 0, 'battlefield', 'Ashen Grunt');
+    s = addCounters(s, grunt, '+1/+1', 1);
+    expect(power(s, grunt)).toBe(4);
+    s = cast(s, 'Ashen Spread');
+    // The question is the proliferate one: any number of permanents and players with counters.
+    expect(s.pendingDecision?.seat).toBe(0);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [grunt] } as Action), 40);
+    expect(power(s, grunt)).toBe(5);
+    expect(toughness(s, grunt)).toBe(5);
+  });
+
+  it('shields a creature so the next destruction is replaced (CR 701.15)', () => {
+    let s = table(['Ashen Ward'], ['Ashen Grunt']);
+    const grunt = find(s, 0, 'battlefield', 'Ashen Grunt');
+    s = drain(cast(s, 'Ashen Ward', grunt), 40);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Ashen Grunt');
+
+    // The shield is spent instead of the creature, which leaves it tapped — the cost of the save.
+    s = destroy(s, grunt);
+    expect(namesIn(s, 0, 'battlefield')).toContain('Ashen Grunt');
+    expect(s.instances[grunt]?.tapped).toBe(true);
+    // And the next destruction is not replaced, because there is one shield and it is gone.
+    s = destroy(s, grunt);
+    expect(namesIn(s, 0, 'battlefield')).not.toContain('Ashen Grunt');
+  });
+
+  it('makes a creature unblockable, which canBlock refuses for the attacker', () => {
+    let s = table(['Ashen Slip'], ['Ashen Grunt'], ['Ashen Grunt']);
+    const mine = find(s, 0, 'battlefield', 'Ashen Grunt');
+    const theirs = find(s, 1, 'battlefield', 'Ashen Grunt');
+    // Before: an ordinary 3/3 may be blocked by an ordinary 3/3.
+    expect(canBlock(s, theirs, mine, 1)).toBeNull();
+    s = drain(cast(s, 'Ashen Slip', mine), 40);
+    expect(canBlock(s, theirs, mine, 1)?.reason).toContain("can't be blocked");
+  });
+
+  it('keeps a creature out of blocks, which canBlock refuses for the blocker', () => {
+    let s = table(['Ashen Taunt'], ['Ashen Grunt'], ['Ashen Grunt']);
+    const mine = find(s, 0, 'battlefield', 'Ashen Grunt');
+    const theirs = find(s, 1, 'battlefield', 'Ashen Grunt');
+    expect(canBlock(s, theirs, mine, 1)).toBeNull();
+    s = drain(cast(s, 'Ashen Taunt', theirs), 40);
+    expect(canBlock(s, theirs, mine, 1)?.reason).toContain("can't block");
+  });
+
+  it('keeps BOTH of two creatures out of blocks, not just the first', () => {
+    /*
+      The quantified form, and the row that makes `cardTargets` load-bearing. A Blow Your House Down
+      that unblocked one of three creatures would be a card doing a third of what it prints — read,
+      offered, and wrong.
+    */
+    let s = table(['Ashen Rout'], ['Ashen Grunt'], ['Ashen Grunt', 'Ashen Grunt']);
+    const mine = find(s, 0, 'battlefield', 'Ashen Grunt');
+    const theirs = ids(s, 1, 'battlefield');
+    expect(theirs).toHaveLength(2);
+    s = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ashen Rout'),
+      targets: theirs.map((id) => ({ kind: 'card', id })),
+    } as Action));
+    s = drain(s, 40);
+    for (const blocker of theirs) {
+      expect(canBlock(s, blocker, mine, 1)?.reason).toContain("can't block");
+    }
+  });
+
+  it('wears off with the turn, which is what "this turn" prints', () => {
+    let s = table(['Ashen Taunt'], ['Ashen Grunt'], ['Ashen Grunt']);
+    const mine = find(s, 0, 'battlefield', 'Ashen Grunt');
+    const theirs = find(s, 1, 'battlefield', 'Ashen Grunt');
+    s = drain(cast(s, 'Ashen Taunt', theirs), 40);
+    expect(canBlock(s, theirs, mine, 1)).not.toBeNull();
+    s = nextTurn(s);
+    s = nextTurn(s);
+    expect(canBlock(s, theirs, mine, 1)).toBeNull();
+  });
+});
