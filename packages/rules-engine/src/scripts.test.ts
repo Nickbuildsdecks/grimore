@@ -32234,3 +32234,158 @@ describe('a STATIC size read off the board, played off printed text (D523)', () 
     expect(toughness(s, chief)).toBe(3);
   });
 });
+
+
+describe('"you may" outside a trigger, played off printed text (D525)', () => {
+  /*
+    The runtime half of D525. The compile rows say the four shapes now read on a spell, an activated
+    ability and a loyalty ability; these say the question reaches the table and that answering it
+    either way does what the card prints.
+
+    The decline rows are the ones worth having. A "may" that compiles and then always happens is a
+    wrong card rather than an unread line (D362), and `askOnlyIfChosen` (D450) is what keeps the
+    clause's own question from being put to a player who said no — so the sequence rows below check
+    that declining never asks about the discard at all.
+
+    Hand sizes are counted against a baseline taken **after** the cast rather than written as
+    literals, because `advanceTo('precombat-main')` on turn 5 goes through the draw step and the
+    seat is one card up before the spell is ever cast.
+  */
+  const DATA = [
+    {
+      name: 'Ashen Offer', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal', oracle_text: 'You may draw a card.',
+    },
+    {
+      name: 'Ashen Bargain', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal', oracle_text: 'You may pay {1}. If you do, draw a card.',
+    },
+    {
+      name: 'Ashen Trade', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal', oracle_text: 'You may discard a card. If you do, draw two cards.',
+    },
+    {
+      name: 'Ashen Font', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [],
+      layout: 'normal', oracle_text: '{T}: You may draw a card.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'offers',
+      name: 'Offers',
+      entries: [...DATA.map((c) => ({ name: c.name, count: 4 })), { name: 'Swamp', count: 44 }],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Ashen Bargain', 'Ashen Font', 'Ashen Offer', 'Ashen Trade']);
+    return list.deck;
+  };
+
+  /** A board of `lands` Swamps, every one already tapped for mana, with `hand` in hand. */
+  const table = (hand: readonly string[], lands: number, battlefield: readonly string[] = []) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'offers', 1: 'offers' },
+      deckSpecs: { offers: deck() },
+      hands: { 0: [...hand] },
+      battlefield: { 0: [...Array.from({ length: lands }, () => 'Swamp'), ...battlefield] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    for (const id of ids(s, 0, 'battlefield')) {
+      if (nameOf(s, id) === 'Swamp') {
+        s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action);
+      }
+    }
+    return s;
+  };
+
+  const cast = (s: GameState, name: string) => passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name),
+  } as Action));
+
+  it('asks the yes-or-no when a spell prints a bare "you may", and draws on a yes', () => {
+    let s = cast(table(['Ashen Offer'], 2), 'Ashen Offer');
+    const before = namesIn(s, 0, 'hand').length;
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.options).toEqual(['Yes', 'No']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Yes' } as Action), 40);
+    expect(namesIn(s, 0, 'hand')).toHaveLength(before + 1);
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Ashen Offer']);
+  });
+
+  it('draws nothing on a no, and the spell still goes to the graveyard', () => {
+    let s = cast(table(['Ashen Offer'], 2), 'Ashen Offer');
+    const before = namesIn(s, 0, 'hand').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'No' } as Action), 40);
+    expect(namesIn(s, 0, 'hand')).toHaveLength(before);
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Ashen Offer']);
+  });
+
+  it('offers the price on a spell, charges it, and resolves the clause behind it', () => {
+    /*
+      Three Swamps: two pay for the spell and the third is what makes "Pay {1}" an answer the
+      engine is willing to offer at all (CR 601.2h — see `askOrFinish`).
+    */
+    let s = cast(table(['Ashen Bargain'], 3), 'Ashen Bargain');
+    const before = namesIn(s, 0, 'hand').length;
+    expect(s.pendingDecision?.options).toEqual(['Decline', 'Pay {1}']);
+    s = drain(apply(s, {
+      type: 'auto:decide', by: 0, cards: [], option: 'Pay {1}',
+    } as Action), 40);
+    expect(namesIn(s, 0, 'hand')).toHaveLength(before + 1);
+  });
+
+  it('does not offer a price the seat cannot pay, and then the clause does not happen', () => {
+    // Exactly two Swamps: the cast spends both, so there is nothing left for the {1}.
+    let s = table(['Ashen Bargain'], 2);
+    const before = namesIn(s, 0, 'hand').length - 1;
+    s = drain(cast(s, 'Ashen Bargain'), 40);
+    // One option left is a question the engine answers itself, so the table is never stopped.
+    expect(s.pendingDecision).toBeNull();
+    expect(namesIn(s, 0, 'hand')).toHaveLength(before);
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Ashen Bargain']);
+  });
+
+  it('holds the sequence’s own question behind the yes, and runs neither half on a no', () => {
+    let s = cast(table(['Ashen Trade', 'Ashen Offer'], 2), 'Ashen Trade');
+    const before = namesIn(s, 0, 'hand').length;
+    expect(s.pendingDecision?.options).toEqual(['Yes', 'No']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'No' } as Action), 40);
+    /*
+      The whole of the decline: the hand is untouched, nothing was drawn, and the discard was
+      never asked about — which is `askOnlyIfChosen` doing its job rather than a question answered
+      with an empty list.
+    */
+    expect(namesIn(s, 0, 'hand')).toHaveLength(before);
+    expect(namesIn(s, 0, 'hand')).toContain('Ashen Offer');
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Ashen Trade']);
+    // Nobody is left on the clock: the discard was never planned, not asked and answered empty.
+    expect(s.pendingDecision).toBeNull();
+  });
+
+  it('discards and then draws two on a yes, which is the sequence in order', () => {
+    let s = cast(table(['Ashen Trade', 'Ashen Offer'], 2), 'Ashen Trade');
+    const before = namesIn(s, 0, 'hand').length;
+    s = apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Yes' } as Action);
+    // Now, and only now, the discard is asked.
+    expect(s.pendingDecision?.seat).toBe(0);
+    const offer = find(s, 0, 'hand', 'Ashen Offer');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [offer] } as Action), 40);
+    expect(namesIn(s, 0, 'graveyard').slice().sort()).toEqual(['Ashen Offer', 'Ashen Trade']);
+    // One discarded, two drawn.
+    expect(namesIn(s, 0, 'hand')).toHaveLength(before + 1);
+  });
+
+  it('asks it from an activated ability too, which is the path a permanent uses', () => {
+    let s = table([], 2, ['Ashen Font']);
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Ashen Font'),
+      abilityIndex: 0,
+    } as Action));
+    const before = namesIn(s, 0, 'hand').length;
+    expect(s.pendingDecision?.options).toEqual(['Yes', 'No']);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Yes' } as Action), 40);
+    expect(namesIn(s, 0, 'hand')).toHaveLength(before + 1);
+  });
+});

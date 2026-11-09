@@ -14495,6 +14495,350 @@ function eventRelativeEffect(
 }
 
 /**
+ * **"You may"** — a printed clause the controller is offered rather than made to do (D447, D525).
+ *
+ * The commonest two words in all of Magic's effect text, and before D447 they made the whole line
+ * unreadable: the clause vocabulary is about what an effect *does*, and "you may" is about whether
+ * it happens. It is read the way the pool's one hand-written optional trigger is (Ophidian, D116):
+ * a `ChoiceDecisionSpec` with two words and an effect that returns the board untouched when the
+ * answer is the second one. The engine has no optional-effect flag and does not need one — a "may"
+ * **is** a question with two answers, and the table already draws a row of buttons for one.
+ *
+ * ## Why it is a function, and the measurement that made it one (D525)
+ *
+ * All four of the shapes below — the bare may (D447), the mana price (D448), the energy price
+ * (D451) and the `. If you do,` sequence (D472) — were written **inside** `triggerFromLine`, on a
+ * closure over the event. That made them unreachable from every other path a resolution has, and
+ * the gap was not visible in the corpus numbers because every card the four increments counted has
+ * its "may" behind a trigger. Asked directly, the compiler read
+ *
+ *     When ~ enters, you may pay {1}. If you do, draw a card.      ← read
+ *     You may pay {1}. If you do, draw a card.                     ← refused, as a spell
+ *     You may draw a card.                                         ← refused, as a spell
+ *
+ * which is the same clause read or not read depending on what printed it. So the block is a
+ * function taking the **reader** its caller composes clauses with: `triggerFromLine` passes its
+ * event-relative one, so the trigger path is byte-for-byte what it was, and the spell and
+ * activated-ability paths pass their own.
+ *
+ * `reader` is a parameter rather than `readEffect` for a reason the trigger shows: "you may return
+ * that card to your hand" only reads with `eventRelativeEffect` in front of the clause vocabulary,
+ * and a function that reached for the shared reader itself would quietly drop that.
+ *
+ * ## The caller tries the clause whole first, and the measurement that order deserves
+ *
+ * D447 wrote the order with a reason — "some clauses in the vocabulary already begin with 'you may'
+ * and read as one phrase, and stripping the two words off those would hand the rest to a reader
+ * that was never written for it" — and **that claim is not true today.** Breaking the order on all
+ * three paths changed no test, so it was measured against the corpus rather than argued about:
+ * of the **2,009 distinct printed clauses** that begin with these two words, **215 read through the
+ * gate below and 0 read whole.** There is no phrase for this order to protect.
+ *
+ * It is kept all the same, and the reason is asymmetry rather than evidence. Reading whole first
+ * costs one reader call on a clause that was going to be read anyway; getting it the other way
+ * round, the day the vocabulary does gain a "you may" phrase, is a clause stripped and handed to a
+ * reader that never saw it — a wrong card rather than an unread line (D362). So the cheap direction
+ * is the safe one, and the honest note is that nothing in the pool can currently tell the two
+ * apart. Whoever adds such a phrase should expect this to start mattering, and `break525.py` is
+ * where the three breaks live that would then begin to fail.
+ *
+ * ## Two things are deliberate about the words
+ *
+ * `'Yes'` is first, and `ChoiceDecisionSpec.options` documents the first option as the answer a bot
+ * falls back on when the card gives no `best`. That is the right fallback for a free may and it is
+ * a measured claim rather than a hope: **every one of the 82 lines D447 read is pure upside for the
+ * controller** — a draw, a counter on your own creature, a destroy, a bounce, an untap. Not one of
+ * them costs the controller anything, which is why no `best` is written and why the refusals below
+ * exist to keep that true as the clause vocabulary grows. A **priced** may puts its decline first
+ * instead, for the reason that branch gives.
+ *
+ * A `may` whose effect asks its own question **was refused here, and is not any more (D450).** The
+ * engine asked a resolution's questions in order and could not skip a later one on an earlier
+ * answer, so "you may search your library for a basic land card" opened the library *before* the
+ * yes-or-no could be read — a player who declined had seen their library anyway, which is both a
+ * wrong reading and an information leak. It was recorded as a refusal rather than taken (D362), and
+ * the engine change it asked for is `DecisionSpec.askOnlyIfChosen`, which those questions now
+ * travel behind. The refusals left are a may whose effect runs something *before* its questions,
+ * and one whose question cannot be gated — both below.
+ */
+function optionalEffect(
+  clause: string, reader: (text: string) => ReadEffect | null,
+): ReadEffect | null {
+  /*
+    **A "may" with a price on it** (D448): "you may pay {1}. If you do, draw a card."
+
+    The second row of the queue D447 measured, and the same family one step on: 66 legal lines
+    print it, of which **39 name a cost this engine can charge** — a mana run, hybrid symbols
+    included. `ChoiceDecisionSpec.payIfChosen` is exactly this shape and has been since echo
+    (#196): a price on one answer, which the engine pays before the effect runs and does not even
+    **offer** when the seat cannot afford it, so a tapped-out player is never asked a question
+    with one button.
+
+    Tried before the bare "you may" below, because this clause begins with those two words too
+    and stripping them would leave "pay {1}. If you do, …" for a reader that has never seen a
+    payment.
+
+    **What is refused, and all of it is a cost the engine cannot charge here.**
+    `payIfChosen.cost` is a mana string, so: 19 lines pay energy (`{E}`, the Kaladesh commons —
+    energy exists in this engine since #180 but not as a price on an answer), 4 pay life, and 4
+    pay a mana cost **and** something else ("{1} and discard a card", "{2} and sacrifice a
+    token"). `parseManaCost` is what refuses them rather than a second list of shapes: it records
+    an unrecognised symbol instead of reading it as generic mana, which is the same guard D446's
+    ability costs lean on.
+  */
+  /*
+    **Energy, which D448 refused and could not then charge (D451).**
+
+    It was the biggest single refusal that increment left behind — 19 lines there, 56 legal cards
+    one line short once the whole family is counted — and the reason was narrow:
+    `payIfChosen.cost` was a mana string. `payIfChosen.energy` is the same price in the other
+    currency, and `AbilityCost.energy` has charged an *activated* ability in energy since #180,
+    so the engine always knew how. `{E}{E}` is a count rather than a symbol run, which is why it
+    is read here and not by `parseManaCost`: energy has no colours and no sources to tap, so
+    there is nothing for a mana parser to do with it.
+  */
+  const energyPriced = /^you may pay ((?:\{E\})+)\.\s*If you do, (.+)$/i.exec(clause);
+  /*
+    The mana price is tried **after** the energy one, and that order is load-bearing rather than
+    tidy: `{E}` matches `\{[^}]+\}`, so the mana regex below matches an energy clause too and
+    then hands "{E}{E}" to `parseManaCost`, which refuses it — and the whole line reads as
+    nothing. That is exactly what the first run of this change did, and the measure caught it:
+    coverage did not move a single card. A run of nothing but `{E}` is unambiguously energy, so
+    asking that question first costs nothing and leaves the mana reader unchanged.
+  */
+  const priced = energyPriced === null
+    ? /^you may pay ((?:\{[^}]+\})+)\.\s*If you do, (.+)$/i.exec(clause)
+    : null;
+  /*
+    **A price that is not mana: `you may X. If you do, Y`** (D472).
+
+    The third row of the queue and the one `phrase-gap.mjs` prices at **77 cards** — with its own
+    docblock saying that figure is a ceiling, because it measures the construct substituted by
+    **Y** and a reader has to refuse Y when X was not performed (CR 608.2). `may-halves.mjs` had
+    to retract a number for measuring halves that are not what a reader would build (D465), so
+    this one was scoped with `may-if-you-do.mjs`, which asks the narrower question: does each half
+    read, and how many questions does each ask?
+
+    That last column decides the shape, and the engine's gate is why.
+    `ChoiceDecisionSpec.askOnlyIfChosen` holds a question back on an **option word** that was
+    chosen (D450); nothing holds one back on "an earlier card answer came back non-empty". So two
+    shapes are readable and the rest are refused:
+
+    - **X asks nothing** — a draw, a mill, a life payment. "If you do" *is* "you said yes", so Y's
+      own questions ride the same gate and the reading is exact.
+    - **X asks once** — a sacrifice, a discard, a chosen bounce. "If you do" is "that answer was
+      not empty", which the effect below reads with `chosenCards`; Y must then ask nothing,
+      because its question could not be held back on that.
+
+    Anything else is refused rather than guessed: X asking twice, either half pointing at a
+    target, or a half that does not read at all.
+  */
+  const doneThen = priced === null && energyPriced === null
+    ? /^you may ([^.]+)\.\s*If you do, (.+)$/i.exec(clause)
+    : null;
+  /*
+    The two halves, composed into one reading the "may" wrapper below can gate without knowing
+    there are two of them. `immediate` for X for the same reason `composeEffects` uses it on a
+    non-final clause: a deferred draw cannot be read by anything after it (D387).
+  */
+  const sequence = ((): { prompt: string; read: ReadEffect } | null => {
+    if (doneThen === null) return null;
+    const xText = doneThen[1]!.trim();
+    const yText = doneThen[2]!.trim();
+    const x = reader(xText);
+    const y = reader(yText);
+    if (x === null || y === null) return null;
+    const xAsks = (x.decisions ?? []).length;
+    const yAsks = (y.decisions ?? []).length;
+    if ((x.targets ?? []).length > 0 || (y.targets ?? []).length > 0) return null;
+    if (xAsks > 1) return null;
+    if (xAsks === 1 && yAsks > 0) return null;
+    const xEffect = x.immediate ?? x.effect;
+    return {
+      prompt: `${xText} — ${yText}`,
+      read: {
+        decisions: [...(x.decisions ?? []), ...(y.decisions ?? [])],
+        effect: (c) => {
+          const after = xEffect(c);
+          /*
+            "If you do" is a fact about whether X happened, and the two shapes read it
+            differently: a question-less X happened the moment the yes was given, and a X that
+            asked happened only if its answer named something. A board with nothing to sacrifice
+            answers empty (CR 608.2 — as much as it can), and then Y must not happen.
+          */
+          const did = xAsks === 0 || chosenCards(c).length > 0;
+          return did ? y.effect({ ...c, state: after }) : after;
+        },
+      },
+    };
+  })();
+  /*
+    The bare "may" regex is **not** guarded on `priced`, and a break run is why.
+
+    It was written as `whole === null && priced === null ? …`, and breaking that guard — letting
+    the bare regex match a priced clause too — changed nothing: all 1,506 tests stayed green. The
+    guard could not fail, because the ordering between the two readings is decided below, where
+    `inner` and `pay` both prefer `priced`. Two statements of one rule is the shape this file
+    keeps removing (D441, D438), so the redundant one is gone and the selection below is the only
+    lever. Breaking **that** does fail.
+
+    The same applies to `sequence`: the bare regex matches `you may X. If you do, Y` too, and the
+    selection below prefers the sequenced reading. A clause whose halves do not both read falls
+    through to the bare reader, which then tries to read "X. If you do, Y" as one clause and
+    fails — which is the refusal that was there before this increment.
+  */
+  const may = /^you may (.+)$/i.exec(clause);
+  const charged = priced ?? energyPriced;
+  /*
+    Not a "may" at all, and so not this reader's sentence. Every shape above begins with the same
+    two words, so the bare match is the one gate the function needs: a clause it does not match
+    cannot have matched any of them. The caller has already tried reading the clause whole — that
+    order is `triggerFromLine`'s and is the guard described above — so there is nothing left here.
+  */
+  if (may === null) return null;
+  const inner = charged !== null
+    ? charged[2]!.trim()
+    : sequence !== null
+      ? sequence.prompt
+      // `may` is non-null by the gate above, so there is no fallback arm to write here.
+      : may[1]!.trim();
+  const read = sequence?.read ?? reader(inner);
+  if (read === null) return null;
+  /*
+    Either kind of "may" is refused when its own effect asks a question, and for one reason: the
+    engine asks a resolution's questions in order and cannot skip a later one on an earlier
+    answer, so the effect's question would be put to a player who has not yet said yes. See the
+    note under the bare "may" for what that costs.
+  */
+  /*
+    A "may" whose own effect runs **before** its questions is still refused: `beforeDecisions`
+    exists precisely to do something ahead of the asking (D418), so putting a yes-or-no in front
+    of it would be putting the question after the effect.
+
+    Its questions, though, are now carried behind `askOnlyIfChosen` (D450) rather than refusing
+    the card — which is what lets "you may search your library for a basic land card" ask the
+    yes-or-no first and open the library only on a yes. That was the biggest single thing left in
+    this compiler's way: 128 legal cards one line short, 42 on the commonest sub-shape.
+  */
+  /*
+    And a question this reader cannot put behind the gate: a retarget or a counter question
+    (`askOnlyIfChosen` is declared `never` on both, because neither is a step a player declines),
+    or a spec that is a **function** of the board rather than a literal — the flag would have to
+    be added to whatever it returns, which cannot be checked here. Neither appears in the family
+    this increment is for: every search in the corpus is a literal `CardsDecisionSpec`.
+  */
+  const gatable = (spec: DecisionSpecOf):
+    spec is CardsDecisionSpec | ChoiceDecisionSpec | NumberDecisionSpec => typeof spec !== 'function'
+      && (spec.from !== undefined || spec.options !== undefined || spec.range !== undefined);
+  /*
+    The `may !== null || charged !== null` disjunct D447 wrote here is gone, and that is a deletion
+    rather than a loosening: it existed to let a clause that read **whole** through untouched, and
+    the whole reading is now the caller's business. Inside this function the test was vacuously
+    true, because the bare regex matches every shape read above. Two statements of one rule is what
+    this file keeps removing (D441, D438).
+  */
+  if (read.beforeDecisions !== undefined || !(read.decisions ?? []).every(gatable)) {
+    return null;
+  }
+  const sentence = (text: string): string =>
+    `${text.charAt(0).toUpperCase()}${text.slice(1).replace(/\.$/, '')}`;
+  const pricedCost = priced === null ? null : priced[1]!;
+  if (pricedCost !== null) {
+    const parsed = parseManaCost(pricedCost);
+    if (parsed.unsupported !== undefined || parsed.x) return null;
+  }
+  // `{E}{E}` is two energy. The symbols are counted rather than parsed, for the reason above.
+  const energyCost = energyPriced === null
+    ? null
+    : (energyPriced[1]!.match(/\{E\}/gi) ?? []).length;
+  /*
+    The words, and they are not symmetrical with the free "may" above on purpose.
+
+    **The decline is first here**, where "Yes" is first there, because `options[0]` is the answer
+    a bot falls back on and the two questions have different safe answers. A free may is pure
+    upside, so taking it is safe; a may with a price can tap a player out, and
+    `extort()`'s docblock already says which way that falls — "the engine answers with [the first
+    option] when there is no real question to ask, and *do not spend mana* is the safe one of the
+    two".
+
+    **And no `best`.** Extort and echo both write one, because each knows something about its own
+    question: extort fires after the turn's spell is already paid for, so its mana is mana the
+    turn did not use. A compiled card knows nothing of the kind — this same shape covers paying
+    {1} to draw a card and paying {4} to untap a Mana Vault — so the honest reading leaves the
+    hint out and takes the safe answer. The consequence is stated rather than hidden: **the bot
+    never pays one of these**, which is a play-quality gap and not a rules error, since a human
+    is asked properly and the card does exactly what it says either way. Whether one generic
+    `best` is worth more than the safe answer is a question for the deck table, not for a guess.
+  */
+  const pay = pricedCost !== null
+    ? `Pay ${pricedCost}`
+    : energyCost === null ? null : `Pay ${'{E}'.repeat(energyCost)}`;
+  /*
+    The effect's own questions, asked only if the "may" was taken (D450).
+
+    A spec in `decisions` may be a function of the board rather than a literal
+    (`DecisionSpecOf`), so the flag is added either by spreading the object or by wrapping the
+    function — not by assuming one shape.
+  */
+  const gatedOn = (word: string): readonly DecisionSpecOf[] =>
+    (read.decisions ?? []).filter(gatable).map((spec) => ({ ...spec, askOnlyIfChosen: word }));
+  /*
+    **The inner effect must not see this reader's own question.**
+
+    The yes-or-no goes in front of the clause's questions, so every answer after it has shifted
+    one place — and the clause's effect reads its answers by index (`chosenCard(c)` is
+    `c.decisions[0]`). Handing it the whole list would have it read the yes-or-no's empty answer
+    as "nothing was found", which is a search that offers the right cards and then does nothing
+    with the one you pick. That is what the first run of this increment's runtime test caught.
+
+    So the context handed on has the first answer dropped. The clause is then written exactly as
+    it would be with no "may" in front of it, which is the point: the gate is this reader's
+    business and not the clause's.
+  */
+  const withoutOurs = (c: EffectContext): EffectContext =>
+    ({ ...c, decisions: c.decisions.slice(1) });
+  /*
+    `spellFlags`, `immediate` and `appliesNothing` are deliberately not carried out of the inner
+    reading, and one reason covers all three: each is a claim about a clause that **happens**, and
+    this one may not. `makesMana` would tell a bot's search that "you may add {R}" produced mana it
+    was free to decline; `immediate` is a reading of the inner effect's position in a sequence,
+    which the gate in front of it is not part of; and `appliesNothing` would let an assembly drop
+    the effect entirely, and the effect is where the gate lives. A dropped hint is a play-quality
+    gap and not a wrong card, which is the right side of D362 to be on.
+  */
+  const targets = read.targets === undefined ? {} : { targets: read.targets };
+  return pay !== null ? {
+    ...targets,
+    decisions: [{
+      who: 'controller',
+      /*
+        "Pay {1} — Draw a card?", rather than extort's "pay {W/B} so each opponent loses 1 life".
+        A hand-written card can write one sentence because it knows its own clause; these clauses
+        are not all the same grammar — "draw a card" is addressed to the player and "target
+        creature gains double strike until end of turn" is about the board — and "Pay {R/W}{R/W}
+        to target creature gains double strike" is not English. The dash joins the price to the
+        printed words without having to inflect them.
+      */
+      prompt: `${pay} — ${sentence(inner)}?`,
+      options: ['Decline', pay],
+      payIfChosen: pricedCost !== null
+        ? { option: pay, cost: pricedCost }
+        : { option: pay, energy: energyCost! },
+    }, ...gatedOn(pay)],
+    effect: (c) => (chosenOption(c) === pay ? read.effect(withoutOurs(c)) : c.state),
+  } : {
+    ...targets,
+    decisions: [{
+      who: 'controller',
+      // The printed clause, as a question in the player's own words: "Draw a card?"
+      prompt: `${sentence(inner)}?`,
+      options: ['Yes', 'No'],
+    }, ...gatedOn('Yes')],
+    effect: (c) => (chosenOption(c) === 'Yes' ? read.effect(withoutOurs(c)) : c.state),
+  };
+}
+
+/**
  * A printed triggered-ability line, as the `triggers` fragment of a `CardScript`.
  *
  * The prologue says when it fires and comes from `TRIGGER_SHAPES`; the clause says what happens and
@@ -14530,38 +14874,6 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     */
     const clause = (matched.groups?.clause ?? matched[1]!).replace(/\.\s*$/, '').trim();
     /*
-      "You may" — the optional triggered ability (D447).
-
-      The commonest two words in all of Magic's trigger clauses, and until now they made the whole
-      line unreadable: the clause vocabulary is about what an effect *does*, and "you may" is about
-      whether it happens. **82 legal lines on 50 cards** are exactly this — a prologue this compiler
-      already reads, a "you may", and an effect it already reads — among them *Gravedigger*,
-      *Reclamation Sage*, *Consecrated Sphinx* and *Ninja of the Deep Hours*.
-
-      It is read the way the pool's one hand-written optional trigger is (Ophidian, D116): a
-      `ChoiceDecisionSpec` with two words and an effect that returns the board untouched when the
-      answer is the second one. The engine has no optional-trigger flag and does not need one — a
-      "may" **is** a question with two answers, and the table already draws a row of buttons for one.
-
-      Two things are deliberate about the words.
-
-      `'Yes'` is first, and `ChoiceDecisionSpec.options` documents the first option as the answer a
-      bot falls back on when the card gives no `best`. That is the right fallback here and it is a
-      measured claim rather than a hope: **every one of the 82 lines this reads is pure upside for
-      the controller** — a draw, a counter on your own creature, a destroy, a bounce, an untap. Not
-      one of them costs the controller anything, which is why no `best` is written and why the
-      refusal below exists to keep that true as the clause vocabulary grows.
-
-      A `may` whose effect asks its own question **was refused here, and is not any more (D450).**
-      The engine asked a resolution's questions in order and could not skip a later one on an
-      earlier answer, so "you may search your library for a basic land card" opened the library
-      *before* the yes-or-no could be read — a player who declined had seen their library anyway,
-      which is both a wrong reading and an information leak. It was recorded as a refusal rather
-      than taken (D362), and the engine change it asked for is `DecisionSpec.askOnlyIfChosen`,
-      which those questions now travel behind. The refusals left are a may whose effect runs
-      something *before* its questions, and one whose question cannot be gated — both below.
-    */
-    /*
       Where the clause's own subject is when it runs, read off the **event** rather than guessed.
 
       A shape fires at a moment, and the moment says where the object the clause names by its own
@@ -14589,271 +14901,13 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     const reader = (text: string): ReadEffect | null =>
       eventRelativeEffect(text, name, on) ?? composeEffects(clausesOf(text), name, where);
     /*
-      **The whole clause is tried first, and that order is the guard.** Some clauses in the
-      vocabulary already begin with "you may" and read as one phrase — a payment offered to the
-      event's own player, for instance — and stripping the two words off those would hand the rest
-      to a reader that was never written for it. So the strip is only reached when the clause does
-      not read at all, which is the only case where there is nothing to lose.
+      **The whole clause is tried first.** See `optionalEffect`, whose docblock carries the
+      measurement: no clause in today's vocabulary reads a "you may" phrase whole, so this order
+      currently discriminates on nothing and is kept because it is the cheap safe direction. Every
+      other caller keeps it too.
     */
-    const whole = reader(clause);
-    /*
-      **A "may" with a price on it** (D448): "you may pay {1}. If you do, draw a card."
-
-      The second row of the queue D447 measured, and the same family one step on: 66 legal lines
-      print it, of which **39 name a cost this engine can charge** — a mana run, hybrid symbols
-      included. `ChoiceDecisionSpec.payIfChosen` is exactly this shape and has been since echo
-      (#196): a price on one answer, which the engine pays before the effect runs and does not even
-      **offer** when the seat cannot afford it, so a tapped-out player is never asked a question
-      with one button.
-
-      Tried before the bare "you may" below, because this clause begins with those two words too
-      and stripping them would leave "pay {1}. If you do, …" for a reader that has never seen a
-      payment.
-
-      **What is refused, and all of it is a cost the engine cannot charge here.**
-      `payIfChosen.cost` is a mana string, so: 19 lines pay energy (`{E}`, the Kaladesh commons —
-      energy exists in this engine since #180 but not as a price on an answer), 4 pay life, and 4
-      pay a mana cost **and** something else ("{1} and discard a card", "{2} and sacrifice a
-      token"). `parseManaCost` is what refuses them rather than a second list of shapes: it records
-      an unrecognised symbol instead of reading it as generic mana, which is the same guard D446's
-      ability costs lean on.
-    */
-    /*
-      **Energy, which D448 refused and could not then charge (D451).**
-
-      It was the biggest single refusal that increment left behind — 19 lines there, 56 legal cards
-      one line short once the whole family is counted — and the reason was narrow:
-      `payIfChosen.cost` was a mana string. `payIfChosen.energy` is the same price in the other
-      currency, and `AbilityCost.energy` has charged an *activated* ability in energy since #180,
-      so the engine always knew how. `{E}{E}` is a count rather than a symbol run, which is why it
-      is read here and not by `parseManaCost`: energy has no colours and no sources to tap, so
-      there is nothing for a mana parser to do with it.
-    */
-    const energyPriced = whole === null
-      ? /^you may pay ((?:\{E\})+)\.\s*If you do, (.+)$/i.exec(clause)
-      : null;
-    /*
-      The mana price is tried **after** the energy one, and that order is load-bearing rather than
-      tidy: `{E}` matches `\{[^}]+\}`, so the mana regex below matches an energy clause too and
-      then hands "{E}{E}" to `parseManaCost`, which refuses it — and the whole line reads as
-      nothing. That is exactly what the first run of this change did, and the measure caught it:
-      coverage did not move a single card. A run of nothing but `{E}` is unambiguously energy, so
-      asking that question first costs nothing and leaves the mana reader unchanged.
-    */
-    const priced = whole === null && energyPriced === null
-      ? /^you may pay ((?:\{[^}]+\})+)\.\s*If you do, (.+)$/i.exec(clause)
-      : null;
-    /*
-      The bare "may" regex is **not** guarded on `priced`, and a break run is why.
-
-      It was written as `whole === null && priced === null ? …`, and breaking that guard — letting
-      the bare regex match a priced clause too — changed nothing: all 1,506 tests stayed green. The
-      guard could not fail, because the ordering between the two readings is decided below, where
-      `inner` and `pay` both prefer `priced`. Two statements of one rule is the shape this file
-      keeps removing (D441, D438), so the redundant one is gone and the selection below is the only
-      lever. Breaking **that** does fail.
-    */
-    /*
-      **A price that is not mana: `you may X. If you do, Y`** (D472).
-
-      The third row of the queue and the one `phrase-gap.mjs` prices at **77 cards** — with its own
-      docblock saying that figure is a ceiling, because it measures the construct substituted by
-      **Y** and a reader has to refuse Y when X was not performed (CR 608.2). `may-halves.mjs` had
-      to retract a number for measuring halves that are not what a reader would build (D465), so
-      this one was scoped with `may-if-you-do.mjs`, which asks the narrower question: does each half
-      read, and how many questions does each ask?
-
-      That last column decides the shape, and the engine's gate is why.
-      `ChoiceDecisionSpec.askOnlyIfChosen` holds a question back on an **option word** that was
-      chosen (D450); nothing holds one back on "an earlier card answer came back non-empty". So two
-      shapes are readable and the rest are refused:
-
-      - **X asks nothing** — a draw, a mill, a life payment. "If you do" *is* "you said yes", so Y's
-        own questions ride the same gate and the reading is exact.
-      - **X asks once** — a sacrifice, a discard, a chosen bounce. "If you do" is "that answer was
-        not empty", which the effect below reads with `chosenCards`; Y must then ask nothing,
-        because its question could not be held back on that.
-
-      Anything else is refused rather than guessed: X asking twice, either half pointing at a
-      target, or a half that does not read at all.
-    */
-    const doneThen = whole === null && priced === null && energyPriced === null
-      ? /^you may ([^.]+)\.\s*If you do, (.+)$/i.exec(clause)
-      : null;
-    /*
-      The two halves, composed into one reading the "may" wrapper below can gate without knowing
-      there are two of them. `immediate` for X for the same reason `composeEffects` uses it on a
-      non-final clause: a deferred draw cannot be read by anything after it (D387).
-    */
-    const sequence = ((): { prompt: string; read: ReadEffect } | null => {
-      if (doneThen === null) return null;
-      const xText = doneThen[1]!.trim();
-      const yText = doneThen[2]!.trim();
-      const x = reader(xText);
-      const y = reader(yText);
-      if (x === null || y === null) return null;
-      const xAsks = (x.decisions ?? []).length;
-      const yAsks = (y.decisions ?? []).length;
-      if ((x.targets ?? []).length > 0 || (y.targets ?? []).length > 0) return null;
-      if (xAsks > 1) return null;
-      if (xAsks === 1 && yAsks > 0) return null;
-      const xEffect = x.immediate ?? x.effect;
-      return {
-        prompt: `${xText} — ${yText}`,
-        read: {
-          decisions: [...(x.decisions ?? []), ...(y.decisions ?? [])],
-          effect: (c) => {
-            const after = xEffect(c);
-            /*
-              "If you do" is a fact about whether X happened, and the two shapes read it
-              differently: a question-less X happened the moment the yes was given, and a X that
-              asked happened only if its answer named something. A board with nothing to sacrifice
-              answers empty (CR 608.2 — as much as it can), and then Y must not happen.
-            */
-            const did = xAsks === 0 || chosenCards(c).length > 0;
-            return did ? y.effect({ ...c, state: after }) : after;
-          },
-        },
-      };
-    })();
-    /*
-      The bare "may" regex is **not** guarded on `priced`, and a break run is why.
-
-      It was written as `whole === null && priced === null ? …`, and breaking that guard — letting
-      the bare regex match a priced clause too — changed nothing: all 1,506 tests stayed green. The
-      guard could not fail, because the ordering between the two readings is decided below, where
-      `inner` and `pay` both prefer `priced`. Two statements of one rule is the shape this file
-      keeps removing (D441, D438), so the redundant one is gone and the selection below is the only
-      lever. Breaking **that** does fail.
-
-      The same applies to `sequence`: the bare regex matches `you may X. If you do, Y` too, and the
-      selection below prefers the sequenced reading. A clause whose halves do not both read falls
-      through to the bare reader, which then tries to read "X. If you do, Y" as one clause and
-      fails — which is the refusal that was there before this increment.
-    */
-    const may = whole === null ? /^you may (.+)$/i.exec(clause) : null;
-    const charged = priced ?? energyPriced;
-    const inner = charged !== null
-      ? charged[2]!.trim()
-      : sequence !== null
-        ? sequence.prompt
-        : may === null ? clause : may[1]!.trim();
-    const read = whole ?? sequence?.read ?? reader(inner);
+    const read = reader(clause) ?? optionalEffect(clause, reader);
     if (read === null) return null;
-    /*
-      Either kind of "may" is refused when its own effect asks a question, and for one reason: the
-      engine asks a resolution's questions in order and cannot skip a later one on an earlier
-      answer, so the effect's question would be put to a player who has not yet said yes. See the
-      note under the bare "may" for what that costs.
-    */
-    /*
-      A "may" whose own effect runs **before** its questions is still refused: `beforeDecisions`
-      exists precisely to do something ahead of the asking (D418), so putting a yes-or-no in front
-      of it would be putting the question after the effect.
-
-      Its questions, though, are now carried behind `askOnlyIfChosen` (D450) rather than refusing
-      the card — which is what lets "you may search your library for a basic land card" ask the
-      yes-or-no first and open the library only on a yes. That was the biggest single thing left in
-      this compiler's way: 128 legal cards one line short, 42 on the commonest sub-shape.
-    */
-    /*
-      And a question this reader cannot put behind the gate: a retarget or a counter question
-      (`askOnlyIfChosen` is declared `never` on both, because neither is a step a player declines),
-      or a spec that is a **function** of the board rather than a literal — the flag would have to
-      be added to whatever it returns, which cannot be checked here. Neither appears in the family
-      this increment is for: every search in the corpus is a literal `CardsDecisionSpec`.
-    */
-    const gatable = (spec: DecisionSpecOf):
-      spec is CardsDecisionSpec | ChoiceDecisionSpec | NumberDecisionSpec => typeof spec !== 'function'
-        && (spec.from !== undefined || spec.options !== undefined || spec.range !== undefined);
-    if ((may !== null || charged !== null)
-      && (read.beforeDecisions !== undefined || !(read.decisions ?? []).every(gatable))) {
-      return null;
-    }
-    const sentence = (text: string): string =>
-      `${text.charAt(0).toUpperCase()}${text.slice(1).replace(/\.$/, '')}`;
-    const pricedCost = priced === null ? null : priced[1]!;
-    if (pricedCost !== null) {
-      const parsed = parseManaCost(pricedCost);
-      if (parsed.unsupported !== undefined || parsed.x) return null;
-    }
-    // `{E}{E}` is two energy. The symbols are counted rather than parsed, for the reason above.
-    const energyCost = energyPriced === null
-      ? null
-      : (energyPriced[1]!.match(/\{E\}/gi) ?? []).length;
-    /*
-      The words, and they are not symmetrical with the free "may" above on purpose.
-
-      **The decline is first here**, where "Yes" is first there, because `options[0]` is the answer
-      a bot falls back on and the two questions have different safe answers. A free may is pure
-      upside, so taking it is safe; a may with a price can tap a player out, and
-      `extort()`'s docblock already says which way that falls — "the engine answers with [the first
-      option] when there is no real question to ask, and *do not spend mana* is the safe one of the
-      two".
-
-      **And no `best`.** Extort and echo both write one, because each knows something about its own
-      question: extort fires after the turn's spell is already paid for, so its mana is mana the
-      turn did not use. A compiled card knows nothing of the kind — this same shape covers paying
-      {1} to draw a card and paying {4} to untap a Mana Vault — so the honest reading leaves the
-      hint out and takes the safe answer. The consequence is stated rather than hidden: **the bot
-      never pays one of these**, which is a play-quality gap and not a rules error, since a human
-      is asked properly and the card does exactly what it says either way. Whether one generic
-      `best` is worth more than the safe answer is a question for the deck table, not for a guess.
-    */
-    const pay = pricedCost !== null
-      ? `Pay ${pricedCost}`
-      : energyCost === null ? null : `Pay ${'{E}'.repeat(energyCost)}`;
-    /*
-      The effect's own questions, asked only if the "may" was taken (D450).
-
-      A spec in `decisions` may be a function of the board rather than a literal
-      (`DecisionSpecOf`), so the flag is added either by spreading the object or by wrapping the
-      function — not by assuming one shape.
-    */
-    const gatedOn = (word: string): readonly DecisionSpecOf[] =>
-      (read.decisions ?? []).filter(gatable).map((spec) => ({ ...spec, askOnlyIfChosen: word }));
-    /*
-      **The inner effect must not see this reader's own question.**
-
-      The yes-or-no goes in front of the clause's questions, so every answer after it has shifted
-      one place — and the clause's effect reads its answers by index (`chosenCard(c)` is
-      `c.decisions[0]`). Handing it the whole list would have it read the yes-or-no's empty answer
-      as "nothing was found", which is a search that offers the right cards and then does nothing
-      with the one you pick. That is what the first run of this increment's runtime test caught.
-
-      So the context handed on has the first answer dropped. The clause is then written exactly as
-      it would be with no "may" in front of it, which is the point: the gate is this reader's
-      business and not the clause's.
-    */
-    const withoutOurs = (c: EffectContext): EffectContext =>
-      ({ ...c, decisions: c.decisions.slice(1) });
-    const optional: Partial<TriggerDef> = pay !== null ? {
-      decisions: [{
-        who: 'controller',
-        /*
-          "Pay {1} — Draw a card?", rather than extort's "pay {W/B} so each opponent loses 1 life".
-          A hand-written card can write one sentence because it knows its own clause; these clauses
-          are not all the same grammar — "draw a card" is addressed to the player and "target
-          creature gains double strike until end of turn" is about the board — and "Pay {R/W}{R/W}
-          to target creature gains double strike" is not English. The dash joins the price to the
-          printed words without having to inflect them.
-        */
-        prompt: `${pay} — ${sentence(inner)}?`,
-        options: ['Decline', pay],
-        payIfChosen: pricedCost !== null
-          ? { option: pay, cost: pricedCost }
-          : { option: pay, energy: energyCost! },
-      }, ...gatedOn(pay)],
-      effect: (c) => (chosenOption(c) === pay ? read.effect(withoutOurs(c)) : c.state),
-    } : may === null ? {} : {
-      decisions: [{
-        who: 'controller',
-        // The printed clause, as a question in the player's own words: "Draw a card?"
-        prompt: `${sentence(inner)}?`,
-        options: ['Yes', 'No'],
-      }, ...gatedOn('Yes')],
-      effect: (c) => (chosenOption(c) === 'Yes' ? read.effect(withoutOurs(c)) : c.state),
-    };
     // `spellFlags` is deliberately not spread: it is advice about casting a spell, and a triggered
     // ability is not cast. See `targetedEffect`.
     return {
@@ -14865,8 +14919,6 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
         // See the split in `composeEffects` (D418): a trigger asks before it runs, as a spell does.
         ...(read.beforeDecisions === undefined ? {} : { beforeDecisions: read.beforeDecisions }),
         effect: read.effect,
-        // Last, so the yes-or-no and its wrapped effect replace the unconditional pair above.
-        ...optional,
       } as TriggerDef)),
     };
   }
@@ -17484,7 +17536,21 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   const loyalty = /^([+\u2212-]?)(\d+)$/.exec(split[1]!.trim());
   if (loyalty !== null) {
     // A loyalty ability is activated from the battlefield, so that is where its subject is.
-    const read = composeEffects(clausesOf(clause), name, 'battlefield');
+    const loyaltyReader = (text: string): ReadEffect | null =>
+      composeEffects(clausesOf(text), name, 'battlefield');
+    /*
+      **A "you may" a loyalty ability offers** (D525) — Sarkhan, Fireblood's "+1: You may discard a
+      card. If you do, draw a card." 25 legal loyalty lines begin with those two words and **4** of
+      them read: this one, Nahiri, the Harbinger, Quintorius, History Chaser and Thomil, the
+      Destroyer. The other 21 are a vocabulary gap rather than a wiring one — "you may cast", "you
+      may put a creature card from your hand onto the battlefield", "you may reveal a card you own
+      from outside the game" — and each refuses because its inner half does not read.
+
+      Four cards is a small reader, and it is written because it is the **same** reader: one more
+      `?? optionalEffect(…)` on a path that already composes clauses, not a new shape. See
+      `modalScriptFor` for the one place this was measured and left out.
+    */
+    const read = loyaltyReader(clause) ?? optionalEffect(clause, loyaltyReader);
     if (read === null) return null;
     // See `dividesAQuantity`: Ral, Caller of Storms and Samut, the Tested both print it on a -2.
     if (dividesAQuantity(read)) return null;
@@ -17661,7 +17727,18 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   */
   // An activated ability on a permanent is activated from the battlefield (see `SubjectZone`).
   const read = animateSelf(clause, name)
-    ?? composeEffects(clausesOf(clause), name, 'battlefield');
+    ?? composeEffects(clausesOf(clause), name, 'battlefield')
+    /*
+      **A "you may" an activated ability offers** (D525) — "{T}: You may put a creature card from
+      your hand onto the battlefield." 95 legal lines are this shape. Last, for the order
+      `optionalEffect`'s docblock gives: the clause is read whole first.
+
+      A price on the answer works here for the same reason it works on a trigger: the engine pays a
+      `payIfChosen` from `decisionSpecsFor` on whatever stack object is asking, and an activated
+      ability is a stack object. So this is a second price on an ability that already charged one
+      to be activated, which is what the printed card says and not a double charge.
+    */
+    ?? optionalEffect(clause, (text) => composeEffects(clausesOf(text), name, 'battlefield'));
   if (read === null) return null;
   /*
     A **divided** quantity on an activated ability is refused, and the line stays unread.
@@ -18498,6 +18575,18 @@ function modalScriptFor(lines: readonly string[], name: string): { modal: ModalD
     const bullet = /^[•\u2022]\s*(.+)$/.exec(plain(line).trim());
     if (bullet === null) return null;
     const printed = bullet[1]!.replace(/\s*\.\s*$/, '').trim();
+    /*
+      No `optionalEffect` here, and that is a measured refusal rather than an oversight (D525).
+
+      15 legal modal bullets begin with "you may" and **one** reads — Witherbloom Charm's "You may
+      sacrifice a permanent. If you do, draw two cards." The other 14 are a vocabulary gap: "you
+      may cast", "you may put a land card from your hand onto the battlefield", "you may put a
+      sticker on a nonland permanent you own". One card does not pay for the only part of this that
+      is genuinely new: a mode's gate would be a `payIfChosen`-capable question inside a `ModeDef`,
+      a combination nothing in the pool prints and no test exercises, and a reader with nothing to
+      check against is a reader written ahead of need. Recorded with its count so the first card
+      that makes it two can reverse this on evidence.
+    */
     // A spell's "itself" is a card on the stack, not a permanent: see `SubjectZone`.
     const read = composeEffects(clausesOf(printed), name, null);
     if (read === null) return null;
@@ -18966,6 +19055,43 @@ function exileForLifeResolution(lines: readonly string[], name: string): ReadEff
   };
 }
 
+/**
+ * **A whole spell the caster is offered rather than made to resolve** (D525).
+ *
+ * `optionalEffect` behind the spell path, and a spell-shape reader rather than a clause one for the
+ * same reason the four readers above it are: the `. If you do,` sequence is **two sentences**, and
+ * `clausesOf` splits on the full stop — so by the time the clause vocabulary sees it, the halves
+ * have already been cut apart and the dependency between them is gone. One line only, which is
+ * what every other reader on this path takes, and the trailing full stop comes off so the
+ * sequence's own inner one is the only one left for its regex to find.
+ *
+ * `null` for `where`, as the composer below: a spell's "itself" is a card on the stack, not a
+ * permanent. See `SubjectZone`.
+ *
+ * ## What this does *not* reach, and it is most of the printed sightings
+ *
+ * 124 legal instant and sorcery lines begin with these two words, and the great majority are not
+ * resolutions at all: "You may cast this card without paying its mana cost", "You may discard a
+ * Plains card rather than pay this spell's mana cost", "You may pay {0} rather than…". Those are
+ * **alternative and additional costs** — a fact about casting the spell, not about resolving it —
+ * and this reader refuses them by construction, because `reader` has no vocabulary for them and
+ * the inner half simply does not read. That is the correct outcome rather than a shortfall: a cost
+ * read as an effect would be a wrong card (D362), and a card whose cost line is unread still
+ * compiles for everything else it prints.
+ */
+function optionalResolution(lines: readonly string[], name: string): ReadEffect | null {
+  if (lines.length !== 1) return null;
+  /*
+    The line goes in with its full stop still on, and that is a deletion a break run asked for. The
+    first version stripped it; breaking the strip changed nothing, and the reason is that every
+    reader downstream already handles it — `clausesOf` takes a trailing stop off each clause and
+    `sentence()` takes one off the prompt. A guard that cannot fail reads as care and is noise
+    (D441, D438), so it is gone and the two readers that do the work are named here instead.
+  */
+  return optionalEffect(plain(lines[0]!).trim(), (text) =>
+    composeEffects(clausesOf(text), name, null));
+}
+
 function readResolution(lines: readonly string[], name: string): ReadEffect | null {
   /*
     The X shapes first, because `composeEffects` would refuse them: the clause vocabulary has no
@@ -18982,5 +19108,10 @@ function readResolution(lines: readonly string[], name: string): ReadEffect | nu
     ?? blinkResolution(lines, name)
     ?? exileForLifeResolution(lines, name)
     // A spell's "itself" is a card on the stack, not a permanent: see `SubjectZone`.
-    ?? composeEffects(lines.flatMap(clausesOf), name, null);
+    ?? composeEffects(lines.flatMap(clausesOf), name, null)
+    /*
+      **Last of all** (D525), for the order every caller of `optionalEffect` keeps: the clause is
+      read whole first, and the two words come off only when there was nothing to lose.
+    */
+    ?? optionalResolution(lines, name);
 }

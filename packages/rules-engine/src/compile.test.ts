@@ -13472,3 +13472,184 @@ describe('a STATIC size read off the board (D523)', () => {
     expect(asStatic.unread).toHaveLength(1);
   });
 });
+
+describe('"you may" outside a trigger (D525)', () => {
+  /*
+    The four "may" readings — the bare one (D447), the mana price (D448), the energy price (D451)
+    and the `. If you do,` sequence (D472) — all lived **inside** `triggerFromLine`, so none of them
+    could be reached from any other path a resolution has. Four increments measured and shipped
+    behind a trigger and nothing said so, because every card they counted prints its "may" behind a
+    trigger too. Asked directly, the compiler read the same clause two different ways depending on
+    what printed it, which is what these rows now forbid.
+
+    `optionalEffect` takes the reader its caller composes with, so the trigger path keeps
+    `eventRelativeEffect` in front of the clause vocabulary and the others do not need it.
+
+    ## What is deliberately still refused
+
+    A modal bullet (15 legal ones begin with these two words, of which one — Witherbloom Charm —
+    reads), and the great majority of the printed sightings on a spell: "you may cast this without
+    paying its mana cost", "you may discard a Plains card rather than pay this spell's mana cost".
+    Those are **costs**, not resolutions, and the inner half simply does not read — which is the
+    right outcome, since a cost read as an effect would be a wrong card (D362).
+  */
+  const sorcery = (text: string) => compileCard({
+    name: 'Not A Card', type_line: 'Sorcery', mana_cost: '{1}{R}', cmc: 2, colors: ['R'],
+    layout: 'normal', oracle_text: text,
+  });
+  const artifact = (text: string) => compileCard({
+    name: 'Not A Card', type_line: 'Artifact', mana_cost: '{2}', cmc: 2, colors: [],
+    layout: 'normal', oracle_text: text,
+  });
+  const walker = (text: string) => compileCard({
+    name: 'Not A Card', type_line: 'Legendary Planeswalker — Nobody', mana_cost: '{2}{R}', cmc: 3,
+    colors: ['R'], layout: 'normal', loyalty: '4', oracle_text: text,
+  });
+
+  it.each([
+    ['a bare may as a whole spell', 'You may draw a card.'],
+    ['a mana price as a whole spell', 'You may pay {1}. If you do, draw a card.'],
+    ['an energy price as a whole spell', 'You may pay {E}{E}. If you do, draw a card.'],
+    ['a sequence as a whole spell', 'You may discard a card. If you do, draw two cards.'],
+  ])('reads %s', (_why, text) => {
+    const read = sorcery(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.onResolve).toBeDefined();
+    /*
+      The **first** question is the gate, and the rest are the clause's own, held behind it by
+      `askOnlyIfChosen` (D450). The sequence shape has two for that reason — the yes-or-no and the
+      discard — so the count is not what these rows pin; the gate being first is.
+      */
+    const gate = (read.script?.decisions ?? [])[0];
+    expect(typeof gate === 'object' && gate !== null && 'options' in gate && gate.options)
+      .toBeTruthy();
+  });
+
+  it.each([
+    ['a bare may on an activated ability', '{T}: You may draw a card.'],
+    ['a priced may on an activated ability', '{1}, {T}: You may pay {1}. If you do, draw a card.'],
+    ['a sequence on an activated ability',
+      '{2}, {T}: You may discard a card. If you do, draw two cards.'],
+  ])('reads %s', (_why, text) => {
+    const read = artifact(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.abilities ?? []).toHaveLength(1);
+    const gate = ((read.script?.abilities ?? [])[0]?.decisions ?? [])[0];
+    expect(typeof gate === 'object' && gate !== null && 'options' in gate && gate.options)
+      .toBeTruthy();
+  });
+
+  it('reads a sequence on a loyalty ability, which is Sarkhan, Fireblood', () => {
+    const read = walker('+1: You may discard a card. If you do, draw a card.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    const ability = (read.script?.abilities ?? [])[0];
+    expect(ability?.cost).toEqual({ loyalty: 1 });
+    const gate = (ability?.decisions ?? [])[0];
+    expect(typeof gate === 'object' && gate !== null && 'options' in gate && gate.options)
+      .toEqual(['Yes', 'No']);
+  });
+
+  it.each([
+    ['an alternative cost, which is not a resolution at all',
+      'You may discard a Plains card rather than pay this spell’s mana cost.'],
+    ['a free cast, for the same reason',
+      'You may cast this card from your graveyard without paying its mana cost.'],
+    ['a sequence whose first half does not read',
+      'You may put a creature card from your hand onto the battlefield. If you do, draw a card.'],
+    ['a sequence whose second half does not read',
+      'You may discard a card. If you do, put a creature card from your hand onto the battlefield.'],
+  ])('refuses %s', (_why, text) => {
+    const read = sorcery(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('refuses a two-line spell, so the second line is never silently dropped (D487)', () => {
+    /*
+      `optionalResolution` is a one-line reader, like the four spell shapes above it, and this row
+      is why it has to be. Letting it see a longer resolution would have it read the first line and
+      ignore the rest — the card would compile, resolve, and do half of what it prints, which is
+      the failure D487 made the standing rule about.
+    */
+    const read = compileCard({
+      name: 'Not A Card', type_line: 'Sorcery', mana_cost: '{1}{R}', cmc: 2, colors: ['R'],
+      layout: 'normal', oracle_text: 'You may draw a card.\nProliferate.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.onResolve).toBeUndefined();
+    expect(read.unread.map((u) => u.line)).toEqual(['You may draw a card.', 'Proliferate.']);
+  });
+
+  it('refuses a clause that is not a "may" at all, rather than reaching for a match it has not got', () => {
+    /*
+      The cheapest row here and the one that pins the function's own gate. Every spell whose
+      resolution does not read reaches `optionalEffect`, most of them saying nothing about a "may",
+      so the bare match is tested before anything is read off it.
+    */
+    const read = compileCard({
+      name: 'Not A Card', type_line: 'Sorcery', mana_cost: '{1}{R}', cmc: 2, colors: ['R'],
+      layout: 'normal', oracle_text: 'Proliferate.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual(['Proliferate.']);
+  });
+
+  it('refuses a modal bullet, which is the one place this was measured and left out', () => {
+    /*
+      One legal card would gain — Witherbloom Charm. A mode's gate would be the first
+      `payIfChosen`-capable question inside a `ModeDef`, which nothing in the pool prints, and the
+      scripts file says so where the decision lives. If a second card ever prints one, this row is
+      what fails and tells whoever reads it that the count has moved.
+    */
+    const read = compileCard({
+      name: 'Not A Card', type_line: 'Instant', mana_cost: '{B}{G}', cmc: 2, colors: ['B', 'G'],
+      layout: 'normal',
+      oracle_text: 'Choose one —\n• You may sacrifice a permanent. If you do, draw two cards.'
+        + '\n• Draw a card.',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.modal).toBeUndefined();
+    // And the bullet stays unread rather than compiling to something outside a `modal`.
+    expect(read.unread.map((u) => u.line)).toContain(
+      '\u2022 You may sacrifice a permanent. If you do, draw two cards.',
+    );
+  });
+
+  it('reads the same clause identically whether a trigger or a spell prints it', () => {
+    /*
+      The defect itself, as one assertion. Before D525 the left-hand side read and the right-hand
+      side did not, for all four shapes.
+    */
+    const shapes = [
+      'you may draw a card',
+      'you may pay {1}. If you do, draw a card',
+      'you may pay {E}{E}. If you do, draw a card',
+      'you may discard a card. If you do, draw two cards',
+    ];
+    for (const shape of shapes) {
+      const triggered = artifact(`When Not A Card enters, ${shape}.`);
+      const resolved = sorcery(`${shape.charAt(0).toUpperCase()}${shape.slice(1)}.`);
+      expect(triggered.ok && resolved.ok).toBe(true);
+      if (!triggered.ok || !resolved.ok) return;
+      expect(triggered.unread.map((u) => u.line)).toEqual([]);
+      expect(resolved.unread.map((u) => u.line)).toEqual([]);
+      // The same question, asked by the trigger and by the spell.
+      const asTrigger = (triggered.script?.triggers ?? [])[0]?.decisions ?? [];
+      const asSpell = resolved.script?.decisions ?? [];
+      const prompts = (specs: readonly unknown[]) => specs.map((spec) => (
+        typeof spec === 'object' && spec !== null && 'prompt' in spec ? spec.prompt : null));
+      expect(prompts(asSpell).length).toBeGreaterThan(0);
+      expect(prompts(asSpell)).toEqual(prompts(asTrigger));
+    }
+  });
+});

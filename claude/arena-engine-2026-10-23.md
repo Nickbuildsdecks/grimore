@@ -18182,3 +18182,130 @@ mistake one level up. The rule generalises: **count what a reader would finish, 
 parts, before believing a bound.** Every increment since D520 has had its ceiling overstated by a
 factor of two to eighteen, and in each case the honest number came from compiling rather than
 pattern-matching.
+
+## D525 — The whole `you may` reader was unreachable from every path but a trigger
+
+Four increments built the optional-effect family — the bare may (D447), the mana price (D448), the
+energy price (D451) and the `. If you do,` sequence (D472) — and all four were written **inside**
+`triggerFromLine`, on a closure over the event. Nothing said so, because every card those
+increments counted prints its "may" behind a trigger, so the measure could not see the hole.
+
+Asked directly, the compiler read the same clause two different ways depending on what printed it:
+
+```
+--- behind a trigger (the path D448 was built on) ---
+READS    When ~ enters, you may pay {1}. If you do, draw a card.
+READS    When ~ enters, you may discard a card. If you do, draw a card.
+READS    When ~ enters, you may pay {E}. If you do, draw a card.
+--- the same clause as a SPELL resolution ---
+refused  You may pay {1}. If you do, draw a card.
+refused  You may discard a card. If you do, draw a card.
+--- a bare "you may" as a spell ---
+refused  You may draw a card.
+```
+
+That is the class of defect D362 is about, read from the other end: not a wrong card, but a line
+the compiler *can* read and does not, decided by grammar that has nothing to do with the clause.
+
+### The fix
+
+`optionalEffect(clause, reader)` — the block lifted out whole, parameterised by the **reader** its
+caller composes clauses with. The reader is a parameter rather than a reach for the shared
+`readEffect` because the trigger needs `eventRelativeEffect` in front of the clause vocabulary ("you
+may return **that card** to your hand"), and a function that chose for itself would quietly drop it.
+
+Four callers, each keeping the same order — **read the clause whole first, and strip the two words
+only on a refusal**, which is the guard D447 wrote and every caller now inherits:
+
+| path | reader it passes | printed lines of the shape |
+| --- | --- | --- |
+| `triggerFromLine` | `eventRelativeEffect ?? composeEffects(…, where)` | unchanged |
+| `readResolution` → `optionalResolution` | `composeEffects(…, null)` | 124 |
+| the activated-ability path | `composeEffects(…, 'battlefield')` | 95 |
+| the loyalty path | `composeEffects(…, 'battlefield')` | 25 |
+
+`optionalResolution` is a **spell-shape** reader (one line, like the four above it) rather than a
+clause one, and the reason is `clausesOf`: it splits on the full stop, so by the time the clause
+vocabulary sees `you may X. If you do, Y` the two halves have already been cut apart and the
+dependency between them is gone.
+
+**The modal path is deliberately left out**, measured rather than forgotten: 15 legal modal bullets
+begin with these two words and **one** reads (Witherbloom Charm). A mode's gate would be the first
+`payIfChosen`-capable question inside a `ModeDef`, a combination nothing in the pool prints and no
+test exercises. One card does not pay for that, and the count is written where the decision lives so
+the first card that makes it two can reverse it on evidence.
+
+### Three deletions the lift exposed
+
+- The "the bare may regex is **not** guarded on `priced`" paragraph was in the file **twice**,
+  verbatim, once with an extra paragraph about `sequence`. The shorter copy is gone.
+- The guard `if ((may !== null || charged !== null) && …)` lost its disjunct. It existed to let a
+  clause that read **whole** through untouched, and the whole reading is now the caller's business;
+  inside the function the test is vacuously true, because the bare regex matches every shape read
+  above. D441 and D438's rule: one statement of one rule.
+- `inner`'s `may === null ? clause : …` arm is gone, dead behind the function's own gate.
+
+### What is not carried out of the inner reading, and why
+
+`spellFlags`, `immediate` and `appliesNothing`. One reason covers all three: each is a claim about a
+clause that **happens**, and this one may not. `makesMana` would tell the bot's search that "you may
+add {R}" produced mana it was free to decline; `immediate` is a reading of the inner effect's
+position in a sequence, which the gate in front of it is not part of; `appliesNothing` would let an
+assembly drop the effect entirely, and the effect is where the gate lives. A dropped hint is a
+play-quality gap and not a wrong card — the right side of D362 to be on.
+
+### What it is worth, measured rather than claimed
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 22,312 / 56,421 (39.5%) | **22,317 / 56,421 (39.6%)** |
+| cards with a compiled script | 11,228 | **11,231** |
+| cards with every printed line read | 6,993 | **6,994** |
+
+**One card finished: Abandon Attachments** (`You may discard a card. If you do, draw two cards.`),
+plus three cards that gained a script with other lines still unread. 244 printed lines are of this
+shape across the three new paths, and 239 of them refuse for a reason that has nothing to do with
+the wiring: they are **costs**, not resolutions — "you may cast this without paying its mana cost",
+"you may discard a Plains card rather than pay this spell's mana cost", "you may put a creature card
+from your hand onto the battlefield". The inner half does not read, which is the correct outcome: a
+cost read as an effect would be a wrong card.
+
+### What the break run found, including two guards that cannot fail
+
+The first pass was **twelve breaks, six caught** — and four of the six misses were not weak tests.
+They were guards with nothing to discriminate on, which is what a break run is for.
+
+- **Three breaks reversed the order** — optional reader before the whole reading, on the spell, the
+  ability and the trigger path — and nothing failed. D447 justified that order with a claim about
+  the vocabulary ("some clauses already begin with 'you may' and read as one phrase"), so the claim
+  was measured rather than argued: of the **2,009 distinct printed clauses beginning with those two
+  words, 215 read through the gate and 0 read whole.** The order protects no phrase that exists.
+  It is kept all the same, because the asymmetry is real — reading whole first costs one reader call
+  on a clause that was going to be read anyway, and the other way round is a stripped clause handed
+  to a reader that never saw it the day the vocabulary does gain such a phrase (D362) — and the
+  docblock now carries the measurement instead of the stale reason.
+- **One break removed the trailing full-stop strip** in `optionalResolution` and nothing failed,
+  because `clausesOf` already takes a stop off each clause and `sentence()` takes one off the
+  prompt. That guard is **deleted** rather than defended (D441, D438), with the two readers that do
+  the work named in its place.
+- **Two misses were weak tests, answered with tests**: a two-line spell reaching the one-line reader
+  (which compiles the first line and silently drops the second — D487), and a clause that is not a
+  "may" at all reaching `may[1]`. Both are compile rows now.
+- **Two breaks were added** to pin rules that had no row: the clause's own question not held behind
+  the gate (D450), and the priced answer offered before the decline — which would make a bot's
+  fallback answer "spend the mana", the opposite of what `extort()`'s docblock settles.
+
+The revised set is **10 breaks, 10 caught**, each verified to apply against a unique anchor and to
+revert against a SHA-256. `break525.py` is also where the three order breaks live, so the day the
+vocabulary gains a "you may" phrase they start failing instead of staying quiet.
+
+### The lesson, now three deep in the same family
+
+D519 priced this family at 591 cards. D524 compiled the halves and measured 33. D525 wired the
+reader to every path and the wiring itself is worth **1**. The same correction keeps arriving from a
+different direction, and the generalisation stands: **count what a reader would finish, by compiling
+the parts, before believing a bound.**
+
+What makes this increment worth shipping is not the card. It is that the compiler no longer reads one
+clause two ways, and that the next reader in the may family — a cost vocabulary, which is what D524
+says to build — lands on four paths instead of one the moment it exists.
