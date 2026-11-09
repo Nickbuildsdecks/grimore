@@ -37410,3 +37410,15 @@ That is the eighth break run in nine where what broke was a test rather than the
 31 more cards finished. The ratio is the usual one for a two-reader increment on a family whose
 bigger half is a referent form: the 415 printings split roughly 1 in 3 readable now, 2 in 3 waiting on
 a combinator.
+
+### D542's pod sweep
+
+**40/40 pods finished** at SEED0=41501 on the clean commit (4fdff53), no engine throw and no stalled
+table, 66.2 turns and 393 moves a game. Per 100-card deck across 160 decks: 26.1 cards with a
+hand-written script, 47.5 with at least one unread line, 62.0 playable only from printed data, 0.4
+cardboard.
+
+The deathtouch fix is the part of this increment a pod sweep is actually measuring. Reading deathtouch
+and lifelink off the source turns both on for every non-combat damage effect in the pool at once —
+pings, triggers, bites — so a sweep that finished every game with no throw is the evidence that
+widening them did not break the damage path the bot searches through hundreds of times a game.
