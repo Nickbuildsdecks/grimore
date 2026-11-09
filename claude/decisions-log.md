@@ -36421,3 +36421,150 @@ asked.
 stalled table, 61.2 turns and 394 moves a game. Per 100-card deck across 160 decks: 25.3 cards with
 a hand-written script, 47.9 with at least one unread line, 61.9 playable only from printed data, 0.5
 cardboard.
+
+## D532 — "This ability triggers only once each turn", and the ranking that said 39 when the answer was 8
+
+`TriggerDef.onceEachTurn`, the triggered-ability counterpart of D508's `AbilityDef.onceEachTurn`.
+143 printings across 140 legal cards carry the sentence, and before this increment every one of them
+had an unread line.
+
+### The headline is the measurement, not the reader
+
+The queue ranking this increment was picked off (`scratchpad/p549.mjs`) put this row at the head at
+**39 cards**. The honest figure, measured by stripping the sentence from all 140 and compiling,
+is **8**. The reader shipped and finished exactly 8. A 4.9x over-prediction is worse than D530's
+11%, and it is worth writing down because the cause is structural rather than a slip:
+
+1. **The clause probe never tests the prologue.** It splits a line's *body* into clauses and asks
+   whether each compiles standalone — and the body is what is left after "Whenever you gain life,"
+   comes off. A card whose prologue has no `TRIGGER_SHAPE` is two readers short and counts as one
+   clause short. Morbid Opportunist is the example: "Whenever one or more other creatures die, draw a
+   card. This ability triggers only once each turn." — its body's only failing clause is the
+   restriction, and strip the restriction and the line still does not read. Every trigger row in that
+   ranking is inflated by however many of its cards are prologue-blocked, which is a different number
+   per row, so the ranking is not even uniformly wrong.
+2. **It compiles each clause under a placeholder name**, which is the artifact that bit three
+   separate probes this session (D530's and D531's rankings among them): `selfRef(name)` matches the
+   card's own name, so "put a +1/+1 counter on Arcbound Crusher" fails under the name "Probe Card"
+   for a reason that has nothing to do with any reader. Those artifacts take the whole head of the
+   ranking — 58, 37, 25, 16 — and the p549 run was corrected for this one and still wrong by 4.9x
+   because of bias 1.
+
+**This is D524's lesson arriving a second time with a second mechanism**, so the instrument is now in
+the repository rather than the scratchpad: `scripts/measure/one-blocker.mjs`. For each legal card that
+is exactly one line short, it SUBSTITUTES each clause of that line in turn with a clause the compiler
+certainly reads ("draw a card") and recompiles the whole card. If the card then reads whole, that
+clause is the only thing between it and a finished script — prologue, sibling clauses and the card's
+own name all accounted for. Substitution rather than removal, and the difference is 9,459 cards: a
+line with one clause has nothing to remove but itself, which is exactly the shape most trigger
+printings are.
+
+Run before the change, it predicted this row at **8** and was right. Its head rows for next time are
+"untap it" (19) and "it can't be regenerated" (17) — a third and a half of what the old ranking
+claimed for its own head, which is roughly the correction factor to expect on the rest of it.
+
+### What the rule needed in the engine
+
+**Enforced where the ability triggers, not where it resolves.** A gate on resolution would put two
+copies of the ability on the stack, let an opponent respond to both, and then silently do nothing on
+the second: a Morbid Opportunist whose controller sacrifices three creatures would show three
+triggers and draw one card. The gate is in `fireTrigger`, after the intervening-if clause (a trigger
+whose condition is false never triggered, so it must not spend the turn's firing) and before the
+target legality check (a trigger with no legal target *did* trigger, CR 603.3d).
+
+**`triggerFireKey`, namespaced `t:`.** The record goes on `CardInstance.abilityUsedTurn`, which D508
+already uses for activated abilities keyed by bare index. A card's triggers and its activated
+abilities are indexed separately, so index 0 of each is a different ability on the same permanent and
+a bare key would have them share a record — using one would silently lock out the other for the turn.
+`triggerFireKey` wraps `abilityUseKey` rather than reimplementing it, so the granted case has one
+answer rather than two.
+
+**A printed ability the compiler splits across several events refuses the restriction** rather than
+carrying it: each `TriggerDef` gets its own index and so its own record, and one printed ability
+firing once per event kind is a different card. Measured cost: of the 140, the 11 whose restricted
+line this compiler reads at all emit one event and none emit several, so the refusal costs nothing
+today and is right by construction (D487).
+
+Everything else the corpus prints in this position stays unread, which is the behaviour it had
+before: "only once" (7 cards — once per *game*, which wants bookkeeping this does not have), "only
+twice each turn" (1), "after the clash ends" (3), "only from the battlefield" (1), "only if <card> is
+on the battlefield or in your graveyard" (2). `triggerRestriction` returns the text unchanged rather
+than refusing, because the refusal already happens one layer down and for the right reason: the
+sentence stays in the line and no clause reader matches it. "once per turn" (1 card) is read beside
+"once each turn" because they are one rule in two printings (D441).
+
+### What it moved
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 22,793 / 56,421 (40.4%) | **22,803 / 56,421 (40.4%)** |
+| cards with a compiled script | 11,550 | **11,559** |
+| cards with every printed line read | 7,308 | **7,316** |
+
+8 cards finished (Academy Wall, Battle-Scarred Survivalist, Bloombrute, Flying Octobot, Mary Jane
+Watson, Mechan Assembler, Nanoform Sentinel, Whispering Wizard), 11 cards now carry the flag, and a
+drop check over all 141 restricted printings found **0 cases where a line the compiler says it read
+has no restricted trigger to show for it** — the one failure mode this reader's placement in
+`lineScriptFor`'s chain could have had, measured rather than argued about.
+
+### The break run: 12 breaks, 12 caught
+
+Each verified to apply against an anchor matching exactly once and to revert against a SHA-256, over
+both files the increment touched. First time this stretch that a run of this size came back clean on
+the first pass, and the reason is the test my own first draft failed: see below. The twelve are the
+reader never splitting the sentence off, the flag set on every trigger, the flag read and not put on
+the `TriggerDef`, "once per turn" dropped, "only once" taken for "only once each turn", the
+multi-event refusal dropped, the `t:` namespace dropped, the gate absent, the gate reading but never
+refusing, the firing gated but never recorded, the record read as a boolean rather than a turn, and
+the live-instance guard inverted.
+
+### Two holes my own tests found before the break run did
+
+- **`passBoth` is not `drain`.** The runtime test's first draft used the file's `cast` helper, which
+  is `passBoth(apply(...))` — and `passBoth` stops the moment the stack's contents change, so a
+  Spider resolving hands back a board with both entry triggers still waiting. The test read an
+  unchanged library and called it a restriction working, which is indistinguishable from a
+  restriction that stopped the *first* firing too. It now drains.
+- **A refusal row that would still refuse with the guard gone.** The multi-event test's first draft
+  used "When ~ enters and whenever you gain life", which has no `TRIGGER_SHAPE` at all — so the line
+  was refused by the prologue and the restriction never came into it. Replaced with "When ~ enters or
+  dies", a shape that really emits two events, plus a control asserting the same line reads as both
+  events once the restriction is removed. This is D531's break-run lesson applied before the run
+  rather than after it, and it is why the run came back 12/12.
+
+### What is not tested, and why
+
+- **The firing spent by a trigger with no legal target** (CR 603.3d). The gate sits before the
+  target check deliberately, and no printing in the restricted set has a target that can be made
+  illegal while the trigger would still fire — Nanoform Sentinel's "untap another target permanent"
+  comes closest and needs a board where it is the only permanent, which is a board where it cannot
+  become tapped twice. Asserted by construction and by the gate's position, not by a test.
+- **The granted case.** `triggerFireKey` passes `grantedBy` through to `abilityUseKey`, and two legal
+  cards print the restriction inside quoted granted text (Dionus, Elvish Archdruid and Folk Hero) —
+  but those go through the quoted-ability reader, not `triggerFromLine`, so neither compiles with the
+  flag today. The key handles them; nothing exercises it.
+- **The ordering against a false intervening-if.** The gate is after the condition on purpose, and no
+  restricted printing has an intervening-if clause, so a break that moved it before the condition
+  would be vacuous.
+
+### The corrected queue, run after the change
+
+`scripts/measure/one-blocker.mjs` over the legal corpus: 15,019 cards are exactly one line short, and
+for **2,323** of them exactly one clause of that line is the blocker. (The removal-only version of the
+same test found 1,338 — the 985 difference is the single-clause lines substitution can test and
+removal cannot.) The head, by cards finished:
+
+| cards | clause |
+| --- | --- |
+| 19 | `untap it` |
+| 17 | `it can't be regenerated` |
+| 12 + 10 | `it has "sacrifice this creature: add {m}."` / `they have "…"` — **one reader, 22 cards** |
+| 11 | `target creature you control deals damage equal to its power to target creature …` |
+| 11 | `if that creature would die this turn, exile it instead` |
+| 11 | `its controller loses N life` |
+| 11 | `return up to two target creature cards from your graveyard to your hand` |
+
+The 22-card row is the biggest real one and is two printings of the same thing — the Eldrazi Spawn
+family's quoted mana ability, singular and plural. Nothing in the corrected ranking is above 19 for a
+single spelling, which is the shape of the queue now that the inflation is gone: the honest head of a
+40%-read compiler is a row in the high teens, not the high thirties.

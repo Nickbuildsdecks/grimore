@@ -14223,3 +14223,158 @@ describe('the chosen discard, read as one group of three sentences (D531)', () =
     expect(read.unread.length).toBeGreaterThan(0);
   });
 });
+
+describe('"This ability triggers only once each turn" (D532)', () => {
+  /*
+    D508's reading, one ability kind over: the activated version shipped under D508, and this is
+    the triggered one. 143 legal printings carry the sentence.
+
+    **The yield was measured by compiling, and the measurement is the point of this block.** The
+    clause ranking that put this row at the head of the queue said 39 cards, and 39 is wrong by
+    4.9x: that probe tests the clauses of a line's *body*, and the body is what is left after the
+    trigger prologue comes off, so a card whose prologue has no `TRIGGER_SHAPE` counts as one
+    clause short when it is two readers short. Strip the sentence from all 140 and compile, and
+    **8 cards finish**. The honest figure and the reason the other one lied are recorded under
+    D532 in `claude/decisions-log.md`; `scratchpad/p554.mjs` is the corrected ranking, which
+    predicted this row at 8 and was right.
+  */
+  const trig = (text: string, name = 'Bloombrute') => compileCard({
+    name, type_line: 'Creature — Plant Elemental', mana_cost: '{3}{G}', cmc: 4, colors: ['G'],
+    layout: 'normal', power: '3', toughness: '3', oracle_text: text,
+  });
+
+  it('reads Bloombrute, whose whole card is the trigger and the restriction', () => {
+    const read = trig('Whenever you gain life, draw a card. This ability triggers only once each turn.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers?.length).toBe(1);
+    expect(read.script?.triggers?.[0]?.onceEachTurn).toBe(true);
+    // And the trigger still watches what it printed, which is the half a restriction reader breaks.
+    expect(read.script?.triggers?.[0]?.on.kind).toBe('life-gained');
+  });
+
+  it.each([
+    ['Battle-Scarred Survivalist', 'Whenever another creature dies, put a +1/+1 counter on this creature. This ability triggers only once each turn.', 'dies'],
+    ['Mary Jane Watson', 'Whenever a Spider you control enters, draw a card. This ability triggers only once each turn.', 'etb'],
+    ['Nanoform Sentinel', 'Whenever this creature becomes tapped, untap another target permanent. This ability triggers only once each turn.', 'becomes-tapped'],
+    ['Whispering Wizard', 'Whenever you cast a noncreature spell, create a 1/1 white Spirit creature token with flying. This ability triggers only once each turn.', 'spell-cast'],
+  ])('reads it on printed %s', (name, text, kind) => {
+    const read = trig(text as string, name as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers?.length).toBe(1);
+    expect(read.script?.triggers?.[0]?.onceEachTurn).toBe(true);
+    expect(read.script?.triggers?.[0]?.on.kind).toBe(kind as string);
+  });
+
+  it('reads it on Academy Wall, whose effect is two sentences before the restriction', () => {
+    /*
+      The restriction comes off the END of the line, and this is the printing that says the
+      anchoring matters: the effect itself is "you may draw a card. If you do, discard a card",
+      so the sentence this reader takes is the third of three and the two before it still have to
+      compose.
+    */
+    const read = trig(
+      'Defender\nWhenever you cast an instant or sorcery spell, you may draw a card. '
+      + 'If you do, discard a card. This ability triggers only once each turn.',
+      'Academy Wall',
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers?.[0]?.onceEachTurn).toBe(true);
+    expect(read.script?.triggers?.[0]?.decisions?.length).toBeGreaterThan(0);
+  });
+
+  it('does not set the flag on a trigger that does not print it', () => {
+    /*
+      The control, and the one that catches a reader setting the flag unconditionally — which is
+      the failure that costs a player every firing after the first on a card with no restriction.
+      Same card, same prologue, same effect, the sentence removed.
+    */
+    const read = trig('Whenever you gain life, draw a card.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers?.[0]?.onceEachTurn).toBeUndefined();
+  });
+
+  it('reads "once per turn", which is the same rule in the other printing', () => {
+    const read = trig('Whenever you gain life, draw a card. This ability triggers only once per turn.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers?.[0]?.onceEachTurn).toBe(true);
+  });
+
+  it.each([
+    ['once per game, not per turn', 'This ability triggers only once.'],
+    ['a count this field cannot hold', 'This ability triggers only twice each turn.'],
+    ['a restriction about the clash', 'This ability triggers after the clash ends.'],
+    ['a restriction about the zone', 'This ability triggers only from the battlefield.'],
+    ['a restriction about where the card is', 'This ability triggers only if Bloombrute is on the battlefield or in your graveyard.'],
+  ])('refuses the line for %s', (_why, tail) => {
+    /*
+      Every other restriction sentence the legal corpus prints, and each must leave the LINE
+      unread rather than be dropped. They are refused one layer down — the sentence stays in the
+      line, no clause reader matches it, and `composeEffects` refuses the whole trigger — which is
+      why `triggerRestriction` returns the text unchanged instead of refusing itself. The outcome
+      is what this asserts, because the outcome is what a player meets: a restriction read in half
+      is an ability that fires at a moment the card forbids (D362, D487).
+    */
+    const read = trig(`Whenever you gain life, draw a card. ${tail as string}`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([
+      `Whenever you gain life, draw a card. ${tail as string}`,
+    ]);
+    expect(read.script?.triggers ?? []).toEqual([]);
+  });
+
+  it('refuses the restriction on a line whose shape emits several events', () => {
+    /*
+      "When ~ enters or dies" is one printed ability over two events, and this compiler gives each
+      event its own `TriggerDef` and so its own once-a-turn record. Carrying the restriction across
+      them would be one printed ability firing twice a turn, so the line is refused whole. No legal
+      printing is affected — of the 140 whose restricted line this compiler reads at all, 11 emit
+      one event and none emit several — which is what makes this a reading that is right by
+      construction rather than one measured into place.
+
+      **The control below is what makes the refusal mean anything**, and writing this test without
+      it is how D531's break run found three rows refusing for the wrong reason: the first draft
+      used "When ~ enters and whenever you gain life", which has no shape at all, so the line was
+      refused by the prologue and the restriction never came into it.
+    */
+    const read = trig(
+      'When Bloombrute enters or dies, draw a card. This ability triggers only once each turn.',
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([
+      'When Bloombrute enters or dies, draw a card. This ability triggers only once each turn.',
+    ]);
+    expect(read.script?.triggers ?? []).toEqual([]);
+    // The same line without the restriction reads, as both events: the refusal is the
+    // restriction's and not the prologue's.
+    const plain = trig('When Bloombrute enters or dies, draw a card.');
+    expect(plain.ok).toBe(true);
+    if (!plain.ok) return;
+    expect(plain.unread.map((u) => u.line)).toEqual([]);
+    expect((plain.script?.triggers ?? []).map((t) => t.on.kind)).toEqual(['etb', 'dies']);
+  });
+
+  it('leaves the activated-ability restriction alone, which is D508\'s', () => {
+    // The two readers sit on different lines of the same card and must not read each other's.
+    const read = trig(
+      'Whenever you gain life, draw a card. This ability triggers only once each turn.\n'
+      + '{2}{G}: Bloombrute gets +2/+2 until end of turn. Activate only once each turn.',
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers?.[0]?.onceEachTurn).toBe(true);
+    expect(read.script?.abilities?.[0]?.onceEachTurn).toBe(true);
+  });
+});

@@ -15145,6 +15145,36 @@ function optionalEffect(
 }
 
 /**
+ * The trailing "This ability triggers only once each turn." sentence, split off from the line.
+ *
+ * The triggered-ability counterpart of `activationRestriction`, and a much smaller function than
+ * that one because the family is smaller: the legal corpus prints exactly one restriction sentence
+ * in any quantity (143 printings across 140 legal cards), and everything else it prints here is
+ * a one-off —
+ * "only once" (7, which is once per *game* and wants bookkeeping this does not have),
+ * "only twice each turn" (1), "only after the clash ends" (3), "only from the battlefield" (1),
+ * "only if <this card> is on the battlefield or in your graveyard" (2).
+ *
+ * Those all leave the sentence in the line, where no clause reader matches it, so the line stays
+ * unread — which is the behaviour they had before this function existed and the behaviour they
+ * should keep: a restriction read in half is an ability that fires at a moment the card forbids,
+ * which is worse than an unread line (D362, D487). That is why this returns the text unchanged
+ * rather than refusing when it finds a sentence it cannot read: the refusal already happens, one
+ * layer down, and for the right reason.
+ *
+ * "once per turn" is read beside "once each turn" because they are one rule in two printings
+ * (140 legal cards and 1), which is what D441 asks of a reader — one statement of one rule.
+ *
+ * Anchored to the **end** of the line, because that is where every printing puts it, and because a
+ * sentence taken out of the middle would leave the compiler reading a line nobody printed.
+ */
+function triggerRestriction(text: string): { readonly rest: string; readonly onceEachTurn?: true } {
+  const found = /^(.*?)\s*This ability triggers only once (?:each|per) turn\.?\s*$/i.exec(text);
+  if (found === null) return { rest: text };
+  return { rest: found[1]!, onceEachTurn: true };
+}
+
+/**
  * A printed triggered-ability line, as the `triggers` fragment of a `CardScript`.
  *
  * The prologue says when it fires and comes from `TRIGGER_SHAPES`; the clause says what happens and
@@ -15160,7 +15190,8 @@ function optionalEffect(
 function triggerFromLine(line: string, name: string): Partial<CardScript> | null {
   // The ability word comes off first: "Battalion — Whenever ~ and at least two other creatures
   // attack, …" is a trigger whose prologue begins after the dash (CR 207.2c).
-  const text = withoutAbilityWord(plain(line).trim());
+  const restriction = triggerRestriction(withoutAbilityWord(plain(line).trim()));
+  const text = restriction.rest;
   const self = selfRef(name);
   for (const shape of TRIGGER_SHAPES) {
     const matched = shape.prologue(self).exec(text);
@@ -15173,6 +15204,17 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
     */
     const on = 'from' in shape ? shape.from(matched, self) : shape.on;
     if (on === null || on.length === 0) continue;
+    /*
+      A once-a-turn restriction on a shape that emits **several** events refuses the whole line.
+
+      Each event becomes its own `TriggerDef` with its own index and so its own record, so a
+      printed ability carried across two of them would fire once per event kind — one printed
+      ability behaving as two, which is a different card. `return null` rather than `continue`,
+      because a later shape reading the same line with one event would be an arbitrary choice
+      between two readings rather than the right one (D487). See `TriggerDef.onceEachTurn` for the
+      measurement that says this costs nothing today.
+    */
+    if (restriction.onceEachTurn === true && on.length > 1) return null;
     /*
       The clause is `clause` where a row names it, and group 1 everywhere else. Two ways of saying
       the same thing because the parsed row's own groups come first in the sentence: the effect is
@@ -15220,6 +15262,8 @@ function triggerFromLine(line: string, name: string): Partial<CardScript> | null
       triggers: on.map((event) => ({
         on: event,
         description: clause,
+        // "This ability triggers only once each turn" (D532), spent in `fireTrigger`.
+        ...(restriction.onceEachTurn === true ? { onceEachTurn: true as const } : {}),
         ...(read.targets === undefined ? {} : { targets: read.targets }),
         ...(read.decisions === undefined ? {} : { decisions: read.decisions }),
         // See the split in `composeEffects` (D418): a trigger asks before it runs, as a spell does.

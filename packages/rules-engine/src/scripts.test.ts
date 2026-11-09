@@ -33167,3 +33167,156 @@ describe('the chosen discard, played off printed text (D531)', () => {
     });
   });
 });
+
+describe('"This ability triggers only once each turn", at the table (D532)', () => {
+  /*
+    CR 603 and the half no reader test can reach: the restriction has to stop the SECOND firing in
+    a turn, leave the first alone, and come back next turn.
+
+    Three real printings through `customDeck`'s `data`, and the third is what makes the test mean
+    anything:
+
+      Mary Jane Watson  {1}{G/W} 2/2  "Whenever a Spider you control enters, draw a card. This
+                                       ability triggers only once each turn."
+      Giant Spider      {3}{G}   2/4  "Reach"
+      Soul Warden       {W}      1/1  "Whenever another creature enters, you gain 1 life."
+
+    **Soul Warden is the control, on the same board and the same events.** Two Spiders arrive in one
+    turn; the Warden sees both and the Watson sees one. A gate that was too eager — one that stopped
+    every trigger after the first, or stopped the whole event — would take the Warden's second life
+    point with it, and a test with only the restricted card on the board could not tell the
+    difference between "the restriction works" and "the second arrival raised no event at all".
+  */
+  const DATA = [
+    {
+      name: 'Mary Jane Watson', type_line: 'Legendary Creature — Human Performer',
+      mana_cost: '{1}{G/W}', cmc: 2, colors: ['G', 'W'], layout: 'normal',
+      power: '2', toughness: '2',
+      oracle_text: 'Whenever a Spider you control enters, draw a card. This ability triggers only once each turn.',
+    },
+    {
+      name: 'Giant Spider', type_line: 'Creature — Spider', mana_cost: '{3}{G}', cmc: 4,
+      colors: ['G'], layout: 'normal', power: '2', toughness: '4',
+      oracle_text: 'Reach (This creature can block creatures with flying.)',
+    },
+    {
+      name: 'Soul Warden', type_line: 'Creature — Human Cleric', mana_cost: '{W}', cmc: 1,
+      colors: ['W'], layout: 'normal', power: '1', toughness: '1',
+      oracle_text: 'Whenever another creature enters, you gain 1 life.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'once-a-turn-trigger',
+      name: 'Once A Turn',
+      entries: [
+        ...DATA.map((card) => ({ name: card.name, count: 4 })),
+        { name: 'Forest', count: 24 },
+        { name: 'Plains', count: 24 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    /*
+      Only the Watson comes from `data`: Giant Spider and Soul Warden are already in the pool, so
+      the deck takes the hand-written scripts for those two. That is the right way round — the
+      control is a card the engine has played since #29, which makes it a control on the gate and
+      not on this increment's own reader.
+    */
+    expect(list.fromData).toEqual(['Mary Jane Watson']);
+    return list.deck;
+  };
+
+  /** Seat 0 in its own main phase, `hand` in hand, `battlefield` out, every land tapped. */
+  const table = (hand: readonly string[], battlefield: readonly string[]) => tapAllLands(advanceTo(
+    arena({
+      decks: { 0: 'once-a-turn-trigger', 1: 'tidal-mind' },
+      deckSpecs: { 'once-a-turn-trigger': deck() },
+      hands: { 0: [...hand] },
+      battlefield: { 0: [...battlefield], 1: [] },
+      turn: 4, firstSeat: 0,
+    }),
+    'precombat-main',
+  ), 0);
+
+  /** Nine Forests: two Spiders at {3}{G} each, so the mana is never what stops the second. */
+  const BOARD = ['Mary Jane Watson', 'Soul Warden',
+    ...Array.from({ length: 9 }, () => 'Forest')];
+  const librarySize = (s: GameState) => [...ids(s, 0, 'library')].length;
+  /*
+    `drain`, not the file's `cast`, and the difference is the whole test: a Spider resolving puts
+    the entry triggers on the stack, and `passBoth` stops the moment the stack's contents change —
+    so it hands back a board with both triggers still waiting. The first draft used `cast` and read
+    an unchanged library, which looks exactly like a restriction that stopped the FIRST firing too.
+  */
+  const play = (s: GameState, name: string) => drain(apply(s, {
+    type: 'auto:cast', by: 0 as SeatIndex, card: find(s, 0, 'hand', name),
+  }));
+
+  it('draws for the first Spider of the turn and not the second, while the control sees both', () => {
+    let s = table(['Giant Spider', 'Giant Spider'], BOARD);
+    const before = { lib: librarySize(s), life: life(s, 0) };
+
+    s = play(s, 'Giant Spider');
+    expect(librarySize(s)).toBe(before.lib - 1);   // the Watson drew
+    expect(life(s, 0)).toBe(before.life + 1);      // and the Warden gained
+
+    s = play(s, 'Giant Spider');
+    // The Watson's restriction is spent, so nothing is drawn for the second arrival …
+    expect(librarySize(s)).toBe(before.lib - 1);
+    // … and the Warden, which prints no restriction, sees it: the event happened.
+    expect(life(s, 0)).toBe(before.life + 2);
+  });
+
+  it('records the firing under a key the activated-ability record cannot collide with', () => {
+    /*
+      `t:0`, not `0`. A card's triggers and its activated abilities are indexed separately, so a
+      bare index would have them share a record on the instance and using one would lock out the
+      other for the turn — silently. See `triggerFireKey`.
+    */
+    let s = table(['Giant Spider'], BOARD);
+    const watson = find(s, 0, 'battlefield', 'Mary Jane Watson');
+    expect(s.instances[watson]!.abilityUsedTurn).toBeUndefined();
+    s = play(s, 'Giant Spider');
+    expect(s.instances[watson]!.abilityUsedTurn).toEqual({ 't:0': s.turn });
+  });
+
+  it('comes back next turn, which is what "each turn" means', () => {
+    /*
+      The reset, and the reason the record holds a *turn number* rather than a boolean: nothing has
+      to clear it, so no cleanup step can forget to. See `CardInstance.abilityUsedTurn`.
+    */
+    let s = table(['Giant Spider', 'Giant Spider', 'Giant Spider'], BOARD);
+    s = play(s, 'Giant Spider');
+    s = play(s, 'Giant Spider');
+    const spent = librarySize(s);
+
+    // Round to seat 0's next turn and untap the mana. `nextTurn` draws for the turn, so the
+    // reading that matters is the delta across the cast rather than the absolute count.
+    s = tapAllLands(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 0);
+    expect(librarySize(s)).toBeLessThan(spent);    // the turn's own draws came off the top
+    const before = librarySize(s);
+    s = play(s, 'Giant Spider');
+    expect(librarySize(s)).toBe(before - 1);
+  });
+
+  it('is per permanent: a second Warden gains twice and does not share the Watson\'s record', () => {
+    /*
+      What putting the record on the **instance** buys (CR 400.7), and the mistake a `GameState`
+      map keyed by card name would have made. The Watson is legendary, so the two-copies reading
+      is taken on the unrestricted card: two Wardens are two life per arrival, and neither of them
+      is holding the Watson's spent firing.
+    */
+    let s = table(['Giant Spider'], ['Mary Jane Watson', 'Soul Warden', 'Soul Warden',
+      ...Array.from({ length: 5 }, () => 'Forest')]);
+    const watson = find(s, 0, 'battlefield', 'Mary Jane Watson');
+    const wardens = [...ids(s, 0, 'battlefield')].filter((i) => nameOf(s, i) === 'Soul Warden');
+    expect(wardens).toHaveLength(2);
+    const before = life(s, 0);
+    s = play(s, 'Giant Spider');
+    expect(life(s, 0)).toBe(before + 2);
+    for (const warden of wardens) expect(s.instances[warden]!.abilityUsedTurn).toBeUndefined();
+    expect(s.instances[watson]!.abilityUsedTurn).toEqual({ 't:0': s.turn });
+  });
+});

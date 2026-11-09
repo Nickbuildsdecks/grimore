@@ -412,6 +412,23 @@ export function abilityUseKey(abilityIndex: number, grantedBy?: GrantedTriggerRe
 }
 
 /**
+ * The same record, for a **triggered** ability that may only trigger once a turn (D532).
+ *
+ * `t:` in front, and the namespace is the whole point: a card's triggers and its activated
+ * abilities are indexed separately, so index 0 of the one and index 0 of the other are different
+ * abilities on the same permanent and `abilityUseKey`'s bare `"0"` would have them share a record.
+ * Basim Ibn Ishaq is not in the pool yet, but the card shape that breaks it is ordinary — a
+ * permanent with a once-a-turn trigger and a once-a-turn activated ability — and the collision
+ * would have been silent: using one would lock out the other for the turn.
+ *
+ * Built on `abilityUseKey` rather than beside it so the granted case has one answer rather than
+ * two. See that function for why a granted ability is keyed by its grantor as well.
+ */
+export function triggerFireKey(abilityIndex: number, grantedBy?: GrantedTriggerRef): string {
+  return `t:${abilityUseKey(abilityIndex, grantedBy)}`;
+}
+
+/**
  * When an activated ability's printed "Activate only during …" clause lets it be activated
  * (CR 602.5d), as the three clauses the corpus actually prints.
  *
@@ -1333,6 +1350,31 @@ function fireTrigger(
       ? { subjectCounters: event.subjectCounters }
       : {}),
   })) return next;
+  /*
+    "This ability triggers only once each turn." — spent here, where the ability *triggers*, rather
+    than where it resolves (D532). See `TriggerDef.onceEachTurn`.
+
+    After the intervening-if clause and before the targets, which is exactly where "it triggered"
+    becomes true: a condition that is false means the ability never triggered at all and must not
+    spend the turn's one firing, while a trigger with no legal target *did* trigger and spends it
+    (CR 603.3d).
+
+    Read and written through `next.instances[holder]` rather than the captured `inst`, for the
+    reason the attachment lookup above gives: `next` is current and `inst` was captured before this
+    permanent's earlier triggers were offered the event. A permanent that is no longer in
+    `instances` at all cannot carry the record, and fires without one — unreachable for anything
+    this compiler emits, since every restricted printing is a battlefield trigger whose holder is
+    still an object in the graveyard by the time a `dies` event is dispatched.
+  */
+  if (trigger.onceEachTurn === true && next.instances[holder] !== undefined) {
+    const fireKey = triggerFireKey(abilityIndex, grantedBy);
+    if (requireInstance(next, holder).abilityUsedTurn?.[fireKey] === next.turn) return next;
+    next = withInstance(next, holder, {
+      abilityUsedTurn: {
+        ...requireInstance(next, holder).abilityUsedTurn, [fireKey]: next.turn,
+      },
+    });
+  }
   const specs = trigger.targets ?? [];
   /*
     Which player this event was about, for the two events that are about one.

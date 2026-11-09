@@ -1554,6 +1554,39 @@ export interface TriggerDef {
    */
   readonly delayed?: true;
   /**
+   * "This ability triggers only once each turn." — the printed restriction, and **143 legal corpus
+   * printings across 140 cards carry it** (8 of those cards were one line away on nothing else; the
+   * rest are blocked by a second reader too). Measured by compiling rather than by matching clauses — see D532 in
+   * `claude/decisions-log.md` for why the two numbers differ by 4.9x.
+   *
+   * **Enforced where the ability *triggers*, not where it resolves**, which is what the sentence
+   * says and not a detail. A gate on resolution would let two copies of the ability go on the
+   * stack, let an opponent respond to both, and then silently do nothing on the second — a Morbid
+   * Opportunist whose controller sacrifices three creatures would show three triggers and draw one
+   * card. The restriction is spent in `fireTrigger`, before the ability is put on the stack, so the
+   * second event in a turn produces no trigger at all.
+   *
+   * Spent even when the ability never reaches the stack for want of a legal target (CR 603.3d):
+   * it triggered, and the rule is about triggering. The alternative reading — "it only counts if it
+   * resolved" — is the one that would let a player dodge the restriction by emptying the board of
+   * targets, which no printing allows.
+   *
+   * Declarative rather than a `condition`, for the reason `AbilityDef.onceEachTurn` is declarative:
+   * a condition is handed the context and not the ability index, so it could not tell which of a
+   * card's triggers it guards, and the engine has to *record* the firing, which only something that
+   * knows the restriction exists can do. Recorded onto `CardInstance.abilityUsedTurn` under
+   * `triggerFireKey`, whose `t:` namespace is what keeps it from colliding with an activated
+   * ability's record at the same index.
+   *
+   * A printed ability the compiler splits into several `TriggerDef`s — one shape, several events —
+   * **refuses this restriction rather than carrying it**, because each `TriggerDef` gets its own
+   * index and so its own record, and one printed ability that fired once per event kind would be a
+   * different card. No corpus printing is affected today (of the 140 legal cards whose restricted
+   * line this compiler reads at all, 11 emit one event and none emit several), so the refusal costs
+   * nothing measurable and is the reading that is right by construction (D487).
+   */
+  readonly onceEachTurn?: true;
+  /**
    * The intervening-if clause: "**if** that creature's power is greater than this creature's, put
    * a +1/+1 counter on it" (CR 603.4).
    *
