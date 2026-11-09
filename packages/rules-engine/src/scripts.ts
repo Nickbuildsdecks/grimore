@@ -3539,7 +3539,8 @@ function landsControlled(state: GameState, seat: SeatIndex): number {
  * `creature(s) you control` (112 mentions), `card(s) in your hand` (84), the five basic land types
  * (87 between them), `attacking creature(s)` (30), `instant and sorcery card(s) in your graveyard`
  * (29), `other creature(s) you control` (15), `card(s) in your graveyard` (15) and
- * `creature card(s) in all graveyards` (9).
+ * `creature card(s) in all graveyards` (9). The subtype count D520 wrote here as `landsOfSubtype`
+ * became `permanentsOfSubtype` in D521, which corrects a reading D520 shipped — see its docblock.
  *
  * Every one of them is read **live** off the state the clause is resolving against, which is the
  * rule for all of these (CR 613 for the characteristics, and a count has no moment at which it is
@@ -3602,38 +3603,45 @@ function otherCreaturesControlled(state: GameState, seat: SeatIndex, except: str
 }
 
 /**
- * Lands of one subtype a seat controls, read **live** — "the number of Swamps you control".
+ * Permanents of one subtype a seat controls, read **live** — "the number of Swamps you control".
  *
- * The count `creaturesOfSubtype` would have got wrong, and the reason the basic land types are a
- * branch of their own in `countOfThing`. "Swamps you control" and "Goblins you control" are the same
- * five printed words and two different counts: the tribal branch asks `ch.isCreature`, so a Cabal
- * Coffers read through it would count the *creatures* named Swamp, find none, and add no mana. A
- * card that resolves and does nothing is worse than an unread line, because an unread line is
- * flagged for a human (D362) — so the land types are read here instead of falling through.
+ * ## The correction this is (D521)
  *
- * Live rather than printed, for `landsControlled`'s reason: an animated land is still a land, and a
- * Dryad Arbor is a Forest.
+ * D520 added this as `landsOfSubtype`, reachable only for the five basic land types, and argued
+ * that the rest of `countOfThing`'s tribal branch was safe. **That inference was wrong**, and the
+ * probe that found it is worth recording: "You gain 1 life for each Food you control" and "for each
+ * Gate you control" both *read*, and both compiled to a count of **creatures** with that subtype,
+ * which is always nought. Food is an artifact type and Gate is a land type. So D520 closed the hole
+ * for five words and left it open for every other non-creature subtype — a card that resolves and
+ * does nothing, which is worse than an unread line because an unread line is flagged for a human
+ * (D362).
+ *
+ * ## Why counting permanents is the *rules* answer rather than a wider net
+ *
+ * "The number of Goblins you control" counts permanents you control with the creature type Goblin
+ * (CR 109.2, CR 205.3). Subtype namespaces are disjoint — a creature type appears only on
+ * creatures, a land type only on lands, an artifact type only on artifacts — so counting permanents
+ * of a subtype is *equal* to counting within the right namespace, and there is no case where it
+ * counts something the card did not mean. That is what makes this one function rather than a table
+ * of "which zone does this word belong to", which the compiler has no vocabulary to answer
+ * (#340/#341 are open tasks about exactly that missing vocabulary).
+ *
+ * For a creature type it agrees with `creaturesOfSubtype` permanent for permanent, which is what
+ * keeps the compiled count and Krenko's hand-written `goblinCount` the same number; a test pins
+ * that agreement rather than leaving it to the argument above.
+ *
+ * Live rather than printed, for `landsControlled`'s reason: an animated land is still a land, a
+ * Dryad Arbor is a Forest, and a changeling is every creature type at once (D506).
  */
-function landsOfSubtype(state: GameState, seat: SeatIndex, subtype: string): number {
+function permanentsOfSubtype(state: GameState, seat: SeatIndex, subtype: string): number {
   let n = 0;
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
-    const ch = characteristicsOf(state, inst);
-    if (ch.isLand && hasSubtype(ch.typeLine, subtype.toLowerCase())) n += 1;
+    if (hasSubtype(characteristicsOf(state, inst).typeLine, subtype.toLowerCase())) n += 1;
   }
   return n;
 }
-
-/**
- * The five basic land types, as the only subtypes `countOfThing` reads as lands.
- *
- * Only the five, and not every land subtype the game has, for D57's reason: these are the ones the
- * corpus counts (87 mentions between them, headed by Swamp at 23 and Forest at 23), and a
- * "Gates you control" with no card behind it would be a count nothing has ever run. The list grows
- * when a measurement says it should.
- */
-const BASIC_LAND_TYPES: readonly string[] = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
 
 // ── Eight that needed nothing new ────────────────────────────────────────────────────────────────
 
@@ -10672,6 +10680,128 @@ const permanentDescribed = (
  * - **any verb not in the table** — the four below are the ones measured. A fifth is a row, not a
  *   redesign, and it waits for a card (D57).
  */
+/**
+ * A clause's count tail, taken off so the body in front of it can be read on its own.
+ *
+ * Lifted out of `countScaledEffect` by D521, because the counted **size** needs the same split and
+ * two readings of the same five words is two places for them to drift — the shape #319 is a task
+ * about. The two grammars are the ones D520's call site documents:
+ *
+ * - `<body>, where X is the number of <T>` → `announced`. The body's number slot is the letter X.
+ * - `<body> for each <T>` → `per-thing`. The body's printed number is a **rate**, and the noun
+ *   arrives singular, which is why `forEachCount` exists beside `boardCount`.
+ *
+ * Returns `null` when a tail matched but the count is one `countOfThing` cannot read, which is the
+ * D487 answer: the line is refused whole rather than read with a number guessed at.
+ */
+function countTailOf(text: string, name: string): {
+  readonly body: string;
+  readonly counted: (c: EffectContext) => number;
+  readonly grammar: 'announced' | 'per-thing';
+} | null {
+  const flat = text.trim().replace(/\.\s*$/, '');
+
+  const announced = /^(.*?),\s*where X is (the number of .+)$/i.exec(flat);
+  if (announced !== null) {
+    const counted = boardCount(announced[2]!, name);
+    return counted === null
+      ? null
+      : { body: announced[1]!.trim(), counted, grammar: 'announced' as const };
+  }
+
+  const perThing = /^(.*?) for each (.+)$/i.exec(flat);
+  if (perThing !== null) {
+    const counted = forEachCount(perThing[2]!, name);
+    return counted === null
+      ? null
+      : { body: perThing[1]!.trim(), counted, grammar: 'per-thing' as const };
+  }
+
+  return null;
+}
+
+/**
+ * A size whose halves are read off the board, as the `PumpOptions` a pump takes.
+ *
+ * `sizeBonus` and `pumpAndGrant` turn two printed numbers into one object; this is the same job
+ * where one or both halves is a count. The number is computed **as the effect is created**, which
+ * is the rule and not a shortcut: a resolved pump is locked to the board it saw (CR 611.2c, pinned
+ * by D301), so a count read at resolution is exactly right and the existing `pump` needs nothing.
+ * That is what makes the temporary half of this family reader work and the static half a different
+ * increment — a static size has no moment of creation to read a count at, so it has to carry the
+ * count as data the way `definesSize` does.
+ *
+ * ## What each printed half means, and why it depends on the grammar
+ *
+ * | printed | `announced` (`where X is …`) | `per-thing` (`for each …`) |
+ * | --- | --- | --- |
+ * | `+X` | the count itself | **refused** |
+ * | `+2` | a fixed 2 | 2 **per thing** |
+ *
+ * The refusal in that table is the one judgement here. Under `for each`, a printed `X` is a
+ * *different* X — the one chosen at cast time — and multiplying a cast-time X by a board count is
+ * not a sentence Magic writes. Reading it would be inventing a card (D259).
+ *
+ * ## The two refusals it inherits
+ *
+ * - **A mixed sign.** Read off the printed words, as D252's reader reads it off printed numbers,
+ *   and for that reader's reason: `+4/-4` cannot say whose creature the clause is for, and a
+ *   `friendly` guessed wrong is a bot aiming at the wrong half of the table every time.
+ * - **No size at all.** Two printed zeroes is a clause that does nothing however big the count,
+ *   which is `sizeBonus`'s refusal of `+0/+0`.
+ *
+ * A granted keyword rides along through `grantedKeywordList`, so "gets +X/+X and gains trample
+ * until end of turn" stays one `PumpOptions` and one continuous effect, as `pumpAndGrant`'s
+ * docblock argues it must.
+ */
+function countedPumpOptions(
+  power: string,
+  toughness: string,
+  grammar: 'announced' | 'per-thing',
+  counted: (c: EffectContext) => number,
+  granted: string | undefined,
+): ((c: EffectContext) => PumpOptions) | null {
+  const half = (word: string): { readonly of: (n: number) => number; readonly sign: number } | null => {
+    const matched = /^([+-])(X|\d+)$/i.exec(word.trim());
+    if (matched === null) return null;
+    const sign = matched[1] === '-' ? -1 : 1;
+    if (/^x$/i.test(matched[2]!)) {
+      return grammar === 'announced' ? { of: (n) => sign * n, sign } : null;
+    }
+    const printed = Number(matched[2]);
+    return {
+      of: grammar === 'per-thing' ? (n) => sign * printed * n : () => sign * printed,
+      // A printed zero has no sign worth comparing: "+X/+0" is not a mixed size.
+      sign: printed === 0 ? 0 : sign,
+    };
+  };
+
+  const left = half(power);
+  const right = half(toughness);
+  if (left === null || right === null) return null;
+  if (left.sign === 0 && right.sign === 0) return null;
+  if (left.sign * right.sign < 0) return null;
+
+  const keywords = granted === undefined ? null : grantedKeywordList(granted);
+  if (granted !== undefined && keywords === null) return null;
+
+  return (c) => {
+    const n = counted(c);
+    const p = left.of(n);
+    const t = right.of(n);
+    return {
+      ...(p === 0 ? {} : { power: p }),
+      ...(t === 0 ? {} : { toughness: t }),
+      ...(keywords === null ? {} : { keywords }),
+    };
+  };
+}
+
+/** Whether a counted size can only ever make the creature smaller. See `AbilityDef.selfShrink`. */
+function countedSizeShrinks(power: string, toughness: string): boolean {
+  return /^-/.test(power.trim()) || /^-/.test(toughness.trim());
+}
+
 function countScaledEffect(clause: string, name: string): ReadEffect | null {
   const flat = clause.trim().replace(/\.\s*$/, '');
 
@@ -10702,14 +10832,10 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
   }
 
   // The two grammars that do have a number in the body, and the count that supplies or multiplies it.
-  const announced = /^(.*?),\s*where X is (the number of .+)$/i.exec(flat);
-  const perThing = announced !== null ? null : /^(.*?) for each (.+)$/i.exec(flat);
-  if (announced === null && perThing === null) return null;
-  const counted = announced !== null
-    ? boardCount(announced[2]!, name)
-    : forEachCount(perThing![2]!, name);
-  if (counted === null) return null;
-  const body = (announced?.[1] ?? perThing![1]!).trim();
+  const tail = countTailOf(flat, name);
+  if (tail === null) return null;
+  const { body, counted } = tail;
+  const announced = tail.grammar === 'announced';
 
   /*
     The printed word in the body's number slot, turned into the amount the clause spends.
@@ -10719,7 +10845,7 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
     and words, so "two life for each" is 2 per thing.
   */
   const amountFrom = (printed: string): ((c: EffectContext) => number) | null => {
-    if (announced !== null) return /^x$/i.test(printed) ? counted : null;
+    if (announced) return /^x$/i.test(printed) ? counted : null;
     const n = countFrom(printed);
     return n === null ? null : (c) => n * counted(c);
   };
@@ -10742,7 +10868,7 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
     shape. It is `spellFlags`, so an *ability* that prints this clause — Cabal Coffers — drops it.
   */
   const mana = /^add ((?:\{[WUBRGC]\})+)$/i.exec(body);
-  if (mana !== null && announced === null) {
+  if (mana !== null && !announced) {
     const symbols = [...mana[1]!.toUpperCase().matchAll(/\{([WUBRGC])\}/g)].map((m) => m[1]!);
     return {
       effect: (c) => {
@@ -11995,6 +12121,52 @@ function selfEffect(
     `+0/+0` — so the regex was the whole of it, which is why this went unnoticed: every piece behind
     it worked.
   */
+  /*
+    **The same pump with its size read off the board** (D522): `it gets +1/+0 until end of turn for
+    each attacking creature`, `~ gets +X/+X until end of turn, where X is the number of creatures
+    you control`.
+
+    By far the largest shape in this family — 91 of the 355 counted-size cards sit behind a trigger
+    and say "it", which is this reader, because the prologue strips the trigger and hands the clause
+    down. Charging Hooligan ("Whenever ~ attacks, it gets +1/+0 until end of turn for each attacking
+    creature") and Angelic Exaltation ("Whenever a creature you control attacks alone, it gets
+    +X/+X until end of turn, where X is the number of creatures you control") are both this line.
+
+    It is read **before** the fixed-number reader below rather than after, and the order is not
+    arbitrary: that reader's pattern is anchored with `$`, so a line with a count tail cannot match
+    it — but reading the tail first keeps the two readers from both having an opinion about the same
+    sentence, which is how a second reading drifts in.
+
+    `selfShrink` is carried for the same reason the fixed reader carries it: an activated ability
+    that only ever costs its own creature power is a loop the bot will walk for ever
+    (Hyalopterous Lemure, found by a pod sweep). The sign is in the printed word, so it is known
+    without the count — see `countedSizeShrinks`.
+  */
+  const countedTail = countTailOf(text, name);
+  if (countedTail !== null) {
+    const grownBy = new RegExp(
+      `^(?:(${self})|it) gets ([+-](?:X|\\d+))/([+-](?:X|\\d+))`
+        + `(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,
+      'i',
+    ).exec(countedTail.body);
+    if (grownBy !== null) {
+      const bonus = countedPumpOptions(
+        grownBy[2]!, grownBy[3]!, countedTail.grammar, countedTail.counted, grownBy[4],
+      );
+      if (bonus !== null) {
+        const namedBy = grownBy[1];
+        const shrinks = countedSizeShrinks(grownBy[2]!, grownBy[3]!);
+        const keywords = grantedKeywordList(grownBy[4] ?? '') ?? [];
+        return {
+          effect: (c) => pump(
+            c.state, [itMeans(namedBy, c)], c.source, c.controller, bonus(c),
+          ),
+          ...(shrinks ? { abilityFlags: { selfShrink: { grants: keywords } } } : {}),
+        };
+      }
+    }
+  }
+
   const grown = new RegExp(
     `^(?:(${self})|it) gets ([+-]\\d+)/([+-]\\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$`,
     'i',
@@ -13974,16 +14146,14 @@ function countOfThing(
     const subtype = subtypeFromTribalPhrase(tribe[1]!, number);
     if (subtype === null) return null;
     /*
-      The branch D520 added, and the one place in this function where a wrong reading was waiting
-      rather than missing. See `landsOfSubtype`: "Swamps you control" and "Goblins you control" are
-      the same five printed words, and until the reach of this function widened, no card asked it
-      for a land type — Corrupt prints its count in a word order nothing read. Reading that order
-      without this branch would have made Cabal Coffers add no mana and resolve cleanly.
+      **Permanents, not creatures** — the D521 correction. D520 had a branch here for the five basic
+      land types and let every other subtype fall through to `creaturesOfSubtype`, on the argument
+      that the rest were safe. They were not: "for each Food you control" and "for each Gate you
+      control" both read, and both counted creatures with those subtypes, of which there are never
+      any. See `permanentsOfSubtype` for why counting permanents is the rules answer rather than a
+      wider net, and for the test that pins its agreement with the hand-written creature count.
     */
-    if (BASIC_LAND_TYPES.some((type) => type.toLowerCase() === subtype.toLowerCase())) {
-      return (c) => landsOfSubtype(c.state, c.controller, subtype);
-    }
-    return (c) => creaturesOfSubtype(c.state, c.controller, subtype);
+    return (c) => permanentsOfSubtype(c.state, c.controller, subtype);
   }
   return null;
 }
@@ -16329,6 +16499,50 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     have been a card that silently does less than it prints — a Blossoming Defense that pumps and
     leaves the creature targetable is the opposite of why anybody casts it.
   */
+  /*
+    **The targeted pump with its size read off the board** (D522): Basilisk Gate's "{2}, {T}: Target
+    creature gets +X/+X until end of turn, where X is the number of Gates you control", and 31 more
+    one-away cards whose line points at a target.
+
+    The sign still decides whose creature it is, exactly as the fixed-number reader below explains
+    at length — and it is still knowable without the count, because it is in the printed word. So
+    `targetSpecFrom` gets the same `friendly` argument it would get for a printed number, and
+    `countedPumpOptions` refuses the mixed sign for D252's reason: `+X/-X` cannot say which half of
+    the table the spell is for, and a `friendly` guessed wrong is a bot aiming at the wrong creature
+    every time.
+
+    `expiresAtEndOfTurn` on a shrink, for Darkblast's reason: wearing off at end of turn is what
+    kills the creature before the shrink expires, and the hand-written card of that shape sets it.
+    A grant is refused on a shrink here as it is below — no printed shrink has one.
+  */
+  const countedTarget = countTailOf(text, name);
+  if (countedTarget !== null) {
+    const sizedBy = new RegExp(
+      "^(target creature(?: you control| an opponent controls| you don't control)?)"
+        + " gets ([-+](?:X|\\d+))/([-+](?:X|\\d+))(?: and gains ([a-z][a-z' ]*?))? until end of turn$",
+      'i',
+    ).exec(countedTarget.body);
+    if (sizedBy !== null) {
+      const shrinks = countedSizeShrinks(sizedBy[2]!, sizedBy[3]!);
+      const bonus = shrinks && sizedBy[4] !== undefined ? null : countedPumpOptions(
+        sizedBy[2]!, sizedBy[3]!, countedTarget.grammar, countedTarget.counted, sizedBy[4],
+      );
+      const spec = targetSpecFrom(sizedBy[1]!, !shrinks);
+      if (bonus !== null && spec !== null) {
+        return {
+          targets: [spec],
+          effect: (c) => {
+            const id = firstCardTarget(c);
+            return id === null
+              ? c.state
+              : pump(c.state, [id], c.source, c.controller, bonus(c));
+          },
+          ...(shrinks ? { spellFlags: { expiresAtEndOfTurn: true } } : {}),
+        };
+      }
+    }
+  }
+
   const sized = /^(target creature(?: you control| an opponent controls| you don't control)?) gets ([-+]\d+)\/([-+]\d+)(?: and gains ([a-z][a-z' ]*?))? until end of turn$/i
     .exec(text);
   /*

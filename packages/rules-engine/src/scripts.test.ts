@@ -31839,3 +31839,254 @@ describe('a quantity read off the board, played off printed text (D520)', () => 
     expect(life(cast(s, 'Ashen Toll'), 0)).toBe(before - 2);
   });
 });
+
+describe('a subtype count is a count of PERMANENTS, not of creatures (D521)', () => {
+  /*
+    **A correction to D520, found by a probe written for the increment after it.**
+
+    D520 gave `countOfThing` a branch for the five basic land types and argued the rest of the
+    tribal branch was safe, because no card had ever reached it with a land type. The probe asked
+    the compiler directly instead of asking the argument:
+
+        an artifact type (Food): unread=0  READS
+        a land type (Gate):      unread=0  READS
+
+    Both read, and both compiled to a count of **creatures** with that subtype, of which there are
+    never any — Food is an artifact type and Gate is a land type. So D520 closed the hole for five
+    words and left it open for every other non-creature subtype, which is the "resolves and does
+    nothing" card the whole family exists to refuse: worse than an unread line, because an unread
+    line is flagged for a human (D362).
+
+    The fix is the rules answer rather than a wider net: "the number of Goblins you control" counts
+    **permanents** you control with that subtype (CR 109.2, CR 205.3), and subtype namespaces are
+    disjoint, so counting permanents is equal to counting within the right namespace.
+
+    These rows are the discrimination a compile row cannot give. Every one of them READ before the
+    fix; what was wrong was the number, and only a life total says so.
+  */
+  const DATA = [
+    { name: 'Ashen Larder', type_line: 'Artifact — Food', mana_cost: '{1}', cmc: 1, colors: [],
+      layout: 'normal', oracle_text: '' },
+    /*
+      A mana ability, because `tapAllLands` activates ability 0 on every land the seat controls and
+      throws on one that has none. Nothing in these rows reads the mana; it is here so the harness
+      can set up a board, and the Gate subtype is the only thing being counted.
+    */
+    { name: 'Ashen Gateway', type_line: 'Land — Gate', mana_cost: '', cmc: 0, colors: [],
+      layout: 'normal', oracle_text: '{T}: Add {B}.' },
+    { name: 'Ashen Goblin', type_line: 'Creature — Goblin', mana_cost: '{R}', cmc: 1,
+      colors: ['R'], layout: 'normal', power: '1', toughness: '1', oracle_text: '' },
+    { name: 'Ashen Feast', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal', oracle_text: 'You gain 1 life for each Food you control.' },
+    { name: 'Ashen Toll Road', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal', oracle_text: 'You gain 1 life for each Gate you control.' },
+    { name: 'Ashen Muster', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal', oracle_text: 'You gain 1 life for each Goblin you control.' },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'subtyped',
+      name: 'Subtyped',
+      entries: [
+        ...DATA.map((c) => ({ name: c.name, count: 4 })),
+        { name: 'Swamp', count: 36 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual([
+      'Ashen Feast', 'Ashen Gateway', 'Ashen Goblin', 'Ashen Larder', 'Ashen Muster',
+      'Ashen Toll Road',
+    ]);
+    return list.deck;
+  };
+
+  const table = (hand: readonly string[], mine: readonly string[]) => tapAllLands(advanceTo(arena({
+    decks: { 0: 'subtyped', 1: 'subtyped' },
+    deckSpecs: { subtyped: deck() },
+    hands: { 0: [...hand] },
+    battlefield: { 0: ['Swamp', 'Swamp', ...mine] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+
+  const cast = (s: GameState, name: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name),
+  } as Action)), 40);
+
+  it.each([
+    ['an ARTIFACT type', 'Ashen Feast', ['Ashen Larder', 'Ashen Larder', 'Ashen Larder'], 3],
+    ['a LAND type', 'Ashen Toll Road', ['Ashen Gateway', 'Ashen Gateway'], 2],
+    ['a CREATURE type', 'Ashen Muster', ['Ashen Goblin', 'Ashen Goblin', 'Ashen Goblin'], 3],
+  ])('counts %s', (_why, spell, mine, expected) => {
+    /*
+      Each of these read before the correction and each gave **0**, because the tribal branch asked
+      `ch.isCreature`. The creature row is here as the control: it is the one case the old reading
+      got right, and it has to keep working, because "permanents with the creature type Goblin" and
+      "creatures with the creature type Goblin" are the same set — which is what keeps this count and
+      Krenko's hand-written `goblinCount` the same number.
+    */
+    const s = table([spell as string], mine as string[]);
+    const before = life(s, 0);
+    expect(life(cast(s, spell as string), 0)).toBe(before + (expected as number));
+  });
+
+  it('does not count a permanent of a different subtype', () => {
+    // The complement: with three Gates and no Food on the battlefield, the Food count is nought —
+    // so the row above is reading the subtype rather than counting the board.
+    const s = table(['Ashen Feast'], ['Ashen Gateway', 'Ashen Gateway', 'Ashen Gateway']);
+    const before = life(s, 0);
+    expect(life(cast(s, 'Ashen Feast'), 0)).toBe(before);
+  });
+
+  it('still counts a basic land type, which D520 had its own branch for', () => {
+    // Two Swamps are placed by `table` itself, so a Swamp count is 2 and the branch D520 added is
+    // subsumed rather than lost.
+    const s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'subtyped', 1: 'subtyped' },
+      deckSpecs: { subtyped: deck() },
+      hands: { 0: ['Ashen Feast'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Ashen Gateway', 'Ashen Larder'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const before = life(s, 0);
+    // One Food on the battlefield beside a Gate and two Swamps: the answer is 1, not 4.
+    expect(life(cast(s, 'Ashen Feast'), 0)).toBe(before + 1);
+  });
+});
+
+describe('a size read off the board, played off printed text (D522)', () => {
+  /*
+    The runtime half. `compile.test.ts` says these lines are read; these rows say the size that
+    lands on the creature is the right one, which is the half a reader gets wrong silently.
+
+    The amount is computed **as the effect is created**, which is the rule rather than a shortcut: a
+    resolved pump is locked to the board it saw (CR 611.2c, pinned by D301), so a count read at
+    resolution is exactly right and `pump` needs nothing new. That is the whole reason the temporary
+    half of this family is reader work and the static half is not.
+  */
+  const DATA = [
+    {
+      name: 'Ashen Charge', type_line: 'Creature — Human Soldier', mana_cost: '{1}{R}', cmc: 2,
+      colors: ['R'], layout: 'normal', power: '2', toughness: '2',
+      oracle_text: 'Whenever Ashen Charge attacks, it gets +1/+0 until end of turn for each '
+        + 'attacking creature.',
+    },
+    {
+      // Black, because every land on these boards is a Swamp and the harness pays real mana.
+      name: 'Ashen Surge', type_line: 'Instant', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal',
+      oracle_text: 'Target creature gets +X/+X until end of turn, where X is the number of lands '
+        + 'you control.',
+    },
+    {
+      name: 'Ashen Blight', type_line: 'Instant', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+      layout: 'normal',
+      oracle_text: 'Target creature gets -X/-X until end of turn, where X is the number of '
+        + 'creature cards in your graveyard.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'sized',
+      name: 'Sized',
+      entries: [
+        ...DATA.map((c) => ({ name: c.name, count: 4 })),
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Serra Angel', count: 4 },
+        { name: 'Swamp', count: 36 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Ashen Blight', 'Ashen Charge', 'Ashen Surge']);
+    return list.deck;
+  };
+
+  const table = (opts: {
+    readonly hand?: readonly string[];
+    readonly mine?: readonly string[];
+    readonly theirs?: readonly string[];
+    readonly dead?: readonly string[];
+  }) => tapAllLands(advanceTo(arena({
+    decks: { 0: 'sized', 1: 'sized' },
+    deckSpecs: { sized: deck() },
+    hands: { 0: [...(opts.hand ?? [])] },
+    battlefield: {
+      0: [...(opts.mine ?? ['Swamp', 'Swamp', 'Swamp'])],
+      1: [...(opts.theirs ?? [])],
+    },
+    graveyard: { 0: [...(opts.dead ?? [])] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+
+  const cast = (s: GameState, name: string, target?: string) => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name),
+    ...(target === undefined ? {} : { targets: [{ kind: 'card', id: target }] }),
+  } as Action)), 40);
+
+  it.each([
+    ['one attacker', 1, 3],
+    ['three attackers', 3, 5],
+  ])('grows by the rate times the count, with %s', (_why, attackers, expectedPower) => {
+    /*
+      "+1/+0 for each attacking creature", so the creature's own attack counts it: one attacker is
+      +1 and three is +3. The pair rules out both the reader that forgets to multiply (always +1)
+      and the reader that drops the count entirely.
+    */
+    let s = table({
+      mine: ['Swamp', 'Swamp', 'Swamp', 'Ashen Charge', 'Grizzly Bears', 'Grizzly Bears'],
+    });
+    const charge = find(s, 0, 'battlefield', 'Ashen Charge');
+    const bears = [...ids(s, 0, 'battlefield')]
+      .filter((id) => nameOf(s, id) === 'Grizzly Bears');
+    s = advanceTo(s, 'declare-attackers');
+    const swinging = [charge, ...bears.slice(0, (attackers as number) - 1)]
+      .map((attacker) => ({ attacker, defender: 1 }));
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: swinging } as Action), 40);
+    expect(power(s, charge)).toBe(expectedPower as number);
+    // The toughness half is a printed +0, so it is untouched however big the count.
+    expect(toughness(s, charge)).toBe(2);
+  });
+
+  it('pumps a target by the count, on both halves', () => {
+    let s = table({
+      hand: ['Ashen Surge'],
+      mine: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Grizzly Bears'],
+    });
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    s = cast(s, 'Ashen Surge', bears);
+    // Four lands, so a 2/2 becomes a 6/6 — not a 3/3, which is what a count of one would give.
+    expect(power(s, bears)).toBe(6);
+    expect(toughness(s, bears)).toBe(6);
+  });
+
+  it.each([
+    ['kills a 2/2 off two dead creatures', ['Grizzly Bears', 'Serra Angel'], 'Grizzly Bears', false],
+    ['leaves a 4/4 alive off the same two', ['Grizzly Bears', 'Serra Angel'], 'Serra Angel', true],
+  ])('shrinks a target by the count: %s', (_why, dead, victim, survives) => {
+    /*
+      The sign decides whose creature the spell is for, and it is in the printed word rather than in
+      the count — so a counted shrink points at `TARGET_CREATURE`, the hostile default, exactly as
+      D252's fixed-number reader does. Two creature cards in the graveyard is -2/-2: lethal to a
+      2/2, and not to a 4/4.
+    */
+    let s = table({
+      hand: ['Ashen Blight'], dead: dead as string[], theirs: [victim as string],
+    });
+    s = cast(s, 'Ashen Blight', find(s, 1, 'battlefield', victim as string));
+    expect(namesIn(s, 1, 'battlefield').includes(victim as string)).toBe(survives);
+  });
+
+  it('counts nothing when there is nothing to count, rather than throwing', () => {
+    // An empty graveyard is a -0/-0, which is a spell that resolves and does nothing — and that is
+    // the printed card, not a defect: the shrink is as big as the graveyard.
+    let s = table({ hand: ['Ashen Blight'], dead: [], theirs: ['Grizzly Bears'] });
+    s = cast(s, 'Ashen Blight', find(s, 1, 'battlefield', 'Grizzly Bears'));
+    expect(namesIn(s, 1, 'battlefield')).toContain('Grizzly Bears');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    expect(power(s, bears)).toBe(2);
+    expect(toughness(s, bears)).toBe(2);
+  });
+});

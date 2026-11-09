@@ -35381,3 +35381,117 @@ breaks**, so both were answered with a test rather than counted as a miss:
   is now a runtime row with two Plains on the battlefield.
 - widening the scaled-mana regex to any symbol admitted `{2}`, generic mana a pool cannot hold, and
   nothing printed it in a test. Answered with a refusal row.
+
+## D521 — A subtype count was counting creatures, and D520 shipped it
+
+A correction to D520, found by the probe written for the increment *after* it.
+
+D520 gave `countOfThing` a branch for the five basic land types and argued the rest of its tribal
+branch was safe, because no card had ever reached that branch with a land type. The probe asked the
+compiler instead of asking the argument:
+
+```
+an artifact type (Food): unread=0  READS
+a land type (Gate):      unread=0  READS
+a creature type (Goblin):unread=0  READS
+```
+
+All three read, and the first two compiled to a count of **creatures** with that subtype — of which
+there are never any, because Food is an artifact type and Gate is a land type. So D520 closed the
+hole for five words and left it open for every other non-creature subtype. That is the card that
+resolves and does nothing, which the whole family exists to refuse: worse than an unread line,
+because an unread line is flagged for a human (D362).
+
+**What I got wrong, precisely.** Earlier in the same stretch I had probed three synthetic cards
+(Swamp, Goblin, Island), found all three refused, and recorded that the tribal branch was
+unreachable. That was true *of D520's readers* and stopped being true the moment their reach
+widened — which is the thing D520 itself widened. A reachability finding has a date on it.
+
+### The fix is the rules answer, not a wider net
+
+`landsOfSubtype` became `permanentsOfSubtype`, and the branch for the five basic types went away
+because it is subsumed. "The number of Goblins you control" counts **permanents** you control with
+that subtype (CR 109.2, CR 205.3), and subtype namespaces are disjoint — a creature type appears
+only on creatures, a land type only on lands, an artifact type only on artifacts — so counting
+permanents is *equal* to counting within the right namespace and there is no case where it counts
+something the card did not mean. That is what makes it one function rather than a table of "which
+zone does this word belong to", which the compiler has no vocabulary to answer (#340 and #341 are
+open tasks about exactly that missing vocabulary).
+
+For a creature type it agrees with the hand-written `creaturesOfSubtype` permanent for permanent,
+which is what keeps a compiled count and Krenko's `goblinCount` the same number. A test pins that
+agreement rather than leaving it to the argument.
+
+**Every one of these rows READ before the fix.** What was wrong was the number, so the
+discrimination had to be a life total, and the five runtime rows are life totals.
+
+## D522 — A size read off the board, the temporary half
+
+D520 read the one-shot counted clauses and left the counted **size** out, because a size is not
+one-shot. Asked of the corpus, the cards one unread line from finished whose line is a counted size
+number **355**, and they split by duration into two different jobs:
+
+| | cards | why it is a different job |
+| --- | --- | --- |
+| TEMPORARY (`until end of turn`) | 222 | the amount is locked in as the effect is created (CR 611.2c, pinned by D301), so a count that is a function of `EffectContext` is enough — reader work only |
+| STATIC (no duration) | 133 | a continuous effect whose amount is a **live** count, and `state.effects` is serialised to Redis, so a function cannot make the trip |
+
+**That 355 was a ceiling, and the ceiling was not the number.** Of it, only **92** name a count
+`countOfThing` can already read — 52 temporary, 40 static. The other 263 are held up by the
+*vocabulary* rather than by a size reader, and that tail is genuinely long: `basic land type among
+lands you control` 11, `its power` 9, `creature blocking it` 8, `that card's mana value` 6, then
+nothing above 4. Worth recording because the first estimate from the shape buckets was ~103, which
+undercounted the family by a factor of three for D519's reason — the buckets group by the line, and
+a line's first seven words are its prologue.
+
+### What shipped
+
+`countTailOf`, lifted out of D520's `countScaledEffect` so the one-shot reader and the size reader
+split the same five words in one place, and `countedPumpOptions`, which turns two printed halves and
+a count into the one `PumpOptions` that `pump` takes. Wired into both pump readers: the self-subject
+one (which is where the 91 trigger-borne cards land, because the prologue strips the trigger and
+hands the clause down) and the targeted one.
+
+Each printed half means something different depending on the grammar, and the table is the reader:
+
+| printed | `announced` (`where X is …`) | `per-thing` (`for each …`) |
+| --- | --- | --- |
+| `+X` | the count itself | **refused** |
+| `+2` | a fixed 2 | 2 **per thing** |
+
+That refusal is the one judgement in it: under `for each`, a printed `X` is a *different* X — the one
+chosen at cast time — and multiplying a cast-time X by a board count is not a sentence Magic writes,
+so reading it would be inventing a card (D259). It also inherits D252's refusals: a mixed sign is
+refused because `+X/-X` cannot say whose creature the clause is for, and a size that is nought
+however big the count is refused as `sizeBonus` refuses `+0/+0`.
+
+### What it moved
+
+| | before | after |
+| --- | --- | --- |
+| printed lines read | 22,226 / 56,421 (39.4%) | **22,264 / 56,421 (39.5%)** |
+| cards with a compiled script | 11,171 | **11,204** |
+| cards with every printed line read | 6,938 | **6,965** |
+
+**27 cards finished against a ceiling of 52**, and the gap is worth stating rather than rounding
+away: the rest carry a second unread line, or print the size in a word order this reader does not
+take ("Until end of turn, target creature you control gains indestructible and gets +1/+0 for each
+card in your hand"), or announce X without the words "the number of". D521 moved no coverage at all,
+by construction — those lines already read; what was wrong was the number.
+
+Basilisk Gate and Hunger of the Nim now read end to end. Four refusals I checked by hand are each
+correct for a different reason, and each is a different lesson: Charging Hooligan has a second
+sentence on the same line (D487), Angelic Exaltation's "it" is the attacking creature rather than the
+source, Akroan Hoplite counts "attacking creatures **you control**" (a count the vocabulary does not
+have), Elvish Berserker counts "creature blocking it".
+
+**12 of 12 breaks caught**, every one verified to apply against a unique anchor and to revert to a
+SHA-256 match. Two came back uncaught on the first pass and they were *different kinds* of result,
+which is why they were handled differently:
+
+- **A weak test.** Nothing printed a `+0/+0` counted size, so the guard refusing one was unchecked.
+  Answered with a refusal row, and a second for a granted keyword on a counted shrink.
+- **A vacuous break.** Dropping `the number of` from the announced tail regex changes nothing,
+  because `boardCount` re-checks that prefix itself and returns null without it. The narrower regex
+  documents the grammar at the point of the split and costs nothing, so it stays — but it is not
+  load-bearing, and the break was replaced with a real one rather than counted as a miss.

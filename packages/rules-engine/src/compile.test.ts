@@ -13201,3 +13201,137 @@ describe('a quantity read off the board (D520)', () => {
     expect(read.unread.map((u) => u.line)).toEqual([]);
   });
 });
+
+describe('a size read off the board (D521, D522)', () => {
+  /*
+    D520 read the one-shot counted clauses — life, draw, damage, mana — and left the counted **size**
+    out, because a size is not one-shot. Asking the corpus which cards are one unread line from
+    finished and whose line is a counted size gives **355**, split by duration:
+
+    |  | cards | why it is a different job |
+    | --- | --- | --- |
+    | TEMPORARY (`until end of turn`) | 222 | the amount is locked in as the effect is created (CR 611.2c, pinned by D301), so a count that is a function of `EffectContext` is enough — reader work only |
+    | STATIC (no duration) | 133 | a continuous effect whose amount is a **live** count, and `state.effects` is serialised to Redis, so a function cannot make the trip |
+
+    That 355 is a CEILING. Of it, **92** name a count `countOfThing` can already read — 52 temporary
+    and 40 static — and the other 263 are held up by the vocabulary rather than by a size reader:
+    `basic land type among lands you control` 11, `its power` 9, `creature blocking it` 8, then
+    nothing above 6. So this increment is the temporary half, and the static half waits for the
+    `definesSize` machinery to learn D520's vocabulary.
+
+    ## The correction that had to come first (D521)
+
+    D520 gave `countOfThing` a branch for the five basic land types and argued the rest of its
+    tribal branch was safe. The probe written for *this* increment asked the compiler instead of the
+    argument, and both of these read while counting **creatures** with the subtype — of which there
+    are never any, because Food is an artifact type and Gate is a land type:
+
+        You gain 1 life for each Food you control.
+        You gain 1 life for each Gate you control.
+
+    A card that resolves and does nothing is worse than an unread line, because an unread line is
+    flagged for a human (D362). The fix counts **permanents** of the subtype, which is the rules
+    answer (CR 109.2, CR 205.3) rather than a wider net: subtype namespaces are disjoint, so
+    counting permanents equals counting within the right namespace. `scripts.test.ts` carries the
+    rows that discriminate, because all four of these READ before the fix and only a life total says
+    which number arrived.
+  */
+  const creature = (name: string, text: string) => compileCard({
+    name, type_line: 'Creature — Human Soldier', mana_cost: '{1}{R}', cmc: 2, colors: ['R'],
+    layout: 'normal', power: '2', toughness: '2', oracle_text: text,
+  });
+  const spell = (name: string, text: string) => compileCard({
+    name, type_line: 'Instant', mana_cost: '{1}{G}', cmc: 2, colors: ['G'],
+    layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    ['a rate behind an attack trigger',
+      'Whenever Not A Card attacks, it gets +1/+0 until end of turn for each attacking creature.'],
+    ['an announced X behind an attack trigger',
+      'Whenever Not A Card attacks, it gets +X/+X until end of turn, where X is the number of '
+        + 'creatures you control.'],
+    ['an announced X behind an activated cost',
+      '{T}: Not A Card gets +X/+X until end of turn, where X is the number of creatures you control.'],
+    ['a rate with a granted keyword',
+      'Whenever Not A Card attacks, it gets +1/+1 and gains trample until end of turn for each '
+        + 'artifact you control.'],
+    ['a half that is printed beside a half that is counted',
+      'Whenever Not A Card attacks, it gets +X/+0 until end of turn, where X is the number of '
+        + 'lands you control.'],
+  ])('reads the self-subject pump with %s', (_why, text) => {
+    const read = creature('Not A Card', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it.each([
+    ['an announced X',
+      'Target creature gets +X/+X until end of turn, where X is the number of lands you control.'],
+    ['a rate',
+      'Target creature gets +1/+0 until end of turn for each artifact you control.'],
+    ['a counted shrink',
+      'Target creature gets -X/-X until end of turn, where X is the number of creature cards in '
+        + 'your graveyard.'],
+  ])('reads the targeted pump with %s', (_why, text) => {
+    const read = spell('Not A Card', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('points a counted pump at a friendly creature and a counted shrink at a hostile one', () => {
+    /*
+      D252's rule, carried through the count: the **printed sign** decides whose creature the clause
+      is for, and it is knowable without the count because it is in the word. A shrink also carries
+      `expiresAtEndOfTurn`, which is Darkblast's reading — wearing off at end of turn is what kills
+      the creature before the shrink expires.
+    */
+    const up = spell('Not A Card',
+      'Target creature gets +X/+X until end of turn, where X is the number of lands you control.');
+    const down = spell('Not A Card',
+      'Target creature gets -X/-X until end of turn, where X is the number of lands you control.');
+    expect(up.ok && down.ok).toBe(true);
+    if (!up.ok || !down.ok) return;
+    expect(up.script?.targets?.[0]?.friendly).toBe(true);
+    expect(down.script?.targets?.[0]?.friendly).not.toBe(true);
+    expect(down.script?.expiresAtEndOfTurn).toBe(true);
+  });
+
+  it.each([
+    ['a mixed sign, which cannot say whose creature it is for',
+      'Target creature gets +X/-X until end of turn, where X is the number of lands you control.'],
+    ['a printed X under "for each", which is the cast-time X and not a count',
+      'Target creature gets +X/+X until end of turn for each land you control.'],
+    ['a count nothing can count',
+      'Target creature gets +X/+X until end of turn, where X is its power.'],
+    ['a granted word the engine would ignore',
+      'Target creature gets +X/+X and gains protection from red until end of turn, where X is the '
+        + 'number of lands you control.'],
+    ['a size that is nought however big the count',
+      'Target creature gets +0/+0 until end of turn for each land you control.'],
+    ['a granted keyword on a counted SHRINK, which no printed card pairs',
+      'Target creature gets -X/-X and gains trample until end of turn, where X is the number of '
+        + 'lands you control.'],
+  ])('refuses %s', (_why, text) => {
+    const read = spell('Not A Card', text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toHaveLength(1);
+  });
+
+  it('leaves a static counted size unread, which is the half this increment did not do', () => {
+    /*
+      Stated as a row rather than left implicit, because "it compiles" and "it is read" are
+      different claims and this is the line between the two halves. A static counted size has no
+      moment of creation to read a count at, so reading it as a fixed number would be a Blanchwood
+      Armor that stops growing — the quiet wrong this family exists to refuse.
+    */
+    const read = creature('Not A Card', 'Not A Card gets +1/+1 for each Forest you control.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line))
+      .toEqual(['Not A Card gets +1/+1 for each Forest you control.']);
+  });
+});
