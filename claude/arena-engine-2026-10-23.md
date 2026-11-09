@@ -19594,3 +19594,10 @@ that would untap it". `untapAll` runs per seat over that seat's own battlefield,
 read **at the step** (CR 502.2), which is both what the rules want and what D537's possessive supply
 could not have given: a permanent that changes hands between the freeze and the step answers to
 whoever controls it then.
+
+### The pod sweep
+
+**40/40 pods finished** at a fresh seed (SEED0=41001) on the clean commit, no engine throw and no
+stalled table, 58.0 turns and 261 moves a game. Per 100-card deck across 160 decks: 25.6 cards with
+a hand-written script, 47.7 with at least one unread line, 61.9 playable only from printed data, 0.4
+cardboard.
