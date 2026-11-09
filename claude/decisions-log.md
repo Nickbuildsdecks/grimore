@@ -36710,3 +36710,14 @@ cast action has one, validate it against the budget, and store it on the stack o
 lifted. The engine's `chooseTargets` throw stays as defence in depth either way: a trigger arriving
 from anywhere with a division is still refused rather than resolved wrongly, which is the two-places
 rule D67 and D89 share.
+
+### The sweep, re-run on the same seeds
+
+**40/40 pods finished** at SEED0=40601 — the *same* seed set whose 40607 threw, which is the reading
+that matters: the fix is confirmed on the games that failed rather than on a fresh set that might
+simply not have met the card. No engine throw and no stalled table, 66.5 turns and 437 moves a game.
+Per 100-card deck across 160 decks: 25.1 cards with a hand-written script, 48.0 with at least one
+unread line, 61.9 playable only from printed data, 0.4 cardboard.
+
+D533's own sweep is therefore recorded as **39/40 with one throw, re-run clean at 40/40 after D534** —
+not as a clean sweep. The first number is the honest one for that commit.
