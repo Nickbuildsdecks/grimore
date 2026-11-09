@@ -20062,3 +20062,15 @@ its cause are above. Gate green.
 refused inside a longer resolution. Both were true of `blinkResolution` and are no longer true of the
 compiler, so both rows now assert what is true and say in their own comment what they used to assert
 and why it changed (D516: a stale refusal is how a suite starts asserting the past).
+
+### D543's pod sweep
+
+**40/40 pods finished** at SEED0=41601 on the clean commit (85d0e41), no engine throw and no stalled
+table, 68.2 turns and 486 moves a game. Per 100-card deck across 160 decks: 26.4 cards with a
+hand-written script, 46.7 with at least one unread line, 61.9 playable only from printed data, 0.4
+cardboard.
+
+The sweep is doing two jobs here. One is the usual check that 18 new readings do not throw. The other
+is the deletion: `blinkResolution` was on the spell-casting path of every game, and a sweep that
+finished every table is the evidence that the general rule which replaced it reads the same sentence
+the same way in play, not only in the compile table.
