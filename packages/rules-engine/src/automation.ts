@@ -2342,6 +2342,36 @@ function replaceZoneChange(
       replaced.add(id);
       continue;
     }
+    /*
+      "If that creature would die this turn, exile it instead" (CR 614.1, D539).
+
+      A **floating** replacement, from a spell that is in a graveyard by the time it matters, so it
+      is in `state.effects` rather than on anybody's `replaces` — see
+      `ContinuousEffect.exiledInsteadOfDying`. Asked here rather than inside the candidates loop
+      because there is no permanent to ask: the effect belongs to the resolution that created it.
+
+      Before everybody else's `replaces`, for the reason the dying permanent's own goes first
+      (CR 616.1): the choice between two applicable replacements belongs to the affected object's
+      controller, and a creature Bleed Dry was aimed at should not end up feeding somebody else's
+      Kalitas instead. `on === 'dies'` only — the sentence says "would die", which is going to a
+      graveyard **from the battlefield**, and the wider `to-graveyard` wording would catch a
+      discard.
+    */
+    if (on === 'dies' && next.effects.some(
+      (fx) => fx.exiledInsteadOfDying === true
+        && fx.scope.kind === 'cards' && fx.scope.ids.includes(id),
+    )) {
+      const named = next.cardDefs[inst.defKey]?.name ?? 'a card';
+      next = exileCard(next, id);
+      // Said in words for the same reason every other replacement is: a creature that silently
+      // turns up in exile is a card the player cannot see working. See `replacements`.
+      next = {
+        ...next,
+        replacements: [...next.replacements, `${named}: exiled instead of dying`],
+      };
+      replaced.add(id);
+      continue;
+    }
     for (const source of candidates) {
       if (!source.own && next.instances[source.id]?.zone !== 'battlefield') continue;
       for (const rule of scriptOf(next, source.id)?.replaces ?? []) {

@@ -15204,3 +15204,141 @@ describe('the freeze: "doesn\'t untap during its controller\'s next untap step" 
     if (borrowed.ok) expect(borrowed.unread.map((u) => u.line)).toEqual([]);
   });
 });
+
+describe('"If that creature would die this turn, exile it instead" (D539)', () => {
+  /*
+    **The compiler's first floating replacement effect.** Every replacement before this one belonged
+    to a permanent — a regeneration shield, "enters tapped", Kalitas — and was asked for by the pass
+    over the battlefield. This sentence is printed on *spells*: Bleed Dry is in a graveyard by the
+    time the creature it was aimed at dies, so the thing that must still be there is a
+    `ContinuousEffect` with a duration, read by `replaceZoneChange`. See
+    `ContinuousEffect.exiledInsteadOfDying`.
+
+    26 legal printings say some version of this sentence and this reader takes the 16 that name
+    their subject through a referent. Measured at **18 cards finished**, the instrument's fifth
+    calibration and under by 2 again.
+
+    The sentence names the same object twice — "If **that creature** would die this turn, exile
+    **it** instead" — and `referentEffect` swaps one occurrence of one pronoun, so the text that
+    arrives here has the target phrase in whichever slot the pronoun table reached first. Both slots
+    are therefore read, and the **raw** sentence, with two pronouns and no target phrase at all,
+    reads as nothing: that is the row below that matters most, because a reader which accepted it
+    would arm a replacement over no objects and exile nothing, silently.
+  */
+  const row = (
+    name: string, type: string, text: string, extra: Partial<CardDataRow> = {},
+  ): ReturnType<typeof compileCard> => compileCard({
+    name, type_line: type, mana_cost: '{2}{B}{B}', cmc: 4, colors: ['B'], layout: 'normal',
+    oracle_text: text, ...extra,
+  });
+
+  it('reads Bleed Dry, the printing this was built for', () => {
+    const read = row('Bleed Dry', 'Instant',
+      'Target creature gets -13/-13 until end of turn. '
+      + 'If that creature would die this turn, exile it instead.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    // One target across the two clauses: the replacement borrows rather than asking again.
+    expect(read.script?.targets?.length).toBe(1);
+    expect(read.script?.targets?.[0]?.kind).toBe('creature');
+  });
+
+  it('reads the "or planeswalker" printing, whose spec is a permanent', () => {
+    /*
+      Blitz of the Thunder-Raptor, and the row that makes the two-slot reading necessary: its spec
+      is `kind: 'permanent'`, so the pronoun table reaches it through "it" as a permanent rather
+      than through "that creature" as a creature — which puts the target phrase in the **object**
+      slot of the swapped text.
+    */
+    const read = row('Blitz of the Thunder-Raptor', 'Instant',
+      'Blitz of the Thunder-Raptor deals damage to target creature or planeswalker equal to the '
+      + 'number of instant and sorcery cards in your graveyard. '
+      + 'If that creature or planeswalker would die this turn, exile it instead.',
+      { mana_cost: '{1}{R}', cmc: 2, colors: ['R'] });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.targets?.length).toBe(1);
+  });
+
+  it('reads nothing out of the raw sentence, which names no target at all', () => {
+    /*
+      The most important refusal here. "If that creature would die this turn, exile it instead" on
+      its own has two pronouns and no antecedent — `composeEffects` has nothing aimed before it, so
+      the pronoun table is never consulted and the clause is handed to the reader as printed. Both
+      slots are pronouns, neither parses as a spec, and the line stays unread.
+
+      A probe, because no card prints this sentence as its whole text; the point is the reader's
+      own shape, not a printing.
+    */
+    const read = row('Probe Rite', 'Sorcery',
+      'If that creature would die this turn, exile it instead.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line))
+      .toEqual(['If that creature would die this turn, exile it instead.']);
+  });
+
+  it('refuses a sentence whose other half is not a referent at all', () => {
+    /*
+      The other slot has to be a bare pronoun, not merely "something that is not a target phrase".
+      Without that, `if target creature would die this turn, exile <anything> instead` reads as this
+      clause and whatever the sentence actually said about the replacement is dropped on the floor —
+      a card that resolves and does the wrong thing, which nothing flags (D362).
+
+      A probe: no card prints this. It exists because a break run found the restriction was
+      otherwise decorative.
+    */
+    const read = row('Probe Rite', 'Sorcery',
+      'Destroy target creature. If that creature would die this turn, '
+      + 'exile the top card of your library instead.');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([
+      'Destroy target creature. If that creature would die this turn, '
+      + 'exile the top card of your library instead.',
+    ]);
+  });
+
+  it('refuses the sweeper form, which needs the set the sibling clause damaged', () => {
+    /*
+      Anger of the Gods, 8 printings: "If **a creature dealt damage this way** would die this turn,
+      exile it instead". The subject is every creature the clause *before* it damaged, and nothing
+      in `composeEffects` hands a clause what its sibling touched — that is a channel to build, not
+      a phrase to match, and reading it as anything else would arm the replacement over the wrong
+      set.
+    */
+    const read = row('Anger of the Gods', 'Sorcery',
+      'Anger of the Gods deals 3 damage to each creature. '
+      + 'If a creature dealt damage this way would die this turn, exile it instead.',
+      { mana_cost: '{1}{R}{R}', cmc: 3, colors: ['R'] });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([
+      'Anger of the Gods deals 3 damage to each creature. '
+      + 'If a creature dealt damage this way would die this turn, exile it instead.',
+    ]);
+  });
+
+  it('refuses the board-wide form, whose scope has to be read live', () => {
+    /*
+      Flaying Tendrils, 2 printings: "If **a** creature would die this turn, exile it instead" is
+      about every creature, *including ones that arrive after it resolves*. The engine snapshots
+      until-end-of-turn scopes deliberately (CR 611.2c, #280) — `pumpAll` converts a board-wide
+      pump into a list of ids for exactly that reason — so there is no scope here that says "every
+      creature, read when the question is asked". Unread rather than half-read.
+    */
+    const read = row('Flaying Tendrils', 'Sorcery',
+      'Devoid (This card has no color.)\n'
+      + 'All creatures get -2/-2 until end of turn. '
+      + 'If a creature would die this turn, exile it instead.',
+      { mana_cost: '{1}{B}{B}', cmc: 3 });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([
+      'All creatures get -2/-2 until end of turn. '
+      + 'If a creature would die this turn, exile it instead.',
+    ]);
+  });
+});

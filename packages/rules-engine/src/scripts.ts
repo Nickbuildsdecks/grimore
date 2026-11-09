@@ -16849,6 +16849,66 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
   }
 
   /*
+    "If that creature would die this turn, exile it instead" (CR 614.1, D539).
+
+    **A floating replacement effect**, and the first one in this compiler. The 26 printings of this
+    sentence split four ways and this reader takes the two that name their subject through a
+    referent: "If **that creature** would die this turn, exile it instead" (11 printings, Bleed Dry)
+    and "If **that creature or planeswalker** would die this turn, exile it instead" (5, Blitz of
+    the Thunder-Raptor). What they do is put a `ContinuousEffect` on the board that
+    `replaceZoneChange` reads when the creature dies — see `ContinuousEffect.exiledInsteadOfDying`
+    for why it is an effect rather than a flag on the dying card.
+
+    ## The sentence has two pronouns, which is why both slots are tried
+
+    "If that creature would die this turn, exile **it** instead" names the same object twice, and
+    `referentEffect` swaps **one** occurrence of **one** pronoun. So the text this reader is handed
+    depends on which entry of `REFERENT_PRONOUNS` matched first: swapping "that creature" gives
+    `if target creature would die this turn, exile it instead`, and swapping "it" gives `if that
+    creature would die this turn, exile target creature instead`. Both are the same card, so both
+    are read — the subject slot or the object slot may be the target phrase, and the other must be
+    a bare pronoun.
+
+    That also makes the **raw** printed sentence refuse itself, which is the half that matters: with
+    two pronouns and no target phrase, neither slot parses as a spec and nothing reads. A reader
+    that accepted it would create the effect with no object and exile nothing, silently.
+
+    ## What the break run could not falsify
+
+    `on === 'dies'` in the hook rather than the wider `to-graveyard`: a dying creature is in both
+    lists and the wide pass runs first, so widening it changes nothing observable, and an effect
+    scoped to a card is dropped once that card leaves the battlefield — so a bounced-then-discarded
+    creature cannot carry one either. It stays the narrow wording because "would die" **is** going
+    to a graveyard from the battlefield, not because a test holds it.
+
+    **Two rows are refused.** "If **a creature dealt damage this way** would die this turn, exile it
+    instead" (8 printings, Anger of the Gods) needs the set of creatures the *sibling* clause
+    damaged, and nothing in the composition hands a clause what the clause before it touched — that
+    is a channel to build, not a phrase to match. "If **a** creature would die this turn, exile it
+    instead" (2, Flaying Tendrils) wants every creature including ones that arrive later, and the
+    engine snapshots until-end-of-turn scopes on purpose (CR 611.2c, #280).
+  */
+  const dieInstead = /^if (.+?) would die this turn, exile (.+?) instead$/i.exec(text);
+  if (dieInstead !== null) {
+    const subject = dieInstead[1]!.trim();
+    const object = dieInstead[2]!.trim();
+    const bare = /^(?:it|that creature|that permanent|that creature or planeswalker)$/i;
+    const subjectSpec = targetSpecFrom(subject, false);
+    const objectSpec = targetSpecFrom(object, false);
+    const spec = subjectSpec !== null && objectSpec === null && bare.test(object) ? subjectSpec
+      : objectSpec !== null && subjectSpec === null && bare.test(subject) ? objectSpec
+        : null;
+    if (spec !== null && pointsAtAPermanent(spec)) {
+      return {
+        targets: [spec],
+        effect: (c) => pump(
+          c.state, cardTargets(c), c.source, c.controller, { exiledInsteadOfDying: true },
+        ),
+      };
+    }
+  }
+
+  /*
     The counter family, whose target is an object on the stack — which is why `TargetSpec` has a
     `spell` kind at all.
 

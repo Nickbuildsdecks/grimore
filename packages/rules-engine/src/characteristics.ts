@@ -1151,6 +1151,30 @@ export interface ContinuousEffect {
    */
   readonly preventsCombatDamage?: boolean;
   /**
+   * "If that creature would die this turn, **exile it instead**" (CR 614.1, D539).
+   *
+   * The first field here that is not a characteristic and is not read by `effectApplies`. Every
+   * other member of this interface answers "what is this permanent like"; this one answers "what
+   * happens instead when it dies", which is a replacement effect — so the reader is
+   * `replaceZoneChange` in `automation.ts`, and the layer passes never see it at all.
+   *
+   * It lives on a `ContinuousEffect` rather than on the dying permanent's own `CardScript.replaces`
+   * because **the spell that creates it is not a permanent**. Bleed Dry resolves and goes to the
+   * graveyard; the thing that must still be there when the creature dies two combat steps later is
+   * a floating effect with a duration, which is exactly what this list is for. A flag on the
+   * instance would have worked too and would have needed its own line in `endTurnCleanup`, where
+   * this expires for free.
+   *
+   * **Only the `cards` scope is honoured.** The printed sentences this reads name their subject
+   * through a referent — "that creature", "it" — so the effect covers the objects the clause
+   * borrowed and nothing else. "If **a** creature would die this turn, exile it instead" (Flaying
+   * Tendrils, 2 printings) wants every creature *including ones that arrive later*, and the
+   * engine's until-end-of-turn scopes are snapshotted on purpose (CR 611.2c, #280): `pumpAll`
+   * refuses to leave a board-wide effect unresolved for exactly that reason. A live board-wide
+   * scope is its own question, so that row stays unread rather than half-read.
+   */
+  readonly exiledInsteadOfDying?: boolean;
+  /**
    * A shield with a quantity: "prevent the next N damage that would be dealt to <this> this turn"
    * (CR 615.1), where N is what is **left** of it.
    *

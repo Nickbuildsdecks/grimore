@@ -33959,3 +33959,150 @@ describe('the freeze, at the table (D538)', () => {
     expect(s.instances[bears]!.frozen ?? false).toBe(false);
   });
 });
+
+describe('"exile it instead", at the table (D539)', () => {
+  /*
+    The runtime half, and the only place the replacement can be seen at all: a compile test shows
+    the line reads and declares one target, and whether the creature ends up in **exile** rather
+    than a graveyard is a fact about `replaceZoneChange`.
+
+    Three things a game can tell apart and a reader cannot:
+
+    - the creature the spell was aimed at goes to exile;
+    - a creature that dies the same turn and was *not* named goes to the graveyard, which is the
+      scope being `cards` and not the whole board;
+    - the replacement is armed for the **turn**, not for the resolution, so a creature that
+      survives the spell and dies later is still exiled — and has expired by the next turn.
+
+    Bleed Dry and Blitz of the Thunder-Raptor, the real printings, with the pool's own Doom Blade
+    as the later cause of death.
+  */
+  const DATA = [
+    {
+      name: 'Bleed Dry', type_line: 'Instant', mana_cost: '{2}{B}{B}', cmc: 4,
+      colors: ['B'], layout: 'normal',
+      oracle_text: 'Target creature gets -13/-13 until end of turn. '
+        + 'If that creature would die this turn, exile it instead.',
+    },
+    {
+      name: 'Blitz of the Thunder-Raptor', type_line: 'Instant', mana_cost: '{1}{R}', cmc: 2,
+      colors: ['R'], layout: 'normal',
+      oracle_text: 'Blitz of the Thunder-Raptor deals damage to target creature or planeswalker '
+        + 'equal to the number of instant and sorcery cards in your graveyard. '
+        + 'If that creature or planeswalker would die this turn, exile it instead.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'death-exile',
+      name: 'Death and Exile',
+      entries: [
+        { name: 'Bleed Dry', count: 4 }, { name: 'Blitz of the Thunder-Raptor', count: 4 },
+        { name: 'Doom Blade', count: 4 }, { name: 'Grizzly Bears', count: 4 },
+        { name: 'Swamp', count: 24 }, { name: 'Mountain', count: 24 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort())
+      .toEqual(['Bleed Dry', 'Blitz of the Thunder-Raptor'].sort());
+    return list.deck;
+  };
+
+  const bearsOf = (s: GameState): readonly string[] =>
+    ids(s, 1 as SeatIndex, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+
+  const table = (hand: readonly string[]): GameState => tapAllLands(advanceTo(arena({
+    decks: { 0: 'death-exile', 1: 'death-exile' },
+    deckSpecs: { 'death-exile': deck() },
+    hands: { 0: [...hand] },
+    battlefield: {
+      0: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Mountain', 'Mountain'],
+      1: ['Grizzly Bears', 'Grizzly Bears'],
+    },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main'), 0);
+
+  it('sends the creature it was aimed at to exile, and leaves the other one alone', () => {
+    let s = table(['Bleed Dry']);
+    const [doomed, spare] = bearsOf(s);
+    expect(doomed).toBeDefined();
+    expect(spare).toBeDefined();
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Bleed Dry'),
+      targets: [{ kind: 'card', id: doomed! }],
+    } as Action), 60);
+
+    expect(s.instances[doomed!]?.zone).toBe('exile');
+    // And the graveyard never saw it, which is what "instead" means (CR 614.6).
+    expect(namesIn(s, 1, 'graveyard')).not.toContain('Grizzly Bears');
+    expect(s.instances[spare!]?.zone).toBe('battlefield');
+  });
+
+  it('is armed for the turn: a creature that survives the spell and dies later is exiled too', () => {
+    /*
+      Blitz with an empty graveyard deals **0** damage, so the Bears walks away from it with the
+      replacement armed — which is exactly what the printed card does and the only way to see that
+      the effect outlives its own resolution. Doom Blade then kills it, and it goes to exile.
+
+      The second Bears is the discriminator: Doom Blade sends it to the graveyard in the same turn,
+      so the replacement is about the objects the clause named and not about dying in general.
+
+      **The unnamed one is killed first, and the order is load-bearing.** An effect scoped to a
+      card is dropped once that card leaves the battlefield, so killing the named Bears first would
+      take the effect with it and leave nothing for the second death to be tested against — a break
+      run proved it: with the id check deleted, the unnamed Bears still reached the graveyard
+      because by then there was no effect left to over-apply.
+    */
+    let s = table(['Blitz of the Thunder-Raptor', 'Doom Blade', 'Doom Blade']);
+    const [named, spare] = bearsOf(s);
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Blitz of the Thunder-Raptor'),
+      targets: [{ kind: 'card', id: named! }],
+    } as Action), 60);
+    // It survived: 0 damage, and the point of the row is what happens next.
+    expect(s.instances[named!]?.zone).toBe('battlefield');
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: spare! }],
+    } as Action), 60);
+    expect(s.instances[spare!]?.zone).toBe('graveyard');
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: named! }],
+    } as Action), 60);
+    expect(s.instances[named!]?.zone).toBe('exile');
+  });
+
+  it('expires with the turn, so the same creature dies normally afterwards', () => {
+    /*
+      "this turn" is the whole duration, and it is free: the effect is pushed with
+      `duration: 'end-of-turn'`, so `endTurnCleanup` drops it with the pumps. A replacement that
+      never expired would exile the creature two turns later, which is a card that reads and is
+      wrong.
+    */
+    let s = table(['Blitz of the Thunder-Raptor', 'Doom Blade']);
+    const [named] = bearsOf(s);
+
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Blitz of the Thunder-Raptor'),
+      targets: [{ kind: 'card', id: named! }],
+    } as Action), 60);
+    expect(s.effects.some((fx) => fx.exiledInsteadOfDying === true)).toBe(true);
+
+    s = nextTurn(nextTurn(s));
+    expect(s.effects.some((fx) => fx.exiledInsteadOfDying === true)).toBe(false);
+
+    s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Doom Blade'),
+      targets: [{ kind: 'card', id: named! }],
+    } as Action), 60);
+    expect(s.instances[named!]?.zone).toBe('graveyard');
+  });
+});

@@ -2016,6 +2016,8 @@ export interface PumpOptions {
   readonly cantBlock?: boolean;
   /** See `ContinuousEffect.preventsCombatDamage`. A Fog Bank is this, printed on a 0/2. */
   readonly preventsCombatDamage?: boolean;
+  /** See `ContinuousEffect.exiledInsteadOfDying` — "exile it instead" (D539). */
+  readonly exiledInsteadOfDying?: boolean;
   /** See `ContinuousEffect.mustAttack` — "attacks each combat if able" (CR 508.1d). */
   readonly mustAttack?: boolean;
   /** See `ContinuousEffect.cantBeBlockedByWalls`. */
@@ -2091,6 +2093,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.cantAttack ? { cantAttack: true } : {}),
     ...(opts.cantBlock ? { cantBlock: true } : {}),
     ...(opts.preventsCombatDamage ? { preventsCombatDamage: true } : {}),
+    ...(opts.exiledInsteadOfDying ? { exiledInsteadOfDying: true } : {}),
     ...(opts.mustAttack ? { mustAttack: true } : {}),
     ...(opts.cantBeBlockedByWalls ? { cantBeBlockedByWalls: true } : {}),
     ...(opts.cantBeBlocked ? { cantBeBlocked: true } : {}),

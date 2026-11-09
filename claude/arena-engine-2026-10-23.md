@@ -19601,3 +19601,83 @@ whoever controls it then.
 stalled table, 58.0 turns and 261 moves a game. Per 100-card deck across 160 decks: 25.6 cards with
 a hand-written script, 47.7 with at least one unread line, 61.9 playable only from printed data, 0.4
 cardboard.
+
+## D539 — "If that creature would die this turn, exile it instead"
+
+**The compiler's first floating replacement effect.** Every replacement the engine had belonged to a
+permanent — a regeneration shield, "enters tapped", Kalitas — and was found by the pass that asks
+each permanent on the battlefield whether it wants to replace what is about to happen. This sentence
+is printed on **spells**: Bleed Dry is in a graveyard by the time the creature it was aimed at dies,
+so the thing that must still be there is a `ContinuousEffect` with a duration, and
+`replaceZoneChange` reads it.
+
+|  | before | after |
+| --- | --- | --- |
+| printed legal lines read | 22,966 / 56,421 (40.7%) | **22,989 / 56,421 (40.7%)** |
+| cards with a compiled script | 11,686 | **11,705** |
+| cards with every printed line read | 7,445 | **7,463** |
+
+**18 cards finished**, all of them: Agate Assault, Bleed Dry, Blitz of the Thunder-Raptor, Bot
+Bashing Time, Elspeth's Smite, Fanged Flames, Feed the Flames, Flame-Blessed Bolt, Lava Coil,
+Magma Spray, Narset's Rebuke, Ob Nixilis's Cruelty, Obliterating Bolt, Puncturing Blow, Reduce
+to Ashes, Scorching Dragonfire, Scorchmark, Suplex. The queue ranked the two referent rows at
+16; the instrument's fifth
+calibration and under by 2. Running record: exact at 8 (D532), under by 3, 2, 9 and 2.
+
+### The sentence names the same object twice
+
+"If **that creature** would die this turn, exile **it** instead" has two pronouns for one object,
+and `referentEffect` swaps one occurrence of one pronoun (D533). So the text that reaches the reader
+has the target phrase in whichever slot the pronoun table got to first: swapping "that creature"
+gives `if target creature would die this turn, exile it instead`, and swapping "it" — which is the
+path Blitz of the Thunder-Raptor takes, because its spec is a *permanent* and the creature entry is
+filtered out — gives `if that creature would die this turn, exile target creature instead`.
+
+Both are the same card, so the reader takes either slot: one must parse as a target spec, the other
+must be a bare pronoun. The second condition is what stops `if target creature would die this turn,
+exile the top card of your library instead` reading as this clause and quietly dropping what the
+sentence actually said — a break run found that restriction was otherwise decorative, and it has a
+probe row now.
+
+The consequence worth stating: **the raw printed sentence reads as nothing.** Two pronouns, no
+target phrase, neither slot parses — so a card that prints it with nothing aimed before it leaves the
+line unread rather than arming a replacement over no objects.
+
+### Why an effect rather than a flag on the dying card
+
+A flag on the instance would have worked and would have needed its own line in `endTurnCleanup`.
+A `ContinuousEffect` with `duration: 'end-of-turn'` expires there for free, alongside the pumps, and
+`pump` already builds exactly this shape. It also gets CR 400.7 right without trying: a creature
+blinked and returned is a new object with a new id, so the effect no longer covers it.
+
+`ContinuousEffect.exiledInsteadOfDying` is the first field on that interface that is **not a
+characteristic**. Every other member answers "what is this permanent like" and is read by the layer
+passes; this one answers "what happens instead when it dies", so `effectApplies` never sees it and
+the reader is in `automation.ts`.
+
+### Two rows refused, each for its own reason
+
+- **"If a creature dealt damage this way would die this turn, exile it instead"** (8 printings, Anger
+  of the Gods). The subject is every creature the *previous clause* damaged, and nothing in
+  `composeEffects` hands a clause what its sibling touched. That is a channel to build — the same
+  shape `GameState.died`, `drew` and `discarded` already have for other "what just happened"
+  questions — not a phrase to match.
+- **"If a creature would die this turn, exile it instead"** (2, Flaying Tendrils). Board-wide, and
+  it covers creatures that *arrive after it resolves*. The engine snapshots until-end-of-turn scopes
+  on purpose (CR 611.2c, #280) — `pumpAll` converts a board-wide pump into a list of ids for exactly
+  that reason — so there is no scope here that means "every creature, read when the question is
+  asked". Unread rather than half-read.
+
+### The break run: 8 of 9, and the order of two deaths was load-bearing
+
+The first pass caught **6 of 9**, and the miss that mattered was the scope check: deleting
+`fx.scope.ids.includes(id)` left the suite green. The reason is a fact about the engine I did not
+know and the test now states — **an effect scoped to a card is dropped once that card leaves the
+battlefield**, so killing the *named* creature first took the effect with it and left nothing for
+the second death to be over-applied to. Killing the unnamed one first catches it. That is the fifth
+"my test passed for the wrong reason" of this stretch and the first one where the wrong reason was
+the engine's behaviour rather than my own regex.
+
+The one break still uncaught is recorded in the reader's docblock: `on === 'dies'` rather than the
+wider `to-graveyard` wording cannot be falsified, because a dying creature is in both lists and the
+wide pass runs first.
