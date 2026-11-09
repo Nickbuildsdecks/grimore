@@ -484,8 +484,29 @@ function canIdentify(state: GameState, inst: CardInstance, viewer: SeatIndex | n
   if (inst.revealed) return true;
   const isOwnSide = viewer !== null && inst.zoneSeat === viewer;
   switch (inst.zone) {
-    case 'hand':
-      return isOwnSide;
+    case 'hand': {
+      if (isOwnSide) return true;
+      /*
+        **A hand somebody else is being asked to choose out of** (D531) — "Target opponent reveals
+        their hand. You choose a nonland card from it."
+
+        The authorisation is the engine's own candidate list, exactly as the `library` case below
+        authorises a scry: the same list an `auto:decide` answer is checked against, rather than a
+        second rule about what is readable that could disagree with it. `decisionCandidates` is the
+        only place that list is computed, which is what makes it safe to lean on here.
+
+        It is **not** `inst.revealed`. That flag is a card deliberately shown to the table and it
+        stays shown; this reveal lasts one resolution, and the permission expires with the question
+        because the pending decision does.
+
+        Narrow on purpose: this viewer, this question, this card. An onlooker sees nothing new, the
+        chooser sees nothing outside the candidate list the card named ("a **nonland** card"), and
+        the moment the answer is in, the pending decision is gone and so is the permission.
+      */
+      const ask = state.pendingDecision;
+      return ask !== null && ask.from === 'hand' && ask.seat === viewer
+        && ask.candidates.includes(inst.id);
+    }
     case 'library': {
       // Only its own, and only in the two situations where a player may read their own library:
       // while searching it, and while looking at the top few cards of it.

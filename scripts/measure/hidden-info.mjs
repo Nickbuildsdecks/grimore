@@ -150,8 +150,21 @@ function scramble(state, seat, seed) {
   return { ...state, instances };
 }
 
-/** Whether this position is one where reading a library is the card's own job. */
-const readingLibrary = (state) => state.pendingDecision !== null
+/**
+ * Whether a card on the stack is currently entitled to read a hidden zone.
+ *
+ * Named for the library because that is what it was written for, and the name has been wrong since:
+ * the predicate drops **any** position with a question outstanding, which is broader and is the
+ * right rule. A pending question means some card is in the middle of showing somebody something —
+ * a scry reading a library, a chosen discard reading an opponent's hand (D531) — and comparing the
+ * bot's answer against a scramble of cards the card itself just revealed would report the card
+ * working as a bot cheating.
+ *
+ * So D531 needed no change here, and that is worth stating rather than leaving to be rediscovered:
+ * the new permission is already outside this instrument's reach, which also means this instrument
+ * does **not** exercise it. The checks that do are in `view.test.ts`.
+ */
+const readingHidden = (state) => state.pendingDecision !== null
   || state.pendingChoice !== null
   || state.seats.some((seat) => seat.searching);
 
@@ -170,7 +183,7 @@ function duel(seed, decks) {
     const chosen = botAction(s, seat, BOT);
     if (chosen === null) break;
 
-    if (readingLibrary(s)) {
+    if (readingHidden(s)) {
       skippedSearching += 1;
     } else {
       const truth = JSON.stringify(chosen);

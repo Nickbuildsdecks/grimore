@@ -18821,3 +18821,103 @@ stalled table, 70.3 turns and 382 moves a game. Per 100-card deck across the 160
 cards with a hand-written script, 48.0 with at least one line nothing could read, 61.7 playable only
 because of the printed data, and 0.5 cardboard. The seed is fresh rather than reused, which is the
 D226 rule: one seed is one shuffle wearing many deck pairings.
+
+## D531 — The chosen discard, and the first question whose pool is not the chooser's own
+
+    Target opponent reveals their hand. You choose a nonland card from it.
+    That player discards that card.
+
+Dark Inquiry, Distress, Despise, Brainbite, Collective Brutality, Corpse Traders, Deceit, Cerebral
+Confiscation, Auntie's Sentence. **95 unread legal lines** contain the third sentence, in 84 distinct
+shapes; this increment reads the head of that family — the three-sentence form in its six spellings.
+
+### Why it was unread, which is a fact about the engine and not about the compiler
+
+`CardsDecisionSpec.who` named **both** the chooser and the owner of the zone, because
+`decisionCandidates` read `zoneKey(chooser, from)`. So the only expressible reading of this family
+asked the *discarding* player to choose — and that card already exists: it is Mind Rot. The whole
+point of the printed card is that the **caster** picks, and a reading that lost that would be a card
+that works and does the wrong thing, which D362 ranks below leaving the line unread. No regex could
+have fixed it.
+
+`fromSeat?: 'chooser' | 'target-player'` splits the two. Default `chooser`, so every question written
+before this is unchanged, and `decisionCandidates` is still the **one** place the candidate list is
+computed — which is what lets everything else lean on the stored list rather than recomputing a rule
+that could disagree.
+
+Two things the brief predicted needing work and which did **not**, both verified rather than assumed:
+
+- **Where the card goes.** `moveToGraveyard` already relocates by `inst.owner`, so a card the caster
+  picks out of an opponent's hand lands in the *opponent's* graveyard. A runtime row asserts it, and
+  asserts the caster's graveyard does not get it.
+- **The answer's authorisation.** All five readers of the candidate list — the `auto:decide` check,
+  the bot's `pick`, the scry resume, `canIdentify`, and the scry filter — read
+  `pending.candidates`, the list stored when the question was asked. There was never a second
+  computation to keep in step.
+
+### Letting the caster *read* the cards, and keeping it that narrow
+
+`canIdentify`'s `hand` case gains the clause the `library` case already had for scry: a card may be
+read when the pending decision is **this** question, asked of **this** viewer, and names **this**
+card in its candidate list. Three runtime rows hold that line — the caster reads the candidates and
+*not* the Swamp in the same hand that the printed "nonland" excluded, a spectator reads nothing new,
+and the permission is gone the moment the question is answered.
+
+It is deliberately **not** `inst.revealed`. That flag is a card deliberately shown to the table and
+it stays shown; this reveal lasts one resolution, and riding the pending decision is what makes it
+expire on its own.
+
+### The read is a group, and the middle sentence is why
+
+`stealPrefix`'s argument (D516): three printed sentences, one play. A reveal without the discard
+leaks a hand for nothing, and a discard without the reveal asks the caster to choose out of cards
+they were never shown. And the middle sentence is **not an effect at all** — "you choose a card from
+it" *is* the question — so there is nothing a clause reader could return for it. Only a reader that
+sees all three can produce the one `CardsDecisionSpec` the play is.
+
+The qualifier is read by `graveyardTypeTest`, the same function three other readers use, because a
+hand and a graveyard ask the same question of a card's printed types. It grew one case: `nonland`
+composed with a second qualifier ("a nonland permanent card"), read as the conjunction the words are
+rather than as a fourth hard-coded phrase — one statement of one rule (D441), and its three existing
+callers get it for free.
+
+### What it refuses, each left for its own increment
+
+- **"Look at target opponent's hand and choose X cards from it"** (Abandon Hope) — an X chosen as the
+  spell is cast, which D399 keeps off this path.
+- **"reveals three cards from their hand and you choose one of them"** (Blackmail, Bala Ged Thief,
+  Cabal Interrogator) — the pool is a slice of the hand rather than the hand, which `fromSeat` does
+  not express.
+- **"you MAY choose"** (Cracked Skull) — the offer has to gate the question, which is #337's open gap.
+- **"Choose a color. … you choose a card of that color from it"** (Addle) — the filter is an earlier
+  answer rather than printed words.
+
+Approximating any of them would be the D362 trade in the wrong direction.
+
+### What the hidden-information audit can and cannot say about this
+
+`scripts/measure/hidden-info.mjs` (#164) drops **any** position with a question outstanding, which is
+broader than its name said — it was called `readingLibrary` and has been renamed `readingHidden` with
+the reason written in. That rule is right: a pending question means some card is in the middle of
+showing somebody something, and scrambling cards the card itself just revealed would report the card
+working as the bot cheating.
+
+The consequence is worth stating plainly rather than leaving to be rediscovered: **the audit needed
+no change, and the audit therefore does not exercise this permission.** It still confirms nothing was
+widened *accidentally*. The checks that actually cover the new path are the three redaction rows in
+`scripts.test.ts`, and they exist because the instrument could not.
+
+### The numbers, and the audit's verdict
+
+| | before D531 | after |
+| --- | --- | --- |
+| cards with every printed line read | 7,287 | **7,308** (+21) |
+| cards with a compiled script | 11,528 | **11,550** (+22) |
+| printed legal lines read | 22,759 / 56,421 (40.3%) | **22,793 / 56,421 (40.4%)** (+34) |
+
+`scripts/measure/hidden-info.mjs` re-run after the change: **0 changed decisions out of 14,293**,
+0% on every action type — `auto:cast` 0/3053, `auto:pass` 0/7508, `auto:attack` 0/1476,
+`auto:block` 0/586, `auto:activate` 0/1258, and the ten smaller rows. The bot reads nothing it
+should not, and nothing was widened by accident. What that run does **not** do is exercise the new
+permission, for the reason above, and the three redaction rows in `scripts.test.ts` exist because of
+it.

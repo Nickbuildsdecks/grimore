@@ -14109,3 +14109,106 @@ describe('a referent subject, read by borrowing the targeted reader (D530)', () 
     });
   });
 });
+
+describe('the chosen discard, read as one group of three sentences (D531)', () => {
+  /*
+    MEASURED (probe548, legal pool): **95 unread legal lines** contain "discards that/those card(s)",
+    84 distinct shapes, and the head of the family is one idiom in a handful of spellings —
+    "Target opponent reveals their hand. You choose a nonland card from it. That player discards that
+    card." (8), the same with "target player" (3), with "a nonland permanent card" (2), with "a card"
+    (2), and singletons for "a creature or planeswalker card" and "an instant or sorcery card".
+
+    It is read as a **group** for `stealPrefix`'s reason (D516): three printed sentences and one
+    play. The middle one is not even an effect — "you choose a card from it" *is* the question — so
+    there is nothing for a clause reader to return for it.
+
+    The engine could not express it before this increment and that is the whole of why it was
+    unread: `who` named the chooser *and* the zone's owner at once, so the only available reading
+    asked the discarding player to choose. That card already exists — it is Mind Rot — and
+    compiling this family as Mind Rot would be a card that works and does the wrong thing, which
+    D362 ranks below an unread line.
+  */
+  const sorcery = (text: string) => compileCard({
+    name: 'Not A Card', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2, colors: ['B'],
+    layout: 'normal', oracle_text: text,
+  });
+  const ask = (text: string) => {
+    const read = sorcery(text);
+    // `Compilation` is a union and `script` lives only on the ok arm, which the gate's
+    // `typecheck:tests` pass is what catches (#246) — the ordinary typecheck does not read tests.
+    if (!read.ok) return null;
+    const spec = (read.script?.decisions ?? [])[0];
+    return typeof spec === 'object' && spec !== null ? spec : null;
+  };
+
+  it.each([
+    ['Dark Inquiry, the 8-card spelling', 'nonland'],
+    ['Brainbite, with no qualifier at all', ''],
+    ["Auntie's Sentence, a composed qualifier", 'nonland permanent'],
+    ['Despise', 'creature or planeswalker'],
+    ['Collective Brutality', 'instant or sorcery'],
+  ])('reads %s', (_why, qualifier) => {
+    const article = /^[aeiou]/i.test(qualifier) ? 'an' : 'a';
+    const read = sorcery(
+      'Target opponent reveals their hand. '
+      + `You choose ${qualifier === '' ? 'a' : `${article} ${qualifier}`} card from it. `
+      + 'That player discards that card.',
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    // One target for the whole spell, and it is the player whose hand is read.
+    expect((read.script?.targets ?? []).map((s) => s.kind)).toEqual(['player']);
+  });
+
+  it('asks the CASTER, out of the TARGET’s hand — both halves, or it is Mind Rot', () => {
+    const spec = ask(
+      'Target opponent reveals their hand. You choose a nonland card from it. '
+      + 'That player discards that card.',
+    );
+    expect(spec).not.toBeNull();
+    if (spec === null) return;
+    expect('who' in spec ? spec.who : null).toBe('controller');
+    expect('fromSeat' in spec ? spec.fromSeat : null).toBe('target-player');
+    expect('from' in spec ? spec.from : null).toBe('hand');
+    // Exactly one card: the printed sentence says "a card", singular, and so does the discard.
+    expect('min' in spec ? spec.min : null).toBe(1);
+    expect('max' in spec ? spec.max : null).toBe(1);
+  });
+
+  it('carries the printed qualifier as a filter, not as prose', () => {
+    const spec = ask(
+      'Target opponent reveals their hand. You choose a nonland card from it. '
+      + 'That player discards that card.',
+    );
+    expect(spec).not.toBeNull();
+    if (spec === null) return;
+    expect('filter' in spec && typeof spec.filter === 'function').toBe(true);
+    // And the prompt says which cards, so a player reading the question knows what it will accept.
+    expect('prompt' in spec ? spec.prompt : '').toContain('nonland');
+  });
+
+  it.each([
+    ['an X chosen as the spell is cast (Abandon Hope)',
+      "Look at target opponent's hand and choose X cards from it. "
+      + 'That player discards those cards.'],
+    ['a random slice of the hand rather than the hand (Blackmail)',
+      'Target player reveals three cards from their hand and you choose one of them. '
+      + 'That player discards that card.'],
+    ['an offer that has to gate the question (Cracked Skull)',
+      'Target player reveals their hand. You may choose a nonland card from it. '
+      + 'That player discards that card.'],
+    ['a filter that is an earlier answer, not printed words (Addle)',
+      'Choose a color. Target player reveals their hand and you choose a card of that color '
+      + 'from it. That player discards that card.'],
+    ['the reveal missing, so the caster would choose from cards never shown',
+      'You choose a nonland card from it. That player discards that card.'],
+    ['the discard missing, so a hand is revealed for nothing',
+      'Target opponent reveals their hand. You choose a nonland card from it.'],
+  ])('refuses %s', (_why, text) => {
+    const read = sorcery(text as string);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.length).toBeGreaterThan(0);
+  });
+});

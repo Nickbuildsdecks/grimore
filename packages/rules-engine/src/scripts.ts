@@ -15408,6 +15408,16 @@ function graveyardTypeTest(words: string): ((line: TypeLine) => boolean) | null 
   if (text === '') return () => true;
   if (text === 'nonland') return (line) => !hasType(line, 'land');
   /*
+    **`nonland` composed with a second qualifier** (D531) — "a nonland permanent card", which
+    Auntie's Sentence and Cerebral Confiscation print. Read as the conjunction the words are rather
+    than as a fourth hard-coded phrase: strip the prefix, ask this function about the rest, and AND
+    the two. One statement of one rule (D441), and the existing three callers get it for free.
+  */
+  if (text.startsWith('nonland ')) {
+    const rest = graveyardTypeTest(text.slice('nonland '.length));
+    return rest === null ? null : (line) => !hasType(line, 'land') && rest(line);
+  }
+  /*
     "Target permanent card in your graveyard" (Invoke Justice). `PERMANENT_TYPES` is the list
     already in this file for what the word means — one answer, three callers now — and it is a list
     rather than the absence of `instant` and `sorcery` because the two are not complements: a
@@ -17767,6 +17777,95 @@ function stealPrefix(
   };
 }
 
+/**
+ * **The chosen discard**, read as one group of three printed sentences (D531).
+ *
+ *     Target opponent reveals their hand. You choose a nonland card from it.
+ *     That player discards that card.
+ *
+ * Dark Inquiry, Distress, Despise, Brainbite, Collective Brutality, Corpse Traders, Deceit, Cerebral
+ * Confiscation, Auntie's Sentence and more. **95 unread legal lines** contain the third sentence;
+ * this reader takes the head of that family, the three-sentence form in its handful of spellings.
+ *
+ * ## Why a group, and not three clauses
+ *
+ * `stealPrefix`'s reason exactly (D516): three sentences and **one play**, whose parts cannot drift
+ * apart. A reveal without the discard leaks a hand for nothing; a discard without the reveal asks
+ * the caster to choose out of cards they were never shown. And the middle sentence is not an effect
+ * at all — "you choose a card from it" *is* the question, so there is nothing for a clause reader to
+ * return for it.
+ *
+ * ## The engine addition this needed, and why nothing less would do
+ *
+ * The question is asked of the **caster** and answered out of the **target's** hand. Before
+ * `CardsDecisionSpec.fromSeat` (D531) one word meant both, so the only expressible reading asked
+ * the discarding player to choose — and that is a different card which already exists: Mind Rot.
+ * Compiling this family as Mind Rot would be a card that works and does the wrong thing, which
+ * D362 ranks below leaving the line unread.
+ *
+ * The chooser may **read** those cards because `canIdentify` authorises the pending decision's own
+ * candidate list, the same list the answer is checked against — the discipline scry already uses
+ * for a library. The permission is this viewer, this question, this card, and it expires with the
+ * question.
+ *
+ * ## What it refuses, from the measured list
+ *
+ * - **"Look at target opponent's hand and choose X cards from it"** (Abandon Hope) — an X chosen as
+ *   the spell is cast, which `xSpellResolution` keeps off this path for D399's reason.
+ * - **"reveals N cards from their hand and you choose one of them"** (Blackmail, Bala Ged Thief,
+ *   Cabal Interrogator) — the pool is a random slice of the hand rather than the hand, which is a
+ *   different question and not one `fromSeat` expresses.
+ * - **"you MAY choose"** (Cracked Skull) — the offer has to gate the question, which is #337's open
+ *   gap and not this increment's.
+ * - **"Choose a color. Target player reveals their hand and you choose a card of that color"**
+ *   (Addle) — the filter is an earlier answer, not printed words.
+ *
+ * Each is left unread rather than approximated, and each is a distinct increment.
+ */
+function chosenDiscardPrefix(
+  clauses: readonly string[],
+): { readonly read: ReadEffect; readonly rest: readonly string[] } | null {
+  if (clauses.length < 3) return null;
+  const revealed = /^target (opponent|player) reveals their hand$/i.exec(clauses[0]!.trim());
+  /*
+    `a` and `an` both, and the qualifier captured as printed: "", "nonland", "nonland permanent",
+    "creature or planeswalker", "instant or sorcery". `graveyardTypeTest` is what turns those words
+    into a predicate, and it is the same function three other readers use — a hand and a graveyard
+    ask the same question about a card's printed types.
+  */
+  const chose = /^you choose an? (.*?)card from it$/i.exec(clauses[1]!.trim());
+  const discards = /^that player discards that card$/i.test(clauses[2]!.trim());
+  if (revealed === null || chose === null || !discards) return null;
+  const test = graveyardTypeTest(chose[1]!.trim());
+  if (test === null) return null;
+  const spec = targetSpecFrom(`target ${revealed[1]!.toLowerCase()}`, false);
+  if (spec === null) return null;
+  const printed = chose[1]!.trim();
+  return {
+    read: {
+      targets: [spec],
+      decisions: [{
+        // The CASTER chooses, out of the TARGET's hand. Both halves are the card.
+        who: 'controller',
+        fromSeat: 'target-player',
+        from: 'hand',
+        prompt: `Choose ${printed === '' ? 'a card' : `a ${printed} card`} to discard`,
+        min: 1,
+        max: 1,
+        filter: (state, id) => {
+          const inst = state.instances[id];
+          return inst !== undefined
+            && test(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine));
+        },
+      }],
+      // `moveToGraveyard` sends each card to its own owner's graveyard, so the card the caster
+      // picked out of an opponent's hand lands in the opponent's graveyard, not in the caster's.
+      effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
+    },
+    rest: clauses.slice(3),
+  };
+}
+
 function composeEffects(
   clauses: readonly string[], name: string, where: SubjectZone | null,
 ): ReadEffect | null {
@@ -17788,9 +17887,18 @@ function composeEffects(
     (CR 302.6); without the duration it never goes home. `stealUntilEndOfTurn` is the one function
     all of that lives in, and the pool's own hand-written Act of Treason calls it too.
   */
-  const stolen = stealPrefix(clauses);
-  const rest = stolen === null ? clauses : stolen.rest;
-  const parts: ReadEffect[] = stolen === null ? [] : [stolen.read];
+  /*
+    **Two idioms are read as a group before the clause loop**, and both for the same reason: several
+    printed sentences that are one play, whose parts cannot drift apart. `stealPrefix` is the Act of
+    Treason sentence (D516); `chosenDiscardPrefix` is the chosen discard (D531), where the middle
+    sentence is not an effect at all but the question itself.
+
+    Tried in order and at most one can match, since their first sentences are different; whichever
+    does consumes its own clauses and the loop below reads the tail.
+  */
+  const grouped = stealPrefix(clauses) ?? chosenDiscardPrefix(clauses);
+  const rest = grouped === null ? clauses : grouped.rest;
+  const parts: ReadEffect[] = grouped === null ? [] : [grouped.read];
   // Which referent kinds the loop below borrowed an earlier clause's target for (D530); the
   // licence for each is checked once `parts` is complete.
   const borrows: ('creature' | 'player')[] = [];

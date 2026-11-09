@@ -3238,21 +3238,33 @@ export function proliferateCandidates(state: GameState): string[] {
   return [...permanents, ...players];
 }
 
-/** The cards in the chooser's own zone that a decision would accept. */
+/**
+ * The cards a decision would accept, out of the **pool seat's** zone.
+ *
+ * The pool seat is the chooser unless `CardsDecisionSpec.fromSeat` says otherwise (D531), and the
+ * one family that says otherwise is the chosen discard: "Target opponent reveals their hand. You
+ * choose a nonland card from it." — the caster picks out of somebody else's hand.
+ *
+ * This is the **only** place the candidate list is computed, which is what makes the list the
+ * authorisation rather than one of two rules that could disagree. The pending decision stores what
+ * comes back, and every other reader — the `auto:decide` check, the bot's `pick`, the scry
+ * resume, and `canIdentify`'s permission to read a hidden card — reads that stored list.
+ */
 export function decisionCandidates(
-  state: GameState, spec: CardsDecisionSpec, chooser: SeatIndex,
+  state: GameState, spec: CardsDecisionSpec, chooser: SeatIndex, poolSeat?: SeatIndex,
 ): string[] {
+  const owner = poolSeat ?? chooser;
   // `library-top` is the top few cards of the chooser's own library rather than a whole zone —
   // scry looks at two cards, not at fifty-three, and the candidate list is also the authorisation
   // the answer is checked against, so taking the slice here is what stops a crafted answer
   // reaching the rest of the deck.
   const inZone = spec.from === 'library-top'
-    ? listAt(state, zoneKey(chooser, 'library')).slice(0, Math.max(0, spec.look ?? 1))
+    ? listAt(state, zoneKey(owner, 'library')).slice(0, Math.max(0, spec.look ?? 1))
     // The one question that crosses the table: every battlefield, in seat order, which is the
     // order the table reads in. See `DecisionZone`.
     : spec.from === 'any-battlefield'
       ? state.seats.flatMap((seat) => listAt(state, zoneKey(seat.index, 'battlefield')))
-      : listAt(state, zoneKey(chooser, spec.from));
+      : listAt(state, zoneKey(owner, spec.from));
   return inZone.filter((id) => {
     if (state.instances[id] === undefined) return false;
     return spec.filter === undefined || spec.filter(state, id, chooser);
@@ -3482,9 +3494,21 @@ function askOrFinish(
       with a counter on it**, on either side of the table, plus the seats. See
       `proliferateCandidates` and `CountersDecisionSpec`.
     */
+    /*
+      And the pool seat, for the one shape whose candidates are not the chooser's own (D531): the
+      spell's player target, resolved here off the stack object the same way `decisionPlan` resolves
+      `who: 'target-player'`. With no player target there is no pool, so the question has nothing
+      to ask — the same outcome, and for the same reason, as `target-player` with nothing targeted.
+    */
+    const poolSeat = !isCountersDecision(spec) && spec.fromSeat === 'target-player'
+      ? object.targets.find((t) => t.kind === 'player')
+      : undefined;
     const candidates = (isCountersDecision(spec)
       ? proliferateCandidates(state)
-      : decisionCandidates(state, spec, entry.seat)).filter((id) => !taken.has(id));
+      : decisionCandidates(
+        state, spec, entry.seat,
+        poolSeat !== undefined && poolSeat.kind === 'player' ? poolSeat.seat : undefined,
+      )).filter((id) => !taken.has(id));
     const { min, max } = decisionBounds(spec, candidates.length);
     if (max === 0 || (min === max && candidates.length === max)) {
       answers = [...answers, { seat: entry.seat, ids: max === 0 ? [] : candidates }];

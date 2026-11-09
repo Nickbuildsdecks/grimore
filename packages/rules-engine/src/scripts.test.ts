@@ -33004,3 +33004,136 @@ describe('a referent subject, played off printed text (D530)', () => {
     expect(characteristicsOf(s, s.instances[bears[1]!]!).keywords.has('reach')).toBe(false);
   });
 });
+
+describe('the chosen discard, played off printed text (D531)', () => {
+  /*
+    The runtime half, and the rows that matter are the ones no compile test can reach: **who is
+    asked**, **whose cards are on offer**, and **who may read them**.
+
+    The last is the reason this increment is more than a reader. The caster is choosing out of an
+    opponent's hand, so the engine has to show those cards to one seat and to nobody else, for the
+    length of one question. `canIdentify` authorises that off the pending decision's own candidate
+    list — and the three redaction rows below are the only check on it, because the
+    hidden-information audit (`scripts/measure/hidden-info.mjs`) drops any position with a question
+    outstanding and therefore cannot see this path at all.
+  */
+  const DATA = [
+    {
+      name: 'Probing Whisper', type_line: 'Sorcery', mana_cost: '{1}{B}', cmc: 2,
+      colors: ['B'], layout: 'normal',
+      oracle_text: 'Target opponent reveals their hand. You choose a nonland card from it. '
+        + 'That player discards that card.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'inquiry',
+      name: 'Inquiry',
+      entries: [
+        { name: 'Probing Whisper', count: 4 }, { name: 'Grizzly Bears', count: 4 },
+        { name: 'Swamp', count: 46 }, { name: 'Forest', count: 46 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData).toEqual(['Probing Whisper']);
+    return list.deck;
+  };
+
+  /** Seat 0 holding the spell with the mana for it; seat 1 holding a land and two creatures. */
+  const seated = () => arena({
+    decks: { 0: 'inquiry', 1: 'inquiry' },
+    deckSpecs: { inquiry: deck() },
+    hands: {
+      0: ['Probing Whisper'],
+      1: ['Grizzly Bears', 'Grizzly Bears', 'Swamp'],
+    },
+    battlefield: { 0: ['Swamp', 'Swamp'] },
+    turn: 5, firstSeat: 0,
+  });
+
+  /** Cast it at seat 1 and stop on the question. */
+  const toTheChoice = () => {
+    let s = advanceTo(seated(), 'precombat-main');
+    for (const id of ids(s, 0, 'battlefield')) {
+      s = apply(s, { type: 'auto:activate', by: 0, card: id, abilityIndex: 0 } as Action);
+    }
+    return drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Probing Whisper'),
+      targets: [{ kind: 'player', seat: 1 }],
+    } as Action)), 60);
+  };
+
+  it('asks the CASTER, and offers the cards in the TARGET’s hand', () => {
+    const s = toTheChoice();
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.from).toBe('hand');
+    const offered = [...(s.pendingDecision?.candidates ?? [])];
+    // Every card on offer belongs to seat 1 — none of the caster's own.
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered.every((id) => s.instances[id]?.zoneSeat === 1)).toBe(true);
+    /*
+      And the printed filter is applied: the two Bears are on offer and the Swamp is not. A reading
+      that dropped the qualifier would be a strictly better card than the one printed.
+    */
+    expect(offered.map((id) => nameOf(s, id)).sort()).toEqual(['Grizzly Bears', 'Grizzly Bears']);
+  });
+
+  it('discards the chosen card into its OWN owner’s graveyard', () => {
+    let s = toTheChoice();
+    const picked = s.pendingDecision!.candidates[0]!;
+    const before = ids(s, 1, 'hand').length;
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [picked] } as Action), 60);
+    expect(ids(s, 1, 'hand').length).toBe(before - 1);
+    expect(ids(s, 1, 'graveyard')).toContain(picked);
+    // Not into the caster's graveyard, which is where a `moveToGraveyard` keyed to the chooser
+    // would have put it.
+    expect(ids(s, 0, 'graveyard')).not.toContain(picked);
+  });
+
+  describe('who may read the revealed cards', () => {
+    it('lets the caster read exactly the cards the question put on offer', () => {
+      const s = toTheChoice();
+      const offered = [...(s.pendingDecision?.candidates ?? [])];
+      const mine = viewFor(s, 0).cards;
+      expect(offered.every((id) => mine[id]?.card !== undefined)).toBe(true);
+      /*
+        And nothing beyond them. The Swamp in the same hand is not a candidate — the card said
+        "nonland" — so it stays hidden even from the seat holding the question.
+      */
+      const swamp = ids(s, 1, 'hand').find((id) => nameOf(s, id) === 'Swamp');
+      expect(swamp).toBeDefined();
+      expect(mine[swamp!]?.card).toBeUndefined();
+    });
+
+    it('shows an onlooker nothing new', () => {
+      const s = toTheChoice();
+      /*
+        Seat 1 owns the hand so it reads its own cards either way; the row that matters is the
+        **spectator**, who is in neither seat and must see no more than before.
+      */
+      const watching = viewFor(s, null).cards;
+      expect(ids(s, 1, 'hand').every((id) => watching[id]?.card === undefined)).toBe(true);
+    });
+
+    it('takes the permission away again once the question is answered', () => {
+      let s = toTheChoice();
+      const kept = ids(s, 1, 'hand')
+        .filter((id) => id !== s.pendingDecision!.candidates[0]!)
+        .filter((id) => nameOf(s, id) === 'Grizzly Bears');
+      expect(kept.length).toBeGreaterThan(0);
+      s = drain(apply(s, {
+        type: 'auto:decide', by: 0, cards: [s.pendingDecision!.candidates[0]!],
+      } as Action), 60);
+      expect(s.pendingDecision).toBeNull();
+      /*
+        The card that was revealed and **not** taken goes back to being hidden. This is why the
+        permission rides the pending decision rather than `inst.revealed`: a flag would have left
+        it face up for the rest of the game.
+      */
+      const mine = viewFor(s, 0).cards;
+      expect(kept.every((id) => mine[id]?.card === undefined)).toBe(true);
+    });
+  });
+});

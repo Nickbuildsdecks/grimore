@@ -1131,11 +1131,36 @@ export interface CardsDecisionSpec {
   readonly who: 'controller' | 'target-player' | 'each-player' | 'each-opponent'
   | 'hit-player' | 'acting-player';
   /**
-   * Which zone, from the chooser's own side. `library` is a search: the chooser may look through
-   * the whole library while deciding, as they would at a table, and it is shuffled afterwards
-   * (CR 701.19e) — which is also what stops them keeping the order they just read.
+   * Which zone. From the chooser's own side unless `fromSeat` says otherwise. `library` is a
+   * search: the chooser may look through the whole library while deciding, as they would at a
+   * table, and it is shuffled afterwards (CR 701.19e) — which is also what stops them keeping the
+   * order they just read.
    */
   readonly from: DecisionZone;
+  /**
+   * **Whose** zone the candidates come out of, when that is not the chooser's (D531).
+   *
+   * Default `chooser`, which is every question written before this field existed, so nothing had
+   * to change. `target-player` is the pool on the spell's player target while the *chooser* stays
+   * whoever `who` names.
+   *
+   * One family needs it and it is the one this field was measured for: "Target opponent reveals
+   * their hand. You choose a nonland card from it. That player discards that card." — Dark Inquiry,
+   * Distress, Despise, Brainbite, Collective Brutality and the rest, **95 unread legal lines** on
+   * the sentence. The whole point of the card is that the **caster** picks. Asking the discarding
+   * player instead is a different card, and that card already exists: it is Mind Rot.
+   *
+   * Splitting chooser from pool is therefore not a convenience. Before this, `who` meant both at
+   * once — `decisionCandidates` read `zoneKey(chooser, from)` — so the family could not be
+   * expressed at all, and reading it with `who: 'target-player'` would have compiled a card that
+   * works and does the wrong thing (D362), which is worse than the unread line.
+   *
+   * It does **not** widen what a player may see on its own. `canIdentify` decides that, and it
+   * authorises reading a hidden card off the engine's own candidate list — the same list an
+   * `auto:decide` answer is checked against — rather than off a second rule that could disagree
+   * with it. That is the discipline scry already uses for a library.
+   */
+  readonly fromSeat?: 'chooser' | 'target-player';
   /**
    * For `library-top`: how many cards off the top the question is about. Ignored everywhere else.
    *
