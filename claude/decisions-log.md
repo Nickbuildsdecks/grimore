@@ -35224,3 +35224,62 @@ shapes are also the ones players meet, so breadth and experience point the same 
 
 One row is a question rather than an answer: **`Draw a card` on 12 cards**. A bare draw is read, so
 that row is a clause the composer refused *in context* — the next probe, not the next reader.
+
+---
+
+## D519 — Correcting myself twice, and finding the actual lever
+
+### The correction that matters
+
+D518's in-play queue put `At the beginning of combat on your turn, …` at the top: 18 of 40 pods, 262
+distinct legal printings, **110 of them with it as their only unread line**. I called that four
+times D517's haul from one reader. **That was wrong, and wrong twice over.**
+
+First, the prologue was already read — `scripts.ts` has had the `begin-combat` row since the
+258-printing family was measured. So the 110 cards are not blocked by the prologue at all; they are
+blocked by their **tails**, and the whole line refuses because a line is read whole or not at all
+(D487).
+
+Second, and the part that changes the plan: grouping those 110 by the tail's opening verb phrase
+gives roughly **sixty** groups, the largest being eleven. There is no reader here worth 110 cards.
+The shapes that look big by card count are big because many cards share a *prologue*, not because
+they share an *effect* — and the prologues are largely done.
+
+Worth stating plainly because it is the second time this project has been misled by a queue that
+counts cards per shape: `one-line-short.mjs` and D518's in-play ranking both group by the line, and a
+line's *first seven words* are its prologue. Both queues therefore rank prologue families, which is
+why they agreed — and neither was answering "what reader should I write".
+
+### What the measurement says instead
+
+So the question was asked of the clause rather than the line. Of the **16,823 legal cards that are
+exactly one unread line from finished**, how many have that line *containing* each recurring
+combinator:
+
+| cards | combinator |
+| --- | --- |
+| **950** | `for each <thing>` |
+| **713** | `where X is …` |
+| **591** | `you may <verb>. If you do, <effect>` |
+| 442 | `. Then <clause>` |
+| 364 | `if you control <thing>,` |
+| 276 | `up to one target` |
+| 194 | `you may pay <cost>. If you do` (a subset of the 591) |
+| 162 | `When you do,` |
+| 36 | `you may have target …` |
+| 30 | `if you've cast … this turn` |
+
+These are **ten to forty times** any card-shape family, and they are upper bounds rather than
+promises: a card whose line contains `for each` may be unread for a second reason in the same line.
+As a ranking of where effort pays, it is far better evidence than either shape queue.
+
+### The plan this sets
+
+The path to high coverage is **a small number of clause combinators**, not thousands of card shapes.
+That is D514's lesson — "a clause is worth more than a line" — generalised, and it is the first
+piece of evidence in this project that the long tail is tractable at all: 13,245 distinct shapes is
+hopeless, eight combinators is not.
+
+The top two share their machinery. `for each <countable>` and `where X is <count>` are both **a
+number read off the board**, which is what `countFrom` already is. So they are one increment, not
+two, and it is the next one.
