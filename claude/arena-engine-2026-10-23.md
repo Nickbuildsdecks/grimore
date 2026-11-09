@@ -18813,3 +18813,11 @@ reason: they read `c.blocked`, a referent source this increment never wired.
 
 D441 deletes a duplicate statement of one rule. These are not duplicates, and the probe is what
 establishes that rather than an argument about it.
+
+### The pod sweep
+
+**40/40 pods finished** at a fresh seed (SEED0=40201) on the clean commit, no engine throw and no
+stalled table, 70.3 turns and 382 moves a game. Per 100-card deck across the 160 decks built: 25.0
+cards with a hand-written script, 48.0 with at least one line nothing could read, 61.7 playable only
+because of the printed data, and 0.5 cardboard. The seed is fresh rather than reused, which is the
+D226 rule: one seed is one shuffle wearing many deck pairings.
