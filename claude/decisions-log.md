@@ -39314,3 +39314,101 @@ thousand.
 The gate caught one stale refusal before this was committed (D516's kind): D563's compile row
 "leaves a condition that needs a filter unread" used "a creature with power 4 or greater", which
 this increment reads. Retargeted to "a creature with flying".
+
+## D565 — One sentence, two events; and the question that found them
+
+Two increments of intervening-if conditions were found by asking "for which unread lines does
+the rest of the sentence already read?" The same question, asked of trigger lines with **no**
+condition:
+
+    unread trigger lines with no "if":                       8,728
+    whose effect already reads behind "When ~ enters, …":    1,274
+    cards that reading the event alone would finish:           630
+
+So for one unread trigger line in seven, the effect was never the problem — the **event** was.
+That is a different picture from the one the "most common unread openings" table gives, which
+ranks by how a line starts and says nothing about which half of it is unread.
+
+The events are a long tail (the largest finishes 18 cards), so this is the first slice of it,
+chosen by one criterion: **both halves are already rows in `TRIGGER_SHAPES`**, so each is a line
+in a table and no engine work at all.
+
+| printed | events | lines read | cards finished |
+| --- | --- | --- | --- |
+| Whenever ~ enters or attacks, … | `etb` self, `attacks` | 33 | 16 |
+| Whenever ~ attacks or blocks, … | `attacks`, `blocking-creature` | 10 | 8 |
+| When ~ enters or leaves the battlefield, … | `etb` self, `leaves` | 6 | 5 |
+| Whenever a creature dies, … | `dies`, any creature | 12 | 6 |
+| Whenever a creature an opponent controls dies, … | `dies`, `of: 'opponent'` | 11 | 6 |
+
+The table has taken a list of events since D134 and each becomes its own `TriggerDef`, so "enters
+or attacks" is two triggers saying the same thing. Three details that are decisions:
+
+- **"Blocks", bare, is the batched event** (`blocking-creature`, D482): once per declaration
+  however many creatures were blocked, which is what `blockTrigger` already uses for the bare word.
+- **"Enters or leaves" has no settled zone** for the clause's own subject — a permanent that left
+  could be in any of four — so `where` is null for the pair and a clause that needs one refuses.
+- **A once-a-turn restriction on a pair refuses the line**, by the existing rule: two events are
+  two records, and one printed ability must not fire once per kind.
+
+"A creature dies" needed no new event: `who: 'any'` with no `of` is what "~ or another creature
+dies" already meant. `of: 'opponent'` has been in the event type since D134 and no printed row had
+asked for it.
+
+### Tests
+
+Eight table rows on five printed cards, each pair tested on **both** of its events — a row that
+read only the first half would pass a test of the first half:
+
+- Grave Titan: two Zombies on arrival, four after its first attack;
+- Howling Golem: both players draw when it attacks, and again when it blocks, with the hands read
+  around the block so the turn's own draw is not in the difference;
+- Aven Riftwatcher: 22 life on entering, 24 after it is bounced;
+- Moonlit Wake gains a life when your Bears dies and when theirs does;
+- Malakir Cullblade gets a counter when their Bears dies and **none** when yours does.
+
+Ten compile rows: six sentences read with their exact event lists, four refusals (the once-a-turn
+pair, three events, a pair with a half that is not a row, a narrower death).
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 24,047 | **24,120** of 56,421 (42.8%) |
+| cards with a compiled script | 12,326 | **12,377** (40.3%) |
+| cards with every printed line read | 8,122 | **8,164** |
+
++42 fully read from five lines in a table.
+
+### The queue this leaves, by cards finished
+
+Each of these needs an **event the engine does not raise yet**, which is why they are not in this
+increment: `~ is dealt damage` (18), `you cycle or discard a card` (10), `you cast a historic
+spell` (9), `a creature you control attacks alone` (9), `~ deals damage to an opponent` (8),
+`you cast an instant or sorcery spell that targets a creature` (8), `a creature dealt damage by ~
+this turn dies` (7), `~ becomes untapped` (6).
+
+D564's pod sweep (SEED0=43401): 40 of 40 to a finish, no throw, no stall. D564 also gained three
+table rows before its break run: a permanent that left under your control but is **owned** by an
+opponent (a record keyed by owner would get it wrong and no earlier row could tell), and the
+next-turn reset for the departure and life-gained records.
+
+### Break harness for D562 and D563: 21 of 26, and what each miss turned out to be
+
+Twenty-six breaks in 46 minutes. Five were not caught, and they were four different things:
+
+| break | what it was | what was done |
+| --- | --- | --- |
+| D563: "there are N or more" is always true | **a missing test.** The condition had a compile row showing it reads and nothing that ever asked it | three direct rows: two creature cards in your graveyard, three, four — with three in the *opponent's* graveyard throughout, which are not yours |
+| D562: a referent the base never named is read anyway | **a second guard for a thing already guarded.** With no target phrase to substitute, the kicked half either fails to read or reads with targets the base lacks, and both are refused further down | the early return is removed; the rule that checks the result is the guard |
+| D563: an "if" later in the effect is taken for the condition | **a guard nothing reaches yet.** Measured on the corpus: 29 unread lines match without the no-comma rule, and none of them would go on to read today, because their effects are unread | kept, with that measurement written at the rule. It is what stops each of the 29 being misread on the day its effect is learned |
+| D562: the clause reader is tried before the damage family | **not a defect.** The two readers are disjoint: the damage sentence's kicked half ("it deals 4 damage instead") has no target and does not read as a clause | nothing; the order is immaterial and now says so here |
+| D563: the wrapper runs before the trigger reader | **not a defect**, for the same reason: no line is read by both today | nothing; it stays after `triggerFromLine` for the stated reason, which is about a future overlap |
+
+Also in that spec, with a patch that compiles this time: "the arrival pass forgets bloodthirst"
+(D560) — caught by six rows, D558's cast rows among them, since the arrival pass is now the only
+place bloodthirst is applied.
+
+The honest summary of the two orderings is that a break which changes nothing observable is not a
+missed catch, and the harness cannot tell the difference; I can, by asking whether any input
+separates the two programs. For the reader orders none does.

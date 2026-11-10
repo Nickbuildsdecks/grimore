@@ -17400,3 +17400,48 @@ describe('the second condition vocabulary, and the ability word in front of it (
     expect(got.unread.map((u) => u.line)).toEqual([line]);
   });
 });
+
+describe('one sentence, two events — and two death prologues (D565)', () => {
+  const creature = (text: string) => {
+    const got = compileCard({
+      name: 'Grave Titan', type_line: 'Creature — Giant', mana_cost: '{4}{B}{B}', cmc: 6,
+      colors: ['B'], power: '6', toughness: '6', layout: 'normal', oracle_text: text,
+    });
+    expect(got.ok).toBe(true);
+    if (!got.ok) throw new Error('refused');
+    return got;
+  };
+
+  it.each([
+    ['Whenever Grave Titan enters or attacks, create two 2/2 black Zombie creature tokens.',
+      [{ kind: 'etb', who: 'self' }, { kind: 'attacks' }]],
+    ['Whenever this creature enters or attacks, draw a card.',
+      [{ kind: 'etb', who: 'self' }, { kind: 'attacks' }]],
+    ['Whenever Grave Titan attacks or blocks, each player draws a card.',
+      [{ kind: 'attacks' }, { kind: 'blocking-creature' }]],
+    ['When Grave Titan enters or leaves the battlefield, you gain 2 life.',
+      [{ kind: 'etb', who: 'self' }, { kind: 'leaves' }]],
+    ['Whenever a creature dies, you gain 1 life.',
+      [{ kind: 'dies', who: 'any', what: 'creature' }]],
+    ['Whenever a creature an opponent controls dies, put a +1/+1 counter on Grave Titan.',
+      [{ kind: 'dies', who: 'any', of: 'opponent', what: 'creature' }]],
+  ])('reads %s as one trigger per event', (line, events) => {
+    const got = creature(line);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script!.triggers!.map((t) => t.on)).toEqual(events);
+    // One printed ability: every trigger it becomes says the same thing.
+    expect(new Set(got.script!.triggers!.map((t) => t.description)).size).toBe(1);
+  });
+
+  it.each([
+    ['a once-a-turn restriction on two events, which would be two records',
+      'Whenever Grave Titan enters or attacks, draw a card. This ability triggers only once each turn.'],
+    ['three events', 'Whenever Grave Titan enters, attacks, or blocks, draw a card.'],
+    ['a pair one of whose halves is not an event row', 'Whenever Grave Titan attacks or becomes untapped, draw a card.'],
+    ['a narrower death', 'Whenever a nontoken creature dies, you gain 1 life.'],
+  ])('leaves %s unread', (_what, line) => {
+    const got = creature(line);
+    expect(got.script?.triggers ?? []).toEqual([]);
+    expect(got.unread.map((u) => u.line)).toEqual([line]);
+  });
+});

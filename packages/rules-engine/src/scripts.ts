@@ -14070,6 +14070,37 @@ const TRIGGER_SHAPES: readonly ({
     on: [{ kind: 'etb', who: 'self' }, { kind: 'dies' }],
   },
   /*
+    Three more pairs of the same shape (D565): one printed sentence, two events, one effect.
+
+    The measurement that found them asked a different question from the keyword audit's — not
+    "which lines are unread" but "which unread trigger lines have an effect that **already
+    reads**": 1,274 of 8,728, so for those the only thing missing was the event. These three are
+    the commonest where both events were already rows of their own, which makes each one a line
+    in this table and nothing else.
+
+    - `enters or attacks` — Aetherwind Basker and 61 others, the largest pair in the corpus.
+    - `attacks or blocks` — Ashcoat of the Shadow Swarm and 32 others. The **bare** blocks, so the
+      batched `blocking-creature` event `blockTrigger` uses for it (D482): once per declaration,
+      however many creatures were blocked.
+    - `enters or leaves the battlefield` — Aven Riftwatcher. `leaves` has no settled zone for the
+      clause's own subject, so `where` is null for this pair and a clause that needs one refuses.
+
+    A once-a-turn restriction on any of them refuses the line, by the rule below: two events would
+    be two records.
+  */
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} ${ENTERS} or attacks, (.+)$`, 'i'),
+    on: [{ kind: 'etb', who: 'self' }, { kind: 'attacks' }],
+  },
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} attacks or blocks, (.+)$`, 'i'),
+    on: [{ kind: 'attacks' }, { kind: 'blocking-creature' }],
+  },
+  {
+    prologue: (self) => new RegExp(`^When(?:ever)? ${self} ${ENTERS} or leaves the battlefield, (.+)$`, 'i'),
+    on: [{ kind: 'etb', who: 'self' }, { kind: 'leaves' }],
+  },
+  /*
     The same shape spelled the long way, which is what a **noncreature** permanent has to print:
     "dies" is defined for creatures only (CR 700.4), so Ichor Wellspring — an artifact — says
     "or is put into a graveyard from the battlefield" instead. `to-graveyard` is the event the
@@ -14578,6 +14609,21 @@ const TRIGGER_SHAPES: readonly ({
   {
     prologue: () => /^Whenever another creature dies, (.+)$/i,
     on: [{ kind: 'dies', who: 'another', of: 'any', what: 'creature' }],
+  },
+  /*
+    And the two death prologues the table was missing (D565). `who: 'any'` with no `of` is what
+    "~ or another creature dies" above already means — any creature at all, this one included —
+    and "a creature dies" is that sentence said more plainly (Blood Artist prints the long form,
+    Ashes of the Abhorrent the short). `of: 'opponent'` has been in the event type since D134 and
+    no printed row asked for it.
+  */
+  {
+    prologue: () => /^Whenever a creature dies, (.+)$/i,
+    on: [{ kind: 'dies', who: 'any', what: 'creature' }],
+  },
+  {
+    prologue: () => /^Whenever a creature an opponent controls dies, (.+)$/i,
+    on: [{ kind: 'dies', who: 'any', of: 'opponent', what: 'creature' }],
   },
   {
     prologue: () => /^Whenever another creature you control dies, (.+)$/i,
@@ -21011,7 +21057,10 @@ function interveningConditionFor(
  * Three refusals, each of which leaves the line reported:
  *
  * - the prologue may not contain a comma, so the "if" is the first clause after the event and not
- *   something later in the effect ("…, then if you control…");
+ *   something later in the effect ("…, then if you control…"). Measured, because no test can
+ *   show this one working: 29 unread legal lines match without the rule, and today none of them
+ *   would go on to read, so relaxing it changes nothing **yet** — it is what stops each of the 29
+ *   being misread on the day its effect is learned;
  * - the condition must be one `interveningConditionFor` reads;
  * - the shorter sentence must come back as **one trigger and nothing else**. Any event is fine —
  *   the condition is about the board, not about how the card arrived — but a second field would be
@@ -21359,8 +21408,14 @@ function kickerClausePairFor(
     const phrase = new RegExp(
       `\\btarget (?:[\\w'-]+ )*?${noun}(?: card)?(?: you control| you don't control| an opponent controls)?`, 'i',
     ).exec(baseText);
-    if (phrase === null) return null;
-    altText = tail.replace(KICKED_REFERENT, phrase[0].toLowerCase());
+    /*
+      No early return when the base names nothing to refer to. The break harness showed the one
+      there was could not be told from its absence (D562's run): left unsubstituted, "that
+      creature gets +5/+5" does not read and is refused two lines down; substituted wrongly, it
+      reads with targets the base does not have and is refused by the shape rule. Either way the
+      rule that checks the result is the guard, so there is one guard and not two.
+    */
+    if (phrase !== null) altText = tail.replace(KICKED_REFERENT, phrase[0].toLowerCase());
   }
   const alt = spellScriptFor([sentence(altText)], name);
   const altEffect = alt.script?.onResolve;

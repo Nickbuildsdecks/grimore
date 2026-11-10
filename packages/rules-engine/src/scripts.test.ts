@@ -37718,11 +37718,49 @@ describe('what happened this turn: raid, morbid, revolt and life gained (D564)',
       s = cast(s, 'Airdrop Aeronauts');
       expect(life(s, 0)).toBe(20);
     });
+
+    it('counts by who controlled it, not who owns it', () => {
+      // Their Bears, taken, then bounced: it left the battlefield under **your** control, which is
+      // what "a permanent you controlled" says. A record keyed by owner would say theirs.
+      let s = start(['Unsummon', 'Airdrop Aeronauts'], [], ['Grizzly Bears']);
+      const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+      s = drain(gainControl(s, bears, 0), 20);
+      expect(s.instances[bears]!.zoneSeat).toBe(0);
+      expect(s.instances[bears]!.owner).toBe(1);
+      // Changing control is not leaving: nothing recorded yet.
+      expect(s.leftBattlefieldThisTurn ?? {}).toEqual({});
+      s = cast(s, 'Unsummon', { targets: [{ kind: 'card', id: bears }] });
+      expect(s.leftBattlefieldThisTurn).toEqual({ 0: 1 });
+      s = cast(s, 'Airdrop Aeronauts');
+      expect(life(s, 0)).toBe(25);
+    });
+
+    it('last turn\'s departure is forgotten', () => {
+      let s = start(['Unsummon', 'Airdrop Aeronauts'], ['Grizzly Bears']);
+      s = cast(s, 'Unsummon', { targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Grizzly Bears') }] });
+      s = advanceTo(nextTurn(nextTurn(s)), 'precombat-main');
+      expect(s.activeSeat).toBe(0);
+      expect(s.leftBattlefieldThisTurn ?? {}).toEqual({});
+      s = cast(s, 'Airdrop Aeronauts');
+      expect(life(s, 0)).toBe(20);
+    });
   });
 
   describe('"if you gained 4 or more life this turn"', () => {
     const salve = (s: GameState): GameState =>
       cast(s, 'Healing Salve', { modes: [0], targets: [{ kind: 'player', seat: 0 }] });
+
+    it('life gained last turn does not count towards this one', () => {
+      // Six on turn five makes an Angel at that end step; nothing gained after it makes no more.
+      let s = start(['Healing Salve', 'Healing Salve'], ['Angelic Accord']);
+      s = salve(salve(s));
+      s = nextTurn(s);
+      expect(named(s, 0, 'Angel')).toBe(1);
+      expect(s.lifeGainedThisTurn ?? {}).toEqual({});
+      // "Each end step": the opponent's passes with no life gained, and so does your next.
+      s = nextTurn(nextTurn(s));
+      expect(named(s, 0, 'Angel')).toBe(1);
+    });
 
     it.each([
       [1, 3, 0],
@@ -37848,6 +37886,24 @@ describe('conditions about a player and the board, asked directly (D564)', () =>
     expect(ask(clause, { ...board(), ...record } as GameState)).toBe(expected);
   });
 
+  it.each([
+    [2, false],
+    [3, true],
+    [4, true],
+  ])('"there are three or more creature cards in your graveyard" with %i of them', (count, expected) => {
+    // D563's condition, which had a compile row and nothing that asked it: the break harness
+    // turned it into "always true" and no test noticed. Two is one short; four is "or more".
+    const s = advanceTo(arena({
+      decks: { 0: 'plain-board', 1: 'plain-board' },
+      deckSpecs: { 'plain-board': plain() },
+      graveyard: { 0: Array<string>(count).fill('Grizzly Bears'), 1: ['Hill Giant', 'Hill Giant', 'Hill Giant'] },
+      battlefield: { 0: ['Forest'], 1: ['Forest'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    // The opponent's three are in *their* graveyard and are not counted.
+    expect(ask('there are three or more creature cards in your graveyard', s)).toBe(expected);
+  });
+
   it('answers "nothing happened" for a record saved before the fields existed', () => {
     // The four fields are optional so an older game still loads; a reader must not throw on it.
     const { attackedThisTurn, creaturesDiedThisTurn, leftBattlefieldThisTurn, lifeGainedThisTurn, ...old } = board();
@@ -37856,5 +37912,145 @@ describe('conditions about a player and the board, asked directly (D564)', () =>
       'you attacked this turn', 'a creature died this turn', 'you gained life this turn',
       'a permanent you controlled left the battlefield this turn',
     ]) expect(ask(clause, old as GameState)).toBe(false);
+  });
+});
+
+describe('one sentence, two events — and two death prologues (D565)', () => {
+  /*
+    "Whenever Grave Titan enters **or attacks**, create two 2/2 black Zombie creature tokens." One
+    printed ability that triggers on either of two events. Each pair is tested on **both** events,
+    because a row that read only the first half would still pass a test of the first half.
+
+    And two prologues the table lacked: "a creature dies" (anybody's) and "a creature an opponent
+    controls dies" (theirs only), each tested on a creature of each side.
+
+    Five printed cards, none in the pool, rows copied from the corpus unchanged.
+  */
+  const DATA = [
+    {
+      name: 'Grave Titan', type_line: 'Creature — Giant', mana_cost: '{4}{B}{B}', cmc: 6,
+      colors: ['B'], power: '6', toughness: '6', layout: 'normal',
+      oracle_text: 'Deathtouch\nWhenever Grave Titan enters or attacks, create two 2/2 black Zombie creature tokens.',
+    },
+    {
+      name: 'Howling Golem', type_line: 'Artifact Creature — Golem', mana_cost: '{3}', cmc: 3,
+      colors: [], power: '2', toughness: '3', layout: 'normal',
+      oracle_text: 'Whenever Howling Golem attacks or blocks, each player draws a card.',
+    },
+    {
+      name: 'Aven Riftwatcher', type_line: 'Creature — Bird Rebel Soldier', mana_cost: '{2}{W}',
+      cmc: 3, colors: ['W'], power: '2', toughness: '3', layout: 'normal',
+      oracle_text: 'Flying\nVanishing 3 (This creature enters with three time counters on it. At the beginning of your upkeep, remove a time counter from it. When the last is removed, sacrifice it.)\nWhen Aven Riftwatcher enters or leaves the battlefield, you gain 2 life.',
+    },
+    {
+      name: 'Moonlit Wake', type_line: 'Enchantment', mana_cost: '{2}{W}', cmc: 3, colors: ['W'],
+      layout: 'normal', oracle_text: 'Whenever a creature dies, you gain 1 life.',
+    },
+    {
+      name: 'Malakir Cullblade', type_line: 'Creature — Vampire Warrior', mana_cost: '{1}{B}',
+      cmc: 2, colors: ['B'], power: '1', toughness: '1', layout: 'normal',
+      oracle_text: 'Whenever a creature an opponent controls dies, put a +1/+1 counter on Malakir Cullblade.',
+    },
+  ];
+  const PRINTED = DATA.map((row) => row.name).sort();
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'pairs',
+      name: 'Pairs',
+      entries: [
+        ...DATA.map((row) => ({ name: row.name, count: 4 })),
+        { name: 'Grizzly Bears', count: 4 }, { name: 'Shock', count: 4 }, { name: 'Unsummon', count: 4 },
+        { name: 'Swamp', count: 10 }, { name: 'Plains', count: 8 }, { name: 'Mountain', count: 6 },
+        { name: 'Island', count: 4 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual(PRINTED);
+    return list.deck;
+  };
+
+  const LANDS = ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Plains', 'Plains', 'Mountain', 'Mountain', 'Island'];
+
+  const start = (
+    hand: readonly string[], mine: readonly string[] = [], theirs: readonly string[] = [],
+  ): GameState => advanceTo(arena({
+    decks: { 0: 'pairs', 1: 'pairs' },
+    deckSpecs: { pairs: deck() },
+    hands: { 0: [...hand] },
+    battlefield: { 0: [...LANDS, ...mine], 1: [...theirs] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  const cast = (s: GameState, name: string, extra: Partial<Extract<Action, { type: 'auto:cast' }>> = {}): GameState =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), ...extra })));
+  const named = (s: GameState, seat: SeatIndex, name: string): number =>
+    ids(s, seat, 'battlefield').filter((id) => nameOf(s, id) === name).length;
+  const shock = (s: GameState, id: string): GameState => cast(s, 'Shock', { targets: [{ kind: 'card', id }] });
+
+  it('enters or attacks — Grave Titan makes two Zombies arriving, and two more attacking', () => {
+    let s = cast(start(['Grave Titan']), 'Grave Titan');
+    expect(named(s, 0, 'Zombie')).toBe(2);
+    s = advanceTo(nextTurn(nextTurn(s)), 'declare-attackers');
+    expect(s.activeSeat).toBe(0);
+    const titan = find(s, 0, 'battlefield', 'Grave Titan');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: titan, defender: 1 }] }));
+    expect(named(s, 0, 'Zombie')).toBe(4);
+  });
+
+  it('attacks or blocks — Howling Golem draws for both players on the attack', () => {
+    let s = advanceTo(start([], ['Howling Golem']), 'declare-attackers');
+    const mine = ids(s, 0, 'hand').length;
+    const theirs = ids(s, 1, 'hand').length;
+    const golem = find(s, 0, 'battlefield', 'Howling Golem');
+    s = drain(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: golem, defender: 1 }] }));
+    expect(ids(s, 0, 'hand').length).toBe(mine + 1);
+    expect(ids(s, 1, 'hand').length).toBe(theirs + 1);
+  });
+
+  it('attacks or blocks — and again when it blocks, once for the block', () => {
+    // Seat 1's turn: their Bears attacks, the Golem blocks. Hands are read around the block
+    // itself, so the turn's own draw is not in the difference.
+    let s = advanceTo(nextTurn(start([], ['Howling Golem'], ['Grizzly Bears'])), 'declare-attackers');
+    expect(s.activeSeat).toBe(1);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    const golem = find(s, 0, 'battlefield', 'Howling Golem');
+    s = passBoth(apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: bears, defender: 0 }] }));
+    const mine = ids(s, 0, 'hand').length;
+    const theirs = ids(s, 1, 'hand').length;
+    s = drain(apply(s, { type: 'auto:block', by: 0, blocks: [{ blocker: golem, attacker: bears }] }));
+    expect(ids(s, 0, 'hand').length).toBe(mine + 1);
+    expect(ids(s, 1, 'hand').length).toBe(theirs + 1);
+  });
+
+  it('enters or leaves the battlefield — Aven Riftwatcher gains two each way', () => {
+    let s = cast(start(['Aven Riftwatcher', 'Unsummon']), 'Aven Riftwatcher');
+    expect(life(s, 0)).toBe(22);
+    s = cast(s, 'Unsummon', { targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Aven Riftwatcher') }] });
+    expect(named(s, 0, 'Aven Riftwatcher')).toBe(0);
+    expect(life(s, 0)).toBe(24);
+  });
+
+  it.each([
+    ['your own Bears', 0],
+    ['an opponent\'s Bears', 1],
+  ])('"a creature dies" — Moonlit Wake gains a life for %s', (_whose, seat) => {
+    let s = start(['Shock'], seat === 0 ? ['Moonlit Wake', 'Grizzly Bears'] : ['Moonlit Wake'], seat === 1 ? ['Grizzly Bears'] : []);
+    s = shock(s, find(s, seat as SeatIndex, 'battlefield', 'Grizzly Bears'));
+    expect(named(s, seat as SeatIndex, 'Grizzly Bears')).toBe(0);
+    expect(life(s, 0)).toBe(21);
+  });
+
+  it.each([
+    ['an opponent\'s Bears', 1, 1],
+    ['your own Bears', 0, 0],
+  ])('"a creature an opponent controls dies" — for %s the Cullblade gets %i counter', (_whose, seat, counters) => {
+    // The same death on the other side of the table. Your own creature dying is not theirs.
+    let s = start(['Shock'], seat === 0 ? ['Malakir Cullblade', 'Grizzly Bears'] : ['Malakir Cullblade'], seat === 1 ? ['Grizzly Bears'] : []);
+    s = shock(s, find(s, seat as SeatIndex, 'battlefield', 'Grizzly Bears'));
+    expect(named(s, seat as SeatIndex, 'Grizzly Bears')).toBe(0);
+    const blade = find(s, 0, 'battlefield', 'Malakir Cullblade');
+    expect(s.instances[blade]!.counters['+1/+1'] ?? 0).toBe(counters);
   });
 });
