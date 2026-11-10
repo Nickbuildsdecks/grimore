@@ -15077,6 +15077,18 @@ describe('embalm and eternalize: a token copy of the card, with different charac
       expect(nameOf(s, second.card)).toBe('Sunscourge Champion');
       expect(second.discarded === undefined ? null : nameOf(s, second.discarded)).toBe('Swamp');
     });
+
+    it('is paid by the bot with a card it wanted, because eternalize is used once', () => {
+      // Four Plains and a Vraska's Contempt they cannot cast: no spare land and no madness card,
+      // so this is the card the D580 rule keeps away from an ability that could be paid again.
+      // Eternalize exiles its own card as part of the cost, so it cannot be.
+      const s = champion(4, ["Vraska's Contempt"]);
+      const action = botAction(s, 0);
+      expect(action?.type).toBe('auto:activate');
+      if (action?.type !== 'auto:activate') return;
+      expect(nameOf(s, action.card)).toBe('Sunscourge Champion');
+      expect(action.discarded === undefined ? null : nameOf(s, action.discarded)).toBe("Vraska's Contempt");
+    });
   });
 
   it('an embalmed Angel of Sanctions exiles a permanent again, and gives it back when it dies', () => {
@@ -40755,5 +40767,220 @@ describe('Fireball: any number of targets, the damage divided evenly, and {1} mo
     expect(nameOf(s, action.card)).toBe('Fireball');
     expect(action.targets).toHaveLength(1);
     expect(action.x).toBe(4);
+  });
+});
+
+describe('"Discard a card" read off the printed cost of an ability (D580)', () => {
+  /*
+    The field is D579's and was written for one hand-written card. Here it is read from the cost
+    of a compiled one: 206 legal lines print these three words as a component, and each of the
+    six rows below is the whole Oracle row of a real card that now compiles with nothing unread.
+  */
+  const GOBLIN = {
+    name: 'Rummaging Goblin', type_line: 'Creature — Goblin Rogue', mana_cost: '{2}{R}', cmc: 3,
+    colors: ['R'], power: '1', toughness: '1', layout: 'normal',
+    oracle_text: '{T}, Discard a card: Draw a card.',
+  };
+  const CONSTRICTOR = {
+    name: 'Noose Constrictor', type_line: 'Creature — Snake', mana_cost: '{1}{G}', cmc: 2,
+    colors: ['G'], power: '2', toughness: '2', layout: 'normal',
+    oracle_text: 'Reach\nDiscard a card: Noose Constrictor gets +1/+1 until end of turn.',
+  };
+  const ILLUSION = {
+    name: 'Pulsating Illusion', type_line: 'Creature — Illusion', mana_cost: '{4}{U}', cmc: 5,
+    colors: ['U'], power: '0', toughness: '1', layout: 'normal',
+    oracle_text: 'Flying\nDiscard a card: Pulsating Illusion gets +4/+4 until end of turn. Activate only once each turn.',
+  };
+  const FAMILIAR = {
+    name: 'Skirge Familiar', type_line: 'Creature — Phyrexian Imp', mana_cost: '{4}{B}', cmc: 5,
+    colors: ['B'], power: '3', toughness: '2', layout: 'normal',
+    oracle_text: 'Flying\nDiscard a card: Add {B}.',
+  };
+  const APPRENTICE = {
+    name: 'Overeager Apprentice', type_line: 'Creature — Human Minion', mana_cost: '{2}{B}', cmc: 3,
+    colors: ['B'], power: '1', toughness: '2', layout: 'normal',
+    oracle_text: 'Discard a card, Sacrifice Overeager Apprentice: Add {B}{B}{B}.',
+  };
+  const NEONATE = {
+    name: 'Insolent Neonate', type_line: 'Creature — Vampire', mana_cost: '{R}', cmc: 1,
+    colors: ['R'], power: '1', toughness: '1', layout: 'normal',
+    oracle_text: "Menace (This creature can't be blocked except by two or more creatures.)\nDiscard a card, Sacrifice Insolent Neonate: Draw a card.",
+  };
+  const PRINTED = [GOBLIN, CONSTRICTOR, ILLUSION, FAMILIAR, APPRENTICE, NEONATE];
+  const pitchList = customDeck({
+    id: 'pitch',
+    name: 'Pitch',
+    entries: [
+      ...PRINTED.map((row) => ({ name: row.name, count: 4 })),
+      { name: 'Fiery Temper', count: 4 },
+      { name: 'Hellrider', count: 4 },
+      { name: 'Dark Ritual', count: 4 },
+      { name: 'Mountain', count: 12 },
+      { name: 'Swamp', count: 12 },
+    ],
+    data: PRINTED as never[],
+  }).deck;
+  /** Seat 0 in its main phase with exactly this hand: the card the draw step added goes back. */
+  const table = (mine: readonly string[], hand: readonly string[]): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'pitch', 1: 'tidal-mind' },
+      deckSpecs: { pitch: pitchList },
+      hands: { 0: [...hand] },
+      battlefield: { 0: [...mine] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const wanted = [...hand];
+    for (const id of [...ids(s, 0, 'hand')]) {
+      const at = wanted.indexOf(nameOf(s, id));
+      if (at >= 0) { wanted.splice(at, 1); continue; }
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    return s;
+  };
+  const abilityOf = (s: GameState, name: string) => legalActions(s, 0).plays.find((p) =>
+    p.kind === 'activate' && nameOf(s, p.card) === name);
+  const pitch = (s: GameState, name: string, card: string): GameState => apply(s, {
+    type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', name), abilityIndex: 0,
+    discarded: find(s, 0, 'hand', card),
+  });
+
+  it('reads the cost on all six cards, and leaves no line of any of them unread', () => {
+    for (const row of PRINTED) {
+      const script = scriptForCard(pitchList.cards.find((entry) => entry.card.name === row.name)!.card);
+      expect(script?.abilities?.[0]?.cost.discardACard, row.name).toBe(true);
+      const compiled = compileCard(row as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), row.name).toEqual([]);
+    }
+  });
+
+  it('offers the ability with the hand as what may be discarded, and not to an empty hand', () => {
+    const s = table(['Rummaging Goblin'], ['Hellrider', 'Mountain']);
+    expect([...(abilityOf(s, 'Rummaging Goblin')?.discardOptions ?? [])].sort())
+      .toEqual([...ids(s, 0, 'hand')].sort());
+    expect(abilityOf(table(['Rummaging Goblin'], []), 'Rummaging Goblin')).toBeUndefined();
+  });
+
+  it('discards the chosen card as the cost, then draws', () => {
+    let s = table(['Rummaging Goblin'], ['Hellrider', 'Mountain']);
+    const goblin = find(s, 0, 'battlefield', 'Rummaging Goblin');
+    const rider = find(s, 0, 'hand', 'Hellrider');
+    // Without a card named there is no payment, so there is no activation.
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: goblin, abilityIndex: 0 }))
+      .toContain('choose a card to discard');
+    s = pitch(s, 'Rummaging Goblin', 'Hellrider');
+    // Paid before the ability resolves: tapped, the card gone, and the draw still on the stack.
+    expect(s.instances[goblin]!.tapped).toBe(true);
+    expect(s.instances[rider]!.zone).toBe('graveyard');
+    expect(namesIn(s, 0, 'hand')).toEqual(['Mountain']);
+    s = drain(passBoth(s));
+    expect(ids(s, 0, 'hand')).toHaveLength(2);
+  });
+
+  it('may be paid again and again where nothing else limits it', () => {
+    let s = table(['Noose Constrictor'], ['Hellrider', 'Mountain']);
+    const snake = find(s, 0, 'battlefield', 'Noose Constrictor');
+    s = drain(passBoth(pitch(s, 'Noose Constrictor', 'Hellrider')));
+    s = drain(passBoth(pitch(s, 'Noose Constrictor', 'Mountain')));
+    const now = characteristicsOf(s, s.instances[snake]!);
+    expect([now.power, now.toughness]).toEqual([4, 4]);
+    // And the hand is the limit: with nothing left in it the ability is not offered.
+    expect(abilityOf(s, 'Noose Constrictor')).toBeUndefined();
+  });
+
+  it('keeps "Activate only once each turn" beside it', () => {
+    let s = table(['Pulsating Illusion'], ['Hellrider', 'Mountain']);
+    const illusion = find(s, 0, 'battlefield', 'Pulsating Illusion');
+    s = drain(passBoth(pitch(s, 'Pulsating Illusion', 'Hellrider')));
+    const now = characteristicsOf(s, s.instances[illusion]!);
+    expect([now.power, now.toughness]).toEqual([4, 5]);
+    expect(ids(s, 0, 'hand')).toHaveLength(1);
+    expect(abilityOf(s, 'Pulsating Illusion')).toBeUndefined();
+  });
+
+  it('is a mana ability the player presses: a card for {B}, with nothing on the stack', () => {
+    let s = table(['Skirge Familiar'], ['Hellrider', 'Dark Ritual']);
+    // Not a source the auto-tapper may spend, so the Ritual is not castable off it yet.
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'cast' && nameOf(s, p.card) === 'Dark Ritual'))
+      .toBe(false);
+    s = pitch(s, 'Skirge Familiar', 'Hellrider');
+    expect(s.stackOrder).toHaveLength(0);
+    expect(s.pools['0']!.B).toBe(1);
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'cast' && nameOf(s, p.card) === 'Dark Ritual'))
+      .toBe(true);
+  });
+
+  it('is never spent by the auto-tapper, even where the rest of the cost is a sacrifice', () => {
+    /*
+      Overeager Apprentice's other component is "Sacrifice Overeager Apprentice", which is a cost
+      `manaSources` accepts — a Treasure is exactly that. Counted as a source, the Apprentice would
+      pay for the Ritual with no card leaving the hand.
+    */
+    let s = table(['Overeager Apprentice'], ['Hellrider', 'Dark Ritual']);
+    const apprentice = find(s, 0, 'battlefield', 'Overeager Apprentice');
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'cast' && nameOf(s, p.card) === 'Dark Ritual'))
+      .toBe(false);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Dark Ritual') })).not.toBeNull();
+    s = pitch(s, 'Overeager Apprentice', 'Hellrider');
+    expect(s.instances[apprentice]!.zone).toBe('graveyard');
+    expect(s.pools['0']!.B).toBe(3);
+    expect(namesIn(s, 0, 'hand')).toEqual(['Dark Ritual']);
+  });
+
+  it('is a discard like any other: a madness card paid as the cost is offered for its madness cost', () => {
+    let s = table(['Rummaging Goblin', 'Mountain'], ['Fiery Temper']);
+    const temper = find(s, 0, 'hand', 'Fiery Temper');
+    s = pitch(s, 'Rummaging Goblin', 'Fiery Temper');
+    expect(s.pendingOfferedCast?.card).toBe(temper);
+    expect(s.instances[temper]!.zone).toBe('exile');
+  });
+
+  describe('and the bot', () => {
+    /** Every action the bot takes from here until it passes or the turn moves on. */
+    const botTurn = (start: GameState): Action[] => {
+      let s = start;
+      const taken: Action[] = [];
+      for (let i = 0; i < 12; i += 1) {
+        const action = botAction(s, 0);
+        if (action === null || action === undefined || action.type === 'auto:pass') break;
+        taken.push(action);
+        s = drain(apply(s, action), 40);
+        if (s.turn !== start.turn || s.activeSeat !== 0) break;
+      }
+      return taken;
+    };
+    const pitched = (s: GameState, taken: readonly Action[]): string[] => taken.flatMap((action) =>
+      action.type === 'auto:activate' && action.discarded !== undefined ? [nameOf(s, action.discarded)] : []);
+
+    it('does not empty its hand into an ability it could pay for again', () => {
+      // Two Mountains and two Hellriders it cannot cast yet: cards it wants, and a pump that is
+      // offered once for each of them.
+      const s = table(['Noose Constrictor', 'Mountain', 'Mountain'], ['Hellrider', 'Hellrider']);
+      expect(abilityOf(s, 'Noose Constrictor')).toBeDefined();
+      expect(pitched(s, botTurn(s))).toEqual([]);
+    });
+
+    it('feeds it a land it has no use for', () => {
+      // Five Mountains out and two in hand: one is the land drop, which makes six and casts the
+      // Hellrider; the other is the spare, and the only card the Constrictor is given.
+      const s = table(
+        ['Noose Constrictor', 'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain'],
+        ['Mountain', 'Mountain', 'Hellrider'],
+      );
+      expect(pitched(s, botTurn(s))).toEqual(['Mountain']);
+    });
+
+    it('will pay a card it wanted for an ability it can use only once', () => {
+      // The same hand that the Constrictor is refused, and {T} in the cost: one card for one
+      // card, once, which is the search's to judge rather than the rule's to forbid.
+      const s = table(['Rummaging Goblin', 'Mountain', 'Mountain'], ['Hellrider', 'Hellrider']);
+      expect(pitched(s, botTurn(s))).toEqual(['Hellrider']);
+    });
+
+    it('and for one it may use only once each turn', () => {
+      // Pulsating Illusion says so in words rather than with {T}: a 0/1 flier that is a 4/5 for
+      // one card, once.
+      const s = table(['Pulsating Illusion', 'Mountain', 'Mountain'], ['Hellrider', 'Hellrider']);
+      expect(pitched(s, botTurn(s))).toEqual(['Hellrider']);
+    });
   });
 });

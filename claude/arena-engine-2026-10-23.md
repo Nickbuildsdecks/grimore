@@ -22989,3 +22989,105 @@ The two moves that match a card changed in D578: Verdant Guard down four points 
 98), where Dragonsguard Elite lost a ward it never printed and half its counters; Ashen Rite up
 three (72 to 77), where Kalitas gained an ability and Hagra Mauling a discount. Both are small
 on 144 games and are recorded as consistent with the changes, not as proved by them.
+
+## D580 — "Discard a card" read as the cost of a printed ability
+
+D579 gave the engine a cost it could charge — a card from the hand, chosen as the ability is
+activated — and used it on one hand-written card. This reads the same cost off printed text, so
+it works on any card in a pasted deck.
+
+**What is read.** The three words "Discard a card" as one component of an activated ability's
+cost, beside mana, {T}, life, or a sacrifice or discard of the card itself. Counted in the legal
+corpus: **206 lines on 204 cards** print it. 114 of those lines now read; the rest have an
+effect the compiler does not read yet. Across the whole corpus the build reads 117 more lines
+than the last one and finishes 96 more cards (table below). The three lines beyond my 114 reach
+the same reader some other way, and I have not itemised them.
+
+D579's record said 210 cards. I could not reproduce that figure; 204 is the count of cards with
+the words as a component of an unquoted cost, and it replaces the earlier number.
+
+**What is deliberately not read**, each because the flag cannot carry it:
+
+    "Discard two cards"            16 lines   a count
+    "Discard a card at random"     16 lines   not a choice
+    "Discard a creature card"      14 lines   a filter
+    "Discard a land card"          12 lines   a filter
+    "Discard your hand"            11 lines   a count
+
+And one combination: a discard together with "Sacrifice a creature" in the same cost. Both are
+choices made as the ability is activated, and the table and the bot each ask for one, so reading
+it would offer a play the engine then refuses. One legal card prints it (Bloodsoaked Altar); its
+line stays unread.
+
+**Mana abilities.** Three legal cards discard a card for mana (Skirge Familiar, Bog Witch,
+Overeager Apprentice). They are read, and offered as an ability the player presses: the card is
+discarded and the mana goes to the pool. The auto-tapper never uses one. Without that rule
+Overeager Apprentice ("Discard a card, Sacrifice Overeager Apprentice: Add {B}{B}{B}") would have
+counted as a free source, because a sacrifice of itself is a cost the auto-tapper accepts — it
+would have paid for a spell with no card leaving the hand.
+
+**The bot's rule, which D579 said had to be decided first.** Which card it gives up is
+unchanged: a land it has no use for (five or more lands out), then a madness card it can pay
+for, then its most expensive card. New is *whether*: an ability that could be paid again in the
+same turn is given only the first two. An ability it can use once — {T} in the cost, "only once
+each turn", or a cost that exiles or sacrifices the card itself — may take a card it wanted, and
+the search decides if that is worth it.
+
+The reason is measured, not assumed. With the rule switched off, a bot holding two Hellriders it
+could not cast yet discarded both to Noose Constrictor ("Discard a card: Noose Constrictor gets
++1/+1 until end of turn") in one main phase.
+
+Of the "used once" kinds, {T}, once-each-turn and exile-itself each have a bot test. Sacrifice-
+itself and discard-itself are read by the same line and have none: the only board that reaches
+them is the bot cashing a creature and a card for one draw, and I did not want that play frozen
+into a test as correct.
+
+**Tests.** 13 added in the engine (12 on six real cards compiled from their Oracle rows, 1 on
+Sunscourge Champion), 8 compile rows added, 1 retired: an older test listed
+"{1}, Discard a card: Draw a card" as a cost the compiler must refuse. It now uses "Discard two
+cards", which is still refused.
+
+    engine tests: 3,925, all passing
+    web tests: 253, all passing
+
+### Measurements
+
+This build against the last one:
+
+    cards with every printed line read:  8,337 → 8,433 of 30,710
+    printed legal lines read:            24,333 → 24,450 of 56,421 (43.3%)
+    cards with a compiled script:        12,532 → 12,622
+
+D579's build (ee3fb5b) measured the same as D578's on all three (8,337 / 24,333 / 12,532), as
+expected: D579 changed three hand-written cards and no reader.
+
+Pod sweep on ee3fb5b, seeds 44701–44740: 40 of 40 finished, no throw and no stall.
+
+Deck table on ee3fb5b, 6 seeds, 144 games a deck:
+
+| deck | D578 build | D579 build |
+| --- | --- | --- |
+| dawn-tithe | 79% | 79% |
+| verdant-guard | 68% | 69% |
+| ember-rush | 68% | 66% |
+| kindle-grove | 65% | 65% |
+| ashen-rite | 53% | 54% |
+| arc-tempest | 50% | 51% |
+| forge-alliance | 49% | 47% |
+| rot-harvest | 40% | 40% |
+| skyward-writ | 40% | 40% |
+| delta-bloom | 39% | 39% |
+| blight-vector | 38% | 38% |
+| hollow-tide | 32% | 32% |
+| tidal-mind | 28% | 30% |
+
+Nothing moved more than two points. Dawn Tithe, which holds Sunscourge Champion, is unchanged
+(114 wins both times), so the cheaper eternalize with a discard did not shift it on this
+sample. Hollow Tide, which holds Toxic Deluge, is unchanged (46 wins both times). Fireball is in
+Ember Rush (98 wins to 95), Forge Alliance (70 to 68) and Arc Tempest (72 to 73). The bot takes
+one target, and with one target the printed Fireball does what the old one did, so I do not
+attribute those three moves to the card.
+
+**Not done in this increment.** The break runs for D578, D579 and D580, and one covering
+D574–D577, are written (40, 28, 14 and 36 breaks) and queued behind this push; their results
+go in the next entry. The pod sweep for this build is seed 44801.

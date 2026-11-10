@@ -2513,6 +2513,18 @@ function candidateActions(
         discarding one is how it gets cast — and otherwise the most expensive thing, the card
         least likely to be castable. Never the last word on what a card is worth; it is a sort,
         like the ninjutsu swap above, because the cost is paid for a 4/4 either way.
+
+        **Whether** to pay is a second rule, and it arrived with the compiler reading this cost
+        off 204 printed cards (D580). The third and fourth choices above give up a card the seat
+        wanted, which is fine for an ability it can use once — eternalize exiles its own card, a
+        rummager taps — and ruinous for one it can use again: "Discard a card: Psychatog gets
+        +1/+1 until end of turn" is offered once for every card in the hand, and a bot that
+        answers yes each time has emptied its hand for a pump. So an ability that **can be
+        repeated this turn** is paid only with a card that was spare anyway, the land or the
+        madness card, and is otherwise not used. `repeatsThisTurn` is the test, read off the cost.
+
+        The same shape as the sacrifice rule above it, for the same reason: the bot cannot tell
+        when pitching its hand to a Psychatog is lethal, and guessing costs more than abstaining.
       */
       if (play.discardOptions !== undefined && play.discardOptions.length > 0) {
         const allowed = new Set(play.discardOptions);
@@ -2522,10 +2534,12 @@ function candidateActions(
           return inst !== undefined && characteristicsOf(state, inst).isLand;
         }).length;
         const spareLand = landsOut >= 5 ? hand.find((card) => card.land)?.id : undefined;
-        const pitch = spareLand
-          ?? madnessToPitch(state, seat, hand.map((card) => card.id))
-          ?? hand.find((card) => !card.land)?.id
-          ?? hand[0]?.id;
+        const spare = spareLand ?? madnessToPitch(state, seat, hand.map((card) => card.id));
+        const paidFor = abilityBehind(state, play.card, play.abilityIndex, play.grantedBy);
+        const pitch = spare
+          ?? (paidFor !== undefined && repeatsThisTurn(paidFor)
+            ? undefined
+            : hand.find((card) => !card.land)?.id ?? hand[0]?.id);
         if (pitch === undefined) continue;
         out.push({
           action: {
@@ -3974,6 +3988,21 @@ function abilityBehind(
 ): AbilityDef | undefined {
   if (grantedBy !== undefined) return grantedAbilityFor(state, grantedBy);
   return playedScript(state, card)?.abilities?.[abilityIndex ?? 0];
+}
+
+/**
+ * Whether an ability could be activated **again this turn** once it has been paid for.
+ *
+ * Read off the cost, which is where the answer is printed: `{T}` spends the permanent, a sacrifice,
+ * an exile or a discard of the card itself spends the card, and "Activate only once each turn" says
+ * so in words. Anything else — mana, life, a card from the hand — can be paid as often as there is
+ * something to pay with. Mana is deliberately not counted as a limit: it runs out, but a hand
+ * emptied two mana at a time is still an emptied hand.
+ */
+function repeatsThisTurn(ability: AbilityDef): boolean {
+  const cost = ability.cost;
+  return !(cost.tap === true || cost.sacrificeSelf === true || cost.exileSelf === true
+    || cost.discardSelf === true || ability.onceEachTurn === true);
 }
 
 /**

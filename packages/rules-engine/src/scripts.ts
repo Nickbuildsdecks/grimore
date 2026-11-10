@@ -20640,6 +20640,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let life = 0;
   let sacrificesSelf = false;
   let discardsSelf = false;
+  let discardsACard = false;
   let sacrifices: 'creature' | 'another-creature' | 'artifact' | null = null;
   const mana: string[] = [];
   const self = selfRef(name);
@@ -20672,6 +20673,27 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     */
     if (new RegExp(`^Sacrifice ${self}$`, 'i').test(component)) { sacrificesSelf = true; continue; }
     if (new RegExp(`^Discard ${self}$`, 'i').test(component)) { discardsSelf = true; continue; }
+    /*
+      **"Discard a card"** (D580), which is `AbilityCost.discardACard` — the field D579 added for
+      Sunscourge Champion's eternalize, charged by `activate` and offered by `legalActions` only to a
+      hand that has a card to give. So this is the rule the docblock above states, met: the field
+      exists and the payment enforces it, and the reader is one line.
+
+      **206 legal lines on 204 cards** print exactly these three words as a cost component —
+      Psychatog, Rummaging Goblin, Waterfront Bouncer. Only these three words: "Discard two cards"
+      (16 lines), "Discard a card at random" (16), "Discard a creature card" (14), "Discard a land
+      card" (12) and "Discard your hand" (11) each need something the field has not got — a count,
+      a random pick, a filter — and a line naming one stays unread rather than being charged the
+      cheaper cost.
+
+      Twice in one cost is refused for the reason a second sacrifice is: no card prints it, and
+      the field is a flag, so the second would be dropped in silence.
+    */
+    if (/^Discard a card$/i.test(component)) {
+      if (discardsACard) return null;
+      discardsACard = true;
+      continue;
+    }
     const sacrificed = /^Sacrifice (a creature|another creature|an artifact)$/i.exec(component);
     if (sacrificed !== null) {
       // One sacrifice per cost: nothing prints two, and two would need a count the field has not
@@ -20701,14 +20723,27 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     a creature: Add {C}{C}" is Ashnod's Altar, whose whole cost is the sacrifice.
   */
   const anything = taps > 0 || mana.length > 0 || life > 0
-    || sacrificesSelf || discardsSelf || sacrifices !== null;
+    || sacrificesSelf || discardsSelf || discardsACard || sacrifices !== null;
   if (taps > 1 || !anything) return null;
+  /*
+    **Two things chosen for one cost** is refused (D580): a card to discard *and* a creature to
+    sacrifice. Each is a choice the player makes as the ability is activated, and both the table
+    and the bot ask for **one** — the table's `feeding` mode holds a single kind, the bot's
+    branches each send a single field. Read anyway, this is a play `legalActions` offers and
+    `activate` then refuses for the half nobody was asked about, which is the one outcome
+    `playout.test.ts` exists to forbid.
+
+    One legal card prints it, counted: Bloodsoaked Altar's "{T}, Pay 2 life, Discard a card,
+    Sacrifice a creature". One card is a line here, not a second question in two clients.
+  */
+  if (discardsACard && sacrifices !== null) return null;
   const cost: AbilityCost = {
     ...(mana.length === 0 ? {} : { mana: mana.join('') }),
     ...(taps === 1 ? { tap: true } : {}),
     ...(life === 0 ? {} : { life }),
     ...(sacrificesSelf ? { sacrificeSelf: true as const } : {}),
     ...(discardsSelf ? { discardSelf: true as const } : {}),
+    ...(discardsACard ? { discardACard: true as const } : {}),
     ...(sacrifices === null ? {} : { sacrifice: sacrifices }),
   };
 

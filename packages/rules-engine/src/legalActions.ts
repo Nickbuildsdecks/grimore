@@ -840,6 +840,14 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
         counts and an energy cost counts once there is energy for it.
       */
       if (!ability.cost.tap && !ability.cost.sacrificeSelf) continue;
+      /*
+        And never one that costs a **card** (D580): Overeager Apprentice's "Discard a card,
+        Sacrifice Overeager Apprentice: Add {B}{B}{B}" passes the line above on its sacrifice, and
+        the auto-tapper would then spend it without a card ever leaving the hand — or with one it
+        chose itself, which is worse. Which card to give up is the player's answer, so the ability
+        is theirs to press: it stays in `legalActions` as a play and is not a source here.
+      */
+      if (ability.cost.discardACard === true) continue;
       if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;
       // A cost you cannot pay is not a cost you may pay (CR 118.4) — and paying down to nothing
       // is a legal way to lose the game, so the engine stops one short of it.

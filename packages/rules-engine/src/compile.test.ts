@@ -1947,10 +1947,15 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         left are the ones that still have no field. The row was retired here rather than deleted
         because the old claim named a card shape that now reads, and a reader comparing the two
         increments should be able to see why.
+
+        **Retired row (D580)**, the same way: `'{1}, Discard a card: Draw a card.'` was the second
+        row, and it reads now that D579 gave `AbilityCost` a `discardACard` the payment charges.
+        Its place is taken by the discard that still has no field — two cards, which a flag cannot
+        count — so the "discard of another card" half of the claim above is still tested.
       */
       for (const text of [
         'Remove a +1/+1 counter from Nonesuch: Draw a card.',
-        '{1}, Discard a card: Draw a card.',
+        '{1}, Discard two cards: Draw a card.',
       ]) {
         const refused = compileCard({
           name: 'Nonesuch', type_line: 'Creature — Horror', mana_cost: '{2}{B}', cmc: 3,
@@ -8456,6 +8461,14 @@ describe('an ability cost that is not mana, a tap or life', () => {
       { mana: '{1}', sacrifice: 'another-creature' }],
     ['Sacrifice an artifact: Draw a card.', { sacrifice: 'artifact' }],
     ['{T}, Discard Probe Thing: Draw a card.', { tap: true, discardSelf: true }],
+    /*
+      "Discard a card" (D580), into the field D579 added: 206 legal lines print these three words
+      as a component. Rummaging Goblin's line, Skirge Familiar's — where it is the whole cost of a
+      mana ability, as the Altar's sacrifice is — and Insolent Neonate's with its other component.
+    */
+    ['{T}, Discard a card: Draw a card.', { tap: true, discardACard: true }],
+    ['Discard a card: Add {B}.', { discardACard: true }],
+    ['Discard a card, Sacrifice Probe Thing: Draw a card.', { sacrificeSelf: true, discardACard: true }],
   ])('reads %s', (text, cost) => {
     const compiled = read('Probe Thing', 'Artifact', text);
     expect(compiled.ok).toBe(true);
@@ -8481,6 +8494,17 @@ describe('an ability cost that is not mana, a tap or life', () => {
     // And two sacrifices in one cost, which the field cannot count: refused rather than halved.
     ['two sacrifices in one cost, which the field cannot count',
       'Sacrifice a creature, Sacrifice an artifact: Draw a card.'],
+    // The discards that are more than "a card" (D580): a count, a random pick and a filter, none
+    // of which the flag carries — so none is read as the cheaper cost it resembles.
+    ['two cards, which the flag cannot count', 'Discard two cards: Draw a card.'],        // 16 lines
+    ['a card at random, which is not a choice', 'Discard a card at random: Draw a card.'],  // 16
+    ['a creature card, which is a filter', 'Discard a creature card: Draw a card.'],      // 14
+    ['"Discard a card" twice, which the flag cannot count',
+      'Discard a card, Discard a card: Draw a card.'],
+    // Bloodsoaked Altar's cost, the one legal card with both: two choices for one activation,
+    // where the table and the bot each ask for one.
+    ['a discard and a chosen sacrifice together, which nothing asks for both of',
+      '{T}, Pay 2 life, Discard a card, Sacrifice a creature: Draw a card.'],
   ])('refuses %s', (_label, text) => {
     const compiled = read('Probe Thing', 'Artifact', text);
     expect(compiled.ok).toBe(true);
