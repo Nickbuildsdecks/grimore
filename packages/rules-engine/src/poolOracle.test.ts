@@ -129,7 +129,6 @@ const KNOWN_DIFFERENT: Readonly<Record<string, string>> = {
   "Merfolk Secretkeeper | oracleText": "convention: the front face quotes its Adventure, which Oracle prints on the other face",
   "Garenbrig Carver | oracleText": "convention: the front face quotes its Adventure, which Oracle prints on the other face",
   "Mutavault | oracleText": "queued: becomes a 2/2 creature, without \"with all creature types\"",
-  "Goblin Arsonist | oracleText": "queued: drops the printed \"you may\"",
   "Fireball | oracleText": "queued: X damage to one target; printed divides it among any number, {1} more for each beyond the first",
   "Faithless Looting | oracleText": "queued: no flashback {2}{R}",
   "Dragonsguard Elite | oracleText": "queued: ward {1} and two counters; printed one counter, no ward, and {4}{G}{G}: double them",
@@ -141,7 +140,6 @@ const KNOWN_DIFFERENT: Readonly<Record<string, string>> = {
   "Ophidian | oracleText": "queued: removed from combat; printed assigns no combat damage this turn",
   "Mystic Remora | oracleText": "queued: draws two cards; printed a card unless that player pays {4}",
   "Sedgemoor Witch | oracleText": "queued: ward {3} and a black Pest; printed ward\u2014pay 3 life and a black and green Pest",
-  "Gravedigger | oracleText": "queued: drops the printed \"you may\"",
   "Bloodthrone Vampire | oracleText": "queued: sacrifice another creature; printed a creature",
   "Lotleth Giant | oracleText": "queued: each opponent loses life; printed deals that damage to target opponent",
   "Balan, Wandering Knight | oracleText": "queued: double strike always; printed first strike, and double strike with two or more Equipment",
@@ -152,7 +150,6 @@ const KNOWN_DIFFERENT: Readonly<Record<string, string>> = {
   "Agonizing Demise | oracleText": "queued: no \"It can't be regenerated.\"",
   "Hagra Mauling | oracleText": "queued: no {1} less when an opponent controls no basic lands",
   "Woe Strider | oracleText": "queued: escape {4}{B}, exile three; printed {3}{B}{B}, exile four, and two +1/+1 counters",
-  "Ninja of the Deep Hours | oracleText": "queued: drops the printed \"you may\"",
   "The Birth of Meletis | oracleText": "queued: chapters reordered and changed; printed I a basic Plains to hand, II a colorless artifact Wall, III 2 life",
   "Tandem Lookout | oracleText": "queued: damage to a player; printed to an opponent",
   "Ajani, Caller of the Pride | oracleText": "queued: +1 lacks \"up to one\"; the ultimate makes five Cats, printed X where X is your life total",
@@ -165,7 +162,6 @@ const KNOWN_DIFFERENT: Readonly<Record<string, string>> = {
   "Mind Sculpt | oracleText": "queued: target player; printed target opponent",
   "Toxic Deluge | oracleText": "queued: the life is paid as the spell resolves; printed as an additional cost to cast it",
   "The Eldest Reborn | oracleText": "queued: creatures only; printed creature or planeswalker in chapters I and III",
-  "Gelectrode | oracleText": "queued: drops the printed \"you may\"",
   "Pyromatics | oracleText": "queued: divides its damage between one or two targets; printed 1 damage to any target",
   "Swerve | oracleText": "queued: instant or sorcery spells only; printed any spell with a single target",
   "Phoenix of Ash | oracleText": "queued: {1}: +1/+0; printed {2}{R}: +2/+0, and it escapes with a +1/+1 counter",
@@ -175,7 +171,6 @@ const KNOWN_DIFFERENT: Readonly<Record<string, string>> = {
   "Angel of Sanctions | oracleText": "queued: mandatory and \"another\"; printed \"you may\", and embalm {5}{W}",
   "Thicket Basilisk | oracleText": "queued: any creature; printed non-Wall",
   "Ruric Thar, the Unbowed | oracleText": "queued: all creatures must attack; printed only Ruric Thar",
-  "Yavimaya Granger | oracleText": "queued: drops the printed \"you may\"",
 };
 
 describe('every built-in card against its Oracle row (D571)', () => {

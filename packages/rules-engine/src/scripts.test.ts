@@ -84,6 +84,25 @@ const toAttackers = (s: GameState): GameState => advanceTo(s, 'declare-attackers
 const power = (s: GameState, id: string): number => characteristicsOf(s, s.instances[id]!).power;
 const toughness = (s: GameState, id: string): number => characteristicsOf(s, s.instances[id]!).toughness;
 
+/**
+ * Answer the "you may" a seat is being asked (D574). It insists a yes/no is the question standing,
+ * so a test cannot say Yes to something else by accident.
+ */
+const say = (s: GameState, by: SeatIndex, option: 'Yes' | 'No'): GameState => {
+  expect(s.pendingDecision?.options, 'no yes/no is being asked').toEqual(['Yes', 'No']);
+  expect(s.pendingDecision?.seat).toBe(by);
+  return apply(s, { type: 'auto:decide', by, cards: [], option } as Action);
+};
+
+/** The same answer to every "you may" the seat meets until the stack is quiet. */
+const sayEachTime = (s: GameState, by: SeatIndex, option: 'Yes' | 'No'): GameState => {
+  let out = drain(s);
+  for (let asked = 0; asked < 8 && out.pendingDecision?.options?.join() === 'Yes,No'; asked += 1) {
+    out = drain(say(out, by, option));
+  }
+  return out;
+};
+
 describe('lands', () => {
   it('taps each basic for its own colour', () => {
     for (const [seat, land, colour] of [[0, 'Mountain', 'R'], [1, 'Forest', 'G'], [1, 'Plains', 'W']] as const) {
@@ -1000,8 +1019,25 @@ describe('the graveyard, which is a place cards come back from', () => {
     const courser = find(s, 1, 'graveyard', 'Centaur Courser');
     s = apply(s, { type: 'auto:choose', by: 1, targets: [{ kind: 'card', id: courser }] });
     s = passBoth(s);
+    // "You may return": the target was chosen as the trigger went on the stack, and whether to do
+    // it is asked as it resolves (D574).
+    expect(s.pendingDecision?.prompt).toBe('Return target creature card from your graveyard to your hand?');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
+    s = say(s, 1, 'Yes');
     expect(namesIn(s, 1, 'hand')).toContain('Centaur Courser');
     expect(namesIn(s, 1, 'graveyard')).toContain('Thornweald Archer');
+  });
+
+  it('and leaves it where it is when the answer is no', () => {
+    let s = rot(['Gravedigger'], ['Swamp', 'Swamp', 'Swamp', 'Swamp']);
+    s = bury(s, 1, 'Centaur Courser');
+    // One creature card there, so the engine aims the trigger itself and the second pass resolves it.
+    s = passBoth(passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Gravedigger') })));
+    s = drain(say(s, 1, 'No'), 40);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
+    expect(namesIn(s, 1, 'hand')).not.toContain('Centaur Courser');
+    expect(namesIn(s, 1, 'battlefield')).toContain('Gravedigger');
+    expect(s.stackOrder).toEqual([]);
   });
 
   it('Gravedigger with an empty graveyard simply does not trigger', () => {
@@ -1427,7 +1463,7 @@ describe('triggers that watch the board rather than themselves', () => {
     // Reanimated, so it entered, so its own trigger is waiting — and it has a creature card in
     // the graveyard to point at, which is the only one left.
     expect(stackNames(s).join()).toContain('return target creature card');
-    s = passBoth(s);
+    s = say(passBoth(s), 1, 'Yes');
     expect(namesIn(s, 1, 'hand')).toContain('Centaur Courser');
   });
 
@@ -1540,7 +1576,15 @@ describe('dying, upkeep and a static effect', () => {
     expect(s.pendingChoice!.seat).toBe(0);
     s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'player', seat: 1 }] });
     s = passBoth(s);
+    // "You may have it deal": aimed already, and asked whether as it resolves (D574).
+    expect(life(s, 1)).toBe(20);
+    const asked = s;
+    s = say(asked, 0, 'Yes');
     expect(life(s, 1)).toBe(19);
+    // And no is an answer: nothing is dealt and the trigger is gone.
+    const declined = drain(say(asked, 0, 'No'), 40);
+    expect(life(declined, 1)).toBe(20);
+    expect(declined.stackOrder).toEqual([]);
   });
 
   it('Glorious Anthem lifts every creature its controller has, including the next one', () => {
@@ -9136,6 +9180,9 @@ describe('red-blue: six cards whose job is to read the spells', () => {
       type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Burst Lightning'),
       targets: [{ kind: 'player', seat: 1 }],
     })));
+    // The Gelectrode's "you may untap" is asked whether or not it is tapped (D574), and it stands
+    // in front of whatever is under it on the stack. It is untapped, so the answer changes nothing.
+    s = drain(say(s, 0, 'No'), 40);
     expect([power(s, adeliz), power(s, wizard), power(s, weird), power(s, shaman)]).toEqual([3, 3, 0, 2]);
     expect([toughness(s, adeliz), toughness(s, wizard)]).toEqual([3, 3]);
   });
@@ -9189,6 +9236,13 @@ describe('red-blue: six cards whose job is to read the spells', () => {
     expect(s.instances[gel]!.tapped).toBe(true);
 
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Think Twice') })));
+    // "You may untap": asked as the trigger resolves, and still tapped until it is answered (D574).
+    expect(s.pendingDecision?.prompt).toBe('Untap Gelectrode?');
+    expect(s.instances[gel]!.tapped).toBe(true);
+    const declined = drain(say(s, 0, 'No'), 40);
+    expect(declined.instances[gel]!.tapped).toBe(true);
+    expect(declined.stackOrder).toEqual([]);
+    s = drain(say(s, 0, 'Yes'), 40);
     expect(s.instances[gel]!.tapped).toBe(false);
     s = passBoth(apply(s, {
       type: 'auto:activate', by: 0, card: gel, abilityIndex: 0,
@@ -10819,7 +10873,8 @@ describe('copying an ability on the stack (CR 706.10)', () => {
       type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Strionic Resonator'),
       abilityIndex: 0, targets: [{ kind: 'ability', id: trigger }],
     });
-    s = drain(passBoth(s));
+    // The copy is its own "you may return" (D574), so it asks as it resolves like the original would.
+    s = sayEachTime(passBoth(s), 0, 'Yes');
 
     // One copy of the card, in hand, and nothing left waiting.
     expect(s.instances[corpse]!.zone).toBe('hand');
@@ -10860,7 +10915,8 @@ describe('copying an ability on the stack (CR 706.10)', () => {
     // And nobody holds priority while it stands, which is the rule every question follows.
     expect(s.priority).toBeNull();
 
-    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], target: { kind: 'card', id: corpses[1]! } }));
+    // Then each of the two is a "you may return" of its own (D574), asked as it resolves.
+    s = sayEachTime(apply(s, { type: 'auto:decide', by: 0, cards: [], target: { kind: 'card', id: corpses[1]! } }), 0, 'Yes');
     expect(s.instances[corpses[0]!]!.zone).toBe('hand');
     expect(s.instances[corpses[1]!]!.zone).toBe('hand');
     expect(s.stackOrder).toEqual([]);
@@ -10896,7 +10952,7 @@ describe('copying an ability on the stack (CR 706.10)', () => {
 
     const action = botAction(s, 0);
     expect(action?.type === 'auto:decide' ? action.target : 'missing').toBeUndefined();
-    s = drain(apply(s, action!));
+    s = sayEachTime(apply(s, action!), 0, 'Yes');
     // One back, one still there — the cost of the answer above.
     expect(s.instances[corpses[0]!]!.zone).toBe('hand');
     expect(s.instances[corpses[1]!]!.zone).toBe('graveyard');
@@ -10965,9 +11021,32 @@ describe('copying an ability on the stack (CR 706.10)', () => {
 
     // And declining is an answer: the copy keeps what the original chose, so the original is the
     // one that fizzles and exactly one creature comes back.
-    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [] }));
+    s = sayEachTime(apply(s, { type: 'auto:decide', by: 0, cards: [] }), 0, 'Yes');
     expect(s.instances[corpses[0]!]!.zone).toBe('hand');
     expect(s.instances[corpses[1]!]!.zone).toBe('graveyard');
+  });
+
+  it('and a copy of a "you may" is asked for itself, so one can be taken and the other left (D574)', () => {
+    let s = rot(['Gravedigger'], ['Strionic Resonator'], 6);
+    const corpses = ids(s, 0, 'library')
+      .filter((id) => s.cardDefs[s.instances[id]!.defKey]!.typeLine.includes('Creature'))
+      .slice(0, 2);
+    for (const id of corpses) s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'graveyard' });
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Gravedigger') }));
+    s = apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: corpses[0]! }] });
+    s = passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Strionic Resonator'),
+      abilityIndex: 0, targets: [{ kind: 'ability', id: onStack(s, /return target creature card/i) }],
+    }));
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], target: { kind: 'card', id: corpses[1]! } }));
+    // The copy, pointed at the second card: declined, so that card stays.
+    s = drain(say(s, 0, 'No'));
+    expect(s.instances[corpses[1]!]!.zone).toBe('graveyard');
+    // The original, still pointed at the first: taken.
+    s = drain(say(s, 0, 'Yes'));
+    expect(s.instances[corpses[0]!]!.zone).toBe('hand');
+    expect(s.instances[corpses[1]!]!.zone).toBe('graveyard');
+    expect(s.stackOrder).toEqual([]);
   });
 });
 
@@ -13572,6 +13651,7 @@ describe('whenever you draw a card (CR 121.2)', () => {
     s = drain(passBoth(apply(s, {
       type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Gravedigger'),
     })));
+    s = drain(say(s, 0, 'Yes'), 40);
     expect(namesIn(s, 0, 'hand')).toContain('Centaur Courser');
     // Their card moved into their hand and nothing was drawn, so nothing triggered — and the
     // Skulker belongs to the other seat anyway, which is the next test.
@@ -18374,8 +18454,17 @@ describe('echo: the first cost the game asks for', () => {
     });
     s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
     s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Yavimaya Granger') }), 40);
-    // Its arrival searches: the basic land is chosen by name from the library it is offered out of.
-    s = drain(decide(s, ['Forest']), 40);
+    // Its arrival may search (D574): yes, and then the basic land is chosen by name from the library
+    // it is offered out of.
+    expect(s.pendingDecision?.prompt).toBe(
+      'Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle?',
+    );
+    // No is an answer: nothing is searched for and the 2/2 arrives alone.
+    const declined = drain(say(s, 0, 'No'), 40);
+    expect(declined.pendingDecision).toBeNull();
+    expect(ids(declined, 0, 'battlefield').filter((id) => nameOf(declined, id) === 'Forest').length).toBe(3);
+    expect(namesIn(declined, 0, 'battlefield')).toContain('Yavimaya Granger');
+    s = drain(decide(drain(say(s, 0, 'Yes'), 40), ['Forest']), 40);
     expect(ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Forest').length).toBe(4);
 
     s = myNextUpkeep(s);
@@ -19095,6 +19184,11 @@ describe('ninjutsu: the creature that arrives already attacking', () => {
       only thing in this pool that changes what damage lands *after* blockers.
     */
     expect(life(s, 1)).toBe(lifeBefore - 2);
+    // "You may draw a card" (D574): asked once the damage has landed, and no card until it is answered.
+    expect(s.pendingDecision?.prompt).toBe('Draw a card?');
+    expect(ids(s, 0, 'hand').length).toBe(handBefore);
+    expect(ids(drain(say(s, 0, 'No'), 40), 0, 'hand').length).toBe(handBefore);
+    s = drain(say(s, 0, 'Yes'), 40);
     expect(ids(s, 0, 'hand').length).toBe(handBefore + 1);
   });
 

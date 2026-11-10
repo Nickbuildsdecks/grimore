@@ -1226,8 +1226,10 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       kind: string;
       /** Set up the board so the effect is observable — see Thermo-Alchemist. */
       prepare?: (state: GameState, source: string) => GameState;
+      /** The card says "you may" (D574): both readings are asked the same question first. */
+      may?: string;
     }[] = [
-      { card: 'Goblin Arsonist', kind: 'dies' },
+      { card: 'Goblin Arsonist', kind: 'dies', may: 'Have it deal 1 damage to any target?' },
       { card: 'Borderland Marauder', kind: 'attacks' },
       // `deals-damage` since D566: the Oracle text is "deals damage to an opponent".
       { card: 'Thieving Magpie', kind: 'deals-damage' },
@@ -1264,12 +1266,65 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         const targets: readonly Target[] = mine.targets === undefined
           ? []
           : [{ kind: 'player', seat: 1 as SeatIndex }];
-        const ctx = contextOn(base, 0 as SeatIndex, source, targets);
+        const bare = contextOn(base, 0 as SeatIndex, source, targets);
+        const prompts = (t: TriggerDef) => (t.decisions ?? []).map((d) => (typeof d === 'function' ? '' : d.prompt));
+        expect(prompts(mine)).toEqual(row.may === undefined ? [] : [row.may]);
+        expect(prompts(written)).toEqual(prompts(mine));
+        // A "may" does nothing on a no, in either reading, and both are then given the yes.
+        if (row.may !== undefined) {
+          const no = { ...bare, decisions: [{ ids: [], option: 'No' }] } as unknown as EffectContext;
+          expect(mine.effect(no)).toEqual(base);
+          expect(written.effect(no)).toEqual(base);
+        }
+        const ctx = row.may === undefined
+          ? bare
+          : { ...bare, decisions: [{ ids: [], option: 'Yes' }] } as unknown as EffectContext;
         expect(mine.effect(ctx)).toEqual(written.effect(ctx));
         // Not vacuous: the printed trigger has to change the board on this fixture.
         expect(mine.effect(ctx), `${row.card}: the effect changed nothing`).not.toEqual(base);
       },
     );
+
+    it('reads "you may have it deal" as the plain clause with a question in front (D574)', () => {
+      /*
+        The causative is the only way a card can print an optional effect whose subject is not the
+        player, and 54 corpus lines do. Checked on a synthetic card against the same card without
+        the "may", because that is the claim: nothing differs but the question. Named subject
+        rather than "it", so both spellings of the subject are covered between this and the
+        Goblin Arsonist row above.
+      */
+      const card = (text: string) => compileCard({
+        name: 'Cinder Wretch', type_line: 'Creature — Elemental', mana_cost: '{1}{R}', cmc: 2,
+        colors: ['R'], power: '2', toughness: '1', oracle_text: text,
+      });
+      const trigger = (text: string): TriggerDef => {
+        const read = card(text);
+        expect(fullyCompiled(read), text).toBe(true);
+        return (read as { script: { triggers: readonly TriggerDef[] } }).script.triggers[0]!;
+      };
+      const may = trigger('When Cinder Wretch dies, you may have Cinder Wretch deal 1 damage to any target.');
+      const must = trigger('When Cinder Wretch dies, Cinder Wretch deals 1 damage to any target.');
+      expect(may.decisions).toEqual([{
+        who: 'controller', prompt: 'Have Cinder Wretch deal 1 damage to any target?', options: ['Yes', 'No'],
+      }]);
+      expect(must.decisions ?? []).toEqual([]);
+      expect(may.targets?.map((t) => t.description)).toEqual(must.targets?.map((t) => t.description));
+
+      const base = arena({ decks: { 0: 'ember-rush' }, battlefield: { 0: ['Goblin Arsonist'] }, turn: 3 });
+      const bare = contextOn(
+        base, 0 as SeatIndex, find(base, 0 as SeatIndex, 'battlefield', 'Goblin Arsonist'),
+        [{ kind: 'player', seat: 1 as SeatIndex }],
+      );
+      const answered = (option: string) =>
+        ({ ...bare, decisions: [{ ids: [], option }] } as unknown as EffectContext);
+      expect(may.effect(answered('No'))).toEqual(base);
+      expect(may.effect(answered('Yes'))).toEqual(must.effect(bare));
+      expect(may.effect(answered('Yes'))).not.toEqual(base);
+      // A priced "may" names its effect after "If you do", so the causative is not looked for there.
+      expect(fullyCompiled(card(
+        'When Cinder Wretch dies, you may pay {1}. If you do, have Cinder Wretch deal 1 damage to any target.',
+      ))).toBe(false);
+    });
 
     it('reads one line that prints two events as two triggers', () => {
       /*

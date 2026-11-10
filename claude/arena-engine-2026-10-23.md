@@ -22493,3 +22493,70 @@ parenthesis after a card's name, not sentences). Corrected by hand.
     engine tests: 3,847, all passing
 
 D571 and D572's pod sweep (seeds 44101–44140): 40 of 40 finished, no throw, no stall.
+
+## D574 — "You may" on five cards that never asked, and the causative the compiler could not read
+
+Five pool cards print "you may" and acted without asking: Gravedigger, Goblin Arsonist, Ninja of
+the Deep Hours, Gelectrode and Yavimaya Granger. Each was queued by D571 with its text left at the
+pool's wording. All five now ask, and carry their Oracle text.
+
+**One helper, `youMay(prompt, effect, decisions)`**, spread into a trigger. It puts a Yes/No in
+front of the trigger's own questions, gates those behind `askOnlyIfChosen: 'Yes'`, and hands the
+effect a context with the first answer dropped — which is exactly what the compiler has emitted for
+a printed "you may" since D450. Writing it once is the point: the hand-written card and the
+compiled card now build the same shape from the same three facts, and `compiled-vs-written`
+compares the prompts as well as the effects.
+
+What a player sees: anything the ability points at is still chosen as it goes on the stack
+(CR 603.3d); the question is asked as it resolves; No does nothing.
+
+| card | question |
+| --- | --- |
+| Gravedigger | Return target creature card from your graveyard to your hand? |
+| Goblin Arsonist | Have it deal 1 damage to any target? |
+| Ninja of the Deep Hours | Draw a card? |
+| Gelectrode | Untap Gelectrode? |
+| Yavimaya Granger | Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle? |
+
+**The causative.** Goblin Arsonist's line did not compile at all: "you may have it deal 1 damage to
+any target" is not "you may" followed by a clause the compiler reads, because the clause is in the
+causative. It is the only way a card can print an optional effect whose subject is not the player.
+The reader now hands "have X deal N…" on as "X deals N…" and keeps the printed words for the
+question. Only on the bare "may": a priced or sequenced one names its effect after "If you do".
+
+    corpus lines printing "you may have … deal": 54
+    cards with every printed line read: 8,287 → 8,303 (+16)
+    cards with a compiled script: 12,481 → 12,498
+    printed legal lines read: 24,254 → 24,274 of 56,421 (43.0%)
+
+The other 38 lines are held up by something else on the line (damage equal to its power, "If you
+do", a quoted grant), not by the causative.
+
+**Tests.** Thirteen existing tests met a question they did not answer and were re-fitted; each of
+the five cards has a decline row beside its accept row. Three are worth naming:
+
+- Strionic Resonator's copy of a Gravedigger trigger is its own "you may", asked separately. A new
+  row declines the copy and takes the original, and gets one card back, not two.
+- Gelectrode's question is asked whether or not it is tapped. That is the printed card, and it
+  means an untapped Gelectrode now stops the stack for a question with no consequence. Not
+  suppressed: an engine that skips a "may" because it judges the answer irrelevant is guessing.
+- The compiler comparison row for Goblin Arsonist now gives both readings the same answer first,
+  and checks that No leaves the board alone in both. Without that the row compared two no-ops.
+
+The player guide has a new row, "Say no to a 'you may'".
+
+    pool cards queued in KNOWN_DIFFERENT: 48 → 43
+    engine tests: 3,850, all passing
+
+Three "you may" cards are still queued, because each is more than a question: Angel of Sanctions
+(also "another" where the card has none, and embalm {5}{W}), Ophidian Eye (the pool grants a
+quoted ability; the card has a trigger of its own, on damage to an opponent) and Tandem Lookout
+("an opponent" where the pool says "a player").
+
+### The deck table is not in this entry
+
+One was taken during D573 (6 seeds, 936 games, all finished) and it is not recorded here: the
+harness printed its stale-build warning, because the source had moved on from the build it loaded.
+It is being re-run on this entry's build and goes in the next entry. What it did show is not in
+doubt and is worth saying now: no measurement taken before D571 is comparable with one taken
+after, because those were games played with cards at the wrong costs and sizes.

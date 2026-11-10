@@ -224,6 +224,42 @@ const basicLand = (name: string, type: 'W' | 'U' | 'B' | 'R' | 'G'): CardScript 
  * while it is on the battlefield. Which is the whole card: a land that is never a dead draw,
  * because the late-game version of it is a cantrip.
  */
+/**
+ * "You may …" on a hand-written trigger: a yes-or-no asked as the ability resolves, in front of
+ * whatever the effect itself asks (D574).
+ *
+ * Seven pool cards print the word and none of their scripts had it, so each of them simply did the
+ * thing: a Gravedigger with one creature card in the graveyard returned it whether its controller
+ * wanted the card back or not, and a Gelectrode untapped under a Sleep it would rather have stayed
+ * tapped through. Declining is a real play — the only way to keep a card *in* a graveyard for a
+ * Reanimate, or off a hand that is one card short of a discard.
+ *
+ * The same shape the compiler emits for every "you may" it reads (`mayEffect`), on purpose, so
+ * that the two readings of a card agree: `Yes` first because a free may is pure upside and the
+ * first option is the answer a bot falls back on; the effect's own questions asked only on a yes
+ * (`askOnlyIfChosen`); and the effect handed its answers with the yes-or-no taken off the front,
+ * so it is written exactly as it would be with no "may" before it.
+ *
+ * A target is still chosen when the ability goes on the stack — "you may return **target** card"
+ * picks its target first and decides later (CR 603.3d) — so `targets` stays on the trigger and
+ * this only wraps what happens at resolution.
+ */
+function youMay(
+  prompt: string,
+  effect: (c: EffectContext) => GameState,
+  decisions: readonly (CardsDecisionSpec | ChoiceDecisionSpec | NumberDecisionSpec)[] = [],
+): Pick<TriggerDef, 'decisions' | 'effect'> {
+  return {
+    decisions: [
+      { who: 'controller', prompt, options: ['Yes', 'No'] },
+      ...decisions.map((spec) => ({ ...spec, askOnlyIfChosen: 'Yes' })),
+    ],
+    effect: (c) => (chosenOption(c) === 'Yes'
+      ? effect({ ...c, decisions: c.decisions.slice(1) })
+      : c.state),
+  };
+}
+
 const cyclingLand = (name: string, type: 'W' | 'U' | 'B' | 'R' | 'G'): CardScript => ({
   name,
   entersTapped: true,
@@ -828,11 +864,11 @@ const GRAVEDIGGER: CardScript = {
     {
       on: { kind: 'etb' },
       targets: [yourGraveyardCreature],
-      description: 'return target creature card from your graveyard to your hand',
-      effect: (c) => {
+      description: 'you may return target creature card from your graveyard to your hand',
+      ...youMay('Return target creature card from your graveyard to your hand?', (c) => {
         const id = firstCardTarget(c);
         return id === null ? c.state : bounceToHand(c.state, id);
-      },
+      }),
     },
   ],
 };
@@ -1405,8 +1441,8 @@ const GOBLIN_ARSONIST: CardScript = {
     {
       on: { kind: 'dies' },
       targets: [ANY_TARGET],
-      description: 'deals 1 damage to any target',
-      effect: (c) => damageFirstTarget(c, 1),
+      description: 'you may have it deal 1 damage to any target',
+      ...youMay('Have it deal 1 damage to any target?', (c) => damageFirstTarget(c, 1)),
     },
   ],
 };
@@ -5876,8 +5912,8 @@ const GELECTRODE: CardScript = {
   triggers: [
     {
       on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery' },
-      description: 'untap Gelectrode',
-      effect: (c) => tap(c.state, c.source, false),
+      description: 'you may untap Gelectrode',
+      ...youMay('Untap Gelectrode?', (c) => tap(c.state, c.source, false)),
     },
   ],
 };
@@ -8456,8 +8492,8 @@ const NINJA_OF_THE_DEEP_HOURS: CardScript = {
   abilities: [ninjutsuAbility('{1}{U}')],
   triggers: [{
     on: { kind: 'combat-damage' },
-    description: 'Whenever Ninja of the Deep Hours deals combat damage to a player, draw a card.',
-    effect: (c) => draw(c.state, c.controller, 1),
+    description: 'Whenever Ninja of the Deep Hours deals combat damage to a player, you may draw a card.',
+    ...youMay('Draw a card?', (c) => drawLater(c.state, c.controller, 1)),
   }],
 };
 
@@ -8768,12 +8804,16 @@ const YAVIMAYA_GRANGER: CardScript = {
     echoTrigger('{2}{G}'),
     {
       on: { kind: 'etb' },
-      description: 'search your library for a basic land card and put it onto the battlefield tapped',
-      decisions: [searchYourLibrary('Search your library for a basic land card', isBasicLand)],
-      effect: (c) => {
-        const found = chosenCard(c);
-        return found === null ? c.state : putOntoBattlefield(c.state, found, c.controller, { tapped: true });
-      },
+      description: 'you may search your library for a basic land card, put that card onto the battlefield tapped, then shuffle',
+      ...youMay(
+        // The printed clause as a question, which is what the compiler asks for the same line.
+        'Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle?',
+        (c) => {
+          const found = chosenCard(c);
+          return found === null ? c.state : putOntoBattlefield(c.state, found, c.controller, { tapped: true });
+        },
+        [searchYourLibrary('Search your library for a basic land card', isBasicLand)],
+      ),
     },
   ],
 };
@@ -16071,7 +16111,19 @@ function optionalEffect(
       ? sequence.prompt
       // `may` is non-null by the gate above, so there is no fallback arm to write here.
       : may[1]!.trim();
-  const read = sequence?.read ?? reader(inner);
+  /*
+    **The causative** (D574): "you may have it deal 1 damage to any target". It is how a card
+    prints an optional effect whose subject is not the player, and there is no other difference —
+    "have X deal N" is "X deals N" with a yes-or-no in front, which is this reader's whole job. So
+    the clause is handed on in the indicative and read by whatever already reads it; the question
+    is still asked in the card's own words, because `inner` is what the prompt is made from.
+    Only the bare "may": a priced or sequenced one names its effect after "If you do".
+  */
+  const causative = charged === null && sequence === null
+    ? /^have (.+?) deal (.+)$/i.exec(inner)
+    : null;
+  const read = sequence?.read
+    ?? reader(causative === null ? inner : `${causative[1]!} deals ${causative[2]!}`);
   if (read === null) return null;
   /*
     Either kind of "may" is refused when its own effect asks a question, and for one reason: the

@@ -139,7 +139,7 @@ const YAVIMAYA_GRANGER: CardDef = {
   cmc: 3,
   power: '2',
   toughness: '2',
-  oracleText: 'Echo {2}{G} (At the beginning of your upkeep, if this came under your control since your last upkeep, sacrifice it unless you pay its echo cost.)\nWhen Yavimaya Granger enters the battlefield, search your library for a basic land card, put it onto the battlefield tapped, then shuffle.',
+  oracleText: 'Echo {2}{G} (At the beginning of your upkeep, if this came under your control since the beginning of your last upkeep, sacrifice it unless you pay its echo cost.)\nWhen Yavimaya Granger enters, you may search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.',
   colors: ['G'],
 };
 
@@ -150,7 +150,7 @@ const GOBLIN_ARSONIST: CardDef = {
   cmc: 1,
   power: '1',
   toughness: '1',
-  oracleText: 'When Goblin Arsonist dies, it deals 1 damage to any target.',
+  oracleText: 'When Goblin Arsonist dies, you may have it deal 1 damage to any target.',
   colors: ['R'],
 };
 
@@ -1259,7 +1259,7 @@ const NINJA_OF_THE_DEEP_HOURS: CardDef = {
   cmc: 4,
   power: '2',
   toughness: '2',
-  oracleText: 'Ninjutsu {1}{U} ({1}{U}, Return an unblocked attacker you control to hand: Put this card onto the battlefield from your hand tapped and attacking.)\nWhenever Ninja of the Deep Hours deals combat damage to a player, draw a card.',
+  oracleText: 'Ninjutsu {1}{U} ({1}{U}, Return an unblocked attacker you control to hand: Put this card onto the battlefield from your hand tapped and attacking.)\nWhenever Ninja of the Deep Hours deals combat damage to a player, you may draw a card.',
   colors: ['U'],
 };
 
@@ -1484,7 +1484,7 @@ const GRAVEDIGGER: CardDef = {
   cmc: 4,
   power: '2',
   toughness: '2',
-  oracleText: 'When Gravedigger enters the battlefield, return target creature card from your graveyard to your hand.',
+  oracleText: 'When Gravedigger enters, you may return target creature card from your graveyard to your hand.',
   colors: ['B'],
 };
 
@@ -6065,7 +6065,7 @@ const GELECTRODE: CardDef = {
   cmc: 3,
   power: '0',
   toughness: '1',
-  oracleText: '{T}: Gelectrode deals 1 damage to any target.\nWhenever you cast an instant or sorcery spell, untap Gelectrode.',
+  oracleText: '{T}: Gelectrode deals 1 damage to any target.\nWhenever you cast an instant or sorcery spell, you may untap Gelectrode.',
   colors: ['U', 'R'],
 };
 
