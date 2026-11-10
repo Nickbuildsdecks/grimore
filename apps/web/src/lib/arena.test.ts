@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest"
 import type { GameView, LegalPlay, Target, VisibleCard } from "@grimore/rules-engine"
 import {
   IDLE, arenaReducer, attackRead, attackSummary, blockersOf, boardRead, brokeADeal, candidatesAt,
-  cardBadges, damageTakenFrom, decisionLabel, feedOptions, libraryTopWords, pactAsked, pactBadge, pactOffers, sparedYouBy,
+  cardBadges, damageTakenFrom, decisionLabel, feedOptions, feedWords, libraryTopWords, pactAsked, pactBadge, pactOffers, sparedYouBy,
   manaPips, playsForCard, primaryMove, reasonCannotPlay, specAt, splitBattlefield, targetKey,
   targetsRequired,
   targetsWanted,
@@ -2152,5 +2152,33 @@ describe("the top of your library: what a tap means there (D584)", () => {
     }
     const mode: ArenaMode = arenaReducer(IDLE, { kind: "startDeciding", ask }).mode
     expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({ type: "auto:decide", cards: [] })
+  })
+})
+
+describe("what to tap for a cost that is a card (D585)", () => {
+  it("names the half of the board the cost eats", () => {
+    expect(feedWords("sacrifice")).toBe("tap a creature to sacrifice")
+    expect(feedWords("sacrifice", "artifact")).toBe("tap an artifact to sacrifice")
+    expect(feedWords("sacrifice", "artifact-or-creature")).toBe("tap an artifact or creature to sacrifice")
+  })
+
+  it("and says discard or return where that is what happens to the card", () => {
+    expect(feedWords("discarded")).toBe("tap a card in your hand to discard")
+    expect(feedWords("returned")).toBe("tap an unblocked attacker to return to your hand")
+    // The kind is about sacrifices; it does not leak into the other two.
+    expect(feedWords("discarded", "artifact")).toBe("tap a card in your hand to discard")
+  })
+
+  it("a spell that costs a discard asks for the card before anything else, and sends it", () => {
+    const play = {
+      kind: "cast", card: "score", name: "Big Score", description: "Cast Big Score", manaCost: "{3}{R}",
+      targetSpecs: [], candidates: [], isManaAbility: false, sacrificeOptions: [],
+      discardOptions: ["giant", "land"],
+    } as unknown as LegalPlay
+    const asked = arenaReducer(IDLE, { kind: "choosePlay", play })
+    expect(asked.mode).toMatchObject({ kind: "feeding", cost: "discarded" })
+    expect(arenaReducer(asked.mode, { kind: "feed", card: "elsewhere" }).action).toBeNull()
+    expect(arenaReducer(asked.mode, { kind: "feed", card: "giant" }).action)
+      .toEqual({ type: "auto:cast", card: "score", discarded: "giant" })
   })
 })

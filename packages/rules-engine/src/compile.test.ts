@@ -4723,14 +4723,59 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     });
 
     it.each([
-      ['discard a card'],
-      ['pay 3 life'],
+      /*
+        **Two rows retired from the refusal table below (D585)**: "discard a card" and "pay 3
+        life" were its first two, and are read now that the field has a shape for each. The rest
+        of what this table reads arrived with them.
+      */
+      ['discard a card', { discard: true }],
+      ['pay 3 life', { life: 3 }],
+      ['pay 1 life', { life: 1 }],
+      ['sacrifice an artifact', { sacrifice: 'artifact' }],
+      ['sacrifice an artifact or creature', { sacrifice: 'artifact-or-creature' }],
+      ['sacrifice a Goblin', { sacrifice: 'creature', sacrificeSubtypes: ['Goblin'] }],
+      ['sacrifice an Elf', { sacrifice: 'creature', sacrificeSubtypes: ['Elf'] }],
+    ])('reads an additional cost of "%s"', (cost, want) => {
+      const read = compileCard({
+        name: 'Other Cost', type_line: 'Sorcery', mana_cost: '{B}', cmc: 1, colors: ['B'],
+        oracle_text: `As an additional cost to cast this spell, ${cost as string}.\nDraw two cards.`,
+      });
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread).toEqual([]);
+      expect(field(read.script, 'additionalCost')).toEqual(want);
+    });
+
+    it.each([
       ['exile a creature card from your graveyard'],
+      // A count, and a pick the player does not make.
+      ['discard two cards'],
+      ['discard a card at random'],
+      ['discard a creature card'],
+      // Kinds the sacrifice has no value for.
+      ['sacrifice a land'],
+      ['sacrifice a permanent'],
+      ['sacrifice a creature or enchantment'],
+      ['sacrifice two creatures'],
+      // A capitalised word that is not a creature type is not read as one.
+      ['sacrifice a Treasure'],
+      ['sacrifice a Zzyzx'],
+      // A choice between two costs, and an optional one.
+      ['sacrifice a creature or pay {3}{B}'],
+      ['discard a card or pay 3 life'],
+      ['you may sacrifice an artifact'],
+      // X, announced as the spell is cast; and nothing at all.
+      ['pay X life'],
+      ['pay 0 life'],
+      // Other verbs and other zones.
+      ['reveal a creature card from your hand'],
+      ['return a land you control to its owner\'s hand'],
     ])('refuses an additional cost of "%s", which the engine cannot express', (cost) => {
       /*
-        `additionalCost` holds a sacrifice and nothing else. These are real printed costs, and a
-        reader that dropped one would make the spell **cheaper than the card** — the clearest kind
-        of card that works and is wrong, and the one a player would notice last.
+        `additionalCost` has a shape for a sacrifice, a discard and a life payment (D585), and for
+        nothing else. These are real printed costs, and a reader that dropped one would make the
+        spell **cheaper than the card** — the clearest kind of card that works and is wrong, and
+        the one a player would notice last.
       */
       const odd = compileCard({
         name: 'Other Cost', type_line: 'Sorcery', mana_cost: '{B}', cmc: 1, colors: ['B'],

@@ -467,6 +467,31 @@ function hasOwnText(state: GameState, id: string): boolean {
  * so it ate whichever came first in the list — which over 144 games meant eating the three cards
  * the rest of the deck is built around.
  */
+/**
+ * Which card a seat gives up to a "Discard a card" cost, out of the ones the cost allows.
+ *
+ * One function for an ability's cost (D579) and a spell's (D585), so the two cannot come to
+ * disagree about what a card in hand is worth. A land it has no use for goes first — five lands
+ * out is past the point where a sixth changes what this pool lets it cast — then a madness card,
+ * whose discard is how it gets cast. `sparesOnly` stops there, which is the answer for a cost that
+ * can be paid again this turn; otherwise the dearest card it holds, the one least likely to be
+ * castable, and failing that whatever is left.
+ */
+function cardToPitch(
+  state: GameState, seat: SeatIndex, options: readonly string[], sparesOnly: boolean,
+): string | undefined {
+  const allowed = new Set(options);
+  const hand = handByCost(state, seat).filter((card) => allowed.has(card.id));
+  const landsOut = (state.zones[`${seat}:battlefield`] ?? []).filter((id) => {
+    const inst = state.instances[id];
+    return inst !== undefined && characteristicsOf(state, inst).isLand;
+  }).length;
+  const spareLand = landsOut >= 5 ? hand.find((card) => card.land)?.id : undefined;
+  const spare = spareLand ?? madnessToPitch(state, seat, hand.map((card) => card.id)) ?? undefined;
+  if (spare !== undefined || sparesOnly) return spare;
+  return hand.find((card) => !card.land)?.id ?? hand[0]?.id;
+}
+
 function cheapestCreature(state: GameState, ids: readonly string[]): string | null {
   let best: { id: string; rank: number; power: number } | null = null;
   for (const id of ids) {
@@ -2391,16 +2416,41 @@ function candidateActions(
         */
         let fodder: string | null = null;
         if (play.sacrificeOptions.length > 0) {
-          fodder = cheapestCreature(state, play.sacrificeOptions);
-          if (fodder === null) continue;
-          const cost = characteristicsOf(state, state.instances[fodder]!).power;
-          const gain = targets.reduce((best, target) => {
-            if (target.kind !== 'card') return best;
-            const inst = state.instances[target.id];
-            return inst === undefined ? best : Math.max(best, characteristicsOf(state, inst).power);
-          }, 0);
-          if (cost >= Math.max(gain, 2)) continue;
+          /*
+            A cost that eats an artifact (D585) is answered first with an artifact that is not a
+            creature and that the seat does not mind losing: a token made to be spent — a
+            Treasure, a Clue, a Food — and otherwise one that pays for leaving, which is
+            `spentArtifact`'s whole rule. A Sol Ring is neither, so a seat whose only artifact is
+            one does not cast the spell; the creature rule below is then asked about whatever
+            creatures the cost also allows.
+          */
+          const idle = play.sacrificeKind === undefined ? [] : play.sacrificeOptions.filter((id) => {
+            const inst = state.instances[id];
+            return inst !== undefined && !characteristicsOf(state, inst).isCreature;
+          });
+          fodder = idle.find((id) => state.instances[id]?.isToken === true) ?? spentArtifact(state, idle);
+          if (fodder === null) {
+            const bodies = play.sacrificeOptions.filter((id) => !idle.includes(id));
+            fodder = cheapestCreature(state, bodies);
+            if (fodder === null) continue;
+            const cost = characteristicsOf(state, state.instances[fodder]!).power;
+            const gain = targets.reduce((best, target) => {
+              if (target.kind !== 'card') return best;
+              const inst = state.instances[target.id];
+              return inst === undefined ? best : Math.max(best, characteristicsOf(state, inst).power);
+            }, 0);
+            if (cost >= Math.max(gain, 2)) continue;
+          }
         }
+        /*
+          And a card to discard, where that is the cost (D585): the rule an ability's discard
+          uses — a land it has no use for, then a madness card, then the dearest thing it holds —
+          and always paid, because a spell is cast once and the card is what the spell costs.
+        */
+        const pitched = play.discardOptions === undefined || play.discardOptions.length === 0
+          ? undefined
+          : cardToPitch(state, seat, play.discardOptions, false);
+        if (play.discardOptions !== undefined && play.discardOptions.length > 0 && pitched === undefined) continue;
         out.push({
           action: {
             type: 'auto:cast', by: seat, card: play.card,
@@ -2465,6 +2515,7 @@ function candidateActions(
             // wrong spell or — on a split card, which has no printed face of its own — refused.
             ...(play.half === undefined ? {} : { half: play.half }),
             ...(fodder === null ? {} : { sacrifice: fodder }),
+            ...(pitched === undefined ? {} : { discarded: pitched }),
             /*
               X as large as the mana allows. The search sees what that buys, which is new: it
               will not cast a Hurricane for eight into a board of its own fliers any more.
@@ -2559,19 +2610,10 @@ function candidateActions(
         when pitching its hand to a Psychatog is lethal, and guessing costs more than abstaining.
       */
       if (play.discardOptions !== undefined && play.discardOptions.length > 0) {
-        const allowed = new Set(play.discardOptions);
-        const hand = handByCost(state, seat).filter((card) => allowed.has(card.id));
-        const landsOut = (state.zones[`${seat}:battlefield`] ?? []).filter((id) => {
-          const inst = state.instances[id];
-          return inst !== undefined && characteristicsOf(state, inst).isLand;
-        }).length;
-        const spareLand = landsOut >= 5 ? hand.find((card) => card.land)?.id : undefined;
-        const spare = spareLand ?? madnessToPitch(state, seat, hand.map((card) => card.id));
         const paidFor = abilityBehind(state, play.card, play.abilityIndex, play.grantedBy);
-        const pitch = spare
-          ?? (paidFor !== undefined && repeatsThisTurn(paidFor)
-            ? undefined
-            : hand.find((card) => !card.land)?.id ?? hand[0]?.id);
+        const pitch = cardToPitch(
+          state, seat, play.discardOptions, paidFor !== undefined && repeatsThisTurn(paidFor),
+        );
         if (pitch === undefined) continue;
         out.push({
           action: {

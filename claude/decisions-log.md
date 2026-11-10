@@ -40945,3 +40945,113 @@ it fails there and passes without it.
 The two older break runs (D578, 40 breaks; D574–D577, 36 breaks) are still owed. I stopped the
 queue before they started so that this increment's gate would not share the machine with them,
 and they are queued again behind this increment's own break run.
+
+## D585 — More additional costs on spells: a discard, life, and wider sacrifices
+
+"As an additional cost to cast this spell, discard a card." The compiler reads a spell whole or
+not at all, so one unread cost line keeps the whole card out, however plain the rest of it is:
+Tormenting Voice is "draw two cards" behind a cost the engine could not take. Until now the only
+additional cost read was "sacrifice a creature".
+
+**What the engine now takes when a spell is cast:**
+
+- **A card discarded.** The player picks which, as they already do for an ability that costs a
+  discard. The spell itself cannot be the card. With no other card in hand the spell is not
+  offered, and the reason is given ("it asks you to discard a card, and you have no other card
+  in hand").
+- **A printed amount of life.** Nothing to choose. Refused unless the player has more life than
+  the cost (#411 is the open question of whether paying exactly your life total should be
+  allowed; this follows what the engine already does for abilities).
+- **A wider sacrifice**: an artifact; an artifact or a creature; a creature of a named type
+  ("sacrifice a Goblin"). One shape with the ability costs, so the two cannot drift apart.
+
+Every cost is paid after the mana and before the spell goes on the stack, so a countered spell
+has still cost its caster the card, the life or the permanent.
+
+**What the compiler reads**, after "As an additional cost to cast this spell, ": `sacrifice a
+creature` (as before), `sacrifice another creature`, `sacrifice an artifact`, `sacrifice an
+artifact or creature`, `sacrifice a <creature type>`, `discard a card`, `pay N life`.
+
+    legal cards with a line beginning "As an additional cost to cast this spell":   297
+    the cost line is read:                                                           96  (was 54)
+    of those, every line is read:                                                    49  (was 21)
+
+(Counted by a probe over the corpus on this build. "Was" is the one cost read before, counted
+on the same build; the totals under Measurements are the before-and-after that does not depend
+on that.)
+
+**A fault in the table, found by a test written for this.** The table asked which card to
+discard and then cast the spell without it: the cast message it sent carried the sacrifice and
+left the discard off, because only abilities had ever asked for one. The engine would have
+refused every such cast with "choose a card to discard". Fixed, with a test on the message
+itself.
+
+**The words on the table** come from one function, `feedWords`, so a spell that eats "an
+artifact or creature" says so instead of saying "creature".
+
+**The computer opponent.**
+
+- *A discard.* One function now serves abilities and spells. It gives up a spare land once it
+  has five on the battlefield, then a card with madness. For a spell — where the discard is the
+  price of the card it has decided to cast — it goes on to the cheapest thing it holds; for an
+  ability it still declines rather than throw away a card it wants.
+- *An artifact, or an artifact or creature.* It looks at the non-creature options first: a
+  token (a Treasure, a Clue, a Food) or an artifact that has nothing left to do. Only then does
+  the rule it already had for creatures apply to the bodies.
+
+**Not read, each on purpose**, counted on this build:
+
+    discard X cards                              10    needs X announced with the cost
+    exile a creature card from your graveyard     8    a cost paid from the graveyard
+    pay X life                                    7    the engine has the payment; the reader
+                                                       needs each card's use of X
+    sacrifice a land                              6    the obvious next one
+    you may collect evidence / reveal a Dragon /
+      behold / blight / waterbend                23    optional costs with their own rules
+    reveal a creature card from your hand         4
+    "A or B" costs (sacrifice a creature or
+      pay {3}{B}, discard a card or pay {2})     16    a choice between two costs
+    everything else                              rest  one or two cards a wording
+
+And a second family the newly read costs lead straight into: **30 cards whose cost now reads
+and whose effect does not**, because the effect measures the thing given up — "Fling deals
+damage equal to the sacrificed creature's power to any target", "Draw cards equal to the
+sacrificed creature's power", "You gain life equal to the sacrificed creature's toughness".
+The engine does not yet remember what was sacrificed once it is gone. That is the next
+increment.
+
+**Tests.** 39 engine tests added and 3 web. Engine: five real cards from their
+Oracle rows (Big Score, Kuldotha Rebirth, Costly Plunder, Goblin Grenade, Withering Boon) and
+one made-up spell for the life payment, for what is offered, each refusal and its wording, what
+is paid and when, and the bot's choice of what to give up. Compiler: the older table that
+asserted "discard a card" and "pay 3 life" are refused is now two tables — seven wordings read,
+seventeen refused — with a note saying which rows moved and why. Web: three, for the words and
+for the cast message carrying the discard.
+
+    engine tests: 4,105, all passing
+    web tests: 262, all passing
+
+### Measurements
+
+This build against the last one:
+
+    cards with every printed line read:  8,706 → 8,734 of 30,710
+    printed legal lines read:            24,986 → 25,054 of 56,421 (44.4%)
+    cards with a compiled script:        12,967 → 13,003
+
+Pod sweep on D584's build (f4d4922), seeds 45201–45240: 40 of 40 finished, no throw and no
+stall.
+
+Break run on D584's build: 39 deliberate faults, 37 caught (35 by a failing test, 2 by the
+typecheck). The two that were not:
+
+- *"In a random order" read as "in any order".* A real gap. The test checked where the cards
+  ended up, and both readings leave the same cards on the bottom. The wording table now checks
+  what the words became, and that a random order is a shuffle rather than the order the cards
+  were in. Both checks were run against the fault and fail with it in.
+- *A scry given the list of cards looked at as well.* Nothing to catch. For a scry the cards
+  looked at are the cards offered, so sending the list twice changes nothing the engine or a
+  player can observe.
+
+The two older break runs (D578, 40 breaks; D574–D577, 36 breaks) are still owed, and are queued
+behind this increment's own.

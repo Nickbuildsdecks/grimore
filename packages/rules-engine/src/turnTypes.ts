@@ -1539,8 +1539,10 @@ export interface AutoCastAction {
    * used to decide this play was offerable.
    */
   readonly escape?: boolean;
-  /** The creature sacrificed for an additional cost, when the spell asks for one. */
+  /** The permanent sacrificed for an additional cost, when the spell asks for one. */
   readonly sacrifice?: string;
+  /** The card discarded for an additional cost, when the spell asks for one (D585). */
+  readonly discarded?: string;
   /**
    * Cast it out of exile for its foretell cost (CR 702.143b). Refused on a card that was not
    * foretold, on one foretold by somebody else, and on one foretold this turn.

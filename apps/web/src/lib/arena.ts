@@ -133,6 +133,24 @@ export interface Attack {
 export type Decision = NonNullable<LegalActions["mustDecide"]>
 
 /**
+ * What to tap to pay a cost that is a card rather than mana, in the words of the cost.
+ *
+ * `cost` says what happens to the card and `sacrificeKind` which cards it may be, and the second
+ * matters most where the board is mixed: over "sacrifice an artifact or creature" (D585) a line
+ * that said "tap a creature" would name half of what the player may tap, and over an artifact cost
+ * it would name the wrong half.
+ */
+export function feedWords(
+  cost: "sacrifice" | "returned" | "discarded", sacrificeKind?: LegalPlay["sacrificeKind"],
+): string {
+  if (cost === "returned") return "tap an unblocked attacker to return to your hand"
+  if (cost === "discarded") return "tap a card in your hand to discard"
+  if (sacrificeKind === "artifact") return "tap an artifact to sacrifice"
+  if (sacrificeKind === "artifact-or-creature") return "tap an artifact or creature to sacrifice"
+  return "tap a creature to sacrifice"
+}
+
+/**
  * The words for a question about the top of your own library: what a tap means, and what the
  * button that ends it says.
  *
@@ -475,12 +493,14 @@ function playAction(
   }
   if (play.kind === "cast") {
     // A cast can have a cost of its own to pay now: "sacrifice a creature" is an additional cost,
-    // not something the spell asks for on resolution, so it travels with the cast.
+    // not something the spell asks for on resolution, so it travels with the cast. And so does a
+    // card discarded for one (D585) — which this branch left off while only abilities had that
+    // cost, so the table would have asked which card and then cast the spell without it.
     return {
       type: "auto:cast", card: play.card,
       ...withModes, ...withX, ...withReplicate, ...withCostFlags,
       ...withHalf, ...withDivision,
-      ...withSacrifice, ...withTargets,
+      ...withSacrifice, ...withDiscarded, ...withTargets,
     }
   }
   return {

@@ -145,12 +145,30 @@ export function sacrificeOptions(
       inventing a restriction. The bot will not do it, because feeding the thing you are growing is
       never the cheapest creature it could feed.
     */
-    const rightKind = cost.sacrifice === 'artifact' ? hasType(ch.typeLine, 'artifact') : ch.isCreature;
+    // "An artifact or creature" is either, and a card that is both is still one sacrifice.
+    const rightKind = cost.sacrifice === 'artifact' ? hasType(ch.typeLine, 'artifact')
+      : cost.sacrifice === 'artifact-or-creature' ? hasType(ch.typeLine, 'artifact') || ch.isCreature
+        : ch.isCreature;
     if (!rightKind) return false;
     // "Sacrifice another Vampire or Zombie": one of the named subtypes, read where the kind was.
     return cost.sacrificeSubtypes === undefined
       || cost.sacrificeSubtypes.some((sub) => hasSubtype(ch.typeLine, sub));
   });
+}
+
+/**
+ * What a sacrifice cost eats, in words a refusal can use: "creature", "artifact", "artifact or
+ * creature", or the subtype where the cost names one ("Goblin").
+ */
+export function sacrificeWords(
+  cost: { readonly sacrifice?: AbilityCost['sacrifice']; readonly sacrificeSubtypes?: readonly string[] },
+): string {
+  if (cost.sacrificeSubtypes !== undefined && cost.sacrificeSubtypes.length > 0) {
+    return cost.sacrificeSubtypes.join(' or ');
+  }
+  return cost.sacrifice === 'artifact' ? 'artifact'
+    : cost.sacrifice === 'artifact-or-creature' ? 'artifact or creature'
+      : 'creature';
 }
 
 /**

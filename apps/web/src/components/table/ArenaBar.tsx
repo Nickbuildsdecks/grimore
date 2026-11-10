@@ -18,7 +18,7 @@ import type { GameView } from "@grimore/rules-engine"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
-  attackRead, decisionLabel, dividedAmount, libraryTopWords, manaPips, orderingDone, pactAsked, pactOffers,
+  attackRead, decisionLabel, dividedAmount, feedWords, libraryTopWords, manaPips, orderingDone, pactAsked, pactOffers,
   playsForCard, primaryMove, specAt, specsRequired, specsWanted, targetKey, targetName,
   targetsRequired, targetsWanted,
   type ArenaEvent, type ArenaMode,
@@ -229,13 +229,7 @@ export function ArenaBar({ view, mode, dispatch, onAct }: ArenaBarProps) {
             the board.
           */}
           <span className="text-[var(--g-text-muted)]">
-            {mode.cost === "returned"
-              ? "tap an unblocked attacker to return to your hand"
-              : mode.cost === "discarded"
-                ? "tap a card in your hand to discard"
-                : mode.play.sacrificeKind === "artifact"
-                  ? "tap an artifact to sacrifice"
-                  : "tap a creature to sacrifice"}
+            {feedWords(mode.cost, mode.play.sacrificeKind)}
           </span>
           <Button size="sm" variant="ghost" className="ml-auto" data-testid="cancel-mode" onClick={() => dispatch({ kind: "cancel" })}>
             <X className="size-3.5" /> Cancel

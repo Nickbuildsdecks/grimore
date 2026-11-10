@@ -17,7 +17,7 @@ import {
 } from './characteristics.js';
 import {
   abilityUseKey, atActivationTiming, atSorcerySpeed, bottomOwed, grantedAbilityFor, modeCombinations,
-  discardOptions, modeTargetSpecs, modesOf, pendingDeclaration, sacrificeOptions, stackTop, unblockedAttackersOf,
+  discardOptions, modeTargetSpecs, modesOf, pendingDeclaration, sacrificeOptions, sacrificeWords, stackTop, unblockedAttackersOf,
 } from './automation.js';
 import {
   canBlock, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
@@ -288,7 +288,7 @@ export interface LegalPlay {
    * the bot's judgement about what it minds losing is a different judgement for a Bonesplitter than
    * for a Centaur Courser — see `spentArtifact` for how different.
    */
-  readonly sacrificeKind?: 'artifact';
+  readonly sacrificeKind?: 'artifact' | 'artifact-or-creature';
   /**
    * Unblocked attackers that could be **returned to hand** to pay for this, when its cost asks for
    * one — ninjutsu, and nothing else so far (CR 702.49a).
@@ -1447,15 +1447,42 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       choice is part of casting it, not a question asked afterwards.
     */
     const sacrificeAsked = script?.additionalCost !== undefined && 'sacrifice' in script.additionalCost
-      ? script.additionalCost.sacrifice
+      ? script.additionalCost
       : undefined;
     const victims = sacrificeAsked === undefined
       ? []
-      : sacrificeOptions(state, seat, id, { sacrifice: sacrificeAsked });
+      : sacrificeOptions(state, seat, id, sacrificeAsked);
     if (sacrificeAsked !== undefined && victims.length === 0) {
-      why(id, sacrificeAsked === 'another-creature'
+      const fodder = sacrificeWords(sacrificeAsked);
+      why(id, sacrificeAsked.sacrifice === 'another-creature'
         ? 'it asks for another creature to sacrifice, and you have none'
-        : 'it asks for a creature to sacrifice, and you have none');
+        : `it asks for ${/^[aeiou]/.test(fodder) ? 'an' : 'a'} ${fodder} to sacrifice, and you have none`);
+      continue;
+    }
+    /*
+      The two additional costs that are not a sacrifice (D585), by the same rule: a cost that
+      cannot be paid is a spell that is not offered. "Discard a card" needs another card in the
+      hand — the spell itself does not count — and its candidates travel on the play as
+      `discardOptions`, the way an ability's do. A printed life payment needs more life than it
+      costs, which is the line every life cost here draws.
+    */
+    const discardAsked = script?.additionalCost !== undefined && 'discard' in script.additionalCost;
+    const pitches = discardAsked ? discardOptions(state, seat, id) : [];
+    if (discardAsked && pitches.length === 0) {
+      why(id, 'it asks you to discard a card, and you have no other card in hand');
+      continue;
+    }
+    // And which half of the board a sacrifice eats, where it is not simply creatures — the same
+    // field an ability's cost sets, for the same two readers. See `LegalPlay.sacrificeKind`.
+    const eats = sacrificeAsked?.sacrifice === 'artifact' || sacrificeAsked?.sacrifice === 'artifact-or-creature'
+      ? { sacrificeKind: sacrificeAsked.sacrifice }
+      : {};
+    const pitchOn = { ...(pitches.length === 0 ? {} : { discardOptions: pitches }), ...eats };
+    const lifeAsked = script?.additionalCost !== undefined && 'life' in script.additionalCost
+      ? script.additionalCost.life
+      : 0;
+    if (lifeAsked > 0 && (state.seats[seat]?.life ?? 0) <= lifeAsked) {
+      why(id, `it costs ${lifeAsked} life, and you do not have that to pay`);
       continue;
     }
     /*
@@ -1596,7 +1623,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           modes, targetSpecs: specs, candidates,
           ...(half === undefined ? {} : { half }),
           ...(offered ? { offered: true } : {}),
-          isManaAbility: false, sacrificeOptions: victims,
+          isManaAbility: false, sacrificeOptions: victims, ...pitchOn,
         });
       }
       continue;
@@ -1663,7 +1690,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       ...(foretold ? { foretold: true } : {}),
       ...(offered ? { offered: true } : {}),
       ...(half === undefined ? {} : { half }),
-      isManaAbility: false, sacrificeOptions: victims,
+      isManaAbility: false, sacrificeOptions: victims, ...pitchOn,
     });
 
     /*
@@ -1692,7 +1719,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           description: `Cast ${ch.name} with ${kicker.description.toLowerCase()}`,
           manaCost: `${def?.manaCost ?? ''}${kicker.cost}`, ...taxOn,
           ...(kickedCost.x ? { xMax: maxAffordableX(poolOf(state, seat), kickedCost, sources) } : {}),
-          targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims,
+          targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims, ...pitchOn,
         });
       }
     }
@@ -1722,7 +1749,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           description: `Cast ${ch.name} with ${buyback.description.toLowerCase()}`,
           manaCost: `${def?.manaCost ?? ''}${buyback.cost}`, ...taxOn,
           ...(boughtCost.x ? { xMax: maxAffordableX(poolOf(state, seat), boughtCost, sources) } : {}),
-          targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims,
+          targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims, ...pitchOn,
         });
       }
     }
@@ -1754,7 +1781,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           kind: 'cast', card: id, name: ch.name, replicate: times,
           description: `Cast ${ch.name} with replicate x${times}`,
           manaCost: text, ...taxOn,
-          targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims,
+          targetSpecs: specs, candidates, isManaAbility: false, sacrificeOptions: victims, ...pitchOn,
         });
       }
     }

@@ -1814,7 +1814,7 @@ export interface AbilityCost {
    * creature in reply. Modelling it as a target would be close enough to look right and wrong
    * exactly where it matters.
    */
-  readonly sacrifice?: 'creature' | 'another-creature' | 'artifact';
+  readonly sacrifice?: 'creature' | 'another-creature' | 'artifact' | 'artifact-or-creature';
   /**
    * Narrows `sacrifice` to permanents with **one of** these subtypes: "Sacrifice another Vampire
    * or Zombie" (D578).
@@ -2942,7 +2942,29 @@ export interface CardScript {
    * than offered and refused.
    */
   readonly additionalCost?:
-    | { readonly sacrifice: 'creature' | 'another-creature' }
+    /**
+     * A permanent of the caster's choosing. `sacrificeSubtypes` narrows it the way it narrows
+     * `AbilityCost.sacrifice` — "sacrifice a Goblin" (D585).
+     */
+    | {
+        readonly sacrifice: NonNullable<AbilityCost['sacrifice']>;
+        readonly sacrificeSubtypes?: readonly string[];
+      }
+    /**
+     * "As an additional cost to cast this spell, discard a card" (D585).
+     *
+     * One card of the caster's choosing, out of the hand the spell is being cast from — never the
+     * spell itself, which is on its way to the stack. Chosen as the spell is cast and carried on
+     * the action as `discarded`, the field an ability's "Discard a card" cost already uses.
+     */
+    | { readonly discard: true }
+    /**
+     * "As an additional cost to cast this spell, pay N life" (D585), with N printed.
+     *
+     * Nothing to choose, so nothing on the action: the spell is offered only to a player who can
+     * pay it, by the rule every life cost here keeps, and the life is lost as it is cast.
+     */
+    | { readonly life: number }
     /**
      * "As an additional cost to cast this spell, pay X life" (D579) — Toxic Deluge.
      *

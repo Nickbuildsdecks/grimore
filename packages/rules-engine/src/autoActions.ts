@@ -24,7 +24,7 @@ import {
   forcedAttackers, legalAttackers,
   legalBlockers, legalDefenders, menaceSatisfied, payFrom, pendingDeclaration, raiseUnblockedAttacks,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
-  discardOptions, raiseTargeted, resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop,
+  discardOptions, raiseTargeted, resetPriority, resolveTop, sacrificeOptions, sacrificeWords, scriptOf, settle, stackTop,
   stateBasedActions, unblockedAttackersOf,
   stillDeciding, takeDredge, tapAttackers,
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
@@ -550,24 +550,57 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   let sacrificed: string | null = null;
   let sacrificedName = '';
   const sacrificeAsked = script?.additionalCost !== undefined && 'sacrifice' in script.additionalCost
-    ? script.additionalCost.sacrifice
+    ? script.additionalCost
     : undefined;
   // "Pay X life" as an additional cost (D579): see `CardScript.additionalCost`.
   const lifeX = script?.additionalCost !== undefined && 'lifeX' in script.additionalCost;
   if (sacrificeAsked !== undefined) {
-    const options = sacrificeOptions(state, action.by, inst.id, { sacrifice: sacrificeAsked });
+    const options = sacrificeOptions(state, action.by, inst.id, sacrificeAsked);
+    // What it eats, in the card's own words, so the refusal names the thing that is missing.
+    const fodder = sacrificeWords(sacrificeAsked);
     if (options.length === 0) {
-      throw new EngineError('RULE_NOT_APPLICABLE', `you have no creature to sacrifice for ${characteristics.name}`);
+      throw new EngineError('RULE_NOT_APPLICABLE', `you have no ${fodder} to sacrifice for ${characteristics.name}`);
     }
     if (action.sacrifice === undefined) {
-      throw new EngineError('RULE_NOT_APPLICABLE', `choose a creature to sacrifice for ${characteristics.name}`);
+      throw new EngineError('RULE_NOT_APPLICABLE', `choose ${/^[aeiou]/.test(fodder) ? 'an' : 'a'} ${fodder} to sacrifice for ${characteristics.name}`);
     }
     if (!options.includes(action.sacrifice)) {
-      throw new EngineError('RULE_NOT_APPLICABLE', 'that creature cannot be sacrificed for this');
+      throw new EngineError('RULE_NOT_APPLICABLE', `that ${fodder} cannot be sacrificed for this`);
     }
     sacrificed = action.sacrifice;
   } else if (action.sacrifice !== undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no additional cost to pay`);
+  }
+  /*
+    "Discard a card" as an additional cost (D585), chosen and checked here for the reason the
+    sacrifice is: a refusal has to leave the hand as it was. Never the spell itself — it is in
+    the hand as this runs and on the stack by the time anything is paid.
+  */
+  let discardedForCost: string | null = null;
+  if (script?.additionalCost !== undefined && 'discard' in script.additionalCost) {
+    const options = discardOptions(state, action.by, inst.id);
+    if (options.length === 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `you have no card to discard for ${characteristics.name}`);
+    }
+    if (action.discarded === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', `choose a card to discard for ${characteristics.name}`);
+    }
+    if (!options.includes(action.discarded)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that card cannot be discarded for this');
+    }
+    discardedForCost = action.discarded;
+  } else if (action.discarded !== undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} does not ask for a discard`);
+  }
+  /*
+    And a printed amount of life (D585): nothing to choose, and refused at exactly the life that
+    would end the game — the rule `AbilityCost.life` keeps, and the one the offer was made by.
+  */
+  const lifeForCost = script?.additionalCost !== undefined && 'life' in script.additionalCost
+    ? script.additionalCost.life
+    : 0;
+  if (lifeForCost > 0 && (state.seats[action.by]?.life ?? 0) <= lifeForCost) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${lifeForCost} life to pay for ${characteristics.name}`);
   }
 
   // The tax is generic mana on top of the printed cost, and it only applies to a cast from the
@@ -766,6 +799,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   let next = paid.state;
   // The life half of the cost, paid with the mana and before anybody may respond (CR 601.2h).
   if (lifePaidForX > 0) next = loseLife(next, action.by, lifePaidForX);
+  if (lifeForCost > 0) next = loseLife(next, action.by, lifeForCost);
+  // And the card discarded for it: a discard like any other, so `settle` raises it for madness
+  // and for anything that watches one, and it is gone before anybody may respond.
+  if (discardedForCost !== null) {
+    const card = requireInstance(next, discardedForCost);
+    next = relocate(next, card, 'graveyard', card.owner, 'bottom');
+  }
   /*
     And the half of the cost that is paid in cards, exiled now as the rest of the cost is paid.
 

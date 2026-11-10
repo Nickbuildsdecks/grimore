@@ -42207,6 +42207,10 @@ describe('the dig, wording by wording (D584)', () => {
     };
     const compiled = compileCard(row as never);
     expect(compiled.ok && compiled.unread.map((u) => u.line)).toEqual([]);
+    // What the words became, before any card moves. Asked of the script and not only of the
+    // board, because the board cannot tell "a random order" from "any order" by where the cards
+    // are — both leave the same cards on the bottom (the D584 break run found exactly that).
+    expect(compiled.ok ? compiled.script?.decisions?.[0] : null).toMatchObject({ restGoTo: want.rest });
     const list = customDeck({
       id: 'probe-dig', name: 'Probe Dig',
       entries: [
@@ -42245,11 +42249,308 @@ describe('the dig, wording by wording (D584)', () => {
       const tail = [...ids(s, 0, 'library')].slice(-rest.length);
       // "Any order" keeps the order they were in; a random order is the same cards in some order.
       if (want.rest === 'bottom') expect(tail).toEqual(rest);
-      else expect([...tail].sort()).toEqual([...rest].sort());
+      else {
+        expect([...tail].sort()).toEqual([...rest].sort());
+        // And it is a shuffle, not the order they were in. The table's seed is fixed, so this is
+        // the same four cards in the same new order on every run rather than a one-in-24 flake.
+        expect(tail).not.toEqual(rest);
+      }
     }
     // Whatever was under the cards looked at is on top now, untouched.
     const under = want.look === 5 ? sixth : five[want.look]!;
     expect(ids(s, 0, 'library')[0]).toBe(under);
     expect(life(s, 0)).toBe(/You gain 2 life/.test(text) ? before + 2 : before);
+  });
+});
+
+describe('additional costs on spells: a discard, life, and wider sacrifices (D585)', () => {
+  /*
+    "As an additional cost to cast this spell, …" is paid as the spell is cast, not as it
+    resolves: it cannot be responded to, it is paid even if the spell is countered, and a spell
+    whose cost cannot be paid is not castable at all. The engine paid one such cost, "sacrifice a
+    creature"; these are the others it can now pay.
+  */
+  const SCORE = {
+    name: 'Big Score', type_line: 'Instant', mana_cost: '{3}{R}', cmc: 4, colors: ['R'], layout: 'normal',
+    oracle_text: 'As an additional cost to cast this spell, discard a card.\nDraw two cards and create two Treasure tokens. (They\'re artifacts with "{T}, Sacrifice this token: Add one mana of any color.")',
+  };
+  const REBIRTH = {
+    name: 'Kuldotha Rebirth', type_line: 'Sorcery', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal',
+    oracle_text: 'As an additional cost to cast this spell, sacrifice an artifact.\nCreate three 1/1 red Goblin creature tokens.',
+  };
+  const PLUNDER = {
+    name: 'Costly Plunder', type_line: 'Instant', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal',
+    oracle_text: 'As an additional cost to cast this spell, sacrifice an artifact or creature.\nDraw two cards.',
+  };
+  const GRENADE = {
+    name: 'Goblin Grenade', type_line: 'Sorcery', mana_cost: '{R}', cmc: 1, colors: ['R'], layout: 'normal',
+    oracle_text: 'As an additional cost to cast this spell, sacrifice a Goblin.\nGoblin Grenade deals 5 damage to any target.',
+  };
+  const BOON = {
+    name: 'Withering Boon', type_line: 'Instant', mana_cost: '{1}{B}', cmc: 2, colors: ['B'], layout: 'normal',
+    oracle_text: 'As an additional cost to cast this spell, pay 3 life.\nCounter target creature spell.',
+  };
+  // Not a real card: the life cost on an effect with nothing to aim, so the cost is all a test of
+  // it has to arrange. Withering Boon above is the real card and is checked for reading whole.
+  const TITHE = {
+    name: 'Probe Tithe', type_line: 'Sorcery', mana_cost: '{B}', cmc: 1, colors: ['B'], layout: 'normal',
+    oracle_text: 'As an additional cost to cast this spell, pay 3 life.\nDraw two cards.',
+  };
+  const ROWS = [SCORE, REBIRTH, PLUNDER, GRENADE, BOON, TITHE];
+  const costList = customDeck({
+    id: 'costs',
+    name: 'Costs',
+    entries: [
+      ...ROWS.map((row) => ({ name: row.name, count: 2 })),
+      { name: 'Mind Stone', count: 4 },
+      { name: 'Raging Goblin', count: 4 },
+      { name: 'Hill Giant', count: 6 },
+      { name: 'Lightning Bolt', count: 4 },
+      { name: 'Mountain', count: 16 },
+      { name: 'Swamp', count: 14 },
+    ],
+    data: ROWS as never[],
+  }).deck;
+  const table = (opts: { hand?: readonly string[]; mine?: readonly string[]; lifeAt?: number }): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'costs', 1: 'tidal-mind' },
+      deckSpecs: { costs: costList },
+      hands: { 0: [...(opts.hand ?? [])] },
+      battlefield: { 0: [...(opts.mine ?? [])] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    // The draw step added a card; it goes back, so the hand is exactly what the test named.
+    const named = [...(opts.hand ?? [])];
+    for (const id of ids(s, 0, 'hand')) {
+      const at = named.indexOf(nameOf(s, id));
+      if (at >= 0) { named.splice(at, 1); continue; }
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    if (opts.lifeAt !== undefined) {
+      s = { ...s, seats: s.seats.map((seat) => (seat.index === 0 ? { ...seat, life: opts.lifeAt! } : seat)) };
+    }
+    return s;
+  };
+  const MOUNTAINS = ['Mountain', 'Mountain', 'Mountain', 'Mountain'];
+  const SWAMPS = ['Swamp', 'Swamp'];
+  const playOf = (s: GameState, name: string) => legalActions(s, 0).plays
+    .find((p) => p.kind === 'cast' && p.name === name);
+  const whyNot = (s: GameState, name: string) => legalActions(s, 0).blocked
+    .find((b) => b.card === find(s, 0, 'hand', name))?.reason;
+
+  it('reads all five real cards with nothing left unread, and the cost as a cost', () => {
+    for (const row of ROWS) {
+      const compiled = compileCard(row as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), row.name).toEqual([]);
+    }
+    const costOf = (name: string) => scriptForCard(costList.cards.find((e) => e.card.name === name)!.card)?.additionalCost;
+    expect(costOf('Big Score')).toEqual({ discard: true });
+    expect(costOf('Kuldotha Rebirth')).toEqual({ sacrifice: 'artifact' });
+    expect(costOf('Costly Plunder')).toEqual({ sacrifice: 'artifact-or-creature' });
+    expect(costOf('Goblin Grenade')).toEqual({ sacrifice: 'creature', sacrificeSubtypes: ['Goblin'] });
+    expect(costOf('Withering Boon')).toEqual({ life: 3 });
+  });
+
+  describe('discard a card', () => {
+    it('offers the rest of the hand to discard, and never the spell itself', () => {
+      const s = table({ hand: ['Big Score', 'Hill Giant', 'Mountain'], mine: MOUNTAINS });
+      const score = find(s, 0, 'hand', 'Big Score');
+      const play = playOf(s, 'Big Score')!;
+      expect([...play.discardOptions!].sort()).toEqual(
+        [find(s, 0, 'hand', 'Hill Giant'), find(s, 0, 'hand', 'Mountain')].sort(),
+      );
+      expect(refusal(s, { type: 'auto:cast', by: 0, card: score, targets: [] })).toMatch(/choose a card to discard/);
+      expect(refusal(s, { type: 'auto:cast', by: 0, card: score, targets: [], discarded: score }))
+        .toMatch(/cannot be discarded/);
+    });
+
+    it('is not castable from a hand with nothing else in it, and says why', () => {
+      const s = table({ hand: ['Big Score'], mine: MOUNTAINS });
+      expect(playOf(s, 'Big Score')).toBeUndefined();
+      expect(whyNot(s, 'Big Score')).toMatch(/discard a card, and you have no other card/);
+      expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Big Score'), targets: [] }))
+        .toMatch(/no card to discard/);
+    });
+
+    it('discards as the spell is cast, with the spell still on the stack', () => {
+      let s = table({ hand: ['Big Score', 'Hill Giant'], mine: MOUNTAINS });
+      const giant = find(s, 0, 'hand', 'Hill Giant');
+      s = apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Big Score'), targets: [], discarded: giant,
+      });
+      expect(s.instances[giant]!.zone).toBe('graveyard');
+      expect(stackNames(s)).toContain('Big Score');
+      // Nothing drawn yet: the cost is paid now, the effect when it resolves.
+      expect(ids(s, 0, 'hand')).toEqual([]);
+      s = drain(passBoth(s));
+      expect(ids(s, 0, 'hand').length).toBe(2);
+      expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Treasure').length).toBe(2);
+    });
+
+    it('refuses a discard on a spell that does not ask for one', () => {
+      const s = table({ hand: ['Lightning Bolt', 'Hill Giant'], mine: MOUNTAINS });
+      expect(refusal(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Lightning Bolt'),
+        targets: [{ kind: 'player', seat: 1 }], discarded: find(s, 0, 'hand', 'Hill Giant'),
+      })).toMatch(/does not ask for a discard/);
+    });
+  });
+
+  describe('sacrifice an artifact', () => {
+    it('offers the artifacts and not the creatures, and says which half of the board it eats', () => {
+      const s = table({ hand: ['Kuldotha Rebirth'], mine: ['Mountain', 'Mind Stone', 'Hill Giant'] });
+      const play = playOf(s, 'Kuldotha Rebirth')!;
+      expect(play.sacrificeOptions).toEqual([find(s, 0, 'battlefield', 'Mind Stone')]);
+      expect(play.sacrificeKind).toBe('artifact');
+      expect(refusal(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Kuldotha Rebirth'), targets: [],
+        sacrifice: find(s, 0, 'battlefield', 'Hill Giant'),
+      })).toMatch(/that artifact cannot be sacrificed/);
+    });
+
+    it('is not castable with no artifact, and says so', () => {
+      const s = table({ hand: ['Kuldotha Rebirth'], mine: ['Mountain', 'Hill Giant'] });
+      expect(playOf(s, 'Kuldotha Rebirth')).toBeUndefined();
+      expect(whyNot(s, 'Kuldotha Rebirth')).toMatch(/an artifact to sacrifice, and you have none/);
+    });
+
+    it('sacrifices it as the spell is cast and makes the three Goblins', () => {
+      let s = table({ hand: ['Kuldotha Rebirth'], mine: ['Mountain', 'Mind Stone'] });
+      const stone = find(s, 0, 'battlefield', 'Mind Stone');
+      s = apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Kuldotha Rebirth'), targets: [], sacrifice: stone,
+      });
+      expect(s.instances[stone]!.zone).toBe('graveyard');
+      s = drain(passBoth(s));
+      expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Goblin').length).toBe(3);
+    });
+  });
+
+  describe('sacrifice an artifact or creature', () => {
+    it('offers both kinds', () => {
+      const s = table({ hand: ['Costly Plunder'], mine: [...SWAMPS, 'Mind Stone', 'Hill Giant'] });
+      const play = playOf(s, 'Costly Plunder')!;
+      expect([...play.sacrificeOptions].sort()).toEqual(
+        [find(s, 0, 'battlefield', 'Mind Stone'), find(s, 0, 'battlefield', 'Hill Giant')].sort(),
+      );
+      expect(play.sacrificeKind).toBe('artifact-or-creature');
+    });
+
+    it('takes a creature as readily as an artifact, and draws the two cards', () => {
+      let s = table({ hand: ['Costly Plunder'], mine: [...SWAMPS, 'Hill Giant'] });
+      const giant = find(s, 0, 'battlefield', 'Hill Giant');
+      s = drain(passBoth(apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Costly Plunder'), targets: [], sacrifice: giant,
+      })));
+      expect(s.instances[giant]!.zone).toBe('graveyard');
+      expect(ids(s, 0, 'hand').length).toBe(2);
+    });
+
+    it('is not castable with neither', () => {
+      const s = table({ hand: ['Costly Plunder'], mine: SWAMPS });
+      expect(playOf(s, 'Costly Plunder')).toBeUndefined();
+      expect(whyNot(s, 'Costly Plunder')).toMatch(/an artifact or creature to sacrifice, and you have none/);
+    });
+  });
+
+  describe('sacrifice a creature of a named type', () => {
+    it('offers the Goblin and not the Giant', () => {
+      const s = table({ hand: ['Goblin Grenade'], mine: ['Mountain', 'Raging Goblin', 'Hill Giant'] });
+      expect(playOf(s, 'Goblin Grenade')!.sacrificeOptions).toEqual([find(s, 0, 'battlefield', 'Raging Goblin')]);
+      expect(refusal(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Goblin Grenade'),
+        targets: [{ kind: 'player', seat: 1 }], sacrifice: find(s, 0, 'battlefield', 'Hill Giant'),
+      })).toMatch(/that Goblin cannot be sacrificed/);
+    });
+
+    it('is not castable by a board with creatures and no Goblin', () => {
+      const s = table({ hand: ['Goblin Grenade'], mine: ['Mountain', 'Hill Giant'] });
+      expect(playOf(s, 'Goblin Grenade')).toBeUndefined();
+      expect(whyNot(s, 'Goblin Grenade')).toMatch(/a Goblin to sacrifice, and you have none/);
+    });
+
+    it('throws the Goblin for five', () => {
+      let s = table({ hand: ['Goblin Grenade'], mine: ['Mountain', 'Raging Goblin'] });
+      const goblin = find(s, 0, 'battlefield', 'Raging Goblin');
+      const before = life(s, 1);
+      s = drain(passBoth(apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Goblin Grenade'),
+        targets: [{ kind: 'player', seat: 1 }], sacrifice: goblin,
+      })));
+      expect(s.instances[goblin]!.zone).toBe('graveyard');
+      expect(life(s, 1)).toBe(before - 5);
+    });
+  });
+
+  describe('pay a printed amount of life', () => {
+    it('takes the life as the spell is cast, before it resolves', () => {
+      let s = table({ hand: ['Probe Tithe'], mine: SWAMPS });
+      const before = life(s, 0);
+      s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Probe Tithe'), targets: [] });
+      expect(life(s, 0)).toBe(before - 3);
+      expect(ids(s, 0, 'hand')).toEqual([]);
+      s = drain(passBoth(s));
+      expect(life(s, 0)).toBe(before - 3);
+      expect(ids(s, 0, 'hand').length).toBe(2);
+    });
+
+    it('is offered at four life and not at three, by the rule every life cost here keeps', () => {
+      const four = table({ hand: ['Probe Tithe'], mine: SWAMPS, lifeAt: 4 });
+      expect(playOf(four, 'Probe Tithe')).toBeDefined();
+      const three = table({ hand: ['Probe Tithe'], mine: SWAMPS, lifeAt: 3 });
+      expect(playOf(three, 'Probe Tithe')).toBeUndefined();
+      expect(whyNot(three, 'Probe Tithe')).toMatch(/costs 3 life/);
+      expect(refusal(three, { type: 'auto:cast', by: 0, card: find(three, 0, 'hand', 'Probe Tithe'), targets: [] }))
+        .toMatch(/do not have 3 life/);
+    });
+  });
+
+  describe('the bot', () => {
+    it('pays a discard with a land it has no use for', () => {
+      // Two Mountains in hand and five out: it plays one as its land for the turn, and the other
+      // is the card a sixth land would not have changed anything for.
+      let s = table({
+        hand: ['Big Score', 'Mountain', 'Mountain'],
+        mine: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain'],
+      });
+      let cast: Action | null = null;
+      for (let i = 0; i < 4 && cast === null; i++) {
+        const action = botAction(s, 0);
+        if (action === null) break;
+        if (action.type === 'auto:cast' && nameOf(s, action.card) === 'Big Score') { cast = action; break; }
+        s = drain(apply(s, action));
+      }
+      expect(cast).not.toBeNull();
+      const pitched = (cast as { discarded?: string }).discarded;
+      expect(pitched === undefined ? undefined : nameOf(s, pitched)).toBe('Mountain');
+      expect(refusal(s, cast!)).toBeNull();
+    });
+
+    it('feeds an artifact cost a Treasure, and will not feed it a Mind Stone', () => {
+      let s = table({ hand: ['Big Score', 'Hill Giant', 'Kuldotha Rebirth'], mine: [...MOUNTAINS, 'Mountain'] });
+      s = drain(passBoth(apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Big Score'), targets: [],
+        discarded: find(s, 0, 'hand', 'Hill Giant'),
+      })));
+      const treasures = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Treasure');
+      expect(treasures.length).toBe(2);
+      const rebirth = find(s, 0, 'hand', 'Kuldotha Rebirth');
+      const offered = legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.card === rebirth)!;
+      expect([...offered.sacrificeOptions].sort()).toEqual([...treasures].sort());
+      // And it does cast it, paying with one of them.
+      let fed: Action | null = null;
+      for (let i = 0; i < 4 && fed === null; i++) {
+        const action = botAction(s, 0);
+        if (action === null) break;
+        if (action.type === 'auto:cast' && action.card === rebirth) { fed = action; break; }
+        s = drain(apply(s, action));
+      }
+      expect(fed).not.toBeNull();
+      expect(treasures).toContain((fed as { sacrifice?: string }).sacrifice);
+
+      const stone = table({ hand: ['Kuldotha Rebirth'], mine: ['Mountain', 'Mind Stone'] });
+      const action = botAction(stone, 0);
+      expect(action?.type === 'auto:cast' && action.card === find(stone, 0, 'hand', 'Kuldotha Rebirth')).toBe(false);
+    });
   });
 });

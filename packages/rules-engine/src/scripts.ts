@@ -21923,19 +21923,56 @@ function entersWithFromLine(line: string, name: string): Partial<CardScript> | n
  * cannot be paid is **not offered** rather than offered and refused, so Bone Splinters with an empty
  * board is not a legal play.
  *
- * Only the sacrifice, because that is the only shape the field has. "Discard a card", "pay 3 life"
- * and the rest are real printed costs this engine cannot express, and a reader that dropped them
- * would make a spell cheaper than the card — the clearest kind of card that works and is wrong.
+ * ## What is read (D585)
+ *
+ * It was only "sacrifice a creature" until the field had more shapes, and **246 legal lines** print
+ * an additional cost — each one holding back a whole spell, because a spell is read all or nothing
+ * and a cost left unread would be a spell cheaper than the card. The shapes the engine can now pay:
+ *
+ *     sacrifice a creature / another creature
+ *     sacrifice an artifact                        (Forge Armor)
+ *     sacrifice an artifact or creature            (Anchor to Reality)
+ *     sacrifice a <creature type>                  (Fodder Launch: a Goblin)
+ *     discard a card                               (Big Score)
+ *     pay N life                                   (Bond of Agony's sibling costs; N printed)
+ *
+ * ## What is refused, and each is a cost the field has no shape for
+ *
+ * - "discard **two** cards", "discard a card **at random**" — a count and a random pick.
+ * - "sacrifice a **land**", "a permanent", "a creature or enchantment" — kinds the sacrifice does
+ *   not have.
+ * - "**you may** …" (collect evidence, behold, blight) — an optional cost, which changes what the
+ *   spell does and is a keyword's business.
+ * - "… **or** pay {2}" — a choice between two costs.
+ * - "exile a creature card from your graveyard", "reveal a creature card from your hand", "return
+ *   a land you control to its owner's hand" — other zones and other verbs.
+ * - "pay **X** life" — X announced as the spell is cast; the pool's Toxic Deluge has it by hand.
  */
 function additionalCostFromLine(line: string): Partial<CardScript> | null {
-  const matched = /^As an additional cost to cast this spell, sacrifice (a|another) creature$/i
-    .exec(plain(line).trim().replace(/\.\s*$/, ''));
-  if (matched === null) return null;
-  return {
-    additionalCost: {
-      sacrifice: matched[1]!.toLowerCase() === 'another' ? 'another-creature' : 'creature',
-    },
-  };
+  const cost = /^As an additional cost to cast this spell, (.+)$/i
+    .exec(plain(line).trim().replace(/\.\s*$/, ''))?.[1];
+  if (cost === undefined) return null;
+  const creature = /^sacrifice (a|another) creature$/i.exec(cost);
+  if (creature !== null) {
+    return {
+      additionalCost: {
+        sacrifice: creature[1]!.toLowerCase() === 'another' ? 'another-creature' : 'creature',
+      },
+    };
+  }
+  if (/^sacrifice an artifact$/i.test(cost)) return { additionalCost: { sacrifice: 'artifact' } };
+  if (/^sacrifice an artifact or creature$/i.test(cost)) {
+    return { additionalCost: { sacrifice: 'artifact-or-creature' } };
+  }
+  // A creature type, validated: an unknown capitalised word is not quietly read as one (#341).
+  const typed = /^sacrifice an? ([A-Z][a-z]+)$/.exec(cost);
+  if (typed !== null && isCreatureType(typed[1]!)) {
+    return { additionalCost: { sacrifice: 'creature', sacrificeSubtypes: [typed[1]!] } };
+  }
+  if (/^discard a card$/i.test(cost)) return { additionalCost: { discard: true } };
+  const life = /^pay (\d+) life$/i.exec(cost);
+  if (life !== null && Number(life[1]) > 0) return { additionalCost: { life: Number(life[1]) } };
+  return null;
 }
 
 /**
