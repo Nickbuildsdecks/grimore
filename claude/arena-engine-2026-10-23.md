@@ -20271,3 +20271,15 @@ creature or planeswalker spell", which is a target phrase the vocabulary does no
 Exactly the ten the one-blocker instrument predicted, which is the first exact call since D538 and a
 useful calibration point: the instrument is accurate when a reader adds a clause and badly under when
 it changes a layer below (D540 by 72, D544 by 60).
+
+### D545's pod sweep
+
+**40/40 pods finished** at SEED0=41801 on the clean commit (86df65e), no engine throw and no stalled
+table, 64.6 turns and 407 moves a game. Per 100-card deck across 160 decks: 26.8 cards with a
+hand-written script, 46.6 with at least one unread line, 61.9 playable only from printed data, 0.4
+cardboard.
+
+What this sweep covers that the tests cannot: `counterSpell` and `settlePayment` are on the path of
+every counterspell and every ward in every game, and this increment changed the signature of one and
+the state shape of the other. Forty tables with no throw is the evidence that the three places the
+flag is now read still agree with the thirty-odd callers that do not pass it.
