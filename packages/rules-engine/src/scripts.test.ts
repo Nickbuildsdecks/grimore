@@ -40590,6 +40590,20 @@ describe('the last printed halves: a doubling, a fed Vampire, and a cheaper Maul
     expect(activates(addCounters(bare, elite, '+1/+1', 3))).toBe(true);
   });
 
+  it('and what it is told is on the card: the flag itself, asked directly', () => {
+    /*
+      The test above passes with the flag switched off (the D578 break run found that): on this
+      board the search declines the empty doubling by itself, so the bot's behaviour here does not
+      show whether the card says anything. The flag is for the boards where the search cannot see
+      it — `AbilityDef.buysNothingIf` has the measurement — so it is asked directly.
+    */
+    const bare = board([...SIX_FORESTS, 'Dragonsguard Elite']);
+    const elite = find(bare, 0, 'battlefield', 'Dragonsguard Elite');
+    const doubling = scriptForCard(bare.cardDefs[bare.instances[elite]!.defKey])!.abilities![0]!;
+    expect(doubling.buysNothingIf!(bare, elite, 0)).toBe(true);
+    expect(doubling.buysNothingIf!(addCounters(bare, elite, '+1/+1', 1), elite, 0)).toBe(false);
+  });
+
   it('has no ward any more: an opponent\'s removal is asked for nothing', () => {
     let s = advanceTo(arena({
       decks: { 0: 'tidal-mind', 1: 'fed' }, deckSpecs: { fed },
@@ -42551,6 +42565,335 @@ describe('additional costs on spells: a discard, life, and wider sacrifices (D58
       const stone = table({ hand: ['Kuldotha Rebirth'], mine: ['Mountain', 'Mind Stone'] });
       const action = botAction(stone, 0);
       expect(action?.type === 'auto:cast' && action.card === find(stone, 0, 'hand', 'Kuldotha Rebirth')).toBe(false);
+    });
+  });
+});
+
+describe('what was sacrificed to pay for it: "the sacrificed creature\'s power" (D586)', () => {
+  /*
+    "Fling deals damage equal to the sacrificed creature's power to any target." The creature is
+    in a graveyard by the time the spell resolves, so the number is what it was as it left the
+    battlefield (CR 608.2h): read as the cost is paid, carried on the spell or ability, and handed
+    to the effect. Ten real cards, each from its Oracle row.
+  */
+  const cost = 'As an additional cost to cast this spell, sacrifice a creature.\n';
+  const row = (name: string, type: string, mana: string, cmc: number, colors: readonly string[], text: string) => ({
+    name, type_line: type, mana_cost: mana, cmc, colors, layout: 'normal', oracle_text: text,
+  });
+  const FLING = row('Fling', 'Instant', '{1}{R}', 2, ['R'],
+    `${cost}Fling deals damage equal to the sacrificed creature's power to any target.`);
+  const LEGACY = row("Life's Legacy", 'Sorcery', '{1}{G}', 2, ['G'],
+    `${cost}Draw cards equal to the sacrificed creature's power.`);
+  const CAUSE = row('Worthy Cause', 'Instant', '{W}', 1, ['W'],
+    'Buyback {2} (You may pay an additional {2} as you cast this spell. If you do, put this card into your hand as it resolves.)\n'
+    + `${cost}You gain life equal to the sacrificed creature's toughness.`);
+  const BARGAIN = row("Reckoner's Bargain", 'Instant', '{1}{B}', 2, ['B'],
+    'As an additional cost to cast this spell, sacrifice an artifact or creature.\n'
+    + "You gain life equal to the sacrificed permanent's mana value. Draw two cards.");
+  const CARRION = row('Carrion', 'Instant', '{1}{B}{B}', 3, ['B'],
+    `${cost}Create X 0/1 black Insect creature tokens, where X is the sacrificed creature's power.`);
+  const BLOOD = row('Call for Blood', 'Instant — Arcane', '{4}{B}', 5, ['B'],
+    `${cost}Target creature gets -X/-X until end of turn, where X is the sacrificed creature's power.`);
+  const STRIKE = row('Final Strike', 'Sorcery', '{2}{B}{B}', 4, ['B'],
+    `${cost}Final Strike deals damage to target opponent or planeswalker equal to the sacrificed creature's power.`);
+  const ALTAR = row('Altar of Dementia', 'Artifact', '{2}', 2, [],
+    "Sacrifice a creature: Target player mills cards equal to the sacrificed creature's power.");
+  const CONDOR = {
+    ...row('Airdrop Condor', 'Creature — Bird', '{4}{R}', 5, ['R'],
+      "Flying\n{1}{R}, Sacrifice a Goblin creature: Airdrop Condor deals damage equal to the sacrificed creature's power to any target."),
+    power: '2', toughness: '2',
+  };
+  const GOOD = row('Greater Good', 'Enchantment', '{2}{G}{G}', 4, ['G'],
+    "Sacrifice a creature: Draw cards equal to the sacrificed creature's power, then discard three cards.");
+  const ROWS = [FLING, LEGACY, CAUSE, BARGAIN, CARRION, BLOOD, STRIKE, ALTAR, CONDOR, GOOD];
+  const list = customDeck({
+    id: 'measures',
+    name: 'Measures',
+    entries: [
+      ...ROWS.map((r) => ({ name: r.name, count: 2 })),
+      { name: 'Hill Giant', count: 4 },       // 3/3, mana value 4
+      { name: 'Giant Spider', count: 4 },     // 2/4, so power and toughness cannot be confused
+      { name: 'Raging Goblin', count: 2 },    // 1/1, the only Goblin
+      { name: 'Mind Stone', count: 2 },       // an artifact that is not a creature, mana value 2
+      { name: 'Giant Growth', count: 2 },
+      { name: 'Twincast', count: 2 },
+      { name: 'Mountain', count: 6 }, { name: 'Swamp', count: 6 }, { name: 'Forest', count: 6 },
+      { name: 'Plains', count: 4 }, { name: 'Island', count: 4 },
+    ],
+    data: ROWS as never[],
+  }).deck;
+  const LANDS = ['Mountain', 'Mountain', 'Swamp', 'Swamp', 'Swamp', 'Forest', 'Forest', 'Plains', 'Island', 'Island'];
+  const table = (hand: readonly string[], mine: readonly string[], theirs: readonly string[] = []): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'measures', 1: 'tidal-mind' },
+      deckSpecs: { measures: list },
+      hands: { 0: [...hand] },
+      battlefield: { 0: [...LANDS, ...mine], 1: [...theirs] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    // The draw step added a card; it goes back, so the hand is exactly what the test named.
+    const named = [...hand];
+    for (const id of ids(s, 0, 'hand')) {
+      const at = named.indexOf(nameOf(s, id));
+      if (at >= 0) { named.splice(at, 1); continue; }
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    return s;
+  };
+  const cast = (s: GameState, name: string, sacrifice: string, targets: readonly Target[] = []): GameState => apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: [...targets], sacrifice,
+  });
+  const THEM: Target = { kind: 'player', seat: 1 };
+
+  it('reads all ten cards with nothing left unread', () => {
+    for (const r of ROWS) {
+      const compiled = compileCard(r as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), r.name).toEqual([]);
+    }
+  });
+
+  it('Fling deals the sacrificed creature\'s power', () => {
+    let s = table(['Fling'], ['Hill Giant']);
+    const before = life(s, 1);
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = cast(s, 'Fling', giant, [THEM]);
+    // Gone as the cost is paid, and the spell still knows how big it was.
+    expect(s.instances[giant]!.zone).toBe('graveyard');
+    expect(s.stackObjects[s.stackOrder[0]!]!.sacrificedStats).toEqual({ power: 3, toughness: 3, manaValue: 4 });
+    s = drain(passBoth(s), 20);
+    expect(life(s, 1)).toBe(before - 3);
+  });
+
+  it('reads the power it had on the battlefield, not the one printed on the card', () => {
+    // A 2/4 under a Giant Growth is a 5/7 when it is thrown, and a 2/4 again in the graveyard.
+    let s = table(['Fling', 'Giant Growth'], ['Giant Spider']);
+    const before = life(s, 1);
+    const spider = find(s, 0, 'battlefield', 'Giant Spider');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Giant Growth'), targets: [{ kind: 'card', id: spider }],
+    })), 20);
+    s = drain(passBoth(cast(s, 'Fling', spider, [THEM])), 20);
+    expect(life(s, 1)).toBe(before - 5);
+  });
+
+  it('counts the counters it had, which a card in a graveyard has none of', () => {
+    let s = table(['Fling'], ['Hill Giant']);
+    const before = life(s, 1);
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = { ...s, instances: { ...s.instances, [giant]: { ...s.instances[giant]!, counters: { '+1/+1': 2 } } } };
+    s = drain(passBoth(cast(s, 'Fling', giant, [THEM])), 20);
+    expect(life(s, 1)).toBe(before - 5);
+  });
+
+  it('a copy of the spell deals the same, though nothing was sacrificed for the copy (CR 707.10)', () => {
+    let s = table(['Fling', 'Twincast'], ['Hill Giant']);
+    const before = life(s, 1);
+    s = cast(s, 'Fling', find(s, 0, 'battlefield', 'Hill Giant'), [THEM]);
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Twincast'), targets: [{ kind: 'card', id: s.stackOrder[0]! }] });
+    s = drain(passBoth(s), 20);
+    for (let i = 0; i < 8 && s.pendingDecision !== null; i += 1) {
+      s = drain(apply(s, { type: 'auto:decide', by: s.pendingDecision.seat, cards: [] } as Action), 20);
+    }
+    s = drain(passBoth(s), 20);
+    expect(life(s, 1)).toBe(before - 6);
+  });
+
+  it("Life's Legacy draws its power, and Worthy Cause gains its toughness", () => {
+    let s = table(["Life's Legacy"], ['Giant Spider']);
+    s = drain(passBoth(cast(s, "Life's Legacy", find(s, 0, 'battlefield', 'Giant Spider'))), 20);
+    // The Legacy left the hand and two cards came: the Spider is a 2/4.
+    expect(ids(s, 0, 'hand').length).toBe(2);
+
+    s = table(['Worthy Cause'], ['Giant Spider']);
+    const before = life(s, 0);
+    s = drain(passBoth(cast(s, 'Worthy Cause', find(s, 0, 'battlefield', 'Giant Spider'))), 20);
+    expect(life(s, 0)).toBe(before + 4);
+  });
+
+  it("Reckoner's Bargain gains the mana value of an artifact, and nothing for a token", () => {
+    let s = table(["Reckoner's Bargain"], ['Mind Stone']);
+    let before = life(s, 0);
+    s = drain(passBoth(cast(s, "Reckoner's Bargain", find(s, 0, 'battlefield', 'Mind Stone'))), 20);
+    expect(life(s, 0)).toBe(before + 2);
+    expect(ids(s, 0, 'hand').length).toBe(2);
+
+    // A face-down permanent has no mana value, whatever is printed on the card under it (CR 708.2).
+    s = table(["Reckoner's Bargain"], ['Hill Giant']);
+    const hidden = find(s, 0, 'battlefield', 'Hill Giant');
+    s = { ...s, instances: { ...s.instances, [hidden]: { ...s.instances[hidden]!, faceDown: true } } };
+    before = life(s, 0);
+    s = drain(passBoth(cast(s, "Reckoner's Bargain", hidden)), 20);
+    expect(life(s, 0)).toBe(before);
+
+    // Carrion makes the tokens, three of them for a 3/3; then one of them is the Bargain's price.
+    s = table(['Carrion', "Reckoner's Bargain"], ['Hill Giant']);
+    s = drain(passBoth(cast(s, 'Carrion', find(s, 0, 'battlefield', 'Hill Giant'))), 20);
+    const insects = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Insect');
+    expect(insects.length).toBe(3);
+    before = life(s, 0);
+    s = drain(passBoth(cast(s, "Reckoner's Bargain", insects[0]!)), 20);
+    expect(life(s, 0)).toBe(before);
+    expect(ids(s, 0, 'hand').length).toBe(2);
+  });
+
+  it('Call for Blood shrinks its target by that much, and Final Strike hits the opponent for it', () => {
+    let s = table(['Call for Blood'], ['Hill Giant'], ['Wind Drake']);
+    const theirs = find(s, 1, 'battlefield', 'Wind Drake');
+    s = drain(passBoth(cast(s, 'Call for Blood', find(s, 0, 'battlefield', 'Hill Giant'), [{ kind: 'card', id: theirs }])), 20);
+    // A 2/2 at -3/-3 has no toughness left.
+    expect(s.instances[theirs]!.zone).toBe('graveyard');
+
+    s = table(['Final Strike'], ['Giant Spider']);
+    const before = life(s, 1);
+    s = drain(passBoth(cast(s, 'Final Strike', find(s, 0, 'battlefield', 'Giant Spider'), [THEM])), 20);
+    expect(life(s, 1)).toBe(before - 2);
+  });
+
+  it('an ability that sacrifices a creature knows it too: Altar of Dementia', () => {
+    let s = table([], ['Altar of Dementia', 'Hill Giant']);
+    const library = ids(s, 1, 'library').length;
+    const yard = ids(s, 1, 'graveyard').length;
+    const giant = find(s, 0, 'battlefield', 'Hill Giant');
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Altar of Dementia'), abilityIndex: 0,
+      targets: [THEM], sacrifice: giant,
+    });
+    expect(s.stackObjects[s.stackOrder[0]!]!.sacrificedStats).toEqual({ power: 3, toughness: 3, manaValue: 4 });
+    s = drain(passBoth(s), 20);
+    expect(ids(s, 1, 'library').length).toBe(library - 3);
+    expect(ids(s, 1, 'graveyard').length).toBe(yard + 3);
+  });
+
+  it('"Sacrifice a Goblin creature" takes a Goblin and nothing else: Airdrop Condor', () => {
+    let s = table([], ['Airdrop Condor', 'Raging Goblin', 'Hill Giant']);
+    const condor = find(s, 0, 'battlefield', 'Airdrop Condor');
+    const goblin = find(s, 0, 'battlefield', 'Raging Goblin');
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === condor)!;
+    expect(play.sacrificeOptions).toEqual([goblin]);
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: condor, abilityIndex: 0, targets: [THEM],
+      sacrifice: find(s, 0, 'battlefield', 'Hill Giant'),
+    })).toMatch(/cannot be sacrificed/);
+    const before = life(s, 1);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: condor, abilityIndex: 0, targets: [THEM], sacrifice: goblin })), 20);
+    expect(life(s, 1)).toBe(before - 1);
+  });
+
+  it('Greater Good draws the power first and then asks for the three discards', () => {
+    // The draw comes before the question, so the half of the card that runs first has to be told
+    // what was sacrificed as well as the half that runs last.
+    // One card in hand to begin with, so that three drawn makes four and the discard is a choice
+    // (with exactly three the engine would answer for the player and there would be no question).
+    let s = table(['Fling'], ['Greater Good', 'Hill Giant']);
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Greater Good'), abilityIndex: 0,
+      targets: [], sacrifice: find(s, 0, 'battlefield', 'Hill Giant'),
+    });
+    s = passBoth(s);
+    expect(ids(s, 0, 'hand').length).toBe(4);
+    expect(s.pendingDecision).toMatchObject({ seat: 0, from: 'hand', min: 3, max: 3 });
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [...ids(s, 0, 'hand')].slice(0, 3) } as Action), 20);
+    expect(ids(s, 0, 'hand').length).toBe(1);
+  });
+
+  describe('wording by wording, as an ability that sacrifices a 2/4 with mana value 4', () => {
+    /*
+      Each printed grammar the measure is read in, on a made-up artifact so that the only thing a
+      row arranges is the sentence. The Giant Spider sacrificed is a 2/4 that costs four, so the
+      three measures give three different numbers.
+    */
+    it.each([
+      ['Target player loses life equal to the sacrificed creature\'s power.', { them: -2 }],
+      ['Each opponent loses life equal to the sacrificed creature\'s toughness.', { them: -4 }],
+      ['Probe Idol deals X damage to any target, where X is the sacrificed creature\'s power.', { them: -2 }],
+      ['Probe Idol deals damage to any target equal to the sacrificed creature\'s toughness.', { them: -4 }],
+      ['You gain X life, where X is the sacrificed creature\'s toughness.', { me: 4 }],
+      ['You lose life equal to the sacrificed creature\'s power.', { me: -2 }],
+      ['Draw cards equal to the mana value of the sacrificed creature.', { cards: 4 }],
+      ['Draw X cards, where X is the sacrificed creature\'s mana value.', { cards: 4 }],
+    ] as const)('%s', (text, want: { them?: number; me?: number; cards?: number }) => {
+      const idol = row('Probe Idol', 'Artifact', '{2}', 2, [], `Sacrifice a creature: ${text}`);
+      const compiled = compileCard(idol as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line)).toEqual([]);
+      const deck = customDeck({
+        id: 'probe-idol', name: 'Probe Idol',
+        entries: [{ name: 'Probe Idol', count: 4 }, { name: 'Giant Spider', count: 20 }, { name: 'Forest', count: 36 }],
+        data: [idol] as never[],
+      }).deck;
+      let s = advanceTo(arena({
+        decks: { 0: 'probe-idol', 1: 'tidal-mind' }, deckSpecs: { 'probe-idol': deck },
+        hands: { 0: [] }, battlefield: { 0: ['Probe Idol', 'Giant Spider'] }, turn: 5, firstSeat: 0,
+      }), 'precombat-main');
+      const before = { them: life(s, 1), me: life(s, 0), cards: ids(s, 0, 'hand').length };
+      const targets: Target[] = /target|any target/i.test(text) ? [THEM] : [];
+      s = drain(passBoth(apply(s, {
+        type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Probe Idol'), abilityIndex: 0,
+        targets, sacrifice: find(s, 0, 'battlefield', 'Giant Spider'),
+      })), 20);
+      expect(life(s, 1) - before.them).toBe(want.them ?? 0);
+      expect(life(s, 0) - before.me).toBe(want.me ?? 0);
+      expect(ids(s, 0, 'hand').length - before.cards).toBe(want.cards ?? 0);
+    });
+  });
+
+  it('the bot may cast one, and whatever it chooses is a move the engine takes', () => {
+    let s = table(['Fling'], ['Hill Giant', 'Raging Goblin'], ['Wind Drake']);
+    for (let i = 0; i < 6; i += 1) {
+      const action = botAction(s, 0);
+      if (action === null || action.type === 'turn:pass') break;
+      s = apply(s, action);
+      if (action.type === 'auto:cast' && action.card !== undefined) break;
+    }
+    // No throw is the assertion; and a Fling on the stack remembers what paid for it.
+    const fling = s.stackOrder.map((id) => s.stackObjects[id]!).find((o) => o.kind === 'spell' && nameOf(s, o.source) === 'Fling');
+    if (fling !== undefined) expect(fling.sacrificedStats).toBeDefined();
+  });
+
+  describe('and where the words are not a number, they stay unread', () => {
+    /*
+      The same five words appear where nothing was sacrificed as a cost, and there the engine has
+      recorded nothing. A reading there would be a Fling that deals 0 — so each of these keeps its
+      line unread, which is flagged for a person rather than wrong in silence.
+    */
+    const FEED = row('Feed the Pack', 'Enchantment', '{5}{G}', 6, ['G'],
+      "At the beginning of your end step, you may sacrifice a nontoken creature. If you do, create X 2/2 green Wolf creature tokens, where X is the sacrificed creature's toughness.");
+    const unreadOf = (r: object): readonly string[] => {
+      const compiled = compileCard(r as never);
+      return compiled.ok ? compiled.unread.map((u) => u.line) : ['(not compiled)'];
+    };
+    const NO_COST = "Probe Toss deals damage equal to the sacrificed creature's power to any target.";
+
+    it('a sacrifice that is part of the effect: Feed the Pack', () => {
+      expect(unreadOf(FEED)).toEqual([FEED.oracle_text]);
+    });
+
+    it('a spell that sacrificed nothing to be cast', () => {
+      expect(unreadOf(row('Probe Toss', 'Instant', '{R}', 1, ['R'], NO_COST))).toEqual([NO_COST]);
+      // And not because of what was compiled just before it: the Fling above it turns nothing on.
+      compileCard(FLING as never);
+      expect(unreadOf(row('Probe Toss', 'Instant', '{R}', 1, ['R'], NO_COST))).toEqual([NO_COST]);
+    });
+
+    it('an additional cost that is not a sacrifice', () => {
+      const text = `As an additional cost to cast this spell, discard a card.\n${NO_COST}`;
+      expect(unreadOf(row('Probe Toss', 'Instant', '{R}', 1, ['R'], text))).toContain(NO_COST);
+    });
+
+    it('"Sacrifice a Food creature": only a creature type can stand in front of "creature"', () => {
+      const text = 'Sacrifice a Food creature: Draw a card.';
+      expect(unreadOf(row('Probe Idol', 'Artifact', '{2}', 2, [], text))).toEqual([text]);
+      // The same sentence with a creature type in it is a cost the engine has.
+      expect(unreadOf(row('Probe Idol', 'Artifact', '{2}', 2, [], 'Sacrifice a Goblin creature: Draw a card.'))).toEqual([]);
+    });
+
+    it('an ability that sacrifices its own source, or nothing', () => {
+      const own = "{1}, Sacrifice Probe Idol: You gain life equal to the sacrificed creature's toughness.";
+      const tap = "{T}: Draw cards equal to the sacrificed creature's power.";
+      const paid = "Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.";
+      expect(unreadOf(row('Probe Idol', 'Artifact', '{2}', 2, [], `${own}\n${tap}`))).toEqual([own, tap]);
+      // Beside an ability that does sacrifice a creature, only that one reads.
+      expect(unreadOf(row('Probe Idol', 'Artifact', '{2}', 2, [], `${paid}\n${tap}`))).toEqual([tap]);
+      expect(unreadOf(row('Probe Idol', 'Artifact', '{2}', 2, [], `${tap}\n${paid}`))).toEqual([tap]);
     });
   });
 });

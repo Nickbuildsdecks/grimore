@@ -23589,3 +23589,113 @@ typecheck). The two that were not:
 
 The two older break runs (D578, 40 breaks; D574–D577, 36 breaks) are still owed, and are queued
 behind this increment's own.
+
+## D586 — What was sacrificed to pay for it: "the sacrificed creature's power"
+
+"Fling deals damage equal to the sacrificed creature's power to any target." D585 taught the
+engine to take the sacrifice; this is the other half of the same cards, and of the abilities
+built the same way (Altar of Dementia, Greater Good, Diamond Valley).
+
+**The rule.** By the time the spell resolves the creature is a card in a graveyard. There it has
+no counters, no Aura and no Giant Growth, so the game uses what was true of it as it left the
+battlefield (CR 608.2h). The engine now reads three numbers at the moment the cost is paid — the
+permanent's power and toughness as they stood, and its mana value — and they travel with the
+spell or ability to its resolution.
+
+- A 2/4 under a Giant Growth is thrown for 5. A 3/3 with two +1/+1 counters is thrown for 5.
+- A token has mana value 0. So does a face-down permanent, whatever card is under it.
+- A copy of the spell has the same numbers as the original, as it has the original's X.
+
+**What the compiler reads.** The measure, in two word orders ("the sacrificed creature's power",
+"the mana value of the sacrificed permanent"), wherever a count was already read:
+
+    deals damage equal to <measure> to <target>          Fling, Thud, Brion Stoutarm
+    deals damage to <target> equal to <measure>          Final Strike
+    deals X damage to <target>, where X is <measure>
+    draw cards equal to <measure> / draw X cards, …      Life's Legacy, Greater Good
+    you gain | lose life equal to <measure>              Worthy Cause, Diamond Valley
+    create X … tokens, where X is <measure>              Carrion
+    gets ±X/±X until end of turn, where X is <measure>   Call for Blood, Atogatog
+
+and three it had no counted form of before:
+
+    target player mills cards equal to <measure>         Altar of Dementia
+    target player loses life equal to <measure>          Starlit Sanctum
+    each opponent loses life equal to <measure>          Jarad's ability
+
+Also the older spelling of a typed sacrifice in an ability's cost, "Sacrifice a Goblin
+creature" (Airdrop Condor, Starlit Sanctum), which is the same cost as "Sacrifice a Goblin".
+
+**Where it is refused, which matters more than where it is read.** The same words are printed
+where nothing was sacrificed as a cost: "you may sacrifice a creature. If you do, create X
+Wolves, where X is the sacrificed creature's toughness" (Feed the Pack), emerge, a
+planeswalker's "Sacrifice a creature. When you do, …". There the engine has recorded nothing,
+and a reading would be a card that resolves for 0 without saying so. So the measure is a number
+only inside text that a sacrifice paid for — the resolution of a spell whose additional cost is
+a sacrifice, or the effect of an ability with a sacrifice of another permanent in its cost — and
+everywhere else the line stays unread and is flagged. Tests hold each side of that line: a spell
+with no cost, a spell whose cost is a discard, an ability that sacrifices its own source, an
+ability that only taps, and two abilities on one card where only one of them sacrifices.
+
+    legal cards printing one of these measures:      87
+    measure lines read (of 86 on the 85 that compile):  34
+    cards with every line read:                      27
+
+**Not read, each on purpose:**
+
+- *Searching by it.* "Search your library for a creature card with mana value equal to 1 plus
+  the sacrificed creature's mana value" — Birthing Pod, Prime Speaker Vannifar, Neoform, Eldritch
+  Evolution and four more. The most played cards in the family, and they need a search filter
+  that is computed, which the search has not got. The next thing worth building here.
+- *Mana equal to it* (Sacrifice, Burnt Offering, Priest of Yawgmoth): seven cards.
+- *Counters equal to it* (Vish Kal, Forge Armor, Scourge of Skola Vale) and a discard of that
+  many cards (Tormented Thoughts).
+- *A fact about the creature that is not one of the three numbers*: "if the sacrificed creature
+  was a Human", "was legendary", its colours, its creature types.
+- *"…then you gain life equal to its toughness"* (Momentous Fall): "its" is the sacrificed
+  creature, and the pronoun reader does not know that.
+
+**The computer opponent** pays these costs as it pays every sacrifice, with the creature it
+values least. So its own Fling is usually thrown for 1. That is a legal play and a weak one; a
+rule for when a big creature is worth throwing is its own piece of work, and is task #424.
+
+**Three lines removed before they shipped.** The first draft also handed the numbers to a mana
+ability, to a trigger's condition and to the reader for modal spells. No printed card reaches
+any of the three, so nothing could have tested them, and they are gone.
+
+**Tests.** 26 engine tests added (25 here, and one for D578's break run, below). Ten real cards from their Oracle rows (Fling, Life's Legacy,
+Worthy Cause, Reckoner's Bargain, Carrion, Call for Blood, Final Strike, Altar of Dementia,
+Airdrop Condor, Greater Good): what is recorded, that it is the live size and not the printed
+one, counters, a copy, a token, a face-down permanent, an ability, and a draw that happens
+before a question. Eight printed grammars, each as an ability that sacrifices a 2/4 costing
+four, so that the three measures give three different numbers. And the refusals above.
+
+    engine tests: 4,131, all passing
+    web tests: 262, all passing (no web change)
+
+### Measurements
+
+This build against the last one:
+
+    cards with every printed line read:  8,734 → 8,761 of 30,710
+    printed legal lines read:            25,054 → 25,086 of 56,421 (44.5%)
+    cards with a compiled script:        13,003 → 13,018
+
+Pod sweep on D585's build (43c050a), seeds 45301–45340: 40 of 40 finished, no throw and no
+stall.
+
+Break run on D585's build: 32 deliberate faults, 32 caught (31 by a failing test, 1 by the
+typecheck).
+
+The two older break runs, owed since D579, have now run.
+
+- *D578's build: 40 faults, 39 caught.* The miss was Dragonsguard Elite's note to the computer
+  opponent that doubling no counters buys nothing. The test for it passed with the note switched
+  off: on that board the opponent declines the empty doubling by itself. The note is now asked
+  directly, and that test fails with the fault in.
+- *D574–D577's build: 36 faults, 30 caught.* Six misses, all in code that is unchanged since:
+  an optional exile read as mandatory; a token-replacing rule found on any permanent; a redirect
+  reading a spell with two target specs as having one; "target opponent draws" aimed as help;
+  "target player draws N" drawing one; and an Equipment count that also counts Auras. None is
+  resolved in this commit. Each gets a test or a stated reason in the next one, before any new
+  reading.

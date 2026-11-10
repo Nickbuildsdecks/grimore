@@ -57,7 +57,7 @@ import {
   withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
-  EMPTY_COMBAT, MAIN_STEPS, targetKey, type CombatAttack, type StackObject, type Target,
+  EMPTY_COMBAT, MAIN_STEPS, targetKey, type CombatAttack, type SacrificedStats, type StackObject, type Target,
   type AutoTurnUpAction, type AutoForetellAction, type AutoSuspendAction,
 } from './turnTypes.js';
 import { EngineError, type ActionContext, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -71,6 +71,22 @@ const requireAutomated = (state: GameState): void => {
 };
 
 const handOf = (state: GameState, seat: SeatIndex): readonly string[] => listAt(state, zoneKey(seat, 'hand'));
+
+/**
+ * A permanent's size and mana value, read while it is still on the battlefield (D586).
+ *
+ * Its power and toughness are the live ones — counters, Auras and until-end-of-turn effects
+ * included — because that is what it was as it left (CR 608.2h). Its mana value is the printed
+ * card's; a face-down permanent has none (CR 708.2).
+ */
+const statsAsItLeaves = (state: GameState, inst: CardInstance): SacrificedStats => {
+  const ch = characteristicsOf(state, inst);
+  return {
+    power: ch.power,
+    toughness: ch.toughness,
+    manaValue: inst.faceDown === true ? 0 : state.cardDefs[inst.defKey]?.cmc ?? 0,
+  };
+};
 
 /**
  * The turn's cast tallies, both of them, for a spell that has just gone on the stack.
@@ -549,6 +565,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   */
   let sacrificed: string | null = null;
   let sacrificedName = '';
+  let sacrificedStats: SacrificedStats | null = null;
   const sacrificeAsked = script?.additionalCost !== undefined && 'sacrifice' in script.additionalCost
     ? script.additionalCost
     : undefined;
@@ -828,6 +845,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   if (sacrificed !== null) {
     const victim = requireInstance(next, sacrificed);
     sacrificedName = characteristicsOf(next, victim).name;
+    // Read before it goes: a card in a graveyard cannot say how big it was. See `SacrificedStats`.
+    sacrificedStats = statsAsItLeaves(next, victim);
     // It dies now, as the cost is paid — not when the spell resolves. `relocate` records the
     // death and `settle` raises it, which also puts a death trigger on the stack *above* the
     // spell that paid for it, so the trigger resolves first (CR 603.3b). Through `sacrifice`, which
@@ -969,6 +988,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     ...(action.division === undefined ? {} : { division: [...action.division] }),
     ...(modes === undefined ? {} : { modes: [...modes] }),
     ...(kicked ? { kicked: true } : {}),
+    ...(sacrificedStats === null ? {} : { sacrificedStats }),
     // The other flag the card's destination depends on, and flashback's opposite number: this one
     // sends the card to its owner's hand as it leaves the stack, but only if it got that far.
     ...(boughtBack ? { boughtBack: true as const } : {}),
@@ -1597,6 +1617,7 @@ function activate(
   // exactly as it was rather than halfway through paying.
   let sacrificed: string | null = null;
   let sacrificedName = '';
+  let sacrificedStats: SacrificedStats | null = null;
   let returnedName = '';
   if (ability.cost.sacrifice !== undefined) {
     const options = sacrificeOptions(state, action.by, inst.id, ability.cost);
@@ -1737,6 +1758,7 @@ function activate(
   if (sacrificed !== null) {
     const victim = requireInstance(next, sacrificed);
     const name = characteristicsOf(next, victim).name;
+    sacrificedStats = statsAsItLeaves(next, victim);
     // A sacrificed creature dies, and anything that cares about that cares now — not when the
     // ability resolves, because the cost was paid before it was ever on the stack. `relocate`
     // records it and `settle` announces it, which also gets the ordering right: the death trigger
@@ -1821,7 +1843,10 @@ function activate(
   */
   next = pushAbility(next, inst.id, action.by, action.abilityIndex, chosen, 'activated',
     `${ch.name}: ${ability.description}`,
-    ninjutsuTarget === null ? {} : { enteringAttack: ninjutsuTarget },
+    {
+      ...(ninjutsuTarget === null ? {} : { enteringAttack: ninjutsuTarget }),
+      ...(sacrificedStats === null ? {} : { sacrificed: sacrificedStats }),
+    },
     action.grantedBy);
   // Ward triggers off an ability as readily as off a spell (CR 702.21b) — an Icy Manipulator aimed
   // at a warded creature is exactly the case the keyword is printed for. See `raiseTargeted`.

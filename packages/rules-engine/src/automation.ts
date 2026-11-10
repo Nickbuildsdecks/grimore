@@ -73,7 +73,7 @@ import {
 import {
   EMPTY_COMBAT, MAIN_STEPS, NO_PRIORITY_STEPS, STEPS, STEP_LABELS, targetKey,
   type ActivationTiming,
-  type AttackedTarget, type DecisionAnswer, type StackObject, type Step, type Target,
+  type AttackedTarget, type DecisionAnswer, type SacrificedStats, type StackObject, type Step, type Target,
 } from './turnTypes.js';
 
 export const MAX_HAND_SIZE = 7;
@@ -2106,6 +2106,12 @@ interface TriggerAbout {
   readonly enteringAttack?: { readonly defender: SeatIndex; readonly planeswalker?: string };
   /** The counters the subject had before the event. See `StackObject.subjectCounters`. */
   readonly subjectCounters?: Readonly<Record<string, number>>;
+  /**
+   * What was sacrificed to activate it, as it last was. The one field here that is about the
+   * **cost** rather than the event, and here because this is how an ability's object is told
+   * anything at all. See `StackObject.sacrificedStats`.
+   */
+  readonly sacrificed?: SacrificedStats;
 }
 
 /**
@@ -2184,6 +2190,7 @@ function pushAbility(
     ...(about.actor === undefined ? {} : { actor: about.actor }),
     ...(about.subjectCounters === undefined ? {} : { subjectCounters: about.subjectCounters }),
     ...(about.enteringAttack === undefined ? {} : { enteringAttack: about.enteringAttack }),
+    ...(about.sacrificed === undefined ? {} : { sacrificedStats: about.sacrificed }),
     targetSeqs: targetSeqsFor(state, targets),
     ...aboutSeqsFor(state, about),
   };
@@ -4467,7 +4474,7 @@ export function resolveTop(state: GameState): { state: GameState; message: strin
       kicked: object.kicked === true, attacked: object.attacked,
       ...aboutNow(state, object),
       answering: object.answering,
-      actor: object.actor, subjectCounters: object.subjectCounters,
+      actor: object.actor, subjectCounters: object.subjectCounters, sacrificed: object.sacrificedStats,
       enteringAttack: object.enteringAttack,
       ...(object.division === undefined ? {} : { division: object.division }),
     });
@@ -4558,6 +4565,8 @@ function completeResolution(
     enteringAttack: object.enteringAttack,
     // And whose action it was, for one that has to say "that player".
     actor: object.actor,
+    // And what was sacrificed to pay for it, for one that measures the thing given up.
+    sacrificed: object.sacrificedStats,
     // And how a divided quantity was split, for the one card shape that announces numbers with
     // its targets. Filtered to match `targets` above.
     ...(object.division === undefined ? {} : { division: object.division }),

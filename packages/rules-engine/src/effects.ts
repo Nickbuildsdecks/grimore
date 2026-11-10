@@ -25,7 +25,7 @@ import { actionSeed, clampValue, mulberry32, replaceSeat, shuffled } from './int
 import { targetSeqsFor } from './targeting.js';
 import type { Color, ManaType } from './mana.js';
 import { addMana, costValue, EMPTY_POOL, parseManaCost, xMultiplier } from './mana.js';
-import type { AttackedTarget, DecisionAnswer, StackObject, Step, Target } from './turnTypes.js';
+import type { AttackedTarget, DecisionAnswer, SacrificedStats, StackObject, Step, Target } from './turnTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 
 /** What an effect is given when it runs. */
@@ -145,6 +145,14 @@ export interface EffectContext {
    * (CR 608.2h). See `StackObject.subjectCounters`.
    */
   readonly subjectCounters?: Readonly<Record<string, number>>;
+  /**
+   * The permanent sacrificed to pay for this spell or ability, as it last was (D586).
+   *
+   * Undefined for everything that sacrificed nothing as a cost. `subjectCounters`' neighbour and
+   * for the same rule: "the sacrificed creature's power" is asked of a card that is already in a
+   * graveyard, so it is answered from what was true when it left. See `SacrificedStats`.
+   */
+  readonly sacrificed?: SacrificedStats;
   /**
    * How much of a divided quantity each of `targets` was assigned, position by position
    * (CR 601.2d). Undefined for everything that divides nothing.

@@ -11319,7 +11319,7 @@ function countTailOf(text: string, name: string): {
 } | null {
   const flat = text.trim().replace(/\.\s*$/, '');
 
-  const announced = /^(.*?),\s*where X is (the number of .+)$/i.exec(flat);
+  const announced = new RegExp(`^(.*?),\\s*where X is (the number of .+|${SACRIFICED_MEASURE})$`, 'i').exec(flat);
   if (announced !== null) {
     const counted = boardCount(announced[2]!, name);
     return counted === null
@@ -11428,7 +11428,9 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
     cards equal to the number of instant and sorcery cards in your graveyard". `boardCount` takes
     the plural, which is what this grammar prints.
   */
-  const drawEqual = /^(?:you )?draw cards equal to (the number of .+)$/i.exec(flat);
+  const drawEqual = new RegExp(
+    `^(?:you )?draw cards equal to (the number of .+|${SACRIFICED_MEASURE})$`, 'i',
+  ).exec(flat);
   if (drawEqual !== null) {
     const counted = boardCount(drawEqual[1]!, name);
     if (counted === null) return null;
@@ -11437,7 +11439,21 @@ function countScaledEffect(clause: string, name: string): ReadEffect | null {
       immediate: (c) => draw(c.state, c.controller, counted(c)),
     };
   }
-  const lifeEqual = /^you (gain|lose) life equal to (the number of .+)$/i.exec(flat);
+  // Jarad's ability: every opponent loses the measure. Only for what was sacrificed (D586).
+  const drainEqual = new RegExp(`^each opponent loses life equal to (${SACRIFICED_MEASURE})$`, 'i').exec(flat);
+  if (drainEqual !== null) {
+    const counted = boardCount(drainEqual[1]!, name);
+    if (counted === null) return null;
+    return {
+      effect: (c) => {
+        const n = counted(c);
+        return opponentsOf(c.state, c.controller).reduce((state, seat) => loseLife(state, seat, n), c.state);
+      },
+    };
+  }
+  const lifeEqual = new RegExp(
+    `^you (gain|lose) life equal to (the number of .+|${SACRIFICED_MEASURE})$`, 'i',
+  ).exec(flat);
   if (lifeEqual !== null) {
     const counted = boardCount(lifeEqual[2]!, name);
     if (counted === null) return null;
@@ -15459,8 +15475,63 @@ const TOKEN_COLOURS: Readonly<Record<string, Color | null>> = {
  * than a guessed one.
  */
 function boardCount(phrase: string, name: string): ((c: EffectContext) => number) | null {
+  const paid = sacrificedMeasure(plain(phrase).trim().replace(/\.$/, ''));
+  if (paid !== null) return paid;
   const announced = /^the number of (.+)$/i.exec(plain(phrase).trim().replace(/\.$/, ''));
   return announced === null ? null : countOfThing(announced[1]!, name, 'plural');
+}
+
+/**
+ * Whether the text being read belongs to something that **sacrificed a permanent to be paid for**.
+ *
+ * "The sacrificed creature's power" is only a number when a creature was sacrificed as a cost: an
+ * additional cost on the spell, or a `Sacrifice a creature:` in front of the ability. The same
+ * five words turn up where the sacrifice is part of the *effect* — "you may sacrifice a creature.
+ * If you do, …, where X is the sacrificed creature's power", an emerge cost, a planeswalker's
+ * "Sacrifice a creature. When you do, …" — and there nothing was recorded, so a reader that took
+ * them anywhere would build a Fling that deals 0. That is the reading D362 is about: wrong and
+ * silent, where an unread line is merely flagged.
+ *
+ * So it is off unless one of the two readers that has just read such a cost turns it on for the
+ * text behind that cost, through `withSacrificeInCost`. A flag rather than a parameter because
+ * the phrase is read at the bottom of five different clause readers, each reached through
+ * `composeEffects`, and none of them is told anything about the cost; threading it would touch
+ * every signature in between to carry one boolean to one function.
+ */
+let sacrificeInCost = false;
+
+function withSacrificeInCost<T>(on: boolean, read: () => T): T {
+  const before = sacrificeInCost;
+  sacrificeInCost = on;
+  try {
+    return read();
+  } finally {
+    sacrificeInCost = before;
+  }
+}
+
+/** The printed spellings of a measure of what was sacrificed, as a regex source. See below. */
+const SACRIFICED_MEASURE = "the sacrificed (?:creature|artifact|permanent)'s (?:power|toughness|mana value)"
+  + '|the mana value of the sacrificed (?:creature|artifact|permanent)';
+
+/**
+ * "The sacrificed creature's power", as a number read when the effect runs (D586).
+ *
+ * Answered from `EffectContext.sacrificed`, which is what the permanent was as it left the
+ * battlefield (CR 608.2h) — not from the card, which is in a graveyard by now and is whatever is
+ * printed on it. Three measures are printed: power, toughness and mana value; and two word orders
+ * for the last ("the sacrificed permanent's mana value", "the mana value of the sacrificed
+ * permanent").
+ *
+ * `null` outside `withSacrificeInCost`, for the reason given there.
+ */
+function sacrificedMeasure(phrase: string): ((c: EffectContext) => number) | null {
+  if (!sacrificeInCost) return null;
+  const text = phrase.trim().toLowerCase();
+  if (!new RegExp(`^(?:${SACRIFICED_MEASURE})$`).test(text)) return null;
+  if (text.includes('mana value')) return (c) => c.sacrificed?.manaValue ?? 0;
+  if (text.endsWith('toughness')) return (c) => c.sacrificed?.toughness ?? 0;
+  return (c) => c.sacrificed?.power ?? 0;
 }
 
 /**
@@ -18007,7 +18078,7 @@ function damageEffect(clause: string, name: string): ReadEffect | null {
   }
 
   const dealt = new RegExp(
-    `^(?:${self}|it) deals (\\d+|damage equal to (?:its power|the number of [^.]+?)) damage to (.+)$`
+    `^(?:${self}|it) deals (\\d+|damage equal to (?:its power|the number of [^.]+?|${SACRIFICED_MEASURE})) damage to (.+)$`
       .replace(' damage to ', '(?: damage)? to '),
     'i',
   ).exec(clause.trim());
@@ -18096,7 +18167,7 @@ function countedDamageFrom(
   const flat = clause.trim().replace(/\.\s*$/, '');
 
   const announced = new RegExp(
-    `^(?:${self}|it) deals X damage to (.+?),\\s*where X is (the number of .+)$`, 'i',
+    `^(?:${self}|it) deals X damage to (.+?),\\s*where X is (the number of .+|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (announced !== null) {
     const amount = boardCount(announced[2]!, name);
@@ -18104,7 +18175,7 @@ function countedDamageFrom(
   }
 
   const equalTo = new RegExp(
-    `^(?:${self}|it) deals damage to (.+?) equal to (the number of .+)$`, 'i',
+    `^(?:${self}|it) deals damage to (.+?) equal to (the number of .+|${SACRIFICED_MEASURE})$`, 'i',
   ).exec(flat);
   if (equalTo !== null) {
     const amount = boardCount(equalTo[2]!, name);
@@ -18507,6 +18578,24 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     controller's own. 15 legal cards print `target opponent` as their only unread phrase and several
     of them are this sentence, which is why it arrives with D469 rather than after it.
   */
+  // The same loss measured by what was sacrificed (D586): Starlit Sanctum's second ability.
+  const drainedBy = new RegExp(
+    `^(target player|target opponent) loses life equal to (${SACRIFICED_MEASURE})$`, 'i',
+  ).exec(text);
+  if (drainedBy !== null) {
+    const counted = boardCount(drainedBy[2]!, name);
+    const spec = targetSpecFrom(drainedBy[1]!, false);
+    if (counted !== null && spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null ? c.state : loseLife(c.state, seat, counted(c));
+        },
+      };
+    }
+  }
+
   const drained = /^(target player|target opponent) loses (\d+) life$/i.exec(text);
   if (drained !== null) {
     const spec = targetSpecFrom(drained[1]!, false);
@@ -18828,6 +18917,28 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
     const n = countFrom(selfMill[1]!);
     if (n !== null && n > 0) {
       return { effect: (c) => mill(c.state, c.controller, n) };
+    }
+  }
+
+  /*
+    A mill measured by what was sacrificed (D586): "Target player mills cards equal to the
+    sacrificed creature's power", which is Altar of Dementia's whole ability. `boardCount` reads
+    the measure and refuses it anywhere no sacrifice paid for the text; see `sacrificedMeasure`.
+  */
+  const milledBy = new RegExp(
+    `^(target player|target opponent) mills cards equal to (${SACRIFICED_MEASURE})$`, 'i',
+  ).exec(text);
+  if (milledBy !== null) {
+    const counted = boardCount(milledBy[2]!, name);
+    const spec = targetSpecFrom(milledBy[1]!, false);
+    if (counted !== null && spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null ? c.state : mill(c.state, seat, counted(c));
+        },
+      };
     }
   }
 
@@ -21036,10 +21147,17 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       "Sacrifice an Aura" — is a land or an enchantment, which the field cannot name, and stays
       unread like "Sacrifice a land" above it.
     */
-    const typed = /^Sacrifice (an?|another) ([A-Z][a-z]+)$/.exec(component);
+    /*
+      And the older spelling of the same cost, with the card type after the creature type:
+      "Sacrifice a Goblin creature" (Airdrop Condor), "Sacrifice a Cleric creature" (Starlit
+      Sanctum), "Sacrifice another Warrior creature" (D586). Only a creature type can stand in
+      front of "creature", so the artifact branch below is not reached by this spelling.
+    */
+    const typed = /^Sacrifice (an?|another) ([A-Z][a-z]+)( creature)?$/.exec(component);
     if (typed !== null) {
       if (sacrifices !== null) return null;
       const another = typed[1]!.toLowerCase() === 'another';
+      if (typed[3] !== undefined && !isCreatureType(typed[2]!)) return null;
       if (isCreatureType(typed[2]!)) {
         sacrifices = another ? 'another-creature' : 'creature';
       } else if (!another && SACRIFICED_ARTIFACT_TYPES.includes(typed[2]!)) {
@@ -21195,7 +21313,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   */
   const outOfTheGraveyard = graveyardSelfReturn(clause, name);
   // An activated ability on a permanent is activated from the battlefield (see `SubjectZone`).
-  const read = outOfTheGraveyard
+  // A sacrifice in the cost is what makes "the sacrificed creature's power" a number (D586).
+  const read = withSacrificeInCost(sacrifices !== null, () => outOfTheGraveyard
     ?? animateSelf(clause, name)
     ?? composeEffects(clausesOf(clause), name, 'battlefield')
     /*
@@ -21208,7 +21327,7 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       ability is a stack object. So this is a second price on an ability that already charged one
       to be activated, which is what the printed card says and not a double charge.
     */
-    ?? optionalEffect(clause, (text) => composeEffects(clausesOf(text), name, 'battlefield'));
+    ?? optionalEffect(clause, (text) => composeEffects(clausesOf(text), name, 'battlefield')));
   if (read === null) return null;
   /*
     A **divided** quantity on an activated ability is refused, and the line stays unread.
@@ -22593,7 +22712,15 @@ export function spellScriptFor(lines: readonly string[], name: string): SpellRea
     };
   }
 
-  const read = readResolution(resolution, name);
+  /*
+    Whether a permanent was sacrificed to cast it, which is what makes "the sacrificed creature's
+    power" in the resolution a number (D586). Known only now, after the loop above has taken the
+    cost line out. Not around the modal reader above: no printed mode measures a sacrifice, and a
+    scope nothing reaches is a scope nothing checks.
+  */
+  const additional = (built as Partial<CardScript>).additionalCost;
+  const paidBySacrifice = additional !== undefined && 'sacrifice' in additional;
+  const read = withSacrificeInCost(paidBySacrifice, () => readResolution(resolution, name));
   if (read === null) {
     const script = Object.keys(built).length === 0 ? null : built as Partial<CardScript>;
     return { script, compiled, unread: [...declared, ...resolution] };

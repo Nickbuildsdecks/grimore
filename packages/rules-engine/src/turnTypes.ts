@@ -250,6 +250,25 @@ export const targetKey = (t: Target): string => {
  * object describes how it was cast. An ability has no card, so it gets a synthetic id — which is
  * why the stack zone and this map are separate: an ability on the stack has no card to put there.
  */
+/**
+ * What a permanent given up to pay a cost **was**, as it last stood on the battlefield (D586).
+ *
+ * "Fling deals damage equal to the sacrificed creature's power to any target." By the time the
+ * spell resolves the creature is a card in a graveyard, where it has no counters on it, no Aura
+ * on it and no Giant Growth; the rule is that the game uses what was true of it as it left
+ * (CR 608.2h). So the three numbers a card ever asks for are read at the moment the cost is paid
+ * and travel with the spell or ability.
+ *
+ * `power` and `toughness` are whatever the permanent had, which for an artifact that is not a
+ * creature is nothing: a cost that takes "an artifact or creature" is followed by a card that asks
+ * for the mana value instead.
+ */
+export interface SacrificedStats {
+  readonly power: number;
+  readonly toughness: number;
+  readonly manaValue: number;
+}
+
 export interface StackObject {
   readonly id: string;
   readonly kind: 'spell' | 'activated' | 'triggered';
@@ -359,6 +378,14 @@ export interface StackObject {
    * resolution. Absent on everything without a kicker.
    */
   readonly kicked?: boolean;
+  /**
+   * The permanent sacrificed to cast or activate this, as it last was. See `SacrificedStats`.
+   *
+   * On the object because it is a fact about this casting and nothing else remembers it. A copy
+   * of the spell has it too, as it has the original's X and kicker (CR 707.10): a copied Fling
+   * deals the same damage though nothing was sacrificed for the copy.
+   */
+  readonly sacrificedStats?: SacrificedStats;
   /**
    * Whether this spell's buyback was paid (CR 702.26a).
    *
