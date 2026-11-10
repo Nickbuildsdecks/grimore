@@ -45,7 +45,7 @@ import {
   madnessOffer, miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
-  type EffectContext, type EffectFn, type PumpOptions, damagedThisTurn,
+  type EffectContext, type EffectFn, type PumpOptions, damageSourceRef, damagedThisTurn,
   chosenOption, ENTERS_COUNTER_OPTION,
 } from './effects.js';
 import { legalActions, manaSources } from './legalActions.js';
@@ -840,6 +840,8 @@ export function endTurnCleanup(state: GameState): GameState {
     lifeLostThisTurn: {},
     // And the turn's damage, which is bloodthirst's fact and cleared with the others (D558).
     damagedThisTurn: {},
+    // And who hit which permanent, which is "dealt damage by ~ this turn" (D566).
+    damagedBy: {},
     // And D564's four: who attacked, what died, what left and who gained life.
     attackedThisTurn: {},
     creaturesDiedThisTurn: 0,
@@ -1045,6 +1047,8 @@ function triggerMatches(
     case 'blocked-creature':
     case 'blocking-creature':
     case 'attacks-unblocked':
+    // And "deals damage to an opponent" (D566), the same sentence with a different verb again.
+    case 'deals-damage':
     case 'combat-damage': {
       // `self` is the default, which is why every script written before this one still means what
       // it meant: a trigger that says nothing about `who` watches only its own permanent.
@@ -1058,6 +1062,17 @@ function triggerMatches(
         a printed line, and a branch that returned early here would read it as the bare attack.
       */
       if (who === 'attached' && !isAttachedSubject) return false;
+      /*
+        "deals damage **to an opponent**" (D566), asked from the watcher's seat: an opponent of
+        whoever controls the permanent this trigger is printed on. A missing `defender` refuses —
+        an event that does not say who was hit cannot have hit an opponent.
+      */
+      if (want.kind === 'deals-damage' && (want.to ?? 'player') === 'opponent') {
+        const hit = (event as { defender?: SeatIndex }).defender;
+        if (hit === undefined || hit === sourceSeat) return false;
+      }
+      if (want.kind === 'deals-damage' && want.combatOnly === true
+        && (event as { combat?: boolean }).combat !== true) return false;
       const e = event as {
         subjectSeat?: SeatIndex; subjectIsCreature?: boolean; subjectIsToken?: boolean;
         subjectIsLand?: boolean; subjectTypes?: readonly string[];
@@ -1162,6 +1177,8 @@ function triggerMatches(
     }
     case 'becomes-tapped':
     case 'leaves':
+    // "Whenever ~ is dealt damage" (D566): its own permanent only, narrowed by `raise`.
+    case 'damaged':
     // Narrowed to its own permanent by `raise`, like the two above: a morph turning over is its
     // own business, and the one thing worth checking is already checked by being in that list.
     case 'turned-face-up':
@@ -1312,6 +1329,20 @@ function fireTrigger(
     Bolt fired nothing, with `attachedTo` already null.
   */
   const wasAttached = (event as { attachments?: readonly string[] }).attachments?.includes(holder);
+  /*
+    "A creature **dealt damage by ~ this turn** dies" (D566).
+
+    Here for the reason `targetsSelf` is: it asks which permanent is watching, and `triggerMatches`
+    is not told. The event carries the refs of everything that hit the dead creature this turn;
+    this asks whether the watcher is one of them, **as the object it is now**, so a Vampire
+    blinked since the bite is not credited with it (CR 400.7).
+
+    An absent list refuses: a creature nothing damaged was not dealt damage by anybody.
+  */
+  if (trigger.on.kind === 'dies' && trigger.on.damagedBy === 'self') {
+    const hitBy = event.kind === 'dies' ? event.subjectDamagedBy ?? [] : [];
+    if (!hitBy.includes(damageSourceRef(next, holder))) return next;
+  }
   if (!triggerMatches(
     event, trigger.on, inst.zoneSeat, actor, holder === subject,
     wasAttached ?? (attachedHost !== null && attachedHost === subject),
@@ -1395,7 +1426,8 @@ function fireTrigger(
   */
   const attacked = event.kind === 'attacks' || event.kind === 'attacks-unblocked'
     ? event.attacked
-    : (event.kind === 'combat-damage' || event.kind === 'combat-damage-dealt')
+    : (event.kind === 'combat-damage' || event.kind === 'combat-damage-dealt'
+      || event.kind === 'deals-damage')
       && event.defender !== undefined
       ? { defender: event.defender }
       : undefined;
@@ -1481,7 +1513,9 @@ function raise(
       // agree today, and a line that is added for somebody else's creature gets the right one.
       || event.kind === 'blocked-creature' || event.kind === 'blocking-creature'
       || event.kind === 'attacks-unblocked' || event.kind === 'to-graveyard'
-      || event.kind === 'to-exile')) {
+      || event.kind === 'to-exile'
+      // And the two damage events (D566): the permanent that was dealt it, or that dealt it.
+      || event.kind === 'damaged' || event.kind === 'deals-damage')) {
     // Which permanent the event was about, so a trigger can say "that creature" rather than only
     // "this creature". The seat and the creature-ness below are *whose* and *what kind*; this is
     // which one. See `EffectContext.subject`.
@@ -1500,6 +1534,18 @@ function raise(
   if (subject !== undefined && (event.kind === 'to-graveyard' || event.kind === 'combat-damage')) {
     const inst = next.instances[subject];
     if (inst !== undefined) event = { ...event, subjectSeat: inst.zoneSeat };
+  }
+  // And whose permanent dealt it, for "a creature **you control** deals combat damage to an
+  // opponent" (D566) — the live instance, as `combat-damage` reads it and for the same reason.
+  if (subject !== undefined && event.kind === 'deals-damage') {
+    const inst = next.instances[subject];
+    if (inst !== undefined) event = { ...event, subjectSeat: inst.zoneSeat };
+  }
+  // And who had hit it this turn, for "a creature dealt damage by ~ this turn dies" (D566). Copied
+  // onto the event because the board no longer says: the record is keyed by a card that has left.
+  if (subject !== undefined && event.kind === 'dies') {
+    const hitBy = next.damagedBy?.[subject];
+    if (hitBy !== undefined && hitBy.length > 0) event = { ...event, subjectDamagedBy: hitBy };
   }
   if (subject !== undefined && (event.kind === 'etb' || event.kind === 'dies')) {
     // The event carries who controlled the permanent and whether it was a creature, so a watcher
@@ -1596,6 +1642,10 @@ function raise(
   const selfOnly = new Set([
     'becomes-tapped', 'leaves', 'targeted', 'turned-face-up', 'transformed',
     'chapter',
+    // "Whenever ~ is dealt damage" (D566). Every printed line the compiler reads is about the
+    // permanent itself, and this event is raised for every landing of damage in every combat the
+    // bot simulates — so it is offered to one permanent rather than walked across the board.
+    'damaged',
   ]);
   const everyBattlefield = apnapSeats(next).flatMap((seat) => {
     const mine = [...listAt(next, zoneKey(seat, 'battlefield'))].filter((id) => id !== subject);
@@ -1683,6 +1733,21 @@ function raise(
       || event.kind === 'to-graveyard')
       && (id === subject || attachedWatchers.includes(id));
     /*
+      And the sixth: a permanent that was dealt damage and is gone by now (D566).
+
+      The damage happened while it was on the battlefield and the ability triggered then; state-based
+      actions only buried it afterwards, in the same `settle` that is now announcing the damage
+      (CR 603.2, 704.3). So a creature that takes lethal damage still gets its own "whenever ~ is
+      dealt damage" — a Ripjaw Raptor draws for the hit that kills it. Only for the subject, like
+      every other exception here.
+
+      **Not** for `deals-damage`, and that is a known gap rather than a rule: a trampler that dies
+      to its blocker in the same step it tramples over should still get "whenever ~ deals damage to
+      an opponent". `combat-damage` has never fired in that case either, the two are the same
+      sentence, and one of them firing where the other does not would be worse than both missing.
+    */
+    const lastKnown = event.kind === 'damaged' && id === subject;
+    /*
       And the fourth zone a trigger fires from: the stack, for a spell watching its own cast.
 
       `zone` is checked rather than assumed, because a cast trigger is raised while the card is on
@@ -1690,7 +1755,7 @@ function raise(
       `spell-cast` trigger and the watcher list above.
     */
     const fromStack = event.kind === 'spell-cast' && id === subject && inst.zone === 'stack';
-    if (!fromGraveyard && !fromStack && inst.zone !== 'battlefield') continue;
+    if (!fromGraveyard && !fromStack && !lastKnown && inst.zone !== 'battlefield') continue;
     // From the instance resolved above rather than by id, so a vanished token's own script is
     // still found: `scriptOf` reads `instances`, and a token that ceased to exist is not in it.
     /*
@@ -2602,7 +2667,8 @@ function settle(state: GameState, before: GameState): GameState {
     let pass = 0;
     pass < 32 && (next.died.length > 0 || next.entered.length > 0 || next.left.length > 0
       || next.dealtCombatDamage.length > 0 || next.drew.length > 0
-      || next.toGraveyard.length > 0 || (next.exiled ?? []).length > 0);
+      || next.toGraveyard.length > 0 || (next.exiled ?? []).length > 0
+      || (next.damageDealt ?? []).length > 0);
     pass++
   ) {
     /*
@@ -2645,6 +2711,8 @@ function settle(state: GameState, before: GameState): GameState {
     const gone = next.left;
     const arrived = next.entered;
     const connected = next.dealtCombatDamage;
+    // Every landing of damage, combat or not, on a player or a permanent (D566).
+    const landed = next.damageDealt ?? [];
     const drawn = next.drew;
     /*
       A card whose *death* was replaced did not reach a graveyard either, so the narrow pass can
@@ -2687,7 +2755,7 @@ function settle(state: GameState, before: GameState): GameState {
     next = {
       ...next,
       died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [], exiled: [],
-      copied: [], transformed: [], detached: {},
+      copied: [], transformed: [], detached: {}, damageDealt: [],
       // Drained here with the rest, and *after* the replacement passes above have read it: a
       // discard is a fact about a move that has already happened, and madness is the one thing
       // that asks about it.
@@ -2744,6 +2812,53 @@ function settle(state: GameState, before: GameState): GameState {
     }
     for (const { by, defender } of hits.values()) {
       next = raise(next, { kind: 'combat-damage-dealt', defender }, by);
+    }
+    /*
+      And damage of every kind, to whatever it landed on (D566) — after the combat events above,
+      which are the narrower sentences about the same hit, and before the deaths below, because the
+      damage is what happened first.
+
+      One event per landing, with one exception that is a rule rather than an economy: combat
+      damage is dealt **simultaneously** (CR 510.2), so a creature blocked by three is dealt damage
+      once and its enrage triggers once. `hurtInCombat` is that — keyed by the creature, and only
+      ever consulted for a record stamped `combat`, so two Shocks at the same creature are still two
+      events. The source side needs no such set: a creature deals its combat damage to one player
+      in one record.
+    */
+    const hurtInCombat = new Set<string>();
+    for (const record of landed) {
+      if (record.to.kind === 'card') {
+        const id = record.to.id;
+        if (record.combat === true) {
+          if (hurtInCombat.has(id)) continue;
+          hurtInCombat.add(id);
+        }
+        next = raise(
+          next, { kind: 'damaged' }, (next.vanished[id] ?? next.instances[id])?.zoneSeat, id,
+        );
+      } else if (record.source !== null && record.sourceInPlay) {
+        /*
+          A permanent's damage to a player. A spell's own damage raises nothing: "whenever ~ deals
+          damage" is an ability of a permanent, and `sourceInPlay` is what says this was one.
+
+          **An economy today, and a guard nothing reaches.** Raised for a Shock as well, the event's
+          subject would be a card in a graveyard, which the watcher loop skips, and every printed
+          row is about the watcher itself, its host, or a creature in *combat* — so no board can
+          tell the two programs apart, and a break run will say so. It stays because it saves a
+          walk of the battlefield for every burn spell the bot simulates, and because the first
+          row that reads "a source you control deals damage" will need the question answered on
+          purpose rather than by accident.
+        */
+        next = raise(
+          next,
+          {
+            kind: 'deals-damage', defender: record.to.seat,
+            ...(record.combat === true ? { combat: true } : {}),
+          },
+          (next.vanished[record.source] ?? next.instances[record.source])?.zoneSeat,
+          record.source,
+        );
+      }
     }
     /*
       Draws, before the deaths and the arrivals in this pass.

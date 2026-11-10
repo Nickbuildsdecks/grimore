@@ -1227,7 +1227,8 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     }[] = [
       { card: 'Goblin Arsonist', kind: 'dies' },
       { card: 'Borderland Marauder', kind: 'attacks' },
-      { card: 'Thieving Magpie', kind: 'combat-damage' },
+      // `deals-damage` since D566: the Oracle text is "deals damage to an opponent".
+      { card: 'Thieving Magpie', kind: 'deals-damage' },
       { card: 'City of Brass', kind: 'becomes-tapped' },
       { card: 'Guttersnipe', kind: 'spell-cast' },
       { card: 'Firebrand Archer', kind: 'spell-cast' },
@@ -17441,6 +17442,65 @@ describe('one sentence, two events — and two death prologues (D565)', () => {
     ['a narrower death', 'Whenever a nontoken creature dies, you gain 1 life.'],
   ])('leaves %s unread', (_what, line) => {
     const got = creature(line);
+    expect(got.script?.triggers ?? []).toEqual([]);
+    expect(got.unread.map((u) => u.line)).toEqual([line]);
+  });
+});
+
+describe('damage as an event: the five prologues (D566)', () => {
+  const card = (text: string, type = 'Creature — Vampire') => {
+    const got = compileCard({
+      name: 'Sengir Vampire', type_line: type, mana_cost: '{3}{B}{B}', cmc: 5, colors: ['B'],
+      ...(type.startsWith('Creature') ? { power: '4', toughness: '4' } : {}),
+      layout: 'normal', oracle_text: text,
+    });
+    expect(got.ok).toBe(true);
+    if (!got.ok) throw new Error('refused');
+    return got;
+  };
+  const AURA = 'Enchantment — Aura';
+
+  it.each([
+    ['Whenever Sengir Vampire is dealt damage, draw a card.', undefined, { kind: 'damaged' }],
+    ['Enrage — Whenever this creature is dealt damage, you gain 2 life.', undefined, { kind: 'damaged' }],
+    ['Whenever Sengir Vampire deals damage to an opponent, draw a card.', undefined,
+      { kind: 'deals-damage', to: 'opponent' }],
+    ['Whenever Sengir Vampire deals damage to an opponent, that player discards a card.', undefined,
+      { kind: 'deals-damage', to: 'opponent' }],
+    ['Enchant creature\nWhenever enchanted creature deals damage to an opponent, you may draw a card.', AURA,
+      { kind: 'deals-damage', who: 'attached', to: 'opponent' }],
+    ['Whenever Sengir Vampire deals combat damage to an opponent, draw a card.', undefined,
+      { kind: 'deals-damage', to: 'opponent', combatOnly: true }],
+    ['Enchant creature\nWhenever enchanted creature deals combat damage to an opponent, you may draw a card.', AURA,
+      { kind: 'deals-damage', who: 'attached', to: 'opponent', combatOnly: true }],
+    ['Whenever a creature you control deals combat damage to an opponent, you may draw a card.', 'Enchantment',
+      { kind: 'deals-damage', who: 'any', of: 'you', to: 'opponent', combatOnly: true }],
+    ['Whenever a creature dealt damage by Sengir Vampire this turn dies, put a +1/+1 counter on Sengir Vampire.',
+      undefined, { kind: 'dies', who: 'any', what: 'creature', damagedBy: 'self' }],
+  ])('reads %s', (text, type, event) => {
+    const got = card(text, type);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script!.triggers!.map((t) => t.on)).toEqual([event]);
+  });
+
+  it('keeps "deals combat damage to a PLAYER" on the event it has always had', () => {
+    const got = card('Whenever Sengir Vampire deals combat damage to a player, draw a card.');
+    expect(got.script!.triggers!.map((t) => t.on.kind)).toEqual(['combat-damage']);
+  });
+
+  it.each([
+    ['"equipped creature is dealt damage", whose host may be dead and detached by then',
+      'Whenever equipped creature is dealt damage, you gain 1 life.', 'Artifact — Equipment'],
+    ['"dealt damage by enchanted creature", whose one card means the enchanted creature by "that creature"',
+      'Whenever a creature dealt damage by enchanted creature this turn dies, put a +1/+1 counter on that creature.', AURA],
+    ['a threshold on the damage', 'Whenever Sengir Vampire is dealt 3 or more damage, draw a card.', undefined],
+    ['damage to "a player", which is not the printed sentence this event reads',
+      'Whenever Sengir Vampire deals damage to a player, draw a card.', undefined],
+    ['damage to a creature', 'Whenever Sengir Vampire deals damage to a creature, draw a card.', undefined],
+    ['a characteristic on the dead creature',
+      'Whenever a creature with flying dealt damage by Sengir Vampire this turn dies, draw a card.', undefined],
+  ])('leaves %s unread', (_what, line, type) => {
+    const got = card(line, type);
     expect(got.script?.triggers ?? []).toEqual([]);
     expect(got.unread.map((u) => u.line)).toEqual([line]);
   });

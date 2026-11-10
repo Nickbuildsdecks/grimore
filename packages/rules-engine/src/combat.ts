@@ -545,6 +545,25 @@ function hit(
 }
 
 export function dealCombatDamage(state: GameState, firstStrike: boolean): GameState {
+  const dealt = dealCombatDamageUnmarked(state, firstStrike);
+  /*
+    Everything this step dealt is **combat** damage, and it was all dealt at once (CR 510.2).
+
+    Stamped here, over the records `dealDamage` appended while the step ran, rather than passed
+    down as an option: a blocker's damage to an attacker goes through a different call from an
+    attacker's damage to a player, and an option is something one of several call sites forgets.
+    The slice is exact because nothing else can deal damage in the middle of this function.
+  */
+  const before = state.damageDealt?.length ?? 0;
+  const records = dealt.damageDealt ?? [];
+  if (records.length === before) return dealt;
+  return {
+    ...dealt,
+    damageDealt: records.map((record, i) => (i < before ? record : { ...record, combat: true as const })),
+  };
+}
+
+function dealCombatDamageUnmarked(state: GameState, firstStrike: boolean): GameState {
   let next = state;
   /*
     What every creature in this combat *was* when the step began (CR 510.2).

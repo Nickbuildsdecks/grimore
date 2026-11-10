@@ -3435,7 +3435,10 @@ const THIEVING_MAGPIE: CardScript = {
   keywords: ['flying'],
   triggers: [
     {
-      on: { kind: 'combat-damage' },
+      // "deals damage to an opponent" — any damage, which is what the card prints. This was
+      // `combat-damage` until D566 gave the wider sentence an event of its own; the two agree for
+      // a bare Magpie and part company the moment something lets it deal damage outside combat.
+      on: { kind: 'deals-damage', to: 'opponent' },
       description: 'draw a card',
       effect: (c) => drawLater(c.state, c.controller, 1),
     },
@@ -14625,6 +14628,65 @@ const TRIGGER_SHAPES: readonly ({
     prologue: () => /^Whenever a creature an opponent controls dies, (.+)$/i,
     on: [{ kind: 'dies', who: 'any', of: 'opponent', what: 'creature' }],
   },
+  /*
+    **Damage as an event** (D566): five prologues over two new events and one new filter.
+
+    | printed | event |
+    | --- | --- |
+    | "Whenever ~ is dealt damage" | `damaged` |
+    | "Whenever ~ deals damage to an opponent" | `deals-damage`, `to: 'opponent'` |
+    | "Whenever enchanted/equipped creature deals damage to an opponent" | the same, `who: 'attached'` |
+    | "Whenever ~ deals **combat** damage to an opponent" (and the attached and "a creature you control" forms) | the same, `combatOnly` |
+    | "Whenever a creature dealt damage by ~ this turn dies" | `dies`, `damagedBy: 'self'` |
+
+    All three need a fact the board does not hold once the damage has been dealt — see
+    `AutomationState.damageDealt`. "Is dealt damage" is `self` only: the "equipped creature is dealt
+    damage" form is one legal card and would be wrong for exactly the case that matters, because a
+    host the damage killed has already been detached from by the time the event is raised and the
+    `damaged` event carries no list of what was on it. Refused rather than read for the survivors.
+
+    And "dealt damage by **enchanted creature** this turn dies" is refused too, for a different
+    reason: its one legal card is Vampiric Embrace, whose effect is "put a +1/+1 counter on **that
+    creature**" — the enchanted one — and the effect reader binds "that creature" to the event's
+    subject, which on a death is the creature that died. Read, it would put the counter on a card
+    in a graveyard. One card, and a wrong reading is worse than an unread line (D362).
+
+    "To **an opponent**" and not "to a player" is the printed word on every one of these, and the
+    two are different events on purpose: "deals **combat** damage to **a player**" stays on
+    `combat-damage`, where it has been since D439, and nothing here re-reads it.
+  */
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} is dealt damage, (.+)$`, 'i'),
+    on: [{ kind: 'damaged' }],
+  },
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} deals damage to an opponent, (.+)$`, 'i'),
+    on: [{ kind: 'deals-damage', to: 'opponent' }],
+  },
+  {
+    prologue: () => /^Whenever (?:equipped|enchanted) creature deals damage to an opponent, (.+)$/i,
+    on: [{ kind: 'deals-damage', who: 'attached', to: 'opponent' }],
+  },
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} deals combat damage to an opponent, (.+)$`, 'i'),
+    on: [{ kind: 'deals-damage', to: 'opponent', combatOnly: true }],
+  },
+  {
+    prologue: () => (
+      /^Whenever (?:equipped|enchanted) creature deals combat damage to an opponent, (.+)$/i
+    ),
+    on: [{ kind: 'deals-damage', who: 'attached', to: 'opponent', combatOnly: true }],
+  },
+  {
+    prologue: () => /^Whenever a creature you control deals combat damage to an opponent, (.+)$/i,
+    on: [{ kind: 'deals-damage', who: 'any', of: 'you', to: 'opponent', combatOnly: true }],
+  },
+  {
+    prologue: (self) => (
+      new RegExp(`^Whenever a creature dealt damage by ${self} this turn dies, (.+)$`, 'i')
+    ),
+    on: [{ kind: 'dies', who: 'any', what: 'creature', damagedBy: 'self' }],
+  },
   {
     prologue: () => /^Whenever another creature you control dies, (.+)$/i,
     on: [{ kind: 'dies', who: 'another', of: 'you', what: 'creature' }],
@@ -15496,7 +15558,9 @@ function eventRelativeEffect(
     Specters, whose printed line is "whenever ~ deals combat damage to a player, that player discards
     a card".
   */
-  const HIT_EVENTS = new Set(['combat-damage', 'combat-damage-dealt']);
+  // `deals-damage` joined in D566: its `defender` goes down the same channel, for Hypnotic
+  // Specter's "that player discards a card at random".
+  const HIT_EVENTS = new Set(['combat-damage', 'combat-damage-dealt', 'deals-damage']);
   const aboutTheHitPlayer = events.length > 0 && events.every((one) => HIT_EVENTS.has(one.kind));
 
   // Kambal: "that player loses 2 life and you gain 2 life".

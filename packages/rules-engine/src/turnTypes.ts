@@ -96,6 +96,23 @@ export interface CopiedSpell {
   readonly subtypes: readonly string[];
 }
 
+/**
+ * One landing of damage, as `dealDamage` recorded it. See `AutomationState.damageDealt`.
+ *
+ * `sourceInPlay` is whether the source was a permanent on the battlefield as it dealt the damage:
+ * "whenever ~ deals damage" is an ability of a permanent, and a burn spell's own id is a card on
+ * the stack that must not be asked for triggers it could never have.
+ */
+export interface DamageRecord {
+  readonly to:
+    | { readonly kind: 'player'; readonly seat: SeatIndex }
+    | { readonly kind: 'card'; readonly id: string };
+  readonly source: string | null;
+  readonly sourceInPlay: boolean;
+  readonly amount: number;
+  readonly combat?: true;
+}
+
 /** One clock that ran out: which object, which counter it was counting, and what it was called. */
 export interface ExpiredClock {
   readonly card: string;
@@ -1108,6 +1125,38 @@ export interface AutomationState {
    * before D564 still loads — every reader goes through `turnFacts` in `effects.ts`, which treats
    * a missing record as nothing having happened.
    */
+  /**
+   * Damage that has been dealt and that nobody has announced yet (D566). Drained by `settle`.
+   *
+   * The same family as `dealtCombatDamage`, and wider than it on both sides: that list is combat
+   * damage to a **player**, which is all the first cards asked for, and this is every point of
+   * damage that actually landed — on a creature or a planeswalker as well as on a player, from a
+   * burn spell or a pinger as well as from an attack. Three printed sentences need it and none of
+   * them can be found by comparing two boards: "whenever ~ **is dealt damage**" has to fire for a
+   * creature the damage killed, whose marked damage was wiped on the way to the graveyard;
+   * "whenever ~ **deals damage to an opponent**" is about a life total that does not say what
+   * lowered it; and "a creature **dealt damage by ~ this turn** dies" needs to know who hit whom.
+   *
+   * Written in one place — the end of `dealDamage`, after protection and prevention have taken
+   * their share, because prevented damage was never dealt — so no caller can forget to. `combat`
+   * is stamped by `dealCombatDamage` on everything it dealt, and it matters to more than the
+   * filter: combat damage in one step is **simultaneous** (CR 510.2), so a creature blocked by
+   * three is dealt damage once, and its enrage triggers once, where three separate pings are three.
+   *
+   * Optional so a game saved before D566 still loads.
+   */
+  readonly damageDealt?: readonly DamageRecord[];
+  /**
+   * Which objects have dealt damage to each permanent **this turn**: victim id → source refs.
+   *
+   * "Whenever a creature dealt damage by Sengir Vampire this turn dies" is the sentence, and the
+   * death event cannot answer it from the board — the creature is in a graveyard with its damage
+   * wiped. A source is recorded as `id#objectSeq`, so a Vampire that is blinked after biting is a
+   * new object that has damaged nothing (CR 400.7); the victim's own entry is dropped by `relocate`
+   * when the card next **enters** the battlefield, for the same rule from the other side, and the
+   * whole record is cleared in the cleanup step, which is where "this turn" ends.
+   */
+  readonly damagedBy?: Readonly<Record<string, readonly string[]>>;
   readonly attackedThisTurn?: Readonly<Record<string, number>>;
   readonly creaturesDiedThisTurn?: number;
   readonly leftBattlefieldThisTurn?: Readonly<Record<string, number>>;

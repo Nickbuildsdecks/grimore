@@ -21946,3 +21946,98 @@ place bloodthirst is applied.
 The honest summary of the two orderings is that a break which changes nothing observable is not a
 missed catch, and the harness cannot tell the difference; I can, by asking whether any input
 separates the two programs. For the reader orders none does.
+
+## D566 — Damage as an event: three sentences the board cannot answer afterwards
+
+The head of D565's queue was three prologues about damage, and none of them is a row in a table:
+each needs a fact that is gone by the time anything could look for it.
+
+| printed | why the board cannot say |
+| --- | --- |
+| Whenever ~ **is dealt damage** | a creature the damage killed is in a graveyard with its marked damage wiped |
+| Whenever ~ **deals damage to an opponent** | a life total going down does not say what lowered it |
+| Whenever a creature **dealt damage by ~ this turn** dies | who hit whom is not a property of either card |
+
+So the engine writes damage down where it lands. `dealDamage` has one tail every landing of
+damage passes through — after protection and prevention have taken their share — and it now
+appends to two records: `damageDealt`, a transient list `settle` drains and announces, in the
+same family as `died`, `entered` and `dealtCombatDamage`; and `damagedBy`, the turn's memory of
+which object hit which permanent, cleared in the cleanup step.
+
+Two new events and one filter:
+
+| event | printed | lines read | cards finished |
+| --- | --- | --- | --- |
+| `damaged` | Whenever ~ is dealt damage | 18 | 17 |
+| `deals-damage`, `to: 'opponent'` | Whenever ~ deals damage to an opponent | 11 | 11 |
+| the same, `who: 'attached'` | Whenever enchanted/equipped creature deals damage to an opponent | 3 | 3 |
+| the same, `combatOnly` | … deals **combat** damage to an opponent (self, attached, "a creature you control") | 3 | 3 |
+| `dies`, `damagedBy: 'self'` | Whenever a creature dealt damage by ~ this turn dies | 10 | 8 |
+
+    printed legal lines read:            24,120 → 24,165 of 56,421 (42.8%)
+    cards with a compiled script:        12,377 → 12,412
+    cards with every printed line read:   8,164 → 8,206
+
+Decisions, each of which is a rule rather than a convenience:
+
+- **A creature the damage killed still gets its trigger.** The ability triggered when the damage
+  was dealt; state-based actions buried the body afterwards (CR 603.2, 704.3). A Ripjaw Raptor
+  draws for the hit that kills it. The watcher loop gained its sixth exception for this, for the
+  subject only. `damaged` is offered to that one permanent and not walked across the board: every
+  line read is about the permanent itself, and the event is raised for every landing of damage in
+  every combat the bot simulates.
+- **Combat damage in one step is one event** (CR 510.2). `dealCombatDamage` stamps everything it
+  dealt as `combat`, and `settle` raises `damaged` once per creature for stamped records: a Raptor
+  blocked by two Bears draws one card, where a Shock and a Bolt draw two.
+- **"Deals damage" is an ability of a permanent.** A spell's damage raises no `deals-damage`
+  event — the record says whether its source was on the battlefield — so a Shock at the opponent's
+  face with a Thieving Otter in play draws nothing. (The record's flag is an economy rather than
+  the reason: a spell in a graveyard is not a watcher either way. Written at the line.)
+- **"An opponent" is asked from the watcher's seat**, so a ping at your own face is not one and a
+  Curiosity on somebody else's creature answers for the Aura's controller.
+- **A blinked object remembers nothing** (CR 400.7). A source is recorded as `id#objectSeq`, so a
+  Sengir Vampire blinked after the bite is not credited with it; and a victim's entry is dropped
+  when the card next enters the battlefield.
+
+### A defect this found, which was not about damage
+
+`addCounters` wrote onto whatever card had the id, wherever it was. "Whenever Fungusaur is dealt
+damage, put a +1/+1 counter on it" resolving after the damage killed the Fungusaur put the counter
+on the card **in the graveyard**, and `relocate` carries a card's counters onto the battlefield
+with it — so the next Zombify returned a 3/3. Any ability that resolves after its source has died
+had the same hole; this is the first printed line that walks into it every game. A +1/+1 or -1/-1
+counter now goes only on a permanent. Time counters on a suspended card in exile are untouched.
+Confirmed load-bearing: with the guard removed, the lethal-damage row is the one row of this
+block's 22 that fails.
+
+### A pool card that was narrower than its text
+
+The pool's Thieving Magpie was written as "deals **combat** damage to **a player**", in both its
+card text and its script. The Oracle text is "deals damage to an opponent". The two agree for a
+bare Magpie, which is why nothing ever noticed; the compiled-against-written check noticed the
+moment the compiler could read the real sentence. Text and script both corrected.
+
+### Refused, with the reason at the row
+
+- "Whenever **equipped creature** is dealt damage" (one legal card): a host the damage killed has
+  been detached from by the time the event is raised, and `damaged` carries no list of what was
+  on it. It would be right for survivors and wrong for the case that matters.
+- "A creature dealt damage by **enchanted creature** this turn dies" (Vampiric Embrace, one card):
+  its effect is "put a +1/+1 counter on **that creature**", meaning the enchanted one, and the
+  effect reader binds "that creature" to the event's subject — the creature that died. Read, it
+  would have compiled with nothing unread and done nothing. Found by reading the list of what the
+  new rows read, card by card, before any test was written.
+- A trampler that dies to its blocker in the step it tramples over should still get "deals damage
+  to an opponent". `combat-damage` has never fired in that case either; the two are the same
+  sentence and stay consistent. A known gap, written at the exemption.
+
+Tests: 22 runtime rows on eight printed cards compiled from corpus rows (each sentence run both
+ways — the wrong creature, the wrong player, a spell where the sentence says a permanent, combat
+where it says any damage and the reverse, this turn and two turns later, both blinks), 16 compile
+rows (nine readings, one "still on the old event", six refusals). Engine suite: 3,751.
+
+The queue behind it, same instrument, re-run on this build: `an enchantment you control enters
+and whenever you fully unlock a room` (10, eerie — half of it is Rooms, which the engine does not
+have), `you cycle or discard a card` (10), `you cast a historic spell` (9), `a creature you
+control attacks alone` (9), `you cast an instant or sorcery spell that targets a creature` (8),
+`you expend N` (7), `~ becomes untapped` (6).

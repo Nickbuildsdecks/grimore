@@ -574,7 +574,7 @@ export function dealDamage(
       const counters = { ...inst.counters, loyalty: Math.max(0, loyalty - left) };
       next = withInstance(next, inst.id, { counters });
       if (lifelinked && opts.controller !== undefined) next = gainLife(next, opts.controller, left);
-      return next;
+      return recordDamage(next, target, left, opts.source);
     }
     /*
       And to a creature, infect is `-1/-1` counters instead of marked damage (CR 702.90b) — as is
@@ -600,6 +600,50 @@ export function dealDamage(
       });
   }
   if (lifelinked && opts.controller !== undefined) next = gainLife(next, opts.controller, left);
+  return recordDamage(next, target, left, opts.source);
+}
+
+/**
+ * How an object that dealt damage is remembered: its id and **which object** that id was.
+ *
+ * A card that leaves the battlefield and comes back is a new object (CR 400.7) with the same id,
+ * so "dealt damage by ~ this turn" keyed on the id alone would credit a blinked Sengir Vampire
+ * with a bite its previous self took. `objectSeq` moves on every zone change, which is the whole
+ * distinction. See `AutomationState.damagedBy`.
+ */
+export function damageSourceRef(state: GameState, id: string): string {
+  return `${id}#${state.instances[id]?.objectSeq ?? 0}`;
+}
+
+/**
+ * Writes down damage that landed — `AutomationState.damageDealt` for the events `settle` raises,
+ * and `damagedBy` for the turn's memory of who hit which permanent (D566).
+ *
+ * Called from the two places `dealDamage` finishes with damage actually dealt, and from nowhere
+ * else: every early return above it is damage that did not happen (nothing left after protection
+ * or a shield, a target that is not there). Only on an automated table, for the reason `died` is —
+ * nothing drains the list on a tabletop.
+ */
+function recordDamage(
+  state: GameState, target: Exclude<Target, { kind: 'ability' }>, amount: number,
+  source: string | null,
+): GameState {
+  if (!state.automated) return state;
+  const sourceInPlay = source !== null && state.instances[source]?.zone === 'battlefield';
+  const to = target.kind === 'player'
+    ? { kind: 'player' as const, seat: target.seat }
+    : { kind: 'card' as const, id: target.id };
+  let next: GameState = {
+    ...state,
+    damageDealt: [...(state.damageDealt ?? []), { to, source, sourceInPlay, amount }],
+  };
+  if (to.kind === 'card' && source !== null && sourceInPlay) {
+    const ref = damageSourceRef(next, source);
+    const before = next.damagedBy?.[to.id] ?? [];
+    if (!before.includes(ref)) {
+      next = { ...next, damagedBy: { ...(next.damagedBy ?? {}), [to.id]: [...before, ref] } };
+    }
+  }
   return next;
 }
 
@@ -1745,6 +1789,22 @@ export function proliferate(state: GameState, chosen: readonly string[]): GameSt
 export function addCounters(state: GameState, id: string, key: string, amount: number): GameState {
   const inst = state.instances[id];
   if (inst === undefined) return state;
+  /*
+    A +1/+1 or -1/-1 counter goes on a **permanent**, and a card that has left the battlefield is
+    not one (D566).
+
+    "Whenever ~ is dealt damage, put a +1/+1 counter on it" is Fungusaur, and the damage that
+    triggers it is often the damage that kills it: the ability resolves with its source in a
+    graveyard, and without this the counter was written onto the card there — where `relocate`
+    would carry it back onto the battlefield with the next Reanimate, a 3/3 arriving as a 4/4 with
+    nothing on the table to say why. An effect that has lost its object does nothing to the new
+    one (CR 400.7).
+
+    Only the two counters that mean something to a creature. Time counters on a suspended card in
+    exile are counters on a card that is deliberately not a permanent, and they are added through
+    this same function.
+  */
+  if ((key === '+1/+1' || key === '-1/-1') && inst.zone !== 'battlefield') return state;
   const value = clampValue((inst.counters[key] ?? 0) + amount);
   const counters = { ...inst.counters };
   if (value === 0) delete counters[key];

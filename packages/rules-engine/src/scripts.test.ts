@@ -7599,6 +7599,20 @@ describe('deck coverage', () => {
         artifacts are out, a creature that is not an artifact is not counted, a Sol Ring is spent as
         mana **or** as a pip and never both, and every board the sweep builds either offers the cast
         or refuses to offer it — never offers one the payment then refuses.
+
+      **And one event** (D566):
+
+      - `trigger damaged`: "whenever ~ is dealt damage" — enrage and its older printings — on
+        **18 legal cards** the compiler reads it for (Ripjaw Raptor, Fungusaur, Bellowing Aegisaur,
+        Ranging Raptors and 14 more), 17 of them with nothing else unread. No pool card prints the
+        sentence, and D442 forbids adding a Dinosaur to a measured deck to satisfy this check. Its
+        sibling `deals-damage` needs no exemption: the pool's Thieving Magpie carries it.
+
+        Driven at runtime by seven tests in "damage as an event (D566)", on printed Ripjaw Raptor
+        and Fungusaur compiled from corpus rows: a Shock on the Raptor draws and a Shock beside it
+        does not, the hit that kills it still draws, two blockers are one event, a Fogged combat is
+        none, a ping the Fungusaur survives is a counter, and the damage that kills it leaves no
+        counter on the card in the graveyard.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7608,6 +7622,7 @@ describe('deck coverage', () => {
       'script bloodthirst',
       'script entersChoice',
       'script kickedEntersWith',
+      'trigger damaged',
     ]);
 
     const declared = [
@@ -38052,5 +38067,378 @@ describe('one sentence, two events — and two death prologues (D565)', () => {
     expect(named(s, seat as SeatIndex, 'Grizzly Bears')).toBe(0);
     const blade = find(s, 0, 'battlefield', 'Malakir Cullblade');
     expect(s.instances[blade]!.counters['+1/+1'] ?? 0).toBe(counters);
+  });
+});
+
+describe('damage as an event: is dealt damage, deals damage to an opponent, dealt damage by ~ (D566)', () => {
+  /*
+    Three sentences the board cannot answer once the damage has been dealt, so the engine writes the
+    damage down where it lands (`AutomationState.damageDealt`, `damagedBy`) and `settle` announces it.
+
+    Every row is run both ways: the damage that should fire the ability and the damage beside it
+    that should not — the wrong creature, the wrong player, a spell where the sentence says a
+    permanent, combat where it says any damage and the reverse, this turn and the next.
+
+    Eight printed cards, none in the pool, rows copied from the corpus unchanged. Wall of Air is the
+    pool's own, and is the victim that survives a Sengir Vampire's bite: a 1/5 flier that can block
+    it and live. Thieving Otter rather than Thieving Magpie because the Magpie is a pool card with a
+    hand-written script, and this block is about what the compiler reads.
+  */
+  const DATA = [
+    {
+      name: 'Ripjaw Raptor', type_line: 'Creature — Dinosaur', mana_cost: '{2}{G}{G}', cmc: 4,
+      colors: ['G'], power: '4', toughness: '5', layout: 'normal',
+      oracle_text: 'Enrage — Whenever Ripjaw Raptor is dealt damage, draw a card.',
+    },
+    {
+      name: 'Fungusaur', type_line: 'Creature — Fungus Dinosaur', mana_cost: '{3}{G}', cmc: 4,
+      colors: ['G'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Whenever Fungusaur is dealt damage, put a +1/+1 counter on it.',
+    },
+    {
+      name: 'Thieving Otter', type_line: 'Creature — Otter', mana_cost: '{2}{U}', cmc: 3,
+      colors: ['U'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Whenever Thieving Otter deals damage to an opponent, draw a card.',
+    },
+    {
+      name: 'Curiosity', type_line: 'Enchantment — Aura', mana_cost: '{U}', cmc: 1, colors: ['U'],
+      layout: 'normal',
+      oracle_text: 'Enchant creature\nWhenever enchanted creature deals damage to an opponent, you may draw a card.',
+    },
+    {
+      name: 'Prodigal Pyromancer', type_line: 'Creature — Human Wizard', mana_cost: '{2}{R}', cmc: 3,
+      colors: ['R'], power: '1', toughness: '1', layout: 'normal',
+      oracle_text: '{T}: Prodigal Pyromancer deals 1 damage to any target.',
+    },
+    {
+      name: 'Reef Pirates', type_line: 'Creature — Zombie Pirate', mana_cost: '{1}{U}{U}', cmc: 3,
+      colors: ['U'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Whenever Reef Pirates deals damage to an opponent, that player mills a card.',
+    },
+    {
+      name: 'Coastal Piracy', type_line: 'Enchantment', mana_cost: '{2}{U}{U}', cmc: 4, colors: ['U'],
+      layout: 'normal',
+      oracle_text: 'Whenever a creature you control deals combat damage to an opponent, you may draw a card.',
+    },
+    {
+      name: 'Sengir Vampire', type_line: 'Creature — Vampire', mana_cost: '{3}{B}{B}', cmc: 5,
+      colors: ['B'], power: '4', toughness: '4', layout: 'normal',
+      oracle_text: 'Flying (This creature can\'t be blocked except by creatures with flying or reach.)\nWhenever a creature dealt damage by Sengir Vampire this turn dies, put a +1/+1 counter on Sengir Vampire.',
+    },
+  ];
+  const PRINTED = DATA.map((row) => row.name).sort();
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'damage',
+      name: 'Damage',
+      entries: [
+        ...DATA.map((row) => ({ name: row.name, count: 3 })), { name: 'Wall of Air', count: 3 },
+        { name: 'Grizzly Bears', count: 4 }, { name: 'Shock', count: 4 },
+        { name: 'Lightning Bolt', count: 3 }, { name: 'Doom Blade', count: 2 },
+        { name: 'Cloudshift', count: 2 }, { name: 'Zombify', count: 2 }, { name: 'Fog', count: 2 },
+        { name: 'Mountain', count: 5 }, { name: 'Island', count: 4 }, { name: 'Swamp', count: 4 },
+        { name: 'Plains', count: 2 }, { name: 'Forest', count: 1 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual(PRINTED);
+    return list.deck;
+  };
+
+  const LANDS = [
+    'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Swamp', 'Swamp', 'Swamp', 'Swamp',
+    'Island', 'Plains', 'Forest',
+  ];
+
+  const start = (
+    hand: readonly string[], mine: readonly string[] = [], theirs: readonly string[] = [],
+    theirHand: readonly string[] = [],
+  ): GameState => advanceTo(arena({
+    decks: { 0: 'damage', 1: 'damage' },
+    deckSpecs: { damage: deck() },
+    hands: { 0: [...hand], 1: [...theirHand] },
+    battlefield: { 0: [...LANDS, ...mine], 1: ['Plains', ...theirs] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  const spell = (
+    s: GameState, name: string, target?: Target, by: SeatIndex = 0,
+  ): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by, card: find(s, by, 'hand', name),
+    ...(target === undefined ? {} : { targets: [target] }),
+  })));
+  const at = (id: string): Target => ({ kind: 'card', id });
+  const library = (s: GameState, seat: SeatIndex): number => ids(s, seat, 'library').length;
+  const plusOnes = (s: GameState, id: string): number => s.instances[id]!.counters['+1/+1'] ?? 0;
+  const ping = (s: GameState, target: Target): GameState => drain(passBoth(apply(s, {
+    type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Prodigal Pyromancer'),
+    abilityIndex: 0, targets: [target],
+  })));
+  /** My creature attacks seat 1; `blockers` block it; combat runs to the second main phase. */
+  const swing = (s: GameState, attacker: string, blockers: readonly string[] = []): GameState => {
+    let next = advanceTo(s, 'declare-attackers');
+    next = passBoth(apply(next, { type: 'auto:attack', by: 0, attackers: [{ attacker, defender: 1 }] }));
+    if (blockers.length > 0) {
+      next = apply(next, {
+        type: 'auto:block', by: 1, blocks: blockers.map((blocker) => ({ blocker, attacker })),
+      });
+    }
+    return next;
+  };
+
+  describe('"whenever ~ is dealt damage"', () => {
+    it('Ripjaw Raptor draws a card when a Shock lands on it, and lives', () => {
+      let s = start(['Shock'], ['Ripjaw Raptor', 'Grizzly Bears']);
+      const raptor = find(s, 0, 'battlefield', 'Ripjaw Raptor');
+      const before = library(s, 0);
+      s = spell(s, 'Shock', at(raptor));
+      expect(damageOn(s, raptor)).toBe(2);
+      expect(library(s, 0)).toBe(before - 1);
+    });
+
+    it('and not when the Shock lands on the creature beside it', () => {
+      let s = start(['Shock'], ['Ripjaw Raptor', 'Grizzly Bears']);
+      const before = library(s, 0);
+      s = spell(s, 'Shock', at(find(s, 0, 'battlefield', 'Grizzly Bears')));
+      expect(namesIn(s, 0, 'graveyard')).toContain('Grizzly Bears');
+      expect(library(s, 0)).toBe(before);
+    });
+
+    it('draws for the damage that kills it: two burn spells are two cards, the second from the graveyard', () => {
+      let s = start(['Shock', 'Lightning Bolt'], ['Ripjaw Raptor']);
+      const raptor = find(s, 0, 'battlefield', 'Ripjaw Raptor');
+      const before = library(s, 0);
+      s = spell(s, 'Shock', at(raptor));
+      expect(library(s, 0)).toBe(before - 1);
+      s = spell(s, 'Lightning Bolt', at(raptor));
+      expect(namesIn(s, 0, 'graveyard')).toContain('Ripjaw Raptor');
+      expect(library(s, 0)).toBe(before - 2);
+    });
+
+    it('is dealt damage ONCE by two blockers, because combat damage is simultaneous (CR 510.2)', () => {
+      let s = start([], ['Ripjaw Raptor'], ['Grizzly Bears', 'Grizzly Bears']);
+      const raptor = find(s, 0, 'battlefield', 'Ripjaw Raptor');
+      const bears = ids(s, 1, 'battlefield').filter((id) => nameOf(s, id) === 'Grizzly Bears');
+      const before = library(s, 0);
+      s = drain(advanceTo(swing(s, raptor, bears), 'postcombat-main'));
+      expect(s.turn).toBe(5);
+      // Four damage from two Bears, on one Raptor, in one step.
+      expect(damageOn(s, raptor)).toBe(4);
+      expect(library(s, 0)).toBe(before - 1);
+    });
+
+    it('is not dealt damage a Fog prevented', () => {
+      let s = start(['Fog'], ['Ripjaw Raptor'], ['Grizzly Bears']);
+      const raptor = find(s, 0, 'battlefield', 'Ripjaw Raptor');
+      const before = library(s, 0);
+      s = swing(s, raptor, [find(s, 1, 'battlefield', 'Grizzly Bears')]);
+      s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fog') }));
+      s = drain(advanceTo(s, 'postcombat-main'));
+      expect(s.turn).toBe(5);
+      expect(damageOn(s, raptor)).toBe(0);
+      expect(library(s, 0)).toBe(before);
+    });
+
+    it('Fungusaur takes a counter from a ping it survives', () => {
+      let s = start([], ['Fungusaur', 'Prodigal Pyromancer']);
+      const fungusaur = find(s, 0, 'battlefield', 'Fungusaur');
+      s = ping(s, at(fungusaur));
+      expect(plusOnes(s, fungusaur)).toBe(1);
+      expect(power(s, fungusaur)).toBe(3);
+    });
+
+    it('and none from the damage that kills it — the card in the graveyard is not a permanent', () => {
+      let s = start(['Shock', 'Zombify'], ['Fungusaur']);
+      const fungusaur = find(s, 0, 'battlefield', 'Fungusaur');
+      s = spell(s, 'Shock', at(fungusaur));
+      expect(namesIn(s, 0, 'graveyard')).toContain('Fungusaur');
+      expect(s.instances[fungusaur]!.counters).toEqual({});
+      // And it comes back the 2/2 it is printed as, which is what the stray counter would have
+      // broken: `relocate` carries a card's counters onto the battlefield with it.
+      s = spell(s, 'Zombify', at(fungusaur));
+      expect(namesIn(s, 0, 'battlefield')).toContain('Fungusaur');
+      expect(plusOnes(s, fungusaur)).toBe(0);
+      expect(power(s, fungusaur)).toBe(2);
+    });
+  });
+
+  describe('"whenever ~ deals damage to an opponent"', () => {
+    it('Thieving Otter draws when it connects in combat', () => {
+      let s = start([], ['Thieving Otter']);
+      const before = library(s, 0);
+      s = drain(advanceTo(swing(s, find(s, 0, 'battlefield', 'Thieving Otter')), 'postcombat-main'));
+      expect(life(s, 1)).toBe(18);
+      expect(library(s, 0)).toBe(before - 1);
+    });
+
+    it('and not when a Shock of mine is what dealt the damage — a spell is not the Otter', () => {
+      let s = start(['Shock'], ['Thieving Otter']);
+      const before = library(s, 0);
+      s = spell(s, 'Shock', { kind: 'player', seat: 1 });
+      expect(life(s, 1)).toBe(18);
+      expect(library(s, 0)).toBe(before);
+    });
+
+    const curious = (): GameState => {
+      const s = start(['Curiosity'], ['Prodigal Pyromancer'], ['Grizzly Bears']);
+      return spell(s, 'Curiosity', at(find(s, 0, 'battlefield', 'Prodigal Pyromancer')));
+    };
+
+    it('Curiosity on a pinger offers a card for NONCOMBAT damage to an opponent', () => {
+      let s = curious();
+      const before = library(s, 0);
+      s = ping(s, { kind: 'player', seat: 1 });
+      expect(life(s, 1)).toBe(19);
+      expect(s.pendingDecision?.seat).toBe(0);
+      s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: s.pendingDecision!.options![0]! }));
+      expect(library(s, 0)).toBe(before - 1);
+    });
+
+    it('and nothing for a ping at an opponent\'s creature, which is not an opponent', () => {
+      let s = curious();
+      const before = library(s, 0);
+      s = ping(s, at(find(s, 1, 'battlefield', 'Grizzly Bears')));
+      expect(damageOn(s, find(s, 1, 'battlefield', 'Grizzly Bears'))).toBe(1);
+      expect(s.pendingDecision).toBeNull();
+      expect(library(s, 0)).toBe(before);
+    });
+
+    it('and nothing for a ping at its own controller, who is a player and not an opponent', () => {
+      let s = curious();
+      const before = library(s, 0);
+      s = ping(s, { kind: 'player', seat: 0 });
+      expect(life(s, 0)).toBe(19);
+      expect(s.pendingDecision).toBeNull();
+      expect(library(s, 0)).toBe(before);
+    });
+
+    it('"that player" is the one who was hit: in a pod Reef Pirates mills seat 2 and nobody else', () => {
+      let s = advanceTo(arena({
+        format: 'pod', seats: 3,
+        decks: { 0: 'damage', 1: 'damage', 2: 'damage' },
+        deckSpecs: { damage: deck() },
+        battlefield: { 0: ['Reef Pirates'] },
+        turn: 5, firstSeat: 0,
+      }), 'declare-attackers');
+      const pirates = find(s, 0, 'battlefield', 'Reef Pirates');
+      const before = [library(s, 0), library(s, 1), library(s, 2)];
+      s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: pirates, defender: 2 }] }));
+      s = drain(advanceTo(s, 'postcombat-main'));
+      expect(life(s, 2)).toBe(life(s, 1) - 2);
+      expect([library(s, 0), library(s, 1), library(s, 2)]).toEqual([before[0], before[1], before[2]! - 1]);
+      expect(namesIn(s, 2, 'graveyard')).toHaveLength(1);
+    });
+  });
+
+  describe('"deals COMBAT damage to an opponent"', () => {
+    it('Coastal Piracy offers a card when my Bears connect', () => {
+      let s = start([], ['Coastal Piracy', 'Grizzly Bears']);
+      const before = library(s, 0);
+      // Passed along by hand rather than with `advanceTo`, which refuses to walk past a question.
+      s = swing(s, find(s, 0, 'battlefield', 'Grizzly Bears'));
+      for (let i = 0; i < 12 && s.pendingDecision === null && s.priority !== null; i++) {
+        s = apply(s, { type: 'auto:pass', by: s.priority });
+      }
+      expect(s.turn).toBe(5);
+      expect(s.pendingDecision?.seat).toBe(0);
+      s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: s.pendingDecision!.options![0]! }));
+      expect(life(s, 1)).toBe(18);
+      expect(library(s, 0)).toBe(before - 1);
+    });
+
+    it('and nothing for a ping, which is damage to an opponent and not combat damage', () => {
+      let s = start([], ['Coastal Piracy', 'Prodigal Pyromancer']);
+      const before = library(s, 0);
+      s = ping(s, { kind: 'player', seat: 1 });
+      expect(life(s, 1)).toBe(19);
+      expect(s.pendingDecision).toBeNull();
+      expect(library(s, 0)).toBe(before);
+    });
+
+    it('and nothing when an opponent\'s Bears connect with me', () => {
+      let s = advanceTo(nextTurn(start([], ['Coastal Piracy'], ['Grizzly Bears'])), 'declare-attackers');
+      expect(s.activeSeat).toBe(1);
+      const before = library(s, 0);
+      const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+      s = passBoth(apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: bears, defender: 0 }] }));
+      s = drain(advanceTo(s, 'postcombat-main'));
+      expect(life(s, 0)).toBe(18);
+      expect(s.pendingDecision).toBeNull();
+      expect(library(s, 0)).toBe(before);
+    });
+  });
+
+  describe('"whenever a creature dealt damage by ~ this turn dies"', () => {
+    /** The Vampire attacks, Wall of Air blocks and lives with four damage on it. */
+    const bitten = (hand: readonly string[], theirHand: readonly string[] = []): GameState => {
+      let s = start(hand, ['Sengir Vampire'], ['Wall of Air', 'Grizzly Bears'], theirHand);
+      const vampire = find(s, 0, 'battlefield', 'Sengir Vampire');
+      const wall = find(s, 1, 'battlefield', 'Wall of Air');
+      s = drain(advanceTo(swing(s, vampire, [wall]), 'postcombat-main'));
+      expect(s.turn).toBe(5);
+      expect(damageOn(s, wall)).toBe(4);
+      expect(plusOnes(s, vampire)).toBe(0);
+      return s;
+    };
+    const vampireOf = (s: GameState): string => find(s, 0, 'battlefield', 'Sengir Vampire');
+    const wallOf = (s: GameState): string => find(s, 1, 'battlefield', 'Wall of Air');
+
+    it('Sengir Vampire grows when something else finishes what it bit', () => {
+      let s = bitten(['Shock']);
+      s = spell(s, 'Shock', at(wallOf(s)));
+      expect(namesIn(s, 1, 'graveyard')).toContain('Wall of Air');
+      expect(plusOnes(s, vampireOf(s))).toBe(1);
+      expect(power(s, vampireOf(s))).toBe(5);
+    });
+
+    it('and not when a creature it never touched dies beside it', () => {
+      let s = bitten(['Shock']);
+      s = spell(s, 'Shock', at(find(s, 1, 'battlefield', 'Grizzly Bears')));
+      expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+      expect(plusOnes(s, vampireOf(s))).toBe(0);
+    });
+
+    it('"this turn" ends with the turn: the same Wall destroyed two turns later is nothing', () => {
+      let s = advanceTo(nextTurn(nextTurn(bitten(['Doom Blade']))), 'precombat-main');
+      expect(s.activeSeat).toBe(0);
+      s = spell(s, 'Doom Blade', at(wallOf(s)));
+      expect(namesIn(s, 1, 'graveyard')).toContain('Wall of Air');
+      expect(plusOnes(s, vampireOf(s))).toBe(0);
+    });
+
+    it('a Vampire blinked since the bite is a new object that bit nothing (CR 400.7)', () => {
+      let s = bitten(['Cloudshift', 'Shock']);
+      s = spell(s, 'Cloudshift', at(vampireOf(s)));
+      s = spell(s, 'Shock', at(wallOf(s)));
+      expect(namesIn(s, 1, 'graveyard')).toContain('Wall of Air');
+      expect(plusOnes(s, vampireOf(s))).toBe(0);
+    });
+
+    it('and a Wall blinked since the bite is a new object that was never bitten', () => {
+      let s = bitten(['Doom Blade'], ['Cloudshift']);
+      s = apply(s, { type: 'auto:pass', by: 0 });
+      s = apply(s, { type: 'auto:activate', by: 1, card: find(s, 1, 'battlefield', 'Plains'), abilityIndex: 0 });
+      s = spell(s, 'Cloudshift', at(wallOf(s)), 1);
+      expect(damageOn(s, wallOf(s))).toBe(0);
+      expect(s.turn).toBe(5);
+      s = spell(s, 'Doom Blade', at(wallOf(s)));
+      expect(namesIn(s, 1, 'graveyard')).toContain('Wall of Air');
+      expect(plusOnes(s, vampireOf(s))).toBe(0);
+    });
+
+    it('a creature the Vampire kills outright in combat counts too', () => {
+      // Seat 1's turn: their Bears attacks and the Vampire blocks it.
+      let s = advanceTo(nextTurn(start([], ['Sengir Vampire'], ['Grizzly Bears'])), 'declare-attackers');
+      expect(s.activeSeat).toBe(1);
+      const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+      const vampire = vampireOf(s);
+      s = passBoth(apply(s, { type: 'auto:attack', by: 1, attackers: [{ attacker: bears, defender: 0 }] }));
+      s = apply(s, { type: 'auto:block', by: 0, blocks: [{ blocker: vampire, attacker: bears }] });
+      s = drain(advanceTo(s, 'postcombat-main'));
+      expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+      expect(plusOnes(s, vampire)).toBe(1);
+    });
   });
 });

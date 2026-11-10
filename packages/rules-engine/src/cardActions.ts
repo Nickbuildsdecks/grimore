@@ -198,6 +198,15 @@ export function relocate(
   // it moves between two battlefields, and a creature that changed hands has not entered.
   if (state.automated && inst.zone !== 'battlefield' && toZone === 'battlefield') {
     next = { ...next, entered: [...next.entered, inst.id] };
+    /*
+      And whatever hit this card's previous self is forgotten, because this is a new object
+      (CR 400.7, D566): a creature bitten by a Sengir Vampire, blinked and then killed was not
+      "dealt damage by" the Vampire as far as the thing that died is concerned.
+    */
+    if (next.damagedBy?.[inst.id] !== undefined) {
+      const { [inst.id]: _forgotten, ...rest } = next.damagedBy;
+      next = { ...next, damagedBy: rest };
+    }
   }
   /*
     And a card arriving in a graveyard **from anywhere**, which is wider than dying and is its own

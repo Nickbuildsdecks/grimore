@@ -289,6 +289,20 @@ export type TriggerEvent =
        */
       readonly who?: 'self' | 'another' | 'any' | 'attached';
       readonly of?: 'you' | 'opponent' | 'any';
+      /**
+       * "Whenever a creature **dealt damage by ~ this turn** dies" — Sengir Vampire's sentence
+       * (D566). `self` is this permanent as the thing that dealt the damage, and the only value:
+       * the "dealt damage by enchanted creature" form is one card, refused where the row would be.
+       *
+       * Not a fact about the creature that died so much as about the pair, which is why it is not
+       * one of the characteristic filters below: it is answered from `subjectDamagedBy`, the list
+       * the engine copies onto the event from `AutomationState.damagedBy`, and matched in
+       * `fireTrigger`, the one place that knows which permanent is watching. Any damage counts —
+       * the Vampire's bite did not have to be what killed it (CR 603.10a reads the turn's record).
+       */
+      readonly damagedBy?: 'self';
+      /** Set by the engine: the source refs that dealt this permanent damage this turn. */
+      readonly subjectDamagedBy?: readonly string[];
       /** As `etb`'s, minus `land`: "whenever a land dies" is not a sentence Magic prints. */
       readonly what?: 'creature' | 'permanent' | 'artifact' | 'enchantment';
       /**
@@ -594,6 +608,60 @@ export type TriggerEvent =
    */
   | { readonly kind: 'leaves' }
   | { readonly kind: 'becomes-tapped' }
+  /**
+   * "Whenever ~ **is dealt damage**" — enrage, and every card printed before the word (D566).
+   *
+   * About the permanent the damage landed on, whoever dealt it and however much: one point from a
+   * pinger and seven from a blocker are both "is dealt damage". It fires for a creature the damage
+   * **killed**, which is the half that cannot be read off the board — a Ripjaw Raptor that takes
+   * lethal damage still draws its card, from the graveyard, because the ability triggered when the
+   * damage was dealt and state-based actions only noticed the body afterwards (CR 603.2, 704.3).
+   * The engine raises it from `AutomationState.damageDealt`, once per landing of damage, and once
+   * per **combat damage step** however many creatures dealt it — combat damage is simultaneous
+   * (CR 510.2), so three blockers are one event where three pings are three.
+   *
+   * Its own permanent only, like `becomes-tapped` and `leaves`, so it takes no `who`: the board
+   * forms ("a creature you control is dealt damage", "equipped creature is dealt damage") are two
+   * legal cards between them and are refused where the row is.
+   */
+  | {
+      readonly kind: 'damaged';
+      /** Set by the engine: which permanent was dealt the damage. */
+      readonly subject?: string;
+    }
+  /**
+   * "Whenever ~ **deals damage to an opponent**" — any damage, not only combat damage (D566).
+   *
+   * `combat-damage` is the narrower sentence and stays its own event: that one is raised from the
+   * combat step's own list and carries nothing about a burn spell or a pinger. This one is every
+   * landing of damage **on a player** from a **permanent** — a Curiosity on a Prodigal Pyromancer
+   * draws for the ping, which is the card the difference was printed for. A spell's damage raises
+   * nothing here: the sentence is an ability of a permanent, about that permanent or the one it is
+   * attached to, and an instant is neither.
+   *
+   * `to: 'opponent'` is asked from the **watcher's** side — an opponent of whoever controls the
+   * permanent the trigger is printed on, which for an Aura on somebody else's creature is not the
+   * creature's controller. `player` is the wider form, kept so the field means something when it
+   * is absent. The seat that was hit travels as `defender`, down the same `attacked` channel the
+   * combat events use, for an effect that says "that player".
+   */
+  | {
+      readonly kind: 'deals-damage';
+      readonly who?: 'self' | 'attached' | 'another' | 'any';
+      readonly of?: 'you' | 'opponent' | 'any';
+      readonly to?: 'opponent' | 'player';
+      /**
+       * "deals **combat** damage to an opponent" — the narrow form of the same sentence, for the
+       * handful of cards that print "opponent" where `combat-damage` prints "player".
+       */
+      readonly combatOnly?: boolean;
+      /** Set by the engine: who was dealt the damage, and whether it was combat damage. */
+      readonly defender?: SeatIndex;
+      readonly combat?: boolean;
+      /** Set by the engine: which permanent dealt it, and who controlled it. */
+      readonly subject?: string;
+      readonly subjectSeat?: SeatIndex;
+    }
   /**
    * "When this permanent is turned face up" — morph's own trigger (CR 702.37d).
    *

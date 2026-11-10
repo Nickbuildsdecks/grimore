@@ -1358,7 +1358,8 @@ const THIEVING_MAGPIE: CardDef = {
   cmc: 4,
   power: '1',
   toughness: '3',
-  oracleText: 'Flying\nWhenever Thieving Magpie deals combat damage to a player, draw a card.',
+  // The Oracle wording (D566): any damage to an opponent, not only combat damage to a player.
+  oracleText: 'Flying\nWhenever Thieving Magpie deals damage to an opponent, draw a card.',
   colors: ['U'],
 };
 
