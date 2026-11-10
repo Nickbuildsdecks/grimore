@@ -21730,3 +21730,23 @@ D562's pod sweep (SEED0=43201): 40 of 40 to a finish, no throw, no stall. D562 a
 table rows and one compile row after it was pushed and before its break run: Bold Defense, for an
 "instead" at the **front** of the kicked clause, and a refusal for two halves that each ask a
 question.
+
+### Break harness for D560 and D561: 19 of 21, and both misses were code that could not be reached
+
+Twenty-one breaks on two mirrors in 36 minutes. Nineteen were caught by the row written for each.
+The two that were not are the two I had marked beforehand as possibly unreachable, and they got
+different answers:
+
+| break | verdict | what was done |
+| --- | --- | --- |
+| D561: the event check in `kickerPermanentShapeFor` is dropped | uncaught | **removed.** The regex above it only accepts "When <this card> enters", so the shorter sentence can only come back as the card's own enters trigger. The check restated a fact already guaranteed and nothing could observe it. |
+| D560: the per-pass `arrivalReplacements` call in `settle`'s loop is removed | uncaught | **kept, and labelled.** `settle`'s loop is written for arrivals that appear mid-loop, and the one thing in a pass that can produce one is a replacement's `instead`, which is an arbitrary script. No card in the pool has one that returns something to the battlefield, so no test can reach the line; a card that came back *instead of* dying would. The comment at the call now says "kept and unreached" in so many words. |
+
+The difference is whether the unreachable case can become reachable without touching the guard. A
+second test of a regex's own guarantee cannot; a hook for a script that has not been written can.
+
+One catch was not a catch: "the arrival pass forgets bloodthirst" was reported caught **by the
+type checker**, because the patch I wrote for it did not compile. That is a break that was never
+run. It is in the next spec with a patch that compiles.
+
+D563's pod sweep (SEED0=43301): 40 of 40 to a finish, no throw, no stall.

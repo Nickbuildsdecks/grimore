@@ -13629,9 +13629,10 @@ function evokeShapeFor(lines: readonly string[]): WholeCardReading | null {
  * that comes back has the kicked condition put in front of its own. Every effect the enters reader
  * learns later is therefore a kicked effect too, with nothing to keep in step.
  *
- * It must come back as **one self-`etb` trigger and nothing else**. Anything more — a second field,
- * a different event — means the shorter sentence was read as something this wrapper does not
- * understand, and wrapping only part of it would lose the condition from the rest.
+ * It must come back as **one trigger and nothing else**. Anything more — a second field beside
+ * `triggers`, or two of them — means the shorter sentence was read as something this wrapper does
+ * not understand, and wrapping only part of it would lose the condition from the rest. That it is
+ * the card's own enters trigger is already guaranteed by the sentence the regex accepts.
  *
  * The condition is a `KICKED` marker written as the kicked spell resolves (see `KICKED`), asked as
  * the ability triggers: an unkicked creature puts nothing on the stack and asks nobody for a
@@ -13680,13 +13681,12 @@ function kickerPermanentShapeFor(def: CardDef, lines: readonly string[]): WholeC
   if (keys.length !== 1 || keys[0] !== 'triggers' || read.triggers!.length !== 1 || inner === undefined) {
     return null;
   }
-  // Its own arrival and no other: `who: 'self'` is how the enters reader spells that, and a filter
-  // of any kind beside it would be a trigger about some other permanent.
-  const on = inner.on as { readonly kind: string; readonly who?: string };
-  if (on.kind !== 'etb' || Object.keys(on).some((key) => key !== 'kind' && key !== 'who')
-    || (on.who !== undefined && on.who !== 'self')) {
-    return null;
-  }
+  /*
+    No check on `inner.on` here, and there was one. `clause` above only matches "When <this card>
+    enters", so the shorter sentence can only come back as the card's own enters trigger; a second
+    test of the same fact was removed when the break harness showed nothing could tell it was
+    there (D561's run, 19 of 21).
+  */
   const wasKicked: NonNullable<TriggerDef['condition']> = (c) =>
     (c.state.instances[c.source]?.counters[KICKED] ?? 0) > 0;
   const own = inner.condition;

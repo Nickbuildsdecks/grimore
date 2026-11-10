@@ -2600,7 +2600,16 @@ function settle(state: GameState, before: GameState): GameState {
       || next.toGraveyard.length > 0 || (next.exiled ?? []).length > 0);
     pass++
   ) {
-    // Anything that arrived during the last pass, before it is announced. See `arrivalReplacements`.
+    /*
+      Anything that arrived during the last pass, before it is announced.
+
+      **Nothing in the pool reaches this today**, and the break harness says so: with this line
+      removed every test still passes (D560's run). It stays because the loop it sits in is
+      written for arrivals that appear mid-loop — `entered.length > 0` is one of its conditions —
+      and the one thing in a pass that can produce one is a replacement's `instead`, which is an
+      arbitrary script. A card that returns to the battlefield *instead of* dying would arrive
+      here, and should have its counters. Recorded as kept-and-unreached rather than as tested.
+    */
     next = arrivalReplacements(next, arrivedWith);
     /*
       Replacements, widest wording first, before anything is announced.
