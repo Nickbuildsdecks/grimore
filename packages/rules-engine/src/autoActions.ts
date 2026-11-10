@@ -19,7 +19,8 @@ import {
   abilityUseKey, advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed,
   attackAimIssue, grantedAbilityFor,
   autoPassFor, bottomOwed,
-  canAttack, canBlock, checkTargets, damageOrdersOwed, endTurnCleanup, forcedAttackers, legalAttackers,
+  canAttack, canBlock, checkTargets, damageOrdersOwed, endTurnCleanup, flankingPenalties,
+  forcedAttackers, legalAttackers,
   legalBlockers, legalDefenders, menaceSatisfied, payFrom, pendingDeclaration, raiseUnblockedAttacks,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
   raiseTargeted, resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop,
@@ -2295,6 +2296,16 @@ function declareBlockers(state: GameState, action: AutoBlockAction): Outcome {
     return while the order is owed, so nothing can resolve or respond in between either way.
   */
   next = raiseUnblockedAttacks(next);
+  /*
+    Flanking's penalty (CR 702.25a), which is not a trigger in this engine for the reason
+    `flankingPenalties` and `KEYWORDS` both state: the rule has to ask a blocker whether it has
+    flanking, and only a keyword can answer that.
+
+    After the events and before priority returns, so a card watching the block sees the board as it
+    was declared and the shrunken blocker is in place by the time anybody can act. Only this
+    seat's combats, which is what keeps a pod's other declarations out of it.
+  */
+  next = flankingPenalties(next, attacks, action.by);
   // Priority only returns once every defender has declared.
   next = pendingDeclaration(next) === null ? resetPriority(settle(next, state)) : settle(next, state);
   const blocking = attacks.reduce((n, a) => n + (a.defender === action.by ? a.blockers.length : 0), 0);

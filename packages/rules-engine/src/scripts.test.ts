@@ -7528,6 +7528,19 @@ describe('deck coverage', () => {
         by a 3/3. Both verdicts on every row, because a test that only
         ever expects a refusal passes against a clause that refuses everything.
 
+      **And flanking** (D554), the second keyword here after myriad whose rule is an instruction
+      the engine carries out rather than a fact it consults:
+
+      - `keyword flanking`: **27 legal cards** print the bare line, two more in a mixed list, and
+        the grant readers picked up Jabari's Banner and Agility on the way — 31 lines, 15 cards
+        finished. No pool card prints it, and D442 forbids adding one to a measured deck.
+
+        Driven at runtime by six tests in "flanking: the blocker that shrinks (D554)", on printed
+        Benalish Cavalry, Mtenda Herder and Knight of Sursi through real attack and block
+        declarations: a 2/2 blocker becomes a 1/1, a 1/1 blocker dies before damage, a blocker with
+        flanking of its own is spared, two blockers take one each, a flanker that *blocks* gives
+        nothing, and both halves of "Flying; flanking" work off the one line.
+
       **And one payment flag** (D552):
 
       - `script improvise`: **23 legal printings** (Foundry Assembler, Sweatworks Brawler, Reverse
@@ -7547,7 +7560,7 @@ describe('deck coverage', () => {
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
       'keyword fear', 'keyword shadow', 'keyword horsemanship', 'keyword wither',
-      'keyword changeling', 'keyword intimidate', 'keyword skulk',
+      'keyword changeling', 'keyword intimidate', 'keyword skulk', 'keyword flanking',
       'script cantBeCountered', 'script grantedAbilities', 'script improvise',
     ]);
 
@@ -35765,5 +35778,404 @@ describe('improvise: a cost paid by tapping artifacts (D552)', () => {
         expect(ids(after, 0, 'stack')).toContain(assembler);
       }
     }
+  });
+});
+
+describe('flanking: the blocker that shrinks (D554)', () => {
+  /*
+    The keyword's own rule is enforced in `combat.ts` rather than by a trigger, and `KEYWORDS`' note
+    says why: "a creature **without flanking**" is a question about the blocker, and the only thing
+    in this engine that can answer it is the keyword set. So these tests are about the board after
+    blockers are declared, which is where the penalty lands.
+
+    Three printed cards, none in the pool. Benalish Cavalry and Mtenda Herder are the pair that
+    matters — a flanker and a *second* flanker, so the "without flanking" half has something to
+    refuse.
+  */
+  const DATA = [
+    {
+      name: 'Benalish Cavalry', type_line: 'Creature — Human Knight', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Flanking (Whenever a creature without flanking blocks this creature, the blocking creature gets -1/-1 until end of turn.)',
+    },
+    {
+      name: 'Mtenda Herder', type_line: 'Creature — Human Scout', mana_cost: '{W}', cmc: 1,
+      colors: ['W'], power: '1', toughness: '1', layout: 'normal',
+      oracle_text: 'Flanking (Whenever a creature without flanking blocks this creature, the blocking creature gets -1/-1 until end of turn.)',
+    },
+    // The mixed list, which `printedPart` reads whole — both keywords off one line.
+    {
+      name: 'Knight of Sursi', type_line: 'Creature — Human Knight', mana_cost: '{3}{W}', cmc: 4,
+      colors: ['W'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Flying; flanking',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'flankers',
+      name: 'Flankers',
+      entries: [
+        { name: 'Benalish Cavalry', count: 4 }, { name: 'Mtenda Herder', count: 4 },
+        { name: 'Knight of Sursi', count: 4 },
+        { name: 'Grizzly Bears', count: 4 }, { name: 'Hill Giant', count: 4 },
+        { name: 'Elite Vanguard', count: 4 }, { name: 'Giant Spider', count: 4 },
+        { name: 'Plains', count: 20 }, { name: 'Forest', count: 16 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort())
+      .toEqual(['Benalish Cavalry', 'Knight of Sursi', 'Mtenda Herder']);
+    return list.deck;
+  };
+
+  /** Seat 0 attacks with `mine`, seat 1 blocks with `theirs`, all on one attacker. */
+  const fight = (attacker: string, blockers: readonly string[], extra: readonly string[] = ['Grizzly Bears']) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'flankers', 1: 'flankers' },
+      deckSpecs: { flankers: deck() },
+      battlefield: { 0: ['Plains', 'Plains', attacker], 1: [...blockers, ...extra] },
+      turn: 5, firstSeat: 0,
+    }), 'declare-attackers');
+    const attackerId = find(s, 0, 'battlefield', attacker);
+    s = apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: attackerId, defender: 1 }],
+    });
+    // Declaring attackers gives priority inside the declare-attackers step; passing is what moves
+    // the table on to blockers, which is where the defender is asked (and where flanking lands).
+    s = passBoth(s);
+    const blockerIds = blockers.map((name) => find(s, 1, 'battlefield', name));
+    s = apply(s, {
+      type: 'auto:block', by: 1,
+      blocks: blockerIds.map((blocker) => ({ blocker, attacker: attackerId })),
+    });
+    return { state: s, attackerId, blockerIds };
+  };
+
+  it('shrinks a blocker that does not have flanking', () => {
+    // A 2/2 Bears blocking a 2/2 Cavalry is a trade; the -1/-1 makes it a 1/1 that dies and takes
+    // nothing with it, which is the whole reason the keyword was worth printing.
+    const { state, blockerIds } = fight('Benalish Cavalry', ['Grizzly Bears']);
+    expect(power(state, blockerIds[0]!)).toBe(1);
+    expect(toughness(state, blockerIds[0]!)).toBe(1);
+  });
+
+  it('kills a 1/1 blocker outright, before any damage is dealt', () => {
+    /*
+      -1/-1 on a 1/1 is a 0/0, and a 0/0 creature is put into its owner's graveyard by a state-based
+      action (CR 704.5a) — so the blocker is gone before the combat damage step. That is what makes
+      flanking a *removal* keyword against small blockers rather than a damage bonus, and it is the
+      row that proves the penalty lands at declaration rather than at damage.
+    */
+    const { state } = fight('Benalish Cavalry', ['Elite Vanguard']);
+    expect(namesIn(state, 1, 'graveyard')).toContain('Elite Vanguard');
+    expect(namesIn(state, 1, 'battlefield')).not.toContain('Elite Vanguard');
+  });
+
+  it('spares a blocker that has flanking of its own', () => {
+    /*
+      The "without flanking" half, and the row a matcher that shrank every blocker would fail. The
+      Herder is a 1/1 flanker: against a non-flanking attacker it would die to its own penalty if
+      the engine applied one, so it staying a 1/1 says the check reads the blocker.
+    */
+    const { state, blockerIds } = fight('Benalish Cavalry', ['Mtenda Herder']);
+    expect(power(state, blockerIds[0]!)).toBe(1);
+    expect(toughness(state, blockerIds[0]!)).toBe(1);
+    expect(namesIn(state, 1, 'battlefield')).toContain('Mtenda Herder');
+  });
+
+  it('shrinks each blocker by one rather than one blocker by the lot', () => {
+    /*
+      Three blockers, three penalties — one `pump` over the three, which is the same board the rules
+      reach by triggering three times. A reading that pumped the first blocker by the count would
+      leave a dead Bears and two untouched Giants, which is a different combat.
+    */
+    const { state, blockerIds } = fight('Benalish Cavalry', ['Grizzly Bears', 'Hill Giant']);
+    expect(blockerIds.map((id) => `${power(state, id)}/${toughness(state, id)}`))
+      .toEqual(['1/1', '2/2']);
+  });
+
+  it('does nothing when the flanker is the one blocking', () => {
+    /*
+      Flanking is an ability of the *attacking* creature (CR 702.25a), so a flanker that blocks
+      gives no penalty to the creature it blocked. Asked from the other side of the table: seat 0
+      attacks with a plain Hill Giant and the flanking Cavalry blocks it.
+    */
+    const { state, attackerId, blockerIds } = fight('Hill Giant', ['Benalish Cavalry']);
+    expect(power(state, attackerId)).toBe(3);
+    expect(toughness(state, attackerId)).toBe(3);
+    expect(power(state, blockerIds[0]!)).toBe(2);
+  });
+
+  it('wears off at end of turn', () => {
+    /*
+      "Until end of turn", which is the half of the sentence the other rows cannot see: they all
+      look at the board the moment blockers are declared. A 1/1 Herder attacks into a 3/3 Giant, so
+      the Giant survives the combat as a 2/2 and is still there on the next turn to be measured —
+      a blocker that died would prove nothing about duration.
+    */
+    const { state, blockerIds } = fight('Mtenda Herder', ['Hill Giant']);
+    expect(`${power(state, blockerIds[0]!)}/${toughness(state, blockerIds[0]!)}`).toBe('2/2');
+    const later = nextTurn(state);
+    expect(namesIn(later, 1, 'battlefield')).toContain('Hill Giant');
+    expect(`${power(later, blockerIds[0]!)}/${toughness(later, blockerIds[0]!)}`).toBe('3/3');
+  });
+
+  it('reads both keywords out of a mixed printed line', () => {
+    /*
+      "Flying; flanking" is one line carrying two keywords, which `printedPart` reads whole — the
+      Phyrexian Crusader shape. Both halves have to work, and the first draft of this row proved it
+      the hard way: it put a Grizzly Bears in front of the Knight and the engine answered **"you
+      have already declared blockers"**, because a defender with no legal blocker is declared for by
+      the step itself. The flying half was working and the test was asking the wrong question.
+
+      So the two halves are asked separately. A Giant Spider has reach and may block a flier, and
+      it is the one that shows the flanking half still applies on a line shared with flying.
+    */
+    const { state, attackerId, blockerIds } = fight('Knight of Sursi', ['Giant Spider']);
+    expect(power(state, blockerIds[0]!)).toBe(1);
+    expect(toughness(state, blockerIds[0]!)).toBe(3);
+
+    // And the flying half, off the same line: a ground creature may not block the Knight at all.
+    const ground = find(state, 1, 'battlefield', 'Grizzly Bears');
+    expect(canBlock(state, ground, attackerId, 1)?.reason).toMatch(/can't block a flier/);
+  });
+});
+
+describe('combat damage dealt as poison is still combat damage dealt (D555)', () => {
+  /*
+    Found while reading `hit` in `combat.ts` to see where toxic would go. That function records
+    "this creature dealt combat damage to that player" — the fact every "whenever ~ deals combat
+    damage to a player" trigger is raised from — and it recorded it **only if the life total
+    moved**. Infect's damage to a player is poison instead of life (CR 702.90b), so an infect
+    creature's hit moved no life, was never recorded, and its damage triggers never fired.
+
+    The rule is the other way round: the damage *is* dealt, and infect changes only what being
+    dealt it does (CR 120.3b). Whispering Specter prints both halves on one card, and any creature
+    handed infect by a Tainted Strike or a Grafted Exoskeleton is the same case — which in
+    Commander is most of the reason those cards get played.
+
+    Two pool cards, so no printed rows are needed: Thieving Magpie draws on a hit, and Tainted
+    Strike is the pool's own way of giving a creature infect for a turn.
+  */
+  const deck = () => {
+    const list = customDeck({
+      id: 'tainted',
+      name: 'Tainted',
+      entries: [
+        { name: 'Thieving Magpie', count: 4 }, { name: 'Tainted Strike', count: 4 },
+        { name: 'Grizzly Bears', count: 4 },
+        { name: 'Swamp', count: 24 }, { name: 'Island', count: 24 },
+      ],
+    });
+    expect(list.unknown).toEqual([]);
+    return list.deck;
+  };
+
+  /** The Magpie attacks alone and nobody blocks; `strike` decides whether it is given infect. */
+  const swing = (strike: boolean) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'tainted', 1: 'tainted' },
+      deckSpecs: { tainted: deck() },
+      hands: { 0: ['Tainted Strike'] },
+      battlefield: { 0: ['Swamp', 'Thieving Magpie'], 1: [] },
+      turn: 5, firstSeat: 0,
+    }), 'declare-attackers');
+    const magpie = find(s, 0, 'battlefield', 'Thieving Magpie');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: magpie, defender: 1 }] });
+    if (strike) {
+      s = drain(passBoth(apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Tainted Strike'),
+        targets: [{ kind: 'card', id: magpie }],
+      })));
+    }
+    const handBefore = ids(s, 0, 'hand').length;
+    for (let i = 0; i < 12 && s.step !== 'postcombat-main'; i += 1) s = drain(passBoth(s));
+    return { state: s, drew: ids(s, 0, 'hand').length - handBefore };
+  };
+
+  it('draws for the Magpie on an ordinary hit, which is the control', () => {
+    // One life lost, one card drawn. If this row fails the block below proves nothing.
+    const { state, drew } = swing(false);
+    expect(life(state, 1)).toBe(19);
+    expect(drew).toBe(1);
+  });
+
+  it('draws for the Magpie when the hit is poison instead of life', () => {
+    /*
+      Tainted Strike makes the Magpie a 2/3 with infect until end of turn. The defender takes two
+      poison and loses no life — and the Magpie still dealt combat damage to a player, so its
+      trigger still draws. Before D555 `drew` was 0.
+    */
+    const { state, drew } = swing(true);
+    expect(life(state, 1)).toBe(20);
+    expect(state.seats[1]!.poison).toBe(2);
+    expect(drew).toBe(1);
+  });
+});
+
+describe('toxic: poison that arrives with the damage (D556)', () => {
+  /*
+    Toxic N (CR 702.164a): "players dealt combat damage by this creature also get N poison
+    counters". Three conditions in one sentence — it has to be **combat** damage, dealt to a
+    **player**, and it has to **land** — and N is a property of the creature, not of the hit. So the
+    rows below take the conditions one at a time, and every creature in them has a toxic value
+    different from its power: a test where the two are equal cannot tell poison-per-hit from
+    poison-per-damage, which is the difference between this keyword and infect.
+
+    Three printed cards, none in the pool, rows copied from the corpus unchanged.
+  */
+  const DATA = [
+    // 3 power, toxic 2: a hit is three life AND two poison. Neither number is the other.
+    {
+      name: 'Branchblight Stalker', type_line: 'Creature — Phyrexian Elf Scout',
+      mana_cost: '{1}{G}', cmc: 2, colors: ['G'], power: '3', toughness: '1', layout: 'normal',
+      oracle_text: 'Toxic 2 (Players dealt combat damage by this creature also get two poison counters.)',
+    },
+    // 0 power, toxic 1: it connects and deals nothing, so nobody was "dealt combat damage".
+    {
+      name: 'Phyrexian Ornithopter', type_line: 'Artifact Creature — Thopter',
+      mana_cost: '{1}', cmc: 1, colors: [], power: '0', toughness: '2', layout: 'normal',
+      oracle_text: 'Flying\nToxic 1 (Players dealt combat damage by this creature also get a poison counter.)',
+    },
+    {
+      name: 'Tyrranax Atrocity', type_line: 'Creature — Phyrexian Dinosaur',
+      mana_cost: '{3}{G}{G}', cmc: 5, colors: ['G'], power: '4', toughness: '4', layout: 'normal',
+      oracle_text: 'Haste\nToxic 3 (Players dealt combat damage by this creature also get three poison counters.)',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'toxic',
+      name: 'Toxic',
+      entries: [
+        { name: 'Branchblight Stalker', count: 4 }, { name: 'Phyrexian Ornithopter', count: 4 },
+        { name: 'Tyrranax Atrocity', count: 4 },
+        { name: 'Grizzly Bears', count: 4 }, { name: 'Fog', count: 4 },
+        { name: 'Turn to Frog', count: 4 },
+        { name: 'Forest', count: 24 }, { name: 'Island', count: 16 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort())
+      .toEqual(['Branchblight Stalker', 'Phyrexian Ornithopter', 'Tyrranax Atrocity']);
+    return list.deck;
+  };
+
+  interface Swing {
+    readonly blocker?: string;
+    /** An instant the defender casts once the attack is declared; the Frog is aimed at the attacker. */
+    readonly answer?: 'Fog' | 'Turn to Frog';
+  }
+
+  /** Seat 0 attacks seat 1 with one creature; seat 1 may block it or Fog it. Run to postcombat. */
+  const swing = (attacker: string, { blocker, answer }: Swing = {}) => {
+    let s = advanceTo(arena({
+      decks: { 0: 'toxic', 1: 'toxic' },
+      deckSpecs: { toxic: deck() },
+      hands: { 1: answer === undefined ? [] : [answer] },
+      battlefield: {
+        0: ['Forest', attacker],
+        1: ['Forest', 'Island', 'Island', ...(blocker === undefined ? [] : [blocker])],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'declare-attackers');
+    const attackerId = find(s, 0, 'battlefield', attacker);
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: attackerId, defender: 1 }] });
+    if (answer !== undefined) {
+      // The attacker passes, and the defender answers while the attack is declared.
+      s = apply(s, { type: 'auto:pass', by: 0 });
+      s = drain(passBoth(apply(s, {
+        type: 'auto:cast', by: 1, card: find(s, 1, 'hand', answer),
+        ...(answer === 'Turn to Frog' ? { targets: [{ kind: 'card' as const, id: attackerId }] } : {}),
+      })));
+    }
+    for (let i = 0; i < 16 && s.step !== 'postcombat-main'; i += 1) {
+      if (s.step === 'declare-blockers' && blocker !== undefined
+        && !s.combat.blockersDeclaredBy.includes(1)) {
+        s = apply(s, {
+          type: 'auto:block', by: 1,
+          blocks: [{ blocker: find(s, 1, 'battlefield', blocker), attacker: attackerId }],
+        });
+        continue;
+      }
+      s = drain(passBoth(s));
+    }
+    expect(s.step).toBe('postcombat-main');
+    return s;
+  };
+
+  it.each([
+    ['Branchblight Stalker', 3, 2],
+    ['Tyrranax Atrocity', 4, 3],
+  ])('%s hits for its power and gives its toxic value in poison', (name, damage, poison) => {
+    // Both at once: toxic adds to the damage, it does not replace it (which is what infect does).
+    const s = swing(name);
+    expect(life(s, 1)).toBe(20 - damage);
+    expect(s.seats[1]!.poison).toBe(poison);
+  });
+
+  it('gives no poison when the creature is blocked', () => {
+    // "**Players** dealt combat damage": the Stalker's three goes into the Bears, and a creature
+    // is not a player. The control for the row above — same attacker, one blocker, no counters.
+    const s = swing('Branchblight Stalker', { blocker: 'Grizzly Bears' });
+    expect(life(s, 1)).toBe(20);
+    expect(s.seats[1]!.poison).toBe(0);
+  });
+
+  it('gives no poison when the hit deals no damage', () => {
+    /*
+      The Ornithopter is a 0/2 with toxic 1, and it is the row that says the counters follow the
+      damage rather than the attack: it connects unblocked, deals zero, and a player dealt no
+      damage was not "dealt combat damage" (CR 120.8 — zero damage is not dealt at all).
+    */
+    const s = swing('Phyrexian Ornithopter');
+    expect(life(s, 1)).toBe(20);
+    expect(s.seats[1]!.poison).toBe(0);
+  });
+
+  it('gives no poison when the damage is prevented', () => {
+    // A Fog prevents the combat damage, so nothing landed and nothing rides along with it.
+    const s = swing('Branchblight Stalker', { answer: 'Fog' });
+    expect(life(s, 1)).toBe(20);
+    expect(s.seats[1]!.poison).toBe(0);
+  });
+
+  it('gives no poison once the creature has lost all its abilities', () => {
+    /*
+      Toxic is a printed ability, so it is a base characteristic that "loses all abilities" clears
+      with the rest (CR 613.1f). A Turn to Frog on the attacking Stalker leaves a 1/1 Frog with an
+      empty text box: it still connects for one, and the two counters it would have given are gone.
+      The life total moving is what makes this row mean something — the hit landed, so the only
+      thing that stopped the poison is the missing ability.
+    */
+    const s = swing('Branchblight Stalker', { answer: 'Turn to Frog' });
+    expect(life(s, 1)).toBe(19);
+    expect(s.seats[1]!.poison).toBe(0);
+  });
+
+  it('ends the game on the tenth counter, as the hit lands', () => {
+    /*
+      Why this is not a trigger. A player on eight poison takes a Stalker's hit: two counters arrive
+      *with* the damage, ten poison is a state-based loss (CR 704.5c), and the game is over with
+      nothing on the stack and nobody having been given priority.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'toxic', 1: 'toxic' },
+      deckSpecs: { toxic: deck() },
+      battlefield: { 0: ['Forest', 'Branchblight Stalker'], 1: ['Forest'] },
+      turn: 5, firstSeat: 0,
+    }), 'declare-attackers');
+    s = { ...s, seats: s.seats.map((seat) => (seat.index === 1 ? { ...seat, poison: 8 } : seat)) };
+    const stalker = find(s, 0, 'battlefield', 'Branchblight Stalker');
+    s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: stalker, defender: 1 }] });
+    for (let i = 0; i < 16 && s.winnerSeat === null; i += 1) s = drain(passBoth(s));
+    expect(s.seats[1]!.poison).toBe(10);
+    expect(s.seats[1]!.eliminated).toBe(true);
+    expect(s.winnerSeat).toBe(0);
+    expect(s.stackOrder).toEqual([]);
   });
 });

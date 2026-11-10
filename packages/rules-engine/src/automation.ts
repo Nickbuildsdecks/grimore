@@ -32,7 +32,8 @@ import {
 import { listAt, relocate, requireInstance, withInstance, withZones } from './cardActions.js';
 import {
   attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, dealCombatDamage,
-  forcedAttackers, legalAttackers, legalBlockers, legalDefenders, menaceSatisfied,
+  flankingPenalties, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
+  menaceSatisfied,
   needsFirstStrikeStep, tapAttackers,
 } from './combat.js';
 import {
@@ -4321,4 +4322,4 @@ function applyStatics(
   return next;
 }
 
-export { legalTargets, hasAnyLegalTargets, checkTargets, applyStatics, scriptOf, raise, nextAlive, prevAlive, aliveSeats, resetPriority, advanceStep, payFrom, pushAbility, settle, attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders, menaceSatisfied, needsFirstStrikeStep, tapAttackers, destroy, STEP_LABELS };
+export { legalTargets, hasAnyLegalTargets, checkTargets, applyStatics, scriptOf, raise, nextAlive, prevAlive, aliveSeats, resetPriority, advanceStep, payFrom, pushAbility, settle, attackAimIssue, canAttack, canBlock, damageOrderChoice, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders, menaceSatisfied, needsFirstStrikeStep, tapAttackers, destroy, flankingPenalties, STEP_LABELS };

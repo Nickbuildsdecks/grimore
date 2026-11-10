@@ -17,8 +17,9 @@ import {
   type BlockerClause, type Characteristics,
 } from './characteristics.js';
 import { listAt } from './cardActions.js';
-import { dealDamage, gainLife } from './effects.js';
+import { dealDamage, gainLife, pump } from './effects.js';
 import { zoneKey, type CardInstance } from './cards.js';
+import { clampValue, replaceSeat } from './internal.js';
 import type { CombatAttack, CombatState, Target } from './turnTypes.js';
 import type { GameState, SeatIndex } from './types.js';
 
@@ -359,6 +360,54 @@ export function menaceSatisfied(state: GameState, attack: CombatAttack): boolean
   return attack.blockers.length === 0 || attack.blockers.length >= 2;
 }
 
+/**
+ * Flanking (CR 702.25a): the -1/-1 every blocker without flanking takes for blocking a flanker.
+ *
+ * "Whenever a creature without flanking blocks this creature, that creature gets -1/-1 until end of
+ * turn." Called by `declareBlockers` once the declaration is settled, which is myriad's arrangement
+ * — the keyword is the declaration in `KEYWORDS` and a combat function is the implementation, for
+ * the reason that docblock gives: the rule has to ask a **blocker** whether it has flanking, and
+ * only `characteristicsOf(...).keywords` can answer that. A per-card trigger could emit the penalty
+ * and could not ask the question, so granted flanking (Sidewinder Sliver, Cavalry Master, Jabari's
+ * Banner) and lost flanking (Barbed Foliage) would all be invisible to it.
+ *
+ * **What the arrangement costs**, stated rather than hidden: in the rules this is a triggered
+ * ability, so each instance goes on the stack and both players get priority before it resolves.
+ * Here the penalty lands as part of the declaration. The board ends up the same — the -1/-1 is in
+ * place before combat damage either way, which is the whole point of the keyword — but a player
+ * cannot answer the trigger itself, only the declaration. The same simplification the batched
+ * `blocking-creature` events already make (D482).
+ *
+ * **One pump per attacker rather than one per blocker**, which is not a shortcut: in the rules the
+ * ability triggers once for each creature that blocks and gives that creature -1/-1, so three
+ * blockers take -1/-1 each. One `pump` over the three is the same board. What it is *not* is
+ * cumulative flanking (CR 702.25b) — a creature with flanking twice would give -2/-2, and a
+ * `ReadonlySet` cannot hold a count. No legal card prints the line twice (measured), so nothing in
+ * this pool can tell; `KEYWORDS`' own note records it.
+ *
+ * `defender` is the seat that just declared, so a pod's other combats are left alone.
+ */
+export function flankingPenalties(
+  state: GameState, attacks: readonly CombatAttack[], defender: SeatIndex,
+): GameState {
+  let next = state;
+  for (const attack of attacks) {
+    if (attack.defender !== defender || attack.blockers.length === 0) continue;
+    const attacker = next.instances[attack.attacker];
+    if (attacker === undefined) continue;
+    if (!characteristicsOf(next, attacker).keywords.has('flanking')) continue;
+    // Read off the live characteristics rather than the printed text, so a blocker *granted*
+    // flanking this turn is spared and one that just lost it is not.
+    const shrink = attack.blockers.filter((id) => {
+      const blocker = next.instances[id];
+      return blocker !== undefined
+        && !characteristicsOf(next, blocker).keywords.has('flanking');
+    });
+    next = pump(next, shrink, attack.attacker, state.activeSeat, { power: -1, toughness: -1 });
+  }
+  return next;
+}
+
 /** Attacking taps the creature, unless it has vigilance. */
 export function tapAttackers(state: GameState, combat: CombatState): GameState {
   let next = state;
@@ -442,11 +491,20 @@ const sameObject = (state: GameState, id: string, seq: number | undefined): bool
  * an arrival or a tap, this one is **recorded** here rather than found by comparing, and `settle`
  * announces it the way it announces the other three.
  *
- * Recorded only if the life total moved, which is the whole of "deals damage": a swing stopped by
+ * Recorded only if the damage **landed**, which is the whole of "deals damage": a swing stopped by
  * a Fog, eaten by a prevention shield or turned aside by protection deals nothing, and a Thieving
  * Magpie whose damage was prevented draws no card. The seat is read from the target rather than
  * from the attack, so a trample over a blocker in front of a *planeswalker* records nothing —
  * loyalty is not a player.
+ *
+ * **Landed means life *or* poison moved (D555).** This used to ask about the life total alone,
+ * which was the right question until infect: an infect source's damage to a player is poison
+ * instead of life (CR 702.90b), so its hit moved no life, was never recorded, and every "whenever
+ * ~ deals combat damage to a player" trigger on an infect creature was silent. The damage is dealt
+ * either way — infect changes what being dealt it does, not whether it happened (CR 120.3b) — and
+ * `dealDamage`'s own commander-damage tally already says so two hundred lines from here. Whispering
+ * Specter prints both halves on one card; a Tainted Strike or a Grafted Exoskeleton on anything
+ * with a damage trigger is the same case.
  */
 function hit(
   state: GameState,
@@ -457,12 +515,32 @@ function hit(
 ): GameState {
   const next = dealDamage(state, target, amount, opts);
   if (target.kind !== 'player') return next;
-  const before = state.seats[target.seat]?.life;
-  const after = next.seats[target.seat]?.life;
-  if (before === undefined || after === undefined || after >= before) return next;
+  const before = state.seats[target.seat];
+  const after = next.seats[target.seat];
+  if (before === undefined || after === undefined) return next;
+  if (after.life >= before.life && after.poison <= before.poison) return next;
+  /*
+    Toxic (CR 702.164a): "players dealt combat damage by this creature also get N poison counters".
+
+    Here because this is the one place in the engine that knows all three facts the sentence needs —
+    the damage was **combat** damage, it was dealt to a **player**, and it actually **landed** — and
+    every one of them is already established by the lines above. N poison regardless of how much
+    damage it was: one point and ten points are both "dealt combat damage".
+
+    Not a trigger, on purpose. Toxic is a static ability, so the counters arrive with the damage
+    and a player on nine poison is dead as the hit lands rather than a priority pass later.
+
+    Read off `state`, the board as the damage was dealt, rather than `next` — a creature that died
+    to the same simultaneous damage still dealt its own, and its toxic with it.
+  */
+  const dealer = state.instances[attacker];
+  const toxic = dealer === undefined ? 0 : characteristicsOf(state, dealer).toxic;
+  const poisoned = toxic > 0
+    ? replaceSeat(next, target.seat, { poison: clampValue(after.poison + toxic) })
+    : next;
   return {
-    ...next,
-    dealtCombatDamage: [...next.dealtCombatDamage, { creature: attacker, defender: target.seat }],
+    ...poisoned,
+    dealtCombatDamage: [...poisoned.dealtCombatDamage, { creature: attacker, defender: target.seat }],
   };
 }
 

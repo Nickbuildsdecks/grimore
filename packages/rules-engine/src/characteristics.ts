@@ -97,6 +97,41 @@ export const KEYWORDS = [
   */
   'wither',
   /*
+    Flanking (CR 702.25a), the first entry in this list whose rules text is an **instruction** about
+    other creatures rather than a fact about this one — myriad's company, and placed here for
+    myriad's reason (D554).
+
+    "Whenever a creature without flanking blocks this creature, that creature gets -1/-1 until end
+    of turn." It belongs in this list rather than in a card's `triggers` because the rule has to ask
+    a *blocker* whether it has flanking, and the only thing in this engine that can answer that is
+    `characteristicsOf(...).keywords`. A per-card trigger could emit the penalty but could not ask
+    the question, and the pool prints the question: **Cavalry Master** gives other flankers flanking,
+    **Sidewinder Sliver** gives it to every Sliver, **Jabari's Banner** hands it out for a turn, and
+    **Barbed Foliage** takes it away. Every one of those is a grant or a loss of a keyword, which is
+    machinery this list already has and a `triggers` entry has none of.
+
+    27 legal cards print the bare line, and two more print it in a mixed list — "Flying; flanking",
+    "Protection from black; flanking" — which `printedPart` reads whole, so those come along.
+    **The grants come along too, and were measured rather than assumed**: Jabari's Banner's "gains
+    flanking until end of turn" and Agility's "has flanking" both read now, because every grant
+    reader asks `isKeyword` and the answer changed. Sidewinder Sliver's "All Sliver creatures have
+    flanking" does **not** — that is a tribal static, a shape nothing here reads yet, and it stays
+    reported. 31 lines in all against the 27 the audit counted, which is a keyword row behaving
+    like a vocabulary change for once: the word is consumed in more than one printed shape.
+
+    `flankingPenalties` in `combat.ts` is the enforcement and `declareBlockers` calls it, which is
+    exactly myriad's arrangement: the keyword is the declaration and a combat function is the
+    implementation. What that costs is stated in that function's docblock — the penalty lands as
+    blockers are declared rather than going on the stack, so there is no window to answer the
+    trigger. What it buys is that granted, lost and copied flanking all work without a line of new
+    code.
+
+    **Cumulative flanking (CR 702.25b) is not represented**, because a `ReadonlySet` cannot hold a
+    count — bushido's limitation, and the same answer: measured, **no legal card prints the line
+    twice**, so nothing in this pool can tell. A card that did would take one -1/-1 instead of two.
+  */
+  'flanking',
+  /*
     Changeling (CR 702.73a), the one keyword here that changes what a creature **is** rather than
     what it does: "This object is every creature type." 23 cards print nothing else at all (D506).
 
@@ -262,6 +297,8 @@ type PrintedPart =
   | { readonly kind: 'devoid' }
   | { readonly kind: 'landwalk'; readonly type: string }
   | { readonly kind: 'protection'; readonly colours: readonly Color[] }
+  /** `Toxic N` — a number, so not a `Keyword`. See `printedToxic` (D556). */
+  | { readonly kind: 'toxic'; readonly amount: number }
   | { readonly kind: 'combat-static'; readonly statics: readonly CombatStatic[] }
   | { readonly kind: 'blocker-ban'; readonly clauses: readonly BlockerClause[] }
   | { readonly kind: 'blocker-only'; readonly clauses: readonly BlockerClause[] }
@@ -302,6 +339,10 @@ function printedPart(part: string): PrintedPart | null {
   if (text === 'devoid') return { kind: 'devoid' };
   const walk = LAND_TYPES.find((type) => `${type.toLowerCase()}walk` === text);
   if (walk !== undefined) return { kind: 'landwalk', type: walk };
+  // Digits only: every legal printing carries one, and a spelled-out or missing count is a shape
+  // this has not seen — reading it would be inventing a number (D259).
+  const toxic = /^toxic (\d+)$/.exec(text);
+  if (toxic !== null) return { kind: 'toxic', amount: Number(toxic[1]) };
   const protection = /^protection from (.+)$/.exec(text);
   if (protection !== null) {
     // "black and from red" and "black and red" are both printed; neither is a third rule.
@@ -456,6 +497,32 @@ export function printedKeywords(oracleText: string | null | undefined): Keyword[
  * As with landwalk, the two scripted cards are now redundant rather than wrong and they stay:
  * deleting a shipping card's static to rely on a reading added the same day buys nothing.
  */
+/**
+ * A card's printed toxic value: the sum of every `Toxic N` it prints (CR 702.164b).
+ *
+ * "Players dealt combat damage by this creature also get N poison counters" (CR 702.164a). The
+ * engine's first printed ability that is a **number** rather than a word, a colour or a land type,
+ * which is why it is its own part and its own field instead of an entry in `KEYWORDS`: a
+ * `ReadonlySet<Keyword>` cannot say *how much*, and toxic is nothing but how much. Bushido met the
+ * same wall and went round it as a pair of triggers, which was right for bushido — it **is** a
+ * triggered ability (CR 702.45a) — and would be wrong here: toxic is a static ability, its poison
+ * arrives with the damage rather than after it, and a trigger would put a stack object and a
+ * round of priority where the rules have neither. `hit` in `combat.ts` is the enforcement.
+ *
+ * Summed rather than maxed, which is the rule and not a guess: 702.164b says a creature's total
+ * toxic value is the sum of all its toxic abilities. No legal card prints the line twice, so the
+ * sum is one term today; it is written as a sum so a granted instance has somewhere to go.
+ *
+ * 40 legal lines: `Toxic 1` on 26 cards, `Toxic 2` on nine, and 3, 4 and 6 on the rest.
+ */
+export function printedToxic(oracleText: string | null | undefined): number {
+  let total = 0;
+  for (const part of printedParts(oracleText)) {
+    if (part.kind === 'toxic') total += part.amount;
+  }
+  return total;
+}
+
 export function printedProtection(oracleText: string | null | undefined): Color[] {
   const found: Color[] = [];
   for (const part of printedParts(oracleText)) {
@@ -1519,6 +1586,11 @@ export interface Characteristics {
   /** Protection from these colours (CR 702.16). Empty for almost everything. */
   readonly protectionFrom: readonly Color[];
   /**
+   * Total toxic value (CR 702.164b): the poison counters a player gets, on top of the damage, for
+   * being dealt combat damage by this creature. 0 for almost everything. See `printedToxic`.
+   */
+  readonly toxic: number;
+  /**
    * The seats that have goaded this creature: the controllers of every `mustAttackAnotherPlayer`
    * effect applying to it.
    *
@@ -2118,6 +2190,8 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
   */
   const printedProt = printedProtection(def?.oracleText);
   let protectionFrom: Color[] | null = printedProt.length === 0 ? null : [...printedProt];
+  // Printed toxic, a base characteristic like the two above and cleared with them (CR 613.1f).
+  let toxic = printedToxic(def?.oracleText);
   let setColors: readonly Color[] | null = null;
 
   for (const effect of state.effects ?? []) {
@@ -2146,6 +2220,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
       landwalk = null;
       goadedBy = null;
       protectionFrom = null;
+      toxic = 0;
     }
     // Layer 7a before 7b, which is the whole of the ordering: a defined size is a *base*, and a
     // setting effect replaces it however early the definition was installed (CR 613.4a, 613.4c).
@@ -2236,6 +2311,7 @@ export function characteristicsOf(state: GameState, instance: CardInstance): Cha
     landwalk: landwalk ?? NO_SUBTYPES,
     goadedBy: goadedBy ?? NO_SEATS,
     protectionFrom: protectionFrom ?? NO_COLORS,
+    toxic,
   };
 }
 

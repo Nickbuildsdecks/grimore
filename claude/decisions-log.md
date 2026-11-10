@@ -38435,3 +38435,153 @@ The latent form of this was in convoke from #101: a creature tapping for two man
 the same problem, and the pool simply has no such creature. It took a mechanic whose fodder is
 *artifacts* — where two-mana rocks are ordinary — to produce a board that discriminates. Another
 entry for the standing lesson that a mechanic generalised is a mechanic tested from a new angle.
+
+## D554 — Flanking, read by adding one word to a list
+
+The keyword audit's next cheap row: 12 finishes, 27 printings. It needed **no reader at all**. The
+word went into `KEYWORDS`, `isPrintedAbilityLine` claimed the line before `keywordScriptFor` was
+ever asked, and one function in `combat.ts` enforces it:
+
+```ts
+export function flankingPenalties(state, attacks, defender): GameState
+```
+
+called by `declareBlockers` once the declaration is settled: every blocker **without flanking**
+that blocked a flanker gets -1/-1 until end of turn (CR 702.25a).
+
+### Why a keyword and a combat function rather than a trigger
+
+In the rules this is a triggered ability. It is not one here, and the reason is the sentence's
+own subordinate clause: "a creature **without flanking**". That is a question about the *blocker*,
+and the only thing in this engine that can answer it is `characteristicsOf(...).keywords`. A
+per-card trigger could emit the penalty and could not ask the question — so granted flanking
+(Jabari's Banner, Agility), tribal flanking (Sidewinder Sliver) and lost flanking (Barbed Foliage)
+would all be invisible to it. Myriad is in that list for exactly this reason, and this follows it.
+
+**What it costs, stated rather than hidden:** the penalty lands as part of the block declaration
+instead of going on the stack, so a player cannot answer the trigger itself — only the
+declaration. The board is the same either way; the -1/-1 is in place before damage, which is the
+point of the keyword. It is in the player cheat sheet in those words.
+
+**Not represented:** cumulative flanking (CR 702.25b). A `ReadonlySet` cannot hold a count. No
+legal card prints the line twice (measured), so nothing in this pool can tell.
+
+### Measured — a keyword row that behaved like a vocabulary change
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,583 (41.8%) | **23,614 / 56,421 (41.9%)** |
+| cards with every printed line read | 7,851 | **7,866** |
+
+Audit: 12 finishes, 27 printings. Delivered **15 and 31**. The extra four lines are the word being
+consumed in more than one printed shape — two mixed lists ("Flying; flanking", "Protection from
+black; flanking") and two grants (Jabari's Banner, Agility), which read because every grant reader
+asks `isKeyword` and the answer changed. So the calibration rule gains a clause: the audit's
+column is exact for a keyword read by a **reader**, and a floor for one read by joining a **list**,
+because a list is shared vocabulary.
+
+Sidewinder Sliver's "All Sliver creatures have flanking" is **not** read and is pinned unread by a
+test, because the first draft of the `KEYWORDS` note claimed the grants "come along" without
+having measured which ones. Two do and one does not.
+
+### A stale refusal, retargeted (D516 again)
+
+`refuses a word the engine has no keyword for` used **flanking** as its example of such a word. It
+failed the moment flanking stopped being one, which is that test working. *Phasing* stands in now:
+a keyword the rules define and nothing here models.
+
+### The harness got faster, and stopped being dangerous
+
+`break-par.py` replaces the per-increment serial harnesses. Three changes, each for a reason:
+
+- **The real tree is never touched.** Each worker patches a private mirror of the engine package
+  under the scratchpad. The serial harness patched tracked files and reverted them, which meant a
+  commit made while it ran could pick up a deliberately broken file — the stop hook asked for
+  exactly that commit during D552, and the only safe answer was to wait 25 minutes.
+- **Two breaks run at once.** Vitest is capped at two workers a run and the box has four cores,
+  so the serial harness left half the machine idle.
+- **A catch has to name a failed test.** Under load a run can exit non-zero on a reporter timeout
+  with every test passing, and a "caught" on that evidence would *hide* an uncaught break. So exit
+  0 is uncaught, a parsed `N failed` is caught, and anything else — or a catch whose failures
+  include a timeout — is re-run alone before it is believed. It also prints which test caught each
+  break, which no earlier harness reported and which is the evidence D551 and D552 both lacked.
+
+## D555 — Combat damage dealt as poison is still combat damage dealt
+
+Found by reading `hit` in `combat.ts` to see where toxic would go.
+
+That function records "this creature dealt combat damage to that player" — the fact every
+"whenever ~ deals combat damage to a player" trigger is raised from — and it recorded it **only if
+the life total moved**. Infect's damage to a player is poison instead of life (CR 702.90b). So an
+infect creature's hit moved no life, was never recorded, and **its damage triggers never fired**.
+
+The rule is the other way round: the damage is dealt, and infect changes only what being dealt it
+does (CR 120.3b). `dealDamage`'s own commander-damage tally already said so two hundred lines
+away — "the damage is dealt either way" — and `hit` did not agree with it.
+
+```ts
+if (after.life >= before.life && after.poison <= before.poison) return next;
+```
+
+**Who it affected.** Whispering Specter prints infect and a damage trigger on one card. More to
+the point for Commander, so does *anything* handed infect: a Tainted Strike, a Grafted
+Exoskeleton, a Triumph of the Hordes on a board of creatures with damage triggers. That is most of
+the reason those cards are played.
+
+**Reproduced before it was fixed.** Two pool cards, no printed rows: Thieving Magpie draws on a
+hit and Tainted Strike gives it infect. The control row (ordinary hit, one life, one card) passed;
+the poison row read `drew: 0` against an expected 1, with the two poison counters in place. After
+the fix both rows pass.
+
+In the engine since infect shipped (#138). The whole suite never asked, because no pool creature
+*prints* both halves and no test had combined a grant with a trigger.
+
+## D556 — Toxic N, the first printed ability that is a number
+
+40 legal lines, 13 cards finished — **the audit's figure exactly**, the fourth keyword row to land
+on it (evoke 18, renown 12, improvise 14, toxic 13).
+
+"Players dealt combat damage by this creature also get N poison counters" (CR 702.164a).
+
+### Not a `Keyword`, not a trigger
+
+A `ReadonlySet<Keyword>` cannot say how much, and toxic is nothing but how much. Bushido met that
+wall and went round it as a pair of triggers — right for bushido, which **is** a triggered ability
+(CR 702.45a). Toxic is a static ability: the counters arrive *with* the damage. As a trigger there
+would be a stack object and a round of priority where the rules have neither, and a player on nine
+poison would die a pass later than they should.
+
+So it is a printed part (`{ kind: 'toxic', amount }`), a base characteristic
+(`Characteristics.toxic`, cleared by "loses all abilities" with the others, CR 613.1f), and one
+block in `hit` — the single place that already knows the three facts the sentence needs: the
+damage was **combat** damage, it went to a **player**, and it **landed**. Read off the board as
+the damage was dealt, so a creature that died to the same simultaneous damage still gives its
+poison.
+
+Summed, not maxed: CR 702.164b. No legal card prints two instances, so the sum has one term today
+and a test says it guards the rule rather than a printing.
+
+### The tests take the three conditions one at a time
+
+Every creature in the block has a toxic value **different from its power**, because a test where
+the two are equal cannot tell poison-per-hit from poison-per-damage — which is the whole
+difference between this keyword and infect. (The lesson from D551 and D552, applied while writing
+rather than after the harness.)
+
+- a 3-power Toxic 2 hits for three life **and** two poison;
+- blocked: nothing, a creature is not a player;
+- a 0/2 Toxic 1 Ornithopter connects for zero: nothing, zero damage is not dealt (CR 120.8);
+- under a Fog: nothing;
+- a player on eight poison dies as the hit lands, with an empty stack.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,614 (41.9%) | **23,651 / 56,421 (41.9%)** |
+| cards with a compiled script | 12,051 | **12,051** |
+| cards with every printed line read | 7,866 | **7,879** |
+
+The compiled-script count does not move for either of these two rows, and that is correct rather
+than a miss: a line read off the `CardDef` emits no script. "Fully read" is the number that says
+what a player gets.

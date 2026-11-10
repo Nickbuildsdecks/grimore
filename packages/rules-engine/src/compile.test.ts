@@ -7,6 +7,7 @@ import {
   CREATURE_TYPES, KEYWORD_BLOCK_RULES, cardHasSubtype, characteristicsOf, hasSubtype, isCreatureType,
   isDevoidLine,
   keywordBlockRules, printedBlockerLimit, printedBlocksLimit, printedCombatStatics, printedKeywords,
+  printedToxic,
   printedLandwalk,
 } from './characteristics.js';
 import type { CardDataRow } from './fromCardData.js';
@@ -2131,10 +2132,14 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         `characteristicsOf` consults, so a grant of something not in it would compile to a creature
         that gains nothing — and a spell that looks like it worked. Protection from a colour is the
         real card this guards against; the engine models it, but not as a keyword a pump can grant.
+
+        The second row was **flanking** until D554 gave the engine that keyword, at which point this
+        test was asserting the past (D516) and failed as it should. Phasing stands in now: a keyword
+        the rules define and nothing here models, which is the property the row needs.
       */
       for (const text of [
         'Target creature gets +2/+2 and gains protection from red until end of turn.',
-        'Target creature gets +2/+2 and gains flanking until end of turn.',
+        'Target creature gets +2/+2 and gains phasing until end of turn.',
       ]) {
         const spell = compileCard({
           name: 'Nonesuch', type_line: 'Instant', mana_cost: '{G}', cmc: 1, colors: ['G'],
@@ -16687,5 +16692,150 @@ describe('the Improvise keyword line (D552)', () => {
       if (!read.ok) return;
       expect(read.script?.improvise).toBe(true);
     }
+  });
+});
+
+/*
+  **Flanking** (D554), and the first row in this family that needed no reader at all: the word went
+  into `KEYWORDS` and `isPrintedAbilityLine` claimed the line before `keywordScriptFor` was asked.
+  12 cards finished by the audit's count, 15 by measurement, because a keyword in that list is
+  consumed in more printed shapes than the bare line.
+*/
+describe('the Flanking keyword line (D554)', () => {
+  const flanker = (text: string) => compileCard({
+    name: 'Benalish Cavalry', type_line: 'Creature — Human Knight', mana_cost: '{1}{W}', cmc: 2,
+    colors: ['W'], power: '2', toughness: '2', layout: 'normal', oracle_text: text,
+  });
+
+  const REMINDER = 'Flanking (Whenever a creature without flanking blocks this creature, the'
+    + ' blocking creature gets -1/-1 until end of turn.)';
+
+  it('reads the bare line, and emits no script for it', () => {
+    /*
+      The line is read off the `CardDef` by `printedKeywords`, so the compile claims it and the
+      script stays empty — "restating it in the script would be a second source for one fact", which
+      is `compileUncached`'s own reason. `combat.ts` is the enforcement, and the table block in
+      `scripts.test.ts` is where that is driven.
+    */
+    const read = flanker(REMINDER);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers).toBeUndefined();
+    expect(printedKeywords(REMINDER)).toEqual(['flanking']);
+  });
+
+  it('reads it out of a mixed list, with the other keyword on the line', () => {
+    // Knight of Sursi prints "Flying; flanking" and Riftmarked Knight "Protection from black;
+    // flanking". D424's reason for asking `isPrintedAbilityLine` rather than `printedKeywords`
+    // alone is this shape, and these are the two legal cards that have it.
+    expect(printedKeywords('Flying; flanking')).toEqual(['flying', 'flanking']);
+    const read = flanker('Flying; flanking');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('leaves a tribal static that grants flanking unread, and reads the two grants that do work', () => {
+    /*
+      Measured rather than claimed, because the KEYWORDS note says which grants came along and a
+      note like that is exactly the kind that rots.
+
+      Jabari's Banner ("gains flanking until end of turn") and Agility ("has flanking") read now,
+      because every grant reader asks `isKeyword` and the answer changed when the word joined the
+      list. Sidewinder Sliver's "All Sliver creatures have flanking" does not: a tribal static is a
+      shape nothing reads yet, and it is **reported** rather than guessed at (D362).
+    */
+    const banner = compileCard({
+      name: "Jabari's Banner", type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [],
+      layout: 'normal', oracle_text: '{1}, {T}: Target creature gains flanking until end of turn.',
+    });
+    expect(banner.ok).toBe(true);
+    if (banner.ok) expect(banner.unread.map((u) => u.line)).toEqual([]);
+
+    const sliver = compileCard({
+      name: 'Sidewinder Sliver', type_line: 'Creature — Sliver', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], power: '1', toughness: '1', layout: 'normal',
+      oracle_text: 'All Sliver creatures have flanking.',
+    });
+    expect(sliver.ok).toBe(true);
+    if (sliver.ok) {
+      expect(sliver.unread.map((u) => u.line)).toEqual(['All Sliver creatures have flanking.']);
+    }
+  });
+
+  it('leaves a line that only mentions the word unread', () => {
+    /*
+      Old Fogey prints "Phasing, cumulative upkeep {1}, echo {G}{G}, fading 3, bands with other
+      Dinosaurs, protection from Homarids, snow-covered plainswalk, flanking, rampage 2" — a list
+      with several things in it this engine cannot read. A line is read whole or not at all (D487),
+      so the whole line is reported rather than mined for the one word it recognises.
+    */
+    expect(printedKeywords('Flanking, rampage 2')).toEqual([]);
+    const read = flanker('Flanking, rampage 2');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual(['Flanking, rampage 2']);
+  });
+});
+
+/*
+  **Toxic N** (D556): 40 legal lines, 13 cards finished — the audit's figure exactly, the fourth
+  keyword row in a row to land on it. Like flanking it needed no script reader: the line is a
+  printed part, read off the card by `printedToxic` and enforced by `hit` in `combat.ts`. Unlike
+  flanking it is not a `Keyword`, because a set of words cannot say how much.
+*/
+describe('the Toxic keyword line (D556)', () => {
+  const toxic = (text: string) => compileCard({
+    name: 'Branchblight Stalker', type_line: 'Creature — Phyrexian Elf Scout', mana_cost: '{1}{G}',
+    cmc: 2, colors: ['G'], power: '3', toughness: '1', layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    ['Toxic 1 (Players dealt combat damage by this creature also get a poison counter.)', 1],
+    ['Toxic 2 (Players dealt combat damage by this creature also get two poison counters.)', 2],
+    ['Toxic 6', 6],
+  ])('reads %s as a number off the card, with no script', (line, amount) => {
+    // 1, 2, 3, 4 and 6 are every count the legal corpus prints. The reminder text spells the number
+    // out in words, which is why it is stripped before anything reads the line.
+    expect(printedToxic(line)).toBe(amount);
+    const read = toxic(line);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.triggers).toBeUndefined();
+  });
+
+  it('reads it beside a keyword on the same card, and in a mixed list', () => {
+    // Pestilent Syphoner prints "Flying" and "Toxic 1" on two lines; a list on one line is the
+    // Phyrexian Crusader shape, and a toxic part has to sit in it like any other.
+    expect(printedToxic('Flying\nToxic 1')).toBe(1);
+    expect(printedKeywords('Flying\nToxic 1')).toEqual(['flying']);
+    expect(printedToxic('Flying, toxic 2')).toBe(2);
+    expect(printedKeywords('Flying, toxic 2')).toEqual(['flying']);
+  });
+
+  it('sums two instances rather than taking the larger', () => {
+    // CR 702.164b: a creature's total toxic value is the sum of its toxic abilities. No legal card
+    // prints two, so this guards the rule rather than a printing — and says so.
+    expect(printedToxic('Toxic 1\nToxic 2')).toBe(3);
+  });
+
+  it.each([
+    ['no count at all', 'Toxic'],
+    ['a word for the count', 'Toxic two'],
+    ['a line that only starts with the keyword', 'Toxic 2 as long as you control an artifact'],
+    ['a grant, which is somebody else having it', 'Creatures you control have toxic 1.'],
+  ])('leaves %s unread', (_what, line) => {
+    /*
+      A count this has not seen would be an invented number (D259), a longer line read as the bare
+      keyword would silently drop its condition (D487), and a grant is a different card. Each is
+      reported rather than guessed at.
+    */
+    expect(printedToxic(line)).toBe(0);
+    const read = toxic(line);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([line]);
   });
 });
