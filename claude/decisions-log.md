@@ -38058,3 +38058,17 @@ there is a test that fails when the order flips.
 
 Re-run after adding the anchor row: **10 of 11 caught**, the eleventh recorded vacuous with the
 count that proves it. Engine suite 3,402.
+
+### D548's pod sweep
+
+**40/40 pods finished** at SEED0=42101 on the clean commit (6c14b93), no engine throw and no stalled
+table, 59.7 turns and 263 moves a game. Per 100-card deck across 160 decks: 26.0 cards with a
+hand-written script, 47.0 with at least one unread line, 61.8 playable only from printed data, 0.4
+cardboard.
+
+What this sweep exercises that nothing else does: an **alternative casting the bot chooses for
+itself**, on a creature that then sacrifices itself as it arrives, out of 160 random decks. The
+sacrifice is an ETB trigger conditioned on a counter written during resolution, resolving after the
+card's own ETB ability — so forty clean tables is the evidence that the counter is written before the
+triggers are collected and that a permanent dying to its own trigger does not trip the state-based
+actions or the bot's search.
