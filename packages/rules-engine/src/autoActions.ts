@@ -17,6 +17,7 @@ import {
 } from './characteristics.js';
 import {
   abilityUseKey, advanceStep, aliveSeats, applyStatics, atActivationTiming, atSorcerySpeed,
+  cleanupHolds, finishCleanup,
   attackAimIssue, grantedAbilityFor,
   autoPassFor, bottomOwed,
   canAttack, canBlock, checkTargets, damageOrdersOwed, endTurnCleanup, flankingPenalties,
@@ -1837,7 +1838,11 @@ function pass(state: GameState, action: { by: SeatIndex }): Outcome {
     return { state: next, message: resolved.message, data: { resolved: !suspended } };
   }
   const before = state;
-  const advanced = advanceStep({ ...state, passed: [] });
+  // Everybody passing on an empty stack ends the step — and for a cleanup step that held priority,
+  // "ends" means it is run again rather than left (CR 514.3a).
+  const advanced = state.step === 'cleanup'
+    ? finishCleanup({ ...state, passed: [] })
+    : advanceStep({ ...state, passed: [] });
   const next = settle(advanced, before);
   return {
     state: next,
@@ -2418,12 +2423,35 @@ function discard(state: GameState, action: { by: SeatIndex; card: string }): Out
   let next = relocate(state, inst, 'graveyard', inst.owner, 'bottom');
   const left = pending.count - 1;
   next = { ...next, pendingDiscard: left > 0 ? { seat: pending.seat, count: left } : null };
-  if (left === 0) {
-    // The cleanup step finishes and the turn ends.
-    next = endTurnCleanup(next);
-    next = advanceStep(next);
-  }
+  /*
+    The discard is announced **in the cleanup step it happened in**, before the turn is ended.
+
+    This used to end the turn first and settle afterwards, so "whenever an opponent discards a
+    card" went on the stack in the next player's turn and resolved in their upkeep — a Megrim's
+    damage a step late, and an "until end of turn" pump from the discard lasting through a whole
+    turn it had no business in. Nothing printed could reach it until D567 read the discard
+    triggers, and the first row written for them walked straight into it.
+  */
   next = settle(next, state);
+  if (left > 0) {
+    /*
+      More is owed, so nobody may act yet. The discards are one event in the rules (CR 514.1) and
+      the triggers follow all of them; here they are made a card at a time, and a trigger from the
+      first is already on the stack. `resetPriority` withholds priority while a discard is pending,
+      which is what keeps a Megrim from resolving between the first card and the second.
+    */
+    next = resetPriority(next);
+  } else if (left === 0) {
+    if (cleanupHolds(next)) {
+      // CR 514.3a: something triggered, so the players get priority in this cleanup step and
+      // another one follows when the stack is empty. See `finishCleanup`.
+      next = resetPriority(next);
+    } else {
+      // Nothing did: the cleanup step finishes and the turn ends, as it always has.
+      const quiet = next;
+      next = settle(advanceStep(endTurnCleanup(quiet)), quiet);
+    }
+  }
   return {
     state: next,
     message: `${seatName(state, action.by)} discards ${name}`,

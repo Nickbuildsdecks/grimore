@@ -555,6 +555,12 @@ function advanceStep(state: GameState): GameState {
       step where nobody receives priority simply waits for the next step that grants it, which is
       the rule (CR 503.1). A list of "the steps a card can name" would be a second thing to keep in
       step with `TRIGGER_SHAPES`, and D433 is the entry about what two statements of one fact cost.
+
+      That sentence is the **untap** step's rule. The cleanup step has its own (CR 514.3a): a
+      trigger raised there gives the players priority there, and the step is run again. A step
+      event raised on *entering* cleanup still falls through to the next turn, because no card
+      prints one; the way a trigger really gets into a cleanup step is a discard to hand size, and
+      `discard` and `finishCleanup` are where that rule lives (D568).
     */
     next = raise(next, { kind: 'step', step }, next.activeSeat);
     // And anything that was scheduled for this step, after the step's own turn-based action: an
@@ -793,6 +799,48 @@ function onEnterStep(state: GameState, step: Step): GameState {
     default:
       return next;
   }
+}
+
+/**
+ * Whether a cleanup step has to stop and hand out priority (CR 514.3a).
+ *
+ * Normally nobody gets priority in the cleanup step. The exception is the rule's own: if anything
+ * triggered during it — or is otherwise waiting to be dealt with — the active player receives
+ * priority **in the cleanup step**, the stack is emptied the ordinary way, and then there is
+ * another cleanup step. A discard to hand size is how that happens in practice: Megrim sees it, a
+ * madness card offers its cost for it.
+ *
+ * "Something is on the stack, or somebody has been asked a question." The second half is madness,
+ * whose offer is not a stack object until it is taken.
+ */
+export function cleanupHolds(state: GameState): boolean {
+  return state.stackOrder.length > 0 || state.pendingDecision !== null
+    || state.pendingChoice !== null || state.pendingPayment !== null
+    || state.pendingOfferedCast !== null;
+}
+
+/**
+ * Ends a cleanup step that held priority, which means running the cleanup step **again** (CR 514.3a).
+ *
+ * The whole step, hand size included: a card drawn in the priority round — a Megrim's victim
+ * cycling in response — can put the active player over seven a second time, and the rule makes them
+ * discard again. Only then does the turn end, with the one `endTurnCleanup` that every turn gets.
+ *
+ * **One divergence, named.** The rule wears damage off and ends "until end of turn" effects in the
+ * *first* cleanup step, before the priority round, and again in the second (CR 514.2). This does it
+ * once, at the end. The two agree on everything a turn later; what differs is that a creature's
+ * marked damage is still on it during the round itself, which matters only to something that deals
+ * damage in a cleanup step to a creature already hurt that turn.
+ */
+export function finishCleanup(state: GameState): GameState {
+  const hand = listAt(state, zoneKey(state.activeSeat, 'hand'));
+  if (hand.length > MAX_HAND_SIZE) {
+    return {
+      ...state, priority: null, passed: [],
+      pendingDiscard: { seat: state.activeSeat, count: hand.length - MAX_HAND_SIZE },
+    };
+  }
+  return advanceStep(endTurnCleanup(state));
 }
 
 /** Damage wears off, until-end-of-turn effects end, and borrowed permanents go home. */

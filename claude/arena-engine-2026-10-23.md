@@ -22121,3 +22121,45 @@ Tests: 22 runtime rows on nine printed cards (each event for the seat it names a
 a cycled card as one discard; a discard that is not cycling; a card that discards itself without
 cycling; the cycled card answering only for itself; alone and in company), 20 compile rows.
 Engine suite: 3,793.
+
+## D568 — The cleanup step that holds priority (CR 514.3a)
+
+D567 found it and this fixes it, the same day, because a printed line now walks into it every
+game a discard payoff is on the table.
+
+**What was wrong.** A discard to hand size happens in the cleanup step. `discard()` ended the
+turn and *then* settled, so anything the discard triggered went on the stack in the next player's
+turn and resolved in their upkeep. Megrim's two damage landed a step late. Worse, an "until end of
+turn" pump from the discard — Hekma Sentinels, Flameblade Adept, the whole Amonkhet cycle — was
+applied in the opponent's upkeep and lasted through their turn: a 2/3 blocker was a 4/5 for a turn
+it should have spent as a 2/3. Madness offered at cleanup was offered in the wrong player's turn.
+
+**The rule.** Normally nobody receives priority in the cleanup step. If anything triggers during
+it, the active player does — in that cleanup step — and once the stack is empty and everybody has
+passed, there is **another cleanup step**.
+
+**What changed.**
+
+- `discard()` settles *before* ending the turn. If that left something on the stack or a question
+  open (`cleanupHolds`), the step holds: priority goes to the active player and the turn does not
+  end. If nothing triggered, the turn ends exactly as it always has.
+- Passing on an empty stack in a cleanup step runs the step again (`finishCleanup`): hand size is
+  checked a second time, and only then does `endTurnCleanup` run and the turn move on.
+- Between the first card of a two-card discard and the second, **nobody has priority**. This was a
+  second defect, found by the row written for it: `settle` was handing priority to the trigger's
+  controller with a discard still owed, so a Megrim could have resolved between the two cards. The
+  discards are one event in the rules; their triggers wait for all of them.
+
+**One divergence, named at the function.** The rule wears damage off and ends "until end of turn"
+effects in the first cleanup step and again in the second. This does it once, at the end. A turn
+later the two are indistinguishable; during the priority round itself a creature's marked damage
+is still on it, which matters only to something that deals damage in a cleanup step to a creature
+already hurt that turn.
+
+Tests: seven. Megrim resolves in turn 5's cleanup and the turn then ends; a quiet cleanup is still
+silent; the Sentinels are a 4/5 for the rest of turn 5 and a 2/3 in turn 6; priority is withheld
+between discards; a card arriving in the round makes the second cleanup ask for another discard;
+madness is offered in the cleanup step and resolves before the turn ends; declining it lets the
+turn end. Engine suite: 3,799.
+
+No card count moves: this is the engine doing what 29 already-read cards say.

@@ -38619,7 +38619,7 @@ describe('discarding and cycling as events, and attacking alone (D567)', () => {
       expect([life(s, 0), life(s, 1), life(s, 2)]).toEqual([before[0], before[1], before[2]! - 4]);
     });
 
-    it('fires for a discard to hand size in the cleanup step, and resolves by the next upkeep', () => {
+    it('fires for a discard to hand size in the cleanup step, and resolves there (CR 514.3a)', () => {
       // Seat 1 has the Megrim; seat 0 ends its turn with nine cards — eight here and the turn's draw.
       const grip = [
         'Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears',
@@ -38630,24 +38630,20 @@ describe('discarding and cycling as events, and attacking alone (D567)', () => {
       expect(s.pendingDiscard).toEqual({ seat: 0, count: 2 });
       s = apply(s, { type: 'auto:discard', by: 0, card: ids(s, 0, 'hand')[0]! });
       s = apply(s, { type: 'auto:discard', by: 0, card: ids(s, 0, 'hand')[0]! });
-      for (let i = 0; i < 12 && s.turn === 5 && s.priority !== null && s.pendingDiscard === null; i++) {
-        s = apply(s, { type: 'auto:pass', by: s.priority });
-      }
-      expect(s.turn).toBe(6);
-      expect(ids(s, 0, 'hand')).toHaveLength(7);
-      /*
-        Both triggers are on the stack and resolve in the next upkeep, which is where this engine
-        puts anything that triggers in a step with no priority. For the cleanup step that is a
-        **known gap** rather than the rule: CR 514.3a gives the players priority in the cleanup
-        step itself and then runs another one, so the damage belongs to turn 5. Asserted as it is
-        today so the day it is fixed this row says so (task #407).
-      */
-      expect(s.step).toBe('upkeep');
+      // Both triggers are on the stack **in turn 5's cleanup step**, and the active player has
+      // priority there: something triggered, so this cleanup step is not the silent kind. Until
+      // D568 the turn was ended first, and these went on the stack in turn 6 (see D567's note).
+      expect([s.turn, s.step]).toEqual([5, 'cleanup']);
       expect(s.stackOrder).toHaveLength(2);
-      expect(life(s, 0)).toBe(20);
+      expect(s.priority).toBe(0);
       s = drain(s);
-      expect(s.stackOrder).toHaveLength(0);
+      expect([s.turn, s.step]).toEqual([5, 'cleanup']);
       expect(life(s, 0)).toBe(16);
+      // And then the step is run again, finds nothing owed, and the turn ends.
+      s = passBoth(s);
+      expect(s.turn).toBe(6);
+      expect(s.activeSeat).toBe(1);
+      expect(ids(s, 0, 'hand')).toHaveLength(7);
     });
   });
 
@@ -38832,5 +38828,143 @@ describe('discarding and cycling as events, and attacking alone (D567)', () => {
       expect(s.instances[here(s, 0, 'Grizzly Bears')]!.counters['+1/+1'] ?? 0).toBe(0);
       expect(s.instances[here(s, 0, 'Black Panther, Claws of Bast')]!.counters['+1/+1'] ?? 0).toBe(0);
     });
+  });
+});
+
+describe('the cleanup step that holds priority (CR 514.3a, D568)', () => {
+  /*
+    Nobody gets priority in the cleanup step — unless something triggered in it, in which case
+    everybody does, and then there is another cleanup step. A discard to hand size is how it
+    happens. The engine used to end the turn and announce the discard afterwards, so the trigger
+    resolved a turn late; D567's first discard row found it.
+
+    Megrim's own row is in D567's block, where it was first pinned. These are the consequences.
+  */
+  const DATA = [
+    {
+      name: 'Hekma Sentinels', type_line: 'Creature — Human Cleric', mana_cost: '{2}{U}', cmc: 3,
+      colors: ['U'], power: '2', toughness: '3', layout: 'normal',
+      oracle_text: 'Whenever you cycle or discard a card, Hekma Sentinels gets +1/+1 until end of turn.',
+    },
+    {
+      name: 'Megrim', type_line: 'Enchantment', mana_cost: '{2}{B}', cmc: 3, colors: ['B'],
+      layout: 'normal',
+      oracle_text: 'Whenever an opponent discards a card, Megrim deals 2 damage to that player.',
+    },
+  ];
+  const deck = () => customDeck({
+    id: 'late',
+    name: 'Late',
+    entries: [
+      ...DATA.map((row) => ({ name: row.name, count: 4 })),
+      { name: 'Grizzly Bears', count: 4 }, { name: 'Fiery Temper', count: 4 },
+      { name: 'Shock', count: 4 }, { name: 'Barren Moor', count: 4 },
+      { name: 'Mountain', count: 12 }, { name: 'Swamp', count: 12 }, { name: 'Island', count: 8 },
+    ],
+    data: DATA as never[],
+  }).deck;
+
+  const GRIP = [
+    'Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears',
+    'Shock', 'Shock', 'Shock', 'Shock',
+  ];
+  /** Seat 0 in its end step, about to be asked to discard down from nine. */
+  const overfull = (
+    mine: readonly string[] = [], theirs: readonly string[] = [], hand: readonly string[] = GRIP,
+  ): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'late', 1: 'late' },
+      deckSpecs: { late: deck() },
+      hands: { 0: [...hand], 1: ['Grizzly Bears'] },
+      battlefield: { 0: ['Mountain', 'Mountain', ...mine], 1: ['Swamp', ...theirs] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    // A creature of mine means a declaration is owed on the way; it stays home.
+    if (mine.length > 0) {
+      s = apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] });
+    }
+    return passBoth(advanceTo(s, 'end'));
+  };
+  const throwAway = (s: GameState, name: string): GameState =>
+    apply(s, { type: 'auto:discard', by: 0, card: find(s, 0, 'hand', name) });
+
+  it('a quiet cleanup step is still silent: no trigger, no priority, the turn just ends', () => {
+    let s = overfull();
+    expect(s.pendingDiscard).toEqual({ seat: 0, count: 2 });
+    s = throwAway(throwAway(s, 'Shock'), 'Shock');
+    expect(s.turn).toBe(6);
+    expect(s.activeSeat).toBe(1);
+  });
+
+  it('an "until end of turn" pump from the discard ends with THIS turn, not the next one', () => {
+    let s = overfull(['Hekma Sentinels']);
+    const sentinels = find(s, 0, 'battlefield', 'Hekma Sentinels');
+    s = throwAway(throwAway(s, 'Shock'), 'Shock');
+    expect([s.turn, s.step]).toEqual([5, 'cleanup']);
+    s = drain(s);
+    // Two discards, two triggers, resolved in the cleanup step: a 4/5 for what is left of turn 5.
+    expect([power(s, sentinels), toughness(s, sentinels)]).toEqual([4, 5]);
+    s = passBoth(s);
+    expect(s.turn).toBe(6);
+    // And the 2/3 it is printed as for the opponent's whole turn — which is the half that was
+    // wrong: resolved in turn 6's upkeep, the pump lasted until turn 6 ended.
+    expect([power(s, sentinels), toughness(s, sentinels)]).toEqual([2, 3]);
+  });
+
+  it('nothing else can be done until the discard is made, and the stack waits for it', () => {
+    let s = throwAway(overfull([], ['Megrim']), 'Shock');
+    // One discard made, one owed: its trigger is already waiting and nobody has priority yet.
+    expect(s.pendingDiscard).toEqual({ seat: 0, count: 1 });
+    expect(s.stackOrder).toHaveLength(1);
+    expect(s.priority).toBeNull();
+    expect(life(s, 0)).toBe(20);
+  });
+
+  it('the second cleanup step checks hand size again', () => {
+    let s = throwAway(throwAway(overfull([], ['Megrim']), 'Shock'), 'Shock');
+    expect([s.turn, s.step, ids(s, 0, 'hand').length]).toEqual([5, 'cleanup', 7]);
+    s = drain(s);
+    // A card arrives in the priority round — moved by hand, standing in for anything that draws.
+    const top = ids(s, 0, 'library')[0]!;
+    s = apply(s, { type: 'card:move', by: 0, card: top, toZone: 'hand' });
+    expect(ids(s, 0, 'hand')).toHaveLength(8);
+    s = passBoth(s);
+    expect([s.turn, s.step]).toEqual([5, 'cleanup']);
+    expect(s.pendingDiscard).toEqual({ seat: 0, count: 1 });
+    s = drain(apply(s, { type: 'auto:discard', by: 0, card: ids(s, 0, 'hand')[0]! }));
+    // Megrim again, for the third card; then the third cleanup step is quiet and the turn ends.
+    expect(life(s, 0)).toBe(14);
+    s = passBoth(s);
+    expect(s.turn).toBe(6);
+  });
+
+  it('madness at cleanup is offered in the cleanup step, and the spell resolves before the turn ends', () => {
+    let s = overfull([], [], ['Fiery Temper', ...GRIP.slice(0, 7)]);
+    s = throwAway(throwAway(s, 'Fiery Temper'), 'Shock');
+    expect([s.turn, s.step]).toEqual([5, 'cleanup']);
+    const offer = s.pendingOfferedCast;
+    expect(offer?.seat).toBe(0);
+    expect(nameOf(s, offer?.card ?? '')).toBe('Fiery Temper');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: offer!.card, offered: true,
+      targets: [{ kind: 'player', seat: 1 }],
+    }), 40);
+    expect([s.turn, s.step]).toEqual([5, 'cleanup']);
+    expect(life(s, 1)).toBe(17);
+    s = passBoth(s);
+    expect(s.turn).toBe(6);
+  });
+
+  it('and declining the madness cast lets the turn end', () => {
+    let s = overfull([], [], ['Fiery Temper', ...GRIP.slice(0, 7)]);
+    s = throwAway(throwAway(s, 'Fiery Temper'), 'Shock');
+    expect(s.pendingOfferedCast?.seat).toBe(0);
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    expect(namesIn(s, 0, 'graveyard')).toContain('Fiery Temper');
+    for (let i = 0; i < 6 && s.turn === 5 && s.priority !== null; i++) {
+      s = apply(s, { type: 'auto:pass', by: s.priority });
+    }
+    expect(s.turn).toBe(6);
+    expect(life(s, 1)).toBe(20);
   });
 });
