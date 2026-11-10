@@ -2188,6 +2188,21 @@ export interface CardScript {
    */
   readonly bloodthirst?: number;
   /**
+   * **Riot** and **unleash** (CR 702.136a, 702.98a): a choice made as the permanent enters.
+   *
+   * Both are replacement effects with a question in them — riot is "enters with your choice of a
+   * +1/+1 counter or haste", unleash is "you may have this enter with a +1/+1 counter" — so neither
+   * is a trigger and neither can be responded to. The question is the spell's one resolution
+   * `decisions` entry, asked before the permanent moves, and this field tells the arrival what the
+   * answer means: `ENTERS_COUNTER_OPTION` is a counter for either, and anything else is haste for
+   * riot and nothing for unleash.
+   *
+   * Unleash's other half — "can't block as long as it has a +1/+1 counter on it" — is an ordinary
+   * conditional static and lives in `statics`, where a counter from any source turns it on, which
+   * is what the card says.
+   */
+  readonly entersChoice?: 'riot' | 'unleash';
+  /**
    * Kicker: an optional additional cost, announced as the spell is cast (CR 702.32a).
    *
    * The third member of the family that already holds X and modes, and for the same reason: it is

@@ -38750,3 +38750,114 @@ been exact. The other seven of the 21 print a second line something else has to 
 
 D557's pod sweep (SEED0=42701) finished while this was being written: 40 of 40 to a finish, no
 throw, no stall.
+
+## D559 — Fabricate, riot and unleash: a choice made as the permanent arrives
+
+Three keyword rows on one cycle again (D557's arrangement), chosen as a batch because all three
+are "the creature comes in and you are asked something", and the engine already had the question.
+
+| keyword | rule | what it is | built from |
+| --- | --- | --- | --- |
+| **Fabricate N** (CR 702.123a) | when this enters, you may put N +1/+1 counters on it; if you don't, create N 1/1 colorless Servo artifact creature tokens | a **trigger** | an `etb` trigger with one word-choice decision |
+| **Riot** (CR 702.136a) | enters with your choice of a +1/+1 counter or haste | a **replacement effect** | the spell's own resolution `decisions`, read as the permanent arrives |
+| **Unleash** (CR 702.98a) | you may have this enter with a +1/+1 counter; it can't block as long as it has a +1/+1 counter on it | a **replacement effect** and a **static** | the same, plus a `source-has-counter` static |
+
+### The distinction the batch turns on
+
+Fabricate goes on the stack. The creature is already on the battlefield when it asks, an opponent
+may respond, and if they kill the creature the ability still resolves — and makes Servos whatever
+was answered, because the counters cannot be put on and "if you don't" is what happened. That is
+the keyword's own ruling, and it is why the effect checks where its source is rather than
+trusting the answer.
+
+Riot and unleash never go on the stack. A reading of either as an enters trigger would be a wrong
+card rather than an approximate one (D362): a riot creature would be on the battlefield for a
+moment without haste and without its counter, and an opponent could answer it in that window. So
+the question is the spell's one resolution `decisions` entry — asked while the card is still on
+the stack — and a new `CardScript.entersChoice: 'riot' | 'unleash'` tells the arrival block what
+the answer means. It sits beside `entersWith` and `bloodthirst` and **adds** to them: Arcbound
+Slasher prints modular 4 and riot, and is a 5/5 or a hasty 4/4.
+
+Two fields and not one shared with `entersWith`, for the reason `bloodthirst` has its own: a
+second line setting an already-set field is a field conflict (D487's whole-line rule), and the
+Slasher's two lines would have refused each other.
+
+### Unleash's static follows the counter, not the answer
+
+"Can't block as long as it has a +1/+1 counter on it" is true of a counter from anywhere. So the
+restriction is an ordinary conditional static (`while: source-has-counter`) rather than something
+the arrival block switches on: a Cackler that declined and is later given a counter stops being
+able to block, and one that loses its counter can block again.
+
+The same shape is Chaos Imps' third line — "has trample as long as it has a +1/+1 counter on it" —
+so that reader came along: `~ has <keywords> as long as it has a +1/+1 (or -1/-1) counter on it`,
+in either word order. Only those two counters. A static keyed on a `divinity` or `shield` counter
+nothing in the engine can place would be a line counted as read that never does anything.
+
+### Riot's haste has no duration
+
+The card gives it none. It is a permanent-duration effect whose source is the creature itself,
+which lasts exactly as long as this object does and goes when it leaves (D304).
+
+### The first option is the counter
+
+`ChoiceDecisionSpec` documents the first option as the one a bot falls back on. For all three
+that is the +1/+1 counter: a bigger body is never a wrong answer, haste is only right on a turn
+the creature can use it, and a bot that cannot tell which turn that is should not guess.
+
+### What is not read
+
+- **A keyword granted to other permanents** — "Nontoken creatures you control have riot", "Other
+  Dogs you control have unleash", "Other nontoken creatures you control have fabricate 1". Five
+  cards, all reported.
+- **Arriving without being cast.** The question belongs to the spell, so a riot or unleash
+  creature that is reanimated or blinked is asked nothing and gets neither. For unleash that is
+  the declined answer and is at least a legal game state; for riot it is a loss against the rules.
+  Both join `entersWith` and `bloodthirst` under task #397, whose fix is one move for all of them.
+  Fabricate is a trigger and is unaffected.
+
+### Tests
+
+Sixteen table rows on six printed cards (Glint-Sleeve Artisan, Weaponcraft Enthusiast, Zhur-Taa
+Goblin, Arcbound Slasher, Rakdos Cackler, Chaos Imps), each cast through the engine's own plays:
+
+- fabricate: the question is asked by a **triggered ability** with the creature on the
+  battlefield; a counter and no Servo; a Servo (1/1, colourless, artifact, creature — each word
+  asserted) and no counter; fabricate **2** on a 0/1 is two of one and never a split; and a Shock
+  in response turns "counter" into a Servo.
+- riot: the question is asked with the card **still on the stack** and leaves the stack empty;
+  the counter makes a 3/3 with summoning sickness; haste attacks the turn it arrives and is still
+  there on the caster's next turn; and both answers on top of modular 4.
+- unleash: with the counter it cannot block; without it, it can; a counter added later turns the
+  restriction on and removing it turns it off; and Chaos Imps' trample goes with the counter.
+
+Twenty-one compile rows, including the three shapes that must stay unread for each keyword.
+
+The first run failed on two rows, both the tests' mistake: the stack lives in `stackObjects`, and
+a creature with summoning sickness makes the engine skip the declare-attackers step, so the row
+that walked there found itself two turns later with a creature that could attack. That second one
+is worth keeping as a fact about the harness: **`advanceTo('declare-attackers')` passes straight
+through a turn in which nothing can attack.**
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,710 | **23,758** of 56,421 (42.1%) |
+| cards with a compiled script | 12,102 | **12,140** |
+| cards with every printed line read | 7,917 | **7,953** |
+
++36 fully read. The three keywords are 31 of those — fabricate 12 of 16, riot 8 of 13, unleash 11
+of 14 — which is the audit's prediction to the card for the ninth, tenth and eleventh reader rows
+running. The other five are the counter-conditional static.
+
+D558's pod sweep (SEED0=42801): 40 of 40 to a finish, no throw, no stall.
+
+### Break harness for D558: 13 of 13
+
+Every break caught on the first run, each by the row written for it: life-lost in place of damage
+by the Cutthroat drain, the unrecorded poison hit by the Tainted Strike row, the controller counted
+as an opponent by City of Brass, "every opponent" by the three-seat pod, the damage used as the
+count by the Savage's bloodthirst 3, and the missing cleanup reset by the next-turn row. The pod
+row and the plain combat row were added after the first draft of the tests and before the harness
+ran; the "every opponent" break is the one that would have got through without them.

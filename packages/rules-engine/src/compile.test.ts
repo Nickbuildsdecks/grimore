@@ -16962,3 +16962,120 @@ describe('the Bloodthirst keyword line (D558)', () => {
     expect(read.unread.map((u) => u.line)).toEqual([line]);
   });
 });
+
+describe('the Fabricate, Riot and Unleash keyword lines (D559)', () => {
+  const creature = (text: string) => compileCard({
+    name: 'Zhur-Taa Goblin', type_line: 'Creature — Goblin Berserker', mana_cost: '{R}{G}', cmc: 2,
+    colors: ['R', 'G'], power: '2', toughness: '2', layout: 'normal', oracle_text: text,
+  });
+  const read = (text: string) => {
+    const got = creature(text);
+    expect(got.ok).toBe(true);
+    if (!got.ok) throw new Error('refused');
+    return got;
+  };
+
+  it.each([
+    ['Fabricate 1 (When this creature enters, put a +1/+1 counter on it or create a 1/1 colorless Servo artifact creature token.)', 'a +1/+1 counter', 'a 1/1 colorless Servo artifact creature token'],
+    ['Fabricate 2', '2 +1/+1 counters', '2 1/1 colorless Servo artifact creature tokens'],
+    ['Fabricate 3', '3 +1/+1 counters', '3 1/1 colorless Servo artifact creature tokens'],
+  ])('reads %s as an enters trigger that says both halves', (line, counters, tokens) => {
+    // 1, 2 and 3 are every count the legal corpus prints.
+    const got = read(line);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script?.triggers).toHaveLength(1);
+    const trigger = got.script!.triggers![0]!;
+    expect(trigger.on).toEqual({ kind: 'etb' });
+    expect(trigger.description).toBe(`put ${counters} on it or create ${tokens}`);
+    // A question on the trigger, not on the spell: fabricate can be responded to.
+    expect(trigger.decisions).toHaveLength(1);
+    expect(got.script?.decisions).toBeUndefined();
+    expect(got.script?.entersChoice).toBeUndefined();
+  });
+
+  it('reads Riot as a question the spell asks, with the counter first', () => {
+    const got = read('Riot (This creature enters with your choice of a +1/+1 counter or haste.)');
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script?.entersChoice).toBe('riot');
+    expect(got.script?.decisions).toHaveLength(1);
+    const spec = got.script!.decisions![0]!;
+    expect(typeof spec === 'function' ? null : spec.options).toEqual(['+1/+1 counter', 'Haste']);
+    // Not a trigger and not a keyword on the body: haste is only there if it is chosen.
+    expect(got.script?.triggers).toBeUndefined();
+    expect(got.script?.keywords ?? []).not.toContain('haste');
+    expect(got.script?.statics).toBeUndefined();
+  });
+
+  it('reads Unleash as the same question and a static about the counter', () => {
+    const got = read("Unleash (You may have this creature enter with a +1/+1 counter on it. It can't block as long as it has a +1/+1 counter on it.)");
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script?.entersChoice).toBe('unleash');
+    const spec = got.script!.decisions![0]!;
+    expect(typeof spec === 'function' ? null : spec.options).toEqual(['+1/+1 counter', 'No counter']);
+    expect(got.script?.statics).toEqual([{
+      scope: 'self',
+      effect: {
+        cantBlock: true,
+        while: { kind: 'source-has-counter', counter: '+1/+1', atLeast: 1 },
+      },
+    }]);
+  });
+
+  it('reads all three lines of Chaos Imps, two of them statics on the same counter', () => {
+    const got = read("Flying\nUnleash (You may have this creature enter with a +1/+1 counter on it. It can't block as long as it has a +1/+1 counter on it.)\nZhur-Taa Goblin has trample as long as it has a +1/+1 counter on it.");
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    const counter = { kind: 'source-has-counter', counter: '+1/+1', atLeast: 1 };
+    expect(got.script?.statics).toEqual([
+      { scope: 'self', effect: { cantBlock: true, while: counter } },
+      { scope: 'self', effect: { keywords: ['trample'], while: counter } },
+    ]);
+  });
+
+  it.each([
+    ['Zhur-Taa Goblin has reach as long as it has a +1/+1 counter on it.', ['reach'], '+1/+1'],
+    ['As long as Zhur-Taa Goblin has a +1/+1 counter on it, it has flying and trample.', ['flying', 'trample'], '+1/+1'],
+    ['Zhur-Taa Goblin has trample as long as it has a -1/-1 counter on it.', ['trample'], '-1/-1'],
+  ])('reads the counter-conditional keyword static: %s', (line, keywords, counter) => {
+    const got = read(line);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script?.statics).toEqual([{
+      scope: 'self',
+      effect: { keywords, while: { kind: 'source-has-counter', counter, atLeast: 1 } },
+    }]);
+  });
+
+  it.each([
+    ['a counter the engine keeps under no agreed name', 'Zhur-Taa Goblin has indestructible as long as it has a divinity counter on it.'],
+    ['a grant that is not a keyword', "As long as Zhur-Taa Goblin has a +1/+1 counter on it, it can attack as though it didn't have defender."],
+    ['a condition about some other creature', 'As long as a creature has a -1/-1 counter on it, Zhur-Taa Goblin has vigilance and deathtouch.'],
+    ['a mismatched counter', 'Zhur-Taa Goblin has trample as long as it has a +1/-1 counter on it.'],
+  ])('leaves %s unread', (_what, line) => {
+    const got = read(line);
+    expect(got.script?.statics ?? []).toEqual([]);
+    expect(got.unread.map((u) => u.line)).toEqual([line]);
+  });
+
+  it('reads riot beside modular without either line taking the other field', () => {
+    // Arcbound Slasher. Modular sets `entersWith`; riot sets `entersChoice`. Two fields because
+    // the counters add up, and a shared one would make the second line a field conflict.
+    const got = read('Modular 4 (This creature enters with four +1/+1 counters on it. When it dies, you may put its +1/+1 counters on target artifact creature.)\nRiot (This creature enters with your choice of an additional +1/+1 counter or haste.)');
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script?.entersWith).toEqual({ counter: '+1/+1', amount: 4 });
+    expect(got.script?.entersChoice).toBe('riot');
+  });
+
+  it.each([
+    ['a fabricate with no count', 'Fabricate'],
+    ['a fabricate with a letter for a count', 'Fabricate X'],
+    ['a line that only starts with fabricate', 'Fabricate 1 if you control an artifact'],
+    ['riot granted to other creatures', 'Nontoken creatures you control have riot.'],
+    ['riot with a number it does not print', 'Riot 2'],
+    ['unleash granted to other creatures', 'Other Dogs you control have unleash.'],
+    ['a spell that merely starts with the word', 'Unleash Shell deals 5 damage to target creature or planeswalker and 2 damage to that permanent\'s controller.'],
+  ])('leaves %s unread', (_what, line) => {
+    const got = read(line);
+    expect(got.script?.entersChoice).toBeUndefined();
+    expect(got.script?.triggers ?? []).toEqual([]);
+    expect(got.unread.map((u) => u.line)).toEqual([line]);
+  });
+});

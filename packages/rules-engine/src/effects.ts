@@ -2409,6 +2409,12 @@ export const chosenCard = (ctx: EffectContext, index = 0): string | null =>
  * two words is answered by the engine, and a seat eliminated mid-resolution answers nothing at
  * all. Every caller has to say what it does then, and for most of them the answer is "nothing".
  */
+/**
+ * The answer that means "a +1/+1 counter" to riot's and unleash's question (D559). One constant,
+ * read by the reader that asks and the arrival that acts, so the two cannot drift apart.
+ */
+export const ENTERS_COUNTER_OPTION = '+1/+1 counter';
+
 export const chosenOption = (ctx: EffectContext, index = 0): string | null =>
   ctx.decisions[index]?.option ?? null;
 

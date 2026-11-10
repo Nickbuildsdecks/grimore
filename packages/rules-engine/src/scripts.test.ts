@@ -7547,12 +7547,28 @@ describe('deck coverage', () => {
         Furyborn Hellkite and 17 more), 14 finished by reading it. None is in the pool, and D442
         forbids putting one into a measured deck to satisfy this check.
 
-        Driven at runtime by seven tests in "bloodthirst: counters for damage dealt this turn
+        Driven at runtime by nine tests in "bloodthirst: counters for damage dealt this turn
         (D558)", on printed Bloodrage Vampire and Ghor-Clan Savage cast through the engine's own
         plays, one row for each word of the condition: no damage and no counters, counters after a
-        Shock, the count taken from the card and not from the damage, **life lost without damage
-        does not count** (a Zulaport Cutthroat drain), **damage that became poison does** (Tainted
-        Strike), damage dealt to the caster does not, and last turn's damage is forgotten.
+        Shock, the count taken from the card and not from the damage, an ordinary combat hit,
+        **life lost without damage does not count** (a Zulaport Cutthroat drain), **damage that
+        became poison does** (Tainted Strike), any one opponent in a three-seat pod, damage dealt
+        to the caster does not, and last turn's damage is forgotten.
+
+      **And the choice made on the way in** (D559):
+
+      - `script entersChoice`: **27 legal lines** — 13 `Riot` (Zhur-Taa Goblin, Rampaging Rendhorn,
+        Arcbound Slasher and 10 more) and 14 `Unleash` (Rakdos Cackler, Gore-House Chainwalker,
+        Chaos Imps and 11 more). None is in the pool, and D442 forbids putting one into a measured
+        deck to satisfy this check.
+
+        Driven at runtime by ten tests in "fabricate, riot and unleash: a choice as the permanent
+        arrives (D559)", on printed Zhur-Taa Goblin, Arcbound Slasher, Rakdos Cackler and Chaos
+        Imps cast through the engine's own plays: the question is asked on the stack and
+        leaves no ability behind, the counter makes a 3/3 with summoning sickness, haste attacks
+        the turn it arrives and is still there a turn later, riot **adds** to modular's four
+        counters instead of replacing them, an unleashed Cackler cannot block and a declined one
+        can, and the restriction follows the counter rather than the answer.
 
       **And one payment flag** (D552):
 
@@ -7576,6 +7592,7 @@ describe('deck coverage', () => {
       'keyword changeling', 'keyword intimidate', 'keyword skulk', 'keyword flanking',
       'script cantBeCountered', 'script grantedAbilities', 'script improvise',
       'script bloodthirst',
+      'script entersChoice',
     ]);
 
     const declared = [
@@ -36600,5 +36617,283 @@ describe('bloodthirst: counters for damage dealt this turn (D558)', () => {
     expect(s.activeSeat).toBe(0);
     const { state, id } = land(s, 'Bloodrage Vampire');
     expect(counters(state, id)).toBe(0);
+  });
+});
+
+describe('fabricate, riot and unleash: a choice as the permanent arrives (D559)', () => {
+  /*
+    Three keywords that ask a question on the way in, and two different kinds of question.
+
+    **Fabricate** is a trigger: the creature is on the battlefield, the ability is on the stack and
+    an opponent may answer it. **Riot** and **unleash** are replacement effects: the question is
+    asked while the spell is still resolving and the creature arrives already changed. Each row
+    below is about one of those words, and the cards are chosen so the two answers cannot be
+    confused with each other or with the printed body — a 0/1 with fabricate **2**, a 0/0 with
+    modular 4 and riot.
+  */
+  const DATA = [
+    {
+      name: 'Glint-Sleeve Artisan', type_line: 'Creature — Dwarf Artificer', mana_cost: '{2}{W}',
+      cmc: 3, colors: ['W'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Fabricate 1 (When this creature enters, put a +1/+1 counter on it or create a 1/1 colorless Servo artifact creature token.)',
+    },
+    {
+      name: 'Weaponcraft Enthusiast', type_line: 'Creature — Aetherborn Artificer',
+      mana_cost: '{2}{B}', cmc: 3, colors: ['B'], power: '0', toughness: '1', layout: 'normal',
+      oracle_text: 'Fabricate 2 (When this creature enters, put two +1/+1 counters on it or create two 1/1 colorless Servo artifact creature tokens.)',
+    },
+    {
+      name: 'Zhur-Taa Goblin', type_line: 'Creature — Goblin Berserker', mana_cost: '{R}{G}',
+      cmc: 2, colors: ['R', 'G'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Riot (This creature enters with your choice of a +1/+1 counter or haste.)',
+    },
+    {
+      name: 'Arcbound Slasher', type_line: 'Artifact Creature — Cat', mana_cost: '{4}{R}', cmc: 5,
+      colors: ['R'], power: '0', toughness: '0', layout: 'normal',
+      oracle_text: 'Modular 4 (This creature enters with four +1/+1 counters on it. When it dies, you may put its +1/+1 counters on target artifact creature.)\nRiot (This creature enters with your choice of an additional +1/+1 counter or haste.)',
+    },
+    {
+      name: 'Rakdos Cackler', type_line: 'Creature — Devil', mana_cost: '{B/R}', cmc: 1,
+      colors: ['B', 'R'], power: '1', toughness: '1', layout: 'normal',
+      oracle_text: "Unleash (You may have this creature enter with a +1/+1 counter on it. It can't block as long as it has a +1/+1 counter on it.)",
+    },
+    {
+      name: 'Chaos Imps', type_line: 'Creature — Imp', mana_cost: '{4}{R}{R}', cmc: 6,
+      colors: ['R'], power: '6', toughness: '5', layout: 'normal',
+      oracle_text: "Flying\nUnleash (You may have this creature enter with a +1/+1 counter on it. It can't block as long as it has a +1/+1 counter on it.)\nChaos Imps has trample as long as it has a +1/+1 counter on it.",
+    },
+  ];
+  const PRINTED = DATA.map((row) => row.name).sort();
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'arrivals',
+      name: 'Arrivals',
+      entries: [
+        ...DATA.map((row) => ({ name: row.name, count: 4 })),
+        { name: 'Grizzly Bears', count: 4 }, { name: 'Shock', count: 4 },
+        { name: 'Plains', count: 6 }, { name: 'Swamp', count: 6 },
+        { name: 'Mountain', count: 8 }, { name: 'Forest', count: 8 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual(PRINTED);
+    return list.deck;
+  };
+
+  const LANDS = ['Plains', 'Swamp', 'Mountain', 'Mountain', 'Forest', 'Forest'];
+
+  const start = (
+    hand: readonly string[], theirs: readonly string[] = [], theirHand: readonly string[] = [],
+  ): GameState => advanceTo(arena({
+    decks: { 0: 'arrivals', 1: 'arrivals' },
+    deckSpecs: { arrivals: deck() },
+    hands: { 0: [...hand], 1: [...theirHand] },
+    battlefield: { 0: [...LANDS], 1: [...theirs] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  const counters = (s: GameState, id: string): number => s.instances[id]!.counters['+1/+1'] ?? 0;
+  const size = (s: GameState, id: string): string => {
+    const ch = characteristicsOf(s, s.instances[id]!);
+    return `${ch.power}/${ch.toughness}`;
+  };
+  const hasHaste = (s: GameState, id: string): boolean =>
+    characteristicsOf(s, s.instances[id]!).keywords.has('haste');
+  const servos = (s: GameState): readonly string[] =>
+    ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Servo');
+
+  /** Cast from seat 0's hand and pass until somebody is asked something. */
+  const castUntilAsked = (s: GameState, name: string) => {
+    const card = find(s, 0, 'hand', name);
+    let next = apply(s, { type: 'auto:cast', by: 0, card });
+    for (let i = 0; i < 6 && next.pendingDecision === null && next.stackOrder.length > 0; i += 1) {
+      next = drain(passBoth(next));
+    }
+    return { state: next, id: card };
+  };
+  const answer = (s: GameState, option: string): GameState =>
+    drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option }));
+
+  describe('fabricate', () => {
+    it('is a trigger: the creature is already on the battlefield when it asks', () => {
+      const { state, id } = castUntilAsked(start(['Glint-Sleeve Artisan']), 'Glint-Sleeve Artisan');
+      expect(state.pendingDecision?.options).toEqual(['Put a +1/+1 counter on it', 'Create a Servo']);
+      expect(state.instances[id]!.zone).toBe('battlefield');
+      // And it is the ability on the stack doing the asking, not the spell.
+      expect(state.stackOrder).toHaveLength(1);
+      expect(state.stackObjects[state.stackOrder[0]!]!.kind).toBe('triggered');
+    });
+
+    it('puts the counter on it and makes no Servo', () => {
+      const asked = castUntilAsked(start(['Glint-Sleeve Artisan']), 'Glint-Sleeve Artisan');
+      const s = answer(asked.state, 'Put a +1/+1 counter on it');
+      expect(counters(s, asked.id)).toBe(1);
+      expect(size(s, asked.id)).toBe('3/3');
+      expect(servos(s)).toEqual([]);
+    });
+
+    it('or makes a Servo and leaves the creature as printed', () => {
+      const asked = castUntilAsked(start(['Glint-Sleeve Artisan']), 'Glint-Sleeve Artisan');
+      const s = answer(asked.state, 'Create a Servo');
+      expect(counters(s, asked.id)).toBe(0);
+      expect(size(s, asked.id)).toBe('2/2');
+      const made = servos(s);
+      expect(made).toHaveLength(1);
+      // A 1/1 colourless artifact creature: every word of that is something another card reads.
+      const servo = characteristicsOf(s, s.instances[made[0]!]!);
+      expect(`${servo.power}/${servo.toughness}`).toBe('1/1');
+      expect(servo.colors).toEqual([]);
+      expect(hasType(servo.typeLine, 'artifact')).toBe(true);
+      expect(servo.isCreature).toBe(true);
+    });
+
+    it.each([
+      ['Put 2 +1/+1 counters on it', 2, '2/3', 0],
+      ['Create 2 Servos', 0, '0/1', 2],
+    ])('fabricate 2 answered "%s" is all of one, never a split', (option, onIt, body, made) => {
+      // N of one or N of the other (CR 702.123a). A 0/1 with fabricate 2, so N is not its power.
+      const asked = castUntilAsked(start(['Weaponcraft Enthusiast']), 'Weaponcraft Enthusiast');
+      expect(asked.state.pendingDecision?.options).toEqual(['Put 2 +1/+1 counters on it', 'Create 2 Servos']);
+      const s = answer(asked.state, option);
+      expect(counters(s, asked.id)).toBe(onIt);
+      expect(size(s, asked.id)).toBe(body);
+      expect(servos(s)).toHaveLength(made);
+    });
+
+    it('makes Servos when the creature is gone, whatever was answered', () => {
+      /*
+        The keyword's own ruling: if the counters cannot be put on it, "if you don't" is what
+        happened. Seat 1 Shocks the 2/2 Artisan with the fabricate trigger on the stack, and the
+        controller then asks for the counter anyway.
+      */
+      let s = start(['Glint-Sleeve Artisan'], ['Mountain'], ['Shock']);
+      const artisan = find(s, 0, 'hand', 'Glint-Sleeve Artisan');
+      s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: artisan }));
+      expect(s.instances[artisan]!.zone).toBe('battlefield');
+      expect(s.stackOrder).toHaveLength(1);
+      expect(s.pendingDecision).toBeNull();
+      s = apply(s, { type: 'auto:pass', by: 0 });
+      s = apply(s, {
+        type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Shock'),
+        targets: [{ kind: 'card', id: artisan }],
+      });
+      s = passBoth(s);
+      expect(s.instances[artisan]!.zone).toBe('graveyard');
+      for (let i = 0; i < 4 && s.pendingDecision === null && s.stackOrder.length > 0; i += 1) s = passBoth(s);
+      expect(s.pendingDecision?.options).toEqual(['Put a +1/+1 counter on it', 'Create a Servo']);
+      s = answer(s, 'Put a +1/+1 counter on it');
+      expect(servos(s)).toHaveLength(1);
+      expect(counters(s, artisan)).toBe(0);
+    });
+  });
+
+  describe('riot', () => {
+    it('asks while the spell is still resolving, and leaves nothing on the stack', () => {
+      // A replacement effect, not a trigger (CR 702.136a): asked before the creature has moved,
+      // and once answered there is no ability for an opponent to respond to.
+      const asked = castUntilAsked(start(['Zhur-Taa Goblin']), 'Zhur-Taa Goblin');
+      expect(asked.state.pendingDecision?.options).toEqual(['+1/+1 counter', 'Haste']);
+      expect(asked.state.instances[asked.id]!.zone).toBe('stack');
+      const s = apply(asked.state, { type: 'auto:decide', by: 0, cards: [], option: 'Haste' });
+      expect(s.instances[asked.id]!.zone).toBe('battlefield');
+      expect(s.stackOrder).toEqual([]);
+    });
+
+    it('a counter: a 3/3 that cannot attack this turn', () => {
+      const asked = castUntilAsked(start(['Zhur-Taa Goblin']), 'Zhur-Taa Goblin');
+      const s = answer(asked.state, '+1/+1 counter');
+      expect(counters(s, asked.id)).toBe(1);
+      expect(size(s, asked.id)).toBe('3/3');
+      expect(hasHaste(s, asked.id)).toBe(false);
+      // Asked in the main phase it arrived in: with nothing able to attack, the engine skips this
+      // turn's declaration altogether and there is no declare-attackers step to stand in.
+      expect(canAttack(s, asked.id, 0)?.reason).toContain('summoning sickness');
+    });
+
+    it('haste: a 2/2 that attacks the turn it arrives, and keeps haste afterwards', () => {
+      const asked = castUntilAsked(start(['Zhur-Taa Goblin']), 'Zhur-Taa Goblin');
+      let s = answer(asked.state, 'Haste');
+      expect(counters(s, asked.id)).toBe(0);
+      expect(size(s, asked.id)).toBe('2/2');
+      expect(hasHaste(s, asked.id)).toBe(true);
+      const turn = s.turn;
+      s = advanceTo(s, 'declare-attackers');
+      expect(s.turn).toBe(turn);
+      expect(canAttack(s, asked.id, 0)).toBeNull();
+      s = apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: asked.id, defender: 1 }] });
+      expect(s.instances[asked.id]!.tapped).toBe(true);
+      // No "until end of turn" on the card, so none here: still hasty on the caster's next turn.
+      s = nextTurn(nextTurn(s));
+      expect(s.activeSeat).toBe(0);
+      expect(hasHaste(s, asked.id)).toBe(true);
+    });
+
+    it.each([
+      ['+1/+1 counter', 5, '5/5', false],
+      ['Haste', 4, '4/4', true],
+    ])('adds to what the card already enters with: modular 4 and "%s"', (option, count, body, hasty) => {
+      // Arcbound Slasher is a 0/0 with modular 4 and riot. "An additional +1/+1 counter" is the
+      // fifth; haste leaves the four. Either way it survives, which a riot that replaced the
+      // modular counters would not allow.
+      const asked = castUntilAsked(start(['Arcbound Slasher']), 'Arcbound Slasher');
+      const s = answer(asked.state, option);
+      expect(s.instances[asked.id]!.zone).toBe('battlefield');
+      expect(counters(s, asked.id)).toBe(count);
+      expect(size(s, asked.id)).toBe(body);
+      expect(hasHaste(s, asked.id)).toBe(hasty);
+    });
+  });
+
+  describe('unleash', () => {
+    const versusBears = (s: GameState, cackler: string) =>
+      canBlock(s, cackler, find(s, 1, 'battlefield', 'Grizzly Bears'), 0);
+
+    it('with the counter: a 2/2 that cannot block', () => {
+      const asked = castUntilAsked(start(['Rakdos Cackler'], ['Grizzly Bears']), 'Rakdos Cackler');
+      expect(asked.state.pendingDecision?.options).toEqual(['+1/+1 counter', 'No counter']);
+      expect(asked.state.instances[asked.id]!.zone).toBe('stack');
+      const s = answer(asked.state, '+1/+1 counter');
+      expect(size(s, asked.id)).toBe('2/2');
+      expect(versusBears(s, asked.id)?.reason).toMatch(/can't block/);
+    });
+
+    it('without it: a 1/1 that blocks like anything else', () => {
+      const asked = castUntilAsked(start(['Rakdos Cackler'], ['Grizzly Bears']), 'Rakdos Cackler');
+      const s = answer(asked.state, 'No counter');
+      expect(counters(s, asked.id)).toBe(0);
+      expect(size(s, asked.id)).toBe('1/1');
+      expect(hasHaste(s, asked.id)).toBe(false);
+      expect(versusBears(s, asked.id)).toBeNull();
+    });
+
+    it.each([
+      ['+1/+1 counter', '7/6', true],
+      ['No counter', '6/5', false],
+    ])('Chaos Imps answered "%s": trample goes with the counter', (option, body, tramples) => {
+      // The card's third line is a second static on the same condition: "has trample as long as
+      // it has a +1/+1 counter on it". Flying is printed and there either way.
+      const asked = castUntilAsked(start(['Chaos Imps']), 'Chaos Imps');
+      const s = answer(asked.state, option);
+      const ch = characteristicsOf(s, s.instances[asked.id]!);
+      expect(`${ch.power}/${ch.toughness}`).toBe(body);
+      expect(ch.keywords.has('trample')).toBe(tramples);
+      expect(ch.keywords.has('flying')).toBe(true);
+      expect(ch.cantBlock).toBe(tramples);
+    });
+
+    it('reads the counter, not the answer: a counter from anywhere stops it blocking', () => {
+      // "As long as it has a +1/+1 counter on it" — declined on the way in, given one later by
+      // something else, and the restriction is on. Take it away again and it is off.
+      const asked = castUntilAsked(start(['Rakdos Cackler'], ['Grizzly Bears']), 'Rakdos Cackler');
+      let s = answer(asked.state, 'No counter');
+      expect(versusBears(s, asked.id)).toBeNull();
+      s = addCounters(s, asked.id, '+1/+1', 1);
+      expect(versusBears(s, asked.id)?.reason).toMatch(/can't block/);
+      s = addCounters(s, asked.id, '+1/+1', -1);
+      expect(counters(s, asked.id)).toBe(0);
+      expect(versusBears(s, asked.id)).toBeNull();
+    });
   });
 });

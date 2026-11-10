@@ -46,6 +46,7 @@ import {
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
   type EffectContext, type EffectFn, type PumpOptions, damagedThisTurn,
+  chosenOption, ENTERS_COUNTER_OPTION,
 } from './effects.js';
 import { legalActions, manaSources } from './legalActions.js';
 import { EngineError, type GameState, type Outcome, type SeatIndex } from './types.js';
@@ -4126,6 +4127,32 @@ function completeResolution(
         && state.seats.some((seat) => seat.index !== object.controller
           && damagedThisTurn(next, seat.index) > 0)) {
         next = addCounters(next, inst.id, '+1/+1', script.bloodthirst);
+      }
+      /*
+        Riot and unleash (CR 702.136a, 702.98a): the answer to the question this spell asked as it
+        began to resolve, acted on as the permanent arrives.
+
+        Here and not in a trigger because both are replacement effects: the creature **enters
+        with** the counter or with haste, so there is no moment at which it is on the battlefield
+        without them and nothing an opponent can respond to. The counter is added to whatever
+        `entersWith` already put there — Arcbound Slasher prints modular 4 and riot, and is a 5/5
+        or a hasty 4/4.
+
+        Riot's haste has no duration because the card gives it none: it is the creature's for as
+        long as it is this object, which is what a permanent effect whose source is the creature
+        itself amounts to — it goes when the creature does.
+
+        A spell that asked nothing has no answer and gets neither. That is every way of arriving
+        other than being cast, the gap #397 names for `entersWith`.
+      */
+      if (script?.entersChoice !== undefined) {
+        const answer = chosenOption(ctx);
+        if (answer === ENTERS_COUNTER_OPTION) next = addCounters(next, inst.id, '+1/+1', 1);
+        else if (answer !== null && script.entersChoice === 'riot') {
+          next = pump(next, [inst.id], inst.id, object.controller, {
+            keywords: ['haste'], duration: 'permanent',
+          });
+        }
       }
       if (script?.aura) {
         const host = object.targets.find((t) => t.kind === 'card');

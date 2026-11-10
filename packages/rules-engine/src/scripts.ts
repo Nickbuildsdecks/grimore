@@ -33,7 +33,7 @@ import {
   counterUnlessPaid, createToken,
   dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, firstCardTarget,
   firstPlayerTarget,
-  chosenOption, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
+  chosenOption, ENTERS_COUNTER_OPTION, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
   gainControl, gainLife, goad, loseLife, mill, moveToGraveyard, moveToHand, opponentsOf, pump,
   stealUntilEndOfTurn,
@@ -2496,6 +2496,79 @@ const afterlifeTrigger = (count: number): TriggerDef => ({
     c.state, c.controller, AFTERLIFE_SPIRIT_TOKEN, count, AFTERLIFE_SPIRIT_KEY,
   ),
 });
+
+/**
+ * The Servo fabricate makes: a 1/1 colourless artifact creature (CR 702.123a). Colourless is the
+ * empty colour list and "artifact" is on the type line, which is what affinity, improvise and
+ * metalcraft read.
+ */
+export const SERVO_TOKEN: CardDef = {
+  name: 'Servo', typeLine: 'Token Artifact Creature — Servo', manaCost: '', cmc: 0,
+  power: '1', toughness: '1', oracleText: '', colors: [],
+};
+
+const plural = (count: number, one: string, many: string): string =>
+  (count === 1 ? one : `${count} ${many}`);
+
+/**
+ * Fabricate N: "When this permanent enters, you may put N +1/+1 counters on it. If you don't,
+ * create N 1/1 colorless Servo artifact creature tokens" (CR 702.123a).
+ *
+ * A trigger, unlike riot and unleash below — it goes on the stack and can be answered — with one
+ * question whose two answers are the two halves. The counters come first because the first option
+ * is the one a bot falls back on, and a bigger body is the answer that is never wrong.
+ *
+ * **If the creature has gone by the time this resolves, it makes Servos whatever was answered.**
+ * That is the keyword's own ruling: the counters cannot be put on, so "if you don't" is what
+ * happened. It is also why the effect asks where the source is instead of trusting the answer.
+ */
+const fabricateTrigger = (count: number): TriggerDef => {
+  const counters = `Put ${plural(count, 'a +1/+1 counter', '+1/+1 counters')} on it`;
+  const servos = `Create ${plural(count, 'a Servo', 'Servos')}`;
+  return {
+    on: { kind: 'etb' },
+    description: `put ${plural(count, 'a +1/+1 counter', '+1/+1 counters')} on it or create `
+      + `${plural(count, 'a 1/1 colorless Servo artifact creature token', '1/1 colorless Servo artifact creature tokens')}`,
+    decisions: [{ who: 'controller', prompt: `Fabricate ${count}`, options: [counters, servos] }],
+    effect: (c) => (chosenOption(c) === counters && c.state.instances[c.source]?.zone === 'battlefield'
+      ? addCounters(c.state, c.source, '+1/+1', count)
+      : createToken(c.state, c.controller, SERVO_TOKEN, count)),
+  };
+};
+
+/** Riot's question (CR 702.136a). The counter first: see `ENTERS_COUNTER_OPTION`. */
+export const RIOT_HASTE_OPTION = 'Haste';
+const RIOT: Partial<CardScript> = {
+  entersChoice: 'riot',
+  decisions: [{
+    who: 'controller', prompt: 'Riot — enter with a +1/+1 counter, or with haste?',
+    options: [ENTERS_COUNTER_OPTION, RIOT_HASTE_OPTION],
+  }],
+};
+
+/**
+ * Unleash (CR 702.98a): the same question with "nothing" as its other answer, and a static.
+ *
+ * The static is not tied to the answer and must not be: "can't block as long as it has a +1/+1
+ * counter on it" is true of a counter from anywhere, so an unleashed-as-nothing Rakdos Cackler
+ * that is later given a counter stops being able to block, and one that loses its counter can
+ * block again. `source-has-counter` reads the permanent live, which is exactly that.
+ */
+export const UNLEASH_DECLINE_OPTION = 'No counter';
+const UNLEASH: Partial<CardScript> = {
+  entersChoice: 'unleash',
+  decisions: [{
+    who: 'controller', prompt: 'Unleash — enter with a +1/+1 counter? It cannot block while it has one.',
+    options: [ENTERS_COUNTER_OPTION, UNLEASH_DECLINE_OPTION],
+  }],
+  statics: [{
+    scope: 'self',
+    effect: {
+      cantBlock: true,
+      while: { kind: 'source-has-counter', counter: '+1/+1', atLeast: 1 },
+    },
+  }],
+};
 
 /**
  * Rampage N: whenever this creature becomes blocked, it gets +N/+N until end of turn for each
@@ -10093,6 +10166,9 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   if (word === 'improvise') return { improvise: true };
   // Mentor, read by the factory Sunhome Stalwart calls (D557): 18 legal printings.
   if (word === 'mentor') return { triggers: [mentorTrigger()] };
+  // Riot and unleash: a choice as the permanent arrives, not a trigger (D559). See `entersChoice`.
+  if (word === 'riot') return RIOT;
+  if (word === 'unleash') return UNLEASH;
 
   // ── The keywords that carry a mana cost ───────────────────────────────────────────────────────
   /*
@@ -10292,6 +10368,10 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   */
   const bloodthirst = /^bloodthirst\s+(\d+)$/i.exec(text);
   if (bloodthirst !== null) return { bloodthirst: Number(bloodthirst[1]) };
+
+  // Fabricate N (D559): 16 legal cards, every one with a digit.
+  const fabricate = /^fabricate\s+(\d+)$/i.exec(text);
+  if (fabricate !== null) return { triggers: [fabricateTrigger(Number(fabricate[1]))] };
 
   /*
     Afterlife N and Rampage N (D557), two more counted keywords whose one line is the whole ability
@@ -20516,6 +20596,37 @@ function conditionalStaticFromLine(line: string, name: string): Partial<CardScri
         effect: {
           keywords,
           while: { kind: 'source-has-counter', counter: '+1/+1', atLeast: 1 },
+        },
+      }],
+    };
+  }
+
+  /*
+    "~ has trample as long as it has a +1/+1 counter on it" (D559), in either word order.
+
+    Chaos Imps' third line, and the same static unleash's own "can't block" half is: a condition on
+    the permanent's own counters, read live. Only the two counters the engine keeps by those exact
+    names — a `divinity` or `shield` counter is somebody else's reader to name, and a static keyed
+    on a counter nothing can put there would be a line counted as read that never does anything.
+  */
+  const whileCountered = new RegExp(
+    `^(?:${self}|it) has (.+) as long as it has a (\\+1/\\+1|-1/-1) counter on it$`, 'i',
+  ).exec(text);
+  const counteredFirst = whileCountered === null ? new RegExp(
+    `^as long as (?:${self}|it) has a (\\+1/\\+1|-1/-1) counter on it, (?:${self}|it) has (.+)$`, 'i',
+  ).exec(text) : null;
+  const countered = whileCountered !== null
+    ? { granted: whileCountered[1]!, counter: whileCountered[2]! }
+    : counteredFirst !== null ? { granted: counteredFirst[2]!, counter: counteredFirst[1]! } : null;
+  if (countered !== null) {
+    const keywords = grantedKeywordList(countered.granted);
+    if (keywords === null) return null;
+    return {
+      statics: [{
+        scope: 'self',
+        effect: {
+          keywords,
+          while: { kind: 'source-has-counter', counter: countered.counter, atLeast: 1 },
         },
       }],
     };
