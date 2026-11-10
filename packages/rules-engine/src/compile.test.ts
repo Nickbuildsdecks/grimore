@@ -1952,9 +1952,14 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         row, and it reads now that D579 gave `AbilityCost` a `discardACard` the payment charges.
         Its place is taken by the discard that still has no field — two cards, which a flag cannot
         count — so the "discard of another card" half of the claim above is still tested.
+
+        **Retired row (D581)**, the third: `'Remove a +1/+1 counter from Nonesuch: Draw a card.'`
+        reads now, into the `removeCounter` the {X}{X} artifacts brought (#127). What still has
+        no field is a removal whose **amount** is chosen as it is paid — "Remove X +1/+1
+        counters" — so that is the row here.
       */
       for (const text of [
-        'Remove a +1/+1 counter from Nonesuch: Draw a card.',
+        'Remove X +1/+1 counters from Nonesuch: Draw a card.',
         '{1}, Discard two cards: Draw a card.',
       ]) {
         const refused = compileCard({
@@ -8469,6 +8474,26 @@ describe('an ability cost that is not mana, a tap or life', () => {
     ['{T}, Discard a card: Draw a card.', { tap: true, discardACard: true }],
     ['Discard a card: Add {B}.', { discardACard: true }],
     ['Discard a card, Sacrifice Probe Thing: Draw a card.', { sacrificeSelf: true, discardACard: true }],
+    /*
+      Four costs that were in the refusal table below until D581, each with a note there saying
+      "which has no field". Each has one now, enforced by `activate` and `legalActions`, so each
+      is read rather than refused: a counter taken off the card, the card exiled (from play, or
+      out of the graveyard it is then used from), energy, and a sacrifice narrowed to a type.
+    */
+    ['{1}, Remove a +1/+1 counter from Probe Thing: Draw a card.',
+      { mana: '{1}', removeCounter: { counter: '+1/+1', amount: 1 } }],
+    ['Remove three charge counters from Probe Thing: Draw a card.',
+      { removeCounter: { counter: 'charge', amount: 3 } }],
+    ['{2}, Exile Probe Thing from your graveyard: Draw a card.',
+      { mana: '{2}', exileSelf: true, fromGraveyard: true }],
+    ['{T}, Exile this artifact: Draw a card.', { tap: true, exileSelf: true }],
+    ['Pay {E}{E}: Draw a card.', { energy: 2 }],
+    ['{1}, Sacrifice a Goblin: Draw a card.',
+      { mana: '{1}', sacrifice: 'creature', sacrificeSubtypes: ['Goblin'] }],
+    ['Sacrifice another Zombie: Draw a card.',
+      { sacrifice: 'another-creature', sacrificeSubtypes: ['Zombie'] }],
+    ['{2}, Sacrifice a Food: Draw a card.',
+      { mana: '{2}', sacrifice: 'artifact', sacrificeSubtypes: ['Food'] }],
   ])('reads %s', (text, cost) => {
     const compiled = read('Probe Thing', 'Artifact', text);
     expect(compiled.ok).toBe(true);
@@ -8484,13 +8509,23 @@ describe('an ability cost that is not mana, a tap or life', () => {
       corpus count.
     */
     ['a land, which has no field', '{1}{B}, Sacrifice a land: Draw a card.'],            // 27 lines
-    ['a creature type, which has no field', '{1}, Sacrifice a Goblin: Draw a card.'],    // 15
     ['tapping somebody else, which has no field',
       'Tap an untapped creature you control: Draw a card.'],                             // 18
-    ['taking a counter off, which has no field',
-      '{1}, Remove a +1/+1 counter from Probe Thing: Draw a card.'],                     // 35
-    ['exiling from a graveyard, which has no field',
-      '{2}, Exile Probe Thing from your graveyard: Draw a card.'],                       // 17
+    // Three rows left here for D581, which took "a creature type", "taking a counter off" and
+    // "exiling from a graveyard" to the table above: what is still refused next to each.
+    ['a land type, which is not a creature or an artifact', 'Sacrifice a Forest: Draw a card.'],
+    ['another Food, which the artifact sacrifice cannot say', 'Sacrifice another Food: Draw a card.'],
+    ['a number of counters chosen as it is paid',
+      'Remove X charge counters from Probe Thing: Draw a card.'],
+    ['every counter, which is a count and not a number',
+      'Remove all +1/+1 counters from Probe Thing: Draw a card.'],
+    ['a counter off something else',
+      'Remove a +1/+1 counter from a creature you control: Draw a card.'],
+    ['two removals in one cost, which the field cannot hold',
+      'Remove a charge counter from Probe Thing, Remove a +1/+1 counter from Probe Thing: Draw a card.'],
+    ['exiling from the hand, which is a third zone', 'Exile Probe Thing from your hand: Draw a card.'],
+    ['a typed sacrifice beside a second sacrifice',
+      'Sacrifice a Goblin, Sacrifice an artifact: Draw a card.'],
     // And two sacrifices in one cost, which the field cannot count: refused rather than halved.
     ['two sacrifices in one cost, which the field cannot count',
       'Sacrifice a creature, Sacrifice an artifact: Draw a card.'],

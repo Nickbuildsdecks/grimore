@@ -846,6 +846,14 @@ export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[
         the auto-tapper would then spend it without a card ever leaving the hand — or with one it
         chose itself, which is worse. Which card to give up is the player's answer, so the ability
         is theirs to press: it stays in `legalActions` as a play and is not a source here.
+
+        The costs D581 reads — a counter taken off, the card exiled, a typed sacrifice — are not
+        named here, and that is measured rather than overlooked. Compiled over the legal corpus,
+        58 mana abilities carry a sacrifice of something else, a counter removal, an exile of the
+        card or a discard; exactly **one** of them also taps or sacrifices its own permanent with
+        no mana in the cost, which is what the line above lets through, and it is the Apprentice.
+        The other 57 never reach this line. Workhorse's "Remove a +1/+1 counter from Workhorse:
+        Add {C}" is pressed by the player, like the Familiar's.
       */
       if (ability.cost.discardACard === true) continue;
       if (ch.isCreature && inst.enteredTurn >= state.turn && !ch.keywords.has('haste')) continue;

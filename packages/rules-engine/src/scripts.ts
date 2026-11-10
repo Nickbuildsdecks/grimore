@@ -18,7 +18,8 @@
  * unscripted and resolved by hand rather than approximated.
  */
 import {
-  cardHasSubtype, characteristicsOf, hasSubtype, hasType, isDevoidLine, isKeyword, isLegendary,
+  cardHasSubtype, characteristicsOf, hasSubtype, hasType, isCreatureType, isDevoidLine, isKeyword,
+  isLegendary,
   parseTypeLine,
   printedKeywords,
   type StaticCountable,
@@ -10971,6 +10972,14 @@ const WORD_NUMBERS: Readonly<Record<string, number>> = {
 };
 
 /** A printed count, or `null` when it is a word this does not know. */
+/**
+ * The artifact subtypes a cost may name to sacrifice: the three predefined tokens this engine
+ * makes (#243, D536). A list rather than "any word that is not a creature type", because the
+ * other single capitalised words a cost prints are land and enchantment types — Forest, Desert,
+ * Aura — and reading one of those as an artifact would be a cost nothing could ever pay.
+ */
+const SACRIFICED_ARTIFACT_TYPES: readonly string[] = ['Food', 'Treasure', 'Clue'];
+
 function countFrom(text: string): number | null {
   const word = text.trim().toLowerCase();
   if (/^\d+$/.test(word)) return Number(word);
@@ -20641,7 +20650,12 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
   let sacrificesSelf = false;
   let discardsSelf = false;
   let discardsACard = false;
+  let exilesSelf = false;
+  let exilesFromGraveyard = false;
+  let energy = 0;
+  let removes: { counter: string; amount: number } | null = null;
   let sacrifices: 'creature' | 'another-creature' | 'artifact' | null = null;
+  let sacrificedSubtype: string | null = null;
   const mana: string[] = [];
   const self = selfRef(name);
   for (const component of split[1]!.split(/,\s*/).map((part) => part.trim())) {
@@ -20670,6 +20684,10 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
       `AbilityCost`**, so there is nothing to read them into — and inventing one would be a cost the
       payment does not charge, which is an ability that activates for free. A line naming one stays
       unread, which is the honest half of D362.
+
+      (True when written, at D446. Three of the five have a field now and are read further down
+      this loop — see D581. "Sacrifice a land" and "Tap an untapped creature you control" still
+      have none, and are still refused.)
     */
     if (new RegExp(`^Sacrifice ${self}$`, 'i').test(component)) { sacrificesSelf = true; continue; }
     if (new RegExp(`^Discard ${self}$`, 'i').test(component)) { discardsSelf = true; continue; }
@@ -20692,6 +20710,85 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     if (/^Discard a card$/i.test(component)) {
       if (discardsACard) return null;
       discardsACard = true;
+      continue;
+    }
+    /*
+      **Four more costs that had a field and no reader** (D581). D446's docblock above lists
+      "Remove a +1/+1 counter from ~" and "Exile ~ from your graveyard" among the costs with no
+      field on `AbilityCost`. That was true then and is not now: `removeCounter` arrived with the
+      {X}{X} artifacts (#127), `exileSelf` and `fromGraveyard` with embalm (#181), `energy` with
+      #180 and `sacrificeSubtypes` with Kalitas (D578). Each is checked by `activate`, kept off
+      the table by `legalActions` when it cannot be paid, and paid before the ability is on the
+      stack — so each is the rule that docblock states, met, and the reader is a few lines.
+
+      Counted over the legal corpus, as a component of an unquoted cost:
+
+      | component | lines |
+      | --- | --- |
+      | `Remove a/N <kind> counter(s) from ~` | 224 over 44 kinds: 68 +1/+1, 48 charge, 21 oil |
+      | `Exile ~ from your graveyard` | 78 |
+      | `Exile ~` | 58 |
+      | `Pay {E}…` | 45 |
+      | `Sacrifice a/another <creature type>` | 75 over 29 types: 20 Goblin, 13 Saproling |
+      | `Sacrifice a Food / Treasure / Clue` | 15, 6, 2 |
+
+      **The counter's kind is whatever word is printed**, lower-cased, which is how every counter
+      in this engine is keyed (`'charge'`, `'ice'`, `'fade'`). A kind nothing on the card ever
+      places is not a wrong reading: the ability is there and its cost cannot be paid, which is
+      what the card does on a table where the counters never arrived. The **number** has to be a
+      number — "Remove X storage counters", "any number of", "all" are amounts chosen or counted
+      as the cost is paid, and `removeCounter.amount` is fixed.
+    */
+    const removed = new RegExp(
+      `^Remove (an?|[a-z]+) (\\+1/\\+1|-1/-1|[a-z]+) counters? from ${self}$`, 'i',
+    ).exec(component);
+    if (removed !== null) {
+      // One removal per cost, for the reason there is one sacrifice: the field holds one.
+      if (removes !== null) return null;
+      const amount = /^an?$/i.test(removed[1]!) ? 1 : countFrom(removed[1]!);
+      if (amount === null || amount <= 0) return null;
+      removes = { counter: removed[2]!.toLowerCase(), amount };
+      continue;
+    }
+    /*
+      "Exile ~ from your graveyard" is two fields, because it says two things: where the ability
+      is used from, and what happens to the card. The first is the same inference
+      `graveyardSelfReturn` makes from a clause, made here from the cost, where it is printed
+      outright. Plain "Exile ~" is the second alone — a permanent that spends itself.
+    */
+    if (new RegExp(`^Exile ${self} from your graveyard$`, 'i').test(component)) {
+      exilesSelf = true;
+      exilesFromGraveyard = true;
+      continue;
+    }
+    if (new RegExp(`^Exile ${self}$`, 'i').test(component)) { exilesSelf = true; continue; }
+    // "Pay {E}{E}": energy is counted, not parsed — `parseManaCost` rightly refuses {E} as mana.
+    const charged = /^Pay ((?:\{E\})+)$/i.exec(component);
+    if (charged !== null) { energy += charged[1]!.length / 3; continue; }
+    /*
+      "Sacrifice a Goblin", "Sacrifice another Zombie", "Sacrifice a Food".
+
+      A creature type is the creature sacrifice narrowed by `sacrificeSubtypes`, which
+      `sacrificeOptions` reads off the live type line — so a changeling is a Goblin here and a
+      Goblin turned into a Frog is not. The three artifact tokens are the artifact sacrifice
+      narrowed the same way; "another" has no artifact form on the field, so it is refused there.
+
+      Anything else that is one capitalised word — "Sacrifice a Forest", "Sacrifice a Desert",
+      "Sacrifice an Aura" — is a land or an enchantment, which the field cannot name, and stays
+      unread like "Sacrifice a land" above it.
+    */
+    const typed = /^Sacrifice (an?|another) ([A-Z][a-z]+)$/.exec(component);
+    if (typed !== null) {
+      if (sacrifices !== null) return null;
+      const another = typed[1]!.toLowerCase() === 'another';
+      if (isCreatureType(typed[2]!)) {
+        sacrifices = another ? 'another-creature' : 'creature';
+      } else if (!another && SACRIFICED_ARTIFACT_TYPES.includes(typed[2]!)) {
+        sacrifices = 'artifact';
+      } else {
+        return null;
+      }
+      sacrificedSubtype = typed[2]!;
       continue;
     }
     const sacrificed = /^Sacrifice (a creature|another creature|an artifact)$/i.exec(component);
@@ -20723,7 +20820,8 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     a creature: Add {C}{C}" is Ashnod's Altar, whose whole cost is the sacrifice.
   */
   const anything = taps > 0 || mana.length > 0 || life > 0
-    || sacrificesSelf || discardsSelf || discardsACard || sacrifices !== null;
+    || sacrificesSelf || discardsSelf || discardsACard || sacrifices !== null
+    || exilesSelf || energy > 0 || removes !== null;
   if (taps > 1 || !anything) return null;
   /*
     **Two things chosen for one cost** is refused (D580): a card to discard *and* a creature to
@@ -20745,6 +20843,11 @@ function abilityFromLine(line: string, name: string): Partial<CardScript> | null
     ...(discardsSelf ? { discardSelf: true as const } : {}),
     ...(discardsACard ? { discardACard: true as const } : {}),
     ...(sacrifices === null ? {} : { sacrifice: sacrifices }),
+    ...(sacrificedSubtype === null ? {} : { sacrificeSubtypes: [sacrificedSubtype] }),
+    ...(removes === null ? {} : { removeCounter: removes }),
+    ...(energy === 0 ? {} : { energy }),
+    ...(exilesSelf ? { exileSelf: true as const } : {}),
+    ...(exilesFromGraveyard ? { fromGraveyard: true as const } : {}),
   };
 
   /*

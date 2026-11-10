@@ -12550,6 +12550,20 @@ describe('Toxic Deluge: X life, paid as an additional cost to cast it (D579)', (
     expect(action?.type === 'auto:cast'
       && nameOf(s, action.card) === 'Toxic Deluge').toBe(false);
   });
+
+  it('nor when they have a creature and killing it would cost more of its own', () => {
+    /*
+      The case the test above cannot reach, found by D579's break run: with nothing of theirs on
+      the board the Deluge is already held by the older rule for removal with nothing to remove,
+      so that test passes whether or not the bot reads the card's own number. Here there is
+      something to remove — a 3/3 — and removing it takes three life and both of its own 0/2s.
+    */
+    const s = table(['Hill Giant'], ['Fog Bank', 'Fog Bank']);
+    expect(offer(s)?.xDefault).toBe(0);
+    const action = botAction(s, 0);
+    expect(action?.type === 'auto:cast'
+      && nameOf(s, action.card) === 'Toxic Deluge').toBe(false);
+  });
 });
 
 describe('the combat triggers: a creature blocking, and an attacker getting through', () => {
@@ -40982,5 +40996,215 @@ describe('"Discard a card" read off the printed cost of an ability (D580)', () =
       const s = table(['Pulsating Illusion', 'Mountain', 'Mountain'], ['Hellrider', 'Hellrider']);
       expect(pitched(s, botTurn(s))).toEqual(['Hellrider']);
     });
+  });
+});
+
+describe('ability costs that had a field and no reader (D581)', () => {
+  /*
+    Seven real cards, each the whole Oracle row, and each compiled with nothing unread. Between
+    them: a counter taken off the card (three kinds), the card exiled from play, the card exiled
+    out of the graveyard it is used from, energy, and a sacrifice narrowed to a creature type.
+  */
+  const MONOSKELION = {
+    name: 'Monoskelion', type_line: 'Artifact Creature — Construct', mana_cost: '{2}', cmc: 2,
+    colors: [], power: '1', toughness: '1', layout: 'normal',
+    oracle_text: 'Monoskelion enters with a +1/+1 counter on it.\n{1}, Remove a +1/+1 counter from Monoskelion: It deals 1 damage to any target.',
+  };
+  const CENSER = {
+    name: 'Necrogen Censer', type_line: 'Artifact', mana_cost: '{3}', cmc: 3, colors: [],
+    power: null, toughness: null, layout: 'normal',
+    oracle_text: 'Necrogen Censer enters with two charge counters on it.\n{T}, Remove a charge counter from Necrogen Censer: Target player loses 2 life.',
+  };
+  const WORKHORSE = {
+    name: 'Workhorse', type_line: 'Artifact Creature — Horse', mana_cost: '{6}', cmc: 6,
+    colors: [], power: '0', toughness: '0', layout: 'normal',
+    oracle_text: 'Workhorse enters with four +1/+1 counters on it.\nRemove a +1/+1 counter from Workhorse: Add {C}.',
+  };
+  const EFFIGY = {
+    name: 'Brittle Effigy', type_line: 'Artifact', mana_cost: '{1}', cmc: 1, colors: [],
+    power: null, toughness: null, layout: 'normal',
+    oracle_text: '{4}, {T}, Exile Brittle Effigy: Exile target creature.',
+  };
+  const CATHAR = {
+    name: 'Dauntless Cathar', type_line: 'Creature — Human Soldier', mana_cost: '{2}{W}', cmc: 3,
+    colors: ['W'], power: '3', toughness: '2', layout: 'normal',
+    oracle_text: '{1}{W}, Exile Dauntless Cathar from your graveyard: Create a 1/1 white Spirit creature token with flying. Activate only as a sorcery.',
+  };
+  const MINISTER = {
+    name: 'Minister of Inquiries', type_line: 'Creature — Vedalken Advisor', mana_cost: '{U}',
+    cmc: 1, colors: ['U'], power: '1', toughness: '2', layout: 'normal',
+    oracle_text: 'When Minister of Inquiries enters, you get {E}{E} (two energy counters).\n{T}, Pay {E}: Target player mills three cards.',
+  };
+  const SLEDDER = {
+    name: 'Goblin Sledder', type_line: 'Creature — Goblin', mana_cost: '{R}', cmc: 1,
+    colors: ['R'], power: '1', toughness: '1', layout: 'normal',
+    oracle_text: 'Sacrifice a Goblin: Target creature gets +1/+1 until end of turn.',
+  };
+  const PRINTED = [MONOSKELION, CENSER, WORKHORSE, EFFIGY, CATHAR, MINISTER, SLEDDER];
+  const costsList = customDeck({
+    id: 'costs',
+    name: 'Costs',
+    entries: [
+      ...PRINTED.map((row) => ({ name: row.name, count: 4 })),
+      { name: 'Goblin Arsonist', count: 4 },
+      { name: 'Hellrider', count: 4 },
+      { name: 'Plains', count: 8 },
+      { name: 'Island', count: 8 },
+      { name: 'Mountain', count: 8 },
+    ],
+    data: PRINTED as never[],
+  }).deck;
+  const table = (opts: {
+    mine?: readonly string[]; hand?: readonly string[]; yard?: readonly string[];
+    theirs?: readonly string[];
+  }): GameState => advanceTo(arena({
+    decks: { 0: 'costs', 1: 'tidal-mind' },
+    deckSpecs: { costs: costsList },
+    hands: { 0: [...(opts.hand ?? [])] },
+    graveyard: { 0: [...(opts.yard ?? [])] },
+    battlefield: { 0: [...(opts.mine ?? [])], 1: [...(opts.theirs ?? [])] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+  const cast = (s: GameState, name: string): GameState =>
+    drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name) })), 40);
+  const abilityOf = (s: GameState, name: string, zone: 'battlefield' | 'graveyard' = 'battlefield') =>
+    legalActions(s, 0).plays.find((p) => p.kind === 'activate'
+      && ids(s, 0, zone).includes(p.card) && nameOf(s, p.card) === name);
+  const energy = (s: GameState): number => s.seats[0]!.counters['energy'] ?? 0;
+
+  it('reads every line of all seven cards', () => {
+    for (const row of PRINTED) {
+      const compiled = compileCard(row as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), row.name).toEqual([]);
+    }
+  });
+
+  it('takes a +1/+1 counter off Monoskelion for a damage, and offers it no more once it is bare', () => {
+    let s = cast(table({ hand: ['Monoskelion'], mine: ['Mountain', 'Mountain', 'Mountain'] }), 'Monoskelion');
+    const mono = find(s, 0, 'battlefield', 'Monoskelion');
+    expect(s.instances[mono]!.counters['+1/+1']).toBe(1);
+    const before = life(s, 1);
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: mono, abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }],
+    });
+    // Paid as it is activated: the counter is gone while the ability is still on the stack.
+    expect(s.instances[mono]!.counters['+1/+1'] ?? 0).toBe(0);
+    s = drain(passBoth(s));
+    expect(life(s, 1)).toBe(before - 1);
+    // A 1/1 with no counter and the mana for it: the cost cannot be paid, so it is not offered.
+    s = nextTurn(nextTurn(s));
+    expect(abilityOf(s, 'Monoskelion')).toBeUndefined();
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: mono, abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }],
+    })).toContain('counter');
+  });
+
+  it('counts a charge counter by its own name', () => {
+    let s = cast(table({ hand: ['Necrogen Censer'], mine: ['Mountain', 'Mountain', 'Mountain'] }), 'Necrogen Censer');
+    const censer = find(s, 0, 'battlefield', 'Necrogen Censer');
+    expect(s.instances[censer]!.counters['charge']).toBe(2);
+    const before = life(s, 1);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: censer, abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(s.instances[censer]!.counters['charge']).toBe(1);
+    expect(life(s, 1)).toBe(before - 2);
+  });
+
+  it('makes mana from a counter when the player presses it, and never on its own', () => {
+    let s = table({ hand: ['Workhorse', 'Goblin Sledder'], mine: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain'] });
+    s = cast(s, 'Workhorse');
+    const horse = find(s, 0, 'battlefield', 'Workhorse');
+    expect(s.instances[horse]!.counters['+1/+1']).toBe(4);
+    // Every Mountain is tapped. The Sledder costs {R} and the Workhorse makes {C}, but more to
+    // the point the Workhorse is not a source the auto-tapper may spend at all.
+    expect(manaSources(s, 0).map((source) => source.key)).not.toContain(horse);
+    s = apply(s, { type: 'auto:activate', by: 0, card: horse, abilityIndex: 0 });
+    expect(s.stackOrder).toHaveLength(0);
+    expect(s.pools['0']!.C).toBe(1);
+    expect(s.instances[horse]!.counters['+1/+1']).toBe(3);
+  });
+
+  it('exiles Brittle Effigy as the cost, and the creature when it resolves', () => {
+    let s = table({
+      mine: ['Brittle Effigy', 'Mountain', 'Mountain', 'Mountain', 'Mountain'], theirs: ['Wall of Frost'],
+    });
+    const effigy = find(s, 0, 'battlefield', 'Brittle Effigy');
+    const wall = find(s, 1, 'battlefield', 'Wall of Frost');
+    s = apply(s, { type: 'auto:activate', by: 0, card: effigy, abilityIndex: 0, targets: [{ kind: 'card', id: wall }] });
+    expect(s.instances[effigy]!.zone).toBe('exile');
+    expect(s.instances[wall]!.zone).toBe('battlefield');
+    s = drain(passBoth(s));
+    expect(s.instances[wall]!.zone).toBe('exile');
+  });
+
+  it('uses Dauntless Cathar from the graveyard, and only from there', () => {
+    let s = table({ yard: ['Dauntless Cathar'], mine: ['Dauntless Cathar', 'Plains', 'Plains'] });
+    const buried = find(s, 0, 'graveyard', 'Dauntless Cathar');
+    // The copy on the battlefield has no ability to press; the one in the graveyard has.
+    expect(abilityOf(s, 'Dauntless Cathar', 'battlefield')).toBeUndefined();
+    expect(abilityOf(s, 'Dauntless Cathar', 'graveyard')?.manaCost).toBe('{1}{W}');
+    const before = ids(s, 0, 'battlefield').length;
+    s = apply(s, { type: 'auto:activate', by: 0, card: buried, abilityIndex: 0 });
+    expect(s.instances[buried]!.zone).toBe('exile');
+    s = drain(passBoth(s));
+    const made = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Spirit');
+    expect(made).toHaveLength(1);
+    expect(ids(s, 0, 'battlefield')).toHaveLength(before + 1);
+  });
+
+  it('keeps "Activate only as a sorcery" on the graveyard ability', () => {
+    // The opponent's turn: mana up and the card in the graveyard, and still not offered.
+    const s = advanceTo(arena({
+      decks: { 0: 'costs', 1: 'tidal-mind' },
+      deckSpecs: { costs: costsList },
+      graveyard: { 0: ['Dauntless Cathar'] },
+      battlefield: { 0: ['Plains', 'Plains'] },
+      turn: 5, firstSeat: 1,
+    }), 'precombat-main');
+    expect(abilityOf(s, 'Dauntless Cathar', 'graveyard')).toBeUndefined();
+  });
+
+  it('spends energy the Minister arrived with, and is not offered without it', () => {
+    let s = cast(table({ hand: ['Minister of Inquiries'], mine: ['Island'] }), 'Minister of Inquiries');
+    expect(energy(s)).toBe(2);
+    // Summoning sick this turn: {T} is in the cost.
+    s = nextTurn(nextTurn(s));
+    const minister = find(s, 0, 'battlefield', 'Minister of Inquiries');
+    const milled = ids(s, 1, 'graveyard').length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: minister, abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(energy(s)).toBe(1);
+    expect(ids(s, 1, 'graveyard')).toHaveLength(milled + 3);
+
+    // And one put straight onto the battlefield brought no energy with it, so it has no play.
+    const dry = table({ mine: ['Minister of Inquiries'] });
+    expect(energy(dry)).toBe(0);
+    expect(abilityOf(dry, 'Minister of Inquiries')).toBeUndefined();
+  });
+
+  it('feeds Goblin Sledder a Goblin, itself included, and nothing that is not one', () => {
+    let s = table({ mine: ['Goblin Sledder', 'Goblin Sledder', 'Goblin Arsonist', 'Hellrider'] });
+    const [sledder, other] = ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Goblin Sledder') as [string, string];
+    const arsonist = find(s, 0, 'battlefield', 'Goblin Arsonist');
+    const rider = find(s, 0, 'battlefield', 'Hellrider');
+    // "A Goblin", not "another Goblin": the Sledder may be its own payment. Hellrider is a Devil.
+    const offered = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === sledder);
+    expect([...(offered?.sacrificeOptions ?? [])].sort()).toEqual([sledder, other, arsonist].sort());
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: sledder, abilityIndex: 0, sacrifice: rider,
+      targets: [{ kind: 'card', id: sledder }],
+    })).not.toBeNull();
+    // The other Sledder pays, rather than the Arsonist, whose own death trigger would ask a
+    // question before this ability resolved.
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: sledder, abilityIndex: 0, sacrifice: other,
+      targets: [{ kind: 'card', id: rider }],
+    });
+    expect(s.instances[other]!.zone).toBe('graveyard');
+    s = drain(passBoth(s));
+    const grown = characteristicsOf(s, s.instances[rider]!);
+    expect([grown.power, grown.toughness]).toEqual([4, 4]);
   });
 });

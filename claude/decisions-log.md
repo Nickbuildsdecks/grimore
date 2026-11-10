@@ -40557,3 +40557,86 @@ attribute those three moves to the card.
 **Not done in this increment.** The break runs for D578, D579 and D580, and one covering
 D574–D577, are written (40, 28, 14 and 36 breaks) and queued behind this push; their results
 go in the next entry. The pod sweep for this build is seed 44801.
+
+## D581 — Five more ability costs read off the card
+
+D580 read one cost into a field the engine already had. Ranking what was left the same way —
+which unread cost components sit in front of an effect the compiler can already read — put
+five near the top that each had a field too, added for one hand-written card or keyword and
+never given a reader. This reads them.
+
+| printed cost | field | legal lines that print it |
+| --- | --- | --- |
+| Remove a (or two, three…) *kind* counter from this card | `removeCounter` | 224, over 44 kinds: 68 +1/+1, 48 charge, 21 oil |
+| Exile this card | `exileSelf` | 58 |
+| Exile this card from your graveyard | `exileSelf` + `fromGraveyard` | 78 |
+| Pay {E}… | `energy` | 45 |
+| Sacrifice a (or another) *creature type* | `sacrifice` + `sacrificeSubtypes` | 75, over 29 types: 20 Goblin, 13 Saproling |
+| Sacrifice a Food / Treasure / Clue | `sacrifice: 'artifact'` + `sacrificeSubtypes` | 15, 6, 2 |
+
+Nothing in the engine changed. Each field was already checked when the ability is activated,
+already kept off the table when it cannot be paid, and already paid before the ability goes on
+the stack. The compiler's own note from D446 said three of these costs "have no field"; that
+was true then, and the note now says which have gained one.
+
+**Read from the graveyard.** "Exile this card from your graveyard" says where the ability is
+used from as well as what it costs, so the ability is offered on the card in the graveyard and
+not on a copy in play. A printed "Activate only as a sorcery" still applies there.
+
+**Mana abilities.** Workhorse ("Remove a +1/+1 counter from Workhorse: Add {C}") and Skirk
+Prospector ("Sacrifice a Goblin: Add {R}") are read and offered as abilities the player presses.
+The auto-tapper does not use them. I checked that claim over the whole legal corpus rather than
+reasoning about it: 58 compiled mana abilities carry a discard, a counter removal, an exile of
+the card or a sacrifice of something else, and exactly one of them could reach the auto-tapper
+— Overeager Apprentice, which D580 already excludes.
+
+**Deliberately not read**, each tested as refused:
+
+- a number of counters chosen as the cost is paid ("Remove X …", "any number of", "all");
+- a counter taken off some other permanent;
+- "Exile this card from your hand";
+- a land or enchantment type ("Sacrifice a Forest", "a Desert", "an Aura") and "Sacrifice a
+  land" (38 lines with a readable effect — the largest cost still unread, and it needs a new
+  kind of sacrifice in the engine, a bot rule for which land, and a table prompt);
+- "Tap an untapped creature you control" (22 lines), which has no field.
+
+**Tests.** 10 added in the engine: 9 on seven real cards compiled from their Oracle rows
+(Monoskelion, Necrogen Censer, Workhorse, Brittle Effigy, Dauntless Cathar, Minister of
+Inquiries, Goblin Sledder) and 1 on Toxic Deluge from the break run below. 8 compile rows added
+as read, 8 as refused; 4 older rows that
+asserted these costs were refused are moved or retargeted, each with a note saying why.
+
+    engine tests: 3,948, all passing
+    web tests: 253, all passing
+
+### Measurements
+
+This build against the last one:
+
+    cards with every printed line read:  8,433 → 8,550 of 30,710
+    printed legal lines read:            24,450 → 24,732 of 56,421 (43.8%)
+    cards with a compiled script:        12,622 → 12,777
+
+Pod sweep on D580's build (53df13b), seeds 44801–44840: 40 of 40 finished, no throw and no
+stall.
+
+Break runs (each break is one deliberate fault put into the engine; "caught" means a test
+failed because of it):
+
+    D580, 14 breaks: 14 caught
+    D579, 28 breaks: 27 caught, 1 not
+
+The one that was not: with the line removed that stops the bot casting an X spell whose own best
+X is nought, no test failed. There was a test for it, on a board where the opponent has no
+creatures — and on that board an older rule already holds removal with nothing to remove, so
+the test passed either way. A second test is added on a board where they do have a creature
+and killing it costs more than it is worth; it fails with the line removed (the bot casts a
+Toxic Deluge for nought) and passes with it.
+
+The runs for D578 (40 breaks), D574–D577 (36) and this increment (22) are queued behind this
+push. The pod sweep for this build is seed 44901.
+
+**Still parked: #411**, whether paying life equal to your whole life total is legal. The engine
+refuses it. I believe the rules allow it, and I have not changed it on a recollection: neither
+rules site I tried is reachable from this session (yawgatog.com and magic.wizards.com are
+outside its allowed network domains). Allowing either one would let me settle it.
