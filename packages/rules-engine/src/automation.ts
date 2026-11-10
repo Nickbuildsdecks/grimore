@@ -1202,6 +1202,9 @@ function triggerMatches(
       if ((want.kind === 'etb' || want.kind === 'dies')
         && (want.what === 'artifact' || want.what === 'enchantment')
         && !(e.subjectTypes ?? []).includes(want.what)) return false;
+      // "A creature or planeswalker dies" (D576): either type, off the same live type line.
+      if (want.kind === 'dies' && want.what === 'creature-or-planeswalker'
+        && e.subjectIsCreature !== true && !(e.subjectTypes ?? []).includes('planeswalker')) return false;
       /*
         The characteristic filters (D478), each asked of what the event carries rather than of the
         board: by the time a death trigger resolves the permanent is in a graveyard with no
@@ -2503,11 +2506,30 @@ function replaceZoneChange(
   const replaced = new Set<string>();
   const survived: string[] = [];
   for (const id of moving) {
-    // A token has already ceased to exist by the time this runs, and every printed version of this
-    // effect says "nontoken" anyway — so there is nothing to replace and nothing to look at.
+    /*
+      A token has already ceased to exist by the time this runs. Most printed versions of this
+      effect say "nontoken", so for them there is nothing to replace and nothing to look at.
+
+      Rest in Peace says "a card **or token**" (D576), and the difference is not where the token
+      ends up — it is gone either way — but what happened to it: exiled instead, it did not go to
+      a graveyard and did not die, so no death trigger fires. This comment used to say every
+      printed version says "nontoken", and the pool's own Rest in Peace was the counter-example.
+    */
     const inst = next.instances[id];
     if (inst === undefined) {
-      survived.push(id);
+      const holder = sources.find((source) => next.instances[source.id]?.zone === 'battlefield'
+        && (scriptOf(next, source.id)?.replaces ?? []).some((rule) => rule.on === on && rule.tokens === true));
+      if (holder === undefined) {
+        survived.push(id);
+        continue;
+      }
+      const nameOf = (of: CardInstance | undefined): string => next.cardDefs[of?.defKey ?? '']?.name ?? 'a token';
+      next = {
+        ...next,
+        replacements: [...next.replacements,
+          `${nameOf(next.instances[holder.id])}: ${nameOf(next.vanished[id])} — exiled instead`],
+      };
+      replaced.add(id);
       continue;
     }
     let handled = false;

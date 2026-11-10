@@ -40110,3 +40110,84 @@ heavy jobs were sharing four cores at the time. Three changes:
 - one full engine run per increment, the gate's; iteration uses only the touched test files;
 - background measurements run one at a time and never beside the gate;
 - the break harness writes each result as it finishes, so a restart keeps what was done.
+
+## D576 — Eighteen cards given the targets and scopes they print
+
+The next group in the queue: cards whose only difference from their Oracle row was who or what
+they could touch. Mostly one-line filters. Two were not, and one of those was an engine bug.
+
+| card | the pool had | the card prints |
+| --- | --- | --- |
+| Doom Blade | any creature | nonblack |
+| Agonizing Demise | regeneration saves the creature | it can't be regenerated |
+| Thicket Basilisk | destroys whatever it fights | not a Wall |
+| Mind Sculpt | target player | target opponent |
+| Banishing Light | another nonland permanent, yours included | one an opponent controls |
+| Impassioned Orator | any other creature entering | another creature you control |
+| Bloodthrone Vampire | sacrifice another creature | sacrifice a creature |
+| Ravenous Rats | each opponent discards at random | target opponent discards a card they choose |
+| Lotleth Giant | each opponent loses life | damage to target opponent |
+| Soulherder | a creature you control is exiled | any creature exiled from the battlefield |
+| Cruel Celebrant | another creature of yours dies | itself too, and planeswalkers |
+| Ruric Thar | every creature must attack | only Ruric Thar |
+| Jace Beleren, −1 | you draw | target player draws |
+| Swerve | an instant or sorcery | any spell with a single target |
+| Rest in Peace | cards | cards or tokens |
+| Knight Exemplar | no first strike | first strike |
+| Harm's Way, Divine Deflection | "target creature or player" | "any target" (text only; the script already was) |
+
+Counted, not estimated: seven made the pool's card stronger than the real one (Doom Blade,
+Thicket Basilisk, Mind Sculpt, Banishing Light, Impassioned Orator, Ravenous Rats, Lotleth Giant),
+eight weaker (Agonizing Demise, Bloodthrone Vampire, Soulherder, Cruel Celebrant, Jace Beleren,
+Swerve, Rest in Peace, Knight Exemplar), Ruric Thar was a different card, and two changed only
+their text. The ones a player would have felt most: a Ruric Thar that forced the whole table to
+attack, Ravenous Rats hitting every opponent in a pod with a random discard, and a Doom Blade
+that killed black creatures.
+
+**The engine bug: a token under Rest in Peace still died.** The replacement loop skipped tokens
+with the comment "every printed version of this effect says nontoken". The pool's own Rest in
+Peace was the counter-example: "a card or token". A token is gone either way; what the card
+changes is that it was exiled, so it did not die and nothing watching for a death sees one. A
+replacement rule can now say `tokens: true`, and Rest in Peace does. Found by a test written for
+the new wording, with the same board minus Rest in Peace as its control.
+
+**Swerve and Aura spells.** "Any spell with a single target" includes an Aura on the stack, and
+the engine could not find an Aura spell's target: it is declared on the Aura, not in the spell's
+target list. Fixed, with a row that sends a Pacifism back at its caster's creature.
+
+**Ruric Thar has no static now.** "Attacks each combat if able" is read off the printed card for
+every card that says it, so the hand-written one was a second statement, and the standing
+compiled-vs-written check refused it.
+
+**Compiler.** "Target player draws a card" and "target opponent draws N cards" now read (Jace's
+printed −1 is the pool's instance; 37 legal lines end in the sentence). Seven of these cards
+have a printed line the compiler does **not** read: Cruel Celebrant, Soulherder's first line,
+Thicket Basilisk, Swerve, Agonizing Demise, Rest in Peace and Knight Exemplar. For Cruel
+Celebrant the pool's invented wording did read, and a compiler test compared against it; that row
+is gone and a new one says outright that the printed line is unread. The corpus measure never
+counted invented wording, so it does not move.
+
+**New in the type system:** a `dies` trigger can ask for `creature-or-planeswalker`, the two
+things the rules say can die (CR 700.4).
+
+**Tests.** The 19 that disagreed were re-fitted or replaced, and 11 rows added, each for the half the old text got wrong: the black
+creature a Doom Blade may not point at, the Wall the Basilisk spares, the opponent's creature the
+Orator ignores, the planeswalker the Celebrant drains for. Where a re-fit needed a different
+card (a regeneration test and a ward test both used Doom Blade on a black creature) it now uses
+Murder.
+
+    pool cards queued in KNOWN_DIFFERENT: 40 → 22
+    engine tests: 3,861, all passing
+
+### Measurements that landed during this entry
+
+- Break run for D568–D572: **37 of 37** deliberate breaks caught (35 by a failing test, 2 by the
+  typechecker). The run survived a container restart because each verdict is now written as it
+  lands. It also stops each break at its first failing test, which is all "caught" needs.
+- Pod sweep on D575's build (seeds 44301–44340): 40 of 40 finished, no throw, no stall.
+
+### One gap found and not fixed here
+
+A redirect (Swerve, Willbender) finds a spell's target through the hand-written script registry
+only. A spell that exists only as a compiled card — anything from a pasted deck that is not in
+the pool — reads as having no single target and cannot be redirected. Recorded as task #414.

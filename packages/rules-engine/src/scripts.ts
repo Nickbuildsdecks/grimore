@@ -170,6 +170,25 @@ const attackingOrBlocking: NonNullable<TargetSpec['filter']> = (state, candidate
 };
 
 const TARGET_PLAYER: TargetSpec = { kind: 'player', description: 'target player' };
+/** "Target opponent": a player, and not the one choosing. The compiler's spec for the phrase. */
+const TARGET_OPPONENT: TargetSpec = {
+  kind: 'player',
+  description: 'target opponent',
+  filter: (_state, candidate, controller) => candidate.kind === 'player' && candidate.seat !== controller,
+};
+/**
+ * "Target nonblack creature" (D576): Doom Blade's and Agonizing Demise's. Colour is read live, so
+ * a creature turned black for the turn is safe and a black one made colourless is not.
+ */
+const TARGET_NONBLACK_CREATURE: TargetSpec = {
+  kind: 'creature',
+  description: 'target nonblack creature',
+  filter: (state, candidate) => {
+    if (candidate.kind !== 'card') return false;
+    const inst = state.instances[candidate.id];
+    return inst !== undefined && !characteristicsOf(state, inst).colors.includes('B');
+  },
+};
 /**
  * The same spec on a card that *helps* the player it points at — see `TargetSpec.friendly`.
  *
@@ -718,7 +737,7 @@ const DOOM_BLADE: CardScript = {
   name: 'Doom Blade',
   // See `CardScript.removesACreature`: not cast with nothing of theirs to point at.
   removesACreature: true,
-  targets: [TARGET_CREATURE],
+  targets: [TARGET_NONBLACK_CREATURE],
   onResolve: (c) => {
     const id = firstCardTarget(c);
     return id === null ? c.state : destroy(c.state, id);
@@ -801,10 +820,13 @@ const RAVENOUS_RATS: CardScript = {
   name: 'Ravenous Rats',
   triggers: [
     {
+      // "Target opponent discards a card" (D576): one opponent, and the card is theirs to choose.
+      // It was every opponent, at random — a stronger card in a pod and a different one anywhere.
       on: { kind: 'etb' },
-      description: 'each opponent discards a card at random',
-      effect: (c) =>
-        opponentsOf(c.state, c.controller).reduce((state, seat) => discardAtRandom(state, seat, 1), c.state),
+      targets: [TARGET_OPPONENT],
+      description: 'target opponent discards a card',
+      decisions: [{ who: 'target-player', from: 'hand', prompt: 'Discard a card', min: 1, max: 1 }],
+      effect: (c) => moveToGraveyard(c.state, chosenCards(c)),
     },
   ],
 };
@@ -954,8 +976,13 @@ const JACE_BELEREN: CardScript = {
     },
     {
       cost: { loyalty: -1 },
-      description: '−1: You draw a card.',
-      effect: (c) => drawLater(c.state, c.controller, 1),
+      description: '−1: Target player draws a card.',
+      // Aimed at yourself by the bot; a person may hand the card to anyone (D576).
+      targets: [TARGET_PLAYER_HELPED],
+      effect: (c) => {
+        const seat = firstPlayerTarget(c);
+        return seat === null ? c.state : drawLater(c.state, seat, 1);
+      },
     },
     {
       cost: { loyalty: -10 },
@@ -1152,11 +1179,17 @@ const LOTLETH_GIANT: CardScript = {
   name: 'Lotleth Giant',
   triggers: [
     {
+      // Damage to **target opponent** (D576), where the pool had life lost by each of them:
+      // one player rather than all, and damage, so it can be prevented or redirected.
       on: { kind: 'etb' },
-      description: 'each opponent loses 1 life for each creature card in your graveyard',
+      targets: [TARGET_OPPONENT],
+      description: 'it deals 1 damage to target opponent for each creature card in your graveyard',
       effect: (c) => {
+        const seat = firstPlayerTarget(c);
         const bodies = creatureCardsInGraveyard(c.state, c.controller);
-        return opponentsOf(c.state, c.controller).reduce((state, seat) => loseLife(state, seat, bodies), c.state);
+        return seat === null || bodies === 0 ? c.state : dealDamage(
+          c.state, { kind: 'player', seat }, bodies, { controller: c.controller, source: c.source },
+        );
       },
     },
   ],
@@ -1183,8 +1216,9 @@ const BLOODTHRONE_VAMPIRE: CardScript = {
   abilities: [
     {
       // "Another" creature: it cannot eat itself, which is the difference from the Aristocrat.
-      cost: { sacrifice: 'another-creature' },
-      description: 'Sacrifice another creature: +2/+2 until end of turn.',
+      // "Sacrifice a creature" (D576): itself included, which is legal and pointless.
+      cost: { sacrifice: 'creature' },
+      description: 'Sacrifice a creature: +2/+2 until end of turn.',
       effect: (c) => pump(c.state, [c.source], c.source, c.controller, { power: 2, toughness: 2 }),
     },
   ],
@@ -3363,6 +3397,8 @@ const REST_IN_PEACE: CardScript = {
       description: 'exile it instead',
       applies: () => true,
       instead: (c) => exileCard(c.state, c.subject),
+      // "If a card or token would be put into a graveyard" (D576).
+      tokens: true,
     },
   ],
 };
@@ -3484,7 +3520,7 @@ const THIEVING_MAGPIE: CardScript = {
 
 const MIND_SCULPT: CardScript = {
   name: 'Mind Sculpt',
-  targets: [TARGET_PLAYER],
+  targets: [TARGET_OPPONENT],
   onResolve: (c) => {
     const seat = firstPlayerTarget(c);
     return seat === null ? c.state : mill(c.state, seat, 7);
@@ -4327,17 +4363,21 @@ const JOURNEY_TO_NOWHERE: CardScript = {
  * unsteered games. The fix is not a house rule in the engine — it is to print the card that says
  * "another", which is what Wizards did themselves ten years later.
  */
-const BANISHING_LIGHT: CardScript = exileUntilItLeaves('Banishing Light', {
+/**
+ * "Target nonland permanent an opponent controls": Banishing Light's and Angel of Sanctions'.
+ * The pool had Banishing Light pointing at "another nonland permanent", yours included (D576).
+ */
+const NONLAND_PERMANENT_AN_OPPONENT_CONTROLS: TargetSpec = {
   kind: 'permanent',
-  description: 'another target nonland permanent',
-  filter: (state, candidate, _controller, source) => {
+  description: 'target nonland permanent an opponent controls',
+  filter: (state, candidate, controller) => {
     if (candidate.kind !== 'card') return false;
-    if (candidate.id === source) return false;
     const inst = state.instances[candidate.id];
-    if (inst === undefined) return false;
+    if (inst === undefined || inst.zoneSeat === controller) return false;
     return !characteristicsOf(state, inst).isLand;
   },
-});
+};
+const BANISHING_LIGHT: CardScript = exileUntilItLeaves('Banishing Light', NONLAND_PERMANENT_AN_OPPONENT_CONTROLS);
 
 /*
   Convoke (CR 702.51), and the two cards that carry it.
@@ -4749,16 +4789,7 @@ const AGONIZING_DEMISE: CardScript = {
   // See `CardScript.removesACreature`: not cast with nothing of theirs to point at.
   removesACreature: true,
   kicker: { cost: '{1}{R}', description: 'Kicker {1}{R}' },
-  targets: [{
-    kind: 'creature',
-    description: 'target nonblack creature',
-    filter: (state, candidate) => {
-      if (candidate.kind !== 'card') return false;
-      const inst = state.instances[candidate.id];
-      if (inst === undefined) return false;
-      return !(state.cardDefs[inst.defKey]?.colors ?? []).includes('B');
-    },
-  }],
+  targets: [TARGET_NONBLACK_CREATURE],
   onResolve: (c) => {
     const id = firstCardTarget(c);
     if (id === null) return c.state;
@@ -4768,7 +4799,8 @@ const AGONIZING_DEMISE: CardScript = {
     // taken before it is destroyed rather than after.
     const power = characteristicsOf(c.state, inst).power;
     const owner = inst.zoneSeat;
-    let state = destroy(c.state, id);
+    // "It can't be regenerated." (D576)
+    let state = destroy(c.state, id, { regenerates: false });
     if (c.kicked && power > 0 && owner !== null) {
       state = dealDamage(state, { kind: 'player', seat: owner }, power, { controller: c.controller, source: c.source });
     }
@@ -4935,7 +4967,8 @@ const SOULHERDER: CardScript = {
   name: 'Soulherder',
   triggers: [
     {
-      on: { kind: 'to-exile', from: 'battlefield', what: 'creature', whose: 'you' },
+      // "A creature" (D576): anybody's, exiled from the battlefield by anything.
+      on: { kind: 'to-exile', from: 'battlefield', what: 'creature', whose: 'any' },
       description: 'put a +1/+1 counter on Soulherder',
       effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
     },
@@ -6267,7 +6300,14 @@ export function soleTargetSpecOf(state: GameState, id: string): TargetSpec | nul
     const script = scriptFor(state.cardDefs[inst?.defKey ?? '']?.name);
     if (script === undefined || script.modal !== undefined) return null;
     const specs = script.targets ?? [];
-    return specs.length === 1 ? specs[0] ?? null : null;
+    if (specs.length === 1) return specs[0] ?? null;
+    /*
+      An Aura spell's one target is the permanent it will enchant (CR 303.4a), and it is declared
+      on `aura`, not in `targets`. Until D576 gave Swerve its printed "target spell with a single
+      target" nothing asked this of a spell that was not an instant or sorcery, so an Aura read as
+      having no target at all.
+    */
+    return specs.length === 0 && script.aura !== undefined ? script.aura.target : null;
   }
   // An activated or triggered ability. Its source is a permanent — or a token that has ceased to
   // exist, in which case there is no script to read and the ability is simply not redirectable.
@@ -6354,7 +6394,8 @@ const WILLBENDER: CardScript = {
 const SWERVE: CardScript = {
   name: 'Swerve',
   targets: [
-    redirectable('spell', 'target instant or sorcery spell with a single target', isInstantOrSorcerySpell),
+    // Any spell with a single target (D576): a creature spell with a targeted Aura half, say.
+    redirectable('spell', 'target spell with a single target'),
     NEW_TARGET,
   ],
   onResolve: redirect,
@@ -6607,7 +6648,7 @@ const IMPASSIONED_ORATOR: CardScript = {
   triggers: [
     {
       // A Soul Warden with a body, and the same "another": it does not pay for its own arrival.
-      on: { kind: 'etb', who: 'another', of: 'any', what: 'creature' },
+      on: { kind: 'etb', who: 'another', of: 'you', what: 'creature' },
       description: 'you gain 1 life',
       effect: (c) => gainLife(c.state, c.controller, 1),
     },
@@ -6645,7 +6686,8 @@ const CRUEL_CELEBRANT: CardScript = {
   name: 'Cruel Celebrant',
   triggers: [
     {
-      on: { kind: 'dies', who: 'another', of: 'you', what: 'creature' },
+      // "Cruel Celebrant or another creature or planeswalker you control" (D576): itself too.
+      on: { kind: 'dies', who: 'any', of: 'you', what: 'creature-or-planeswalker' },
       description: 'each opponent loses 1 life and you gain 1 life',
       effect: (c) => {
         let next = c.state;
@@ -7846,16 +7888,7 @@ const SACRED_CAT: CardScript = {
  * it was given here and one colour lighter.
  */
 const ANGEL_OF_SANCTIONS: CardScript = {
-  ...exileUntilItLeaves('Angel of Sanctions', {
-    kind: 'permanent',
-    description: 'target nonland permanent an opponent controls',
-    filter: (state, candidate, controller) => {
-      if (candidate.kind !== 'card') return false;
-      const inst = state.instances[candidate.id];
-      if (inst === undefined || inst.zoneSeat === controller) return false;
-      return !characteristicsOf(state, inst).isLand;
-    },
-  }, true),
+  ...exileUntilItLeaves('Angel of Sanctions', NONLAND_PERMANENT_AN_OPPONENT_CONTROLS, true),
   keywords: ['flying'],
   abilities: [embalm('{5}{W}', 'Token Creature \u2014 Zombie Angel')],
 };
@@ -8925,14 +8958,14 @@ const THICKET_BASILISK: CardScript = {
   triggers: [
     {
       on: { kind: 'blocks' },
-      description: 'destroy the creature it blocked at end of combat',
+      description: 'destroy the non-Wall creature it blocked at end of combat',
       effect: (c) => markForEndOfCombat(c),
     },
     {
       // The same clause from the other side, and a separate trigger because the two events are
       // about different creatures. Both read `c.blocked`, which is the other creature either way.
       on: { kind: 'becomes-blocked' },
-      description: 'destroy the creature blocking it at end of combat',
+      description: 'destroy the non-Wall creature blocking it at end of combat',
       effect: (c) => markForEndOfCombat(c),
     },
     {
@@ -8948,6 +8981,9 @@ const THICKET_BASILISK: CardScript = {
 
 function markForEndOfCombat(c: EffectContext): GameState {
   if (c.blocked === undefined) return c.state;
+  // "…by a non-Wall creature" (D576). Read live, as the card would be read at the table.
+  const other = c.state.instances[c.blocked];
+  if (other !== undefined && hasSubtype(characteristicsOf(c.state, other).typeLine, 'Wall')) return c.state;
   return scheduleDelayed(c.state, {
     source: c.source,
     controller: c.controller,
@@ -9507,7 +9543,10 @@ const RURIC_THAR: CardScript = {
     It is symmetric, which is what makes it a commander rather than a beating: the six-mana 6/6 is
     on a board where every creature of yours has to come at somebody too.
   */
-  statics: [{ scope: 'all-creatures', effect: { mustAttack: true } }],
+  // "Ruric Thar attacks each combat if able" (D576): itself, where the pool had every creature
+  // under an `all-creatures` static. No static at all now — the sentence is read off the printed
+  // card, as every "attacks each combat if able" is, and a second statement here would be one
+  // the standing compiled-vs-written check refuses.
   triggers: [{
     on: { kind: 'spell-cast', by: 'any', spell: 'noncreature' },
     description: 'Ruric Thar deals 6 damage to that spell’s controller',
@@ -19027,6 +19066,31 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
         effect: (c) => {
           const seat = firstPlayerTarget(c);
           return seat === null ? c.state : loseLife(draw(c.state, seat, cards), seat, life);
+        },
+      };
+    }
+  }
+
+  /*
+    "Target player draws a card" (D576), and "target opponent draws…", which is the same clause
+    with a narrower player. Jace Beleren's printed −1 is the pool's instance; 37 legal lines end
+    in the sentence. A card is help, so `friendly` — except where the card names an opponent,
+    whose spec has no side to choose. Owed rather than drawn on the spot, like "draw a card".
+  */
+  const handed = /^(target player|target opponent) draws ([\w]+) cards?$/i.exec(text);
+  if (handed !== null) {
+    const cards = countFrom(handed[2]!);
+    const spec = targetSpecFrom(handed[1]!, handed[1]!.toLowerCase() === 'target player');
+    if (cards !== null && spec !== null) {
+      return {
+        targets: [spec],
+        effect: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null ? c.state : drawLater(c.state, seat, cards);
+        },
+        immediate: (c) => {
+          const seat = firstPlayerTarget(c);
+          return seat === null ? c.state : draw(c.state, seat, cards);
         },
       };
     }

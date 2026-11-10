@@ -304,7 +304,8 @@ export type TriggerEvent =
       /** Set by the engine: the source refs that dealt this permanent damage this turn. */
       readonly subjectDamagedBy?: readonly string[];
       /** As `etb`'s, minus `land`: "whenever a land dies" is not a sentence Magic prints. */
-      readonly what?: 'creature' | 'permanent' | 'artifact' | 'enchantment';
+      /** `creature-or-planeswalker` is Cruel Celebrant's: "dies" is said of exactly those two (CR 700.4). */
+      readonly what?: 'creature' | 'permanent' | 'artifact' | 'enchantment' | 'creature-or-planeswalker';
       /**
        * Set by the engine when it raises the event: what was attached to the dying permanent as it
        * left the battlefield, which is what `who: 'attached'` is answered from.
@@ -3197,6 +3198,16 @@ export interface CardScript {
     readonly description: string;
     readonly applies: (ctx: ReplacementContext) => boolean;
     readonly instead: (ctx: ReplacementContext) => GameState;
+    /**
+     * "If a card **or token** would be put into a graveyard…" — Rest in Peace's wording (D576).
+     *
+     * A token has ceased to exist by the time a replacement is asked (CR 111.7), so there is no
+     * instance to hand `applies` or `instead`. What the rule changes for a token is only what it
+     * did **not** do: it was exiled, so it did not reach a graveyard and did not die, and nothing
+     * watching for either sees it. Set only on a rule whose `applies` is unconditional, because
+     * for a token it is not consulted.
+     */
+    readonly tokens?: boolean;
   }[];
 }
 

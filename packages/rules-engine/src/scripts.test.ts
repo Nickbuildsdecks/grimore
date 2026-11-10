@@ -781,24 +781,28 @@ describe('blue-black control', () => {
     expect(ids(s, 0, 'graveyard').length).toBe(5);
   });
 
-  it('Ravenous Rats makes each opponent discard at random, and the same seed discards the same card', () => {
-    const play = (): GameState => {
-      let s = arena({
-        decks: { 1: 'tidal-mind' },
-        hands: { 0: ['Shock', 'Hill Giant', 'Mountain'], 1: ['Ravenous Rats'] },
-        battlefield: { 1: ['Island', 'Swamp'] },
-        turn: 2, firstSeat: 1,
-      });
-      s = advanceTo(s, 'precombat-main');
-      s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Ravenous Rats') });
-      s = passBoth(s); // the Rats resolve onto the battlefield
-      return passBoth(s); // and the ETB trigger resolves
-    };
-    const a = play();
-    expect(ids(a, 0, 'hand').length).toBe(2);
-    expect(ids(a, 0, 'graveyard').length).toBe(1);
-    // Deterministic: the engine's own seeded stream, so a replayed game discards the same card.
-    expect(namesIn(play(), 0, 'graveyard')).toEqual(namesIn(a, 0, 'graveyard'));
+  it('Ravenous Rats makes target opponent discard a card of their own choosing (D576)', () => {
+    let s = arena({
+      decks: { 1: 'tidal-mind' },
+      hands: { 0: ['Shock', 'Hill Giant', 'Mountain'], 1: ['Ravenous Rats'] },
+      battlefield: { 1: ['Island', 'Swamp'] },
+      turn: 2, firstSeat: 1,
+    });
+    s = advanceTo(s, 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Ravenous Rats') });
+    s = passBoth(s); // the Rats resolve; one opponent, so the trigger aims itself
+    s = passBoth(s); // and the trigger resolves as far as its question
+    // The opponent chooses: not the Rats' controller, and not a die, which is what the pool had.
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.prompt).toBe('Discard a card');
+    const giant = find(s, 0, 'hand', 'Hill Giant');
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [giant] } as Action), 40);
+    expect(namesIn(s, 0, 'graveyard')).toEqual(['Hill Giant']);
+    expect(ids(s, 0, 'hand').length).toBe(2);
+    // "Target opponent": never its own controller.
+    const spec = scriptFor('Ravenous Rats')!.triggers![0]!.targets![0]!;
+    expect(spec.filter!(s, { kind: 'player', seat: 1 }, 1 as SeatIndex, giant)).toBe(false);
+    expect(spec.filter!(s, { kind: 'player', seat: 0 }, 1 as SeatIndex, giant)).toBe(true);
   });
 
   it('Talrand makes a Drake for a sorcery, and not for a creature', () => {
@@ -1060,14 +1064,22 @@ describe('the graveyard, which is a place cards come back from', () => {
     expect(characteristicsOf(s, s.instances[wall]!).cantAttack).toBe(true);
   });
 
-  it('Lotleth Giant drains for each creature card in your graveyard', () => {
+  it('Lotleth Giant deals damage to target opponent for each creature card in your graveyard (D576)', () => {
     let s = rot(['Lotleth Giant'], Array.from({ length: 7 }, () => 'Swamp'));
     s = bury(s, 1, 'Centaur Courser');
     s = bury(s, 1, 'Thornweald Archer');
     s = bury(s, 1, 'Swamp'); // a land does not count
-    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Lotleth Giant') }));
-    s = passBoth(s);
+    const cast = passBoth(apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Lotleth Giant') }));
+    s = passBoth(cast);
     expect(life(s, 0)).toBe(18);
+    // Damage and not loss of life, where the pool had loss: a shield for one point takes one of the
+    // two, and a shield does nothing about life that is simply lost.
+    const giant = find(cast, 1, 'battlefield', 'Lotleth Giant');
+    const shielded = preventDamage(cast, giant, 0 as SeatIndex, { kind: 'player', seat: 0 as SeatIndex }, 1);
+    expect(life(passBoth(shielded), 0)).toBe(19);
+    const spec = scriptFor('Lotleth Giant')!.triggers![0]!.targets![0]!;
+    expect(spec.description).toBe('target opponent');
+    expect(spec.filter!(s, { kind: 'player', seat: 1 }, 1 as SeatIndex, 'x')).toBe(false);
   });
 
   it('Izoni makes an Insect for each creature card in your graveyard', () => {
@@ -1100,14 +1112,15 @@ describe('the graveyard, which is a place cards come back from', () => {
     expect(power(s, vamp)).toBe(2);
   });
 
-  it('Vampire Aristocrat can eat itself, and Bloodthrone Vampire cannot', () => {
+  it('Vampire Aristocrat and Bloodthrone Vampire each eat any creature, themselves included (D576)', () => {
+    // Both print "Sacrifice a creature". The pool had the Bloodthrone asking for "another".
     const s = rot([], ['Forest', 'Swamp'], ['Vampire Aristocrat', 'Bloodthrone Vampire']);
     const aristocrat = find(s, 1, 'battlefield', 'Vampire Aristocrat');
     const bloodthrone = find(s, 1, 'battlefield', 'Bloodthrone Vampire');
     const options = (card: string) =>
       legalActions(s, 1).plays.find((p) => p.card === card && p.kind === 'activate')!.sacrificeOptions;
     expect([...options(aristocrat)].sort()).toEqual([aristocrat, bloodthrone].sort());
-    expect(options(bloodthrone)).toEqual([aristocrat]);
+    expect([...options(bloodthrone)].sort()).toEqual([aristocrat, bloodthrone].sort());
   });
 
   it('refuses a sacrifice that is not offered, and one that is not chosen at all', () => {
@@ -1121,11 +1134,17 @@ describe('the graveyard, which is a place cards come back from', () => {
   });
 
   it('does not offer an outlet with nothing to feed it', () => {
-    const s = rot([], ['Forest', 'Swamp'], ['Bloodthrone Vampire']);
-    const vamp = find(s, 1, 'battlefield', 'Bloodthrone Vampire');
-    expect(legalActions(s, 1).plays.some((p) => p.card === vamp && p.kind === 'activate')).toBe(false);
-    expect(refusal(s, { type: 'auto:activate', by: 1, card: vamp, abilityIndex: 0, sacrifice: vamp }))
+    // Izoni's is the pool's "sacrifice **another** creature" now that Bloodthrone Vampire's is
+    // not: alone on the board it has nothing to eat, and it may not eat itself.
+    const s = rot([], ['Forest', 'Swamp'], ['Izoni, Thousand-Eyed']);
+    const izoni = find(s, 1, 'battlefield', 'Izoni, Thousand-Eyed');
+    expect(legalActions(s, 1).plays.some((p) => p.card === izoni && p.kind === 'activate')).toBe(false);
+    expect(refusal(s, { type: 'auto:activate', by: 1, card: izoni, abilityIndex: 0, sacrifice: izoni }))
       .toContain('no creature to sacrifice');
+    // And the control: a lone Bloodthrone Vampire is offered its own ability, because it is a creature.
+    const alone = rot([], ['Forest', 'Swamp'], ['Bloodthrone Vampire']);
+    const vamp = find(alone, 1, 'battlefield', 'Bloodthrone Vampire');
+    expect(legalActions(alone, 1).plays.some((p) => p.card === vamp && p.kind === 'activate')).toBe(true);
   });
 
   it('a creature eaten as a cost dies, so anything watching for a death sees it', () => {
@@ -2471,9 +2490,10 @@ describe('replacement effects: regenerating, and entering with counters', () => 
     // Regenerating and then dying have to happen in the *same* turn: the shield is "the next time
     // this turn" (CR 701.15b), so an opponent's instant on your own turn is the natural test.
     let s = advanceTo(arena({
-      decks: { 0: 'rot-harvest', 1: 'rot-harvest' },
-      hands: { 0: [], 1: ['Doom Blade'] },
-      battlefield: { 0: ['Swamp', 'Swamp', 'Drudge Skeletons'], 1: ['Swamp', 'Swamp'] },
+      // Murder, not Doom Blade: the Skeletons are black, and a Doom Blade cannot point at them (D576).
+      decks: { 0: 'rot-harvest', 1: 'tidal-mind' },
+      hands: { 0: [], 1: ['Murder'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Drudge Skeletons'], 1: ['Swamp', 'Swamp', 'Swamp'] },
       turn: 3, firstSeat: 0,
     }), 'precombat-main');
     s = tapAll(s, 0);
@@ -2486,7 +2506,7 @@ describe('replacement effects: regenerating, and entering with counters', () => 
     s = apply(s, { type: 'auto:pass', by: 0 });
     s = tapAll(s, 1);
     s = passBoth(apply(s, {
-      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Doom Blade'),
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Murder'),
       targets: [{ kind: 'card', id: skeleton }],
     }));
     // Destroyed is replaced by tapped, undamaged and no shield left (CR 701.15).
@@ -3733,14 +3753,14 @@ describe('exile until this leaves the battlefield', () => {
     expect(countOf(after, 1, 'battlefield', 'Banisher Priest')).toBe(1);
   });
 
-  it('Banishing Light points at anything that is not a land, and not at itself', () => {
+  it('Banishing Light points at a nonland permanent an opponent controls, and at nothing of its own (D576)', () => {
     // Two legal targets, so the trigger has to ask rather than aim itself — which is what makes
     // the candidate list readable.
     let s = arena({
-      decks: { 1: 'forge-alliance' }, hands: { 1: ['Banishing Light'] },
+      decks: { 0: 'ember-rush', 1: 'forge-alliance' }, hands: { 1: ['Banishing Light'] },
       battlefield: {
         1: ['Plains', 'Plains', 'Plains', 'Plains', 'Bonesplitter'],
-        0: ['Shivan Dragon'],
+        0: ['Mountain', 'Shivan Dragon', 'Raging Goblin'],
       },
       turn: 3, firstSeat: 1,
     });
@@ -3752,16 +3772,15 @@ describe('exile until this leaves the battlefield', () => {
     const dragon = find(s, 0, 'battlefield', 'Shivan Dragon');
     s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Banishing Light') });
     s = drain(s);
-    // The trigger is waiting to be aimed, and what it offers is every permanent but the lands —
-    // and not itself, which is the whole reason this card is Banishing Light and not Oblivion
-    // Ring: "target nonland permanent" on an empty board means itself, and a permanent that
-    // exiles itself returns itself and exiles itself again, forever.
+    /*
+      "Target nonland permanent an opponent controls". The pool had "another target nonland
+      permanent", which let it exile its controller's own Bonesplitter. The printed phrase also
+      does the job "another" was there for: it cannot answer itself, so it cannot loop.
+    */
     expect(s.pendingChoice).not.toBeNull();
     const choice = legalActions(s, 1).mustChoose;
     const names = (choice?.candidates[0] ?? []).map((t) => (t.kind === 'card' ? nameOf(s, t.id) : 'player'));
-    expect(names).toContain('Shivan Dragon');
-    expect(names).not.toContain('Plains');
-    expect(names).not.toContain('Banishing Light');
+    expect([...names].sort()).toEqual(['Raging Goblin', 'Shivan Dragon']);
 
     s = drain(apply(s, { type: 'auto:choose', by: 1, targets: [{ kind: 'card', id: dragon }] }));
     expect(s.instances[dragon]!.zone).toBe('exile');
@@ -7778,9 +7797,12 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
     offered as a choice at all, for the reason a trigger with no legal targets never goes on the
     stack — a prompt with one button is a table that has stopped.
   */
-  const table = (deck: string, wardCard: string, theirLands: readonly string[], mine: readonly string[]): GameState => advanceTo(arena({
+  const table = (
+    deck: string, wardCard: string, theirLands: readonly string[], mine: readonly string[],
+    spell = 'Doom Blade',
+  ): GameState => advanceTo(arena({
     decks: { 0: 'tidal-mind', 1: deck },
-    hands: { 0: ['Doom Blade'] },
+    hands: { 0: [spell] },
     battlefield: { 0: [...theirLands], 1: [...mine, wardCard] },
     turn: 4, firstSeat: 0,
   }), 'precombat-main');
@@ -7828,10 +7850,11 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
   });
 
   it('is not offered at all when the cost cannot be paid, and counters the spell itself', () => {
-    // Exactly enough to cast the Doom Blade and nothing over, against Sedgemoor Witch's Ward {3}.
-    let s = table('tidal-mind', 'Sedgemoor Witch', ['Swamp', 'Swamp'], ['Swamp']);
+    // Exactly enough to cast the Murder and nothing over, against Sedgemoor Witch's Ward {3}.
+    // A Murder because the Witch is black, which a Doom Blade cannot point at (D576).
+    let s = table('tidal-mind', 'Sedgemoor Witch', ['Swamp', 'Swamp', 'Swamp'], ['Swamp'], 'Murder');
     const witch = find(s, 1, 'battlefield', 'Sedgemoor Witch');
-    const blade = find(s, 0, 'hand', 'Doom Blade');
+    const blade = find(s, 0, 'hand', 'Murder');
     s = drain(passBoth(apply(s, {
       type: 'auto:cast', by: 0, card: blade, targets: [{ kind: 'card', id: witch }],
     })));
@@ -7840,7 +7863,7 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
     expect(s.pendingPayment).toBeNull();
     expect(legalActions(s, 0).mustPay).toBeNull();
     expect(s.instances[witch]!.zone).toBe('battlefield');
-    expect(namesIn(s, 0, 'graveyard')).toContain('Doom Blade');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Murder');
     // And said out loud in the log, because nobody pressed anything: a spell that leaves the stack
     // with no prompt and no message is a card the player cannot see working. `reduceAutoAction`
     // drains the notes onto the message of the action that provoked them, which is why this reads
@@ -10443,7 +10466,7 @@ describe('the tenth deck: the life total that goes up', () => {
     return tapAllLands(s, 0);
   };
 
-  it('Impassioned Orator gains a life for anybody’s creature but its own arrival', () => {
+  it('Impassioned Orator gains a life for another creature of yours, and not for theirs (D576)', () => {
     let s = dawn(['Impassioned Orator', "Healer's Hawk"], []);
     const before = life(s, 0);
     s = drain(passBoth(apply(s, {
@@ -10453,6 +10476,13 @@ describe('the tenth deck: the life total that goes up', () => {
     expect(life(s, 0)).toBe(before);
 
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', "Healer's Hawk") })));
+    expect(life(s, 0)).toBe(before + 1);
+
+    // "You control": a creature arriving on the other side is not the Orator's business. The pool
+    // had it gaining for anybody's, which is Soul Warden's text and not this card's.
+    const theirs = ids(s, 1, 'library').find((id) => s.cardDefs[s.instances[id]!.defKey]!.typeLine.includes('Creature'))!;
+    s = drain(apply(s, { type: 'card:move', by: 1, card: theirs, toZone: 'battlefield' }), 40);
+    expect(s.instances[theirs]!.zone).toBe('battlefield');
     expect(life(s, 0)).toBe(before + 1);
   });
 
@@ -12796,7 +12826,7 @@ describe('delayed triggers: at end of combat, and at the next end step (CR 603.7
     }));
     // Not drained: the block trigger is on the stack, which is the whole point of this one.
     s = apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: bears, attacker: basilisk }] });
-    expect(stackNames(s)).toEqual(['destroy the creature blocking it at end of combat']);
+    expect(stackNames(s)).toEqual(['destroy the non-Wall creature blocking it at end of combat']);
     expect(s.delayed.length).toBe(0);
 
     s = apply(s, { type: 'auto:pass', by: 0 });
@@ -13813,16 +13843,21 @@ describe('red-green: the thirteenth deck’s cards', () => {
     expect(life(s, 1)).toBe(17);
   });
 
-  it('and makes every creature on the table attack, both sides of it', () => {
+  it('and attacks each combat itself, which is all its attack clause says (D576)', () => {
+    // "Ruric Thar, the Unbowed attacks each combat if able." The pool had every creature on the
+    // table attacking, a different and much louder card. Read off the printed line, with no static.
     const s = advanceTo(arena({
       decks: { 0: 'kindle-grove', 1: 'verdant-guard' },
-      battlefield: { 0: ['Ruric Thar, the Unbowed'], 1: ['Centaur Courser'] },
+      battlefield: { 0: ['Ruric Thar, the Unbowed', 'Burning-Tree Emissary'], 1: ['Centaur Courser'] },
       turn: 5, firstSeat: 0,
     }), 'precombat-main');
     const mine = find(s, 0, 'battlefield', 'Ruric Thar, the Unbowed');
+    const beside = find(s, 0, 'battlefield', 'Burning-Tree Emissary');
     const theirs = find(s, 1, 'battlefield', 'Centaur Courser');
     expect(characteristicsOf(s, s.instances[mine]!).mustAttack).toBe(true);
-    expect(characteristicsOf(s, s.instances[theirs]!).mustAttack).toBe(true);
+    expect(characteristicsOf(s, s.instances[beside]!).mustAttack).not.toBe(true);
+    expect(characteristicsOf(s, s.instances[theirs]!).mustAttack).not.toBe(true);
+    expect(scriptFor('Ruric Thar, the Unbowed')!.statics).toBeUndefined();
     // Vigilance and reach come off the printed line, which is what lets it attack every turn under
     // its own clause and still block.
     expect([...characteristicsOf(s, s.instances[mine]!).keywords].sort()).toEqual(['reach', 'vigilance']);
@@ -19778,15 +19813,15 @@ describe('Soulherder, and the move into exile nothing could read', () => {
     expect(countersOn(s, herder)).toBe(1);
   });
 
-  it('and not when the creature was an opponent’s, which is the "you control"', () => {
-    // Journey to Nowhere and Flickerwisp both aim at the other side of the table, so a Soulherder
-    // that counted those would be growing off the deck's own removal.
+  it('and when the creature was an opponent’s too: "a creature", not one you control (D576)', () => {
+    // The pool had "a creature you control", so the deck's own Journey to Nowhere did not feed it.
+    // The card counts any creature exiled from the battlefield, which is most of why it is played.
     let s = board([], ['Grizzly Bears']);
     const herder = find(s, 0, 'battlefield', 'Soulherder');
     s = drain(apply(s, {
       type: 'card:move', by: 1, card: find(s, 1, 'battlefield', 'Grizzly Bears'), toZone: 'exile',
     }), 40);
-    expect(countersOn(s, herder)).toBe(0);
+    expect(countersOn(s, herder)).toBe(1);
   });
 
   it('and not when it was a creature card rather than a creature, which is the "from"', () => {
@@ -39687,5 +39722,208 @@ describe('sacrifice as an event: "whenever you sacrifice a permanent" (D570)', (
     // One offer for each creature sacrificed, whoever sacrificed it.
     expect(offered).toBe(2);
     expect(plusOnes(s, beetle)).toBe(2);
+  });
+});
+
+describe('printed targets and scopes, where the pool had wider or narrower ones (D576)', () => {
+  /*
+    Eighteen cards whose only difference from their Oracle row was who or what they could touch.
+    Each row here is the half the old text got wrong: the thing the card may not do, or may.
+  */
+  it('Doom Blade cannot point at a black creature', () => {
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'rot-harvest' },
+      hands: { 0: ['Doom Blade'] },
+      battlefield: { 0: ['Swamp', 'Swamp'], 1: ['Drudge Skeletons', 'Centaur Courser'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const blade = find(s, 0, 'hand', 'Doom Blade');
+    const black = find(s, 1, 'battlefield', 'Drudge Skeletons');
+    const green = find(s, 1, 'battlefield', 'Centaur Courser');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: blade, targets: [{ kind: 'card', id: black }] }))
+      .toContain('nonblack');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: blade, targets: [{ kind: 'card', id: green }] })));
+    expect(s.instances[green]!.zone).toBe('graveyard');
+  });
+
+  it('Agonizing Demise destroys through a regeneration shield', () => {
+    // "It can't be regenerated." A green regenerator, because the spell cannot point at a black one.
+    let s = advanceTo(arena({
+      decks: { 0: 'hollow-tide', 1: 'blight-vector' },
+      hands: { 0: ['Agonizing Demise'] },
+      battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp'], 1: ['Forest', 'Forest', 'Blight Mamba'] },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    s = tapAllLands(s, 1);
+    const mamba = find(s, 1, 'battlefield', 'Blight Mamba');
+    s = passBoth(apply(s, { type: 'auto:activate', by: 1, card: mamba, abilityIndex: 0 }));
+    expect(s.instances[mamba]!.counters['regeneration']).toBe(1);
+    s = tapAllLands(apply(s, { type: 'auto:pass', by: 1 }), 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Agonizing Demise'),
+      targets: [{ kind: 'card', id: mamba }],
+    })));
+    expect(s.instances[mamba]!.zone).toBe('graveyard');
+  });
+
+  it('Thicket Basilisk spares a Wall and destroys anything else it fights', () => {
+    const fight = (blockerName: string): { state: GameState; blocker: string } => {
+      let s = advanceTo(arena({
+        decks: { 0: 'delta-bloom', 1: 'rot-harvest' },
+        battlefield: { 0: ['Forest', 'Forest', 'Thicket Basilisk'], 1: ['Wall of Blossoms', 'Centaur Courser'] },
+        turn: 4, firstSeat: 0,
+      }), 'declare-attackers');
+      const basilisk = find(s, 0, 'battlefield', 'Thicket Basilisk');
+      const blocker = find(s, 1, 'battlefield', blockerName);
+      s = passBoth(apply(s, { type: 'auto:attack', by: 0, attackers: [{ attacker: basilisk, defender: 1 }] }));
+      s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker, attacker: basilisk }] }), 40);
+      return { state: s, blocker };
+    };
+    const wall = fight('Wall of Blossoms');
+    // Nothing is scheduled for a Wall, so there is nothing to miss at end of combat.
+    expect(wall.state.delayed.length).toBe(0);
+    expect(drain(advanceTo(wall.state, 'end'), 60).instances[wall.blocker]!.zone).toBe('battlefield');
+    const courser = fight('Centaur Courser');
+    expect(courser.state.delayed.length).toBe(1);
+    expect(drain(advanceTo(courser.state, 'end'), 60).instances[courser.blocker]!.zone).toBe('graveyard');
+  });
+
+  it('Cruel Celebrant drains for its own death, and for a planeswalker’s, and not for an artifact’s', () => {
+    const list = customDeck({
+      id: 'celebrant',
+      name: 'Celebrant',
+      entries: [
+        { name: 'Cruel Celebrant', count: 4 },
+        { name: 'Ajani, Caller of the Pride', count: 1 },
+        { name: 'Bonesplitter', count: 4 },
+        { name: 'Plains', count: 26 },
+        { name: 'Swamp', count: 25 },
+      ],
+    }).deck;
+    const board = (): GameState => advanceTo(arena({
+      decks: { 0: 'celebrant', 1: 'ember-rush' },
+      deckSpecs: { celebrant: list },
+      battlefield: { 0: ['Cruel Celebrant', 'Ajani, Caller of the Pride', 'Bonesplitter'] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const bury = (name: string): GameState => {
+      const s = board();
+      return drain(apply(s, {
+        type: 'card:move', by: 0, card: find(s, 0, 'battlefield', name), toZone: 'graveyard',
+      }), 40);
+    };
+    const base = board();
+    const drained = (s: GameState): number[] => [life(s, 0) - life(base, 0), life(s, 1) - life(base, 1)];
+    // "Cruel Celebrant or another creature or planeswalker you control": itself, which the pool left out.
+    expect(drained(bury('Cruel Celebrant'))).toEqual([1, -1]);
+    // A planeswalker is the other thing that "dies" (CR 700.4).
+    expect(drained(bury('Ajani, Caller of the Pride'))).toEqual([1, -1]);
+    // And an artifact put into a graveyard is neither.
+    expect(drained(bury('Bonesplitter'))).toEqual([0, 0]);
+  });
+
+  it('Mind Sculpt mills an opponent and cannot be turned on its caster', () => {
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'hollow-tide', 1: 'verdant-guard' },
+      hands: { 0: ['Mind Sculpt'] },
+      battlefield: { 0: ['Island', 'Island'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const sculpt = find(s, 0, 'hand', 'Mind Sculpt');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: sculpt, targets: [{ kind: 'player', seat: 0 }] }))
+      .toContain('target opponent');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: sculpt, targets: [{ kind: 'player', seat: 1 }] })));
+    expect(ids(s, 1, 'graveyard').length).toBe(7);
+  });
+
+  it('Jace Beleren’s minus hands the card to whichever player it is pointed at', () => {
+    const board = (): GameState => advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      battlefield: { 0: ['Jace Beleren'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const minus = (seat: SeatIndex): GameState => {
+      const s = board();
+      return drain(passBoth(apply(s, {
+        type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Jace Beleren'), abilityIndex: 1,
+        targets: [{ kind: 'player', seat }],
+      })), 40);
+    };
+    const base = board();
+    const hands = (s: GameState): number[] => [ids(s, 0, 'hand').length, ids(s, 1, 'hand').length];
+    const [mine, theirs] = hands(base);
+    // "Target player draws a card": the pool had "you draw", which is half the card.
+    expect(hands(minus(0 as SeatIndex))).toEqual([mine! + 1, theirs!]);
+    expect(hands(minus(1 as SeatIndex))).toEqual([mine!, theirs! + 1]);
+    // And the bot, left to itself, keeps the card.
+    const action = botAction(base, 0, {});
+    if (action?.type === 'auto:activate' && action.abilityIndex === 1) {
+      expect(action.targets).toEqual([{ kind: 'player', seat: 0 }]);
+    }
+  });
+
+  it('Swerve moves an Aura spell, which is a spell with a single target and not an instant', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'dawn-tithe', 1: 'arc-tempest' },
+      hands: { 0: ['Pacifism'], 1: ['Swerve'] },
+      battlefield: {
+        0: ['Plains', 'Plains', 'Impassioned Orator'],
+        1: ['Island', 'Island', 'Mountain', 'Monastery Swiftspear'],
+      },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = tapAllLands(s, 0);
+    const mine = find(s, 1, 'battlefield', 'Monastery Swiftspear');
+    const theirs = find(s, 0, 'battlefield', 'Impassioned Orator');
+    const aura = find(s, 0, 'hand', 'Pacifism');
+    s = apply(s, { type: 'auto:cast', by: 0, card: aura, targets: [{ kind: 'card', id: mine }] });
+    s = tapAllLands(apply(s, { type: 'auto:pass', by: 0 }), 1);
+    s = drain(passBoth(passBoth(apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Swerve'),
+      targets: [{ kind: 'card', id: aura }, { kind: 'card', id: theirs }],
+    }))), 40);
+    // The Pacifism landed on its own controller's creature.
+    expect(s.instances[aura]!.zone).toBe('battlefield');
+    expect(s.instances[aura]!.attachedTo).toBe(theirs);
+  });
+
+  it('Rest in Peace exiles a token that would die, so nothing sees it die', () => {
+    // "If a card **or token** would be put into a graveyard from anywhere, exile it instead."
+    const list = customDeck({
+      id: 'peace',
+      name: 'Peace',
+      entries: [
+        { name: 'Rest in Peace', count: 4 },
+        { name: 'Zulaport Cutthroat', count: 4 },
+        { name: 'Raise the Alarm', count: 4 },
+        { name: 'Plains', count: 24 },
+        { name: 'Swamp', count: 24 },
+      ],
+    }).deck;
+    const board = (peace: boolean): GameState => {
+      let s = tapAllLands(advanceTo(arena({
+        decks: { 0: 'peace', 1: 'ember-rush' },
+        deckSpecs: { peace: list },
+        hands: { 0: ['Raise the Alarm'] },
+        battlefield: { 0: ['Plains', 'Plains', 'Zulaport Cutthroat', ...(peace ? ['Rest in Peace'] : [])] },
+        turn: 5, firstSeat: 0,
+      }), 'precombat-main'), 0);
+      s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Raise the Alarm') })), 40);
+      return s;
+    };
+    const kill = (s: GameState): GameState =>
+      drain(destroy(s, ids(s, 0, 'battlefield').find((id) => s.instances[id]!.isToken)!), 40);
+    // Without it a dying Soldier is a death, and the Zulaport Cutthroat drains for it.
+    const open = board(false);
+    expect(life(kill(open), 1)).toBe(life(open, 1) - 1);
+    // With it the token was exiled instead, so it never died.
+    const held = board(true);
+    expect(life(kill(held), 1)).toBe(life(held, 1));
+  });
+
+  it('Knight Exemplar has first strike, which the pool’s text left off', () => {
+    const s = arena({ decks: { 0: 'skyward-writ' }, battlefield: { 0: ['Knight Exemplar'] }, turn: 3 });
+    const knight = find(s, 0, 'battlefield', 'Knight Exemplar');
+    expect(characteristicsOf(s, s.instances[knight]!).keywords.has('first strike')).toBe(true);
   });
 });

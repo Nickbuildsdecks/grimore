@@ -466,8 +466,7 @@ const HARMS_WAY: CardDef = {
   typeLine: 'Instant',
   manaCost: '{W}',
   cmc: 1,
-  oracleText: 'The next 2 damage that a source of your choice would deal to you and/or permanents '
-    + 'you control this turn is dealt to target creature or player instead.',
+  oracleText: 'The next 2 damage that a source of your choice would deal to you and/or permanents you control this turn is dealt to any target instead.',
   colors: ['W'],
 };
 
@@ -476,9 +475,7 @@ const DIVINE_DEFLECTION: CardDef = {
   typeLine: 'Instant',
   manaCost: '{X}{W}',
   cmc: 1,
-  oracleText: 'Prevent the next X damage that would be dealt to you and/or permanents you control '
-    + 'this turn. If damage is prevented this way, Divine Deflection deals that much damage to '
-    + 'target creature or player.',
+  oracleText: 'Prevent the next X damage that would be dealt to you and/or permanents you control this turn. If damage is prevented this way, Divine Deflection deals that much damage to any target.',
   colors: ['W'],
 };
 
@@ -1048,7 +1045,7 @@ const DOOM_BLADE: CardDef = {
   typeLine: 'Instant',
   manaCost: '{1}{B}',
   cmc: 2,
-  oracleText: 'Destroy target creature.',
+  oracleText: 'Destroy target nonblack creature.',
   colors: ['B'],
 };
 
@@ -1122,7 +1119,7 @@ const RAVENOUS_RATS: CardDef = {
   cmc: 2,
   power: '1',
   toughness: '1',
-  oracleText: 'When Ravenous Rats enters the battlefield, each opponent discards a card at random.',
+  oracleText: 'When Ravenous Rats enters, target opponent discards a card.',
   colors: ['B'],
 };
 
@@ -1280,7 +1277,7 @@ const JACE_BELEREN: CardDef = {
   manaCost: '{1}{U}{U}',
   cmc: 3,
   loyalty: '3',
-  oracleText: '+2: Each player draws a card.\n−1: You draw a card.\n−10: Target player mills twenty cards.',
+  oracleText: '+2: Each player draws a card.\n−1: Target player draws a card.\n−10: Target player mills twenty cards.',
   colors: ['U'],
 };
 
@@ -1362,7 +1359,7 @@ const MIND_SCULPT: CardDef = {
   typeLine: 'Sorcery',
   manaCost: '{1}{U}',
   cmc: 2,
-  oracleText: 'Target player mills seven cards.',
+  oracleText: 'Target opponent mills seven cards.',
   colors: ['U'],
 };
 
@@ -1577,7 +1574,7 @@ const LOTLETH_GIANT: CardDef = {
   cmc: 7,
   power: '6',
   toughness: '5',
-  oracleText: 'When Lotleth Giant enters the battlefield, each opponent loses 1 life for each creature card in your graveyard.',
+  oracleText: 'Undergrowth \u2014 When Lotleth Giant enters, it deals 1 damage to target opponent for each creature card in your graveyard.',
   colors: ['B'],
 };
 
@@ -1599,7 +1596,7 @@ const BLOODTHRONE_VAMPIRE: CardDef = {
   cmc: 2,
   power: '1',
   toughness: '1',
-  oracleText: 'Sacrifice another creature: Bloodthrone Vampire gets +2/+2 until end of turn.',
+  oracleText: 'Sacrifice a creature: Bloodthrone Vampire gets +2/+2 until end of turn.',
   colors: ['B'],
 };
 
@@ -1868,8 +1865,7 @@ const THICKET_BASILISK: CardDef = {
   cmc: 5,
   power: '2',
   toughness: '4',
-  oracleText: 'Whenever Thicket Basilisk blocks or becomes blocked by a creature, destroy that '
-    + 'creature at end of combat.',
+  oracleText: 'Whenever Thicket Basilisk blocks or becomes blocked by a non-Wall creature, destroy that creature at end of combat.',
   colors: ['G'],
 };
 
@@ -2321,9 +2317,7 @@ const SOULHERDER: CardDef = {
   cmc: 3,
   power: '1',
   toughness: '1',
-  oracleText: 'Whenever a creature you control is exiled, put a +1/+1 counter on Soulherder.\n'
-    + 'At the beginning of your end step, you may exile another target creature you control, then '
-    + 'return that card to the battlefield under its owner\'s control.',
+  oracleText: "Whenever a creature is exiled from the battlefield, put a +1/+1 counter on Soulherder.\nAt the beginning of your end step, you may exile another target creature you control, then return that card to the battlefield under its owner's control.",
   colors: ['W', 'U'],
 };
 
@@ -2962,9 +2956,7 @@ const REST_IN_PEACE: CardDef = {
   typeLine: 'Enchantment',
   manaCost: '{1}{W}',
   cmc: 2,
-  oracleText:
-    'When Rest in Peace enters the battlefield, exile all cards from all graveyards.\n'
-    + 'If a card would be put into a graveyard from anywhere, exile it instead.',
+  oracleText: 'When Rest in Peace enters, exile all graveyards.\nIf a card or token would be put into a graveyard from anywhere, exile it instead.',
   colors: ['W'],
 };
 
@@ -3208,7 +3200,7 @@ const BANISHING_LIGHT: CardDef = {
   typeLine: 'Enchantment',
   manaCost: '{2}{W}',
   cmc: 3,
-  oracleText: 'When Banishing Light enters the battlefield, exile another target nonland permanent until Banishing Light leaves the battlefield.',
+  oracleText: 'When Banishing Light enters, exile target nonland permanent an opponent controls until Banishing Light leaves the battlefield.',
   colors: ['W'],
 };
 
@@ -3269,7 +3261,7 @@ const AGONIZING_DEMISE: CardDef = {
   typeLine: 'Instant',
   manaCost: '{3}{B}',
   cmc: 4,
-  oracleText: 'Kicker {1}{R}\nDestroy target nonblack creature. If this spell was kicked, it deals damage equal to that creature\u2019s power to the creature\u2019s controller.',
+  oracleText: "Kicker {1}{R}\nDestroy target nonblack creature. It can't be regenerated. If this spell was kicked, Agonizing Demise deals damage equal to that creature's power to the creature's controller.",
   colors: ['B'],
 };
 
@@ -3916,7 +3908,7 @@ const SWERVE: CardDef = {
   typeLine: 'Instant',
   manaCost: '{U}{R}',
   cmc: 2,
-  oracleText: 'Change the target of target instant or sorcery spell with a single target.',
+  oracleText: 'Change the target of target spell with a single target.',
   colors: ['U', 'R'],
 };
 
@@ -4467,7 +4459,7 @@ const KNIGHT_EXEMPLAR: CardDef = {
   cmc: 3,
   power: '2',
   toughness: '2',
-  oracleText: 'Other Knight creatures you control get +1/+1 and have indestructible.',
+  oracleText: 'First strike\nOther Knight creatures you control get +1/+1 and have indestructible.',
   colors: ['W'],
 };
 
@@ -6452,7 +6444,7 @@ const IMPASSIONED_ORATOR: CardDef = {
   cmc: 2,
   power: '2',
   toughness: '2',
-  oracleText: 'Whenever another creature enters the battlefield, you gain 1 life.',
+  oracleText: 'Whenever another creature you control enters, you gain 1 life.',
   colors: ['W'],
 };
 
@@ -6463,7 +6455,7 @@ const CRUEL_CELEBRANT: CardDef = {
   cmc: 2,
   power: '1',
   toughness: '2',
-  oracleText: 'Whenever another creature you control dies, each opponent loses 1 life and you gain 1 life.',
+  oracleText: 'Whenever Cruel Celebrant or another creature or planeswalker you control dies, each opponent loses 1 life and you gain 1 life.',
   colors: ['W', 'B'],
 };
 
@@ -6824,7 +6816,7 @@ const RURIC_THAR: CardDef = {
   cmc: 6,
   power: '6',
   toughness: '6',
-  oracleText: 'Vigilance, reach\nAll creatures must attack each combat if able.\nWhenever a player casts a noncreature spell, Ruric Thar, the Unbowed deals 6 damage to that player.',
+  oracleText: 'Vigilance, reach\nRuric Thar, the Unbowed attacks each combat if able.\nWhenever a player casts a noncreature spell, Ruric Thar deals 6 damage to that player.',
   colors: ['R', 'G'],
 };
 

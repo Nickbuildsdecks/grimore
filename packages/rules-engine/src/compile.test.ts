@@ -326,7 +326,6 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       ['Kitchen Finks', 'you gain 2 life'],
       ['Elvish Visionary', 'draw a card'],
       ['Aether Hub', 'you get {E}'],
-      ['Ravenous Rats', 'each opponent discards a card at random'],
     ])('%s: the compiled effect leaves the same state as the written one', (card) => {
       const written = etbOf(scriptFor(card as string));
       expect(written.length, `${card as string} has no hand-written ETB trigger`).toBe(1);
@@ -429,9 +428,29 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     const field = (script: unknown, key: string) =>
       (script as Record<string, unknown> | undefined)?.[key];
 
+    it('Doom Blade points at a nonblack creature in both readings (D576)', () => {
+      /*
+        Out of the row below since it gained a filter: `toEqual` compares a filter by identity, and
+        the compiled card builds its own. So the two are compared by what they admit.
+      */
+      const written = (field(scriptFor('Doom Blade'), 'targets') as readonly TargetSpec[])[0]!;
+      const compiled = (field(compiledScript('Doom Blade').script, 'targets') as readonly TargetSpec[])[0]!;
+      expect([compiled.kind, compiled.description]).toEqual([written.kind, written.description]);
+      expect(compiled.description).toBe('target nonblack creature');
+      const board = arena({
+        decks: { 0: 'rot-harvest', 1: 'rot-harvest' },
+        battlefield: { 1: ['Drudge Skeletons', 'Centaur Courser'] },
+      });
+      const black = find(board, 1 as SeatIndex, 'battlefield', 'Drudge Skeletons');
+      const green = find(board, 1 as SeatIndex, 'battlefield', 'Centaur Courser');
+      for (const spec of [written, compiled]) {
+        expect(spec.filter!(board, { kind: 'card', id: black }, 0 as SeatIndex, 'x')).toBe(false);
+        expect(spec.filter!(board, { kind: 'card', id: green }, 0 as SeatIndex, 'x')).toBe(true);
+      }
+    });
+
     it.each([
       ['Lightning Bolt'],
-      ['Doom Blade'],
       ['Giant Growth'],
       ['Unsummon'],
       ['Divination'],
@@ -1811,25 +1830,26 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(triggerKinds(permanent.script)).toEqual(['etb']);
     });
 
-    it('will not let a card exile itself where the print says "another"', () => {
+    it('reads "an opponent controls" on Banishing Light, which is also what stops it exiling itself (D576)', () => {
       /*
-        `another target nonland permanent` on Banishing Light, checked through the filter rather than
-        through the description: the phrase is the only thing that stops an Oblivion-Ring-shaped
-        card answering itself and locking its own target in exile for ever.
+        Checked through the filter, not the description. The pool had "another target nonland
+        permanent", whose "another" was all that stopped an Oblivion-Ring-shaped card answering
+        itself. The printed phrase does that and more: nothing of its controller's is a target.
       */
       const light = compiledScript('Banishing Light');
       const spec = ((field(light.script, 'triggers') as readonly TriggerDef[])
         .find((t) => t.on.kind === 'etb')?.targets ?? [])[0];
       expect(spec).toBeDefined();
-      const board = arena({ battlefield: { 0: ['Mountain'], 1: ['Grizzly Bears'] } });
-      const bear = find(board, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
-      const land = find(board, 0 as SeatIndex, 'battlefield', 'Mountain');
-      const admits = (id: string, source: string) =>
-        spec?.filter?.(board, { kind: 'card', id }, 0 as SeatIndex, source) ?? false;
-      // Somebody else's creature: yes. Itself: no. A land: no, because it says nonland.
-      expect(admits(bear, 'some-other-id')).toBe(true);
-      expect(admits(bear, bear)).toBe(false);
-      expect(admits(land, 'some-other-id')).toBe(false);
+      expect(spec?.description).toBe('target nonland permanent an opponent controls');
+      const board = arena({ battlefield: { 0: ['Mountain', 'Raging Goblin'], 1: ['Forest', 'Grizzly Bears'] } });
+      const theirs = find(board, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
+      const theirLand = find(board, 1 as SeatIndex, 'battlefield', 'Forest');
+      const mine = find(board, 0 as SeatIndex, 'battlefield', 'Raging Goblin');
+      const admits = (id: string) => spec?.filter?.(board, { kind: 'card', id }, 0 as SeatIndex, 'some-other-id') ?? false;
+      // An opponent's creature: yes. Their land: no, because it says nonland. Anything of mine: no.
+      expect(admits(theirs)).toBe(true);
+      expect(admits(theirLand)).toBe(false);
+      expect(admits(mine)).toBe(false);
     });
   });
   /*
@@ -2723,9 +2743,20 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       arithmetic on life totals: two seats' totals and the caster's, which is what the assertions
       below read.
     */
+    it('leaves Cruel Celebrant’s printed trigger unread, and says so (D576)', () => {
+      /*
+        This card was in the row below while the pool gave it Zulaport Cutthroat's sentence. It
+        prints "Whenever Cruel Celebrant or another creature or planeswalker you control dies", a
+        subject no reader takes yet, so the compiler refuses the line and the card is the
+        hand-written one. Asserted so the refusal is a known state and not a silent one.
+      */
+      const celebrant = compiledScript('Cruel Celebrant');
+      expect(celebrant.unread.map((u) => u.line).join()).toContain('or another creature or planeswalker you control dies');
+      expect(triggerOf(celebrant.script)).toBeUndefined();
+    });
+
     it.each([
       ['Zulaport Cutthroat'],
-      ['Cruel Celebrant'],
     ])('%s drains the table exactly as the hand-written trigger does', (card) => {
       const base = arena();
       const ctx = contextOn(base, 0 as SeatIndex, 'c1');
@@ -3351,20 +3382,22 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(mine).toEqual(base);
     });
 
-    it('drains a life per creature card from every opponent, as Lotleth Giant’s trigger does', () => {
+    it('deals a damage per creature card to target opponent, as Lotleth Giant’s trigger does (D576)', () => {
       const base = yard();
-      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
-      const mine = triggerOf(compiledScript('Lotleth Giant').script)!.effect(ctx);
-      const theirs = triggerOf(scriptFor('Lotleth Giant'))!.effect(ctx);
-      expect(mine).toEqual(theirs);
+      const ctx = { ...contextOn(base, 0 as SeatIndex, 'c1'), targets: [{ kind: 'player', seat: 1 as SeatIndex }] } as EffectContext;
+      const mine = triggerOf(compiledScript('Lotleth Giant').script)!;
+      const theirs = triggerOf(scriptFor('Lotleth Giant'))!;
+      expect(mine.targets?.map((t) => t.description)).toEqual(['target opponent']);
+      expect(theirs.targets?.map((t) => t.description)).toEqual(['target opponent']);
+      expect(mine.effect(ctx)).toEqual(theirs.effect(ctx));
       /*
-        Two bodies, so two life — and the caster's own total is the control twice over: a reader
-        that drained "each player" would take it too, and a reader that read the whole graveyard
-        would take three.
+        Two bodies, so two — and the caster's own total is the control twice over: a reader that
+        hit "each player" would take it too, and a reader that read the whole graveyard would take
+        three.
       */
-      const before = base.seats[1]!.life;
-      expect(mine.seats[1]!.life).toBe(before - 2);
-      expect(mine.seats[0]!.life).toBe(base.seats[0]!.life);
+      const after = mine.effect(ctx);
+      expect(after.seats[1]!.life).toBe(base.seats[1]!.life - 2);
+      expect(after.seats[0]!.life).toBe(base.seats[0]!.life);
     });
 
     it('drains nothing on an empty graveyard, because loseLife refuses a non-positive amount', () => {
@@ -5890,13 +5923,15 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       expect(mine.zones[zoneKey(1 as SeatIndex, 'hand')]).toHaveLength(1);
     });
 
-    it('owes the controller a card for "You draw a card", as the hand-written minus does', () => {
-      const base = arena({ decks: { 0: 'tidal-mind' } });
-      const ctx = contextOn(base, 0 as SeatIndex, 'c1');
-      const mine = abilitiesOf(compiledScript('Jace Beleren').script)[1]!.effect!(ctx);
-      const theirs = abilitiesOf(scriptFor('Jace Beleren'))[1]!.effect!(ctx);
-      expect(mine).toEqual(theirs);
-      expect(mine.drawsOwed.filter((seat) => seat === 0)).toHaveLength(1);
+    it('owes the targeted player a card for "Target player draws a card", as the hand-written minus does (D576)', () => {
+      const base = arena({ decks: { 0: 'tidal-mind', 1: 'verdant-guard' } });
+      for (const seat of [0, 1] as const) {
+        const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'player', seat: seat as SeatIndex }]);
+        const mine = abilitiesOf(compiledScript('Jace Beleren').script)[1]!.effect!(ctx);
+        const theirs = abilitiesOf(scriptFor('Jace Beleren'))[1]!.effect!(ctx);
+        expect(mine).toEqual(theirs);
+        expect(mine.drawsOwed).toEqual([seat]);
+      }
     });
 
     it('mills twenty, which needed the word as well as the clause', () => {
