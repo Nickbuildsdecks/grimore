@@ -7527,12 +7527,28 @@ describe('deck coverage', () => {
         a colourless one may not block it either, and a 1/1 skulker is blockable by a 1/1 and not
         by a 3/3. Both verdicts on every row, because a test that only
         ever expects a refusal passes against a clause that refuses everything.
+
+      **And one payment flag** (D552):
+
+      - `script improvise`: **23 legal printings** (Foundry Assembler, Sweatworks Brawler, Reverse
+        Engineer, Whir of Invention and 19 more), 14 of them finished by reading it. Not one is in
+        the pool's thirteen measured decks — the pool's artifact payment mechanic is convoke's
+        cousin crew, not this — and the flag cannot be added to a hand-written card without
+        changing what a measured deck costs to cast, which is D442 again.
+
+        Driven at runtime by six tests in "improvise: a cost paid by tapping artifacts (D552)",
+        on printed Foundry Assembler and Sweatworks Brawler compiled from corpus rows and cast
+        through the engine's own plays: the artifacts are left alone when the lands cover the cost,
+        three Crypts pay three generic pips, a coloured pip cannot be improvised however many
+        artifacts are out, a creature that is not an artifact is not counted, a Sol Ring is spent as
+        mana **or** as a pip and never both, and every board the sweep builds either offers the cast
+        or refuses to offer it — never offers one the payment then refuses.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
       'keyword fear', 'keyword shadow', 'keyword horsemanship', 'keyword wither',
       'keyword changeling', 'keyword intimidate', 'keyword skulk',
-      'script cantBeCountered', 'script grantedAbilities',
+      'script cantBeCountered', 'script grantedAbilities', 'script improvise',
     ]);
 
     const declared = [
@@ -35527,5 +35543,227 @@ describe('the relational blocker clause, at the table (D551)', () => {
     const issue = mayBlock(s, 'Cybermat', blockerName);
     if (allowed) expect(issue).toBeNull();
     else expect(issue?.reason).toContain('power no greater than its own');
+  });
+});
+
+describe('improvise: a cost paid by tapping artifacts (D552)', () => {
+  /*
+    Convoke's sibling one card type along, and the reason this block is short is that the engine
+    already had the mechanism. Improvise (CR 702.126a) is "each artifact you control can be tapped
+    to pay {1}" — the same planner as convoke with two parameters changed: what may be tapped, and
+    what it may pay. `tapToPayPlan` is that planner; `'improvise'` is the rule.
+
+    The one difference the rules actually turn on is the second parameter. A convoked creature pays
+    a generic pip **or** a pip of its own colour; an improvised artifact pays generic and nothing
+    else, there being no colour clause in the keyword at all. So the test that matters here is the
+    coloured-pip one: a board of artifacts does not make a {R} appear.
+
+    Three real printings, none in the pool. Printed rows copied from the corpus unchanged. The
+    artifacts tapped for the cost come from the pool itself — Tormod's Crypt, which taps for no mana
+    and so cannot be confused with a source, and Sol Ring, which can and is the subject of the last
+    test.
+  */
+  const DATA = [
+    // {5} and its only printed line is the keyword, which is what makes it 1 of the 14 cards this
+    // reader finishes outright rather than merely advances.
+    {
+      name: 'Foundry Assembler', type_line: 'Artifact Creature — Assembly-Worker',
+      mana_cost: '{5}', cmc: 5, colors: [], power: '3', toughness: '3', layout: 'normal',
+      oracle_text: 'Improvise (Your artifacts can help cast this spell. Each artifact you tap after you’re done activating mana abilities pays for {1}.)',
+    },
+    // {3}{R}: three pips an artifact may pay and one it may not.
+    {
+      name: 'Sweatworks Brawler', type_line: 'Creature — Human Artificer',
+      mana_cost: '{3}{R}', cmc: 4, colors: ['R'], power: '3', toughness: '3', layout: 'normal',
+      oracle_text: 'Improvise (Your artifacts can help cast this spell. Each artifact you tap after you’re done activating mana abilities pays for {1}.)\nMenace',
+    },
+    /*
+      A **red** artifact, and it is here because the break harness found the coloured-pip test
+      could not tell `colors: []` from `ch.colors`: every artifact the block had on the board was
+      colourless, so handing an improvising artifact its real colours changed nothing and the row
+      passed against the broken planner. Most artifacts are colourless, which is exactly why a test
+      about colour needs one that is not.
+
+      Its printed ability costs `{2}` and taps, so it is not a mana ability and the Scrapper never
+      enters `manaSources` — it is an artifact on the board and nothing else, which is what the row
+      needs it to be.
+    */
+    {
+      name: 'Slagdrill Scrapper', type_line: 'Artifact Creature — Robot Scout',
+      mana_cost: '{R}', cmc: 1, colors: ['R'], power: '1', toughness: '2', layout: 'normal',
+      oracle_text: '{2}, {T}, Sacrifice another artifact or land: Draw a card.',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'improvised',
+      name: 'Improvised',
+      entries: [
+        { name: 'Foundry Assembler', count: 4 }, { name: 'Sweatworks Brawler', count: 4 },
+        { name: "Tormod's Crypt", count: 8 }, { name: 'Sol Ring', count: 4 },
+        { name: 'Slagdrill Scrapper', count: 4 }, { name: 'Grizzly Bears', count: 4 },
+        { name: 'Mountain', count: 20 }, { name: 'Plains', count: 16 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    // The three printed rows above come from the data; everything else is a pool card.
+    expect([...list.fromData].sort())
+      .toEqual(['Foundry Assembler', 'Slagdrill Scrapper', 'Sweatworks Brawler']);
+    return list.deck;
+  };
+
+  const board = (mine: readonly string[], hand: readonly string[]): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'improvised', 1: 'improvised' },
+      deckSpecs: { improvised: deck() },
+      hands: { 0: [...hand] },
+      battlefield: { 0: [...mine] },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+
+  /** The play for a card in seat 0's hand, or undefined when it is not offered. */
+  const playFor = (s: GameState, name: string) => {
+    const card = find(s, 0, 'hand', name);
+    return legalActions(s, 0).plays.find((p) => p.card === card);
+  };
+
+  it('taps no artifact when the lands already cover the cost', () => {
+    // Five Mountains for a {5} Assembler. A tapped artifact is an artifact that cannot be used, so
+    // the planner spends mana first and improvises only the shortfall — convoke's rule, unchanged.
+    let s = board(['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain', "Tormod's Crypt"], ['Foundry Assembler']);
+    const crypt = find(s, 0, 'battlefield', "Tormod's Crypt");
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Foundry Assembler'),
+    })));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Foundry Assembler');
+    expect(s.instances[crypt]!.tapped).toBe(false);
+  });
+
+  it('is castable off fewer lands than its cost, by tapping artifacts for the rest', () => {
+    // Two Mountains and three Crypts against {5}: two off the lands, three improvised.
+    let s = board(
+      ['Mountain', 'Mountain', "Tormod's Crypt", "Tormod's Crypt", "Tormod's Crypt"],
+      ['Foundry Assembler'],
+    );
+    // Said out loud on the play, because otherwise the table offers a five-mana spell off two
+    // lands and gives no reason for it. The word is the keyword's, not convoke's.
+    expect(playFor(s, 'Foundry Assembler')?.description)
+      .toBe('Cast Foundry Assembler (improvising 3)');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Foundry Assembler'),
+    })));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Foundry Assembler');
+    // All three Crypts spent, which is what the discount actually costs.
+    const crypts = [...ids(s, 0, 'battlefield')].filter((id) => nameOf(s, id) === "Tormod's Crypt");
+    expect(crypts.filter((id) => s.instances[id]!.tapped)).toHaveLength(3);
+  });
+
+  it('cannot improvise a coloured pip, however many artifacts are out', () => {
+    /*
+      The rule the mechanic turns on, and the one place improvise and convoke differ: CR 702.126a
+      says an artifact pays {1}, with no colour clause, so {3}{R} off four artifacts and no red
+      source is three pips of four.
+
+      **Two refusals, and the second is the one that discriminates.** Four colourless Crypts say
+      only that four artifacts are not four mana — a planner that had kept convoke's "or one of its
+      colour" arm would read their empty colour lists and refuse this too, so that row passes either
+      way. The second board puts a **red** artifact out, where the two readings disagree:
+      generic-only still refuses the {R}, convoke's arm would pay it. The break harness found that
+      by swapping `colors: []` for `ch.colors` and watching this whole block pass.
+
+      The row underneath them, where one Mountain turns it into a play, is what proves the three
+      generic pips were improvised rather than nothing having been counted at all.
+    */
+    const dry = board(
+      ["Tormod's Crypt", "Tormod's Crypt", "Tormod's Crypt", "Tormod's Crypt"],
+      ['Sweatworks Brawler'],
+    );
+    expect(playFor(dry, 'Sweatworks Brawler')).toBeUndefined();
+    const brawler = find(dry, 0, 'hand', 'Sweatworks Brawler');
+    expect(legalActions(dry, 0).blocked.find((entry) => entry.card === brawler)?.reason)
+      .toMatch(/improvise/);
+
+    const red = board(
+      ['Slagdrill Scrapper', "Tormod's Crypt", "Tormod's Crypt", "Tormod's Crypt"],
+      ['Sweatworks Brawler'],
+    );
+    expect(playFor(red, 'Sweatworks Brawler')).toBeUndefined();
+
+    const wet = board(
+      ['Mountain', "Tormod's Crypt", "Tormod's Crypt", "Tormod's Crypt"],
+      ['Sweatworks Brawler'],
+    );
+    expect(playFor(wet, 'Sweatworks Brawler')?.description)
+      .toBe('Cast Sweatworks Brawler (improvising 3)');
+  });
+
+  it('does not count a creature that is not an artifact', () => {
+    /*
+      Both verdicts, because a row that only ever expects a refusal passes against a planner that
+      taps nothing at all. One Mountain and three Crypts is four of the Assembler's five however
+      many Bears stand next to them; a fourth Crypt is the fifth pip.
+    */
+    const bears = board(
+      ['Mountain', "Tormod's Crypt", "Tormod's Crypt", "Tormod's Crypt", 'Grizzly Bears', 'Grizzly Bears'],
+      ['Foundry Assembler'],
+    );
+    expect(playFor(bears, 'Foundry Assembler')).toBeUndefined();
+
+    const fourth = board(
+      ['Mountain', "Tormod's Crypt", "Tormod's Crypt", "Tormod's Crypt", "Tormod's Crypt"],
+      ['Foundry Assembler'],
+    );
+    expect(playFor(fourth, 'Foundry Assembler')?.description)
+      .toBe('Cast Foundry Assembler (improvising 4)');
+  });
+
+  it('spends a Sol Ring once: as mana or as a tapped artifact, never both', () => {
+    /*
+      Convoke's Llanowar Elves problem, one card type along. A Sol Ring is both an artifact
+      improvise may tap and a source the solver may tap for {C}{C}, and it cannot be both — the
+      planner drops whatever it taps from the source list, which is the line this row defends.
+
+      Sol Ring alone is {C}{C} of the Assembler's {5} and the cast is not offered. With three
+      Crypts beside it the board reaches exactly five: two off the Ring and three improvised, so
+      the note reads 3 rather than 4.
+    */
+    const alone = board(['Sol Ring'], ['Foundry Assembler']);
+    expect(playFor(alone, 'Foundry Assembler')).toBeUndefined();
+
+    let s = board(['Sol Ring', "Tormod's Crypt", "Tormod's Crypt", "Tormod's Crypt"], ['Foundry Assembler']);
+    expect(playFor(s, 'Foundry Assembler')?.description)
+      .toBe('Cast Foundry Assembler (improvising 3)');
+    const ring = find(s, 0, 'battlefield', 'Sol Ring');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Foundry Assembler'),
+    })));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Foundry Assembler');
+    // Tapped for its mana, and every Crypt tapped for a pip: four permanents for a five-drop.
+    expect(s.instances[ring]!.tapped).toBe(true);
+  });
+
+  it('never offers an improvise cast the engine then refuses', () => {
+    /*
+      The property the shared planner exists for, swept over every board this deck can build: for
+      each number of lands and each number of artifacts, either the play is offered and the cast
+      goes onto the stack, or it is not offered. An offer the engine then refuses is what a *second*
+      answer to "can this be paid for" produces, and the whole argument for one planner is that
+      improvise did not grow one.
+    */
+    for (let lands = 0; lands <= 5; lands += 1) {
+      for (let artifacts = 0; artifacts <= 5; artifacts += 1) {
+        const s = board(
+          [...Array.from({ length: lands }, () => 'Mountain'),
+            ...Array.from({ length: artifacts }, () => "Tormod's Crypt")],
+          ['Foundry Assembler'],
+        );
+        const assembler = find(s, 0, 'hand', 'Foundry Assembler');
+        if (!legalActions(s, 0).plays.some((p) => p.card === assembler)) continue;
+        const after = apply(s, { type: 'auto:cast', by: 0, card: assembler });
+        expect(ids(after, 0, 'stack')).toContain(assembler);
+      }
+    }
   });
 });

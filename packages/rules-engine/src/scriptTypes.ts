@@ -1972,10 +1972,23 @@ export interface CardScript {
    * that creature's colour.
    *
    * A flag rather than a cost, because it does not change what the spell costs — it changes what
-   * may pay for it. `convokePlan` works out which creatures, and taps none that the lands already
+   * may pay for it. `tapToPayPlan` works out which creatures, and taps none that the lands already
    * cover.
    */
   readonly convoke?: boolean;
+  /**
+   * Improvise (CR 702.126): each artifact tapped as this is cast pays one generic mana.
+   *
+   * Convoke's sibling and the same kind of flag, through the same `tapToPayPlan` with
+   * `'improvise'` for its rule. The two differences are the whole of the mechanic: what may be
+   * tapped is an artifact rather than a creature, and what it pays is generic **only** — an
+   * artifact's colours never enter into it (CR 702.126a), so a blue artifact cannot pay a {U} pip.
+   *
+   * Which artifacts get tapped is the engine's choice, exactly as convoke's creatures are, and for
+   * the reason that file argues at length: the offer and the payment have to agree about a cost,
+   * and they can only do that by asking one function.
+   */
+  readonly improvise?: boolean;
   /** What the spell targets when cast. For a modal spell the targets live on each mode. */
   readonly targets?: readonly TargetSpec[];
   /** "Choose one —". See `ModalDef`. */

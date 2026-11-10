@@ -4160,7 +4160,7 @@ const BANISHING_LIGHT: CardScript = exileUntilItLeaves('Banishing Light', {
   Convoke (CR 702.51), and the two cards that carry it.
 
   A flag rather than a cost: convoke does not change what a spell costs, it changes what may pay
-  for it, and `convokePlan` in `legalActions.ts` is where that lives. Both of these are Selesnya
+  for it, and `tapToPayPlan` in `legalActions.ts` is where that lives. Both of these are Selesnya
   cards in the Selesnya deck, which is where the mechanic is printed and the only place it is worth
   anything — convoke needs a board of creatures to be a discount at all.
 
@@ -10025,6 +10025,14 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   if (word === 'persist') return { triggers: comesBackWithACounter('persist') };
   if (word === 'split second') return { splitSecond: true };
   if (word === 'convoke') return { convoke: true };
+  /*
+    Improvise (CR 702.126), convoke's sibling one card type along: each artifact you control may be
+    tapped to pay {1}. **23 legal printings** print the bare word and nothing else, 14 of them with
+    this as their only unread line, and the engine has had the mechanism since #101 — `tapToPayPlan`
+    is convoke's planner parameterised by what may be tapped and what it may pay, so the flag is the
+    whole of the reading.
+  */
+  if (word === 'improvise') return { improvise: true };
 
   // ── The keywords that carry a mana cost ───────────────────────────────────────────────────────
   /*

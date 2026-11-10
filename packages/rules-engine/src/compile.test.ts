@@ -16596,3 +16596,96 @@ describe('the relational blocker clause (D551)', () => {
     expect(read.unread.map((u) => u.line)).toEqual([]);
   });
 });
+
+/*
+  **Improvise** (D552), the keyword audit's head row that the engine already had the mechanism for:
+  14 legal cards finished, 23 printings. Unlike evoke and renown it emits no trigger and no ability
+  at all — it is a flag on the script, and the whole of the reading is `tapToPayPlan` being
+  convoke's planner with two parameters rather than convoke's planner.
+*/
+describe('the Improvise keyword line (D552)', () => {
+  /** Foundry Assembler's printed row, whose only line is the keyword, with the text swapped in. */
+  const improvise = (text: string) => compileCard({
+    name: 'Foundry Assembler', type_line: 'Artifact Creature — Assembly-Worker',
+    mana_cost: '{5}', cmc: 5, colors: [], power: '3', toughness: '3', layout: 'normal',
+    oracle_text: text,
+  });
+
+  const REMINDER = 'Improvise (Your artifacts can help cast this spell. Each artifact you tap'
+    + ' after you’re done activating mana abilities pays for {1}.)';
+
+  it('reads the keyword off a card whose only printed line it is', () => {
+    /*
+      The 14 cards this reader finishes are the ones shaped like this: one line, the keyword, and
+      the reminder text in brackets that `printedRulesLines` strips before anything reads it. So the
+      row is asked with the reminder still on, which is how the corpus prints it.
+    */
+    const read = improvise(REMINDER);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.improvise).toBe(true);
+    // And nothing else: it is a payment rule, so it has no ability and no trigger of its own.
+    expect(read.script?.triggers).toBeUndefined();
+    expect(read.script?.abilities).toBeUndefined();
+  });
+
+  it('reads it beside the rest of a card, in either printed order', () => {
+    // 9 of the 23 printings carry other text. The keyword is a line like any other, so the loop
+    // that reads it does not care where it sits.
+    for (const text of [`${REMINDER}\nFlying`, `Flying\n${REMINDER}`]) {
+      const read = improvise(text);
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.unread.map((u) => u.line)).toEqual([]);
+      expect(read.script?.improvise).toBe(true);
+    }
+  });
+
+  it('does not set convoke, which is the sibling flag it must not be confused with', () => {
+    /*
+      The two flags differ by what may be tapped and what it may pay, and they go through one
+      planner — so the only thing keeping them apart downstream is which flag the card carries.
+      A reader that set `convoke` here would make a board of creatures pay for this spell and let
+      an artifact pay a coloured pip, both wrong, and every other assertion in this block would
+      still pass.
+    */
+    const read = improvise(REMINDER);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.convoke).toBeUndefined();
+  });
+
+  it.each([
+    ['a line that only starts with the keyword', 'Improvise 2'],
+    ['the word inside a sentence', 'Artifacts you control have improvise.'],
+  ])('leaves %s unread', (_what, line) => {
+    /*
+      Both anchors, and the second is the one that matters: "artifacts you control have improvise"
+      is a static ability granting the keyword to other spells, and reading it as this card having
+      improvise would be a different card (D362 — a wrong reading is worse than an unread line).
+      `Improvise 2` is not printed on anything; it guards the shape rather than a card.
+    */
+    const read = improvise(line);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.improvise).toBeUndefined();
+  });
+
+  it('reads the word whatever its case', () => {
+    /*
+      The corpus prints it capitalised as a keyword line; `keywordScriptFor` lowercases first, and
+      this is the row that says so rather than leaving it to the regex flags of a neighbour.
+
+      Written out with a narrowing guard rather than `read.ok && read.script?...`, because the
+      failure union has no `script` at all and the test typecheck (#246) refuses the short form —
+      two calls to the same function are two values as far as the narrowing is concerned.
+    */
+    for (const word of ['improvise', 'IMPROVISE', 'Improvise']) {
+      const read = improvise(word);
+      expect(read.ok).toBe(true);
+      if (!read.ok) return;
+      expect(read.script?.improvise).toBe(true);
+    }
+  });
+});

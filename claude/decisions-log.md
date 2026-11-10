@@ -38304,3 +38304,134 @@ green at **3,424** engine tests.
 Three defective rows in one increment, all three found by the harness rather than by the suite
 passing, is the strongest argument yet for running it on every mechanic: a suite only ever reports
 that its own assertions held.
+
+## D552 — The Improvise keyword line, and convoke's planner made general
+
+The keyword audit's head row that the engine already had the mechanism for. **23 legal printings,
+14 of them finished by reading it**, and the reading is one line:
+
+```ts
+if (word === 'improvise') return { improvise: true };
+```
+
+Improvise (CR 702.126a) is "each artifact you control can be tapped to pay {1}". Convoke
+(CR 702.51) is "each creature you tap pays one generic mana or one mana of that creature's colour".
+Those are the same mechanic with two parameters: **what may be tapped**, and **which pips it may
+pay**. So `convokePlan` became `tapToPayPlan(state, seat, cost, sources, rule)` with
+`rule: 'convoke' | 'improvise'`, and the two differences are two expressions:
+
+```ts
+if (!(rule === 'convoke' ? ch.isCreature : hasType(ch.typeLine, 'artifact'))) continue;
+available.push({ id, colors: rule === 'convoke' ? ch.colors as readonly ManaType[] : [] });
+```
+
+Everything else — mana first, the shortfall only, coloured pips before generic, a tapped permanent
+leaving the mana sources, summoning sickness not applying — is shared, because all of it is the
+same for both keywords. Writing improvise its own planner would have been that whole argument
+copied with one line changed, and the copy is exactly where the two would have drifted.
+
+### The second parameter is where the rules live
+
+An artifact pays **generic and only generic**. There is no colour clause in the keyword, so the
+clean way to say it is to hand the planner an empty colour list for an improvising artifact rather
+than to add a branch further down: the assignment loop then cannot offer an artifact for a coloured
+pip because it never sees a colour to offer. A board of four artifacts against `{3}{R}` is three
+pips of four, and that is the test that distinguishes this reading from convoke's.
+
+An **artifact creature** answers to both rules and needs no special case: under `'improvise'` it is
+an artifact paying one generic pip, under `'convoke'` it is a creature that may pay a coloured one.
+No card prints both keywords, so the two readings never meet on one cast.
+
+### Measured — the third exact keyword prediction in a row
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,560 / 56,421 (41.8%) | **23,583 / 56,421 (41.8%)** |
+| cards with a compiled script | 12,035 | **12,050** |
+| cards with every printed line read | 7,837 | **7,851** |
+
+The audit predicted **14 finishes and 23 printings**; it delivered 14 and 23. Evoke (D548) and
+renown (D549) also landed exactly on their figures, and D551 beat its figure because it widened a
+shared clause vocabulary rather than adding a keyword. So the calibration note now has three
+confirmations of the same rule: **the audit's column is exact for a keyword row** and a floor for a
+change to the vocabulary underneath one. That is a property `one-blocker.mjs` has never had, and
+the reason is structural — a keyword line is a whole printed line, so reading it either finishes
+the card or does not, with nothing left to estimate.
+
+### No pool card, and the two checks that said so
+
+`script improvise` is the fourth entry in `compilerOnly` added on evidence rather than on a card:
+23 printings, 14 finished, none in the pool's thirteen measured decks, and the flag cannot be put
+on a hand-written card without changing what a measured deck costs to cast (D442). The runtime
+evidence is six tests driving printed Foundry Assembler and Sweatworks Brawler through the engine's
+own plays. The mechanic-coverage test refused the push until that entry was written with its
+evidence, which is the third increment running where a standing check caught the thing I would
+otherwise have left undocumented.
+
+### A documentation defect found on the way
+
+Three docblocks were stacked above `crewPlan` in `legalActions.ts`: `manaSources`', the convoke
+planner's, and `crewPlan`'s own. Only the last of the three documented the function under it —
+TypeScript and every editor attach the *immediately* preceding comment, so the other two had been
+documenting nothing since whenever a function was moved past them. Both are now directly above the
+function they describe. Worth recording because it is a failure mode a reviewer cannot see: the
+prose is present, correct, and attached to the wrong thing.
+
+### The break harness, and a fourth defective test row — the same defect as D551's
+
+10 of 10 caught, again after a correction. The first run came back **9/10**, and the survivor was
+break 5: `available.push({ id, colors: ch.colors as readonly ManaType[] })`, which hands an
+improvising artifact its real colours and so lets it pay a coloured pip.
+
+The reason nothing caught it is the reason D551's survivor went uncaught, one increment later and
+in a different file: **every artifact on the board in that block was colourless.** Tormod's Crypt is
+`colors: []`, so `colors: []` and `ch.colors` are the same list and the coloured-pip test could not
+tell the correct planner from the broken one. The row read like the heart of the mechanic and
+asserted nothing about it.
+
+Fixed by putting a **red** artifact on the board — Slagdrill Scrapper (`{R}`, Artifact Creature —
+Robot Scout, 1/2, whose printed ability costs `{2}` and taps, so it is not a mana ability and never
+enters `manaSources`). Against `{3}{R}` with no red land: generic-only refuses the `{R}`, convoke's
+arm would pay it. Both boards are kept, with the docblock saying which one discriminates and which
+one passes either way, because the colourless row still says something true (four artifacts are not
+four mana) and deleting it would lose that.
+
+**The generalised lesson, now twice confirmed:** a test about colour needs an object that *has* a
+colour, and the default object in Magic — a colourless artifact, a colourless creature — is exactly
+the one that makes such a test vacuous. Both survivors were quantifier-or-colour bugs whose
+witnesses had empty colour lists. That is now a thing to check when writing the test rather than
+when reading the harness output.
+
+## D553 — A permanent that makes mana is tapped last, and a failing test is what found it
+
+The Sol Ring row of D552's table block failed on first run, and it was the code that was wrong
+rather than the test.
+
+A Sol Ring is both an artifact improvise may tap and a source for `{C}{C}`, and it cannot be both.
+Against a `{5}` spell with a Sol Ring and three Tormod's Crypts on the board, one assignment is
+castable and the other is short by one:
+
+- Ring tapped for mana (2) + three Crypts improvised (3) = **5**. Castable.
+- Ring improvised (1) + three Crypts improvised (3) = **4**. Not castable.
+
+The planner walked the battlefield in order, so it took whatever came first — and on that board
+that was the Ring. The offer was refused for a board that could pay.
+
+The fix is one sort and one sentence of reasoning:
+
+```ts
+const makesMana = new Set(sources.map((source) => source.key));
+available.sort((a, b) => Number(makesMana.has(a.id)) - Number(makesMana.has(b.id)));
+```
+
+**Nothing is lost by the rule**, which is what makes it the right one rather than a heuristic.
+Every mana pays a generic pip, so a permanent that makes mana is worth *at least* as much tapped
+for mana as tapped for a cost: there is no board on which reaching for it first helps. A source
+that makes one mana is worth exactly the same either way, which is why **convoke's own answers do
+not move** — the pool's convoke tests, Llanowar Elves included, give the same counts before and
+after, and that is why the rule can live in the shared planner rather than in one arm of it.
+
+The latent form of this was in convoke from #101: a creature tapping for two mana would have had
+the same problem, and the pool simply has no such creature. It took a mechanic whose fodder is
+*artifacts* — where two-mana rocks are ordinary — to produce a board that discriminates. Another
+entry for the standing lesson that a mechanic generalised is a mechanic tested from a new angle.

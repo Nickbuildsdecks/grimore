@@ -50,8 +50,8 @@ import { FORETELL_COST, MORPH_COST, type CardScript, type TargetSpec } from './s
 import { BESTOW_TARGET, checkDivision, hasAnyLegalTargets, targetSeqsFor } from './targeting.js';
 import { markPactsBroken, pactLine, pactsBrokenBy } from './pacts.js';
 import {
-  convokePlan, costChangeFor, crewPlan, delvePlan, graveyardFodder, legalActions, manaSources,
-  withCostChange,
+  costChangeFor, crewPlan, delvePlan, graveyardFodder, legalActions, manaSources, tapToPayPlan,
+  withCostChange, type TapToPayRule,
 } from './legalActions.js';
 import {
   EMPTY_COMBAT, MAIN_STEPS, targetKey, type CombatAttack, type StackObject, type Target,
@@ -646,7 +646,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   /*
     Convoke, which widens what may pay rather than changing what it costs (CR 702.51).
 
-    Worked out by the same `convokePlan` that decided whether to offer this cast at all, so the
+    Worked out by the same `tapToPayPlan` that decided whether to offer this cast at all, so the
     offer and the payment cannot disagree — the rule this file exists to keep. The creatures are
     tapped here, as the cost is paid, which is also what makes the "became tapped" triggers fire at
     the right moment: a City of Brass convoked for a spell charges its life now, not on resolution.
@@ -690,13 +690,22 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     toPay = plan.cost;
     taxToPay = 0;
   }
-  if (script?.convoke === true && !offered) {
+  /*
+    Convoke and improvise, which are one planner with two parameters (see `tapToPayPlan`): the
+    permanents tapped are worked out here rather than carried on the action, for the reason this
+    whole family is built that way — a client naming them would be a client deciding which of its
+    own resources to spend, and the offer and the payment have to agree about the cost either way.
+  */
+  const tapRule: TapToPayRule | null = script?.convoke === true ? 'convoke'
+    : script?.improvise === true ? 'improvise' : null;
+  if (tapRule !== null && !offered) {
     const printed = parseManaCost(costText);
     const taxed = tax > 0 ? { ...printed, generic: printed.generic + tax } : printed;
     const full = withCostChange(taxed, change.generic);
-    const plan = convokePlan(state, action.by, full, manaSources(state, action.by));
+    const plan = tapToPayPlan(state, action.by, full, manaSources(state, action.by), tapRule);
     if (plan === null) {
-      throw new EngineError('RULE_NOT_APPLICABLE', `cannot pay for ${characteristics.name}, even with convoke`);
+      throw new EngineError('RULE_NOT_APPLICABLE',
+        `cannot pay for ${characteristics.name}, even with ${tapRule}`);
     }
     convoked = plan.tapped;
     // The plan's cost already carries the tax, so it must not be added a second time.

@@ -527,47 +527,6 @@ interface ManaSourceEntry {
 }
 
 /**
- * Permanents the engine may tap on a player's behalf to pay a cost.
- *
- * Only abilities that need nothing the seat does not already have: one that costs mana would need
- * mana first, and pretending otherwise offers spells that cannot be cast. One entry per permanent,
- * because tapping it is what pays — and several tap-for-mana abilities on one permanent are a
- * *choice* between them rather than a sum, which is exactly what a dual land is.
- *
- * A life cost is the one non-mana cost that counts, because it is the one a seat can always decide
- * about from its own life total. Mana Confluence was a dead land for as long as this function only
- * admitted a bare tap: it never paid for a spell, never showed up in the dimmed pips, and the
- * engine would refuse a cast that the player could see the mana for. Painful sources go last in
- * the list so the solver's tie-breaks — every one of which keeps the first source it found —
- * reach for a Swamp before they reach for your life total.
- *
- * Lives here rather than in `automation.ts` because `legalActions` is what asks it the question
- * that matters — "can this be paid for at all" — and `automation.ts` already imports this file.
- */
-/**
- * Convoke (CR 702.51): which creatures to tap for a cost, and what is left of it to pay.
- *
- * **It reduces the cost rather than making mana**, which is the one design decision here worth
- * stating. Modelling a convoked creature as a mana source would have been a few lines — it is
- * almost exactly a dual land, "one generic or one of my colour" — but a mana source that
- * over-produces leaves mana floating, and convoke cannot do that. There is no way to clean it up
- * afterwards either, because a Dark Ritual means floating mana is sometimes legitimate and nothing
- * downstream could tell the two apart.
- *
- * **It taps nothing it does not have to.** Mana first: a spell the lands already cover convokes
- * nobody, because a tapped creature cannot block and the player would rather keep it. Only the
- * shortfall is convoked, one pip at a time, coloured pips first while a creature of that colour is
- * available — a greedy assignment rather than an optimal one, which for convoke is the same thing
- * often enough and never offers a cast that cannot be paid.
- *
- * **Summoning sickness does not stop it.** Tapping for convoke is neither attacking nor activating
- * an ability, so a creature that arrived this turn may be tapped for it (CR 702.51a) — the one rule
- * about convoke that is easy to get wrong in the direction of being too strict.
- *
- * Returns null when even convoke cannot cover the cost. `legalActions` and `castSpell` both call
- * this, so there is one answer to "can this be paid for" rather than an offer and a refusal.
- */
-/**
  * Which creatures to tap to crew a Vehicle, or `null` when the board cannot reach the number.
  *
  * Convoke's sibling, and built the same way for the same reason: one planner, called by
@@ -614,21 +573,82 @@ export function crewPlan(
   return total >= need ? tapped : null;
 }
 
-export function convokePlan(
+/**
+ * Convoke (CR 702.51) and improvise (CR 702.126): which permanents to tap for a cost, and what is
+ * left of it to pay.
+ *
+ * **One planner for both**, because they are the same mechanic with two parameters. Convoke taps
+ * creatures and each one pays a generic pip or a pip of its own colour; improvise taps artifacts
+ * and each one pays a generic pip and nothing else — CR 702.126a is "each artifact you control can
+ * be tapped to pay {1}", with no colour clause in it at all. Everything else is identical: mana
+ * first, the shortfall only, coloured pips before generic, a tapped permanent leaving the mana
+ * sources. Improvise as its own function would have been that whole argument copied with one line
+ * changed, and the copy is where the two would have drifted apart.
+ *
+ * **It reduces the cost rather than making mana**, which is the one design decision here worth
+ * stating. Modelling a convoked creature as a mana source would have been a few lines — it is
+ * almost exactly a dual land, "one generic or one of my colour" — but a mana source that
+ * over-produces leaves mana floating, and convoke cannot do that. There is no way to clean it up
+ * afterwards either, because a Dark Ritual means floating mana is sometimes legitimate and nothing
+ * downstream could tell the two apart.
+ *
+ * **It taps nothing it does not have to.** Mana first: a spell the lands already cover convokes
+ * nobody, because a tapped creature cannot block and the player would rather keep it. Only the
+ * shortfall is convoked, one pip at a time, coloured pips first while a creature of that colour is
+ * available — a greedy assignment rather than an optimal one, which for convoke is the same thing
+ * often enough and never offers a cast that cannot be paid.
+ *
+ * **A permanent that makes mana is tapped last**, and improvise is what forced that rule into the
+ * open. A Sol Ring is both an artifact improvise may tap and a source for {C}{C}, and it cannot be
+ * both — so tapping it for one pip throws a mana away, and a board of Sol Ring plus three Crypts
+ * against a {5} spell is castable on one assignment (Ring for mana, Crypts for three pips) and
+ * short by one on the other. Under battlefield order it was the other. Nothing is lost by the
+ * rule either, because every mana pays a generic pip: a source is always worth at least as much
+ * tapped for mana as tapped for a cost, so there is no board on which reaching for it first helps.
+ * Convoke's own answers do not move — a creature tapping for one mana is worth the same either
+ * way — which is why the rule can live in the shared planner rather than in one arm of it.
+ *
+ * **Summoning sickness does not stop it.** Tapping for convoke is neither attacking nor activating
+ * an ability, so a creature that arrived this turn may be tapped for it (CR 702.51a) — the one rule
+ * about convoke that is easy to get wrong in the direction of being too strict. The same answer
+ * covers improvise, where it is not even a question: an artifact has no summoning sickness to ask
+ * about unless it is also a creature, and tapping it here is still neither of the two things
+ * CR 302.6 is about.
+ *
+ * **An artifact creature answers to both rules**, and that is not a special case in here: under
+ * `'improvise'` it is an artifact that pays one generic pip, under `'convoke'` it is a creature that
+ * may pay a coloured one. No card prints both keywords, so the two readings never meet on one cast.
+ *
+ * Returns null when even tapping everything eligible cannot cover the cost. `legalActions` and
+ * `castSpell` both call this, so there is one answer to "can this be paid for" rather than an offer
+ * and a refusal.
+ */
+export type TapToPayRule = 'convoke' | 'improvise';
+
+export function tapToPayPlan(
   state: GameState, seat: SeatIndex, cost: ManaCost, sources: readonly ManaSourceEntry[],
+  rule: TapToPayRule,
 ): { readonly tapped: readonly string[]; readonly cost: ManaCost } | null {
   const pool = poolOf(state, seat);
   if (canAfford(pool, cost, sources)) return { tapped: [], cost };
 
-  /** Untapped creatures, with the colours each could pay for. */
+  /** Untapped permanents this rule may tap, with the colours each could pay for. */
   const available: { id: string; colors: readonly ManaType[] }[] = [];
   for (const id of listAt(state, zoneKey(seat, 'battlefield'))) {
     const inst = state.instances[id];
     if (inst === undefined || inst.tapped) continue;
     const ch = characteristicsOf(state, inst);
-    if (!ch.isCreature) continue;
-    available.push({ id, colors: ch.colors as readonly ManaType[] });
+    // Asked of the **live** characteristics rather than the printed type line, so an animated
+    // artifact convokes and a creature turned into an artifact improvises.
+    if (!(rule === 'convoke' ? ch.isCreature : hasType(ch.typeLine, 'artifact'))) continue;
+    // Improvise pays generic and only generic, so an artifact's colours are not offered to the
+    // assignment below. That is what stops a blue artifact paying a {U} pip.
+    available.push({ id, colors: rule === 'convoke' ? ch.colors as readonly ManaType[] : [] });
   }
+  // Mana-makers last, battlefield order within each group (the sort is stable). See the docblock:
+  // a permanent spent on a pip is a permanent not spent on mana, and mana pays pips too.
+  const makesMana = new Set(sources.map((source) => source.key));
+  available.sort((a, b) => Number(makesMana.has(a.id)) - Number(makesMana.has(b.id)));
 
   const tapped: string[] = [];
   let left: ManaCost = cost;
@@ -650,7 +670,7 @@ export function convokePlan(
     left = paying === 'generic'
       ? { ...left, generic: left.generic - 1 }
       : { ...left, colors: { ...left.colors, [paying]: (left.colors[paying] ?? 0) - 1 } };
-    // A creature tapped for convoke cannot also be tapped for mana, so it leaves the source list.
+    // A permanent tapped for a cost cannot also be tapped for mana, so it leaves the source list.
     leftSources = leftSources.filter((source) => source.key !== chosen.id);
     if (canAfford(pool, left, leftSources)) return { tapped, cost: left };
   }
@@ -707,7 +727,7 @@ export function graveyardFodder(
  * can never pay a coloured pip, so the loop stops at `cost.generic` however many cards are there.
  *
  * `null` means it cannot be cast even with every card in the graveyard behind it, which is a
- * refusal to offer rather than an offer to refuse — the same shape `convokePlan` returns and for
+ * refusal to offer rather than an offer to refuse — the same shape `tapToPayPlan` returns and for
  * the same reason.
  */
 export function delvePlan(
@@ -722,6 +742,24 @@ export function delvePlan(
   return null;
 }
 
+/**
+ * Permanents the engine may tap on a player's behalf to pay a cost.
+ *
+ * Only abilities that need nothing the seat does not already have: one that costs mana would need
+ * mana first, and pretending otherwise offers spells that cannot be cast. One entry per permanent,
+ * because tapping it is what pays — and several tap-for-mana abilities on one permanent are a
+ * *choice* between them rather than a sum, which is exactly what a dual land is.
+ *
+ * A life cost is the one non-mana cost that counts, because it is the one a seat can always decide
+ * about from its own life total. Mana Confluence was a dead land for as long as this function only
+ * admitted a bare tap: it never paid for a spell, never showed up in the dimmed pips, and the
+ * engine would refuse a cast that the player could see the mana for. Painful sources go last in
+ * the list so the solver's tie-breaks — every one of which keeps the first source it found —
+ * reach for a Swamp before they reach for your life total.
+ *
+ * Lives here rather than in `automation.ts` because `legalActions` is what asks it the question
+ * that matters — "can this be paid for at all" — and `automation.ts` already imports this file.
+ */
 export function manaSources(state: GameState, seat: SeatIndex): ManaSourceEntry[] {
   const free: ManaSourceEntry[] = [];
   /*
@@ -1393,9 +1431,13 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       than of the lands alone — and the plan is what `castSpell` recomputes, so the offer and the
       payment cannot disagree.
     */
-    const convoked = script?.convoke === true ? convokePlan(state, seat, payable, sources) : null;
-    if (script?.convoke === true && convoked === null) {
-      why(id, 'not enough mana, counting every land you could tap and every creature you could convoke');
+    const tapRule: TapToPayRule | null = script?.convoke === true ? 'convoke'
+      : script?.improvise === true ? 'improvise' : null;
+    const convoked = tapRule === null ? null : tapToPayPlan(state, seat, payable, sources, tapRule);
+    if (tapRule !== null && convoked === null) {
+      why(id, tapRule === 'convoke'
+        ? 'not enough mana, counting every land you could tap and every creature you could convoke'
+        : 'not enough mana, counting every land you could tap and every artifact you could improvise with');
       continue;
     }
     /*
@@ -1478,11 +1520,11 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       off four lands and gives no reason at all.
 
       The count rather than the names: which creatures get tapped is the engine's to decide (see
-      `convokePlan`), and a player reading "convoking 3" knows what the cast is about to cost them
+      `tapToPayPlan`), and a player reading "convoking 3" knows what the cast is about to cost them
       without having to work out which three.
     */
     const convokeNote = convoked !== null && convoked.tapped.length > 0
-      ? ` (convoking ${convoked.tapped.length})`
+      ? ` (${tapRule === 'improvise' ? 'improvising' : 'convoking'} ${convoked.tapped.length})`
       : '';
     /*
       An offered cast is named for what it is rather than for where it is.
