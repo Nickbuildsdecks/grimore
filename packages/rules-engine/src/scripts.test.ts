@@ -38,6 +38,7 @@ import {
   namesIn, nextTurn, passBoth, refusal, stackNames, tapAllLands,
 } from './testkit.js';
 import { CARD_SCRIPTS } from './scripts.js';
+import { scriptForCard } from './derive.js';
 import type { Action, GameState, SeatIndex } from './types.js';
 import type { Target } from './turnTypes.js';
 
@@ -14694,16 +14695,21 @@ describe('embalm and eternalize: a token copy of the card, with different charac
     // Built inline rather than through the helper, because the one thing of theirs worth exiling
     // has to be on the board *before* the game starts: a creature walked on afterwards would
     // raise its own entry trigger and the test would be about that instead.
-    let s = advanceTo(arena({
+    // Embalm is {5}{W} (D575), so six lands; five do not offer it.
+    const board = (lands: number): GameState => tapAllLands(advanceTo(arena({
       decks: { 0: 'dawn-tithe', 1: 'tidal-mind' },
       graveyard: { 0: ['Angel of Sanctions'] },
       battlefield: {
-        0: Array.from({ length: 5 }, () => 'Plains'),
+        0: Array.from({ length: lands }, () => 'Plains'),
         1: ['Wall of Frost'],
       },
       turn: 7, firstSeat: 0,
-    }), 'precombat-main');
-    s = tapAllLands(s, 0);
+    }), 'precombat-main'), 0);
+    const short = board(5);
+    expect(refusal(short, {
+      type: 'auto:activate', by: 0, card: find(short, 0, 'graveyard', 'Angel of Sanctions'), abilityIndex: 0,
+    })).not.toBeNull();
+    let s = board(6);
     const theirs = find(s, 1, 'battlefield', 'Wall of Frost');
     const angel = find(s, 0, 'graveyard', 'Angel of Sanctions');
     s = apply(s, { type: 'auto:activate', by: 0, card: angel, abilityIndex: 0 });
@@ -14711,6 +14717,15 @@ describe('embalm and eternalize: a token copy of the card, with different charac
 
     const token = tokenOf(s, 0);
     expect(characteristicsOf(s, s.instances[token]!).keywords.has('flying')).toBe(true);
+    // "You may exile" (D575): the token has arrived and the Wall is still there until the answer.
+    expect(s.pendingDecision?.prompt).toBe(
+      'Exile target nonland permanent an opponent controls until Angel of Sanctions leaves the battlefield?',
+    );
+    expect(s.instances[theirs]!.zone).toBe('battlefield');
+    const declined = drain(say(s, 0, 'No'), 40);
+    expect(declined.instances[theirs]!.zone).toBe('battlefield');
+    expect(declined.stackOrder).toEqual([]);
+    s = drain(say(s, 0, 'Yes'), 40);
     expect(s.instances[theirs]!.zone).toBe('exile');
     expect(s.instances[theirs]!.exiledBy).toBe(token);
 
@@ -21273,6 +21288,56 @@ describe('a granted triggered ability: the first ability on a permanent that did
 
   const held = (s: GameState): number => ids(s, 0, 'hand').length;
 
+  /*
+    The Aura route, on a card that prints it (D575). Ophidian Eye carried these rows until it was
+    given its printed text, which is a trigger of the Eye's own and not a grant. Sixth Sense does
+    print one. It is not in the pool, so it is compiled from its Oracle row and played out of a
+    list of its own — which makes these the rows a pasted deck's granting Aura would be held to.
+  */
+  const SIXTH_SENSE = {
+    name: 'Sixth Sense', type_line: 'Enchantment — Aura', mana_cost: '{G}', cmc: 1, colors: ['G'],
+    layout: 'normal',
+    oracle_text: 'Enchant creature\nEnchanted creature has "Whenever this creature deals combat damage to a player, you may draw a card."',
+  };
+  const senseList = customDeck({
+    id: 'sixth-sense',
+    name: 'Sixth Sense',
+    entries: [
+      { name: 'Sixth Sense', count: 4 },
+      { name: 'Turn to Frog', count: 4 },
+      { name: 'Leonin Skyhunter', count: 4 },
+      { name: 'Forest', count: 24 },
+      { name: 'Island', count: 24 },
+    ],
+    data: [SIXTH_SENSE] as never[],
+  }).deck;
+  /**
+   * Seat 0 with a Skyhunter out, and the lands for a Sixth Sense and a Turn to Frog in either
+   * order — two Forests, so the Frog's generic mana cannot take the only green source.
+   */
+  const sensing = (hand: readonly string[] = ['Sixth Sense']): GameState => advanceTo(arena({
+    decks: { 0: 'sixth-sense', 1: 'verdant-guard' },
+    deckSpecs: { 'sixth-sense': senseList },
+    battlefield: { 0: ['Forest', 'Forest', 'Island', 'Island', 'Leonin Skyhunter'] },
+    hands: { 0: hand },
+    turn: 6, firstSeat: 0,
+  }), 'precombat-main');
+  /** Casts the named card from hand at the Skyhunter. */
+  const aimAtSkyhunter = (s: GameState, card: string): GameState => drain(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', card),
+    targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
+  }), 20);
+  /** `connect`, for an ability that asks: the swing, the answer it wants, the rest of the turn. */
+  const connectSaying = (s: GameState, option: 'Yes' | 'No', ...names: readonly string[]): GameState => {
+    const attackers = names.map((name) => ({
+      attacker: find(s, 0, 'battlefield', name), defender: 1 as const,
+    }));
+    const swung = drain(advanceTo(apply(advanceTo(s, 'declare-attackers'), {
+      type: 'auto:attack', by: 0, attackers,
+    }), 'combat-damage'), 80);
+    return drain(advanceTo(drain(say(swung, 0, option), 80), 'end'), 80);
+  };
+
   it('fires off the holder’s combat damage, for both halves of the pair', () => {
     /*
       Two attackers and two cards, which is the reading that distinguishes a granted ability from a
@@ -21300,15 +21365,13 @@ describe('a granted triggered ability: the first ability on a permanent that did
   });
 
   it('and an Aura hands the same ability to one creature, which is the other route in', () => {
-    let s = table(['Leonin Skyhunter'], ['Ophidian Eye']);
-    s = drain(apply(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ophidian Eye'),
-      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
-    }), 20);
+    const s = aimAtSkyhunter(sensing(), 'Sixth Sense');
     const before = held(s);
-    s = connect(s, 'Leonin Skyhunter');
-    expect(life(s, 1)).toBe(18);
-    expect(held(s)).toBe(before + 1);
+    const swung = connectSaying(s, 'Yes', 'Leonin Skyhunter');
+    expect(life(swung, 1)).toBe(18);
+    expect(held(swung)).toBe(before + 1);
+    // Sixth Sense's ability is a "you may": the same swing, declined, draws nothing.
+    expect(held(connectSaying(s, 'No', 'Leonin Skyhunter'))).toBe(before);
   });
 
   it('is gone the moment the thing granting it is', () => {
@@ -21317,16 +21380,13 @@ describe('a granted triggered ability: the first ability on a permanent that did
       copied onto the creature, it is read off the effect every time an event is raised. So the
       Aura leaving takes it with it, with nothing having to remember that it was ever there.
     */
-    let s = table(['Leonin Skyhunter'], ['Ophidian Eye']);
-    s = drain(apply(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ophidian Eye'),
-      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
-    }), 20);
+    let s = aimAtSkyhunter(sensing(), 'Sixth Sense');
     s = apply(s, {
-      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Ophidian Eye'),
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Sixth Sense'),
       toZone: 'graveyard',
     });
     const before = held(s);
+    // `connect` and not `connectSaying`: nothing is asked, because nothing triggered.
     s = connect(s, 'Leonin Skyhunter');
     expect(life(s, 1)).toBe(18);
     expect(held(s)).toBe(before);
@@ -21343,11 +21403,7 @@ describe('a granted triggered ability: the first ability on a permanent that did
       step and both players get priority before it resolves, which is where an opponent's
       Disenchant would go.
     */
-    let s = table(['Leonin Skyhunter'], ['Ophidian Eye']);
-    s = drain(apply(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ophidian Eye'),
-      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
-    }), 20);
+    let s = aimAtSkyhunter(sensing(), 'Sixth Sense');
     const before = held(s);
     /*
       Attack and stop **in the damage step**, which is where the window is: `advanceTo` passes
@@ -21363,15 +21419,16 @@ describe('a granted triggered ability: the first ability on a permanent that did
       .map((id) => s.stackObjects[id]!)
       .filter((object) => object.grantedBy !== undefined);
     expect(waiting).toHaveLength(1);
-    expect(waiting[0]!.grantedBy?.card).toBe('Ophidian Eye');
+    expect(waiting[0]!.grantedBy?.card).toBe('Sixth Sense');
     // The ability belongs to the creature, not to the Aura: that is what `source` says.
     expect(waiting[0]!.source).toBe(find(s, 0, 'battlefield', 'Leonin Skyhunter'));
 
     s = apply(s, {
-      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Ophidian Eye'),
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Sixth Sense'),
       toZone: 'graveyard',
     });
-    expect(held(drain(s, 80))).toBe(before + 1);
+    // It still resolves, still asks, and still draws on a yes.
+    expect(held(drain(say(drain(s, 80), 0, 'Yes'), 80))).toBe(before + 1);
   });
 
   it('and a creature that loses all abilities loses the granted one too, in timestamp order', () => {
@@ -21381,8 +21438,30 @@ describe('a granted triggered ability: the first ability on a permanent that did
       alone. Both halves are asserted on the same board, because a version that cleared everything
       would pass the first and fail the second.
 
-      A list of its own, because no starter deck holds both an Ophidian Eye and a Turn to Frog —
-      and `customDeck` looks a name up anywhere in the pool, so the test says what it needs.
+      The Sixth Sense list holds a Turn to Frog for this row.
+    */
+    const start = sensing(['Sixth Sense', 'Turn to Frog']);
+    const enchant = (s: GameState): GameState => aimAtSkyhunter(s, 'Sixth Sense');
+    const frog = (s: GameState): GameState => aimAtSkyhunter(s, 'Turn to Frog');
+
+    // Aura first, then the Frog: the Frog is later, so it takes the ability away. `connect` and
+    // not `connectSaying`, because an ability that is gone asks nothing.
+    const frogged = frog(enchant(start));
+    const beforeFrogged = held(frogged);
+    expect(held(connect(frogged, 'Leonin Skyhunter'))).toBe(beforeFrogged);
+
+    // Frog first, then the Aura: the grant is later, so the 1/1 draws.
+    const regranted = enchant(frog(start));
+    const beforeRegranted = held(regranted);
+    const swung = connectSaying(regranted, 'Yes', 'Leonin Skyhunter');
+    expect(life(swung, 1)).toBe(19);
+    expect(held(swung)).toBe(beforeRegranted + 1);
+  });
+
+  it('but Ophidian Eye is not a grant: the trigger is the Aura’s own, and a Frog does not stop it (D575)', () => {
+    /*
+      The card as printed — "Whenever enchanted creature deals damage to an opponent, you may draw
+      a card" — and the three ways it differs from the grant above, on one board each.
     */
     const list = customDeck({
       id: 'eye-and-frog',
@@ -21401,27 +21480,84 @@ describe('a granted triggered ability: the first ability on a permanent that did
       hands: { 0: ['Ophidian Eye', 'Turn to Frog'] },
       turn: 6, firstSeat: 0,
     }), 'precombat-main');
+    const eyed = aimAtSkyhunter(start, 'Ophidian Eye');
+    const before = held(eyed);
 
-    const enchant = (s: GameState): GameState => drain(apply(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Ophidian Eye'),
-      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
-    }), 20);
-    const frog = (s: GameState): GameState => drain(apply(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Turn to Frog'),
-      targets: [{ kind: 'card', id: find(s, 0, 'battlefield', 'Leonin Skyhunter') }],
-    }), 20);
+    // It is the Eye's ability: on the stack its source is the Aura, and nothing granted it.
+    const inDamage = advanceTo(apply(advanceTo(eyed, 'declare-attackers'), {
+      type: 'auto:attack', by: 0,
+      attackers: [{ attacker: find(eyed, 0, 'battlefield', 'Leonin Skyhunter'), defender: 1 }],
+    }), 'combat-damage');
+    const waiting = inDamage.stackOrder.map((id) => inDamage.stackObjects[id]!);
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]!.grantedBy).toBeUndefined();
+    expect(waiting[0]!.source).toBe(find(eyed, 0, 'battlefield', 'Ophidian Eye'));
 
-    // Eye first, then the Frog: the Frog is later, so it takes the ability away.
-    const frogged = frog(enchant(start));
+    // "You may": asked, and each answer does what it says.
+    expect(held(connectSaying(eyed, 'Yes', 'Leonin Skyhunter'))).toBe(before + 1);
+    expect(held(connectSaying(eyed, 'No', 'Leonin Skyhunter'))).toBe(before);
+
+    // And a creature with no abilities left still feeds it, which is the row above turned over.
+    const frogged = aimAtSkyhunter(eyed, 'Turn to Frog');
     const beforeFrogged = held(frogged);
-    expect(held(connect(frogged, 'Leonin Skyhunter'))).toBe(beforeFrogged);
-
-    // Frog first, then the Eye: the grant is later, so the 1/1 draws.
-    const regranted = enchant(frog(start));
-    const beforeRegranted = held(regranted);
-    const swung = connect(regranted, 'Leonin Skyhunter');
+    const swung = connectSaying(frogged, 'Yes', 'Leonin Skyhunter');
     expect(life(swung, 1)).toBe(19);
-    expect(held(swung)).toBe(beforeRegranted + 1);
+    expect(held(swung)).toBe(beforeFrogged + 1);
+  });
+
+  it('and damage that is not combat damage counts, for the Eye and for the Lookout’s pair (D575)', () => {
+    /*
+      "Deals damage to an opponent" on both cards, where the pool had "combat damage to a player".
+      A Gelectrode is the creature that tells the two apart: it taps to deal one damage to any
+      target. At a player's face that is a card; at a creature it is nothing.
+    */
+    const list = customDeck({
+      id: 'pingers',
+      name: 'Pingers',
+      entries: [
+        { name: 'Ophidian Eye', count: 4 },
+        { name: 'Tandem Lookout', count: 4 },
+        { name: 'Gelectrode', count: 4 },
+        { name: 'Island', count: 48 },
+      ],
+    }).deck;
+    const board = (hand: string): GameState => advanceTo(arena({
+      decks: { 0: 'pingers', 1: 'verdant-guard' },
+      deckSpecs: { pingers: list },
+      battlefield: { 0: [...BLUE, 'Gelectrode'], 1: ['Centaur Courser'] },
+      hands: { 0: [hand] },
+      turn: 6, firstSeat: 0,
+    }), 'precombat-main');
+    const ping = (s: GameState, target: Target): GameState => drain(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Gelectrode'), abilityIndex: 0,
+      targets: [target],
+    }), 40);
+
+    // The Eye: asked on a ping to the face, silent on a ping to a creature.
+    let eyed = board('Ophidian Eye');
+    eyed = drain(apply(eyed, {
+      type: 'auto:cast', by: 0, card: find(eyed, 0, 'hand', 'Ophidian Eye'),
+      targets: [{ kind: 'card', id: find(eyed, 0, 'battlefield', 'Gelectrode') }],
+    }), 20);
+    const beforeEye = held(eyed);
+    const atFace = ping(eyed, { kind: 'player', seat: 1 });
+    expect(life(atFace, 1)).toBe(19);
+    expect(held(drain(say(atFace, 0, 'Yes'), 40))).toBe(beforeEye + 1);
+    const atCreature = ping(eyed, { kind: 'card', id: find(eyed, 1, 'battlefield', 'Centaur Courser') });
+    expect(atCreature.pendingDecision).toBeNull();
+    expect(held(atCreature)).toBe(beforeEye);
+
+    // The Lookout's pair: the same two pings, and its draw is not a "may".
+    let paired = board('Tandem Lookout');
+    paired = drain(apply(paired, { type: 'auto:cast', by: 0, card: find(paired, 0, 'hand', 'Tandem Lookout') }), 20);
+    paired = drain(apply(paired, {
+      type: 'auto:choose', by: 0,
+      targets: [{ kind: 'card', id: find(paired, 0, 'battlefield', 'Gelectrode') }],
+    }), 20);
+    const beforePair = held(paired);
+    expect(held(ping(paired, { kind: 'player', seat: 1 }))).toBe(beforePair + 1);
+    expect(held(ping(paired, { kind: 'card', id: find(paired, 1, 'battlefield', 'Centaur Courser') })))
+      .toBe(beforePair);
   });
 
   it('and the bot will not feed a creature that is carrying one to a sacrifice cost', () => {
@@ -21434,6 +21570,9 @@ describe('a granted triggered ability: the first ability on a permanent that did
       A vanilla Grizzly Bears is a body and a Grizzly Bears under an Ophidian Eye is a card engine,
       and the printed script says the same thing about both — so until this it would have been fed
       to a Vampire Aristocrat for two points of power.
+
+      Since D575 the Eye does not grant: it is an Aura of your own watching the creature, and
+      `hasOwnText` counts that as well. The row is unchanged and still passes, which is the claim.
 
       One board, two arms, and the Eye is the only difference: with it on the Bears the bot declines
       the activation, and without it the bot takes the two points.
@@ -21571,10 +21710,13 @@ describe('a granted triggered ability: the first ability on a permanent that did
       an ability in `grantedTriggers` and a `grants` index on some `PumpOptions` — and a card with
       one and not the other does nothing at all while reading as though it did.
     */
-    const granting = scriptedCardNames().filter((name) => scriptFor(name)?.grantedTriggers !== undefined);
-    expect(granting.length).toBeGreaterThanOrEqual(2);
-    for (const name of granting) {
-      const script = scriptFor(name)!;
+    // One hand-written card since D575 (Ophidian Eye's printed text is not a grant), and the
+    // compiled Sixth Sense beside it, so both routes in — a pair and an Aura — are still held to it.
+    const written = scriptedCardNames().filter((name) => scriptFor(name)?.grantedTriggers !== undefined);
+    expect(written).toEqual(['Tandem Lookout']);
+    const sense = scriptForCard(senseList.cards.find((entry) => entry.card.name === 'Sixth Sense')!.card);
+    expect(sense?.grantedTriggers).toHaveLength(1);
+    for (const script of [...written.map((name) => scriptFor(name)!), sense!]) {
       const handed = [
         ...(script.soulbond === undefined ? [] : script.soulbond.effect.grants ?? []),
         ...(script.aura === undefined ? [] : script.aura.effect.grants ?? []),

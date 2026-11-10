@@ -22560,3 +22560,87 @@ harness printed its stale-build warning, because the source had moved on from th
 It is being re-run on this entry's build and goes in the next entry. What it did show is not in
 doubt and is worth saying now: no measurement taken before D571 is comparable with one taken
 after, because those were games played with cards at the wrong costs and sizes.
+
+## D575 — Angel of Sanctions, Ophidian Eye and Tandem Lookout as printed
+
+The last three "you may" cards in the queue. Each was more than a question, which is why D574
+left them.
+
+| card | the pool had | the card prints |
+| --- | --- | --- |
+| Angel of Sanctions | exiles "another" permanent, always; embalm {3}{W}{W} | "you may exile target nonland permanent an opponent controls"; embalm {5}{W} |
+| Ophidian Eye | gives the creature "whenever this creature deals damage to a player, draw a card" | the Aura's own trigger: "Whenever enchanted creature deals damage to an opponent, you may draw a card" |
+| Tandem Lookout | the pair draws on combat damage to a player | the pair draws on any damage to an opponent |
+
+**Ophidian Eye is the one that changed kind.** It was written for #230 as the second route into
+granted abilities, and the card is not a grant. Three things follow at the table: the Eye's
+controller draws whoever controls the creature; a creature that has lost all abilities still feeds
+it; and it asks. Any damage to an opponent counts, not only combat damage.
+
+The granted route did not lose its second card. Its four tests (fires for the holder, gone with
+the grantor, survives on the stack, respects layer 6 order) now run on **Sixth Sense**, which does
+print a granted ability, compiled from its Oracle row and played out of a list of its own. That is
+a better test than before: it is the path a pasted deck's Aura takes. A new row beside them proves
+the Eye is the opposite case, on the same board, with a Turn to Frog.
+
+**Two compiler readings, so the hand-written cards and the printed text agree.**
+
+- "you may exile … until ~ leaves the battlefield" is the exile-and-return pair with a question in
+  front. Angel of Sanctions compiles again; Suspension Field is held up only by its target phrase.
+- An Aura that watches its host deal damage to a player or an opponent is aimed at your own
+  attacker (`friendly`, `helpsInCombat`). The compiler had refused to guess a side for an Aura with
+  no bonus line, rightly: "enchanted creature dies" is printed on cards for both sides. This
+  sentence has no second kind. 14 legal Auras print it and all 14 are for the caster's creature.
+
+**The bot.** Its rule for what to feed a sacrifice outlet asked whether a creature has text of its
+own or text it was granted. A creature under the printed Eye has neither, and would have been fed
+to a Vampire Aristocrat with the Aura on it. The rule now also counts one of your own attachments
+that watches the creature. The existing test for it passes unchanged.
+
+**Tests.** Eight re-fitted. New rows: the Angel's embalm is refused with five lands and both
+answers to its question are played; the Eye's trigger is the Aura's on the stack, both answers,
+and after a Turn to Frog; a Gelectrode's ping draws for the Eye and for the Lookout's pair at a
+player's face and not at a creature; the compiler's hint, with "dies" as its control.
+
+    pool cards queued in KNOWN_DIFFERENT: 43 → 40
+    engine tests: 3,853
+
+D574's pod sweep (seeds 44201–44240): 40 of 40 finished, no throw, no stall.
+
+### The deck table, on D574's build
+
+6 seeds, 144 games a deck, 936 games, all finished. The build is commit 3d9d55e: the engine the
+gate built for that commit, loaded before any of this entry's source edits. (The harness prints a
+stale-build warning on it because those edits began while it ran. The warning is about the
+working tree, not about what was measured.) It does not include this entry's three cards.
+
+| deck | win rate | record |
+| --- | --- | --- |
+| dawn-tithe | 76% | 110-34 |
+| verdant-guard | 71% | 102-42 |
+| ember-rush | 69% | 99-45 |
+| kindle-grove | 65% | 93-51 |
+| arc-tempest | 51% | 73-71 |
+| forge-alliance | 50% | 72-72 |
+| ashen-rite | 47% | 67-77 |
+| delta-bloom | 40% | 58-86 |
+| rot-harvest | 39% | 56-88 |
+| skyward-writ | 38% | 55-89 |
+| blight-vector | 38% | 54-90 |
+| hollow-tide | 35% | 51-93 |
+| tidal-mind | 31% | 45-99 |
+
+This is the first table taken on cards at their printed costs and sizes, so it is the baseline and
+nothing before D571 is comparable with it. The spread is 31% to 76%: four decks well ahead, three
+near even, six behind. That is wider than the pool was tuned to, because the tuning was done
+against the wrong cards. Re-balancing waits for the queue of 40 to empty, since each card in it
+can still move a deck.
+
+### How the work is run, from here
+
+A container restart during this entry cost a 45-minute break run and an in-flight test run. Four
+heavy jobs were sharing four cores at the time. Three changes:
+
+- one full engine run per increment, the gate's; iteration uses only the touched test files;
+- background measurements run one at a time and never beside the gate;
+- the break harness writes each result as it finishes, so a restart keeps what was done.

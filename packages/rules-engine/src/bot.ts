@@ -410,6 +410,23 @@ function hasOwnText(state: GameState, id: string): boolean {
     this a card or is it a body", and a borrowed ability makes it a card as surely as a printed one.
   */
   if (grantedTriggersOn(state, inst).length > 0) return true;
+  /*
+    And text one of its controller's own attachments has **about** it (D575).
+
+    The printed Ophidian Eye does not hand its creature an ability, it watches it: "whenever
+    enchanted creature deals damage to an opponent, you may draw a card" is the Aura's trigger.
+    For this question that is the same thing. The body is what the card works through, and
+    feeding it to a sacrifice outlet throws the Aura away with it — so a creature under one is a
+    card and not a body, exactly as it was while the pool had the Eye granting.
+
+    The controller's own attachments only: a Pacifism watching nothing, or an opponent's Aura, is
+    no reason to keep a creature.
+  */
+  for (const other of Object.values(state.instances)) {
+    if (other.attachedTo !== id || other.zoneSeat !== inst.zoneSeat) continue;
+    const watching = scriptForCard(state.cardDefs[other.defKey])?.triggers ?? [];
+    if (watching.some((t) => (t.on as { who?: string }).who === 'attached')) return true;
+  }
   const script = scriptForCard(state.cardDefs[inst.defKey]);
   if (script === undefined) return false;
   return (script.triggers?.length ?? 0) > 0 || (script.abilities?.length ?? 0) > 0

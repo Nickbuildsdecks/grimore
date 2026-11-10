@@ -4160,17 +4160,26 @@ const CLUE: CardScript = {
  * half would be strictly better than its printed self, which is the kind of bug a player would
  * never report as one.
  */
-const exileUntilItLeaves = (name: string, target: TargetSpec): Pick<CardScript, 'name' | 'triggers'> => ({
+const exileUntilItLeaves = (
+  name: string, target: TargetSpec, optional = false,
+): Pick<CardScript, 'name' | 'triggers'> => {
+  const clause = `exile ${target.description} until ${name} leaves the battlefield`;
+  const exile = (c: EffectContext): GameState => {
+    const id = firstCardTarget(c);
+    return id === null ? c.state : exileUntilLeaves(c.state, id, c.source);
+  };
+  return {
   name,
   triggers: [
     {
       on: { kind: 'etb' },
       targets: [target],
-      description: `exile ${target.description} until ${name} leaves the battlefield`,
-      effect: (c) => {
-        const id = firstCardTarget(c);
-        return id === null ? c.state : exileUntilLeaves(c.state, id, c.source);
-      },
+      // "You may exile" (D575) is the Angel of Sanctions' and not the Banisher Priest's: the
+      // target is chosen either way, and the question is whether to go through with it.
+      description: optional ? `you may ${clause}` : clause,
+      ...(optional
+        ? youMay(`${clause.charAt(0).toUpperCase()}${clause.slice(1)}?`, exile)
+        : { effect: exile }),
     },
     {
       on: { kind: 'leaves' },
@@ -4178,7 +4187,8 @@ const exileUntilItLeaves = (name: string, target: TargetSpec): Pick<CardScript, 
       effect: (c) => returnExiledBy(c.state, c.source),
     },
   ],
-});
+  };
+};
 
 /** Banisher Priest: a 2/2 holding a creature hostage, and the creature comes back when it dies. */
 const BANISHER_PRIEST: CardScript = exileUntilItLeaves('Banisher Priest', {
@@ -7827,23 +7837,27 @@ const SACRED_CAT: CardScript = {
  * error anywhere to find it.
  *
  * `exileUntilItLeaves` is the same helper the Banisher Priest and Banishing Light use, with
- * Banishing Light's target: another nonland permanent, which is how the Angel answers an
- * enchantment or an artifact as readily as a creature.
+ * Banishing Light's target: a nonland permanent an opponent controls, which is how the Angel
+ * answers an enchantment or an artifact as readily as a creature.
+ *
+ * Three things were not the card until D575. It is "you **may** exile", so the trigger asks; the
+ * pool's "another" was never printed, and was a guard against the Angel exiling itself that the
+ * words "an opponent controls" already are; and embalm is {5}{W}, a mana dearer than the {3}{W}{W}
+ * it was given here and one colour lighter.
  */
 const ANGEL_OF_SANCTIONS: CardScript = {
   ...exileUntilItLeaves('Angel of Sanctions', {
     kind: 'permanent',
-    description: 'another target nonland permanent an opponent controls',
-    filter: (state, candidate, controller, source) => {
+    description: 'target nonland permanent an opponent controls',
+    filter: (state, candidate, controller) => {
       if (candidate.kind !== 'card') return false;
-      if (candidate.id === source) return false;
       const inst = state.instances[candidate.id];
       if (inst === undefined || inst.zoneSeat === controller) return false;
       return !characteristicsOf(state, inst).isLand;
     },
-  }),
+  }, true),
   keywords: ['flying'],
-  abilities: [embalm('{3}{W}{W}', 'Token Creature \u2014 Zombie Angel')],
+  abilities: [embalm('{5}{W}', 'Token Creature \u2014 Zombie Angel')],
 };
 
 /**
@@ -9908,28 +9922,26 @@ const TANDEM_LOOKOUT: CardScript = {
   triggers: [...soulbondTriggers()],
   grantedTriggers: [{
     /*
-      `combat-damage` without a `to`, for the reason Topan Freeblade's docblock gives: the engine
-      raises this event only for damage that actually took a player's life total down, which is
-      exactly "deals damage to a player". A blocked attacker and a swing stopped by a Fog draw
-      nothing, which is the printed card.
+      "Deals damage to an opponent" — any damage, and only to an opponent of whoever controls the
+      creature holding the ability (D575). It was `combat-damage` to any player, which is the
+      sentence this pool printed on the card and not the one the card prints: the two agree for
+      an attacker and part company for a creature that taps to deal damage, which draws as well.
+      A blocked attacker and a swing stopped by a Fog still draw nothing.
     */
-    on: { kind: 'combat-damage' },
+    on: { kind: 'deals-damage', to: 'opponent' },
     description: 'draw a card',
     effect: (c) => draw(c.state, c.controller, 1),
   }],
 };
 
 /**
- * Ophidian Eye: the same granted ability through the **other** route, and the one that proves the
- * claim.
+ * Ophidian Eye: an Aura that watches the creature it is on, and draws when that creature connects.
  *
- * Tandem Lookout hands its draw trigger out through a soulbond pair; this hands the identical
- * ability to one creature through an Aura. Two cards rather than one on purpose (D239: a mechanic
- * resting on a single card is one deck change from gone), but the second card is doing more than
- * making a count: the two reach `ContinuousEffect.grants` by completely different paths —
- * `applyStatics`' pair scope and `addAuraEffect`'s `{ kind: 'cards' }` — and the whole argument
- * for putting the grant on `PumpOptions` was that every builder would then carry it for nothing.
- * A second card that used the same builder would have left that untested.
+ * Written for #230 as the second route into `ContinuousEffect.grants` — an Aura handing the
+ * creature the ability Tandem Lookout hands its pair. That is not what the card prints, and D575
+ * made it the card: the trigger is the Eye's own (see the note on it below). The granted route did
+ * not lose its second card by that; the compiler has read quoted grants on Auras since D511 and
+ * the route's tests now run on one of those.
  *
  * Flash is the card's own text and it matters: cast in response to a blocker, the creature that was
  * about to get through connects and draws. And the Aura being removal-bait cuts the other way from
@@ -9941,19 +9953,33 @@ const OPHIDIAN_EYE: CardScript = {
   aura: {
     /*
       A bonus, so the bot aims it at its own side — and at a creature that can *attack*, because
-      the trigger it grants reads "deals damage to a player". See `TargetSpec.friendly` and
+      the trigger reads "deals damage to an opponent". See `TargetSpec.friendly` and
       `TargetSpec.helpsInCombat`: without the second one this landed on a Wall of Air, which can
       never deal damage to anybody.
     */
     target: {
       kind: 'creature', description: 'enchant creature', friendly: true, helpsInCombat: true,
     },
-    effect: { grants: [0] },
+    effect: {},
   },
-  grantedTriggers: [{
-    on: { kind: 'combat-damage' },
-    description: 'draw a card',
-    effect: (c) => draw(c.state, c.controller, 1),
+  /*
+    The Aura's **own** trigger (D575), which is what the card prints: "Whenever enchanted creature
+    deals damage to an opponent, you may draw a card." The pool had it as an ability handed to the
+    creature, on combat damage to any player, with no "may" — three differences, and each one is a
+    different game:
+
+    - The ability is the Eye's, so the Eye's controller draws whoever controls the creature, and a
+      creature that loses all abilities still feeds it. Granted, it was the creature's (CR 113.6).
+    - "An opponent" is an opponent of the Eye's controller, and any damage counts, not only combat.
+    - "You may", so it asks.
+
+    The granted route this card used to exercise is still the engine's and still tested, on a
+    card that does print it (Sixth Sense, in `scripts.test.ts`).
+  */
+  triggers: [{
+    on: { kind: 'deals-damage', who: 'attached', to: 'opponent' },
+    description: 'you may draw a card',
+    ...youMay('Draw a card?', (c) => drawLater(c.state, c.controller, 1)),
   }],
 };
 
@@ -13213,6 +13239,25 @@ export function attachmentScriptFor(
     const host = targetSpecFrom(`target ${thing}`, read !== null && !read.harmful, false);
     if (host === null) return null;
     /*
+      **The one trigger that does say whose creature the Aura wants (D575).**
+
+      "Whenever enchanted creature deals [combat] damage to a player / an opponent, …" pays out
+      when the host connects, and it pays the Aura's controller — it is their ability. So it goes
+      on their own creature, and on one that can attack: `friendly` and `helpsInCombat`, the two
+      hints the hand-written Ophidian Eye carries for exactly this reason (D252, D253).
+
+      This is a reading and not the guess the note on `target` below refuses to make. That note is
+      about "enchanted creature dies", which Bequeathal wants on yours and Banewasp Affliction on
+      theirs. This sentence has no second kind: 14 legal Auras print it and all 14 are for the
+      caster's own attacker, including the three whose effect lands on "that player".
+
+      Not claimed over a bonus line that says the Aura hurts its host — none of the 14 has one, and
+      a card that did would be saying two things at once.
+    */
+    const watchesItsHostConnect = (read === null || !read.harmful) && lines.some((line) =>
+      /^whenever enchanted (?:creature|permanent) deals (?:combat )?damage to (?:a player|an opponent)\b/i
+        .test(plain(line).trim()));
+    /*
       An Aura whose *whole card* is `Enchant creature` is still refused, and that is the invariant
       the test below the bonus-optional change had to keep: a declaration on its own is an Aura you
       can cast, that attaches, and that does nothing — a card that works and does nothing, which is
@@ -13254,7 +13299,11 @@ export function attachmentScriptFor(
             answer the harmful case gives and leaves the bot to read the board instead of a wrong
             hint.
           */
-          target: { ...host, description: `enchant ${thing}` },
+          target: {
+            ...host,
+            description: `enchant ${thing}`,
+            ...(watchesItsHostConnect ? { friendly: true as const, helpsInCombat: true as const } : {}),
+          },
           /*
             `grants` holds **indices into `grantedTriggers`** below, which is #230's two-halves
             design: the effect stays serialisable and the abilities keep their functions. So the
@@ -13499,8 +13548,10 @@ function exileUntilLeavesShapeFor(
   def: CardDef, lines: readonly string[],
 ): WholeCardReading | null {
   const self = selfRef(def.name);
+  // "You may exile" (D575) is the same pair with a question in front of the first half: Angel of
+  // Sanctions and Suspension Field print it. Group 1 is the "may", 2 the target, 3 the duration.
   const exiling = new RegExp(
-    `^When ${self} ${ENTERS}, exile (target .+?|another target .+?)`
+    `^When ${self} ${ENTERS}, (you may )?exile (target .+?|another target .+?)`
     + `(\\s+until ${self} leaves the battlefield)?\\.?$`,
     'i',
   );
@@ -13512,7 +13563,7 @@ function exileUntilLeavesShapeFor(
   }
   if (line === undefined || matched === null) return null;
 
-  const spec = targetSpecFrom(matched[1]!, false);
+  const spec = targetSpecFrom(matched[2]!, false);
   if (spec === null || !pointsAtAPermanent(spec)) return null;
 
   // The return, either inside the `until` clause or as its own printed line.
@@ -13521,9 +13572,9 @@ function exileUntilLeavesShapeFor(
     + ` under its owner's control\\.?$`,
     'i',
   ).test(plain(other).trim()));
-  if (matched[2] === undefined && returning === undefined) return null;
+  if (matched[3] === undefined && returning === undefined) return null;
 
-  const { name: _ignored, ...pair } = exileUntilItLeaves(def.name, spec);
+  const { name: _ignored, ...pair } = exileUntilItLeaves(def.name, spec, matched[1] !== undefined);
   // See the docblock: a creature exiled by a card with no body of its own. Both tests matter —
   // Banisher Priest fails the second and Banishing Light the first.
   const bodyless = spec.kind === 'creature' && !hasType(parseTypeLine(def.typeLine), 'creature');

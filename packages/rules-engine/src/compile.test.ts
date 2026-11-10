@@ -880,7 +880,7 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     it('refuses the soulbond that hands out an ability instead of a body', () => {
       /*
         Tandem Lookout's pair does not get bigger, it draws a card — "each of those creatures has
-        'Whenever this creature deals damage to a player, draw a card'". The pool declares that as
+        'Whenever this creature deals damage to an opponent, draw a card'". The pool declares that as
         `grants: [0]` against a `grantedTriggers` entry, and nothing here can build one. Compiling
         it as a pair that gets *nothing* would be a card that works and does half of what it says.
       */
@@ -1555,14 +1555,49 @@ describe('compileCard, against the cards a person wrote by hand', () => {
         So the attachment ships and the line keeps its badge, which is what D362 promises for every
         other card type.
       */
-      const eye = compiledScript('Ophidian Eye');
-      const aura = field(eye.script, 'aura') as { target?: { description?: string } } | undefined;
+      /*
+        Ophidian Eye was this row's card while the pool gave it that sentence. It prints a trigger
+        of its own, which reads (D575), so the row moved to a card that does print a quoted
+        ability nothing reads yet: Mark of Sakiko, from its Oracle row.
+      */
+      const mark = compileCard({
+        name: 'Mark of Sakiko', type_line: 'Enchantment — Aura', mana_cost: '{1}{G}', cmc: 2,
+        colors: ['G'], layout: 'normal',
+        oracle_text: 'Enchant creature\nEnchanted creature has "Whenever this creature deals combat damage to a player, add that much {G}. Until end of turn, you don\'t lose this mana as steps and phases end."',
+      } as never);
+      expect(mark.ok).toBe(true);
+      if (!mark.ok) return;
+      const aura = field(mark.script, 'aura') as { target?: { description?: string } } | undefined;
       expect(aura?.target?.description).toBe('enchant creature');
       // And it grants nothing, rather than guessing at the quoted text.
       expect((aura as { effect?: Record<string, unknown> } | undefined)?.effect).toEqual({});
-      expect(eye.unread.map((u) => u.line)).toContain(
-        'Enchanted creature has "Whenever this creature deals damage to a player, draw a card."',
+      expect(mark.unread.map((u) => u.line)).toContain(
+        'Enchanted creature has "Whenever this creature deals combat damage to a player, add that much {G}. Until end of turn, you don\'t lose this mana as steps and phases end."',
       );
+    });
+
+    it('reads Ophidian Eye whole: an Aura of its own trigger, aimed at your own attacker (D575)', () => {
+      /*
+        The printed card, and the one hint the compiler now reads off a trigger. "Whenever
+        enchanted creature deals damage to an opponent" pays the Aura's controller when the host
+        connects, so the Aura belongs on their own creature and on one that can attack. 14 legal
+        Auras print the sentence and all 14 are that card.
+      */
+      const eye = compiledScript('Ophidian Eye');
+      expect(fullyCompiled(eye)).toBe(true);
+      expect(field(eye.script, 'aura')).toEqual(field(scriptFor('Ophidian Eye'), 'aura'));
+      expect((field(eye.script, 'aura') as { target: Record<string, unknown> }).target)
+        .toMatchObject({ friendly: true, helpsInCombat: true });
+      // The control: an Aura watching its creature **die** says nothing about whose creature.
+      const dies = compileCard({
+        name: 'Parting Gift', type_line: 'Enchantment — Aura', mana_cost: '{B}', cmc: 1, colors: ['B'],
+        layout: 'normal', oracle_text: 'Enchant creature\nWhen enchanted creature dies, you draw two cards.',
+      } as never);
+      expect(dies.ok).toBe(true);
+      if (!dies.ok) return;
+      const target = (field(dies.script, 'aura') as { target: Record<string, unknown> }).target;
+      expect(target['friendly']).toBeUndefined();
+      expect(target['helpsInCombat']).toBeUndefined();
     });
 
     it('emits both halves or neither, never half an attachment', () => {
@@ -1734,6 +1769,7 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       ['Conclave Tribunal'],
       // "another target nonland permanent", so the card cannot exile itself.
       ['Banishing Light'],
+      // "You may exile target nonland permanent an opponent controls" (D575).
       ['Angel of Sanctions'],
       // Two printed lines, the return as its own sentence.
       ['Journey to Nowhere'],

@@ -490,7 +490,7 @@ const TANDEM_LOOKOUT: CardDef = {
   power: '2',
   toughness: '1',
   oracleText: `${SOULBOND_REMINDER}\nAs long as Tandem Lookout is paired with another creature, `
-    + "each of those creatures has \"Whenever this creature deals damage to a player, draw a card.\"",
+    + "each of those creatures has \"Whenever this creature deals damage to an opponent, draw a card.\"",
   colors: ['U'],
 };
 
@@ -506,8 +506,8 @@ const OPHIDIAN_EYE: CardDef = {
   typeLine: 'Enchantment — Aura',
   manaCost: '{2}{U}',
   cmc: 3,
-  oracleText: 'Flash\nEnchant creature\nEnchanted creature has "Whenever this creature deals '
-    + 'damage to a player, draw a card."',
+  oracleText: 'Flash\nEnchant creature\nWhenever enchanted creature deals damage to an opponent, '
+    + 'you may draw a card.',
   colors: ['U'],
 };
 
@@ -6607,9 +6607,9 @@ const ANGEL_OF_SANCTIONS: CardDef = {
   cmc: 5,
   power: '3',
   toughness: '4',
-  oracleText: 'Flying\nWhen Angel of Sanctions enters the battlefield, exile another target '
-    + 'nonland permanent an opponent controls until Angel of Sanctions leaves the battlefield.\n'
-    + 'Embalm {3}{W}{W} ({3}{W}{W}, Exile this card from your graveyard: Create a token that\u2019s '
+  oracleText: 'Flying\nWhen Angel of Sanctions enters, you may exile target nonland permanent '
+    + 'an opponent controls until Angel of Sanctions leaves the battlefield.\n'
+    + 'Embalm {5}{W} ({5}{W}, Exile this card from your graveyard: Create a token that\u2019s '
     + 'a copy of it, except it\u2019s a white Zombie Angel with no mana cost. '
     + 'Embalm only as a sorcery.)',
   colors: ['W'],
