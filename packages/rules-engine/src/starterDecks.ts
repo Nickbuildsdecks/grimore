@@ -332,10 +332,7 @@ const BLADE_OF_SELVES: CardDef = {
   typeLine: 'Artifact — Equipment',
   manaCost: '{2}',
   cmc: 2,
-  oracleText: 'Equipped creature has myriad. (Whenever this creature attacks, for each opponent '
-    + 'other than defending player, you may create a token that\u2019s a copy of this creature '
-    + 'that\u2019s tapped and attacking that player or a planeswalker they control. Exile those '
-    + 'tokens at end of combat.)\nEquip {3}',
+  oracleText: "Equipped creature has myriad. (Whenever it attacks, for each opponent other than defending player, you may create a token copy that's tapped and attacking that player or a planeswalker they control. Exile the tokens at end of combat.)\nEquip {4}",
   colors: [],
 };
 
@@ -652,7 +649,7 @@ const CONSULATE_DREADNOUGHT: CardDef = {
   cmc: 1,
   power: '7',
   toughness: '11',
-  oracleText: 'Crew 4',
+  oracleText: 'Crew 6',
   colors: [],
 };
 
@@ -712,7 +709,7 @@ const SAW_IT_COMING: CardDef = {
   typeLine: 'Instant',
   manaCost: '{1}{U}{U}',
   cmc: 3,
-  oracleText: 'Counter target spell.\nForetell {U}{U}',
+  oracleText: 'Counter target spell.\nForetell {1}{U}',
   colors: ['U'],
 };
 
@@ -743,7 +740,7 @@ const MARDU_SCOUT: CardDef = {
   cmc: 2,
   power: '3',
   toughness: '1',
-  oracleText: 'Dash {R}',
+  oracleText: 'Dash {1}{R}',
   colors: ['R'],
 };
 
@@ -924,9 +921,7 @@ const FLEECEMANE_LION: CardDef = {
   cmc: 2,
   power: '3',
   toughness: '3',
-  oracleText: '{2}{G}{W}: Monstrosity 1. (If this creature isn\u2019t monstrous, put a +1/+1 counter on '
-    + 'it and it becomes monstrous.)\nAs long as Fleecemane Lion is monstrous, it has hexproof and '
-    + 'indestructible.',
+  oracleText: "{3}{G}{W}: Monstrosity 1. (If this creature isn't monstrous, put a +1/+1 counter on it and it becomes monstrous.)\nAs long as Fleecemane Lion is monstrous, it has hexproof and indestructible.",
   colors: ['G', 'W'],
 };
 
@@ -937,8 +932,7 @@ const AEROMUNCULUS: CardDef = {
   cmc: 3,
   power: '2',
   toughness: '3',
-  oracleText: 'Flying\n{2}{G}{U}: Adapt 3. (If this creature has no +1/+1 counters on it, put three '
-    + '+1/+1 counters on it.)',
+  oracleText: 'Flying\n{2}{G}{U}: Adapt 1. (If this creature has no +1/+1 counters on it, put a +1/+1 counter on it.)',
   colors: ['G', 'U'],
 };
 
@@ -1243,7 +1237,7 @@ const PREORDAIN: CardDef = {
   typeLine: 'Sorcery',
   manaCost: '{U}',
   cmc: 1,
-  oracleText: 'Scry 1, then draw a card.',
+  oracleText: 'Scry 2, then draw a card.',
   colors: ['U'],
 };
 
@@ -1386,7 +1380,7 @@ const COMPELLING_ARGUMENT: CardDef = {
   typeLine: 'Sorcery',
   manaCost: '{1}{U}',
   cmc: 2,
-  oracleText: 'Target player mills three cards.\nCycling {U} ({U}, Discard this card: Draw a card.)',
+  oracleText: 'Target player mills five cards.\nCycling {U} ({U}, Discard this card: Draw a card.)',
   colors: ['U'],
 };
 
@@ -1806,9 +1800,7 @@ const WALKING_BALLISTA: CardDef = {
   cmc: 0,
   power: '0',
   toughness: '0',
-  oracleText: 'Walking Ballista enters the battlefield with X +1/+1 counters on it. '
-    + '{1}: Put a +1/+1 counter on Walking Ballista. '
-    + 'Remove a +1/+1 counter from Walking Ballista: It deals 1 damage to any target.',
+  oracleText: 'Walking Ballista enters with X +1/+1 counters on it.\n{4}: Put a +1/+1 counter on Walking Ballista.\nRemove a +1/+1 counter from Walking Ballista: It deals 1 damage to any target.',
   colors: [],
 };
 
@@ -2011,7 +2003,7 @@ const BLIGHT_MAMBA: CardDef = {
   cmc: 2,
   power: '1',
   toughness: '1',
-  oracleText: 'Infect\n{G}: Regenerate Blight Mamba.',
+  oracleText: 'Infect\n{1}{G}: Regenerate Blight Mamba.',
   colors: ['G'],
 };
 
@@ -2699,7 +2691,7 @@ const GALVANIC_BLAST: CardDef = {
   typeLine: 'Instant',
   manaCost: '{R}',
   cmc: 1,
-  oracleText: 'Galvanic Blast deals 1 damage to any target.\nMetalcraft \u2014 Galvanic Blast deals 4 damage to that permanent or player instead if you control three or more artifacts.',
+  oracleText: 'Galvanic Blast deals 2 damage to any target.\nMetalcraft \u2014 Galvanic Blast deals 4 damage instead if you control three or more artifacts.',
   colors: ['R'],
 };
 
@@ -3268,7 +3260,7 @@ const BREATH_OF_DARIGAAZ: CardDef = {
   typeLine: 'Sorcery',
   manaCost: '{1}{R}',
   cmc: 2,
-  oracleText: 'Kicker {3}\nBreath of Darigaaz deals 1 damage to each creature without flying and each player. If this spell was kicked, it deals 4 damage instead.',
+  oracleText: 'Kicker {2}\nBreath of Darigaaz deals 1 damage to each creature without flying and each player. If this spell was kicked, it deals 4 damage to each creature without flying and each player instead.',
   colors: ['R'],
 };
 
@@ -4486,7 +4478,7 @@ const IMPERIOUS_PERFECT: CardDef = {
   cmc: 3,
   power: '2',
   toughness: '2',
-  oracleText: 'Other Elf creatures you control get +1/+1.\n{1}{G}, {T}: Create a 1/1 green Elf Warrior creature token.',
+  oracleText: 'Other Elves you control get +1/+1.\n{G}, {T}: Create a 1/1 green Elf Warrior creature token.',
   colors: ['G'],
 };
 
@@ -4558,7 +4550,7 @@ const STRIONIC_RESONATOR: CardDef = {
   cmc: 2,
   // The printed text, including the clause the script does not offer — see its comment in
   // `scripts.ts`. A card that said less than it says would be a worse lie than a documented gap.
-  oracleText: '{1}, {T}: Copy target triggered ability you control. You may choose new targets for the copy.',
+  oracleText: '{2}, {T}: Copy target triggered ability you control. You may choose new targets for the copy.',
   colors: [],
 };
 
@@ -5786,8 +5778,7 @@ const TRAIN_OF_THOUGHT: CardDef = {
   typeLine: 'Sorcery',
   manaCost: '{1}{U}',
   cmc: 2,
-  oracleText: 'Draw a card.\nReplicate {2}{U} (When you cast this spell, copy it for each time '
-    + 'you paid its replicate cost.)',
+  oracleText: 'Replicate {1}{U} (When you cast this spell, copy it for each time you paid its replicate cost.)\nDraw a card.',
   colors: ['U'],
 };
 
@@ -6563,7 +6554,7 @@ const BEASTBREAKER_OF_BALA_GED: CardDef = {
   cmc: 2,
   power: '2',
   toughness: '2',
-  oracleText: 'Level up {1}{G} (Activate only as a sorcery.)\nLEVEL 1-3: 4/4\nLEVEL 4+: 6/6, trample',
+  oracleText: 'Level up {2}{G} ({2}{G}: Put a level counter on this. Level up only as a sorcery.)\nLEVEL 1-3\n4/4\nLEVEL 4+\n6/6\nTrample',
   colors: ['G'],
   levelBands: [
     { from: 1, power: 4, toughness: 4 },
@@ -6591,9 +6582,7 @@ const ADORNED_POUNCER: CardDef = {
   cmc: 2,
   power: '1',
   toughness: '1',
-  oracleText: 'Double strike\nEternalize {4}{W}{W} ({4}{W}{W}, Exile this card from your '
-    + 'graveyard: Create a token that\u2019s a copy of it, except it\u2019s a black Zombie Cat '
-    + 'with base power and toughness 4/4 and no mana cost. Eternalize only as a sorcery.)',
+  oracleText: "Double strike\nEternalize {3}{W}{W} ({3}{W}{W}, Exile this card from your graveyard: Create a token that's a copy of it, except it's a 4/4 black Zombie Cat with no mana cost. Eternalize only as a sorcery.)",
   colors: ['W'],
 };
 

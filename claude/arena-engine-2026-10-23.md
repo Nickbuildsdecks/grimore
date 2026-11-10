@@ -22443,3 +22443,53 @@ measurement includes the sentences D571's three compiler rows newly read.
 Tests: four, on two rows copied from the corpus. The keyword above the first band is read and the
 ones below are not; Brimstone Mage has one ability; Kargan Dragonlord has none, and on the
 battlefield is a 2/2 that does not fly. With either half of the fix removed, they fail.
+
+## D573 — Seventeen cards given their printed numbers
+
+The first batch off D571's list: the cards whose only fault was a number in the rules text. Each
+one changed in three places at once — the printed text, the script, and the tests that had been
+written to the wrong number — and came off `KNOWN_DIFFERENT` as it landed, which the standing check
+insists on.
+
+| card | was | is |
+| --- | --- | --- |
+| Walking Ballista | {1}: put a +1/+1 counter | {4} |
+| Preordain | scry 1 | scry 2 |
+| Galvanic Blast | 1 damage, 4 with metalcraft | 2, or 4 |
+| Consulate Dreadnought | crew 4 | crew 6 |
+| Strionic Resonator | {1}, {T} | {2}, {T} |
+| Blade of Selves | equip {3} | equip {4} |
+| Fleecemane Lion | monstrosity for {2}{G}{W} | {3}{G}{W} |
+| Aeromunculus | adapt 3 | adapt 1 |
+| Compelling Argument | mill three | mill five |
+| Saw It Coming | foretell {U}{U} | {1}{U} |
+| Breath of Darigaaz | kicker {3} | kicker {2} |
+| Adorned Pouncer | eternalize {4}{W}{W} | {3}{W}{W} |
+| Blight Mamba | {G}: regenerate | {1}{G} |
+| Mardu Scout | dash {R} | dash {1}{R} |
+| Imperious Perfect | {1}{G}, {T}: an Elf Warrior | {G}, {T} |
+| Train of Thought | replicate {2}{U} | replicate {1}{U} |
+| Beastbreaker of Bala Ged | level up {1}{G} | level up {2}{G} |
+
+Nine of the seventeen were **stronger** than the card and eight weaker, so this is not a nerf or a
+buff; it is the pool becoming the game it claims to be. The ones a player would have felt: a
+Ballista that grew four times as fast, a Dreadnought two power easier to crew, an Aeromunculus that
+became a 5/6 instead of a 3/4, and a Galvanic Blast that was half a Shock.
+
+Mardu Scout is the one that changed character rather than size. Printed, it is {R}{R} with dash
+{1}{R}: the two costs are the same size and the dash is the one a two-colour deck can pay. The
+pool had it at {1}{R} with dash {R}, and its tests and the player guide both called the dash "the
+cheap cast". The test that said so now says what is true of this card — both rows with two
+Mountains, only the dash with a Mountain and a Forest, neither with one land.
+
+**23 tests re-fitted**, and where a cost went up the test gained the board that is one short, so
+the number is being charged and not just displayed: Ballista's growth is not offered with five
+lands and is with six; the Dreadnought is not crewed by five power and is by seven.
+
+The player guide quoted nine of these numbers in prose the cost guard does not read (it reads the
+parenthesis after a card's name, not sentences). Corrected by hand.
+
+    pool cards queued in KNOWN_DIFFERENT: 65 → 48
+    engine tests: 3,847, all passing
+
+D571 and D572's pod sweep (seeds 44101–44140): 40 of 40 finished, no throw, no stall.

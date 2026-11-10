@@ -2820,15 +2820,16 @@ describe('scry, which is the other way a player sees their own library', () => {
   const topOf = (s: GameState, seat: SeatIndex, n: number): string[] =>
     [...ids(s, seat, 'library')].slice(0, n);
 
-  it('asks about the top card only, and leaves it there when nothing is chosen', () => {
+  it('asks about the top two cards, and leaves them there when nothing is chosen', () => {
     let s = withMana(1, ['Preordain'], ['Island'], [], 'hollow-tide');
     const [top, second] = topOf(s, 1, 2);
     s = apply(s, { type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Preordain') });
     s = passBoth(s);
     expect(s.pendingDecision?.from).toBe('library-top');
-    expect(s.pendingDecision?.candidates).toEqual([top]);
-    // Scry 1 is a question with two answers, so the engine asks rather than deciding for them.
-    expect([s.pendingDecision?.min, s.pendingDecision?.max]).toEqual([0, 1]);
+    // Scry 2, as printed. This pool's Preordain scried one until D571 read its Oracle row.
+    expect(s.pendingDecision?.candidates).toEqual([top, second]);
+    // Any number of them may go to the bottom, so the engine asks rather than deciding for them.
+    expect([s.pendingDecision?.min, s.pendingDecision?.max]).toEqual([0, 2]);
 
     s = apply(s, { type: 'auto:decide', by: 1, cards: [] });
     expect(s.pendingDecision).toBeNull();
@@ -8636,7 +8637,7 @@ describe('Vehicles and crew: an artifact that is a creature only while somebody 
     // And with nobody to drive it, the crew is not offered — there is no cost it could pay.
     expect(legalActions(s, 1).plays.some((p) => p.card === ship)).toBe(false);
     expect(refusal(s, { type: 'auto:activate', by: 1, card: ship, abilityIndex: 0 }))
-      .toContain('total power 4');
+      .toContain('total power 6');
   });
 
   it('taps the smallest creatures that reach the number, and says how many before you press it', () => {
@@ -8663,14 +8664,22 @@ describe('Vehicles and crew: an artifact that is a creature only while somebody 
 
     /*
       And the other half of the same rule: when the small creatures cannot reach the number, the big
-      one is tapped because it has to be. Crew 4 off two 1/1s and a 3/3 taps all three — five power
-      for a cost of four, which is the price of the greedy rule and is cheaper than the search for a
-      perfect subset would be worth.
+      ones are tapped because they have to be. Crew 6 off two 1/1s, a 2/2 and a 3/3 taps all four —
+      seven power for a cost of six, which is the price of the greedy rule and is cheaper than the
+      search for a perfect subset would be worth.
+
+      Crew 6, as printed: the pool had the Dreadnought at crew 4 until D571, and this used three
+      bodies. With those three it is five power and the crew is not offered at all, which is the
+      first assertion.
     */
-    const big = yard('Consulate Dreadnought', ['Llanowar Elves', 'Llanowar Elves', 'Centaur Courser']);
+    const short = yard('Consulate Dreadnought', ['Llanowar Elves', 'Llanowar Elves', 'Centaur Courser']);
+    expect(legalActions(short, 1).plays
+      .some((p) => p.card === find(short, 1, 'battlefield', 'Consulate Dreadnought'))).toBe(false);
+    const big = yard('Consulate Dreadnought',
+      ['Llanowar Elves', 'Llanowar Elves', 'Gravedigger', 'Centaur Courser']);
     const dread = find(big, 1, 'battlefield', 'Consulate Dreadnought');
     expect(legalActions(big, 1).plays.find((p) => p.card === dread)?.description)
-      .toContain('(tapping 3)');
+      .toContain('(tapping 4)');
   });
 
   it('becomes a creature on resolution, attacks, and stops being one at end of turn', () => {
@@ -12050,8 +12059,18 @@ describe('Walking Ballista and Hangarback Walker: the counter as a cost, and the
     })).toContain('counter');
   });
 
-  it('grows for {1}, which is the other half of the mana sink', () => {
-    let s = board(1, 4, 'Walking Ballista');
+  it('grows for {4}, which is the other half of the mana sink', () => {
+    /*
+      {4} a counter, as printed. The pool had this at {1} until D571 — a Ballista that grew four
+      times as fast as the card, in a deck that was measured with it.
+
+      Six Plains: two for X=1 and four for the counter. With five the growth is not offered, which
+      is the half that says the number is being charged and not just displayed.
+    */
+    const short = board(1, 5, 'Walking Ballista');
+    expect(legalActions(short, 0).plays.some((p) => p.kind === 'activate'
+      && p.card === find(short, 0, 'battlefield', 'Walking Ballista') && p.abilityIndex === 0)).toBe(false);
+    let s = board(1, 6, 'Walking Ballista');
     const ballista = find(s, 0, 'battlefield', 'Walking Ballista');
     s = apply(s, { type: 'auto:activate', by: 0, card: ballista, abilityIndex: 0 });
     s = drain(passBoth(s));
@@ -13444,12 +13463,12 @@ describe('a static that comes and goes: metalcraft (CR 702.75)', () => {
     expect(after).toContain(champ);
   });
 
-  it('Galvanic Blast deals one, or four with three artifacts out', () => {
-    // One artifact: a Shock that costs {R}.
+  it('Galvanic Blast deals two, or four with three artifacts out', () => {
+    // One artifact: a Shock that costs {R}. (It dealt one here until D571; the card says two.)
     let s = forge(['Galvanic Blast'], ['Mountain', 'Bonesplitter']);
     s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Mountain'), abilityIndex: 0 });
     s = cast(s, 0, 'Galvanic Blast', [{ kind: 'player', seat: 1 }]);
-    expect(life(s, 1)).toBe(19);
+    expect(life(s, 1)).toBe(18);
 
     // Three artifacts: four damage, and the difference is read as it resolves rather than as it is
     // cast — which is why this is an ordinary script and not a conditional effect.
@@ -13475,14 +13494,14 @@ describe('a static that comes and goes: metalcraft (CR 702.75)', () => {
       type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Galvanic Blast'),
       targets: [{ kind: 'player', seat: 1 }],
     });
-    // Three artifacts when it was cast, two by the time it resolves: one damage, not four. The
+    // Three artifacts when it was cast, two by the time it resolves: two damage, not four. The
     // player who answered the Collar earned that, and a condition snapshotted at cast time would
     // have taken it away from them.
     s = apply(s, {
       type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Basilisk Collar'), toZone: 'graveyard',
     });
     s = passBoth(s);
-    expect(life(s, 1)).toBe(19);
+    expect(life(s, 1)).toBe(18);
   });
 });
 
@@ -14548,7 +14567,7 @@ describe('embalm and eternalize: a token copy of the card, with different charac
     let s = graveyard(['Adorned Pouncer'], 6);
     const pouncer = find(s, 0, 'graveyard', 'Adorned Pouncer');
     expect(legalActions(s, 0).plays.find((play) => play.card === pouncer)?.manaCost)
-      .toBe('{4}{W}{W}');
+      .toBe('{3}{W}{W}');
 
     s = drain(apply(s, { type: 'auto:activate', by: 0, card: pouncer, abilityIndex: 0 }), 40);
     const ch = characteristicsOf(s, s.instances[tokenOf(s, 0)]!);
@@ -15579,7 +15598,8 @@ describe('monstrosity and adapt: a creature that grows once and stays grown', ()
     expect([power(s, lion), toughness(s, lion)]).toEqual([3, 3]);
   });
 
-  it('Aeromunculus adapts to a 5/6, and the second payment buys nothing', () => {
+  it('Aeromunculus adapts to a 3/4, and the second payment buys nothing', () => {
+    // Adapt 1, as printed. The pool had it at adapt 3 until D571, which made this a 5/6.
     // Eight lands, because the test pays for adapt twice and each payment is four mana.
     let s = board('delta-bloom', ['Aeromunculus'],
       ['Forest', 'Forest', 'Island', 'Island', 'Island', 'Island', 'Island', 'Island']);
@@ -15587,7 +15607,7 @@ describe('monstrosity and adapt: a creature that grows once and stays grown', ()
     expect([power(s, mancus), toughness(s, mancus)]).toEqual([2, 3]);
 
     s = drain(apply(s, { type: 'auto:activate', by: 0, card: mancus, abilityIndex: 0 }), 40);
-    expect([power(s, mancus), toughness(s, mancus)]).toEqual([5, 6]);
+    expect([power(s, mancus), toughness(s, mancus)]).toEqual([3, 4]);
 
     /*
       Adapt's condition is in the effect, so the ability is still offered — which is the printed
@@ -15595,7 +15615,7 @@ describe('monstrosity and adapt: a creature that grows once and stays grown', ()
       the offer is the point.
     */
     s = drain(apply(s, { type: 'auto:activate', by: 0, card: mancus, abilityIndex: 0 }), 40);
-    expect([power(s, mancus), toughness(s, mancus)]).toEqual([5, 6]);
+    expect([power(s, mancus), toughness(s, mancus)]).toEqual([3, 4]);
   });
 });
 
@@ -16932,11 +16952,16 @@ describe('evoke: the same card cast for two prices, and the permanent is the dif
   });
 });
 
-describe('dash: the creature you pay less for and do not get to keep', () => {
+describe('dash: the creature you get for a turn and do not get to keep', () => {
   /*
-    Evoke's mirror. There the cheap cast buys the spell and gives up the body; here it buys the
+    Evoke's mirror. There the other cast buys the spell and gives up the body; here it buys the
     body for one turn — haste, an attack, and the card back in hand at the beginning of the next
     end step — and gives up keeping it.
+
+    Mardu Scout is {R}{R} with dash {1}{R}: the two costs are the same *size*, and the dash is the
+    one a two-colour deck can pay with one red source. Until D571 this pool had the card at {1}{R}
+    with dash {R}, and these tests said the dash was the cheap one — true of other dash cards and
+    not of this one.
 
     Both consequences are arranged where the spell resolves rather than by anything on the stack
     (CR 702.109a), which is the half these tests are really about: there is no window between the
@@ -16952,20 +16977,23 @@ describe('dash: the creature you pay less for and do not get to keep', () => {
 
   const mountains = (n: number): string[] => Array.from({ length: n }, () => 'Mountain');
 
-  it('is offered twice with two lands and only dashed with one', () => {
+  it('is offered twice with two Mountains, and only dashed when one of the two lands is not red', () => {
     expect(legalActions(scout(mountains(2)), 0).plays
       .filter((p) => p.name === 'Mardu Scout').map((p) => p.description))
       .toEqual([
-        'Cast Mardu Scout for its dash cost ({R}, hasty, back to your hand at end of turn)',
+        'Cast Mardu Scout for its dash cost ({1}{R}, hasty, back to your hand at end of turn)',
         'Cast Mardu Scout',
       ]);
-    expect(legalActions(scout(mountains(1)), 0).plays
+    // A Mountain and a Forest pay {1}{R} and cannot pay {R}{R}: the dash is the only row.
+    expect(legalActions(scout(['Mountain', 'Forest']), 0).plays
       .filter((p) => p.name === 'Mardu Scout').map((p) => p.manaCost))
-      .toEqual(['{R}']);
+      .toEqual(['{1}{R}']);
+    // And one land pays for neither.
+    expect(legalActions(scout(mountains(1)), 0).plays.filter((p) => p.name === 'Mardu Scout')).toEqual([]);
   });
 
   it('dashed: it has haste, and the stack says which cast it was', () => {
-    let s = scout(mountains(1));
+    let s = scout(mountains(2));
     s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Mardu Scout'), dashed: true });
     expect(stackNames(s)).toEqual(['Mardu Scout (dashed)']);
 
@@ -16990,7 +17018,7 @@ describe('dash: the creature you pay less for and do not get to keep', () => {
   });
 
   it('goes back to its owner\'s hand at the beginning of the end step', () => {
-    let s = scout(mountains(1));
+    let s = scout(mountains(2));
     const card = find(s, 0, 'hand', 'Mardu Scout');
     s = drain(apply(s, { type: 'auto:cast', by: 0, card, dashed: true }), 40);
     expect(s.instances[card]!.zone).toBe('battlefield');
@@ -17002,7 +17030,7 @@ describe('dash: the creature you pay less for and do not get to keep', () => {
     s = apply(s, { type: 'auto:attack', by: 0, attackers: [] });
     s = drain(advanceTo(s, 'end'), 40);
     expect(s.instances[card]!.zone).toBe('hand');
-    // Which means it can be dashed again, for one mana, on the next turn — and that is the card.
+    // Which means it can be dashed again on the next turn — and that is the card.
     expect(s.instances[card]!.counters['dashed'] ?? 0).toBe(0);
   });
 
@@ -17013,7 +17041,7 @@ describe('dash: the creature you pay less for and do not get to keep', () => {
       no creature on the battlefield, does as much as it can, which is nothing. The card must not
       come back out of the graveyard.
     */
-    let s = scout(mountains(1), ['Mardu Scout', 'Lightning Bolt']);
+    let s = scout(mountains(2), ['Mardu Scout', 'Lightning Bolt']);
     const card = find(s, 0, 'hand', 'Mardu Scout');
     s = drain(apply(s, { type: 'auto:cast', by: 0, card, dashed: true }), 40);
     s = drain(apply(s, { type: 'card:move', by: 0, card, toZone: 'graveyard' }), 40);
@@ -18590,7 +18618,13 @@ describe('level up: a creature whose size is a count on itself', () => {
   it('the Beastbreaker reaches its second band and tramples', () => {
     let s = arena({
       decks: { 0: 'kindle-grove', 1: 'tidal-mind' },
-      battlefield: { 0: [...Array.from({ length: 9 }, () => 'Forest'), 'Beastbreaker of Bala Ged'] },
+      // Twelve lands: four level-ups at {2}{G} each, as printed. (Nine, at the pool's old {1}{G}.)
+      battlefield: {
+        0: [
+          'Forest', 'Forest', 'Forest', 'Forest',
+          ...Array.from({ length: 8 }, () => 'Mountain'), 'Beastbreaker of Bala Ged',
+        ],
+      },
       turn: 6, firstSeat: 0,
     });
     s = tapAllLands(advanceTo(s, 'precombat-main'), 0);
@@ -20171,7 +20205,8 @@ describe('myriad, the first keyword in this pool that reads the number of people
     Every test here is a **pod**, because there is no other kind of table this card does anything
     at. That is not a limitation of the tests — it is the card.
   */
-  const podWithBlade = (lands = 3): GameState => advanceTo(arena({
+  // Four lands by default: equip {4}, as printed. (Three, while the pool had it at equip {3}.)
+  const podWithBlade = (lands = 4): GameState => advanceTo(arena({
     format: 'pod',
     seats: 4,
     decks: { 0: 'forge-alliance', 1: 'tidal-mind', 2: 'ember-rush', 3: 'hollow-tide' },
@@ -20229,7 +20264,7 @@ describe('myriad, the first keyword in this pool that reads the number of people
     */
     const s = swing(advanceTo(arena({
       decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
-      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Serra Angel', 'Blade of Selves'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Serra Angel', 'Blade of Selves'] },
       turn: 6,
       firstSeat: 0,
     }), 'precombat-main'));
@@ -20349,7 +20384,7 @@ describe('myriad, the first keyword in this pool that reads the number of people
   it('and says nothing at all at a two-player table, where it did nothing', () => {
     const s = swing(advanceTo(arena({
       decks: { 0: 'forge-alliance', 1: 'tidal-mind' },
-      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Serra Angel', 'Blade of Selves'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Serra Angel', 'Blade of Selves'] },
       turn: 6,
       firstSeat: 0,
     }), 'precombat-main'));

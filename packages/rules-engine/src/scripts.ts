@@ -736,7 +736,7 @@ const EXSANGUINATE: CardScript = {
 const PREORDAIN: CardScript = {
   name: 'Preordain',
   // Scry *then* draw, which is the whole card: the draw sees the library the scry left behind.
-  decisions: [scry(1)],
+  decisions: [scry(2)],
   onResolve: (c) => drawLater(c.state, c.controller, 1),
 };
 
@@ -3030,7 +3030,7 @@ const ninjutsuAbility = (mana: string): AbilityDef => ({
  */
 const MARDU_SCOUT: CardScript = {
   name: 'Mardu Scout',
-  dash: { cost: '{R}' },
+  dash: { cost: '{1}{R}' },
   triggers: [dashReturn()],
 };
 
@@ -3501,7 +3501,7 @@ const COMPELLING_ARGUMENT: CardScript = {
   targets: [TARGET_PLAYER],
   onResolve: (c) => {
     const seat = firstPlayerTarget(c);
-    return seat === null ? c.state : mill(c.state, seat, 3);
+    return seat === null ? c.state : mill(c.state, seat, 5);
   },
   abilities: [cyclingAbility('{U}')],
 };
@@ -4506,8 +4506,8 @@ const RENEGADE_FREIGHTER: CardScript = {
 const CONSULATE_DREADNOUGHT: CardScript = {
   name: 'Consulate Dreadnought',
   abilities: [{
-    cost: { crew: 4 },
-    description: 'Crew 4',
+    cost: { crew: 6 },
+    description: 'Crew 6',
     animates: true,
     effect: (c) => pump(c.state, [c.source], c.source, c.controller, { addTypes: ['Creature'] }),
   }],
@@ -4627,7 +4627,7 @@ const BEHOLD_THE_MULTIVERSE: CardScript = {
 
 const SAW_IT_COMING: CardScript = {
   name: 'Saw It Coming',
-  foretell: { cost: '{U}{U}' },
+  foretell: { cost: '{1}{U}' },
   targets: [TARGET_SPELL],
   onResolve: (c) => {
     const id = firstCardTarget(c);
@@ -4672,7 +4672,7 @@ const BURST_LIGHTNING: CardScript = {
  */
 const BREATH_OF_DARIGAAZ: CardScript = {
   name: 'Breath of Darigaaz',
-  kicker: { cost: '{3}', description: 'Kicker {3}' },
+  kicker: { cost: '{2}', description: 'Kicker {2}' },
   onResolve: (c) => {
     const amount = c.kicked ? 4 : 1;
     let state = c.state;
@@ -5986,8 +5986,8 @@ const IMPERIOUS_PERFECT: CardScript = {
   }],
   abilities: [
     {
-      cost: { mana: '{1}{G}', tap: true },
-      description: '{1}{G}, {T}: Create a 1/1 green Elf Warrior creature token.',
+      cost: { mana: '{G}', tap: true },
+      description: '{G}, {T}: Create a 1/1 green Elf Warrior creature token.',
       effect: (c) => createToken(c.state, c.controller, ELF_WARRIOR_TOKEN, 1),
     },
   ],
@@ -6960,8 +6960,8 @@ const STRIONIC_RESONATOR: CardScript = {
   name: 'Strionic Resonator',
   abilities: [
     {
-      cost: { mana: '{1}', tap: true },
-      description: '{1}, {T}: Copy target triggered ability you control.',
+      cost: { mana: '{2}', tap: true },
+      description: '{2}, {T}: Copy target triggered ability you control.',
       targets: [{
         kind: 'ability',
         description: 'target triggered ability you control',
@@ -7229,8 +7229,8 @@ const WALKING_BALLISTA: CardScript = {
   entersWith: { counter: '+1/+1', amount: 'x' },
   abilities: [
     {
-      cost: { mana: '{1}' },
-      description: '{1}: Put a +1/+1 counter on Walking Ballista.',
+      cost: { mana: '{4}' },
+      description: '{4}: Put a +1/+1 counter on Walking Ballista.',
       effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
     },
     {
@@ -7822,7 +7822,7 @@ const ANGEL_OF_SANCTIONS: CardScript = {
 const ADORNED_POUNCER: CardScript = {
   name: 'Adorned Pouncer',
   keywords: ['double strike'],
-  abilities: [eternalize('{4}{W}{W}', 'Token Creature \u2014 Zombie Cat')],
+  abilities: [eternalize('{3}{W}{W}', 'Token Creature \u2014 Zombie Cat')],
 };
 
 /**
@@ -8052,7 +8052,7 @@ const PYROMATICS: CardScript = {
  */
 const TRAIN_OF_THOUGHT: CardScript = {
   name: 'Train of Thought',
-  replicate: { cost: '{2}{U}' },
+  replicate: { cost: '{1}{U}' },
   triggers: [replicate()],
   onResolve: (c) => drawLater(c.state, c.controller, 1),
 };
@@ -8638,8 +8638,8 @@ const STUDENT_OF_WARFARE: CardScript = {
  */
 const BEASTBREAKER_OF_BALA_GED: CardScript = {
   name: 'Beastbreaker of Bala Ged',
-  levelUp: { cost: '{1}{G}' },
-  abilities: [levelUpAbility('{1}{G}')],
+  levelUp: { cost: '{2}{G}' },
+  abilities: [levelUpAbility('{2}{G}')],
 };
 
 /**
@@ -9029,8 +9029,8 @@ const BLIGHT_MAMBA: CardScript = {
   name: 'Blight Mamba',
   keywords: ['infect'],
   abilities: [{
-    cost: { mana: '{G}' },
-    description: '{G}: Regenerate Blight Mamba.',
+    cost: { mana: '{1}{G}' },
+    description: '{1}{G}: Regenerate Blight Mamba.',
     effect: (c) => regenerate(c.state, c.source),
   }],
 };
@@ -9363,7 +9363,7 @@ const adapt = (n: number, cost: string): AbilityDef => ({
  */
 const FLEECEMANE_LION: CardScript = {
   name: 'Fleecemane Lion',
-  abilities: [monstrosity(1, '{2}{G}{W}')],
+  abilities: [monstrosity(1, '{3}{G}{W}')],
   statics: [{
     scope: 'self',
     effect: {
@@ -9390,7 +9390,7 @@ const FLEECEMANE_LION: CardScript = {
  */
 const AEROMUNCULUS: CardScript = {
   name: 'Aeromunculus',
-  abilities: [adapt(3, '{2}{G}{U}')],
+  abilities: [adapt(1, '{2}{G}{U}')],
 };
 
 /** "Metalcraft — ... as long as you control three or more artifacts." */
@@ -9421,10 +9421,11 @@ const ETCHED_CHAMPION: CardScript = {
 const GALVANIC_BLAST: CardScript = {
   name: 'Galvanic Blast',
   targets: [ANY_TARGET],
-  // Four damage or one, decided as it resolves rather than as it is cast — which is what the card
+  // Four damage or two, decided as it resolves rather than as it is cast — which is what the card
   // says, and it matters: an artifact that dies to a removal spell in between turns the Blast back
-  // into a Shock, and the player who answered it that way earned that.
-  onResolve: (c) => damageFirstTarget(c, artifactsControlled(c.state, c.controller) >= 3 ? 4 : 1),
+  // into a Shock, and the player who answered it that way earned that. (It dealt *one* without
+  // metalcraft until D571: the comment above said Shock and the number below did not.)
+  onResolve: (c) => damageFirstTarget(c, artifactsControlled(c.state, c.controller) >= 3 ? 4 : 2),
 };
 
 /*
@@ -10000,7 +10001,7 @@ const ALL: readonly CardScript[] = [
     See `myriadCopies`, and D229 for what it is worth at four seats and what it is worth at two
     (nothing).
   */
-  equipment('Blade of Selves', '{3}', { keywords: ['myriad'] },
+  equipment('Blade of Selves', '{4}', { keywords: ['myriad'] },
     'equipped creature has myriad'),
   cyclingLand('Barren Moor', 'B'),
   cyclingLand('Forgotten Cave', 'R'),
