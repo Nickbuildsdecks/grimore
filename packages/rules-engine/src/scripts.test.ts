@@ -41208,3 +41208,247 @@ describe('ability costs that had a field and no reader (D581)', () => {
     expect([grown.power, grown.toughness]).toEqual([4, 4]);
   });
 });
+
+describe('Channel: an ability used from the hand by discarding the card (D582)', () => {
+  /*
+    The label used to stop the line being read at all, because without it the remainder looks
+    like an ordinary ability and would be offered from the battlefield. The remainder's own cost
+    says where it is used from — "Discard <this card>" — so it is read on that condition.
+  */
+  const ARCHER = {
+    name: 'Bamboo Grove Archer', type_line: 'Enchantment Creature — Snake Archer', mana_cost: '{1}{G}',
+    cmc: 2, colors: ['G'], power: '3', toughness: '3', layout: 'normal',
+    oracle_text: 'Defender, reach\nChannel — {4}{G}, Discard Bamboo Grove Archer: Destroy target creature with flying.',
+  };
+  const SNIPER = {
+    name: 'Twinshot Sniper', type_line: 'Artifact Creature — Goblin Archer', mana_cost: '{3}{R}',
+    cmc: 4, colors: ['R'], power: '2', toughness: '3', layout: 'normal',
+    oracle_text: 'Reach\nWhen Twinshot Sniper enters, it deals 2 damage to any target.\nChannel — {1}{R}, Discard Twinshot Sniper: It deals 2 damage to any target.',
+  };
+  const channelList = customDeck({
+    id: 'channel',
+    name: 'Channel',
+    entries: [
+      { name: 'Bamboo Grove Archer', count: 4 },
+      { name: 'Twinshot Sniper', count: 4 },
+      { name: 'Hellrider', count: 4 },
+      { name: 'Forest', count: 24 },
+      { name: 'Mountain', count: 24 },
+    ],
+    data: [ARCHER, SNIPER] as never[],
+  }).deck;
+  const table = (opts: { hand?: readonly string[]; mine?: readonly string[]; theirs?: readonly string[] }): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'channel', 1: 'tidal-mind' },
+      deckSpecs: { channel: channelList },
+      hands: { 0: [...(opts.hand ?? [])] },
+      battlefield: { 0: [...(opts.mine ?? [])], 1: [...(opts.theirs ?? [])] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+  const FIVE = ['Forest', 'Forest', 'Forest', 'Forest', 'Forest'];
+  const channelOf = (s: GameState, card: string) => legalActions(s, 0).plays
+    .find((p) => p.kind === 'activate' && p.card === card);
+
+  it('reads both cards with nothing left unread, and keeps the label on the button', () => {
+    for (const row of [ARCHER, SNIPER]) {
+      const compiled = compileCard(row as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), row.name).toEqual([]);
+    }
+    const script = scriptForCard(channelList.cards.find((entry) => entry.card.name === 'Bamboo Grove Archer')!.card);
+    expect(script?.abilities?.[0]?.cost).toEqual({ mana: '{4}{G}', discardSelf: true });
+    expect(script?.abilities?.[0]?.description).toMatch(/^Channel — \{4\}\{G\}, Discard Bamboo Grove Archer:/);
+  });
+
+  it('is offered from the hand and not from the battlefield', () => {
+    const s = table({ hand: ['Bamboo Grove Archer'], mine: ['Bamboo Grove Archer', ...FIVE], theirs: ['Wind Drake'] });
+    const held = find(s, 0, 'hand', 'Bamboo Grove Archer');
+    const inPlay = find(s, 0, 'battlefield', 'Bamboo Grove Archer');
+    expect(channelOf(s, held)?.manaCost).toBe('{4}{G}');
+    expect(channelOf(s, inPlay)).toBeUndefined();
+    expect(refusal(s, {
+      type: 'auto:activate', by: 0, card: inPlay, abilityIndex: 0,
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Wind Drake') }],
+    })).not.toBeNull();
+  });
+
+  it('discards the card as the cost and destroys the flier', () => {
+    let s = table({ hand: ['Bamboo Grove Archer'], mine: FIVE, theirs: ['Wind Drake'] });
+    const held = find(s, 0, 'hand', 'Bamboo Grove Archer');
+    const crow = find(s, 1, 'battlefield', 'Wind Drake');
+    s = apply(s, { type: 'auto:activate', by: 0, card: held, abilityIndex: 0, targets: [{ kind: 'card', id: crow }] });
+    // In the graveyard at once, with the ability still on the stack.
+    expect(s.instances[held]!.zone).toBe('graveyard');
+    expect(s.instances[crow]!.zone).toBe('battlefield');
+    s = drain(passBoth(s));
+    expect(s.instances[crow]!.zone).toBe('graveyard');
+  });
+
+  it('deals its damage from the graveyard, where the card is by then', () => {
+    let s = table({ hand: ['Twinshot Sniper'], mine: ['Mountain', 'Mountain'] });
+    const held = find(s, 0, 'hand', 'Twinshot Sniper');
+    const before = life(s, 1);
+    // Ability 0 is the Channel line; the entry trigger is a trigger and has no index here.
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: held, abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(s.instances[held]!.zone).toBe('graveyard');
+    expect(life(s, 1)).toBe(before - 2);
+  });
+});
+
+describe('Food and Blood: two more tokens the engine has a definition for (D582)', () => {
+  /*
+    Five real cards, each the whole Oracle row. The tokens' abilities are the ones these rows quote
+    in reminder text; the tests below are about the tokens behaving as that text says.
+  */
+  const PIE = {
+    name: 'Bake into a Pie', type_line: 'Instant', mana_cost: '{2}{B}{B}', cmc: 4, colors: ['B'],
+    power: null, toughness: null, layout: 'normal',
+    oracle_text: 'Destroy target creature. Create a Food token. (It\'s an artifact with "{2}, {T}, Sacrifice this token: You gain 3 life.")',
+  };
+  const NAUGHTY = {
+    name: 'Bog Naughty', type_line: 'Creature — Faerie', mana_cost: '{3}{B}{B}', cmc: 5, colors: ['B'],
+    power: '3', toughness: '3', layout: 'normal',
+    oracle_text: 'Flying\n{2}{B}, Sacrifice a Food: Target creature gets -3/-3 until end of turn.',
+  };
+  const SERVITOR = {
+    name: 'Blood Servitor', type_line: 'Artifact Creature — Construct', mana_cost: '{3}', cmc: 3,
+    colors: [], power: '2', toughness: '2', layout: 'normal',
+    oracle_text: 'When Blood Servitor enters, create a Blood token. (It\'s an artifact with "{1}, {T}, Discard a card, Sacrifice this token: Draw a card.")',
+  };
+  const CELEBRANTS = {
+    name: 'Falkenrath Celebrants', type_line: 'Creature — Vampire', mana_cost: '{4}{R}', cmc: 5,
+    colors: ['R'], power: '4', toughness: '4', layout: 'normal',
+    oracle_text: 'Menace (This creature can\'t be blocked except by two or more creatures.)\nWhen Falkenrath Celebrants enters, create two Blood tokens. (They\'re artifacts with "{1}, {T}, Discard a card, Sacrifice this token: Draw a card.")',
+  };
+  const GUEST = {
+    name: 'Gluttonous Guest', type_line: 'Creature — Vampire', mana_cost: '{2}{B}', cmc: 3,
+    colors: ['B'], power: '1', toughness: '4', layout: 'normal',
+    oracle_text: 'When Gluttonous Guest enters, create a Blood token. (It\'s an artifact with "{1}, {T}, Discard a card, Sacrifice this token: Draw a card.")\nWhenever you sacrifice a Blood token, you gain 1 life.',
+  };
+  const PRINTED = [PIE, NAUGHTY, SERVITOR, CELEBRANTS, GUEST];
+  const larderList = customDeck({
+    id: 'larder',
+    name: 'Larder',
+    entries: [
+      ...PRINTED.map((row) => ({ name: row.name, count: 4 })),
+      { name: 'Hellrider', count: 4 },
+      { name: 'Swamp', count: 20 },
+      { name: 'Mountain', count: 16 },
+    ],
+    data: PRINTED as never[],
+  }).deck;
+  const SWAMPS = (n: number): string[] => Array.from({ length: n }, () => 'Swamp');
+  const table = (opts: { hand?: readonly string[]; mine?: readonly string[]; theirs?: readonly string[] }): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'larder', 1: 'tidal-mind' },
+      deckSpecs: { larder: larderList },
+      hands: { 0: [...(opts.hand ?? [])] },
+      battlefield: { 0: [...(opts.mine ?? [])], 1: [...(opts.theirs ?? [])] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    // The drawn card goes back: several of these tests are about exactly what is in the hand.
+    const wanted = [...(opts.hand ?? [])];
+    for (const id of [...ids(s, 0, 'hand')]) {
+      const at = wanted.indexOf(nameOf(s, id));
+      if (at >= 0) { wanted.splice(at, 1); continue; }
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    return s;
+  };
+  const tokens = (s: GameState, name: string): string[] =>
+    ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === name);
+  const cast = (s: GameState, name: string, targets?: readonly Target[]): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), ...(targets === undefined ? {} : { targets: [...targets] }),
+  })), 40);
+
+  it('reads every line of all five cards', () => {
+    for (const row of PRINTED) {
+      const compiled = compileCard(row as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), row.name).toEqual([]);
+    }
+  });
+
+  it('bakes the creature into a Food, and the Food is three life for {2} and itself', () => {
+    let s = table({ hand: ['Bake into a Pie'], mine: SWAMPS(6), theirs: ['Wall of Frost'] });
+    const wall = find(s, 1, 'battlefield', 'Wall of Frost');
+    s = cast(s, 'Bake into a Pie', [{ kind: 'card', id: wall }]);
+    expect(s.instances[wall]!.zone).toBe('graveyard');
+    const [food] = tokens(s, 'Food');
+    expect(food).toBeDefined();
+    expect(characteristicsOf(s, s.instances[food!]!).typeLine.subtypes).toEqual(['Food']);
+    // Four Swamps went on the Pie; two are left, which is the Food's {2}.
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: food!, abilityIndex: 0 })));
+    expect(life(s, 0)).toBe(before + 3);
+    expect(tokens(s, 'Food')).toEqual([]);
+  });
+
+  it('does not offer the Food with nothing to pay its {2}', () => {
+    let s = table({ hand: ['Bake into a Pie'], mine: SWAMPS(4), theirs: ['Wall of Frost'] });
+    s = cast(s, 'Bake into a Pie', [{ kind: 'card', id: find(s, 1, 'battlefield', 'Wall of Frost') }]);
+    const [food] = tokens(s, 'Food');
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === food)).toBe(false);
+  });
+
+  it('pays "Sacrifice a Food" with the token a different card made', () => {
+    let s = table({ hand: ['Bake into a Pie'], mine: ['Bog Naughty', ...SWAMPS(7)], theirs: ['Wall of Frost', 'Wind Drake'] });
+    s = cast(s, 'Bake into a Pie', [{ kind: 'card', id: find(s, 1, 'battlefield', 'Wall of Frost') }]);
+    const [food] = tokens(s, 'Food');
+    const naughty = find(s, 0, 'battlefield', 'Bog Naughty');
+    const drake = find(s, 1, 'battlefield', 'Wind Drake');
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === naughty);
+    expect(play?.sacrificeOptions).toEqual([food]);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: naughty, abilityIndex: 0, sacrifice: food!,
+      targets: [{ kind: 'card', id: drake }],
+    })));
+    expect(tokens(s, 'Food')).toEqual([]);
+    // A 2/2 given -3/-3.
+    expect(s.instances[drake]!.zone).toBe('graveyard');
+  });
+
+  it('arrives with a Blood, and the Blood is a card for a card', () => {
+    let s = table({ hand: ['Blood Servitor', 'Hellrider'], mine: SWAMPS(4) });
+    s = cast(s, 'Blood Servitor');
+    const [blood] = tokens(s, 'Blood');
+    expect(blood).toBeDefined();
+    const rider = find(s, 0, 'hand', 'Hellrider');
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'activate' && p.card === blood);
+    expect(play?.manaCost).toBe('{1}');
+    expect(play?.discardOptions).toEqual([rider]);
+    // No card named, no activation: the discard is part of the cost.
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: blood!, abilityIndex: 0 })).toContain('choose a card to discard');
+    s = apply(s, { type: 'auto:activate', by: 0, card: blood!, abilityIndex: 0, discarded: rider });
+    expect(s.instances[rider]!.zone).toBe('graveyard');
+    expect(tokens(s, 'Blood')).toEqual([]);
+    expect(ids(s, 0, 'hand')).toHaveLength(0);
+    s = drain(passBoth(s));
+    expect(ids(s, 0, 'hand')).toHaveLength(1);
+  });
+
+  it('does not offer the Blood to an empty hand', () => {
+    let s = table({ hand: ['Blood Servitor'], mine: SWAMPS(4) });
+    s = cast(s, 'Blood Servitor');
+    const [blood] = tokens(s, 'Blood');
+    expect(ids(s, 0, 'hand')).toHaveLength(0);
+    expect(legalActions(s, 0).plays.some((p) => p.kind === 'activate' && p.card === blood)).toBe(false);
+  });
+
+  it('makes two where the card says two', () => {
+    let s = table({ hand: ['Falkenrath Celebrants'], mine: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain'] });
+    s = cast(s, 'Falkenrath Celebrants');
+    expect(tokens(s, 'Blood')).toHaveLength(2);
+  });
+
+  it('is seen by a card that watches a Blood token being sacrificed', () => {
+    let s = table({ hand: ['Gluttonous Guest', 'Hellrider'], mine: SWAMPS(4) });
+    s = cast(s, 'Gluttonous Guest');
+    const [blood] = tokens(s, 'Blood');
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: blood!, abilityIndex: 0, discarded: find(s, 0, 'hand', 'Hellrider'),
+    })), 40);
+    expect(life(s, 0)).toBe(before + 1);
+  });
+});

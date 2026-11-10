@@ -1371,6 +1371,30 @@ export const CLUE_TOKEN: CardDef = {
   oracleText: '{2}, Sacrifice this artifact: Draw a card.', colors: [],
 };
 
+/*
+  Food and Blood (D582), the next two predefined tokens by how often they are printed: 118 legal
+  lines create a Food and 38 a Blood, against 322 for Treasure and 23 for Clue.
+
+  **Their text is taken from the corpus, not from memory**, which is the condition `NAMED_TOKENS`
+  set for growing: every card that makes one prints the token's ability in its reminder text, and
+  the two abilities below are those quotations, character for character —
+
+      Food   (It's an artifact with "{2}, {T}, Sacrifice this token: You gain 3 life.")
+      Blood  (It's an artifact with "{1}, {T}, Discard a card, Sacrifice this token: Draw a card.")
+
+  Blood could not have been written before D579: its cost discards a card, and that field arrived
+  with Sunscourge Champion.
+*/
+export const FOOD_TOKEN: CardDef = {
+  name: 'Food', typeLine: 'Token Artifact — Food', manaCost: '', cmc: 0,
+  oracleText: '{2}, {T}, Sacrifice this token: You gain 3 life.', colors: [],
+};
+
+export const BLOOD_TOKEN: CardDef = {
+  name: 'Blood', typeLine: 'Token Artifact — Blood', manaCost: '', cmc: 0,
+  oracleText: '{1}, {T}, Discard a card, Sacrifice this token: Draw a card.', colors: [],
+};
+
 export const KNIGHT_TOKEN: CardDef = {
   name: 'Knight', typeLine: 'Token Creature — Knight', manaCost: '', cmc: 0,
   power: '2', toughness: '2', oracleText: 'Vigilance', colors: ['W'],
@@ -4293,6 +4317,32 @@ const CLUE: CardScript = {
   abilities: [{
     cost: { mana: '{2}', sacrificeSelf: true },
     description: '{2}, Sacrifice this artifact: Draw a card.',
+    effect: (c) => drawLater(c.state, c.controller, 1),
+  }],
+};
+
+/** Food (D582): the Clue's shape with a tap in the cost and life at the end of it. */
+const FOOD: CardScript = {
+  name: 'Food',
+  abilities: [{
+    cost: { mana: '{2}', tap: true, sacrificeSelf: true },
+    description: '{2}, {T}, Sacrifice this token: You gain 3 life.',
+    effect: (c) => gainLife(c.state, c.controller, 3),
+  }],
+};
+
+/**
+ * Blood (D582): a card for a card, and the first token whose cost is paid out of the hand.
+ *
+ * `discardACard` means the play carries `discardOptions`, so the table asks which card and the bot
+ * answers by D580's rule. The token taps and sacrifices itself, so that rule counts it as an
+ * ability used once and lets it take a card the bot wanted — which is what a Blood is for.
+ */
+const BLOOD: CardScript = {
+  name: 'Blood',
+  abilities: [{
+    cost: { mana: '{1}', tap: true, discardACard: true, sacrificeSelf: true },
+    description: '{1}, {T}, Discard a card, Sacrifice this token: Draw a card.',
     effect: (c) => drawLater(c.state, c.controller, 1),
   }],
 };
@@ -7670,6 +7720,8 @@ export const TOKEN_DEFS: readonly CardDef[] = [
   // The two that are resources rather than bodies, and the first tokens here whose whole text is
   // an ability that eats them.
   TREASURE_TOKEN, CLUE_TOKEN,
+  // And the two D582 added, on the same terms.
+  FOOD_TOKEN, BLOOD_TOKEN,
 ];
 
 /*
@@ -10309,7 +10361,7 @@ const ALL: readonly CardScript[] = [
   BURST_LIGHTNING, BREATH_OF_DARIGAAZ, AGONIZING_DEMISE, BONE_SPLINTERS, VILLAGE_RITES, JUDITH,
   BANISHER_PRIEST, JOURNEY_TO_NOWHERE, BANISHING_LIGHT,
   NATURALIZE, DISENCHANT, BLOSSOMING_DEFENSE, DIVE_DOWN, JUGGERNAUT, DISRUPT_DECORUM, KALITAS,
-  SOL_RING, MIND_STONE, BIRDS_OF_PARADISE, TREASURE, CLUE,
+  SOL_RING, MIND_STONE, BIRDS_OF_PARADISE, TREASURE, CLUE, FOOD, BLOOD,
   THRABEN_INSPECTOR, PIRATES_PRIZE, LOTUS_PETAL,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,
@@ -15659,7 +15711,7 @@ function subtypeFromTribalPhrase(word: string, number: 'plural' | 'singular'): s
 }
 
 /**
- * The two tokens the engine has **definitions** for, looked up by the name a card prints.
+ * The predefined tokens the engine has **definitions** for, looked up by the name a card prints.
  *
  * Magic names a predefined token instead of describing it — "Create a Treasure token" — and the
  * reminder text in brackets after it is not rules text (CR 207.2). So the token's actual
@@ -15672,12 +15724,14 @@ function subtypeFromTribalPhrase(word: string, number: 'plural' | 'singular'): s
  * object a hand-written card makes — including the sacrifice-for-mana ability that makes the mana
  * solver count it.
  *
- * ## Why only two names
+ * ## Why only these names
  *
- * Because there are only two definitions. Food, Blood, Map, Powerstone and the rest are real
- * predefined tokens this engine has never needed, and the only way to read one would be to invent
- * its text. An unread line is dealt to a human (D362); an invented Food token is a card that plays
- * and is wrong. So the map **is** the validation, and the table grows when a definition does.
+ * Because these are the definitions there are. Map, Powerstone, Junk, Gold and the rest are real
+ * predefined tokens this engine has not written, and the only way to read one would be to invent
+ * its text. An unread line is dealt to a human (D362); an invented token is a card that plays and
+ * is wrong. So the map **is** the validation, and the table grows when a definition does — as it
+ * did at D582, when Food and Blood were written from the ability every card that makes one
+ * quotes in its reminder text. See `FOOD_TOKEN`.
  *
  * The count is returned unread, as the word the card printed, exactly as `tokenFrom` returns it:
  * both go through `tokenEffect`'s own count machinery, so "two Treasure tokens" and "a Clue token
@@ -15686,6 +15740,8 @@ function subtypeFromTribalPhrase(word: string, number: 'plural' | 'singular'): s
 const NAMED_TOKENS: Readonly<Record<string, CardDef>> = {
   Treasure: TREASURE_TOKEN,
   Clue: CLUE_TOKEN,
+  Food: FOOD_TOKEN,
+  Blood: BLOOD_TOKEN,
 };
 
 function namedTokenFrom(body: string): { token: CardDef; printed: string } | null {
@@ -20551,6 +20607,28 @@ function graveyardSelfReturn(clause: string, name: string): ReadEffect | null {
 
 function abilityFromLine(line: string, name: string): Partial<CardScript> | null {
   const text = plain(line).trim();
+  /*
+    **Channel** (D582): a label on an activated ability whose cost discards the card itself,
+    which is what makes it usable from the hand. "Channel — {4}{G}, Discard Bamboo Grove Archer:
+    Destroy target creature with flying." 38 legal lines on 37 cards print the label.
+
+    `withoutAbilityWord` keeps the label on, deliberately: with it gone the remainder looks like
+    an ordinary activated ability, and one read that way is offered from the battlefield. But the
+    remainder says where it is used from in its own cost — `Discard ~` is `discardSelf`, and
+    `discardSelf` is what `legalActions` and `activate` both read as "used from the hand, and
+    spends the card", since cycling (#45). So the label can come off **here**, on the one
+    condition that the cost it leaves really does discard the card: a "Channel —" line whose
+    remainder did not would be an ability with no zone, and is refused.
+
+    The description stays the printed line, label included, because that is what the button says.
+  */
+  const channelled = /^Channel\s*[—–]\s*(.+)$/i.exec(text);
+  if (channelled !== null) {
+    const inner = abilityFromLine(channelled[1]!, name);
+    const abilities = inner?.abilities ?? [];
+    if (abilities.length === 0 || abilities.some((ability) => ability.cost.discardSelf !== true)) return null;
+    return { abilities: abilities.map((ability) => ({ ...ability, description: text })) };
+  }
   /*
     The cost, then a colon, then the clause. Every comma-separated component of the cost has to
     classify as something `AbilityCost` can say, and one that does not refuses the line — see the

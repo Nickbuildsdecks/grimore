@@ -23174,3 +23174,106 @@ push. The pod sweep for this build is seed 44901.
 refuses it. I believe the rules allow it, and I have not changed it on a recollection: neither
 rules site I tried is reachable from this session (yawgatog.com and magic.wizards.com are
 outside its allowed network domains). Allowing either one would let me settle it.
+
+## D582 — Channel, and two more tokens: Food and Blood
+
+Two small readers, both found by asking which unread lines sit in front of an effect the
+compiler already reads.
+
+**Channel.** A "Channel —" line is an ability you use from your hand by discarding the card:
+"Channel — {4}{G}, Discard Bamboo Grove Archer: Destroy target creature with flying." The
+compiler kept the label on and left the line unread, on purpose: with the label gone the rest
+looks like an ordinary ability and would be offered from the battlefield. But the rest says where
+it is used from in its own cost. "Discard this card" is the field the engine already reads as
+"used from the hand, and spends the card" (cycling has worked that way since #45). So the label
+now comes off on one condition, that the cost under it discards the card; a Channel line whose
+cost did not is refused.
+
+    legal lines that print the label:   38, on 37 cards
+    read now:                           22
+    cards with no unread line left:     19
+
+The 16 still unread have an effect the compiler cannot read yet; several put an X in the cost.
+
+**Food and Blood.** "Create a Food token" had no reader at all, where "create a Treasure token"
+has had one since #243. The compiler's own note said why: a named token's text is not in the
+sentence that makes it, and writing it from memory was ruled out. The text is in the corpus,
+though — every card that makes one quotes the token's ability in its reminder text — so the two
+definitions are those quotations:
+
+    Food    {2}, {T}, Sacrifice this token: You gain 3 life.
+    Blood   {1}, {T}, Discard a card, Sacrifice this token: Draw a card.
+
+The note that argued against memory had itself remembered Food's text slightly wrong ("this
+artifact" for "this token"). Blood could not have been written before D579, because its cost
+discards a card.
+
+    legal lines that make a Food:   118, on 114 cards (26 of those cards now fully read)
+    legal lines that make a Blood:   38, on 37 cards (10 now fully read)
+
+This also makes real something D581 only half delivered. D581 read "Sacrifice a Food" as a
+cost, but nothing could make a Food, so the cost could never be paid. It can now, and a test
+pays Bog Naughty's with a Food that Bake into a Pie made.
+
+Map, Powerstone, Junk and Gold are not written. A card that makes one keeps that line unread.
+
+**A correction to D580's record.** I wrote there that 114 of the 206 "Discard a card" cost lines
+read. That came from a probe that matched lines by their text, and it counted The Underworld
+Cookbook's line as read when it was not (its effect makes a Food). Counted the reliable way, by
+compiled abilities that carry the cost, today's build reads 115 of the 206. I have not rebuilt
+D580 to recount it, so its own figure should be taken as "about 114". The totals in its table
+(cards and lines read across the whole corpus) came from the standing measure and are unaffected.
+
+**Tests.** 12 added in the engine on seven real cards compiled from their Oracle rows (Bamboo
+Grove Archer, Twinshot Sniper, Bake into a Pie, Bog Naughty, Blood Servitor, Falkenrath
+Celebrants, Gluttonous Guest), and 5 compile tests (3 for this increment, 2 from D581's break
+run, below). Two older tests used Food and Blood as
+examples of tokens with no definition; they now use Map, and Bloody Betrayal — which one of
+them cited as unreadable because of its Blood token — is tested as reading whole.
+
+    engine tests: 3,965, all passing
+    web tests: 253, all passing
+
+### Measurements
+
+This build against the last one:
+
+    cards with every printed line read:  8,550 → 8,606 of 30,710
+    printed legal lines read:            24,732 → 24,832 of 56,421 (44.0%)
+    cards with a compiled script:        12,777 → 12,850
+
+Pod sweep on D581's build (4e8fb27), seeds 44901–44940: 40 of 40 finished, no throw and no
+stall.
+
+Break run for D581, 22 breaks: 20 caught, 2 not. Both misses were test rows I had not written,
+not faults in the reader:
+
+- With "Exile this card" no longer counted as a cost on its own, nothing failed, because no row
+  had it as the *whole* cost. Added (it is Inquisitive Puppet's shape).
+- With the typed sacrifice's own "one sacrifice per cost" check removed, nothing failed, because
+  my row put the typed sacrifice first and the older check refused it. Added in the other order.
+
+Each new row was run with its fault in place and fails, and passes without it.
+
+### Where the unread triggers are
+
+A probe I ran to choose this increment, recorded because it will steer the next several. For
+each unread triggered ability it asks two questions separately: does the trigger condition read
+with a known-good effect, and does the effect read behind a known-good condition?
+
+    unread triggered abilities:                   8,905
+    only the condition is unread:                   981
+    only the effect is unread:                    5,720
+    neither half reads:                           2,201
+
+So the effects are where the cards are, by nearly six to one. The conditions are a long thin
+tail: the commonest unread one ("Whenever this creature mutates") is 19 lines. The commonest
+unread effects, with how many of those lines are a card's last unread line:
+
+    put a +1/+1 counter on <something not yet read>     104 lines, 70 last
+    you may search your library …                        61 lines, 49 last
+    exile the top card of your library …                 48 lines, 26 last
+    exile up to one target …                             44 lines, 23 last
+    it / this deals N damage to <not yet read>           74 lines, 52 last
+    look at the top N cards …                            102 lines, 76 last
+    it explores                                          18 lines, 18 last

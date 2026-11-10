@@ -5879,12 +5879,16 @@ describe('compileCard, against the cards a person wrote by hand', () => {
 
     it('refuses a predefined token the engine has no definition for', () => {
       /*
-        Food is as real a token as Treasure and the engine has never needed one, so the only way to
-        read it would be to invent "{2}, {T}, Sacrifice this artifact: You gain 3 life" — the text
-        of a real card, written from memory. The refusal is the point of the table being a table:
-        an unread line is flagged for a human (D362), an invented Food plays and is wrong.
+        A Map is as real a token as a Treasure and the engine has never written one, so the only
+        way to read it would be to invent its text. The refusal is the point of the table being a
+        table: an unread line is flagged for a human (D362), an invented token plays and is wrong.
+
+        This list was `Food, Blood, Powerstone` until D582, which wrote Food and Blood from the
+        ability their makers quote in reminder text. The comment that stood here is the argument
+        for doing it that way: it gave Food's text from memory as "Sacrifice this artifact", and
+        the cards print "Sacrifice this token".
       */
-      for (const named of ['Food', 'Blood', 'Powerstone']) {
+      for (const named of ['Map', 'Powerstone', 'Junk']) {
         const card = compileCard({
           name: `Larder ${named}`, type_line: 'Sorcery', mana_cost: '{1}', cmc: 1, colors: [],
           oracle_text: `Create a ${named} token.`,
@@ -8487,6 +8491,9 @@ describe('an ability cost that is not mana, a tap or life', () => {
     ['{2}, Exile Probe Thing from your graveyard: Draw a card.',
       { mana: '{2}', exileSelf: true, fromGraveyard: true }],
     ['{T}, Exile this artifact: Draw a card.', { tap: true, exileSelf: true }],
+    // The exile as the **whole** cost, which the "is there a cost at all" guard has to count —
+    // Inquisitive Puppet's shape. Added after D581's break run found nothing tested it.
+    ['Exile Probe Thing: Draw a card.', { exileSelf: true }],
     ['Pay {E}{E}: Draw a card.', { energy: 2 }],
     ['{1}, Sacrifice a Goblin: Draw a card.',
       { mana: '{1}', sacrifice: 'creature', sacrificeSubtypes: ['Goblin'] }],
@@ -8494,6 +8501,9 @@ describe('an ability cost that is not mana, a tap or life', () => {
       { sacrifice: 'another-creature', sacrificeSubtypes: ['Zombie'] }],
     ['{2}, Sacrifice a Food: Draw a card.',
       { mana: '{2}', sacrifice: 'artifact', sacrificeSubtypes: ['Food'] }],
+    // Channel (D582): the label comes off because the cost under it discards the card, which is
+    // the field that says "used from the hand".
+    ['Channel \u2014 {2}, Discard Probe Thing: Draw a card.', { mana: '{2}', discardSelf: true }],
   ])('reads %s', (text, cost) => {
     const compiled = read('Probe Thing', 'Artifact', text);
     expect(compiled.ok).toBe(true);
@@ -8526,6 +8536,12 @@ describe('an ability cost that is not mana, a tap or life', () => {
     ['exiling from the hand, which is a third zone', 'Exile Probe Thing from your hand: Draw a card.'],
     ['a typed sacrifice beside a second sacrifice',
       'Sacrifice a Goblin, Sacrifice an artifact: Draw a card.'],
+    // And in the other order, which is the typed reader's own guard rather than the older one's:
+    // D581's break run showed the row above passes on the older guard alone.
+    ['a typed sacrifice after another sacrifice',
+      'Sacrifice an artifact, Sacrifice a Goblin: Draw a card.'],
+    // Channel with nothing under it that discards the card: no zone to use it from (D582).
+    ['Channel over a cost that keeps the card', 'Channel \u2014 {2}, {T}: Draw a card.'],
     // And two sacrifices in one cost, which the field cannot count: refused rather than halved.
     ['two sacrifices in one cost, which the field cannot count',
       'Sacrifice a creature, Sacrifice an artifact: Draw a card.'],
@@ -13272,9 +13288,11 @@ describe('the Act of Treason sentence, read as one group (D516)', () => {
       'Gain control of target creature until end of turn. Untap that creature. Until end of turn, '
       + 'it gains haste and "Whenever this creature deals combat damage to a player or battle, '
       + 'create a Treasure token."'],
-    ['a Blood token this compiler has no reader for (Bloody Betrayal)',
+    // The row that stood here was Bloody Betrayal's, refused for its Blood token. Blood has a
+    // definition since D582, so the card reads whole now and is tested as such below.
+    ['a Map token this compiler has no definition for',
       'Gain control of target creature until end of turn. Untap that creature. It gains haste '
-      + 'until end of turn. Create a Blood token.'],
+      + 'until end of turn. Create a Map token.'],
     ['a counter put on before the untap (Mark of Mutiny)',
       'Gain control of target creature until end of turn. Put a +1/+1 counter on it and untap it. '
       + 'That creature gains haste until end of turn.'],
@@ -13289,6 +13307,17 @@ describe('the Act of Treason sentence, read as one group (D516)', () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.unread).toHaveLength(1);
+  });
+
+  it('reads Bloody Betrayal whole, now that its Blood token has a definition (D582)', () => {
+    const read = sorcery('Bloody Betrayal',
+      'Gain control of target creature until end of turn. Untap that creature. It gains haste '
+      + 'until end of turn. Create a Blood token. (It\'s an artifact with "{1}, {T}, Discard a card, '
+      + 'Sacrifice this token: Draw a card.")');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([]);
+    expect(read.script).toBeDefined();
   });
 
   it('refuses a steal whose tail grants no haste at all', () => {
