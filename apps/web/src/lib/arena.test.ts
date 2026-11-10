@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest"
 import type { GameView, LegalPlay, Target, VisibleCard } from "@grimore/rules-engine"
 import {
   IDLE, arenaReducer, attackRead, attackSummary, blockersOf, boardRead, brokeADeal, candidatesAt,
-  cardBadges, damageTakenFrom, decisionLabel, pactAsked, pactBadge, pactOffers, sparedYouBy,
+  cardBadges, damageTakenFrom, decisionLabel, feedOptions, pactAsked, pactBadge, pactOffers, sparedYouBy,
   manaPips, playsForCard, primaryMove, reasonCannotPlay, specAt, splitBattlefield, targetKey,
   targetsRequired,
   targetsWanted,
@@ -825,6 +825,60 @@ describe("choosing X", () => {
     expect(afterX.mode.kind).toBe("targeting")
     const sent = arenaReducer(afterX.mode, { kind: "pickTarget", target: player(1) })
     expect(sent.action).toEqual({ type: "auto:cast", card: "c1", x: 2, targets: [player(1)] })
+  })
+
+  it("opens on the card's own best X where it names one, rather than on the largest", () => {
+    // Toxic Deluge pays X life: nineteen is legal and one is what the board wants.
+    const deluge = fireball({
+      name: "Toxic Deluge", manaCost: "{2}{B}", targetSpecs: [], candidates: [], xMax: 19, xDefault: 1,
+    })
+    const result = arenaReducer(IDLE, { kind: "choosePlay", play: deluge })
+    expect(result.mode).toEqual({ kind: "payingX", play: deluge, chosen: 1 })
+    // And every number up to the ceiling is still one tap away.
+    const raised = arenaReducer(result.mode, { kind: "setX", amount: 7 }).mode
+    expect(arenaReducer(raised, { kind: "confirm" }).action).toEqual({
+      type: "auto:cast", card: "c1", x: 7,
+    })
+  })
+
+  describe("a spell that charges for each target beyond the first", () => {
+    const anyNumber = (over: Partial<LegalPlay> = {}): LegalPlay => fireball({
+      extraTargetCost: 1,
+      targetSpecs: [{ kind: "any", description: "any number of targets", count: 99, optional: true }],
+      candidates: [[player(1), card("c7"), card("c8")]],
+      ...over,
+    })
+    const aimingAt = (x: number): ArenaMode => {
+      let mode = arenaReducer(IDLE, { kind: "choosePlay", play: anyNumber() }).mode
+      mode = arenaReducer(mode, { kind: "setX", amount: x }).mode
+      return arenaReducer(mode, { kind: "confirm" }).mode
+    }
+
+    it("takes one target at the largest X, and no second one the mana cannot cover", () => {
+      let mode = aimingAt(4)
+      mode = arenaReducer(mode, { kind: "pickTarget", target: player(1) }).mode
+      const refused = arenaReducer(mode, { kind: "pickTarget", target: card("c7") })
+      expect(refused.action).toBeNull()
+      expect((refused.mode as { chosen: Target[] }).chosen).toEqual([player(1)])
+      // And is sent with the one it has, by the button: the spec is "any number".
+      expect(arenaReducer(refused.mode, { kind: "confirm" }).action).toEqual({
+        type: "auto:cast", card: "c1", x: 4, targets: [player(1)],
+      })
+    })
+
+    it("takes one extra target for each mana X left unspent", () => {
+      // X is two of a possible four: two spare, so three targets and not a fourth.
+      let mode = aimingAt(2)
+      for (const target of [player(1), card("c7"), card("c8")]) {
+        mode = arenaReducer(mode, { kind: "pickTarget", target }).mode
+      }
+      expect((mode as { chosen: Target[] }).chosen).toHaveLength(3)
+      const full = arenaReducer(mode, { kind: "pickTarget", target: player(0) })
+      expect((full.mode as { chosen: Target[] }).chosen).toHaveLength(3)
+      expect(arenaReducer(mode, { kind: "confirm" }).action).toEqual({
+        type: "auto:cast", card: "c1", x: 2, targets: [player(1), card("c7"), card("c8")],
+      })
+    })
   })
 
   it("sends an X spell that needs no target as soon as X is confirmed", () => {
@@ -1942,6 +1996,54 @@ describe("deals between players", () => {
     ])
     // Nothing on a manual table, where the engine is not computing anybody's options.
     expect(pactOffers(view({ seats }))).toEqual([])
+  })
+})
+
+describe("paying for an ability by discarding a card", () => {
+  /*
+    "Discard a card" as a cost — Sunscourge Champion's eternalize. The third thing the feeding mode
+    asks for and the first that is in the **hand**, so the mode names the cost and the bar's wording
+    and the ring round what may be tapped both follow from it.
+  */
+  const eternalize = (over: Partial<LegalPlay> = {}) => play({
+    kind: "activate", abilityIndex: 0, name: "Sunscourge Champion",
+    description: "Eternalize\u2014{2}{W}{W}, Discard a card",
+    manaCost: "{2}{W}{W}", targetSpecs: [], candidates: [], sacrificeOptions: [],
+    discardOptions: ["h1", "h2"],
+    ...over,
+  })
+
+  it("asks which card to discard before anything else, and says it is a discard", () => {
+    const result = arenaReducer(IDLE, { kind: "choosePlay", play: eternalize() })
+    expect(result.action).toBeNull()
+    expect(result.mode.kind === "feeding" ? result.mode.cost : null).toBe("discarded")
+    expect(result.mode.kind === "feeding" ? feedOptions(result.mode) : null).toEqual(["h1", "h2"])
+  })
+
+  it("sends the activation with the card in its own field", () => {
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: eternalize() }).mode
+    expect(arenaReducer(mode, { kind: "feed", card: "h2" }).action).toEqual({
+      type: "auto:activate", card: "c1", abilityIndex: 0, discarded: "h2",
+    })
+  })
+
+  it("ignores a card the engine did not offer", () => {
+    const mode = arenaReducer(IDLE, { kind: "choosePlay", play: eternalize() }).mode
+    const result = arenaReducer(mode, { kind: "feed", card: "a-plains-on-the-battlefield" })
+    expect(result.action).toBeNull()
+    expect(result.mode.kind).toBe("feeding")
+  })
+
+  it("carries the discard through to the targets when the ability also aims", () => {
+    const aimed = eternalize({
+      targetSpecs: [{ kind: "any", description: "any target" }], candidates: [[player(1)]],
+    })
+    let mode = arenaReducer(IDLE, { kind: "choosePlay", play: aimed }).mode
+    mode = arenaReducer(mode, { kind: "feed", card: "h1" }).mode
+    expect(mode.kind).toBe("targeting")
+    expect(arenaReducer(mode, { kind: "pickTarget", target: player(1) }).action).toEqual({
+      type: "auto:activate", card: "c1", abilityIndex: 0, discarded: "h1", targets: [player(1)],
+    })
   })
 })
 

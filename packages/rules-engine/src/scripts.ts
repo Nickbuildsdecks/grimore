@@ -420,16 +420,46 @@ const LAVA_SPIKE: CardScript = {
 };
 
 /**
- * The first card with {X} in its cost, and the simplest shape it comes in.
+ * The first card with {X} in its cost.
  *
  * X is chosen as the spell is cast (CR 601.2b) and paid for then, so by the time this runs the
  * number is settled and `c.x` is just a number. Nothing here knows how it was paid for, which is
  * the point: the mana layer took the decision and the card reads like the card.
+ *
+ * **Any number of targets, the damage divided evenly and rounded down, and {1} more for each
+ * target beyond the first** (D579). The pool's Fireball took one target and that was all of it —
+ * the commonest way the card is cast, and half of what is printed. Two things follow from the
+ * printed half:
+ *
+ * - The division is **arithmetic, not a choice**: X over the number of targets, the remainder
+ *   lost. So this is not `divided` (Arc Lightning's, where the caster announces each share) and
+ *   nothing is asked — five damage at two targets is two each.
+ * - It is divided among the targets the resolution is handed, which are the ones still legal.
+ *
+ * `ANY_NUMBER_OF_TARGETS` is a ceiling the engine needs a number for, not a rule: more than a
+ * table could hold. `botTakes: 1` because the bot fills a spec to its count, and a Fireball
+ * aimed at everything — its caster's own creatures included — is the damage divided to nothing.
  */
+const ANY_NUMBER_OF_TARGETS = 99;
+
 const FIREBALL: CardScript = {
   name: 'Fireball',
-  targets: [ANY_TARGET],
-  onResolve: (c) => damageFirstTarget(c, c.x),
+  extraTargetCost: 1,
+  targets: [{
+    kind: 'any', description: 'any number of targets',
+    count: ANY_NUMBER_OF_TARGETS, optional: true, botTakes: 1,
+  }],
+  onResolve: (c) => {
+    if (c.targets.length === 0) return c.state;
+    const each = Math.floor(c.x / c.targets.length);
+    if (each <= 0) return c.state;
+    // One dealing of damage per target, each from the same source: protection, prevention and
+    // deathtouch are asked about each separately, as they are for Arc Lightning's shares.
+    return c.targets.reduce(
+      (state, target) => dealDamage(state, target, each, { controller: c.controller, source: c.source }),
+      c.state,
+    );
+  },
 };
 
 /**
@@ -7524,76 +7554,58 @@ const HANGARBACK_WALKER: CardScript = {
 };
 
 /**
- * The sweeper whose size you choose, and the pool's first question answered with a number.
+ * The sweeper whose size you choose.
  *
- * "Pay X life. All creatures get -X/-X until end of turn." Everything about this card is the
- * number, and the number is chosen **as it resolves** rather than as it is cast — which is the
- * distinction that made it unscriptable until now. An X in a cost is announced on the stack, is
- * part of what gets countered, and lets an opponent decide whether to respond knowing how big it
- * is. This is chosen after all of that, from the board as it actually ended up, which is precisely
- * why a player would rather have it this way round (see `NumberDecisionSpec`).
- *
- * **The range is the card's own.** Nought up to the smaller of the life its caster can survive
- * paying and the biggest toughness on the board: -9/-9 and -4/-4 kill exactly the same creatures
- * when nothing has five toughness, so offering forty answers where four matter would be a worse
- * question rather than a more honest one. It reads the board when the question is asked.
+ * "As an additional cost to cast this spell, pay X life. All creatures get -X/-X until end of
+ * turn." Everything about this card is the number, and the number is chosen **as it is cast**
+ * (D579): the life is a cost, so it is announced on the stack, paid before anybody may respond,
+ * and gone whether or not the spell resolves. The pool's Deluge asked on resolution instead, from
+ * the board as it ended up — which is a better card than the printed one and not the same one. A
+ * countered Deluge cost no life, and an opponent deciding whether to answer it could not see how
+ * big it was. See `CardScript.additionalCost`.
  *
  * It hits **all** creatures, the caster's own included, which is the card and is also why the bot
  * needs an opinion rather than a maximum: the number that kills the most of somebody else's board
- * is often the number that kills its own. `best` answers the way a player does — the smallest
- * number that kills more of theirs than of mine, and nought when no number does.
+ * is often the number that kills its own. `bestX` answers the way a player does — the smallest
+ * number that kills more of theirs than of mine, and nought when no number does — and the table
+ * opens its question on the same number rather than on "all your life but one".
  */
 const TOXIC_DELUGE: CardScript = {
   name: 'Toxic Deluge',
   removesACreature: true,
-  decisions: [{
-    who: 'controller',
-    prompt: 'Pay how much life?',
-    range: (state, chooser) => ({
-      min: 0,
-      // One less than the life total: a cost that kills you is not a cost you may choose to pay
-      // (CR 118.4), and the same rule is why a Mana Confluence stops at one life.
-      max: Math.max(0, Math.min(
-        (state.seats[chooser]?.life ?? 1) - 1,
-        biggestToughness(state),
-      )),
-    }),
-    best: (state, chooser) => {
-      // The smallest number that is worth more to this seat than it costs, which is what a person
-      // works out by looking: how many of theirs dies, how many of mine, and is the trade good.
-      const cap = Math.min((state.seats[chooser]?.life ?? 1) - 1, biggestToughness(state));
-      let best = 0;
-      let bestGain = 0;
-      for (let x = 1; x <= cap; x += 1) {
-        let theirs = 0;
-        let mine = 0;
-        for (const id of battlefield(state)) {
-          const inst = state.instances[id];
-          if (inst === undefined) continue;
-          const ch = characteristicsOf(state, inst);
-          if (!ch.isCreature || ch.toughness > x) continue;
-          if (inst.zoneSeat === chooser) mine += 1;
-          else theirs += 1;
-        }
-        // Life is a resource and this is the one card here that spends it, so a number that trades
-        // three life for one creature apiece is not an improvement on doing nothing.
-        const gain = theirs - mine;
-        if (gain > bestGain) {
-          bestGain = gain;
-          best = x;
-        }
+  additionalCost: { lifeX: true },
+  bestX: (state, chooser, xMax) => {
+    // The smallest number that is worth more to this seat than it costs, which is what a person
+    // works out by looking: how many of theirs dies, how many of mine, and is the trade good.
+    // Nothing above the biggest toughness on the board kills anything more, so the search stops
+    // there: -9/-9 and -4/-4 are the same sweep when nothing has five.
+    const cap = Math.min(xMax, biggestToughness(state));
+    let best = 0;
+    let bestGain = 0;
+    for (let x = 1; x <= cap; x += 1) {
+      let theirs = 0;
+      let mine = 0;
+      for (const id of battlefield(state)) {
+        const inst = state.instances[id];
+        if (inst === undefined) continue;
+        const ch = characteristicsOf(state, inst);
+        if (!ch.isCreature || ch.toughness > x) continue;
+        if (inst.zoneSeat === chooser) mine += 1;
+        else theirs += 1;
       }
-      return best;
-    },
-  }],
-  onResolve: (c) => {
-    const paid = c.decisions[0]?.amount ?? 0;
-    if (paid <= 0) return c.state;
-    // The life first, because it is the cost of the effect rather than part of it: a Deluge for
-    // four takes the life whether or not anything on the board has four toughness.
-    const spent = loseLife(c.state, c.controller, paid);
-    return pumpAll(spent, c.source, c.controller, { power: -paid, toughness: -paid });
+      // Life is a resource and this is the one card here that spends it, so a number that trades
+      // three life for one creature apiece is not an improvement on doing nothing.
+      const gain = theirs - mine;
+      if (gain > bestGain) {
+        bestGain = gain;
+        best = x;
+      }
+    }
+    return best;
   },
+  onResolve: (c) => (c.x <= 0
+    ? c.state
+    : pumpAll(c.state, c.source, c.controller, { power: -c.x, toughness: -c.x })),
 };
 
 const KIORAS_FOLLOWER: CardScript = {
@@ -8007,10 +8019,16 @@ const embalm = (cost: string, typeLine: string): AbilityDef => ({
   }),
 });
 
-const eternalize = (cost: string, typeLine: string): AbilityDef => ({
-  cost: { mana: cost, fromGraveyard: true, exileSelf: true },
+/*
+  `discards` is the second printed shape of the keyword (D579): "Eternalize—{2}{W}{W}, Discard a
+  card", where the dash says the cost is more than mana. Sunscourge Champion is the pool's one;
+  the cost is `AbilityCost.discardACard`, chosen as the ability is activated.
+*/
+const eternalize = (cost: string, typeLine: string, discards = false): AbilityDef => ({
+  cost: { mana: cost, fromGraveyard: true, exileSelf: true, ...(discards ? { discardACard: true as const } : {}) },
   sorcerySpeed: true,
-  description: `Eternalize ${cost} (${cost}, Exile this card from your graveyard: Create a token `
+  description: `${discards ? `Eternalize\u2014${cost}, Discard a card` : `Eternalize ${cost}`} `
+    + `(${cost}${discards ? ', Discard a card' : ''}, Exile this card from your graveyard: Create a token `
     + 'that\u2019s a copy of it, except it\u2019s a black Zombie with base power and toughness 4/4 '
     + 'and no mana cost. Eternalize only as a sorcery.)',
   effect: (c) => copyAsToken(c.state, c.controller, c.source, 1, {
@@ -8074,12 +8092,19 @@ const ADORNED_POUNCER: CardScript = {
 };
 
 /**
- * Sunscourge Champion: two life now, two life again later, and a 4/4 the second time.
+ * Sunscourge Champion: two life now, **four** later, and a 4/4 the second time.
  *
  * The card that makes eternalize an *input* rather than a finisher. Dawn Tithe's whole plan is that
  * gaining life is a thing other cards read — a counter on Ajani's Pridemate, a counter on the
- * Bloodthirsty Aerialist — so a body whose arrival gains two life is worth having twice, and the
+ * Bloodthirsty Aerialist — so a body whose arrival gains life is worth having twice, and the
  * second time it arrives as a 4/4.
+ *
+ * "You gain life **equal to its power**" (D579), where the pool said two both times: the printed
+ * 2/3 gains two and the eternalized 4/4 gains four, which is the whole reason the two halves of
+ * the card are on one card. Read as the trigger resolves, so a Giant Growth in response is five.
+ *
+ * And the printed eternalize: **{2}{W}{W} and a card from the hand**, where the pool charged
+ * {5}{W}{W} and nothing else — three mana dearer and a card cheaper than what is printed.
  *
  * It is also the simplest possible check that the token really is a copy: the token has the entry
  * trigger because `scriptFor` finds this script by **name**, and the name is the one field
@@ -8090,11 +8115,15 @@ const SUNSCOURGE_CHAMPION: CardScript = {
   triggers: [
     {
       on: { kind: 'etb' },
-      description: 'you gain 2 life',
-      effect: (c) => gainLife(c.state, c.controller, 2),
+      description: 'you gain life equal to its power',
+      effect: (c) => {
+        const inst = c.state.instances[c.source];
+        const power = inst === undefined ? 0 : characteristicsOf(c.state, inst).power;
+        return power <= 0 ? c.state : gainLife(c.state, c.controller, power);
+      },
     },
   ],
-  abilities: [eternalize('{5}{W}{W}', 'Token Creature \u2014 Zombie Human Cleric')],
+  abilities: [eternalize('{2}{W}{W}', 'Token Creature \u2014 Zombie Human Wizard', true)],
 };
 
 /*

@@ -350,7 +350,7 @@ const FIREBALL: CardDef = {
   typeLine: 'Sorcery',
   manaCost: '{X}{R}',
   cmc: 1,
-  oracleText: 'Fireball deals X damage to any target.',
+  oracleText: 'This spell costs {1} more to cast for each target beyond the first.\nFireball deals X damage divided evenly, rounded down, among any number of targets.',
   colors: ['R'],
 };
 
@@ -2167,7 +2167,7 @@ const TOXIC_DELUGE: CardDef = {
   typeLine: 'Sorcery',
   manaCost: '{2}{B}',
   cmc: 3,
-  oracleText: 'Pay X life. All creatures get -X/-X until end of turn.',
+  oracleText: 'As an additional cost to cast this spell, pay X life.\nAll creatures get -X/-X until end of turn.',
   colors: ['B'],
 };
 
@@ -6579,10 +6579,7 @@ const SUNSCOURGE_CHAMPION: CardDef = {
   cmc: 3,
   power: '2',
   toughness: '3',
-  oracleText: 'When Sunscourge Champion enters the battlefield, you gain 2 life.\n'
-    + 'Eternalize {5}{W}{W} ({5}{W}{W}, Exile this card from your graveyard: Create a token '
-    + 'that\u2019s a copy of it, except it\u2019s a black Zombie Human Cleric with base power and '
-    + 'toughness 4/4 and no mana cost. Eternalize only as a sorcery.)',
+  oracleText: "When Sunscourge Champion enters, you gain life equal to its power.\nEternalize\u2014{2}{W}{W}, Discard a card. ({2}{W}{W}, Discard a card, Exile this card from your graveyard: Create a token that's a copy of it, except it's a 4/4 black Zombie Human Wizard with no mana cost. Eternalize only as a sorcery.)",
   colors: ['W'],
 };
 

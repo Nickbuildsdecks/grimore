@@ -48,7 +48,7 @@ import { cn } from "@/lib/utils"
 import {
   IDLE, arenaReducer, boardRead, brokeADeal, candidatesAt, cardBadges, choiceCandidatesAt,
   damageTakenFrom, dividedAmount,
-  eliminatedLabel, pactBadge, playsForCard, reasonCannotPlay, sparedYouBy, splitBattlefield,
+  eliminatedLabel, feedOptions, pactBadge, playsForCard, reasonCannotPlay, sparedYouBy, splitBattlefield,
   type ArenaEvent, type ArenaMode, type BoardRead,
 } from "@/lib/arena"
 import {
@@ -1608,9 +1608,8 @@ function Board({ table }: { table: UseTable }) {
     ...nowChoosing.filter((t) => t.kind === "ability").map((t) => (t as { id: string }).id),
     // A creature that could be fed to an ability is lit the same way a target is: it is the next
     // thing to tap, and the player should not have to guess which of their creatures qualifies.
-    ...(arenaMode.kind === "feeding"
-      ? arenaMode.cost === "returned" ? arenaMode.play.returnOptions ?? [] : arenaMode.play.sacrificeOptions
-      : []),
+    // Or, for a cost that discards, a card in the hand: `feedOptions` says which list it is.
+    ...(arenaMode.kind === "feeding" ? feedOptions(arenaMode) : []),
     // A card a mid-resolution question is offering is lit exactly like a target, wherever it is —
     // including a library, which is the one zone the table normally does not draw at all.
     ...(arenaMode.kind === "deciding" ? arenaMode.ask.candidates : []),
@@ -1687,10 +1686,7 @@ function Board({ table }: { table: UseTable }) {
 
     const mode = arenaRef.current
     if (mode.kind === "feeding") {
-      const allowed = mode.cost === "returned"
-        ? mode.play.returnOptions ?? []
-        : mode.play.sacrificeOptions
-      if (allowed.includes(card.id)) dispatchArena({ kind: "feed", card: card.id })
+      if (feedOptions(mode).includes(card.id)) dispatchArena({ kind: "feed", card: card.id })
       return
     }
     if (mode.kind === "choosing") {

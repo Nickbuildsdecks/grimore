@@ -154,6 +154,16 @@ export function sacrificeOptions(
 }
 
 /**
+ * Cards a seat may discard to pay "Discard a card" on one of `source`'s abilities (D579).
+ *
+ * The whole hand but the card the ability is printed on: that one is already being spent by its
+ * own half of the cost when it is in the hand at all, and a card cannot pay twice.
+ */
+export function discardOptions(state: GameState, seat: SeatIndex, source: string): string[] {
+  return listAt(state, zoneKey(seat, 'hand')).filter((id) => id !== source);
+}
+
+/**
  * Attackers this seat controls that nothing is blocking — ninjutsu's candidates (CR 702.49a).
  *
  * Read off `combat.attacks` rather than off the battlefield, because "unblocked attacker" is a fact

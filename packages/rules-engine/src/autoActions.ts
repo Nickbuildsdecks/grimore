@@ -24,7 +24,7 @@ import {
   forcedAttackers, legalAttackers,
   legalBlockers, legalDefenders, menaceSatisfied, payFrom, pendingDeclaration, raiseUnblockedAttacks,
   answerDecision, modeCombinations, modeTargetSpecs, modesOf, prevAlive, pushAbility, raise,
-  raiseTargeted, resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop,
+  discardOptions, raiseTargeted, resetPriority, resolveTop, sacrificeOptions, scriptOf, settle, stackTop,
   stateBasedActions, unblockedAttackersOf,
   stillDeciding, takeDredge, tapAttackers,
   type AutoAction, type AutoAttackAction, type AutoBlockAction, type AutoCastAction,
@@ -540,8 +540,13 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   */
   let sacrificed: string | null = null;
   let sacrificedName = '';
-  if (script?.additionalCost !== undefined) {
-    const options = sacrificeOptions(state, action.by, inst.id, { sacrifice: script.additionalCost.sacrifice });
+  const sacrificeAsked = script?.additionalCost !== undefined && 'sacrifice' in script.additionalCost
+    ? script.additionalCost.sacrifice
+    : undefined;
+  // "Pay X life" as an additional cost (D579): see `CardScript.additionalCost`.
+  const lifeX = script?.additionalCost !== undefined && 'lifeX' in script.additionalCost;
+  if (sacrificeAsked !== undefined) {
+    const options = sacrificeOptions(state, action.by, inst.id, { sacrifice: sacrificeAsked });
     if (options.length === 0) {
       throw new EngineError('RULE_NOT_APPLICABLE', `you have no creature to sacrifice for ${characteristics.name}`);
     }
@@ -559,6 +564,14 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // The tax is generic mana on top of the printed cost, and it only applies to a cast from the
   // command zone. It goes up by two *after* the cast, so the first one is offered of it.
   const tax = fromCommand ? (state.seats[action.by]?.commanderTax ?? 0) : 0;
+  /*
+    "This spell costs {1} more to cast for each target beyond the first" (D579): generic mana on
+    top of the cost, like the tax, and counted off the targets just checked. Kept apart from `tax`
+    because that name also feeds the commander's next cast and the log line; `surcharge` is the
+    two together, which is what the payment below adds.
+  */
+  const targetTax = (script?.extraTargetCost ?? 0) * Math.max(0, chosen.length - 1);
+  const surcharge = tax + targetTax;
   // The kicker is paid as part of the spell's total cost, so it goes to `payFrom` as more symbols
   // on the same cost rather than as a second payment: a kicked spell either gets cast or does not,
   // and a player who could pay the printed cost but not the kicker must not end up having paid
@@ -624,12 +637,20 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   */
   const payingCost = offered ? printedCost : parseManaCost(costText);
   if (action.x !== undefined) {
-    if (!payingCost.x) {
+    if (!payingCost.x && !lifeX) {
       throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has no X to choose`);
     }
     if (!Number.isInteger(action.x) || action.x < 0) {
       throw new EngineError('RULE_NOT_APPLICABLE', 'X must be a whole number, and cannot be negative');
     }
+  }
+  /*
+    And an X that is life: checked before anything is spent, like the sacrifice above it, and
+    refused at exactly the life that would end the game — the rule `AbilityCost.life` keeps.
+  */
+  const lifePaidForX = lifeX ? action.x ?? 0 : 0;
+  if (lifePaidForX > 0 && (state.seats[action.by]?.life ?? 0) <= lifePaidForX) {
+    throw new EngineError('RULE_NOT_APPLICABLE', `you do not have ${lifePaidForX} life to pay`);
   }
 
   /*
@@ -660,10 +681,10 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   */
   let convoked: readonly string[] = [];
   let toPay: string | ManaCost | undefined = costText;
-  let taxToPay = tax;
+  let taxToPay = surcharge;
   if (change.generic !== 0) {
     const printed = parseManaCost(costText);
-    toPay = withCostChange(tax > 0 ? { ...printed, generic: printed.generic + tax } : printed, change.generic);
+    toPay = withCostChange(surcharge > 0 ? { ...printed, generic: printed.generic + surcharge } : printed, change.generic);
     // The tax is inside `toPay` now, so adding it again in `payFrom` would charge it twice.
     taxToPay = 0;
   }
@@ -682,7 +703,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   let delved: readonly string[] = [];
   if (script?.delve === true && !offered) {
     const printed = parseManaCost(costText);
-    const taxed = tax > 0 ? { ...printed, generic: printed.generic + tax } : printed;
+    const taxed = surcharge > 0 ? { ...printed, generic: printed.generic + surcharge } : printed;
     const full = withCostChange(taxed, change.generic);
     const plan = delvePlan(state, action.by, full, manaSources(state, action.by));
     if (plan === null) {
@@ -703,7 +724,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     : script?.improvise === true ? 'improvise' : null;
   if (tapRule !== null && !offered) {
     const printed = parseManaCost(costText);
-    const taxed = tax > 0 ? { ...printed, generic: printed.generic + tax } : printed;
+    const taxed = surcharge > 0 ? { ...printed, generic: printed.generic + surcharge } : printed;
     const full = withCostChange(taxed, change.generic);
     const plan = tapToPayPlan(state, action.by, full, manaSources(state, action.by), tapRule);
     if (plan === null) {
@@ -734,6 +755,8 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   }
   const paid = payFrom(beforePay, action.by, toPay, action.x ?? 0, taxToPay);
   let next = paid.state;
+  // The life half of the cost, paid with the mana and before anybody may respond (CR 601.2h).
+  if (lifePaidForX > 0) next = loseLife(next, action.by, lifePaidForX);
   /*
     And the half of the cost that is paid in cards, exiled now as the rest of the cost is paid.
 
@@ -819,7 +842,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   // respond has to know how big the Fireball is, and the stack is where both players read it.
   // `payingCost`, not the printed cost: a foretold Starnheim Unleashed pays {X}{X}{W} and the stack
   // has to say how big it is, which the printed {2}{W}{W} would have hidden (D481).
-  const xText = payingCost.x ? ` (X=${action.x ?? 0})` : '';
+  const xText = payingCost.x || lifeX ? ` (X=${action.x ?? 0})` : '';
   // And the kicker, for the same reason again: whether it was paid changes what the spell does,
   // and the player deciding whether to respond reads the stack to find out.
   const kickedText = kicked ? ' (kicked)' : '';
@@ -1365,7 +1388,7 @@ function activate(
   state: GameState,
   action: {
     by: SeatIndex; card: string; abilityIndex: number;
-    targets?: readonly Target[]; sacrifice?: string; returned?: string;
+    targets?: readonly Target[]; sacrifice?: string; returned?: string; discarded?: string;
     grantedBy?: GrantedTriggerRef;
   },
 ): Outcome {
@@ -1572,6 +1595,29 @@ function activate(
   }
 
   /*
+    "Discard a card" as a cost (D579), chosen and checked here for the reason the two above are:
+    a refusal has to leave the hand as it was. The list is recomputed rather than trusted, and it
+    never holds the card the ability is printed on — that one is being discarded or exiled by its
+    own half of the cost, and a card cannot pay twice.
+  */
+  let discarded: string | null = null;
+  if (ability.cost.discardACard === true) {
+    const options = discardOptions(state, action.by, inst.id);
+    if (options.length === 0) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'you have no card to discard for that');
+    }
+    if (action.discarded === undefined) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'choose a card to discard');
+    }
+    if (!options.includes(action.discarded)) {
+      throw new EngineError('RULE_NOT_APPLICABLE', 'that card cannot be discarded for this');
+    }
+    discarded = action.discarded;
+  } else if (action.discarded !== undefined) {
+    throw new EngineError('RULE_NOT_APPLICABLE', 'that ability does not ask for a discard');
+  }
+
+  /*
     Crew, worked out before anything is spent and paid with the mana (CR 702.122a).
 
     Recomputed by `crewPlan` rather than carried on the action, exactly as convoke is: which
@@ -1663,6 +1709,11 @@ function activate(
     next = removeFromCombat(moveToHand(next, [returned]), returned);
   }
   if (ability.cost.sacrificeSelf) next = sacrifice(next, [inst.id]);
+  // The card discarded as a cost: gone before the ability is on the stack, and a discard like
+  // any other, so `settle` raises it for madness and for anything watching discards.
+  if (discarded !== null) {
+    next = relocate(next, requireInstance(next, discarded), 'graveyard', requireInstance(next, discarded).owner, 'bottom');
+  }
   // Discarded as the cost is paid, so the card is in the graveyard while its own ability is still
   // on the stack (CR 702.29a) — which is why a cycling land can be cycled and then returned from
   // the graveyard by something else before the draw has even happened.

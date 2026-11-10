@@ -2293,13 +2293,16 @@ describe('the sweeper whose own number comes out nought', () => {
   /*
     The twelfth "spent on nothing" rule, and the first about a *question* rather than a play.
 
-    Toxic Deluge asks its caster how much life to pay as it resolves, and the card's own answer is
-    nought when no number kills more of theirs than of mine. Cast anyway, the spell resolves, the
-    card is in the graveyard, and the board is exactly where it was.
+    Toxic Deluge has its caster pay X life, and the card's own best X is nought when no number
+    kills more of theirs than of mine. Cast anyway, the spell resolves, the card is in the
+    graveyard, and the board is exactly where it was.
 
-    The search cannot see it, and the reason is structural: a cast puts a spell on the *stack*, and
-    the number is not chosen until it resolves — so one ply out, the board after the cast is the
-    board before it plus a stack object, which scores the same as any other play that does nothing.
+    When this rule was written the number was chosen as the spell **resolved**, and the search
+    could not see it for a structural reason: one ply out, the board after the cast was the board
+    before it plus a stack object. Since D579 X is announced with the cast, as the card prints it,
+    and the rule reads the same fact from a different place — `LegalPlay.xDefault`, the card's own
+    `bestX` — so a Deluge whose best number is nought is still not cast. The measurement below is
+    from the older arrangement and is kept as what the rule was worth then.
 
     Instrumented over 120 Hollow Tide duels against the other ten decks, before and after:
 

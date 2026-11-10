@@ -3862,8 +3862,23 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     const resolve = (script: unknown) =>
       field(script, 'onResolve') as (c: EffectContext) => GameState;
 
-    it('deals the X it was cast for, at the target, as Fireball’s hand-written script does', () => {
-      const mine = compiledScript('Fireball');
+    /*
+      Blaze, which prints the sentence and nothing else. These two rows stood on **Fireball** until
+      D579: the pool's Fireball read "deals X damage to any target", which is Blaze's text and not
+      its own. Fireball's printed two lines are a different card — see the row after these.
+    */
+    const BLAZE = {
+      name: 'Blaze', type_line: 'Sorcery', mana_cost: '{X}{R}', cmc: 1, colors: ['R'],
+      layout: 'normal', oracle_text: 'Blaze deals X damage to any target.',
+    };
+    const blaze = () => {
+      const result = compileCard(BLAZE as never);
+      if (!result.ok) throw new Error(`Blaze did not compile at all: ${result.why}`);
+      return result;
+    };
+
+    it('deals the X it was cast for, at the target', () => {
+      const mine = blaze();
       expect(mine.unread).toEqual([]);
       const base = arena({
         decks: { 0: 'ember-rush', 1: 'verdant-guard' },
@@ -3872,14 +3887,14 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       });
       const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
       const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: bear }], 3);
-      expect(resolve(mine.script)(ctx)).toEqual(resolve(scriptFor('Fireball'))(ctx));
       // Three, not one and not the creature's toughness: the number the spell was cast for.
       expect(resolve(mine.script)(ctx).instances[bear]!.damage).toBe(3);
-      // And it points where the card points.
-      expect(field(mine.script, 'targets')).toEqual(field(scriptFor('Fireball'), 'targets'));
+      // And it points where the card points: one target, of any kind.
+      const targets = field(mine.script, 'targets') as readonly Record<string, unknown>[];
+      expect(targets.map((t) => [t['kind'], t['count'] ?? 1])).toEqual([['any', 1]]);
     });
 
-    it('deals nothing when X is zero, as the hand-written Fireball does', () => {
+    it('deals nothing when X is zero', () => {
       const base = arena({
         decks: { 0: 'ember-rush', 1: 'verdant-guard' },
         battlefield: { 1: ['Grizzly Bears'] },
@@ -3887,10 +3902,23 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       });
       const bear = find(base, 1 as SeatIndex, 'battlefield', 'Grizzly Bears');
       const ctx = contextOn(base, 0 as SeatIndex, 'c1', [{ kind: 'card', id: bear }], 0);
-      const mine = resolve(compiledScript('Fireball').script)(ctx);
-      expect(mine).toEqual(resolve(scriptFor('Fireball'))(ctx));
-      // `dealDamage` refuses a non-positive amount, which is why neither card has a zero guard.
-      expect(mine).toEqual(base);
+      // `dealDamage` refuses a non-positive amount, which is why the reading has no zero guard.
+      expect(resolve(blaze().script)(ctx)).toEqual(base);
+    });
+
+    it('leaves Fireball’s own two lines unread: a cost that counts targets, and a division', () => {
+      /*
+        The printed card, which the pool now carries (D579) and the hand-written script plays.
+        Neither line is one this compiler reads — "costs {1} more to cast for each target beyond
+        the first" is a cost that depends on an announcement, and "divided evenly, rounded down,
+        among any number of targets" is not the single-target sentence above. Reported, so a
+        pasted Fireball-alike is partly read and says so rather than dealing X to one target.
+      */
+      const fireball = compiledScript('Fireball');
+      expect(fireball.unread.map((u) => u.line)).toEqual([
+        'This spell costs {1} more to cast for each target beyond the first.',
+        'Fireball deals X damage divided evenly, rounded down, among any number of targets.',
+      ]);
     });
 
     it('sweeps every creature for X, as Savage Twister’s hand-written script does', () => {

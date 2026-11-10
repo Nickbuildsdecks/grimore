@@ -80,7 +80,10 @@ const playValue = (play: LegalPlay): number => {
   if (play.isManaAbility) return -1000; // mana is tapped on demand, not for its own sake
   // An X spell is worth what X will be: `{X}{R}` parses as a one-mana card, so without this a
   // Fireball for eight ranks below a Shock and gets cast for nothing or not at all.
-  return costValue(parseManaCost(play.manaCost)) + (play.xMax ?? 0) + (play.modes?.length ?? 0) / 10;
+  // `xDefault` where the card names its own best X (D579): a Toxic Deluge is not a twenty-mana card
+  // because twenty is the life its caster has.
+  return costValue(parseManaCost(play.manaCost)) + (play.xDefault ?? play.xMax ?? 0)
+    + (play.modes?.length ?? 0) / 10;
 };
 
 /**
@@ -346,7 +349,8 @@ function chooseTargets(
     // A spec can want more than one — "untap two target lands" is one spec with a count of two,
     // and sending one target for it is a play the engine refuses. The bot was doing exactly that
     // the moment a card with `count: 2` existed.
-    const want = Math.max(1, spec.count ?? 1);
+    // `botTakes` where the count is only a ceiling: see `TargetSpec.botTakes`.
+    const want = spec.botTakes ?? Math.max(1, spec.count ?? 1);
     for (let taken = 0; taken < want; taken++) {
       const candidates = (play.candidates[i] ?? []).filter(
         (t) => !used.has(targetKey(t)),
@@ -2293,7 +2297,9 @@ function candidateActions(
     // An X spell with X stuck at nothing is a card thrown away: a Fireball for no damage, an
     // Endless One that enters as a 0/0 and dies before anyone can look at it. Legal, and never
     // what the bot means.
-    if (play.xMax === 0) continue;
+    // The card's own best X where it names one (D579), for the same reason: a Toxic Deluge whose
+    // best number is nought kills nothing worth the card.
+    if ((play.xDefault ?? play.xMax) === 0) continue;
     // Lands are taken by the rule above, before the search sees them.
     if (play.kind === 'land') continue;
     /*
@@ -2438,7 +2444,8 @@ function candidateActions(
               x: playedScript(state, play.card)
                 ?.xIsANumberToMatch === true
                 ? xToMatch(state, seat, play.xMax)
-                : play.xMax,
+                // The card's own answer where it has one (`CardScript.bestX`), else everything.
+                : play.xDefault ?? play.xMax,
             }),
             ...(play.modes === undefined ? {} : { modes: [...play.modes] }),
             ...(targets.length > 0 ? { targets: [...targets] } : {}),
@@ -2492,6 +2499,39 @@ function candidateActions(
             // copied from the play unchanged, because `abilityIndex` means nothing without it.
             ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
             returned: smallest,
+            ...(targets.length > 0 ? { targets: [...targets] } : {}),
+          },
+        });
+        continue;
+      }
+      /*
+        "Discard a card" as a cost (D579), answered by the rule the cleanup discard already uses
+        with one line in front of it: a **land it has no use for** goes first.
+
+        A seat with five lands out is past the point where the sixth changes what it can cast, in
+        this pool, so a land in hand is the cheapest card it owns. Otherwise a madness card —
+        discarding one is how it gets cast — and otherwise the most expensive thing, the card
+        least likely to be castable. Never the last word on what a card is worth; it is a sort,
+        like the ninjutsu swap above, because the cost is paid for a 4/4 either way.
+      */
+      if (play.discardOptions !== undefined && play.discardOptions.length > 0) {
+        const allowed = new Set(play.discardOptions);
+        const hand = handByCost(state, seat).filter((card) => allowed.has(card.id));
+        const landsOut = (state.zones[`${seat}:battlefield`] ?? []).filter((id) => {
+          const inst = state.instances[id];
+          return inst !== undefined && characteristicsOf(state, inst).isLand;
+        }).length;
+        const spareLand = landsOut >= 5 ? hand.find((card) => card.land)?.id : undefined;
+        const pitch = spareLand
+          ?? madnessToPitch(state, seat, hand.map((card) => card.id))
+          ?? hand.find((card) => !card.land)?.id
+          ?? hand[0]?.id;
+        if (pitch === undefined) continue;
+        out.push({
+          action: {
+            type: 'auto:activate', by: seat, card: play.card, abilityIndex: play.abilityIndex ?? 0,
+            ...(play.grantedBy === undefined ? {} : { grantedBy: play.grantedBy }),
+            discarded: pitch,
             ...(targets.length > 0 ? { targets: [...targets] } : {}),
           },
         });

@@ -17,7 +17,7 @@ import {
 } from './characteristics.js';
 import {
   abilityUseKey, atActivationTiming, atSorcerySpeed, bottomOwed, grantedAbilityFor, modeCombinations,
-  modeTargetSpecs, modesOf, pendingDeclaration, sacrificeOptions, stackTop, unblockedAttackersOf,
+  discardOptions, modeTargetSpecs, modesOf, pendingDeclaration, sacrificeOptions, stackTop, unblockedAttackersOf,
 } from './automation.js';
 import {
   canBlock, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
@@ -79,6 +79,18 @@ export interface LegalPlay {
    * which is why it travels on the play and not into the resolution.
    */
   readonly xMax?: number;
+  /**
+   * The X to open the question on, when the card says its largest X is not its best: see
+   * `CardScript.bestX`. Absent for every other X play, where the table opens on `xMax`.
+   */
+  readonly xDefault?: number;
+  /**
+   * Generic mana each target **beyond the first** adds to this cast: `CardScript.extraTargetCost`.
+   *
+   * On the play so a table can keep X and the targets inside one budget — `xMax` is what the seat
+   * can pay on top of the rest of the cost, and every extra target spends one of it.
+   */
+  readonly extraTargetCost?: number;
   readonly abilityIndex?: number;
   /**
    * Which card **defines** this ability, for an ability a continuous effect handed this permanent
@@ -275,6 +287,13 @@ export interface LegalPlay {
    * Absent for every other ability.
    */
   readonly returnOptions?: readonly string[];
+  /**
+   * The cards in hand that may be **discarded** to pay this ability's cost, when it says "Discard
+   * a card" (D579) — the third list of its kind, and its own for the reason `returnOptions` is:
+   * the table has to ask "which card do you want to discard", not "which creature do you want to
+   * lose". Absent for every other ability.
+   */
+  readonly discardOptions?: readonly string[];
 }
 
 export interface BlockOption {
@@ -1372,11 +1391,14 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       victims travel on the play, the way they already do for an activated ability's cost — the
       choice is part of casting it, not a question asked afterwards.
     */
-    const victims = script?.additionalCost === undefined
+    const sacrificeAsked = script?.additionalCost !== undefined && 'sacrifice' in script.additionalCost
+      ? script.additionalCost.sacrifice
+      : undefined;
+    const victims = sacrificeAsked === undefined
       ? []
-      : sacrificeOptions(state, seat, id, { sacrifice: script.additionalCost.sacrifice });
-    if (script?.additionalCost !== undefined && victims.length === 0) {
-      why(id, script.additionalCost.sacrifice === 'another-creature'
+      : sacrificeOptions(state, seat, id, { sacrifice: sacrificeAsked });
+    if (sacrificeAsked !== undefined && victims.length === 0) {
+      why(id, sacrificeAsked === 'another-creature'
         ? 'it asks for another creature to sacrifice, and you have none'
         : 'it asks for a creature to sacrifice, and you have none');
       continue;
@@ -1479,7 +1501,24 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       `{X}{R}` is offered with one. That distinction is CR 107.3b, and until D460 the engine's other
       half disagreed with it: see the refusal in `autoActions`.
     */
-    const xOn = payable.x ? { xMax: maxAffordableX(poolOf(state, seat), payable, sources) } : {};
+    /*
+      And an X paid in **life** rather than mana (D579): "As an additional cost to cast this spell,
+      pay X life". The same field, because it is the same announcement — only the bound differs,
+      and it is the caster's life by the rule every life cost here keeps (one less than the total;
+      task #411 is whether the total itself should be payable). An additional cost is paid on a
+      free cast too, and CR 107.3b's "X is 0" is about an {X} in the **mana** cost, which this
+      card does not have — so an offered Deluge keeps its question.
+    */
+    const lifeX = script?.additionalCost !== undefined && 'lifeX' in script.additionalCost;
+    const xLimit = payable.x
+      ? maxAffordableX(poolOf(state, seat), payable, sources)
+      : lifeX ? Math.max(0, (state.seats[seat]?.life ?? 1) - 1) : null;
+    const xHint = xLimit === null || script?.bestX === undefined
+      ? null
+      : Math.max(0, Math.min(xLimit, Math.trunc(script.bestX(state, seat, xLimit))));
+    const xOn = xLimit === null
+      ? {}
+      : { xMax: xLimit, ...(xHint === null ? {} : { xDefault: xHint }) };
 
     // A modal spell is offered once per legal combination of modes, and a combination whose
     // targets cannot be filled is not offered at all — so "destroy target creature; or draw two
@@ -1561,6 +1600,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       description: castLabel,
       manaCost: costShown, ...taxOn, ...changeOn, ...xOn, ...exilesOn,
       targetSpecs: specs, candidates,
+      ...(script?.extraTargetCost === undefined ? {} : { extraTargetCost: script.extraTargetCost }),
       ...(flashback ? { flashback: true } : {}),
       ...(foretold ? { foretold: true } : {}),
       ...(offered ? { offered: true } : {}),
@@ -1818,6 +1858,9 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         ? unblockedAttackersOf(state, seat)
         : [];
       if (ability.cost.returnsUnblockedAttacker === true && ninjas.length === 0) continue;
+      // "Discard a card" (D579): not offered to a hand with nothing in it to discard.
+      const pitches = ability.cost.discardACard === true ? discardOptions(state, seat, id) : [];
+      if (ability.cost.discardACard === true && pitches.length === 0) continue;
 
       /*
         Crew, asked of the same planner that will pay it (CR 702.122a).
@@ -1853,6 +1896,7 @@ function activatablePlays(state: GameState, seat: SeatIndex, sources: ManaSource
         // Which kind of cost that list is for, read off the cost rather than guessed from the list.
         ...(ability.cost.sacrifice === 'artifact' ? { sacrificeKind: 'artifact' as const } : {}),
         ...(ninjas.length === 0 ? {} : { returnOptions: ninjas }),
+        ...(pitches.length === 0 ? {} : { discardOptions: pitches }),
       });
     }
   }

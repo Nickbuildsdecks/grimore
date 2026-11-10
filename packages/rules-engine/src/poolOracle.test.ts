@@ -128,9 +128,6 @@ const NO_ORACLE_ROW: Readonly<Record<string, string>> = {
 const KNOWN_DIFFERENT: Readonly<Record<string, string>> = {
   "Merfolk Secretkeeper | oracleText": "convention: the front face quotes its Adventure, which Oracle prints on the other face",
   "Garenbrig Carver | oracleText": "convention: the front face quotes its Adventure, which Oracle prints on the other face",
-  "Fireball | oracleText": "queued: X damage to one target; printed divides it among any number, {1} more for each beyond the first",
-  "Toxic Deluge | oracleText": "queued: the life is paid as the spell resolves; printed as an additional cost to cast it",
-  "Sunscourge Champion | oracleText": "queued: gains 2; printed life equal to its power, and eternalize\u2014{2}{W}{W}, discard a card",
 };
 
 describe('every built-in card against its Oracle row (D571)', () => {

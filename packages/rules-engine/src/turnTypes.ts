@@ -1647,6 +1647,8 @@ export interface AutoActivateAction {
    * back in a hand. A single field would make every reader of this action guess which.
    */
   readonly returned?: string;
+  /** The card **discarded** to pay for it, when the cost says "Discard a card" (D579). */
+  readonly discarded?: string;
   /**
    * Which card **defines** the ability, for one a continuous effect handed this permanent
    * (CR 113.6) — an Aura's `Enchanted creature has "{T}: …"`. Absent for a printed ability, which

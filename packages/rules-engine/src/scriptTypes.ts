@@ -52,6 +52,15 @@ export interface TargetSpec {
   /** "up to": the spell is castable with fewer, including none. */
   readonly optional?: boolean;
   /**
+   * Advice to the bot: how many of an "any number of targets" spec to take (D579).
+   *
+   * The bot fills a spec to its `count`, which is right for "up to two target creatures" and
+   * wrong for a number that is only a ceiling — a Fireball aimed at everything on the table,
+   * its caster's own creatures included, with the damage divided to nothing. Not a restriction:
+   * a person may take as many as the spec allows.
+   */
+  readonly botTakes?: number;
+  /**
    * Extra restriction beyond the kind, e.g. only creatures you control.
    *
    * `source` is the card the targeting belongs to, when there is one — the permanent whose
@@ -1830,6 +1839,20 @@ export interface AbilityCost {
    */
   readonly discardSelf?: boolean;
   /**
+   * "Discard a card:" — a card out of the hand as part of the cost, chosen by whoever is paying
+   * (D579). Sunscourge Champion's eternalize is "{2}{W}{W}, Discard a card".
+   *
+   * `discardSelf`'s neighbour and not the same thing: that one spends the card the ability is
+   * printed on, this one spends any **other** card in the hand. Chosen as the ability is
+   * activated and gone before it is on the stack, so it travels on the action as `discarded` and
+   * its candidates on the play as `discardOptions` — the arrangement a sacrifice cost already
+   * has, for the same reason. An ability with this cost is not offered to an empty hand.
+   *
+   * It is a real discard: the card goes to its owner's graveyard through `relocate`, so madness
+   * may take it and "whenever you discard a card" sees it.
+   */
+  readonly discardACard?: true;
+  /**
    * "Exile this card from your graveyard:" — embalm's cost, and the second time the card itself is
    * what you are paying with (CR 702.89a, CR 702.100a).
    *
@@ -2888,9 +2911,43 @@ export interface CardScript {
    * cost cannot be paid is not castable at all (CR 601.2h), which is why it is not offered rather
    * than offered and refused.
    */
-  readonly additionalCost?: {
-    readonly sacrifice: 'creature' | 'another-creature';
-  };
+  readonly additionalCost?:
+    | { readonly sacrifice: 'creature' | 'another-creature' }
+    /**
+     * "As an additional cost to cast this spell, pay X life" (D579) — Toxic Deluge.
+     *
+     * X with no `{X}` in the mana cost: it is still announced as the spell is cast (CR 601.2b) and
+     * paid then, so the number is on the stack for an opponent to read and the life is gone
+     * whether or not the spell resolves. The pool's Deluge chose its number **on resolution**,
+     * which was a different card twice over: a countered Deluge cost no life, and nobody could
+     * see how big it was before deciding to answer it.
+     *
+     * It reuses the X a mana cost already carries — `action.x`, `StackObject.x`, `LegalPlay.xMax`
+     * — because that is what it is; only the currency differs. `xMax` is the life the caster may
+     * pay, by the rule every life cost here keeps.
+     */
+    | { readonly lifeX: true };
+  /**
+   * Which X to open on, for a spell whose best X is not its largest (D579).
+   *
+   * Read twice: by `legalActions`, which reports it as `LegalPlay.xDefault` so a table opens the
+   * question on a sensible number, and by the bot, which casts for it. A Fireball has no need of
+   * one — more is better and the default is everything available — but a Toxic Deluge opened on
+   * "pay 19 life" would be a table suggesting the worst answer it has. Clamped to `xMax` by the
+   * caller, so a hint cannot offer a number the seat may not choose.
+   */
+  readonly bestX?: (state: GameState, seat: SeatIndex, xMax: number) => number;
+  /**
+   * "This spell costs {N} more to cast for each target beyond the first" (D579) — Fireball.
+   *
+   * Generic mana added as the spell is cast, counted off the targets it was announced with: a
+   * cost that depends on a choice made in the same announcement (CR 601.2b then 601.2f), which is
+   * why it is charged in `castSpell` rather than computed by `costChangeFor` — that function
+   * prices a card before anybody has aimed it. `LegalPlay.extraTargetCost` carries the number to
+   * the table so the X it offers and the targets it takes can be kept inside what the seat can
+   * pay.
+   */
+  readonly extraTargetCost?: number;
   /**
    * A Saga: it enters with a lore counter, gains one at the beginning of its controller's
    * precombat main phase, and is sacrificed once its last chapter has resolved (CR 714).

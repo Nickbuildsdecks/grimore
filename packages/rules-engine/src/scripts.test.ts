@@ -2636,8 +2636,7 @@ describe('replacement effects: regenerating, and entering with counters', () => 
 
       It is a play a player will make, which is why the board is worth asserting: regenerating
       through a sweeper is exactly what the shield is bought for, and Toxic Deluge is the sweeper
-      that answers it. The Skeletons is a 1/1, so the card's own range offers 1, and -1/-1 is a
-      toughness of zero.
+      that answers it. The Skeletons is a 1/1, so X is one, and -1/-1 is a toughness of zero.
 
       **And this test cannot tell the engine's implementation from the bug, which is worth knowing
       rather than assuming.** Take the `toughness > 0` guard off the regeneration branch and the
@@ -2667,12 +2666,10 @@ describe('replacement effects: regenerating, and entering with counters', () => 
     // than about a creature that was going to die anyway.
     expect(s.instances[skeleton]!.counters['regeneration']).toBe(1);
 
+    // X is one, announced and paid with the cast (D579): nothing on the table has two toughness.
     s = drain(passBoth(apply(s, {
-      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Toxic Deluge'),
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Toxic Deluge'), x: 1,
     })));
-    // One is the whole range the card offers: nothing on the table has two toughness.
-    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 1 });
-    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], amount: 1 }));
     expect(s.instances[skeleton]!.zone).toBe('graveyard');
   });
 });
@@ -4462,9 +4459,8 @@ describe('the keywords nothing in the pool carried', () => {
       `continue`s past it and a 2/1 at -1 toughness sits on the battlefield for the rest of the
       game. Verified by doing exactly that on purpose.
 
-      Toxic Deluge is the sweeper that asks the question, and its own range answers it: the
-      Vanguard is the biggest toughness on the table at 1, so the card offers 1, and -1/-1 is a
-      toughness of zero.
+      Toxic Deluge is the sweeper that asks the question: the Vanguard is the biggest toughness on
+      the table at 1, so X is one, and -1/-1 is a toughness of zero.
     */
     let s = arena({
       decks: { 0: 'forge-alliance', 1: 'hollow-tide' },
@@ -4489,10 +4485,8 @@ describe('the keywords nothing in the pool carried', () => {
 
     s = advanceTo(nextTurn(s), 'precombat-main');
     s = drain(passBoth(apply(s, {
-      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Toxic Deluge'),
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Toxic Deluge'), x: 1,
     })));
-    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 1 });
-    s = drain(apply(s, { type: 'auto:decide', by: 1, cards: [], amount: 1 }));
     expect(s.instances[body]!.zone).toBe('graveyard');
     // And the Plate is still there, unattached: an Equipment does not follow its creature
     // (CR 301.5c), which is the half of this board that is *not* the rule under test.
@@ -12419,17 +12413,17 @@ describe('Walking Ballista and Hangarback Walker: the counter as a cost, and the
   });
 });
 
-describe('Toxic Deluge: the number chosen while the spell resolves', () => {
+describe('Toxic Deluge: X life, paid as an additional cost to cast it (D579)', () => {
   /*
-    The third and last shape of mid-resolution question, and the one this engine has been missing
-    since it learned the other two. A card is not an answer and neither is a word: this card's
-    whole text is a number, chosen as it resolves.
+    "As an additional cost to cast this spell, pay X life. All creatures get -X/-X until end of
+    turn." The number is announced as the spell goes on the stack and the life is paid then, which
+    is what makes it a cost: it is part of what gets countered, and an opponent deciding whether
+    to respond can read how big it is.
 
-    Which is the distinction worth being careful about. An X in a cost is announced as the spell
-    goes on the stack, is part of what gets countered, and lets an opponent decide whether to
-    respond knowing how big it is. This number is chosen after all of that, from the board as it
-    actually ended up — so it cannot be folded into `xMax`, and that is also why a player would
-    rather have it this way round.
+    The pool's Deluge chose its number **as it resolved** — after everybody had passed, from the
+    board as it ended up — and these tests stood on that for four hundred entries. It is a better
+    card that way and not the printed one, so the question moved to where X is always asked: with
+    the cast, on the play, bounded by `xMax`.
   */
   const table = (theirs: readonly string[], mine: readonly string[] = []): GameState => advanceTo(arena({
     decks: { 0: 'hollow-tide', 1: 'ember-rush' },
@@ -12441,88 +12435,120 @@ describe('Toxic Deluge: the number chosen while the spell resolves', () => {
     turn: 4, firstSeat: 0,
   }), 'precombat-main');
 
-  const cast = (s: GameState): GameState => {
-    const deluge = find(s, 0, 'hand', 'Toxic Deluge');
-    return drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: deluge })));
-  };
-
-  it('stops and asks for a number, with a range the card computed from the board', () => {
-    // Two one-toughness creatures and a 3/3: nothing above three toughness, so nothing above
-    // three is worth offering, however much life there is to spend.
-    const s = cast(table(['Raging Goblin', 'Goblin Arsonist', 'Hill Giant']));
-    expect(s.pendingDecision?.seat).toBe(0);
-    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 3 });
-    expect(legalActions(s, 0).mustDecide?.numbers).toEqual({ min: 0, max: 3 });
-    // And nobody holds priority while it stands, which is the rule every other question follows.
-    expect(s.priority).toBeNull();
+  const offer = (s: GameState) => legalActions(s, 0).plays
+    .find((p) => p.kind === 'cast' && p.card === find(s, 0, 'hand', 'Toxic Deluge'));
+  const cast = (s: GameState, x?: number): GameState => apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Toxic Deluge'), ...(x === undefined ? {} : { x }),
   });
 
-  it('pays the life and shrinks every creature by it, the caster’s own included', () => {
-    let s = cast(table(['Raging Goblin', 'Hill Giant'], ['Fog Bank']));
-    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], amount: 2 }));
+  it('is offered with an X bounded by the caster’s life, opening on the number that trades best', () => {
+    // Two one-toughness creatures and a 3/3 across the table, and an 0/2 of its own.
+    const s = table(['Raging Goblin', 'Goblin Arsonist', 'Hill Giant'], ['Fog Bank']);
+    // Any X up to one less than the life total is legal: it is the caster's to overpay.
+    expect(offer(s)?.xMax).toBe(19);
+    // And the table opens on one, which kills both goblins and nothing of its own — not on 19.
+    expect(offer(s)?.xDefault).toBe(1);
+    // The mana cost is still the printed one: the life is beside it, not in it.
+    expect(offer(s)?.manaCost).toBe('{2}{B}');
+  });
+
+  it('takes the life as the spell is cast, and says how big it is on the stack', () => {
+    let s = cast(table(['Raging Goblin', 'Hill Giant'], ['Fog Bank']), 2);
+    // Paid already, with the spell still waiting to resolve and nobody asked anything.
     expect(life(s, 0)).toBe(18);
-    // A 1/1 and an 0/2 die; the 3/3 lives as a 1/1.
+    expect(s.stackOrder).toHaveLength(1);
+    expect(s.pendingDecision).toBeNull();
+    expect(stackNames(s).join(' ')).toContain('X=2');
+    expect(namesIn(s, 1, 'battlefield')).toContain('Raging Goblin');
+
+    s = drain(passBoth(s));
+    expect(life(s, 0)).toBe(18);
+    // A 1/1 and an 0/2 die; the 3/3 lives as a 1/1. The caster's own creature is not spared.
     expect(namesIn(s, 1, 'graveyard')).toContain('Raging Goblin');
     expect(namesIn(s, 0, 'graveyard')).toContain('Fog Bank');
     const giant = find(s, 1, 'battlefield', 'Hill Giant');
     expect(characteristicsOf(s, s.instances[giant]!).power).toBe(1);
   });
 
-  it('refuses a number the question did not offer, which is where the authorisation is', () => {
-    const s = cast(table(['Raging Goblin']));
-    // The board tops out at one toughness, so one is the most on offer — however much life there
-    // is. A crafted action paying nine is refused here and nowhere else.
-    expect(s.pendingDecision?.numbers).toEqual({ min: 0, max: 1 });
-    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [], amount: 9 })).toContain('between 0 and 1');
-    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [], amount: -1 })).toContain('between 0 and 1');
-    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [], amount: 1.5 })).toContain('choose a number');
-    expect(refusal(s, { type: 'auto:decide', by: 0, cards: [] })).toContain('choose a number');
+  it('keeps the life when the spell is countered, which is what a cost means', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'hollow-tide', 1: 'hollow-tide' },
+      hands: { 0: ['Toxic Deluge'], 1: ['Counterspell'] },
+      battlefield: { 0: ['Island', 'Island', 'Swamp', 'Fog Bank'], 1: ['Island', 'Island'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    s = cast(s, 2);
+    const deluge = s.stackOrder[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 });
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Counterspell'),
+      targets: [{ kind: 'card', id: deluge }],
+    });
+    s = drain(passBoth(s));
+    expect(s.stackOrder).toEqual([]);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Toxic Deluge');
+    // Nothing shrank, and the two life is gone all the same.
+    expect(namesIn(s, 0, 'battlefield')).toContain('Fog Bank');
+    expect(life(s, 0)).toBe(18);
   });
 
-  it('pays nothing and does nothing when nought is the answer', () => {
-    let s = cast(table(['Hill Giant']));
-    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], amount: 0 }));
-    expect(life(s, 0)).toBe(20);
-    expect(namesIn(s, 1, 'battlefield')).toContain('Hill Giant');
+  it('refuses an X its caster’s life cannot pay, and a number that is not one', () => {
+    const s = table(['Raging Goblin']);
+    // Twenty life: nineteen is the most, the rule every life cost here keeps (task #411).
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Toxic Deluge'), x: 20 }))
+      .toContain('do not have 20 life');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Toxic Deluge'), x: -1 }))
+      .toContain('whole number');
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Toxic Deluge'), x: 1.5 }))
+      .toContain('whole number');
+    expect(life(cast(s, 19), 0)).toBe(1);
   });
 
-  it('never offers a number that would kill its caster (CR 118.4)', () => {
-    // One life left and a 6/6 across the table: the range stops at nought, which is the same rule
-    // that stops a Mana Confluence making mana at one life.
+  it('pays nothing and does nothing when X is nought, sent or left out', () => {
+    for (const x of [0, undefined]) {
+      const s = drain(passBoth(cast(table(['Hill Giant']), x)));
+      expect(life(s, 0)).toBe(20);
+      expect(namesIn(s, 1, 'battlefield')).toContain('Hill Giant');
+      expect(namesIn(s, 0, 'graveyard')).toContain('Toxic Deluge');
+    }
+  });
+
+  it('offers only nought to a caster on one life (CR 118.4)', () => {
+    // The same rule that stops a Mana Confluence making mana at one life.
     let s = table(['Shivan Dragon']);
     s = apply(s, { type: 'life:adjust', by: 0, seat: 0, delta: -19 });
     expect(life(s, 0)).toBe(1);
-    s = cast(s);
-    // A range with one answer in it is not a question: the engine takes it and the spell resolves.
-    expect(s.pendingDecision).toBeNull();
-    expect(life(s, 0)).toBe(1);
-    expect(namesIn(s, 1, 'battlefield')).toContain('Shivan Dragon');
+    expect(offer(s)?.xMax).toBe(0);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Toxic Deluge'), x: 1 }))
+      .toContain('do not have 1 life');
   });
 
-  it('is answered by the bot with the number that trades best, not the biggest', () => {
+  it('is cast by the bot for the number that trades best, not the biggest', () => {
     /*
       The card's own opinion, which is the only place it could live: a number that kills three of
       theirs and two of mine for four life is not an improvement on doing nothing, and nothing
-      generic can weigh that. See `NumberDecisionSpec.best`.
+      generic can weigh that. See `CardScript.bestX`.
     */
-    let s = cast(table(['Raging Goblin', 'Goblin Arsonist', 'Hill Giant'], ['Fog Bank']));
+    let s = table(['Raging Goblin', 'Goblin Arsonist', 'Hill Giant'], ['Fog Bank']);
     const action = botAction(s, 0);
-    expect(action?.type).toBe('auto:decide');
+    expect(action?.type).toBe('auto:cast');
     // One kills both goblins and nothing of its own: the Fog Bank is an 0/2 and survives, the
     // Hill Giant is a 3/3 and survives. Two would take the Fog Bank with it for no extra gain.
-    expect(action?.type === 'auto:decide' ? action.amount : null).toBe(1);
-    s = drain(apply(s, action!));
+    expect(action?.type === 'auto:cast' ? action.x : null).toBe(1);
+    s = drain(passBoth(apply(s, action!)));
+    expect(life(s, 0)).toBe(19);
     expect(namesIn(s, 1, 'battlefield')).toEqual(['Hill Giant']);
     expect(namesIn(s, 0, 'battlefield')).toContain('Fog Bank');
   });
 
-  it('and pays nothing when no number is worth it', () => {
-    // Its own 0/2 and nothing of theirs: every number costs more than it buys, so the answer is
-    // nought. The search will not *choose* to cast it into this board (see the twelfth "spent on
-    // nothing" rule in `playout.test.ts`), but a person may, and then this is the answer.
-    const s = cast(table([], ['Fog Bank']));
+  it('and is not cast at all when no number is worth it', () => {
+    // Its own 0/2 and nothing of theirs: every number costs more than it buys, so the card's
+    // best X is nought — and a Deluge for nought is a card thrown away, which the bot will not do.
+    const s = table([], ['Fog Bank']);
+    expect(offer(s)?.xDefault).toBe(0);
     const action = botAction(s, 0);
-    expect(action?.type === 'auto:decide' ? action.amount : null).toBe(0);
+    expect(action?.type === 'auto:cast'
+      && nameOf(s, action.card) === 'Toxic Deluge').toBe(false);
   });
 });
 
@@ -14944,15 +14970,113 @@ describe('embalm and eternalize: a token copy of the card, with different charac
     expect([def.power, def.toughness]).toEqual(['4', '4']);
   });
 
-  it('a Sunscourge Champion token gains the two life its printed trigger gains', () => {
-    // The entry trigger is on the token because `scriptFor` finds a script by **name**, and the
-    // name is the one printed field the profile leaves alone.
-    let s = graveyard(['Sunscourge Champion'], 7);
-    const before = life(s, 0);
-    const champion = find(s, 0, 'graveyard', 'Sunscourge Champion');
-    s = drain(apply(s, { type: 'auto:activate', by: 0, card: champion, abilityIndex: 0 }), 40);
-    expect(life(s, 0)).toBe(before + 2);
-    expect(characteristicsOf(s, s.instances[tokenOf(s, 0)]!).power).toBe(4);
+  describe('Sunscourge Champion: life equal to its power, and an eternalize that costs a card (D579)', () => {
+    /*
+      "When Sunscourge Champion enters, you gain life equal to its power. Eternalize—{2}{W}{W},
+      Discard a card." The pool had it gaining two both times and eternalizing for {5}{W}{W} with
+      no discard: the 4/4 token gained the 2/3's life, and the cost was three mana dearer and a
+      card cheaper than printed.
+    */
+    const champion = (lands: number, hand: readonly string[]): GameState => {
+      let s = advanceTo(arena({
+        decks: { 0: 'dawn-tithe', 1: 'tidal-mind' },
+        graveyard: { 0: ['Sunscourge Champion'] },
+        hands: { 0: [...hand] },
+        battlefield: { 0: Array.from({ length: lands }, () => 'Plains') },
+        turn: 7, firstSeat: 0,
+      }), 'precombat-main');
+      // The draw step put a card in hand on the way here, and these tests are about exactly what
+      // is in it: the drawn card goes back, leaving the hand that was asked for.
+      const wanted = [...hand];
+      for (const id of [...ids(s, 0, 'hand')]) {
+        const at = wanted.indexOf(nameOf(s, id));
+        if (at >= 0) { wanted.splice(at, 1); continue; }
+        s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+      }
+      return tapAllLands(s, 0);
+    };
+    const eternalizePlay = (s: GameState) => legalActions(s, 0).plays.find((p) =>
+      p.kind === 'activate' && p.card === find(s, 0, 'graveyard', 'Sunscourge Champion'));
+
+    it('gains two as the printed 2/3', () => {
+      let s = tapAllLands(advanceTo(arena({
+        decks: { 0: 'dawn-tithe', 1: 'tidal-mind' },
+        hands: { 0: ['Sunscourge Champion'] },
+        battlefield: { 0: ['Plains', 'Plains', 'Plains'] },
+        turn: 7, firstSeat: 0,
+      }), 'precombat-main'), 0);
+      const before = life(s, 0);
+      s = drain(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Sunscourge Champion') }), 40);
+      expect(life(s, 0)).toBe(before + 2);
+    });
+
+    it('is offered for {2}{W}{W} with the hand as what may be discarded', () => {
+      const s = champion(4, ['Sacred Cat', 'Plains']);
+      const play = eternalizePlay(s);
+      expect(play?.manaCost).toBe('{2}{W}{W}');
+      expect([...(play?.discardOptions ?? [])].sort()).toEqual([...ids(s, 0, 'hand')].sort());
+      // And not for three lands, or to an empty hand: a cost that cannot be paid is not offered.
+      expect(eternalizePlay(champion(3, ['Sacred Cat']))).toBeUndefined();
+      expect(eternalizePlay(champion(4, []))).toBeUndefined();
+    });
+
+    it('discards the chosen card as it is activated, and the 4/4 token gains four', () => {
+      // The entry trigger is on the token because `scriptFor` finds a script by **name**, and the
+      // name is the one printed field the profile leaves alone.
+      let s = champion(4, ['Sacred Cat', 'Plains']);
+      const before = life(s, 0);
+      const card = find(s, 0, 'graveyard', 'Sunscourge Champion');
+      const cat = find(s, 0, 'hand', 'Sacred Cat');
+      s = apply(s, { type: 'auto:activate', by: 0, card, abilityIndex: 0, discarded: cat });
+      // Paid already: the Cat is in the graveyard and the Champion in exile, with the ability
+      // still on the stack.
+      expect(s.instances[cat]!.zone).toBe('graveyard');
+      expect(s.instances[card]!.zone).toBe('exile');
+      expect(namesIn(s, 0, 'hand')).toEqual(['Plains']);
+      s = drain(s, 40);
+      const token = characteristicsOf(s, s.instances[tokenOf(s, 0)]!);
+      expect([token.power, token.toughness]).toEqual([4, 4]);
+      expect(token.colors).toEqual(['B']);
+      expect(token.typeLine.subtypes).toEqual(['Zombie', 'Human', 'Wizard']);
+      // Life equal to **its** power: four for the token, where the card gained two.
+      expect(life(s, 0)).toBe(before + 4);
+    });
+
+    it('refuses the activation without a card named, or with one that is not in the hand', () => {
+      const s = champion(4, ['Sacred Cat']);
+      const card = find(s, 0, 'graveyard', 'Sunscourge Champion');
+      expect(refusal(s, { type: 'auto:activate', by: 0, card, abilityIndex: 0 }))
+        .toContain('choose a card to discard');
+      expect(refusal(s, {
+        type: 'auto:activate', by: 0, card, abilityIndex: 0, discarded: ids(s, 0, 'battlefield')[0]!,
+      })).toContain('cannot be discarded');
+      // The card itself is in the graveyard, not the hand, and is not its own payment.
+      expect(refusal(s, { type: 'auto:activate', by: 0, card, abilityIndex: 0, discarded: card }))
+        .toContain('cannot be discarded');
+    });
+
+    it('refuses a discard sent with an ability that does not ask for one', () => {
+      const s = graveyard(['Sacred Cat'], 1);
+      const cat = find(s, 0, 'graveyard', 'Sacred Cat');
+      expect(refusal(s, {
+        type: 'auto:activate', by: 0, card: cat, abilityIndex: 0, discarded: ids(s, 0, 'battlefield')[0]!,
+      })).toContain('does not ask for a discard');
+    });
+
+    it('is paid by the bot with a land it has no use for', () => {
+      // Seven Plains out, and two Swamps and a Vraska's Contempt in hand. One Swamp is the turn's
+      // land drop; the other is the cheapest card it owns, and what it discards — not the
+      // removal spell, which one Swamp cannot cast this turn and which is the card worth keeping.
+      let s = champion(7, ['Swamp', 'Swamp', "Vraska's Contempt"]);
+      const first = botAction(s, 0);
+      expect(first?.type).toBe('auto:playLand');
+      s = apply(s, first!);
+      const second = botAction(s, 0);
+      expect(second?.type).toBe('auto:activate');
+      if (second?.type !== 'auto:activate') return;
+      expect(nameOf(s, second.card)).toBe('Sunscourge Champion');
+      expect(second.discarded === undefined ? null : nameOf(s, second.discarded)).toBe('Swamp');
+    });
   });
 
   it('an embalmed Angel of Sanctions exiles a permanent again, and gives it back when it dies', () => {
@@ -40516,5 +40640,120 @@ describe('the last printed halves: a doubling, a fed Vampire, and a cheaper Maul
     const full = legalActions(four, 0).plays.find((p) => p.card === again && p.kind === 'cast');
     expect(full?.manaCost).toBe('{2}{B}{B}');
     expect(full?.costChange).toBeUndefined();
+  });
+});
+
+describe('Fireball: any number of targets, the damage divided evenly, and {1} more for each extra (D579)', () => {
+  /*
+    The printed card. The pool's Fireball took exactly one target, which is how it is most often
+    cast and half of what it says: "This spell costs {1} more to cast for each target beyond the
+    first. Fireball deals X damage divided evenly, rounded down, among any number of targets."
+
+    The division is arithmetic and not a choice, so nothing is asked beyond X and the targets; the
+    surcharge is counted off the targets the spell was announced with.
+  */
+  const table = (lands: number, theirs: readonly string[] = ['Grizzly Bears', 'Centaur Courser']): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'ember-rush', 1: 'verdant-guard' },
+      hands: { 0: ['Fireball'] },
+      battlefield: { 0: Array.from({ length: lands }, () => 'Mountain'), 1: [...theirs] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+  const fire = (s: GameState, x: number, at: readonly Target[]): GameState => apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fireball'), x, targets: [...at],
+  });
+  const creature = (s: GameState, name: string): Target => ({ kind: 'card', id: find(s, 1, 'battlefield', name) });
+  const tappedLands = (s: GameState): number =>
+    ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length;
+
+  it('is offered as one play that may take any number of targets, with its surcharge on the play', () => {
+    const s = table(5);
+    const play = legalActions(s, 0).plays.find((p) => p.kind === 'cast' && p.name === 'Fireball');
+    expect(play?.xMax).toBe(4);
+    expect(play?.extraTargetCost).toBe(1);
+    expect(play?.targetSpecs.map((spec) => [spec.description, spec.optional])).toEqual([
+      ['any number of targets', true],
+    ]);
+  });
+
+  it('costs nothing extra at one target, and deals all of X to it', () => {
+    let s = table(5);
+    const courser = creature(s, 'Centaur Courser');
+    s = drain(passBoth(fire(s, 4, [courser])));
+    expect(tappedLands(s)).toBe(5);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
+  });
+
+  it('charges {1} for the second target and halves the damage', () => {
+    // Six Mountains: {R}, four for X, and one for the target beyond the first.
+    let s = table(6);
+    const bears = creature(s, 'Grizzly Bears');
+    s = fire(s, 4, [bears, { kind: 'player', seat: 1 }]);
+    expect(tappedLands(s)).toBe(6);
+    const before = life(s, 1);
+    s = drain(passBoth(s));
+    // Two each: the 2/2 dies and the player takes two.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    expect(life(s, 1)).toBe(before - 2);
+  });
+
+  it('rounds the division down, and the remainder is lost', () => {
+    // X is five at two targets: two each, and the fifth point goes nowhere.
+    let s = table(7);
+    const courser = creature(s, 'Centaur Courser');
+    s = drain(passBoth(fire(s, 5, [courser, { kind: 'player', seat: 1 }])));
+    expect(damageOn(s, courser.kind === 'card' ? courser.id : '')).toBe(2);
+    expect(life(s, 1)).toBe(18);
+    expect(namesIn(s, 1, 'battlefield')).toContain('Centaur Courser');
+  });
+
+  it('charges {2} for three targets, and divides three ways', () => {
+    // Six Mountains again: {R}, three for X, two for the two targets beyond the first.
+    let s = table(6);
+    const bears = creature(s, 'Grizzly Bears');
+    const courser = creature(s, 'Centaur Courser');
+    s = fire(s, 3, [bears, courser, { kind: 'player', seat: 1 }]);
+    expect(tappedLands(s)).toBe(6);
+    s = drain(passBoth(s));
+    expect(damageOn(s, bears.kind === 'card' ? bears.id : '')).toBe(1);
+    expect(damageOn(s, courser.kind === 'card' ? courser.id : '')).toBe(1);
+    expect(life(s, 1)).toBe(19);
+  });
+
+  it('refuses an X the mana cannot cover once the extra target is counted', () => {
+    // Five Mountains pay for X=4 at one target and not at two.
+    const s = table(5);
+    const bears = creature(s, 'Grizzly Bears');
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fireball'), x: 4,
+      targets: [bears, { kind: 'player', seat: 1 }],
+    })).toBeTruthy();
+    // And X=3 at the same two is exactly five.
+    expect(tappedLands(fire(s, 3, [bears, { kind: 'player', seat: 1 }]))).toBe(5);
+  });
+
+  it('may be cast at nothing, which is legal and does nothing', () => {
+    let s = drain(passBoth(fire(table(3), 2, [])));
+    expect(tappedLands(s)).toBe(3);
+    expect(life(s, 1)).toBe(20);
+    expect(namesIn(s, 0, 'graveyard')).toContain('Fireball');
+  });
+
+  it('is aimed by the bot at one thing, with everything it has', () => {
+    // The bot fills a spec to its count unless told otherwise, and a Fireball split across the
+    // whole table — its own side included — is the damage divided to nothing.
+    let s = table(5);
+    // The draw step put a card in hand on the way here; a bot with a second option is not being
+    // asked this question, so everything but the Fireball goes back.
+    for (const id of [...ids(s, 0, 'hand')]) {
+      if (nameOf(s, id) === 'Fireball') continue;
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    const action = botAction(s, 0);
+    expect(action?.type).toBe('auto:cast');
+    if (action?.type !== 'auto:cast') return;
+    expect(nameOf(s, action.card)).toBe('Fireball');
+    expect(action.targets).toHaveLength(1);
+    expect(action.x).toBe(4);
   });
 });

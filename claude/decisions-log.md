@@ -40360,3 +40360,98 @@ measured is the one named).
 Skyward Writ moved most: 54 wins to 60 of 144. Nothing else moved more than two points. The
 spread between the top four decks and the bottom four is unchanged, and it is the standing
 balance question; it is not something these text corrections were expected to close.
+
+## D579 — The last three: Toxic Deluge, Fireball and Sunscourge Champion as printed
+
+The queue D571 opened is empty. Every built-in card now carries its Oracle text and is scripted
+to it; the two entries left in the standing test's list are the adventure-quoting convention,
+not differences.
+
+| card | the pool had | printed, and now scripted |
+| --- | --- | --- |
+| Toxic Deluge | the life chosen and paid as the spell resolved | X life paid as an additional cost to cast it |
+| Fireball | X damage to one target | X divided evenly, rounded down, among any number of targets; {1} more for each beyond the first |
+| Sunscourge Champion | gains 2; eternalize {5}{W}{W} | gains life equal to its power; eternalize—{2}{W}{W}, discard a card |
+
+**Toxic Deluge.** The pool's version was kinder than the card: a countered Deluge cost no
+life, and nobody could see how big it was before answering it. X is now announced with the
+cast like any other X, the life is paid then, and the stack shows `Toxic Deluge (X=3)`. Two
+things were needed so this did not make the card worse to play:
+
+- The table opens the X question on the card's own best number (`bestX`, reported as
+  `xDefault`), not on the largest legal one. For this card the largest is "all your life but
+  one".
+- The bot casts for that number, and does not cast at all when it is nought. The old rule that
+  held a Deluge with nothing to kill now reads the same fact from the play.
+
+**Fireball.** One spec, "any number of targets", optional. The split is arithmetic and nothing
+is asked: five damage at two targets is two each. The extra {1} a target is charged in the
+cast, counted off the targets announced. The table keeps X and the targets inside one budget,
+so it will not take a target the mana cannot cover. The bot takes one target (`botTakes`);
+without that it filled the spec and divided the damage across the whole table, its own side
+included.
+
+**Sunscourge Champion.** A new ability cost, `discardACard`: a card from the hand chosen as the
+ability is activated, sent on the action as `discarded`, offered on the play as
+`discardOptions`. It is a real discard, so madness and discard triggers see it. The table asks
+"tap a card in your hand to discard". The bot discards a land it has no use for (five or more
+lands out), then a madness card, then its most expensive card.
+
+**Measured in the corpus, for what these pieces could read later** (legal cards):
+
+    "As an additional cost to cast this spell, pay X life":        7 cards
+    "costs {N} more to cast for each target beyond the first":     2 cards
+    "Discard a card" as part of an activated ability's cost:     210 cards
+
+The third is the large one. The compiler does not read that cost yet; the engine can now charge
+it, so reading it is the next increment. It needs a decision first about when the bot should
+pay a card for an effect, which is why it is not in this one.
+
+**Smaller things found on the way.**
+
+- The compiler's "deals X damage to any target" rows had been tested on Fireball, whose text
+  that is not. They now use Blaze, which prints exactly that sentence. Fireball's own two lines
+  are asserted as unread by the compiler.
+- A note in the table's control bar said its "Cast" button for optional targets could not be
+  reached by any built-in card. That stopped being true at D577 (Ajani, Jace) and is corrected.
+- A target tapped after a ninjutsu or discard cost is now sent with that cost; the reducer had
+  been dropping `returned` on that path. No built-in card has both, so nothing was affected.
+
+**Tests.** 12 re-fitted and 15 added in the engine; 7 added to the table client.
+
+    pool cards queued in KNOWN_DIFFERENT: 3 → 0 (65 at D571)
+    engine tests: 3,904, all passing
+    web tests: 253, all passing
+
+### Measurements on D578's build (490ac8a)
+
+    cards with every printed line read:  8,332 → 8,337 of 30,710
+    printed legal lines read:            24,314 → 24,333 of 56,421 (43.1%)
+    cards with a compiled script:        12,516 → 12,532
+
+Pod sweep, seeds 44601–44640: 40 of 40 finished, no throw and no stall. (The harness labelled
+the tree dirty because D579's edits were in progress; the build it loaded was the gate's build
+of 490ac8a, made before any of them.)
+
+Deck table, 6 seeds, 144 games a deck, 936 games. Build 490ac8a (same note as the sweep).
+
+| deck | D577 build | D578 build |
+| --- | --- | --- |
+| dawn-tithe | 77% | 79% |
+| ember-rush | 69% | 68% |
+| verdant-guard | 72% | 68% |
+| kindle-grove | 64% | 65% |
+| ashen-rite | 50% | 53% |
+| arc-tempest | 49% | 50% |
+| forge-alliance | 49% | 49% |
+| rot-harvest | 39% | 40% |
+| skyward-writ | 42% | 40% |
+| delta-bloom | 40% | 39% |
+| blight-vector | 38% | 38% |
+| hollow-tide | 33% | 32% |
+| tidal-mind | 28% | 28% |
+
+The two moves that match a card changed in D578: Verdant Guard down four points (103 wins to
+98), where Dragonsguard Elite lost a ward it never printed and half its counters; Ashen Rite up
+three (72 to 77), where Kalitas gained an ability and Hagra Mauling a discount. Both are small
+on 144 games and are recorded as consistent with the changes, not as proved by them.

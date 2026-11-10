@@ -49,7 +49,7 @@ export type ArenaMode =
     `play.sacrificeKind` for that. Folding it in here would make `cost` mean two things at once —
     what happens to the permanent, and what kind of permanent it may be.
   */
-  | { kind: "feeding"; play: LegalPlay; cost: "sacrifice" | "returned" }
+  | { kind: "feeding"; play: LegalPlay; cost: "sacrifice" | "returned" | "discarded" }
   /** A triggered ability of yours waiting to be aimed. Shaped like `targeting`, sent differently. */
   | { kind: "choosing"; specs: readonly LegalPlay["targetSpecs"][number][]; candidates: readonly (readonly Target[])[]; description: string; chosen: Target[] }
   /**
@@ -70,6 +70,8 @@ export type ArenaMode =
    */
   | {
       kind: "targeting"; play: LegalPlay; chosen: Target[]; sacrifice?: string; returned?: string
+      /** The card discarded to pay for it, when the cost says "Discard a card". */
+      discarded?: string
       x?: number
       shares?: number[]
     }
@@ -316,10 +318,23 @@ export function choiceCandidatesAt(
   return []
 }
 
+/**
+ * The cards a play in `feeding` mode may be paid with, for whichever cost it is asking about.
+ *
+ * One function because three places ask — the reducer, the ring the table draws round what may
+ * be tapped next, and the tap itself — and three copies of "which list is it" had already drifted
+ * to two lists when the third cost arrived.
+ */
+export function feedOptions(mode: Extract<ArenaMode, { kind: "feeding" }>): readonly string[] {
+  if (mode.cost === "returned") return mode.play.returnOptions ?? []
+  if (mode.cost === "discarded") return mode.play.discardOptions ?? []
+  return mode.play.sacrificeOptions
+}
+
 /** The action a completed play turns into. */
 function playAction(
   play: LegalPlay, targets: readonly Target[], sacrifice?: string, x?: number,
-  division?: readonly number[], returned?: string,
+  division?: readonly number[], returned?: string, discarded?: string,
 ): TableAction {
   const withTargets = targets.length > 0 ? { targets: [...targets] } : {}
   // The division, for a spell that has one. Sent only when the play's own spec asks for it, so a
@@ -331,6 +346,8 @@ function playAction(
   // Ninjutsu's unblocked attacker, carried the same way and in its own field: a cost that gives the
   // creature back is not a sacrifice, and one field for both would make the engine guess.
   const withReturned = returned === undefined ? {} : { returned }
+  // And a card discarded as a cost ("Discard a card"), in a field of its own for the same reason.
+  const withDiscarded = discarded === undefined ? {} : { discarded }
   /*
     And which half of a two-faced card, for the fifth time and the same reason: a split card and an
     adventurer are each offered as two plays on one card, and a cast with no half is either the
@@ -433,7 +450,7 @@ function playAction(
   }
   return {
     type: "auto:activate", card: play.card, abilityIndex: play.abilityIndex ?? 0,
-    ...withTargets, ...withSacrifice, ...withReturned,
+    ...withTargets, ...withSacrifice, ...withReturned, ...withDiscarded,
   }
 }
 
@@ -461,10 +478,17 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       if (play.returnOptions !== undefined && play.returnOptions.length > 0) {
         return { mode: { kind: "feeding", play, cost: "returned" }, action: null }
       }
+      // "Discard a card" as a cost, asked the same way: a card out of the hand, chosen before
+      // anything else about the play.
+      if (play.discardOptions !== undefined && play.discardOptions.length > 0) {
+        return { mode: { kind: "feeding", play, cost: "discarded" }, action: null }
+      }
       if (play.xMax !== undefined) {
         // Opening on the largest X is the choice a player makes nearly every time — a Fireball is
         // cast for everything available — and it is one tap from any smaller number.
-        return { mode: { kind: "payingX", play, chosen: play.xMax }, action: null }
+        // Unless the card says its largest X is not its best (`xDefault`): a Toxic Deluge pays X
+        // **life**, and opening that on "all of it but one" would be suggesting the worst answer.
+        return { mode: { kind: "payingX", play, chosen: play.xDefault ?? play.xMax }, action: null }
       }
       if (targetsWanted(play) === 0) return { mode: IDLE, action: playAction(play, []) }
       return { mode: { kind: "targeting", play, chosen: [] }, action: null }
@@ -478,22 +502,20 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
 
     case "feed": {
       if (mode.kind !== "feeding") return { mode, action: null }
-      const allowed = mode.cost === "returned"
-        ? mode.play.returnOptions ?? []
-        : mode.play.sacrificeOptions
-      if (!allowed.includes(event.card)) return { mode, action: null }
+      if (!feedOptions(mode).includes(event.card)) return { mode, action: null }
+      const paid = mode.cost === "returned" ? { returned: event.card }
+        : mode.cost === "discarded" ? { discarded: event.card }
+          : { sacrifice: event.card }
       if (targetsWanted(mode.play) === 0) {
         return {
           mode: IDLE,
-          action: mode.cost === "returned"
-            ? playAction(mode.play, [], undefined, undefined, undefined, event.card)
-            : playAction(mode.play, [], event.card),
+          action: playAction(
+            mode.play, [], paid.sacrifice, undefined, undefined, paid.returned, paid.discarded,
+          ),
         }
       }
       // Something to aim as well: keep the cost and go on to the targets.
-      return mode.cost === "returned"
-        ? { mode: { kind: "targeting", play: mode.play, chosen: [], returned: event.card }, action: null }
-        : { mode: { kind: "targeting", play: mode.play, chosen: [], sacrifice: event.card }, action: null }
+      return { mode: { kind: "targeting", play: mode.play, chosen: [], ...paid }, action: null }
     }
 
     case "startChoosing":
@@ -544,7 +566,7 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
         if (spread.reduce((n, d) => n + d, 0) >= amount) {
           return {
             mode: IDLE,
-            action: playAction(mode.play, picked, mode.sacrifice, mode.x, spread),
+            action: playAction(mode.play, picked, mode.sacrifice, mode.x, spread, mode.returned, mode.discarded),
           }
         }
         return { mode: { ...mode, chosen: picked, shares: spread }, action: null }
@@ -553,9 +575,25 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
       if (mode.chosen.some((t) => targetKey(t) === key)) {
         return { mode: { ...mode, chosen: mode.chosen.filter((t) => targetKey(t) !== key) }, action: null }
       }
+      /*
+        A spell that charges for each target beyond the first (Fireball): X was chosen already, so
+        what is left of `xMax` is the budget for extra targets, and a target the mana cannot cover
+        is not taken. The engine would refuse the cast otherwise — and a table that let a player
+        aim a spell it then could not send is the thing this reducer exists to avoid.
+      */
+      const perExtra = mode.play.extraTargetCost
+      if (perExtra !== undefined && perExtra > 0 && mode.play.xMax !== undefined) {
+        const spare = mode.play.xMax - (mode.x ?? 0)
+        if (mode.chosen.length >= 1 + Math.floor(Math.max(0, spare) / perExtra)) {
+          return { mode, action: null }
+        }
+      }
       const chosen = [...mode.chosen, event.target]
       if (chosen.length >= targetsWanted(mode.play)) {
-        return { mode: IDLE, action: playAction(mode.play, chosen, mode.sacrifice, mode.x) }
+        return {
+          mode: IDLE,
+          action: playAction(mode.play, chosen, mode.sacrifice, mode.x, undefined, mode.returned, mode.discarded),
+        }
       }
       return { mode: { ...mode, chosen }, action: null }
     }
@@ -599,7 +637,9 @@ export function arenaReducer(mode: ArenaMode, event: ArenaEvent): ArenaResult {
         }
         return {
           mode: IDLE,
-          action: playAction(mode.play, mode.chosen, mode.sacrifice, mode.x, mode.shares),
+          action: playAction(
+            mode.play, mode.chosen, mode.sacrifice, mode.x, mode.shares, mode.returned, mode.discarded,
+          ),
         }
       }
       if (mode.kind === "attackers") {
