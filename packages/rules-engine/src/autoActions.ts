@@ -169,8 +169,17 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     *adventure* half again is not a play: that half is gone, and `onAdventure` says so by being the
     only reason this card is castable at all.
   */
-  const fromAdventure = action.half === undefined && inst.zone === 'exile'
+  const backFromAdventure = action.half === undefined && inst.zone === 'exile'
     && inst.onAdventure === true && inst.zoneSeat === action.by;
+  /*
+    And a card this seat was told it may play out of exile (D583). Either face, since the card was
+    never cast: an adventurer exiled off the top of a library still has its adventure.
+
+    Folded into the one word below because the two are the same exemption — a cast out of exile
+    for the printed cost — and every check that reads it is about the zone.
+  */
+  const fromAdventure = backFromAdventure
+    || (inst.zone === 'exile' && inst.playFromExile?.by === action.by);
   /*
     Foretell, the fourth zone a spell is cast from here (CR 702.143b).
 
@@ -803,7 +812,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     card castable out of exile, and a copy that kept it would be castable again from the graveyard
     it eventually reaches.
   */
-  if (fromAdventure) next = withInstance(next, inst.id, { onAdventure: undefined });
+  if (backFromAdventure) next = withInstance(next, inst.id, { onAdventure: undefined });
   /*
     And an offered cast consumes the offer that allowed it, taking the rest of the pile with it.
 
@@ -1315,7 +1324,10 @@ function playLand(
     throw new EngineError('RULE_NOT_APPLICABLE', 'lands can only be played in your main phase with an empty stack');
   }
   const inst = requireInstance(state, action.card);
-  if (inst.zone !== 'hand' || inst.zoneSeat !== action.by) {
+  // From the hand, or out of exile under a permission to play the card (D583) — which is a land
+  // drop like any other and is counted below with the rest.
+  const fromExile = inst.zone === 'exile' && inst.playFromExile?.by === action.by;
+  if (!fromExile && (inst.zone !== 'hand' || inst.zoneSeat !== action.by)) {
     throw new EngineError('RULE_NOT_APPLICABLE', 'that card is not in your hand');
   }
   /*

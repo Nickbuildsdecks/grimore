@@ -41452,3 +41452,389 @@ describe('Food and Blood: two more tokens the engine has a definition for (D582)
     expect(life(s, 0)).toBe(before + 1);
   });
 });
+
+describe('playing a card out of exile until a deadline (D583)', () => {
+  /*
+    "Exile the top card of your library. You may play that card this turn." Two sentences and one
+    effect: the second is a fact about the card the first one moved. The engine keeps that fact on
+    the card (`playFromExile`), offers the card as a play to the seat that was told, and takes the
+    permission away at the printed deadline.
+  */
+  const RECKLESS = {
+    name: 'Reckless Impulse', type_line: 'Sorcery', mana_cost: '{1}{R}', cmc: 2, colors: ['R'],
+    layout: 'normal',
+    oracle_text: 'Exile the top two cards of your library. Until the end of your next turn, you may play those cards.',
+  };
+  const ACT = {
+    name: 'Act on Impulse', type_line: 'Sorcery', mana_cost: '{2}{R}', cmc: 3, colors: ['R'],
+    layout: 'normal',
+    oracle_text: 'Exile the top three cards of your library. Until end of turn, you may play cards exiled this way. (If you cast a spell this way, you still pay its costs. You can play a land this way only if you have an available land play remaining.)',
+  };
+  const ABBOT = {
+    name: 'Abbot of Keral Keep', type_line: 'Creature — Human Monk', mana_cost: '{1}{R}', cmc: 2,
+    colors: ['R'], power: '2', toughness: '1', layout: 'normal',
+    oracle_text: 'Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)\nWhen Abbot of Keral Keep enters, exile the top card of your library. Until end of turn, you may play that card.',
+  };
+  const YASMIN = {
+    name: 'Yasmin Khan', type_line: 'Legendary Creature — Human Detective', mana_cost: '{3}{R}',
+    cmc: 4, colors: ['R'], power: '3', toughness: '3', layout: 'normal',
+    oracle_text: "{T}: Exile the top card of your library. Until your next end step, you may play it.\nDoctor's companion (You can have two commanders if the other is the Doctor.)",
+  };
+  const ORACLE = {
+    name: 'Dark-Dweller Oracle', type_line: 'Creature — Goblin Shaman', mana_cost: '{1}{R}', cmc: 2,
+    colors: ['R'], power: '2', toughness: '2', layout: 'normal',
+    oracle_text: '{1}, Sacrifice a creature: Exile the top card of your library. You may play that card this turn. (You still pay its costs. You can play a land this way only if you have an available land play remaining.)',
+  };
+  const impulseList = customDeck({
+    id: 'impulse',
+    name: 'Impulse',
+    entries: [
+      { name: 'Reckless Impulse', count: 4 },
+      { name: 'Act on Impulse', count: 4 },
+      { name: 'Abbot of Keral Keep', count: 4 },
+      { name: 'Yasmin Khan', count: 2 },
+      { name: 'Dark-Dweller Oracle', count: 4 },
+      { name: 'Lightning Bolt', count: 4 },
+      { name: 'Hill Giant', count: 4 },
+      { name: 'Garenbrig Carver', count: 4 },
+      { name: 'Raging Goblin', count: 4 },
+      { name: 'Mountain', count: 20 },
+      { name: 'Forest', count: 6 },
+    ],
+    data: [RECKLESS, ACT, ABBOT, YASMIN, ORACLE] as never[],
+  }).deck;
+  const table = (opts: {
+    hand?: readonly string[]; mine?: readonly string[]; theirs?: readonly string[]; top?: readonly string[];
+  }): GameState => {
+    let s = advanceTo(arena({
+      decks: { 0: 'impulse', 1: 'tidal-mind' },
+      deckSpecs: { impulse: impulseList },
+      hands: { 0: [...(opts.hand ?? [])] },
+      battlefield: { 0: [...(opts.mine ?? [])], 1: [...(opts.theirs ?? [])] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    // The named cards go on top of the library in the order given, first name uppermost.
+    // Each name takes a different card, so two Mountains are two cards and not one moved twice.
+    const taken = new Set<string>();
+    for (const name of [...(opts.top ?? [])].reverse()) {
+      const card = ids(s, 0, 'library').find((id) => !taken.has(id) && nameOf(s, id) === name)!;
+      taken.add(card);
+      s = apply(s, { type: 'card:move', by: 0, card, toZone: 'library', position: 'top' });
+    }
+    return s;
+  };
+  const LANDS = ['Mountain', 'Mountain', 'Mountain', 'Mountain'];
+  const playsOn = (s: GameState, seat: 0 | 1, card: string) => legalActions(s, seat).plays
+    .filter((p) => p.card === card);
+  const cast = (s: GameState, name: string): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name), targets: [],
+  })));
+
+  it('reads the pair on all five cards', () => {
+    for (const row of [RECKLESS, ACT, ABBOT, ORACLE]) {
+      const compiled = compileCard(row as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), row.name).toEqual([]);
+    }
+    // Yasmin Khan's other line is a deck-building rule with nothing to do in a game, and is the
+    // one line of hers left unread; the ability this describe is about is read.
+    const yasmin = compileCard(YASMIN as never);
+    expect(yasmin.ok && yasmin.unread.map((u) => u.line)).toEqual(["Doctor's companion"]);
+  });
+
+  it('exiles the top two cards face up and tells the caster they may play them', () => {
+    let s = table({ hand: ['Reckless Impulse'], mine: LANDS, top: ['Lightning Bolt', 'Mountain', 'Hill Giant'] });
+    const bolt = find(s, 0, 'library', 'Lightning Bolt');
+    const land = ids(s, 0, 'library')[1]!;
+    const third = ids(s, 0, 'library')[2]!;
+    const handBefore = ids(s, 0, 'hand').length;
+    s = cast(s, 'Reckless Impulse');
+    for (const id of [bolt, land]) {
+      expect(s.instances[id]!.zone, nameOf(s, id)).toBe('exile');
+      expect(s.instances[id]!.faceDown).toBe(false);
+      expect(s.instances[id]!.playFromExile).toEqual({ by: 0, grantedTurn: 5, through: 'your-next-turn' });
+    }
+    // Two and not three, and nothing went to the hand: this is not a draw.
+    expect(s.instances[third]!.zone).toBe('library');
+    expect(ids(s, 0, 'hand').length).toBe(handBefore - 1);
+  });
+
+  it('casts an exiled spell for its printed cost, and the permission goes with the card', () => {
+    let s = table({ hand: ['Reckless Impulse'], mine: LANDS, top: ['Lightning Bolt', 'Hill Giant'] });
+    const bolt = find(s, 0, 'library', 'Lightning Bolt');
+    const giant = find(s, 0, 'library', 'Hill Giant');
+    s = cast(s, 'Reckless Impulse');
+    // Two Mountains are left: enough for the Bolt, not for the Giant, which is named and not offered.
+    const offered = playsOn(s, 0, bolt);
+    expect(offered.map((p) => p.kind)).toEqual(['cast']);
+    expect(offered[0]!.manaCost).toBe('{R}');
+    expect(offered[0]!.description).toMatch(/from exile \(until the end of your next turn\)/);
+    expect(playsOn(s, 0, giant)).toEqual([]);
+    const before = life(s, 1);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: bolt, targets: [{ kind: 'player', seat: 1 }],
+    })));
+    expect(life(s, 1)).toBe(before - 3);
+    expect(s.instances[bolt]!.zone).toBe('graveyard');
+    expect(s.instances[bolt]!.playFromExile).toBeUndefined();
+    // The other card is still where it was and still playable.
+    expect(s.instances[giant]!.playFromExile?.by).toBe(0);
+  });
+
+  it('plays an exiled land as the land for the turn, and only one', () => {
+    let s = table({ hand: ['Reckless Impulse', 'Forest'], mine: LANDS, top: ['Mountain', 'Mountain'] });
+    const [first, second] = ids(s, 0, 'library').slice(0, 2) as [string, string];
+    s = cast(s, 'Reckless Impulse');
+    expect(playsOn(s, 0, first).map((p) => p.kind)).toEqual(['land']);
+    expect(playsOn(s, 0, first)[0]!.description).toMatch(/^Play Mountain from exile/);
+    s = apply(s, { type: 'auto:playLand', by: 0, card: first });
+    expect(s.instances[first]!.zone).toBe('battlefield');
+    expect(s.instances[first]!.playFromExile).toBeUndefined();
+    // The drop is spent: neither the second exiled land nor the Forest in hand is a play now.
+    expect(playsOn(s, 0, second)).toEqual([]);
+    expect(refusal(s, { type: 'auto:playLand', by: 0, card: second })).toMatch(/already played a land/);
+    expect(refusal(s, { type: 'auto:playLand', by: 0, card: find(s, 0, 'hand', 'Forest') }))
+      .toMatch(/already played a land/);
+  });
+
+  it('is a permission for the seat that was told and nobody else', () => {
+    let s = table({
+      hand: ['Reckless Impulse'], mine: LANDS, top: ['Lightning Bolt', 'Mountain'],
+      theirs: ['Island', 'Island'],
+    });
+    const bolt = find(s, 0, 'library', 'Lightning Bolt');
+    const land = ids(s, 0, 'library')[1]!;
+    s = cast(s, 'Reckless Impulse');
+    // Asked in the opponent's own main phase, with priority and mana of their own, so that the
+    // only thing standing between them and the card is that it was not them who was told.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    expect(s.priority).toBe(1);
+    expect(s.instances[bolt]!.playFromExile?.by).toBe(0);
+    expect(playsOn(s, 1, bolt)).toEqual([]);
+    expect(playsOn(s, 1, land)).toEqual([]);
+    expect(refusal(s, { type: 'auto:cast', by: 1, card: bolt, targets: [{ kind: 'player', seat: 0 }] }))
+      .toMatch(/not in your hand/);
+    expect(refusal(s, { type: 'auto:playLand', by: 1, card: land })).toMatch(/not in your hand/);
+  });
+
+  it('"this turn" ends with the turn: the card stays in exile and is no longer a play', () => {
+    let s = table({ hand: ['Act on Impulse'], mine: LANDS, top: ['Lightning Bolt', 'Mountain', 'Hill Giant'] });
+    const three = ids(s, 0, 'library').slice(0, 3);
+    const bolt = three[0]!;
+    s = cast(s, 'Act on Impulse');
+    for (const id of three) {
+      expect(s.instances[id]!.playFromExile, nameOf(s, id))
+        .toEqual({ by: 0, grantedTurn: 5, through: 'this-turn' });
+    }
+    expect(playsOn(s, 0, bolt).map((p) => p.kind)).toEqual(['cast']);
+    s = nextTurn(s);
+    for (const id of three) {
+      expect(s.instances[id]!.zone).toBe('exile');
+      expect(s.instances[id]!.playFromExile).toBeUndefined();
+    }
+    // Two turns on, with mana up in the caster's own main phase: still not a play.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    expect(playsOn(s, 0, bolt)).toEqual([]);
+    expect(refusal(s, { type: 'auto:cast', by: 0, card: bolt, targets: [{ kind: 'player', seat: 1 }] }))
+      .toMatch(/not in your hand/);
+  });
+
+  it('"until the end of your next turn" lasts through the opponent\'s turn and all of your next one', () => {
+    let s = table({ hand: ['Reckless Impulse'], mine: LANDS, top: ['Lightning Bolt', 'Hill Giant'] });
+    const bolt = find(s, 0, 'library', 'Lightning Bolt');
+    const giant = find(s, 0, 'library', 'Hill Giant');
+    s = cast(s, 'Reckless Impulse');
+    // The opponent's turn: an instant is castable there, a creature is not.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    expect(s.instances[giant]!.playFromExile?.by).toBe(0);
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    expect(s.priority).toBe(0);
+    expect(playsOn(s, 0, bolt).map((p) => p.kind)).toEqual(['cast']);
+    expect(playsOn(s, 0, giant)).toEqual([]);
+    // The caster's next turn: both are plays.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    expect(playsOn(s, 0, giant).map((p) => p.kind)).toEqual(['cast']);
+    // And when that turn is over they are not.
+    s = nextTurn(s);
+    expect(s.instances[bolt]!.playFromExile).toBeUndefined();
+    expect(s.instances[giant]!.playFromExile).toBeUndefined();
+    expect(s.instances[giant]!.zone).toBe('exile');
+  });
+
+  it('"until your next end step" ends as that step begins', () => {
+    let s = table({ mine: ['Yasmin Khan', ...LANDS], top: ['Lightning Bolt'] });
+    const bolt = find(s, 0, 'library', 'Lightning Bolt');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Yasmin Khan'), abilityIndex: 0, targets: [],
+    })));
+    expect(s.instances[bolt]!.playFromExile).toEqual({ by: 0, grantedTurn: 5, through: 'your-next-end-step' });
+    expect(playsOn(s, 0, bolt).map((p) => p.kind)).toEqual(['cast']);
+    s = advanceTo(s, 'end');
+    expect(s.turn).toBe(5);
+    expect(s.instances[bolt]!.zone).toBe('exile');
+    expect(s.instances[bolt]!.playFromExile).toBeUndefined();
+  });
+
+  it('given in an opponent\'s turn, "until your next end step" waits for your own', () => {
+    let s = table({ mine: ['Yasmin Khan', ...LANDS], top: ['Lightning Bolt'] });
+    const bolt = find(s, 0, 'library', 'Lightning Bolt');
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(1);
+    s = apply(s, { type: 'auto:pass', by: 1 });
+    s = apply(s, {
+      type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Yasmin Khan'), abilityIndex: 0, targets: [],
+    });
+    s = drain(passBoth(s));
+    expect(s.instances[bolt]!.playFromExile?.through).toBe('your-next-end-step');
+    // The opponent's end step and cleanup do not end it.
+    s = advanceTo(nextTurn(s), 'precombat-main');
+    expect(s.activeSeat).toBe(0);
+    expect(playsOn(s, 0, bolt).map((p) => p.kind)).toEqual(['cast']);
+    // Yasmin Khan untapped and could attack, so the declaration is made (of nobody) on the way.
+    s = apply(advanceTo(s, 'declare-attackers'), { type: 'auto:attack', by: 0, attackers: [] });
+    s = advanceTo(s, 'end');
+    expect(s.turn).toBe(7);
+    expect(s.instances[bolt]!.playFromExile).toBeUndefined();
+  });
+
+  it('reads the pair as the tail of an entry trigger and of an activated ability', () => {
+    let s = table({ hand: ['Abbot of Keral Keep'], mine: LANDS, top: ['Mountain'] });
+    const land = ids(s, 0, 'library')[0]!;
+    s = cast(s, 'Abbot of Keral Keep');
+    expect(s.instances[land]!.playFromExile).toEqual({ by: 0, grantedTurn: 5, through: 'this-turn' });
+    s = apply(s, { type: 'auto:playLand', by: 0, card: land });
+    expect(s.instances[land]!.zone).toBe('battlefield');
+
+    let t = table({ mine: ['Dark-Dweller Oracle', 'Raging Goblin', ...LANDS], top: ['Hill Giant'] });
+    const giant = find(t, 0, 'library', 'Hill Giant');
+    const goblin = find(t, 0, 'battlefield', 'Raging Goblin');
+    t = drain(passBoth(apply(t, {
+      type: 'auto:activate', by: 0, card: find(t, 0, 'battlefield', 'Dark-Dweller Oracle'), abilityIndex: 0,
+      targets: [], sacrifice: goblin,
+    })));
+    expect(t.instances[goblin]!.zone).toBe('graveyard');
+    expect(t.instances[giant]!.playFromExile?.through).toBe('this-turn');
+    // {1} went on the ability; three Mountains are left, which is not the Giant's {3}{R}.
+    expect(playsOn(t, 0, giant)).toEqual([]);
+  });
+
+  it('offers an exiled adventurer as both of its faces, since neither has been cast', () => {
+    let s = table({ hand: ['Reckless Impulse'], mine: [...LANDS, 'Forest', 'Forest', 'Forest', 'Forest', 'Raging Goblin'], top: ['Garenbrig Carver', 'Mountain'] });
+    const carver = find(s, 0, 'library', 'Garenbrig Carver');
+    s = cast(s, 'Reckless Impulse');
+    const offered = playsOn(s, 0, carver);
+    expect(offered.map((p) => p.half).sort()).toEqual([0, undefined].sort());
+    // Cast as the creature it goes to the battlefield and is an ordinary permanent.
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: carver, targets: [] })));
+    expect(s.instances[carver]!.zone).toBe('battlefield');
+    expect(s.instances[carver]!.playFromExile).toBeUndefined();
+    expect(s.instances[carver]!.onAdventure).toBeUndefined();
+  });
+
+  it('gives what the library has when it has fewer cards than the spell asks for', () => {
+    let s = table({ hand: ['Act on Impulse'], mine: LANDS });
+    const library = [...ids(s, 0, 'library')];
+    for (const id of library.slice(2)) {
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'graveyard', position: 'bottom' });
+    }
+    s = cast(s, 'Act on Impulse');
+    expect(ids(s, 0, 'library').length).toBe(0);
+    expect(library.slice(0, 2).every((id) => s.instances[id]!.playFromExile?.by === 0)).toBe(true);
+  });
+
+  it('forgets the permission when something else takes the card out of exile', () => {
+    let s = table({ hand: ['Reckless Impulse'], mine: LANDS, top: ['Lightning Bolt', 'Hill Giant'] });
+    const bolt = find(s, 0, 'library', 'Lightning Bolt');
+    s = cast(s, 'Reckless Impulse');
+    s = apply(s, { type: 'card:move', by: 0, card: bolt, toZone: 'graveyard', position: 'bottom' });
+    expect(s.instances[bolt]!.playFromExile).toBeUndefined();
+    s = apply(s, { type: 'card:move', by: 0, card: bolt, toZone: 'exile', position: 'bottom' });
+    expect(playsOn(s, 0, bolt)).toEqual([]);
+  });
+
+  it.each([
+    /*
+      Every wording the reader takes, each cast as a sorcery of its own so that what is checked is
+      what the words became: how many cards moved, and which deadline they carry. The wordings are
+      the ones the legal corpus prints; the card they are put on here is not a real one.
+    */
+    ['Exile the top card of your library. You may play that card this turn.', 1, 'this-turn'],
+    ['Exile the top card of your library. You may play it this turn.', 1, 'this-turn'],
+    ['Exile the top card of your library. Until end of turn, you may play that card.', 1, 'this-turn'],
+    ['Exile the top two cards of your library. You may play those cards this turn.', 2, 'this-turn'],
+    ['Exile the top three cards of your library. You may play them this turn.', 3, 'this-turn'],
+    ['Exile the top three cards of your library. You may play those cards until end of turn.', 3, 'this-turn'],
+    ['Exile the top three cards of your library. Until end of turn, you may play cards exiled this way.', 3, 'this-turn'],
+    ['Exile the top card of your library. Until the end of your next turn, you may play that card.', 1, 'your-next-turn'],
+    ['Exile the top card of your library. You may play it until the end of your next turn.', 1, 'your-next-turn'],
+    ['Exile the top card of your library. You may play that card until the end of your next turn.', 1, 'your-next-turn'],
+    ['Exile the top two cards of your library. Until the end of your next turn, you may play those cards.', 2, 'your-next-turn'],
+    ['Exile the top five cards of your library. You may play cards exiled this way until the end of your next turn.', 5, 'your-next-turn'],
+    ['Exile the top card of your library. Until your next end step, you may play that card.', 1, 'your-next-end-step'],
+    ['Exile the top card of your library. You may play it until your next end step.', 1, 'your-next-end-step'],
+    ['Exile the top two cards of your library. You may play those cards until your next end step.', 2, 'your-next-end-step'],
+    // And with something before the pair and something after it, which is where the pair sits on
+    // most of the cards that print it.
+    ['You gain 2 life. Exile the top card of your library. You may play that card this turn.', 1, 'this-turn'],
+    ['Exile the top card of your library. You may play that card this turn. You gain 2 life.', 1, 'this-turn'],
+  ] as const)('%s', (text, count, through) => {
+    const row = {
+      name: 'Probe Impulse', type_line: 'Sorcery', mana_cost: '{R}', cmc: 1, colors: ['R'],
+      layout: 'normal', oracle_text: text,
+    };
+    const compiled = compileCard(row as never);
+    expect(compiled.ok && compiled.unread.map((u) => u.line)).toEqual([]);
+    const list = customDeck({
+      id: 'probe-impulse', name: 'Probe Impulse',
+      entries: [{ name: 'Probe Impulse', count: 4 }, { name: 'Hill Giant', count: 26 }, { name: 'Mountain', count: 30 }],
+      data: [row] as never[],
+    }).deck;
+    let s = advanceTo(arena({
+      decks: { 0: 'probe-impulse', 1: 'tidal-mind' }, deckSpecs: { 'probe-impulse': list },
+      hands: { 0: ['Probe Impulse'] }, battlefield: { 0: ['Mountain'] }, turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    const top = ids(s, 0, 'library').slice(0, count + 1);
+    const before = life(s, 0);
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Probe Impulse'), targets: [] })));
+    expect(top.slice(0, count).map((id) => s.instances[id]!.playFromExile))
+      .toEqual(top.slice(0, count).map(() => ({ by: 0, grantedTurn: 5, through })));
+    // One past the count is still in the library: the number is the printed one, not "at least".
+    expect(s.instances[top[count]!]!.zone).toBe('library');
+    // And a neighbouring sentence still happened, on the two rows that have one.
+    expect(life(s, 0)).toBe(/You gain 2 life/.test(text) ? before + 2 : before);
+  });
+
+  it('the bot casts the spell that turns the cards over, because they are worth what a draw is', () => {
+    let s = table({ hand: ['Reckless Impulse'], mine: ['Mountain', 'Mountain'], top: ['Hill Giant', 'Mountain'] });
+    // The draw step put a second card in the hand; it goes back, so the Impulse is the only play.
+    for (const id of ids(s, 0, 'hand')) {
+      if (nameOf(s, id) === 'Reckless Impulse') continue;
+      s = apply(s, { type: 'card:move', by: 0, card: id, toZone: 'library', position: 'bottom' });
+    }
+    expect(namesIn(s, 0, 'hand')).toEqual(['Reckless Impulse']);
+    expect(botAction(s, 0)).toMatchObject({ type: 'auto:cast', card: find(s, 0, 'hand', 'Reckless Impulse') });
+  });
+
+  it('the bot plays the land it exiled, and casts the spell', () => {
+    let s = table({ hand: ['Reckless Impulse'], mine: ['Mountain', 'Mountain'], top: ['Mountain', 'Hill Giant'] });
+    const land = ids(s, 0, 'library')[0]!;
+    s = cast(s, 'Reckless Impulse');
+    expect(botAction(s, 0)).toMatchObject({ type: 'auto:playLand', card: land });
+
+    let t = table({ hand: ['Reckless Impulse'], mine: [...LANDS, 'Mountain', 'Mountain'], top: ['Hill Giant', 'Lightning Bolt'] });
+    const giant = find(t, 0, 'library', 'Hill Giant');
+    t = cast(t, 'Reckless Impulse');
+    const seen: string[] = [];
+    for (let i = 0; i < 6 && t.step === 'precombat-main'; i++) {
+      const action = botAction(t, 0);
+      if (action === null || action.type !== 'auto:cast') break;
+      seen.push(action.card);
+      t = drain(passBoth(apply(t, action)));
+    }
+    expect(seen).toContain(giant);
+    expect(t.instances[giant]!.zone).toBe('battlefield');
+  });
+});

@@ -239,6 +239,30 @@ export interface CardInstance {
    */
   readonly onAdventure?: true;
   /**
+   * Set on a card in exile that one seat has been told it may **play** until a deadline (D583) —
+   * "Exile the top card of your library. You may play that card this turn."
+   *
+   * The third fact of this shape beside `foretoldTurn` and `onAdventure`, and the first that is a
+   * *play* rather than a cast: a land exiled this way may be played as the turn's land, which
+   * neither of the other two can be.
+   *
+   * - `by` is the seat that was told, which is not read off the zone: an exile zone belongs to the
+   *   card's owner, and the permission belongs to whoever resolved the effect.
+   * - `through` is the deadline as printed. `this-turn` ends with the turn it was given in;
+   *   `your-next-turn` ends with the first turn of `by`'s that *ends after* `grantedTurn` — so a
+   *   permission given in your own turn lasts through the rest of it and all of your next one,
+   *   and one given in an opponent's turn lasts until your next turn is over.
+   *   `your-next-end-step` ends as `by`'s next end step **begins**, whichever turn gave it.
+   *
+   * Cleared by `endTurnCleanup` (or on entering the end step) at the deadline and by `relocate` when the card leaves exile, so a
+   * card that was played, or taken somewhere else by another effect, does not carry it along.
+   */
+  readonly playFromExile?: {
+    readonly by: SeatIndex;
+    readonly grantedTurn: number;
+    readonly through: 'this-turn' | 'your-next-turn' | 'your-next-end-step';
+  };
+  /**
    * Set while this card is being cast — and then while it is on the battlefield — **as an Aura
    * rather than as a creature**, because its bestow cost was paid (CR 702.103b).
    *

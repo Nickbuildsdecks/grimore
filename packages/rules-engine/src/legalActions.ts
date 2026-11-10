@@ -10,7 +10,7 @@
  * mana follows. Showing a card as uncastable because the lands are still untapped would be
  * technically true and useless.
  */
-import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef } from './cards.js';
+import { defKeyFor, isFaceDownPermanent, zoneKey, type CardDef, type CardInstance } from './cards.js';
 import { listAt } from './cardActions.js';
 import {
   allAbilitiesLost, characteristicsOf, grantedAbilitiesOn, hasType, type GrantedTriggerRef,
@@ -37,6 +37,18 @@ import { BESTOW_TARGET, legalTargets } from './targeting.js';
 import { PACT_KINDS } from './pacts.js';
 import { MAIN_STEPS, type DecisionZone, type Step, type Target } from './turnTypes.js';
 import type { GameState, PactKind, SeatIndex } from './types.js';
+
+/**
+ * How long a permission to play a card out of exile lasts, in the words the play row shows (D583).
+ * The deadline is the half the player has to act on, so every such row says it.
+ */
+const PLAY_FROM_EXILE_UNTIL: Readonly<Record<
+  NonNullable<CardInstance['playFromExile']>['through'], string
+>> = {
+  'this-turn': 'this turn only',
+  'your-next-turn': 'until the end of your next turn',
+  'your-next-end-step': 'until your next end step',
+};
 
 /** One thing a player could do, with everything the UI needs to offer it. */
 export interface LegalPlay {
@@ -1064,12 +1076,12 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
   */
   const zones = [
     ...listAt(state, zoneKey(seat, 'hand'))
-      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: false, offered: false })),
+      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: false, impulse: false, offered: false })),
     ...listAt(state, zoneKey(seat, 'command'))
-      .map((id) => ({ id, fromCommand: true, flashback: false, escape: false, foretold: false, fromAdventure: false, offered: false })),
+      .map((id) => ({ id, fromCommand: true, flashback: false, escape: false, foretold: false, fromAdventure: false, impulse: false, offered: false })),
     ...listAt(state, zoneKey(seat, 'graveyard'))
       .filter((id) => scriptForCard(state.cardDefs[state.instances[id]?.defKey ?? ''])?.flashback !== undefined)
-      .map((id) => ({ id, fromCommand: false, flashback: true, escape: false, foretold: false, fromAdventure: false, offered: false })),
+      .map((id) => ({ id, fromCommand: false, flashback: true, escape: false, foretold: false, fromAdventure: false, impulse: false, offered: false })),
     /*
       And the second narrow list over the graveyard: a card with escape (CR 702.139).
 
@@ -1083,7 +1095,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       .filter((id) => scriptForCard(state.cardDefs[state.instances[id]?.defKey ?? ''])?.escape !== undefined)
       .map((id) => ({
         id, fromCommand: false, flashback: false, escape: true, foretold: false,
-        fromAdventure: false, offered: false,
+        fromAdventure: false, impulse: false, offered: false,
       })),
     ...listAt(state, zoneKey(seat, 'exile'))
       .filter((id) => {
@@ -1091,7 +1103,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
         if (inst?.foretoldTurn === undefined || inst.foretoldTurn === state.turn) return false;
         return scriptForCard(state.cardDefs[inst.defKey])?.foretell !== undefined;
       })
-      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: true, fromAdventure: false, offered: false })),
+      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: true, fromAdventure: false, impulse: false, offered: false })),
     /*
       And the fifth: a creature in exile whose adventure resolved (CR 708).
 
@@ -1103,7 +1115,20 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     */
     ...listAt(state, zoneKey(seat, 'exile'))
       .filter((id) => state.instances[id]?.onAdventure === true)
-      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: true, offered: false })),
+      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: true, impulse: false, offered: false })),
+    /*
+      And a card this seat has been told it may play out of exile until a deadline (D583) —
+      "Exile the top card of your library. You may play that card this turn."
+
+      A third narrow list over the zone, told apart by its own field for the reason the other two
+      are. Unlike them it is a **play**: the loop below offers a land in this list as the turn's
+      land drop, at the same timing and against the same count as a land in hand. A spell is cast
+      for what is printed on it and at its ordinary timing, which is why nothing below treats this
+      entry as a different cost — only as a different place.
+    */
+    ...listAt(state, zoneKey(seat, 'exile'))
+      .filter((id) => state.instances[id]?.playFromExile?.by === seat)
+      .map((id) => ({ id, fromCommand: false, flashback: false, escape: false, foretold: false, fromAdventure: false, impulse: true, offered: false })),
     /*
       And the sixth: the one card somebody has been told they may cast for nothing (CR 702.85a).
 
@@ -1116,7 +1141,7 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
     ...(state.pendingOfferedCast !== null && state.pendingOfferedCast.seat === seat
       ? [{
           id: state.pendingOfferedCast.card, fromCommand: false, flashback: false, escape: false,
-          foretold: false, fromAdventure: false, offered: true,
+          foretold: false, fromAdventure: false, impulse: false, offered: true,
         }]
       : []),
   ];
@@ -1137,9 +1162,17 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
       : [{ ...entry, half: undefined as number | undefined }, ...halves];
   });
 
-  for (const { id, fromCommand, flashback, escape, foretold, fromAdventure, offered, half } of castable) {
+  for (const { id, fromCommand, flashback, escape, foretold, fromAdventure: adventure, impulse, offered, half } of castable) {
     const inst = state.instances[id];
     if (inst === undefined) continue;
+    /*
+      One word below for both ways a card is cast out of exile at its printed cost: back from an
+      adventure, or under a permission to play it (D583). They differ in which faces are offered —
+      settled above, where `castable` is built — and in the label; in every other question this
+      loop asks (no morph, no foretell, no suspend, no alternative cost) they are the same card in
+      the same place, and those are plays the engine makes out of a hand.
+    */
+    const fromAdventure = adventure || impulse;
     if (splitSecond) {
       // Only the hand is worth explaining: a card in a graveyard or in exile is not drawn with a
       // reason beside it, for the same reason none of those zones goes through `why` at all.
@@ -1195,7 +1228,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           // Named as the back of the card when that is what it is, because the player is looking at
           // a Hagra Mauling in their hand and "Play Hagra Broodpit" would otherwise read as a bug.
           description: half === undefined
-            ? `Play ${ch.name}`
+            ? `Play ${ch.name}${impulse
+              ? ` from exile (${PLAY_FROM_EXILE_UNTIL[inst.playFromExile?.through ?? 'this-turn']})`
+              : ''}`
             : `Play ${ch.name} (the back of ${state.cardDefs[inst.defKey]?.name ?? 'this card'})`,
           manaCost: '', targetSpecs: [], candidates: [], isManaAbility: false, sacrificeOptions: [],
           ...(half === undefined ? {} : { half }),
@@ -1601,6 +1636,9 @@ function castablePlays(state: GameState, seat: SeatIndex, sources: ManaSources):
           ? `Cast ${ch.name} from your graveyard (escape ${costShown}, exiling ${script?.escape?.exile ?? 0})`
           : foretold
             ? `Cast ${ch.name} from exile (foretold ${costShown})`
+            : impulse
+              // The deadline is the half the player has to act on, so the row says it.
+              ? `Cast ${ch.name} from exile (${PLAY_FROM_EXILE_UNTIL[inst.playFromExile?.through ?? 'this-turn']})`
             : fromAdventure
               // Named as coming back, because that is the half of the card the player has not
               // seen in play yet and a bare "Cast Merfolk Secretkeeper" from exile reads as a bug.

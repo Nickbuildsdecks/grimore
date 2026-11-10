@@ -1455,6 +1455,35 @@ export function counterUnlessPaid(ctx: EffectContext, cost: string, name: string
   };
 }
 
+/**
+ * Exiles the top `count` cards of `seat`'s library and tells that seat it may **play** them until
+ * the deadline (D583) — "Exile the top card of your library. You may play that card this turn."
+ *
+ * Face up, because the printed effect exiles them face up and the whole table sees what was
+ * turned over. Fewer cards than asked is not an error: a library with one card left gives one.
+ *
+ * What makes them playable is `CardInstance.playFromExile`, which `legalActions` offers and
+ * `castSpell` and `playLand` accept; nothing here casts anything.
+ */
+export function exileTopToPlay(
+  state: GameState, seat: SeatIndex, count: number,
+  through: NonNullable<CardInstance['playFromExile']>['through'],
+): GameState {
+  let next = state;
+  for (let i = 0; i < Math.max(0, count); i++) {
+    const top = listAt(next, zoneKey(seat, 'library'))[0];
+    if (top === undefined) break;
+    const inst = next.instances[top];
+    if (inst === undefined) break;
+    next = relocate(next, inst, 'exile', inst.owner, 'bottom');
+    next = withInstance(next, inst.id, {
+      faceDown: false,
+      playFromExile: { by: seat, grantedTurn: next.turn, through },
+    });
+  }
+  return next;
+}
+
 /** Puts the top `count` cards of a library into its owner's graveyard. */
 export function mill(state: GameState, seat: SeatIndex, count: number): GameState {
   let next = state;

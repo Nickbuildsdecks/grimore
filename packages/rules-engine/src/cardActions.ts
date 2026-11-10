@@ -368,6 +368,11 @@ export function relocate(
       which is what a reanimation spell brings back and what a graveyard-counting cost reads.
     */
     ...(toZone === 'battlefield' || toZone === 'stack' ? {} : { bestowed: undefined }),
+    // And a permission to play this card out of exile ends when it is no longer there (D583):
+    // played, or moved by something else, it is a new object that was never told anything.
+    ...(inst.zone === 'exile' && toZone !== 'exile' && inst.playFromExile !== undefined
+      ? { playFromExile: undefined }
+      : {}),
     revealed: false,
     /*
       A copy stops being a copy when the permanent leaves the battlefield.

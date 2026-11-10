@@ -23277,3 +23277,107 @@ unread effects, with how many of those lines are a card's last unread line:
     it / this deals N damage to <not yet read>           74 lines, 52 last
     look at the top N cards …                            102 lines, 76 last
     it explores                                          18 lines, 18 last
+
+## D583 — Playing a card out of exile until a deadline
+
+"Exile the top card of your library. You may play that card this turn." Red's version of drawing
+a card, and until now a line the compiler left alone: it had no reader, and the engine had nothing
+to read it into. A card in exile was castable only if it had been foretold, or was a creature back
+from its adventure, or was the one card a cascade was offering.
+
+**What the engine has now.** A card in exile can carry a permission: which seat may play it, and
+until when. While it does, it is offered to that seat exactly as a card in hand would be:
+
+- a spell is cast for its printed cost, at its usual time (an instant on anybody's turn, anything
+  else in your own main phase with the stack empty);
+- a **land** is played as the turn's land, counted against the same one-a-turn limit as a land
+  from hand. This is the part neither foretell nor adventure needed, and it is why the wording
+  says "play" and not "cast";
+- a two-faced card is offered as each face, since neither has been cast;
+- nobody else is offered it, and the engine refuses them if they try.
+
+The permission ends at the printed deadline and the card then simply stays in exile. Three
+deadlines are read:
+
+    this turn / until end of turn        gone when that turn's cleanup ends
+    until the end of your next turn      gone at the end of the first turn of yours that
+                                         finishes after the one it was given in
+    until your next end step             gone as your next end step begins
+
+It also ends the moment the card leaves exile for any reason, so a card that was played, or that
+another effect moved, does not carry it along.
+
+**What the compiler reads.** The two sentences are read as a pair or not at all. The second one
+does nothing by itself, and the first one by itself would be a card thrown away, so there is no
+reader for either half. The pair is read wherever it sits in a line: on its own (Reckless
+Impulse), behind a trigger (Abbot of Keral Keep), behind a cost (Dark-Dweller Oracle), or with
+another sentence before or after it.
+
+    legal lines that print the pair with "play":    136, on 132 cards
+    read now:                                        53
+    of those cards, every line now read:             31
+
+Those three figures match lines by their text, with reminder text removed on both sides, which
+is the less reliable of my two ways of counting (see the correction in D582). The totals under
+Measurements come from the standing measure and do not depend on it.
+
+Most of the 83 still unread are held up by something else on the same line: a trigger condition
+that is not read yet ("whenever a modified creature you control attacks"), a mode bullet, a saga
+chapter, a cost. The rest are wordings this increment refuses on purpose, each because it is a
+different permission:
+
+- "you may **cast**" it: a land turned over that way stays in exile, and this permission would
+  let it be played;
+- "without paying its mana cost";
+- "you may play **one of** those cards", or a filtered cast "from among them";
+- "the top **X** cards";
+- the rarer deadlines: until end of combat on your next turn, until your next upkeep, for as
+  long as it remains exiled, for as long as you control something;
+- another player's library.
+
+One limit to name: a card played this way is cast for its printed cost only. An alternative cost
+the card has (evoke, dash, a morph cast face down) is not offered from exile. That is the same
+rule the engine already applies to a creature back from an adventure; the rules allow more.
+
+**The computer opponent.** It scored a card in exile as worth nothing, so a Reckless Impulse
+looked like one card spent and two library cards lost, and it would not have cast it. A card it
+may play from exile now counts as a card in hand. A test has it cast the Impulse, play the land
+it turned over and cast the creature. It cannot see what it will turn over: its own library is
+shuffled out of its sight before it looks ahead, as it has been since #207.
+
+**Food and Blood, corrected.** D582's break run (below) took away the hand-written script for
+each token in turn and no test noticed. The reason is that a card with no script is read from
+its printed text, and the two token definitions carry text the compiler reads whole, so each
+token had two definitions that happened to agree. I deleted the hand-written pair. A Food and a
+Blood are now defined only by their printed text, and the break spec for this increment changes
+that text instead (a Food that gains 2, a Blood with no discard) to check the tests notice.
+
+**Tests.** 50 added. In the engine, 32 on five real cards compiled from their Oracle rows
+(Reckless Impulse, Act on Impulse, Abbot of Keral Keep, Dark-Dweller Oracle, Yasmin Khan) and on
+17 wordings each cast as a spell of its own: what is exiled and how many, each deadline from both
+sides of it, the land drop, the other seat refused in its own main phase with its own mana, an
+adventurer offered as both faces, a library shorter than the count, the permission dropped when
+the card leaves exile, and the bot. In the compiler, 18: the 17 neighbouring wordings above left
+unread, and the pair read behind a trigger and a cost.
+
+    engine tests: 4,015, all passing
+    web tests: 253, all passing
+
+### Measurements
+
+This build against the last one:
+
+    cards with every printed line read:  8,606 → 8,637 of 30,710
+    printed legal lines read:            24,832 → 24,888 of 56,421 (44.1%)
+    cards with a compiled script:        12,850 → 12,892
+
+Pod sweep on D582's build (5b4bd93), seeds 45001–45040: 40 of 40 finished, no throw and no
+stall.
+
+Break run for D582, 16 breaks: 14 caught, 2 not. The two are the Food and Blood registrations
+described above, resolved by removing the duplicate rather than by adding a test for it.
+
+The two older break runs I had queued behind it (D578, 40 breaks; D574–D577, 36 breaks) did not
+run: the machine this session runs on restarted at about 19:20Z, which stopped them and the
+local Postgres and Redis. I restarted the services, ran the gate again from the start on this
+build, and have queued both runs again behind this increment's.

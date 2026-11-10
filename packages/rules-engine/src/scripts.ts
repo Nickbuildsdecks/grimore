@@ -32,7 +32,7 @@ import {
   chosenCards,
   counterSpell, putOnTopOfLibrary,
   counterUnlessPaid, createToken,
-  dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, firstCardTarget,
+  dealDamage, destroy, discardAtRandom, draw, drawLater, exileCard, exileTopToPlay, firstCardTarget,
   firstPlayerTarget,
   chosenOption, ENTERS_COUNTER_OPTION, turnFacts, firstAbilityTarget, dividedAmong, copyAbilityOnStack, copySpellOnStack,
   allowExtraLand, echoSettled, proliferate,
@@ -4321,31 +4321,23 @@ const CLUE: CardScript = {
   }],
 };
 
-/** Food (D582): the Clue's shape with a tap in the cost and life at the end of it. */
-const FOOD: CardScript = {
-  name: 'Food',
-  abilities: [{
-    cost: { mana: '{2}', tap: true, sacrificeSelf: true },
-    description: '{2}, {T}, Sacrifice this token: You gain 3 life.',
-    effect: (c) => gainLife(c.state, c.controller, 3),
-  }],
-};
+/*
+  **Food and Blood have no script here, and that is deliberate** (D583, correcting D582).
 
-/**
- * Blood (D582): a card for a card, and the first token whose cost is paid out of the hand.
- *
- * `discardACard` means the play carries `discardOptions`, so the table asks which card and the bot
- * answers by D580's rule. The token taps and sacrifices itself, so that rule counts it as an
- * ability used once and lets it take a card the bot wanted — which is what a Blood is for.
- */
-const BLOOD: CardScript = {
-  name: 'Blood',
-  abilities: [{
-    cost: { mana: '{1}', tap: true, discardACard: true, sacrificeSelf: true },
-    description: '{1}, {T}, Discard a card, Sacrifice this token: Draw a card.',
-    effect: (c) => drawLater(c.state, c.controller, 1),
-  }],
-};
+  D582 wrote one for each beside the Clue. Its break run then took each registration away and no
+  test noticed — because a card with no entry in the registry is read from its printed text, and
+  `FOOD_TOKEN` and `BLOOD_TOKEN` carry text the compiler reads whole: the same cost, the same
+  effect, the same button. Two definitions of one token that happen to agree are one definition
+  and one place for them to stop agreeing, so the hand-written pair is gone and the printed text
+  is the only thing a Food or a Blood is.
+
+  Blood's cost discards a card, so its play carries `discardOptions`: the table asks which card
+  and the bot answers by D580's rule. The token taps and sacrifices itself, which that rule counts
+  as an ability used once.
+
+  Treasure keeps its script because its five abilities are the five colours of "one mana of any
+  color", which is written out above rather than read; Clue keeps its own as the control for it.
+*/
 
 // ── Exile until this leaves the battlefield ──────────────────────────────────────────────────────
 
@@ -10361,7 +10353,7 @@ const ALL: readonly CardScript[] = [
   BURST_LIGHTNING, BREATH_OF_DARIGAAZ, AGONIZING_DEMISE, BONE_SPLINTERS, VILLAGE_RITES, JUDITH,
   BANISHER_PRIEST, JOURNEY_TO_NOWHERE, BANISHING_LIGHT,
   NATURALIZE, DISENCHANT, BLOSSOMING_DEFENSE, DIVE_DOWN, JUGGERNAUT, DISRUPT_DECORUM, KALITAS,
-  SOL_RING, MIND_STONE, BIRDS_OF_PARADISE, TREASURE, CLUE, FOOD, BLOOD,
+  SOL_RING, MIND_STONE, BIRDS_OF_PARADISE, TREASURE, CLUE,
   THRABEN_INSPECTOR, PIRATES_PRIZE, LOTUS_PETAL,
   DAY_OF_JUDGMENT, ESSENCE_SCATTER, UNSUMMON, ICY_MANIPULATOR, TORMODS_CRYPT,
   AMBUSH_VIPER, ELVISH_VISIONARY, READ_THE_BONES,
@@ -19879,6 +19871,66 @@ function stealPrefix(
  *
  * Each is left unread rather than approximated, and each is a distinct increment.
  */
+/**
+ * "Exile the top card of your library. You may play that card this turn." — two printed sentences
+ * read as the one effect they are (D583).
+ *
+ * **Why a pair and not two clauses.** The second sentence is not an effect: it does nothing when it
+ * resolves and is a fact about the card the first one moved. Read alone, the first sentence would
+ * be a card thrown away, which is the opposite of what the line is for — so neither half has a
+ * clause reader and the pair is read here or not at all. Read inside `composeEffects`'s loop
+ * rather than off the front of it because the pair is as often the tail of a line as the head.
+ *
+ * **What is read**, from the wordings the legal corpus prints:
+ *
+ *     Exile the top card of your library. You may play that card this turn.
+ *     Exile the top card of your library. You may play it this turn.
+ *     Exile the top card of your library. Until end of turn, you may play that card.
+ *     Exile the top two cards of your library. You may play those cards this turn.
+ *     Exile the top three cards of your library. You may play them this turn.
+ *     Exile the top card of your library. Until the end of your next turn, you may play that card.
+ *     Exile the top card of your library. You may play it until the end of your next turn.
+ *     … Until end of turn, you may play cards exiled this way.
+ *     Exile the top card of your library. Until your next end step, you may play that card.
+ *
+ * The count is a printed number word; the pronoun is whichever of the five the printing chose and
+ * is not checked against the count, because the two never disagree in print and a mismatch would
+ * change nothing about what the engine does.
+ *
+ * **What is refused, each for a reason that is a different card:**
+ *
+ * - "you may **cast**" in place of "play" — a land exiled that way stays in exile, and the
+ *   permission this sets would let it be played.
+ * - "without paying its mana cost", "from among them", "one of those cards" — a free cast, a
+ *   filtered choice and a choice of one, none of which `playFromExile` expresses.
+ * - "until end of combat on your next turn", "until the beginning of your next upkeep", "for as
+ *   long as it remains exiled", "for as long as you control …" — deadlines the field has no
+ *   value for.
+ * - "the top X cards" — an X chosen as the spell is cast, which is kept to `xSpellResolution`.
+ * - "of **their** library", "target opponent's library" — another seat's cards, played with mana
+ *   of any type on most printings; a different permission.
+ */
+const IMPULSE_PLAY = [
+  [/^you may play (?:that card|it|those cards|them|cards exiled this way) this turn$/i, 'this-turn'],
+  [/^until end of turn, you may play (?:that card|it|those cards|them|cards exiled this way)$/i, 'this-turn'],
+  [/^you may play (?:that card|it|those cards|them|cards exiled this way) until end of turn$/i, 'this-turn'],
+  [/^until the end of your next turn, you may play (?:that card|it|those cards|them|cards exiled this way)$/i, 'your-next-turn'],
+  [/^you may play (?:that card|it|those cards|them|cards exiled this way) until the end of your next turn$/i, 'your-next-turn'],
+  [/^until your next end step, you may play (?:that card|it|those cards|them|cards exiled this way)$/i, 'your-next-end-step'],
+  [/^you may play (?:that card|it|those cards|them|cards exiled this way) until your next end step$/i, 'your-next-end-step'],
+] as const;
+
+function impulseDraw(first: string, second: string | undefined): ReadEffect | null {
+  if (second === undefined) return null;
+  const exiled = /^exile the top (card|([a-z]+) cards) of your library$/i.exec(first.trim());
+  if (exiled === null) return null;
+  const count = exiled[2] === undefined ? 1 : WORD_NUMBERS[exiled[2].toLowerCase()];
+  if (count === undefined || count < 1) return null;
+  const through = IMPULSE_PLAY.find(([shape]) => shape.test(second.trim()))?.[1];
+  if (through === undefined) return null;
+  return { effect: (c) => exileTopToPlay(c.state, c.controller, count, through) };
+}
+
 function chosenDiscardPrefix(
   clauses: readonly string[],
 ): { readonly read: ReadEffect; readonly rest: readonly string[] } | null {
@@ -20122,7 +20174,11 @@ function composeEffects(
   // Whether any clause borrowed a **possessive** referent, which needs the derived seat computed
   // before the parts run. See `EffectContext.referentSeat`.
   let possessive = false;
-  for (const clause of rest) {
+  for (let at = 0; at < rest.length; at++) {
+    const clause = rest[at]!;
+    // Two sentences that are one effect, wherever in the sequence they sit (D583).
+    const impulse = impulseDraw(clause, rest[at + 1]);
+    if (impulse !== null) { parts.push(impulse); at++; continue; }
     /*
       **A clause may refer back to the target an earlier clause in this same resolution chose**
       (D530) — "Put a +1/+1 counter on target creature. That creature gains reach until end of

@@ -784,6 +784,25 @@ function onEnterStep(state: GameState, step: Step): GameState {
 
     case 'end': {
       /*
+        "Until your next end step, you may play that card" stops here (D583): the permission lasts
+        *until* the step, so it is gone as the step begins and before anything in it can be done.
+
+        Every such permission this seat holds, with no turn compared — one given earlier this turn
+        ends now, and one given later in this same step is given after this line has run and so
+        waits for the next end step, which is what "next" means from inside one.
+      */
+      {
+        const instances = { ...next.instances };
+        let changed = false;
+        for (const [id, inst] of Object.entries(instances)) {
+          const may = inst.playFromExile;
+          if (may === undefined || may.through !== 'your-next-end-step' || may.by !== next.activeSeat) continue;
+          instances[id] = { ...inst, playFromExile: undefined };
+          changed = true;
+        }
+        if (changed) next = { ...next, instances };
+      }
+      /*
         The monarch draws a card at the beginning of their own end step (CR 720.4).
 
         A turn-based action here rather than a triggered ability on the stack, which is a
@@ -871,6 +890,20 @@ export function endTurnCleanup(state: GameState): GameState {
       delete counters['deathtouched'];
       delete counters[REGENERATION];
       instances[id] = { ...inst, damage: 0, counters };
+    }
+    /*
+      And a permission to play a card out of exile runs out with the turn (D583).
+
+      "This turn" is this cleanup whoever's turn it is. "Until the end of your next turn" is the
+      cleanup of a turn that belongs to the seat that was told **and** is later than the turn the
+      permission was given in — the second half is what keeps a permission given in your own turn
+      alive through that turn's cleanup.
+    */
+    const may = inst.playFromExile;
+    if (may !== undefined && (may.through === 'this-turn'
+      || (may.through === 'your-next-turn' && state.activeSeat === may.by
+        && state.turn > may.grantedTurn))) {
+      instances[id] = { ...(instances[id] ?? inst), playFromExile: undefined };
     }
   }
   next = { ...next, instances };

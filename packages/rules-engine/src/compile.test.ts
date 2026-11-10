@@ -18002,3 +18002,70 @@ describe('sacrifice as an event: every printed combination of the three slots (D
     expect(got.unread.map((u) => u.line)).toEqual([line]);
   });
 });
+
+describe('playing a card out of exile: what the reader takes and what it leaves (D583)', () => {
+  /*
+    The two sentences are read as a pair or not at all, so every refusal here is the whole line
+    left unread — never the exile read and the permission dropped, which would be a card thrown
+    away. `scripts.test.ts` plays the wordings that are read; these are the neighbours that are not,
+    each a printed shape on a legal card.
+  */
+  const spell = (text: string) => compileCard({
+    name: 'Probe Impulse', type_line: 'Sorcery', mana_cost: '{R}', cmc: 1, colors: ['R'],
+    layout: 'normal', oracle_text: text,
+  } as never);
+
+  it.each([
+    ['a cast, which leaves a land in exile',
+      'Exile the top card of your library. You may cast that card this turn.'],
+    ['a free play, which is a different cost',
+      'Exile the top card of your library. Until end of turn, you may play that card without paying its mana cost.'],
+    ['a free play of several',
+      'Exile the top three cards of your library. You may play them this turn without paying their mana costs.'],
+    ['a choice of one among those exiled',
+      'Exile the top two cards of your library. Until your next end step, you may play one of those cards.'],
+    ['a filtered cast from among them',
+      'Exile the top five cards of your library. You may cast red spells from among them this turn.'],
+    ['a deadline at the end of a combat',
+      'Exile the top card of your library. Until end of combat on your next turn, you may play that card.'],
+    ['a deadline at an upkeep',
+      'Exile the top card of your library. Until the beginning of your next upkeep, you may play that card.'],
+    ['no deadline at all',
+      'Exile the top card of your library. You may play that card for as long as it remains exiled.'],
+    ['a deadline that is another permanent',
+      'Exile the top card of your library. You may play that card for as long as you control Probe Impulse.'],
+    ['a deadline that is the next use',
+      'Exile the top card of your library. You may play that card until you exile another card with Probe Impulse.'],
+    ['a count chosen as the spell is cast',
+      'Exile the top X cards of your library. Until the end of your next turn, you may play those cards.'],
+    ['somebody else\'s library',
+      'Exile the top card of target opponent\'s library. You may play that card this turn.'],
+    ['each player\'s library',
+      'Each player exiles the top card of their library. You may play those cards this turn.'],
+    ['the exile on its own, which would be a card thrown away',
+      'Exile the top card of your library.'],
+    ['the permission on its own, which is about no card',
+      'You may play that card this turn.'],
+    ['the pair the wrong way round',
+      'You may play that card this turn. Exile the top card of your library.'],
+    ['the pair with a sentence between, which the permission no longer follows',
+      'Exile the top card of your library. You gain 2 life. You may play that card this turn.'],
+  ])('leaves %s unread', (_what, text) => {
+    const compiled = spell(text);
+    expect(compiled.ok && compiled.unread.map((u) => u.line)).toEqual([text]);
+  });
+
+  it('reads the pair as the effect of a trigger and of an activated ability', () => {
+    for (const [typeLine, text] of [
+      ['Creature — Goblin', 'When Probe Impulse enters, exile the top card of your library. You may play that card this turn.'],
+      ['Creature — Goblin', 'Whenever Probe Impulse deals combat damage to a player, exile the top card of your library. You may play that card this turn.'],
+      ['Artifact', '{2}, {T}: Exile the top card of your library. You may play it until the end of your next turn.'],
+    ] as const) {
+      const compiled = compileCard({
+        name: 'Probe Impulse', type_line: typeLine, mana_cost: '{1}{R}', cmc: 2, colors: ['R'],
+        power: '2', toughness: '2', layout: 'normal', oracle_text: text,
+      } as never);
+      expect(compiled.ok && compiled.unread.map((u) => u.line), text).toEqual([]);
+    }
+  });
+});

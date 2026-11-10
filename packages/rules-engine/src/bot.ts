@@ -1773,6 +1773,18 @@ function seatValue(state: GameState, seat: SeatIndex, opts: BotOptions = {}): nu
   let total = (state.seats[seat]?.life ?? 0) * (w.life ?? LIFE_WEIGHT);
   total += (state.zones[`${seat}:hand`] ?? []).length * (w.hand ?? CARD_IN_HAND);
   /*
+    And a card in exile this seat may play is a card in hand by another name (D583).
+
+    Without this a Reckless Impulse scores as a card spent and two library cards lost for nothing,
+    and the bot never casts it — the two cards it turned over are worth exactly what two drawn
+    cards would be, for as long as the permission lasts. No discount for a deadline: a permission
+    that runs out is removed from the card, so the next position scored after it has no such card
+    to count.
+  */
+  for (const id of state.zones[`${seat}:exile`] ?? []) {
+    if (state.instances[id]?.playFromExile?.by === seat) total += w.hand ?? CARD_IN_HAND;
+  }
+  /*
     Short-circuited at zero weight, which is both the default and a correctness requirement rather
     than a saving. `canAfford` runs a solver per hand card, so computing it for an arm that then
     multiplies by nothing would make the two arms of a *cost* measurement play identical games at
