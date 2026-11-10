@@ -2525,7 +2525,10 @@ function payWard(state: GameState, action: { by: SeatIndex; pay: boolean }): Out
       data: { ward: pending.source, cost: pending.cost, paid: true, tapped: [...paid.tapped] },
     };
   }
-  next = resetPriority(settle(counterSpell(next, pending.counters), state));
+  next = resetPriority(settle(
+    counterSpell(next, pending.counters, { exile: pending.exileWhenCountered === true }),
+    state,
+  ));
   return {
     state: next,
     message: `${seatName(state, action.by)} does not pay ${pending.cost}: ${spell} is countered by ${warded}'s ward`,

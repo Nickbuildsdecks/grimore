@@ -34660,3 +34660,148 @@ describe('the mixed-sign pump, at the table (D544)', () => {
     expect(toughness(s, troll)).toBe(1);
   });
 });
+
+describe('the counter-exile rider, at the table (D545)', () => {
+  /*
+    The one fact the compile table cannot see: **where the card goes**. A reader that compiled the
+    rider and dropped it would produce a Cancel — a card that works, counters the spell, and is
+    strictly worse than the one printed, because the spell it buried can be cast again.
+
+    Two cards from `customDeck`'s `data`, the same sentence apart, so the pair is the assertion:
+    Dissipate exiles and Cancel buries.
+  */
+  const DATA = [
+    {
+      name: 'Dissipate', type_line: 'Instant', mana_cost: '{1}{U}{U}', cmc: 3,
+      colors: ['U'], layout: 'normal',
+      oracle_text: 'Counter target spell. If that spell is countered this way, exile it instead of '
+        + "putting it into its owner's graveyard.",
+    },
+    /*
+      Cancel's row is here for the deck list's sake and is **not** what the game uses: the pool
+      already holds a hand-written Cancel, so the registry wins. Kept so the entry list below reads
+      as the deck it is, and so `fromData` can assert which of the three came from text.
+    */
+    {
+      name: 'Cancel', type_line: 'Instant', mana_cost: '{1}{U}{U}', cmc: 3,
+      colors: ['U'], layout: 'normal',
+      oracle_text: 'Counter target spell.',
+    },
+    {
+      name: 'Spell Shrivel', type_line: 'Instant', mana_cost: '{2}{U}', cmc: 3,
+      colors: ['U'], layout: 'normal',
+      oracle_text: 'Counter target spell unless its controller pays {4}. If that spell is '
+        + "countered this way, exile it instead of putting it into its owner's graveyard.",
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'exile-counters',
+      name: 'Exile Counters',
+      entries: [
+        { name: 'Dissipate', count: 4 }, { name: 'Cancel', count: 4 },
+        { name: 'Spell Shrivel', count: 4 }, { name: 'Grizzly Bears', count: 8 },
+        { name: 'Island', count: 20 }, { name: 'Forest', count: 20 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    /*
+      **Cancel is not in this list, and that is better than if it were.** It is one of the pool's
+      hand-written cards, so `customDeck` resolves it from the registry and the `data` row above is
+      ignored — which means the discriminating row below compares a *compiled* Dissipate against the
+      engine's own hand-written counterspell rather than against a second compiled card. Asserted
+      rather than worked around, so the day Cancel leaves the pool this says so.
+    */
+    expect(list.fromData.slice().sort()).toEqual(['Dissipate', 'Spell Shrivel'].sort());
+    return list.deck;
+  };
+
+  /** Seat 0 casts a Grizzly Bears; seat 1 holds the answer and has mana up. */
+  const onTheStack = (answer: string): { state: GameState; bears: string } => {
+    // No `tapAllLands`: the lands `arena` places are untapped and `auto:cast` pays from them, and
+    // seat 1 does not hold priority in seat 0's main phase so it could not tap them anyway.
+    let s = advanceTo(arena({
+      decks: { 0: 'exile-counters', 1: 'exile-counters' },
+      deckSpecs: { 'exile-counters': deck() },
+      hands: { 0: ['Grizzly Bears'], 1: [answer] },
+      battlefield: {
+        0: ['Forest', 'Forest'],
+        1: ['Island', 'Island', 'Island', 'Island', 'Island'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grizzly Bears') } as Action);
+    const bears = ids(s, 0, 'stack')[0]!;
+    expect(s.stackOrder).toEqual([bears]);
+    s = apply(s, { type: 'auto:pass', by: 0 } as Action);
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', answer),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action);
+    return { state: s, bears };
+  };
+
+  it('exiles the countered spell instead of burying it', () => {
+    const { state, bears } = onTheStack('Dissipate');
+    const s = drain(state, 60);
+    expect(s.instances[bears]?.zone).toBe('exile');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Grizzly Bears');
+    expect(s.stackOrder).toEqual([]);
+  });
+
+  it('buries it when the rider is not printed, which is the discriminating half', () => {
+    const { state, bears } = onTheStack('Cancel');
+    const s = drain(state, 60);
+    expect(s.instances[bears]?.zone).toBe('graveyard');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Grizzly Bears');
+  });
+
+  it('exiles it when the controller can pay and says no, which is a different branch again', () => {
+    /*
+      **Two branches, and a break run showed the test only covered one.** `settlePayment` has a
+      declining branch for a player who *could* pay and chooses not to, and `automation.ts` has an
+      unaffordable path where nobody is asked at all because there is only one outcome. The flag has
+      to be read in both, and the row below — a controller with no mana left — only exercises the
+      second. So this one gives seat 0 a third Forest it has not spent, which makes the question real,
+      and answers it with `auto:pay { pay: false }`.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'exile-counters', 1: 'exile-counters' },
+      deckSpecs: { 'exile-counters': deck() },
+      hands: { 0: ['Grizzly Bears'], 1: ['Spell Shrivel'] },
+      battlefield: {
+        0: ['Forest', 'Forest', 'Forest', 'Forest', 'Forest', 'Forest'],
+        1: ['Island', 'Island', 'Island', 'Island', 'Island'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+    s = apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Grizzly Bears') } as Action);
+    const bears = ids(s, 0, 'stack')[0]!;
+    s = apply(s, { type: 'auto:pass', by: 0 } as Action);
+    s = apply(s, {
+      type: 'auto:cast', by: 1, card: find(s, 1, 'hand', 'Spell Shrivel'),
+      targets: [{ kind: 'card', id: bears }],
+    } as Action);
+    s = drain(s, 20);
+    // The question is real: four untapped Forests are left, so the engine asked rather than deciding.
+    expect(s.pendingPayment?.seat).toBe(0);
+    s = drain(apply(s, { type: 'auto:pay', by: 0, pay: false } as Action), 60);
+    expect(s.instances[bears]?.zone).toBe('exile');
+  });
+
+  it('exiles it on the unless-paid path too, where nobody is asked at all', () => {
+    /*
+      The half that needed state rather than a context flag: `counterUnlessPaid` puts a question to
+      the spell's controller and the counter happens at `settlePayment`, a different action in a
+      different turn of the reducer. So the rider travels on `pendingPayment`, and this row is what
+      proves it arrived — the bot declines (it cannot pay {4} with no untapped land), and the Bears
+      must be in exile rather than the graveyard.
+    */
+    const { state, bears } = onTheStack('Spell Shrivel');
+    const s = drain(state, 60);
+    expect(s.pendingPayment).toBeNull();
+    expect(s.instances[bears]?.zone).toBe('exile');
+  });
+});

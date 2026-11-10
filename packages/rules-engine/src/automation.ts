@@ -3032,6 +3032,14 @@ function settlePayment(state: GameState): GameState {
       replacements: [...state.replacements, pending.unpaidNote],
     },
     pending.counters,
+    /*
+      And the rider travels here too (D545). **This is the path that matters most**, and the one a
+      test found: nobody is asked when the cost is simply unaffordable, so a Spell Shrivel aimed at
+      a player who has tapped out never reaches `settlePayment`'s declining branch at all. The flag
+      was carried on `pendingPayment` and read in the other place first, and the spell still went to
+      the graveyard — because the common case of the card goes through here.
+    */
+    { exile: pending.exileWhenCountered === true },
   );
 }
 

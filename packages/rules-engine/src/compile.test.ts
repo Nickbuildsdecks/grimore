@@ -16027,3 +16027,101 @@ describe('the single-target pump, opened up (D544)', () => {
     }
   });
 });
+
+describe('the counter-exile rider (D545)', () => {
+  /*
+    `noRegenerationRider`'s sibling, and the second clause this file reads as a modifier on another
+    clause rather than as an effect of its own. Twenty legal cards print it over six different
+    counter sentences, so one flag on the context covers what six readers would have had to.
+
+    What it changes is not cosmetic: a buried spell can be recast from the graveyard, reanimated or
+    dredged back, and exiling it is the whole reason Dissipate costs one more than Cancel.
+  */
+  const row = (text: string): ReturnType<typeof compileCard> => compileCard({
+    name: 'Probe Rite', type_line: 'Instant', mana_cost: '{1}{U}{U}', cmc: 3, colors: ['U'],
+    layout: 'normal', oracle_text: text,
+  });
+  const RIDER = 'If that spell is countered this way, exile it instead of putting it into its '
+    + "owner's graveyard.";
+
+  it.each([
+    ['the plain counter (Dissipate)', `Counter target spell. ${RIDER}`],
+    ['a filtered counter (Deny Existence)', `Counter target creature spell. ${RIDER}`],
+    ['a counter with a cost filter (Liquify)',
+      `Counter target spell with mana value 3 or less. ${RIDER}`],
+    ['the "unless its controller pays" form (Spell Shrivel)',
+      `Counter target spell unless its controller pays {4}. ${RIDER}`],
+    ['"a spell" rather than "that spell" (Defabricate\'s mode)',
+      'Counter target artifact or enchantment spell. If a spell is countered this way, exile it '
+      + "instead of putting it into its owner's graveyard."],
+    /*
+      **The rider in the middle of the chain**, which is where Devious Cover-Up and Spelljack print
+      it and the one place this differs from `noRegenerationRider`. Position cannot matter for a flag
+      set around the whole composition, so the reader finds the rider wherever it stands rather than
+      anchoring to the last clause — and this row is what makes that a rule rather than an accident.
+    */
+    ['the rider with a sentence after it', `Counter target spell. ${RIDER} Draw a card.`],
+    /*
+      And a **tail on the rider's own sentence**, which `clausesOf` splits at ", then " so that the
+      two halves compose: the rider is removed from the chain and "draw a card" stays in it. Here
+      because the refusal row below needs it — it is what shows that the Transcendent Dragon case is
+      refused by its free cast rather than by the rider's pattern.
+    */
+    ['a readable tail after the rider',
+      'Counter target spell. If that spell is countered this way, exile it instead of putting it '
+      + "into its owner's graveyard, then draw a card."],
+  ])('reads %s', (_what, text) => {
+    const read = row(text as string);
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.map((u) => u.line)).toEqual([]);
+  });
+
+  it('refuses the rider with no counter beside it', () => {
+    /*
+      The sibling test, and it is on the **printed word** rather than on the composed reading, for
+      `noRegenerationRider`'s reason. Without it this compiles as a draw with a sentence silently
+      dropped, which is the half-read line D487 is about — and because the test is on the text, a
+      counter sentence this engine cannot read (a cost computed off the board, a cost that is not
+      mana) refuses the whole line instead of having the rider read onto a counter that is not there.
+    */
+    const read = row(`Draw a card. ${RIDER}`);
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ['a condition on the countered spell\'s type (Thranduil\'s Decree)',
+      'Counter target spell. If a permanent spell is countered this way, exile it instead of '
+      + "putting it into its owner's graveyard."],
+    ['the replacement on resolution, not on being countered (Rod of Absorption)',
+      'Counter target spell. Whenever a player casts an instant or sorcery spell, exile it instead '
+      + 'of putting it into a graveyard as it resolves.'],
+    /*
+      **A promise after the comma** (Transcendent Dragon): "… exile it instead of putting it into its
+      owner's graveyard, **then you may cast it without paying its mana cost**." It refuses, and the
+      refusal is right — exiling the spell and silently dropping the permission is the
+      strictly-worse-card failure D487 is about.
+
+      **But it is not the pattern's anchor that refuses it, and a break run proved that.** `clausesOf`
+      splits on ", then ", so the tail is a *separate clause* and the rider's own pattern never sees
+      it: what refuses the line is the free cast having no reader. The row above this one is the
+      evidence — the same shape with a readable tail ("…, then draw a card") compiles, both halves.
+
+      So the `$` on the pattern is belt-and-braces given the splitter, and that is recorded here
+      rather than defended with a break that cannot fail (D533's vacuous four).
+    */
+    ['a promise after the comma (Transcendent Dragon)',
+      "Counter target spell. If that spell is countered this way, exile it instead of putting it "
+      + "into its owner's graveyard, then you may cast it without paying its mana cost."],
+  ])('refuses %s', (_what, text) => {
+    /*
+      Two near-misses, and each would be a wrong card rather than an unread line. "A **permanent**
+      spell" is a condition the flag cannot express, so reading it would exile an instant the card
+      leaves in the graveyard. "As it **resolves**" is a different mechanic — a replacement on a
+      spell finishing — and a counter is not a resolution.
+    */
+    const read = row(text as string);
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.unread.length).toBeGreaterThan(0);
+  });
+});

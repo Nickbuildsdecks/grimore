@@ -17200,7 +17200,11 @@ function targetedEffect(clause: string, name: string): ReadEffect | null {
           out a spec that could fill one, so the branch is unreachable and written for the type.
         */
         effect: (c) => c.targets.reduce(
-          (state, object) => (object.kind === 'player' ? state : counterSpell(state, object.id)),
+          (state, object) => (object.kind === 'player'
+            ? state
+            // `c.exileWhenCountered` is the printed rider on a sibling clause (D545), carried on
+            // the context because it belongs to the resolution rather than to this sentence.
+            : counterSpell(state, object.id, { exile: c.exileWhenCountered === true })),
           c.state,
         ),
       };
@@ -18628,6 +18632,71 @@ function noRegenerationRider(
 }
 
 /**
+ * The wording, which is one sentence with two interchangeable subjects.
+ *
+ * "**That** spell" on nineteen of the twenty printings and "**a** spell" on Defabricate's mode;
+ * they mean the same thing here, because the clause beside them counters exactly one object. The
+ * optional tail is Transcendent Dragon's, which continues ", then you may cast it…" — refused, so
+ * the comma and what follows are deliberately *not* matched.
+ */
+const COUNTER_EXILE =
+  /^if (?:that|a) spell is countered this way, exile it instead of putting it into its owner['’]s graveyard$/i;
+
+/**
+ * A composition containing "If that spell is countered this way, exile it instead …" (D545).
+ *
+ * `noRegenerationRider`'s sibling, and written beside it on purpose: the same shape — a clause that
+ * modifies another clause rather than doing anything itself — answered the same way, with a flag on
+ * `EffectContext` that the effects read. Twenty legal cards print it, over six different counter
+ * sentences (plain, four target filters, and "unless its controller pays {N}"), so one flag covers
+ * what six readers would have had to.
+ *
+ * ## Two differences from the regeneration rider, both deliberate
+ *
+ * **The rider may stand anywhere in the chain, not only last.** Devious Cover-Up and Spelljack print
+ * it second of three, and position cannot matter for a flag that is set around the whole
+ * composition. `noRegenerationRider` anchors to the last clause because that is where every one of
+ * its 134 printings puts it; this one does not need to and so does not pretend to.
+ *
+ * **The sibling test is on the printed word "counter".** Without it, "Draw a card. If that spell is
+ * countered this way, exile it instead …" would compile as a draw with a sentence silently dropped,
+ * which is the half-read line D487 is about. Tested on the text rather than on the composed reading,
+ * for `noRegenerationRider`'s reason: the two counters this engine cannot read — a cost computed off
+ * the board, a cost that is not mana — must refuse the whole line rather than read the rider onto a
+ * counter that is not there.
+ *
+ * ## Refused
+ *
+ * Thranduil's Decree's "If a **permanent** spell is countered this way" — a condition on the
+ * countered spell's own type, which this flag has no way to express and which would silently exile
+ * an instant the card leaves in the graveyard. Rod of Absorption's "exile it instead of putting it
+ * into a graveyard **as it resolves**" is a different mechanic entirely: a replacement on a spell
+ * finishing, not on one being countered.
+ */
+function counterExileRider(
+  clauses: readonly string[], name: string, where: SubjectZone | null,
+): ReadEffect | null {
+  const at = clauses.findIndex(
+    (clause) => COUNTER_EXILE.test(plain(clause).trim().replace(/\.\s*$/, '')),
+  );
+  if (at < 0) return null;
+  const rest = clauses.filter((_, i) => i !== at);
+  if (rest.length === 0) return null;
+  if (!rest.some((clause) => /\bcounter\b/i.test(clause))) return null;
+  const read = composeEffects(rest, name, where);
+  if (read === null) return null;
+  // `beforeDecisions` stays refused, for `noRegenerationRider`'s reason: a half the wrapper cannot
+  // see through is a question moved in front of an effect that was meant to come first.
+  if (read.beforeDecisions !== undefined) return null;
+  const exiling = (fn: EffectFn): EffectFn => (c) => fn({ ...c, exileWhenCountered: true });
+  return {
+    ...read,
+    effect: exiling(read.effect),
+    ...(read.immediate === undefined ? {} : { immediate: exiling(read.immediate) }),
+  };
+}
+
+/**
  * `It has "<ability>"` / `They have "<ability>"` — the ability a token arrives with (D536).
  *
  * The second clause this file reads as a **rider on its sibling** rather than as an effect of its
@@ -18665,6 +18734,10 @@ function composeEffects(
   // refuse: nothing reads "It can't be regenerated" as a clause, and nothing should.
   const rider = noRegenerationRider(clauses, name, where);
   if (rider !== null) return rider;
+  // The same shape on the counter family (D545): "If that spell is countered this way, exile it
+  // instead of putting it into its owner's graveyard."
+  const exiled = counterExileRider(clauses, name, where);
+  if (exiled !== null) return exiled;
   // The same shape, one sentence over: the ability a token arrives with (D536).
   const granted = tokenAbilityRider(clauses, name);
   if (granted !== null) return granted;

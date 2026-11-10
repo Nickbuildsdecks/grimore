@@ -20182,3 +20182,92 @@ This is the sweep that most needed running of the last four. The other three add
 a sign error in it would have had the bot aiming its pumps at the wrong half of the table for 40
 games without throwing anything. Finishing every table with the usual turn and move counts is the
 evidence that the one rule plays like the three branches it replaced.
+
+## D545 — The counter-exile rider, and the path nobody is asked on
+
+**10 cards finished.** `noRegenerationRider`'s sibling, written beside it: the second clause this
+compiler reads as a **modifier on another clause** rather than as an effect of its own.
+
+> Counter target spell. **If that spell is countered this way, exile it instead of putting it into
+> its owner's graveyard.**
+
+Twenty legal cards print it across six different counter sentences — plain, four target filters, and
+"unless its controller pays {N}" — so one flag on `EffectContext` covers what six readers would have
+had to. And what it changes is not cosmetic: a buried spell can be recast from the graveyard,
+reanimated or dredged back, and exiling it is the whole reason Dissipate costs one more than Cancel.
+
+### Two differences from the regeneration rider, both deliberate
+
+**The rider may stand anywhere in the chain.** Devious Cover-Up and Spelljack print it second of
+three, and position cannot matter for a flag set around the whole composition.
+`noRegenerationRider` anchors to the last clause because that is where all 134 of its printings put
+it; this one does not need to, so it does not pretend to, and a compile row with a sentence after the
+rider is what makes that a rule rather than an accident.
+
+**The sibling test is on the printed word "counter".** Without it, "Draw a card. If that spell is
+countered this way, exile it instead …" compiles as a draw with a sentence silently dropped — the
+half-read line D487 is about. On the text rather than on the composed reading, for
+`noRegenerationRider`'s reason: the counters this engine cannot read (a cost computed off the board,
+a cost that is not mana) must refuse the whole line rather than have the rider read onto a counter
+that is not there.
+
+### The option on `counterSpell` is the right shape, and D542 is why that needs saying
+
+D542 **deleted** two options from `dealDamage` for being exactly the wrong shape, so adding one here
+needs its reason written down. The difference is where the fact lives: deathtouch is a characteristic
+of the damage's *source*, so a caller passing it was a second place for an answer the game already
+held. Whether a countered spell is exiled is a fact about the **countering card's printed text** and
+about nothing else on the table — there is nothing in the game state to read it off.
+
+### The path nobody is asked on, which a test found
+
+The flag has to be read in **three** places, and the third is the one that matters most:
+
+1. the plain counter reader, in `scripts.ts`;
+2. `settlePayment`'s declining branch, for a controller who could pay and says no;
+3. **`automation.ts`'s unaffordable path**, where nobody is asked at all because there is only one
+   outcome.
+
+The flag was carried on `pendingPayment` and read in (1) and (2) first, and the table test still
+found a Spell Shrivel putting the spell in the graveyard — because a Spell Shrivel aimed at somebody
+who has tapped out never reaches (2). That is the common case of the card, and it goes through (3).
+
+Then the **break run found the mirror of the same gap in the tests**: with (3) covered, breaking (2)
+changed nothing, because the only payment row exercised an opponent who could not pay. A second row
+gives them four untapped Forests and answers `auto:pay { pay: false }`, so both branches are now
+asserted. The methodological shape is worth naming: **a question with two answers needs two rows, and
+a cost nobody can afford is a third case rather than one of the two.**
+
+### The break run: 8 of 10, then 9 of 10, and the tenth is vacuous
+
+Breaks 5 (the declining branch) and 10 (the pattern's anchor) came back uncaught. The first was a
+real hole in the tests, closed above and re-verified **CAUGHT**.
+
+The second is **vacuous, and the probe that settled it is worth more than the break**: loosening the
+pattern to accept a tail after "graveyard" changes nothing, because `clausesOf` splits on ", then "
+— so Transcendent Dragon's "…, then you may cast it without paying its mana cost" is a *separate
+clause*, and what refuses that line is the free cast having no reader rather than the rider's
+anchor. Proved rather than argued: the same shape with a readable tail ("…, then draw a card")
+compiles, both halves, and now has a row of its own. The compile test's comment claimed the anchor
+was doing that work and has been corrected.
+
+### Refused
+
+Thranduil's Decree's "If a **permanent** spell is countered this way" — a condition on the countered
+spell's own type, which the flag has no way to express and which would silently exile an instant the
+card leaves in the graveyard. Rod of Absorption's "exile it instead of putting it into a graveyard
+**as it resolves**" — a replacement on a spell finishing, which a counter is not. Syncopate's `{X}`
+cost (D489's standing refusal), Faerie Trickery's subtype target (#341), and No Escape's "target
+creature or planeswalker spell", which is a target phrase the vocabulary does not build yet.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,347 / 56,421 (41.4%) | **23,357 / 56,421 (41.4%)** |
+| cards with a compiled script | 11,962 | **11,971** |
+| cards with every printed line read | 7,708 | **7,718** |
+
+Exactly the ten the one-blocker instrument predicted, which is the first exact call since D538 and a
+useful calibration point: the instrument is accurate when a reader adds a clause and badly under when
+it changes a layer below (D540 by 72, D544 by 60).

@@ -993,6 +993,15 @@ export interface AutomationState {
      * having to know which card asked.
      */
     readonly unpaidNote: string;
+    /**
+     * Exile the countered spell instead of burying it (D545).
+     *
+     * Here rather than worked out at settle time for `counters`' own reason: by the time the answer
+     * arrives the countering spell has left the stack, and nothing else on the table says what its
+     * text promised. Absent means the graveyard, which is the rule (CR 701.5a), so a payment raised
+     * by ward behaves exactly as it did before this existed.
+     */
+    readonly exileWhenCountered?: true;
   } | null;
   /**
    * A card somebody may cast **without paying its mana cost**, and the pile it came out of

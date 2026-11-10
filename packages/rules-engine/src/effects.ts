@@ -60,6 +60,25 @@ export interface EffectContext {
    */
   readonly noRegeneration?: true;
   /**
+   * The countered spell is **exiled** rather than buried (D545).
+   *
+   * `noRegeneration`'s sibling, in every sense: a printed sentence that modifies the clause beside
+   * it rather than doing anything itself — "Counter target spell. If that spell is countered this
+   * way, exile it instead of putting it into its owner's graveyard." Twenty legal cards print it,
+   * and what it changes is not small: a buried spell can be recast from the graveyard, raised by a
+   * reanimator or dredged back, and exiling it is the whole reason Dissipate costs one more than
+   * Cancel.
+   *
+   * On the context because the rider is a fact about the **resolution**: `composeEffects` runs the
+   * parts in order and a later part cannot reach back into an earlier one, so the flag is set
+   * around the whole composition and every counter in it reads it. That covers the plain counter,
+   * the filtered counters, and the "unless its controller pays {N}" form — whose counter happens
+   * later still, at `settlePayment`, so the flag travels on `pendingPayment` from here.
+   *
+   * Absent means the graveyard, which is the rule (CR 701.5a).
+   */
+  readonly exileWhenCountered?: true;
+  /**
    * The seat a **possessive referent** names — "Its controller loses 2 life" — computed once, as
    * the resolution begins (D537).
    *
@@ -1003,7 +1022,19 @@ export function manaValueOnStack(state: GameState, id: string): number {
  * a spell waiting to resolve is just two fields on the state, and routing through the engine would
  * only buy a cycle. An ability has no card, so countering one simply removes it.
  */
-export function counterSpell(state: GameState, id: string): GameState {
+export function counterSpell(
+  state: GameState,
+  id: string,
+  /*
+    **An option the caller must pass, and here that is right** — which is worth saying because D542
+    deleted two options from `dealDamage` for being exactly the wrong shape. The difference is where
+    the fact lives: deathtouch is a characteristic of the damage's *source*, so a caller passing it
+    was a second place for an answer the game already held. Whether a countered spell is exiled is a
+    fact about the **countering card's printed text** and about nothing else on the table — there is
+    nothing here to read it off.
+  */
+  opts: { readonly exile?: boolean } = {},
+): GameState {
   const object = state.stackObjects[id];
   if (object === undefined) return state;
   /*
@@ -1034,6 +1065,13 @@ export function counterSpell(state: GameState, id: string): GameState {
   };
   const inst = next.instances[id];
   if (object.kind !== 'spell' || inst === undefined) return next;
+  /*
+    The rider's half (D545): straight to exile, ahead of `spellLeavesStack`, because every branch in
+    that function is about where a spell goes *by default* and this is a replacement of the default.
+    Flashback already exiles, so the two agree there rather than fighting; an adventure or a buyback
+    spell that is countered never reached its `resolved` branch anyway.
+  */
+  if (opts.exile === true) return relocate(next, inst, 'exile', inst.owner, 'bottom');
   // Exiled rather than buried when it was cast with flashback, countered or not (CR 702.33a).
   return spellLeavesStack(next, object, inst);
 }
@@ -1285,6 +1323,9 @@ export function counterUnlessPaid(ctx: EffectContext, cost: string, name: string
       counters: target.id,
       source: ctx.source,
       unpaidNote: `${name}: ${cost} was not paid — ${object.description} is countered`,
+      // The rider travels with the question (D545): the counter happens at `settlePayment`, which
+      // is a different action in a different turn of the reducer, so the fact has to be in state.
+      ...(ctx.exileWhenCountered === true ? { exileWhenCountered: true as const } : {}),
     },
   };
 }
