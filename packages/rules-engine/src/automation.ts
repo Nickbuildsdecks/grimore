@@ -935,6 +935,21 @@ function triggerMatches(
     case 'life-gained':
       return (want.by ?? 'you') === 'any' || actorSeat === sourceSeat;
     /*
+      A discard or a cycling (D567): whose, asked of the seat that did it.
+
+      `self` on a cycle is the card watching its own cycling and nothing else — `raise` offers the
+      event to the cycled card as its subject, and a permanent on the battlefield is never that.
+      A missing actor refuses rather than passing, except for `any`, which asks nothing of it.
+    */
+    case 'discards':
+    case 'cycles': {
+      if (want.kind === 'cycles' && want.self === true) return isSubject;
+      const by = want.by ?? 'you';
+      if (by === 'any') return true;
+      if (actorSeat === undefined) return false;
+      return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
+    }
+    /*
       "Whenever you attack" — the declaration, which is one event however many creatures were in it.
       `raise` offers it to every permanent on the battlefield, so whose declaration it was is the
       whole of the filter: there is no subject to be, and no size or type to ask about (see the
@@ -1515,7 +1530,9 @@ function raise(
       || event.kind === 'attacks-unblocked' || event.kind === 'to-graveyard'
       || event.kind === 'to-exile'
       // And the two damage events (D566): the permanent that was dealt it, or that dealt it.
-      || event.kind === 'damaged' || event.kind === 'deals-damage')) {
+      || event.kind === 'damaged' || event.kind === 'deals-damage'
+      // And the card that was cycled (D567).
+      || event.kind === 'cycles')) {
     // Which permanent the event was about, so a trigger can say "that creature" rather than only
     // "this creature". The seat and the creature-ness below are *whose* and *what kind*; this is
     // which one. See `EffectContext.subject`.
@@ -1748,6 +1765,15 @@ function raise(
     */
     const lastKnown = event.kind === 'damaged' && id === subject;
     /*
+      And the seventh: a card watching its own cycling, from the graveyard the cost put it in (D567).
+
+      Unlike the others it was never on the battlefield at all — it went from a hand to a graveyard
+      — so this is the stack's arrangement rather than the graveyard's: the card is offered the
+      event as its own subject, and `fireTrigger` lets it answer with its `self` cycle trigger and
+      nothing else. Wherever the card is by now: madness may have sent the discard to exile.
+    */
+    const ownCycle = event.kind === 'cycles' && id === subject && inst.zone !== 'battlefield';
+    /*
       And the fourth zone a trigger fires from: the stack, for a spell watching its own cast.
 
       `zone` is checked rather than assumed, because a cast trigger is raised while the card is on
@@ -1755,7 +1781,7 @@ function raise(
       `spell-cast` trigger and the watcher list above.
     */
     const fromStack = event.kind === 'spell-cast' && id === subject && inst.zone === 'stack';
-    if (!fromGraveyard && !fromStack && !lastKnown && inst.zone !== 'battlefield') continue;
+    if (!fromGraveyard && !fromStack && !lastKnown && !ownCycle && inst.zone !== 'battlefield') continue;
     // From the instance resolved above rather than by id, so a vanished token's own script is
     // still found: `scriptOf` reads `instances`, and a token that ceased to exist is not in it.
     /*
@@ -1781,8 +1807,13 @@ function raise(
       triggers of one permanent go on the stack in is the controller's to choose anyway (CR 603.3b).
     */
     for (const [i, trigger] of (script?.triggers ?? []).entries()) {
+      // A card that was cycled answers for its own cycling and for nothing else printed on it
+      // (D567): a Drannith Healer in a graveyard does not gain life for the next card cycled.
+      if (ownCycle && !(trigger.on.kind === 'cycles' && trigger.on.self === true)) continue;
       next = fireTrigger(next, trigger, id, inst, i, event, actor, subject, fromStack);
     }
+    // And nothing grants an ability to a card in a graveyard.
+    if (ownCycle) continue;
     /*
       And the granted ones. `grantedTriggersOn` answers "which, in what order, and with layer 6
       applied"; the definition itself is looked up by card name, which is what makes the effect
@@ -2668,7 +2699,7 @@ function settle(state: GameState, before: GameState): GameState {
     pass < 32 && (next.died.length > 0 || next.entered.length > 0 || next.left.length > 0
       || next.dealtCombatDamage.length > 0 || next.drew.length > 0
       || next.toGraveyard.length > 0 || (next.exiled ?? []).length > 0
-      || (next.damageDealt ?? []).length > 0);
+      || (next.damageDealt ?? []).length > 0 || (next.cycled ?? []).length > 0);
     pass++
   ) {
     /*
@@ -2713,6 +2744,10 @@ function settle(state: GameState, before: GameState): GameState {
     const connected = next.dealtCombatDamage;
     // Every landing of damage, combat or not, on a player or a permanent (D566).
     const landed = next.damageDealt ?? [];
+    // Cards discarded, and the ones among them that were cycled (D567). `thrown` is read here and
+    // not below because the list is emptied a few lines down, after madness has asked about it.
+    const thrown = next.discarded;
+    const cycledNow = next.cycled ?? [];
     const drawn = next.drew;
     /*
       A card whose *death* was replaced did not reach a graveyard either, so the narrow pass can
@@ -2755,7 +2790,7 @@ function settle(state: GameState, before: GameState): GameState {
     next = {
       ...next,
       died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [], exiled: [],
-      copied: [], transformed: [], detached: {}, damageDealt: [],
+      copied: [], transformed: [], detached: {}, damageDealt: [], cycled: [],
       // Drained here with the rest, and *after* the replacement passes above have read it: a
       // discard is a fact about a move that has already happened, and madness is the one thing
       // that asks about it.
@@ -2875,6 +2910,21 @@ function settle(state: GameState, before: GameState): GameState {
     // `draw(2)` from the second by the time either trigger is matched. See the `draws` event's
     // `onNth`, and miracle's note below, which found the same thing first.
     for (const { seat, nth } of drawn) next = raise(next, { kind: 'draws', nth }, seat);
+    /*
+      Discards, and then cycling, which is a discard that was also something more (D567).
+
+      One event per card. The actor is the seat whose hand it left — the card's owner, since a hand
+      holds only its owner's cards — read off the instance because a discard has no other record of
+      who made it. A card whose discard madness replaced is in exile rather than a graveyard and is
+      still here: it was discarded.
+
+      `cycles` carries the card as its subject, for the one trigger that is about the card itself.
+    */
+    for (const id of thrown) {
+      const owner = next.instances[id]?.owner;
+      if (owner !== undefined) next = raise(next, { kind: 'discards' }, owner);
+    }
+    for (const { card, seat } of cycledNow) next = raise(next, { kind: 'cycles' }, seat, card);
     /*
       And miracle, which is not a trigger at all — it is an offer, on the card that was drawn.
 

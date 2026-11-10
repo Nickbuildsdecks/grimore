@@ -911,6 +911,16 @@ export interface AutomationState {
    */
   readonly discarded: readonly string[];
   /**
+   * Cards **cycled** since the last `settle`, with the seat that cycled each (D567).
+   *
+   * A cycled card is in `discarded` too — cycling's cost is a discard (CR 702.29a) — and that list
+   * cannot say which discards were cycling: "whenever you **cycle** a card" must not fire for a
+   * Mind Rot. The activation that pays a cycling cost is the one place that knows, so it writes
+   * the pair here as the cost is paid and `settle` raises the event. Optional so a game saved
+   * before D567 still loads.
+   */
+  readonly cycled?: readonly { readonly card: string; readonly seat: SeatIndex }[];
+  /**
    * Permanents that have arrived on the battlefield and whose entry nobody has announced yet.
    * Drained by `settle` alongside `died`.
    *

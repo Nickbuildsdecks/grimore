@@ -1663,6 +1663,11 @@ function activate(
   // on the stack (CR 702.29a) — which is why a cycling land can be cycled and then returned from
   // the graveyard by something else before the draw has even happened.
   if (ability.cost.discardSelf) next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');
+  // And if that discard was cycling, say so (D567): the `discarded` list cannot tell a cycled card
+  // from one thrown away by a Mind Rot, and "whenever you cycle a card" has to. See `cycled`.
+  if (ability.cost.discardSelf && ability.cycling === true) {
+    next = { ...next, cycled: [...(next.cycled ?? []), { card: inst.id, seat: action.by }] };
+  }
   /*
     Embalm's cost, paid the same way and for a sharper reason: exiling the card as the ability is
     activated is what stops the same card being embalmed twice while the first ability is still on

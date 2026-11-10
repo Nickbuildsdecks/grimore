@@ -39507,3 +39507,83 @@ and whenever you fully unlock a room` (10, eerie — half of it is Rooms, which 
 have), `you cycle or discard a card` (10), `you cast a historic spell` (9), `a creature you
 control attacks alone` (9), `you cast an instant or sorcery spell that targets a creature` (8),
 `you expend N` (7), `~ becomes untapped` (6).
+
+## D567 — Discarding and cycling as events; and what the cleanup step does not do
+
+The next rows of the queue D565 built. Three families in one increment, because two of them
+needed almost nothing:
+
+| event | printed | triggers | on fully read cards |
+| --- | --- | --- | --- |
+| `discards`, by you | Whenever you [cycle or] discard a/another card | 20 | 16 |
+| `discards`, by an opponent | Whenever an opponent discards a card | 8 | 6 |
+| `discards`, by anyone | Whenever a player discards a card | 1 | 1 |
+| `cycles`, by you | Whenever you cycle a/another card | 6 | 5 |
+| `cycles`, by anyone | Whenever a player cycles a card | 4 | 4 |
+| `cycles`, `self` | When you cycle ~ [or it dies] | 11 | 8 |
+| `attacks`, `alone` | Whenever ~ / a creature you control attacks alone | 11 | 9 |
+
+    printed legal lines read:            24,165 → 24,229 of 56,421 (42.9%)
+    cards with a compiled script:        12,412 → 12,452
+    cards with every printed line read:   8,206 → 8,258
+
+**Discards needed no new record.** `relocate` has kept a `discarded` list since madness (#171),
+because a card going from a hand to a graveyard cannot be told from a milled one afterwards.
+`settle` now raises one event per card in it, with the discarding seat as the actor. A card whose
+discard madness replaced is still in the list, and was still discarded.
+
+**"Cycle or discard" is one event.** Cycling's cost is a discard, and the ruling printed with Drake
+Haven is that the ability triggers once for a cycled card. So that prologue is the discard row with
+two more words in it, and there is a row proving a cycled land pumps Hekma Sentinels once.
+
+**Cycling needed a flag, in three places.** "Whenever you cycle a card" must not fire for a Mind
+Rot, and it must not fire for a card that discards itself for some other effect — `discardSelf` is
+also how channel is paid. So `AbilityDef` gained `cycling`, the activation that pays such a cost
+writes the card into a new `cycled` list, and `settle` raises `cycles` from it. The flag had to be
+set where a cycling ability is *built*, and there were three builders: the hand-written cycling
+land, the keyword reader, and — found by the compiled-against-written check, not by me — the land
+derivation in `fromCardData`, which builds its own. Without the third, a Barren Moor read from
+printed data was discarded and never cycled.
+
+**A card watches its own cycling from the graveyard.** "When you cycle Krosan Tusker, …" is an
+ability of a card that went from a hand to a graveyard and was never on the battlefield. The
+watcher loop gained its seventh exception, shaped like the stack's rather than the graveyard's: the
+cycled card is offered the event as its own subject and may answer with its `self` cycle trigger
+**and nothing else**. The row that pins it is a Drannith Healer ("whenever you cycle *another*
+card") cycled with no Healer in play: it gains nothing, because a card in a graveyard is not
+watching.
+
+**"Attacks alone"** has been on the `attacks` event since exalted. Two table rows.
+
+### What it found: the cleanup step has no priority round
+
+A discard to hand size happens in the cleanup step. The engine ends the turn and then announces
+the discard, so "whenever an opponent discards a card" goes on the stack in the **next** turn and
+resolves in its upkeep. Megrim's damage lands a step late, which hardly matters; an "until end of
+turn" pump from the same discard lasts through the opponent's whole turn, which does.
+
+The rule is CR 514.3a: if anything triggers during cleanup, the players get priority in that
+cleanup step and another cleanup step follows. The engine has never done this — its note on step
+triggers says a trigger in a step without priority "waits for the next step that grants it", which
+is the rule for the untap step and not for this one. It was unreachable in practice until a
+printed line watched discards.
+
+Not fixed here: it changes when madness is offered at cleanup and puts the bot in a step it has
+never held priority in, and it wants its own increment and its own sweep. **Task #407**, next. The
+row "fires for a discard to hand size in the cleanup step" asserts today's behaviour by name, so
+the fix has to change it.
+
+### Break harness for D564 and D565: 35 of 36
+
+Thirty-six breaks in 64 minutes. One uncaught: with the owner check deleted from "you control
+your commander", every row still passed — none of them put **somebody else's** commander on your
+side of the table. A stolen commander is a commander you control and is not yours. Row added; it
+fails with the break applied.
+
+D566's pod sweep (SEED0=43601): 40 of 40 to a finish, no throw, no stall, in 4m53s — the new
+per-damage events cost nothing visible.
+
+Tests: 22 runtime rows on nine printed cards (each event for the seat it names and not the other;
+a cycled card as one discard; a discard that is not cycling; a card that discards itself without
+cycling; the cycled card answering only for itself; alone and in company), 20 compile rows.
+Engine suite: 3,793.

@@ -972,6 +972,39 @@ export type TriggerEvent =
     }
   | { readonly kind: 'life-gained'; readonly by?: 'you' | 'any' }
   /**
+   * "Whenever you **discard** a card" — and "whenever you **cycle or discard** a card", which is
+   * the same event (D567).
+   *
+   * One event per card discarded, from a hand to a graveyard, whoever or whatever caused it: an
+   * opponent's Mind Rot, your own looter, a cost. A card whose discard was replaced by madness was
+   * still discarded (CR 702.35a replaces where it goes, not whether it happened), and it is in the
+   * same list. Raised from `AutomationState.discarded`, with the discarding seat as the actor, so
+   * `by` is answered the way `life-gained` and `draws` answer theirs.
+   *
+   * "Cycle or discard" needs no second event because cycling **is** discarding: the printed ruling
+   * on Drake Haven is that the ability triggers once when you cycle a card, not twice.
+   */
+  | { readonly kind: 'discards'; readonly by?: 'you' | 'opponent' | 'any' }
+  /**
+   * "Whenever you **cycle** a card", and a card's own "when you cycle this card" (D567).
+   *
+   * Narrower than `discards`: only a discard that paid a cycling cost. The activation records it
+   * (`AutomationState.cycled`) because nothing else can tell a cycled card from a discarded one.
+   *
+   * `self` is the card watching its **own** cycling — Decree of Silence's "When you cycle ~, you
+   * may counter target spell" — and it is the second trigger in the engine that fires from a card
+   * that is not on the battlefield and never was: the cycled card is in a graveyard, having gone
+   * there from a hand. `raise` offers the event to it for exactly that trigger and no other, the
+   * way a spell on the stack is offered its own cast.
+   */
+  | {
+      readonly kind: 'cycles';
+      readonly by?: 'you' | 'opponent' | 'any';
+      readonly self?: boolean;
+      /** Set by the engine: which card was cycled. */
+      readonly subject?: string;
+    }
+  /**
    * "Whenever you draw a card" (CR 121.2), and the opponents' half of it.
    *
    * One event per card, so "draw three cards" fires it three times. `by` works the way it does on
@@ -1835,6 +1868,15 @@ export interface AbilityCost {
 export interface AbilityDef {
   readonly cost: AbilityCost;
   readonly description: string;
+  /**
+   * This ability is **cycling** (CR 702.29), which is more than its cost says (D567).
+   *
+   * `discardSelf` is how cycling is paid for, and it is also how channel and bloodrush are: a card
+   * that discards itself for an effect has not been cycled, and "whenever you cycle a card" must
+   * not fire for it. So the keyword says so here, and activating an ability carrying this is what
+   * records the card in `AutomationState.cycled`.
+   */
+  readonly cycling?: true;
   readonly targets?: readonly TargetSpec[];
   /**
    * A mana ability. It produces these types, resolves immediately and never uses the stack

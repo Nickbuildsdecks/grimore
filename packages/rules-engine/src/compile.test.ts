@@ -17505,3 +17505,68 @@ describe('damage as an event: the five prologues (D566)', () => {
     expect(got.unread.map((u) => u.line)).toEqual([line]);
   });
 });
+
+describe('discarding and cycling as events, and attacking alone (D567)', () => {
+  const card = (text: string, type = 'Creature — Human Cleric') => {
+    const got = compileCard({
+      name: 'Drannith Healer', type_line: type, mana_cost: '{1}{W}', cmc: 2, colors: ['W'],
+      ...(type.startsWith('Creature') ? { power: '2', toughness: '2' } : {}),
+      layout: 'normal', oracle_text: text,
+    });
+    expect(got.ok).toBe(true);
+    if (!got.ok) throw new Error('refused');
+    return got;
+  };
+
+  it.each([
+    ['Whenever you discard a card, you gain 1 life.', [{ kind: 'discards', by: 'you' }]],
+    ['Whenever you cycle or discard a card, you gain 1 life.', [{ kind: 'discards', by: 'you' }]],
+    ['Whenever you cycle or discard another card, you gain 1 life.', [{ kind: 'discards', by: 'you' }]],
+    ['Whenever an opponent discards a card, that player loses 2 life.', [{ kind: 'discards', by: 'opponent' }]],
+    ['Whenever a player discards a card, you gain 1 life.', [{ kind: 'discards', by: 'any' }]],
+    ['Whenever you cycle a card, you gain 1 life.', [{ kind: 'cycles', by: 'you' }]],
+    ['Whenever you cycle another card, you gain 1 life.', [{ kind: 'cycles', by: 'you' }]],
+    ['Whenever a player cycles a card, you gain 1 life.', [{ kind: 'cycles', by: 'any' }]],
+    ['When you cycle Drannith Healer, you gain 1 life.', [{ kind: 'cycles', self: true }]],
+    ['When you cycle this card, you gain 1 life.', [{ kind: 'cycles', self: true }]],
+    ['When you cycle Drannith Healer or it dies, you gain 1 life.',
+      [{ kind: 'cycles', self: true }, { kind: 'dies' }]],
+    ['Whenever Drannith Healer attacks alone, it gets +3/+0 until end of turn.',
+      [{ kind: 'attacks', alone: true }]],
+    ['Whenever a creature you control attacks alone, put a +1/+1 counter on it.',
+      [{ kind: 'attacks', who: 'any', of: 'you', alone: true }]],
+  ])('reads %s', (text, events) => {
+    const got = card(text);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script!.triggers!.map((t) => t.on)).toEqual(events);
+  });
+
+  it('marks the Cycling keyword\'s ability as cycling, which its cost alone does not say', () => {
+    const got = card('Cycling {1} ({1}, Discard this card: Draw a card.)');
+    expect(got.unread).toEqual([]);
+    expect(got.script!.abilities).toHaveLength(1);
+    expect(got.script!.abilities![0]!.cost.discardSelf).toBe(true);
+    expect(got.script!.abilities![0]!.cycling).toBe(true);
+  });
+
+  it('and does not mark an ability that merely discards its own card', () => {
+    const got = card('{1}{R}, Discard this card: You gain 2 life.');
+    expect(got.unread).toEqual([]);
+    expect(got.script!.abilities![0]!.cost.discardSelf).toBe(true);
+    expect(got.script!.abilities![0]!.cycling).toBeUndefined();
+  });
+
+  it.each([
+    ['a discard narrowed by card type', 'Whenever you discard a creature card, you gain 1 life.'],
+    ['a batched discard', 'Whenever you discard one or more cards, you gain 1 life.'],
+    ['a discard somebody else caused',
+      'When a spell or ability an opponent controls causes you to discard Drannith Healer, you gain 1 life.'],
+    ['a first-cycle-each-turn restriction',
+      'Whenever you cycle another card for the first time each turn, you gain 1 life.'],
+    ['a tribe attacking alone', 'Whenever a Samurai or Warrior you control attacks alone, you gain 1 life.'],
+  ])('leaves %s unread', (_what, line) => {
+    const got = card(line);
+    expect(got.script?.triggers ?? []).toEqual([]);
+    expect(got.unread.map((u) => u.line)).toEqual([line]);
+  });
+});

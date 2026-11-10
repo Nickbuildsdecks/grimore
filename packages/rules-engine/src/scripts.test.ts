@@ -7613,6 +7613,24 @@ describe('deck coverage', () => {
         does not, the hit that kills it still draws, two blockers are one event, a Fogged combat is
         none, a ping the Fungusaur survives is a counter, and the damage that kills it leaves no
         counter on the card in the graveyard.
+
+      **And two more** (D567):
+
+      - `trigger discards`: "whenever you discard a card", "whenever you cycle or discard a card",
+        "whenever an opponent discards a card" — **29 legal cards** the compiler reads it for
+        (Megrim, Liliana's Caress, Drake Haven, Archfiend of Ifnir and 25 more). The pool has the
+        cards that *cause* a discard — Mind Rot, Faithless Looting, five cycling lands — and none
+        that watches one, and D442 forbids adding a Megrim to a measured deck to satisfy this.
+      - `trigger cycles`: "whenever you cycle a card", "whenever a player cycles a card" and a
+        card's own "when you cycle this card" — **21 legal cards** (Drannith Healer, Lightning
+        Rift, Krosan Tusker, the three Sojourners and 15 more). The same absence.
+
+        Both driven at runtime by eighteen tests in "discarding and cycling as events (D567)", on
+        nine printed cards compiled from corpus rows, with the pool's own Mind Rot, Faithless
+        Looting and Barren Moor doing the discarding: each event for the seat it names and not the
+        other, a cycled card as one discard and not two, a discard that is not cycling, a card that
+        discards itself without cycling, and a cycled card answering from the graveyard for its own
+        trigger and no other.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7623,6 +7641,7 @@ describe('deck coverage', () => {
       'script entersChoice',
       'script kickedEntersWith',
       'trigger damaged',
+      'trigger discards', 'trigger cycles',
     ]);
 
     const declared = [
@@ -37884,6 +37903,11 @@ describe('conditions about a player and the board, asked directly (D564)', () =>
     expect(ask(clause, withInstance(s, mine, { isCommander: true, zone: 'command' }))).toBe(false);
     // Yours, on the battlefield, under an opponent's control.
     expect(ask(clause, withInstance(s, mine, { isCommander: true, zoneSeat: 1 }))).toBe(false);
+    // And the mirror of that: an opponent's commander you have stolen. You control *a* commander
+    // and it is not yours. The break harness found this row missing — with the owner check deleted
+    // every line above still passed, because none of them put somebody else's commander on your
+    // side of the table.
+    expect(ask(clause, withInstance(s, theirs, { isCommander: true, zoneSeat: 0 }))).toBe(false);
   });
 
   it.each([
@@ -38439,6 +38463,374 @@ describe('damage as an event: is dealt damage, deals damage to an opponent, deal
       s = drain(advanceTo(s, 'postcombat-main'));
       expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
       expect(plusOnes(s, vampire)).toBe(1);
+    });
+  });
+});
+
+describe('discarding and cycling as events, and attacking alone (D567)', () => {
+  /*
+    "Whenever you cycle or discard a card", "whenever an opponent discards a card", "whenever a
+    player cycles a card", and a card's own "when you cycle this card" — plus the two "attacks
+    alone" prologues, which needed no event at all.
+
+    Every row both ways: the discard that is yours and the one that is not, the discard that is
+    cycling and the one that is only a discard, the attack alone and the attack in company.
+
+    Nine printed cards compiled from corpus rows; Mind Rot, Faithless Looting and the cycling land
+    are the pool's own and are what does the discarding. Sureshot Sower is the card that discards
+    itself for an effect that is not cycling.
+  */
+  const DATA = [
+    {
+      name: 'Megrim', type_line: 'Enchantment', mana_cost: '{2}{B}', cmc: 3, colors: ['B'],
+      layout: 'normal',
+      oracle_text: 'Whenever an opponent discards a card, Megrim deals 2 damage to that player.',
+    },
+    {
+      name: 'Hekma Sentinels', type_line: 'Creature — Human Cleric', mana_cost: '{2}{U}', cmc: 3,
+      colors: ['U'], power: '2', toughness: '3', layout: 'normal',
+      oracle_text: 'Whenever you cycle or discard a card, Hekma Sentinels gets +1/+1 until end of turn.',
+    },
+    {
+      name: 'Spirit Cairn', type_line: 'Enchantment', mana_cost: '{2}{W}', cmc: 3, colors: ['W'],
+      layout: 'normal',
+      oracle_text: 'Whenever a player discards a card, you may pay {W}. If you do, create a 1/1 white Spirit creature token with flying.',
+    },
+    {
+      name: 'Drannith Healer', type_line: 'Creature — Human Cleric', mana_cost: '{1}{W}', cmc: 2,
+      colors: ['W'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Whenever you cycle another card, you gain 1 life.\nCycling {1} ({1}, Discard this card: Draw a card.)',
+    },
+    {
+      name: 'Stoic Champion', type_line: 'Creature — Human Soldier', mana_cost: '{W}{W}', cmc: 2,
+      colors: ['W'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Whenever a player cycles a card, Stoic Champion gets +2/+2 until end of turn.',
+    },
+    {
+      name: 'Bant Sojourners', type_line: 'Creature — Human Soldier', mana_cost: '{1}{G}{W}{U}',
+      cmc: 4, colors: ['G', 'W', 'U'], power: '2', toughness: '4', layout: 'normal',
+      oracle_text: 'When you cycle Bant Sojourners or it dies, you may create a 1/1 white Soldier creature token.\nCycling {2}{W} ({2}{W}, Discard this card: Draw a card.)',
+    },
+    {
+      name: 'Sureshot Sower', type_line: 'Creature — Human Archer', mana_cost: '{1}{G}', cmc: 2,
+      colors: ['G'], power: '3', toughness: '1', layout: 'normal',
+      oracle_text: 'Reach\n{3}{G}, Discard this card: Destroy target creature with flying.',
+    },
+    {
+      name: 'Reckless Ogre', type_line: 'Creature — Ogre', mana_cost: '{3}{R}', cmc: 4,
+      colors: ['R'], power: '3', toughness: '2', layout: 'normal',
+      oracle_text: 'Whenever Reckless Ogre attacks alone, it gets +3/+0 until end of turn.',
+    },
+    {
+      name: 'Black Panther, Claws of Bast', type_line: 'Legendary Creature — Human Warrior Hero',
+      mana_cost: '{2}{W}', cmc: 3, colors: ['W'], power: '3', toughness: '3', layout: 'normal',
+      oracle_text: 'Lifelink (Damage dealt by this creature also causes you to gain that much life.)\nWhenever a creature you control attacks alone, put a +1/+1 counter on it.',
+    },
+  ];
+  const PRINTED = DATA.map((row) => row.name).sort();
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'thrown',
+      name: 'Thrown',
+      entries: [
+        ...DATA.map((row) => ({ name: row.name, count: 3 })),
+        { name: 'Grizzly Bears', count: 4 }, { name: 'Mind Rot', count: 3 },
+        { name: 'Faithless Looting', count: 3 }, { name: 'Barren Moor', count: 4 },
+        { name: 'Doom Blade', count: 2 }, { name: 'Wall of Air', count: 2 },
+        { name: 'Swamp', count: 6 }, { name: 'Plains', count: 5 }, { name: 'Mountain', count: 4 },
+        { name: 'Island', count: 2 }, { name: 'Forest', count: 2 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual(PRINTED);
+    return list.deck;
+  };
+
+  const LANDS = [
+    'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Plains', 'Plains', 'Plains', 'Mountain', 'Mountain', 'Island',
+    'Forest',
+  ];
+
+  const start = (
+    hand: readonly string[], mine: readonly string[] = [], theirs: readonly string[] = [],
+    theirHand: readonly string[] = ['Grizzly Bears', 'Grizzly Bears', 'Swamp'],
+  ): GameState => advanceTo(arena({
+    decks: { 0: 'thrown', 1: 'thrown' },
+    deckSpecs: { thrown: deck() },
+    hands: { 0: [...hand], 1: [...theirHand] },
+    battlefield: { 0: [...LANDS, ...mine], 1: ['Swamp', 'Swamp', ...theirs] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  const here = (s: GameState, seat: SeatIndex, name: string): string => find(s, seat, 'battlefield', name);
+  /** Seat 0 casts Mind Rot at `seat`, who discards the first two cards they are offered. */
+  const mindRot = (s: GameState, seat: SeatIndex): GameState => {
+    let next = passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Mind Rot'), targets: [{ kind: 'player', seat }],
+    }));
+    expect(next.pendingDecision?.seat).toBe(seat);
+    next = apply(next, { type: 'auto:decide', by: seat, cards: next.pendingDecision!.candidates.slice(0, 2) });
+    return next;
+  };
+  /** Seat `by` cycles the named card from hand; the cost is paid and nothing has resolved yet. */
+  const cycle = (s: GameState, by: SeatIndex, name: string): GameState => {
+    const card = find(s, by, 'hand', name);
+    const play = legalActions(s, by).plays.find((p) => p.card === card && p.kind === 'activate');
+    expect(play, `${name} can be cycled`).toBeDefined();
+    return apply(s, { type: 'auto:activate', by, card, abilityIndex: play!.abilityIndex! });
+  };
+
+  describe('"whenever an opponent discards a card"', () => {
+    it('Megrim deals 2 to the opponent for each card a Mind Rot takes', () => {
+      let s = start(['Mind Rot'], ['Megrim']);
+      s = drain(mindRot(s, 1));
+      expect(namesIn(s, 1, 'graveyard')).toHaveLength(2);
+      expect(life(s, 1)).toBe(16);
+      expect(life(s, 0)).toBe(20);
+    });
+
+    it('and nothing for its own controller\'s discards', () => {
+      let s = start(['Faithless Looting'], ['Megrim']);
+      s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Faithless Looting') }));
+      expect(s.pendingDecision?.seat).toBe(0);
+      s = drain(apply(s, { type: 'auto:decide', by: 0, cards: s.pendingDecision!.candidates.slice(0, 2) }));
+      expect(namesIn(s, 0, 'graveyard').length).toBeGreaterThanOrEqual(3);
+      expect(life(s, 0)).toBe(20);
+      expect(life(s, 1)).toBe(20);
+    });
+
+    it('"that player" is the one who discarded: in a pod it is seat 2 and not seat 1', () => {
+      let s = advanceTo(arena({
+        format: 'pod', seats: 3,
+        decks: { 0: 'thrown', 1: 'thrown', 2: 'thrown' },
+        deckSpecs: { thrown: deck() },
+        hands: {
+          0: ['Mind Rot'],
+          1: ['Grizzly Bears', 'Swamp', 'Plains'],
+          2: ['Grizzly Bears', 'Swamp', 'Plains'],
+        },
+        battlefield: { 0: [...LANDS, 'Megrim'] },
+        turn: 5, firstSeat: 0,
+      }), 'precombat-main');
+      const before = [life(s, 0), life(s, 1), life(s, 2)];
+      s = drain(mindRot(s, 2));
+      expect([life(s, 0), life(s, 1), life(s, 2)]).toEqual([before[0], before[1], before[2]! - 4]);
+    });
+
+    it('fires for a discard to hand size in the cleanup step, and resolves by the next upkeep', () => {
+      // Seat 1 has the Megrim; seat 0 ends its turn with nine cards — eight here and the turn's draw.
+      const grip = [
+        'Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears', 'Grizzly Bears',
+        'Stoic Champion', 'Stoic Champion', 'Stoic Champion', 'Reckless Ogre',
+      ];
+      let s = start(grip, [], ['Megrim']);
+      s = passBoth(advanceTo(s, 'end'));
+      expect(s.pendingDiscard).toEqual({ seat: 0, count: 2 });
+      s = apply(s, { type: 'auto:discard', by: 0, card: ids(s, 0, 'hand')[0]! });
+      s = apply(s, { type: 'auto:discard', by: 0, card: ids(s, 0, 'hand')[0]! });
+      for (let i = 0; i < 12 && s.turn === 5 && s.priority !== null && s.pendingDiscard === null; i++) {
+        s = apply(s, { type: 'auto:pass', by: s.priority });
+      }
+      expect(s.turn).toBe(6);
+      expect(ids(s, 0, 'hand')).toHaveLength(7);
+      /*
+        Both triggers are on the stack and resolve in the next upkeep, which is where this engine
+        puts anything that triggers in a step with no priority. For the cleanup step that is a
+        **known gap** rather than the rule: CR 514.3a gives the players priority in the cleanup
+        step itself and then runs another one, so the damage belongs to turn 5. Asserted as it is
+        today so the day it is fixed this row says so (task #407).
+      */
+      expect(s.step).toBe('upkeep');
+      expect(s.stackOrder).toHaveLength(2);
+      expect(life(s, 0)).toBe(20);
+      s = drain(s);
+      expect(s.stackOrder).toHaveLength(0);
+      expect(life(s, 0)).toBe(16);
+    });
+  });
+
+  describe('"whenever you cycle or discard a card"', () => {
+    it('Hekma Sentinels grows once for each card a Faithless Looting throws away', () => {
+      let s = start(['Faithless Looting'], ['Hekma Sentinels']);
+      const sentinels = here(s, 0, 'Hekma Sentinels');
+      s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Faithless Looting') }));
+      s = drain(apply(s, { type: 'auto:decide', by: 0, cards: s.pendingDecision!.candidates.slice(0, 2) }));
+      expect([power(s, sentinels), toughness(s, sentinels)]).toEqual([4, 5]);
+    });
+
+    it('and once — not twice — for a card that is cycled, which is a discard and nothing more', () => {
+      let s = start(['Barren Moor'], ['Hekma Sentinels']);
+      const sentinels = here(s, 0, 'Hekma Sentinels');
+      s = drain(cycle(s, 0, 'Barren Moor'));
+      expect(countOf(s, 0, 'graveyard', 'Barren Moor')).toBe(1);
+      expect([power(s, sentinels), toughness(s, sentinels)]).toEqual([3, 4]);
+    });
+
+    it('and not at all for an opponent\'s discards', () => {
+      let s = start(['Mind Rot'], ['Hekma Sentinels']);
+      const sentinels = here(s, 0, 'Hekma Sentinels');
+      s = drain(mindRot(s, 1));
+      expect(namesIn(s, 1, 'graveyard')).toHaveLength(2);
+      expect([power(s, sentinels), toughness(s, sentinels)]).toEqual([2, 3]);
+    });
+  });
+
+  describe('"whenever a player discards a card"', () => {
+    it('Spirit Cairn asks its controller when an opponent discards', () => {
+      let s = start(['Mind Rot'], ['Spirit Cairn']);
+      s = mindRot(s, 1);
+      for (let i = 0; i < 6 && s.pendingDecision === null && s.priority !== null; i++) {
+        s = apply(s, { type: 'auto:pass', by: s.priority });
+      }
+      expect(s.pendingDecision?.seat).toBe(0);
+      expect(s.pendingDecision?.options?.join(' ')).toContain('{W}');
+    });
+
+    it('and when its controller does', () => {
+      let s = cycle(start(['Barren Moor'], ['Spirit Cairn']), 0, 'Barren Moor');
+      for (let i = 0; i < 6 && s.pendingDecision === null && s.priority !== null; i++) {
+        s = apply(s, { type: 'auto:pass', by: s.priority });
+      }
+      expect(s.pendingDecision?.seat).toBe(0);
+      expect(s.pendingDecision?.options?.join(' ')).toContain('{W}');
+    });
+  });
+
+  describe('"whenever you cycle a card" and "whenever a player cycles a card"', () => {
+    it('Drannith Healer gains a life when you cycle a land', () => {
+      let s = start(['Barren Moor'], ['Drannith Healer']);
+      s = drain(cycle(s, 0, 'Barren Moor'));
+      expect(life(s, 0)).toBe(21);
+    });
+
+    it('and nothing for a discard that was not cycling', () => {
+      let s = start(['Faithless Looting'], ['Drannith Healer']);
+      s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Faithless Looting') }));
+      s = drain(apply(s, { type: 'auto:decide', by: 0, cards: s.pendingDecision!.candidates.slice(0, 2) }));
+      expect(life(s, 0)).toBe(20);
+    });
+
+    it('"another card": a Healer on the battlefield gains for a Healer cycled from hand', () => {
+      let s = start(['Drannith Healer'], ['Drannith Healer']);
+      s = drain(cycle(s, 0, 'Drannith Healer'));
+      expect(countOf(s, 0, 'graveyard', 'Drannith Healer')).toBe(1);
+      expect(life(s, 0)).toBe(21);
+    });
+
+    it('and a Healer cycled with none in play gains nothing: a card in a graveyard watches nothing', () => {
+      let s = start(['Drannith Healer']);
+      s = drain(cycle(s, 0, 'Drannith Healer'));
+      expect(countOf(s, 0, 'graveyard', 'Drannith Healer')).toBe(1);
+      expect(life(s, 0)).toBe(20);
+    });
+
+    it('an opponent\'s cycling pumps Stoic Champion ("a player") and not the Healer ("you")', () => {
+      let s = start([], ['Stoic Champion', 'Drannith Healer'], [], ['Barren Moor']);
+      const champion = here(s, 0, 'Stoic Champion');
+      s = apply(s, { type: 'auto:pass', by: 0 });
+      expect(s.priority).toBe(1);
+      s = drain(cycle(s, 1, 'Barren Moor'));
+      expect(countOf(s, 1, 'graveyard', 'Barren Moor')).toBe(1);
+      expect([power(s, champion), toughness(s, champion)]).toEqual([4, 4]);
+      expect(life(s, 0)).toBe(20);
+    });
+  });
+
+  it('a card that discards itself for something else is discarded and is NOT cycled', () => {
+    // Sureshot Sower: "{3}{G}, Discard this card: Destroy target creature with flying." The
+    // Sentinels watch discards and grow; the Champion watches cycling and does not.
+    let s = start(['Sureshot Sower'], ['Hekma Sentinels', 'Stoic Champion'], ['Wall of Air']);
+    const sentinels = here(s, 0, 'Hekma Sentinels');
+    const champion = here(s, 0, 'Stoic Champion');
+    const card = find(s, 0, 'hand', 'Sureshot Sower');
+    const play = legalActions(s, 0).plays.find((p) => p.card === card && p.kind === 'activate')!;
+    s = drain(apply(s, {
+      type: 'auto:activate', by: 0, card, abilityIndex: play.abilityIndex!,
+      targets: [{ kind: 'card', id: here(s, 1, 'Wall of Air') }],
+    }));
+    expect(countOf(s, 0, 'graveyard', 'Sureshot Sower')).toBe(1);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Wall of Air');
+    expect([power(s, sentinels), toughness(s, sentinels)]).toEqual([3, 4]);
+    expect([power(s, champion), toughness(s, champion)]).toEqual([2, 2]);
+  });
+
+  describe('"when you cycle this card"', () => {
+    const offered = (s: GameState): GameState => {
+      let next = s;
+      for (let i = 0; i < 6 && next.pendingDecision === null && next.priority !== null; i++) {
+        next = apply(next, { type: 'auto:pass', by: next.priority });
+      }
+      return next;
+    };
+    const soldiers = (s: GameState): number =>
+      ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Soldier').length;
+
+    it('Bant Sojourners offers its Soldier from the graveyard it was cycled into', () => {
+      let s = offered(cycle(start(['Bant Sojourners']), 0, 'Bant Sojourners'));
+      expect(countOf(s, 0, 'graveyard', 'Bant Sojourners')).toBe(1);
+      expect(s.pendingDecision?.seat).toBe(0);
+      s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: s.pendingDecision!.options![0]! }));
+      expect(soldiers(s)).toBe(1);
+    });
+
+    it('"or it dies": and again when one on the battlefield is destroyed', () => {
+      let s = start(['Doom Blade'], ['Bant Sojourners']);
+      s = passBoth(apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Doom Blade'),
+        targets: [{ kind: 'card', id: here(s, 0, 'Bant Sojourners') }],
+      }));
+      s = offered(s);
+      expect(s.pendingDecision?.seat).toBe(0);
+      s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: s.pendingDecision!.options![0]! }));
+      expect(soldiers(s)).toBe(1);
+    });
+
+    it('and not when it is merely discarded, which is neither', () => {
+      let s = start(['Faithless Looting', 'Bant Sojourners']);
+      s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Faithless Looting') }));
+      const sojourners = s.pendingDecision!.candidates.find((id) => nameOf(s, id) === 'Bant Sojourners')!;
+      const other = s.pendingDecision!.candidates.find((id) => id !== sojourners)!;
+      s = offered(apply(s, { type: 'auto:decide', by: 0, cards: [sojourners, other] }));
+      expect(countOf(s, 0, 'graveyard', 'Bant Sojourners')).toBe(1);
+      expect(s.pendingDecision).toBeNull();
+      expect(soldiers(s)).toBe(0);
+    });
+  });
+
+  describe('"attacks alone"', () => {
+    const attack = (s: GameState, names: readonly string[]): GameState => {
+      const next = advanceTo(s, 'declare-attackers');
+      return drain(apply(next, {
+        type: 'auto:attack', by: 0,
+        attackers: names.map((name) => ({ attacker: here(next, 0, name), defender: 1 as SeatIndex })),
+      }));
+    };
+
+    it('Reckless Ogre is a 6/2 attacking alone', () => {
+      const s = attack(start([], ['Reckless Ogre', 'Grizzly Bears']), ['Reckless Ogre']);
+      expect(power(s, here(s, 0, 'Reckless Ogre'))).toBe(6);
+    });
+
+    it('and a 3/2 attacking beside a Bears', () => {
+      const s = attack(start([], ['Reckless Ogre', 'Grizzly Bears']), ['Reckless Ogre', 'Grizzly Bears']);
+      expect(power(s, here(s, 0, 'Reckless Ogre'))).toBe(3);
+    });
+
+    it('"a creature you control attacks alone … on it": the counter goes on the attacker', () => {
+      const s = attack(start([], ['Black Panther, Claws of Bast', 'Grizzly Bears']), ['Grizzly Bears']);
+      expect(s.instances[here(s, 0, 'Grizzly Bears')]!.counters['+1/+1'] ?? 0).toBe(1);
+      expect(s.instances[here(s, 0, 'Black Panther, Claws of Bast')]!.counters['+1/+1'] ?? 0).toBe(0);
+    });
+
+    it('and nobody gets one when two attack together', () => {
+      const s = attack(
+        start([], ['Black Panther, Claws of Bast', 'Grizzly Bears']),
+        ['Grizzly Bears', 'Black Panther, Claws of Bast'],
+      );
+      expect(s.instances[here(s, 0, 'Grizzly Bears')]!.counters['+1/+1'] ?? 0).toBe(0);
+      expect(s.instances[here(s, 0, 'Black Panther, Claws of Bast')]!.counters['+1/+1'] ?? 0).toBe(0);
     });
   });
 });

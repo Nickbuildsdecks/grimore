@@ -704,6 +704,10 @@ function cyclingCost(line: string): string | null {
 function cyclingAbility(cost: string): AbilityDef {
   return {
     cost: { mana: cost, discardSelf: true },
+    // The keyword and not only its cost (D567): this is the third place a cycling ability is
+    // built, and the one a derived land goes through — without the flag a Barren Moor read from
+    // printed data would be discarded and never "cycled", and Drannith Healer would gain nothing.
+    cycling: true,
     description: `Cycling ${cost} (${cost}, Discard this card: Draw a card.)`,
     effect: (c) => drawLater(c.state, c.controller, 1),
   };

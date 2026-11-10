@@ -231,6 +231,7 @@ const cyclingLand = (name: string, type: 'W' | 'U' | 'B' | 'R' | 'G'): CardScrip
     { cost: { tap: true }, description: `{T}: Add {${type}}.`, produces: [type] },
     {
       cost: { mana: '{2}', discardSelf: true },
+      cycling: true,
       description: 'Cycling {2} ({2}, Discard this card: Draw a card.)',
       effect: (c) => drawLater(c.state, c.controller, 1),
     },
@@ -3489,6 +3490,8 @@ const THOUGHT_SCOUR: CardScript = {
  */
 const cyclingAbility = (mana: string): AbilityDef => ({
   cost: { mana, discardSelf: true },
+  // The keyword, and not only its cost: see `AbilityDef.cycling` (D567).
+  cycling: true,
   description: `${mana}, Discard this card: Draw a card.`,
   effect: (c) => drawLater(c.state, c.controller, 1),
 });
@@ -14659,6 +14662,60 @@ const TRIGGER_SHAPES: readonly ({
     prologue: (self) => new RegExp(`^Whenever ${self} is dealt damage, (.+)$`, 'i'),
     on: [{ kind: 'damaged' }],
   },
+  /*
+    **Discarding and cycling as events** (D567).
+
+    "Cycle or discard" is one event and not two: cycling's cost is a discard, and the ruling printed
+    with Drake Haven is that the ability triggers once for a cycled card. So that prologue is the
+    discard row with two more words in it.
+
+    "Another card" is "a card" for a permanent: the watcher is on the battlefield and the card that
+    was discarded came from a hand, so it is never the same object. The word is on the card because
+    Archfiend of Ifnir and Drannith Healer have cycling themselves — and a Healer that is cycled is
+    in a graveyard, where it watches nothing.
+
+    The last two are a card watching its **own** cycling, from the graveyard it was discarded to.
+  */
+  {
+    prologue: () => /^Whenever you (?:cycle or )?discard (?:a|another) card, (.+)$/i,
+    on: [{ kind: 'discards', by: 'you' }],
+  },
+  {
+    prologue: () => /^Whenever an opponent discards a card, (.+)$/i,
+    on: [{ kind: 'discards', by: 'opponent' }],
+  },
+  {
+    prologue: () => /^Whenever a player discards a card, (.+)$/i,
+    on: [{ kind: 'discards', by: 'any' }],
+  },
+  {
+    prologue: () => /^Whenever you cycle (?:a|another) card, (.+)$/i,
+    on: [{ kind: 'cycles', by: 'you' }],
+  },
+  {
+    prologue: () => /^Whenever a player cycles a card, (.+)$/i,
+    on: [{ kind: 'cycles', by: 'any' }],
+  },
+  {
+    prologue: (self) => new RegExp(`^When you cycle (?:${self}|this card), (.+)$`, 'i'),
+    on: [{ kind: 'cycles', self: true }],
+  },
+  {
+    prologue: (self) => new RegExp(`^When you cycle ${self} or it dies, (.+)$`, 'i'),
+    on: [{ kind: 'cycles', self: true }, { kind: 'dies' }],
+  },
+  /*
+    "Attacks **alone**" (D567), which the `attacks` event has carried since exalted: 12 legal cards
+    print it as an ordinary sentence rather than as the keyword.
+  */
+  {
+    prologue: (self) => new RegExp(`^Whenever ${self} attacks alone, (.+)$`, 'i'),
+    on: [{ kind: 'attacks', alone: true }],
+  },
+  {
+    prologue: () => /^Whenever a creature you control attacks alone, (.+)$/i,
+    on: [{ kind: 'attacks', who: 'any', of: 'you', alone: true }],
+  },
   {
     prologue: (self) => new RegExp(`^Whenever ${self} deals damage to an opponent, (.+)$`, 'i'),
     on: [{ kind: 'deals-damage', to: 'opponent' }],
@@ -15534,7 +15591,9 @@ function eventRelativeEffect(
     Those lines are refused and left for a human rather than read as the wrong player (D362), which
     is what this gate buys: without it Furnace Scamp compiled, fired, and hit nobody.
   */
-  const PLAYER_ACTIONS = new Set(['spell-cast', 'draws', 'life-gained', 'step']);
+  // `discards` and `cycles` joined in D567: both are raised with the acting seat, so "whenever an
+  // opponent discards a card, ~ deals 2 damage to that player" is Megrim and reads correctly.
+  const PLAYER_ACTIONS = new Set(['spell-cast', 'draws', 'life-gained', 'step', 'discards', 'cycles']);
   const aboutAPlayer = events.length > 0 && events.every((one) => PLAYER_ACTIONS.has(one.kind));
 
   /*
