@@ -21638,3 +21638,95 @@ to be the unkicked spell's own, and D423's damage family shown to read as before
 +15 fully read. Eighteen kicker instants and sorceries now compile, up from three.
 
 D561's pod sweep (SEED0=43101): 40 of 40 to a finish, no throw, no stall.
+
+## D563 — The intervening-if in a trigger: D561's wrapper, given a vocabulary
+
+D561 read "When ~ enters, **if it was kicked**, <effect>" by taking the clause out, reading the
+shorter sentence with the reader that already exists, and putting the condition in front of what
+came back. Nothing in that is about kicker. The same sentence shape, with any condition:
+
+    When ~ enters, if you control an artifact, draw a card.
+    At the beginning of your upkeep, if you control six or more lands, create a 5/5 …
+    When ~ enters, if an opponent lost life this turn, each opponent loses 2 life and you gain 2 life.
+
+Measured before writing anything: **334** legal trigger lines have a non-kicker "if" as the first
+clause after the event and are unread; for **149** of them the shorter sentence already reads; and
+**90** cards would be finished by it. The effects were never the problem. The conditions are a
+long tail — the commonest is printed seven times — so this is a wrapper plus a vocabulary that
+grows a row at a time.
+
+### The wrapper
+
+`interveningIfFromLine` sits in `lineScriptFor` **after** `triggerFromLine`, so it only ever sees
+a line the trigger reader refused. It wants the prologue to hold no comma (so the "if" really is
+the first clause, not "…, then if you control…"), a condition `interveningConditionFor` reads,
+and the shorter sentence to come back as one trigger and nothing else. Any event will do — unlike
+kicker, the condition is about the board and not about how the card arrived.
+
+The condition goes on `TriggerDef.condition`, which the engine asks as the ability triggers and
+again as it resolves (CR 603.4). That is what makes it an intervening-if and not a branch inside
+the effect: a Scholar of Stars with no artifact puts **nothing** on the stack.
+
+### The first vocabulary: four conditions, no new way of looking at the board
+
+| condition | read from |
+| --- | --- |
+| an opponent lost life this turn | `lifeLostThisTurn`, spectacle's fact (D197) |
+| you control N or more *things* | `countOfThing("<things> you control")`, plural |
+| you control a / an *thing* | the same count, singular, at least one |
+| there are N or more *things* | `countOfThing`, plural — creature cards in your graveyard, cards in hand |
+
+Every count is D520's `countOfThing`, so "lands", "artifacts", "creatures", "other creatures" and
+any subtype (Gates, Plains, a Dinosaur, an Equipment) come for nothing, with D521's correction
+that a subtype counts permanents and not creatures, and with the plural rule that refuses Fungi.
+
+Anything else is refused, and that matters more for a condition than for an effect: a condition
+read loosely is a trigger that fires when it should not, on a card that reports every line read.
+
+### Refused today, in the order they would be worth adding
+
+1. "you cast it" / "you cast it from your hand" (40 lines) — needs a marker like `KICKED`, and most
+   of their effects are unread too (4 of the 40 read);
+2. "you control another <subtype>" — needs to know whether the card asking is one of the things
+   counted, which a count alone cannot say;
+3. "you control a creature with power 4 or greater" and other filtered counts;
+4. "tribute wasn't paid" (11), "it was bargained" (6): each its own mechanic;
+5. "you gained life this turn", "a creature died this turn", "you attacked this turn" — three
+   per-turn facts the engine does not keep yet. `damagedThisTurn` (D558) is the pattern.
+
+### Tests
+
+Nine table rows on printed Scholar of Stars, Dragonmaster Outcast and Arrogant Outlaw, each
+condition run true and false on boards that differ by exactly the thing it names:
+
+- an artifact or a fifth Island — and with the Island the stack is **empty** after the spell
+  resolves, not holding an ability that will do nothing;
+- five, six and seven lands: none, one and one Dragon an upkeep, and the same again a turn later;
+- no life lost; a Shock to the opponent (they go to 16, you to 22); and your **own** life lost to
+  a City of Brass, with `lifeLostThisTurn['0']` asserted so the missing drain is about whose life
+  it was and not about nothing having happened.
+
+The first run of the land rows failed, and it was the tests: `start` walks to the main phase of a
+turn whose upkeep the Outcast was already on the battlefield for, so a board with six lands
+arrives with a Dragon. The rows now read that upkeep as the first observation and the caster's
+next one as the second.
+
+Seventeen compile rows: seven conditions read across three trigger events, the wrapped trigger
+shown to be the shorter sentence's with a condition added and nothing else changed, and nine
+refusals.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,916 | **23,952** of 56,421 (42.5%) |
+| cards with a compiled script | 12,213 | **12,243** |
+| cards with every printed line read | 8,023 | **8,049** |
+
++26 fully read from four conditions; 34 cards carry a read intervening-if. Sixty-four of the 90
+are still to come, each behind a condition on the list above.
+
+D562's pod sweep (SEED0=43201): 40 of 40 to a finish, no throw, no stall. D562 also gained two
+table rows and one compile row after it was pushed and before its break run: Bold Defense, for an
+"instead" at the **front** of the kicked clause, and a refusal for two halves that each ask a
+question.

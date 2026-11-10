@@ -17243,6 +17243,8 @@ describe('a kicked spell with a second clause: also, or instead (D562)', () => {
       'Draw a card. If this spell was kicked, each player votes for wind or rain.'],
     ['a base nothing can read',
       'Each player votes for wind or rain. If this spell was kicked, draw a card.'],
+    ['two halves that each ask a question, which cannot be listed once for both',
+      'Target player discards a card. If this spell was kicked, target player discards a card instead.'],
     ['"of those tokens", which is a count and not a clause',
       'Create two 1/1 green Saproling creature tokens. If this spell was kicked, create four of those tokens instead.'],
   ])('leaves both lines unread for %s', (_what, body) => {
@@ -17257,5 +17259,77 @@ describe('a kicked spell with a second clause: also, or instead (D562)', () => {
     expect(got.unread.map((u) => u.line)).toEqual([]);
     expect(got.script?.kicker?.cost).toBe('{1}{U}');
     expect(got.script?.targets).toHaveLength(1);
+  });
+});
+
+describe('an intervening-if in a trigger (D563)', () => {
+  const creature = (text: string) => {
+    const got = compileCard({
+      name: 'Scholar of Stars', type_line: 'Creature — Human Artificer', mana_cost: '{3}{U}',
+      cmc: 4, colors: ['U'], power: '3', toughness: '2', layout: 'normal', oracle_text: text,
+    });
+    expect(got.ok).toBe(true);
+    if (!got.ok) throw new Error('refused');
+    return got;
+  };
+
+  it.each([
+    ['When this creature enters, if you control an artifact, draw a card.',
+      'if you control an artifact, draw a card', 'etb'],
+    ['When Scholar of Stars enters, if you control two or more Gates, you gain 7 life.',
+      'if you control two or more Gates, you gain 7 life', 'etb'],
+    ['At the beginning of your upkeep, if you control six or more lands, create a 5/5 red Dragon creature token with flying.',
+      'if you control six or more lands, create a 5/5 red Dragon creature token with flying', 'step'],
+    ['When Scholar of Stars enters, if an opponent lost life this turn, each opponent loses 2 life and you gain 2 life.',
+      'if an opponent lost life this turn, each opponent loses 2 life and you gain 2 life', 'etb'],
+    ['Whenever Scholar of Stars attacks, if you control a Dinosaur, Scholar of Stars gets +1/+1 until end of turn.',
+      'if you control a Dinosaur, Scholar of Stars gets +1/+1 until end of turn', 'attacks'],
+    ['At the beginning of your upkeep, if there are three or more creature cards in your graveyard, you gain 5 life.',
+      'if there are three or more creature cards in your graveyard, you gain 5 life', 'step'],
+    ['When Scholar of Stars enters, if you control seven or more Plains, draw a card.',
+      'if you control seven or more Plains, draw a card', 'etb'],
+  ])('reads %s', (line, description, event) => {
+    const got = creature(line);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script?.triggers).toHaveLength(1);
+    const trigger = got.script!.triggers![0]!;
+    expect(trigger.description).toBe(description);
+    expect(trigger.on.kind).toBe(event);
+    expect(typeof trigger.condition).toBe('function');
+  });
+
+  it('is the shorter sentence\'s trigger with a condition, and nothing else changed', () => {
+    const iffy = creature('When this creature enters, if you control an artifact, destroy target creature.');
+    const plainly = creature('When this creature enters, destroy target creature.');
+    const a = iffy.script!.triggers![0]!;
+    const b = plainly.script!.triggers![0]!;
+    expect(a.on).toEqual(b.on);
+    expect(a.targets!.map((t) => t.description)).toEqual(b.targets!.map((t) => t.description));
+    expect(b.condition).toBeUndefined();
+  });
+
+  it.each([
+    ['a condition that needs a filter',
+      'When this creature enters, if you control a creature with power 4 or greater, draw a card.'],
+    ['"another", which needs to know whether the card asking is one of them',
+      'When this creature enters, if you control another Wizard, draw a card.'],
+    ['a choice of two things',
+      'When this creature enters, if you control an artifact or enchantment, draw a card.'],
+    ['a number it does not print',
+      'When this creature enters, if you control X or more lands, draw a card.'],
+    ['an irregular plural, which would count a subtype nothing has',
+      'When this creature enters, if you control two or more Fungi, draw a card.'],
+    ['a condition about how the card was cast',
+      'When this creature enters, if you cast it from your hand, draw a card.'],
+    ['a readable condition in front of an unreadable effect',
+      'When this creature enters, if you control an artifact, each player votes for wind or rain.'],
+    ['an "if" that is not the first clause after the event',
+      'When this creature enters, draw a card, then if you control an artifact, draw a card.'],
+    ['your own life, where the card says an opponent\'s',
+      'When this creature enters, if you lost life this turn, draw a card.'],
+  ])('leaves %s unread', (_what, line) => {
+    const got = creature(line);
+    expect(got.script?.triggers ?? []).toEqual([]);
+    expect(got.unread.map((u) => u.line)).toEqual([line]);
   });
 });

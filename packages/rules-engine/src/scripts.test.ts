@@ -37305,6 +37305,11 @@ describe('a kicked spell with a second clause: also, or instead (D562)', () => {
       layout: 'normal',
       oracle_text: 'Kicker {2}{U} (You may pay an additional {2}{U} as you cast this spell.)\nDraw two cards. If this spell was kicked, draw three cards instead.',
     },
+    {
+      name: 'Bold Defense', type_line: 'Instant', mana_cost: '{2}{W}', cmc: 3, colors: ['W'],
+      layout: 'normal',
+      oracle_text: 'Kicker {3}{W} (You may pay an additional {3}{W} as you cast this spell.)\nCreatures you control get +1/+1 until end of turn. If this spell was kicked, instead creatures you control get +2/+2 and gain first strike until end of turn.',
+    },
   ];
   const PRINTED = DATA.map((row) => row.name).sort();
 
@@ -37315,7 +37320,7 @@ describe('a kicked spell with a second clause: also, or instead (D562)', () => {
       entries: [
         ...DATA.map((row) => ({ name: row.name, count: 4 })),
         { name: 'Grizzly Bears', count: 8 },
-        { name: 'Island', count: 20 }, { name: 'Forest', count: 20 },
+        { name: 'Island', count: 14 }, { name: 'Forest', count: 12 }, { name: 'Plains', count: 10 },
       ],
       data: DATA as never[],
     });
@@ -37324,7 +37329,9 @@ describe('a kicked spell with a second clause: also, or instead (D562)', () => {
     return list.deck;
   };
 
-  const LANDS = ['Island', 'Island', 'Island', 'Island', 'Forest', 'Forest', 'Forest'];
+  const LANDS = [
+    'Island', 'Island', 'Island', 'Island', 'Forest', 'Forest', 'Forest', 'Plains', 'Plains',
+  ];
 
   const start = (hand: readonly string[], theirs: readonly string[] = []): GameState => advanceTo(arena({
     decks: { 0: 'clauses', 1: 'clauses' },
@@ -37380,6 +37387,22 @@ describe('a kicked spell with a second clause: also, or instead (D562)', () => {
   });
 
   it.each([
+    [false, 3, '3/3', false],
+    [true, 7, '4/4', true],
+  ])('instead, at the front of the clause — Bold Defense kicked %s: %i mana, a %s', (kicked, mana, body, strikes) => {
+    // "If this spell was kicked, **instead** creatures you control get +2/+2 and gain first
+    // strike." The word leads the clause here and trails it on the other two; it means the same
+    // thing in either place. Read as "also", the kicked Bears would be a 5/5.
+    const before = start(['Bold Defense']);
+    const bears = find(before, 0, 'battlefield', 'Grizzly Bears');
+    const s = cast(before, 'Bold Defense', kicked);
+    expect(tappedLands(s)).toBe(mana);
+    const ch = characteristicsOf(s, s.instances[bears]!);
+    expect(`${ch.power}/${ch.toughness}`).toBe(body);
+    expect(ch.keywords.has('first strike')).toBe(strikes);
+  });
+
+  it.each([
     [false, 3, 2],
     [true, 6, 3],
   ])('instead — Field Research kicked %s: %i mana, %i cards and not five', (kicked, mana, drawn) => {
@@ -37388,5 +37411,148 @@ describe('a kicked spell with a second clause: also, or instead (D562)', () => {
     const s = cast(before, 'Field Research', kicked);
     expect(tappedLands(s)).toBe(mana);
     expect(ids(s, 0, 'hand').length).toBe(hand - 1 + drawn);
+  });
+});
+
+describe('an intervening-if in a trigger: asked as it triggers (D563)', () => {
+  /*
+    "When this enters, **if you control an artifact**, draw a card." The clause in the middle is a
+    condition on the trigger itself (CR 603.4): when it is false the ability does not trigger at
+    all, so nothing goes on the stack. Every row here is run with the condition true and with it
+    false, on boards that differ by exactly the thing the condition names — one artifact, one
+    land, whose life it was.
+
+    Three printed cards, none in the pool, rows copied from the corpus unchanged.
+  */
+  const DATA = [
+    {
+      name: 'Scholar of Stars', type_line: 'Creature — Human Artificer', mana_cost: '{3}{U}',
+      cmc: 4, colors: ['U'], power: '3', toughness: '2', layout: 'normal',
+      oracle_text: 'When this creature enters, if you control an artifact, draw a card.',
+    },
+    {
+      name: 'Dragonmaster Outcast', type_line: 'Creature — Human Shaman', mana_cost: '{R}', cmc: 1,
+      colors: ['R'], power: '1', toughness: '1', layout: 'normal',
+      oracle_text: 'At the beginning of your upkeep, if you control six or more lands, create a 5/5 red Dragon creature token with flying.',
+    },
+    {
+      name: 'Arrogant Outlaw', type_line: 'Creature — Vampire Noble', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], power: '3', toughness: '2', layout: 'normal',
+      oracle_text: 'When Arrogant Outlaw enters, if an opponent lost life this turn, each opponent loses 2 life and you gain 2 life.',
+    },
+  ];
+  const PRINTED = DATA.map((row) => row.name).sort();
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'conditions',
+      name: 'Conditions',
+      entries: [
+        ...DATA.map((row) => ({ name: row.name, count: 4 })),
+        { name: 'Sol Ring', count: 4 }, { name: 'Shock', count: 4 }, { name: 'City of Brass', count: 4 },
+        { name: 'Island', count: 12 }, { name: 'Mountain', count: 12 }, { name: 'Swamp', count: 12 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual(PRINTED);
+    return list.deck;
+  };
+
+  const start = (mine: readonly string[], hand: readonly string[], turn = 5): GameState => advanceTo(arena({
+    decks: { 0: 'conditions', 1: 'conditions' },
+    deckSpecs: { conditions: deck() },
+    hands: { 0: [...hand] },
+    battlefield: { 0: [...mine], 1: [] },
+    turn, firstSeat: 0,
+  }), 'precombat-main');
+
+  const FOUR = ['Island', 'Island', 'Island', 'Island'];
+  const dragons = (s: GameState): number =>
+    ids(s, 0, 'battlefield').filter((id) => nameOf(s, id) === 'Dragon').length;
+
+  describe('"if you control an artifact"', () => {
+    it.each([
+      ['with a Sol Ring out', [...FOUR, 'Sol Ring'], 1],
+      ['with no artifact', [...FOUR, 'Island'], 0],
+    ])('Scholar of Stars %s draws %i', (_board, mine, drawn) => {
+      const before = start(mine, ['Scholar of Stars']);
+      const hand = ids(before, 0, 'hand').length;
+      const card = find(before, 0, 'hand', 'Scholar of Stars');
+      // The spell alone first, so the stack can be read before the ability resolves.
+      let s = passBoth(apply(before, { type: 'auto:cast', by: 0, card }));
+      expect(s.instances[card]!.zone).toBe('battlefield');
+      // True: one triggered ability waiting. False: nothing at all — not a trigger that fizzles.
+      expect(s.stackOrder).toHaveLength(drawn);
+      s = drain(s);
+      expect(ids(s, 0, 'hand').length).toBe(hand - 1 + drawn);
+    });
+  });
+
+  describe('"if you control six or more lands"', () => {
+    it.each([
+      [5, 0],
+      [6, 1],
+      [7, 1],
+    ])('Dragonmaster Outcast with %i lands makes %i Dragon each upkeep', (lands, made) => {
+      // Five is one short and makes nothing; six is the printed number; seven is "or more".
+      // `start` walks to the main phase of a turn whose upkeep the Outcast was already out for,
+      // so that upkeep is the first reading and the caster's next one is the second.
+      let s = start([...Array<string>(lands).fill('Mountain'), 'Dragonmaster Outcast'], []);
+      expect(dragons(s)).toBe(made);
+      s = nextTurn(nextTurn(s));
+      expect(s.activeSeat).toBe(0);
+      s = drain(advanceTo(s, 'precombat-main'));
+      // Once a turn and only on yours: seat 1's upkeep in between made nothing.
+      expect(dragons(s)).toBe(2 * made);
+    });
+
+    it('makes a 5/5 red flier', () => {
+      const s = start([...Array<string>(6).fill('Mountain'), 'Dragonmaster Outcast'], []);
+      const dragon = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Dragon')!;
+      const ch = characteristicsOf(s, s.instances[dragon]!);
+      expect(`${ch.power}/${ch.toughness}`).toBe('5/5');
+      expect(ch.colors).toEqual(['R']);
+      expect(ch.keywords.has('flying')).toBe(true);
+    });
+  });
+
+  describe('"if an opponent lost life this turn"', () => {
+    const LANDS = ['Swamp', 'Swamp', 'Swamp', 'Mountain'];
+
+    it('nobody lost life: the Outlaw arrives and nothing happens', () => {
+      const before = start(LANDS, ['Arrogant Outlaw']);
+      const s = drain(passBoth(apply(before, {
+        type: 'auto:cast', by: 0, card: find(before, 0, 'hand', 'Arrogant Outlaw'),
+      })));
+      expect(life(s, 0)).toBe(20);
+      expect(life(s, 1)).toBe(20);
+    });
+
+    it('after a Shock to the opponent: they lose 2 more and you gain 2', () => {
+      let s = start(LANDS, ['Shock', 'Arrogant Outlaw']);
+      s = drain(passBoth(apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'),
+        targets: [{ kind: 'player', seat: 1 }],
+      })));
+      expect(life(s, 1)).toBe(18);
+      s = drain(passBoth(apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Arrogant Outlaw'),
+      })));
+      expect(life(s, 1)).toBe(16);
+      expect(life(s, 0)).toBe(22);
+    });
+
+    it('your own life lost does not count: "an opponent"', () => {
+      // City of Brass pings its controller as it is tapped for the Outlaw. Life was lost this turn,
+      // by the wrong player, and the record that shows it is asserted so the row is not vacuous.
+      const before = start(['Swamp', 'Swamp', 'City of Brass'], ['Arrogant Outlaw']);
+      const s = drain(passBoth(apply(before, {
+        type: 'auto:cast', by: 0, card: find(before, 0, 'hand', 'Arrogant Outlaw'),
+      })));
+      expect(life(s, 0)).toBe(19);
+      expect(s.lifeLostThisTurn['0']).toBe(1);
+      expect(life(s, 1)).toBe(20);
+    });
   });
 });

@@ -20878,6 +20878,107 @@ function entersTappedFromLine(line: string, name: string): Partial<CardScript> |
  * Keywords first because they are exact matches on a short line and cannot be confused for a
  * sentence.
  */
+/**
+ * The condition in the middle of a trigger — "…, **if you control two or more Gates**, …" — as the
+ * question the engine asks (D563).
+ *
+ * A short list on purpose. Each entry is a fact the engine already keeps or a count
+ * `countOfThing` already reads, so nothing here is a new way to look at the board:
+ *
+ *     an opponent lost life this turn          `lifeLostThisTurn`, spectacle's fact (D197)
+ *     you control N or more <things>           `countOfThing(<things> you control)`, plural
+ *     you control a/an <thing>                 the same count, singular, at least one
+ *     there are N or more <things>             `countOfThing`, plural — "creature cards in your
+ *                                              graveyard", "cards in your hand"
+ *
+ * Anything else is `null`, which refuses the whole line. That matters more here than for an
+ * effect: a condition read loosely is a trigger that fires when it should not, on a card that
+ * reports every line read (D362). "You control a creature with power 4 or greater" and "you
+ * control another Spirit" are both refused today — the first needs a filter and the second needs
+ * to know whether the card asking is one of the things counted, and neither is guessed at.
+ */
+function interveningConditionFor(
+  printed: string, name: string,
+): NonNullable<TriggerDef['condition']> | null {
+  const text = plain(printed).trim();
+  if (/^an opponent lost life this turn$/i.test(text)) {
+    return (c) => c.state.seats.some((seat) => seat.index !== c.controller
+      && (c.state.lifeLostThisTurn[String(seat.index)] ?? 0) > 0);
+  }
+  const number = (word: string): number | undefined =>
+    (/^\d+$/.test(word) ? Number(word) : WORD_NUMBERS[word.toLowerCase()]);
+
+  const several = /^you control (\w+) or more (.+)$/i.exec(text);
+  if (several !== null) {
+    const atLeast = number(several[1]!);
+    const count = countOfThing(`${several[2]!} you control`, name, 'plural');
+    if (atLeast === undefined || atLeast < 1 || count === null) return null;
+    return (c) => count(c) >= atLeast;
+  }
+  const one = /^you control an? (.+)$/i.exec(text);
+  if (one !== null) {
+    const count = countOfThing(`${one[1]!} you control`, name, 'singular');
+    return count === null ? null : (c) => count(c) >= 1;
+  }
+  const there = /^there are (\w+) or more (.+)$/i.exec(text);
+  if (there !== null) {
+    const atLeast = number(there[1]!);
+    const count = countOfThing(there[2]!, name, 'plural');
+    if (atLeast === undefined || atLeast < 1 || count === null) return null;
+    return (c) => count(c) >= atLeast;
+  }
+  return null;
+}
+
+/**
+ * A triggered ability with an intervening-if: "When ~ enters, **if <condition>**, <effect>" (D563).
+ *
+ * D561's wrapper, generalised from one condition to a small vocabulary of them. The sentence is the
+ * shorter one with a clause in the middle, so the clause is taken out, the shorter sentence goes
+ * through `lineScriptFor` as any card that printed it would, and the condition is put in front of
+ * the trigger that comes back. 334 legal lines have this shape and are unread; for 149 of them the
+ * shorter sentence already reads, so the only thing missing was the condition.
+ *
+ * It sits **after** `triggerFromLine` in the chain, which means it only ever sees a line the
+ * trigger reader refused — a line with an "if" the trigger reader already understands is read
+ * there and never reaches this.
+ *
+ * Three refusals, each of which leaves the line reported:
+ *
+ * - the prologue may not contain a comma, so the "if" is the first clause after the event and not
+ *   something later in the effect ("…, then if you control…");
+ * - the condition must be one `interveningConditionFor` reads;
+ * - the shorter sentence must come back as **one trigger and nothing else**. Any event is fine —
+ *   the condition is about the board, not about how the card arrived — but a second field would be
+ *   something the condition was not put in front of.
+ *
+ * The engine asks a trigger's `condition` as it triggers and again as it resolves (CR 603.4), which
+ * is the rule for an intervening-if and the reason it is a condition rather than a branch in the
+ * effect: a Gatekeeper with one Gate puts nothing on the stack.
+ */
+function interveningIfFromLine(line: string, name: string): Partial<CardScript> | null {
+  const text = plain(line).trim();
+  const clause = /^((?:When|Whenever|At the beginning of) [^,]+), if ([^,]+), (.+)$/i.exec(text);
+  if (clause === null) return null;
+  const condition = interveningConditionFor(clause[2]!, name);
+  if (condition === null) return null;
+  const read = lineScriptFor(`${clause[1]!}, ${clause[3]!}`, name);
+  if (read === null) return null;
+  const keys = Object.keys(read);
+  const inner = read.triggers?.[0];
+  if (keys.length !== 1 || keys[0] !== 'triggers' || read.triggers!.length !== 1 || inner === undefined) {
+    return null;
+  }
+  const own = inner.condition;
+  return {
+    triggers: [{
+      ...inner,
+      description: `if ${clause[2]!.trim()}, ${inner.description}`,
+      condition: own === undefined ? condition : (c) => condition(c) && own(c),
+    }],
+  };
+}
+
 export function lineScriptFor(line: string, name: string): Partial<CardScript> | null {
   return keywordScriptFor(line, name)
     ?? additionalCostFromLine(line)
@@ -20907,6 +21008,7 @@ export function lineScriptFor(line: string, name: string): Partial<CardScript> |
     */
     ?? sacrificeAtEndOfTurnFromLine(line, name)
     ?? triggerFromLine(line, name)
+    ?? interveningIfFromLine(line, name)
     ?? abilityFromLine(line, name);
 }
 
