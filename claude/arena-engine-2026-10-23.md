@@ -20355,3 +20355,14 @@ where the queue had measured one. Three of the last four increments have beaten 
 more than twice, and all three opened a phrase rather than adding a clause. That is now a reliable
 rule for reading the queue: **a row whose fix is a wider phrase is worth several times its printed
 count; a row whose fix is a new clause is worth about what it says.**
+
+### D546's pod sweep
+
+**40/40 pods finished** at SEED0=41901 on the clean commit (aa163fa), no engine throw and no stalled
+table, 57.9 turns and 334 moves a game. Per 100-card deck across 160 decks: 26.1 cards with a
+hand-written script, 47.0 with at least one unread line, 61.9 playable only from printed data, 0.5
+cardboard.
+
+**Five increments, five clean sweeps, and the running total for the stretch:** 23,228 → 23,403
+printed legal lines read (41.2% → 41.5%), 11,875 → 12,003 cards with a compiled script, 7,620 →
+7,753 with every printed line read. 3,321 → 3,380 engine tests, green at every push.
