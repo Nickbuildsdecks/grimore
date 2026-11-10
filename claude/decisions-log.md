@@ -38185,3 +38185,21 @@ Seed 42201 now finishes: 49 turns, 221 moves.
 `corpus-decks.mjs` also gained `STACK=1`, which prints the stack of a throw. Without it the message
 alone said only which card died, not which of the three cast paths was on the stack — and the fix
 depended entirely on knowing it was the offered one.
+
+### D549 + D550's pod sweep
+
+The honest sequence, because it is the point: D549's sweep at SEED0=42101 came back **39/40**, and
+the one throw was D550's defect. After the fix, seed 42201 finishes on its own, and a **fresh** sweep
+at SEED0=42301 is **40/40** — no engine throw and no stalled table, 56.4 turns and 250 moves a game.
+Per 100-card deck across 160 decks: 26.4 cards with a hand-written script, 46.6 with at least one
+unread line, 62.0 playable only from printed data, 0.4 cardboard.
+
+A fresh seed set rather than re-running 42101: re-running the set that found the bug would only prove
+the bug is gone, which the named-seed replay already proves. Forty new tables ask whether anything
+else is.
+
+**And the sweep earned its place in the loop.** Six increments ran clean before this one; the seventh
+caught a defect that had been in the engine since cascade shipped and that the whole 3,414-test suite
+never touched, because no test in it cascades into a card with an unreadable cost. The gate proves
+the engine does what its tests say; the sweep is what asks whether anything in 160 random real decks
+disagrees.
