@@ -37941,3 +37941,120 @@ the state-based actions, the attachment rules (CR 704.5m) or the bot's search.
 Six increments (D542–D547), six clean pod sweeps, gate green at every push. And one finding that is
 not in the table: **46 cards now do what they print**, where before their keyword line counted as
 read and the mechanic did nothing.
+
+---
+
+## D548 — Audit the keyword list, then read the Evoke line as a whole-card shape
+
+### The audit D547 asked for
+
+D547 found 46 printings whose keyword line **read and did nothing**: `Living weapon` and
+`For Mirrodin!` were in `KEYWORD_ABILITY_NAMES`, so `compile.ts` tagged their line
+`unimplemented-keyword` rather than `no-reader` — and `one-blocker.mjs` and `one-away.mjs` both
+filter to `no-reader`. The whole queue instrument is blind to that family by construction, so the
+only way to see it was to ask a different question.
+
+`scratchpad/kwaudit.mjs` asks it: for every legal card, group the unread lines whose `why` is
+`unimplemented-keyword`, and count both **printings** and **cards finished** (a card whose only
+unread line is that keyword).
+
+| | |
+| --- | --- |
+| legal cards scanned, by name | 31,654 |
+| with an unimplemented keyword line | 2,033 |
+| **whose every unread line is one** | **578** |
+
+578 cards are one keyword reader away from a finished script, and none of them was visible to the
+queue. The head of the ranking, by cards finished:
+
+| finishes | printings | keyword |
+| --- | --- | --- |
+| 18 | 30 | evoke |
+| 14 | 25 | backup |
+| 14 | 23 | improvise |
+| 13 | 32 | toxic |
+| 13 | 21 | bloodthirst |
+| 12 | 42 | disguise |
+| 12 | 27 | flanking |
+| 12 | 22 | splice onto arcane |
+| 12 | 20 | renown |
+| 12 | 16 | fabricate |
+
+Two large families are large in printings and **zero** in cards finished, and both are already
+explained rather than newly discovered. `kicker` (202) is documented in `keywordScriptFor` as
+deliberately unread, because its payoff is printed on another line. `enchant <filter>` (42 for
+"enchant player", 22 for "enchant artifact or creature", and a long tail) is a filter-vocabulary
+gap on Auras that have other unread lines anyway — a different job from reading a keyword.
+
+### What shipped: evoke, the head row
+
+The cheapest row on the list, because **the engine already had both halves**. `CardScript.evoke` is
+read by `collectLegalActions` and `completeResolution` for any script that sets it, and
+`evokeSacrifice()` has been written out since #172 for the hand-written Mulldrifter. Thirty cards
+carried the declaration as a line nothing implemented.
+
+**The reading is in `wholeCardShapeFor`, not in `keywordScriptFor`, and the reason is order.**
+Three facts compose into a bug:
+
+1. Evoke prints **last** on all 30 corpus cards — it is a cost line, and cost lines print at the
+   bottom.
+2. `compile.ts`'s `merge` **appends** to `triggers`, because a permanent with two printed triggered
+   abilities is ordinary and both are real.
+3. The engine puts a permanent's triggers on the stack in list order, so the **first listed is at
+   the bottom and resolves last** (CR 603.3b).
+
+Read from the per-line loop, the sacrifice would therefore be appended last, go on the stack above
+the card's own ETB ability, and resolve **first** — a Mulldrifter that dies before it draws. Nothing
+would throw and no line would be reported unread, which makes it the shape of mistake this module is
+least able to notice. A whole-card shape runs ahead of the loop, so the sacrifice is listed first.
+
+`wholeCardShapeFor` now holds two different kinds of reader, and its docblock says so: three are
+there because **no single line is a unit** (an Aura's enchant line, an exile-until-leaves, soulbond),
+and this one because **its one line is a unit but its trigger has to be first**. `evokeShapeFor` is
+deliberately last in the chain — a card that somehow matched an earlier shape keeps the reading it
+had and its evoke line falls through to be reported, which is the status quo rather than a
+regression.
+
+Six printings stay unread: the five Elemental Incarnations ("Evoke—Exile a green card from your
+hand.") and Infestation ("Evoke—{1}{B}{B}, Pay 3 life."). `CardScript.evoke.cost` is a mana cost, so
+reading either would be inventing a cost the engine cannot pay (D362). Both end in a full stop, so
+`isKeywordDeclaration` already refuses them — which is why the audit's row reads 30 and not 36.
+
+### Measured
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,464 / 56,421 (41.6%) | **23,494 / 56,421 (41.6%)** |
+| cards with a compiled script | 12,003 | **12,014** |
+| cards with every printed line read | 7,783 | **7,801** |
+
++18 fully read, exactly what the audit predicted, and +30 lines — one per printing. The audit is
+therefore also calibrated: for a keyword row the "cards finished" column is not an estimate.
+
+### The break run, and two entries it sent back
+
+Eleven breaks, each verified to apply against a SHA-256 and to revert to the original bytes, the
+whole engine suite run with **no `-t` filter** (D544's rule). **9 caught.** The two that came back
+uncaught were adjudicated rather than patched, and they are different cases:
+
+- **The `^` anchor comes off** — uncaught, and probing says why: **zero** printed lines in the legal
+  corpus are read by the un-anchored pattern and refused by the anchored one. No real card
+  discriminates. But a synthetic line does, and the anchor carries the claim that makes the reader
+  safe at all — the line *is* the declaration, not a line that mentions the keyword. A resolution
+  sentence ending in a mana cost would otherwise hand the card a free alternative casting, which is
+  strictly better than printed. So it gets a row, labelled in the test as a guard against a shape
+  the pool does not print rather than a regression test for one it does.
+- **`evokeShapeFor` tried first instead of last** — uncaught and **genuinely vacuous**. Of the 30
+  legal cards printing a mana evoke cost, **none** also prints an `Enchant` line, an
+  exile-until-it-leaves or `Soulbond`, so no card can tell the two orders apart. Recorded as vacuous
+  with that count, and `wholeCardShapeFor`'s docblock was rewritten: the ordering claim it used to
+  make was a behavioural guarantee it cannot support, so it now says the order is arbitrary against
+  the pool as it stands and the position is defensive.
+
+Break 11 is worth naming because it is the one that defends the whole reason this reader is a
+whole-card shape: making `merge` **prepend** instead of append reverses every card's trigger order,
+and the suite catches it. So the ordering argument in `evokeShapeFor`'s docblock is not decoration —
+there is a test that fails when the order flips.
+
+Re-run after adding the anchor row: **10 of 11 caught**, the eleventh recorded vacuous with the
+count that proves it. Engine suite 3,402.

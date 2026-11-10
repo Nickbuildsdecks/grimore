@@ -35021,3 +35021,139 @@ describe('the Equipment that arrives already attached, at the table (D547)', () 
     expect(toughness(s, bears)).toBe(3);
   });
 });
+
+describe('the Evoke keyword line, at the table (D548)', () => {
+  /*
+    Two **real** evoke cards, neither of which is in the pool, so what is driven here is the
+    compiler's reading and not a hand-written script. Their printed rows are copied from the corpus
+    unchanged — reminder text and all — because a row retyped from memory is a row that can be
+    wrong about the card (D259).
+
+    Mulldrifter is deliberately not one of them. It is in Tidal Mind, so `customDeck` would find the
+    hand-written script and this block would test the twin rather than the reading.
+  */
+  const DATA = [
+    {
+      name: 'Aethersnipe', type_line: 'Creature — Elemental', mana_cost: '{5}{U}', cmc: 6,
+      colors: ['U'], power: '4', toughness: '4', layout: 'normal',
+      oracle_text: "When Aethersnipe enters, return target nonland permanent to its owner's hand.\n"
+        + 'Evoke {1}{U}{U} (You may cast this spell for its evoke cost. '
+        + "If you do, it's sacrificed when it enters.)",
+    },
+    {
+      name: 'Ingot Chewer', type_line: 'Creature — Elemental', mana_cost: '{4}{R}', cmc: 5,
+      colors: ['R'], power: '3', toughness: '3', layout: 'normal',
+      oracle_text: 'When Ingot Chewer enters, destroy target artifact.\n'
+        + 'Evoke {R} (You may cast this spell for its evoke cost. '
+        + "If you do, it's sacrificed when it enters.)",
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'evoked',
+      name: 'Evoked',
+      entries: [
+        { name: 'Aethersnipe', count: 4 }, { name: 'Ingot Chewer', count: 4 },
+        { name: 'Grizzly Bears', count: 8 }, { name: 'Sol Ring', count: 4 },
+        { name: 'Island', count: 20 }, { name: 'Mountain', count: 20 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Aethersnipe', 'Ingot Chewer'].sort());
+    return list.deck;
+  };
+
+  const table = (
+    hand: readonly string[], mine: readonly string[], theirs: readonly string[] = [],
+  ): GameState => advanceTo(arena({
+    decks: { 0: 'evoked', 1: 'evoked' },
+    deckSpecs: { evoked: deck() },
+    hands: { 0: [...hand] },
+    battlefield: { 0: ['Island', 'Island', 'Island', 'Mountain', ...mine], 1: [...theirs] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  it('offers both castings of a compiled card, at both printed costs', () => {
+    // Six Islands, so both costs are affordable and the list is about what the card offers rather
+    // than about what this board can pay for: `legalActions` prints only the plays it can afford.
+    const s = table(['Aethersnipe'], ['Island', 'Island', 'Island']);
+    expect(legalActions(s, 0).plays
+      .filter((p) => p.name === 'Aethersnipe').map((p) => p.manaCost))
+      .toEqual(['{1}{U}{U}', '{5}{U}']);
+  });
+
+  it('on three lands, only the evoke casting is on offer', () => {
+    // Which is the whole point of the keyword: a card you could not cast at all this turn becomes
+    // a card you can. Three Islands and a Mountain is four mana against a printed {5}{U}.
+    const s = table(['Aethersnipe'], []);
+    expect(legalActions(s, 0).plays
+      .filter((p) => p.name === 'Aethersnipe').map((p) => p.manaCost))
+      .toEqual(['{1}{U}{U}']);
+  });
+
+  it('evoked: the ability resolves and the body goes to the graveyard', () => {
+    /*
+      The end-to-end claim. Three Islands is exactly the evoke cost and nowhere near the printed
+      {5}{U}, so a casting that happened at all is the evoke casting — and the opponent's Bears
+      going home is the ETB ability having resolved rather than been thrown away with the body.
+    */
+    let s = table(['Aethersnipe'], [], ['Grizzly Bears']);
+    const card = find(s, 0, 'hand', 'Aethersnipe');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card, evoked: true } as Action), 60);
+
+    /*
+      **The stack, read out, which is the ordering assertion at the table.** Both triggers are on
+      it: the sacrifice at the bottom, where the compile-level test said it would be, and the ETB
+      ability on top. So the ability resolves first and the body is given up afterwards, which is
+      the order a player ordering their own triggers would pick (CR 603.3b).
+    */
+    expect(stackNames(s)).toEqual([
+      'sacrifice it, because its evoke cost was paid',
+      "return target nonland permanent to its owner's hand",
+    ]);
+    // The choice is the controller's, and it is a real one: the Aethersnipe can point at itself.
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, {
+      type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bears }],
+    } as Action), 60);
+
+    expect(s.instances[card]!.zone).toBe('graveyard');
+    expect(namesIn(s, 1, 'battlefield')).toEqual([]);
+    expect(namesIn(s, 1, 'hand')).toContain('Grizzly Bears');
+  });
+
+  it('cast for its printed cost: the body stays', () => {
+    // The other half of the trade, and the half that proves the sacrifice is conditioned on the
+    // counter rather than on the card: the same script, cast the expensive way, keeps its creature.
+    let s = table(['Aethersnipe'], ['Island', 'Island', 'Island'], ['Grizzly Bears']);
+    const card = find(s, 0, 'hand', 'Aethersnipe');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card } as Action), 60);
+    // One trigger this time, because the sacrifice's intervening-if reads a counter the printed
+    // casting never writes — the `EVOKED` counter. See `evokeSacrifice`.
+    expect(stackNames(s)).toEqual(["return target nonland permanent to its owner's hand"]);
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = drain(apply(s, {
+      type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: bears }],
+    } as Action), 60);
+
+    expect(s.instances[card]!.zone).toBe('battlefield');
+    expect(namesIn(s, 1, 'hand')).toContain('Grizzly Bears');
+  });
+
+  it('a one-mana evoke pays with one land, and still destroys the artifact', () => {
+    // Ingot Chewer, whose evoke cost is a single {R}: the cheapest row in the family, and the one
+    // that would be unaffordable if the reader had picked up the printed {4}{R} by mistake.
+    let s = table(['Ingot Chewer'], [], ['Sol Ring']);
+    const card = find(s, 0, 'hand', 'Ingot Chewer');
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card, evoked: true } as Action), 60);
+    // One artifact on the table, so the trigger has nothing to ask and resolves on its own.
+    expect(s.pendingChoice).toBeNull();
+
+    expect(s.instances[card]!.zone).toBe('graveyard');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Sol Ring');
+    // One land tapped and no more: the evoke cost is what was paid.
+    expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(1);
+  });
+});

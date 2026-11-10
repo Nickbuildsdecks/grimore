@@ -9978,10 +9978,15 @@ export { cardTargets, destroy };
  *   it deals 4 damage instead" — so the declaration alone is an option to pay more for nothing.
  *   Every other alternative cost here changes only *how* the card is cast; these two change what it
  *   does, and overload's field takes an `onResolve` no line can supply.
- * - **Evoke.** `CardScript.evoke` is only half of it. The other half is "when this permanent
- *   enters, if its evoke cost was paid, sacrifice it", which the pool writes out as an ordinary
- *   triggered ability per card. The declaration on its own is a creature you get cheap and keep,
- *   which is a strictly better card than the one printed.
+ * - **Evoke**, which is absent for a reason worth keeping distinct from the rest of this list:
+ *   nothing about the line is unreadable. Both halves exist — the cost is `CardScript.evoke` and
+ *   the sacrifice is `evokeSacrifice()`, written out above — and the declaration on its own would
+ *   be a creature you get cheap and keep, so the pair has to be emitted together, which this
+ *   function can do. What it cannot do is emit them in the right **place**: the sacrifice has to be
+ *   the card's *first* trigger to resolve last, and a fragment from this table is appended after
+ *   the card's own abilities. So evoke is read by `evokeShapeFor`, ahead of the per-line loop. Its
+ *   docblock has the argument, and `wholeCardShapeFor`'s says why that function now has two kinds
+ *   of reader in it.
  * - **Embalm, eternalize and bestow.** Each needs characteristics the keyword line does not carry:
  *   the token's type and colour, its base power and toughness, the Aura's bonus. Reading the
  *   reminder text for them would be inventing a card out of a parenthesis.
@@ -13284,14 +13289,31 @@ function exileUntilLeavesShapeFor(
 }
 
 /**
- * Every shape read from more than one line, or from the type line as well as the text.
+ * Every shape that has to be read **before** the per-line loop, and the two reasons one does.
  *
- * Two so far — attachments and exile-until-leaves — and they are tried in order because a card is
- * one or the other, never both: an Aura has no ETB exile and an exiling creature has no
- * `Enchant creature`. The order is therefore arbitrary today and stated as such rather than
- * presented as a precedence that means something.
+ * `compileCard` calls this once, ahead of the loop, and skips whatever it claimed.
  *
- * `compileCard` calls this once, before the per-line loop, and skips whatever it claimed.
+ * Three of the four are here because **no single line is a unit**. An Aura's `Enchant creature`
+ * alone attaches and does nothing and its bonus line alone has nothing to attach to; an exile
+ * "until ~ leaves the battlefield" is two triggers broken apart; `Soulbond` alone is a pairing
+ * that buys nothing. Each emits every half or none.
+ *
+ * `evokeShapeFor` is here for a different reason, and it is worth separating because it is the
+ * first: **its one line is a unit, but the trigger it builds has to be the card's first.** See its
+ * docblock. The distinction matters for whoever adds the fifth reader — "I need the whole card" and
+ * "I need to be ahead of the other lines" are different needs, and only the second is about order.
+ *
+ * They are tried in sequence and the first answer wins, and for all four of them that order is
+ * **arbitrary against the pool as it stands**: a card is one of these shapes or another, never two.
+ * Measured rather than assumed — of the 30 legal cards printing a mana evoke cost, **none** also
+ * prints an `Enchant` line, an exile-until-it-leaves or `Soulbond`, so moving `evokeShapeFor` to the
+ * front of this chain changes no card's reading and the whole engine suite passes either way. That
+ * break is recorded as vacuous in `compile.test.ts` rather than defended with a test.
+ *
+ * `evokeShapeFor` is nonetheless written last **defensively**, and the preference is worth one
+ * sentence: if a card ever printed both, the older reader keeps the card and the evoke line falls
+ * through to the per-line loop to be reported as an unimplemented keyword — the status quo for such
+ * a card rather than a regression, which is the direction a new reader should fail in.
  */
 /**
  * Soulbond, which is two printed lines and one mechanic (CR 702.95a).
@@ -13332,12 +13354,71 @@ function soulbondShapeFor(def: CardDef, lines: readonly string[]): WholeCardRead
   return null;
 }
 
+/**
+ * Evoke: cast the creature for a cheaper cost and give the body up as it arrives (CR 702.74).
+ *
+ * The **head of the D548 keyword audit** — 18 legal cards finished, 30 printings — and the cheapest
+ * row on it, because the engine already had both halves. `CardScript.evoke` is read by
+ * `collectLegalActions` and `completeResolution` for any card that sets it, and `evokeSacrifice()`
+ * is already written out above for the hand-written Mulldrifter. Nothing was missing but a reader
+ * for the printed line, and 30 cards carried it as a keyword declaration nothing implemented —
+ * D547's failure mode exactly, and the reason that audit was worth running.
+ *
+ * ## Why it is read here and not in `keywordScriptFor`, which is the whole of the difficulty
+ *
+ * The keyword is a declaration **and** a triggered ability, which is the arrangement `echo`,
+ * `unearth` and `dash` are in, and every one of those is read in `keywordScriptFor`. This one
+ * cannot be, and the reason is **order**:
+ *
+ *  - Evoke prints **last** on every one of the 30 cards in the corpus — it is a cost line, and cost
+ *    lines print at the bottom.
+ *  - `compileCard`'s `merge` **appends** to `triggers`, because a permanent with two printed
+ *    triggered abilities is ordinary and both are real.
+ *  - The engine puts a permanent's triggers on the stack in list order, so the **first listed is at
+ *    the bottom and resolves last** (see `evokeSacrifice`, and CR 603.3b for whose choice that is).
+ *
+ * Read from the per-line loop, then, the sacrifice would be appended last, go on the stack on top of
+ * the card's own ETB ability, and resolve **first**: a Mulldrifter that dies before it draws. The
+ * engine would not throw and no line would be reported unread, so it is the shape of mistake this
+ * module is least able to notice — a card that reads whole and plays wrong.
+ *
+ * A whole-card shape runs before the loop, so the sacrifice is listed first and resolves last. The
+ * reader is one line's worth of parsing sitting in a two-line-shape function purely for that, which
+ * is why `wholeCardShapeFor`'s docblock now names two different reasons to be there.
+ *
+ * ## What it refuses, and both refusals leave a card that is flagged rather than wrong
+ *
+ * Only a **mana** evoke cost, because `CardScript.evoke.cost` is a mana cost and the engine pays it
+ * through the ordinary cost path. Six printings word it otherwise — the five Elemental Incarnations
+ * ("Evoke—Exile a green card from your hand.") and Infestation ("Evoke—{1}{B}{B}, Pay 3 life.") —
+ * and each stays unread and reported (D362). Note they are not even keyword declarations as far as
+ * `isKeywordDeclaration` is concerned: both forms end in a full stop, so they are already counted
+ * as `no-reader` rather than as an unimplemented keyword, and the audit's row of 30 is the mana
+ * form alone.
+ *
+ * It needs no check that the card is a permanent. `compileCard` returns through `spellScriptFor`
+ * for an instant or a sorcery before this function is reached, so the `etb` trigger it builds
+ * cannot land on a card that never enters the battlefield.
+ */
+function evokeShapeFor(lines: readonly string[]): WholeCardReading | null {
+  for (const line of lines) {
+    const evoked = /^evoke\s+((?:\{[^}]*\})+)$/i.exec(plain(line).trim());
+    if (evoked === null) continue;
+    return {
+      fragment: { evoke: { cost: evoked[1]! }, triggers: [evokeSacrifice()] },
+      claimed: [line],
+    };
+  }
+  return null;
+}
+
 export function wholeCardShapeFor(
   def: CardDef, lines: readonly string[],
 ): WholeCardReading | null {
   return attachmentScriptFor(def, lines)
     ?? exileUntilLeavesShapeFor(def, lines)
-    ?? soulbondShapeFor(def, lines);
+    ?? soulbondShapeFor(def, lines)
+    ?? evokeShapeFor(lines);
 }
 
 /** One `etb` or `dies` trigger, which is all the parsed board prologue below builds. */

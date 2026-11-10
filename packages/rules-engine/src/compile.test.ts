@@ -16314,3 +16314,134 @@ describe('the Equipment that arrives already attached (D547)', () => {
     if (creature.ok) expect(creature.script?.triggers ?? []).toEqual([]);
   });
 });
+
+/*
+  **The Evoke keyword line** (D548), and the reason it is a whole-card shape rather than a row in
+  `keywordScriptFor`'s table.
+
+  Head of the D548 keyword audit — 18 legal cards finished, 30 printings — and the whole increment
+  is one regex, because the engine already had `CardScript.evoke` and `evokeSacrifice()`. What it
+  did not have was a way to put the sacrifice in the right *place*: Evoke prints last on all 30
+  cards, `merge` appends to `triggers`, and the engine stacks a permanent's triggers in list order,
+  so a fragment appended by the per-line loop would resolve the sacrifice **before** the card's own
+  ETB ability. The second test below is the one that would catch that, and it is why the reader
+  lives in `wholeCardShapeFor`.
+*/
+describe('the Evoke keyword line, read ahead of the other lines (D548)', () => {
+  /** Mulldrifter's own printed text, reminder text and all, as the corpus carries it. */
+  const MULLDRIFTER: CardDataRow = {
+    name: 'Mulldrifter',
+    type_line: 'Creature — Elemental',
+    mana_cost: '{4}{U}',
+    cmc: 5,
+    colors: ['U'],
+    power: '2',
+    toughness: '2',
+    layout: 'normal',
+    oracle_text: 'Flying\nWhen Mulldrifter enters, draw two cards.\n'
+      + 'Evoke {2}{U} (You may cast this spell for its evoke cost. '
+      + "If you do, it's sacrificed when it enters.)",
+  };
+
+  it('reads the cost off the line, and the whole card with it', () => {
+    const read = compileCard(MULLDRIFTER);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect(read.script?.evoke).toEqual({ cost: '{2}{U}' });
+  });
+
+  it('lists the sacrifice FIRST, so it resolves after the card draws', () => {
+    /*
+      The assertion the increment exists for. Triggers go on the stack in list order, so the first
+      listed is at the bottom and resolves last (CR 603.3b, and `evokeSacrifice`'s docblock). A
+      Mulldrifter whose sacrifice were listed second would die before it drew — and nothing else in
+      this file would notice, because every printed line would still read.
+    */
+    const read = compileCard(MULLDRIFTER);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect((read.script?.triggers ?? []).map((t) => t.description)).toEqual([
+      'sacrifice it, because its evoke cost was paid',
+      'draw two cards',
+    ]);
+  });
+
+  it('is offered as a second way to cast the card, at the evoke cost', () => {
+    // The engine's half, which was already there: `collectLegalActions` reads `script.evoke` off
+    // whatever script it is handed, so a compiled card is offered the cast a hand-written one is.
+    const read = compileCard(MULLDRIFTER);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.evoke?.cost).toBe('{2}{U}');
+    /*
+      And the body is still the body: `Flying` emits no script field at all, because
+      `characteristicsOf` reads it off the card definition and restating it in the script would be
+      a second source for one fact (see `isPrintedAbilityLine`). So the evoke reading has to leave
+      the keyword line alone rather than claim it.
+    */
+    expect(read.script?.keywords).toBeUndefined();
+    expect(printedKeywords(read.def.oracleText)).toEqual(['flying']);
+  });
+
+  it.each([
+    ['the five Elemental Incarnations', 'Evoke—Exile a green card from your hand.'],
+    ['Infestation', 'Evoke—{1}{B}{B}, Pay 3 life.'],
+  ])('leaves the non-mana evoke cost of %s unread', (_which, line) => {
+    /*
+      `CardScript.evoke.cost` is a mana cost the engine pays through the ordinary cost path, so
+      these six printings stay unread and reported rather than being read as a cost they are not
+      (D362). Note both end in a full stop, so `isKeywordDeclaration` already refuses them — which
+      is why the audit's row of 30 is the mana form alone and these are counted as `no-reader`.
+    */
+    expect(isKeywordDeclaration(line)).toBe(false);
+    const read = compileCard({ ...MULLDRIFTER, oracle_text: `Flying\n${line}` });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread).toEqual([{ line, why: 'no-reader' }]);
+    expect(read.script?.evoke).toBeUndefined();
+  });
+
+  it('does not read a cost with a word in it as mana', () => {
+    // The anchored `$` doing its job: a trailing clause is not part of the cost, and reading
+    // `{2}{U}` off this line would make up a card whose evoke cost has no condition on it.
+    const read = compileCard({
+      ...MULLDRIFTER,
+      oracle_text: 'Flying\nEvoke {2}{U} if you control an Elemental',
+    });
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.script?.evoke).toBeUndefined();
+  });
+
+  it('does not read a sentence that merely ends in a cost as the declaration', () => {
+    /*
+      The `^` anchor, which the break run found undefended. **No printed line in the legal corpus
+      discriminates** — measured: zero lines that the un-anchored pattern reads and the anchored one
+      does not — so this row is a guard against a shape the pool does not print rather than a
+      regression test for one it does, and it is written down as such.
+
+      It is still worth a row, because the anchor carries the claim that makes this reader safe at
+      all: the line IS the declaration, not a line that mentions the keyword. A resolution sentence
+      ending in a mana cost would otherwise hand the card a free alternative casting, which is a
+      strictly better card than the one printed (D259, D362) — the one direction this module must
+      never err in.
+    */
+    const read = compileCard({
+      ...MULLDRIFTER,
+      oracle_text: 'Flying\nWhen this creature enters, evoke {2}{U}',
+    });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.evoke).toBeUndefined();
+  });
+
+  /*
+    **The chain's order is unfalsifiable, and that is a measurement rather than a shrug.**
+
+    `evokeShapeFor` is written last in `wholeCardShapeFor`, and moving it first passes the entire
+    engine suite. Probed rather than guessed: of the 30 legal cards printing a mana evoke cost,
+    **none** also prints an `Enchant` line, an exile-until-it-leaves or `Soulbond`, so no card can
+    tell the two orders apart. Recorded here as a vacuous break, with the preference kept in that
+    function's docblock as the defensive choice it is (D545's precedent, and D547's).
+  */
+});
