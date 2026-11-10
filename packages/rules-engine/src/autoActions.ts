@@ -903,6 +903,7 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     // The flag the card's destination depends on: a spell cast from the graveyard is exiled as it
     // leaves the stack, and by then nothing else remembers where it came from.
     ...(flashback ? { flashback: true as const } : {}),
+    ...(escape ? { escaped: true as const } : {}),
     // And the flag the permanent's own life depends on: a creature that arrives from an evoked
     // casting is marked as it lands, and nothing else remembers by then how it was paid for.
     ...(evoked ? { evoked: true as const } : {}),

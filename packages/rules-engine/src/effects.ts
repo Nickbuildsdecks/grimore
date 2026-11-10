@@ -2225,6 +2225,10 @@ export interface PumpOptions {
   /** See `ContinuousEffect.addTypes` — layer 4, "becomes a creature". */
   readonly addTypes?: readonly string[];
   readonly addSubtypes?: readonly string[];
+  /** See `ContinuousEffect.setCreatureTypes` — "becomes a Frog". */
+  readonly setCreatureTypes?: readonly string[];
+  /** See `ContinuousEffect.allCreatureTypes` — "with all creature types". */
+  readonly allCreatureTypes?: boolean;
   /** See `ContinuousEffect.setColors` — layer 5, "becomes red". */
   readonly setColors?: readonly Color[];
   /** See `ContinuousEffect.definesSize` — layer 7a, a size that is a count of the board. */
@@ -2292,6 +2296,8 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.losesAllAbilities ? { losesAllAbilities: true } : {}),
     ...(opts.addTypes ? { addTypes: opts.addTypes } : {}),
     ...(opts.addSubtypes ? { addSubtypes: opts.addSubtypes } : {}),
+    ...(opts.setCreatureTypes ? { setCreatureTypes: opts.setCreatureTypes } : {}),
+    ...(opts.allCreatureTypes ? { allCreatureTypes: true } : {}),
     ...(opts.setColors ? { setColors: opts.setColors } : {}),
     ...(opts.definesSize ? { definesSize: opts.definesSize } : {}),
     ...(opts.sizePerCount ? { sizePerCount: opts.sizePerCount } : {}),

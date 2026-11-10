@@ -22725,3 +22725,80 @@ Murder.
 A redirect (Swerve, Willbender) finds a spell's target through the hand-written script registry
 only. A spell that exists only as a compiled card — anything from a pasted deck that is not in
 the pool — reads as having no single target and cannot be redirected. Recorded as task #414.
+
+## D577 — Eleven cards given the clauses the pool had left off
+
+The next group: cards whose printed text has a clause the pool's did not, where the engine either
+had the mechanic already or needed one small piece.
+
+| card | what changed |
+| --- | --- |
+| Faithless Looting | has flashback {2}{R} |
+| Cackling Counterpart | text only: the script already had flashback {5}{U}{U} |
+| Woe Strider | escape is {3}{B}{B} and four other cards (was {4}{B} and three), and it escapes with two +1/+1 counters |
+| Phoenix of Ash | {2}{R}: +2/+0 (was {1}: +1/+0), and it escapes with a +1/+1 counter |
+| Mutavault | the animated land has all creature types |
+| Turn to Frog | the creature becomes blue and a Frog, as well as a 1/1 with no abilities |
+| Darksteel Plate | the Plate itself is indestructible (read off the printed keyword; text only) |
+| Balan, Wandering Knight | first strike; double strike only with two or more Equipment attached |
+| Pyromatics | 1 damage to any target; replicate is how it reaches a second |
+| Jace, Memory Adept | +1 draw a card and target player mills one; 0 mills ten; −7 any number of players draw twenty |
+| Ajani, Caller of the Pride | +1 is "up to one target creature"; −8 makes X Cats, X your life total |
+
+The largest of these in play is Jace, Memory Adept. The pool had the +1 milling ten and the 0
+drawing a card, with no ultimate. That is a planeswalker that mills ten every turn and gains
+loyalty for it. Hollow Tide is the mill deck and plays it; expect its results to move.
+
+**Four small engine pieces**, each for a clause more than one card prints:
+
+- `escape.counters`, with an `escaped` flag on the stack object, because "escapes with a +1/+1
+  counter" is asked as the permanent arrives and by then nothing else remembers how it was cast.
+- `setCreatureTypes` on a continuous effect: "becomes a Frog" replaces the creature types and
+  leaves any other subtype alone.
+- `allCreatureTypes`: a flag, not three hundred subtypes in the game state, and not the
+  changeling keyword either, which is an ability a Turn to Frog would remove.
+- a fourth kind of conditional static, `source-equipment`, for "as long as two or more Equipment
+  are attached to it".
+
+**Compiler.** Two readings added: "~ escapes with N +1/+1 counter(s) on it", read with its Escape
+line as one fact (10 corpus cards print it; 3 more say "escapes with" something else and stay
+unread), and "becomes a 2/2 creature with all
+creature types". Not read, and asserted as unread: Jace's −7, Ajani's −8, Turn to Frog's printed
+sentence, and Balan's two lines.
+
+**Tests.** 15 disagreed and were re-fitted; 8 rows added to the script tests and 3 to the
+compiler tests. The ones that check a price check it
+both ways: Woe Strider's escape is refused with three other cards in the graveyard and offered
+with four.
+
+Sunscourge Champion was meant for this group and is not in it: its eternalize costs "discard a
+card", and the engine has no discard-a-card cost on an ability yet. It stays queued.
+
+    pool cards queued in KNOWN_DIFFERENT: 22 → 11
+    engine tests: 3,868, all passing
+
+### The deck table, on D576's build
+
+6 seeds, 144 games a deck, 936 games, all finished. Build 9cd53de. D576's pod sweep (seeds
+44401–44440) was clean: 40 of 40 finished.
+
+| deck | D574 build | D576 build |
+| --- | --- | --- |
+| dawn-tithe | 76% | 76% |
+| verdant-guard | 71% | 71% |
+| ember-rush | 69% | 68% |
+| kindle-grove | 65% | 65% |
+| arc-tempest | 51% | 51% |
+| forge-alliance | 50% | 50% |
+| ashen-rite | 47% | 49% |
+| delta-bloom | 40% | 40% |
+| rot-harvest | 39% | 38% |
+| skyward-writ | 38% | 38% |
+| blight-vector | 38% | 38% |
+| hollow-tide | 35% | 35% |
+| tidal-mind | 31% | 29% |
+
+Twenty-one cards changed between the two columns and no deck moved by more than two points,
+which on 144 games is inside the noise. The corrections so far have been about what a card may
+touch, and the bot mostly was not using the extra reach. This entry's cards are a different
+kind (a planeswalker's abilities, two escape costs) and are not in either column.

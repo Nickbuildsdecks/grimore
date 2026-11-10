@@ -6031,7 +6031,7 @@ describe('the library as the thing you attack', () => {
     expect(before - librarySize(s, 1)).toBe(2);
   });
 
-  it("Jace's plus ability mills ten, and the deck loses the game when it runs out", () => {
+  it("Jace's zero mills ten, and the deck loses the game when it runs out", () => {
     let s = arena({
       decks: { 0: 'hollow-tide', 1: 'ember-rush' },
       battlefield: { 0: ['Jace, Memory Adept'] },
@@ -6047,12 +6047,14 @@ describe('the library as the thing you attack', () => {
     }
     expect(librarySize(s, 1)).toBe(5);
     s = advanceTo(s, 'precombat-main');
+    // The **0** mills ten (D577). The pool had it on the +1, which is a Jace that mills ten and
+    // gains loyalty for it; the printed +1 is a card for you and one card off their library.
     s = drain(passBoth(apply(s, {
-      type: 'auto:activate', by: 0, card: jace, abilityIndex: 0,
+      type: 'auto:activate', by: 0, card: jace, abilityIndex: 1,
       targets: [{ kind: 'player', seat: 1 }],
     })));
     expect(librarySize(s, 1)).toBe(0);
-    expect(s.instances[jace]!.counters['loyalty']).toBe(5);
+    expect(s.instances[jace]!.counters['loyalty']).toBe(4);
     expect(s.finished).toBe(false);
 
     // And the loss happens where the rules put it: on the draw they cannot make.
@@ -11712,7 +11714,7 @@ describe('two more planeswalkers', () => {
     expect(characteristicsOf(s, s.instances[knight]!).keywords.has('double strike')).toBe(false);
   });
 
-  it('Ajani’s ultimate makes five 2/2 Cats', () => {
+  it('Ajani’s ultimate makes a 2/2 Cat for each point of your life total (D577)', () => {
     let s = withWalker(0, 'skyward-writ', 'Ajani, Caller of the Pride', 'Plains', 3);
     const ajani = find(s, 0, 'battlefield', 'Ajani, Caller of the Pride');
     // Nobody reaches eight loyalty inside a test; the counters go on by hand so the ability itself
@@ -11720,7 +11722,9 @@ describe('two more planeswalkers', () => {
     s = charge(s, ajani, 8);
     s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: ajani, abilityIndex: 2 })));
 
-    expect(countOf(s, 0, 'battlefield', 'Cat')).toBe(5);
+    // X is your life total as it resolves. The pool made five, whatever the life total was.
+    expect(life(s, 0)).toBeGreaterThan(5);
+    expect(countOf(s, 0, 'battlefield', 'Cat')).toBe(life(s, 0));
     const cat = ids(s, 0, 'battlefield').find((id) => nameOf(s, id) === 'Cat')!;
     expect([power(s, cat), toughness(s, cat)]).toEqual([2, 2]);
     // Zero loyalty is a state-based action, so the ultimate kills its own planeswalker.
@@ -14080,7 +14084,10 @@ describe('a cost paid out of the graveyard: escape and delve', () => {
     s = drain(passBoth(s));
     expect(s.instances[card]!.zone).toBe('battlefield');
     const ch = characteristicsOf(s, s.instances[card]!);
-    expect([ch.power, ch.toughness]).toEqual([2, 2]);
+    // "Phoenix of Ash escapes with a +1/+1 counter on it" (D577): a 3/3, where one cast from a
+    // hand is the printed 2/2.
+    expect(s.instances[card]!.counters['+1/+1']).toBe(1);
+    expect([ch.power, ch.toughness]).toEqual([3, 3]);
     expect(ch.keywords.has('flying')).toBe(true);
 
     // Killed, and back in the graveyard rather than in exile: it can escape again.
@@ -15355,7 +15362,7 @@ describe('replicate: a cost paid several times over', () => {
     const before = life(s, 1);
     s = drain(apply(s, {
       type: 'auto:cast', by: 0, card: pyro, replicate: 2,
-      targets: [{ kind: 'player', seat: 1 }], division: [1],
+      targets: [{ kind: 'player', seat: 1 }],
     }), 60);
     // One damage three times rather than three damage once: three separate dealings, which is what
     // protection and prevention each have to be asked about separately.
@@ -15370,7 +15377,7 @@ describe('replicate: a cost paid several times over', () => {
     const before = life(s, 1);
     s = drain(apply(s, {
       type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Pyromatics'),
-      targets: [{ kind: 'player', seat: 1 }], division: [1],
+      targets: [{ kind: 'player', seat: 1 }],
     }), 60);
     expect(life(s, 1)).toBe(before - 1);
   });
@@ -15390,7 +15397,7 @@ describe('replicate: a cost paid several times over', () => {
   it('refuses a count that is not a count, and one on a card with no replicate', () => {
     const s = casting('Pyromatics', 'arc-tempest', Array.from({ length: 6 }, () => MOUNTAIN));
     const pyro = find(s, 0, 'hand', 'Pyromatics');
-    const aim = { targets: [{ kind: 'player' as const, seat: 1 as SeatIndex }], division: [1] };
+    const aim = { targets: [{ kind: 'player' as const, seat: 1 as SeatIndex }] };
     // Zero is "no replicate at all" rather than a count of none, and is simply the printed cast.
     expect(refusal(s, { type: 'auto:cast', by: 0, card: pyro, replicate: 0, ...aim })).toBeNull();
     expect(refusal(s, { type: 'auto:cast', by: 0, card: pyro, replicate: -1, ...aim }))
@@ -16503,23 +16510,30 @@ describe('Woe Strider: escape’s second card, and the outlet that comes back', 
     expect(fed).toBe(false);
   });
 
-  it('and comes back out of the graveyard for {4}{B} and three other cards', () => {
+  it('and comes back out of the graveyard for {3}{B}{B} and four other cards, two counters bigger (D577)', () => {
     const s = rite(
       [],
       ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp'],
-      ['Woe Strider', 'Village Rites', 'Dark Ritual', 'Burst Lightning'],
+      ['Woe Strider', 'Village Rites', 'Dark Ritual', 'Burst Lightning', 'Blood Artist'],
     );
     const play = legalActions(s, 0).plays
       .find((p) => p.name === 'Woe Strider' && p.escape === true);
-    expect(play?.manaCost).toBe('{4}{B}');
-    expect(play?.exiles).toBe(3);
+    expect(play?.manaCost).toBe('{3}{B}{B}');
+    expect(play?.exiles).toBe(4);
+    // Three other cards is one short, which is the printed price and not the pool's.
+    const short = rite([], ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp'],
+      ['Woe Strider', 'Village Rites', 'Dark Ritual', 'Burst Lightning']);
+    expect(legalActions(short, 0).plays.some((p) => p.name === 'Woe Strider' && p.escape === true)).toBe(false);
 
     const strider = find(s, 0, 'graveyard', 'Woe Strider');
     const after = drain(passBoth(apply(s, {
       type: 'auto:cast', by: 0, card: strider, escape: true,
     })));
     expect(after.instances[strider]!.zone).toBe('battlefield');
-    expect(ids(after, 0, 'exile')).toHaveLength(3);
+    expect(ids(after, 0, 'exile')).toHaveLength(4);
+    // "Woe Strider escapes with two +1/+1 counters on it": a 5/4.
+    expect(after.instances[strider]!.counters['+1/+1']).toBe(2);
+    expect([power(after, strider), toughness(after, strider)]).toEqual([5, 4]);
     // And a second Goat with it: the entry trigger does not care which zone it was cast from.
     expect(namesIn(after, 0, 'battlefield')).toContain('Goat');
   });
@@ -39925,5 +39939,177 @@ describe('printed targets and scopes, where the pool had wider or narrower ones 
     const s = arena({ decks: { 0: 'skyward-writ' }, battlefield: { 0: ['Knight Exemplar'] }, turn: 3 });
     const knight = find(s, 0, 'battlefield', 'Knight Exemplar');
     expect(characteristicsOf(s, s.instances[knight]!).keywords.has('first strike')).toBe(true);
+  });
+});
+
+describe('clauses the pool had left off its cards (D577)', () => {
+  it('Faithless Looting comes back from the graveyard for {2}{R}, once', () => {
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'ashen-rite', 1: 'ember-rush' },
+      graveyard: { 0: ['Faithless Looting'] },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Mountain'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const looting = find(s, 0, 'graveyard', 'Faithless Looting');
+    const play = legalActions(s, 0).plays.find((p) => p.card === looting && p.flashback === true);
+    expect(play?.manaCost).toBe('{2}{R}');
+    const before = ids(s, 0, 'hand').length;
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: looting, flashback: true })), 40);
+    // Two drawn, then two to discard: the question is the card's own.
+    expect(ids(s, 0, 'hand').length).toBe(before + 2);
+    const toss = ids(s, 0, 'hand').slice(0, 2);
+    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: toss } as Action), 40);
+    expect(ids(s, 0, 'hand').length).toBe(before);
+    // Exiled as it leaves the stack, so there is no third casting.
+    expect(s.instances[looting]!.zone).toBe('exile');
+  });
+
+  it('an animated Mutavault is every creature type, so a lord counts it', () => {
+    const list = customDeck({
+      id: 'vault',
+      name: 'Vault',
+      entries: [
+        { name: 'Mutavault', count: 4 },
+        { name: 'Knight Exemplar', count: 4 },
+        { name: 'Plains', count: 52 },
+      ],
+    }).deck;
+    let s = advanceTo(arena({
+      decks: { 0: 'vault', 1: 'ember-rush' },
+      deckSpecs: { vault: list },
+      battlefield: { 0: ['Plains', 'Mutavault', 'Knight Exemplar'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const vault = find(s, 0, 'battlefield', 'Mutavault');
+    s = apply(s, { type: 'auto:activate', by: 0, card: find(s, 0, 'battlefield', 'Plains'), abilityIndex: 0 });
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: vault, abilityIndex: 1 })), 40);
+    const ch = characteristicsOf(s, s.instances[vault]!);
+    expect(ch.isCreature).toBe(true);
+    expect(ch.isLand).toBe(true);
+    // "With all creature types": a Knight for the Exemplar, so a 3/3 with indestructible.
+    expect(ch.typeLine.subtypes).toEqual(expect.arrayContaining(['Knight', 'Elf', 'Wizard']));
+    expect([ch.power, ch.toughness]).toEqual([3, 3]);
+    expect(ch.keywords.has('indestructible')).toBe(true);
+  });
+
+  it('Turn to Frog makes a blue Frog: the colour and the creature types go with the abilities', () => {
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      hands: { 0: ['Turn to Frog'] },
+      battlefield: { 0: ['Island', 'Island'], 1: ['Centaur Courser'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const courser = find(s, 1, 'battlefield', 'Centaur Courser');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Turn to Frog'),
+      targets: [{ kind: 'card', id: courser }],
+    })), 40);
+    const frog = characteristicsOf(s, s.instances[courser]!);
+    expect([frog.power, frog.toughness]).toEqual([1, 1]);
+    expect(frog.colors).toEqual(['U']);
+    expect(frog.typeLine.subtypes).toEqual(['Frog']);
+    // Until end of turn, like the rest of it.
+    const later = characteristicsOf(nextTurn(s), s.instances[courser]!);
+    expect(later.typeLine.subtypes).toEqual(['Centaur', 'Warrior']);
+    expect(later.colors).toEqual(['G']);
+  });
+
+  it('Balan has first strike, and double strike only with two Equipment on it', () => {
+    const list = customDeck({
+      id: 'balan',
+      name: 'Balan',
+      entries: [
+        { name: 'Balan, Wandering Knight', count: 1 },
+        { name: 'Bonesplitter', count: 4 },
+        { name: 'Darksteel Plate', count: 4 },
+        { name: 'Plains', count: 51 },
+      ],
+    }).deck;
+    let s = advanceTo(arena({
+      decks: { 0: 'balan', 1: 'ember-rush' },
+      deckSpecs: { balan: list },
+      battlefield: { 0: ['Plains', 'Plains', 'Balan, Wandering Knight', 'Bonesplitter', 'Darksteel Plate'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const balan = find(s, 0, 'battlefield', 'Balan, Wandering Knight');
+    const keywords = (state: GameState) => characteristicsOf(state, state.instances[balan]!).keywords;
+    expect(keywords(s).has('first strike')).toBe(true);
+    expect(keywords(s).has('double strike')).toBe(false);
+    // Its own ability attaches both, and two is the number the card names.
+    s = drain(passBoth(apply(tapAllLands(s, 0), { type: 'auto:activate', by: 0, card: balan, abilityIndex: 0 })), 40);
+    expect(keywords(s).has('double strike')).toBe(true);
+    // One comes off and it is first strike alone again, with nothing to announce.
+    s = drain(apply(s, {
+      type: 'card:move', by: 0, card: find(s, 0, 'battlefield', 'Bonesplitter'), toZone: 'graveyard',
+    }), 40);
+    expect(keywords(s).has('double strike')).toBe(false);
+    expect(keywords(s).has('first strike')).toBe(true);
+  });
+
+  it('Darksteel Plate is itself indestructible', () => {
+    const s = arena({ decks: { 0: 'forge-alliance' }, battlefield: { 0: ['Darksteel Plate'] }, turn: 3 });
+    const plate = find(s, 0, 'battlefield', 'Darksteel Plate');
+    expect(characteristicsOf(s, s.instances[plate]!).keywords.has('indestructible')).toBe(true);
+    expect(destroy(s, plate).instances[plate]!.zone).toBe('battlefield');
+  });
+
+  it('Jace, Memory Adept: the plus is a card and a card, and the ultimate hands out twenty', () => {
+    const board = (): GameState => advanceTo(arena({
+      decks: { 0: 'hollow-tide', 1: 'ember-rush' },
+      battlefield: { 0: ['Jace, Memory Adept'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    let s = board();
+    const jace = find(s, 0, 'battlefield', 'Jace, Memory Adept');
+    const hand = ids(s, 0, 'hand').length;
+    const theirLibrary = ids(s, 1, 'library').length;
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: jace, abilityIndex: 0, targets: [{ kind: 'player', seat: 1 }],
+    })), 40);
+    expect(ids(s, 0, 'hand').length).toBe(hand + 1);
+    expect(ids(s, 1, 'library').length).toBe(theirLibrary - 1);
+    expect(s.instances[jace]!.counters['loyalty']).toBe(5);
+
+    // −7: any number of target players each draw twenty. One player here, and none is legal too.
+    let t = board();
+    t = { ...t, instances: { ...t.instances, [jace]: { ...t.instances[jace]!, counters: { loyalty: 7 } } } };
+    const mine = ids(t, 0, 'hand').length;
+    expect(refusal(t, { type: 'auto:activate', by: 0, card: jace, abilityIndex: 2, targets: [] })).toBeNull();
+    t = drain(passBoth(apply(t, {
+      type: 'auto:activate', by: 0, card: jace, abilityIndex: 2, targets: [{ kind: 'player', seat: 0 }],
+    })), 60);
+    expect(ids(t, 0, 'hand').length).toBe(mine + 20);
+    expect(t.instances[jace]!.zone).toBe('graveyard');
+  });
+
+  it('Ajani’s plus may be taken with no creature anywhere to put the counter on', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'skyward-writ', 1: 'ember-rush' },
+      battlefield: { 0: ['Ajani, Caller of the Pride'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const ajani = find(s, 0, 'battlefield', 'Ajani, Caller of the Pride');
+    // "Up to one target creature": none on the table, and the loyalty still goes up.
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: ajani, abilityIndex: 0, targets: [] })), 40);
+    expect(s.instances[ajani]!.counters['loyalty']).toBe(5);
+  });
+
+  it('Pyromatics is one damage at one target, and a replicated copy may be aimed elsewhere', () => {
+    let s = tapAllLands(advanceTo(arena({
+      decks: { 0: 'arc-tempest', 1: 'ember-rush' },
+      hands: { 0: ['Pyromatics'] },
+      battlefield: { 0: ['Mountain', 'Mountain'], 1: ['Raging Goblin'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main'), 0);
+    const pyro = find(s, 0, 'hand', 'Pyromatics');
+    const goblin = find(s, 1, 'battlefield', 'Raging Goblin');
+    // Two targets on one copy is not the card: the pool's version took both.
+    expect(refusal(s, {
+      type: 'auto:cast', by: 0, card: pyro,
+      targets: [{ kind: 'player', seat: 1 }, { kind: 'card', id: goblin }],
+    })).not.toBeNull();
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: pyro, targets: [{ kind: 'card', id: goblin }] })), 40);
+    expect(s.instances[goblin]!.zone).toBe('graveyard');
+    expect(life(s, 1)).toBe(20);
   });
 });

@@ -2632,6 +2632,8 @@ export interface CardScript {
     readonly cost: string;
     /** How many *other* cards leave the graveyard with it. */
     readonly exile: number;
+    /** "~ escapes with N +1/+1 counters on it" (D577): only when it was cast this way. */
+    readonly counters?: number;
   };
   /**
    * Delve: each card you exile from your graveyard while casting this pays for {1} (CR 702.112).

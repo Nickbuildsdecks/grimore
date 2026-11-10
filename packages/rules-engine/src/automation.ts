@@ -4469,6 +4469,10 @@ function completeResolution(
         `arrivalReplacements`: that pass serves every arrival, and only a spell can have been
         kicked. Additive with `entersWith`, which the arrival pass still applies.
       */
+      // "Escapes with N +1/+1 counters on it" (D577): the same kind of record, for the same reason.
+      if (object.escaped === true && (script?.escape?.counters ?? 0) > 0) {
+        next = addCounters(next, inst.id, '+1/+1', script!.escape!.counters!);
+      }
       if (object.kicked === true) {
         next = addCounters(next, inst.id, KICKED, 1);
         const kickedWith = script?.kickedEntersWith;

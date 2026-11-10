@@ -244,7 +244,7 @@ const FAITHLESS_LOOTING: CardDef = {
   typeLine: 'Sorcery',
   manaCost: '{R}',
   cmc: 1,
-  oracleText: 'Draw two cards, then discard two cards.',
+  oracleText: 'Draw two cards, then discard two cards.\nFlashback {2}{R}',
   colors: ['R'],
 };
 
@@ -1305,7 +1305,7 @@ const TURN_TO_FROG: CardDef = {
   typeLine: 'Instant',
   manaCost: '{1}{U}',
   cmc: 2,
-  oracleText: 'Target creature loses all abilities and becomes 1/1 until end of turn.',
+  oracleText: 'Until end of turn, target creature loses all abilities and becomes a blue Frog with base power and toughness 1/1.',
   colors: ['U'],
 };
 
@@ -1314,7 +1314,7 @@ const CACKLING_COUNTERPART: CardDef = {
   typeLine: 'Instant',
   manaCost: '{1}{U}{U}',
   cmc: 3,
-  oracleText: "Create a token that's a copy of target creature you control.",
+  oracleText: "Create a token that's a copy of target creature you control.\nFlashback {5}{U}{U}",
   colors: ['U'],
 };
 
@@ -1418,7 +1418,7 @@ const JACE_MEMORY_ADEPT: CardDef = {
   manaCost: '{3}{U}{U}',
   cmc: 5,
   loyalty: '4',
-  oracleText: '+1: Target player mills ten cards.\n0: Draw a card.',
+  oracleText: '+1: Draw a card. Target player mills a card.\n0: Target player mills ten cards.\n−7: Any number of target players each draw twenty cards.',
   colors: ['U'],
 };
 
@@ -1746,7 +1746,7 @@ const BALAN: CardDef = {
   cmc: 4,
   power: '3',
   toughness: '3',
-  oracleText: 'Double strike\n{1}{W}: Attach all Equipment you control to Balan, Wandering Knight.',
+  oracleText: 'First strike\nBalan, Wandering Knight has double strike as long as two or more Equipment are attached to it.\n{1}{W}: Attach all Equipment you control to Balan.',
   colors: ['W'],
 };
 
@@ -2390,7 +2390,7 @@ const DARKSTEEL_PLATE: CardDef = {
   typeLine: 'Artifact \u2014 Equipment',
   manaCost: '{3}',
   cmc: 3,
-  oracleText: 'Equipped creature is indestructible.\nEquip {2}',
+  oracleText: 'Indestructible\nEquipped creature has indestructible.\nEquip {2}',
   colors: [],
 };
 
@@ -2868,7 +2868,7 @@ const MUTAVAULT: CardDef = {
   typeLine: 'Land',
   manaCost: '',
   cmc: 0,
-  oracleText: '{T}: Add {C}.\n{1}: Mutavault becomes a 2/2 creature until end of turn. It\u2019s still a land.',
+  oracleText: "{T}: Add {C}.\n{1}: Mutavault becomes a 2/2 creature with all creature types until end of turn. It's still a land.",
   colors: [],
 };
 
@@ -2916,8 +2916,7 @@ const PHOENIX_OF_ASH: CardDef = {
   cmc: 3,
   power: '2',
   toughness: '2',
-  oracleText: 'Flying, haste\n{1}: Phoenix of Ash gets +1/+0 until end of turn.\n'
-    + 'Escape—{2}{R}{R}, Exile three other cards from your graveyard.',
+  oracleText: 'Flying, haste\n{2}{R}: Phoenix of Ash gets +2/+0 until end of turn.\nEscape\u2014{2}{R}{R}, Exile three other cards from your graveyard.\nPhoenix of Ash escapes with a +1/+1 counter on it.',
   colors: ['R'],
 };
 
@@ -3076,9 +3075,7 @@ const WOE_STRIDER: CardDef = {
   cmc: 3,
   power: '3',
   toughness: '2',
-  oracleText: 'When Woe Strider enters the battlefield, create a 0/1 white Goat creature token.\n'
-    + 'Sacrifice another creature: Scry 1.\n'
-    + 'Escape—{4}{B}, Exile three other cards from your graveyard.',
+  oracleText: 'When Woe Strider enters, create a 0/1 white Goat creature token.\nSacrifice another creature: Scry 1.\nEscape\u2014{3}{B}{B}, Exile four other cards from your graveyard.\nWoe Strider escapes with two +1/+1 counters on it.',
   colors: ['B'],
 };
 
@@ -3639,7 +3636,7 @@ const AJANI_CALLER_OF_THE_PRIDE: CardDef = {
   manaCost: '{1}{W}{W}',
   cmc: 3,
   loyalty: '4',
-  oracleText: '+1: Put a +1/+1 counter on target creature.\n−3: Target creature gains flying and double strike until end of turn.\n−8: Create five 2/2 white Cat creature tokens.',
+  oracleText: '+1: Put a +1/+1 counter on up to one target creature.\n−3: Target creature gains flying and double strike until end of turn.\n−8: Create X 2/2 white Cat creature tokens, where X is your life total.',
   colors: ['W'],
 };
 
@@ -5759,9 +5756,9 @@ const PYROMATICS: CardDef = {
   typeLine: 'Instant',
   manaCost: '{1}{R}',
   cmc: 2,
-  oracleText: 'Pyromatics deals 1 damage divided as you choose among one or two targets.\n'
-    + 'Replicate {1}{R} (When you cast this spell, copy it for each time you paid its replicate '
-    + 'cost. You may choose new targets for the copies.)',
+  oracleText: 'Replicate {1}{R} (When you cast this spell, copy it for each time you paid its replicate '
+    + 'cost. You may choose new targets for the copies.)\n'
+    + 'Pyromatics deals 1 damage to any target.',
   colors: ['R'],
 };
 

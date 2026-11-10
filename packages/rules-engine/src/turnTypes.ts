@@ -379,6 +379,12 @@ export interface StackObject {
    */
   readonly flashback?: true;
   /**
+   * Whether this spell was cast with escape (D577). On the stack object for flashback's reason:
+   * "escapes with a +1/+1 counter" is asked as the permanent arrives, and by then the card is
+   * not in a graveyard and nothing else remembers that it came from one.
+   */
+  readonly escaped?: true;
+  /**
    * Whether this spell is the adventure half of an adventurer card.
    *
    * Beside `flashback` because it answers the same question — where the card goes as it leaves the

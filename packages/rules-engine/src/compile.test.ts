@@ -4445,9 +4445,6 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     it.each([
       // "3 damage divided as you choose among one, two, or three targets" — three and three.
       ['Arc Lightning', 3, 3],
-      // "1 damage divided as you choose among one or two targets" — one damage, two targets, which
-      // is the pair that proves the two numbers are read separately.
-      ['Pyromatics', 1, 2],
     ])('%s divides %i damage among up to %i targets, as the hand-written card does', (card, divided, count) => {
       const mine = compiledScript(card as string);
       expect(field(mine.script, 'targets'))
@@ -5876,8 +5873,42 @@ describe('compileCard, against the cards a person wrote by hand', () => {
       restrictions: sorcery speed, once a turn, controller only. So the cost parse takes it before
       the component loop, which has no `{T}` or mana to classify on a planeswalker's line.
     */
+    it('Pyromatics is 1 damage to any target, and does not divide (D577)', () => {
+      /*
+        It was the second row of the divided-damage table, for the sentence the pool gave it: "1
+        damage divided as you choose among one or two targets". The card prints "Pyromatics deals
+        1 damage to any target", and replicate is how it reaches a second one.
+      */
+      const mine = (field(compiledScript('Pyromatics').script, 'targets') as readonly TargetSpec[]);
+      expect(mine).toEqual(field(scriptFor('Pyromatics'), 'targets'));
+      expect(mine).toHaveLength(1);
+      expect(mine[0]!.divided).toBeUndefined();
+      expect(mine[0]!.count).toBeUndefined();
+    });
+
     it.each([
-      ['Jace, Memory Adept'],
+      ['Jace, Memory Adept', '\u22127: Any number of target players each draw twenty cards.'],
+      ['Ajani, Caller of the Pride', '\u22128: Create X 2/2 white Cat creature tokens, where X is your life total.'],
+    ])('%s reads every ability but its printed ultimate, and says which (D577)', (card, ultimate) => {
+      /*
+        Both read whole while the pool gave them ultimates of its own. The printed ones are two
+        sentences no reader takes yet, so each is reported unread and the card is the hand-written
+        one. The abilities above it still agree line for line.
+      */
+      const compiled = compiledScript(card as string);
+      expect(compiled.unread.map((u) => u.line)).toEqual([ultimate]);
+      const mine = abilitiesOf(compiled.script);
+      const theirs = abilitiesOf(scriptFor(card as string));
+      expect(theirs).toHaveLength(3);
+      expect(mine).toHaveLength(2);
+      mine.forEach((ability, i) => {
+        expect(ability.cost).toEqual(theirs[i]!.cost);
+        expect(ability.description).toBe(theirs[i]!.description);
+      });
+      expect(theirs[2]!.description).toBe(ultimate);
+    });
+
+    it.each([
       ['Jace Beleren'],
     ])('%s reads ability for ability, cost and description, like the hand-written card', (card) => {
       const compiled = compiledScript(card as string);
@@ -6103,13 +6134,12 @@ describe('compileCard, against the cards a person wrote by hand', () => {
     /*
       The headline, and the reason it is worth a test of its own: a planeswalker is three or four
       independent abilities, so it is the shape most likely to compile *partly* — and a card that is
-      three quarters automated is the hybrid D362 is about, not a finished reading. All five in the
-      pool now read whole.
+      three quarters automated is the hybrid D362 is about, not a finished reading. Three of the
+      pool's five read whole; Jace, Memory Adept and Ajani, Caller of the Pride each have a printed
+      ultimate that does not (D577), asserted where their abilities are compared.
     */
     it.each([
-      ['Jace, Memory Adept'],
       ['Jace Beleren'],
-      ['Ajani, Caller of the Pride'],
       ['Garruk Wildspeaker'],
       ['Nissa, Voice of Zendikar'],
     ])('%s leaves no line unread', (card) => {

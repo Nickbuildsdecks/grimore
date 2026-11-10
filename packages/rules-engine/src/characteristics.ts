@@ -1415,6 +1415,21 @@ export interface ContinuousEffect {
   /** Subtypes this effect adds, for the same layer. */
   readonly addSubtypes?: readonly string[];
   /**
+   * "Becomes a blue **Frog**" (D577): the creature types this effect leaves the permanent with,
+   * replacing the ones it had. Same layer. A subtype that is not a creature type — an Equipment
+   * that is also a creature keeps being an Equipment — is left alone.
+   */
+  readonly setCreatureTypes?: readonly string[];
+  /**
+   * "…becomes a 2/2 creature **with all creature types**" (D577), which is Mutavault's.
+   *
+   * A flag and not three hundred entries in `addSubtypes`: an effect is game state, the state is
+   * sent over the wire, and a list of every creature type on one animated land is most of a
+   * kilobyte per activation. And not the changeling keyword either — that is an ability, so a
+   * creature that loses all abilities loses it, where a type-changing effect does not care.
+   */
+  readonly allCreatureTypes?: boolean;
+  /**
    * A characteristic-defining ability: layer 7a (CR 613.4a), and the one layer whose answer is a
    * fact about the board rather than a number somebody wrote down.
    *
@@ -1445,6 +1460,15 @@ export interface ContinuousEffect {
    * creature itself rather than a count of the board (D182).
    */
   readonly while?:
+    | {
+        /**
+         * "As long as two or more Equipment are attached to it" (D577) — Balan's double strike.
+         * Counted off what is attached to the effect's own **source**, by printed type line, for
+         * the reason `controller-artifacts` gives: this is asked inside `characteristicsOf`.
+         */
+        readonly kind: 'source-equipment';
+        readonly atLeast: number;
+      }
     | {
         readonly kind: 'controller-artifacts';
         /** "three or more", which is what every metalcraft card printed says. */
@@ -1684,6 +1708,15 @@ function conditionMet(state: GameState, effect: ContinuousEffect): boolean {
   if (cond.kind === 'controller-graveyard') {
     return (state.zones[zoneKey(effect.controller, 'graveyard')] ?? []).length >= cond.atLeast;
   }
+  // Equipment attached to the source, whoever controls it: the sentence says "attached to it".
+  if (cond.kind === 'source-equipment') {
+    let attached = 0;
+    for (const inst of Object.values(state.instances)) {
+      if (inst.attachedTo !== effect.source || inst.zone !== 'battlefield') continue;
+      if (hasSubtype(parseTypeLine(state.cardDefs[inst.defKey]?.typeLine), 'Equipment')) attached += 1;
+    }
+    return attached >= cond.atLeast;
+  }
   let count = 0;
   for (const id of state.zones[zoneKey(effect.controller, 'battlefield')] ?? []) {
     const inst = state.instances[id];
@@ -1876,25 +1909,40 @@ function withAddedTypes(
   state: GameState, instance: CardInstance, printed: TypeLine, printedCreature: boolean,
 ): TypeLine {
   let types: string[] | null = null;
+  // The subtypes as they stand so far, or `null` while nothing has touched the printed ones.
   let subtypes: string[] | null = null;
+  const add = (sub: string): void => {
+    if ((subtypes ?? printed.subtypes).includes(sub)) return;
+    subtypes = [...(subtypes ?? printed.subtypes), sub];
+  };
   for (const effect of state.effects ?? []) {
-    if (effect.addTypes === undefined && effect.addSubtypes === undefined) continue;
+    if (effect.addTypes === undefined && effect.addSubtypes === undefined
+      && effect.setCreatureTypes === undefined && effect.allCreatureTypes !== true) continue;
     if (silenced(state, effect.source)) continue;
     if (!effectApplies(state, effect, instance, printedCreature, printed)) continue;
     for (const type of effect.addTypes ?? []) {
       if (hasType(printed, type) || (types !== null && types.includes(type))) continue;
       types = [...(types ?? []), type];
     }
-    for (const sub of effect.addSubtypes ?? []) {
-      if (printed.subtypes.includes(sub) || (subtypes !== null && subtypes.includes(sub))) continue;
-      subtypes = [...(subtypes ?? []), sub];
+    /*
+      "Becomes a Frog" (D577): the creature types go and these replace them. In effect order, which
+      is timestamp order (CR 613.7), so a type added by an earlier effect is replaced too and one
+      added later lands on top.
+    */
+    if (effect.setCreatureTypes !== undefined) {
+      subtypes = [
+        ...(subtypes ?? printed.subtypes).filter((sub) => !isCreatureType(sub)),
+        ...effect.setCreatureTypes,
+      ];
     }
+    for (const sub of effect.addSubtypes ?? []) add(sub);
+    if (effect.allCreatureTypes === true) for (const sub of CREATURE_TYPES) add(sub);
   }
   if (types === null && subtypes === null) return printed;
   return {
     supertypes: printed.supertypes,
     types: types === null ? printed.types : [...printed.types, ...types],
-    subtypes: subtypes === null ? printed.subtypes : [...printed.subtypes, ...subtypes],
+    subtypes: subtypes ?? printed.subtypes,
   };
 }
 

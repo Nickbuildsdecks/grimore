@@ -1086,7 +1086,12 @@ const INSPIRED_CHARGE: CardScript = {
  */
 const BALAN: CardScript = {
   name: 'Balan, Wandering Knight',
-  keywords: ['double strike'],
+  // First strike is printed. Double strike is conditional (D577): "as long as two or more
+  // Equipment are attached to it". The pool had it always on.
+  statics: [{
+    scope: 'self',
+    effect: { keywords: ['double strike'], while: { kind: 'source-equipment', atLeast: 2 } },
+  }],
   abilities: [
     {
       cost: { mana: '{1}{W}' },
@@ -2203,6 +2208,8 @@ const MIND_ROT: CardScript = {
  */
 const FAITHLESS_LOOTING: CardScript = {
   name: 'Faithless Looting',
+  // Flashback {2}{R} (D577): the pool's card had no second life.
+  flashback: { cost: '{2}{R}' },
   beforeDecisions: (c) => draw(c.state, c.controller, 2),
   decisions: [{ who: 'controller', from: 'hand', prompt: 'Discard two cards', min: 2, max: 2 }],
   onResolve: (c) => moveToGraveyard(c.state, chosenCards(c)),
@@ -2303,6 +2310,9 @@ const TURN_TO_FROG: CardScript = {
       setPower: 1,
       setToughness: 1,
       losesAllAbilities: true,
+      // "…and becomes a blue Frog" (D577): its colour and its creature types, both replaced.
+      setColors: ['U'],
+      setCreatureTypes: ['Frog'],
     });
   },
 };
@@ -2371,12 +2381,13 @@ const FIREBOLT: CardScript = {
 const PHOENIX_OF_ASH: CardScript = {
   name: 'Phoenix of Ash',
   keywords: ['flying', 'haste'],
-  escape: { cost: '{2}{R}{R}', exile: 3 },
+  escape: { cost: '{2}{R}{R}', exile: 3, counters: 1 },
   abilities: [
     {
-      cost: { mana: '{1}' },
-      description: '{1}: Phoenix of Ash gets +1/+0 until end of turn.',
-      effect: (c) => pump(c.state, [c.source], c.source, c.controller, { power: 1 }),
+      // {2}{R} for +2/+0 (D577). The pool had {1} for +1/+0.
+      cost: { mana: '{2}{R}' },
+      description: '{2}{R}: Phoenix of Ash gets +2/+0 until end of turn.',
+      effect: (c) => pump(c.state, [c.source], c.source, c.controller, { power: 2 }),
     },
   ],
 };
@@ -2407,7 +2418,8 @@ const GURMAG_ANGLER: CardScript = {
 */
 const WOE_STRIDER: CardScript = {
   name: 'Woe Strider',
-  escape: { cost: '{4}{B}', exile: 3 },
+  // {3}{B}{B}, four other cards, and two +1/+1 counters on the way back (D577).
+  escape: { cost: '{3}{B}{B}', exile: 4, counters: 2 },
   triggers: [
     {
       on: { kind: 'etb' },
@@ -3642,10 +3654,22 @@ const PSYCHIC_STRIKE: CardScript = {
  */
 const JACE_MEMORY_ADEPT: CardScript = {
   name: 'Jace, Memory Adept',
+  // The three printed abilities (D577). The pool had the +1 milling ten and the 0 drawing, which
+  // is the card with its two cheap abilities traded for something much stronger, and no ultimate.
   abilities: [
     {
       cost: { loyalty: 1 },
-      description: '+1: Target player mills ten cards.',
+      description: '+1: Draw a card. Target player mills a card.',
+      targets: [TARGET_PLAYER],
+      effect: (c) => {
+        const seat = firstPlayerTarget(c);
+        const drawn = drawLater(c.state, c.controller, 1);
+        return seat === null ? drawn : mill(drawn, seat, 1);
+      },
+    },
+    {
+      cost: { loyalty: 0 },
+      description: '0: Target player mills ten cards.',
       targets: [TARGET_PLAYER],
       effect: (c) => {
         const seat = firstPlayerTarget(c);
@@ -3653,9 +3677,13 @@ const JACE_MEMORY_ADEPT: CardScript = {
       },
     },
     {
-      cost: { loyalty: 0 },
-      description: '0: Draw a card.',
-      effect: (c) => drawLater(c.state, c.controller, 1),
+      cost: { loyalty: -7 },
+      description: '\u22127: Any number of target players each draw twenty cards.',
+      targets: [{ kind: 'player', description: 'any number of target players', count: 4, optional: true }],
+      effect: (c) => c.targets.reduce(
+        (state, target) => (target.kind === 'player' ? drawLater(state, target.seat, 20) : state),
+        c.state,
+      ),
     },
   ],
 };
@@ -5508,7 +5536,7 @@ const MUTAVAULT: CardScript = {
     { cost: { tap: true }, description: '{T}: Add {C}.', produces: ['C'] },
     {
       cost: { mana: '{1}' },
-      description: '{1}: Mutavault becomes a 2/2 creature until end of turn. It\u2019s still a land.',
+      description: '{1}: Mutavault becomes a 2/2 creature with all creature types until end of turn. It\u2019s still a land.',
       // See `AbilityDef.animates`: the bot does not press this unless there is an attack or a
       // block to make with it.
       animates: true,
@@ -5519,7 +5547,8 @@ const MUTAVAULT: CardScript = {
         anthem lands on top of it rather than under it.
       */
       effect: (c) => pump(c.state, [c.source], c.source, c.controller, {
-        addTypes: ['Creature'], setPower: 2, setToughness: 2,
+        // "With all creature types" (D577): an Elf for the Perfect, a Knight for the Exemplar.
+        addTypes: ['Creature'], allCreatureTypes: true, setPower: 2, setToughness: 2,
       }),
     },
   ],
@@ -6933,8 +6962,9 @@ const AJANI_CALLER_OF_THE_PRIDE: CardScript = {
   abilities: [
     {
       cost: { loyalty: 1 },
-      description: '+1: Put a +1/+1 counter on target creature.',
-      targets: [TARGET_CREATURE_HELPED],
+      // "Up to one" (D577): the loyalty may be taken with no creature to put a counter on.
+      description: '+1: Put a +1/+1 counter on up to one target creature.',
+      targets: [{ ...TARGET_CREATURE_HELPED, description: 'up to one target creature', optional: true }],
       effect: (c) => {
         const id = firstCardTarget(c);
         return id === null ? c.state : addCounters(c.state, id, '+1/+1', 1);
@@ -6955,8 +6985,12 @@ const AJANI_CALLER_OF_THE_PRIDE: CardScript = {
     },
     {
       cost: { loyalty: -8 },
-      description: '−8: Create five 2/2 white Cat creature tokens.',
-      effect: (c) => createToken(c.state, c.controller, CAT_TOKEN, 5),
+      // X Cats, where X is your life total (D577). The pool made five.
+      description: '−8: Create X 2/2 white Cat creature tokens, where X is your life total.',
+      effect: (c) => {
+        const cats = c.state.seats[c.controller]?.life ?? 0;
+        return cats <= 0 ? c.state : createToken(c.state, c.controller, CAT_TOKEN, cats);
+      },
     },
   ],
 };
@@ -8114,14 +8148,11 @@ function replicate(): TriggerDef {
 const PYROMATICS: CardScript = {
   name: 'Pyromatics',
   replicate: { cost: '{1}{R}' },
-  targets: [{ kind: 'any', description: 'any target', count: 2, optional: true, divided: 1 }],
+  // "Pyromatics deals 1 damage to any target" (D577): one target a copy, and replicate is how it
+  // reaches a second. The pool had the spell dividing its damage between two on its own.
+  targets: [ANY_TARGET],
   triggers: [replicate()],
-  onResolve: (c) => dividedAmong(c).reduce(
-    (state, { target, amount }) => dealDamage(state, target, amount, {
-      controller: c.controller, source: c.source,
-    }),
-    c.state,
-  ),
+  onResolve: (c) => damageFirstTarget(c, 1),
 };
 
 /**
@@ -13851,6 +13882,30 @@ function kickerPermanentShapeFor(def: CardDef, lines: readonly string[]): WholeC
   };
 }
 
+/**
+ * Escape with its second line: "~ escapes with N +1/+1 counter(s) on it" (D577).
+ *
+ * Two printed lines and one field. `Escape—{cost}, Exile N other cards…` reads on its own in
+ * `keywordScriptFor`, and that is all three of the thirteen escape cards print. The other ten add
+ * this sentence, and it cannot be read a line at a time: it has nothing to set but
+ * `escape.counters`, and a second line setting a single-fact field is what the line merger takes
+ * for a misreading. So the pair is claimed together here, and a card with only the first line is
+ * left to the per-line reader as before.
+ */
+function escapeShapeFor(def: CardDef, lines: readonly string[]): WholeCardReading | null {
+  const self = selfRef(def.name);
+  const with_ = new RegExp(`^${self} escapes with (an?|[\\w]+) \\+1/\\+1 counters? on it\\.?$`, 'i');
+  const counted = lines.find((line) => with_.test(plain(line).trim()));
+  if (counted === undefined) return null;
+  const declared = lines.find((line) => /^escape\s*[—-]/i.test(plain(line).trim()));
+  if (declared === undefined) return null;
+  const escape = keywordScriptFor(declared, def.name)?.escape;
+  const word = with_.exec(plain(counted).trim())![1]!;
+  const counters = /^an?$/i.test(word) ? 1 : countFrom(word);
+  if (escape === undefined || counters === null) return null;
+  return { fragment: { escape: { ...escape, counters } }, claimed: [declared, counted] };
+}
+
 export function wholeCardShapeFor(
   def: CardDef, lines: readonly string[],
 ): WholeCardReading | null {
@@ -13858,7 +13913,8 @@ export function wholeCardShapeFor(
     ?? exileUntilLeavesShapeFor(def, lines)
     ?? soulbondShapeFor(def, lines)
     ?? evokeShapeFor(lines)
-    ?? kickerPermanentShapeFor(def, lines);
+    ?? kickerPermanentShapeFor(def, lines)
+    ?? escapeShapeFor(def, lines);
 }
 
 /** One `etb` or `dies` trigger, which is all the parsed board prologue below builds. */
@@ -20187,17 +20243,20 @@ function composeEffects(
  */
 function animateSelf(clause: string, name: string): ReadEffect | null {
   const self = selfRef(name);
+  // "…with all creature types" (D577) is Mutavault's printed text, and the only wording it has.
   const becomes = new RegExp(
-    `^(?:${self}|it) becomes a (\\d+)/(\\d+) creature until end of turn\\.\\s*it['’]s still a land$`,
+    `^(?:${self}|it) becomes a (\\d+)/(\\d+) creature( with all creature types)? until end of turn\\.\\s*it['’]s still a land$`,
     'i',
   ).exec(plain(clause).trim().replace(/\.\s*$/, ''));
   if (becomes === null) return null;
   const power = Number(becomes[1]);
   const toughness = Number(becomes[2]);
+  const everyType = becomes[3] !== undefined;
   return {
     abilityFlags: { animates: true },
     effect: (c) => pump(c.state, [c.source], c.source, c.controller, {
-      addTypes: ['Creature'], setPower: power, setToughness: toughness,
+      addTypes: ['Creature'], ...(everyType ? { allCreatureTypes: true } : {}),
+      setPower: power, setToughness: toughness,
     }),
   };
 }
