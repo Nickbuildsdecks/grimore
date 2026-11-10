@@ -35157,3 +35157,127 @@ describe('the Evoke keyword line, at the table (D548)', () => {
     expect(ids(s, 0, 'battlefield').filter((id) => s.instances[id]!.tapped).length).toBe(1);
   });
 });
+
+describe('Renown N, at the table (D549)', () => {
+  /*
+    Two real renown cards, neither in the pool, so this drives the compiler's reading of the keyword
+    line and not Topan Freeblade's hand-written twin. Rows copied from the corpus unchanged.
+
+    Citadel Castellan is the `Renown 2` row, and it matters: a reader that ignored the count would
+    pass every `Renown 1` test and quietly make nineteen cards smaller than printed.
+  */
+  const DATA = [
+    {
+      name: 'Akroan Sergeant', type_line: 'Creature — Human Soldier', mana_cost: '{2}{R}', cmc: 3,
+      colors: ['R'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'First strike (This creature deals combat damage before creatures without '
+        + 'first strike.)\nRenown 1 (When this creature deals combat damage to a player, if it '
+        + "isn't renowned, put a +1/+1 counter on it and it becomes renowned.)",
+    },
+    {
+      name: 'Citadel Castellan', type_line: 'Creature — Human Knight', mana_cost: '{1}{G}{W}',
+      cmc: 3, colors: ['G', 'W'], power: '2', toughness: '3', layout: 'normal',
+      oracle_text: "Vigilance (Attacking doesn't cause this creature to tap.)\nRenown 2 (When "
+        + "this creature deals combat damage to a player, if it isn't renowned, put two +1/+1 "
+        + 'counters on it and it becomes renowned.)',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'renowned',
+      name: 'Renowned',
+      entries: [
+        { name: 'Akroan Sergeant', count: 4 }, { name: 'Citadel Castellan', count: 4 },
+        { name: 'Grizzly Bears', count: 8 },
+        { name: 'Mountain', count: 22 }, { name: 'Forest', count: 22 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect(list.fromData.slice().sort()).toEqual(['Akroan Sergeant', 'Citadel Castellan'].sort());
+    return list.deck;
+  };
+
+  const table = (mine: readonly string[], theirs: readonly string[] = []): GameState => advanceTo(
+    arena({
+      decks: { 0: 'renowned', 1: 'renowned' },
+      deckSpecs: { renowned: deck() },
+      battlefield: { 0: ['Mountain', 'Mountain', 'Forest', ...mine], 1: [...theirs] },
+      turn: 5, firstSeat: 0,
+    }),
+    'declare-attackers',
+  );
+
+  /*
+    Priority passed until combat is over, which is how the pool's own combat tests get damage dealt.
+    `drain` is the wrong tool here and the first draft used it: it settles the stack and the pending
+    decisions but does not advance a step, so the attack sat in `declare-attackers` for eighty
+    iterations and renown looked broken when nothing had attacked yet.
+  */
+  const toPostcombat = (from: GameState): GameState => {
+    let s = from;
+    for (let i = 0; i < 8 && s.step !== 'postcombat-main'; i += 1) s = passBoth(s);
+    expect(s.step).toBe('postcombat-main');
+    return s;
+  };
+
+  it('keeps a counter the first time it connects, and only the first time', () => {
+    let s = table(['Akroan Sergeant']);
+    const soldier = find(s, 0, 'battlefield', 'Akroan Sergeant');
+    expect(power(s, soldier)).toBe(2);
+
+    s = apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: soldier, defender: 1 }],
+    } as Action);
+    s = toPostcombat(s);
+    // Unblocked, so the damage landed and renown fired: a 3/3, and 18 life left.
+    expect(power(s, soldier)).toBe(3);
+    expect(toughness(s, soldier)).toBe(3);
+    expect(life(s, 1)).toBe(18);
+
+    // A second swing connects for 3 and adds nothing: the intervening-if reads the counter it wrote.
+    s = toPostcombat(apply(advanceTo(nextTurn(nextTurn(s)), 'declare-attackers'), {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: soldier, defender: 1 }],
+    } as Action));
+    expect(power(s, soldier)).toBe(3);
+    expect(life(s, 1)).toBe(15);
+  });
+
+  it('a Renown 2 creature keeps two, not one', () => {
+    // The count read off the line. A reader that dropped it would make this a 3/4 instead of a 4/5.
+    let s = table(['Citadel Castellan']);
+    const knight = find(s, 0, 'battlefield', 'Citadel Castellan');
+    s = toPostcombat(apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: knight, defender: 1 }],
+    } as Action));
+    expect(power(s, knight)).toBe(4);
+    expect(toughness(s, knight)).toBe(5);
+  });
+
+  it('does not fire when the damage never reaches the player', () => {
+    /*
+      Blocked, so no `combat-damage` event is raised at all — the engine raises it only for damage
+      that took a life total down. Renown wants exactly that reading, and this is the row that says
+      so rather than leaving it to the factory's comment.
+    */
+    let s = table(['Akroan Sergeant'], ['Grizzly Bears']);
+    const soldier = find(s, 0, 'battlefield', 'Akroan Sergeant');
+    const bears = find(s, 1, 'battlefield', 'Grizzly Bears');
+    s = apply(s, {
+      type: 'auto:attack', by: 0, attackers: [{ attacker: soldier, defender: 1 }],
+    } as Action);
+    s = passBoth(s);
+    s = toPostcombat(apply(s, {
+      type: 'auto:block', by: 1, blocks: [{ blocker: bears, attacker: soldier }],
+    } as Action));
+    /*
+      The block really happened, which is what stops this row passing for the wrong reason: the
+      Sergeant has first strike, so it kills the 2/2 Bears and takes nothing back. Without this
+      assertion the row would read exactly the same if the attack had never been blocked at all.
+    */
+    expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+    expect(power(s, soldier)).toBe(2);
+    expect(life(s, 1)).toBe(20);
+  });
+});

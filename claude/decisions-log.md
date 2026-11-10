@@ -38072,3 +38072,63 @@ sacrifice is an ETB trigger conditioned on a counter written during resolution, 
 card's own ETB ability — so forty clean tables is the evidence that the counter is written before the
 triggers are collected and that a permanent dying to its own trigger does not trip the state-based
 actions or the bot's search.
+
+---
+
+## D549 — Renown N, and the audit's second exact prediction
+
+The keyword audit's head row after evoke: **12 legal cards finished, 20 printings** (15 print
+`Renown 1`, four `Renown 2`, one `Renown 6`).
+
+Like evoke it needed **no new mechanism**. `TOPAN_FREEBLADE` already carried the whole ability
+inline, with the `RENOWNED` counter answering "if it isn't renowned"; that trigger is now
+`renownTrigger(count)` and the pool card calls it with 1, so the hand-written card and the compiled
+reading are the same code and cannot drift. A compile test asserts they produce the same trigger —
+the rule D364 asks of every keyword in this table.
+
+Unlike evoke it reads in `keywordScriptFor` rather than `wholeCardShapeFor`, and the difference is
+exactly the one D548's docblock drew: evoke's trigger has to be the card's *first*, so it needed the
+stage that runs ahead of the per-line loop. Renown's one line is the whole ability and nothing on the
+card orders against it, so the ordinary table is the right place.
+
+### Measured, and the instrument is now calibrated
+
+| | before | after |
+| --- | --- | --- |
+| printed legal lines read | 23,494 / 56,421 (41.6%) | **23,514 / 56,421 (41.7%)** |
+| cards with a compiled script | 12,014 | **12,031** |
+| cards with every printed line read | 7,801 | **7,813** |
+
++12 fully read against a predicted 12, and +20 lines — one per printing. **That is the second exact
+hit** after evoke's +18 for 18. For a keyword row the audit's "cards finished" column is a count,
+not an estimate, which is a stronger property than the one-blocker instrument has ever had: D532's
+head row read 39 and shipped 8. The difference is that a keyword line is a whole line, so finishing
+it cannot be partly blocked by a sibling clause.
+
+### Two test defects, both found by the tests failing rather than by reading
+
+- **`drain` settles the stack but does not advance a step.** The first table draft used it after
+  declaring attackers, so the attack sat in `declare-attackers` for eighty iterations and renown
+  looked broken when nothing had attacked yet. Priority has to be passed through to the postcombat
+  main, which is how the pool's own combat tests deal damage. It is a named helper now with that
+  reason on it, because the failure mode reads as "the mechanic is broken" rather than "the harness
+  is wrong".
+- **The blocked row was passing vacuously.** The table helper gave seat 1 no battlefield, so the row
+  that proves renown does *not* fire on blocked damage returned early every time. It now puts a
+  Grizzly Bears opposite and asserts the Bears died, so the row would read differently if the attack
+  had never been blocked.
+
+### The break run
+
+Eight breaks, **7 caught**. The six that matter all are: ignoring the count (every renown becomes
+`Renown 1`, which would quietly shrink nineteen cards), dropping the intervening-if so it fires every
+swing, never writing the `RENOWNED` marker, never writing the `+1/+1` counters, watching `etb`
+instead of `combat-damage`, and Topan Freeblade ceasing to share the factory — that last one is the
+drift guard, and it fails as it should.
+
+The eighth, the end anchor, came back uncaught and was adjudicated the way D548's start anchor was:
+**zero** printed lines in the legal corpus are read by the un-anchored pattern and refused by the
+anchored one, so no real card discriminates. It still gets a guard row, on a sharper argument than
+D548's — reading `Renown 1 as long as you control a Knight` as a plain `Renown 1` would take the
+trigger and **silently drop the rest of the line**, which is the one thing `readResolution` refuses
+by design (D487: a line is read whole or not at all).

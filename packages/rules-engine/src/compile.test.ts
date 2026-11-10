@@ -16445,3 +16445,91 @@ describe('the Evoke keyword line, read ahead of the other lines (D548)', () => {
     function's docblock as the defensive choice it is (D545's precedent, and D547's).
   */
 });
+
+/*
+  **Renown N** (D549), the keyword audit's head row after evoke: 12 legal cards finished, 20
+  printings. Like evoke it needed no new mechanism — `renownTrigger` *is* Topan Freeblade's own
+  trigger, now taking its count as an argument — and unlike evoke it reads in `keywordScriptFor`,
+  because its one line is the whole ability and nothing on the card orders against it.
+*/
+describe('the Renown keyword line (D549)', () => {
+  const renown = (text: string) => compileCard({
+    name: 'Akroan Sergeant', type_line: 'Creature — Human Soldier', mana_cost: '{2}{R}', cmc: 3,
+    colors: ['R'], power: '2', toughness: '2', layout: 'normal', oracle_text: text,
+  });
+
+  it.each([
+    ['Renown 1', 1, 'it becomes renowned and gets a +1/+1 counter'],
+    ['Renown 2', 2, 'it becomes renowned and gets 2 +1/+1 counters'],
+    ['Renown 6', 6, 'it becomes renowned and gets 6 +1/+1 counters'],
+  ])('reads %s, and says so in the log', (line, _count, description) => {
+    // All three counts the pool prints: 15 cards print `Renown 1`, four `Renown 2`, one `Renown 6`.
+    const read = renown(`First strike\n${line}`);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.unread.map((u) => u.line)).toEqual([]);
+    expect((read.script?.triggers ?? []).map((t) => t.description)).toEqual([description]);
+  });
+
+  it('fires on combat damage, and only while the creature is not already renowned', () => {
+    /*
+      The intervening-if, which is the whole of renown's "once" (CR 702.112a). The engine's answer
+      to *renowned* is a counter rather than a flag, so a creature that leaves and comes back is a
+      new object with renown available again — which is what the rules say about any such marker.
+    */
+    const read = renown('Renown 1');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const trigger = (read.script?.triggers ?? [])[0];
+    expect(trigger?.on).toEqual({ kind: 'combat-damage' });
+    expect(trigger?.condition).toBeTypeOf('function');
+  });
+
+  it('is the same code as the pool card it was factored out of', () => {
+    /*
+      Topan Freeblade prints `Renown 1` and its hand-written script now calls the same factory, so
+      compiling its text has to produce the trigger the pool card carries. This is the check that
+      stops the two readings drifting — the reason every keyword in `keywordScriptFor` is built from
+      a factory a hand-written card also calls (D364).
+    */
+    expect(POOL.get('Topan Freeblade')).toBeDefined();
+    const written = scriptFor('Topan Freeblade')?.triggers ?? [];
+    expect(written.length).toBe(1);
+    const compiled = renown('Vigilance\nRenown 1').ok
+      ? (renown('Vigilance\nRenown 1') as { script?: { triggers?: readonly unknown[] } })
+        .script?.triggers ?? []
+      : [];
+    expect(compiled.map((t) => (t as { description: string }).description))
+      .toEqual(written.map((t) => t.description));
+  });
+
+  it.each([
+    ['no count at all', 'Renown'],
+    ['a word for the count', 'Renown two'],
+  ])('leaves %s unread', (_what, line) => {
+    // Every printing carries a digit, so a bare or spelled-out count is a shape this has not seen;
+    // reading one would be inventing a number (D259).
+    const read = renown(line);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.triggers).toBeUndefined();
+  });
+
+  it('leaves a line that only starts with the keyword unread', () => {
+    /*
+      The end anchor, which the break run found undefended. **No printed line discriminates** —
+      measured: zero lines in the legal corpus that the un-anchored pattern reads and the anchored
+      one refuses — so this row guards a shape the pool does not print, and says so rather than
+      posing as a regression test.
+
+      It earns its place on a sharper argument than the start anchor's, though: reading this as a
+      plain `Renown 1` would take the trigger and **silently drop the rest of the line**, which is
+      the one thing `readResolution` refuses by design — a line is read whole or not at all (D487).
+    */
+    const read = renown('Renown 1 as long as you control a Knight');
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.script?.triggers).toBeUndefined();
+    expect(read.unread.map((u) => u.line)).toEqual(['Renown 1 as long as you control a Knight']);
+  });
+});

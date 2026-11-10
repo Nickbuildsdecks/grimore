@@ -2465,28 +2465,39 @@ const SUNHOME_STALWART: CardScript = {
 };
 
 /**
- * Renown 1: the first time it connects with a player, it keeps a +1/+1 counter (CR 702.112a).
+ * Renown N: the first time it connects with a player, it keeps N +1/+1 counters (CR 702.112a).
  *
  * "If it isn't renowned" is an intervening-if about a state the creature carries, so the engine's
  * answer to renowned is a counter — the same shape monstrous and unearth use. A creature that
  * leaves and comes back is a new object with no counters, and renown is correctly available again,
  * which is what the rules say about any such marker.
+ *
+ * A factory rather than a literal because the keyword line is read (D549), and the count is the
+ * only thing that varies: the pool prints `Renown 1` fifteen times, `Renown 2` four times and
+ * `Renown 6` once. Topan Freeblade below calls it with 1, so the hand-written card and the compiled
+ * reading are the same code and cannot drift — the rule D364 asks of every keyword here.
  */
+const renownTrigger = (count: number): TriggerDef => ({
+  /*
+    No `to: 'player'` needed, which is worth knowing rather than guessing at: the engine raises
+    `combat-damage` **only** for damage that actually took a player's life total down (see
+    `dealCombatDamageTo`), so blocked damage and a swing stopped by a Fog raise nothing at all.
+    Renown wants exactly that reading.
+  */
+  on: { kind: 'combat-damage' },
+  description: count === 1
+    ? 'it becomes renowned and gets a +1/+1 counter'
+    : `it becomes renowned and gets ${count} +1/+1 counters`,
+  condition: (c) => (c.state.instances[c.source]?.counters[RENOWNED] ?? 0) === 0,
+  effect: (c) => addCounters(
+    addCounters(c.state, c.source, '+1/+1', count), c.source, RENOWNED, 1,
+  ),
+});
+
 const TOPAN_FREEBLADE: CardScript = {
   name: 'Topan Freeblade',
   keywords: ['vigilance'],
-  triggers: [{
-    /*
-      No `to: 'player'` needed, which is worth knowing rather than guessing at: the engine raises
-      `combat-damage` **only** for damage that actually took a player's life total down (see
-      `dealCombatDamageTo`), so blocked damage and a swing stopped by a Fog raise nothing at all.
-      Renown wants exactly that reading.
-    */
-    on: { kind: 'combat-damage' },
-    description: 'it becomes renowned and gets a +1/+1 counter',
-    condition: (c) => (c.state.instances[c.source]?.counters[RENOWNED] ?? 0) === 0,
-    effect: (c) => addCounters(addCounters(c.state, c.source, '+1/+1', 1), c.source, RENOWNED, 1),
-  }],
+  triggers: [renownTrigger(1)],
 };
 
 /**
@@ -10196,6 +10207,15 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   */
   const bushido = /^bushido\s+(\d+)$/i.exec(text);
   if (bushido !== null) return { triggers: bushidoTriggers(Number(bushido[1])) };
+
+  /*
+    Renown N (D549), the head of the keyword audit after evoke: **12 legal cards finished, 20
+    printings.** Like evoke it needed no new mechanism — `renownTrigger` is the pool's own Topan
+    Freeblade, now parameterised — and unlike evoke it belongs here, because its one line is the
+    whole ability and nothing on the card orders against it.
+  */
+  const renowned = /^renown\s+(\d+)$/i.exec(text);
+  if (renowned !== null) return { triggers: [renownTrigger(Number(renowned[1]))] };
 
   /*
     Soulshift N, the same counted-keyword shape one zone over. See `soulshiftTriggers`, and note
