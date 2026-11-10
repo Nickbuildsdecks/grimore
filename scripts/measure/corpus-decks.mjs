@@ -506,6 +506,7 @@ for (let i = 0; i < GAMES; i++) {
     result = play(seed);
   } catch (error) {
     result = { verdict: 'threw', seed, detail: `${error?.message ?? error}` };
+    if (process.env.STACK === '1') console.error(error?.stack ?? error);
     problems.push(result);
   }
   tally.set(result.verdict, (tally.get(result.verdict) ?? 0) + 1);

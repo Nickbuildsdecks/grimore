@@ -304,7 +304,32 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
   }
 
   const cost = parseManaCost(def?.manaCost);
-  if (cost.unsupported !== undefined) {
+  /*
+    **A cost the engine cannot pay is refused only when this casting is going to pay it** (D550).
+
+    This check used to read the printed cost unconditionally, and that contradicted the rule the
+    comment beside `payingCost` states for X: the question is about **the cost being paid**, not the
+    printed one. An offered cast pays what the offer says and nothing else — `toPay` is overwritten
+    from `pendingOfferedCast.cost` further down, which is the empty string for cascade — so the
+    printed cost is discarded, and refusing on it refuses a casting that was never going to touch it.
+    Dismember is `{1}{B/P}{B/P}`: Phyrexian mana is a symbol `parseManaCost` does not yet read, so a
+    cascade that hit it **threw**, and the whole table died with it. Found by `corpus-decks.mjs`
+    POD=1 at seed 42201, one pod of forty.
+
+    The refusal stays for every other path, which is the safety net it was written as: a client
+    sending a paid cast of a card whose cost cannot be assembled gets a refusal rather than a
+    half-charged spell. `legalActions` already declines to offer those (it checks `unsupported` on
+    the printed cost and on each alternative), so this is unreachable from the engine's own offers
+    and reachable only from a hand-written action.
+
+    Narrowed rather than deleted, and not widened to the whole chain below: a flashback or an escape
+    may replace the printed cost with one the engine *can* pay, so the fully correct reading is to
+    ask this question where `payingCost` is assembled. That is a bigger change than the crash needs
+    and `legalActions` covers those paths, so it is left as a note rather than done half-way.
+  */
+  const paidCostText = offered ? state.pendingOfferedCast?.cost ?? '' : def?.manaCost;
+  const unpayable = parseManaCost(paidCostText).unsupported;
+  if (unpayable !== undefined) {
     throw new EngineError('RULE_NOT_APPLICABLE', `${characteristics.name} has a mana cost the engine cannot pay yet`);
   }
   // A modal spell's modes are announced as it is cast (CR 601.2b), before its targets, and the

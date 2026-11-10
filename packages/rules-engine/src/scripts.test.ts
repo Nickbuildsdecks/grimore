@@ -35281,3 +35281,107 @@ describe('Renown N, at the table (D549)', () => {
     expect(life(s, 1)).toBe(20);
   });
 });
+
+describe('a free cast is not refused on a cost it never pays (D550)', () => {
+  /*
+    **A pod died on this**, which is how it was found: `corpus-decks.mjs POD=1` at SEED0=42201, one
+    game of forty, with "Dismember has a mana cost the engine cannot pay yet" and the whole table
+    going down with it.
+
+    Dismember is `{1}{B/P}{B/P}`. Phyrexian mana is a symbol `parseManaCost` does not read yet, and
+    `castSpell` refused the cast on that — **before** reaching the line that decides which cost this
+    casting actually pays. A cascade pays nothing: `toPay` is overwritten from
+    `pendingOfferedCast.cost`, the empty string. So the refusal was about a cost the casting was
+    never going to touch, and the fix is to ask the question of the cost being paid, which is the
+    rule the comment beside `payingCost` had already written down for X (D481).
+
+    Driven through a real cascade rather than by poking `pendingOfferedCast`, because the bug lived
+    in the gap between the offer and the payment and a test that sets the offer by hand would skip
+    exactly that gap.
+  */
+  const DATA = [
+    {
+      name: 'Dismember', type_line: 'Instant', mana_cost: '{1}{B/P}{B/P}', cmc: 3,
+      colors: ['B'], layout: 'normal',
+      oracle_text: 'Target creature gets -5/-5 until end of turn.',
+    },
+    {
+      name: 'Bloodbraid Elf', type_line: 'Creature — Elf Berserker', mana_cost: '{2}{R}{G}',
+      cmc: 4, colors: ['G', 'R'], power: '3', toughness: '2', layout: 'normal',
+      oracle_text: 'Haste\nCascade',
+    },
+  ];
+
+  it('cascades into a Phyrexian-mana card and resolves it', () => {
+    const list = customDeck({
+      id: 'cascading',
+      name: 'Cascading',
+      entries: [
+        { name: 'Bloodbraid Elf', count: 4 }, { name: 'Dismember', count: 8 },
+        // Only those two are nonland, and the Elf's own cost is not less than 4, so the cascade
+        // must land on Dismember whatever the shuffle did.
+        { name: 'Mountain', count: 24 }, { name: 'Forest', count: 24 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    /*
+      Only Dismember comes from the printed data: Bloodbraid Elf is already in the pool with a
+      hand-written cascade, which is what this test wants — the cascade is the implementation
+      D168 built and tested, and the card it lands on is the compiled one. The defect lived in
+      the handover between them.
+    */
+    expect(list.fromData).toEqual(['Dismember']);
+
+    let s: GameState = advanceTo(arena({
+      decks: { 0: 'cascading', 1: 'cascading' },
+      deckSpecs: { cascading: list.deck },
+      hands: { 0: ['Bloodbraid Elf'] },
+      battlefield: {
+        0: ['Mountain', 'Mountain', 'Forest', 'Forest'],
+        /*
+          Something for the cascaded Dismember to point at, so the cast is not refused for want of
+          a target — which would hide the defect behind a different refusal. A second Bloodbraid
+          Elf rather than any other creature, for two reasons: a battlefield entry has to come out
+          of this deck's own library, and the Elf's mana value of 4 keeps it off the cascade's own
+          list, which needs a value **less** than 4. So the cascade still has to land on Dismember.
+        */
+        1: ['Bloodbraid Elf'],
+      },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+
+    const elf = find(s, 0, 'hand', 'Bloodbraid Elf');
+    // Before the fix this threw here rather than returning a state.
+    s = drain(apply(s, { type: 'auto:cast', by: 0, card: elf } as Action), 80);
+
+    /*
+      The cascade stops and **offers** the free cast (CR 702.85a), so the offer has to be taken
+      explicitly — the same `auto:cast` with `offered: true` that the bot sends. This is the action
+      that used to throw.
+    */
+    const offer = s.pendingOfferedCast;
+    expect(offer?.card).toBeDefined();
+    expect(nameOf(s, offer!.card)).toBe('Dismember');
+    /*
+      And the offer carries **no cost at all** — `cost` is absent rather than the empty string,
+      which is worth pinning because the fix reads it: `pendingOfferedCast?.cost ?? ''` has to cope
+      with an absent cost, and an assertion of `''` would have passed against a shape that is not
+      the one the engine builds.
+    */
+    expect(offer?.cost ?? '').toBe('');
+    const victim = find(s, 1, 'battlefield', 'Bloodbraid Elf');
+    s = drain(apply(s, {
+      type: 'auto:cast', by: 0, card: offer!.card, offered: true,
+      targets: [{ kind: 'card', id: victim }],
+    } as Action), 80);
+
+    // It resolved rather than being refused: the Dismember is in a graveyard, and the Elf stayed.
+    const cascaded = [0, 1].some((seat) => namesIn(s, seat as SeatIndex, 'graveyard')
+      .includes('Dismember'));
+    expect(cascaded).toBe(true);
+    expect(s.instances[elf]?.zone).toBe('battlefield');
+    // And it did what it prints: -5/-5 kills a 3/2, so the target is in its owner's graveyard.
+    expect(namesIn(s, 1, 'graveyard')).toContain('Bloodbraid Elf');
+  });
+});

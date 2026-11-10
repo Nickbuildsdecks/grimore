@@ -38132,3 +38132,56 @@ anchored one, so no real card discriminates. It still gets a guard row, on a sha
 D548's — reading `Renown 1 as long as you control a Knight` as a plain `Renown 1` would take the
 trigger and **silently drop the rest of the line**, which is the one thing `readResolution` refuses
 by design (D487: a line is read whole or not at all).
+
+---
+
+## D550 — A free cast was refused on a cost it never pays
+
+**Found by D549's own pod sweep**, which came back 39/40 rather than clean: seed 42201 threw
+`Dismember has a mana cost the engine cannot pay yet` and the whole table went down with it.
+
+### The mechanism
+
+`castSpell` parsed the **printed** cost and refused on an unreadable symbol, 300 lines before the
+chain that decides which cost this casting actually pays. Dismember is `{1}{B/P}{B/P}` and Phyrexian
+mana is a symbol `parseManaCost` does not read yet — so a **cascade** that landed on it threw, even
+though a cascade pays nothing at all: `toPay` is overwritten from `pendingOfferedCast.cost` further
+down, and for cascade that is absent.
+
+The file had already written down the right rule, for X, forty lines below the bug:
+
+> **X, checked against the cost being paid** (CR 601.2b, CR 107.3b, D481). It sits here rather than
+> beside the modes because this is the first line that knows which cost this casting pays.
+
+D481 fixed that question and left this one. Same disagreement between the offer and the payment,
+same symptom — one pod in two hundred for D481's Starnheim Unleashed, one in forty here.
+
+### The fix, and what it deliberately does not do
+
+The refusal now reads the cost **being paid**: the offer's cost for an offered cast, the printed one
+otherwise. It is narrowed rather than deleted, because for a paid cast it is a real safety net — a
+client sending one gets a refusal instead of a half-charged spell, and `legalActions` already
+declines to offer those (it checks `unsupported` on the printed cost and on every alternative).
+
+It is **not** widened to the whole chain. A flashback or an escape may replace the printed cost with
+one the engine can pay, so the fully correct reading asks this question where `payingCost` is
+assembled — a bigger change than the crash needs, and `legalActions` covers those paths. Left as a
+note in the code rather than done half-way.
+
+Phyrexian mana itself is still unread. That is the honest state: a card whose cost cannot be
+assembled cannot be cast for that cost, and now says so instead of killing the table.
+
+### Verification
+
+A regression test drives the whole chain through a **real cascade** rather than by poking
+`pendingOfferedCast`, because the defect lived in the handover between the offer and the payment and
+a test that sets the offer by hand would skip exactly that gap: Bloodbraid Elf's hand-written cascade
+lands on a compiled Dismember, the offer comes back with no cost at all, the free cast resolves, and
+−5/−5 kills the 3/2 it pointed at. **Reverting the fix makes that test fail with the pod's own error
+message**, which is the check that it discriminates.
+
+Seed 42201 now finishes: 49 turns, 221 moves.
+
+`corpus-decks.mjs` also gained `STACK=1`, which prints the stack of a throw. Without it the message
+alone said only which card died, not which of the three cast paths was on the stack — and the fix
+depended entirely on knowing it was the offered one.
