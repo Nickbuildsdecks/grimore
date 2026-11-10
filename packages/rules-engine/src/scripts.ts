@@ -13774,6 +13774,53 @@ function boardFilter(printed: string): Partial<BoardEvent> | null {
  * trigger as a wider one.
  */
 /**
+ * The artifact-token subtypes a card names when it says what was sacrificed: "a **Clue**", "a
+ * **Treasure**". A closed list on purpose — an open one would read "whenever you sacrifice a
+ * Goblin" as a subtype filter, which it is, on an event that has never been asked that and has no
+ * row proving it. Each of these is a token every deck that makes it also sacrifices.
+ */
+const SACRIFICED_TOKEN_SUBTYPES = [
+  'Clue', 'Treasure', 'Food', 'Blood', 'Junk', 'Map', 'Gold', 'Powerstone',
+] as const;
+
+/**
+ * "Whenever you sacrifice a permanent", in every printed combination of its three slots (D570).
+ *
+ * Who did it, whether the watcher itself counts ("another"), and what was sacrificed. The last is
+ * the slot that refuses: a card type the event can answer for, the bare word "token", or one of
+ * `SACRIFICED_TOKEN_SUBTYPES` — and anything else is `null`, so "a land", "a nontoken creature" and
+ * "a creature token" are left for a person rather than read as the nearest thing this knows.
+ */
+function sacrificeTrigger(matched: RegExpExecArray): readonly TriggerDef['on'][] | null {
+  const groups = matched.groups ?? {};
+  const by = ({ you: 'you', 'a player': 'any', 'an opponent': 'opponent' } as const)[
+    (groups.by ?? '').toLowerCase() as 'you' | 'a player' | 'an opponent'
+  ];
+  if (by === undefined) return null;
+  const word = (groups.what ?? '').toLowerCase();
+  const subtype = SACRIFICED_TOKEN_SUBTYPES.find((known) => known.toLowerCase() === word);
+  let asked: { what?: 'creature' | 'artifact' | 'token'; ofSubtypes?: readonly string[] };
+  if (subtype !== undefined) {
+    // "a Blood **token**" says nothing "a Blood" does not: the subtype is only ever a token's.
+    asked = { ofSubtypes: [subtype] };
+  } else if (groups.token !== undefined) {
+    // "a creature token" is two filters at once, and this reads one.
+    return null;
+  } else if (word === 'permanent') {
+    asked = {};
+  } else if (word === 'creature' || word === 'artifact' || word === 'token') {
+    asked = { what: word };
+  } else {
+    return null;
+  }
+  return [{
+    kind: 'sacrifices', by,
+    ...((groups.who ?? '').toLowerCase() === 'another' ? { who: 'another' as const } : {}),
+    ...asked,
+  }];
+}
+
+/**
  * "Whenever ~ blocks a creature" / "becomes blocked by a creature" / "blocks or becomes blocked by
  * a creature" — three printed shapes, one parse, because they differ only in **which of the two
  * engine events** the sentence is about (D480).
@@ -14714,6 +14761,30 @@ const TRIGGER_SHAPES: readonly ({
     on: [{ kind: 'cycles', self: true }, { kind: 'dies' }],
   },
   /*
+    **Sacrifice as an event** (D570), parsed rather than written out because the sentence has
+    three independent slots and every combination of them is printed:
+
+        Whenever [you | a player | an opponent] sacrifice[s] [a | an | another] [thing], …
+
+    See `sacrificeTrigger` for the things it knows and the ones it refuses.
+  */
+  {
+    prologue: () => new RegExp(
+      '^Whenever (?<by>you|a player|an opponent) sacrifices? (?<who>a|an|another)'
+      + ' (?<what>[A-Za-z]+)(?<token> token)?, (?<clause>.+)$',
+      'i',
+    ),
+    from: sacrificeTrigger,
+  },
+  {
+    prologue: (self) => new RegExp(`^When you sacrifice ${self}, (.+)$`, 'i'),
+    on: [{ kind: 'sacrifices', who: 'self' }],
+  },
+  {
+    prologue: (self) => new RegExp(`^When ${self} ${ENTERS} and when you sacrifice it, (.+)$`, 'i'),
+    on: [{ kind: 'etb', who: 'self' }, { kind: 'sacrifices', who: 'self' }],
+  },
+  /*
     "Attacks **alone**" (D567), which the `attacks` event has carried since exalted: 12 legal cards
     print it as an ordinary sentence rather than as the keyword.
   */
@@ -15602,7 +15673,11 @@ function eventRelativeEffect(
   */
   // `discards` and `cycles` joined in D567: both are raised with the acting seat, so "whenever an
   // opponent discards a card, ~ deals 2 damage to that player" is Megrim and reads correctly.
-  const PLAYER_ACTIONS = new Set(['spell-cast', 'draws', 'life-gained', 'step', 'discards', 'cycles']);
+  const PLAYER_ACTIONS = new Set([
+    'spell-cast', 'draws', 'life-gained', 'step', 'discards', 'cycles',
+    // And the seat that sacrificed (D570): "whenever a player sacrifices a permanent, that player…".
+    'sacrifices',
+  ]);
   const aboutAPlayer = events.length > 0 && events.every((one) => PLAYER_ACTIONS.has(one.kind));
 
   /*

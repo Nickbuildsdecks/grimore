@@ -921,6 +921,17 @@ export interface AutomationState {
    */
   readonly cycled?: readonly { readonly card: string; readonly seat: SeatIndex }[];
   /**
+   * Permanents **sacrificed** since the last `settle`, with the seat that sacrificed each (D570).
+   *
+   * A sacrificed creature is in `died` and `left` too, and neither can say it was a sacrifice
+   * rather than a Doom Blade — nor, for an artifact or a token, that anything happened beyond a
+   * card reaching a graveyard. "Whenever you sacrifice a permanent" is about the act, so the one
+   * function that performs it (`sacrifice` in `effects.ts`) writes it down, and it records the
+   * **controller as the permanent left**: you can only sacrifice what you control (CR 701.17a),
+   * so that seat is who did it. Optional so a game saved before D570 still loads.
+   */
+  readonly sacrificed?: readonly { readonly card: string; readonly seat: SeatIndex }[];
+  /**
    * Permanents that have arrived on the battlefield and whose entry nobody has announced yet.
    * Drained by `settle` alongside `died`.
    *

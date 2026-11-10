@@ -41,7 +41,8 @@ import {
   counterSpell, destroy,
   recordExpiry,
   draw,
-  drawLater, energyOf, exileCard, loseLife, mill, moveToGraveyard, spendEnergy, suspendedCast,
+  drawLater, energyOf, exileCard, loseLife, mill, moveToGraveyard, sacrifice, spendEnergy,
+  suspendedCast,
   madnessOffer, miracleOffer,
   modsFrom, poolOf, pump, removeEffectsFrom, scheduleDelayed, setPool, spellLeavesStack,
   spendRegeneration, untapAll,
@@ -989,6 +990,30 @@ function triggerMatches(
       event to the cycled card as its subject, and a permanent on the battlefield is never that.
       A missing actor refuses rather than passing, except for `any`, which asks nothing of it.
     */
+    /*
+      A sacrifice (D570): which permanent, what it was, and who gave it up.
+
+      `who` defaults to `any` and that is deliberate — see the event's declaration. Each filter
+      refuses on a missing fact: an event that does not say the permanent was a creature cannot
+      have been "a creature".
+    */
+    case 'sacrifices': {
+      const e = event as Extract<TriggerEvent, { kind: 'sacrifices' }>;
+      const who = want.who ?? 'any';
+      if (who === 'self' && !isSubject) return false;
+      if (who === 'another' && isSubject) return false;
+      const what = want.what ?? 'permanent';
+      if (what === 'creature' && e.subjectIsCreature !== true) return false;
+      if (what === 'artifact' && !(e.subjectTypes ?? []).includes('artifact')) return false;
+      if (what === 'token' && e.subjectIsToken !== true) return false;
+      if (want.ofSubtypes !== undefined && !want.ofSubtypes.some((sub) => (
+        (e.subjectSubtypes ?? []).some((printed) => printed.toLowerCase() === sub.toLowerCase())
+      ))) return false;
+      const by = want.by ?? 'you';
+      if (by === 'any') return true;
+      if (actorSeat === undefined) return false;
+      return by === 'you' ? actorSeat === sourceSeat : actorSeat !== sourceSeat;
+    }
     case 'discards':
     case 'cycles': {
       if (want.kind === 'cycles' && want.self === true) return isSubject;
@@ -1582,8 +1607,8 @@ function raise(
       || event.kind === 'to-exile'
       // And the two damage events (D566): the permanent that was dealt it, or that dealt it.
       || event.kind === 'damaged' || event.kind === 'deals-damage'
-      // And the card that was cycled (D567).
-      || event.kind === 'cycles')) {
+      // And the card that was cycled (D567), and the permanent that was sacrificed (D570).
+      || event.kind === 'cycles' || event.kind === 'sacrifices')) {
     // Which permanent the event was about, so a trigger can say "that creature" rather than only
     // "this creature". The seat and the creature-ness below are *whose* and *what kind*; this is
     // which one. See `EffectContext.subject`.
@@ -1614,6 +1639,26 @@ function raise(
   if (subject !== undefined && event.kind === 'dies') {
     const hitBy = next.damagedBy?.[subject];
     if (hitBy !== undefined && hitBy.length > 0) event = { ...event, subjectDamagedBy: hitBy };
+  }
+  /*
+    What a sacrificed permanent **was**, for "a creature", "an artifact", "a token", "a Clue" (D570).
+
+    From the snapshot and never the live instance: a sacrificed token has ceased to exist, and a
+    card in a graveyard has no types an effect gave it. `vanished` is what it looked like as it left.
+  */
+  if (subject !== undefined && event.kind === 'sacrifices') {
+    const inst = next.vanished[subject] ?? next.instances[subject];
+    if (inst !== undefined) {
+      const was = characteristicsOf(next, inst);
+      event = {
+        ...event,
+        subjectSeat: inst.zoneSeat,
+        subjectIsCreature: was.isCreature,
+        subjectIsToken: inst.isToken,
+        subjectTypes: was.typeLine.types.map((t) => t.toLowerCase()),
+        subjectSubtypes: was.typeLine.subtypes,
+      };
+    }
   }
   if (subject !== undefined && (event.kind === 'etb' || event.kind === 'dies')) {
     // The event carries who controlled the permanent and whether it was a creature, so a watcher
@@ -1798,7 +1843,9 @@ function raise(
       wrote the trigger would be a worse rule than asking whether the event was about its host.
     */
     const fromGraveyard = (event.kind === 'dies' || event.kind === 'leaves'
-      || event.kind === 'to-graveyard')
+      || event.kind === 'to-graveyard'
+      // A sacrificed permanent sees its own sacrifice, like its own death (D570, CR 603.10a).
+      || event.kind === 'sacrifices')
       && (id === subject || attachedWatchers.includes(id));
     /*
       And the sixth: a permanent that was dealt damage and is gone by now (D566).
@@ -2198,7 +2245,8 @@ export function stateBasedActions(state: GameState): GameState {
         const chapters = sagaChapters(scriptForCard(next.cardDefs[inst.defKey]));
         if (chapters > 0 && (inst.counters['lore'] ?? 0) >= chapters
           && !next.stackOrder.some((objectId) => next.stackObjects[objectId]?.source === id)) {
-          next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+          // "Its controller sacrifices it" (CR 714.4), so it is a sacrifice and says so (D570).
+          next = sacrifice(next, [id]);
           changed = true;
           continue;
         }
@@ -2750,7 +2798,8 @@ function settle(state: GameState, before: GameState): GameState {
     pass < 32 && (next.died.length > 0 || next.entered.length > 0 || next.left.length > 0
       || next.dealtCombatDamage.length > 0 || next.drew.length > 0
       || next.toGraveyard.length > 0 || (next.exiled ?? []).length > 0
-      || (next.damageDealt ?? []).length > 0 || (next.cycled ?? []).length > 0);
+      || (next.damageDealt ?? []).length > 0 || (next.cycled ?? []).length > 0
+      || (next.sacrificed ?? []).length > 0);
     pass++
   ) {
     /*
@@ -2799,6 +2848,8 @@ function settle(state: GameState, before: GameState): GameState {
     // not below because the list is emptied a few lines down, after madness has asked about it.
     const thrown = next.discarded;
     const cycledNow = next.cycled ?? [];
+    // And the permanents sacrificed (D570).
+    const givenUp = next.sacrificed ?? [];
     const drawn = next.drew;
     /*
       A card whose *death* was replaced did not reach a graveyard either, so the narrow pass can
@@ -2841,7 +2892,7 @@ function settle(state: GameState, before: GameState): GameState {
     next = {
       ...next,
       died: [], left: [], entered: [], dealtCombatDamage: [], drew: [], toGraveyard: [], exiled: [],
-      copied: [], transformed: [], detached: {}, damageDealt: [], cycled: [],
+      copied: [], transformed: [], detached: {}, damageDealt: [], cycled: [], sacrificed: [],
       // Drained here with the rest, and *after* the replacement passes above have read it: a
       // discard is a fact about a move that has already happened, and madness is the one thing
       // that asks about it.
@@ -2976,6 +3027,12 @@ function settle(state: GameState, before: GameState): GameState {
       if (owner !== undefined) next = raise(next, { kind: 'discards' }, owner);
     }
     for (const { card, seat } of cycledNow) next = raise(next, { kind: 'cycles' }, seat, card);
+    /*
+      And sacrifices (D570), before the deaths below: the sacrifice is the act and the death is
+      what it did, and for one controller's triggers the order they go on the stack in is the order
+      a player watched. Both are raised for a sacrificed creature, each to the triggers that ask.
+    */
+    for (const { card, seat } of givenUp) next = raise(next, { kind: 'sacrifices' }, seat, card);
     /*
       And miracle, which is not a trigger at all — it is an offer, on the card that was drawn.
 
@@ -3375,10 +3432,7 @@ function tapSources(state: GameState, seat: SeatIndex, picks: readonly ManaPick[
       — a token put into a graveyard ceases to exist there, and that is one rule in one place.
     */
     next = withInstance(next, pick.key, { tapped: true });
-    if (pick.sacrifices === true) {
-      const inst = next.instances[pick.key];
-      if (inst !== undefined) next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
-    }
+    if (pick.sacrifices === true) next = sacrifice(next, [pick.key]);
     if (pick.life !== undefined) next = loseLife(next, seat, pick.life);
     // What the solver decided this one made — for a dual, the single colour it was tapped for.
     for (const type of pick.types) next = setPool(next, seat, addMana(poolOf(next, seat), type, 1));

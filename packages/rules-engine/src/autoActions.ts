@@ -35,6 +35,7 @@ import {
   energyOf, enterAttacking, loseLife,
   mill, moveToHand, removeFromCombat,
   poolOf, spendEnergy,
+  sacrifice,
 } from './effects.js';
 import { assertSeatIndex, replaceSeat, seatName } from './internal.js';
 import { canPay, parseManaCost, type ManaCost } from './mana.js';
@@ -757,8 +758,9 @@ function castSpell(state: GameState, action: AutoCastAction): Outcome {
     sacrificedName = characteristicsOf(next, victim).name;
     // It dies now, as the cost is paid — not when the spell resolves. `relocate` records the
     // death and `settle` raises it, which also puts a death trigger on the stack *above* the
-    // spell that paid for it, so the trigger resolves first (CR 603.3b).
-    next = relocate(next, victim, 'graveyard', victim.owner, 'bottom');
+    // spell that paid for it, so the trigger resolves first (CR 603.3b). Through `sacrifice`, which
+    // is the same move and also says that it was one (D570).
+    next = sacrifice(next, [victim.id]);
   }
   if (fromCommand) {
     next = replaceSeat(next, action.by, { commanderTax: tax + 2 });
@@ -1640,7 +1642,7 @@ function activate(
     // ability resolves, because the cost was paid before it was ever on the stack. `relocate`
     // records it and `settle` announces it, which also gets the ordering right: the death trigger
     // goes on the stack above the ability and resolves before it (CR 603.3b).
-    next = relocate(next, victim, 'graveyard', victim.owner, 'bottom');
+    next = sacrifice(next, [victim.id]);
     sacrificedName = name;
   }
   /*
@@ -1659,7 +1661,7 @@ function activate(
       : { defender: attack.defender, ...(attack.planeswalker === undefined ? {} : { planeswalker: attack.planeswalker }) };
     next = removeFromCombat(moveToHand(next, [returned]), returned);
   }
-  if (ability.cost.sacrificeSelf) next = relocate(next, requireInstance(next, inst.id), 'graveyard', inst.owner, 'bottom');
+  if (ability.cost.sacrificeSelf) next = sacrifice(next, [inst.id]);
   // Discarded as the cost is paid, so the card is in the graveyard while its own ability is still
   // on the stack (CR 702.29a) — which is why a cycling land can be cycled and then returned from
   // the graveyard by something else before the draw has even happened.

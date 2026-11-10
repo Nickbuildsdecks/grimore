@@ -39685,3 +39685,57 @@ pool card whose text was typed from memory is not ground truth, and a check that
 readings of the same wrong text passes. The compiled-against-written check cannot see this class
 of error; only the corpus text can. Worth an instrument: every pool card's text against its corpus
 row. Queued as its own task.
+
+## D570 — Sacrifice as an event, and the function that did not exist
+
+"Whenever you sacrifice a permanent" was the largest family left in the event queue, and it could
+not be an event because **the engine had no sacrifice**. A sacrifice was a `relocate` to a
+graveyard, written out wherever one was needed: the cost of a spell, the cost of an ability, an
+ability that sacrifices its own source, a finished Saga, a Treasure spent for mana — five places
+in the engine — and behind `moveToGraveyard` at every script that says the word. Afterwards it was
+a card in a graveyard, indistinguishable from one a Doom Blade put there.
+
+**One function now.** `sacrifice(state, ids)` in `effects.ts`: for each permanent, record who
+controlled it as it left (you can only sacrifice what you control, so that seat did it), then move
+it. The five engine sites call it. `moveToGraveyard` hands it any card that is on the battlefield,
+because every use of that function on a permanent has always been a sacrifice — an edict's chosen
+creature, echo declined, vanishing run out — the other two ways a permanent reaches a graveyard
+having functions of their own (`destroy`, and the state-based actions). One rule there instead of
+twenty-two call sites each remembering.
+
+**The event.** `sacrifices`, raised once per permanent, before the death it may also be:
+
+| slot | printed | field |
+| --- | --- | --- |
+| who did it | you / a player / an opponent | `by` |
+| the watcher itself? | "another" | `who: 'another'`; the default includes it |
+| what | a permanent / creature / artifact / token | `what` |
+| | a Clue / Treasure / Food / Blood / … | `ofSubtypes`, from a closed list |
+
+The default **includes the watcher's own sacrifice**: a Korvold fed to an altar still draws its
+card, because a zone-change trigger looks back (CR 603.10a). "Another" is the printed word that
+rules it out, and Mazirek's row is the one that shows the difference.
+
+Every filter is asked of what the permanent **was**, from the snapshot `relocate` keeps: a
+sacrificed token has ceased to exist and a card in a graveyard has no types an effect gave it.
+
+One parsed row reads all of it, with the three slots as named groups, and refuses a thing it does
+not know: "a land", "a creature token", "a nontoken creature", "a Goblin", "one or more Foods".
+
+    printed legal lines read:            24,229 → 24,284 of 56,421 (43.0%)
+    cards with a compiled script:        12,452 → 12,486
+    cards with every printed line read:   8,258 → 8,283
+
+55 triggers on 55 cards, 25 of them now fully read: Korvold, Mayhem Devil, Tireless Tracker,
+Mazirek, Smothering Abomination, Body Dropper, Captain Lannery Storm, the five Ordeals' last line.
+
+Tests: 13 runtime rows on eight printed cards, with **the pool's own cards doing the
+sacrificing** — Vampire Aristocrat's cost, Fleshbag Marauder's edict, a Clue cracked, a Treasure
+tapped for mana — because the claim being tested is that those different paths now say the same
+thing. Each filter both ways. With the record disabled, 11 of the 13 fail and the two that pass
+are the two that assert nothing happened. 20 compile rows. Engine suite: 3,838.
+
+One thing this does not do: a permanent you **stole** and then sacrificed. The act is recorded
+for you, correctly; but a trigger on the sacrificed card itself is matched and controlled from
+where the card ended up, which is its owner's graveyard. The same is true of every `dies` trigger
+and is not new here.

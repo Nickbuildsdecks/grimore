@@ -986,6 +986,42 @@ export type TriggerEvent =
    */
   | { readonly kind: 'discards'; readonly by?: 'you' | 'opponent' | 'any' }
   /**
+   * "Whenever you **sacrifice** a permanent" — the act, not the death (D570).
+   *
+   * Raised once per permanent sacrificed, from `AutomationState.sacrificed`, with the seat that
+   * sacrificed it as the actor. Not the `dies` event with a filter: an artifact, a Clue or a
+   * Treasure is sacrificed without dying, and a creature killed by a Doom Blade died without being
+   * sacrificed. The two overlap only when a creature is sacrificed, and then both are raised —
+   * which is right, because Mayhem Devil and Blood Artist are both entitled to that creature.
+   *
+   * | field | printed |
+   * | --- | --- |
+   * | `by` | "**you** sacrifice", "an **opponent** sacrifices", "a **player** sacrifices" |
+   * | `what` | "a permanent", "a **creature**", "an **artifact**", "a **token**" |
+   * | `ofSubtypes` | "a **Clue**", "a **Treasure**", "a **Food**" |
+   * | `who` | `another` is "**another** permanent"; `self` is "when you sacrifice **this**" |
+   *
+   * `who` defaults to `any`, and that includes the watcher itself: a Korvold sacrificed to an
+   * edict still sees a permanent of yours sacrificed (CR 603.10a — a zone-change trigger looks
+   * back). `another` is the printed word that rules it out. Every filter is asked of what the
+   * permanent was **as it left**, carried on the event, because a token has ceased to exist and a
+   * card in a graveyard has no types the layers gave it.
+   */
+  | {
+      readonly kind: 'sacrifices';
+      readonly by?: 'you' | 'opponent' | 'any';
+      readonly who?: 'self' | 'another' | 'any';
+      readonly what?: 'permanent' | 'creature' | 'artifact' | 'token';
+      readonly ofSubtypes?: readonly string[];
+      /** Set by the engine: which permanent, and what it was as it left. */
+      readonly subject?: string;
+      readonly subjectSeat?: SeatIndex;
+      readonly subjectIsCreature?: boolean;
+      readonly subjectIsToken?: boolean;
+      readonly subjectTypes?: readonly string[];
+      readonly subjectSubtypes?: readonly string[];
+    }
+  /**
    * "Whenever you **cycle** a card", and a card's own "when you cycle this card" (D567).
    *
    * Narrower than `discards`: only a discard that paid a cycling cost. The activation records it

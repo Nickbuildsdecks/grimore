@@ -2521,12 +2521,52 @@ export function moveToHand(state: GameState, ids: readonly string[]): GameState 
 }
 
 /** Puts chosen cards into their owner's graveyard: a discard, or a sacrifice. */
+/**
+ * Sacrifices permanents: each goes to its owner's graveyard, and the act is recorded (D570).
+ *
+ * **The one place a sacrifice is performed.** There used to be none — a sacrifice was a `relocate`
+ * to a graveyard written out wherever one was needed, five times in the engine and behind
+ * `moveToGraveyard` in every script — which was indistinguishable from a destruction afterwards and
+ * is why "whenever you sacrifice a permanent" could not be an event. Now the cost of a spell, the
+ * cost of an ability, a Treasure spent for mana, a finished Saga, echo declined and an edict all
+ * come through here, and `AutomationState.sacrificed` says who did it.
+ *
+ * Not a destruction (CR 701.17a): indestructible does not stop it and nothing regenerates from it,
+ * which is why this is a move and not a call to `destroy`. A card that is not on the battlefield is
+ * not sacrificed — it is left exactly where it is — because a sacrifice is a thing done to a
+ * permanent you control, and an effect that has lost its permanent has nothing to give up.
+ */
+export function sacrifice(state: GameState, ids: readonly string[]): GameState {
+  let next = state;
+  for (const id of ids) {
+    const inst = next.instances[id];
+    if (inst === undefined || inst.zone !== 'battlefield') continue;
+    if (next.automated) {
+      next = { ...next, sacrificed: [...(next.sacrificed ?? []), { card: id, seat: inst.zoneSeat }] };
+    }
+    next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+  }
+  return next;
+}
+
+/**
+ * Puts cards into their owners' graveyards, from wherever they are.
+ *
+ * For a card in a hand that is a discard and for one in a library a mill, and `relocate` tells
+ * those apart by the zone it left. For a **permanent** it is a sacrifice, and has been at every
+ * call site since the function was written — an edict's chosen creature, echo declined, vanishing
+ * run out — because the two other ways a permanent reaches a graveyard have functions of their own:
+ * `destroy`, and the state-based actions. So a permanent is handed to `sacrifice`, which is what
+ * records the act (D570). One rule here instead of twenty-two call sites each remembering.
+ */
 export function moveToGraveyard(state: GameState, ids: readonly string[]): GameState {
   let next = state;
   for (const id of ids) {
     const inst = next.instances[id];
     if (inst === undefined) continue;
-    next = relocate(next, inst, 'graveyard', inst.owner, 'bottom');
+    next = inst.zone === 'battlefield'
+      ? sacrifice(next, [id])
+      : relocate(next, inst, 'graveyard', inst.owner, 'bottom');
   }
   return next;
 }

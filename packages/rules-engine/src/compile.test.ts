@@ -17570,3 +17570,61 @@ describe('discarding and cycling as events, and attacking alone (D567)', () => {
     expect(got.unread.map((u) => u.line)).toEqual([line]);
   });
 });
+
+describe('sacrifice as an event: every printed combination of the three slots (D570)', () => {
+  const card = (text: string, type = 'Creature — Devil') => {
+    const got = compileCard({
+      name: 'Mayhem Devil', type_line: type, mana_cost: '{1}{B}{R}', cmc: 3, colors: ['B', 'R'],
+      ...(type.startsWith('Creature') ? { power: '3', toughness: '3' } : {}),
+      layout: 'normal', oracle_text: text,
+    });
+    expect(got.ok).toBe(true);
+    if (!got.ok) throw new Error('refused');
+    return got;
+  };
+
+  it.each([
+    ['Whenever you sacrifice a permanent, you gain 1 life.', { kind: 'sacrifices', by: 'you' }],
+    ['Whenever you sacrifice another permanent, you gain 1 life.', { kind: 'sacrifices', by: 'you', who: 'another' }],
+    ['Whenever you sacrifice a creature, draw a card.', { kind: 'sacrifices', by: 'you', what: 'creature' }],
+    ['Whenever you sacrifice another creature, draw a card.',
+      { kind: 'sacrifices', by: 'you', who: 'another', what: 'creature' }],
+    ['Whenever you sacrifice an artifact, you gain 1 life.', { kind: 'sacrifices', by: 'you', what: 'artifact' }],
+    ['Whenever you sacrifice a token, you gain 1 life.', { kind: 'sacrifices', by: 'you', what: 'token' }],
+    ['Whenever you sacrifice a Clue, you gain 1 life.', { kind: 'sacrifices', by: 'you', ofSubtypes: ['Clue'] }],
+    ['Whenever you sacrifice a Treasure, you gain 1 life.', { kind: 'sacrifices', by: 'you', ofSubtypes: ['Treasure'] }],
+    ['Whenever you sacrifice a Blood token, you gain 1 life.', { kind: 'sacrifices', by: 'you', ofSubtypes: ['Blood'] }],
+    ['Whenever a player sacrifices a permanent, Mayhem Devil deals 1 damage to any target.',
+      { kind: 'sacrifices', by: 'any' }],
+    ['Whenever a player sacrifices another permanent, you gain 1 life.',
+      { kind: 'sacrifices', by: 'any', who: 'another' }],
+    ['Whenever an opponent sacrifices a creature, you gain 1 life.',
+      { kind: 'sacrifices', by: 'opponent', what: 'creature' }],
+    ['When you sacrifice Mayhem Devil, you gain 10 life.', { kind: 'sacrifices', who: 'self' }],
+  ])('reads %s', (text, event) => {
+    const got = card(text);
+    expect(got.unread.map((u) => u.line)).toEqual([]);
+    expect(got.script!.triggers!.map((t) => t.on)).toEqual([event]);
+  });
+
+  it('reads "enters and when you sacrifice it" as two events with one effect', () => {
+    const got = card('When Mayhem Devil enters and when you sacrifice it, you gain 3 life.', 'Artifact — Food');
+    expect(got.unread).toEqual([]);
+    expect(got.script!.triggers!.map((t) => t.on)).toEqual([
+      { kind: 'etb', who: 'self' }, { kind: 'sacrifices', who: 'self' },
+    ]);
+  });
+
+  it.each([
+    ['a card type the event has no answer for', 'Whenever you sacrifice a land, you gain 1 life.'],
+    ['two filters at once', 'Whenever you sacrifice a creature token, you gain 1 life.'],
+    ['a negated filter', 'Whenever you sacrifice a nontoken creature, you gain 1 life.'],
+    ['a creature subtype, which is not in the closed list', 'Whenever you sacrifice a Goblin, you gain 1 life.'],
+    ['a batch', 'Whenever you sacrifice one or more Foods, you gain 1 life.'],
+    ['an either-or', 'Whenever you sacrifice an artifact or creature, you gain 1 life.'],
+  ])('leaves %s unread', (_what, line) => {
+    const got = card(line);
+    expect(got.script?.triggers ?? []).toEqual([]);
+    expect(got.unread.map((u) => u.line)).toEqual([line]);
+  });
+});

@@ -7631,6 +7631,21 @@ describe('deck coverage', () => {
         other, a cycled card as one discard and not two, a discard that is not cycling, a card that
         discards itself without cycling, and a cycled card answering from the graveyard for its own
         trigger and no other.
+
+      **And one more** (D570):
+
+      - `trigger sacrifices`: "whenever you sacrifice a permanent" in every printed combination of
+        who, another and what — **55 legal cards** the compiler reads it for (Korvold, Mayhem
+        Devil, Tireless Tracker, Mazirek, Body Dropper and 50 more). The pool is full of cards that
+        *perform* a sacrifice — Vampire Aristocrat, Fleshbag Marauder, Village Rites, every Clue
+        and Treasure — and has none that watches one, and D442 forbids adding a Mayhem Devil to a
+        measured deck to satisfy this check.
+
+        Driven at runtime by thirteen tests in "sacrifice as an event (D570)", on eight printed
+        cards compiled from corpus rows, with the pool's own outlets doing the sacrificing: a cost,
+        an edict, a Clue cracked and a Treasure spent each raise it; a Shock does not; each filter
+        (creature, artifact, token, Clue, Treasure, another) both ways; and a Korvold sacrificed
+        still sees its own.
     */
     const compilerOnly = new Set([
       'trigger attack-declared', 'trigger combat-damage-dealt', 'trigger blocking-creature',
@@ -7642,6 +7657,7 @@ describe('deck coverage', () => {
       'script kickedEntersWith',
       'trigger damaged',
       'trigger discards', 'trigger cycles',
+      'trigger sacrifices',
     ]);
 
     const declared = [
@@ -39079,5 +39095,274 @@ describe('"put into a graveyard from the battlefield" means from the battlefield
     expect(s.turn).toBe(6);
     expect(namesIn(s, 0, 'graveyard')).toContain('Undying Rage');
     expect(namesIn(s, 0, 'hand')).not.toContain('Undying Rage');
+  });
+});
+
+describe('sacrifice as an event: "whenever you sacrifice a permanent" (D570)', () => {
+  /*
+    The act and not the death: a Clue cracked for a card, a Treasure spent for mana and a creature
+    fed to an altar are all sacrifices, and a creature shot by a Shock is not.
+
+    Every sacrifice here is made by one of the pool's own cards doing what it has always done —
+    Vampire Aristocrat's cost, Fleshbag Marauder's edict, Thraben Inspector's Clue, a Treasure
+    tapped for mana — because the point of D570 is that those five different code paths now go
+    through one function that says so. The watchers are nine printed cards from corpus rows.
+  */
+  const DATA = [
+    {
+      name: 'Korvold, Fae-Cursed King', type_line: 'Legendary Creature — Dragon Noble',
+      mana_cost: '{2}{B}{R}{G}', cmc: 5, colors: ['B', 'R', 'G'], power: '4', toughness: '4', layout: 'normal',
+      oracle_text: 'Flying\nWhenever Korvold, Fae-Cursed King enters or attacks, sacrifice another permanent.\nWhenever you sacrifice a permanent, put a +1/+1 counter on Korvold and draw a card.',
+    },
+    {
+      name: 'Mazirek, Kraul Death Priest', type_line: 'Legendary Creature — Insect Shaman',
+      mana_cost: '{3}{B}{G}', cmc: 5, colors: ['B', 'G'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Flying\nWhenever a player sacrifices another permanent, put a +1/+1 counter on each creature you control.',
+    },
+    {
+      name: 'Body Dropper', type_line: 'Creature — Devil Warrior', mana_cost: '{B}{R}', cmc: 2,
+      colors: ['B', 'R'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Whenever you sacrifice another creature, put a +1/+1 counter on Body Dropper.\n{B}{R}, Sacrifice another creature: Body Dropper gains menace until end of turn. (It can\'t be blocked except by two or more creatures.)',
+    },
+    {
+      name: 'Gleaming Geardrake', type_line: 'Artifact Creature — Drake', mana_cost: '{U}{R}', cmc: 2,
+      colors: ['U', 'R'], power: '1', toughness: '1', layout: 'normal',
+      oracle_text: 'Flying\nWhen Gleaming Geardrake enters, investigate. (Create a Clue token. It\'s an artifact with "{2}, Sacrifice this token: Draw a card.")\nWhenever you sacrifice an artifact, put a +1/+1 counter on Gleaming Geardrake.',
+    },
+    {
+      name: 'Tireless Tracker', type_line: 'Creature — Human Scout', mana_cost: '{2}{G}', cmc: 3,
+      colors: ['G'], power: '3', toughness: '2', layout: 'normal',
+      oracle_text: 'Landfall — Whenever a land you control enters, investigate. (Create a Clue token. It\'s an artifact with "{2}, Sacrifice this token: Draw a card.")\nWhenever you sacrifice a Clue, put a +1/+1 counter on Tireless Tracker.',
+    },
+    {
+      name: 'Captain Lannery Storm', type_line: 'Legendary Creature — Human Pirate',
+      mana_cost: '{2}{R}', cmc: 3, colors: ['R'], power: '2', toughness: '2', layout: 'normal',
+      oracle_text: 'Haste\nWhenever Captain Lannery Storm attacks, create a Treasure token. (It\'s an artifact with "{T}, Sacrifice this token: Add one mana of any color.")\nWhenever you sacrifice a Treasure, Captain Lannery Storm gets +1/+0 until end of turn.',
+    },
+    {
+      name: 'Burdened Aerialist', type_line: 'Creature — Human Pirate', mana_cost: '{2}{U}', cmc: 3,
+      colors: ['U'], power: '3', toughness: '1', layout: 'normal',
+      oracle_text: 'When Burdened Aerialist enters, create a Treasure token. (It\'s an artifact with "{T}, Sacrifice this token: Add one mana of any color.")\nWhenever you sacrifice a token, Burdened Aerialist gains flying until end of turn.',
+    },
+    {
+      name: 'Mortician Beetle', type_line: 'Creature — Insect', mana_cost: '{B}', cmc: 1,
+      colors: ['B'], power: '1', toughness: '1', layout: 'normal',
+      oracle_text: 'Whenever a player sacrifices a creature, you may put a +1/+1 counter on Mortician Beetle.',
+    },
+  ];
+  const PRINTED = DATA.map((row) => row.name).sort();
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'altar',
+      name: 'Altar',
+      entries: [
+        ...DATA.map((row) => ({ name: row.name, count: 3 })),
+        { name: 'Grizzly Bears', count: 4 }, { name: 'Vampire Aristocrat', count: 3 },
+        { name: 'Fleshbag Marauder', count: 3 }, { name: 'Thraben Inspector', count: 3 },
+        { name: "Pirate's Prize", count: 3 }, { name: 'Shock', count: 3 },
+        { name: 'Swamp', count: 6 }, { name: 'Mountain', count: 4 }, { name: 'Island', count: 3 },
+        { name: 'Forest', count: 3 }, { name: 'Plains', count: 3 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData].sort()).toEqual(PRINTED);
+    return list.deck;
+  };
+
+  const LANDS = [
+    'Swamp', 'Swamp', 'Swamp', 'Mountain', 'Mountain', 'Island', 'Island', 'Forest', 'Plains', 'Plains',
+  ];
+  const start = (
+    hand: readonly string[], mine: readonly string[] = [], theirs: readonly string[] = [],
+  ): GameState => advanceTo(arena({
+    decks: { 0: 'altar', 1: 'altar' },
+    deckSpecs: { altar: deck() },
+    hands: { 0: [...hand], 1: ['Swamp'] },
+    battlefield: { 0: [...LANDS, ...mine], 1: ['Swamp', ...theirs] },
+    turn: 5, firstSeat: 0,
+  }), 'precombat-main');
+
+  const here = (s: GameState, seat: SeatIndex, name: string): string => find(s, seat, 'battlefield', name);
+  const plusOnes = (s: GameState, id: string): number => s.instances[id]?.counters['+1/+1'] ?? 0;
+  const cast = (s: GameState, name: string, target?: Target): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', name),
+    ...(target === undefined ? {} : { targets: [target] }),
+  })), 24);
+  /** Feeds `victim` to the Vampire Aristocrat ("Sacrifice a creature: +2/+2 until end of turn"). */
+  const feed = (s: GameState, victim: string): GameState => drain(passBoth(apply(s, {
+    type: 'auto:activate', by: 0, card: here(s, 0, 'Vampire Aristocrat'), abilityIndex: 0, sacrifice: victim,
+  })), 24);
+  /** Cracks a Clue: "{2}, Sacrifice this token: Draw a card." */
+  const crack = (s: GameState): GameState => {
+    const clue = here(s, 0, 'Clue');
+    const play = legalActions(s, 0).plays.find((p) => p.card === clue && p.kind === 'activate')!;
+    return drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: clue, abilityIndex: play.abilityIndex! })), 24);
+  };
+  /** Taps a Treasure for mana, which sacrifices it. */
+  const spend = (s: GameState): GameState => {
+    const treasure = here(s, 0, 'Treasure');
+    const play = legalActions(s, 0).plays.find((p) => p.card === treasure && p.kind === 'activate')!;
+    return drain(apply(s, { type: 'auto:activate', by: 0, card: treasure, abilityIndex: play.abilityIndex! }), 24);
+  };
+
+  describe('"whenever you sacrifice a permanent"', () => {
+    it('Korvold takes a counter and draws when a Bears is fed to the Aristocrat', () => {
+      let s = start([], ['Korvold, Fae-Cursed King', 'Vampire Aristocrat', 'Grizzly Bears']);
+      const korvold = here(s, 0, 'Korvold, Fae-Cursed King');
+      const before = ids(s, 0, 'library').length;
+      s = feed(s, here(s, 0, 'Grizzly Bears'));
+      expect(namesIn(s, 0, 'graveyard')).toContain('Grizzly Bears');
+      expect(plusOnes(s, korvold)).toBe(1);
+      expect(ids(s, 0, 'library').length).toBe(before - 1);
+    });
+
+    it('and nothing when the Bears is merely killed: a death is not a sacrifice', () => {
+      let s = start(['Shock'], ['Korvold, Fae-Cursed King', 'Grizzly Bears']);
+      const korvold = here(s, 0, 'Korvold, Fae-Cursed King');
+      const before = ids(s, 0, 'library').length;
+      s = cast(s, 'Shock', { kind: 'card', id: here(s, 0, 'Grizzly Bears') });
+      expect(namesIn(s, 0, 'graveyard')).toContain('Grizzly Bears');
+      expect(plusOnes(s, korvold)).toBe(0);
+      expect(ids(s, 0, 'library').length).toBe(before);
+    });
+
+    it('sees its OWN sacrifice: Korvold fed to the Aristocrat still draws the card (CR 603.10a)', () => {
+      let s = start([], ['Korvold, Fae-Cursed King', 'Vampire Aristocrat']);
+      const before = ids(s, 0, 'library').length;
+      s = feed(s, here(s, 0, 'Korvold, Fae-Cursed King'));
+      expect(namesIn(s, 0, 'graveyard')).toContain('Korvold, Fae-Cursed King');
+      expect(ids(s, 0, 'library').length).toBe(before - 1);
+    });
+
+    it('counts a Treasure spent for mana and a Clue cracked, which are sacrifices and not deaths', () => {
+      let s = start(["Pirate's Prize", 'Thraben Inspector'], ['Korvold, Fae-Cursed King']);
+      const korvold = here(s, 0, 'Korvold, Fae-Cursed King');
+      s = cast(cast(s, "Pirate's Prize"), 'Thraben Inspector');
+      expect(plusOnes(s, korvold)).toBe(0);
+      s = spend(s);
+      expect(plusOnes(s, korvold)).toBe(1);
+      s = crack(s);
+      expect(plusOnes(s, korvold)).toBe(2);
+    });
+  });
+
+  describe('"another permanent" and "a player"', () => {
+    const counters = (s: GameState): number[] =>
+      ['Mazirek, Kraul Death Priest', 'Vampire Aristocrat'].map((name) => plusOnes(s, here(s, 0, name)));
+
+    it('Mazirek puts a counter on each of your creatures when a Bears is sacrificed', () => {
+      let s = start([], ['Mazirek, Kraul Death Priest', 'Vampire Aristocrat', 'Grizzly Bears']);
+      s = feed(s, here(s, 0, 'Grizzly Bears'));
+      expect(counters(s)).toEqual([1, 1]);
+    });
+
+    it('and none when Mazirek itself is the one sacrificed: "another" is the word that says so', () => {
+      let s = start([], ['Mazirek, Kraul Death Priest', 'Vampire Aristocrat', 'Grizzly Bears']);
+      const aristocrat = here(s, 0, 'Vampire Aristocrat');
+      const bears = here(s, 0, 'Grizzly Bears');
+      s = feed(s, here(s, 0, 'Mazirek, Kraul Death Priest'));
+      expect(namesIn(s, 0, 'graveyard')).toContain('Mazirek, Kraul Death Priest');
+      expect([plusOnes(s, aristocrat), plusOnes(s, bears)]).toEqual([0, 0]);
+    });
+
+    it('"a player": an edict counts both sacrifices for Mazirek, and only your own for Korvold', () => {
+      // Fleshbag Marauder: each player sacrifices a creature. Seat 0 gives up the Bears, seat 1 theirs.
+      let s = start(
+        ['Fleshbag Marauder'],
+        ['Mazirek, Kraul Death Priest', 'Korvold, Fae-Cursed King', 'Grizzly Bears'], ['Grizzly Bears'],
+      );
+      const mazirek = here(s, 0, 'Mazirek, Kraul Death Priest');
+      const korvold = here(s, 0, 'Korvold, Fae-Cursed King');
+      const mine = here(s, 0, 'Grizzly Bears');
+      const theirs = here(s, 1, 'Grizzly Bears');
+      s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fleshbag Marauder') }));
+      for (let i = 0; i < 12 && (s.pendingDecision !== null || s.stackOrder.length > 0); i++) {
+        if (s.pendingDecision !== null) {
+          const seat = s.pendingDecision.seat;
+          s = apply(s, { type: 'auto:decide', by: seat, cards: [seat === 0 ? mine : theirs] });
+        } else if (s.priority !== null) {
+          s = apply(s, { type: 'auto:pass', by: s.priority });
+        } else break;
+      }
+      expect(namesIn(s, 0, 'graveyard')).toContain('Grizzly Bears');
+      expect(namesIn(s, 1, 'graveyard')).toContain('Grizzly Bears');
+      // Two sacrifices by two players: Mazirek twice. One of them yours: Korvold once.
+      expect(plusOnes(s, mazirek)).toBe(2);
+      expect(plusOnes(s, korvold)).toBe(1 + 2);
+    });
+  });
+
+  describe('what was sacrificed', () => {
+    it('"another creature": Body Dropper grows for a Bears and not for a cracked Clue', () => {
+      let s = start(['Thraben Inspector'], ['Body Dropper', 'Vampire Aristocrat', 'Grizzly Bears']);
+      const dropper = here(s, 0, 'Body Dropper');
+      s = crack(cast(s, 'Thraben Inspector'));
+      expect(plusOnes(s, dropper)).toBe(0);
+      s = feed(s, here(s, 0, 'Grizzly Bears'));
+      expect(plusOnes(s, dropper)).toBe(1);
+    });
+
+    it('"an artifact": Gleaming Geardrake grows for a cracked Clue and not for a Bears', () => {
+      let s = start(['Thraben Inspector'], ['Gleaming Geardrake', 'Vampire Aristocrat', 'Grizzly Bears']);
+      const drake = here(s, 0, 'Gleaming Geardrake');
+      s = feed(s, here(s, 0, 'Grizzly Bears'));
+      expect(plusOnes(s, drake)).toBe(0);
+      s = crack(cast(s, 'Thraben Inspector'));
+      expect(plusOnes(s, drake)).toBe(1);
+    });
+
+    it('"a Clue": Tireless Tracker grows for a Clue and not for a Treasure', () => {
+      let s = start(["Pirate's Prize", 'Thraben Inspector'], ['Tireless Tracker']);
+      const tracker = here(s, 0, 'Tireless Tracker');
+      s = spend(cast(s, "Pirate's Prize"));
+      expect(plusOnes(s, tracker)).toBe(0);
+      s = crack(cast(s, 'Thraben Inspector'));
+      expect(plusOnes(s, tracker)).toBe(1);
+    });
+
+    it('"a Treasure": Captain Lannery Storm is a 3/2 for a Treasure and a 2/2 for a Clue', () => {
+      let s = start(["Pirate's Prize", 'Thraben Inspector'], ['Captain Lannery Storm']);
+      const captain = here(s, 0, 'Captain Lannery Storm');
+      s = crack(cast(s, 'Thraben Inspector'));
+      expect(power(s, captain)).toBe(2);
+      s = spend(cast(s, "Pirate's Prize"));
+      expect(power(s, captain)).toBe(3);
+    });
+
+    it('"a token": Burdened Aerialist flies for a Treasure and not for a nontoken Bears', () => {
+      let s = start(["Pirate's Prize"], ['Burdened Aerialist', 'Vampire Aristocrat', 'Grizzly Bears']);
+      const aerialist = here(s, 0, 'Burdened Aerialist');
+      const flies = (state: GameState): boolean =>
+        characteristicsOf(state, state.instances[aerialist]!).keywords.has('flying');
+      s = feed(s, here(s, 0, 'Grizzly Bears'));
+      expect(flies(s)).toBe(false);
+      s = spend(cast(s, "Pirate's Prize"));
+      expect(flies(s)).toBe(true);
+    });
+  });
+
+  it('"a player sacrifices a creature": Mortician Beetle is offered a counter for an opponent\'s', () => {
+    let s = start(['Fleshbag Marauder'], ['Mortician Beetle', 'Grizzly Bears'], ['Grizzly Bears']);
+    const beetle = here(s, 0, 'Mortician Beetle');
+    const mine = here(s, 0, 'Grizzly Bears');
+    const theirs = here(s, 1, 'Grizzly Bears');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Fleshbag Marauder') }));
+    let offered = 0;
+    for (let i = 0; i < 16 && (s.pendingDecision !== null || s.stackOrder.length > 0); i++) {
+      const pending = s.pendingDecision;
+      if (pending !== null && pending.options !== undefined) {
+        offered += 1;
+        s = apply(s, { type: 'auto:decide', by: pending.seat, cards: [], option: pending.options[0]! });
+      } else if (pending !== null) {
+        s = apply(s, { type: 'auto:decide', by: pending.seat, cards: [pending.seat === 0 ? mine : theirs] });
+      } else if (s.priority !== null) {
+        s = apply(s, { type: 'auto:pass', by: s.priority });
+      } else break;
+    }
+    // One offer for each creature sacrificed, whoever sacrificed it.
+    expect(offered).toBe(2);
+    expect(plusOnes(s, beetle)).toBe(2);
   });
 });
