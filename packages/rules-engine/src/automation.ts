@@ -2522,8 +2522,71 @@ function drainOwedDraws(state: GameState): GameState {
   return next;
 }
 
+/**
+ * "Enters with N counters on it", for **every** arrival and not only a spell resolving (D560).
+ *
+ * CR 614.1c makes these replacement effects on the event of entering the battlefield, and the
+ * event does not care how it came about: an Arcbound Worker returned by a reanimation spell, put
+ * back by a blink or made as a token copy enters with its counter exactly as a cast one does.
+ * Until D560 only the spell path applied them, so every other arrival came in bare — and for a 0/0
+ * with modular that is the difference between a card and no card at all.
+ *
+ * Run from `settle` **before** the state-based actions, which is the whole of the timing: the
+ * counters have to be there by the time anything asks whether the creature has toughness, and
+ * before its own enters trigger is put on the stack (an intervening-if reads them as it triggers).
+ * `relocate` is the one place a card arrives and already seeds loyalty there for that reason, but
+ * it sits below the layer that knows what a script is; `state.entered` is its record of every
+ * arrival, drained only here, so reading that list is the same guarantee one layer up.
+ *
+ * Two things it deliberately leaves alone:
+ *
+ * - **An X.** "Enters with X +1/+1 counters" is the X the spell was cast for; anything else that
+ *   puts the card onto the battlefield has an X of zero (CR 107.3m). The spell path still applies
+ *   that half, because it is the only caller that knows the number.
+ * - **Riot and unleash.** Their counter is an answer to a question, and the question belongs to a
+ *   resolving spell. A riot creature that arrives uncast is asked nothing — recorded under D559.
+ *
+ * A face-down permanent has no abilities and so no script (`scriptOf` answers nothing for one),
+ * and a card placed on a table that is not automated is not in `entered` at all: on the tabletop
+ * the players put their own counters on.
+ *
+ * `done` is the caller's, so one `settle` cannot apply the same arrival twice: the list is read
+ * once before the state-based actions and again at the top of each pass.
+ */
+function arrivalReplacements(state: GameState, done: Set<string>): GameState {
+  let next = state;
+  for (const id of state.entered) {
+    if (done.has(id)) continue;
+    done.add(id);
+    const inst = next.instances[id];
+    if (inst === undefined || inst.zone !== 'battlefield') continue;
+    const script = scriptOf(next, id);
+    const arrives = script?.entersWith;
+    if (arrives !== undefined && arrives.amount !== 'x' && arrives.amount > 0) {
+      next = addCounters(next, id, arrives.counter, arrives.amount);
+    }
+    /*
+      Bloodthirst (CR 702.54a): "if an opponent was dealt damage this turn, this creature enters
+      with N +1/+1 counters on it".
+
+      The same replacement with a condition in front of it, asked as the permanent arrives rather
+      than as the spell was cast: a burn spell on the stack above it has resolved by now, and one
+      cast in response to it has too. **An** opponent, so any one of them in a pod; and damage
+      rather than life — see `GameState.damagedThisTurn`. The controller is whoever it arrived
+      under, which for a creature reanimated from somebody else's graveyard is not its owner.
+    */
+    if (script?.bloodthirst !== undefined
+      && next.seats.some((seat) => seat.index !== inst.zoneSeat
+        && damagedThisTurn(next, seat.index) > 0)) {
+      next = addCounters(next, id, '+1/+1', script.bloodthirst);
+    }
+  }
+  return next;
+}
+
 function settle(state: GameState, before: GameState): GameState {
-  let next = drainOwedDraws(stateBasedActions(state));
+  const arrivedWith = new Set<string>();
+  let next = drainOwedDraws(stateBasedActions(arrivalReplacements(state, arrivedWith)));
   // Deaths and arrivals, in a loop: a creature dying can trigger something that kills another or
   // makes a token, and every one of those has to reach its own trigger. `relocate` and
   // `createToken` record them wherever they happen — lethal damage, a destroy spell, a sacrifice,
@@ -2537,6 +2600,8 @@ function settle(state: GameState, before: GameState): GameState {
       || next.toGraveyard.length > 0 || (next.exiled ?? []).length > 0);
     pass++
   ) {
+    // Anything that arrived during the last pass, before it is announced. See `arrivalReplacements`.
+    next = arrivalReplacements(next, arrivedWith);
     /*
       Replacements, widest wording first, before anything is announced.
 
@@ -4109,24 +4174,15 @@ function completeResolution(
           });
         }
       }
-      const arrives = script?.entersWith;
-      if (arrives !== undefined) {
-        const amount = arrives.amount === 'x' ? (object.x ?? 0) : arrives.amount;
-        if (amount > 0) next = addCounters(next, inst.id, arrives.counter, amount);
-      }
       /*
-        Bloodthirst (CR 702.54a): "if an opponent was dealt damage this turn, this creature enters
-        with N +1/+1 counters on it".
-
-        Beside `entersWith` because it is the same replacement with a condition in front of it, and
-        asked as the permanent arrives rather than as the spell was cast: a burn spell on the stack
-        above it has resolved by now, and one cast in response to it has too. **An** opponent, so
-        any one of them in a pod; and damage rather than life — see `GameState.damagedThisTurn`.
+        Only the X half is applied here now (D560). A **printed number** is the same for every way
+        of arriving, so it lives in `arrivalReplacements`, which every arrival passes through; an X
+        is known only to the spell that was cast for it, which is this one.
       */
-      if (script?.bloodthirst !== undefined
-        && state.seats.some((seat) => seat.index !== object.controller
-          && damagedThisTurn(next, seat.index) > 0)) {
-        next = addCounters(next, inst.id, '+1/+1', script.bloodthirst);
+      const arrives = script?.entersWith;
+      if (arrives !== undefined && arrives.amount === 'x') {
+        const amount = object.x ?? 0;
+        if (amount > 0) next = addCounters(next, inst.id, arrives.counter, amount);
       }
       /*
         Riot and unleash (CR 702.136a, 702.98a): the answer to the question this spell asked as it
@@ -4135,7 +4191,7 @@ function completeResolution(
         Here and not in a trigger because both are replacement effects: the creature **enters
         with** the counter or with haste, so there is no moment at which it is on the battlefield
         without them and nothing an opponent can respond to. The counter is added to whatever
-        `entersWith` already put there — Arcbound Slasher prints modular 4 and riot, and is a 5/5
+        `entersWith` puts there — Arcbound Slasher prints modular 4 and riot, and is a 5/5
         or a hasty 4/4.
 
         Riot's haste has no duration because the card gives it none: it is the creature's for as
@@ -4143,7 +4199,9 @@ function completeResolution(
         itself amounts to — it goes when the creature does.
 
         A spell that asked nothing has no answer and gets neither. That is every way of arriving
-        other than being cast, the gap #397 names for `entersWith`.
+        other than being cast: D560 moved the *printed* counters to `arrivalReplacements`, which
+        every arrival passes through, but this one needs somebody to ask and only a resolving
+        spell can.
       */
       if (script?.entersChoice !== undefined) {
         const answer = chosenOption(ctx);

@@ -19212,10 +19212,15 @@ describe('modular: counters that move from a dying creature to a living one', ()
 
   it('and a 0/0 put onto the battlefield without entering dies at once, having no counter', () => {
     /*
-      The tabletop's "Move by hand" can put any card on the battlefield, and a modular creature that
-      arrives that way never ran `entersWith` — so it is a literal 0/0 and the state-based actions
-      take it. Worth pinning rather than discovering: it is the same fact echo and vanishing each
-      found, and here it is the difference between a card and no card at all.
+      A board **built before the engine took over** holds cards that never entered: nothing was
+      announced for them, so no enters trigger fired and no `entersWith` ran. A modular creature
+      placed that way is a literal 0/0 and the state-based actions take it. Worth pinning rather
+      than discovering: it is the same fact echo and vanishing each found, and here it is the
+      difference between a card and no card at all.
+
+      Since D560 that is the *only* way to get one. A card moved onto an automated battlefield by
+      hand, reanimated or blinked has entered and has its counter — see "enters with counters,
+      however it arrived (D560)".
 
       And it goes **without a question**: the modular trigger's intervening-if reads the counters it
       had, which are none, so the table does not stop to ask who should receive nothing.
@@ -36895,5 +36900,149 @@ describe('fabricate, riot and unleash: a choice as the permanent arrives (D559)'
       expect(counters(s, asked.id)).toBe(0);
       expect(versusBears(s, asked.id)).toBeNull();
     });
+  });
+});
+
+describe('enters with counters, however it arrived (D560)', () => {
+  /*
+    "Enters with N counters" is a replacement on the event of entering the battlefield (CR 614.1c),
+    and the event is the same whether a spell resolved, a Zombify returned the card, a Cloudshift
+    put it back or a player moved it by hand. Until D560 only the first of those applied it.
+
+    Every card here is in the pool except the Vampire, which is a printed row. The 0/0 is the
+    sharpest case — without its counter it is not a smaller creature, it is no creature.
+  */
+  const DATA = [
+    {
+      name: 'Bloodrage Vampire', type_line: 'Creature — Vampire', mana_cost: '{2}{B}', cmc: 3,
+      colors: ['B'], power: '3', toughness: '1', layout: 'normal',
+      oracle_text: 'Bloodthirst 1 (If an opponent was dealt damage this turn, this creature enters with a +1/+1 counter on it.)',
+    },
+  ];
+
+  const deck = () => {
+    const list = customDeck({
+      id: 'arrivers',
+      name: 'Arrivers',
+      entries: [
+        { name: 'Bloodrage Vampire', count: 4 }, { name: 'Arcbound Worker', count: 4 },
+        { name: 'Calciderm', count: 4 }, { name: 'Blastoderm', count: 4 },
+        { name: 'Endless One', count: 4 }, { name: 'Zombify', count: 4 },
+        { name: 'Cloudshift', count: 4 }, { name: 'Shock', count: 4 },
+        { name: 'Plains', count: 8 }, { name: 'Swamp', count: 10 }, { name: 'Mountain', count: 6 },
+        { name: 'Forest', count: 4 },
+      ],
+      data: DATA as never[],
+    });
+    expect(list.unknown).toEqual([]);
+    expect([...list.fromData]).toEqual(['Bloodrage Vampire']);
+    return list.deck;
+  };
+
+  // Two Plains, so the Worker's {1} cannot take the only white source the Cloudshift needs.
+  const LANDS = ['Plains', 'Plains', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Mountain'];
+
+  const start = (hand: readonly string[], graveyard: readonly string[] = []): GameState =>
+    advanceTo(arena({
+      decks: { 0: 'arrivers', 1: 'arrivers' },
+      deckSpecs: { arrivers: deck() },
+      hands: { 0: [...hand] },
+      graveyard: { 0: [...graveyard] },
+      battlefield: { 0: [...LANDS], 1: [] },
+      turn: 5, firstSeat: 0,
+    }), 'precombat-main');
+
+  /** Zombify the named card out of seat 0's graveyard and let everything settle. */
+  const zombify = (s: GameState, name: string) => {
+    const id = find(s, 0, 'graveyard', name);
+    const after = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Zombify'),
+      targets: [{ kind: 'card', id }],
+    })));
+    return { state: after, id };
+  };
+
+  it.each([
+    ['Arcbound Worker', '+1/+1', 1],
+    ['Calciderm', 'time', 4],
+    ['Blastoderm', 'fade', 3],
+  ])('a reanimated %s has its %s counters', (name, counter, count) => {
+    const { state, id } = zombify(start(['Zombify'], [name]), name);
+    expect(state.instances[id]!.zone).toBe('battlefield');
+    expect(state.instances[id]!.counters[counter]).toBe(count);
+  });
+
+  it('so a reanimated 0/0 with modular is a creature and not a trip back to the graveyard', () => {
+    // The row that makes the difference visible on the board: before D560 the Worker came back a
+    // literal 0/0 and the state-based actions took it at the next priority.
+    let { state: s, id } = zombify(start(['Zombify'], ['Arcbound Worker']), 'Arcbound Worker');
+    expect(`${characteristicsOf(s, s.instances[id]!).power}/${characteristicsOf(s, s.instances[id]!).toughness}`).toBe('1/1');
+    s = drain(passBoth(s));
+    expect(namesIn(s, 0, 'battlefield')).toContain('Arcbound Worker');
+    expect(namesIn(s, 0, 'graveyard')).not.toContain('Arcbound Worker');
+  });
+
+  it('a blinked creature comes back with the printed number, not the number it left with', () => {
+    // Cast (one counter), given two more, then Cloudshifted. It is a new object (CR 400.7): the
+    // three it had are gone and the one it enters with is there. Not zero, and not three.
+    let s = start(['Arcbound Worker', 'Cloudshift']);
+    const worker = find(s, 0, 'hand', 'Arcbound Worker');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: worker })));
+    expect(s.instances[worker]!.counters['+1/+1']).toBe(1);
+    s = addCounters(s, worker, '+1/+1', 2);
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Cloudshift'),
+      targets: [{ kind: 'card', id: worker }],
+    })));
+    expect(s.instances[worker]!.zone).toBe('battlefield');
+    expect(s.instances[worker]!.counters['+1/+1']).toBe(1);
+  });
+
+  it('a card moved onto an automated battlefield by hand has entered, and has them', () => {
+    let s = start(['Calciderm']);
+    const id = find(s, 0, 'hand', 'Calciderm');
+    s = drain(apply(s, { type: 'card:move', by: 0, card: id, toZone: 'battlefield' }));
+    expect(s.instances[id]!.zone).toBe('battlefield');
+    expect(s.instances[id]!.counters['time']).toBe(4);
+  });
+
+  it('a cast one still has them once, not twice', () => {
+    // The spell path used to apply these itself. It no longer does, and the arrival pass must not
+    // be a second helping on top of anything left behind there.
+    let s = start(['Calciderm']);
+    const id = find(s, 0, 'hand', 'Calciderm');
+    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: id })));
+    expect(s.instances[id]!.zone).toBe('battlefield');
+    expect(s.instances[id]!.counters['time']).toBe(4);
+    // And passing again does not find it in a list a second time.
+    s = drain(passBoth(s));
+    expect(s.instances[id]!.counters['time']).toBe(4);
+  });
+
+  it('an X is the spell\'s alone: a reanimated Endless One enters with none and dies', () => {
+    // CR 107.3m: anything other than the spell that was cast has an X of zero. The half of
+    // `entersWith` that stayed where it was.
+    const { state, id } = zombify(start(['Zombify'], ['Endless One']), 'Endless One');
+    const s = drain(passBoth(state));
+    expect(s.instances[id]!.zone).toBe('graveyard');
+  });
+
+  it.each([
+    ['after a Shock to an opponent', true, 1],
+    ['with nobody damaged', false, 0],
+  ])('bloodthirst is asked of a reanimated creature too: %s', (_when, burn, count) => {
+    // "If an opponent was dealt damage this turn, this creature **enters** with" — no word about
+    // casting it. Both rows, so the counter cannot be something reanimation always hands out.
+    let s = start(['Zombify', 'Shock'], ['Bloodrage Vampire']);
+    if (burn) {
+      s = drain(passBoth(apply(s, {
+        type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Shock'),
+        targets: [{ kind: 'player', seat: 1 }],
+      })));
+      expect(life(s, 1)).toBe(18);
+    }
+    const { state, id } = zombify(s, 'Bloodrage Vampire');
+    expect(state.instances[id]!.zone).toBe('battlefield');
+    expect(state.instances[id]!.counters['+1/+1'] ?? 0).toBe(count);
   });
 });

@@ -21395,3 +21395,68 @@ as an opponent by City of Brass, "every opponent" by the three-seat pod, the dam
 count by the Savage's bloodthirst 3, and the missing cleanup reset by the next-turn row. The pod
 row and the plain combat row were added after the first draft of the tests and before the harness
 ran; the "every opponent" break is the one that would have got through without them.
+
+## D560 — "Enters with N counters" applies to every arrival (task #397)
+
+**The bug.** `entersWith` was applied in one place: the block that puts a resolving permanent
+spell onto the battlefield. Every other way of arriving skipped it. A Zombified Arcbound Worker
+came back a literal 0/0 and went straight to the graveyard; a Cloudshifted Calciderm came back
+with no time counters and so never left; a reanimated bloodthirst creature was never asked. D558
+and D559 each added a mechanic to that list and named the gap rather than widening the fix.
+
+CR 614.1c makes these replacement effects on the *event* of entering the battlefield, and the
+event does not care what caused it. In Commander, where reanimation and blink are staples, this
+was the commonest way for a compiled card to be wrong while reading as fully read.
+
+**The fix.** `arrivalReplacements(state, done)` in `automation.ts`, run from `settle` **before**
+the state-based actions and again at the top of each of its passes:
+
+- it walks `state.entered` — `relocate`'s and `createToken`'s own record of every arrival, which
+  is the same "one place a card arrives" guarantee loyalty uses, one layer up where a script can
+  be looked up;
+- a printed number of counters is added there, and so is bloodthirst's conditional one;
+- the spell path keeps only the **X** half, because CR 107.3m gives every other arrival an X of
+  zero and only the resolving spell knows the number.
+
+Before the state-based actions is the whole of the timing. The counters have to be there by the
+time anything asks whether a 0/0 has toughness, and before the creature's own enters trigger is
+put on the stack, since an intervening-if is asked as it triggers.
+
+**What still asks nothing:** riot and unleash. Their counter is an answer, and a question needs a
+resolving object to hang on (`pendingDecision.stackId`). A riot creature that arrives uncast gets
+neither counter nor haste. That is now the whole of what remains of #397 and is written on the
+player sheet as a stated limit.
+
+**What did not change:** a board built before the engine takes over. Cards placed in setup never
+entered — no enters trigger fires for them either — so the existing test that pins a setup-placed
+Arcbound Worker dying as a 0/0 still holds, and its comment now says why that is the only way to
+get one.
+
+### Tests
+
+Ten rows in "enters with counters, however it arrived (D560)", on pool cards and one printed
+bloodthirst row. Run against the engine as it was before the change, **seven fail and three
+pass**, and the three are the controls:
+
+| row | old engine | new |
+| --- | --- | --- |
+| Zombified Arcbound Worker has a +1/+1 counter | fail | pass |
+| Zombified Calciderm has 4 time counters | fail | pass |
+| Zombified Blastoderm has 3 fade counters | fail | pass |
+| the Zombified Worker is a 1/1 and stays on the battlefield | fail | pass |
+| a Worker with three counters, Cloudshifted, comes back with one | fail | pass |
+| Calciderm moved by hand onto an automated battlefield has 4 | fail | pass |
+| Zombified Bloodrage Vampire after a Shock has its counter | fail | pass |
+| ...and with nobody damaged has none | pass | pass |
+| a cast Calciderm has 4, once | pass | pass |
+| a Zombified Endless One (X) has none and dies | pass | pass |
+
+The full engine suite passed unchanged before any of these were written (3,542 of 3,542), which is
+the evidence that moving the printed half out of the spell path changed nothing for a cast card.
+
+No coverage change: this is a correctness fix for cards already counted as read. Its reach,
+counted on the corpus: 57 legal cards print modular, vanishing or fading with a number, and 450
+print some "enters with N ... counters on it" line with a fixed N. How many of the 450 the
+compiler reads into `entersWith` today was not counted; every one that it does is covered.
+
+D559's pod sweep (SEED0=42901): 40 of 40 to a finish, no throw, no stall.
