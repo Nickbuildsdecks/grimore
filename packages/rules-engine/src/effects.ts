@@ -1368,13 +1368,14 @@ export function copySpellOnStack(
  * And a ward whose object has already left the stack does nothing at all: something else countered
  * the spell first, or it resolved, which is the ordinary "its target is gone" case one level up.
  */
-export function wardAsks(ctx: EffectContext, cost: string, name: string): GameState {
+export function wardAsks(ctx: EffectContext, cost: string, name: string, life = 0): GameState {
   const { state } = ctx;
   const id = ctx.answering;
   if (id === undefined) return state;
   const object = state.stackObjects[id];
   if (object === undefined) return state;
   const payer = object.controller;
+  const words = paymentWords({ cost, life });
   return {
     ...state,
     // Nobody holds priority while the question is outstanding, for the reason `pendingChoice` and
@@ -1385,13 +1386,27 @@ export function wardAsks(ctx: EffectContext, cost: string, name: string): GameSt
     pendingPayment: {
       seat: payer,
       cost,
-      prompt: `Pay ${cost} or ${object.description} is countered by ${name}'s ward`,
+      ...(life > 0 ? { life } : {}),
+      prompt: `Pay ${words} or ${object.description} is countered by ${name}'s ward`,
       counters: id,
       source: ctx.source,
       // The wording `settlePayment` used to build for itself. See `pendingPayment.unpaidNote`.
-      unpaidNote: `${name}: ward ${cost} was not paid — ${object.description} is countered`,
+      unpaidNote: `${name}: ward ${words} was not paid — ${object.description} is countered`,
     },
   };
+}
+
+/**
+ * What a pending payment costs, in the words a player reads: `{2}`, `3 life`, `{2} and 2 life`.
+ *
+ * One function because three places say it — the prompt, the button, and the log line when it is
+ * paid or refused — and a cost said three ways is how one of them ends up naming only the mana.
+ * A mana-only payment reads exactly as it did before life could be part of one.
+ */
+export function paymentWords(payment: { readonly cost: string; readonly life?: number }): string {
+  const life = payment.life ?? 0;
+  if (life <= 0) return payment.cost;
+  return payment.cost === '' ? `${life} life` : `${payment.cost} and ${life} life`;
 }
 
 /**
@@ -2203,6 +2218,8 @@ export interface PumpOptions {
   readonly cantBlock?: boolean;
   /** See `ContinuousEffect.preventsCombatDamage`. A Fog Bank is this, printed on a 0/2. */
   readonly preventsCombatDamage?: boolean;
+  /** See `ContinuousEffect.assignsNoCombatDamage`: the creature deals none, and may still be hit. */
+  readonly assignsNoCombatDamage?: boolean;
   /** See `ContinuousEffect.exiledInsteadOfDying` — "exile it instead" (D539). */
   readonly exiledInsteadOfDying?: boolean;
   /** See `ContinuousEffect.mustAttack` — "attacks each combat if able" (CR 508.1d). */
@@ -2284,6 +2301,7 @@ export function modsFrom(opts: PumpOptions): Omit<ContinuousEffect, 'id' | 'crea
     ...(opts.cantAttack ? { cantAttack: true } : {}),
     ...(opts.cantBlock ? { cantBlock: true } : {}),
     ...(opts.preventsCombatDamage ? { preventsCombatDamage: true } : {}),
+    ...(opts.assignsNoCombatDamage ? { assignsNoCombatDamage: true } : {}),
     ...(opts.exiledInsteadOfDying ? { exiledInsteadOfDying: true } : {}),
     ...(opts.mustAttack ? { mustAttack: true } : {}),
     ...(opts.cantBeBlockedByWalls ? { cantBeBlockedByWalls: true } : {}),

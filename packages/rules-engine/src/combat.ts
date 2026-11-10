@@ -12,7 +12,7 @@
  * survive combat damage if it is pumped in response.
  */
 import {
-  clauseMatches, characteristicsOf, combatDamagePrevented, hasSubtype, keywordBlockRules,
+  assignsNoCombatDamage, clauseMatches, characteristicsOf, combatDamagePrevented, hasSubtype, keywordBlockRules,
   protectionApplies,
   type BlockerClause, type Characteristics,
 } from './characteristics.js';
@@ -599,6 +599,11 @@ function dealCombatDamageUnmarked(state: GameState, firstStrike: boolean): GameS
     const inst = next.instances[id];
     return inst !== undefined && combatDamagePrevented(next, inst);
   };
+  /** "Assigns no combat damage this turn": deals none, and is not protected from any (D578). */
+  const assignsNone = (id: string): boolean => {
+    const inst = next.instances[id];
+    return inst !== undefined && assignsNoCombatDamage(next, inst);
+  };
   for (const attack of next.combat.attacks) {
     // Still in combat and still the same object, but *as it was*: see `was` above.
     const attacker = sameObject(next, attack.attacker, attack.attackerSeq)
@@ -611,7 +616,7 @@ function dealCombatDamageUnmarked(state: GameState, firstStrike: boolean): GameS
       creatureOf(next, id) !== null && sameObject(next, id, attack.blockerSeqs?.[id]));
 
     if (attacker !== null && dealsInStep(attacker.ch, firstStrike) && attacker.ch.power > 0
-      && !prevented(attack.attacker)) {
+      && !prevented(attack.attacker) && !assignsNone(attack.attacker)) {
       /*
         Deathtouch is still read here, and only for the **arithmetic**: how much of an attacker's
         power one blocker soaks up before trample lets the rest through is a question about lethal
@@ -669,7 +674,7 @@ function dealCombatDamageUnmarked(state: GameState, firstStrike: boolean): GameS
       // The attacker may already be gone; blockers deal damage only to something still there,
       // and not to a new permanent wearing the same id.
       if (attacker === null || creatureOf(next, attack.attacker) === null) continue;
-      if (prevented(blockerId) || prevented(attack.attacker)) continue;
+      if (prevented(blockerId) || prevented(attack.attacker) || assignsNone(blockerId)) continue;
       next = dealDamage(next, { kind: 'card', id: attack.attacker }, blocker.ch.power, {
         controller: blocker.inst.zoneSeat,
         source: blockerId,

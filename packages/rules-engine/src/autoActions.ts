@@ -32,7 +32,7 @@ import {
 } from './automation.js';
 import {
   MYRIAD, SEAT_CHOICE, TIME, addCounters, addToPool, addTokens, bottomPile, counterSpell, draw,
-  energyOf, enterAttacking, loseLife,
+  energyOf, enterAttacking, loseLife, paymentWords,
   mill, moveToHand, removeFromCombat,
   poolOf, spendEnergy,
   sacrifice,
@@ -2604,14 +2604,19 @@ function payWard(state: GameState, action: { by: SeatIndex; pay: boolean }): Out
   const object = state.stackObjects[pending.counters];
   const spell = object?.description ?? 'it';
 
+  const words = paymentWords(pending);
   let next: GameState = { ...state, pendingPayment: null };
   if (action.pay) {
+    // Mana first and life second, which is the order the card prints them in ("{2}, Pay 2 life");
+    // both are one payment, and nothing can happen between the halves.
     const paid = payFrom(next, action.by, pending.cost, 0);
-    next = resetPriority(settle(paid.state, state));
+    const lifePaid = pending.life ?? 0;
+    const afterLife = lifePaid > 0 ? loseLife(paid.state, action.by, lifePaid) : paid.state;
+    next = resetPriority(settle(afterLife, state));
     return {
       state: next,
-      message: `${seatName(state, action.by)} pays ${pending.cost} for ${warded}'s ward`,
-      data: { ward: pending.source, cost: pending.cost, paid: true, tapped: [...paid.tapped] },
+      message: `${seatName(state, action.by)} pays ${words} for ${warded}'s ward`,
+      data: { ward: pending.source, cost: words, paid: true, tapped: [...paid.tapped] },
     };
   }
   next = resetPriority(settle(
@@ -2620,8 +2625,8 @@ function payWard(state: GameState, action: { by: SeatIndex; pay: boolean }): Out
   ));
   return {
     state: next,
-    message: `${seatName(state, action.by)} does not pay ${pending.cost}: ${spell} is countered by ${warded}'s ward`,
-    data: { ward: pending.source, cost: pending.cost, paid: false, countered: pending.counters },
+    message: `${seatName(state, action.by)} does not pay ${words}: ${spell} is countered by ${warded}'s ward`,
+    data: { ward: pending.source, cost: words, paid: false, countered: pending.counters },
   };
 }
 

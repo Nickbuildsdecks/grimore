@@ -1777,6 +1777,21 @@ export interface AbilityCost {
    */
   readonly sacrifice?: 'creature' | 'another-creature' | 'artifact';
   /**
+   * Narrows `sacrifice` to permanents with **one of** these subtypes: "Sacrifice another Vampire
+   * or Zombie" (D578).
+   *
+   * A narrowing of the field above rather than a fifth member of it, because the subtype is a
+   * parameter — sixty creature types and one rule, which is D57's point about an enum of them.
+   * Read off `characteristicsOf`, so a changeling counts and a creature that lost its types does
+   * not.
+   *
+   * Paired with `'another-creature'` on the one card that uses it, and that pairing is exact for
+   * what is printed rather than a near miss: the card says "another Vampire or Zombie", not
+   * "creature", and the corpus has **no** noncreature card with either subtype (measured, D578).
+   * A kindred Zombie enchantment would be the card that needs a permanent-wide member.
+   */
+  readonly sacrificeSubtypes?: readonly string[];
+  /**
    * `'artifact'` is the fourth member and the first that is not about creatures at all.
    *
    * Worth its own note because of what it eats in this pool: there are Equipment, mana rocks, a
@@ -3030,6 +3045,24 @@ export interface CardScript {
    * another arrives it is a second member of this union rather than a second field.
    */
   readonly affinity?: 'artifacts';
+  /**
+   * A change to **this spell's own** cost that the board decides: "This spell costs {1} less to
+   * cast if an opponent controls no basic lands" (D578).
+   *
+   * Affinity's neighbour and the same arrangement: a clause on the card being cast, reading the
+   * table as the cost is computed, so the offer and the payment agree because `costChangeFor`
+   * answers both. A predicate rather than a list of conditions for `costModifiers.applies`'
+   * reason — 108 legal lines print "costs {N} less to cast if …" and they name 83 different
+   * conditions.
+   *
+   * Generic only, negative for less, and floored at nought with every other reduction.
+   */
+  readonly selfCostChange?: {
+    readonly generic: number;
+    readonly when: (state: GameState, caster: SeatIndex) => boolean;
+    /** Shown on the play when it applies: "costs {1} less". */
+    readonly description: string;
+  };
   /**
    * Replacement effects this permanent contributes, for an event happening to *another* object
    * (CR 614).

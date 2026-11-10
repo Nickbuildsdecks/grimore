@@ -22,7 +22,7 @@ import {
 import {
   canBlock, damageOrdersOwed, forcedAttackers, legalAttackers, legalBlockers, legalDefenders,
 } from './combat.js';
-import { energyOf, poolOf } from './effects.js';
+import { energyOf, paymentWords, poolOf } from './effects.js';
 import {
   addMana, canAfford, maxAffordableX, parseManaCost,
   type ManaCost, type ManaPool, type ManaType,
@@ -1981,6 +1981,13 @@ export function costChangeFor(
       notes.push(`affinity for artifacts: {${n}} less`);
     }
   }
+  // And a conditional change printed on the spell: "costs {1} less to cast if …" (D578).
+  const conditional = scriptForCard(def)?.selfCostChange;
+  if (conditional !== undefined && conditional.generic !== 0 && conditional.when(state, seat)) {
+    if (conditional.generic > 0) up += conditional.generic;
+    else down -= conditional.generic;
+    notes.push(conditional.description);
+  }
   if (up === 0 && down === 0) return { generic: 0, notes: [] };
   return { generic: up - down, notes };
 }
@@ -2073,7 +2080,8 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   const mustPay: LegalActions['mustPay'] = payment !== null && payment.seat === seat
     ? {
         prompt: payment.prompt,
-        cost: payment.cost,
+        // In words rather than as the mana string, so a ward paid in life has a button that says so.
+        cost: paymentWords(payment),
         ward: payment.source,
         spell: state.stackObjects[payment.counters]?.description ?? 'it',
       }
@@ -2104,7 +2112,7 @@ export function legalActions(state: GameState, seat: SeatIndex): LegalActions {
   if (decision !== null) return mustDecide === null ? empty : { ...empty, passLabel: 'Choose' };
   // And so does a ward: the spell is on the stack, nobody holds priority, and the only move at the
   // table is the one answer this seat owes.
-  if (payment !== null) return mustPay === null ? empty : { ...empty, passLabel: `Pay ${payment.cost}` };
+  if (payment !== null) return mustPay === null ? empty : { ...empty, passLabel: `Pay ${paymentWords(payment)}` };
   /*
     And so does a dredge, which is the one of these that stops the table over a card nobody cast.
 

@@ -1317,6 +1317,16 @@ export interface ContinuousEffect {
    */
   readonly preventsCombatDamage?: boolean;
   /**
+   * "~ **assigns no combat damage** this turn" (D578) — the one-directional half of the flag above.
+   *
+   * `preventsCombatDamage` answers for damage dealt **by and to** a creature, which is a Fog. This
+   * is only the first half and is not prevention at all: the creature assigns none (CR 510.1), so
+   * nothing is dealt, nothing is there to prevent, and a blocker in front of it still hits back.
+   * 26 legal cards print the phrase — Ophidian, the Laccoliths, Master of Cruelties — and reading
+   * it as a Fog would make each of them unkillable in the combat it is declining to fight.
+   */
+  readonly assignsNoCombatDamage?: boolean;
+  /**
    * "If that creature would die this turn, **exile it instead**" (CR 614.1, D539).
    *
    * The first field here that is not a characteristic and is not read by `effectApplies`. Every
@@ -2397,6 +2407,17 @@ export function combatDamagePrevented(state: GameState, instance: CardInstance):
   const creature = hasType(line, 'creature');
   return (state.effects ?? []).some(
     (effect) => effect.preventsCombatDamage === true
+      && effectApplies(state, effect, instance, creature, line),
+  );
+}
+
+/** Whether this permanent assigns no combat damage: see `ContinuousEffect.assignsNoCombatDamage`. */
+export function assignsNoCombatDamage(state: GameState, instance: CardInstance): boolean {
+  const def = state.cardDefs[instance.defKey];
+  const line = parseTypeLine(def?.typeLine);
+  const creature = hasType(line, 'creature');
+  return (state.effects ?? []).some(
+    (effect) => effect.assignsNoCombatDamage === true
       && effectApplies(state, effect, instance, creature, line),
   );
 }

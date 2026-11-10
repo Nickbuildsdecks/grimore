@@ -7798,22 +7798,64 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
     The three outcomes are the three tests: paid, declined, and could not pay. The last is not
     offered as a choice at all, for the reason a trigger with no legal targets never goes on the
     stack — a prompt with one button is a table that has stopped.
+
+    **The cards are compiled from their Oracle rows (D578).** These tests stood on Dragonsguard
+    Elite's ward {1} and Sedgemoor Witch's ward {3}, and neither is printed: the Elite has no ward
+    and the Witch's is paid in life. No pool card prints a ward paid in mana, so the mana half is
+    held up by two cards that do, played out of a list of their own — which also makes these the
+    rows a pasted deck's warded creature is held to.
   */
+  const HORTIMANCER = {
+    name: 'Unflinching Hortimancer', type_line: 'Creature — Human Cleric', mana_cost: '{1}{W}',
+    cmc: 2, colors: ['W'], power: '2', toughness: '1', layout: 'normal',
+    oracle_text: 'Ward {1} (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {1}.)\nWhenever you gain life, put a +1/+1 counter on this creature.',
+  };
+  const FROST_GIANT = {
+    name: 'Rimeshield Frost Giant', type_line: 'Creature — Giant Warrior', mana_cost: '{3}{U}{U}',
+    cmc: 5, colors: ['U'], power: '4', toughness: '5', layout: 'normal',
+    oracle_text: 'Ward {3} (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {3}.)',
+  };
+  const wardedList = customDeck({
+    id: 'warded',
+    name: 'Warded',
+    entries: [
+      { name: 'Unflinching Hortimancer', count: 4 },
+      { name: 'Rimeshield Frost Giant', count: 4 },
+      { name: 'Giant Growth', count: 4 },
+      { name: 'Forest', count: 24 },
+      { name: 'Plains', count: 24 },
+    ],
+    data: [HORTIMANCER, FROST_GIANT] as never[],
+  }).deck;
   const table = (
-    deck: string, wardCard: string, theirLands: readonly string[], mine: readonly string[],
-    spell = 'Doom Blade',
+    wardCard: string, theirLands: readonly string[], mine: readonly string[],
+    spell = 'Doom Blade', deck = 'warded',
   ): GameState => advanceTo(arena({
     decks: { 0: 'tidal-mind', 1: deck },
+    deckSpecs: { warded: wardedList },
     hands: { 0: [spell] },
     battlefield: { 0: [...theirLands], 1: [...mine, wardCard] },
     turn: 4, firstSeat: 0,
   }), 'precombat-main');
+  const aim = (s: GameState, spell: string, at: string): GameState => drain(passBoth(apply(s, {
+    type: 'auto:cast', by: 0, card: find(s, 0, 'hand', spell),
+    targets: [{ kind: 'card', id: find(s, 1, 'battlefield', at) }],
+  })));
+
+  it('reads both wards off their printed lines, with nothing left unread', () => {
+    for (const name of ['Unflinching Hortimancer', 'Rimeshield Frost Giant']) {
+      const script = scriptForCard(wardedList.cards.find((entry) => entry.card.name === name)!.card);
+      expect((script?.triggers ?? []).map((t) => t.description)).toContain(
+        name === 'Rimeshield Frost Giant' ? 'Ward {3}' : 'Ward {1}',
+      );
+    }
+  });
 
   it('stops the removal on the stack and asks the other player to pay', () => {
-    let s = table('verdant-guard', 'Dragonsguard Elite', ['Swamp', 'Swamp', 'Swamp'], ['Forest']);
-    const elite = find(s, 1, 'battlefield', 'Dragonsguard Elite');
+    let s = table('Unflinching Hortimancer', ['Swamp', 'Swamp', 'Swamp'], ['Forest']);
+    const cleric = find(s, 1, 'battlefield', 'Unflinching Hortimancer');
     const blade = find(s, 0, 'hand', 'Doom Blade');
-    s = apply(s, { type: 'auto:cast', by: 0, card: blade, targets: [{ kind: 'card', id: elite }] });
+    s = apply(s, { type: 'auto:cast', by: 0, card: blade, targets: [{ kind: 'card', id: cleric }] });
 
     // The ward ability is on the stack above the spell, so it resolves first (CR 603.3b).
     expect(s.stackOrder).toHaveLength(2);
@@ -7822,7 +7864,9 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
     // And the question is the caster's, not the warded creature's controller's.
     expect(s.pendingPayment?.seat).toBe(0);
     expect(s.pendingPayment?.cost).toBe('{1}');
-    expect(legalActions(s, 0).mustPay?.prompt).toContain('Dragonsguard Elite');
+    expect(s.pendingPayment?.life).toBeUndefined();
+    expect(legalActions(s, 0).mustPay?.prompt).toContain('Unflinching Hortimancer');
+    expect(legalActions(s, 0).mustPay?.cost).toBe('{1}');
     expect(legalActions(s, 1).mustPay).toBeNull();
     // Nobody holds priority while it stands, which is what stops the other table offering a pass.
     expect(s.priority).toBeNull();
@@ -7831,41 +7875,34 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
     // Paid, and the removal resolves as though the ward had never been there.
     s = drain(apply(s, { type: 'auto:pay', by: 0, pay: true }));
     expect(s.pendingPayment).toBeNull();
-    expect(namesIn(s, 1, 'graveyard')).toContain('Dragonsguard Elite');
+    expect(namesIn(s, 1, 'graveyard')).toContain('Unflinching Hortimancer');
   });
 
   it('counters the spell when the cost is declined, and the creature lives', () => {
-    let s = table('verdant-guard', 'Dragonsguard Elite', ['Swamp', 'Swamp', 'Swamp'], ['Forest']);
-    const elite = find(s, 1, 'battlefield', 'Dragonsguard Elite');
-    const blade = find(s, 0, 'hand', 'Doom Blade');
-    s = drain(passBoth(apply(s, {
-      type: 'auto:cast', by: 0, card: blade, targets: [{ kind: 'card', id: elite }],
-    })));
+    let s = aim(table('Unflinching Hortimancer', ['Swamp', 'Swamp', 'Swamp'], ['Forest']),
+      'Doom Blade', 'Unflinching Hortimancer');
+    const cleric = find(s, 1, 'battlefield', 'Unflinching Hortimancer');
     expect(s.pendingPayment).not.toBeNull();
 
     s = drain(apply(s, { type: 'auto:pay', by: 0, pay: false }));
     // The card is spent and the creature is untouched, which is the whole point of ward being a
     // cost rather than hexproof: the removal was answered and it cost its controller a card.
-    expect(s.instances[elite]!.zone).toBe('battlefield');
+    expect(s.instances[cleric]!.zone).toBe('battlefield');
     expect(namesIn(s, 0, 'graveyard')).toContain('Doom Blade');
     expect(s.stackOrder).toEqual([]);
   });
 
   it('is not offered at all when the cost cannot be paid, and counters the spell itself', () => {
-    // Exactly enough to cast the Murder and nothing over, against Sedgemoor Witch's Ward {3}.
-    // A Murder because the Witch is black, which a Doom Blade cannot point at (D576).
-    let s = table('tidal-mind', 'Sedgemoor Witch', ['Swamp', 'Swamp', 'Swamp'], ['Swamp'], 'Murder');
-    const witch = find(s, 1, 'battlefield', 'Sedgemoor Witch');
-    const blade = find(s, 0, 'hand', 'Murder');
-    s = drain(passBoth(apply(s, {
-      type: 'auto:cast', by: 0, card: blade, targets: [{ kind: 'card', id: witch }],
-    })));
+    // Exactly enough to cast the Doom Blade and one over, against the Frost Giant's Ward {3}.
+    const s = aim(table('Rimeshield Frost Giant', ['Swamp', 'Swamp', 'Swamp'], ['Plains']),
+      'Doom Blade', 'Rimeshield Frost Giant');
+    const giant = find(s, 1, 'battlefield', 'Rimeshield Frost Giant');
 
     // No question was ever asked: there was only one outcome available.
     expect(s.pendingPayment).toBeNull();
     expect(legalActions(s, 0).mustPay).toBeNull();
-    expect(s.instances[witch]!.zone).toBe('battlefield');
-    expect(namesIn(s, 0, 'graveyard')).toContain('Murder');
+    expect(s.instances[giant]!.zone).toBe('battlefield');
+    expect(namesIn(s, 0, 'graveyard')).toContain('Doom Blade');
     // And said out loud in the log, because nobody pressed anything: a spell that leaves the stack
     // with no prompt and no message is a card the player cannot see working. `reduceAutoAction`
     // drains the notes onto the message of the action that provoked them, which is why this reads
@@ -7877,45 +7914,42 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
     // Ward defaults to `by: 'opponent'` for this case and only this case: a creature with ward
     // may be given a Giant Growth by its own controller for free.
     let s = advanceTo(arena({
-      decks: { 0: 'verdant-guard' },
+      decks: { 0: 'warded' },
+      deckSpecs: { warded: wardedList },
       hands: { 0: ['Giant Growth'] },
-      battlefield: { 0: ['Forest', 'Forest', 'Dragonsguard Elite'] },
+      battlefield: { 0: ['Forest', 'Forest', 'Unflinching Hortimancer'] },
       turn: 4, firstSeat: 0,
     }), 'precombat-main');
-    const elite = find(s, 0, 'battlefield', 'Dragonsguard Elite');
+    const cleric = find(s, 0, 'battlefield', 'Unflinching Hortimancer');
     s = apply(s, {
       type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Giant Growth'),
-      targets: [{ kind: 'card', id: elite }],
+      targets: [{ kind: 'card', id: cleric }],
     });
-    /*
-      Two objects on the stack and neither is a ward: the Giant Growth, and the Elite's *own*
-      magecraft trigger, which fires off its controller casting an instant. That is the card
-      working — and it is also why this test asserts on what ward did not do rather than on the
-      size of the stack.
-    */
-    expect(s.stackOrder).toHaveLength(2);
+    // One object on the stack, the Giant Growth, and no ward above it.
+    expect(s.stackOrder).toHaveLength(1);
     s = drain(passBoth(s));
     expect(s.pendingPayment).toBeNull();
-    // 2/2, +3/+3 from the Growth, and two +1/+1 counters from its own magecraft.
-    expect(power(s, elite)).toBe(7);
+    // 2/1, and +3/+3 from the Growth.
+    expect(power(s, cleric)).toBe(5);
   });
 
   it('triggers off an ability as well as a spell (CR 702.21b)', () => {
     // An Icy Manipulator aimed at a warded creature is the case the keyword is printed for, and it
     // is a different code path from a cast: the object on the stack is an activated ability.
     let s = advanceTo(arena({
-      decks: { 0: 'tidal-mind', 1: 'verdant-guard' },
+      decks: { 0: 'tidal-mind', 1: 'warded' },
+      deckSpecs: { warded: wardedList },
       battlefield: {
         0: ['Island', 'Island', 'Island', 'Island', 'Island', 'Icy Manipulator'],
-        1: ['Forest', 'Dragonsguard Elite'],
+        1: ['Forest', 'Unflinching Hortimancer'],
       },
       turn: 4, firstSeat: 0,
     }), 'precombat-main');
     const icy = find(s, 0, 'battlefield', 'Icy Manipulator');
-    const elite = find(s, 1, 'battlefield', 'Dragonsguard Elite');
+    const cleric = find(s, 1, 'battlefield', 'Unflinching Hortimancer');
     s = apply(s, {
       type: 'auto:activate', by: 0, card: icy, abilityIndex: 0,
-      targets: [{ kind: 'card', id: elite }],
+      targets: [{ kind: 'card', id: cleric }],
     });
     s = drain(passBoth(s));
     expect(s.pendingPayment?.seat).toBe(0);
@@ -7930,11 +7964,12 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
       Kavu, which reads as a bug rather than as a rule.
     */
     let s = advanceTo(arena({
-      decks: { 0: 'ashen-rite', 1: 'verdant-guard' },
+      decks: { 0: 'ashen-rite', 1: 'warded' },
+      deckSpecs: { warded: wardedList },
       hands: { 0: ['Flametongue Kavu'] },
       battlefield: {
         0: ['Mountain', 'Mountain', 'Mountain', 'Mountain', 'Mountain'],
-        1: ['Forest', 'Dragonsguard Elite'],
+        1: ['Forest', 'Unflinching Hortimancer'],
       },
       turn: 6, firstSeat: 0,
     }), 'precombat-main');
@@ -7944,13 +7979,96 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
     s = drain(s);
     // The Kavu can shoot its own controller's creatures too, so the choice is a real one and the
     // engine stops to ask. Aimed at the warded creature, which is what the ward is for.
-    const elite = find(s, 1, 'battlefield', 'Dragonsguard Elite');
-    s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: elite }] }));
+    const cleric = find(s, 1, 'battlefield', 'Unflinching Hortimancer');
+    s = drain(apply(s, { type: 'auto:choose', by: 0, targets: [{ kind: 'card', id: cleric }] }));
     expect(s.pendingPayment?.seat).toBe(0);
     expect(s.pendingPayment?.cost).toBe('{1}');
   });
 
-  it('makes a Pest when its controller casts an instant, and the Pest pays a life when it dies', () => {
+  describe('paid in life: Sedgemoor Witch\'s "Ward—Pay 3 life" (D578)', () => {
+    // A Murder, because the Witch is black and a Doom Blade cannot point at her (D576). Three
+    // Swamps is exactly the Murder: the caster is tapped out when the ward asks.
+    const atWitch = (): GameState => aim(
+      table('Sedgemoor Witch', ['Swamp', 'Swamp', 'Swamp'], ['Swamp'], 'Murder', 'tidal-mind'),
+      'Murder', 'Sedgemoor Witch',
+    );
+    const withLife = (s: GameState, seat: number, n: number): GameState => ({
+      ...s, seats: s.seats.map((one) => (one.index === seat ? { ...one, life: n } : one)),
+    });
+
+    it('asks for life and no mana, of a caster with no land left untapped', () => {
+      const s = atWitch();
+      expect(s.pendingPayment?.seat).toBe(0);
+      expect(s.pendingPayment?.cost).toBe('');
+      expect(s.pendingPayment?.life).toBe(3);
+      // The button and the prompt both say life: a mana string here would be an empty button.
+      expect(legalActions(s, 0).mustPay?.cost).toBe('3 life');
+      expect(legalActions(s, 0).mustPay?.prompt).toContain('Pay 3 life or');
+      expect(legalActions(s, 0).passLabel).toBe('Pay 3 life');
+    });
+
+    it('takes the three life when it is paid, and the removal resolves', () => {
+      let s = atWitch();
+      const before = life(s, 0);
+      s = drain(apply(s, { type: 'auto:pay', by: 0, pay: true }));
+      expect(life(s, 0)).toBe(before - 3);
+      expect(namesIn(s, 1, 'graveyard')).toContain('Sedgemoor Witch');
+      expect(s.log.map((entry) => entry.message).join(' ')).toContain('pays 3 life for Sedgemoor Witch');
+    });
+
+    it('costs no life when it is declined, and the Witch lives', () => {
+      let s = atWitch();
+      const before = life(s, 0);
+      s = drain(apply(s, { type: 'auto:pay', by: 0, pay: false }));
+      expect(life(s, 0)).toBe(before);
+      expect(namesIn(s, 1, 'battlefield')).toContain('Sedgemoor Witch');
+      expect(namesIn(s, 0, 'graveyard')).toContain('Murder');
+    });
+
+    it('is not offered to a player without the life, and says so in the log', () => {
+      // Three life against a ward of three: refused at the life that would end the game, the
+      // rule every life cost in this engine keeps (task #411 is whether it should).
+      const start = withLife(
+        table('Sedgemoor Witch', ['Swamp', 'Swamp', 'Swamp'], ['Swamp'], 'Murder', 'tidal-mind'), 0, 3,
+      );
+      const s = aim(start, 'Murder', 'Sedgemoor Witch');
+      expect(s.pendingPayment).toBeNull();
+      expect(life(s, 0)).toBe(3);
+      expect(namesIn(s, 1, 'battlefield')).toContain('Sedgemoor Witch');
+      expect(s.log.map((entry) => entry.message).join(' ')).toContain('ward 3 life was not paid');
+    });
+
+    it('reads "Ward—{2}, Pay 2 life" as both, and charges both', () => {
+      const HOWLER = {
+        name: 'Captain Howler, Sea Scourge', type_line: 'Legendary Creature — Shark Pirate',
+        mana_cost: '{2}{U}{R}', cmc: 4, colors: ['U', 'R'], power: '5', toughness: '4', layout: 'normal',
+        oracle_text: 'Ward—{2}, Pay 2 life.\nWhenever you discard one or more cards, target creature gets +2/+0 until end of turn for each card discarded this way. Whenever that creature deals combat damage to a player this turn, you draw a card.',
+      };
+      const list = customDeck({
+        id: 'howler', name: 'Howler',
+        entries: [{ name: 'Captain Howler, Sea Scourge', count: 4 }, { name: 'Island', count: 28 }, { name: 'Mountain', count: 28 }],
+        data: [HOWLER] as never[],
+      }).deck;
+      let s = advanceTo(arena({
+        decks: { 0: 'tidal-mind', 1: 'howler' }, deckSpecs: { howler: list },
+        hands: { 0: ['Doom Blade'] },
+        battlefield: { 0: ['Swamp', 'Swamp', 'Swamp', 'Swamp'], 1: ['Island', 'Captain Howler, Sea Scourge'] },
+        turn: 4, firstSeat: 0,
+      }), 'precombat-main');
+      s = aim(s, 'Doom Blade', 'Captain Howler, Sea Scourge');
+      expect(s.pendingPayment?.cost).toBe('{2}');
+      expect(s.pendingPayment?.life).toBe(2);
+      expect(legalActions(s, 0).mustPay?.cost).toBe('{2} and 2 life');
+      const before = life(s, 0);
+      s = drain(apply(s, { type: 'auto:pay', by: 0, pay: true }));
+      expect(life(s, 0)).toBe(before - 2);
+      // All four Swamps: two for the Blade and two for the ward.
+      expect(ids(s, 0, 'battlefield').every((id) => s.instances[id]!.tapped)).toBe(true);
+      expect(namesIn(s, 1, 'graveyard')).toContain('Captain Howler, Sea Scourge');
+    });
+  });
+
+  it('makes a black and green Pest when its controller casts an instant, and the Pest pays a life when it dies', () => {
     // Sedgemoor Witch's other half, which is also the pool's first token with an ability of its
     // own: `scriptFor` finds a token's script by name like any other card's.
     let s = advanceTo(arena({
@@ -7966,7 +8084,7 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
 
       Pointed at the Witch itself, which is the only creature on the table and costs this test
       nothing: magecraft triggers on the **cast**, so the Pest is already on the battlefield by
-      the time the bounce resolves.
+      the time the bounce resolves. Her own controller's spell, so the ward asks nothing.
     */
     s = drain(passBoth(apply(s, {
       type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Unsummon'),
@@ -7975,6 +8093,8 @@ describe('ward: a cost the other player has to pay to touch your creature', () =
     expect(namesIn(s, 0, 'battlefield')).toContain('Pest');
 
     const pest = find(s, 0, 'battlefield', 'Pest');
+    // Both colours, as printed (D578): the pool's Pest was black only.
+    expect([...characteristicsOf(s, s.instances[pest]!).colors].sort()).toEqual(['B', 'G']);
     const before = life(s, 0);
     s = drain(passBoth(apply(s, { type: 'card:move', by: 0, card: pest, toZone: 'graveyard' })));
     expect(life(s, 0)).toBe(before + 1);
@@ -8894,6 +9014,20 @@ describe('Sagas: a permanent that reads itself out over three turns and then is 
     return s;
   };
 
+  /**
+   * Casts The Birth of Meletis and takes chapter I all the way through: the search it asks for is
+   * answered with a Plains, which is the only thing it can find.
+   */
+  const meletis = (): { s: GameState; card: string } => {
+    let s = saga('The Birth of Meletis', 'skyward-writ', ['Plains', 'Plains']);
+    const card = find(s, 1, 'hand', 'The Birth of Meletis');
+    s = passBoth(apply(s, { type: 'auto:cast', by: 1, card }));
+    s = passBoth(s);
+    expect(s.pendingDecision?.seat).toBe(1);
+    s = drain(decide(s, ['Plains']), 24);
+    return { s, card };
+  };
+
   it('does chapter I on the turn it is cast, off the counter it enters with', () => {
     /*
       The rule that makes a Saga a card rather than a three-turn promise: it enters with a lore
@@ -8907,16 +9041,34 @@ describe('Sagas: a permanent that reads itself out over three turns and then is 
     expect(s.instances[card]!.zone).toBe('battlefield');
     expect(lore(s, card)).toBe(1);
     // Chapter I is on the stack, which is where an opponent may answer it.
-    expect(stackNames(s).join(' ')).toContain('Wall');
-    s = drain(passBoth(s));
-    expect(countOf(s, 1, 'battlefield', 'Wall')).toBe(1);
+    expect(stackNames(s).join(' ')).toContain('basic Plains');
+    /*
+      And it is the **search**, for the hand (D578): the pool had this chapter making the Wall and
+      the land arriving on the battlefield two turns later. The printed card finds a basic Plains
+      first and puts it in the hand — a land drop its controller still has to make.
+    */
+    s = passBoth(s);
+    expect(s.pendingDecision).not.toBeNull();
+    const landsBefore = countOf(s, 1, 'battlefield', 'Plains');
+    s = drain(decide(s, ['Plains']), 24);
+    expect(namesIn(s, 1, 'hand')).toContain('Plains');
+    expect(countOf(s, 1, 'battlefield', 'Plains')).toBe(landsBefore);
+    expect(countOf(s, 1, 'battlefield', 'Wall')).toBe(0);
     expect(s.instances[card]!.zone).toBe('battlefield');
   });
 
-  it('gains a counter at the beginning of its own controller’s precombat main phase, and nobody else’s', () => {
+  it('finds only a basic Plains: not another basic, and not nothing', () => {
     let s = saga('The Birth of Meletis', 'skyward-writ', ['Plains', 'Plains']);
     const card = find(s, 1, 'hand', 'The Birth of Meletis');
-    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card })));
+    s = passBoth(passBoth(apply(s, { type: 'auto:cast', by: 1, card })));
+    const offered = new Set((s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id)));
+    // Skyward Writ runs Islands beside its Plains, and every one of them is a basic land.
+    expect(namesIn(s, 1, 'library')).toContain('Island');
+    expect([...offered]).toEqual(['Plains']);
+  });
+
+  it('gains a counter at the beginning of its own controller’s precombat main phase, and nobody else’s', () => {
+    let { s, card } = meletis();
     expect(lore(s, card)).toBe(1);
 
     // The opponent's turn moves nothing: it is "your precombat main phase" (CR 714.2a).
@@ -8924,12 +9076,20 @@ describe('Sagas: a permanent that reads itself out over three turns and then is 
     expect(s.activeSeat).toBe(0);
     expect(lore(s, card)).toBe(1);
 
-    // And its own turn is chapter II, which gains two life.
-    const before = life(s, 1);
+    // And its own turn is chapter II, which makes the Wall.
     s = drain(advanceTo(nextTurn(s), 'precombat-main'));
     expect(lore(s, card)).toBe(2);
-    expect(life(s, 1)).toBe(before + 2);
+    expect(countOf(s, 1, 'battlefield', 'Wall')).toBe(1);
     expect(s.instances[card]!.zone).toBe('battlefield');
+    /*
+      A **colorless artifact** creature, as printed (D578): the pool's Wall was white and not an
+      artifact, so an artifact sweeper missed it and protection from white stopped it.
+    */
+    const wall = characteristicsOf(s, s.instances[find(s, 1, 'battlefield', 'Wall')]!);
+    expect(wall.colors).toEqual([]);
+    expect(wall.typeLine.types.map((t) => t.toLowerCase()).sort()).toEqual(['artifact', 'creature']);
+    expect(wall.keywords.has('defender')).toBe(true);
+    expect([wall.power, wall.toughness]).toEqual([0, 4]);
   });
 
   it('is sacrificed after the last chapter resolves, and not before it', () => {
@@ -8938,9 +9098,7 @@ describe('Sagas: a permanent that reads itself out over three turns and then is 
       whole of the delay: the Saga sits on the battlefield while chapter III waits to resolve, which
       is what lets a chapter that reads the board see the board the chapter is about.
     */
-    let s = saga('The Birth of Meletis', 'skyward-writ', ['Plains', 'Plains']);
-    const card = find(s, 1, 'hand', 'The Birth of Meletis');
-    s = drain(passBoth(apply(s, { type: 'auto:cast', by: 1, card })));
+    let { s, card } = meletis();
     s = drain(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'));
     expect(lore(s, card)).toBe(2);
 
@@ -8950,18 +9108,10 @@ describe('Sagas: a permanent that reads itself out over three turns and then is 
     expect(s.instances[card]!.zone).toBe('battlefield');
     expect(s.stackOrder.length).toBeGreaterThan(0);
 
-    /*
-      And still there while the chapter *resolves*, because chapter III stops to ask for the Plains.
-      A mid-resolution question keeps the ability on the stack, so the state-based action sees it
-      and leaves the Saga where it is — which is what lets a chapter that reads the board see the
-      board the chapter is about.
-    */
-    s = passBoth(s);
-    expect(s.pendingDecision).not.toBeNull();
-    expect(s.instances[card]!.zone).toBe('battlefield');
-
-    s = drain(decide(s, ['Plains']), 24);
-    expect(countOf(s, 1, 'battlefield', 'Plains')).toBeGreaterThan(2);
+    // Chapter III is the two life, and only once it has resolved does the Saga go.
+    const before = life(s, 1);
+    s = drain(passBoth(s), 24);
+    expect(life(s, 1)).toBe(before + 2);
     expect(s.instances[card]!.zone).toBe('graveyard');
   });
 
@@ -9021,6 +9171,44 @@ describe('Sagas: a permanent that reads itself out over three turns and then is 
     // Their card, still owned by them, which is what sends it home when it dies (CR 110.2a).
     expect(s.instances[theirs]!.owner).toBe(0);
     // And the Saga is gone, its last chapter having resolved.
+    expect(s.instances[card]!.zone).toBe('graveyard');
+  });
+
+  it('lets a planeswalker be the sacrifice, and brings one back, as both chapters print (D578)', () => {
+    /*
+      "Each opponent sacrifices a creature **or planeswalker**" and "target creature **or
+      planeswalker** card from a graveyard". The pool read both as creatures only, so a player
+      with a planeswalker out had no choice to make in chapter I and the Saga could never return
+      one in chapter III.
+    */
+    let s = advanceTo(arena({
+      decks: { 0: 'verdant-guard', 1: 'hollow-tide' },
+      hands: { 1: ['The Eldest Reborn'] },
+      battlefield: {
+        0: ['Centaur Courser', 'Garruk Wildspeaker'],
+        1: ['Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp', 'Swamp'],
+      },
+      turn: 4, firstSeat: 1,
+    }), 'precombat-main');
+    const card = find(s, 1, 'hand', 'The Eldest Reborn');
+    s = tapAllLands(s, 1);
+    s = passBoth(passBoth(apply(s, { type: 'auto:cast', by: 1, card })));
+
+    // Chapter I asks the opponent, and both of their permanents are on offer.
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect((s.pendingDecision?.candidates ?? []).map((id) => nameOf(s, id)).sort())
+      .toEqual(['Centaur Courser', 'Garruk Wildspeaker']);
+    s = drain(decide(s, ['Garruk Wildspeaker']), 24);
+    const garruk = find(s, 0, 'graveyard', 'Garruk Wildspeaker');
+    expect(namesIn(s, 0, 'battlefield')).toContain('Centaur Courser');
+
+    // Chapter II's discard, then chapter III: the planeswalker card is its only legal target.
+    s = settleAll(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'));
+    s = settleAll(advanceTo(nextTurn(nextTurn(s)), 'precombat-main'), 24);
+    expect(s.instances[garruk]!.zone).toBe('battlefield');
+    expect(s.instances[garruk]!.zoneSeat).toBe(1);
+    // With the loyalty it is printed with, like any planeswalker arriving (CR 306.5b).
+    expect(s.instances[garruk]!.counters['loyalty']).toBe(3);
     expect(s.instances[card]!.zone).toBe('graveyard');
   });
 });
@@ -12467,11 +12655,17 @@ describe('the combat triggers: a creature blocking, and an attacker getting thro
     const { state, attacker } = swing('Ophidian', { decks: BLUE_INTO_GREEN, mine: ['Ophidian'] });
     let s = drain(state);
     expect(s.pendingDecision?.prompt).toContain('Draw a card');
+    expect(s.pendingDecision?.options).toEqual(['Yes', 'No']);
     const before = namesIn(s, 0, 'hand').length;
     const defender = life(s, 1);
-    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Draw' }));
+    s = drain(say(s, 0, 'Yes'));
     expect(namesIn(s, 0, 'hand').length).toBe(before + 1);
-    // Removed from combat because the card was drawn, so no damage is dealt at all.
+    /*
+      **Still attacking, and assigning nothing** (D578). The pool removed it from combat, which is
+      a different sentence: the printed card "assigns no combat damage this turn", so it is an
+      attacking creature for everything that counts attackers and simply deals none.
+    */
+    expect(s.combat.attacks.map((attack) => attack.attacker)).toContain(attacker);
     s = advanceTo(s, 'end-combat');
     expect(life(s, 1)).toBe(defender);
   });
@@ -12481,7 +12675,7 @@ describe('the combat triggers: a creature blocking, and an attacker getting thro
     let s = drain(state);
     const before = namesIn(s, 0, 'hand').length;
     const defender = life(s, 1);
-    s = drain(apply(s, { type: 'auto:decide', by: 0, cards: [], option: 'Attack' }));
+    s = drain(say(s, 0, 'No'));
     expect(namesIn(s, 0, 'hand').length).toBe(before);
     s = advanceTo(s, 'end-combat');
     expect(life(s, 1)).toBe(defender - 1);
@@ -12510,7 +12704,7 @@ describe('the combat triggers: a creature blocking, and an attacker getting thro
     expect(s.pendingDecision).not.toBeNull();
     const action = botAction(s, 0);
     expect(action).not.toBeNull();
-    expect(action && 'option' in action ? action.option : null).toBe('Attack');
+    expect(action && 'option' in action ? action.option : null).toBe('No');
   });
 
   it('and draws when it is only one damage', () => {
@@ -12518,7 +12712,41 @@ describe('the combat triggers: a creature blocking, and an attacker getting thro
     const s = drain(state);
     expect(s.pendingDecision).not.toBeNull();
     const action = botAction(s, 0);
-    expect(action && 'option' in action ? action.option : null).toBe('Draw');
+    expect(action && 'option' in action ? action.option : null).toBe('Yes');
+  });
+
+  it('a creature that assigns no combat damage is still dealt it (D578)', () => {
+    /*
+      The half that separates this from a Fog. `preventsCombatDamage` answers for damage dealt by
+      **and to** a creature; "assigns no combat damage" is only the first, so a blocker in front
+      of such a creature still hits it. Asked of a blocked Grizzly Bears under the same effect the
+      Ophidian gives itself, because an unblocked Ophidian has nobody to be hit by.
+    */
+    const { state, attacker } = swing('Grizzly Bears', {
+      decks: { 0: 'verdant-guard', 1: 'verdant-guard' }, mine: ['Grizzly Bears'], theirs: ['Centaur Courser'],
+    });
+    const courser = find(state, 1, 'battlefield', 'Centaur Courser');
+    let s = pump(state, [attacker], attacker, 0, { assignsNoCombatDamage: true });
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: courser, attacker }] }));
+    s = drain(advanceTo(s, 'end-combat'));
+    // The Bears dealt nothing to the 3/3, and the 3/3 killed the Bears.
+    expect(s.instances[courser]!.zone).toBe('battlefield');
+    expect(damageOn(s, courser)).toBe(0);
+    expect(s.instances[attacker]!.zone).toBe('graveyard');
+  });
+
+  it('and a blocker under the same effect deals none either, while taking what it blocked', () => {
+    const { state, attacker } = swing('Grizzly Bears', {
+      decks: { 0: 'verdant-guard', 1: 'verdant-guard' }, mine: ['Grizzly Bears'], theirs: ['Centaur Courser'],
+    });
+    const courser = find(state, 1, 'battlefield', 'Centaur Courser');
+    let s = pump(state, [courser], courser, 1, { assignsNoCombatDamage: true });
+    s = drain(apply(s, { type: 'auto:block', by: 1, blocks: [{ blocker: courser, attacker }] }));
+    s = advanceTo(s, 'end-combat');
+    // The 2/2 lives, and its two damage is on the 3/3 that blocked it.
+    expect(s.instances[attacker]!.zone).toBe('battlefield');
+    expect(damageOn(s, attacker)).toBe(0);
+    expect(damageOn(s, courser)).toBe(2);
   });
 });
 
@@ -13373,7 +13601,7 @@ describe('a card with two halves you can cast (CR 708)', () => {
   - the chosen face survives onto the battlefield — a permanent that arrived as its back face *is*
     that face, with that face's abilities, for as long as it is there;
   - the **front** face is still what the card is everywhere else, so the card in a graveyard is a
-    three-mana instant rather than a land.
+    four-mana instant rather than a land.
 */
 describe('a land on the back of a spell (CR 712)', () => {
   const inHand = (deck: string, name: string, lands: readonly string[]): GameState => arena({
@@ -17573,16 +17801,16 @@ describe('overload: the cost that stops the spell pointing at one thing', () => 
   it('gives ward nothing to ask for, because it targets nothing', () => {
     /*
       The rule this keyword is played for. Ward (CR 702.21) triggers on *becoming the target of* a
-      spell an opponent controls, so the printed Mortars at a Sedgemoor Witch has to pay {3} on top
-      of its {1}{R} or be countered — and the overloaded one walks straight through, because there
-      is no target for the trigger to watch for.
+      spell an opponent controls, so the printed Mortars at a Sedgemoor Witch has to pay 3 life on
+      top of its {1}{R} or be countered — and the overloaded one walks straight through, because
+      there is no target for the trigger to watch for.
     */
     let printedCast = table(6);
     const witch = find(printedCast, 1, 'battlefield', 'Sedgemoor Witch');
     printedCast = drain(passBoth(apply(printedCast, {
       type: 'auto:cast', by: 0, card: mortars(printedCast), targets: [{ kind: 'card', id: witch }],
     })));
-    expect(printedCast.pendingPayment?.cost).toBe('{3}');
+    expect(printedCast.pendingPayment?.life).toBe(3);
 
     let swept = table(6);
     swept = drain(apply(swept, {
@@ -18605,8 +18833,12 @@ describe('cumulative upkeep: the price that climbs', () => {
     expect(s.pendingDecision?.options).toEqual(['Sacrifice it', 'Pay {2}']);
   });
 
-  it('draws two off an opponent noncreature spell, which is what it is paying for', () => {
-    let s = cast(6, ['Mountain', 'Mountain']);
+  /**
+   * The Remora out and paid for once, and seat 1 casting a Shock at seat 0 with the lands given.
+   * Returns the table at whatever the Remora's trigger asks first, and seat 0's hand before it.
+   */
+  const shocked = (theirLands: number): { s: GameState; before: number } => {
+    let s = cast(6, Array.from({ length: theirLands }, () => 'Mountain'));
     s = drain(apply(myNextUpkeep(s), { type: 'auto:decide', by: 0, option: 'Pay {1}' }), 40);
     // Seat 1's turn, and a Shock from its hand: a noncreature spell, cast by an opponent.
     s = nextTurn(s);
@@ -18618,13 +18850,44 @@ describe('cumulative upkeep: the price that climbs', () => {
     s = drain(apply(s, {
       type: 'auto:cast', by: 1, card: shock, targets: [{ kind: 'player', seat: 0 }],
     }), 40);
+    return { s, before };
+  };
+
+  it('draws one off an opponent noncreature spell they cannot pay {4} for', () => {
     /*
-      The Remora's own question, answered by its controller rather than by the caster. The word is
-      'Yes' rather than the old 'Draw two' because D447 gave this card the shape the compiler emits
-      for every "you may" — see the comment on its decision in `scripts.ts`.
+      **A card, not two, and only "unless that player pays {4}"** (D578). Two Mountains, one spent
+      on the Shock: the caster cannot pay, so they are not asked — a question with one answer —
+      and the trigger goes straight to the Remora's controller.
     */
-    s = drain(apply(s, { type: 'auto:decide', by: 0, option: 'Yes' }), 40);
-    expect(ids(s, 0, 'hand').length).toBe(before + 2);
+    let { s, before } = shocked(2);
+    expect(s.pendingDecision?.seat).toBe(0);
+    expect(s.pendingDecision?.prompt).toBe('Draw a card?');
+    s = drain(say(s, 0, 'Yes'), 40);
+    expect(ids(s, 0, 'hand').length).toBe(before + 1);
+  });
+
+  it('asks the caster first when they can pay, and paying {4} stops the draw', () => {
+    // Five Mountains: one for the Shock and exactly four left for the tax.
+    let { s, before } = shocked(5);
+    expect(s.pendingDecision?.seat).toBe(1);
+    expect(s.pendingDecision?.options).toEqual(["Don't pay", 'Pay {4}']);
+    s = drain(apply(s, { type: 'auto:decide', by: 1, option: 'Pay {4}' }), 40);
+    // Paid: every Mountain is tapped, nobody is asked anything else, and no card was drawn.
+    expect(ids(s, 1, 'battlefield').every((id) => s.instances[id]!.tapped)).toBe(true);
+    expect(s.pendingDecision).toBeNull();
+    expect(ids(s, 0, 'hand').length).toBe(before);
+  });
+
+  it('and not paying hands the question to the Remora\'s controller, who may still say no', () => {
+    let { s, before } = shocked(5);
+    s = drain(apply(s, { type: 'auto:decide', by: 1, option: "Don't pay" }), 40);
+    expect(s.pendingDecision?.seat).toBe(0);
+    // Unpaid, so the four Mountains are still up.
+    expect(ids(s, 1, 'battlefield').filter((id) => !s.instances[id]!.tapped)).toHaveLength(4);
+    const declined = drain(say(s, 0, 'No'), 40);
+    expect(ids(declined, 0, 'hand').length).toBe(before);
+    const taken = drain(say(s, 0, 'Yes'), 40);
+    expect(ids(taken, 0, 'hand').length).toBe(before + 1);
   });
 
   it('a cost of one colour is repeated rather than multiplied', () => {
@@ -20637,11 +20900,11 @@ describe('magecraft, and the half of two cards that a stale comment said was unr
     expect(namesIn(s, 0, 'battlefield').filter((n) => n === 'Pest')).toHaveLength(3);
   });
 
-  it('and on the other magecraft card, which counts in twos', () => {
-    // Two +1/+1 counters per fire, so six rather than four.
+  it('and on the other magecraft card, a counter a time', () => {
+    // One +1/+1 counter per fire as printed (D578, where the pool had two): three, not two.
     const s = boltAndCopyIt(table());
     const elite = find(s, 0, 'battlefield', 'Dragonsguard Elite');
-    expect(s.instances[elite]?.counters['+1/+1']).toBe(6);
+    expect(s.instances[elite]?.counters['+1/+1']).toBe(3);
   });
 
   it('but prowess does not see the copy, because a copy is not cast (CR 707.12)', () => {
@@ -40111,5 +40374,147 @@ describe('clauses the pool had left off its cards (D577)', () => {
     s = drain(passBoth(apply(s, { type: 'auto:cast', by: 0, card: pyro, targets: [{ kind: 'card', id: goblin }] })), 40);
     expect(s.instances[goblin]!.zone).toBe('graveyard');
     expect(life(s, 1)).toBe(20);
+  });
+});
+
+describe('the last printed halves: a doubling, a fed Vampire, and a cheaper Mauling (D578)', () => {
+  /*
+    Three of the eight cards D578 brought to their Oracle text, each with a piece the pool had not
+    got at all — an activated ability on two of them and a cost clause on the third. The other five
+    are re-fitted where they already stood: the ward tests, the Sagas, Ophidian and Mystic Remora.
+  */
+  const fed = customDeck({
+    id: 'fed',
+    name: 'Fed',
+    entries: [
+      { name: 'Kalitas, Traitor of Ghet', count: 1 },
+      { name: 'Dragonsguard Elite', count: 4 },
+      { name: 'Gravedigger', count: 4 },
+      { name: 'Child of Night', count: 4 },
+      { name: 'Grizzly Bears', count: 4 },
+      { name: 'Hagra Mauling', count: 4 },
+      { name: 'Swamp', count: 20 },
+      { name: 'Forest', count: 19 },
+    ],
+  }).deck;
+  const board = (
+    mine: readonly string[], hand: readonly string[] = [], theirs: readonly string[] = [],
+  ): GameState => advanceTo(arena({
+    decks: { 0: 'fed', 1: 'verdant-guard' },
+    deckSpecs: { fed },
+    hands: { 0: [...hand] },
+    battlefield: { 0: [...mine], 1: [...theirs] },
+    turn: 6, firstSeat: 0,
+  }), 'precombat-main');
+  const SIX_FORESTS = ['Forest', 'Forest', 'Forest', 'Forest', 'Forest', 'Forest'];
+
+  it('Dragonsguard Elite doubles its counters for {4}{G}{G}, counted as the ability resolves', () => {
+    let s = board([...SIX_FORESTS, 'Dragonsguard Elite']);
+    const elite = find(s, 0, 'battlefield', 'Dragonsguard Elite');
+    s = addCounters(s, elite, '+1/+1', 3);
+    const play = legalActions(s, 0).plays.find((p) => p.card === elite && p.kind === 'activate');
+    expect(play?.manaCost).toBe('{4}{G}{G}');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: elite, abilityIndex: 0 })), 40);
+    expect(s.instances[elite]!.counters['+1/+1']).toBe(6);
+    // 2/2 with six counters.
+    expect(power(s, elite)).toBe(8);
+  });
+
+  it('and doubling nothing is nothing: the ability resolves and no counter appears', () => {
+    let s = board([...SIX_FORESTS, 'Dragonsguard Elite']);
+    const elite = find(s, 0, 'battlefield', 'Dragonsguard Elite');
+    s = drain(passBoth(apply(s, { type: 'auto:activate', by: 0, card: elite, abilityIndex: 0 })), 40);
+    expect(s.instances[elite]!.counters['+1/+1'] ?? 0).toBe(0);
+    expect(power(s, elite)).toBe(2);
+  });
+
+  it('which the bot is told: it does not spend six mana doubling no counters, and does with some', () => {
+    const bare = board([...SIX_FORESTS, 'Dragonsguard Elite']);
+    const elite = find(bare, 0, 'battlefield', 'Dragonsguard Elite');
+    const activates = (s: GameState): boolean => {
+      const action = botAction(s, 0);
+      return action !== null && action.type === 'auto:activate' && action.card === elite
+        && action.abilityIndex === 0;
+    };
+    expect(activates(bare)).toBe(false);
+    expect(activates(addCounters(bare, elite, '+1/+1', 3))).toBe(true);
+  });
+
+  it('has no ward any more: an opponent\'s removal is asked for nothing', () => {
+    let s = advanceTo(arena({
+      decks: { 0: 'tidal-mind', 1: 'fed' }, deckSpecs: { fed },
+      hands: { 0: ['Doom Blade'] },
+      battlefield: { 0: ['Swamp', 'Swamp'], 1: ['Dragonsguard Elite'] },
+      turn: 4, firstSeat: 0,
+    }), 'precombat-main');
+    const elite = find(s, 1, 'battlefield', 'Dragonsguard Elite');
+    s = apply(s, {
+      type: 'auto:cast', by: 0, card: find(s, 0, 'hand', 'Doom Blade'), targets: [{ kind: 'card', id: elite }],
+    });
+    expect(s.stackOrder).toHaveLength(1);
+    s = drain(passBoth(s), 40);
+    expect(s.pendingPayment).toBeNull();
+    expect(s.instances[elite]!.zone).toBe('graveyard');
+  });
+
+  it('Kalitas eats another Vampire or Zombie for two counters, and nothing else', () => {
+    let s = board(['Swamp', 'Swamp', 'Swamp', 'Kalitas, Traitor of Ghet', 'Gravedigger', 'Child of Night', 'Grizzly Bears']);
+    const kalitas = find(s, 0, 'battlefield', 'Kalitas, Traitor of Ghet');
+    const digger = find(s, 0, 'battlefield', 'Gravedigger');
+    const child = find(s, 0, 'battlefield', 'Child of Night');
+    const bears = find(s, 0, 'battlefield', 'Grizzly Bears');
+    const play = legalActions(s, 0).plays.find((p) => p.card === kalitas && p.kind === 'activate');
+    expect(play?.manaCost).toBe('{2}{B}');
+    /*
+      The Zombie and the Vampire, and neither of the other two: the Bears are neither type, and
+      Kalitas is a Vampire but the cost says **another**.
+    */
+    expect([...(play?.sacrificeOptions ?? [])].sort()).toEqual([digger, child].sort());
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: kalitas, abilityIndex: 0, sacrifice: bears })).toBeTruthy();
+    expect(refusal(s, { type: 'auto:activate', by: 0, card: kalitas, abilityIndex: 0, sacrifice: kalitas })).toBeTruthy();
+
+    s = drain(passBoth(apply(s, {
+      type: 'auto:activate', by: 0, card: kalitas, abilityIndex: 0, sacrifice: digger,
+    })), 40);
+    expect(s.instances[digger]!.zone).toBe('graveyard');
+    expect(s.instances[kalitas]!.counters['+1/+1']).toBe(2);
+    // 3/4 with two counters.
+    expect(power(s, kalitas)).toBe(5);
+  });
+
+  it('and is offered nothing to do when it has nobody of either type to feed on', () => {
+    const s = board(['Swamp', 'Swamp', 'Swamp', 'Kalitas, Traitor of Ghet', 'Grizzly Bears']);
+    const kalitas = find(s, 0, 'battlefield', 'Kalitas, Traitor of Ghet');
+    expect(legalActions(s, 0).plays.filter((p) => p.card === kalitas && p.kind === 'activate')).toEqual([]);
+  });
+
+  it('Hagra Mauling costs {1} less against an opponent with no basic lands', () => {
+    // Three Swamps, a creature to point at, and no land at all across the table.
+    let s = board(['Swamp', 'Swamp', 'Swamp'], ['Hagra Mauling'], ['Centaur Courser']);
+    const card = find(s, 0, 'hand', 'Hagra Mauling');
+    const cast = legalActions(s, 0).plays.find((p) => p.card === card && p.kind === 'cast');
+    // The printed cost is still what the card says; the change and its reason travel beside it.
+    expect(cast?.manaCost).toBe('{2}{B}{B}');
+    expect(cast?.costChange).toBe(-1);
+    expect(cast?.costNote).toContain('no basic lands');
+    s = drain(passBoth(apply(s, {
+      type: 'auto:cast', by: 0, card,
+      targets: [{ kind: 'card', id: find(s, 1, 'battlefield', 'Centaur Courser') }],
+    })), 40);
+    expect(namesIn(s, 1, 'graveyard')).toContain('Centaur Courser');
+    expect(ids(s, 0, 'battlefield').every((id) => s.instances[id]!.tapped)).toBe(true);
+  });
+
+  it('and the full {2}{B}{B} the moment they control one', () => {
+    const three = board(['Swamp', 'Swamp', 'Swamp'], ['Hagra Mauling'], ['Centaur Courser', 'Forest']);
+    const card = find(three, 0, 'hand', 'Hagra Mauling');
+    // Three Swamps no longer reach it: the only play left is the land on its back.
+    expect(legalActions(three, 0).plays.filter((p) => p.card === card).map((p) => p.kind)).toEqual(['land']);
+
+    const four = board(['Swamp', 'Swamp', 'Swamp', 'Swamp'], ['Hagra Mauling'], ['Centaur Courser', 'Forest']);
+    const again = find(four, 0, 'hand', 'Hagra Mauling');
+    const full = legalActions(four, 0).plays.find((p) => p.card === again && p.kind === 'cast');
+    expect(full?.manaCost).toBe('{2}{B}{B}');
+    expect(full?.costChange).toBeUndefined();
   });
 });

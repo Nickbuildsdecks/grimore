@@ -1018,8 +1018,17 @@ export interface AutomationState {
   readonly pendingPayment: {
     /** Who may pay: the controller of the spell or ability that did the targeting. */
     readonly seat: SeatIndex;
-    /** The ward cost, in the printed `{2}` form. */
+    /** The mana part of the cost, in the printed `{2}` form. Empty when the cost has none. */
     readonly cost: string;
+    /**
+     * Life paid with it, or instead of it: "Ward—Pay 3 life" (D578).
+     *
+     * A second currency on the same question rather than a second kind of question, because the
+     * rule is the same one — pay, or the object is countered — and 19 legal ward lines name life
+     * (16 "Pay N life", 3 "{N}, Pay N life"). Absent means none, so a payment raised before this
+     * existed is exactly what it was. `paymentWords` is the one place the two are put into words.
+     */
+    readonly life?: number;
     /** Shown to the player paying, in their own words. */
     readonly prompt: string;
     /** The stack object countered if they decline, or cannot pay. */

@@ -40268,3 +40268,95 @@ Twenty-one cards changed between the two columns and no deck moved by more than 
 which on 144 games is inside the noise. The corrections so far have been about what a card may
 touch, and the bot mostly was not using the extra reach. This entry's cards are a different
 kind (a planeswalker's abilities, two escape costs) and are not in either column.
+
+## D578 — Eight more cards as printed: a ward paid in life, a taxed "may", and a creature that assigns no damage
+
+Eight of the last eleven queued cards now carry their Oracle text and do what it says. Three are
+left (Toxic Deluge, Fireball, Sunscourge Champion), each needing a cost the engine cannot charge
+yet.
+
+**What each card was, and is now.**
+
+| card | the pool had | printed, and now scripted |
+| --- | --- | --- |
+| Dragonsguard Elite | ward {1}; two counters a spell | no ward; one counter a spell; `{4}{G}{G}`: double its +1/+1 counters |
+| Sedgemoor Witch | ward {3}; a black Pest | Ward—Pay 3 life; a black and green Pest |
+| The Birth of Meletis | I a white Wall, II 2 life, III a Plains onto the battlefield tapped | I a basic Plains to hand, II a colorless artifact Wall, III 2 life |
+| The Eldest Reborn | creatures only | creature or planeswalker, in chapters I and III |
+| Kalitas, Traitor of Ghet | two abilities | the third: `{2}{B}`, sacrifice another Vampire or Zombie: two +1/+1 counters |
+| Hagra Mauling | {2}{B}{B} always | {1} less while an opponent controls no basic lands |
+| Ophidian | draw, and removed from combat | draw, and it assigns no combat damage this turn |
+| Mystic Remora | you may draw two cards | you may draw a card unless that player pays {4} |
+
+**Engine pieces these needed.**
+
+- **A ward paid in life.** `pendingPayment` gains `life`, beside its mana string. One function,
+  `paymentWords`, says the cost in the prompt, on the button and in the log (`3 life`,
+  `{2} and 2 life`). A player whose life is at or below the amount is not asked, which is the rule
+  every other life cost in this engine keeps; whether a payment equal to the life total should be
+  allowed is still task #411, for all of them at once.
+- **"Assigns no combat damage"** as its own flag on a continuous effect. The existing
+  `preventsCombatDamage` stops damage dealt by *and to* a creature, which is a Fog. This one only
+  stops what the creature deals; a blocker in front of it still hits it. A test proves the
+  difference.
+- **A conditional change to a spell's own cost** (`selfCostChange`), computed where affinity is,
+  so the offer and the payment agree. The play keeps its printed cost and shows the change and
+  its reason beside it.
+- **A sacrifice cost narrowed by subtype** (`sacrificeSubtypes`).
+- **A "may" somebody else can buy off** (`mayUnlessThatPlayerPays`): the player who cast the
+  spell is asked first, with the price on the paying answer, and the controller is asked only if
+  they do not pay. A caster who cannot afford it is not asked.
+
+**The compiler reads two of these from printed text**, so they also work on cards from a
+pasted list:
+
+- `Ward—Pay N life` and `Ward—{N}, Pay N life`: 19 legal lines (16 and 3). Wards paid by
+  discarding (15 lines), sacrificing, or "life equal to its power" (2) stay unread.
+- `you may … unless that player pays {N}`: 2 legal cards, Rhystic Study and Mystic Remora.
+
+Measured in the corpus, not yet read by the compiler: 26 legal cards print "assigns no combat
+damage", and 108 legal lines print "costs {N} less to cast if …" over 83 different conditions.
+
+**The ward tests moved to real ward cards.** No built-in card prints a ward paid in mana, so
+the six mana-ward tests had been standing on two invented wards. They now use Unflinching
+Hortimancer (Ward {1}) and Rimeshield Frost Giant (Ward {3}), compiled from their Oracle rows
+and played from a custom list, plus Captain Howler, Sea Scourge for the mana-and-life ward.
+
+**Tests.** 18 re-fitted, 21 added, among them one that the engine's own opponent does not
+spend six mana doubling no counters. Two stale comments that still called Hagra Mauling a
+three-mana instant were corrected (it is four; D571 fixed the cost).
+
+    pool cards queued in KNOWN_DIFFERENT: 11 → 3
+    engine tests: 3,889, all passing
+
+### Measurements on D577's build (58e9aa0)
+
+    cards with every printed line read:  8,303 → 8,332 of 30,710
+    printed legal lines read:            24,274 → 24,314 of 56,421 (43.1%)
+    cards with a compiled script:        12,498 → 12,516
+
+Pod sweep, seeds 44501–44540: 40 of 40 finished, no throw and no stall.
+
+Deck table, 6 seeds, 144 games a deck, 936 games. Build 58e9aa0 (the harness printed its
+stale-engine warning because the source had newer edits than the build it loaded; the build it
+measured is the one named).
+
+| deck | D576 build | D577 build |
+| --- | --- | --- |
+| dawn-tithe | 76% | 77% |
+| verdant-guard | 71% | 72% |
+| ember-rush | 68% | 69% |
+| kindle-grove | 65% | 64% |
+| ashen-rite | 49% | 50% |
+| forge-alliance | 50% | 49% |
+| arc-tempest | 51% | 49% |
+| skyward-writ | 38% | 42% |
+| delta-bloom | 40% | 40% |
+| rot-harvest | 38% | 39% |
+| blight-vector | 38% | 38% |
+| hollow-tide | 35% | 33% |
+| tidal-mind | 29% | 28% |
+
+Skyward Writ moved most: 54 wins to 60 of 144. Nothing else moved more than two points. The
+spread between the top four decks and the bottom four is unchanged, and it is the standing
+balance question; it is not something these text corrections were expected to close.

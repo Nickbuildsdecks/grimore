@@ -129,15 +129,7 @@ const KNOWN_DIFFERENT: Readonly<Record<string, string>> = {
   "Merfolk Secretkeeper | oracleText": "convention: the front face quotes its Adventure, which Oracle prints on the other face",
   "Garenbrig Carver | oracleText": "convention: the front face quotes its Adventure, which Oracle prints on the other face",
   "Fireball | oracleText": "queued: X damage to one target; printed divides it among any number, {1} more for each beyond the first",
-  "Dragonsguard Elite | oracleText": "queued: ward {1} and two counters; printed one counter, no ward, and {4}{G}{G}: double them",
-  "Ophidian | oracleText": "queued: removed from combat; printed assigns no combat damage this turn",
-  "Mystic Remora | oracleText": "queued: draws two cards; printed a card unless that player pays {4}",
-  "Sedgemoor Witch | oracleText": "queued: ward {3} and a black Pest; printed ward\u2014pay 3 life and a black and green Pest",
-  "Kalitas, Traitor of Ghet | oracleText": "queued: no {2}{B}, sacrifice another Vampire or Zombie ability",
-  "Hagra Mauling | oracleText": "queued: no {1} less when an opponent controls no basic lands",
-  "The Birth of Meletis | oracleText": "queued: chapters reordered and changed; printed I a basic Plains to hand, II a colorless artifact Wall, III 2 life",
   "Toxic Deluge | oracleText": "queued: the life is paid as the spell resolves; printed as an additional cost to cast it",
-  "The Eldest Reborn | oracleText": "queued: creatures only; printed creature or planeswalker in chapters I and III",
   "Sunscourge Champion | oracleText": "queued: gains 2; printed life equal to its power, and eternalize\u2014{2}{W}{W}, discard a card",
 };
 

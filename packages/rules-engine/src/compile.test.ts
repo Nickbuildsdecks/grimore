@@ -8619,7 +8619,28 @@ describe('"you may": the optional triggered ability', () => {
     const spec = (remora.script?.triggers ?? [])
       .flatMap((t) => t.decisions ?? [])
       .filter((d) => typeof d !== 'function') as unknown as Record<string, unknown>[];
-    expect(spec.map((d) => d['prompt'])).toContain('Draw two cards?');
+    /*
+      One card, and a price the caster may pay to stop it (D578): the pool's text said "draw two
+      cards" and the printed card says "a card unless that player pays {4}". Two questions, the
+      payer's first, and the draw held back on the answer that did not pay.
+    */
+    expect(spec.map((d) => d['prompt'])).toEqual([
+      'Pay {4}? If you do not, the ability\'s controller may draw a card.',
+      'Draw a card?',
+    ]);
+    expect(spec.map((d) => d['who'])).toEqual(['acting-player', 'controller']);
+    expect(spec[0]!['payIfChosen']).toEqual({ option: 'Pay {4}', cost: '{4}' });
+    expect(spec[1]!['askOnlyIfChosen']).toBe("Don't pay");
+  });
+
+  it('reads Rhystic Study, and refuses the same sentence with a price it cannot charge', () => {
+    const study = read('Whenever an opponent casts a spell, you may draw a card unless that player pays {1}.');
+    expect(unreadLines(study)).toEqual([]);
+    const asked = (triggersOf(study)[0]?.decisions ?? []) as unknown as Record<string, unknown>[];
+    expect(asked.map((d) => d['options'])).toEqual([["Don't pay", 'Pay {1}'], ['Yes', 'No']]);
+    // Esper Sentinel's: X is a fact about the board when the trigger resolves, not a cost string.
+    const sentinel = 'Whenever an opponent casts a spell, you may draw a card unless that player pays {X}.';
+    expect(unreadLines(read(sentinel))).toEqual([sentinel]);
   });
 });
 

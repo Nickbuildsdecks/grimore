@@ -383,7 +383,7 @@ const DRAGONSGUARD_ELITE: CardDef = {
   cmc: 2,
   power: '2',
   toughness: '2',
-  oracleText: 'Ward {1}\nMagecraft — Whenever you cast or copy an instant or sorcery spell, put two +1/+1 counters on Dragonsguard Elite.',
+  oracleText: 'Magecraft \u2014 Whenever you cast or copy an instant or sorcery spell, put a +1/+1 counter on Dragonsguard Elite.\n{4}{G}{G}: Double the number of +1/+1 counters on Dragonsguard Elite.',
   colors: ['G'],
 };
 
@@ -394,7 +394,7 @@ const SEDGEMOOR_WITCH: CardDef = {
   cmc: 3,
   power: '3',
   toughness: '2',
-  oracleText: "Menace, ward {3}\nMagecraft — Whenever you cast or copy an instant or sorcery spell, create a 1/1 black Pest creature token with \"When this creature dies, you gain 1 life.\"",
+  oracleText: 'Menace\nWard\u2014Pay 3 life. (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays 3 life.)\nMagecraft \u2014 Whenever you cast or copy an instant or sorcery spell, create a 1/1 black and green Pest creature token with "When this token dies, you gain 1 life."',
   colors: ['B'],
 };
 
@@ -668,7 +668,7 @@ const THE_BIRTH_OF_MELETIS: CardDef = {
   typeLine: 'Enchantment — Saga',
   manaCost: '{1}{W}',
   cmc: 2,
-  oracleText: 'I — Create a 0/4 white Wall creature token with defender.\nII — You gain 2 life.\nIII — Search your library for a Plains card, put it onto the battlefield tapped, then shuffle.',
+  oracleText: 'I \u2014 Search your library for a basic Plains card, reveal it, put it into your hand, then shuffle.\nII \u2014 Create a 0/4 colorless Wall artifact creature token with defender.\nIII \u2014 You gain 2 life.',
   colors: ['W'],
 };
 
@@ -677,7 +677,7 @@ const THE_ELDEST_REBORN: CardDef = {
   typeLine: 'Enchantment — Saga',
   manaCost: '{4}{B}',
   cmc: 5,
-  oracleText: 'I — Each opponent sacrifices a creature.\nII — Each opponent discards a card.\nIII — Return target creature card from a graveyard to the battlefield under your control.',
+  oracleText: 'I \u2014 Each opponent sacrifices a creature or planeswalker.\nII \u2014 Each opponent discards a card.\nIII \u2014 Put target creature or planeswalker card from a graveyard onto the battlefield under your control.',
   colors: ['B'],
 };
 
@@ -1853,8 +1853,7 @@ const OPHIDIAN: CardDef = {
   cmc: 3,
   power: '1',
   toughness: '3',
-  oracleText: "Whenever Ophidian attacks and isn't blocked, you may draw a card. If you do, "
-    + 'remove Ophidian from combat.',
+  oracleText: "Whenever Ophidian attacks and isn't blocked, you may draw a card. If you do, Ophidian assigns no combat damage this turn.",
   colors: ['U'],
 };
 
@@ -2201,7 +2200,7 @@ const MYSTIC_REMORA: CardDef = {
   typeLine: 'Enchantment',
   manaCost: '{U}',
   cmc: 1,
-  oracleText: 'Cumulative upkeep {1} (At the beginning of your upkeep, put an age counter on this permanent, then sacrifice it unless you pay its upkeep cost for each age counter on it.)\nWhenever an opponent casts a noncreature spell, you may draw two cards.',
+  oracleText: 'Cumulative upkeep {1} (At the beginning of your upkeep, put an age counter on this permanent, then sacrifice it unless you pay its upkeep cost for each age counter on it.)\nWhenever an opponent casts a noncreature spell, you may draw a card unless that player pays {4}.',
   colors: ['U'],
 };
 
@@ -2739,9 +2738,7 @@ const KALITAS: CardDef = {
   cmc: 4,
   power: '3',
   toughness: '4',
-  oracleText:
-    'Lifelink\nIf a nontoken creature an opponent controls would die, instead exile that card and '
-    + 'create a 2/2 black Zombie creature token.',
+  oracleText: 'Lifelink\nIf a nontoken creature an opponent controls would die, instead exile that card and create a 2/2 black Zombie creature token.\n{2}{B}, Sacrifice another Vampire or Zombie: Put two +1/+1 counters on Kalitas, Traitor of Ghet.',
   colors: ['B'],
 };
 
@@ -3376,7 +3373,7 @@ const WAX_WANE: CardDef = {
   (CR 712).
 
   The card's printed cost, type and mana value are the **front** face's, in every zone but the
-  battlefield: a Hagra Mauling in a hand or a graveyard is a three-mana instant, which is what a
+  battlefield: a Hagra Mauling in a hand or a graveyard is a four-mana instant, which is what a
   Chalice of the Void counts and what a discard spell sees. The back face is not a cheaper way to
   cast it — it is a different thing to do with the card, and it costs that turn's land drop.
 
@@ -3453,7 +3450,7 @@ const HAGRA_MAULING: CardDef = {
   typeLine: 'Instant',
   manaCost: '{2}{B}{B}',
   cmc: 4,
-  oracleText: 'Destroy target creature.',
+  oracleText: 'This spell costs {1} less to cast if an opponent controls no basic lands.\nDestroy target creature.',
   colors: ['B'],
   faces: {
     kind: 'modal',

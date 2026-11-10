@@ -41,7 +41,7 @@ import {
   putOntoBattlefield, tap, equipTo, creaturesControlledBy, pumpAll, regenerate,
   exileUntilLeaves, returnExiledBy, preventCombatDamage, preventDamage, preventDamageToSide,
   copyAsToken,
-  becomeMonarch, freezeNextUntap, removeFromCombat, scheduleDelayed, EVOKED, KICKED, UNEARTHED, RENOWNED,
+  becomeMonarch, freezeNextUntap, scheduleDelayed, EVOKED, KICKED, UNEARTHED, RENOWNED,
   becomeCopyOf, wardAsks, staticEffect, manaValueOnStack, cascadeFrom,
   addEnergy, energyOf, spendEnergy, bottomPile, reboundOffer, FADE, TIME, enterAttacking,
   transformPermanent, recordExpiry, pairCreatures,
@@ -275,6 +275,53 @@ function youMay(
     ],
     effect: (c) => (chosenOption(c) === 'Yes'
       ? effect({ ...c, decisions: c.decisions.slice(1) })
+      : c.state),
+  };
+}
+
+/** The word a taxed "may" is declined with: see `mayUnlessThatPlayerPays`. */
+const TAX_NOT_PAID = "Don't pay";
+
+/**
+ * "You may [do X] unless that player pays {N}" (D578) — Rhystic Study's sentence, and Mystic
+ * Remora's.
+ *
+ * Two questions, in the order the sentence resolves. The **player whose action raised the
+ * trigger** is asked whether to pay, and only if they do not is the controller asked whether to
+ * take the effect:
+ *
+ * - The first is `acting-player` with the price on the paying answer (`payIfChosen`), so a player
+ *   who cannot afford it is not asked at all and the question falls to its other word. "Don't pay"
+ *   is first because `options[0]` is what a bot falls back on, and it is the safe one of the two
+ *   for the reason `optionalEffect` gives for every priced answer: do not spend mana on a guess.
+ * - The second is the ordinary "you may", Yes first, held back on "Don't pay" by
+ *   `askOnlyIfChosen`.
+ *
+ * `clause` is the printed words after "you may" ("draw a card"), which is what both prompts are
+ * made from. The effect is handed its context with these two answers dropped, like `youMay`'s.
+ */
+function mayUnlessThatPlayerPays(
+  cost: string, clause: string, effect: (c: EffectContext) => GameState,
+): Pick<TriggerDef, 'decisions' | 'effect'> {
+  const pay = `Pay ${cost}`;
+  const words = clause.trim().replace(/\.$/, '');
+  return {
+    decisions: [
+      {
+        who: 'acting-player',
+        prompt: `${pay}? If you do not, the ability's controller may ${words}.`,
+        options: [TAX_NOT_PAID, pay],
+        payIfChosen: { option: pay, cost },
+      },
+      {
+        who: 'controller',
+        prompt: `${words.charAt(0).toUpperCase()}${words.slice(1)}?`,
+        options: ['Yes', 'No'],
+        askOnlyIfChosen: TAX_NOT_PAID,
+      },
+    ],
+    effect: (c) => (chosenOption(c, 0) === TAX_NOT_PAID && chosenOption(c, 1) === 'Yes'
+      ? effect({ ...c, decisions: c.decisions.slice(2) })
       : c.state),
   };
 }
@@ -1298,10 +1345,16 @@ export const KNIGHT_TOKEN: CardDef = {
   power: '2', toughness: '2', oracleText: 'Vigilance', colors: ['W'],
 };
 
-/** The Birth of Meletis' first chapter, and the pool's first 0/4. */
+/**
+ * The Birth of Meletis' second chapter, and the pool's first 0/4.
+ *
+ * A **colorless artifact** creature, as the Saga prints it (D578) — the pool had a white Wall with
+ * no artifact type, which an artifact sweeper would have missed and protection from white would
+ * have stopped.
+ */
 export const WALL_TOKEN: CardDef = {
-  name: 'Wall', typeLine: 'Token Creature — Wall', manaCost: '', cmc: 0,
-  power: '0', toughness: '4', oracleText: 'Defender', colors: ['W'],
+  name: 'Wall', typeLine: 'Token Artifact Creature — Wall', manaCost: '', cmc: 0,
+  power: '0', toughness: '4', oracleText: 'Defender', colors: [],
 };
 
 export const BEAST_TOKEN: CardDef = {
@@ -4640,8 +4693,10 @@ const CONSULATE_DREADNOUGHT: CardScript = {
   questions for free, and the number of chapters is read off them rather than declared beside them.
   The sacrifice is a state-based action in `stateBasedActions`, not a fourth chapter.
 
-  The Birth of Meletis is the defensive one: a wall, two life, and a land, which is three turns of
-  exactly what a deck that wants to survive to its fliers is short of. The Eldest Reborn is the
+  The Birth of Meletis is the defensive one: a land, a wall, and two life, which is three turns of
+  exactly what a deck that wants to survive to its fliers is short of. **In that order** (D578): the
+  pool had the chapters as wall, life, land-onto-the-battlefield, and the printed card finds a
+  basic Plains for the **hand** first — a land drop it still has to make, not a free one. The Eldest Reborn is the
   grinding one, and it is in the mill deck on purpose — it makes every opponent sacrifice, then
   discard, and then reanimates a creature out of **any** graveyard, which is a deck that spends the
   whole game filling its opponents' graveyards finally getting to use one.
@@ -4652,26 +4707,28 @@ const THE_BIRTH_OF_MELETIS: CardScript = {
   triggers: [
     {
       on: { kind: 'chapter', n: 1 },
-      description: 'create a 0/4 white Wall creature token with defender',
-      effect: (c) => createToken(c.state, c.controller, WALL_TOKEN, 1),
+      description: 'search your library for a basic Plains card, reveal it, put it into your hand, then shuffle',
+      // Basic **and** a Plains, by its type line rather than its name: a snow-covered one is both,
+      // and a nonbasic land with the Plains type is not basic.
+      decisions: [searchYourLibrary('Search your library for a basic Plains card', (state, id) => {
+        const inst = state.instances[id];
+        const def = inst === undefined ? undefined : state.cardDefs[inst.defKey];
+        return isBasicLand(state, id) && cardHasSubtype(def, 'Plains');
+      })],
+      effect: (c) => {
+        const found = chosenCard(c);
+        return found === null ? c.state : moveToHand(c.state, [found]);
+      },
     },
     {
       on: { kind: 'chapter', n: 2 },
-      description: 'you gain 2 life',
-      effect: (c) => gainLife(c.state, c.controller, 2),
+      description: 'create a 0/4 colorless Wall artifact creature token with defender',
+      effect: (c) => createToken(c.state, c.controller, WALL_TOKEN, 1),
     },
     {
       on: { kind: 'chapter', n: 3 },
-      description: 'search your library for a Plains card and put it onto the battlefield tapped',
-      decisions: [searchYourLibrary('Search your library for a Plains', (state, id) => {
-        const inst = state.instances[id];
-        return inst !== undefined && state.cardDefs[inst.defKey]?.name === 'Plains';
-      })],
-      // Tapped, like a Rampant Growth: the land is the chapter's payoff and not a free land drop.
-      effect: (c) => {
-        const found = chosenCard(c);
-        return found === null ? c.state : putOntoBattlefield(c.state, found, c.controller, { tapped: true });
-      },
+      description: 'you gain 2 life',
+      effect: (c) => gainLife(c.state, c.controller, 2),
     },
   ],
 };
@@ -4682,12 +4739,17 @@ const THE_ELDEST_REBORN: CardScript = {
   triggers: [
     {
       on: { kind: 'chapter', n: 1 },
-      description: 'each opponent sacrifices a creature',
+      description: 'each opponent sacrifices a creature or planeswalker',
       decisions: [{
-        who: 'each-opponent', from: 'battlefield', prompt: 'Sacrifice a creature', min: 1, max: 1,
+        who: 'each-opponent', from: 'battlefield', prompt: 'Sacrifice a creature or planeswalker',
+        min: 1, max: 1,
+        // Either, at the sacrificing player's choice (D578): a player with a planeswalker and a
+        // creature may keep the creature, which the pool's creature-only reading never offered.
         filter: (state, id) => {
           const inst = state.instances[id];
-          return inst !== undefined && characteristicsOf(state, inst).isCreature;
+          if (inst === undefined) return false;
+          const ch = characteristicsOf(state, inst);
+          return ch.isCreature || hasType(ch.typeLine, 'planeswalker');
         },
       }],
       effect: (c) => c.decisions.reduce((state, answer) => moveToGraveyard(state, answer.ids), c.state),
@@ -4707,11 +4769,25 @@ const THE_ELDEST_REBORN: CardScript = {
 
         Every other reanimation in the pool reads "your graveyard" — Zombify, Gravedigger, Raise
         Dead — and this one is the first that can take a creature out of the pile it spent the game
-        filling. No filter on the spec, because `graveyard-creature` already means every creature
-        card in every graveyard and narrowing it is what the others do.
+        filling.
+
+        A creature **or planeswalker** card (D578), so the spec is `graveyard-card` with the two
+        types as its filter: `graveyard-creature` is every creature card in every graveyard and
+        cannot be widened. Read off the card's printed types, which are what a card in a graveyard
+        has.
       */
-      targets: [{ kind: 'graveyard-creature', description: 'target creature card in a graveyard' }],
-      description: "return target creature card from a graveyard to the battlefield under your control",
+      targets: [{
+        kind: 'graveyard-card',
+        description: 'target creature or planeswalker card in a graveyard',
+        filter: (state, candidate) => {
+          if (candidate.kind !== 'card') return false;
+          const inst = state.instances[candidate.id];
+          if (inst === undefined || inst.zone !== 'graveyard') return false;
+          const line = parseTypeLine(state.cardDefs[inst.defKey]?.typeLine);
+          return hasType(line, 'creature') || hasType(line, 'planeswalker');
+        },
+      }],
+      description: 'put target creature or planeswalker card from a graveyard onto the battlefield under your control',
       effect: (c) => {
         const id = firstCardTarget(c);
         return id === null ? c.state : putOntoBattlefield(c.state, id, c.controller);
@@ -5838,6 +5914,18 @@ const KALITAS: CardScript = {
       instead: (c) => createToken(exileCard(c.state, c.subject), c.controller, ZOMBIE_TOKEN, 1),
     },
   ],
+  /*
+    The third printed ability, which the pool left off (D578) — and the one that makes the first
+    two a plan: every creature Kalitas exiles leaves a Zombie, and every Zombie is two counters.
+    "Another" is the cost's own word, so Kalitas (a Vampire) cannot be fed to itself.
+  */
+  abilities: [
+    {
+      cost: { mana: '{2}{B}', sacrifice: 'another-creature', sacrificeSubtypes: ['Vampire', 'Zombie'] },
+      description: '{2}{B}, Sacrifice another Vampire or Zombie: Put two +1/+1 counters on Kalitas, Traitor of Ghet.',
+      effect: (c) => addCounters(c.state, c.source, '+1/+1', 2),
+    },
+  ],
 };
 
 /**
@@ -6825,11 +6913,18 @@ const KAMBAL: CardScript = {
  * should say which creature did this, and by the time the ward resolves the only thing that knows
  * is the ability itself.
  */
-function ward(name: string, cost: string): TriggerDef {
+function ward(name: string, cost: string, life = 0): TriggerDef {
   return {
     on: { kind: 'targeted', by: 'opponent' },
-    description: `Ward ${cost}`,
-    effect: (c) => wardAsks(c, cost, name),
+    /*
+      The printed line, which is two spellings: "Ward {2}" for mana and "Ward—Pay 3 life" for life,
+      with "Ward—{2}, Pay 2 life" for both (D578). The words after the dash are the cost exactly as
+      the card states it, so the stack reads what the card reads.
+    */
+    description: life <= 0
+      ? `Ward ${cost}`
+      : `Ward—${cost === '' ? '' : `${cost}, `}Pay ${life} life`,
+    effect: (c) => wardAsks(c, cost, name, life),
   };
 }
 
@@ -6844,7 +6939,10 @@ function ward(name: string, cost: string): TriggerDef {
 export const PEST_TOKEN: CardDef = {
   name: 'Pest', typeLine: 'Token Creature — Pest', manaCost: '', cmc: 0,
   power: '1', toughness: '1',
-  oracleText: 'When this creature dies, you gain 1 life.', colors: ['B'],
+  // Black **and green**, and "this token": both as Sedgemoor Witch prints them (D578). The pool
+  // had a black Pest, which a Doom Blade could not point at and the printed one's colours allow
+  // no differently — but a green-hating card could, and a token's colours are part of the card.
+  oracleText: 'When this token dies, you gain 1 life.', colors: ['B', 'G'],
 };
 
 const PEST: CardScript = {
@@ -6859,7 +6957,7 @@ const PEST: CardScript = {
 };
 
 /*
-  The two ward cards, and the clause that was wrong here for eight entries.
+  The two magecraft cards, and the clause that was wrong here for eight entries.
 
   Both are printed "Magecraft — Whenever you cast **or copy** an instant or sorcery spell", and the
   copy half used to be missing. The comment that stood here said why: "nothing in this pool copies
@@ -6878,13 +6976,34 @@ const PEST: CardScript = {
 */
 const DRAGONSGUARD_ELITE: CardScript = {
   name: 'Dragonsguard Elite',
+  /*
+    One counter a spell and an ability that doubles them, as printed (D578).
+
+    The pool's Elite had **ward {1}** and **two** counters a spell, and neither is on the card: it
+    has no ward at all, and what it has instead is the six-mana ability below — which is the half
+    that makes it a late-game card rather than only an early one. The ward tests it carried moved
+    to a card that prints the keyword.
+  */
   triggers: [
-    ward('Dragonsguard Elite', '{1}'),
     {
       // Magecraft: a cast **or** a copy, which is the whole of what `how` exists for.
       on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery', how: 'any' },
-      description: 'put two +1/+1 counters on Dragonsguard Elite',
-      effect: (c) => addCounters(c.state, c.source, '+1/+1', 2),
+      description: 'put a +1/+1 counter on Dragonsguard Elite',
+      effect: (c) => addCounters(c.state, c.source, '+1/+1', 1),
+    },
+  ],
+  abilities: [
+    {
+      cost: { mana: '{4}{G}{G}' },
+      description: '{4}{G}{G}: Double the number of +1/+1 counters on Dragonsguard Elite.',
+      // Six mana to double nothing is legal and a waste, so the bot is told when it is one.
+      buysNothingIf: (state, source) => (state.instances[source]?.counters['+1/+1'] ?? 0) <= 0,
+      // Doubled by adding as many again, counted as the ability resolves and not as it was
+      // activated: a counter that arrived in between is doubled with the rest.
+      effect: (c) => {
+        const n = c.state.instances[c.source]?.counters['+1/+1'] ?? 0;
+        return n <= 0 ? c.state : addCounters(c.state, c.source, '+1/+1', n);
+      },
     },
   ],
 };
@@ -6893,10 +7012,12 @@ const SEDGEMOOR_WITCH: CardScript = {
   name: 'Sedgemoor Witch',
   keywords: ['menace'],
   triggers: [
-    ward('Sedgemoor Witch', '{3}'),
+    // "Ward—Pay 3 life", where the pool had ward {3}: a different currency, and one a player who
+    // has tapped out can still pay. See `pendingPayment.life`.
+    ward('Sedgemoor Witch', '', 3),
     {
       on: { kind: 'spell-cast', by: 'you', spell: 'instant-or-sorcery', how: 'any' },
-      description: 'create a 1/1 black Pest creature token',
+      description: 'create a 1/1 black and green Pest creature token with "When this token dies, you gain 1 life."',
       effect: (c) => createToken(c.state, c.controller, PEST_TOKEN, 1),
     },
   ],
@@ -7583,7 +7704,7 @@ const WALL_OF_FROST: CardScript = {
  * (CR 704.5b). Everywhere else a card beats one damage, which is why the card is played.
  */
 function ophidianWouldDraw(state: GameState, chooser: SeatIndex): string | undefined {
-  if (listAt(state, zoneKey(chooser, 'library')).length === 0) return 'Attack';
+  if (listAt(state, zoneKey(chooser, 'library')).length === 0) return 'No';
   const lethal = state.combat.attacks.some((attack) => {
     const inst = state.instances[attack.attacker];
     if (inst === undefined || inst.zoneSeat !== chooser || attack.blockers.length > 0) return false;
@@ -7591,7 +7712,7 @@ function ophidianWouldDraw(state: GameState, chooser: SeatIndex): string | undef
     const seat = state.seats[attack.defender];
     return seat !== undefined && seat.life <= characteristicsOf(state, inst).power;
   });
-  return lethal ? 'Attack' : 'Draw';
+  return lethal ? 'No' : 'Yes';
 }
 
 const OPHIDIAN: CardScript = {
@@ -7599,7 +7720,7 @@ const OPHIDIAN: CardScript = {
   triggers: [
     {
       on: { kind: 'attacks-unblocked' },
-      description: 'you may draw a card; if you do, remove Ophidian from combat',
+      description: 'you may draw a card; if you do, Ophidian assigns no combat damage this turn',
       /*
         "You may" as two words rather than as a flag on the trigger (D116).
 
@@ -7607,18 +7728,28 @@ const OPHIDIAN: CardScript = {
         between two words, the table already draws a row of buttons for one, and the decision is
         genuinely a decision — a card is worth more than one damage until the turn the one damage
         wins the game.
+
+        The words are Yes and No, like every other "you may" (D574), with the `best` kept: this is
+        the one of them where the answer is a fact about the board rather than always yes.
       */
       decisions: [{
         who: 'controller',
-        prompt: 'Draw a card, and remove Ophidian from combat?',
-        options: ['Draw', 'Attack'],
+        prompt: 'Draw a card? If you do, Ophidian assigns no combat damage this turn.',
+        options: ['Yes', 'No'],
         best: ophidianWouldDraw,
       }],
       effect: (c) => {
-        if (chosenOption(c) !== 'Draw') return c.state;
-        // Removed from combat *because* a card was drawn, in that order and only then: the card
-        // says "if you do", and an Ophidian that declined is still an attacking creature.
-        return removeFromCombat(draw(c.state, c.controller, 1), c.source);
+        if (chosenOption(c) !== 'Yes') return c.state;
+        /*
+          **Assigns no combat damage**, which is what is printed, and not "removed from combat",
+          which is what stood here (D578). The difference is not wording: an Ophidian removed from
+          combat stops being an attacking creature, so nothing that reads attackers sees it, and
+          "this turn" covers a second combat the removal never did. It stays attacking and deals
+          nothing — *because* a card was drawn, in that order and only then.
+        */
+        return pump(draw(c.state, c.controller, 1), [c.source], c.source, c.controller, {
+          assignsNoCombatDamage: true,
+        });
       },
     },
   ],
@@ -8799,12 +8930,17 @@ function cumulativeUpkeepTrigger(cost: string): TriggerDef {
 }
 
 /**
- * Mystic Remora: two cards every time they do anything, for as long as you keep paying.
+ * Mystic Remora: a card every time they do anything they will not pay {4} for, for as long as you
+ * keep paying.
  *
  * The pool's first **cumulative upkeep** card (CR 702.24), and the one that makes the climb a real
- * decision rather than an accounting exercise: one mana for two cards is the best rate in the pool,
- * two mana for two cards is still good, and by the fourth or fifth upkeep the Remora is asking for
- * more than the deck can spare — so it is a card you play, milk and then let go.
+ * decision rather than an accounting exercise: one mana for a card a spell is a fine rate, two is
+ * still good, and by the fourth or fifth upkeep the Remora is asking for more than the deck can
+ * spare — so it is a card you play, milk and then let go.
+ *
+ * **One card, and the caster may pay {4} to stop it** (D578). The pool's Remora drew two with no
+ * way out, which is not the printed card on either count; the tax is the half an opponent with
+ * mana to spare actually plays around.
  *
  * It only reads an **opponent's** noncreature spells, which is why it goes in a deck that is happy
  * to sit behind counterspells: the turns it draws nothing are the turns nobody is doing anything.
@@ -8816,25 +8952,10 @@ const MYSTIC_REMORA: CardScript = {
     cumulativeUpkeepTrigger('{1}'),
     {
       on: { kind: 'spell-cast', by: 'opponent', spell: 'noncreature' },
-      description: 'you may draw two cards',
-      /*
-        The words and their order are the compiled reading's (D447), and the `best` this used to
-        carry is gone with them.
-
-        It read `options: ['Decline', 'Draw two']` with `best: () => 'Draw two'` — which is a bot
-        hint written to undo the option order rather than to say anything about the board.
-        `ChoiceDecisionSpec.options` documents the **first** option as the answer a bot falls back
-        on, so putting the answer nobody would choose first and then overriding it is two levers
-        where one does. Yes first, no `best`, and the bot draws because the question's own default
-        says to. This is also what the compiler emits for every "you may" it reads, so the two
-        readings of this card agree rather than being listed as a disagreement.
-      */
-      decisions: [{
-        who: 'controller',
-        prompt: 'Draw two cards?',
-        options: ['Yes', 'No'],
-      }],
-      effect: (c) => (chosenOption(c) === 'Yes' ? drawLater(c.state, c.controller, 2) : c.state),
+      description: 'you may draw a card unless that player pays {4}',
+      // The caster is asked first, and the Remora's controller only if they do not pay: see
+      // `mayUnlessThatPlayerPays`, which is also what the compiler emits for this sentence.
+      ...mayUnlessThatPlayerPays('{4}', 'draw a card', (c) => drawLater(c.state, c.controller, 1)),
     },
   ],
 };
@@ -9367,6 +9488,17 @@ const HAGRA_MAULING: CardScript = {
   // See `CardScript.removesACreature`: not cast with nothing of theirs to point at — which for this
   // card is the whole decision, because the alternative is a land.
   removesACreature: true,
+  /*
+    "{1} less to cast if an opponent controls no basic lands" (D578) — **an** opponent, so one seat
+    of three with none is enough at a pod, and a seat that has left the game is not an opponent.
+    Counted as the cost is computed, like affinity: see `CardScript.selfCostChange`.
+  */
+  selfCostChange: {
+    generic: -1,
+    description: 'an opponent controls no basic lands: {1} less',
+    when: (state, caster) => state.seats.some((seat) => seat.index !== caster && !seat.eliminated
+      && !listAt(state, zoneKey(seat.index, 'battlefield')).some((id) => isBasicLand(state, id))),
+  },
   targets: [TARGET_CREATURE],
   onResolve: (c) => {
     const id = firstCardTarget(c);
@@ -10346,6 +10478,23 @@ export function keywordScriptFor(line: string, name: string): Partial<CardScript
   */
   const unearth = /^unearth\s+((?:\{[^}]*\})+)$/i.exec(text);
   if (unearth !== null) return unearthFragment(unearth[1]!);
+
+  /*
+    **Ward paid in life** (D578): "Ward—Pay 3 life." and "Ward—{2}, Pay 2 life."
+
+    Tried before the mana reader below, whose pattern would otherwise take "{2}, Pay 2 life" for a
+    mana cost and hand `parseManaCost` a sentence. **19 legal lines**: 16 with life alone and 3 with
+    mana beside it. The other things a ward can cost — discard a card (15 lines), sacrifice a
+    permanent, collect evidence — are payments `pendingPayment` cannot charge, so they stay unread
+    and reported rather than read as a ward that costs nothing.
+
+    "Pay life equal to ~'s power" (2 lines) is refused by the digits: a number that is a fact about
+    the board when the ward resolves is not one this reader can write down at compile time.
+  */
+  const lifeWard = /^ward\s*[—-]\s*(?:((?:\{[^}]+\})+),\s*)?pay (\d+) life\.?$/i.exec(text);
+  if (lifeWard !== null) {
+    return { triggers: [ward(name, lifeWard[1] ?? '', Number(lifeWard[2]))] };
+  }
 
   const cost = /^(ward|replicate|cumulative upkeep)\s*[—-]?\s*(\{[^\n]+\})$/i.exec(text);
   if (cost !== null) {
@@ -16152,6 +16301,26 @@ function optionalEffect(
     is read here and not by `parseManaCost`: energy has no colours and no sources to tap, so
     there is nothing for a mana parser to do with it.
   */
+  /*
+    **A "may" somebody else can buy off** (D578): "you may draw a card unless that player pays
+    {1}" — Rhystic Study. Two legal cards print it, the Study and Mystic Remora, and the pool's
+    own Remora is one of them, so this is the reading the hand-written card is held to.
+    `mayUnlessThatPlayerPays` is both.
+
+    First, because the bare "may" below would otherwise take "draw a card unless that player pays
+    {1}" for its clause and find no reader for it. Refused when the price is not a plain mana run
+    (`{X}`, "where X is …" — Esper Sentinel) or when the inner clause asks or targets: the two
+    questions here are the only ones this shape can order.
+  */
+  const taxed = /^you may (.+?) unless that player pays ((?:\{[^}]+\})+)\.?$/i.exec(clause);
+  if (taxed !== null) {
+    const parsed = parseManaCost(taxed[2]!);
+    if (parsed.unsupported !== undefined || parsed.x) return null;
+    const inner = reader(taxed[1]!.trim());
+    if (inner === null || inner.beforeDecisions !== undefined) return null;
+    if ((inner.decisions ?? []).length > 0 || (inner.targets ?? []).length > 0) return null;
+    return mayUnlessThatPlayerPays(taxed[2]!, taxed[1]!, inner.effect);
+  }
   const energyPriced = /^you may pay ((?:\{E\})+)\.\s*If you do, (.+)$/i.exec(clause);
   /*
     The mana price is tried **after** the energy one, and that order is load-bearing rather than

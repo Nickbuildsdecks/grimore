@@ -145,7 +145,11 @@ export function sacrificeOptions(
       inventing a restriction. The bot will not do it, because feeding the thing you are growing is
       never the cheapest creature it could feed.
     */
-    return cost.sacrifice === 'artifact' ? hasType(ch.typeLine, 'artifact') : ch.isCreature;
+    const rightKind = cost.sacrifice === 'artifact' ? hasType(ch.typeLine, 'artifact') : ch.isCreature;
+    if (!rightKind) return false;
+    // "Sacrifice another Vampire or Zombie": one of the named subtypes, read where the kind was.
+    return cost.sacrificeSubtypes === undefined
+      || cost.sacrificeSubtypes.some((sub) => hasSubtype(ch.typeLine, sub));
   });
 }
 
@@ -3402,7 +3406,16 @@ function settlePayment(state: GameState): GameState {
   const pending = state.pendingPayment;
   if (pending === null) return state;
   const cost = parseManaCost(pending.cost);
-  if (canAfford(poolOf(state, pending.seat), cost, manaSources(state, pending.seat))) return state;
+  /*
+    Life is affordable by the rule every other life cost here uses (`AbilityCost.life`, morph):
+    refused at exactly the life that would end the game. Whether a payment *equal* to the life
+    total is legal is one question for all of them, and it is task #411's rather than this line's —
+    a ward that answered it differently from a painland would be two rules for one cost.
+  */
+  const lifeOwed = pending.life ?? 0;
+  const lifeIsThere = lifeOwed === 0 || (state.seats[pending.seat]?.life ?? 0) > lifeOwed;
+  if (lifeIsThere
+    && canAfford(poolOf(state, pending.seat), cost, manaSources(state, pending.seat))) return state;
   /*
     And said in words, through the channel a replacement effect uses.
 
